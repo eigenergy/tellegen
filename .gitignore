@@ -1,0 +1,17 @@
+# Julia
+backend/Manifest.toml
+
+# Node
+node_modules/
+frontend/build/
+frontend/.svelte-kit/
+
+# Rust
+wasm/target/
+wasm/pkg/
+
+# OS
+.DS_Store
+
+# Env
+.env

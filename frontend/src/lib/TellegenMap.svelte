@@ -1,0 +1,274 @@
+<script lang="ts">
+	import maplibregl from 'maplibre-gl';
+	import 'maplibre-gl/dist/maplibre-gl.css';
+	import { MapboxOverlay } from '@deck.gl/mapbox';
+	import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+	import type { Layer, PickingInfo } from '@deck.gl/core';
+	import type { NetworkBranch, NetworkBus } from '$lib/api';
+	import { branchColor, branchWidth, busRadius, lmpColor, lmpDomain, sensColor } from '$lib/colors';
+	import { app, type CaseState } from '$lib/state.svelte';
+
+	let { onbusclick }: { onbusclick: (caseId: string, busId: number) => void } = $props();
+
+	const STYLE = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json';
+
+	let map = $state.raw<maplibregl.Map | null>(null);
+	let overlay = $state.raw<MapboxOverlay | null>(null);
+
+	interface CaseDisplay {
+		lmp: Map<number, number>;
+		lo: number;
+		hi: number;
+		loading: Map<number, number>;
+		mode: 'lmp' | 'sens';
+		sens: Map<number, number>;
+		sensMax: number;
+	}
+
+	// Everything the accessors need, rebuilt when any case's data moves. The
+	// LMP scale normalizes per network: each case is an islanded market, so
+	// within-network structure beats cross-network color comparability (the
+	// panel legend and tooltips carry the actual numbers). Preview values
+	// shift individual buses without rescaling.
+	const display = $derived.by(() => {
+		const active = app.active;
+		const selected = app.selectedBus;
+		const previewStep =
+			active && selected !== null && app.previewDeltaMw !== null && active.sensitivity
+				? app.previewDeltaMw - (active.deltas[selected] ?? 0)
+				: 0;
+
+		const perCase = new Map<string, CaseDisplay>();
+		for (const c of app.cases) {
+			if (!c.network || !c.solution) continue;
+			const lmp = new Map<number, number>();
+			for (const e of c.solution.lmp) lmp.set(e.bus, e.usd_per_mwh);
+			const { lo, hi } = lmpDomain(c.solution.lmp.map((e) => e.usd_per_mwh));
+			const loading = new Map<number, number>();
+			for (const f of c.solution.flows) loading.set(f.branch, f.loading);
+
+			const sens = new Map<number, number>();
+			let sensMax = 0;
+			const isActive = c === active;
+			if (isActive && selected !== null && c.sensitivity) {
+				for (const v of c.sensitivity.values) {
+					sens.set(v.bus, v.value);
+					sensMax = Math.max(sensMax, Math.abs(v.value));
+				}
+				if (previewStep !== 0) {
+					// First order preview: shift LMPs along the gradient.
+					for (const v of c.sensitivity.values) {
+						lmp.set(v.bus, (lmp.get(v.bus) ?? 0) + v.value * previewStep);
+					}
+				}
+			}
+			const mode: 'lmp' | 'sens' =
+				isActive && selected !== null && sensMax > 0 && previewStep === 0 ? 'sens' : 'lmp';
+			perCase.set(c.id, { lmp, lo, hi, loading, mode, sens, sensMax });
+		}
+		return perCase;
+	});
+
+	function busFill(caseId: string) {
+		const d = display.get(caseId);
+		return (bus: NetworkBus): [number, number, number, number] => {
+			if (!d) return [180, 175, 165, 200];
+			if (d.mode === 'sens') return sensColor((d.sens.get(bus.id) ?? 0) / d.sensMax);
+			const mid = (d.lo + d.hi) / 2;
+			return lmpColor(((d.lmp.get(bus.id) ?? mid) - d.lo) / (d.hi - d.lo));
+		};
+	}
+
+	function caseOf(info: PickingInfo): CaseState | null {
+		const id = info.layer?.id.replace(/^(buses|branches)-/, '');
+		return id ? app.byId(id) : null;
+	}
+
+	function tooltip(info: PickingInfo): { html: string } | null {
+		const { object } = info;
+		if (!object) return null;
+		const c = caseOf(info);
+		const d = c ? display.get(c.id) : undefined;
+		if ('path' in object) {
+			const b = object as NetworkBranch;
+			const loading = d?.loading.get(b.id) ?? 0;
+			return {
+				html: `<div class="tt"><b>line ${b.from}&#8201;&ndash;&#8201;${b.to}</b>
+					${(loading * 100).toFixed(0)}% of ${b.rate_mw.toFixed(0)} MW</div>`
+			};
+		}
+		const bus = object as NetworkBus;
+		const lmp = d?.lmp.get(bus.id);
+		const sens = d?.mode === 'sens' ? d.sens.get(bus.id) : undefined;
+		const delta = c?.deltas[bus.id] ?? 0;
+		const loadRow =
+			delta === 0
+				? `load ${bus.demand_mw.toFixed(0)} MW`
+				: `load ${(bus.demand_mw + delta).toFixed(0)} MW (${delta > 0 ? '+' : ''}${delta.toFixed(0)})`;
+		const sensRow =
+			sens === undefined
+				? ''
+				: `<br>&part;LMP/&part;d ${sens >= 0 ? '+' : ''}${sens.toExponential(2)}`;
+		return {
+			html: `<div class="tt"><b>bus ${bus.id}</b>
+				LMP ${lmp?.toFixed(2) ?? '&mdash;'} $/MWh<br>
+				${loadRow} &#8901; gen ${bus.gen_mw.toFixed(0)} MW${sensRow}</div>`
+		};
+	}
+
+	function initMap(container: HTMLDivElement) {
+		const m = new maplibregl.Map({
+			container,
+			style: STYLE,
+			center: [-85, 36],
+			zoom: 4.5,
+			attributionControl: { compact: true }
+		});
+		const o = new MapboxOverlay({
+			layers: [],
+			getTooltip: tooltip,
+			getCursor: ({ isHovering, isDragging }) =>
+				isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
+		});
+		m.addControl(o);
+		m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+		map = m;
+		overlay = o;
+		return () => {
+			m.remove();
+			map = null;
+			overlay = null;
+		};
+	}
+
+	// Sync deck.gl layers with app state. New layer instances diff cheaply;
+	// updateTriggers tell deck.gl when accessor outputs changed.
+	$effect(() => {
+		if (!overlay) return;
+		const layers: Layer[] = [];
+		for (const c of app.cases) {
+			if (!c.network) continue;
+			const d = display.get(c.id);
+			layers.push(
+				new PathLayer<NetworkBranch>({
+					id: `branches-${c.id}`,
+					data: c.network.branches,
+					getPath: (b) => b.path,
+					getColor: (b) => branchColor(d?.loading.get(b.id) ?? 0, b.status === 1),
+					getWidth: (b) => branchWidth(d?.loading.get(b.id) ?? 0),
+					widthUnits: 'pixels',
+					widthMinPixels: 1.5,
+					pickable: true,
+					autoHighlight: true,
+					highlightColor: [32, 36, 43, 90],
+					updateTriggers: {
+						getColor: [display],
+						getWidth: [display]
+					}
+				}),
+				new ScatterplotLayer<NetworkBus>({
+					id: `buses-${c.id}`,
+					data: c.network.buses,
+					getPosition: (b) => [b.lon, b.lat],
+					getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
+					radiusUnits: 'pixels',
+					getFillColor: busFill(c.id),
+					stroked: true,
+					getLineColor: (b) =>
+						c.id === app.activeCaseId && b.id === app.selectedBus
+							? [32, 36, 43, 255]
+							: [46, 42, 34, 110],
+					getLineWidth: (b) =>
+						c.id === app.activeCaseId && b.id === app.selectedBus ? 2.5 : 1,
+					lineWidthUnits: 'pixels',
+					pickable: true,
+					autoHighlight: true,
+					highlightColor: [32, 36, 43, 70],
+					onClick: (info: PickingInfo) => {
+						const bus = info.object as NetworkBus | undefined;
+						if (bus) onbusclick(c.id, bus.id);
+					},
+					updateTriggers: {
+						getFillColor: [display],
+						getLineColor: [app.selectedBus, app.activeCaseId],
+						getLineWidth: [app.selectedBus, app.activeCaseId]
+					}
+				})
+			);
+		}
+		overlay.setProps({ layers });
+	});
+
+	function boundsFor(target: string | 'all'): maplibregl.LngLatBoundsLike | null {
+		let minLon = Infinity;
+		let minLat = Infinity;
+		let maxLon = -Infinity;
+		let maxLat = -Infinity;
+		let seen = false;
+		for (const c of app.cases) {
+			if (!c.network || (target !== 'all' && c.id !== target)) continue;
+			for (const b of c.network.buses) {
+				minLon = Math.min(minLon, b.lon);
+				minLat = Math.min(minLat, b.lat);
+				maxLon = Math.max(maxLon, b.lon);
+				maxLat = Math.max(maxLat, b.lat);
+				seen = true;
+			}
+		}
+		return seen
+			? [
+					[minLon, minLat],
+					[maxLon, maxLat]
+				]
+			: null;
+	}
+
+	// Fly to whatever the header (or initial load) asked for.
+	$effect(() => {
+		void app.frameSeq;
+		if (!map) return;
+		const bounds = boundsFor(app.frameTarget);
+		if (!bounds) return;
+		map.fitBounds(bounds, {
+			padding: { top: 96, left: 380, right: 60, bottom: 64 },
+			duration: 1400
+		});
+	});
+</script>
+
+<div class="map" {@attach initMap}></div>
+
+<style>
+	.map {
+		position: absolute;
+		inset: 0;
+		background: var(--bg);
+	}
+
+	/* Lift the bottom-right controls clear of the footer strip. */
+	.map :global(.maplibregl-ctrl-bottom-right) {
+		bottom: 30px;
+	}
+
+	.map :global(.maplibregl-ctrl-attrib) {
+		background: rgba(252, 251, 247, 0.75);
+		font-family: var(--font-mono);
+		font-size: 10px;
+	}
+
+	.map :global(.maplibregl-ctrl-attrib a) {
+		color: var(--ink-dim);
+	}
+
+	.map :global(.deck-tooltip) {
+		background: var(--panel) !important;
+		border: 1px solid var(--line);
+		color: var(--ink) !important;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		line-height: 1.5;
+		padding: 8px 10px !important;
+		border-radius: 2px;
+		box-shadow: 0 2px 10px rgba(32, 36, 43, 0.12);
+	}
+</style>

@@ -1,0 +1,91 @@
+export type RGBA = [number, number, number, number];
+
+function lerp(a: number, b: number, t: number): number {
+	return a + (b - a) * t;
+}
+
+function lerpColor(a: RGBA, b: RGBA, t: number): RGBA {
+	return [
+		Math.round(lerp(a[0], b[0], t)),
+		Math.round(lerp(a[1], b[1], t)),
+		Math.round(lerp(a[2], b[2], t)),
+		Math.round(lerp(a[3], b[3], t))
+	];
+}
+
+function ramp(stops: RGBA[], t: number): RGBA {
+	const x = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+	const i = Math.min(stops.length - 2, Math.floor(x));
+	return lerpColor(stops[i], stops[i + 1], x - i);
+}
+
+function cssGradient(stops: RGBA[]): string {
+	const parts = stops.map((s) => `rgb(${s[0]} ${s[1]} ${s[2]})`);
+	return `linear-gradient(90deg, ${parts.join(', ')})`;
+}
+
+/** Sequential LMP ramp, cheap to expensive: pale straw darkening through
+ * amber and rust to near-black maroon. Lightness falls monotonically, so the
+ * ordering survives every kind of color vision deficiency. */
+const LMP_STOPS: RGBA[] = [
+	[246, 227, 180, 235],
+	[236, 178, 66, 235],
+	[212, 116, 34, 240],
+	[160, 56, 21, 245],
+	[84, 18, 7, 250]
+];
+
+export const lmpColor = (t: number): RGBA => ramp(LMP_STOPS, t);
+export const lmpGradient = cssGradient(LMP_STOPS);
+
+/** Robust color domain for LMPs: 5th to 95th percentile, with a $1/MWh
+ * minimum span. LMP distributions are heavy tailed (one binding line pins a
+ * handful of buses far from the pack) so min-max scaling compresses the pack
+ * into a single hue, and a congestion-free case is one price plus solver
+ * noise that an exact scale would stretch into fake structure. Values beyond
+ * the domain clamp to the ramp ends. */
+export function lmpDomain(values: number[]): { lo: number; hi: number } {
+	if (values.length === 0) return { lo: 0, hi: 1 };
+	const sorted = [...values].sort((a, b) => a - b);
+	const q = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+	const lo = q(0.05);
+	const hi = q(0.95);
+	const mid = (lo + hi) / 2;
+	const span = Math.max(hi - lo, 1);
+	return { lo: mid - span / 2, hi: mid + span / 2 };
+}
+
+/** Diverging sensitivity ramp: green (price falls per MW of demand) through
+ * a paper-toned neutral to purple (price rises). The green/purple pair stays
+ * legible under CVD and shares no hue with the warm LMP ramp, so the two
+ * modes cannot be confused. */
+const SENS_STOPS: RGBA[] = [
+	[27, 120, 55, 240],
+	[127, 191, 123, 230],
+	[223, 219, 208, 160],
+	[194, 165, 207, 230],
+	[118, 42, 131, 240]
+];
+
+/** t in [-1, 1] */
+export const sensColor = (t: number): RGBA => ramp(SENS_STOPS, (t + 1) / 2);
+export const sensGradient = cssGradient(SENS_STOPS);
+
+/** Branch color by loading fraction: warm gray, amber past 0.6, red past 0.9. */
+export function branchColor(loading: number, inService: boolean): RGBA {
+	if (!inService) return [197, 191, 178, 110];
+	if (loading < 0.6) return [138, 131, 117, 200];
+	if (loading < 0.9)
+		return lerpColor([138, 131, 117, 210], [212, 116, 34, 240], (loading - 0.6) / 0.3);
+	return [179, 38, 30, 250];
+}
+
+export function branchWidth(loading: number): number {
+	return 1.6 + 3.4 * Math.min(1, loading);
+}
+
+/** Bus radius in px; area tracks max(load, gen) so big plants and big loads
+ * both read at a glance. Shared by the map layers and the size legend. */
+export function busRadius(maxMw: number): number {
+	return 3.2 + 0.45 * Math.sqrt(Math.max(maxMw, 1));
+}

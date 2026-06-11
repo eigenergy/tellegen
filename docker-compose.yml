@@ -1,0 +1,9 @@
+services:
+  tellegen:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      TELLEGEN_PORT: "8000"
+    mem_limit: 6g
+    restart: unless-stopped

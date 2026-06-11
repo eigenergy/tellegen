@@ -1,0 +1,55 @@
+/* tellegen design tokens: warm paper ground, burnt amber accent, the physics
+   owns all other saturation. */
+:root {
+	--bg: #ece9e2;
+	--panel: rgba(252, 251, 247, 0.92);
+	--line: #d9d3c6;
+	--ink: #20242b;
+	--ink-dim: #6e7378;
+	--ink-faint: #989b92;
+	--accent: #b25e00;
+	--accent-bright: #ffb000;
+	--accent-soft: rgba(178, 94, 0, 0.1);
+	--red: #b3261e;
+	--pos: #762a83;
+	--neg: #1b7837;
+
+	--font-display: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+	background: var(--bg);
+	color: var(--ink);
+	font-family: var(--font-display);
+	font-size: 15px;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* faint grain over everything; keeps flat panels from looking sterile */
+body::after {
+	content: '';
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: 9999;
+	opacity: 0.04;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+}
+
+.mono {
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+}
+
+a {
+	color: var(--accent);
+	text-decoration: none;
+}
