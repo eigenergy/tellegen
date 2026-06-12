@@ -50,22 +50,17 @@ cd backend
 julia --project=. bootstrap.jl
 ```
 
-PowerDiff.jl and PowerIO.jl are not yet in the General registry. Until they are, the backend environment uses local clones:
+PowerDiff.jl and PowerIO.jl are not yet in the General registry (PowerIO.jl's registration is in flight). Until they are, add them from git:
 
 ```sh
 julia --project=backend -e 'using Pkg;
-  Pkg.develop([PackageSpec(path="../Research/PowerIO.jl"),
-               PackageSpec(path="../Research/PowerDiff.jl")])'
+  Pkg.add([PackageSpec(url="https://github.com/eigenergy/PowerIO.jl.git"),
+           PackageSpec(url="https://github.com/grid-opt-alg-lab/PowerDiff.jl.git", rev="mk/backends")])'
 ```
 
-PowerIO.jl's bundled binary lags the powerio main branch. When working against a local powerio checkout, build it and point the backend at it:
+(Maintainers with local clones can `Pkg.develop` paths instead.) PowerIO.jl 0.1.1 bundles the powerio v0.2.1 binary as a lazy artifact, so no separate Rust build is needed. To run against an unreleased powerio, build `powerio-capi` and set `POWERIO_CAPI=/path/to/libpowerio_capi.{dylib,so}`.
 
-```sh
-cargo build --release -p powerio-capi   # in the powerio checkout
-export POWERIO_CAPI=/path/to/powerio/target/release/libpowerio_capi.dylib
-```
-
-WASM module (required before the frontend builds):
+WASM module (required before the frontend builds; powerio comes from crates.io):
 
 ```sh
 cargo install wasm-pack

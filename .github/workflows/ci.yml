@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # wasm module, then the frontend that imports it.
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wasm
+      - name: Install wasm-pack
+        run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+      - run: wasm-pack build wasm --target web --out-dir ../frontend/src/lib/wasm-pkg
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run check
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  # Backend against the branch heads the README documents (the Dockerfile pins
+  # shas for reproducible deploys; CI tracks the branches to catch drift early).
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.11"
+      - uses: julia-actions/cache@v2
+      - name: Install unregistered deps
+        # One Pkg.add call for both: the project lists PowerDiff and PowerIO
+        # as deps, so resolution only succeeds once both unregistered
+        # packages are specs in the same resolve.
+        run: |
+          julia --project=backend -e 'using Pkg;
+            Pkg.add([PackageSpec(url="https://github.com/eigenergy/PowerIO.jl.git"),
+                     PackageSpec(url="https://github.com/grid-opt-alg-lab/PowerDiff.jl.git", rev="mk/backends")]);
+            Pkg.instantiate()'
+      - run: julia --project=backend backend/test/runtests.jl

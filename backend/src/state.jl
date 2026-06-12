@@ -54,9 +54,7 @@ function load_cases!()
     isempty(specs) &&
         @warn "no TAMU case data under $DATA_DIR; serving pglib fallbacks with synthetic layout (see scripts/stage-data.sh)"
     for spec in specs
-        # One bad distribution (or a stale powerio binary that drops the aux
-        # extras carrying coordinates; see the POWERIO_CAPI note in the
-        # README) should not take down the cases that load.
+        # One bad distribution should not take down the cases that load.
         try
             CASES[spec.id] = build_entry(spec)
             @info "case loaded" spec.id

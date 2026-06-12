@@ -19,7 +19,7 @@ docker compose up -d --build
 
 The TAMU ACTIVSg distributions are downloaded by the operator from [electricgrids.engr.tamu.edu](https://electricgrids.engr.tamu.edu/) and staged into `data/`, which the compose file mounts read only. Stage real files, not symlinks; bind mounts do not follow host symlinks. Without staged data the server falls back to pglib cases with synthetic coordinates.
 
-The container binds to 127.0.0.1:8000 only, so nothing is public until a reverse proxy fronts it. The first build is slow: one stage builds powerio (Rust) and the wasm module from source, another compiles JuMP and Ipopt. Both are cached layers, so source changes rebuild in seconds.
+The container binds to 127.0.0.1:8000 only, so nothing is public until a reverse proxy fronts it. The first build is slow: one stage builds the wasm module (powerio from crates.io), another compiles JuMP and Ipopt. Both are cached layers, so source changes rebuild in seconds.
 
 ## TLS and reverse proxy
 
@@ -34,15 +34,9 @@ Solve requests serialize per case behind a lock. A warm re-solve costs about 100
 ## Hardening before a public launch
 
 - Stock Caddy has no per IP rate limiting. Build with `caddy-ratelimit` and enable the limits sketched in the Caddyfile; the sensitivity and solve endpoints are the expensive ones.
-- PowerDiff and PowerIO install from git until registered in General; pass `--build-arg POWERDIFF_URL=...` / `POWERIO_JL_URL=...` if the repos move, and `--build-arg POWERIO_URL=...` for the Rust source build.
+- PowerDiff and PowerIO install from git at revs pinned in the Dockerfile until registered in General; bump `POWERIO_JL_REV` / `POWERDIFF_REV` (or override with `--build-arg`) when upstream moves. The powerio binary arrives as PowerIO.jl's bundled artifact; the wasm build takes powerio from crates.io.
 - If you add POST endpoints (case upload), put body size caps and a bounded queue in front of them first. The drop-a-file feature needs none of this: parsing runs in the visitor's browser and nothing reaches the server.
 
-## Reference: the dev deployment (Hetzner)
+## Sharing a host with an existing reverse proxy
 
-The exact recipe behind the public demo, for copy-paste:
-
-1. Hetzner Cloud CPX31 (4 vCPU, 8 GB), Ubuntu LTS, plus a 4 GB swapfile.
-2. Docker Engine + compose plugin; nothing else runs on the host.
-3. UFW: allow 22, 80, 443 (tcp, plus udp on 443 for HTTP/3), deny the rest.
-4. DNS A record at the server IP; Caddy from the host package with the repo Caddyfile.
-5. `git clone` to `/opt/tellegen`; `scp` the TAMU distributions over and `scripts/stage-data.sh` them; `docker compose up -d --build`.
+When another stack's proxy already owns ports 80/443, run tellegen beside it instead of adding a second proxy: bring the container up joined to the proxy's Docker network with `deploy/docker-compose.edge.yml` (rename the network there to match the host's), then add a vhost to the proxy that forwards to `tellegen:8000` by container name. With Caddy that vhost is the site block from `deploy/Caddyfile` with `reverse_proxy tellegen:8000`; reload the proxy and TLS follows automatically once DNS resolves. The public demo at [tellegen.dev](https://tellegen.dev) runs this way; with the staged cases it holds about 3 GB resident beside whatever else the host serves. (`.dev` is HSTS preloaded, so the site is HTTPS-only by construction; automatic TLS covers it.)

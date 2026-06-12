@@ -1,18 +1,13 @@
-# ---- rust: powerio C library + wasm module ----
+# ---- rust: wasm module ----
 FROM rust:slim AS rust
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# PowerIO.jl's bundled binary artifact lags powerio main, and the wasm module
-# wraps powerio directly, so both build here from source. The wasm crate
-# points at a sibling checkout (../../../Research/powerio); recreate that
-# layout. Override the source with --build-arg POWERIO_URL.
-ARG POWERIO_URL=https://github.com/eigenergy/powerio.git
-RUN git clone --depth 1 "$POWERIO_URL" /Research/powerio
-RUN cargo build --release -p powerio-capi --manifest-path /Research/powerio/Cargo.toml
+# The wasm crate pins powerio to a release tag in its Cargo.toml, so cargo
+# fetches the source itself; nothing to clone here.
 RUN cargo install wasm-pack --locked
-COPY wasm /Visualization/tellegen/wasm
-RUN wasm-pack build /Visualization/tellegen/wasm --target web --out-dir /out/wasm-pkg
+COPY wasm /build/wasm
+RUN wasm-pack build /build/wasm --target web --out-dir /out/wasm-pkg
 
 # ---- frontend build ----
 FROM node:22-slim AS frontend
@@ -34,23 +29,28 @@ WORKDIR /app/backend
 ENV JULIA_CPU_TARGET="generic;haswell,clone_all"
 
 # Dependency layer, keyed on Project.toml only. PowerDiff and PowerIO are not
-# registered yet, so they come from git; the local dev Manifest points at
-# local paths and is intentionally not copied.
+# registered yet, so they come from git at pinned revs; bump the REV args
+# deliberately when upstream moves. The local dev Manifest points at local
+# clones and is intentionally not copied.
 ARG POWERIO_JL_URL=https://github.com/eigenergy/PowerIO.jl.git
+ARG POWERIO_JL_REV=16f6d7e181de7f43704f2abf1e92942d033ee079
 ARG POWERDIFF_URL=https://github.com/grid-opt-alg-lab/PowerDiff.jl.git
+ARG POWERDIFF_REV=7433db4c766795b28151f4ec9ab610aff448a77e
 COPY backend/Project.toml ./
+# One Pkg.add call for both: the project lists PowerDiff and PowerIO as deps,
+# so resolution only succeeds once both unregistered packages are specs in
+# the same resolve.
 RUN julia -e "using Pkg; Pkg.activate(\".\"); \
-    Pkg.add(url=\"$POWERIO_JL_URL\"); \
-    Pkg.add(url=\"$POWERDIFF_URL\"); \
+    Pkg.add([PackageSpec(url=\"$POWERIO_JL_URL\", rev=\"$POWERIO_JL_REV\"), \
+             PackageSpec(url=\"$POWERDIFF_URL\", rev=\"$POWERDIFF_REV\")]); \
     Pkg.instantiate(); Pkg.precompile()"
 
-# Pull the pglib artifact at build time so first boot does not hit the network.
-RUN julia --project=. -e "using PowerDiff; PowerDiff.get_path(:pglib)"
-
-# The source-built powerio C library, overriding PowerIO.jl's bundled binary
-# (aux bus extras, where substation coordinates live, need current powerio).
-COPY --from=rust /Research/powerio/target/release/libpowerio_capi.so /usr/local/lib/
-ENV POWERIO_CAPI=/usr/local/lib/libpowerio_capi.so
+# Pull the lazy artifacts at build time so first boot does not hit the
+# network: the pglib cases and the powerio binary (PowerIO.jl's Artifacts.toml
+# tracks the powerio release, v0.2.1 today, which carries the aux bus extras
+# where substation coordinates live).
+RUN julia --project=. -e "using PowerDiff; PowerDiff.get_path(:pglib); \
+    using PowerIO; PowerIO.library_available() || error(\"powerio artifact unavailable\")"
 
 COPY backend/src ./src
 COPY backend/bootstrap.jl ./

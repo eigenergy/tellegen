@@ -9,10 +9,10 @@ description = "powerio parsing in the browser: case files never leave the machin
 crate-type = ["cdylib", "rlib"]
 
 # powerio's core parser is pure Rust over strings, so it compiles to
-# wasm32-unknown-unknown as-is. Point this at a published crate once
-# powerio releases; until then, use the local workspace.
+# wasm32-unknown-unknown as-is. For local powerio development, override
+# with a [patch.crates-io] section.
 [dependencies]
-powerio = { path = "../../../Research/powerio/powerio" }
+powerio = "0.2.1"
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
