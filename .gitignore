@@ -9,6 +9,10 @@ frontend/.svelte-kit/
 # Rust
 wasm/target/
 wasm/pkg/
+frontend/src/lib/wasm-pkg/
+
+# Operator-staged TAMU case data (scripts/stage-data.sh); never vendored
+data/
 
 # OS
 .DS_Store

@@ -1,12 +1,19 @@
+<script lang="ts" module>
+	// Counter for local case ids; module level so ids stay unique across remounts.
+	let localSeq = 0;
+</script>
+
 <script lang="ts">
 	import { getCases, getNetwork, getSensitivity, getSolution, openSolveStream } from '$lib/api';
 	import { busRadius, lmpDomain, lmpGradient, sensGradient } from '$lib/colors';
-	import { app, CaseState } from '$lib/state.svelte';
+	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
+	import { formatOf, ingestCase } from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
 	let abort: AbortController | null = null;
 	let closeStream: (() => void) | null = null;
+	let fileInput: HTMLInputElement | undefined = $state();
 
 	async function load() {
 		try {
@@ -30,6 +37,7 @@
 	load();
 
 	function activateCase(id: string) {
+		app.activeLocalId = null;
 		if (app.activeCaseId !== id) {
 			clearSelection();
 			app.activeCaseId = id;
@@ -37,7 +45,14 @@
 		app.requestFrame(id);
 	}
 
+	function activateLocal(c: LocalCase) {
+		clearSelection();
+		app.activeLocalId = c.id;
+		if (c.view) app.requestFrame(c.id);
+	}
+
 	async function selectBus(caseId: string, busId: number) {
+		app.activeLocalId = null;
 		if (app.activeCaseId !== caseId) app.activeCaseId = caseId;
 		const c = app.byId(caseId);
 		if (!c) return;
@@ -114,6 +129,68 @@
 		app.previewDeltaMw = null;
 		if (c.baseSolution) c.solution = c.baseSolution;
 		runSolve(c, app.selectedBus);
+	}
+
+	/** Parse dropped case files in the browser via the powerio wasm module.
+	 * Files run serially; nothing uploads. */
+	async function ingestFiles(files: FileList | File[]) {
+		for (const file of Array.from(files)) {
+			const format = formatOf(file.name);
+			if (!format) {
+				app.error = `${file.name}: not a case file (.m, .raw, .aux)`;
+				continue;
+			}
+			app.parsingFile = true;
+			try {
+				const text = await file.text();
+				const { view, ...summary } = await ingestCase(text, format);
+				const id = `local-${++localSeq}`;
+				const label =
+					summary.name && summary.name !== 'case'
+						? summary.name
+						: file.name.replace(/\.[^.]+$/, '');
+				app.addLocal({ id, label, fileName: file.name, summary, view });
+				if (view) app.requestFrame(id);
+			} catch (e) {
+				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
+			} finally {
+				app.parsingFile = false;
+			}
+		}
+	}
+
+	// Depth counter so dragenter/dragleave on nested elements doesn't flicker
+	// the overlay.
+	let dragDepth = 0;
+
+	function dragHasFiles(e: DragEvent): boolean {
+		return e.dataTransfer?.types.includes('Files') ?? false;
+	}
+
+	function onDragEnter(e: DragEvent) {
+		if (!dragHasFiles(e)) return;
+		e.preventDefault();
+		dragDepth++;
+		app.dragOver = true;
+	}
+
+	function onDragLeave(e: DragEvent) {
+		if (!dragHasFiles(e)) return;
+		dragDepth = Math.max(0, dragDepth - 1);
+		if (dragDepth === 0) app.dragOver = false;
+	}
+
+	function onDragOver(e: DragEvent) {
+		if (!dragHasFiles(e)) return;
+		e.preventDefault();
+	}
+
+	function onDrop(e: DragEvent) {
+		if (!dragHasFiles(e)) return;
+		e.preventDefault();
+		dragDepth = 0;
+		app.dragOver = false;
+		if (e.dataTransfer) ingestFiles(e.dataTransfer.files);
 	}
 
 	function splitName(name: string): [string, string] {
@@ -213,6 +290,10 @@
 	onkeydown={(e) => {
 		if (e.key === 'Escape') clearSelection();
 	}}
+	ondragenter={onDragEnter}
+	ondragleave={onDragLeave}
+	ondragover={onDragOver}
+	ondrop={onDrop}
 />
 
 <main>
@@ -228,18 +309,51 @@
 			</svg>
 			<h1>tellegen</h1>
 		</div>
-		{#if app.cases.length > 0}
-			<nav class="cases" aria-label="networks">
-				{#each app.cases as c (c.id)}
-					{@const [cname, cregion] = splitName(c.name)}
-					<button class:active={app.activeCaseId === c.id} onclick={() => activateCase(c.id)}>
-						<span class="cname">{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"
-								></i>{/if}</span>
-						<span class="cregion mono">{cregion}</span>
-					</button>
-				{/each}
-			</nav>
-		{/if}
+		<nav class="cases" aria-label="networks">
+			{#each app.cases as c (c.id)}
+				{@const [cname, cregion] = splitName(c.name)}
+				<button class:active={app.activeCaseId === c.id} onclick={() => activateCase(c.id)}>
+					<span class="cname">{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"
+							></i>{/if}</span>
+					<span class="cregion mono">{cregion}</span>
+				</button>
+			{/each}
+			{#each app.localCases as c (c.id)}
+				<button
+					class="local"
+					class:active={app.activeLocalId === c.id}
+					onclick={() => activateLocal(c)}
+				>
+					<span class="cname"
+						>{c.label}<span
+							class="x mono"
+							role="button"
+							tabindex="0"
+							aria-label="remove {c.label}"
+							onclick={(e) => {
+								e.stopPropagation();
+								app.removeLocal(c.id);
+							}}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.stopPropagation();
+									app.removeLocal(c.id);
+								}
+							}}>&#10005;</span
+						></span
+					>
+					<span class="cregion mono">local</span>
+				</button>
+			{/each}
+			<button
+				class="ghost"
+				title="parsed in your browser; the file never uploads"
+				onclick={() => fileInput?.click()}
+			>
+				<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
+				<span class="cregion mono">.m &middot; .raw &middot; .aux &mdash; or click</span>
+			</button>
+		</nav>
 		<span class="kicker mono">differentiable power systems</span>
 	</header>
 
@@ -247,7 +361,38 @@
 		{#if app.error}
 			<p class="error mono">{app.error}</p>
 		{/if}
-		{#if !stats}
+		{#if app.parsingFile}
+			<p class="dim mono blink">parsing&hellip;</p>
+		{/if}
+		{#if app.activeLocal}
+			{@const lc = app.activeLocal}
+			<h2>{lc.label} <span class="region mono">via {lc.fileName}</span></h2>
+			<dl class="mono">
+				<div><dt>buses</dt><dd>{lc.summary.n_bus}</dd></div>
+				<div><dt>branches</dt><dd>{lc.summary.n_branch}</dd></div>
+				<div><dt>generators</dt><dd>{lc.summary.n_gen}</dd></div>
+				<div><dt>load</dt><dd>{fmt.format(lc.summary.load_mw)} MW</dd></div>
+				<div><dt>gen capacity</dt><dd>{fmt.format(lc.summary.gen_mw)} MW</dd></div>
+				<div><dt>base MVA</dt><dd>{fmt.format(lc.summary.base_mva)}</dd></div>
+			</dl>
+			{#if lc.summary.warnings.length > 0}
+				<ul class="warnings mono">
+					{#each lc.summary.warnings.slice(0, 4) as w, i (i)}
+						<li>{w}</li>
+					{/each}
+					{#if lc.summary.warnings.length > 4}
+						<li>+{lc.summary.warnings.length - 4} more</li>
+					{/if}
+				</ul>
+			{/if}
+			{#if !lc.view}
+				<p class="footnote mono">
+					no substation coordinates in this file &mdash; parsed, not placed
+				</p>
+			{/if}
+			<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
+			<button class="reset mono" onclick={() => app.removeLocal(lc.id)}>remove</button>
+		{:else if !stats}
 			{#if !app.error}
 				<p class="dim mono blink">loading cases&hellip;</p>
 			{/if}
@@ -264,7 +409,7 @@
 				{/if}
 			</dl>
 			{#if app.active?.network?.synthetic_coords}
-				<p class="footnote mono">coordinates: spectral embedding, synthetic</p>
+				<p class="footnote mono">coordinates: synthetic</p>
 			{/if}
 
 			<hr />
@@ -314,17 +459,6 @@
 					{#if predictedDeltaObj !== null && previewing}
 						<p class="pred mono dim">predicted &Delta;cost {signed(predictedDeltaObj)} $/h</p>
 					{/if}
-					{#if c.solving}
-						<p class="dim mono blink small">exact solve streaming&hellip;</p>
-					{/if}
-					{#if c.iterations.length > 1}
-						<Sparkline iterations={c.iterations} />
-						<div class="solve-meta mono dim">
-							<span>ipopt</span>
-							<span>{c.iterations.length} iterations</span>
-							{#if c.solveMs !== null}<span>{c.solveMs} ms</span>{/if}
-						</div>
-					{/if}
 					{#if gradientScore && c.perturbed}
 						<p class="score mono">
 							gradient {signed(gradientScore.pred)} &middot; exact {signed(gradientScore.exact)} $/h
@@ -370,6 +504,10 @@
 						<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
 					{/if}
 				</div>
+				<p class="dim small">
+					Or bring your own grid: drop a case file (.m, .raw, .aux) anywhere on the map. powerio
+					parses it in your browser; nothing uploads.
+				</p>
 			{/if}
 
 			<hr />
@@ -386,13 +524,65 @@
 		{/if}
 	</aside>
 
+	{#if app.active && (app.active.solving || app.active.iterations.length > 1)}
+		<div class="solvecard">
+			<div class="solvecard-head mono">
+				<span>exact solve</span>
+				{#if app.active.solving}
+					<span class="dim blink">streaming&hellip;</span>
+				{:else}
+					<span class="dim">ipopt</span>
+				{/if}
+			</div>
+			<Sparkline iterations={app.active.iterations} />
+			<div class="solve-meta mono dim">
+				<span>{app.active.iterations.length} iterations</span>
+				{#if app.active.solveMs !== null}<span>{app.active.solveMs} ms</span>{/if}
+			</div>
+		</div>
+	{/if}
+
+	{#if app.dragOver}
+		<div class="dropzone" aria-hidden="true">
+			<div class="dropframe">
+				<p class="mono">drop to parse &mdash; .m &middot; .raw &middot; .aux</p>
+				<p class="mono hint">parsed in your browser; the file never uploads</p>
+			</div>
+		</div>
+	{/if}
+
 	<footer class="mono">
-		<span>DC OPF</span>
+		<a href="https://electricgrids.engr.tamu.edu/" target="_blank" rel="noreferrer"
+			>ACTIVSg synthetic grids</a
+		>
 		<i class="sep"></i>
-		<span>PowerDiff exact KKT sensitivities</span>
+		<a href="https://github.com/grid-opt-alg-lab/PowerDiff.jl" target="_blank" rel="noreferrer"
+			>powerdiff sensitivities</a
+		>
 		<i class="sep"></i>
-		<span>powerio parser</span>
+		<a href="https://github.com/eigenergy/powerio" target="_blank" rel="noreferrer"
+			>powerio parser</a
+		>
+		<i class="sep"></i>
+		<a href="https://github.com/eigenergy/tellegen" target="_blank" rel="noreferrer"
+			>tellegen framework</a
+		>
+		<i class="sep"></i>
+		<span class="drophint"><span class="arrow">&#8675;</span> drop a case file anywhere</span>
 	</footer>
+
+	<input
+		type="file"
+		accept=".m,.raw,.aux"
+		multiple
+		hidden
+		bind:this={fileInput}
+		onchange={(e) => {
+			const input = e.currentTarget;
+			if (input.files) ingestFiles(Array.from(input.files));
+			input.value = '';
+		}}
+	/>
 </main>
 
 <style>
@@ -483,6 +673,51 @@
 		text-transform: uppercase;
 	}
 
+	/* Local case chips: dashed border + graphite text, topology only. */
+	.cases button.local {
+		border-style: dashed;
+		color: var(--ink-dim);
+	}
+
+	.cases button.local.active {
+		background: var(--panel);
+		border-color: var(--accent);
+		box-shadow: inset 0 -2px 0 var(--accent);
+	}
+
+	/* Ghost chip: standing invitation to drop or pick a case file. */
+	.cases button.ghost {
+		background: transparent;
+		border: 1px dashed var(--ink-faint);
+		color: var(--ink-dim);
+	}
+
+	.cases button.ghost:hover {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+	}
+
+	.cases button.ghost:hover,
+	.cases button.ghost:hover .cregion {
+		color: var(--accent);
+	}
+
+	.arrow {
+		display: inline-block;
+		animation: bob 1.8s ease-in-out infinite alternate;
+	}
+
+	.x {
+		font-size: 9px;
+		color: var(--ink-faint);
+		padding: 0 1px;
+		cursor: pointer;
+	}
+
+	.x:hover {
+		color: var(--red);
+	}
+
 	.kicker {
 		font-size: 11px;
 		text-transform: uppercase;
@@ -550,6 +785,15 @@
 		font-size: 10px;
 		color: var(--ink-faint);
 		letter-spacing: 0.04em;
+	}
+
+	.warnings {
+		margin: 8px 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 10.5px;
+		line-height: 1.5;
+		color: var(--accent);
 	}
 
 	hr {
@@ -680,11 +924,33 @@
 		color: var(--ink);
 	}
 
+	.solvecard {
+		position: absolute;
+		top: 64px;
+		right: 20px;
+		z-index: 10;
+		width: 240px;
+		padding: 12px 14px 10px;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		backdrop-filter: blur(6px);
+		box-shadow: 0 4px 24px rgba(32, 36, 43, 0.08);
+		animation: rise 0.3s ease-out both;
+	}
+
+	.solvecard-head {
+		display: flex;
+		justify-content: space-between;
+		font-size: 11px;
+		margin-bottom: 6px;
+	}
+
 	.solve-meta {
 		display: flex;
 		gap: 12px;
 		font-size: 10px;
-		margin-top: 2px;
+		margin-top: 4px;
 	}
 
 	.reset {
@@ -769,6 +1035,15 @@
 		pointer-events: none;
 	}
 
+	footer a {
+		pointer-events: auto;
+		color: var(--ink-dim);
+	}
+
+	footer a:hover {
+		color: var(--accent);
+	}
+
 	.sep {
 		width: 4px;
 		height: 4px;
@@ -776,6 +1051,44 @@
 		background: var(--accent-bright);
 		opacity: 0.55;
 		transform: rotate(45deg);
+	}
+
+	.drophint {
+		color: var(--ink-faint);
+	}
+
+	.drophint .arrow {
+		color: var(--accent);
+	}
+
+	.dropzone {
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		pointer-events: none;
+		background: rgba(236, 233, 226, 0.75);
+	}
+
+	.dropframe {
+		position: absolute;
+		inset: 14px;
+		border: 1.5px dashed var(--accent);
+		border-radius: 3px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+	}
+
+	.dropframe p {
+		margin: 0;
+		font-size: 13px;
+	}
+
+	.dropframe .hint {
+		font-size: 11px;
+		color: var(--ink-dim);
 	}
 
 	.blink {
@@ -802,10 +1115,17 @@
 		}
 	}
 
+	@keyframes bob {
+		to {
+			transform: translateY(2px);
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		header,
 		.panel,
-		footer {
+		footer,
+		.arrow {
 			animation: none;
 		}
 	}

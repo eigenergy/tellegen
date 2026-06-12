@@ -19,34 +19,78 @@ end
 
 const CASES = Dict{String,CaseEntry}()
 
-# Both cases are synthetic grids built on a real service territory, so they
-# sit at plausible places on the basemap. Quadratic generator costs make
-# dLMP/dd nonzero across the interior of the feasible region; linear cost
-# cases (most IEEE test systems) have piecewise constant LMPs whose gradient
-# is zero almost everywhere.
+# Operator-staged TAMU distributions (scripts/stage-data.sh); never vendored.
+const DATA_DIR = normpath(get(ENV, "TELLEGEN_DATA", joinpath(@__DIR__, "..", "..", "data")))
+
+# The demo cases are TAMU ACTIVSg synthetic grids, served at the real
+# substation coordinates carried in their aux exports. Quadratic generator
+# costs make dLMP/dd nonzero across the interior of the feasible region;
+# linear cost cases (most IEEE test systems) have piecewise constant LMPs
+# whose gradient is zero almost everywhere.
 const CASE_SPECS = (
+    (id="case200", name="ACTIVSg200 (Illinois)",
+        casefile="ACTIVSg200/case_ACTIVSg200.m", auxfile="ACTIVSg200/ACTIVSg200.aux"),
+    (id="case500", name="ACTIVSg500 (South Carolina)",
+        casefile="ACTIVSg500/case_ACTIVSg500.m", auxfile="ACTIVSg500/ACTIVSg500.aux"),
+    (id="case2000", name="ACTIVSg2000 (Texas)",
+        casefile="ACTIVSg2000/case_ACTIVSg2000.m", auxfile="ACTIVSg2000/ACTIVSg2000.aux"),
+)
+
+# Without staged data the server still boots: pglib variants of the small
+# cases, placed by the spectral layout in layout.jl. A dev convenience; the
+# deploy stages real data.
+const FALLBACK_SPECS = (
     (id="case200", name="ACTIVSg200 (Illinois)", file="pglib_opf_case200_activ.m",
         bbox=(-91.4, 37.1, -87.6, 42.4)),
     (id="case500", name="ACTIVSg500 (South Carolina)", file="pglib_opf_case500_goc.m",
         bbox=(-82.9, 33.3, -79.9, 35.0)),
 )
 
+_staged(spec) =
+    isfile(joinpath(DATA_DIR, spec.casefile)) && isfile(joinpath(DATA_DIR, spec.auxfile))
+
 function load_cases!()
-    for spec in CASE_SPECS
-        CASES[spec.id] = build_entry(spec)
-        @info "case loaded" spec.id
+    specs = collect(Any, filter(_staged, CASE_SPECS))
+    isempty(specs) &&
+        @warn "no TAMU case data under $DATA_DIR; serving pglib fallbacks with synthetic layout (see scripts/stage-data.sh)"
+    for spec in specs
+        # One bad distribution (or a stale powerio binary that drops the aux
+        # extras carrying coordinates; see the POWERIO_CAPI note in the
+        # README) should not take down the cases that load.
+        try
+            CASES[spec.id] = build_entry(spec)
+            @info "case loaded" spec.id
+        catch err
+            @error "case failed to load" spec.id err
+        end
+    end
+    if isempty(CASES)
+        for spec in FALLBACK_SPECS
+            CASES[spec.id] = build_entry(spec)
+            @info "case loaded (fallback)" spec.id
+        end
     end
 end
 
 function build_entry(spec)
-    case = parse_file(spec.file; library=:pglib)
+    if haskey(spec, :auxfile)
+        case = parse_file(joinpath(DATA_DIR, spec.casefile))
+        coords = real_coords(joinpath(DATA_DIR, spec.auxfile))
+        unmapped = [b.bus_i for b in case.bus if !haskey(coords, b.bus_i)]
+        isempty(unmapped) || error(
+            "$(spec.id): aux carries no coordinates for buses $(unmapped[1:min(end, 5)])")
+        synthetic = false
+    else
+        case = parse_file(spec.file; library=:pglib)
+        coords = synthetic_layout(case; bbox=spec.bbox)
+        synthetic = true
+    end
     net = DCNetwork(case)
     prob = DCOPFProblem(net)
     sol = solve!(prob)
-    coords = spectral_layout(case; bbox=spec.bbox)
     # Warm the dLMP/dd cache so request handlers hit a populated cache.
     calc_sensitivity(prob, :lmp, :d)
-    network_json = JSON3.write(network_payload(spec, case, coords))
+    network_json = JSON3.write(network_payload(spec, case, coords; synthetic))
     solution_json = JSON3.write(solution_payload(case, net, sol))
     return CaseEntry(spec.id, spec.name, case, net, prob, copy(prob.d), coords,
         ReentrantLock(), network_json, solution_json)
@@ -79,7 +123,7 @@ function target_demand(e::CaseEntry, deltas)
     return target
 end
 
-function network_payload(spec, case::ParsedCase, coords)
+function network_payload(spec, case::ParsedCase, coords; synthetic::Bool)
     base = case.baseMVA
     demand_mw = Dict{Int,Float64}()
     for l in case.load
@@ -104,7 +148,7 @@ function network_payload(spec, case::ParsedCase, coords)
                  status=br.br_status,
                  path=[collect(coords[br.f_bus]), collect(coords[br.t_bus])])
                 for br in case.branch]
-    return (id=spec.id, name=spec.name, base_mva=base, synthetic_coords=true,
+    return (id=spec.id, name=spec.name, base_mva=base, synthetic_coords=synthetic,
         buses=buses, branches=branches)
 end
 

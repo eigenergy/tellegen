@@ -79,6 +79,7 @@
 		};
 	}
 
+	/** Backend case owning a picked layer; null for local case layers. */
 	function caseOf(info: PickingInfo): CaseState | null {
 		const id = info.layer?.id.replace(/^(buses|branches)-/, '');
 		return id ? app.byId(id) : null;
@@ -91,16 +92,25 @@
 		const d = c ? display.get(c.id) : undefined;
 		if ('path' in object) {
 			const b = object as NetworkBranch;
-			const loading = d?.loading.get(b.id) ?? 0;
+			const flow = d
+				? `${((d.loading.get(b.id) ?? 0) * 100).toFixed(0)}% of ${b.rate_mw.toFixed(0)} MW`
+				: `rate ${b.rate_mw.toFixed(0)} MW`;
 			return {
-				html: `<div class="tt"><b>line ${b.from}&#8201;&ndash;&#8201;${b.to}</b>
-					${(loading * 100).toFixed(0)}% of ${b.rate_mw.toFixed(0)} MW</div>`
+				html: `<div class="tt"><b>line ${b.from}&#8201;&ndash;&#8201;${b.to}</b> ${flow}</div>`
 			};
 		}
 		const bus = object as NetworkBus;
+		if (!c) {
+			// Browser-parsed file: topology only, no solution to report.
+			return {
+				html: `<div class="tt"><b>bus ${bus.id}</b>
+					load ${bus.demand_mw.toFixed(0)} MW &#8901; gen ${bus.gen_mw.toFixed(0)} MW<br>
+					<span style="opacity:0.6">local file</span></div>`
+			};
+		}
 		const lmp = d?.lmp.get(bus.id);
 		const sens = d?.mode === 'sens' ? d.sens.get(bus.id) : undefined;
-		const delta = c?.deltas[bus.id] ?? 0;
+		const delta = c.deltas[bus.id] ?? 0;
 		const loadRow =
 			delta === 0
 				? `load ${bus.demand_mw.toFixed(0)} MW`
@@ -196,6 +206,38 @@
 				})
 			);
 		}
+		// Local cases: topology only, no physics yet, so desaturated graphite
+		// against the warm LMP ramp of solved backend cases.
+		for (const c of app.localCases) {
+			if (!c.view) continue;
+			layers.push(
+				new PathLayer<NetworkBranch>({
+					id: `local-branches-${c.id}`,
+					data: c.view.branches,
+					getPath: (b) => b.path,
+					getColor: [138, 131, 117, 150],
+					getWidth: 1.5,
+					widthUnits: 'pixels',
+					widthMinPixels: 1.2,
+					pickable: true
+				}),
+				new ScatterplotLayer<NetworkBus>({
+					id: `local-buses-${c.id}`,
+					data: c.view.buses,
+					getPosition: (b) => [b.lon, b.lat],
+					getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
+					radiusUnits: 'pixels',
+					getFillColor: [110, 115, 120, 200],
+					stroked: true,
+					getLineColor: [46, 42, 34, 110],
+					getLineWidth: 1,
+					lineWidthUnits: 'pixels',
+					pickable: true,
+					autoHighlight: true,
+					highlightColor: [32, 36, 43, 70]
+				})
+			);
+		}
 		overlay.setProps({ layers });
 	});
 
@@ -205,15 +247,22 @@
 		let maxLon = -Infinity;
 		let maxLat = -Infinity;
 		let seen = false;
-		for (const c of app.cases) {
-			if (!c.network || (target !== 'all' && c.id !== target)) continue;
-			for (const b of c.network.buses) {
+		const fold = (buses: NetworkBus[]) => {
+			for (const b of buses) {
 				minLon = Math.min(minLon, b.lon);
 				minLat = Math.min(minLat, b.lat);
 				maxLon = Math.max(maxLon, b.lon);
 				maxLat = Math.max(maxLat, b.lat);
 				seen = true;
 			}
+		};
+		for (const c of app.cases) {
+			if (!c.network || (target !== 'all' && c.id !== target)) continue;
+			fold(c.network.buses);
+		}
+		for (const c of app.localCases) {
+			if (!c.view || (target !== 'all' && c.id !== target)) continue;
+			fold(c.view.buses);
 		}
 		return seen
 			? [

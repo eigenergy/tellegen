@@ -5,5 +5,9 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       TELLEGEN_PORT: "8000"
+    volumes:
+      # Operator-staged TAMU case data (scripts/stage-data.sh). Without it
+      # the server falls back to pglib cases with synthetic layout.
+      - ./data:/app/data:ro
     mem_limit: 6g
     restart: unless-stopped

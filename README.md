@@ -2,13 +2,15 @@
 
 Reactive visualization for power systems optimization. Named for Tellegen's theorem, the basis of adjoint sensitivity analysis in circuits.
 
-The interaction model is gradient preview, exact commit: perturbations update the display instantly through KKT sensitivity columns computed by [PowerDiff.jl](https://github.com/grid-opt-alg-lab/PowerDiff.jl), and exact OPF re-solves stream in behind them. Case file parsing uses [powerio](https://github.com/eigenergy/powerio).
+The interaction model is gradient preview, exact commit: perturbations update the display instantly through KKT sensitivity columns computed by [PowerDiff.jl](https://github.com/grid-opt-alg-lab/PowerDiff.jl), and exact OPF re-solves stream in behind them. Case file parsing uses [powerio](https://github.com/eigenergy/powerio), on the server and in the browser.
 
 ## The demo
 
-Two synthetic networks share one map: ACTIVSg200 sits on Illinois, ACTIVSg500 on South Carolina. Each is an islanded DC OPF instance on the backend; the header switcher pans the shared view between them. Both cases have quadratic generator costs, which keeps dLMP/dd nonzero across the interior of the feasible region (linear cost cases have piecewise constant LMPs whose gradient is zero almost everywhere).
+Three TAMU ACTIVSg synthetic grids share one map, each at the real substation coordinates from its aux export: ACTIVSg200 on central Illinois, ACTIVSg500 on South Carolina, ACTIVSg2000 across Texas ([docs/real-coordinates.md](docs/real-coordinates.md)). Each is an islanded DC OPF instance on the backend; the header switcher pans the shared view between them. All three have quadratic generator costs, which keeps dLMP/dd nonzero across the interior of the feasible region (linear cost cases have piecewise constant LMPs whose gradient is zero almost everywhere).
 
 Bus colors are locational marginal prices on a sequential ramp. Click a bus and the map switches to its dLMP/dd column on a diverging ramp: one exact KKT column, no re-solve. Drag the demand slider and prices preview instantly along that gradient; release it and the exact solution streams back over SSE with the interior point iterations drawn live. The panel then scores the preview: predicted objective change next to the exact one.
+
+Drop a case file (`.m`, `.raw`, `.aux`) anywhere on the window and powerio, compiled to WebAssembly, parses it in the browser. Files with substation coordinates land on the map; the file never uploads.
 
 ## Exact gradients
 
@@ -22,10 +24,22 @@ The objective prediction in the UI uses the envelope theorem (the LMP times the 
 
 ## Layout
 
-- `backend/` Julia API server (Oxygen.jl + PowerDiff.jl)
+- `backend/` Julia API server (Oxygen.jl + PowerDiff.jl); real coordinate ingestion in `src/coords.jl`
 - `frontend/` SvelteKit 5 static app (MapLibre GL + deck.gl)
-- `wasm/` powerio WASM wrapper for in browser case file parsing (phase 2)
+- `wasm/` powerio compiled to WebAssembly for in browser case parsing
+- `scripts/` data staging
 - `deploy/` deployment guide and Caddy config
+- `docs/` design notes: [real coordinates](docs/real-coordinates.md), [synthetic layout](docs/synthetic-layout.md) for cases without geography
+
+## Data
+
+The TAMU distributions are downloaded by the operator and never vendored. With the distributions at `~/Datasets`:
+
+```sh
+scripts/stage-data.sh ~/Datasets
+```
+
+stages the six needed files (about 9 MB) into `data/`. Without staged data the backend falls back to pglib copies of the small cases, placed by the [synthetic layout](docs/synthetic-layout.md).
 
 ## Development
 
@@ -44,6 +58,20 @@ julia --project=backend -e 'using Pkg;
                PackageSpec(path="../Research/PowerDiff.jl")])'
 ```
 
+PowerIO.jl's bundled binary lags the powerio main branch. When working against a local powerio checkout, build it and point the backend at it:
+
+```sh
+cargo build --release -p powerio-capi   # in the powerio checkout
+export POWERIO_CAPI=/path/to/powerio/target/release/libpowerio_capi.dylib
+```
+
+WASM module (required before the frontend builds):
+
+```sh
+cargo install wasm-pack
+cd wasm && wasm-pack build --target web --out-dir ../frontend/src/lib/wasm-pkg
+```
+
 Frontend (port 5173, proxies `/api` to 8000):
 
 ```sh
@@ -56,7 +84,7 @@ npm run dev
 
 - `GET /api/health`
 - `GET /api/cases`
-- `GET /api/cases/{id}/network` buses, branches, synthetic coordinates
+- `GET /api/cases/{id}/network` buses, branches, coordinates (`synthetic_coords` flags manufactured ones)
 - `GET /api/cases/{id}/solution` LMPs, flows, dispatch from the DC OPF
 - `GET /api/cases/{id}/sensitivity/lmp/d/{bus}` dLMP/dd column at a bus
 - `GET /api/cases/{id}/solve` SSE re-solve stream
@@ -65,11 +93,9 @@ Both of the last two accept `?d=bus:mw,bus:mw`, demand deltas in MW from the bas
 
 ## Roadmap
 
-The demo is deliberately a slice. The wider toolchain it draws from suggests where it goes next:
-
 - AC OPF sensitivities and voltage/reactive operands (PowerDiff.jl computes them today; the UI needs operand switching)
+- solve and differentiate dropped cases, not only the bundled ones
 - synthetic grid generation, so users can spawn networks onto any part of the map (powerio)
-- in browser case parsing via the powerio WASM build in `wasm/`
 - energy burden and demographic overlays
 - DER screening workflows
 

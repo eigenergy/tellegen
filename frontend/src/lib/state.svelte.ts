@@ -2,10 +2,23 @@ import type {
 	CaseSummary,
 	DemandDeltas,
 	Network,
+	NetworkBranch,
+	NetworkBus,
 	SensitivityColumn,
 	Solution,
 	SolveIteration
 } from './api';
+import type { CaseFileSummary } from './wasm';
+
+/** A case file parsed in the browser. Topology only, no physics. */
+export interface LocalCase {
+	id: string; // `local-1`, `local-2`, ...
+	label: string;
+	fileName: string;
+	summary: CaseFileSummary;
+	/** Map geometry when the file carried coordinates; null = summary only. */
+	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
+}
 
 /** One islanded network with its own solver instance on the backend. API
  * payloads are reassigned wholesale, so $state.raw throughout. */
@@ -47,6 +60,13 @@ export class AppState {
 	sensitivityLoading = $state(false);
 	error = $state<string | null>(null);
 
+	/** Case files parsed in the browser via the powerio wasm module. */
+	localCases = $state.raw<LocalCase[]>([]);
+	/** Local case the panel shows; clicking a backend case or a bus clears it. */
+	activeLocalId = $state<string | null>(null);
+	dragOver = $state(false);
+	parsingFile = $state(false);
+
 	/** Map framing request: bump seq so repeat targets still fly. */
 	frameTarget = $state<string | 'all'>('all');
 	frameSeq = $state(0);
@@ -57,6 +77,24 @@ export class AppState {
 
 	byId(id: string): CaseState | null {
 		return this.cases.find((c) => c.id === id) ?? null;
+	}
+
+	get activeLocal(): LocalCase | null {
+		return this.localCases.find((c) => c.id === this.activeLocalId) ?? null;
+	}
+
+	localById(id: string): LocalCase | null {
+		return this.localCases.find((c) => c.id === id) ?? null;
+	}
+
+	addLocal(c: LocalCase) {
+		this.localCases = [...this.localCases, c];
+		this.activeLocalId = c.id;
+	}
+
+	removeLocal(id: string) {
+		this.localCases = this.localCases.filter((c) => c.id !== id);
+		if (this.activeLocalId === id) this.activeLocalId = null;
 	}
 
 	requestFrame(target: string | 'all') {
