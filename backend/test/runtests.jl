@@ -49,7 +49,7 @@ end
     case = parse_file("pglib_opf_case500_goc.m"; library=:pglib)
     bbox = (-82.9, 33.3, -79.9, 35.0)
     coords = Tellegen.synthetic_layout(case; bbox)
-    @test length(coords) == length(case.bus)
+    @test length(coords) == length(Tellegen.case_buses(case))
     pts = collect(values(coords))
     @test all(bbox[1] <= p[1] <= bbox[3] && bbox[2] <= p[2] <= bbox[4] for p in pts)
     # No stacked buses: the force pass must separate every pair.

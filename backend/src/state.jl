@@ -7,7 +7,7 @@
 struct CaseEntry
     id::String
     name::String
-    case::ParsedCase
+    case
     net::DCNetwork
     prob::DCOPFProblem
     base_d::Vector{Float64}
@@ -55,7 +55,7 @@ function load_cases!()
     isempty(specs) &&
         @warn "no TAMU case data under $DATA_DIR; serving pglib fallbacks with synthetic layout (see scripts/stage-data.sh)"
     for spec in specs
-        # One bad distribution should not take down the cases that load.
+        # A failed distribution should not block the cases that load.
         try
             CASES[spec.id] = build_entry(spec)
             @info "case loaded" spec.id
@@ -65,7 +65,7 @@ function load_cases!()
     end
     if isempty(CASES)
         for spec in FALLBACK_SPECS
-            # Same guard for the fallbacks: one bad pglib case should not
+            # Same guard for the fallbacks: one failed pglib case should not
             # block the other from booting.
             try
                 CASES[spec.id] = build_entry(spec)
@@ -81,7 +81,7 @@ function build_entry(spec)
     if haskey(spec, :auxfile)
         case = parse_file(joinpath(DATA_DIR, spec.casefile))
         coords = real_coords(joinpath(DATA_DIR, spec.auxfile))
-        unmapped = [b.bus_i for b in case.bus if !haskey(coords, b.bus_i)]
+        unmapped = [bus_id(b) for b in case_buses(case) if !haskey(coords, bus_id(b))]
         isempty(unmapped) || error(
             "$(spec.id): aux carries no coordinates for buses $(unmapped[1:min(end, 5)])")
         synthetic = false
@@ -119,7 +119,7 @@ end
 
 function target_demand(e::CaseEntry, deltas)
     target = copy(e.base_d)
-    base = e.case.baseMVA
+    base = case_base_mva(e.case)
     for (bus, mw) in deltas
         i = get(e.net.id_map.bus_to_idx, bus, nothing)
         isnothing(i) && continue
@@ -128,37 +128,45 @@ function target_demand(e::CaseEntry, deltas)
     return target
 end
 
-function network_payload(spec, case::ParsedCase, coords; synthetic::Bool)
-    base = case.baseMVA
+function network_payload(spec, case, coords; synthetic::Bool)
+    base = case_base_mva(case)
     demand_mw = Dict{Int,Float64}()
-    for l in case.load
-        l.status == 1 || continue
-        demand_mw[l.load_bus] = get(demand_mw, l.load_bus, 0.0) + l.pd * base
+    for l in case_loads(case)
+        load_in_service(l) || continue
+        bus = load_bus(l)
+        demand_mw[bus] = get(demand_mw, bus, 0.0) + load_p_mw(case, l)
     end
     gen_mw = Dict{Int,Float64}()
-    for g in case.gen
-        g.gen_status == 1 || continue
-        gen_mw[g.gen_bus] = get(gen_mw, g.gen_bus, 0.0) + g.pmax * base
+    for g in case_generators(case)
+        gen_in_service(g) || continue
+        bus = gen_bus(g)
+        gen_mw[bus] = get(gen_mw, bus, 0.0) + gen_pmax_mw(case, g)
     end
-    buses = [(id=b.bus_i,
-              lon=coords[b.bus_i][1],
-              lat=coords[b.bus_i][2],
-              demand_mw=get(demand_mw, b.bus_i, 0.0),
-              gen_mw=get(gen_mw, b.bus_i, 0.0))
-             for b in case.bus]
-    branches = [(id=br.index,
-                 from=br.f_bus,
-                 to=br.t_bus,
-                 rate_mw=br.rate_a * base,
-                 status=br.br_status,
-                 path=[collect(coords[br.f_bus]), collect(coords[br.t_bus])])
-                for br in case.branch]
+    buses = [
+        let id = bus_id(b)
+            (id=id,
+             lon=coords[id][1],
+             lat=coords[id][2],
+             demand_mw=get(demand_mw, id, 0.0),
+             gen_mw=get(gen_mw, id, 0.0))
+        end for b in case_buses(case)
+    ]
+    branches = [
+        let f = branch_from(br), t = branch_to(br)
+            (id=branch_id(br, i),
+             from=f,
+             to=t,
+             rate_mw=branch_rate_mw(case, br),
+             status=branch_status(br),
+             path=[collect(coords[f]), collect(coords[t])])
+        end for (i, br) in enumerate(case_branches(case))
+    ]
     return (id=spec.id, name=spec.name, base_mva=base, synthetic_coords=synthetic,
         buses=buses, branches=branches)
 end
 
-function solution_payload(case::ParsedCase, net::DCNetwork, sol)
-    base = case.baseMVA
+function solution_payload(case, net::DCNetwork, sol)
+    base = case_base_mva(case)
     lmp = calc_lmp(sol, net)
     bus_ids = net.id_map.bus_ids
     branch_ids = net.id_map.branch_ids
@@ -176,7 +184,7 @@ end
 # Caller must hold `e.lock`: calc_sensitivity reads/writes the cache.
 function sensitivity_payload(e::CaseEntry, bus_id::Int)
     S = calc_sensitivity(e.prob, :lmp, :d)
-    base = e.case.baseMVA
+    base = case_base_mva(e.case)
     col = S.id_to_col[bus_id]
     bus_ids = e.net.id_map.bus_ids
     # Both sides of dLMP/dd are per unit; /base^2 converts to ($/MWh)/MW.

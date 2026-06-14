@@ -1,19 +1,32 @@
-# tellegen (Rust)
+# tellegen Rust
 
-tellegen's Rust, compiled to WebAssembly for client side parsing. powerio parses a dropped case in the browser; it never leaves the machine.
+This crate builds the browser WebAssembly module used by the frontend. It
+depends on powerio for case and display parsing.
 
 ## Exports
 
-- `parse_case(text, format)`: full powerio network as JSON, with parse warnings.
-- `ingest_case(text, format)`: counts, total load and capacity, parse warnings, and a map-ready `view` of buses and branches in the shape the backend serves, placed at the substation coordinates in the file (PowerWorld complete case aux exports). `view` is null when the file has none. One parse per dropped file.
+- `parse_case(text, format)`: parse a supported case format and return the
+  powerio network JSON with parse warnings.
+- `ingest_case(text, format)`: return summary counts, load, capacity, parse
+  warnings, and map geometry when coordinates are present.
+- `parse_display(bytes, format)`: parse a binary display file. The current
+  supported format is PowerWorld `.pwd`.
 
-Format tokens follow powerio: `m`, `raw`, `aux`, and the JSON variants.
+Case format tokens follow powerio: `m`, `raw`, `aux`, and the JSON variants.
+Display parsing uses `pwd`.
 
 ## Build
 
+From `frontend/`:
+
 ```sh
-cargo install wasm-pack
+npm run wasm
+```
+
+or directly from this directory:
+
+```sh
 wasm-pack build --target web --out-dir ../frontend/src/lib/wasm-pkg
 ```
 
-The output (~150 KB gzip) is imported lazily by the frontend, so the module loads only when a file is dropped.
+The frontend imports the generated package lazily when a file is dropped.

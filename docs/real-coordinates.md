@@ -1,48 +1,44 @@
-# Real substation coordinates
+# Real Substation Coordinates
 
-The demo cases are TAMU ACTIVSg synthetic grids: fictional networks built on
-real service territories, with substation latitude and longitude included.
-tellegen serves three of them, sized to run comfortably on a small VPS:
+The demo cases are TAMU ACTIVSg synthetic grids. They are fictional networks
+built on real service territories and include substation latitude and longitude
+in the PowerWorld aux export.
 
 | case | territory | buses | branches | files |
-|---|---|---|---|---|
+|---|---|---:|---:|---|
 | ACTIVSg200 | central Illinois | 200 | 245 | `case_ACTIVSg200.m` + `ACTIVSg200.aux` |
 | ACTIVSg500 | South Carolina | 500 | 597 | `case_ACTIVSg500.m` + `ACTIVSg500.aux` |
 | ACTIVSg2000 | Texas | 2000 | 3206 | `case_ACTIVSg2000.m` + `ACTIVSg2000.aux` |
 
-The MATPOWER export feeds the DC OPF; the PowerWorld aux export supplies the
-coordinates. Both come from the same distribution, so bus numbering matches.
-The operator downloads the distributions from
-[electricgrids.engr.tamu.edu](https://electricgrids.engr.tamu.edu/) and runs
-`scripts/stage-data.sh`; the repository never vendors them.
+The MATPOWER file feeds the DC OPF. The aux file supplies the coordinates. Both
+files come from the same distribution, so bus numbering matches. Operators
+download the distributions from
+[electricgrids.engr.tamu.edu](https://electricgrids.engr.tamu.edu/) and stage
+them with `scripts/stage-data.sh`; the repository does not vendor them.
 
-## Where coordinates live in an aux file
+## Aux Coordinate Forms
 
-PowerWorld exports have written substation coordinates two ways:
+PowerWorld aux exports have used two coordinate layouts:
 
-- 2018-era complete case exports (the ACTIVSg distributions) repeat the
-  substation's latitude and longitude on every bus row, in the `Latitude:1`
-  and `Longitude:1` columns.
-- Later exports (for example the 2022 Hawaii40 distribution) leave the bus
-  columns empty and reference the `Substation` table through `SubNumber`.
+- ACTIVSg complete case exports repeat substation latitude and longitude on each
+  bus row in `Latitude:1` and `Longitude:1`.
+- Later exports can leave the bus latitude and longitude columns empty and
+  reference the `Substation` table through `SubNumber`.
 
-powerio parses the aux and keeps these columns in bus `extras`. The backend
-(`backend/src/coords.jl`) reads the bus row form, which covers every bus in
-the three served cases. The browser parser (`wasm/`) additionally performs
-the substation join, so dropped files of either generation resolve.
+The backend reads the bus row form in `backend/src/coords.jl`, which covers the
+three served cases. The browser parser in `rust/` also performs the substation
+join, so dropped files of either form resolve when the data is present.
 
-## Co-located buses
+## Co-located Buses
 
-Buses at one substation share its coordinate exactly (the 200 bus case has
-several buses per substation). Each co-located group is spread on a ring of
-about 400 m around the substation point, ordered by bus id, so every bus
-stays individually hoverable at street zoom while the group still reads as
-one substation at network zoom. The spread is deterministic; identical input
-yields identical layouts.
+Multiple buses can share one substation coordinate. tellegen spreads each group
+on a deterministic ring of about 400 m around the substation point, ordered by
+bus id. The group remains visually associated with the substation at network
+zoom, and individual buses remain hoverable at street zoom.
 
-## Sizing
+## Demo Size
 
-ACTIVSg2000 is the practical ceiling for the demo host: about 1.4 s per
-exact re-solve and a 32 MB dense sensitivity cache. Texas7k parses fine but
-a 7000 column KKT sensitivity matrix and multi-second solves want more
-machine than a small VPS.
+ACTIVSg2000 is the largest bundled case. On the current demo host it takes about
+1.4 s per exact re-solve and uses a 32 MB dense sensitivity cache. Larger cases,
+such as Texas7k, parse but require larger sensitivity matrices and longer
+solves than the small demo host is intended to serve.

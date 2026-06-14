@@ -7,18 +7,18 @@
 # its service territory the way the real grid does. The API labels these
 # coordinates synthetic.
 
-function synthetic_layout(case::ParsedCase; bbox=(-94.5, 36.5, -82.5, 43.5))
-    ids = sort!([b.bus_i for b in case.bus])
+function synthetic_layout(case; bbox=(-94.5, 36.5, -82.5, 43.5))
+    ids = sort!([bus_id(b) for b in case_buses(case)])
     idx = Dict(id => i for (i, id) in enumerate(ids))
     n = length(ids)
 
     L = zeros(n, n)
     edges = Tuple{Int,Int}[]
     seen = Set{Tuple{Int,Int}}()
-    for br in case.branch
-        br.br_status == 1 || continue
-        i = idx[br.f_bus]
-        j = idx[br.t_bus]
+    for br in case_branches(case)
+        branch_in_service(br) || continue
+        i = idx[branch_from(br)]
+        j = idx[branch_to(br)]
         i == j && continue
         L[i, i] += 1.0
         L[j, j] += 1.0

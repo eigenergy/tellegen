@@ -254,7 +254,7 @@
 			objective: c.solution.objective,
 			deltaObjective: c.solution.objective - c.baseSolution.objective,
 			uniformLmp: lmpMax - lmpMin < 1 ? lmps[0] : null,
-			// Mark the legend ends when outliers clamp beyond the robust domain.
+			// Mark legend ends when outliers clamp beyond the trimmed domain.
 			lmpLo: { value: domain.lo, clamped: lmpMin < domain.lo - 0.05 },
 			lmpHi: { value: domain.hi, clamped: lmpMax > domain.hi + 0.05 },
 			binding: c.solution.flows.filter((f) => f.loading >= 0.999).length

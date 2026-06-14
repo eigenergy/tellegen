@@ -1,13 +1,10 @@
-# Replace with the real domain. Caddy handles TLS via ACME automatically.
+# Replace with the deployment domain.
 tellegen.example.org {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8000
 
-	# Stock Caddy has no per IP rate limiting. Before opening the site to the
-	# public, build with the rate limit module:
-	#   xcaddy build --with github.com/mholt/caddy-ratelimit
-	# and add a rate_limit block here (2 r/s on /api/cases/*/solve, 5 r/s on
-	# /api/cases/*/sensitivity/*, 30 r/s on the rest of /api).
-	# /solve is SSE: if you add timeouts here, exempt it from response
-	# buffering and keep the write timeout above a few seconds.
+	# Add rate limits before broad public traffic. The expensive endpoints are
+	# /api/cases/*/solve and /api/cases/*/sensitivity/*.
+	# Keep /solve compatible with SSE: no response buffering, and write
+	# timeouts long enough for the largest served case.
 }
