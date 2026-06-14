@@ -7,7 +7,7 @@
 	import { getCases, getNetwork, getSensitivity, getSolution, openSolveStream } from '$lib/api';
 	import { busRadius, lmpDomain, lmpGradient, sensGradient } from '$lib/colors';
 	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
-	import { formatOf, ingestCase } from '$lib/wasm';
+	import { formatOf, ingestCase, isDisplayFile, parseDisplay } from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
@@ -48,7 +48,7 @@
 	function activateLocal(c: LocalCase) {
 		clearSelection();
 		app.activeLocalId = c.id;
-		if (c.view) app.requestFrame(c.id);
+		if (c.view || c.substations) app.requestFrame(c.id);
 	}
 
 	async function selectBus(caseId: string, busId: number) {
@@ -131,13 +131,55 @@
 		runSolve(c, app.selectedBus);
 	}
 
-	/** Parse dropped case files in the browser via the powerio wasm module.
-	 * Files run serially; nothing uploads. */
+	// PowerWorld .pwd files store substation symbols at diagram coordinates,
+	// not lat/lon. Auto-generated TAMU layouts are Web Mercator scaled by this
+	// constant with BOTH axes in degrees: x = K·lon and y = K·mercdeg(lat),
+	// where mercdeg is the Mercator ordinate expressed in degrees. So lon = x/K,
+	// and latitude is the inverse gudermannian after converting y/K back to
+	// radians. Hand-edited diagrams drift from this, so positions stay
+	// approximate. Verified against ACTIVSg200/2000 to within ~0.02 deg.
+	const PWD_MERCATOR_K = 535.81608;
+	function pwdToLngLat(x: number, y: number): [number, number] {
+		const lon = x / PWD_MERCATOR_K;
+		const lat = (Math.atan(Math.sinh(((y / PWD_MERCATOR_K) * Math.PI) / 180)) * 180) / Math.PI;
+		return [lon, lat];
+	}
+
+	/** Parse dropped files in the browser via the powerio wasm module. Case
+	 * files (.m, .raw, .aux) become local networks; a PowerWorld .pwd becomes a
+	 * substation-points preview. Files run serially; nothing uploads. */
 	async function ingestFiles(files: FileList | File[]) {
 		for (const file of Array.from(files)) {
+			if (isDisplayFile(file.name)) {
+				app.parsingFile = true;
+				try {
+					const bytes = new Uint8Array(await file.arrayBuffer());
+					const display = await parseDisplay(bytes);
+					const points = display.substations.map((s) => {
+						const [lon, lat] = pwdToLngLat(s.x, s.y);
+						return { number: s.number, name: s.name, lon, lat };
+					});
+					const id = `local-${++localSeq}`;
+					app.addLocal({
+						id,
+						label: file.name.replace(/\.[^.]+$/, ''),
+						fileName: file.name,
+						summary: null,
+						view: null,
+						substations: { points, approximate: true }
+					});
+					app.error = null;
+					app.requestFrame(id);
+				} catch (e) {
+					app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
+				} finally {
+					app.parsingFile = false;
+				}
+				continue;
+			}
 			const format = formatOf(file.name);
 			if (!format) {
-				app.error = `${file.name}: not a case file (.m, .raw, .aux)`;
+				app.error = `${file.name}: not a case file (.m, .raw, .aux, .pwd)`;
 				continue;
 			}
 			app.parsingFile = true;
@@ -352,7 +394,7 @@
 				onclick={() => fileInput?.click()}
 			>
 				<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
-				<span class="cregion mono">.m &middot; .raw &middot; .aux &mdash; or click</span>
+				<span class="cregion mono">.m &middot; .raw &middot; .aux &middot; .pwd &mdash; or click</span>
 			</button>
 		</nav>
 		<span class="kicker mono">differentiable power systems</span>
@@ -368,30 +410,41 @@
 		{#if app.activeLocal}
 			{@const lc = app.activeLocal}
 			<h2>{lc.label} <span class="region mono">via {lc.fileName}</span></h2>
-			<dl class="mono">
-				<div><dt>buses</dt><dd>{lc.summary.n_bus}</dd></div>
-				<div><dt>branches</dt><dd>{lc.summary.n_branch}</dd></div>
-				<div><dt>generators</dt><dd>{lc.summary.n_gen}</dd></div>
-				<div><dt>load</dt><dd>{fmt.format(lc.summary.load_mw)} MW</dd></div>
-				<div><dt>gen capacity</dt><dd>{fmt.format(lc.summary.gen_mw)} MW</dd></div>
-				<div><dt>base MVA</dt><dd>{fmt.format(lc.summary.base_mva)}</dd></div>
-			</dl>
-			{#if lc.summary.warnings.length > 0}
-				<ul class="warnings mono">
-					{#each lc.summary.warnings.slice(0, 4) as w, i (i)}
-						<li>{w}</li>
-					{/each}
-					{#if lc.summary.warnings.length > 4}
-						<li>+{lc.summary.warnings.length - 4} more</li>
-					{/if}
-				</ul>
-			{/if}
-			{#if !lc.view}
+			{#if lc.substations}
+				<dl class="mono">
+					<div><dt>substations</dt><dd>{lc.substations.points.length}</dd></div>
+				</dl>
 				<p class="footnote mono">
-					no substation coordinates in this file &mdash; parsed, not placed
+					display only &mdash; positions approximated from the PowerWorld diagram, not surveyed
+					lat/lon
 				</p>
+				<p class="footnote mono">decoded in your browser by powerio (wasm); never uploaded</p>
+			{:else if lc.summary}
+				<dl class="mono">
+					<div><dt>buses</dt><dd>{lc.summary.n_bus}</dd></div>
+					<div><dt>branches</dt><dd>{lc.summary.n_branch}</dd></div>
+					<div><dt>generators</dt><dd>{lc.summary.n_gen}</dd></div>
+					<div><dt>load</dt><dd>{fmt.format(lc.summary.load_mw)} MW</dd></div>
+					<div><dt>gen capacity</dt><dd>{fmt.format(lc.summary.gen_mw)} MW</dd></div>
+					<div><dt>base MVA</dt><dd>{fmt.format(lc.summary.base_mva)}</dd></div>
+				</dl>
+				{#if lc.summary.warnings.length > 0}
+					<ul class="warnings mono">
+						{#each lc.summary.warnings.slice(0, 4) as w, i (i)}
+							<li>{w}</li>
+						{/each}
+						{#if lc.summary.warnings.length > 4}
+							<li>+{lc.summary.warnings.length - 4} more</li>
+						{/if}
+					</ul>
+				{/if}
+				{#if !lc.view}
+					<p class="footnote mono">
+						no substation coordinates in this file &mdash; parsed, not placed
+					</p>
+				{/if}
+				<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 			{/if}
-			<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 			<button class="reset mono" onclick={() => app.removeLocal(lc.id)}>remove</button>
 		{:else if !stats}
 			{#if !app.error}
@@ -506,8 +559,8 @@
 					{/if}
 				</div>
 				<p class="dim small">
-					Or bring your own grid: drop a case file (.m, .raw, .aux) anywhere on the map. powerio
-					parses it in your browser; nothing uploads.
+					Or bring your own grid: drop a case file (.m, .raw, .aux) or a PowerWorld display file
+					(.pwd) anywhere on the map. powerio parses it in your browser; nothing uploads.
 				</p>
 			{/if}
 
@@ -546,7 +599,7 @@
 	{#if app.dragOver}
 		<div class="dropzone" aria-hidden="true">
 			<div class="dropframe">
-				<p class="mono">drop to parse &mdash; .m &middot; .raw &middot; .aux</p>
+				<p class="mono">drop to parse &mdash; .m &middot; .raw &middot; .aux &middot; .pwd</p>
 				<p class="mono hint">parsed in your browser; the file never uploads</p>
 			</div>
 		</div>
@@ -574,7 +627,7 @@
 
 	<input
 		type="file"
-		accept=".m,.raw,.aux"
+		accept=".m,.raw,.aux,.pwd"
 		multiple
 		hidden
 		bind:this={fileInput}

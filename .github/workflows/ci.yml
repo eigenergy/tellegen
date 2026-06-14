@@ -30,8 +30,8 @@ jobs:
       - run: npm run build
         working-directory: frontend
 
-  # Backend against the branch heads the README documents (the Dockerfile pins
-  # shas for reproducible deploys; CI tracks the branches to catch drift early).
+  # Backend: PowerIO from the General registry (compat-pinned in Project.toml),
+  # PowerDiff from the git rev in [sources]. Resolves fresh each run.
   backend:
     runs-on: ubuntu-latest
     steps:
@@ -40,13 +40,6 @@ jobs:
         with:
           version: "1.11"
       - uses: julia-actions/cache@v2
-      - name: Install unregistered deps
-        # One Pkg.add call for both: the project lists PowerDiff and PowerIO
-        # as deps, so resolution only succeeds once both unregistered
-        # packages are specs in the same resolve.
-        run: |
-          julia --project=backend -e 'using Pkg;
-            Pkg.add([PackageSpec(url="https://github.com/eigenergy/PowerIO.jl.git"),
-                     PackageSpec(url="https://github.com/grid-opt-alg-lab/PowerDiff.jl.git", rev="mk/backends")]);
-            Pkg.instantiate()'
+      - name: Instantiate backend
+        run: julia --project=backend -e 'using Pkg; Pkg.instantiate()'
       - run: julia --project=backend backend/test/runtests.jl

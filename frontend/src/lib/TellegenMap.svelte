@@ -85,9 +85,29 @@
 		return id ? app.byId(id) : null;
 	}
 
+	/** Escape free text from a dropped file before it goes into tooltip html
+	 * (deck.gl renders the html string as innerHTML). */
+	const esc = (s: string) =>
+		s
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;');
+
 	function tooltip(info: PickingInfo): { html: string } | null {
 		const { object } = info;
 		if (!object) return null;
+		if (info.layer?.id.startsWith('local-subs-')) {
+			// PowerWorld .pwd substation: display data only, position approximate.
+			// The name is free text from a dropped file, so escape it; the number
+			// is coerced before interpolation.
+			const s = object as { number: number; name: string };
+			const named = s.name ? ` ${esc(s.name)}` : '';
+			return {
+				html: `<div class="tt"><b>substation ${Number(s.number)}</b>${named}<br><span style="opacity:0.6">.pwd diagram &#8901; approx. position</span></div>`
+			};
+		}
 		const c = caseOf(info);
 		const d = c ? display.get(c.id) : undefined;
 		if ('path' in object) {
@@ -207,36 +227,59 @@
 			);
 		}
 		// Local cases: topology only, no physics yet, so desaturated graphite
-		// against the warm LMP ramp of solved backend cases.
+		// against the warm LMP ramp of solved backend cases. A .pwd display
+		// file contributes substation points only (no topology), in a cooler
+		// slate so they read as approximate diagram positions.
 		for (const c of app.localCases) {
-			if (!c.view) continue;
-			layers.push(
-				new PathLayer<NetworkBranch>({
-					id: `local-branches-${c.id}`,
-					data: c.view.branches,
-					getPath: (b) => b.path,
-					getColor: [138, 131, 117, 150],
-					getWidth: 1.5,
-					widthUnits: 'pixels',
-					widthMinPixels: 1.2,
-					pickable: true
-				}),
-				new ScatterplotLayer<NetworkBus>({
-					id: `local-buses-${c.id}`,
-					data: c.view.buses,
-					getPosition: (b) => [b.lon, b.lat],
-					getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
-					radiusUnits: 'pixels',
-					getFillColor: [110, 115, 120, 200],
-					stroked: true,
-					getLineColor: [46, 42, 34, 110],
-					getLineWidth: 1,
-					lineWidthUnits: 'pixels',
-					pickable: true,
-					autoHighlight: true,
-					highlightColor: [32, 36, 43, 70]
-				})
-			);
+			if (c.view) {
+				layers.push(
+					new PathLayer<NetworkBranch>({
+						id: `local-branches-${c.id}`,
+						data: c.view.branches,
+						getPath: (b) => b.path,
+						getColor: [138, 131, 117, 150],
+						getWidth: 1.5,
+						widthUnits: 'pixels',
+						widthMinPixels: 1.2,
+						pickable: true
+					}),
+					new ScatterplotLayer<NetworkBus>({
+						id: `local-buses-${c.id}`,
+						data: c.view.buses,
+						getPosition: (b) => [b.lon, b.lat],
+						getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
+						radiusUnits: 'pixels',
+						getFillColor: [110, 115, 120, 200],
+						stroked: true,
+						getLineColor: [46, 42, 34, 110],
+						getLineWidth: 1,
+						lineWidthUnits: 'pixels',
+						pickable: true,
+						autoHighlight: true,
+						highlightColor: [32, 36, 43, 70]
+					})
+				);
+			}
+			if (c.substations) {
+				layers.push(
+					new ScatterplotLayer<{ number: number; name: string; lon: number; lat: number }>({
+						id: `local-subs-${c.id}`,
+						data: c.substations.points,
+						getPosition: (s) => [s.lon, s.lat],
+						getRadius: 5,
+						radiusUnits: 'pixels',
+						radiusMinPixels: 3,
+						getFillColor: [70, 92, 124, 190],
+						stroked: true,
+						getLineColor: [38, 52, 78, 220],
+						getLineWidth: 1,
+						lineWidthUnits: 'pixels',
+						pickable: true,
+						autoHighlight: true,
+						highlightColor: [32, 36, 43, 70]
+					})
+				);
+			}
 		}
 		overlay.setProps({ layers });
 	});
@@ -247,8 +290,8 @@
 		let maxLon = -Infinity;
 		let maxLat = -Infinity;
 		let seen = false;
-		const fold = (buses: NetworkBus[]) => {
-			for (const b of buses) {
+		const fold = (pts: { lon: number; lat: number }[]) => {
+			for (const b of pts) {
 				minLon = Math.min(minLon, b.lon);
 				minLat = Math.min(minLat, b.lat);
 				maxLon = Math.max(maxLon, b.lon);
@@ -261,8 +304,9 @@
 			fold(c.network.buses);
 		}
 		for (const c of app.localCases) {
-			if (!c.view || (target !== 'all' && c.id !== target)) continue;
-			fold(c.view.buses);
+			if (target !== 'all' && c.id !== target) continue;
+			if (c.view) fold(c.view.buses);
+			if (c.substations) fold(c.substations.points);
 		}
 		return seen
 			? [

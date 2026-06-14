@@ -48,3 +48,21 @@ export function formatOf(name: string): string | null {
 export async function ingestCase(text: string, format: string): Promise<IngestedCase> {
 	return JSON.parse((await powerio()).ingest_case(text, format));
 }
+
+/** Substations from a PowerWorld .pwd display file. x/y are diagram
+ * coordinates as stored (not lat/lon); the caller projects them. */
+export interface DisplayPreview {
+	substations: { number: number; name: string; x: number; y: number }[];
+	canvas_width: number;
+	canvas_height: number;
+}
+
+/** True for binary display files (PowerWorld .pwd), read via parseDisplay.
+ * Kept separate from formatOf: a .pwd is display data, not a case format. */
+export function isDisplayFile(name: string): boolean {
+	return name.split('.').pop()?.toLowerCase() === 'pwd';
+}
+
+export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
+	return JSON.parse((await powerio()).parse_display(bytes, 'pwd'));
+}

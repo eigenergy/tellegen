@@ -28,26 +28,17 @@ WORKDIR /app/backend
 # recompiling (precompile cache misses otherwise).
 ENV JULIA_CPU_TARGET="generic;haswell,clone_all"
 
-# Dependency layer, keyed on Project.toml only. PowerDiff and PowerIO are not
-# registered yet, so they come from git at pinned revs; bump the REV args
-# deliberately when upstream moves. The local dev Manifest points at local
-# clones and is intentionally not copied.
-ARG POWERIO_JL_URL=https://github.com/eigenergy/PowerIO.jl.git
-ARG POWERIO_JL_REV=16f6d7e181de7f43704f2abf1e92942d033ee079
-ARG POWERDIFF_URL=https://github.com/grid-opt-alg-lab/PowerDiff.jl.git
-ARG POWERDIFF_REV=7433db4c766795b28151f4ec9ab610aff448a77e
+# Dependency layer, keyed on Project.toml. PowerIO is registered (General);
+# PowerDiff is unregistered, so Project.toml pins it through [sources] at a git
+# rev. The local dev Manifest points at local clones and is intentionally not
+# copied: this resolves fresh from Project.toml against the registry and the
+# [sources] rev.
 COPY backend/Project.toml ./
-# One Pkg.add call for both: the project lists PowerDiff and PowerIO as deps,
-# so resolution only succeeds once both unregistered packages are specs in
-# the same resolve.
-RUN julia -e "using Pkg; Pkg.activate(\".\"); \
-    Pkg.add([PackageSpec(url=\"$POWERIO_JL_URL\", rev=\"$POWERIO_JL_REV\"), \
-             PackageSpec(url=\"$POWERDIFF_URL\", rev=\"$POWERDIFF_REV\")]); \
-    Pkg.instantiate(); Pkg.precompile()"
+RUN julia --project=. -e "using Pkg; Pkg.Registry.update(); Pkg.instantiate(); Pkg.precompile()"
 
 # Pull the lazy artifacts at build time so first boot does not hit the
 # network: the pglib cases and the powerio binary (PowerIO.jl's Artifacts.toml
-# tracks the powerio release, v0.2.1 today, which carries the aux bus extras
+# tracks the powerio release, v0.2.2 today, which carries the aux bus extras
 # where substation coordinates live).
 RUN julia --project=. -e "using PowerDiff; PowerDiff.get_path(:pglib); \
     using PowerIO; PowerIO.library_available() || error(\"powerio artifact unavailable\")"

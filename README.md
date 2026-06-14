@@ -10,7 +10,7 @@ Three TAMU ACTIVSg synthetic grids share one map, each at the real substation co
 
 Bus colors are locational marginal prices on a sequential ramp. Click a bus and the map switches to its dLMP/dd column on a diverging ramp: one exact KKT column, no re-solve. Drag the demand slider and prices preview instantly along that gradient; release it and the exact solution streams back over SSE with the interior point iterations drawn live. The panel then scores the preview: predicted objective change next to the exact one.
 
-Drop a case file (`.m`, `.raw`, `.aux`) anywhere on the window and powerio, compiled to WebAssembly, parses it in the browser. Files with substation coordinates land on the map; the file never uploads.
+Drop a case file (`.m`, `.raw`, `.aux`) anywhere on the window and powerio, compiled to WebAssembly, parses it in the browser. Files with substation coordinates land on the map; the file never uploads. A PowerWorld `.pwd` display file drops too, decoded to its substation points at approximate positions ([docs/display-format.md](docs/display-format.md)).
 
 ## Exact gradients
 
@@ -29,7 +29,7 @@ The objective prediction in the UI uses the envelope theorem (the LMP times the 
 - `wasm/` powerio compiled to WebAssembly for in browser case parsing
 - `scripts/` data staging
 - `deploy/` deployment guide and Caddy config
-- `docs/` design notes: [real coordinates](docs/real-coordinates.md), [synthetic layout](docs/synthetic-layout.md) for cases without geography
+- `docs/` design notes: [real coordinates](docs/real-coordinates.md), [synthetic layout](docs/synthetic-layout.md) for cases without geography, [display format](docs/display-format.md) for `.pwd` reading and the canonical format plan
 
 ## Data
 
@@ -50,15 +50,13 @@ cd backend
 julia --project=. bootstrap.jl
 ```
 
-PowerDiff.jl and PowerIO.jl are not yet in the General registry (PowerIO.jl's registration is in flight). Until they are, add them from git:
+PowerIO.jl is in the General registry; PowerDiff.jl is not, so `backend/Project.toml` pins it through `[sources]` at a git rev. Resolve both:
 
 ```sh
-julia --project=backend -e 'using Pkg;
-  Pkg.add([PackageSpec(url="https://github.com/eigenergy/PowerIO.jl.git"),
-           PackageSpec(url="https://github.com/grid-opt-alg-lab/PowerDiff.jl.git", rev="mk/backends")])'
+julia --project=backend -e 'using Pkg; Pkg.instantiate()'
 ```
 
-(Maintainers with local clones can `Pkg.develop` paths instead.) PowerIO.jl 0.1.1 bundles the powerio v0.2.1 binary as a lazy artifact, so no separate Rust build is needed. To run against an unreleased powerio, build `powerio-capi` and set `POWERIO_CAPI=/path/to/libpowerio_capi.{dylib,so}`.
+(Maintainers developing PowerIO.jl or PowerDiff.jl locally can `Pkg.develop` a path instead; the gitignored Manifest keeps that local.) PowerIO.jl 0.1.2 bundles the powerio v0.2.2 binary as a lazy artifact, so no separate Rust build is needed. To run against an unreleased powerio, build `powerio-capi` and set `POWERIO_CAPI=/path/to/libpowerio_capi.{dylib,so}`.
 
 WASM module (required before the frontend builds; powerio comes from crates.io):
 
@@ -91,6 +89,7 @@ Both of the last two accept `?d=bus:mw,bus:mw`, demand deltas in MW from the bas
 - AC OPF sensitivities and voltage/reactive operands (PowerDiff.jl computes them today; the UI needs operand switching)
 - solve and differentiate dropped cases, not only the bundled ones
 - synthetic grid generation, so users can spawn networks onto any part of the map (powerio)
+- a display format in powerio for case geometry, rendered in the browser through tellegen, so any case can carry positions ([docs/display-format.md](docs/display-format.md))
 - energy burden and demographic overlays
 - DER screening workflows
 

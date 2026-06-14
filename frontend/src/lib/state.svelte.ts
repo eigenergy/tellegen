@@ -10,14 +10,25 @@ import type {
 } from './api';
 import type { CaseFileSummary } from './wasm';
 
-/** A case file parsed in the browser. Topology only, no physics. */
+/** Substations from a PowerWorld .pwd display file. Positions are
+ * approximated from the diagram, not surveyed lat/lon. */
+export interface LocalSubstations {
+	points: { number: number; name: string; lon: number; lat: number }[];
+	approximate: true;
+}
+
+/** A case file parsed in the browser. Topology only, no physics. A .pwd
+ * display file is the one entry with no case summary: substations only. */
 export interface LocalCase {
 	id: string; // `local-1`, `local-2`, ...
 	label: string;
 	fileName: string;
-	summary: CaseFileSummary;
+	/** Case stats; null for a .pwd display-only entry. */
+	summary: CaseFileSummary | null;
 	/** Map geometry when the file carried coordinates; null = summary only. */
 	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
+	/** Present for a PowerWorld .pwd display-only entry. */
+	substations?: LocalSubstations;
 }
 
 /** One islanded network with its own solver instance on the backend. API

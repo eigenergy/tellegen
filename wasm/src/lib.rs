@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use powerio::format::powerworld::{AuxFile, aux_sections};
 use powerio::network::{Bus, Network};
+use powerio::{DisplayData, parse_display_bytes};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -116,6 +117,50 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
         "view": view,
     }))
     .map_err(jserr)
+}
+
+#[derive(Serialize)]
+struct ViewSubstation {
+    number: u32,
+    name: String,
+    x: f64,
+    y: f64,
+}
+
+#[derive(Serialize)]
+struct DisplayView {
+    substations: Vec<ViewSubstation>,
+    canvas_width: u16,
+    canvas_height: u16,
+}
+
+/// Decode a PowerWorld `.pwd` display file (binary). Returns the substation
+/// symbols at the diagram coordinates the file stores (x east, y north) plus
+/// the canvas size. These are diagram positions, not geography: the caller
+/// projects them. A `.pwd` carries no buses or branches. `format` is "pwd".
+/// Pure in-memory parsing, no filesystem, so it runs in the browser.
+#[wasm_bindgen]
+pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
+    match parse_display_bytes(bytes, format).map_err(jserr)? {
+        DisplayData::PowerWorld(d) => serde_json::to_string(&DisplayView {
+            substations: d
+                .substations
+                .into_iter()
+                .map(|s| ViewSubstation {
+                    number: s.number,
+                    name: s.name,
+                    x: s.x,
+                    y: s.y,
+                })
+                .collect(),
+            canvas_width: d.canvas_width,
+            canvas_height: d.canvas_height,
+        })
+        .map_err(jserr),
+        // DisplayData is #[non_exhaustive]; PowerWorld is the only arm today.
+        #[allow(unreachable_patterns)]
+        _ => Err(JsError::new("unsupported display format")),
+    }
 }
 
 /// Bus id => (lon, lat). Two generations of PowerWorld export carry
