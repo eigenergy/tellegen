@@ -29,7 +29,7 @@ The objective prediction in the UI uses the envelope theorem (the LMP times the 
 - `rust/` tellegen's Rust: powerio compiled to WebAssembly for in browser parsing
 - `scripts/` data staging
 - `deploy/` deployment guide and Caddy config
-- `docs/` design notes: [real coordinates](docs/real-coordinates.md), [synthetic layout](docs/synthetic-layout.md) for cases without geography, [display format](docs/display-format.md) for `.pwd` reading and the canonical format plan
+- `docs/` notes: [direction](docs/direction.md) and [ecosystem research](docs/research-notes.md); [real coordinates](docs/real-coordinates.md), [synthetic layout](docs/synthetic-layout.md), [display format](docs/display-format.md)
 
 ## Data
 
