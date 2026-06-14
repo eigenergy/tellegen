@@ -50,7 +50,8 @@ _staged(spec) =
     isfile(joinpath(DATA_DIR, spec.casefile)) && isfile(joinpath(DATA_DIR, spec.auxfile))
 
 function load_cases!()
-    specs = collect(Any, filter(_staged, CASE_SPECS))
+    empty!(CASES)  # idempotent: a reload rebuilds rather than accumulating stale entries
+    specs = filter(_staged, CASE_SPECS)
     isempty(specs) &&
         @warn "no TAMU case data under $DATA_DIR; serving pglib fallbacks with synthetic layout (see scripts/stage-data.sh)"
     for spec in specs
@@ -64,8 +65,14 @@ function load_cases!()
     end
     if isempty(CASES)
         for spec in FALLBACK_SPECS
-            CASES[spec.id] = build_entry(spec)
-            @info "case loaded (fallback)" spec.id
+            # Same guard for the fallbacks: one bad pglib case should not
+            # block the other from booting.
+            try
+                CASES[spec.id] = build_entry(spec)
+                @info "case loaded (fallback)" spec.id
+            catch err
+                @error "fallback case failed to load" spec.id err
+            end
         end
     end
 end

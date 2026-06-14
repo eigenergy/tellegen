@@ -83,10 +83,6 @@ export class AppState {
 		return this.localCases.find((c) => c.id === this.activeLocalId) ?? null;
 	}
 
-	localById(id: string): LocalCase | null {
-		return this.localCases.find((c) => c.id === id) ?? null;
-	}
-
 	addLocal(c: LocalCase) {
 		this.localCases = [...this.localCases, c];
 		this.activeLocalId = c.id;

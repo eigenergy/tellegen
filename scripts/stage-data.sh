@@ -13,8 +13,8 @@ src=${1:?usage: stage-data.sh <datasets dir> [target dir]}
 dst=${2:-"$(cd "$(dirname "$0")/.." && pwd)/data"}
 
 for c in ACTIVSg200 ACTIVSg500 ACTIVSg2000; do
-    if [ ! -f "$src/$c/case_$c.m" ]; then
-        echo "skip $c: $src/$c/case_$c.m not found" >&2
+    if [ ! -f "$src/$c/case_$c.m" ] || [ ! -f "$src/$c/$c.aux" ]; then
+        echo "skip $c: need both $src/$c/case_$c.m and $src/$c/$c.aux" >&2
         continue
     fi
     mkdir -p "$dst/$c"

@@ -150,6 +150,7 @@
 						? summary.name
 						: file.name.replace(/\.[^.]+$/, '');
 				app.addLocal({ id, label, fileName: file.name, summary, view });
+				app.error = null; // a successful parse clears a prior file's error
 				if (view) app.requestFrame(id);
 			} catch (e) {
 				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;

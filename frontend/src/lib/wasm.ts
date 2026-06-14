@@ -25,10 +25,17 @@ export interface IngestedCase extends CaseFileSummary {
 let ready: Promise<typeof import('./wasm-pkg/tellegen_wasm')> | null = null;
 
 function powerio() {
-	ready ??= import('./wasm-pkg/tellegen_wasm').then(async (mod) => {
-		await mod.default({ module_or_path: wasmUrl });
-		return mod;
-	});
+	ready ??= import('./wasm-pkg/tellegen_wasm')
+		.then(async (mod) => {
+			await mod.default({ module_or_path: wasmUrl });
+			return mod;
+		})
+		.catch((e) => {
+			// Don't cache a rejected load: a transient failure (chunk fetch or
+			// instantiate) must not disable the feature for the whole session.
+			ready = null;
+			throw e;
+		});
 	return ready;
 }
 
