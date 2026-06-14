@@ -7,8 +7,8 @@ frontend/build/
 frontend/.svelte-kit/
 
 # Rust
-wasm/target/
-wasm/pkg/
+rust/target/
+rust/pkg/
 frontend/src/lib/wasm-pkg/
 
 # Operator-staged TAMU case data (scripts/stage-data.sh); never vendored

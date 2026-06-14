@@ -26,7 +26,7 @@ The objective prediction in the UI uses the envelope theorem (the LMP times the 
 
 - `backend/` Julia API server (Oxygen.jl + PowerDiff.jl); real coordinate ingestion in `src/coords.jl`
 - `frontend/` SvelteKit 5 static app (MapLibre GL + deck.gl)
-- `wasm/` powerio compiled to WebAssembly for in browser case parsing
+- `rust/` tellegen's Rust: powerio compiled to WebAssembly for in browser parsing
 - `scripts/` data staging
 - `deploy/` deployment guide and Caddy config
 - `docs/` design notes: [real coordinates](docs/real-coordinates.md), [synthetic layout](docs/synthetic-layout.md) for cases without geography, [display format](docs/display-format.md) for `.pwd` reading and the canonical format plan
@@ -62,7 +62,7 @@ WASM module (required before the frontend builds; powerio comes from crates.io):
 
 ```sh
 cargo install wasm-pack
-cd wasm && wasm-pack build --target web --out-dir ../frontend/src/lib/wasm-pkg
+cd rust && wasm-pack build --target web --out-dir ../frontend/src/lib/wasm-pkg
 ```
 
 Frontend (port 5173, proxies `/api` to 8000):

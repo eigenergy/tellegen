@@ -1,13 +1,13 @@
 # ---- rust: wasm module ----
-FROM rust:slim AS rust
+FROM rust:slim AS wasm
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# The wasm crate pins powerio to a release tag in its Cargo.toml, so cargo
+# The tellegen crate pins powerio to a release tag in its Cargo.toml, so cargo
 # fetches the source itself; nothing to clone here.
 RUN cargo install wasm-pack --locked
-COPY wasm /build/wasm
-RUN wasm-pack build /build/wasm --target web --out-dir /out/wasm-pkg
+COPY rust /build/rust
+RUN wasm-pack build /build/rust --target web --out-dir /out/wasm-pkg
 
 # ---- frontend build ----
 FROM node:22-slim AS frontend
@@ -15,7 +15,7 @@ WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-COPY --from=rust /out/wasm-pkg ./src/lib/wasm-pkg
+COPY --from=wasm /out/wasm-pkg ./src/lib/wasm-pkg
 RUN npm run build
 
 # ---- backend ----

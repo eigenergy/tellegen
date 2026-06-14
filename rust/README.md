@@ -1,6 +1,6 @@
-# tellegen-wasm
+# tellegen (Rust)
 
-powerio compiled to WebAssembly for client side case file parsing. A dropped file is parsed in the browser; it never leaves the machine.
+tellegen's Rust, compiled to WebAssembly for client side parsing. powerio parses a dropped case in the browser; it never leaves the machine.
 
 ## Exports
 

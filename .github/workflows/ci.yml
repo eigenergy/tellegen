@@ -14,10 +14,10 @@ jobs:
       - run: rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: wasm
+          workspaces: rust
       - name: Install wasm-pack
         run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
-      - run: wasm-pack build wasm --target web --out-dir ../frontend/src/lib/wasm-pkg
+      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-pkg
       - uses: actions/setup-node@v4
         with:
           node-version: 22

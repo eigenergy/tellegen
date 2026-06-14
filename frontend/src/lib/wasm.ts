@@ -2,7 +2,7 @@
  * first file is dropped; the dropped file is parsed in the browser and never
  * leaves the machine. */
 import type { NetworkBranch, NetworkBus } from './api';
-import wasmUrl from './wasm-pkg/tellegen_wasm_bg.wasm?url';
+import wasmUrl from './wasm-pkg/tellegen_bg.wasm?url';
 
 export interface CaseFileSummary {
 	name: string;
@@ -22,10 +22,10 @@ export interface IngestedCase extends CaseFileSummary {
 	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 }
 
-let ready: Promise<typeof import('./wasm-pkg/tellegen_wasm')> | null = null;
+let ready: Promise<typeof import('./wasm-pkg/tellegen')> | null = null;
 
 function powerio() {
-	ready ??= import('./wasm-pkg/tellegen_wasm')
+	ready ??= import('./wasm-pkg/tellegen')
 		.then(async (mod) => {
 			await mod.default({ module_or_path: wasmUrl });
 			return mod;
