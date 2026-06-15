@@ -541,8 +541,7 @@
 					{/if}
 				</div>
 				<p class="dim small">
-					Locational marginal prices from the DC optimal power flow. Select a bus for the
-					demand sensitivity column and load perturbation.
+					DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
 				</p>
 				<div class="legend" style:background={lmpGradient}></div>
 				<div class="legend-labels mono">
@@ -554,8 +553,7 @@
 					{/if}
 				</div>
 				<p class="dim small">
-					Or bring your own grid: drop a case file (.m, .raw, .aux) or a PowerWorld display file
-					(.pwd) anywhere on the map. powerio parses it in your browser; nothing uploads.
+					Drop .m, .raw, .aux, or .pwd files; parsing stays in your browser.
 				</p>
 			{/if}
 
