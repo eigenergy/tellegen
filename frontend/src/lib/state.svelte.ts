@@ -57,6 +57,8 @@ export class CaseState {
 	iterations = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
+	/** Monotone token: only the latest solve may write this case. */
+	solveSeq = 0;
 	/** Objective change the gradient predicted for the last commit, to score
 	 * the preview once the exact solve lands. */
 	predictedObjective = $state<number | null>(null);

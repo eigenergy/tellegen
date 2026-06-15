@@ -12,7 +12,7 @@
 //! pieces layered on top — the angle-bound defaults and the `rate_a == 0`
 //! fallback — mirror PowerDiff's `_network_data`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use powerio::network::{BusType, GenCost, Network};
 use powerio::IndexedNetwork;
@@ -31,8 +31,8 @@ const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 const MIN_Z_SQUARED: f64 = 1e-10;
 
 /// B-theta DC OPF model data. Indices are dense `[0, n)` / `[0, m)` / `[0, k)`
-/// over the normalized network; `bus_ids` maps a dense bus index back to the
-/// original source bus id for output payloads.
+/// over the normalized network; `bus_ids`, `branch_ids`, and `gen_ids` map dense
+/// indices back to source ids for output payloads.
 ///
 /// Susceptance-weighted Laplacian `B = A' diag(-b .* sw) A`; DC power balance
 /// `G_inc pg + psh - d = B theta`; branch flows `f = diag(-b .* sw) A theta`.
@@ -76,6 +76,10 @@ pub struct DcNetwork {
     pub tau: f64,
     /// Dense bus index -> original source bus id.
     pub bus_ids: Vec<usize>,
+    /// Dense branch index -> original source branch id.
+    pub branch_ids: Vec<usize>,
+    /// Dense generator index -> original source generator id.
+    pub gen_ids: Vec<usize>,
     /// System base power (MVA), for recovering MW / $/MWh from per-unit results.
     pub base_mva: f64,
 }
@@ -108,6 +112,7 @@ impl DcNetwork {
                 n
             ));
         }
+        let active_bus_ids: BTreeSet<usize> = bus_ids.iter().copied().collect();
 
         // Per-bus demand (already per unit on the normalized network).
         let demand = view.pd().to_vec();
@@ -115,6 +120,24 @@ impl DcNetwork {
         // Branches.
         let branches = view.branches();
         let m = branches.len();
+        let branch_ids: Vec<usize> = raw
+            .branches
+            .iter()
+            .enumerate()
+            .filter(|(_, br)| {
+                br.in_service
+                    && active_bus_ids.contains(&br.from.0)
+                    && active_bus_ids.contains(&br.to.0)
+            })
+            .map(|(i, _)| i + 1)
+            .collect();
+        if branch_ids.len() != m {
+            return Err(format!(
+                "branch id reconstruction mismatch: {} active raw branches vs {} normalized",
+                branch_ids.len(),
+                m
+            ));
+        }
         let mut br_from = Vec::with_capacity(m);
         let mut br_to = Vec::with_capacity(m);
         let mut b = Vec::with_capacity(m);
@@ -157,6 +180,20 @@ impl DcNetwork {
         let k = gens.len();
         if k == 0 {
             return Err("network has no in-service generators".into());
+        }
+        let gen_ids: Vec<usize> = raw
+            .generators
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| g.in_service && active_bus_ids.contains(&g.bus.0))
+            .map(|(i, _)| i + 1)
+            .collect();
+        if gen_ids.len() != k {
+            return Err(format!(
+                "generator id reconstruction mismatch: {} active raw generators vs {} normalized",
+                gen_ids.len(),
+                k
+            ));
         }
         let mut gen_bus = Vec::with_capacity(k);
         let mut gmax = Vec::with_capacity(k);
@@ -211,6 +248,8 @@ impl DcNetwork {
             ref_bus,
             tau: DEFAULT_TAU,
             bus_ids,
+            branch_ids,
+            gen_ids,
             base_mva: raw.base_mva,
         })
     }
@@ -261,9 +300,8 @@ fn fallback_rate_a(r: f64, x: f64, amin: f64, amax: f64, fr_vmax: f64, to_vmax: 
     let theta_max = amin.abs().max(amax.abs());
     let zmag = r.hypot(x);
     let ymag = if zmag == 0.0 { 0.0 } else { 1.0 / zmag };
-    let cmax = (fr_vmax * fr_vmax + to_vmax * to_vmax
-        - 2.0 * fr_vmax * to_vmax * theta_max.cos())
-    .sqrt();
+    let cmax =
+        (fr_vmax * fr_vmax + to_vmax * to_vmax - 2.0 * fr_vmax * to_vmax * theta_max.cos()).sqrt();
     ymag * fr_vmax.max(to_vmax) * cmax
 }
 
@@ -343,9 +381,25 @@ mod tests {
         assert_eq!(dc.m, 3);
         assert_eq!(dc.k, 2);
         assert_eq!(dc.bus_ids, vec![1, 2, 3]);
+        assert_eq!(dc.branch_ids, vec![1, 2, 3]);
+        assert_eq!(dc.gen_ids, vec![1, 2]);
         approx(dc.base_mva, 100.0);
         // Bus 1 is the MATPOWER slack (type 3) -> dense index 0.
         assert_eq!(dc.ref_bus, 0);
+    }
+
+    #[test]
+    fn ids_remain_source_order_after_filtering() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        net.branches[0].in_service = false;
+        net.generators[0].in_service = false;
+
+        let dc = DcNetwork::from_network(&net).expect("build filtered DcNetwork");
+
+        assert_eq!(dc.branch_ids, vec![2, 3]);
+        assert_eq!(dc.gen_ids, vec![2]);
     }
 
     #[test]
@@ -402,7 +456,7 @@ mod tests {
         approx(dc.cl[0], 5.0 * 100.0); // 500
         approx(dc.cq[1], 0.085 * 100.0 * 100.0); // 850
         approx(dc.cl[1], 1.2 * 100.0); // 120
-        // Shedding cost = 10 x max marginal cost (2 cq gmax + cl).
+                                       // Shedding cost = 10 x max marginal cost (2 cq gmax + cl).
         let marginal = (2.0 * 1100.0 * 2.5 + 500.0_f64).max(2.0 * 850.0 * 2.7 + 120.0);
         for &cs in &dc.c_shed {
             approx(cs, 10.0 * marginal);

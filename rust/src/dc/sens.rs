@@ -40,9 +40,6 @@ fn is_fixed_zero_shed(d: f64) -> bool {
 /// order: `[va, pg, f, psh, lam_lb, lam_ub, gamma_lb, gamma_ub, rho_lb, rho_ub,
 /// mu_lb, mu_ub, nu_bal, nu_flow, eta]`. Total `5n + 6m + 3k + 1`.
 struct KktIdx {
-    n: usize,
-    m: usize,
-    k: usize,
     dim: usize,
     va: usize,
     pg: usize,
@@ -85,9 +82,6 @@ impl KktIdx {
         let nu_flow = take(m);
         let eta = take(1);
         KktIdx {
-            n,
-            m,
-            k,
             dim: o,
             va,
             pg,
@@ -341,7 +335,11 @@ fn demand_rhs(dc: &DcNetwork, s: &DcSolution, idx: &KktIdx, buses: &[usize]) -> 
     let mut rhs = Mat::<f64>::zeros(idx.dim, buses.len());
     for (c, &j) in buses.iter().enumerate() {
         rhs[(idx.nu_bal + j, c)] = -1.0;
-        let dcap = if is_fixed_zero_shed(dc.demand[j]) { 0.0 } else { 1.0 };
+        let dcap = if is_fixed_zero_shed(dc.demand[j]) {
+            0.0
+        } else {
+            1.0
+        };
         rhs[(idx.mu_ub + j, c)] = s.mu_ub[j] * dcap;
     }
     rhs
@@ -534,7 +532,9 @@ mod tests {
     /// absent.
     fn parity_vs_finite_differences(casefile: &str) -> Option<f64> {
         let text = std::fs::read_to_string(casefile).ok()?;
-        let net = powerio::parse_str(&text, "matpower").expect("parse").network;
+        let net = powerio::parse_str(&text, "matpower")
+            .expect("parse")
+            .network;
         let dc = DcNetwork::from_network(&net).expect("model");
         let sol = solve(&dc).expect("solve");
 

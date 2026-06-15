@@ -224,41 +224,51 @@
 	// the interior point iterations.
 	function runSolve(c: CaseState, sensBus: number | null) {
 		closeStream?.();
+		const seq = ++c.solveSeq;
 		app.error = null;
 		c.solving = true;
 		c.iterations = [];
 		c.solveMs = null;
 		ensureNetworkJson(c).then((networkJson) => {
-			if (!networkJson) return serverSolve(c, sensBus);
+			if (seq !== c.solveSeq) return;
+			if (!networkJson) return serverSolve(c, sensBus, seq);
 			const t0 = performance.now();
 			solveDc(c.id, networkJson, c.deltas, sensBus)
 				.then(({ solution, sensitivity }) => {
+					if (seq !== c.solveSeq) return;
 					c.solution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
 					if (sensitivity) c.sensitivity = sensitivity;
 					c.solving = false;
 				})
-				.catch(() => serverSolve(c, sensBus));
+				.catch(() => {
+					if (seq === c.solveSeq) serverSolve(c, sensBus, seq);
+				});
 		});
 	}
 
-	function serverSolve(c: CaseState, sensBus: number | null) {
+	function serverSolve(c: CaseState, sensBus: number | null, seq = c.solveSeq) {
 		closeStream = openSolveStream(c.id, c.deltas, sensBus, {
 			oniteration: (it) => {
+				if (seq !== c.solveSeq) return;
 				c.iterations = [...c.iterations, it];
 			},
 			onsolution: (sol) => {
+				if (seq !== c.solveSeq) return;
 				c.solution = sol;
 				c.solveMs = sol.solve_ms;
 			},
 			onsensitivity: (col) => {
+				if (seq !== c.solveSeq) return;
 				c.sensitivity = col;
 			},
 			onfail: (msg) => {
+				if (seq !== c.solveSeq) return;
 				c.solving = false;
 				app.error = msg;
 			},
 			ondone: () => {
+				if (seq !== c.solveSeq) return;
 				c.solving = false;
 			}
 		});

@@ -33,9 +33,8 @@ use clarabel::solver::{
 use super::model::DcNetwork;
 
 /// Primal and dual solution of the DC OPF, in per unit. Dual names and signs
-/// follow PowerDiff's `DCOPFSolution`: `nu_*` are equality duals, the rest are
-/// non-negative inequality duals. `nu_bal` is the LMP (per-unit $/per-unit-MW);
-/// divide by `base_mva` for $/MWh.
+/// follow PowerDiff's `DCOPFSolution`. `nu_bal` is the LMP (per-unit
+/// $/per-unit-MW); divide by `base_mva` for $/MWh.
 #[derive(Clone)]
 pub struct DcSolution {
     pub va: Vec<f64>,
@@ -43,8 +42,6 @@ pub struct DcSolution {
     pub f: Vec<f64>,
     pub psh: Vec<f64>,
     pub nu_bal: Vec<f64>,
-    pub nu_flow: Vec<f64>,
-    pub eta_ref: f64,
     pub lam_ub: Vec<f64>,
     pub lam_lb: Vec<f64>,
     pub rho_ub: Vec<f64>,
@@ -224,8 +221,6 @@ pub fn solve(dc: &DcNetwork) -> Result<DcSolution, String> {
         f: (0..m).map(|e| x[col_f(e)]).collect(),
         psh: (0..n).map(|i| x[col_psh(i)]).collect(),
         nu_bal: (0..n).map(|i| -z[r_pb(i)]).collect(),
-        nu_flow: (0..m).map(|e| -z[r_fd(e)]).collect(),
-        eta_ref: z[r_ref],
         lam_ub: (0..m).map(|e| z[r_lineub(e)]).collect(),
         lam_lb: (0..m).map(|e| z[r_linelb(e)]).collect(),
         rho_ub: (0..k).map(|j| z[r_genub(j)]).collect(),
@@ -269,14 +264,20 @@ mod tests {
         let lo = lmp.iter().cloned().fold(f64::INFINITY, f64::min);
         let hi = lmp.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         assert!(lo > 0.0, "LMP must be positive, got {lo}");
-        assert!(hi - lo < 0.05, "uncongested LMPs should be ~equal: {lo}..{hi}");
+        assert!(
+            hi - lo < 0.05,
+            "uncongested LMPs should be ~equal: {lo}..{hi}"
+        );
         assert!((lo - 11.49).abs() < 0.5, "LMP {lo} not near analytic 11.49");
 
         // Flows obey f = W A theta exactly (the flow-definition equality).
         for e in 0..dc.m {
             let w = -dc.b[e] * dc.sw[e];
             let expected = w * (sol.va[dc.br_from[e]] - sol.va[dc.br_to[e]]);
-            assert!((sol.f[e] - expected).abs() < 1e-6, "flow def mismatch at {e}");
+            assert!(
+                (sol.f[e] - expected).abs() < 1e-6,
+                "flow def mismatch at {e}"
+            );
         }
     }
 

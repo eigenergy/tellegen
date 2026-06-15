@@ -13,7 +13,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::model::DcNetwork;
-use super::{dlmp_dd, solve};
+use super::sens::dlmp_dd;
+use super::solve::solve;
 
 /// A solve request: demand deltas in MW keyed by original bus id (the operating
 /// point is `base demand + deltas`), and an optional bus to return the dLMP/dd
@@ -31,8 +32,8 @@ struct SolveRequest {
 /// sensitivity column for `sens_bus` (or null when none is requested).
 ///
 /// LMPs and the sensitivity column are keyed by original bus id; flows and
-/// dispatch by 1-based in-service branch / generator index, matching the
-/// backend's `id_map`. Powers are MW, prices $/MWh, sensitivities ($/MWh)/MW.
+/// dispatch by source branch / generator ids, matching the backend's `id_map`.
+/// Powers are MW, prices $/MWh, sensitivities ($/MWh)/MW.
 pub fn solve_dc_json(network_json: &str, deltas_json: &str) -> Result<String, String> {
     let net = Network::from_json(network_json).map_err(|e| e.to_string())?;
     let mut dc = DcNetwork::from_network(&net)?;
@@ -72,14 +73,17 @@ pub fn solve_dc_json(network_json: &str, deltas_json: &str) -> Result<String, St
             } else {
                 0.0
             };
-            json!({ "branch": e + 1, "mw": sol.f[e] * base, "loading": loading })
+            json!({ "branch": dc.branch_ids[e], "mw": sol.f[e] * base, "loading": loading })
         })
         .collect();
     let dispatch_payload: Vec<_> = (0..dc.k)
-        .map(|j| json!({ "gen": j + 1, "mw": sol.pg[j] * base }))
+        .map(|j| json!({ "gen": dc.gen_ids[j], "mw": sol.pg[j] * base }))
         .collect();
 
-    let dlmp = match req.sens_bus.and_then(|b| bus_idx.get(&(b as usize)).copied()) {
+    let dlmp = match req
+        .sens_bus
+        .and_then(|b| bus_idx.get(&(b as usize)).copied())
+    {
         Some(si) => {
             let col = dlmp_dd(&dc, &sol, &[si])?;
             let values: Vec<_> = (0..dc.n)
@@ -120,6 +124,15 @@ mod tests {
             .expect("to_json")
     }
 
+    fn case3_with_outages_json() -> String {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse")
+            .network;
+        net.branches[0].in_service = false;
+        net.generators[0].in_service = false;
+        net.to_json().expect("to_json")
+    }
+
     #[test]
     fn base_solution_payload_shapes() {
         let out = solve_dc_json(&case3_json(), "").expect("solve_dc");
@@ -144,6 +157,27 @@ mod tests {
             .sum();
         assert!((total - 90.0).abs() < 1e-2, "dispatch total {total}");
         assert!(v["dlmp_dd"].is_null());
+    }
+
+    #[test]
+    fn payload_ids_survive_out_of_service_elements() {
+        let out = solve_dc_json(&case3_with_outages_json(), "").expect("solve_dc");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let branches: Vec<i64> = v["flows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["branch"].as_i64().unwrap())
+            .collect();
+        let gens: Vec<i64> = v["dispatch"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["gen"].as_i64().unwrap())
+            .collect();
+
+        assert_eq!(branches, vec![2, 3]);
+        assert_eq!(gens, vec![2]);
     }
 
     #[test]
@@ -195,7 +229,12 @@ mod tests {
             return;
         }
         let get_json = |url: String| -> Value {
-            let body = ureq::get(url).call().unwrap().body_mut().read_to_string().unwrap();
+            let body = ureq::get(url)
+                .call()
+                .unwrap()
+                .body_mut()
+                .read_to_string()
+                .unwrap();
             serde_json::from_str(&body).unwrap()
         };
         for (id, dir) in [
@@ -218,13 +257,21 @@ mod tests {
             let disp_rel = column_rel(&server["dispatch"], &mine["dispatch"], "gen", "mw");
 
             // dLMP/dd column at the highest-demand bus (a large, stable column).
-            let jmax = (0..dc.n).max_by(|&a, &b| dc.demand[a].total_cmp(&dc.demand[b])).unwrap();
+            let jmax = (0..dc.n)
+                .max_by(|&a, &b| dc.demand[a].total_cmp(&dc.demand[b]))
+                .unwrap();
             let bus = dc.bus_ids[jmax];
-            let mine_s: Value =
-                serde_json::from_str(&solve_dc_json(&net_json, &format!(r#"{{"sens_bus":{bus}}}"#)).unwrap())
-                    .unwrap();
+            let mine_s: Value = serde_json::from_str(
+                &solve_dc_json(&net_json, &format!(r#"{{"sens_bus":{bus}}}"#)).unwrap(),
+            )
+            .unwrap();
             let server_s = get_json(format!("{base}/api/cases/{id}/sensitivity/lmp/d/{bus}"));
-            let sens_rel = column_rel(&server_s["values"], &mine_s["dlmp_dd"]["values"], "bus", "value");
+            let sens_rel = column_rel(
+                &server_s["values"],
+                &mine_s["dlmp_dd"]["values"],
+                "bus",
+                "value",
+            );
 
             eprintln!("{id}: lmp_rel={lmp_rel:.2e} dispatch_rel={disp_rel:.2e} dlmp_dd_rel={sens_rel:.2e}");
             assert!(lmp_rel < 1e-3, "{id} LMP vs server rel {lmp_rel}");
@@ -235,9 +282,10 @@ mod tests {
     #[test]
     fn deltas_shift_the_operating_point() {
         let base: Value = serde_json::from_str(&solve_dc_json(&case3_json(), "").unwrap()).unwrap();
-        let bumped: Value =
-            serde_json::from_str(&solve_dc_json(&case3_json(), r#"{"deltas": {"2": 50.0}}"#).unwrap())
-                .unwrap();
+        let bumped: Value = serde_json::from_str(
+            &solve_dc_json(&case3_json(), r#"{"deltas": {"2": 50.0}}"#).unwrap(),
+        )
+        .unwrap();
         let lmp0 = base["lmp"][0]["usd_per_mwh"].as_f64().unwrap();
         let lmp1 = bumped["lmp"][0]["usd_per_mwh"].as_f64().unwrap();
         // More demand at bus 2 raises the system marginal price.
