@@ -153,10 +153,19 @@ jobs:
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           ssh -i ~/.ssh/tellegen_deploy "$remote" "
             for i in \$(seq 1 90); do
-              if curl -fsS http://127.0.0.1:8000/api/health; then
-                exit 0
+              health=\$(curl -fsS http://127.0.0.1:8000/api/health) || {
+                sleep 10
+                continue
+              }
+              case \"\$health\" in
+                *'\"case200\"'*'\"case2000\"'*'\"case500\"'*)
+                  exit 0
+                  ;;
+              esac
+              echo \"unexpected health payload: \$health\"
+              if [ \"\$i\" -lt 90 ]; then
+                sleep 10
               fi
-              sleep 10
             done
             cd '$DEPLOY_PATH'
             docker compose --env-file .env -f deploy/docker-compose.prod.yml logs --tail=200 tellegen
@@ -166,11 +175,21 @@ jobs:
         run: |
           health_url="${DEMO_URL%/}/api/health"
           for attempt in $(seq 1 30); do
-            if curl -fsS "$health_url"; then
-              exit 0
+            health=$(curl -fsS "$health_url") || {
+              echo "waiting for public health ($attempt/30)"
+              sleep 10
+              continue
+            }
+            case "$health" in
+              *'"case200"'*'"case2000"'*'"case500"'*)
+                exit 0
+                ;;
+            esac
+            echo "unexpected public health payload: $health"
+            if [ "$attempt" -lt 30 ]; then
+              echo "waiting for public health ($attempt/30)"
+              sleep 10
             fi
-            echo "waiting for public health ($attempt/30)"
-            sleep 10
           done
           echo "public health check failed: $health_url"
           exit 1
