@@ -603,10 +603,6 @@
 			>ACTIVSg synthetic grids</a
 		>
 		<i class="sep"></i>
-		<a href="https://github.com/grid-opt-alg-lab/PowerDiff.jl" target="_blank" rel="noreferrer"
-			>powerdiff sensitivities</a
-		>
-		<i class="sep"></i>
 		<a href="https://github.com/eigenergy/powerio" target="_blank" rel="noreferrer"
 			>powerio parser</a
 		>
