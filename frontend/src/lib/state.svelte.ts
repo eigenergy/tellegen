@@ -45,6 +45,8 @@ export class CaseState {
 	readonly id: string;
 	readonly name: string;
 	network = $state.raw<Network | null>(null);
+	/** Raw powerio Network JSON for the in-browser solver; fetched lazily. */
+	networkJson = $state.raw<string | null>(null);
 	/** Boot solution at base demand; never changes. */
 	baseSolution = $state.raw<Solution | null>(null);
 	/** Exact solution at the current committed perturbation. */

@@ -5,7 +5,14 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getCases, getNetwork, getSensitivity, getSolution, openSolveStream } from '$lib/api';
+	import {
+		getCaseNetworkJson,
+		getCases,
+		getNetwork,
+		getSensitivity,
+		getSolution,
+		openSolveStream
+	} from '$lib/api';
 	import { busRadius, lmpDomain, lmpGradient, sensGradient } from '$lib/colors';
 	import {
 		applyGeoSidecar,
@@ -16,7 +23,7 @@
 	} from '$lib/geo-sidecar';
 	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
-	import { formatOf, ingestCase, isDisplayFile, parseDisplay } from '$lib/wasm';
+	import { formatOf, ingestCase, isDisplayFile, parseDisplay, solveDc } from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
@@ -152,6 +159,19 @@
 		}
 	}
 
+	// Fetch and cache the raw powerio Network JSON for the in-browser solver.
+	// Returns null when it can't be loaded, so callers fall back to the server.
+	async function ensureNetworkJson(c: CaseState): Promise<string | null> {
+		if (c.networkJson) return c.networkJson;
+		try {
+			const json = await getCaseNetworkJson(c.id);
+			c.networkJson = json;
+			return json;
+		} catch {
+			return null;
+		}
+	}
+
 	async function selectBus(caseId: string, busId: number) {
 		app.activeLocalId = null;
 		app.placingLocalId = null;
@@ -166,11 +186,21 @@
 		app.previewDeltaMw = null;
 		app.sensitivityLoading = true;
 		try {
-			const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
-			if (!ac.signal.aborted) c.sensitivity = col;
-		} catch (e) {
-			if (!ac.signal.aborted && !(e instanceof DOMException)) {
-				app.error = String(e);
+			// The dLMP/dd column from the in-browser solver; the server is the fallback.
+			const networkJson = await ensureNetworkJson(c);
+			if (networkJson) {
+				const { sensitivity } = await solveDc(caseId, networkJson, c.deltas, busId);
+				if (!ac.signal.aborted) c.sensitivity = sensitivity;
+			} else {
+				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
+				if (!ac.signal.aborted) c.sensitivity = col;
+			}
+		} catch {
+			try {
+				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
+				if (!ac.signal.aborted) c.sensitivity = col;
+			} catch (e2) {
+				if (!ac.signal.aborted && !(e2 instanceof DOMException)) app.error = String(e2);
 			}
 		} finally {
 			if (abort === ac) app.sensitivityLoading = false;
@@ -185,12 +215,30 @@
 		app.sensitivityLoading = false;
 	}
 
+	// Exact DC solve in the browser (wasm). On any failure, or when the network
+	// JSON can't be fetched, reconcile via the server stream — which also shows
+	// the interior point iterations.
 	function runSolve(c: CaseState, sensBus: number | null) {
 		closeStream?.();
 		app.error = null;
 		c.solving = true;
 		c.iterations = [];
 		c.solveMs = null;
+		ensureNetworkJson(c).then((networkJson) => {
+			if (!networkJson) return serverSolve(c, sensBus);
+			const t0 = performance.now();
+			solveDc(c.id, networkJson, c.deltas, sensBus)
+				.then(({ solution, sensitivity }) => {
+					c.solution = solution;
+					c.solveMs = Math.round(performance.now() - t0);
+					if (sensitivity) c.sensitivity = sensitivity;
+					c.solving = false;
+				})
+				.catch(() => serverSolve(c, sensBus));
+		});
+	}
+
+	function serverSolve(c: CaseState, sensBus: number | null) {
 		closeStream = openSolveStream(c.id, c.deltas, sensBus, {
 			oniteration: (it) => {
 				c.iterations = [...c.iterations, it];

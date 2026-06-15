@@ -75,6 +75,14 @@ export const getCases = () => getJson<CaseSummary[]>('/api/cases');
 
 export const getNetwork = (caseId: string) => getJson<Network>(`/api/cases/${caseId}/network`);
 
+/** The raw powerio Network JSON, for solving the case in the browser. */
+export async function getCaseNetworkJson(caseId: string, signal?: AbortSignal): Promise<string> {
+	const url = `/api/cases/${caseId}/case`;
+	const res = await fetch(url, { signal });
+	if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+	return res.text();
+}
+
 export const getSolution = (caseId: string) => getJson<Solution>(`/api/cases/${caseId}/solution`);
 
 export function getSensitivity(

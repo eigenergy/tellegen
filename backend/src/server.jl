@@ -21,6 +21,16 @@ function start(; host="0.0.0.0", port=parse(Int, get(ENV, "TELLEGEN_PORT", "8000
         return _json_response(e.network_json)
     end
 
+    # The raw powerio Network JSON (pio_to_json), so the browser can build the
+    # DC model and solve it in wasm with no server round trip. Same bytes the
+    # wasm `Network::from_json` reads; the solve and sensitivity then run client
+    # side, with the endpoints above kept as a reconcile/fallback.
+    @get "/api/cases/{id}/case" function (req, id::String)
+        e = get(CASES, id, nothing)
+        isnothing(e) && return _not_found("unknown case $id")
+        return _json_response(PowerIO.to_json(e.case))
+    end
+
     @get "/api/cases/{id}/solution" function (req, id::String)
         e = get(CASES, id, nothing)
         isnothing(e) && return _not_found("unknown case $id")
