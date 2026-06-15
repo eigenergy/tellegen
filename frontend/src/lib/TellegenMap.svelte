@@ -1,9 +1,9 @@
 <script lang="ts">
-	import maplibregl from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
-	import { MapboxOverlay } from '@deck.gl/mapbox';
-	import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 	import type { Layer, PickingInfo } from '@deck.gl/core';
+	import type { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+	import type { MapboxOverlay } from '@deck.gl/mapbox';
+	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
 	import type { NetworkBranch, NetworkBus } from '$lib/api';
 	import { branchColor, branchWidth, busRadius, lmpColor, lmpDomain, sensColor } from '$lib/colors';
 	import { app, type CaseState } from '$lib/state.svelte';
@@ -12,8 +12,14 @@
 
 	const STYLE = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json';
 
-	let map = $state.raw<maplibregl.Map | null>(null);
+	let map = $state.raw<MapLibreMap | null>(null);
 	let overlay = $state.raw<MapboxOverlay | null>(null);
+
+	type LayerCtors = {
+		PathLayer: typeof PathLayer;
+		ScatterplotLayer: typeof ScatterplotLayer;
+	};
+	let layerCtors = $state.raw<LayerCtors | null>(null);
 
 	interface CaseDisplay {
 		lmp: Map<number, number>;
@@ -146,35 +152,64 @@
 		};
 	}
 
+	async function loadMapModules() {
+		const [maplibre, mapbox, layers] = await Promise.all([
+			import('maplibre-gl'),
+			import('@deck.gl/mapbox'),
+			import('@deck.gl/layers')
+		]);
+		return {
+			maplibregl: maplibre.default,
+			MapboxOverlay: mapbox.MapboxOverlay,
+			PathLayer: layers.PathLayer,
+			ScatterplotLayer: layers.ScatterplotLayer
+		};
+	}
+
 	function initMap(container: HTMLDivElement) {
-		const m = new maplibregl.Map({
-			container,
-			style: STYLE,
-			center: [-85, 36],
-			zoom: 4.5,
-			attributionControl: { compact: true }
-		});
-		const o = new MapboxOverlay({
-			layers: [],
-			getTooltip: tooltip,
-			getCursor: ({ isHovering, isDragging }) =>
-				isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
-		});
-		m.addControl(o);
-		m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-		map = m;
-		overlay = o;
+		let cleanup = () => {};
+		let cancelled = false;
+		void loadMapModules()
+			.then(({ maplibregl, MapboxOverlay, PathLayer, ScatterplotLayer }) => {
+				if (cancelled) return;
+				layerCtors = { PathLayer, ScatterplotLayer };
+				const m = new maplibregl.Map({
+					container,
+					style: STYLE,
+					center: [-85, 36],
+					zoom: 4.5,
+					attributionControl: { compact: true }
+				});
+				const o = new MapboxOverlay({
+					layers: [],
+					getTooltip: tooltip,
+					getCursor: ({ isHovering, isDragging }) =>
+						isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
+				});
+				m.addControl(o);
+				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+				map = m;
+				overlay = o;
+				cleanup = () => {
+					m.remove();
+					map = null;
+					overlay = null;
+				};
+			})
+			.catch((e) => {
+				if (!cancelled) app.error = `map failed to load: ${e instanceof Error ? e.message : e}`;
+			});
 		return () => {
-			m.remove();
-			map = null;
-			overlay = null;
+			cancelled = true;
+			cleanup();
 		};
 	}
 
 	// Sync deck.gl layers with app state. New layer instances diff cheaply;
 	// updateTriggers tell deck.gl when accessor outputs changed.
 	$effect(() => {
-		if (!overlay) return;
+		if (!overlay || !layerCtors) return;
+		const { PathLayer, ScatterplotLayer } = layerCtors;
 		const layers: Layer[] = [];
 		for (const c of app.cases) {
 			if (!c.network) continue;
@@ -284,7 +319,7 @@
 		overlay.setProps({ layers });
 	});
 
-	function boundsFor(target: string | 'all'): maplibregl.LngLatBoundsLike | null {
+	function boundsFor(target: string | 'all'): LngLatBoundsLike | null {
 		let minLon = Infinity;
 		let minLat = Infinity;
 		let maxLon = -Infinity;
