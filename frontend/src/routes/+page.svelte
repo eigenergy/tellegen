@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { getCases, getNetwork, getSensitivity, getSolution, openSolveStream } from '$lib/api';
 	import { busRadius, lmpDomain, lmpGradient, sensGradient } from '$lib/colors';
 	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
@@ -14,6 +15,24 @@
 	let abort: AbortController | null = null;
 	let closeStream: (() => void) | null = null;
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
+	let showFileDropUi = $state(true);
+	let dragDepth = 0;
+
+	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
+
+	onMount(() => {
+		const query = window.matchMedia(FILE_DROP_QUERY);
+		const syncFileDropUi = () => {
+			showFileDropUi = query.matches;
+			if (!showFileDropUi) {
+				dragDepth = 0;
+				app.dragOver = false;
+			}
+		};
+		syncFileDropUi();
+		query.addEventListener('change', syncFileDropUi);
+		return () => query.removeEventListener('change', syncFileDropUi);
+	});
 
 	async function load() {
 		try {
@@ -208,12 +227,8 @@
 		}
 	}
 
-	// Depth counter so dragenter/dragleave on nested elements doesn't flicker
-	// the overlay.
-	let dragDepth = 0;
-
 	function dragHasFiles(e: DragEvent): boolean {
-		return e.dataTransfer?.types.includes('Files') ?? false;
+		return showFileDropUi && (e.dataTransfer?.types.includes('Files') ?? false);
 	}
 
 	function onDragEnter(e: DragEvent) {
@@ -381,14 +396,16 @@
 					>
 				</div>
 			{/each}
-			<button
-				class="ghost"
-				title="parsed in your browser; the file never uploads"
-				onclick={() => fileInput?.click()}
-			>
-				<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
-				<span class="cregion mono">.m &middot; .raw &middot; .aux &middot; .pwd &mdash; or click</span>
-			</button>
+			{#if showFileDropUi}
+				<button
+					class="ghost filedrop-ui"
+					title="parsed in your browser; the file never uploads"
+					onclick={() => fileInput?.click()}
+				>
+					<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
+					<span class="cregion mono">.m &middot; .raw &middot; .aux &middot; .pwd &mdash; or click</span>
+				</button>
+			{/if}
 		</nav>
 		<span class="kicker mono">differentiable power systems</span>
 	</header>
@@ -552,7 +569,7 @@
 						<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
 					{/if}
 				</div>
-				<p class="dim small">
+				<p class="dim small filedrop-note">
 					Drop .m, .raw, .aux, or .pwd files; parsing stays in your browser.
 				</p>
 			{/if}
@@ -610,22 +627,28 @@
 		<a href="https://github.com/eigenergy/tellegen" target="_blank" rel="noreferrer"
 			>tellegen framework</a
 		>
-		<i class="sep"></i>
-		<span class="drophint"><span class="arrow">&#8675;</span> drop a case file anywhere</span>
+		{#if showFileDropUi}
+			<i class="sep filedrop-ui"></i>
+			<span class="drophint filedrop-ui"
+				><span class="arrow">&#8675;</span> drop a case file anywhere</span
+			>
+		{/if}
 	</footer>
 
-	<input
-		type="file"
-		accept=".m,.raw,.aux,.pwd"
-		multiple
-		hidden
-		bind:this={fileInput}
-		onchange={(e) => {
-			const input = e.currentTarget;
-			if (input.files) ingestFiles(Array.from(input.files));
-			input.value = '';
-		}}
-	/>
+	{#if showFileDropUi}
+		<input
+			type="file"
+			accept=".m,.raw,.aux,.pwd"
+			multiple
+			hidden
+			bind:this={fileInput}
+			onchange={(e) => {
+				const input = e.currentTarget;
+				if (input.files) ingestFiles(Array.from(input.files));
+				input.value = '';
+			}}
+		/>
+	{/if}
 </main>
 
 <style>
@@ -1227,6 +1250,9 @@
 			overflow-x: auto;
 			padding-bottom: 2px;
 			scrollbar-width: none;
+			scroll-padding: 10px;
+			scroll-snap-type: x proximity;
+			-webkit-overflow-scrolling: touch;
 		}
 
 		.cases::-webkit-scrollbar {
@@ -1237,14 +1263,20 @@
 		.case-chip {
 			flex: 0 0 auto;
 			max-width: 150px;
+			min-height: 40px;
+			scroll-snap-align: start;
 		}
 
 		.cases > button {
-			padding: 5px 9px 4px;
+			padding: 7px 10px 6px;
 		}
 
 		.local-activate {
-			padding: 5px 6px 4px 9px;
+			padding: 7px 7px 6px 10px;
+		}
+
+		.local-remove {
+			min-width: 34px;
 		}
 
 		.cname,
@@ -1308,7 +1340,15 @@
 			margin: 0 8px;
 		}
 
-		.drophint {
+		.filedrop-ui,
+		.filedrop-note {
+			display: none;
+		}
+	}
+
+	@media (hover: none), (pointer: coarse) {
+		.filedrop-ui,
+		.filedrop-note {
 			display: none;
 		}
 	}
