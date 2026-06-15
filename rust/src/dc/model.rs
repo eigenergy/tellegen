@@ -12,10 +12,6 @@
 //! pieces layered on top — the angle-bound defaults and the `rate_a == 0`
 //! fallback — mirror PowerDiff's `_network_data`.
 
-// Fields and helpers here are consumed by the solver (step 2) and the
-// sensitivity column (step 3); keep them even before those steps land.
-#![allow(dead_code)]
-
 use std::collections::BTreeMap;
 
 use powerio::network::{BusType, GenCost, Network};
@@ -294,14 +290,11 @@ fn cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64), String> {
     }
 }
 
+/// Shared 3-bus test fixture: bus 1 slack with a generator, bus 3 PV with a
+/// generator, bus 2 a pure 90 MW load. Three identical lines (r = 0.01,
+/// x = 0.1). Standard MATPOWER column widths.
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // A 3-bus triangle: bus 1 slack with a generator, bus 3 PV with a
-    // generator, bus 2 a pure 90 MW load. Three identical lines
-    // (r = 0.01, x = 0.1). Standard MATPOWER column widths.
-    const CASE3: &str = "\
+pub(crate) const CASE3: &str = "\
 function mpc = case3test
 mpc.version = '2';
 mpc.baseMVA = 100;
@@ -325,12 +318,18 @@ mpc.gencost = [
 ];
 ";
 
-    fn build() -> DcNetwork {
-        let net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse case3")
-            .network;
-        DcNetwork::from_network(&net).expect("build DcNetwork")
-    }
+/// Parse and build the shared 3-bus fixture.
+#[cfg(test)]
+pub(crate) fn parse_case3() -> DcNetwork {
+    let net = powerio::parse_str(CASE3, "matpower")
+        .expect("parse case3")
+        .network;
+    DcNetwork::from_network(&net).expect("build DcNetwork")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     fn approx(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-6, "expected {b}, got {a}");
@@ -338,7 +337,7 @@ mpc.gencost = [
 
     #[test]
     fn dimensions_and_ids() {
-        let dc = build();
+        let dc = parse_case3();
         assert_eq!(dc.n, 3);
         assert_eq!(dc.m, 3);
         assert_eq!(dc.k, 2);
@@ -350,7 +349,7 @@ mpc.gencost = [
 
     #[test]
     fn susceptance_is_a_grounded_laplacian() {
-        let dc = build();
+        let dc = parse_case3();
         // b = -x / (r^2 + x^2) for every identical line.
         let w = 0.1 / (0.01 * 0.01 + 0.1 * 0.1); // = -b = 9.9009901...
         for &be in &dc.b {
@@ -378,7 +377,7 @@ mpc.gencost = [
 
     #[test]
     fn per_unit_demand_and_limits() {
-        let dc = build();
+        let dc = parse_case3();
         // 90 MW load at bus 2 (dense index 1), per unit on a 100 MVA base.
         approx(dc.demand[0], 0.0);
         approx(dc.demand[1], 0.9);
@@ -396,7 +395,7 @@ mpc.gencost = [
 
     #[test]
     fn quadratic_costs_in_per_unit() {
-        let dc = build();
+        let dc = parse_case3();
         // c2 scales by base^2, c1 by base (cost_to_pu / _cost_tuple).
         approx(dc.cq[0], 0.11 * 100.0 * 100.0); // 1100
         approx(dc.cl[0], 5.0 * 100.0); // 500
@@ -411,7 +410,7 @@ mpc.gencost = [
 
     #[test]
     fn angle_bounds_default_to_sixty_degrees() {
-        let dc = build();
+        let dc = parse_case3();
         // The +-360 degree MATPOWER default collapses to the +-60 degree window.
         let pad = 60.0_f64.to_radians();
         for e in 0..dc.m {
