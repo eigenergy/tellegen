@@ -178,10 +178,16 @@
 					style: STYLE,
 					center: [-85, 36],
 					zoom: 4.5,
+					canvasContextAttributes: { antialias: true },
 					attributionControl: { compact: true }
 				});
 				const o = new MapboxOverlay({
+					interleaved: true,
 					layers: [],
+					parameters: {
+						depthWriteEnabled: false,
+						depthCompare: 'always'
+					},
 					getTooltip: tooltip,
 					getCursor: ({ isHovering, isDragging }) =>
 						isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
@@ -223,6 +229,9 @@
 					getWidth: (b) => branchWidth(d?.loading.get(b.id) ?? 0),
 					widthUnits: 'pixels',
 					widthMinPixels: 1.5,
+					capRounded: true,
+					jointRounded: true,
+					miterLimit: 2,
 					pickable: true,
 					autoHighlight: true,
 					highlightColor: [32, 36, 43, 90],
@@ -239,6 +248,7 @@
 					radiusUnits: 'pixels',
 					getFillColor: busFill(c.id),
 					stroked: true,
+					billboard: true,
 					getLineColor: (b) =>
 						c.id === app.activeCaseId && b.id === app.selectedBus
 							? [32, 36, 43, 255]
@@ -276,6 +286,9 @@
 						getWidth: 1.5,
 						widthUnits: 'pixels',
 						widthMinPixels: 1.2,
+						capRounded: true,
+						jointRounded: true,
+						miterLimit: 2,
 						pickable: true
 					}),
 					new ScatterplotLayer<NetworkBus>({
@@ -286,6 +299,7 @@
 						radiusUnits: 'pixels',
 						getFillColor: [110, 115, 120, 200],
 						stroked: true,
+						billboard: true,
 						getLineColor: [46, 42, 34, 110],
 						getLineWidth: 1,
 						lineWidthUnits: 'pixels',
@@ -306,6 +320,7 @@
 						radiusMinPixels: 3,
 						getFillColor: [70, 92, 124, 190],
 						stroked: true,
+						billboard: true,
 						getLineColor: [38, 52, 78, 220],
 						getLineWidth: 1,
 						lineWidthUnits: 'pixels',
