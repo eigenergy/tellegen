@@ -1,16 +1,16 @@
-# Real substation coordinates from a PowerWorld aux export. TAMU complete
-# case exports write the substation's latitude/longitude on every bus row
+# TAMU geographic coordinates from a PowerWorld aux export. TAMU complete
+# case exports write latitude/longitude fields on every bus row
 # (the Latitude:1/Longitude:1 columns); powerio keeps those columns in bus
 # extras, so one parse of the aux yields the whole map.
 
 """
-    real_coords(aux_path) -> Dict{Int,NTuple{2,Float64}}
+    aux_coords(aux_path) -> Dict{Int,NTuple{2,Float64}}
 
 Bus id => (lon, lat) read from the aux bus table. Throws when any bus lacks
 coordinates: a partially placed network misleads, and the TAMU exports are
 complete.
 """
-function real_coords(aux_path::AbstractString)
+function aux_coords(aux_path::AbstractString)
     net = PowerIO.parse_file(aux_path)
     coords = Dict{Int,NTuple{2,Float64}}()
     missed = Int[]

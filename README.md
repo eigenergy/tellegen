@@ -13,7 +13,7 @@ Julia.
 
 ## Demo
 
-The bundled demo serves three TAMU ACTIVSg synthetic grids at the substation
+The bundled demo serves three TAMU ACTIVSg synthetic grids at the geographic
 coordinates stored in their PowerWorld aux exports:
 
 | case | territory | buses | branches |
@@ -49,7 +49,7 @@ diagonal term, so the displayed prediction is second order in the demand step.
 
 ## Repository Layout
 
-- `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, real coordinate ingestion
+- `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, TAMU coordinate ingestion
 - `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl
 - `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing
 - `scripts/`: data staging

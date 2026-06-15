@@ -22,8 +22,8 @@ const CASES = Dict{String,CaseEntry}()
 # Operator-staged TAMU distributions (scripts/stage-data.sh); never vendored.
 const DATA_DIR = normpath(get(ENV, "TELLEGEN_DATA", joinpath(@__DIR__, "..", "..", "data")))
 
-# The demo cases are TAMU ACTIVSg synthetic grids, served at the real
-# substation coordinates carried in their aux exports. Quadratic generator
+# The demo cases are TAMU ACTIVSg synthetic grids, served at the geographic
+# coordinates carried in their aux exports. Quadratic generator
 # costs make dLMP/dd nonzero across the interior of the feasible region;
 # linear cost cases (most IEEE test systems) have piecewise constant LMPs
 # whose gradient is zero almost everywhere.
@@ -38,7 +38,7 @@ const CASE_SPECS = (
 
 # Without staged data the server still boots: pglib variants of the small
 # cases, placed by the spectral layout in layout.jl. A dev convenience; the
-# deploy stages real data.
+# deploy stages TAMU data.
 const FALLBACK_SPECS = (
     (id="case200", name="ACTIVSg200 (Illinois)", file="pglib_opf_case200_activ.m",
         bbox=(-91.4, 37.1, -87.6, 42.4)),
@@ -80,7 +80,7 @@ end
 function build_entry(spec)
     if haskey(spec, :auxfile)
         case = parse_file(joinpath(DATA_DIR, spec.casefile))
-        coords = real_coords(joinpath(DATA_DIR, spec.auxfile))
+        coords = aux_coords(joinpath(DATA_DIR, spec.auxfile))
         unmapped = [bus_id(b) for b in case_buses(case) if !haskey(coords, bus_id(b))]
         isempty(unmapped) || error(
             "$(spec.id): aux carries no coordinates for buses $(unmapped[1:min(end, 5)])")

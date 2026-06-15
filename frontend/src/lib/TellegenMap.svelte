@@ -99,7 +99,7 @@
 		const { object } = info;
 		if (!object) return null;
 		if (info.layer?.id.startsWith('local-subs-')) {
-			// PowerWorld .pwd substation: display data only, position approximate.
+			// PowerWorld .pwd substation: display data only, position inferred from the diagram.
 			// The name is free text from a dropped file, so escape it; the number
 			// is coerced before interpolation.
 			const s = object as { number: number; name: string };
@@ -229,7 +229,7 @@
 		// Local cases: topology only, no physics yet, so desaturated graphite
 		// against the warm LMP ramp of solved backend cases. A .pwd display
 		// file contributes substation points only (no topology), in a cooler
-		// slate so they read as approximate diagram positions.
+		// slate so they read as diagram-derived positions.
 		for (const c of app.localCases) {
 			if (c.view) {
 				layers.push(
@@ -322,8 +322,13 @@
 		if (!map) return;
 		const bounds = boundsFor(app.frameTarget);
 		if (!bounds) return;
+		const { clientWidth: w, clientHeight: h } = map.getContainer();
+		const padding =
+			w <= 760
+				? { top: 130, left: 24, right: 24, bottom: Math.min(Math.round(h * 0.5), 330) }
+				: { top: 96, left: 380, right: 60, bottom: 64 };
 		map.fitBounds(bounds, {
-			padding: { top: 96, left: 380, right: 60, bottom: 64 },
+			padding,
 			duration: 1400
 		});
 	});

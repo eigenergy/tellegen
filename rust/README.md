@@ -8,7 +8,7 @@ depends on powerio for case and display parsing.
 - `parse_case(text, format)`: parse a supported case format and return the
   powerio network JSON with parse warnings.
 - `ingest_case(text, format)`: return summary counts, load, capacity, parse
-  warnings, and map geometry when coordinates are present.
+  warnings, and map geometry when the file carries coordinates.
 - `parse_display(bytes, format)`: parse a binary display file. The current
   supported format is PowerWorld `.pwd`.
 

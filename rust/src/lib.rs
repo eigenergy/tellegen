@@ -50,9 +50,9 @@ struct View {
 }
 
 /// Everything the drop panel needs from one parse: counts, total load and
-/// capacity, parse warnings, and a map-ready `view` of buses and branches in
-/// the shape the tellegen backend serves, placed at the substation
-/// coordinates the file carries (PowerWorld complete case aux exports).
+/// capacity, parse warnings, and a `view` of buses and branches in the shape
+/// the tellegen backend serves, placed at the coordinates the file carries
+/// (PowerWorld complete case aux exports).
 /// `view` is null when the file has no coordinates.
 #[wasm_bindgen]
 pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {

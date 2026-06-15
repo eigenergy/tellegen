@@ -38,7 +38,7 @@ const LMP_STOPS: RGBA[] = [
 export const lmpColor = (t: number): RGBA => ramp(LMP_STOPS, t);
 export const lmpGradient = cssGradient(LMP_STOPS);
 
-/** Robust color domain for LMPs: 5th to 95th percentile, with a $1/MWh
+/** Trimmed LMP color domain: 5th to 95th percentile, with a $1/MWh
  * minimum span. LMP distributions are heavy tailed (one binding line pins a
  * handful of buses far from the pack) so min-max scaling compresses the pack
  * into a single hue, and a congestion-free case is one price plus solver

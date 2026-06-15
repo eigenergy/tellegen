@@ -47,7 +47,15 @@
 
 	function activateLocal(c: LocalCase) {
 		clearSelection();
+		app.activeCaseId = null;
 		app.activeLocalId = c.id;
+		if (c.view || c.substations) app.requestFrame(c.id);
+	}
+
+	function addAndActivateLocal(c: LocalCase) {
+		clearSelection();
+		app.activeCaseId = null;
+		app.addLocal(c);
 		if (c.view || c.substations) app.requestFrame(c.id);
 	}
 
@@ -133,7 +141,7 @@
 
 	// PowerWorld .pwd files store substation symbols at diagram coordinates,
 	// not lat/lon. Auto-generated TAMU layouts are Web Mercator scaled by this
-	// constant with BOTH axes in degrees: x = K·lon and y = K·mercdeg(lat),
+	// constant with both axes in degrees: x = K·lon and y = K·mercdeg(lat),
 	// where mercdeg is the Mercator ordinate expressed in degrees. So lon = x/K,
 	// and latitude is the inverse gudermannian after converting y/K back to
 	// radians. Hand-edited diagrams drift from this, so positions stay
@@ -147,7 +155,7 @@
 
 	/** Parse dropped files in the browser via the powerio wasm module. Case
 	 * files (.m, .raw, .aux) become local networks; a PowerWorld .pwd becomes a
-	 * substation-points preview. Files run serially; nothing uploads. */
+	 * substation point preview. Files run serially; nothing uploads. */
 	async function ingestFiles(files: FileList | File[]) {
 		for (const file of Array.from(files)) {
 			if (isDisplayFile(file.name)) {
@@ -160,7 +168,7 @@
 						return { number: s.number, name: s.name, lon, lat };
 					});
 					const id = `local-${++localSeq}`;
-					app.addLocal({
+					addAndActivateLocal({
 						id,
 						label: file.name.replace(/\.[^.]+$/, ''),
 						fileName: file.name,
@@ -169,7 +177,6 @@
 						substations: { points, approximate: true }
 					});
 					app.error = null;
-					app.requestFrame(id);
 				} catch (e) {
 					app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
 				} finally {
@@ -191,9 +198,8 @@
 					summary.name && summary.name !== 'case'
 						? summary.name
 						: file.name.replace(/\.[^.]+$/, '');
-				app.addLocal({ id, label, fileName: file.name, summary, view });
+				addAndActivateLocal({ id, label, fileName: file.name, summary, view });
 				app.error = null; // a successful parse clears a prior file's error
-				if (view) app.requestFrame(id);
 			} catch (e) {
 				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
 			} finally {
@@ -415,8 +421,8 @@
 					<div><dt>substations</dt><dd>{lc.substations.points.length}</dd></div>
 				</dl>
 				<p class="footnote mono">
-					display only &mdash; positions approximated from the PowerWorld diagram, not surveyed
-					lat/lon
+					display only &mdash; positions inferred from the PowerWorld diagram, not surveyed
+					latitude and longitude
 				</p>
 				<p class="footnote mono">decoded in your browser by powerio (wasm); never uploaded</p>
 			{:else if lc.summary}
@@ -440,7 +446,7 @@
 				{/if}
 				{#if !lc.view}
 					<p class="footnote mono">
-						no substation coordinates in this file &mdash; parsed, not placed
+						no coordinates in this file &mdash; parsed, not placed
 					</p>
 				{/if}
 				<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
@@ -463,7 +469,9 @@
 				{/if}
 			</dl>
 			{#if app.active?.network?.synthetic_coords}
-				<p class="footnote mono">coordinates: synthetic</p>
+				<p class="footnote mono">coordinates: topology layout, not geography</p>
+			{:else}
+				<p class="footnote mono">coordinates: TAMU synthetic grid footprint</p>
 			{/if}
 
 			<hr />
@@ -483,7 +491,7 @@
 				{:else}
 					<p class="dim small">
 						Price response across the network per MW of demand added at bus
-						{app.selectedBus}. One exact KKT column, no re-solve.
+						{app.selectedBus}. One KKT sensitivity column, no re-solve.
 					</p>
 					<div class="legend" style:background={sensGradient}></div>
 					<div class="legend-labels mono">
@@ -546,8 +554,8 @@
 					{/if}
 				</div>
 				<p class="dim small">
-					Locational marginal prices from the DC optimal power flow. Click any bus to see its
-					demand sensitivity column and perturb its load.
+					Locational marginal prices from the DC optimal power flow. Select a bus for the
+					demand sensitivity column and load perturbation.
 				</p>
 				<div class="legend" style:background={lmpGradient}></div>
 				<div class="legend-labels mono">
@@ -1172,6 +1180,129 @@
 	@keyframes bob {
 		to {
 			transform: translateY(2px);
+		}
+	}
+
+	@media (max-width: 760px) {
+		header {
+			align-items: flex-start;
+			flex-wrap: wrap;
+			gap: 8px;
+			padding: 8px 10px 12px;
+			background: linear-gradient(rgba(236, 233, 226, 0.97), rgba(236, 233, 226, 0.72));
+		}
+
+		.brand {
+			gap: 8px;
+		}
+
+		h1 {
+			font-size: 20px;
+		}
+
+		.kicker {
+			margin-left: auto;
+			font-size: 9.5px;
+			letter-spacing: 0.1em;
+			line-height: 2;
+		}
+
+		.cases {
+			order: 3;
+			width: 100%;
+			overflow-x: auto;
+			padding-bottom: 2px;
+			scrollbar-width: none;
+		}
+
+		.cases::-webkit-scrollbar {
+			display: none;
+		}
+
+		.cases button {
+			flex: 0 0 auto;
+			max-width: 150px;
+			padding: 5px 9px 4px;
+		}
+
+		.cname,
+		.cregion {
+			max-width: 100%;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.panel {
+			top: auto;
+			left: 10px;
+			right: 10px;
+			bottom: 40px;
+			width: auto;
+			max-height: 44dvh;
+			padding: 14px 16px;
+		}
+
+		.solvecard {
+			top: 124px;
+			left: auto;
+			right: 10px;
+			width: min(230px, calc(100% - 20px));
+		}
+
+		.mode {
+			flex-wrap: wrap;
+			gap: 7px;
+		}
+
+		.mode button {
+			margin-left: 0;
+		}
+
+		.sizes {
+			flex-wrap: wrap;
+			gap: 8px 12px;
+		}
+
+		.caption {
+			margin-left: 0;
+			flex-basis: 100%;
+		}
+
+		footer {
+			padding: 7px 10px;
+			overflow-x: auto;
+			font-size: 9.5px;
+			white-space: nowrap;
+			pointer-events: auto;
+			scrollbar-width: none;
+		}
+
+		footer::-webkit-scrollbar {
+			display: none;
+		}
+
+		.sep {
+			margin: 0 8px;
+		}
+
+		.drophint {
+			display: none;
+		}
+	}
+
+	@media (max-width: 420px) {
+		.kicker {
+			display: none;
+		}
+
+		.cases button {
+			max-width: 132px;
+		}
+
+		.panel {
+			bottom: 34px;
+			max-height: 46dvh;
 		}
 	}
 

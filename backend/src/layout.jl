@@ -4,8 +4,7 @@
 # spectral embedding localizes on networks with long chains: ACTIVSg500
 # collapses into a filament with one dense blob. The force pass keeps the
 # global spectral ordering while spreading local density, so the network fills
-# its service territory the way the real grid does. The API labels these
-# coordinates synthetic.
+# the case footprint. The API labels these coordinates synthetic.
 
 function synthetic_layout(case; bbox=(-94.5, 36.5, -82.5, 43.5))
     ids = sort!([bus_id(b) for b in case_buses(case)])

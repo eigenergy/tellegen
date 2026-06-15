@@ -1,8 +1,9 @@
-# Real Substation Coordinates
+# TAMU Geographic Coordinates
 
 The demo cases are TAMU ACTIVSg synthetic grids. They are fictional networks
-built on real service territories and include substation latitude and longitude
-in the PowerWorld aux export.
+built on geographic footprints and include latitude and longitude fields in the
+PowerWorld aux export. These positions come from the TAMU datasets; they are
+not surveyed infrastructure locations.
 
 | case | territory | buses | branches | files |
 |---|---|---:|---:|---|

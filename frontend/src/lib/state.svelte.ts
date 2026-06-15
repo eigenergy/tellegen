@@ -10,15 +10,15 @@ import type {
 } from './api';
 import type { CaseFileSummary } from './wasm';
 
-/** Substations from a PowerWorld .pwd display file. Positions are
- * approximated from the diagram, not surveyed lat/lon. */
+/** Substations from a PowerWorld .pwd display file. Positions are inferred
+ * from diagram coordinates, not surveyed latitude and longitude. */
 export interface LocalSubstations {
 	points: { number: number; name: string; lon: number; lat: number }[];
 	approximate: true;
 }
 
 /** A case file parsed in the browser. Topology only, no physics. A .pwd
- * display file is the one entry with no case summary: substations only. */
+ * display file has no case summary: substations only. */
 export interface LocalCase {
 	id: string; // `local-1`, `local-2`, ...
 	label: string;
@@ -101,7 +101,13 @@ export class AppState {
 
 	removeLocal(id: string) {
 		this.localCases = this.localCases.filter((c) => c.id !== id);
-		if (this.activeLocalId === id) this.activeLocalId = null;
+		if (this.activeLocalId === id) {
+			this.activeLocalId = null;
+			if (this.activeCaseId === null) {
+				this.activeCaseId = this.cases[0]?.id ?? null;
+				if (this.activeCaseId) this.requestFrame(this.activeCaseId);
+			}
+		}
 	}
 
 	requestFrame(target: string | 'all') {
