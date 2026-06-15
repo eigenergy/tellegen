@@ -1,6 +1,6 @@
 <script lang="ts">
 	import 'maplibre-gl/dist/maplibre-gl.css';
-	import type { Layer, PickingInfo } from '@deck.gl/core';
+	import type { Layer, MapView, MapViewState, PickingInfo } from '@deck.gl/core';
 	import type { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 	import type { MapboxOverlay } from '@deck.gl/mapbox';
 	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
@@ -18,6 +18,18 @@
 	type LayerCtors = {
 		PathLayer: typeof PathLayer;
 		ScatterplotLayer: typeof ScatterplotLayer;
+	};
+	type MapboxOverlayPlanViewProps = ConstructorParameters<typeof MapboxOverlay>[0] & {
+		viewState?: StableViewState;
+		views?: InstanceType<typeof MapView>;
+	};
+	type StableViewState = MapViewState & {
+		padding: ReturnType<MapLibreMap['getPadding']>;
+		repeat: boolean;
+	};
+	type CursorState = {
+		isDragging: boolean;
+		isHovering: boolean;
 	};
 	let layerCtors = $state.raw<LayerCtors | null>(null);
 
@@ -153,13 +165,15 @@
 	}
 
 	async function loadMapModules() {
-		const [maplibre, mapbox, layers] = await Promise.all([
+		const [maplibre, core, mapbox, layers] = await Promise.all([
 			import('maplibre-gl'),
+			import('@deck.gl/core'),
 			import('@deck.gl/mapbox'),
 			import('@deck.gl/layers')
 		]);
 		return {
 			maplibregl: maplibre.default,
+			MapView: core.MapView,
 			MapboxOverlay: mapbox.MapboxOverlay,
 			PathLayer: layers.PathLayer,
 			ScatterplotLayer: layers.ScatterplotLayer
@@ -170,7 +184,7 @@
 		let cleanup = () => {};
 		let cancelled = false;
 		void loadMapModules()
-			.then(({ maplibregl, MapboxOverlay, PathLayer, ScatterplotLayer }) => {
+			.then(({ maplibregl, MapView, MapboxOverlay, PathLayer, ScatterplotLayer }) => {
 				if (cancelled) return;
 				layerCtors = { PathLayer, ScatterplotLayer };
 				const m = new maplibregl.Map({
@@ -181,22 +195,47 @@
 					canvasContextAttributes: { antialias: true },
 					attributionControl: { compact: true }
 				});
+				const stableViewState = (): StableViewState => {
+					const { lng, lat } = m.getCenter();
+					return {
+						longitude: ((lng + 540) % 360) - 180,
+						latitude: lat,
+						zoom: m.getZoom(),
+						bearing: m.getBearing(),
+						pitch: 0,
+						padding: m.getPadding(),
+						repeat: m.getRenderWorldCopies()
+					};
+				};
+				const deckView = new MapView({ id: 'mapbox', orthographic: true });
+				// The overlay type narrows custom view props; MapboxOverlay forwards them to Deck.
 				const o = new MapboxOverlay({
-					interleaved: true,
+					interleaved: false,
+					views: deckView,
 					layers: [],
 					parameters: {
 						depthWriteEnabled: false,
 						depthCompare: 'always'
 					},
 					getTooltip: tooltip,
-					getCursor: ({ isHovering, isDragging }) =>
+					getCursor: ({ isHovering, isDragging }: CursorState) =>
 						isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
-				});
+				} as unknown as MapboxOverlayPlanViewProps);
+				// Keep network marks in plan view while the basemap pitches.
+				const syncDeckView = () => {
+					o.setProps({
+						views: deckView,
+						viewState: stableViewState()
+					} as unknown as MapboxOverlayPlanViewProps);
+				};
 				m.addControl(o);
+				m.on('render', syncDeckView);
+				syncDeckView();
 				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 				map = m;
 				overlay = o;
 				cleanup = () => {
+					m.off('render', syncDeckView);
 					m.remove();
 					map = null;
 					overlay = null;
