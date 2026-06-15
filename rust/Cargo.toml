@@ -25,3 +25,6 @@ faer = { version = "0.24.0", default-features = false, features = ["std", "linal
 [profile.release]
 opt-level = "s"
 lto = true
+
+[dev-dependencies]
+ureq = "3.3.0"

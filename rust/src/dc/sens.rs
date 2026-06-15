@@ -526,33 +526,65 @@ mod tests {
         }
     }
 
-    #[test]
-    fn matches_central_differences_on_a_real_case() {
-        // ACTIVSg200: the real validation that faer's sparse factorization gives
-        // correct sensitivities on a full case (faer-rs#222). The KKT is singular
-        // at the optimum, so solve_kkt regularizes; this checks every dLMP/dd
-        // entry of a load-bus column against central differences. Skips when the
-        // data is absent.
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../data/ACTIVSg200/case_ACTIVSg200.m"
-        );
-        let Ok(text) = std::fs::read_to_string(path) else {
-            eprintln!("skipping matches_central_differences_on_a_real_case: {path} not found");
-            return;
-        };
+    /// Parity check mirroring the backend's `runtests.jl`: compute the full
+    /// dLMP/dd matrix, take the three columns with the largest norm (the most
+    /// significant sensitivities, away from near-kink buses), and compare each to
+    /// central differences with the same 1 MW step. Returns the worst relative
+    /// column error `norm(fd - exact)/norm(exact)`, or `None` if the case file is
+    /// absent.
+    fn parity_vs_finite_differences(casefile: &str) -> Option<f64> {
+        let text = std::fs::read_to_string(casefile).ok()?;
         let net = powerio::parse_str(&text, "matpower").expect("parse").network;
         let dc = DcNetwork::from_network(&net).expect("model");
         let sol = solve(&dc).expect("solve");
 
-        let j = (0..dc.n).find(|&i| dc.demand[i] > 1e-3).expect("a load bus");
-        let analytic = dlmp_dd_perunit(&dc, &sol, &[j]).expect("dlmp/dd");
-        let fd = central_fd(&dc, j, 1e-6);
-        let mut max_rel = 0.0f64;
-        for i in 0..dc.n {
-            let rel = (analytic[0][i] - fd[i]).abs() / fd[i].abs().max(1.0);
-            max_rel = max_rel.max(rel);
+        let all: Vec<usize> = (0..dc.n).collect();
+        let exact = dlmp_dd_perunit(&dc, &sol, &all).expect("dlmp/dd"); // exact[j][i]
+        let norm = |c: &[f64]| c.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let mut order: Vec<usize> = (0..dc.n).collect();
+        order.sort_by(|&a, &b| norm(&exact[b]).total_cmp(&norm(&exact[a])));
+
+        let h = 1e-2; // 1 MW at 100 MVA base, as in runtests.jl
+        let mut worst = 0.0f64;
+        for &j in order.iter().take(3) {
+            let fd = central_fd(&dc, j, h);
+            let diff: Vec<f64> = (0..dc.n).map(|i| fd[i] - exact[j][i]).collect();
+            let rel = norm(&diff) / norm(&exact[j]).max(f64::EPSILON);
+            worst = worst.max(rel);
         }
-        assert!(max_rel < 1e-3, "ACTIVSg200 dLMP/dd vs FD max rel {max_rel}");
+        Some(worst)
+    }
+
+    #[test]
+    fn parity_with_finite_differences_activsg200() {
+        // The backend's exact-sensitivity criterion (runtests.jl) on the Rust
+        // path: the top sensitivity columns match central differences within
+        // 1e-3. Skips when the data is absent.
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/ACTIVSg200/case_ACTIVSg200.m"
+        );
+        match parity_vs_finite_differences(path) {
+            Some(rel) => assert!(rel < 1e-3, "ACTIVSg200 dLMP/dd vs FD rel {rel}"),
+            None => eprintln!("skipping ACTIVSg200 parity: {path} not found"),
+        }
+    }
+
+    // ACTIVSg500 and ACTIVSg2000 build the full sensitivity matrix (the 2000-bus
+    // case allocates a ~26500 x 2000 solve), so they are heavy: run explicitly
+    // with `cargo test --release -- --ignored`.
+    #[test]
+    #[ignore = "heavy: run with --release --ignored"]
+    fn parity_with_finite_differences_large_cases() {
+        for case in ["ACTIVSg500", "ACTIVSg2000"] {
+            let path = format!(
+                "{}/../data/{case}/case_{case}.m",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            match parity_vs_finite_differences(&path) {
+                Some(rel) => assert!(rel < 1e-3, "{case} dLMP/dd vs FD rel {rel}"),
+                None => eprintln!("skipping {case} parity: {path} not found"),
+            }
+        }
     }
 }

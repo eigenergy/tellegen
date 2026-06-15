@@ -161,6 +161,77 @@ mod tests {
         }
     }
 
+    /// `norm(mine - server) / norm(server)` over entries matched by `key`.
+    #[cfg(test)]
+    fn column_rel(server: &Value, mine: &Value, key: &str, val: &str) -> f64 {
+        let to_map = |v: &Value| -> HashMap<i64, f64> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|e| (e[key].as_i64().unwrap(), e[val].as_f64().unwrap()))
+                .collect()
+        };
+        let (s, m) = (to_map(server), to_map(mine));
+        let mut num = 0.0;
+        let mut den = 0.0;
+        for (k, &sv) in &s {
+            let mv = m[k];
+            num += (mv - sv).powi(2);
+            den += sv * sv;
+        }
+        num.sqrt() / den.sqrt().max(f64::EPSILON)
+    }
+
+    #[test]
+    #[ignore = "needs the running Julia backend (set TELLEGEN_SERVER, default :8000)"]
+    fn parity_against_julia_server() {
+        // Direct cross-check: the Rust solve and dLMP/dd must agree with the
+        // PowerDiff/Ipopt backend on the served ACTIVSg cases. Skips when the
+        // server or a case file is absent.
+        let base =
+            std::env::var("TELLEGEN_SERVER").unwrap_or_else(|_| "http://localhost:8000".into());
+        if ureq::get(format!("{base}/api/cases")).call().is_err() {
+            eprintln!("skipping server parity: {base} not reachable");
+            return;
+        }
+        let get_json = |url: String| -> Value {
+            let body = ureq::get(url).call().unwrap().body_mut().read_to_string().unwrap();
+            serde_json::from_str(&body).unwrap()
+        };
+        for (id, dir) in [
+            ("case200", "ACTIVSg200"),
+            ("case500", "ACTIVSg500"),
+            ("case2000", "ACTIVSg2000"),
+        ] {
+            let path = format!("{}/../data/{dir}/case_{dir}.m", env!("CARGO_MANIFEST_DIR"));
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let net = powerio::parse_str(&text, "matpower").unwrap().network;
+            let net_json = net.to_json().unwrap();
+            let dc = DcNetwork::from_network(&net).unwrap();
+
+            // Base solution: LMPs by bus, dispatch by gen index.
+            let mine: Value = serde_json::from_str(&solve_dc_json(&net_json, "").unwrap()).unwrap();
+            let server = get_json(format!("{base}/api/cases/{id}/solution"));
+            let lmp_rel = column_rel(&server["lmp"], &mine["lmp"], "bus", "usd_per_mwh");
+            let disp_rel = column_rel(&server["dispatch"], &mine["dispatch"], "gen", "mw");
+
+            // dLMP/dd column at the highest-demand bus (a large, stable column).
+            let jmax = (0..dc.n).max_by(|&a, &b| dc.demand[a].total_cmp(&dc.demand[b])).unwrap();
+            let bus = dc.bus_ids[jmax];
+            let mine_s: Value =
+                serde_json::from_str(&solve_dc_json(&net_json, &format!(r#"{{"sens_bus":{bus}}}"#)).unwrap())
+                    .unwrap();
+            let server_s = get_json(format!("{base}/api/cases/{id}/sensitivity/lmp/d/{bus}"));
+            let sens_rel = column_rel(&server_s["values"], &mine_s["dlmp_dd"]["values"], "bus", "value");
+
+            eprintln!("{id}: lmp_rel={lmp_rel:.2e} dispatch_rel={disp_rel:.2e} dlmp_dd_rel={sens_rel:.2e}");
+            assert!(lmp_rel < 1e-3, "{id} LMP vs server rel {lmp_rel}");
+            assert!(sens_rel < 1e-3, "{id} dLMP/dd vs server rel {sens_rel}");
+        }
+    }
+
     #[test]
     fn deltas_shift_the_operating_point() {
         let base: Value = serde_json::from_str(&solve_dc_json(&case3_json(), "").unwrap()).unwrap();
