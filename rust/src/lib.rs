@@ -8,6 +8,9 @@ use powerio::{parse_display_bytes, DisplayData};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+mod dc;
+use dc::DcNetwork;
+
 fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
 }
@@ -20,6 +23,26 @@ pub fn parse_case(text: &str, format: &str) -> Result<String, JsError> {
     serde_json::to_string(&serde_json::json!({
         "network": parsed.network,
         "warnings": parsed.warnings,
+    }))
+    .map_err(jserr)
+}
+
+/// Build the DC OPF model from a parsed network (the `network` object from
+/// `parse_case`) and report its dimensions. This is the wasm surface for step 1
+/// of the in-browser DC pipeline (issue #2); the Clarabel solve and the
+/// dLMP/dd column build on the same `DcNetwork`. Returns
+/// `{ n, m, k, ref_bus, total_demand_mw, b_nnz }` as JSON.
+#[wasm_bindgen]
+pub fn dc_model_summary(network_json: &str) -> Result<String, JsError> {
+    let net = Network::from_json(network_json).map_err(jserr)?;
+    let dc = DcNetwork::from_network(&net).map_err(jserr)?;
+    serde_json::to_string(&serde_json::json!({
+        "n": dc.n,
+        "m": dc.m,
+        "k": dc.k,
+        "ref_bus": dc.bus_ids[dc.ref_bus],
+        "total_demand_mw": dc.demand.iter().sum::<f64>() * dc.base_mva,
+        "b_nnz": dc.susceptance_coo().len(),
     }))
     .map_err(jserr)
 }
