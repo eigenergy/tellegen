@@ -75,6 +75,8 @@ function load_cases!()
             end
         end
     end
+    isempty(CASES) && error(
+        "no cases loaded from staged TAMU data under $DATA_DIR or pglib fallbacks")
 end
 
 function build_entry(spec)

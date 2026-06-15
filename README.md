@@ -14,7 +14,8 @@ Julia.
 ## Demo
 
 The bundled demo serves three TAMU ACTIVSg synthetic grids at the geographic
-coordinates stored in their PowerWorld aux exports:
+coordinates stored in their PowerWorld aux exports. These are fictional grids
+on geographic footprints, not surveyed infrastructure:
 
 | case | territory | buses | branches |
 |---|---|---:|---:|
@@ -55,6 +56,12 @@ diagonal term, so the displayed prediction is second order in the demand step.
 - `scripts/`: data staging
 - `deploy/`: deployment compose files and proxy notes
 - `docs/`: architecture and implementation notes
+
+## Documentation
+
+The docs index is [docs/README.md](docs/README.md). The release notes there
+cover data provenance, fallback layout, display file handling, deployment, and
+the caveats that should stay visible in public descriptions of the demo.
 
 ## Data
 

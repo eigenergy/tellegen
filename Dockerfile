@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 
 # The tellegen crate depends on the crates.io powerio release, so cargo fetches
 # the source itself; nothing to clone here.
+RUN rustup target add wasm32-unknown-unknown
 RUN cargo install wasm-pack --locked
 COPY rust /build/rust
 RUN wasm-pack build /build/rust --target web --out-dir /out/wasm-pkg

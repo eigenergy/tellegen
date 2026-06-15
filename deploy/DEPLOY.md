@@ -39,6 +39,10 @@ docker compose --env-file .env -f deploy/docker-compose.prod.yml up -d
 mount, and restart policy as the local compose file. It does not build from
 source on the host.
 
+`/api/health` returns `ok` only after at least one case loads. The image smoke
+test accepts pglib fallback cases because Actions does not have TAMU data. The
+host and public deploy checks require the staged 200, 500, and 2000 bus cases.
+
 ## GitHub Actions Deploy
 
 `.github/workflows/deploy.yml` runs on `push` to `main` and

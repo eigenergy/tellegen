@@ -13,7 +13,7 @@
 
 	let abort: AbortController | null = null;
 	let closeStream: (() => void) | null = null;
-	let fileInput: HTMLInputElement | undefined = $state();
+	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
 
 	async function load() {
 		try {

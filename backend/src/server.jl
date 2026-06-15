@@ -4,7 +4,10 @@ function start(; host="0.0.0.0", port=parse(Int, get(ENV, "TELLEGEN_PORT", "8000
     load_cases!()
 
     @get "/api/health" function ()
-        return (status="ok", cases=sort!(collect(keys(CASES))))
+        cases = sort!(collect(keys(CASES)))
+        isempty(cases) && return HTTP.Response(503, ["Content-Type" => "application/json"],
+            JSON3.write((status="degraded", cases=cases)))
+        return (status="ok", cases=cases)
     end
 
     @get "/api/cases" function ()
