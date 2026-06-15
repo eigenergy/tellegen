@@ -1,4 +1,4 @@
-# Display Data In tellegen
+# Display data in tellegen
 
 Case files and display files are separate inputs. MATPOWER `.m`, PSS/E `.raw`,
 PowerWorld `.aux`, and JSON case formats describe the network. PowerWorld `.pwd`
@@ -20,7 +20,7 @@ accept `.pwd`.
 A dropped `.pwd` creates a local display entry with substation points only. It
 does not create buses, branches, or a solvable case.
 
-## Projecting `.pwd` Coordinates
+## Projecting `.pwd` coordinates
 
 PowerWorld `.pwd` coordinates are diagram coordinates, not latitude and
 longitude. TAMU generated diagrams use Web Mercator scaled by one constant,
@@ -38,7 +38,7 @@ ACTIVSg2000 diagrams within about 0.02 degrees of their corresponding named
 cities. Hand edited diagrams can differ, so tellegen labels these positions as
 approximate.
 
-## Canonical Display Format
+## Canonical display format
 
 A canonical display format belongs in powerio as a `DisplayData` variant. That
 keeps the format available to Rust, browser wasm, Python, and Julia bindings.
@@ -56,7 +56,7 @@ The format should decide:
 
 Existing `.pwd` parsing gives powerio a migration path from PowerWorld diagrams.
 
-## Deferred tellegen Work
+## Deferred tellegen work
 
 - Fill missing case coordinates from a dropped `.pwd` sibling when the case has
   a bus to substation mapping.

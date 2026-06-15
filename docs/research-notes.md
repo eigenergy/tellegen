@@ -3,7 +3,7 @@
 These notes summarize the technical checks behind
 [direction.md](direction.md). Version and maturity claims are point in time.
 
-## Rust To WebAssembly
+## Rust to WebAssembly
 
 ### Toolchain
 
@@ -27,7 +27,7 @@ Sources: [wasm-pack](https://crates.io/crates/wasm-pack),
 [wasm-bindgen](https://github.com/wasm-bindgen/wasm-bindgen),
 [rustwasm sunset](https://blog.rust-lang.org/inside-rust/2025/07/21/sunsetting-the-rustwasm-github-org/).
 
-### Browser Features
+### Browser features
 
 For numerical kernels, the relevant browser features are fixed width SIMD and
 threads. SIMD is available across current major browsers. Threads require cross
@@ -44,7 +44,7 @@ Sources: [wasm SIMD](https://caniuse.com/wasm-simd),
 [COOP/COEP](https://web.dev/articles/coop-coep),
 [memory64 analysis](https://spidermonkey.dev/blog/2025/01/15/is-memory64-actually-worth-using.html).
 
-## Browser Numerical Kernels
+## Browser numerical kernels
 
 DC OPF is a sparse LP/QP. The current Rust path is Clarabel.rs, whose pure Rust
 QDLDL backend has a WebAssembly target and user reported browser use. Clarabel
@@ -123,7 +123,7 @@ consumer fetches a file rather than inlining the module.
 Sources: [Svelte packaging](https://svelte.dev/docs/kit/packaging),
 [Vite assets](https://vite.dev/guide/features).
 
-## Julia Backend
+## Julia backend
 
 Oxygen.jl is a small HTTP layer over HTTP.jl and fits the current API shape.
 Genie.jl is a larger full stack option and is not needed for a Svelte frontend.
@@ -138,7 +138,7 @@ Sources: [Julia 1.9 highlights](https://julialang.org/blog/2023/04/julia-1.9-hig
 [PrecompileTools](https://julialang.github.io/PrecompileTools.jl/stable/),
 [Julia 1.12 static compilation review](https://viralinstruction.com/posts/aoc2025/).
 
-## Julia To WebAssembly
+## Julia to WebAssembly
 
 PowerDiff.jl cannot be moved to the browser as written. It depends on JuMP,
 Ipopt, and sparse linear algebra packages that do not have a supported Julia
@@ -158,7 +158,7 @@ language with a mature wasm compilation path, and validated against PowerDiff.jl
 Sources: [julia-wasm](https://github.com/Keno/julia-wasm),
 [WasmTarget.jl](https://github.com/GroupTherapyOrg/WasmTarget.jl).
 
-## Power Systems Software Landscape
+## Power systems software landscape
 
 Most comparable tools are libraries, desktop applications, hosted data views, or
 server backed simulation tools.
@@ -181,7 +181,7 @@ demand or generation, and inspect updated flows and prices. PowerDiff.jl supplie
 the derivative information for that loop today; Rust/WebAssembly is the path to
 moving the DC loop into the browser.
 
-## Open Checks
+## Open checks
 
 - Validate Clarabel.rs under wasm in tellegen CI.
 - Validate faer sparse factorizations under wasm before starting browser AC

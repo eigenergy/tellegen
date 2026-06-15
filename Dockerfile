@@ -3,8 +3,8 @@ FROM rust:slim AS wasm
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# The tellegen crate pins powerio to a release tag in its Cargo.toml, so cargo
-# fetches the source itself; nothing to clone here.
+# The tellegen crate depends on the crates.io powerio release, so cargo fetches
+# the source itself; nothing to clone here.
 RUN cargo install wasm-pack --locked
 COPY rust /build/rust
 RUN wasm-pack build /build/rust --target web --out-dir /out/wasm-pkg

@@ -17,7 +17,7 @@ The bundled demo serves three TAMU ACTIVSg synthetic grids at the geographic
 coordinates stored in their PowerWorld aux exports:
 
 | case | territory | buses | branches |
-|---|---:|---:|---:|
+|---|---|---:|---:|
 | ACTIVSg200 | central Illinois | 200 | 245 |
 | ACTIVSg500 | South Carolina | 500 | 597 |
 | ACTIVSg2000 | Texas | 2000 | 3206 |
@@ -47,7 +47,7 @@ julia --project=backend backend/test/runtests.jl
 The objective preview uses the envelope theorem and the selected dLMP/dd
 diagonal term, so the displayed prediction is second order in the demand step.
 
-## Repository Layout
+## Repository layout
 
 - `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, TAMU coordinate ingestion
 - `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl

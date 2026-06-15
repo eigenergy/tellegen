@@ -4,7 +4,7 @@ tellegen is the browser interface for power systems cases parsed by powerio and
 solved by PowerDiff.jl. This note records the intended boundary between Rust,
 Svelte, and Julia as of June 2026.
 
-## Current Boundary
+## Current boundary
 
 - **powerio** parses, encodes, and owns the network and display formats.
 - **tellegen Rust** builds browser WebAssembly against powerio. It owns browser
@@ -17,7 +17,7 @@ Svelte, and Julia as of June 2026.
 This split keeps format support in powerio, interface code in tellegen, and the
 reference solver in PowerDiff.jl.
 
-## Placement Of Solver Work
+## Placement of solver work
 
 The browser can run the DC path if the numerical code is written in Rust and
 compiled to WebAssembly. PowerDiff.jl itself depends on JuMP, Ipopt, and sparse
@@ -35,7 +35,7 @@ a WebAssembly path. DC sensitivities require a linear solve against the active
 KKT system. AC power flow requires separate validation of sparse linear algebra
 under WebAssembly; AC OPF remains a server calculation.
 
-## Frontend And Packaging
+## Frontend and packaging
 
 The current application already uses the intended interaction model:
 sensitivity preview in the browser, exact solve on the server, and
@@ -50,7 +50,7 @@ When the package is introduced, shared reactive state should move behind context
 or explicit object instances rather than module singletons so server side
 rendering does not share state across requests.
 
-## Research Summary
+## Research summary
 
 - Use wasm-pack and wasm-bindgen for browser WebAssembly. The Component Model
   does not replace wasm-bindgen for DOM and browser library integration.

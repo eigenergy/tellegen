@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  # wasm module, then the frontend that imports it.
+  # Build the wasm module before the frontend that imports it.
   frontend:
     runs-on: ubuntu-latest
     steps:

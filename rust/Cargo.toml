@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "powerio parsing in the browser: case files never leave the machine"
+repository = "https://github.com/eigenergy/tellegen"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
