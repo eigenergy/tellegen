@@ -368,31 +368,18 @@
 				</button>
 			{/each}
 			{#each app.localCases as c (c.id)}
-				<button
-					class="local"
-					class:active={app.activeLocalId === c.id}
-					onclick={() => activateLocal(c)}
-				>
-					<span class="cname"
-						>{c.label}<span
-							class="x mono"
-							role="button"
-							tabindex="0"
-							aria-label="remove {c.label}"
-							onclick={(e) => {
-								e.stopPropagation();
-								app.removeLocal(c.id);
-							}}
-							onkeydown={(e) => {
-								if (e.key === 'Enter' || e.key === ' ') {
-									e.stopPropagation();
-									app.removeLocal(c.id);
-								}
-							}}>&#10005;</span
-						></span
+				<div class="case-chip local" class:active={app.activeLocalId === c.id}>
+					<button class="local-activate" onclick={() => activateLocal(c)}>
+						<span class="cname">{c.label}</span>
+						<span class="cregion mono">local</span>
+					</button>
+					<button
+						class="local-remove mono"
+						aria-label="remove {c.label}"
+						title="remove {c.label}"
+						onclick={() => app.removeLocal(c.id)}>&#10005;</button
 					>
-					<span class="cregion mono">local</span>
-				</button>
+				</div>
 			{/each}
 			<button
 				class="ghost"
@@ -679,7 +666,7 @@
 		margin: 0;
 		font-size: 22px;
 		font-weight: 600;
-		letter-spacing: -0.02em;
+		letter-spacing: 0;
 	}
 
 	.cases {
@@ -687,9 +674,9 @@
 		gap: 6px;
 	}
 
-	.cases button {
+	.cases > button,
+	.case-chip {
 		display: flex;
-		flex-direction: column;
 		align-items: flex-start;
 		gap: 1px;
 		padding: 5px 12px 4px;
@@ -702,11 +689,51 @@
 		transition: border-color 0.15s ease;
 	}
 
-	.cases button:hover {
+	.cases > button {
+		flex-direction: column;
+	}
+
+	.case-chip {
+		align-items: stretch;
+		gap: 0;
+		padding: 0;
+		overflow: hidden;
+	}
+
+	.case-chip button {
+		font-family: var(--font-display);
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.local-activate {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 1px;
+		min-width: 0;
+		padding: 5px 8px 4px 12px;
+		background: transparent;
+		border: 0;
+	}
+
+	.local-remove {
+		align-self: stretch;
+		padding: 0 7px;
+		background: transparent;
+		border: 0;
+		border-left: 1px solid var(--line);
+		color: var(--ink-faint);
+		font-size: 9px;
+	}
+
+	.cases > button:hover,
+	.case-chip:hover {
 		border-color: var(--accent);
 	}
 
-	.cases button.active {
+	.cases > button.active,
+	.case-chip.active {
 		background: var(--panel);
 		border-color: var(--accent);
 		box-shadow: inset 0 -2px 0 var(--accent);
@@ -731,36 +758,36 @@
 	.cregion {
 		font-size: 9.5px;
 		color: var(--ink-dim);
-		letter-spacing: 0.06em;
+		letter-spacing: 0;
 		text-transform: uppercase;
 	}
 
 	/* Local case chips: dashed border + graphite text, topology only. */
-	.cases button.local {
+	.case-chip.local {
 		border-style: dashed;
 		color: var(--ink-dim);
 	}
 
-	.cases button.local.active {
+	.case-chip.local.active {
 		background: var(--panel);
 		border-color: var(--accent);
 		box-shadow: inset 0 -2px 0 var(--accent);
 	}
 
 	/* Ghost chip: standing invitation to drop or pick a case file. */
-	.cases button.ghost {
+	.cases > button.ghost {
 		background: transparent;
 		border: 1px dashed var(--ink-faint);
 		color: var(--ink-dim);
 	}
 
-	.cases button.ghost:hover {
+	.cases > button.ghost:hover {
 		border-color: var(--accent);
 		background: var(--accent-soft);
 	}
 
-	.cases button.ghost:hover,
-	.cases button.ghost:hover .cregion {
+	.cases > button.ghost:hover,
+	.cases > button.ghost:hover .cregion {
 		color: var(--accent);
 	}
 
@@ -769,21 +796,14 @@
 		animation: bob 1.8s ease-in-out infinite alternate;
 	}
 
-	.x {
-		font-size: 9px;
-		color: var(--ink-faint);
-		padding: 0 1px;
-		cursor: pointer;
-	}
-
-	.x:hover {
+	.local-remove:hover {
 		color: var(--red);
 	}
 
 	.kicker {
 		font-size: 11px;
 		text-transform: uppercase;
-		letter-spacing: 0.18em;
+		letter-spacing: 0;
 		color: var(--ink-dim);
 	}
 
@@ -815,7 +835,7 @@
 		font-weight: 400;
 		color: var(--ink-dim);
 		text-transform: uppercase;
-		letter-spacing: 0.08em;
+		letter-spacing: 0;
 		margin-left: 4px;
 	}
 
@@ -846,7 +866,7 @@
 		margin: 8px 0 0;
 		font-size: 10px;
 		color: var(--ink-faint);
-		letter-spacing: 0.04em;
+		letter-spacing: 0;
 	}
 
 	.warnings {
@@ -1203,7 +1223,7 @@
 		.kicker {
 			margin-left: auto;
 			font-size: 9.5px;
-			letter-spacing: 0.1em;
+			letter-spacing: 0;
 			line-height: 2;
 		}
 
@@ -1219,10 +1239,18 @@
 			display: none;
 		}
 
-		.cases button {
+		.cases > button,
+		.case-chip {
 			flex: 0 0 auto;
 			max-width: 150px;
+		}
+
+		.cases > button {
 			padding: 5px 9px 4px;
+		}
+
+		.local-activate {
+			padding: 5px 6px 4px 9px;
 		}
 
 		.cname,
@@ -1296,7 +1324,8 @@
 			display: none;
 		}
 
-		.cases button {
+		.cases > button,
+		.case-chip {
 			max-width: 132px;
 		}
 
