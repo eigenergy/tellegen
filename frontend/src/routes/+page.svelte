@@ -82,6 +82,10 @@
 
 	function activateLocal(c: LocalCase) {
 		clearSelection();
+		// Mirror activateCase's reset: a local and a backend case are mutually
+		// exclusive, so drop the backend selection. Otherwise app.active (derived
+		// from activeCaseId) stays set and its solve card keeps hovering over the
+		// local view.
 		app.activeCaseId = null;
 		app.activeLocalId = c.id;
 		app.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
