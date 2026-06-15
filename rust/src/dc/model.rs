@@ -36,6 +36,7 @@ const MIN_Z_SQUARED: f64 = 1e-10;
 ///
 /// Susceptance-weighted Laplacian `B = A' diag(-b .* sw) A`; DC power balance
 /// `G_inc pg + psh - d = B theta`; branch flows `f = diag(-b .* sw) A theta`.
+#[derive(Clone)]
 pub struct DcNetwork {
     /// Buses, branches, generators after filtering (in-service, non-isolated).
     pub n: usize,

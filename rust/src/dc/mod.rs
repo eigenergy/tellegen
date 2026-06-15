@@ -7,7 +7,9 @@
 #![allow(dead_code, unused_imports)]
 
 mod model;
+mod sens;
 mod solve;
 
 pub use model::DcNetwork;
+pub use sens::{dlmp_dd, dlmp_dd_perunit};
 pub use solve::{solve, DcSolution};
