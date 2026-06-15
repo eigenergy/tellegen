@@ -6,10 +6,12 @@
 // are read in the current cdylib build.
 #![allow(dead_code, unused_imports)]
 
+mod api;
 mod model;
 mod sens;
 mod solve;
 
+pub use api::solve_dc_json;
 pub use model::DcNetwork;
 pub use sens::{dlmp_dd, dlmp_dd_perunit};
 pub use solve::{solve, DcSolution};

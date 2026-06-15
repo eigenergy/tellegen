@@ -9,7 +9,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 mod dc;
-use dc::DcNetwork;
+use dc::solve_dc_json;
 
 fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
@@ -27,24 +27,15 @@ pub fn parse_case(text: &str, format: &str) -> Result<String, JsError> {
     .map_err(jserr)
 }
 
-/// Build the DC OPF model from a parsed network (the `network` object from
-/// `parse_case`) and report its dimensions. This is the wasm surface for step 1
-/// of the in-browser DC pipeline (issue #2); the Clarabel solve and the
-/// dLMP/dd column build on the same `DcNetwork`. Returns
-/// `{ n, m, k, ref_bus, total_demand_mw, b_nnz }` as JSON.
+/// Solve the DC OPF in the browser (issue #2). `network_json` is the `network`
+/// object from `parse_case`; `deltas_json` is `{ deltas: { bus: mw }, sens_bus }`
+/// (or empty for the base case). Returns `{ objective, lmp, flows, dispatch,
+/// dlmp_dd }` in the shapes the Julia backend serves — LMPs in $/MWh keyed by
+/// bus id, flows and dispatch in MW, and `dlmp_dd` the ($/MWh)/MW sensitivity
+/// column for `sens_bus` (null when none is requested).
 #[wasm_bindgen]
-pub fn dc_model_summary(network_json: &str) -> Result<String, JsError> {
-    let net = Network::from_json(network_json).map_err(jserr)?;
-    let dc = DcNetwork::from_network(&net).map_err(jserr)?;
-    serde_json::to_string(&serde_json::json!({
-        "n": dc.n,
-        "m": dc.m,
-        "k": dc.k,
-        "ref_bus": dc.bus_ids[dc.ref_bus],
-        "total_demand_mw": dc.demand.iter().sum::<f64>() * dc.base_mva,
-        "b_nnz": dc.susceptance_coo().len(),
-    }))
-    .map_err(jserr)
+pub fn solve_dc(network_json: &str, deltas_json: &str) -> Result<String, JsError> {
+    solve_dc_json(network_json, deltas_json).map_err(jserr)
 }
 
 #[derive(Serialize)]
