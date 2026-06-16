@@ -64,14 +64,16 @@ The production compose file consumes an image built by GitHub Actions:
 ```sh
 TELLEGEN_IMAGE=ghcr.io/eigenergy/tellegen:<sha>
 TELLEGEN_DATA_DIR=/opt/tellegen/data
-docker compose --env-file .env \
+docker compose -p tellegen --env-file .env \
   -f deploy/docker-compose.prod.yml \
   -f deploy/docker-compose.edge.yml up -d
 ```
 
 The production compose file binds `127.0.0.1:8000`, mounts staged data read
 only, and sets the memory limit. The edge overlay adds the fixed container name
-and external `edge` network membership needed by the Caddy route.
+and external `edge` network membership needed by the Caddy route. The fixed
+Compose project name matters because the shared Caddy edge stack is a separate
+project.
 
 Use the host deploy script for normal deploys and rollbacks:
 
@@ -81,7 +83,9 @@ bash deploy/remote-deploy.sh ghcr.io/eigenergy/tellegen:<sha> "$TELLEGEN_DEPLOY_
 
 The script validates Docker, Compose, the external `edge` network, the staged
 TAMU files, and the compose config. It pulls the selected image before
-recreating the container, then waits for Docker health and `/api/health`.
+recreating the container, then waits for Docker health and `/api/health`. It
+does not use `--remove-orphans`; the shared edge proxy is owned by the
+maptogrid stack.
 
 ## GitHub Actions Deploy
 

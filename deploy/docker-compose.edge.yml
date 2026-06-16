@@ -2,7 +2,7 @@
 # The proxy routes to the `tellegen` container over the external `edge`
 # network.
 #
-# docker compose --env-file .env \
+# docker compose -p tellegen --env-file .env \
 #   -f deploy/docker-compose.prod.yml \
 #   -f deploy/docker-compose.edge.yml up -d
 services:

@@ -1,3 +1,5 @@
+name: tellegen
+
 services:
   tellegen:
     image: ${TELLEGEN_IMAGE:?set TELLEGEN_IMAGE}

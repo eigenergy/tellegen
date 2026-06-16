@@ -4,8 +4,9 @@
 #
 #   bash deploy/remote-deploy.sh ghcr.io/eigenergy/tellegen:<sha> /opt/tellegen/data
 #
-# Shared proxy deployments route to tellegen over the `edge` Docker network, so
-# this always uses the production compose file plus the edge overlay.
+# Shared proxy deployments route to tellegen over the `edge` Docker network.
+# Keep the Compose project fixed so this deploy cannot prune the shared proxy
+# stack when these files are copied under a deploy/ directory.
 set -euo pipefail
 
 IMAGE="${1:-}"
@@ -31,10 +32,7 @@ die() {
 
 logs() {
 	if [ -f .env ]; then
-		docker compose --env-file .env \
-			-f deploy/docker-compose.prod.yml \
-			-f deploy/docker-compose.edge.yml \
-			logs --tail=200 tellegen >&2 || true
+		"${compose[@]}" logs --tail=200 tellegen >&2 || true
 	fi
 	docker logs --tail=200 tellegen >&2 || true
 }
@@ -65,16 +63,18 @@ done
 umask 077
 printf 'TELLEGEN_IMAGE=%s\nTELLEGEN_DATA_DIR=%s\n' "$IMAGE" "$DATA_DIR" > .env
 
-compose=(docker compose --env-file .env -f deploy/docker-compose.prod.yml -f deploy/docker-compose.edge.yml)
+compose=(docker compose -p tellegen --env-file .env -f deploy/docker-compose.prod.yml -f deploy/docker-compose.edge.yml)
 
 echo "==> Validating compose config"
 "${compose[@]}" config >/dev/null
+services="$("${compose[@]}" config --services)"
+[ "$services" = "tellegen" ] || die "unexpected compose services: $services"
 
 echo "==> Pulling $IMAGE"
 "${compose[@]}" pull tellegen
 
 echo "==> Starting tellegen"
-"${compose[@]}" up -d --remove-orphans
+"${compose[@]}" up -d
 
 edge_membership="$(docker inspect tellegen --format '{{if index .NetworkSettings.Networks "edge"}}edge{{end}}' 2>/dev/null || true)"
 [ "$edge_membership" = "edge" ] || fail_with_logs "tellegen container is not attached to the edge network"
