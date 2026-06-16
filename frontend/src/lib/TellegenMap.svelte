@@ -8,7 +8,13 @@
 	import { branchColor, branchWidth, busRadius, lmpColor, lmpDomain, sensColor } from '$lib/colors';
 	import { app, type CaseState } from '$lib/state.svelte';
 
-	let { onbusclick }: { onbusclick: (caseId: string, busId: number) => void } = $props();
+	let {
+		onbusclick,
+		onplacecase
+	}: {
+		onbusclick: (caseId: string, busId: number) => void;
+		onplacecase: (lon: number, lat: number) => void;
+	} = $props();
 
 	const STYLE = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json';
 
@@ -219,7 +225,7 @@
 					},
 					getTooltip: tooltip,
 					getCursor: ({ isHovering, isDragging }: CursorState) =>
-						isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
+						app.placingLocalId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
 				} as unknown as MapboxOverlayPlanViewProps);
 				// Keep network marks in plan view while the basemap pitches.
 				const syncDeckView = () => {
@@ -230,6 +236,9 @@
 				};
 				m.addControl(o);
 				m.on('render', syncDeckView);
+				m.on('click', (e) => {
+					if (app.placingLocalId) onplacecase(e.lngLat.lng, e.lngLat.lat);
+				});
 				syncDeckView();
 				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 				map = m;
@@ -371,6 +380,11 @@
 			}
 		}
 		overlay.setProps({ layers });
+	});
+
+	$effect(() => {
+		if (!map) return;
+		map.getCanvas().style.cursor = app.placingLocalId ? 'crosshair' : '';
 	});
 
 	function boundsFor(target: string | 'all'): LngLatBoundsLike | null {

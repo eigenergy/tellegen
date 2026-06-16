@@ -30,10 +30,11 @@ releasing it sends the perturbation to the server and streams Ipopt iterations
 until the exact solution returns.
 
 Dropped `.m`, `.raw`, and `.aux` files are parsed in the browser by the
-WebAssembly build of powerio. Files with coordinates render on the map; files
-without coordinates show a summary. A dropped PowerWorld `.pwd` file is decoded
-as display data and rendered as approximate substation positions. Dropped files
-are not uploaded.
+WebAssembly build of powerio. Files with coordinates render on the map. Files
+without coordinates can be placed by clicking the map; tellegen draws a
+synthetic topology layout centered there. A dropped PowerWorld `.pwd` file is
+decoded as display data and rendered as approximate substation positions.
+Dropped files are not uploaded.
 
 ## Sensitivities
 
@@ -72,8 +73,10 @@ the distributions under `~/Datasets`:
 scripts/stage-data.sh ~/Datasets
 ```
 
-The script stages the six files used by the demo into `data/`. Without staged
-data, the backend serves pglib fallback cases with synthetic coordinates.
+The script stages the six files used by the demo into `data/`. Without all
+three staged cases, the backend exits. For CI or local smoke checks without the
+TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the two pglib
+fallback cases with synthetic coordinates.
 
 ## Development
 

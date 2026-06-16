@@ -22,8 +22,9 @@ docker compose up -d --build
 ```
 
 `docker-compose.yml` binds the service to `127.0.0.1:8000`. A reverse proxy must
-front the process before it is public. Without staged TAMU files, the server
-falls back to pglib cases with synthetic coordinates.
+front the process before it is public. Without all three staged TAMU cases, the
+server exits. Set `TELLEGEN_ALLOW_FALLBACK=1` only for CI or local smoke checks
+that intentionally use the two pglib cases with synthetic coordinates.
 
 ## Image Deploy
 
@@ -39,9 +40,9 @@ docker compose --env-file .env -f deploy/docker-compose.prod.yml up -d
 mount, and restart policy as the local compose file. It does not build from
 source on the host.
 
-`/api/health` returns `ok` only after at least one case loads. The image smoke
-test accepts pglib fallback cases because Actions does not have TAMU data. The
-host and public deploy checks require the staged 200, 500, and 2000 bus cases.
+`/api/health` returns `ok` only after cases load. The image smoke test sets
+`TELLEGEN_ALLOW_FALLBACK=1` because Actions does not have TAMU data. The host
+and public deploy checks require the staged 200, 500, and 2000 bus cases.
 
 ## GitHub Actions Deploy
 

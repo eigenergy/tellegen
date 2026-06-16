@@ -8,6 +8,7 @@
 	import { getCases, getNetwork, getSensitivity, getSolution, openSolveStream } from '$lib/api';
 	import { busRadius, lmpDomain, lmpGradient, sensGradient } from '$lib/colors';
 	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
+	import { placeSyntheticTopology } from '$lib/synthetic-layout';
 	import { formatOf, ingestCase, isDisplayFile, parseDisplay } from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
@@ -57,6 +58,7 @@
 
 	function activateCase(id: string) {
 		app.activeLocalId = null;
+		app.placingLocalId = null;
 		if (app.activeCaseId !== id) {
 			clearSelection();
 			app.activeCaseId = id;
@@ -68,6 +70,7 @@
 		clearSelection();
 		app.activeCaseId = null;
 		app.activeLocalId = c.id;
+		app.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
 		if (c.view || c.substations) app.requestFrame(c.id);
 	}
 
@@ -78,8 +81,30 @@
 		if (c.view || c.substations) app.requestFrame(c.id);
 	}
 
+	function placeLocalCase(lon: number, lat: number) {
+		const id = app.placingLocalId;
+		const c = id ? app.localCases.find((lc) => lc.id === id) : null;
+		if (!c?.topology) return;
+		const view = placeSyntheticTopology(c.topology, { lon, lat });
+		app.updateLocal(c.id, {
+			view,
+			coordsKind: 'synthetic',
+			syntheticCenter: { lon, lat }
+		});
+		app.placingLocalId = null;
+		app.activeLocalId = c.id;
+		app.requestFrame(c.id);
+	}
+
+	function moveLocalCase(c: LocalCase) {
+		app.activeCaseId = null;
+		app.activeLocalId = c.id;
+		app.placingLocalId = c.id;
+	}
+
 	async function selectBus(caseId: string, busId: number) {
 		app.activeLocalId = null;
+		app.placingLocalId = null;
 		if (app.activeCaseId !== caseId) app.activeCaseId = caseId;
 		const c = app.byId(caseId);
 		if (!c) return;
@@ -211,13 +236,26 @@
 			app.parsingFile = true;
 			try {
 				const text = await file.text();
-				const { view, ...summary } = await ingestCase(text, format);
+				const { network_json, topology, view, ...summary } = await ingestCase(text, format);
+				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
+					app.error = `${file.name}: aux parsed, but no complete network; drop the matching .m or .raw case file`;
+					continue;
+				}
 				const id = `local-${++localSeq}`;
 				const label =
 					summary.name && summary.name !== 'case'
 						? summary.name
 						: file.name.replace(/\.[^.]+$/, '');
-				addAndActivateLocal({ id, label, fileName: file.name, summary, view });
+				addAndActivateLocal({
+					id,
+					label,
+					fileName: file.name,
+					summary,
+					networkJson: network_json,
+					topology,
+					coordsKind: summary.coords_kind,
+					view
+				});
 				app.error = null; // a successful parse clears a prior file's error
 			} catch (e) {
 				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
@@ -361,7 +399,7 @@
 />
 
 <main>
-	<TellegenMap onbusclick={selectBus} />
+	<TellegenMap onbusclick={selectBus} onplacecase={placeLocalCase} />
 
 	<header>
 		<div class="brand">
@@ -450,10 +488,21 @@
 				{/if}
 				{#if !lc.view}
 					<p class="footnote mono">
-						no coordinates in this file &mdash; parsed, not placed
+						no coordinates in this file &mdash; click the map to place a synthetic layout
+					</p>
+				{:else if lc.coordsKind === 'synthetic'}
+					<p class="footnote mono">
+						coordinates: synthetic topology layout centered where you placed it
 					</p>
 				{/if}
-				<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
+				<p class="footnote mono">
+					parsed in your browser by powerio (wasm); never uploaded
+				</p>
+			{/if}
+			{#if lc.topology && lc.coordsKind !== 'file'}
+				<button class="reset mono" onclick={() => moveLocalCase(lc)}>
+					{lc.coordsKind === 'synthetic_pending' ? 'place on map' : 'move layout'}
+				</button>
 			{/if}
 			<button class="reset mono" onclick={() => app.removeLocal(lc.id)}>remove</button>
 		{:else if !stats}
@@ -615,6 +664,12 @@
 		</div>
 	{/if}
 
+	{#if app.placingLocalId}
+		<div class="placement-cue mono">
+			click the map to place the synthetic topology
+		</div>
+	{/if}
+
 	<footer class="mono">
 		<a href="https://electricgrids.engr.tamu.edu/" target="_blank" rel="noreferrer"
 			>ACTIVSg synthetic grids</a
@@ -627,6 +682,8 @@
 		<a href="https://github.com/eigenergy/tellegen" target="_blank" rel="noreferrer"
 			>tellegen framework</a
 		>
+		<i class="sep"></i>
+		<a href="/privacy">privacy</a>
 		{#if showFileDropUi}
 			<i class="sep filedrop-ui"></i>
 			<span class="drophint filedrop-ui"
@@ -1190,6 +1247,22 @@
 		color: var(--ink-dim);
 	}
 
+	.placement-cue {
+		position: absolute;
+		left: 50%;
+		bottom: 52px;
+		z-index: 14;
+		transform: translateX(-50%);
+		padding: 8px 12px;
+		background: var(--panel);
+		border: 1px solid var(--accent);
+		border-radius: 3px;
+		color: var(--accent);
+		font-size: 11px;
+		box-shadow: 0 4px 18px rgba(32, 36, 43, 0.1);
+		pointer-events: none;
+	}
+
 	.blink {
 		animation: blink 1.2s steps(2) infinite;
 	}
@@ -1366,6 +1439,12 @@
 		.panel {
 			bottom: 34px;
 			max-height: 46dvh;
+		}
+
+		.placement-cue {
+			bottom: 38px;
+			width: calc(100% - 28px);
+			text-align: center;
 		}
 	}
 

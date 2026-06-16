@@ -43,7 +43,7 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: Instantiate backend
         run: julia --project=backend -e 'using Pkg; Pkg.instantiate()'
-      - run: julia --project=backend backend/test/runtests.jl
+      - run: TELLEGEN_ALLOW_FALLBACK=1 julia --project=backend backend/test/runtests.jl
 
   image:
     runs-on: ubuntu-latest
@@ -75,6 +75,7 @@ jobs:
             --detach \
             --name tellegen-smoke \
             --publish 127.0.0.1:8000:8000 \
+            --env TELLEGEN_ALLOW_FALLBACK=1 \
             "${{ steps.meta.outputs.sha_tag }}"
           for attempt in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8000/api/health; then

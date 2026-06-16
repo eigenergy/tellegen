@@ -8,7 +8,7 @@ import type {
 	Solution,
 	SolveIteration
 } from './api';
-import type { CaseFileSummary } from './wasm';
+import type { CaseFileSummary, Topology } from './wasm';
 
 /** Substations from a PowerWorld .pwd display file. Positions are inferred
  * from diagram coordinates, not surveyed latitude and longitude. */
@@ -25,8 +25,14 @@ export interface LocalCase {
 	fileName: string;
 	/** Case stats; null for a .pwd display-only entry. */
 	summary: CaseFileSummary | null;
-	/** Map geometry when the file carried coordinates; null = summary only. */
+	/** Raw powerio Network JSON for the browser solver branch. */
+	networkJson?: string;
+	/** Topology for synthetic placement when the file has no coordinates. */
+	topology?: Topology;
+	coordsKind?: 'file' | 'synthetic_pending' | 'synthetic';
+	/** Map geometry when the file carried or received coordinates. */
 	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
+	syntheticCenter?: { lon: number; lat: number };
 	/** Present for a PowerWorld .pwd display-only entry. */
 	substations?: LocalSubstations;
 }
@@ -75,6 +81,7 @@ export class AppState {
 	localCases = $state.raw<LocalCase[]>([]);
 	/** Local case the panel shows; clicking a backend case or a bus clears it. */
 	activeLocalId = $state<string | null>(null);
+	placingLocalId = $state<string | null>(null);
 	dragOver = $state(false);
 	parsingFile = $state(false);
 
@@ -97,10 +104,16 @@ export class AppState {
 	addLocal(c: LocalCase) {
 		this.localCases = [...this.localCases, c];
 		this.activeLocalId = c.id;
+		this.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
+	}
+
+	updateLocal(id: string, patch: Partial<LocalCase>) {
+		this.localCases = this.localCases.map((c) => (c.id === id ? { ...c, ...patch } : c));
 	}
 
 	removeLocal(id: string) {
 		this.localCases = this.localCases.filter((c) => c.id !== id);
+		if (this.placingLocalId === id) this.placingLocalId = null;
 		if (this.activeLocalId === id) {
 			this.activeLocalId = null;
 			if (this.activeCaseId === null) {

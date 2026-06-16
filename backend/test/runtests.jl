@@ -2,6 +2,7 @@
 
 using Test
 using LinearAlgebra
+using JSON3
 using PowerDiff
 
 include(joinpath(@__DIR__, "..", "src", "app.jl"))
@@ -70,7 +71,7 @@ end
 @testset "TAMU coordinates from aux" begin
     spec = first(Tellegen.CASE_SPECS)
     if Tellegen._staged(spec)
-        coords = Tellegen.aux_coords(joinpath(Tellegen.DATA_DIR, spec.auxfile))
+        coords = Tellegen.aux_coords(joinpath(Tellegen.data_dir(), spec.auxfile))
         @test length(coords) == 200
         # Inside the Illinois footprint the case was built on.
         @test all(-92 < c[1] < -87 && 37 < c[2] < 43 for c in values(coords))
@@ -83,6 +84,21 @@ end
         ) > 1e-5
     else
         @info "TAMU data not staged; skipping coordinate tests"
+    end
+end
+
+@testset "case loading fallback is explicit" begin
+    mktempdir() do dir
+        withenv("TELLEGEN_DATA" => dir, "TELLEGEN_ALLOW_FALLBACK" => nothing) do
+            @test_throws ErrorException Tellegen.load_cases!()
+            @test isempty(Tellegen.CASES)
+        end
+        withenv("TELLEGEN_DATA" => dir, "TELLEGEN_ALLOW_FALLBACK" => "1") do
+            Tellegen.load_cases!()
+            @test sort(collect(keys(Tellegen.CASES))) == ["case200", "case500"]
+            @test all(JSON3.read(e.network_json).synthetic_coords for e in values(Tellegen.CASES))
+        end
+        empty!(Tellegen.CASES)
     end
 end
 

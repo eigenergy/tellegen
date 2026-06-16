@@ -20,7 +20,11 @@ end
 const CASES = Dict{String,CaseEntry}()
 
 # Operator-staged TAMU distributions (scripts/stage-data.sh); never vendored.
-const DATA_DIR = normpath(get(ENV, "TELLEGEN_DATA", joinpath(@__DIR__, "..", "..", "data")))
+const DEFAULT_DATA_DIR = normpath(joinpath(@__DIR__, "..", "..", "data"))
+
+data_dir() = normpath(get(ENV, "TELLEGEN_DATA", DEFAULT_DATA_DIR))
+allow_fallback() = lowercase(get(ENV, "TELLEGEN_ALLOW_FALLBACK", "")) in
+                   ("1", "true", "yes", "on")
 
 # The demo cases are TAMU ACTIVSg synthetic grids, served at the geographic
 # coordinates carried in their aux exports. Quadratic generator
@@ -36,9 +40,8 @@ const CASE_SPECS = (
         casefile="ACTIVSg2000/case_ACTIVSg2000.m", auxfile="ACTIVSg2000/ACTIVSg2000.aux"),
 )
 
-# Without staged data the server still boots: pglib variants of the small
-# cases, placed by the spectral layout in layout.jl. A dev convenience; the
-# deploy stages TAMU data.
+# Explicit dev fallback for CI and smoke checks without staged TAMU files. The
+# server uses these only when TELLEGEN_ALLOW_FALLBACK=1.
 const FALLBACK_SPECS = (
     (id="case200", name="ACTIVSg200 (Illinois)", file="pglib_opf_case200_activ.m",
         bbox=(-91.4, 37.1, -87.6, 42.4)),
@@ -47,42 +50,55 @@ const FALLBACK_SPECS = (
 )
 
 _staged(spec) =
-    isfile(joinpath(DATA_DIR, spec.casefile)) && isfile(joinpath(DATA_DIR, spec.auxfile))
+    isfile(joinpath(data_dir(), spec.casefile)) && isfile(joinpath(data_dir(), spec.auxfile))
 
 function load_cases!()
     empty!(CASES)  # idempotent: a reload rebuilds rather than accumulating stale entries
-    specs = filter(_staged, CASE_SPECS)
-    isempty(specs) &&
-        @warn "no TAMU case data under $DATA_DIR; serving pglib fallbacks with synthetic layout (see scripts/stage-data.sh)"
+    specs = collect(filter(_staged, CASE_SPECS))
+    if length(specs) == length(CASE_SPECS)
+        load_specs!(specs; fallback=false)
+        length(CASES) == length(CASE_SPECS) || error(
+            "failed to load all staged TAMU cases from $(data_dir())")
+    elseif allow_fallback()
+        missing = setdiff([s.id for s in CASE_SPECS], [s.id for s in specs])
+        @warn "TAMU case data incomplete under $(data_dir()); serving pglib fallbacks with synthetic layout" missing
+        load_specs!(FALLBACK_SPECS; fallback=true)
+        length(CASES) == length(FALLBACK_SPECS) || error(
+            "failed to load all pglib fallback cases")
+    else
+        missing = setdiff([s.id for s in CASE_SPECS], [s.id for s in specs])
+        error(
+            "TAMU case data incomplete under $(data_dir()); missing $(join(missing, ", ")). " *
+            "Run scripts/stage-data.sh or set TELLEGEN_ALLOW_FALLBACK=1 for the pglib dev fallback.")
+    end
+    isempty(CASES) && error(
+        "no cases loaded from staged TAMU data under $(data_dir()) or pglib fallbacks")
+end
+
+function load_specs!(specs; fallback::Bool)
     for spec in specs
         # A failed distribution should not block the cases that load.
         try
             CASES[spec.id] = build_entry(spec)
-            @info "case loaded" spec.id
-        catch err
-            @error "case failed to load" spec.id err
-        end
-    end
-    if isempty(CASES)
-        for spec in FALLBACK_SPECS
-            # Same guard for the fallbacks: one failed pglib case should not
-            # block the other from booting.
-            try
-                CASES[spec.id] = build_entry(spec)
+            if fallback
                 @info "case loaded (fallback)" spec.id
-            catch err
+            else
+                @info "case loaded" spec.id
+            end
+        catch err
+            if fallback
                 @error "fallback case failed to load" spec.id err
+            else
+                @error "case failed to load" spec.id err
             end
         end
     end
-    isempty(CASES) && error(
-        "no cases loaded from staged TAMU data under $DATA_DIR or pglib fallbacks")
 end
 
 function build_entry(spec)
     if haskey(spec, :auxfile)
-        case = parse_file(joinpath(DATA_DIR, spec.casefile))
-        coords = aux_coords(joinpath(DATA_DIR, spec.auxfile))
+        case = parse_file(joinpath(data_dir(), spec.casefile))
+        coords = aux_coords(joinpath(data_dir(), spec.auxfile))
         unmapped = [bus_id(b) for b in case_buses(case) if !haskey(coords, bus_id(b))]
         isempty(unmapped) || error(
             "$(spec.id): aux carries no coordinates for buses $(unmapped[1:min(end, 5)])")

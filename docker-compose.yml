@@ -6,8 +6,8 @@ services:
     environment:
       TELLEGEN_PORT: "8000"
     volumes:
-      # Operator-staged TAMU case data (scripts/stage-data.sh). Without it
-      # the server falls back to pglib cases with synthetic layout.
+      # Operator-staged TAMU case data (scripts/stage-data.sh). Without all
+      # three cases, the server exits unless TELLEGEN_ALLOW_FALLBACK=1 is set.
       - ./data:/app/data:ro
     mem_limit: 6g
     restart: unless-stopped

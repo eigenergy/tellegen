@@ -13,12 +13,34 @@ export interface CaseFileSummary {
 	load_mw: number;
 	gen_mw: number;
 	has_coords: boolean;
+	coords_kind: 'file' | 'synthetic_pending';
 	warnings: string[];
 }
 
+export interface TopologyBus {
+	id: number;
+	demand_mw: number;
+	gen_mw: number;
+}
+
+export interface TopologyBranch {
+	id: number;
+	from: number;
+	to: number;
+	rate_mw: number;
+	status: number;
+}
+
+export interface Topology {
+	buses: TopologyBus[];
+	branches: TopologyBranch[];
+}
+
 /** One parse per dropped file: summary stats, plus map geometry when the
- * file carries coordinates. */
+ * file carries coordinates and topology for synthetic placement otherwise. */
 export interface IngestedCase extends CaseFileSummary {
+	network_json: string;
+	topology: Topology;
 	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 }
 

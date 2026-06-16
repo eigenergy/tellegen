@@ -42,4 +42,4 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: Instantiate backend
         run: julia --project=backend -e 'using Pkg; Pkg.instantiate()'
-      - run: julia --project=backend backend/test/runtests.jl
+      - run: TELLEGEN_ALLOW_FALLBACK=1 julia --project=backend backend/test/runtests.jl
