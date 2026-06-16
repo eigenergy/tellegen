@@ -29,10 +29,12 @@ export interface LocalCase {
 	networkJson?: string;
 	/** Topology for synthetic placement when the file has no coordinates. */
 	topology?: Topology;
-	coordsKind?: 'file' | 'synthetic_pending' | 'synthetic';
+	coordsKind?: 'file' | 'synthetic_pending' | 'synthetic' | 'sidecar';
 	/** Map geometry when the file carried or received coordinates. */
 	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 	syntheticCenter?: { lon: number; lat: number };
+	geoSource?: string;
+	geoWarnings?: string[];
 	/** Present for a PowerWorld .pwd display-only entry. */
 	substations?: LocalSubstations;
 }

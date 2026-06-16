@@ -31,10 +31,10 @@ until the exact solution returns.
 
 Dropped `.m`, `.raw`, and `.aux` files are parsed in the browser by the
 WebAssembly build of powerio. Files with coordinates render on the map. Files
-without coordinates can be placed by clicking the map; tellegen draws a
-synthetic topology layout centered there. A dropped PowerWorld `.pwd` file is
-decoded as display data and rendered as approximate substation positions.
-Dropped files are not uploaded.
+without coordinates can be placed by clicking the map, or paired with local
+coordinate sidecars in `.csv`, `.json`, or `.geojson` form. A dropped PowerWorld
+`.pwd` file is decoded as display data and rendered as approximate substation
+positions. Dropped files are not uploaded.
 
 ## Sensitivities
 

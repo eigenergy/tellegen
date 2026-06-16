@@ -7,6 +7,13 @@
 	import { onMount } from 'svelte';
 	import { getCases, getNetwork, getSensitivity, getSolution, openSolveStream } from '$lib/api';
 	import { busRadius, lmpDomain, lmpGradient, sensGradient } from '$lib/colors';
+	import {
+		applyGeoSidecar,
+		isGeoSidecarFile,
+		mergeGeoSidecars,
+		parseGeoSidecar,
+		type GeoSidecar
+	} from '$lib/geo-sidecar';
 	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
 	import { formatOf, ingestCase, isDisplayFile, parseDisplay } from '$lib/wasm';
@@ -100,6 +107,48 @@
 		app.activeCaseId = null;
 		app.activeLocalId = c.id;
 		app.placingLocalId = c.id;
+	}
+
+	function withGeoSidecar(c: LocalCase, sidecars: GeoSidecar[]): LocalCase {
+		if (!c.topology || sidecars.length === 0) return c;
+		const applied = applyGeoSidecar(c.topology, mergeGeoSidecars(sidecars));
+		return {
+			...c,
+			view: applied.view,
+			coordsKind: 'sidecar',
+			geoSource: applied.sourceLabel,
+			geoWarnings: [
+				`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
+				...(applied.matchedBranches > 0
+					? [`${applied.matchedBranches} branch paths matched from sidecar data`]
+					: []),
+				...applied.warnings
+			]
+		};
+	}
+
+	function applyGeoSidecarsToExisting(sidecars: GeoSidecar[]) {
+		const target =
+			(app.activeLocal?.topology ? app.activeLocal : null) ??
+			app.localCases.find((c) => c.coordsKind === 'synthetic_pending') ??
+			[...app.localCases].reverse().find((c) => c.topology);
+		if (!target?.topology) {
+			app.error = 'drop a case file with the coordinate sidecar, or select a parsed local case first';
+			return;
+		}
+		try {
+			const updated = withGeoSidecar(target, sidecars);
+			app.updateLocal(target.id, updated);
+			app.activeCaseId = null;
+			app.activeLocalId = target.id;
+			app.placingLocalId = null;
+			app.requestFrame(target.id);
+			app.error = null;
+		} catch (e) {
+			app.error = `${sidecars.map((s) => s.sourceNames.join(' + ')).join(' + ')}: ${
+				e instanceof Error ? e.message : e
+			}; use place on map for manual placement`;
+		}
 	}
 
 	async function selectBus(caseId: string, busId: number) {
@@ -198,10 +247,26 @@
 	}
 
 	/** Parse dropped files in the browser via the powerio wasm module. Case
-	 * files (.m, .raw, .aux) become local networks; a PowerWorld .pwd becomes a
-	 * substation point preview. Files run serially; nothing uploads. */
+	 * files (.m, .raw, .aux) become local networks; coordinate sidecars can
+	 * place those networks; a PowerWorld .pwd becomes a substation point
+	 * preview. Files run serially; nothing uploads. */
 	async function ingestFiles(files: FileList | File[]) {
-		for (const file of Array.from(files)) {
+		const list = Array.from(files);
+		const sidecars: GeoSidecar[] = [];
+		for (const file of list.filter((f) => isGeoSidecarFile(f.name))) {
+			app.parsingFile = true;
+			try {
+				sidecars.push(parseGeoSidecar(file.name, await file.text()));
+				app.error = null;
+			} catch (e) {
+				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
+			} finally {
+				app.parsingFile = false;
+			}
+		}
+
+		let parsedCaseCount = 0;
+		for (const file of list.filter((f) => !isGeoSidecarFile(f.name))) {
 			if (isDisplayFile(file.name)) {
 				app.parsingFile = true;
 				try {
@@ -230,7 +295,7 @@
 			}
 			const format = formatOf(file.name);
 			if (!format) {
-				app.error = `${file.name}: not a case file (.m, .raw, .aux, .pwd)`;
+				app.error = `${file.name}: not a case or coordinate file (.m, .raw, .aux, .pwd, .csv, .json, .geojson)`;
 				continue;
 			}
 			app.parsingFile = true;
@@ -246,7 +311,7 @@
 					summary.name && summary.name !== 'case'
 						? summary.name
 						: file.name.replace(/\.[^.]+$/, '');
-				addAndActivateLocal({
+				let local: LocalCase = {
 					id,
 					label,
 					fileName: file.name,
@@ -255,7 +320,12 @@
 					topology,
 					coordsKind: summary.coords_kind,
 					view
-				});
+				};
+				if (sidecars.length > 0 && local.coordsKind === 'synthetic_pending') {
+					local = withGeoSidecar(local, sidecars);
+				}
+				addAndActivateLocal(local);
+				parsedCaseCount++;
 				app.error = null; // a successful parse clears a prior file's error
 			} catch (e) {
 				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
@@ -263,6 +333,8 @@
 				app.parsingFile = false;
 			}
 		}
+
+		if (sidecars.length > 0 && parsedCaseCount === 0) applyGeoSidecarsToExisting(sidecars);
 	}
 
 	function dragHasFiles(e: DragEvent): boolean {
@@ -441,7 +513,7 @@
 					onclick={() => fileInput?.click()}
 				>
 					<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
-					<span class="cregion mono">.m &middot; .raw &middot; .aux &middot; .pwd &mdash; or click</span>
+					<span class="cregion mono">case + geo sidecars &mdash; or click</span>
 				</button>
 			{/if}
 		</nav>
@@ -488,12 +560,26 @@
 				{/if}
 				{#if !lc.view}
 					<p class="footnote mono">
-						no coordinates in this file &mdash; click the map to place a synthetic layout
+						no coordinates in this file &mdash; click the map or drop a coordinate sidecar
 					</p>
 				{:else if lc.coordsKind === 'synthetic'}
 					<p class="footnote mono">
 						coordinates: synthetic topology layout centered where you placed it
 					</p>
+				{:else if lc.coordsKind === 'sidecar'}
+					<p class="footnote mono">
+						coordinates: uploaded sidecar data from {lc.geoSource}
+					</p>
+				{/if}
+				{#if lc.geoWarnings && lc.geoWarnings.length > 0}
+					<ul class="warnings mono">
+						{#each lc.geoWarnings.slice(0, 4) as w, i (i)}
+							<li>{w}</li>
+						{/each}
+						{#if lc.geoWarnings.length > 4}
+							<li>+{lc.geoWarnings.length - 4} more</li>
+						{/if}
+					</ul>
 				{/if}
 				<p class="footnote mono">
 					parsed in your browser by powerio (wasm); never uploaded
@@ -501,7 +587,11 @@
 			{/if}
 			{#if lc.topology && lc.coordsKind !== 'file'}
 				<button class="reset mono" onclick={() => moveLocalCase(lc)}>
-					{lc.coordsKind === 'synthetic_pending' ? 'place on map' : 'move layout'}
+					{lc.coordsKind === 'synthetic_pending'
+						? 'place on map'
+						: lc.coordsKind === 'sidecar'
+							? 'place manually'
+							: 'move layout'}
 				</button>
 			{/if}
 			<button class="reset mono" onclick={() => app.removeLocal(lc.id)}>remove</button>
@@ -619,7 +709,7 @@
 					{/if}
 				</div>
 				<p class="dim small filedrop-note">
-					Drop .m, .raw, .aux, or .pwd files; parsing stays in your browser.
+					Drop case files and optional coordinate sidecars; parsing stays in your browser.
 				</p>
 			{/if}
 
@@ -658,7 +748,7 @@
 	{#if app.dragOver}
 		<div class="dropzone" aria-hidden="true">
 			<div class="dropframe">
-				<p class="mono">drop to parse &mdash; .m &middot; .raw &middot; .aux &middot; .pwd</p>
+				<p class="mono">drop to parse &mdash; case files or coordinate sidecars</p>
 				<p class="mono hint">parsed in your browser; the file never uploads</p>
 			</div>
 		</div>
@@ -687,7 +777,7 @@
 		{#if showFileDropUi}
 			<i class="sep filedrop-ui"></i>
 			<span class="drophint filedrop-ui"
-				><span class="arrow">&#8675;</span> drop a case file anywhere</span
+				><span class="arrow">&#8675;</span> drop a case or coordinate file anywhere</span
 			>
 		{/if}
 	</footer>
@@ -695,7 +785,7 @@
 	{#if showFileDropUi}
 		<input
 			type="file"
-			accept=".m,.raw,.aux,.pwd"
+			accept=".m,.raw,.aux,.pwd,.csv,.json,.geojson"
 			multiple
 			hidden
 			bind:this={fileInput}
