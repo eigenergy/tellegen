@@ -723,6 +723,7 @@
 	const previewing = $derived(
 		Boolean(
 			activeSolvable?.solving ||
+				app.previewActive ||
 				(app.previewDeltaMw !== null && Math.abs(sliderValue - committedDelta) >= 0.25)
 		)
 	);

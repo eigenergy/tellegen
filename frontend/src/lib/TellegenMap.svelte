@@ -71,7 +71,9 @@
 			active && selected !== null && app.previewDeltaMw !== null && activeSensitivity
 				? app.previewDeltaMw - (activeDeltas[selected] ?? 0)
 				: 0;
-		const previewing = Boolean(active?.solving || Math.abs(previewStep) >= 0.25);
+		const previewing = Boolean(
+			active?.solving || app.previewActive || Math.abs(previewStep) >= 0.25
+		);
 
 		const perCase = new Map<string, CaseDisplay>();
 		const addCase = (c: CaseState | LocalCase) => {

@@ -504,11 +504,9 @@ mod tests {
         let sol = solve(&dc).expect("solve");
         let buses: Vec<usize> = (0..dc.n).collect();
         let analytic = dlmp_dd_perunit(&dc, &sol, &buses).expect("dlmp/dd");
-        for j in 0..dc.n {
+        for (j, col) in analytic.iter().enumerate().take(dc.n) {
             let fd = central_fd(&dc, j, 1e-4);
-            for i in 0..dc.n {
-                let a = analytic[j][i];
-                let f = fd[i];
+            for (i, (&a, &f)) in col.iter().zip(fd.iter()).enumerate().take(dc.n) {
                 let rel = (a - f).abs() / f.abs().max(1.0);
                 assert!(
                     rel < 1e-3,

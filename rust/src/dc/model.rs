@@ -417,14 +417,14 @@ mod tests {
         for (r, c, v) in dc.susceptance_coo() {
             dense[r][c] = v;
         }
-        for i in 0..3 {
-            approx(dense[i][i], 2.0 * w);
-            let row_sum: f64 = dense[i].iter().sum();
+        for (i, row) in dense.iter().enumerate() {
+            approx(row[i], 2.0 * w);
+            let row_sum: f64 = row.iter().sum();
             approx(row_sum, 0.0);
-            for j in 0..3 {
-                approx(dense[i][j], dense[j][i]);
+            for (j, &value) in row.iter().enumerate() {
+                approx(value, dense[j][i]);
                 if i != j {
-                    approx(dense[i][j], -w);
+                    approx(value, -w);
                 }
             }
         }
