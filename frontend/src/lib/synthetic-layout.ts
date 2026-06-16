@@ -12,6 +12,7 @@ export interface PlacementCenter {
 }
 
 type Point = { x: number; y: number };
+const ALL_PAIRS_LIMIT = 500;
 
 export function placeSyntheticTopology(topology: Topology, center: PlacementCenter): PlacedNetwork {
 	const buses = [...topology.buses].sort((a, b) => a.id - b.id);
@@ -56,6 +57,7 @@ export function placeSyntheticTopology(topology: Topology, center: PlacementCent
 function forceLayout(n: number, edges: [number, number][]): Point[] {
 	if (n === 0) return [];
 	if (n === 1) return [{ x: 0.5, y: 0.5 }];
+	if (n > ALL_PAIRS_LIMIT) return fastGraphLayout(n, edges);
 
 	const golden = Math.PI * (3 - Math.sqrt(5));
 	const pos = Array.from({ length: n }, (_, i) => {
@@ -105,6 +107,171 @@ function forceLayout(n: number, edges: [number, number][]): Point[] {
 		}
 	}
 	return normalize(pos);
+}
+
+function fastGraphLayout(n: number, edges: [number, number][]): Point[] {
+	const adjacency = graph(n, edges);
+	const components = connectedComponents(adjacency);
+	const cols = Math.ceil(Math.sqrt(components.length));
+	const rows = Math.ceil(components.length / cols);
+	const pos = Array.from({ length: n }, () => ({ x: 0.5, y: 0.5 }));
+	const cellScale = 0.82 / Math.max(cols, rows);
+
+	for (let c = 0; c < components.length; c++) {
+		const nodes = components[c];
+		const local = componentLayout(nodes, adjacency);
+		const col = c % cols;
+		const row = Math.floor(c / cols);
+		const cx = (col + 0.5) / cols;
+		const cy = (row + 0.5) / rows;
+		for (const node of nodes) {
+			const p = local.get(node) ?? { x: 0.5, y: 0.5 };
+			pos[node] = {
+				x: cx + (p.x - 0.5) * cellScale,
+				y: cy + (p.y - 0.5) * cellScale
+			};
+		}
+	}
+	return normalize(pos);
+}
+
+function graph(n: number, edges: [number, number][]) {
+	const adjacency = Array.from({ length: n }, () => [] as number[]);
+	const seen = new Set<number>();
+	for (const [from, to] of edges) {
+		if (from < 0 || to < 0 || from >= n || to >= n || from === to) continue;
+		const a = Math.min(from, to);
+		const b = Math.max(from, to);
+		const key = a * n + b;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		adjacency[a].push(b);
+		adjacency[b].push(a);
+	}
+	for (const neighbors of adjacency) neighbors.sort((a, b) => a - b);
+	return adjacency;
+}
+
+function connectedComponents(adjacency: number[][]): number[][] {
+	const seen = new Uint8Array(adjacency.length);
+	const components: number[][] = [];
+	for (let start = 0; start < adjacency.length; start++) {
+		if (seen[start]) continue;
+		const nodes: number[] = [];
+		const stack = [start];
+		seen[start] = 1;
+		while (stack.length > 0) {
+			const node = stack.pop()!;
+			nodes.push(node);
+			for (const next of adjacency[node]) {
+				if (seen[next]) continue;
+				seen[next] = 1;
+				stack.push(next);
+			}
+		}
+		nodes.sort((a, b) => a - b);
+		components.push(nodes);
+	}
+	components.sort((a, b) => b.length - a.length || a[0] - b[0]);
+	return components;
+}
+
+function componentLayout(nodes: number[], adjacency: number[][]): Map<number, Point> {
+	if (nodes.length === 1) return new Map([[nodes[0], { x: 0.5, y: 0.5 }]]);
+
+	const nodeToLocal = new Map(nodes.map((node, i) => [node, i]));
+	const seed = nodes.reduce((best, node) =>
+		adjacency[node].length > adjacency[best].length ||
+		(adjacency[node].length === adjacency[best].length && node < best)
+			? node
+			: best
+	);
+	const order = bfsOrder(seed, adjacency);
+	const golden = Math.PI * (3 - Math.sqrt(5));
+	const pos = Array.from({ length: nodes.length }, () => ({ x: 0.5, y: 0.5 }));
+	const initial = Array.from({ length: nodes.length }, () => ({ x: 0.5, y: 0.5 }));
+
+	for (let rank = 0; rank < order.length; rank++) {
+		const local = nodeToLocal.get(order[rank]);
+		if (local === undefined) continue;
+		const r = 0.47 * Math.sqrt((rank + 0.5) / nodes.length);
+		const theta = rank * golden;
+		const p = {
+			x: 0.5 + r * Math.cos(theta),
+			y: 0.5 + r * Math.sin(theta)
+		};
+		pos[local] = { ...p };
+		initial[local] = p;
+	}
+
+	const localEdges: [number, number][] = [];
+	for (const node of nodes) {
+		const a = nodeToLocal.get(node)!;
+		for (const next of adjacency[node]) {
+			if (next <= node) continue;
+			const b = nodeToLocal.get(next);
+			if (b !== undefined) localEdges.push([a, b]);
+		}
+	}
+	relaxEdges(pos, initial, localEdges);
+
+	const out = new Map<number, Point>();
+	const normalized = normalize(pos);
+	for (const [i, node] of nodes.entries()) out.set(node, normalized[i]);
+	return out;
+}
+
+function bfsOrder(seed: number, adjacency: number[][]): number[] {
+	const seen = new Uint8Array(adjacency.length);
+	const order: number[] = [];
+	const queue = [seed];
+	seen[seed] = 1;
+	for (let head = 0; head < queue.length; head++) {
+		const node = queue[head];
+		order.push(node);
+		for (const next of adjacency[node]) {
+			if (seen[next]) continue;
+			seen[next] = 1;
+			queue.push(next);
+		}
+	}
+	return order;
+}
+
+function relaxEdges(pos: Point[], initial: Point[], edges: [number, number][]) {
+	const n = pos.length;
+	const disp = Array.from({ length: n }, () => ({ x: 0, y: 0 }));
+	const rest = Math.max(0.012, Math.min(0.06, 1.4 / Math.sqrt(n)));
+	const iters = n <= 2000 ? 72 : n <= 10000 ? 42 : 24;
+	for (let iter = 0; iter < iters; iter++) {
+		for (const d of disp) {
+			d.x = 0;
+			d.y = 0;
+		}
+		for (const [i, j] of edges) {
+			const dx = pos[j].x - pos[i].x;
+			const dy = pos[j].y - pos[i].y;
+			const dist = Math.hypot(dx, dy) + 1e-9;
+			const f = (dist - rest) * 0.045;
+			const fx = (dx / dist) * f;
+			const fy = (dy / dist) * f;
+			disp[i].x += fx;
+			disp[i].y += fy;
+			disp[j].x -= fx;
+			disp[j].y -= fy;
+		}
+		for (let i = 0; i < n; i++) {
+			disp[i].x += (initial[i].x - pos[i].x) * 0.012;
+			disp[i].y += (initial[i].y - pos[i].y) * 0.012;
+		}
+		const t = 0.055 * (1 - iter / iters) + 0.002;
+		for (let i = 0; i < n; i++) {
+			const d = Math.hypot(disp[i].x, disp[i].y) + 1e-9;
+			const s = Math.min(d, t) / d;
+			pos[i].x = clamp(pos[i].x + disp[i].x * s);
+			pos[i].y = clamp(pos[i].y + disp[i].y * s);
+		}
+	}
 }
 
 function normalize(pos: Point[]): Point[] {
