@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 820" role="img" aria-labelledby="title desc">
+  <title id="title">tellegen hero</title>
+  <desc id="desc">A power system network over a muted map field, showing browser parsing, sensitivities, and streamed solves.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfaf5"/>
+      <stop offset="0.48" stop-color="#eee9df"/>
+      <stop offset="1" stop-color="#d9e2e3"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="120" y1="650" x2="1500" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4b78a8"/>
+      <stop offset="0.44" stop-color="#d3b45f"/>
+      <stop offset="1" stop-color="#c95f32"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="720" y1="620" x2="1400" y2="140" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6c7f98"/>
+      <stop offset="0.55" stop-color="#a97d35"/>
+      <stop offset="1" stop-color="#cf6a2d"/>
+    </linearGradient>
+    <radialGradient id="nodeWarm" cx="50%" cy="42%" r="65%">
+      <stop offset="0" stop-color="#ffd27b"/>
+      <stop offset="0.62" stop-color="#d8792f"/>
+      <stop offset="1" stop-color="#8f3d21"/>
+    </radialGradient>
+    <radialGradient id="nodeCool" cx="46%" cy="40%" r="68%">
+      <stop offset="0" stop-color="#dcecf1"/>
+      <stop offset="0.7" stop-color="#66849b"/>
+      <stop offset="1" stop-color="#324659"/>
+    </radialGradient>
+    <pattern id="minorGrid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#2d3138" stroke-width="1" opacity="0.055"/>
+    </pattern>
+    <pattern id="majorGrid" width="160" height="160" patternUnits="userSpaceOnUse">
+      <rect width="160" height="160" fill="url(#minorGrid)"/>
+      <path d="M160 0H0V160" fill="none" stroke="#2d3138" stroke-width="1.4" opacity="0.09"/>
+    </pattern>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#20242b" flood-opacity="0.16"/>
+    </filter>
+    <filter id="tinyShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#20242b" flood-opacity="0.22"/>
+    </filter>
+    <clipPath id="rounded">
+      <rect x="16" y="16" width="1768" height="788" rx="36"/>
+    </clipPath>
+  </defs>
+
+  <rect x="16" y="16" width="1768" height="788" rx="36" fill="url(#bg)"/>
+  <g clip-path="url(#rounded)">
+    <rect x="16" y="16" width="1768" height="788" fill="url(#majorGrid)"/>
+    <path d="M108 643C205 552 282 581 371 504C455 432 484 314 601 279C744 237 835 335 971 279C1081 233 1122 122 1244 113C1379 104 1458 226 1575 194C1652 173 1699 111 1734 67"
+      fill="none" stroke="#ffffff" stroke-width="92" opacity="0.25" stroke-linecap="round"/>
+    <path d="M105 652C199 558 277 592 369 514C455 442 487 322 605 289C746 249 836 346 972 289C1081 243 1121 132 1243 124C1377 115 1455 238 1576 205C1653 184 1703 120 1738 77"
+      fill="none" stroke="#78848a" stroke-width="2.5" opacity="0.28" stroke-linecap="round" stroke-dasharray="8 14"/>
+    <path d="M86 220C210 168 309 205 414 173C520 140 558 54 690 62C839 71 899 190 1028 170C1151 150 1201 28 1351 47C1460 61 1524 139 1643 112"
+      fill="none" stroke="#ffffff" stroke-width="70" opacity="0.17" stroke-linecap="round"/>
+    <path d="M98 226C218 177 314 211 418 181C525 149 562 66 690 73C832 81 898 199 1028 179C1154 160 1204 39 1350 57C1456 70 1519 148 1640 122"
+      fill="none" stroke="#78848a" stroke-width="2" opacity="0.22" stroke-linecap="round" stroke-dasharray="6 12"/>
+
+    <g opacity="0.38">
+      <path d="M126 704H378M126 664H543M126 624H436" stroke="#20242b" stroke-width="1.2"/>
+      <path d="M1437 690H1675M1512 650H1675M1469 610H1675" stroke="#20242b" stroke-width="1.2"/>
+      <path d="M1054 74H1698M1180 114H1698M1325 154H1698" stroke="#20242b" stroke-width="1.2"/>
+    </g>
+
+    <g filter="url(#softShadow)">
+      <path d="M263 558L401 474L548 508L693 390L838 441L985 326L1138 362L1302 251L1467 292L1602 213"
+        fill="none" stroke="#2b2f35" stroke-width="16" opacity="0.11" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M263 558L401 474L548 508L693 390L838 441L985 326L1138 362L1302 251L1467 292L1602 213"
+        fill="none" stroke="url(#flow)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M401 474L473 333L693 390M548 508L617 635L838 441M985 326L966 188L1302 251M1138 362L1217 529L1467 292M263 558L195 423L401 474M838 441L890 612L1138 362M1302 251L1404 140L1602 213"
+        fill="none" stroke="#3e4850" stroke-width="5" opacity="0.46" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M401 474L473 333L693 390M548 508L617 635L838 441M985 326L966 188L1302 251M1138 362L1217 529L1467 292M263 558L195 423L401 474M838 441L890 612L1138 362M1302 251L1404 140L1602 213"
+        fill="none" stroke="#fff8e6" stroke-width="1.4" opacity="0.42" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <g filter="url(#tinyShadow)">
+      <circle cx="263" cy="558" r="17" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="4"/>
+      <circle cx="401" cy="474" r="25" fill="url(#nodeWarm)" stroke="#fcfbf7" stroke-width="5"/>
+      <circle cx="548" cy="508" r="19" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="4"/>
+      <circle cx="693" cy="390" r="31" fill="url(#nodeWarm)" stroke="#fcfbf7" stroke-width="5"/>
+      <circle cx="838" cy="441" r="20" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="4"/>
+      <circle cx="985" cy="326" r="36" fill="url(#nodeWarm)" stroke="#fcfbf7" stroke-width="6"/>
+      <circle cx="1138" cy="362" r="21" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="4"/>
+      <circle cx="1302" cy="251" r="32" fill="url(#nodeWarm)" stroke="#fcfbf7" stroke-width="5"/>
+      <circle cx="1467" cy="292" r="20" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="4"/>
+      <circle cx="1602" cy="213" r="27" fill="url(#nodeWarm)" stroke="#fcfbf7" stroke-width="5"/>
+      <circle cx="473" cy="333" r="14" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="3"/>
+      <circle cx="617" cy="635" r="14" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="3"/>
+      <circle cx="966" cy="188" r="15" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="3"/>
+      <circle cx="1217" cy="529" r="15" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="3"/>
+      <circle cx="195" cy="423" r="14" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="3"/>
+      <circle cx="890" cy="612" r="13" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="3"/>
+      <circle cx="1404" cy="140" r="14" fill="url(#nodeCool)" stroke="#fcfbf7" stroke-width="3"/>
+    </g>
+
+    <g transform="translate(118,126)">
+      <text x="0" y="0" fill="#20242b" font-family="Bricolage Grotesque, Inter, Arial, sans-serif" font-size="126" font-weight="650" letter-spacing="0">tellegen</text>
+      <text x="6" y="62" fill="#59616a" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="24" letter-spacing="0">reactive visualization for power systems optimization</text>
+      <g transform="translate(8,100)" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="17" letter-spacing="0">
+        <rect x="0" y="0" width="188" height="38" rx="5" fill="#fcfbf7" fill-opacity="0.76" stroke="#c8c0b2"/>
+        <text x="18" y="25" fill="#20242b">browser parse</text>
+        <rect x="206" y="0" width="172" height="38" rx="5" fill="#fcfbf7" fill-opacity="0.76" stroke="#c8c0b2"/>
+        <text x="224" y="25" fill="#20242b">dLMP/dd</text>
+        <rect x="396" y="0" width="176" height="38" rx="5" fill="#fcfbf7" fill-opacity="0.76" stroke="#c8c0b2"/>
+        <text x="414" y="25" fill="#20242b">streamed solve</text>
+      </g>
+    </g>
+
+    <g transform="translate(1235,560)" filter="url(#tinyShadow)">
+      <rect x="0" y="0" width="410" height="134" rx="12" fill="#fcfbf7" fill-opacity="0.83" stroke="#c8c0b2"/>
+      <text x="24" y="38" fill="#20242b" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="18" letter-spacing="0">case14.m</text>
+      <path d="M112 32H180" stroke="#d1772d" stroke-width="3"/>
+      <text x="24" y="73" fill="#59616a" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="15" letter-spacing="0">local file stays in browser</text>
+      <text x="24" y="101" fill="#59616a" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="15" letter-spacing="0">drop sidecar or place topology</text>
+      <circle cx="348" cy="68" r="32" fill="none" stroke="url(#signal)" stroke-width="5"/>
+      <path d="M335 68L347 80L366 54" fill="none" stroke="#20242b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <g opacity="0.72">
+      <path d="M77 761C260 710 379 734 519 697C653 661 727 589 883 581C1035 573 1113 636 1264 608C1400 583 1504 500 1717 523"
+        fill="none" stroke="#fcfbf7" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M90 776C275 727 405 748 543 713C674 679 747 606 891 601C1041 595 1120 655 1272 628C1412 603 1516 520 1730 541"
+        fill="none" stroke="#20242b" stroke-width="1.2" opacity="0.14" stroke-linecap="round"/>
+    </g>
+  </g>
+  <rect x="16" y="16" width="1768" height="788" rx="36" fill="none" stroke="#c6beb0" stroke-width="2"/>
+</svg>

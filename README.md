@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/hero.svg" alt="tellegen reactive power flow visualization" width="100%">
+</p>
+
 # tellegen
 
 Reactive visualization for power systems optimization. The name refers to
