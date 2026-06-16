@@ -16,14 +16,16 @@
 		sensNeutral,
 		type SensitivityDomain
 	} from '$lib/colors';
-	import { app, type CaseState } from '$lib/state.svelte';
+	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
 
 	let {
 		onbusclick,
+		onlocalbusclick,
 		onplacecase,
 		onmapclick
 	}: {
 		onbusclick: (caseId: string, busId: number) => void;
+		onlocalbusclick: (caseId: string, busId: number) => void;
 		onplacecase: (lon: number, lat: number) => void;
 		onmapclick: () => void;
 	} = $props();
@@ -67,19 +69,20 @@
 	// panel legend and tooltips carry the actual numbers). Preview values
 	// shift individual buses without rescaling.
 	const display = $derived.by(() => {
-		const active = app.active;
+		const active = app.active ?? app.activeLocal;
 		const selected = app.selectedBus;
 		const activeSensitivity =
 			active && selected !== null && active.sensitivity?.bus === selected ? active.sensitivity : null;
+		const activeDeltas = active instanceof CaseState ? active.deltas : (active?.deltas ?? {});
 		const previewStep =
 			active && selected !== null && app.previewDeltaMw !== null && activeSensitivity
-				? app.previewDeltaMw - (active.deltas[selected] ?? 0)
+				? app.previewDeltaMw - (activeDeltas[selected] ?? 0)
 				: 0;
 		const previewing = Boolean(active?.solving || Math.abs(previewStep) >= 0.25);
 
 		const perCase = new Map<string, CaseDisplay>();
-		for (const c of app.cases) {
-			if (!c.network || !c.solution) continue;
+		const addCase = (c: CaseState | LocalCase) => {
+			if (!c.network || !c.solution) return;
 			const lmp = new Map<number, number>();
 			for (const e of c.solution.lmp) lmp.set(e.bus, e.usd_per_mwh);
 			const { lo, hi } = lmpDomain(c.solution.lmp.map((e) => e.usd_per_mwh));
@@ -105,7 +108,9 @@
 			const mode: 'lmp' | 'sens' =
 				isActive && selected !== null && domain && !previewing ? 'sens' : 'lmp';
 			perCase.set(c.id, { lmp, lo, hi, loading, mode, sens, sensDomain: domain });
-		}
+		};
+		for (const c of app.cases) addCase(c);
+		for (const c of app.localCases) addCase(c);
 		return perCase;
 	});
 
@@ -343,25 +348,30 @@
 				})
 			);
 		}
-		// Local cases: topology only, no physics yet, so desaturated graphite
-		// against the warm LMP ramp of solved backend cases. A .pwd display
-		// file contributes substation points only (no topology), in a cooler
-		// slate so they read as diagram derived positions.
+		// Local cases are grey until the browser solve returns. A .pwd display
+		// file contributes substation points only, in a cooler slate so they
+		// read as diagram derived positions.
 		for (const c of app.localCases) {
 			if (c.view) {
+				const d = display.get(c.id);
 				layers.push(
 					new PathLayer<NetworkBranch>({
 						id: `local-branches-${c.id}`,
 						data: c.view.branches,
 						getPath: (b) => b.path,
-						getColor: [138, 131, 117, 150],
-						getWidth: 1.5,
+						getColor: (b) =>
+							d ? branchColor(d.loading.get(b.id) ?? 0, b.status === 1) : [138, 131, 117, 150],
+						getWidth: (b) => (d ? branchWidth(d.loading.get(b.id) ?? 0) : 1.5),
 						widthUnits: 'pixels',
 						widthMinPixels: 1.2,
 						capRounded: true,
 						jointRounded: true,
 						miterLimit: 2,
-						pickable: true
+						pickable: true,
+						updateTriggers: {
+							getColor: [display],
+							getWidth: [display]
+						}
 					}),
 					new ScatterplotLayer<NetworkBus>({
 						id: `local-buses-${c.id}`,
@@ -369,15 +379,30 @@
 						getPosition: (b) => [b.lon, b.lat],
 						getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
 						radiusUnits: 'pixels',
-						getFillColor: [110, 115, 120, 200],
+						getFillColor: d ? busFill(c.id) : [110, 115, 120, 200],
 						stroked: true,
 						billboard: true,
-						getLineColor: [46, 42, 34, 110],
-						getLineWidth: 1,
+						getLineColor: (b) =>
+							c.id === app.activeLocalId && b.id === app.selectedBus
+								? [32, 36, 43, 255]
+								: [46, 42, 34, 110],
+						getLineWidth: (b) =>
+							c.id === app.activeLocalId && b.id === app.selectedBus ? 2.5 : 1,
 						lineWidthUnits: 'pixels',
 						pickable: true,
 						autoHighlight: true,
-						highlightColor: [32, 36, 43, 70]
+						highlightColor: [32, 36, 43, 70],
+						onClick: (info: PickingInfo) => {
+							const bus = info.object as NetworkBus | undefined;
+							if (!bus) return false;
+							onlocalbusclick(c.id, bus.id);
+							return true;
+						},
+						updateTriggers: {
+							getFillColor: [display],
+							getLineColor: [app.selectedBus, app.activeLocalId],
+							getLineWidth: [app.selectedBus, app.activeLocalId]
+						}
 					})
 				);
 			}

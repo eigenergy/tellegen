@@ -7,7 +7,7 @@ uploaded to the server by the current public demo.
 
 - Dropped `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, and `.geojson` files
   stay on your device.
-- The browser uses the local file contents to draw a map preview.
+- The browser uses local file contents to draw the map and run DC solves.
 - The server receives ordinary page and API requests for the bundled demo cases.
 - There is no analytics product wired to uploaded case contents.
 

@@ -20,13 +20,13 @@ export interface LocalSubstations {
 	approximate: true;
 }
 
-/** A case file parsed in the browser. Topology only, no physics. A .pwd
- * display file has no case summary: substations only. */
+/** A case file parsed in the browser. Network cases can solve after they have
+ * coordinates. A .pwd display file has no case summary: substations only. */
 export interface LocalCase {
 	id: string; // `local-1`, `local-2`, ...
 	label: string;
 	fileName: string;
-	/** Case stats; null for a .pwd display-only entry. */
+	/** Case stats; null for a .pwd display only entry. */
 	summary: CaseFileSummary | null;
 	/** Raw powerio Network JSON for the browser solver branch. */
 	networkJson?: string;
@@ -38,7 +38,20 @@ export interface LocalCase {
 	syntheticCenter?: { lon: number; lat: number };
 	geoSource?: string;
 	geoWarnings?: string[];
-	/** Present for a PowerWorld .pwd display-only entry. */
+	/** Local solve state. Present only for parsed case files, never for .pwd display entries. */
+	network?: Network | null;
+	baseSolution?: Solution | null;
+	solution?: Solution | null;
+	sensitivity?: SensitivityColumn | null;
+	deltas?: DemandDeltas;
+	iterations?: SolveIteration[];
+	solving?: boolean;
+	solveMs?: number | null;
+	solveBackend?: SolveBackend | null;
+	solveSeq?: number;
+	sensitivitySeq?: number;
+	predictedObjective?: number | null;
+	/** Present for a PowerWorld .pwd display only entry. */
 	substations?: LocalSubstations;
 }
 

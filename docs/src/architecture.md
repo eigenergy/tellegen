@@ -1,45 +1,47 @@
 # Architecture
 
 tellegen is the browser interface for power systems cases parsed by powerio and
-solved by PowerDiff.jl. This chapter records the intended boundary between
-Rust, Svelte, and Julia as of June 2026.
+solved either in browser WebAssembly or by the Julia reference backend. This
+chapter records the intended boundary between Rust, Svelte, and Julia as of
+June 2026.
 
 ## Current boundary
 
 - **powerio** parses, encodes, and owns the network and display formats.
 - **tellegen Rust** builds browser WebAssembly against powerio. It owns browser
-  parsing, display decoding, and browser numerical kernels as they are added.
+  parsing, display decoding, DC OPF, and dLMP/dd columns.
 - **tellegen frontend** owns interaction, rendering, and the gradient preview,
   exact commit loop.
-- **Julia backend** owns exact OPF solves and PowerDiff.jl sensitivities until
-  the corresponding browser numerical path exists.
+- **Julia backend** owns bundled demo case loading, raw PowerIO JSON export, and
+  the PowerDiff.jl/Ipopt fallback path for bundled cases.
 
 This split keeps format support in powerio, interface code in tellegen, and the
-reference solver in PowerDiff.jl.
+reference solver in PowerDiff.jl. Local dropped case files solve only in the
+browser.
 
 ## Placement of solver work
 
-The browser can run the DC path if the numerical code is written in Rust and
+The browser runs the DC path because the numerical code is written in Rust and
 compiled to WebAssembly. PowerDiff.jl itself depends on JuMP, Ipopt, and sparse
 linear algebra that do not have a supported Julia WebAssembly path.
 
-The implementation order is:
+The implemented order is:
 
 1. Use server computed sensitivity matrices for browser matrix vector previews.
 2. Port DC OPF to Rust/WebAssembly, with PowerDiff.jl as the reference.
 3. Port dLMP/dd columns for the solved DC active set.
 4. Keep AC OPF on the Julia server until a browser solver path is validated.
 
-Clarabel.rs is the candidate for DC LP/QP solves because it is pure Rust and has
-a WebAssembly path. DC sensitivities require a linear solve against the active
-KKT system. AC power flow requires separate validation of sparse linear algebra
-under WebAssembly; AC OPF remains a server calculation.
+Clarabel.rs runs the DC LP/QP solves in the Rust crate. DC sensitivities use a
+linear solve against the active KKT system. AC power flow requires separate
+validation of sparse linear algebra under WebAssembly; AC OPF remains a server
+calculation.
 
 ## Frontend and packaging
 
 The current application already uses the intended interaction model:
-sensitivity preview in the browser, exact solve on the server, and
-reconciliation when the solve returns.
+sensitivity preview in the browser, exact solve in the browser, and bundled
+case fallback to the server when WebAssembly solve fails.
 
 The next packaging step is to turn the Svelte code into a library with
 `@sveltejs/package`. The package should export map components, typed case data,
@@ -63,12 +65,11 @@ rendering does not share state across requests.
 ## Roadmap
 
 1. Package the frontend library surface.
-2. Implement DC OPF and DC sensitivities in Rust/WebAssembly.
-3. Use PowerDiff.jl parity tests as the acceptance criterion for the Rust DC
+2. Keep PowerDiff.jl parity tests as the acceptance criterion for the Rust DC
    path.
-4. Validate sparse Rust linear algebra in WebAssembly before starting browser AC
+3. Validate sparse Rust linear algebra in WebAssembly before starting browser AC
    power flow.
-5. Keep AC OPF on the backend until a nonlinear or conic browser solver path is
+4. Keep AC OPF on the backend until a nonlinear or conic browser solver path is
    selected and tested.
 
 ## Sources

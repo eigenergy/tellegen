@@ -34,15 +34,15 @@ on geographic footprints, not surveyed infrastructure:
 Each case is an islanded DC OPF instance. Bus color shows locational marginal
 price. Selecting a bus shows the dLMP/dd column for a demand perturbation at
 that bus. Moving the demand slider applies the local sensitivity immediately;
-releasing it computes the exact solution with Clarabel in WebAssembly. If the
-browser solve is unavailable, the server streams an Ipopt fallback solve.
+releasing it computes the exact solution with Clarabel in WebAssembly. Bundled
+cases can fall back to the Julia server if browser solve is unavailable.
 
 Dropped `.m`, `.raw`, and `.aux` files are parsed in the browser by the
 WebAssembly build of powerio. Files with coordinates render on the map. Files
 without coordinates can be placed by clicking the map, or paired with local
 coordinate sidecars in `.csv`, `.json`, or `.geojson` form. A dropped PowerWorld
 `.pwd` file is decoded as display data and rendered as approximate substation
-positions. Dropped files are not uploaded.
+positions. Parsed local case files solve in the browser and are not uploaded.
 
 ## Development
 
@@ -106,7 +106,7 @@ npm run build
 
 - `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, TAMU coordinate ingestion
 - `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl
-- `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing
+- `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing and DC solves
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -123,6 +123,7 @@ scripts/build-docs.sh
 
 - `GET /api/health`
 - `GET /api/cases`
+- `GET /api/cases/{id}/case`
 - `GET /api/cases/{id}/network`
 - `GET /api/cases/{id}/solution`
 - `GET /api/cases/{id}/sensitivity/lmp/d/{bus}`
@@ -149,7 +150,6 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 ## Roadmap
 
 - library packaging with `@sveltejs/package`
-- dropped case solving, not only browser parsing
 - canonical display data in powerio
 - AC operands and AC solver paths as the browser numerical stack matures
 

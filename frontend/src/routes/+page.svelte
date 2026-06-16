@@ -13,7 +13,7 @@
 		getSolution,
 		openSolveStream
 	} from '$lib/api';
-	import type { SensitivityColumn } from '$lib/api';
+	import type { Network, SensitivityColumn } from '$lib/api';
 	import { busRadius, lmpDomain, lmpGradient, sensGradient, sensitivityDomain } from '$lib/colors';
 	import {
 		applyGeoSidecar,
@@ -35,6 +35,27 @@
 	let dragDepth = 0;
 
 	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
+	type SolvableCase = CaseState | LocalCase;
+
+	function isBackendCase(c: SolvableCase): c is CaseState {
+		return c instanceof CaseState;
+	}
+
+	function isActiveSolveCase(c: SolvableCase): boolean {
+		return isBackendCase(c) ? app.activeCaseId === c.id : app.activeLocalId === c.id;
+	}
+
+	function caseDeltas(c: SolvableCase) {
+		return isBackendCase(c) ? c.deltas : (c.deltas ?? {});
+	}
+
+	function isPerturbed(c: SolvableCase | null): boolean {
+		return c ? Object.values(caseDeltas(c)).some((mw) => mw !== 0) : false;
+	}
+
+	function touchLocal(c: SolvableCase) {
+		if (!isBackendCase(c)) app.updateLocal(c.id, { ...c });
+	}
 
 	onMount(() => {
 		const query = window.matchMedia(FILE_DROP_QUERY);
@@ -71,6 +92,45 @@
 
 	load();
 
+	function localNetwork(c: LocalCase): Network | null {
+		if (!c.summary || !c.view) return null;
+		return {
+			id: c.id,
+			name: c.label,
+			base_mva: c.summary.base_mva,
+			synthetic_coords: c.coordsKind !== 'file' && c.coordsKind !== 'sidecar',
+			buses: c.view.buses,
+			branches: c.view.branches
+		};
+	}
+
+	function withLocalSolveState(c: LocalCase): LocalCase {
+		return {
+			...c,
+			network: localNetwork(c) ?? c.network ?? null,
+			baseSolution: c.baseSolution ?? null,
+			solution: c.solution ?? null,
+			sensitivity: c.sensitivity ?? null,
+			deltas: c.deltas ?? {},
+			iterations: c.iterations ?? [],
+			solving: c.solving ?? false,
+			solveMs: c.solveMs ?? null,
+			solveBackend: c.solveBackend ?? null,
+			solveSeq: c.solveSeq ?? 0,
+			sensitivitySeq: c.sensitivitySeq ?? 0,
+			predictedObjective: c.predictedObjective ?? null
+		};
+	}
+
+	function maybeStartLocalSolve(id: string) {
+		const c = app.localCases.find((lc) => lc.id === id);
+		if (!c?.networkJson || !c.view || !c.summary) return;
+		const prepared = withLocalSolveState({ ...c, network: localNetwork(c) });
+		app.updateLocal(id, prepared);
+		const current = app.localCases.find((lc) => lc.id === id);
+		if (current?.networkJson && current.network && !current.solution) runSolve(current, null);
+	}
+
 	function activateCase(id: string) {
 		app.activeLocalId = null;
 		app.placingLocalId = null;
@@ -91,13 +151,15 @@
 		app.activeLocalId = c.id;
 		app.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
 		if (c.view || c.substations) app.requestFrame(c.id);
+		maybeStartLocalSolve(c.id);
 	}
 
 	function addAndActivateLocal(c: LocalCase) {
 		clearSelection();
 		app.activeCaseId = null;
-		app.addLocal(c);
+		app.addLocal(withLocalSolveState(c));
 		if (c.view || c.substations) app.requestFrame(c.id);
+		maybeStartLocalSolve(c.id);
 	}
 
 	function placeLocalCase(lon: number, lat: number) {
@@ -105,14 +167,16 @@
 		const c = id ? app.localCases.find((lc) => lc.id === id) : null;
 		if (!c?.topology) return;
 		const view = placeSyntheticTopology(c.topology, { lon, lat });
-		app.updateLocal(c.id, {
+		app.updateLocal(c.id, withLocalSolveState({
+			...c,
 			view,
 			coordsKind: 'synthetic',
 			syntheticCenter: { lon, lat }
-		});
+		}));
 		app.placingLocalId = null;
 		app.activeLocalId = c.id;
 		app.requestFrame(c.id);
+		maybeStartLocalSolve(c.id);
 	}
 
 	function moveLocalCase(c: LocalCase) {
@@ -124,7 +188,7 @@
 	function withGeoSidecar(c: LocalCase, sidecars: GeoSidecar[]): LocalCase {
 		if (!c.topology || sidecars.length === 0) return c;
 		const applied = applyGeoSidecar(c.topology, mergeGeoSidecars(sidecars));
-		return {
+		return withLocalSolveState({
 			...c,
 			view: applied.view,
 			coordsKind: 'sidecar',
@@ -137,7 +201,7 @@
 					: []),
 				...applied.warnings
 			]
-		};
+		});
 	}
 
 	function applyGeoSidecarsToExisting(sidecars: GeoSidecar[]) {
@@ -156,6 +220,7 @@
 			app.activeLocalId = target.id;
 			app.placingLocalId = null;
 			app.requestFrame(target.id);
+			maybeStartLocalSolve(target.id);
 			app.error = null;
 		} catch (e) {
 			app.error = `${sidecars.map((s) => s.sourceNames.join(' + ')).join(' + ')}: ${
@@ -166,7 +231,8 @@
 
 	// Fetch and cache the raw powerio Network JSON for the browser solver.
 	// Returns null when it can't be loaded, so callers fall back to the server.
-	async function ensureNetworkJson(c: CaseState): Promise<string | null> {
+	async function ensureNetworkJson(c: SolvableCase): Promise<string | null> {
+		if (!isBackendCase(c)) return c.networkJson ?? null;
 		if (c.networkJson) return c.networkJson;
 		try {
 			const json = await getCaseNetworkJson(c.id);
@@ -178,25 +244,27 @@
 	}
 
 	function acceptSensitivity(
-		c: CaseState,
+		c: SolvableCase,
 		col: SensitivityColumn | null,
 		busId: number | null,
 		sensitivitySeq?: number
 	) {
 		if (!col || busId === null) return;
 		if (col.bus !== busId) return;
-		if (app.activeCaseId !== c.id || app.selectedBus !== busId) return;
-		if (sensitivitySeq !== undefined && sensitivitySeq !== c.sensitivitySeq) return;
+		if (!isActiveSolveCase(c) || app.selectedBus !== busId) return;
+		if (sensitivitySeq !== undefined && sensitivitySeq !== (c.sensitivitySeq ?? 0)) return;
 		c.sensitivity = col;
+		touchLocal(c);
 	}
 
-	function finishSolve(c: CaseState, seq: number, sensBus: number | null) {
-		if (seq !== c.solveSeq) return;
+	function finishSolve(c: SolvableCase, seq: number, sensBus: number | null) {
+		if (seq !== (c.solveSeq ?? 0)) return;
 		c.solving = false;
-		if (app.activeCaseId === c.id && app.selectedBus === sensBus) {
+		if (isActiveSolveCase(c) && app.selectedBus === sensBus) {
 			app.previewActive = false;
 			app.previewDeltaMw = null;
 		}
+		touchLocal(c);
 	}
 
 	async function selectBus(caseId: string, busId: number) {
@@ -241,12 +309,47 @@
 		}
 	}
 
+	async function selectLocalBus(localId: string, busId: number) {
+		const c = app.localCases.find((lc) => lc.id === localId);
+		if (!c?.networkJson || !c.network) return;
+		app.activeCaseId = null;
+		app.activeLocalId = localId;
+		app.placingLocalId = null;
+		abort?.abort();
+		const ac = new AbortController();
+		abort = ac;
+		c.sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
+		const sensitivitySeq = c.sensitivitySeq;
+		app.error = null;
+		app.selectedBus = busId;
+		app.previewDeltaMw = null;
+		app.previewActive = false;
+		app.demandRangeMode = 'local';
+		app.sensitivityLoading = true;
+		c.sensitivity = null;
+		touchLocal(c);
+		try {
+			const { sensitivity } = await solveDc(localId, c.networkJson, c.deltas ?? {}, busId);
+			if (!ac.signal.aborted) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+		} catch (e) {
+			if (!ac.signal.aborted) app.error = `${c.label}: ${e instanceof Error ? e.message : e}`;
+		} finally {
+			if (abort === ac) app.sensitivityLoading = false;
+		}
+	}
+
 	function clearSelection() {
 		abort?.abort();
 		const c = app.active;
 		if (c) {
 			c.sensitivitySeq++;
 			c.sensitivity = null;
+		}
+		const lc = app.activeLocal;
+		if (lc) {
+			lc.sensitivitySeq = (lc.sensitivitySeq ?? 0) + 1;
+			lc.sensitivity = null;
+			touchLocal(lc);
 		}
 		app.selectedBus = null;
 		app.previewDeltaMw = null;
@@ -258,29 +361,45 @@
 	// Exact DC solve in the browser (wasm). On any failure, or when the network
 	// JSON can't be fetched, reconcile via the server stream — which also shows
 	// the interior point iterations.
-	function runSolve(c: CaseState, sensBus: number | null) {
+	function runSolve(c: SolvableCase, sensBus: number | null) {
 		closeStream?.();
-		const seq = ++c.solveSeq;
+		c.solveSeq = (c.solveSeq ?? 0) + 1;
+		const seq = c.solveSeq;
 		app.error = null;
 		c.solving = true;
 		c.solveBackend = null;
 		c.iterations = [];
 		c.solveMs = null;
+		touchLocal(c);
 		ensureNetworkJson(c).then((networkJson) => {
-			if (seq !== c.solveSeq) return;
-			if (!networkJson) return serverSolve(c, sensBus, seq);
+			if (seq !== (c.solveSeq ?? 0)) return;
+			if (!networkJson) {
+				if (isBackendCase(c)) return serverSolve(c, sensBus, seq);
+				c.solving = false;
+				app.error = `${c.label}: local case has no browser network JSON`;
+				touchLocal(c);
+				return;
+			}
 			const t0 = performance.now();
 			c.solveBackend = 'clarabel-wasm';
-			solveDc(c.id, networkJson, c.deltas, sensBus)
+			touchLocal(c);
+			solveDc(c.id, networkJson, caseDeltas(c), sensBus)
 				.then(({ solution, sensitivity }) => {
-					if (seq !== c.solveSeq) return;
+					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
+					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0) c.baseSolution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
 					acceptSensitivity(c, sensitivity, sensBus);
 					finishSolve(c, seq, sensBus);
 				})
 				.catch(() => {
-					if (seq === c.solveSeq) serverSolve(c, sensBus, seq);
+					if (seq !== (c.solveSeq ?? 0)) return;
+					if (isBackendCase(c)) serverSolve(c, sensBus, seq);
+					else {
+						c.solving = false;
+						app.error = `${c.label}: browser solve failed`;
+						touchLocal(c);
+					}
 				});
 		});
 	}
@@ -315,22 +434,23 @@
 	}
 
 	function commitDelta(value: number) {
-		const c = app.active;
+		const c = activeSolvable;
 		const bus = app.selectedBus;
 		if (!c || bus === null) return;
 		c.predictedObjective = predictedDeltaObj;
-		const deltas = { ...c.deltas };
+		const deltas = { ...caseDeltas(c) };
 		if (Math.abs(value) < 0.25) delete deltas[bus];
 		else deltas[bus] = value;
 		c.deltas = deltas;
 		app.previewDeltaMw = value;
 		app.previewActive = true;
+		touchLocal(c);
 		runSolve(c, bus);
 	}
 
 	function finishDemandInput(value: number) {
 		if (Math.abs(value - committedDelta) < 0.25) {
-			if (!app.active?.solving) {
+			if (!activeSolvable?.solving) {
 				app.previewActive = false;
 				app.previewDeltaMw = null;
 			}
@@ -339,13 +459,14 @@
 		commitDelta(value);
 	}
 
-	function resetCase(c: CaseState) {
+	function resetCase(c: SolvableCase) {
 		c.deltas = {};
 		c.predictedObjective = null;
 		app.previewDeltaMw = app.selectedBus === null ? null : 0;
 		app.previewActive = app.selectedBus !== null;
 		app.demandRangeMode = 'local';
 		if (c.baseSolution) c.solution = c.baseSolution;
+		touchLocal(c);
 		runSolve(c, app.selectedBus);
 	}
 
@@ -489,8 +610,12 @@
 		return m ? [m[1], m[2]] : [name, ''];
 	}
 
+	const activeSolvable = $derived.by(
+		(): SolvableCase | null => app.active ?? (app.activeLocal?.network ? app.activeLocal : null)
+	);
+
 	const stats = $derived.by(() => {
-		const c = app.active;
+		const c = activeSolvable;
 		if (!c?.network || !c.solution || !c.baseSolution) return null;
 		const lmps = c.solution.lmp.map((e) => e.usd_per_mwh);
 		const domain = lmpDomain(lmps);
@@ -510,13 +635,13 @@
 	});
 
 	const selectedBusData = $derived.by(() => {
-		const c = app.active;
+		const c = activeSolvable;
 		if (!c?.network || app.selectedBus === null) return null;
 		return c.network.buses.find((b) => b.id === app.selectedBus) ?? null;
 	});
 
 	const committedDelta = $derived(
-		app.active && app.selectedBus !== null ? (app.active.deltas[app.selectedBus] ?? 0) : 0
+		activeSolvable && app.selectedBus !== null ? (caseDeltas(activeSolvable)[app.selectedBus] ?? 0) : 0
 	);
 	const sliderValue = $derived(app.previewDeltaMw ?? committedDelta);
 
@@ -549,7 +674,7 @@
 	}
 
 	const selectedSensitivity = $derived.by(() => {
-		const c = app.active;
+		const c = activeSolvable;
 		if (!c?.sensitivity || app.selectedBus === null) return null;
 		return c.sensitivity.bus === app.selectedBus ? c.sensitivity : null;
 	});
@@ -559,7 +684,7 @@
 	);
 
 	const selectedLmp = $derived.by(() => {
-		const c = app.active;
+		const c = activeSolvable;
 		if (!c?.solution || app.selectedBus === null) return null;
 		return c.solution.lmp.find((e) => e.bus === app.selectedBus)?.usd_per_mwh ?? null;
 	});
@@ -572,7 +697,7 @@
 	// Second order objective preview vs base: the exact part up to the
 	// committed point, plus lmp*step + S_bb*step^2/2 along the gradient.
 	const predictedDeltaObj = $derived.by(() => {
-		const c = app.active;
+		const c = activeSolvable;
 		if (!c?.solution || !c.baseSolution || selectedLmp === null) return null;
 		const step = sliderValue - committedDelta;
 		const committedPart = c.solution.objective - c.baseSolution.objective;
@@ -580,8 +705,8 @@
 	});
 
 	const gradientScore = $derived.by(() => {
-		const c = app.active;
-		if (!c?.solution || !c.baseSolution || c.predictedObjective === null || c.solving)
+		const c = activeSolvable;
+		if (!c?.solution || !c.baseSolution || c.predictedObjective == null || c.solving)
 			return null;
 		const exact = c.solution.objective - c.baseSolution.objective;
 		return { pred: c.predictedObjective, exact };
@@ -597,7 +722,7 @@
 
 	const previewing = $derived(
 		Boolean(
-			app.active?.solving ||
+			activeSolvable?.solving ||
 				(app.previewDeltaMw !== null && Math.abs(sliderValue - committedDelta) >= 0.25)
 		)
 	);
@@ -619,7 +744,12 @@
 />
 
 <main>
-	<TellegenMap onbusclick={selectBus} onplacecase={placeLocalCase} onmapclick={clearSelection} />
+	<TellegenMap
+		onbusclick={selectBus}
+		onlocalbusclick={selectLocalBus}
+		onplacecase={placeLocalCase}
+		onmapclick={clearSelection}
+	/>
 
 	<header>
 		<div class="brand">
@@ -743,32 +873,35 @@
 				</button>
 			{/if}
 			<button class="reset mono" onclick={() => app.removeLocal(lc.id)}>remove</button>
-		{:else if !stats}
-			{#if !app.error}
+		{/if}
+		{#if !stats}
+			{#if !app.error && !app.activeLocal}
 				<p class="dim mono blink">loading cases&hellip;</p>
 			{/if}
 		{:else}
-			{@const [cname, cregion] = splitName(app.active?.name ?? '')}
-			<h2>{cname} <span class="region mono">{cregion}</span></h2>
-			<dl class="mono">
-				<div><dt>buses</dt><dd>{stats.buses}</dd></div>
-				<div><dt>branches</dt><dd>{stats.branches}</dd></div>
-				<div><dt>binding lines</dt><dd>{stats.binding}</dd></div>
-				<div><dt>objective</dt><dd>{fmt.format(stats.objective)} $/h</dd></div>
-				{#if app.active?.perturbed}
-					<div class="delta"><dt>vs base</dt><dd>{signed(stats.deltaObjective)} $/h</dd></div>
+			{#if !app.activeLocal}
+				{@const [cname, cregion] = splitName(app.active?.name ?? '')}
+				<h2>{cname} <span class="region mono">{cregion}</span></h2>
+				<dl class="mono">
+					<div><dt>buses</dt><dd>{stats.buses}</dd></div>
+					<div><dt>branches</dt><dd>{stats.branches}</dd></div>
+					<div><dt>binding lines</dt><dd>{stats.binding}</dd></div>
+					<div><dt>objective</dt><dd>{fmt.format(stats.objective)} $/h</dd></div>
+					{#if isPerturbed(activeSolvable)}
+						<div class="delta"><dt>vs base</dt><dd>{signed(stats.deltaObjective)} $/h</dd></div>
+					{/if}
+				</dl>
+				{#if app.active?.network?.synthetic_coords}
+					<p class="footnote mono">coordinates: topology layout, not geography</p>
+				{:else}
+					<p class="footnote mono">coordinates: TAMU synthetic grid footprint</p>
 				{/if}
-			</dl>
-			{#if app.active?.network?.synthetic_coords}
-				<p class="footnote mono">coordinates: topology layout, not geography</p>
-			{:else}
-				<p class="footnote mono">coordinates: TAMU synthetic grid footprint</p>
 			{/if}
 
 			<hr />
 
 			{#if app.selectedBus !== null && selectedSensitivity}
-				{@const c = app.active as CaseState}
+				{@const c = activeSolvable as SolvableCase}
 				<div class="mode">
 					<span class="chip">{previewing ? 'LMP preview' : '∂LMP/∂d'}</span>
 					<span class="mono dim">bus {app.selectedBus}</span>
@@ -843,20 +976,20 @@
 					{#if predictedDeltaObj !== null && previewing}
 						<p class="pred mono dim">predicted &Delta;cost {signed(predictedDeltaObj)} $/h</p>
 					{/if}
-					{#if gradientScore && c.perturbed}
+					{#if gradientScore && isPerturbed(c)}
 						<p class="score mono">
 							gradient {signed(gradientScore.pred)} &middot; exact {signed(gradientScore.exact)} $/h
 						</p>
 					{/if}
-					{#if c.perturbed}
+					{#if isPerturbed(c)}
 						<button class="reset mono" onclick={() => resetCase(c)}>reset demand</button>
 					{/if}
 				</div>
 
-					{#if !previewing}
-						<table class="mono">
-							<tbody>
-								{#each topMovers as mover (mover.bus)}
+				{#if !previewing}
+					<table class="mono">
+						<tbody>
+							{#each topMovers as mover (mover.bus)}
 								<tr>
 									<td>bus {mover.bus}</td>
 									<td class:pos={mover.value > 0} class:neg={mover.value < 0}>
@@ -864,9 +997,9 @@
 									</td>
 								</tr>
 							{/each}
-							</tbody>
-						</table>
-					{/if}
+						</tbody>
+					</table>
+				{/if}
 				{:else}
 					<div class="mode">
 						<span class="chip">LMP</span>
@@ -878,18 +1011,18 @@
 					<p class="dim small">
 						DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
 					</p>
-				<div class="legend" style:background={lmpGradient}></div>
-				<div class="legend-labels mono">
-					{#if stats.uniformLmp !== null}
-						<span>uniform {fmt.format(stats.uniformLmp)} $/MWh, no congestion</span>
-					{:else}
-						<span>{stats.lmpLo.clamped ? '≤' : ''}{fmt.format(stats.lmpLo.value)}</span>
-						<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
-					{/if}
-				</div>
-				<p class="dim small filedrop-note">
-					Drop case files and optional coordinate sidecars; parsing stays in your browser.
-				</p>
+					<div class="legend" style:background={lmpGradient}></div>
+					<div class="legend-labels mono">
+						{#if stats.uniformLmp !== null}
+							<span>uniform {fmt.format(stats.uniformLmp)} $/MWh, no congestion</span>
+						{:else}
+							<span>{stats.lmpLo.clamped ? '≤' : ''}{fmt.format(stats.lmpLo.value)}</span>
+							<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
+						{/if}
+					</div>
+					<p class="dim small filedrop-note">
+						Drop case files and optional coordinate sidecars; parsing stays in your browser.
+					</p>
 			{/if}
 
 			<hr />
@@ -906,30 +1039,30 @@
 		{/if}
 	</aside>
 
-	{#if app.active && (app.active.solving || app.active.solveMs !== null)}
+	{#if activeSolvable && (activeSolvable.solving || activeSolvable.solveMs != null)}
 		<div class="solvecard">
 			<div class="solvecard-head mono">
 				<span>exact solve</span>
-				{#if app.active.solving}
+				{#if activeSolvable.solving}
 					<span class="dim blink"
-						>{app.active.solveBackend === 'ipopt-server' ? 'Ipopt server' : 'Clarabel wasm'}</span
+						>{activeSolvable.solveBackend === 'ipopt-server' ? 'Ipopt server' : 'Clarabel wasm'}</span
 					>
 				{:else}
 					<span class="dim"
-						>{app.active.solveBackend === 'ipopt-server' ? 'Ipopt server' : 'Clarabel wasm'}</span
+						>{activeSolvable.solveBackend === 'ipopt-server' ? 'Ipopt server' : 'Clarabel wasm'}</span
 					>
 				{/if}
 			</div>
-			{#if app.active.iterations.length > 1}
-				<Sparkline iterations={app.active.iterations} />
+			{#if (activeSolvable.iterations ?? []).length > 1}
+				<Sparkline iterations={activeSolvable.iterations ?? []} />
 			{/if}
 			<div class="solve-meta mono dim">
-				{#if app.active.iterations.length > 1}
-					<span>{app.active.iterations.length} iterations</span>
+				{#if (activeSolvable.iterations ?? []).length > 1}
+					<span>{activeSolvable.iterations?.length} iterations</span>
 				{:else}
 					<span>browser solve</span>
 				{/if}
-				{#if app.active.solveMs !== null}<span>{app.active.solveMs} ms</span>{/if}
+				{#if activeSolvable.solveMs != null}<span>{activeSolvable.solveMs} ms</span>{/if}
 			</div>
 		</div>
 	{/if}

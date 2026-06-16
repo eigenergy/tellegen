@@ -9,6 +9,10 @@ directly. If coordinates are missing, tellegen creates a local synthetic layout
 and asks the user to place it on the map. JSON files are treated as coordinate
 sidecars in this release, not as network case files.
 
+After a parsed local case has coordinates, either from the file, a sidecar, or
+manual placement, tellegen solves the DC OPF in browser WebAssembly. Local case
+files do not call the backend solve endpoints.
+
 ## Manual Placement
 
 For no coordinate files such as a plain `case14.m`, tellegen computes a
@@ -17,6 +21,10 @@ clicks the map to center that synthetic layout at the chosen location.
 
 The placed local case can be moved later with the case panel move action. The
 first version uses explicit click placement rather than drag movement.
+
+After placement, the local case enters the same bus selection and demand slider
+workflow as the bundled demo cases. The solve card reports the browser solve
+time and does not show server iterations.
 
 ## Coordinate Sidecars
 
