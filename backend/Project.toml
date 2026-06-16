@@ -15,10 +15,6 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 PowerIO = "0.1.2"
 
 [sources]
-# PowerDiff is unregistered; pin an exact commit for reproducible builds (a bare
-# branch rev would float to whatever HEAD is at resolve time). Bump deliberately
-# when the branch moves. Maintainers developing it locally can Pkg.develop a path
-# (the gitignored Manifest keeps that local). PowerDiff's own [sources] pin of
-# PowerIO is ignored here: as a dependency it takes PowerIO from the registry per
-# the [compat] above.
-PowerDiff = {url = "https://github.com/grid-opt-alg-lab/PowerDiff.jl.git", rev = "7433db4c766795b28151f4ec9ab610aff448a77e"}
+# PowerDiff is unregistered. Track the upstream main branch for this release
+# while its dependency graph is changing; do not rely on local checkouts.
+PowerDiff = {url = "https://github.com/grid-opt-alg-lab/PowerDiff.jl.git", rev = "main"}

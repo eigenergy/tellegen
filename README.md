@@ -9,9 +9,9 @@ Tellegen's theorem and the adjoint sensitivity calculations used by
 PowerDiff.jl.
 
 tellegen uses a gradient preview, exact commit interaction model. Perturbations
-update the display from KKT sensitivity columns computed by
-[PowerDiff.jl](https://github.com/grid-opt-alg-lab/PowerDiff.jl). Exact DC OPF
-solutions stream back from the server. Case parsing uses
+update the display from KKT sensitivity columns. Exact DC OPF commits run in the
+browser through Rust, Clarabel, and WebAssembly; the Julia server path with
+PowerDiff.jl and Ipopt remains the fallback. Case parsing uses
 [powerio](https://github.com/eigenergy/powerio) in both Rust/WebAssembly and
 Julia.
 
@@ -34,8 +34,8 @@ on geographic footprints, not surveyed infrastructure:
 Each case is an islanded DC OPF instance. Bus color shows locational marginal
 price. Selecting a bus shows the dLMP/dd column for a demand perturbation at
 that bus. Moving the demand slider applies the local sensitivity immediately;
-releasing it sends the perturbation to the server and streams Ipopt iterations
-until the exact solution returns.
+releasing it computes the exact solution with Clarabel in WebAssembly. If the
+browser solve is unavailable, the server streams an Ipopt fallback solve.
 
 Dropped `.m`, `.raw`, and `.aux` files are parsed in the browser by the
 WebAssembly build of powerio. Files with coordinates render on the map. Files
@@ -128,9 +128,9 @@ scripts/build-docs.sh
 - `GET /api/cases/{id}/sensitivity/lmp/d/{bus}`
 - `GET /api/cases/{id}/solve`
 
-The sensitivity and solve endpoints accept `?d=bus:mw,bus:mw`, where each value
-is a MW delta from the base case. The solve stream emits `status`, `iteration`,
-`solution`, optional `sensitivity`, and `done` events.
+The sensitivity and server solve endpoints accept `?d=bus:mw,bus:mw`, where each
+value is a MW delta from the base case. The solve stream emits `status`,
+`iteration`, `solution`, optional `sensitivity`, and `done` events.
 
 ## Deployment
 
@@ -148,7 +148,6 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 ## Roadmap
 
-- DC OPF and dLMP/dd sensitivities in Rust/WebAssembly
 - library packaging with `@sveltejs/package`
 - dropped case solving, not only browser parsing
 - canonical display data in powerio

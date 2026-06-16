@@ -10,6 +10,9 @@ import type {
 } from './api';
 import type { CaseFileSummary, Topology } from './wasm';
 
+export type SolveBackend = 'clarabel-wasm' | 'ipopt-server';
+export type DemandRangeMode = 'local' | 'full';
+
 /** Substations from a PowerWorld .pwd display file. Positions are inferred
  * from diagram coordinates, not surveyed latitude and longitude. */
 export interface LocalSubstations {
@@ -45,7 +48,7 @@ export class CaseState {
 	readonly id: string;
 	readonly name: string;
 	network = $state.raw<Network | null>(null);
-	/** Raw powerio Network JSON for the in-browser solver; fetched lazily. */
+	/** Raw powerio Network JSON for the browser solver; fetched lazily. */
 	networkJson = $state.raw<string | null>(null);
 	/** Boot solution at base demand; never changes. */
 	baseSolution = $state.raw<Solution | null>(null);
@@ -57,8 +60,11 @@ export class CaseState {
 	iterations = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
+	solveBackend = $state<SolveBackend | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;
+	/** Monotone token: only the latest sensitivity request may write this case. */
+	sensitivitySeq = 0;
 	/** Objective change the gradient predicted for the last commit, to score
 	 * the preview once the exact solve lands. */
 	predictedObjective = $state<number | null>(null);
@@ -80,6 +86,9 @@ export class AppState {
 	selectedBus = $state<number | null>(null);
 	/** Live slider value (MW from base) before commit; null when idle. */
 	previewDeltaMw = $state<number | null>(null);
+	/** True while the demand control should keep the map in LMP preview mode. */
+	previewActive = $state(false);
+	demandRangeMode = $state<DemandRangeMode>('local');
 	sensitivityLoading = $state(false);
 	error = $state<string | null>(null);
 

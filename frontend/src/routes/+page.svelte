@@ -13,7 +13,8 @@
 		getSolution,
 		openSolveStream
 	} from '$lib/api';
-	import { busRadius, lmpDomain, lmpGradient, sensGradient } from '$lib/colors';
+	import type { SensitivityColumn } from '$lib/api';
+	import { busRadius, lmpDomain, lmpGradient, sensGradient, sensitivityDomain } from '$lib/colors';
 	import {
 		applyGeoSidecar,
 		isGeoSidecarFile,
@@ -21,7 +22,7 @@
 		parseGeoSidecar,
 		type GeoSidecar
 	} from '$lib/geo-sidecar';
-	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
+	import { app, CaseState, type DemandRangeMode, type LocalCase } from '$lib/state.svelte';
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
 	import { formatOf, ingestCase, isDisplayFile, parseDisplay, solveDc } from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
@@ -163,7 +164,7 @@
 		}
 	}
 
-	// Fetch and cache the raw powerio Network JSON for the in-browser solver.
+	// Fetch and cache the raw powerio Network JSON for the browser solver.
 	// Returns null when it can't be loaded, so callers fall back to the server.
 	async function ensureNetworkJson(c: CaseState): Promise<string | null> {
 		if (c.networkJson) return c.networkJson;
@@ -176,33 +177,62 @@
 		}
 	}
 
+	function acceptSensitivity(
+		c: CaseState,
+		col: SensitivityColumn | null,
+		busId: number | null,
+		sensitivitySeq?: number
+	) {
+		if (!col || busId === null) return;
+		if (col.bus !== busId) return;
+		if (app.activeCaseId !== c.id || app.selectedBus !== busId) return;
+		if (sensitivitySeq !== undefined && sensitivitySeq !== c.sensitivitySeq) return;
+		c.sensitivity = col;
+	}
+
+	function finishSolve(c: CaseState, seq: number, sensBus: number | null) {
+		if (seq !== c.solveSeq) return;
+		c.solving = false;
+		if (app.activeCaseId === c.id && app.selectedBus === sensBus) {
+			app.previewActive = false;
+			app.previewDeltaMw = null;
+		}
+	}
+
 	async function selectBus(caseId: string, busId: number) {
 		app.activeLocalId = null;
 		app.placingLocalId = null;
-		if (app.activeCaseId !== caseId) app.activeCaseId = caseId;
+		if (app.activeCaseId !== caseId) {
+			clearSelection();
+			app.activeCaseId = caseId;
+		}
 		const c = app.byId(caseId);
 		if (!c) return;
 		abort?.abort();
 		const ac = new AbortController();
 		abort = ac;
+		const sensitivitySeq = ++c.sensitivitySeq;
 		app.error = null;
 		app.selectedBus = busId;
 		app.previewDeltaMw = null;
+		app.previewActive = false;
+		app.demandRangeMode = 'local';
 		app.sensitivityLoading = true;
+		c.sensitivity = null;
 		try {
-			// The dLMP/dd column from the in-browser solver; the server is the fallback.
+			// The dLMP/dd column from the browser solver; the server is the fallback.
 			const networkJson = await ensureNetworkJson(c);
 			if (networkJson) {
 				const { sensitivity } = await solveDc(caseId, networkJson, c.deltas, busId);
-				if (!ac.signal.aborted) c.sensitivity = sensitivity;
+				if (!ac.signal.aborted) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
 			} else {
 				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
-				if (!ac.signal.aborted) c.sensitivity = col;
+				if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
 			}
 		} catch {
 			try {
 				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
-				if (!ac.signal.aborted) c.sensitivity = col;
+				if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
 			} catch (e2) {
 				if (!ac.signal.aborted && !(e2 instanceof DOMException)) app.error = String(e2);
 			}
@@ -213,9 +243,15 @@
 
 	function clearSelection() {
 		abort?.abort();
+		const c = app.active;
+		if (c) {
+			c.sensitivitySeq++;
+			c.sensitivity = null;
+		}
 		app.selectedBus = null;
 		app.previewDeltaMw = null;
-		if (app.active) app.active.sensitivity = null;
+		app.previewActive = false;
+		app.demandRangeMode = 'local';
 		app.sensitivityLoading = false;
 	}
 
@@ -227,19 +263,21 @@
 		const seq = ++c.solveSeq;
 		app.error = null;
 		c.solving = true;
+		c.solveBackend = null;
 		c.iterations = [];
 		c.solveMs = null;
 		ensureNetworkJson(c).then((networkJson) => {
 			if (seq !== c.solveSeq) return;
 			if (!networkJson) return serverSolve(c, sensBus, seq);
 			const t0 = performance.now();
+			c.solveBackend = 'clarabel-wasm';
 			solveDc(c.id, networkJson, c.deltas, sensBus)
 				.then(({ solution, sensitivity }) => {
 					if (seq !== c.solveSeq) return;
 					c.solution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
-					if (sensitivity) c.sensitivity = sensitivity;
-					c.solving = false;
+					acceptSensitivity(c, sensitivity, sensBus);
+					finishSolve(c, seq, sensBus);
 				})
 				.catch(() => {
 					if (seq === c.solveSeq) serverSolve(c, sensBus, seq);
@@ -248,6 +286,7 @@
 	}
 
 	function serverSolve(c: CaseState, sensBus: number | null, seq = c.solveSeq) {
+		c.solveBackend = 'ipopt-server';
 		closeStream = openSolveStream(c.id, c.deltas, sensBus, {
 			oniteration: (it) => {
 				if (seq !== c.solveSeq) return;
@@ -260,16 +299,17 @@
 			},
 			onsensitivity: (col) => {
 				if (seq !== c.solveSeq) return;
-				c.sensitivity = col;
+				acceptSensitivity(c, col, sensBus);
 			},
 			onfail: (msg) => {
 				if (seq !== c.solveSeq) return;
 				c.solving = false;
+				app.previewActive = false;
+				app.previewDeltaMw = null;
 				app.error = msg;
 			},
 			ondone: () => {
-				if (seq !== c.solveSeq) return;
-				c.solving = false;
+				finishSolve(c, seq, sensBus);
 			}
 		});
 	}
@@ -283,14 +323,28 @@
 		if (Math.abs(value) < 0.25) delete deltas[bus];
 		else deltas[bus] = value;
 		c.deltas = deltas;
-		app.previewDeltaMw = null;
+		app.previewDeltaMw = value;
+		app.previewActive = true;
 		runSolve(c, bus);
+	}
+
+	function finishDemandInput(value: number) {
+		if (Math.abs(value - committedDelta) < 0.25) {
+			if (!app.active?.solving) {
+				app.previewActive = false;
+				app.previewDeltaMw = null;
+			}
+			return;
+		}
+		commitDelta(value);
 	}
 
 	function resetCase(c: CaseState) {
 		c.deltas = {};
 		c.predictedObjective = null;
-		app.previewDeltaMw = null;
+		app.previewDeltaMw = app.selectedBus === null ? null : 0;
+		app.previewActive = app.selectedBus !== null;
+		app.demandRangeMode = 'local';
 		if (c.baseSolution) c.solution = c.baseSolution;
 		runSolve(c, app.selectedBus);
 	}
@@ -465,9 +519,43 @@
 		app.active && app.selectedBus !== null ? (app.active.deltas[app.selectedBus] ?? 0) : 0
 	);
 	const sliderValue = $derived(app.previewDeltaMw ?? committedDelta);
-	const sliderMin = $derived(selectedBusData ? -Math.ceil(selectedBusData.demand_mw) : 0);
-	const sliderMax = $derived(
-		selectedBusData ? Math.max(Math.ceil(selectedBusData.demand_mw), 50) : 0
+
+	function demandBounds(
+		mode: DemandRangeMode,
+		bus: typeof selectedBusData,
+		committed: number
+	): { min: number; max: number; span: number } {
+		if (!bus) return { min: 0, max: 0, span: 0 };
+		const physicalMin = -Math.ceil(bus.demand_mw);
+		const physicalMax = Math.max(Math.ceil(bus.demand_mw), 50);
+		if (mode === 'full') return { min: physicalMin, max: physicalMax, span: physicalMax - physicalMin };
+		const span = Math.max(5, Math.min(25, 0.1 * Math.max(bus.demand_mw, 50)));
+		return {
+			min: Math.max(physicalMin, committed - span),
+			max: Math.min(physicalMax, committed + span),
+			span
+		};
+	}
+
+	const sliderBounds = $derived(demandBounds(app.demandRangeMode, selectedBusData, committedDelta));
+	const sliderMin = $derived(sliderBounds.min);
+	const sliderMax = $derived(sliderBounds.max);
+
+	function setDemandRangeMode(mode: DemandRangeMode) {
+		app.demandRangeMode = mode;
+		const bounds = demandBounds(mode, selectedBusData, committedDelta);
+		if (app.previewDeltaMw === null) return;
+		app.previewDeltaMw = Math.min(bounds.max, Math.max(bounds.min, app.previewDeltaMw));
+	}
+
+	const selectedSensitivity = $derived.by(() => {
+		const c = app.active;
+		if (!c?.sensitivity || app.selectedBus === null) return null;
+		return c.sensitivity.bus === app.selectedBus ? c.sensitivity : null;
+	});
+
+	const sensSummary = $derived.by(() =>
+		selectedSensitivity ? sensitivityDomain(selectedSensitivity.values.map((v) => v.value)) : null
 	);
 
 	const selectedLmp = $derived.by(() => {
@@ -477,9 +565,8 @@
 	});
 
 	const selfSens = $derived.by(() => {
-		const c = app.active;
-		if (!c?.sensitivity || app.selectedBus === null) return 0;
-		return c.sensitivity.values.find((v) => v.bus === app.selectedBus)?.value ?? 0;
+		if (!selectedSensitivity || app.selectedBus === null) return 0;
+		return selectedSensitivity.values.find((v) => v.bus === app.selectedBus)?.value ?? 0;
 	});
 
 	// Second order objective preview vs base: the exact part up to the
@@ -501,25 +588,23 @@
 	});
 
 	const topMovers = $derived.by(() => {
-		const c = app.active;
-		if (!c?.sensitivity) return [];
-		return [...c.sensitivity.values]
+		if (!selectedSensitivity || sensSummary?.flat) return [];
+		return [...selectedSensitivity.values]
 			.filter((v) => v.bus !== app.selectedBus)
 			.sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
 			.slice(0, 5);
 	});
 
-	const sensMaxAbs = $derived.by(() => {
-		const c = app.active;
-		return c?.sensitivity ? Math.max(...c.sensitivity.values.map((v) => Math.abs(v.value))) : 0;
-	});
-
 	const previewing = $derived(
-		app.previewDeltaMw !== null && Math.abs(sliderValue - committedDelta) >= 0.25
+		Boolean(
+			app.active?.solving ||
+				(app.previewDeltaMw !== null && Math.abs(sliderValue - committedDelta) >= 0.25)
+		)
 	);
 
 	const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 	const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.abs(v))}`;
+	const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
 	const SIZE_SAMPLES = [10, 100, 500];
 </script>
 
@@ -534,7 +619,7 @@
 />
 
 <main>
-	<TellegenMap onbusclick={selectBus} onplacecase={placeLocalCase} />
+	<TellegenMap onbusclick={selectBus} onplacecase={placeLocalCase} onmapclick={clearSelection} />
 
 	<header>
 		<div class="brand">
@@ -682,8 +767,8 @@
 
 			<hr />
 
-			{#if app.selectedBus !== null && app.active?.sensitivity}
-				{@const c = app.active}
+			{#if app.selectedBus !== null && selectedSensitivity}
+				{@const c = app.active as CaseState}
 				<div class="mode">
 					<span class="chip">{previewing ? 'LMP preview' : '∂LMP/∂d'}</span>
 					<span class="mono dim">bus {app.selectedBus}</span>
@@ -691,26 +776,43 @@
 				</div>
 				{#if previewing}
 					<p class="dim small">
-						Prices shifted along the gradient, no solve yet. Release the slider to stream the
-						exact solution.
+						{c.solving
+							? 'Exact solve running; the map stays in LMP view.'
+							: 'First order LMP preview. Release for the exact solve.'}
 					</p>
 				{:else}
-					<p class="dim small">
-						Price response across the network per MW of demand added at bus
-						{app.selectedBus}. One KKT sensitivity column, no re-solve.
-					</p>
-					<div class="legend" style:background={sensGradient}></div>
-					<div class="legend-labels mono">
-						<span>&minus;{sensMaxAbs.toExponential(1)}</span>
-						<span>0</span>
-						<span>+{sensMaxAbs.toExponential(1)}</span>
-					</div>
+					<p class="dim small">Price response per MW of demand added at bus {app.selectedBus}.</p>
+					{#if sensSummary?.flat}
+						<p class="flat-note mono">near uniform {signedExp(sensSummary.mean)}</p>
+					{:else if sensSummary}
+						<div class="legend" style:background={sensGradient}></div>
+						<div class="legend-labels mono">
+							<span>&minus;{sensSummary.scale.toExponential(1)}</span>
+							<span>0</span>
+							<span>+{sensSummary.scale.toExponential(1)}</span>
+						</div>
+					{/if}
 				{/if}
 
 				<div class="slider-block">
 					<div class="slider-head mono">
 						<span>&Delta; demand</span>
 						<span class="val">{signed(sliderValue)} MW</span>
+					</div>
+					<div class="range-mode">
+						<div class="segment mono" aria-label="demand range">
+							<button
+								type="button"
+								class:active={app.demandRangeMode === 'local'}
+								onclick={() => setDemandRangeMode('local')}>local</button
+							>
+							<button
+								type="button"
+								class:active={app.demandRangeMode === 'full'}
+								onclick={() => setDemandRangeMode('full')}>full</button
+							>
+						</div>
+						<span class="mono dim">{fmt.format(sliderMin)} to {fmt.format(sliderMax)} MW</span>
 					</div>
 					<input
 						type="range"
@@ -719,9 +821,23 @@
 						step="0.5"
 						value={sliderValue}
 						aria-label="demand delta at selected bus"
+						onpointerdown={() => {
+							app.previewActive = true;
+							app.previewDeltaMw = sliderValue;
+						}}
+						onkeydown={() => {
+							app.previewActive = true;
+							app.previewDeltaMw = sliderValue;
+						}}
 						oninput={(e) => {
+							app.previewActive = true;
 							app.previewDeltaMw = Number(e.currentTarget.value);
 						}}
+						onpointerup={(e) => finishDemandInput(Number(e.currentTarget.value))}
+						onmouseup={(e) => finishDemandInput(Number(e.currentTarget.value))}
+						onclick={(e) => finishDemandInput(Number(e.currentTarget.value))}
+						onkeyup={(e) => finishDemandInput(Number(e.currentTarget.value))}
+						onblur={(e) => finishDemandInput(Number(e.currentTarget.value))}
 						onchange={(e) => commitDelta(Number(e.currentTarget.value))}
 					/>
 					{#if predictedDeltaObj !== null && previewing}
@@ -737,10 +853,10 @@
 					{/if}
 				</div>
 
-				{#if !previewing}
-					<table class="mono">
-						<tbody>
-							{#each topMovers as mover (mover.bus)}
+					{#if !previewing}
+						<table class="mono">
+							<tbody>
+								{#each topMovers as mover (mover.bus)}
 								<tr>
 									<td>bus {mover.bus}</td>
 									<td class:pos={mover.value > 0} class:neg={mover.value < 0}>
@@ -748,20 +864,20 @@
 									</td>
 								</tr>
 							{/each}
-						</tbody>
-					</table>
-				{/if}
-			{:else}
-				<div class="mode">
-					<span class="chip">LMP</span>
-					<span class="mono dim">$/MWh</span>
-					{#if app.sensitivityLoading}
-						<span class="mono dim blink">&part; loading&hellip;</span>
+							</tbody>
+						</table>
 					{/if}
-				</div>
-				<p class="dim small">
-					DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
-				</p>
+				{:else}
+					<div class="mode">
+						<span class="chip">LMP</span>
+						<span class="mono dim">$/MWh</span>
+						{#if app.sensitivityLoading}
+							<span class="mono dim blink">&part; loading&hellip;</span>
+						{/if}
+					</div>
+					<p class="dim small">
+						DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
+					</p>
 				<div class="legend" style:background={lmpGradient}></div>
 				<div class="legend-labels mono">
 					{#if stats.uniformLmp !== null}
@@ -790,19 +906,29 @@
 		{/if}
 	</aside>
 
-	{#if app.active && (app.active.solving || app.active.iterations.length > 1)}
+	{#if app.active && (app.active.solving || app.active.solveMs !== null)}
 		<div class="solvecard">
 			<div class="solvecard-head mono">
 				<span>exact solve</span>
 				{#if app.active.solving}
-					<span class="dim blink">streaming&hellip;</span>
+					<span class="dim blink"
+						>{app.active.solveBackend === 'ipopt-server' ? 'Ipopt server' : 'Clarabel wasm'}</span
+					>
 				{:else}
-					<span class="dim">ipopt</span>
+					<span class="dim"
+						>{app.active.solveBackend === 'ipopt-server' ? 'Ipopt server' : 'Clarabel wasm'}</span
+					>
 				{/if}
 			</div>
-			<Sparkline iterations={app.active.iterations} />
+			{#if app.active.iterations.length > 1}
+				<Sparkline iterations={app.active.iterations} />
+			{/if}
 			<div class="solve-meta mono dim">
-				<span>{app.active.iterations.length} iterations</span>
+				{#if app.active.iterations.length > 1}
+					<span>{app.active.iterations.length} iterations</span>
+				{:else}
+					<span>browser solve</span>
+				{/if}
 				{#if app.active.solveMs !== null}<span>{app.active.solveMs} ms</span>{/if}
 			</div>
 		</div>
@@ -1173,6 +1299,12 @@
 		margin-top: 4px;
 	}
 
+	.flat-note {
+		margin: 8px 0 0;
+		font-size: 11px;
+		color: var(--ink-dim);
+	}
+
 	.slider-block {
 		margin-top: 14px;
 	}
@@ -1187,6 +1319,41 @@
 
 	.slider-head .val {
 		color: var(--ink);
+	}
+
+	.range-mode {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		margin: 6px 0 7px;
+		font-size: 10.5px;
+	}
+
+	.segment {
+		display: inline-flex;
+		border: 1px solid var(--line);
+		border-radius: 2px;
+		overflow: hidden;
+		background: rgba(252, 251, 247, 0.55);
+	}
+
+	.segment button {
+		padding: 2px 8px;
+		border: 0;
+		background: transparent;
+		color: var(--ink-dim);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.segment button + button {
+		border-left: 1px solid var(--line);
+	}
+
+	.segment button.active {
+		background: var(--accent-soft);
+		color: var(--accent);
 	}
 
 	input[type='range'] {
