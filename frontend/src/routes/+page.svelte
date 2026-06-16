@@ -116,6 +116,7 @@
 			...c,
 			view: applied.view,
 			coordsKind: 'sidecar',
+			syntheticCenter: undefined,
 			geoSource: applied.sourceLabel,
 			geoWarnings: [
 				`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
