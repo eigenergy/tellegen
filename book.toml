@@ -1,0 +1,23 @@
+[book]
+authors = ["eigenergy"]
+description = "Reactive visualization for power flow cases"
+language = "en"
+src = "docs/src"
+title = "tellegen"
+
+[build]
+build-dir = "docs/book"
+create-missing = false
+
+[output.html]
+additional-css = ["docs/theme/tellegen.css"]
+default-theme = "light"
+edit-url-template = "https://github.com/eigenergy/tellegen/edit/main/{path}"
+git-repository-url = "https://github.com/eigenergy/tellegen"
+preferred-dark-theme = "navy"
+site-url = "/tellegen/"
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-boolean-and = true

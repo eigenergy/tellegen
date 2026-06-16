@@ -2,15 +2,16 @@
 
 using Test
 using LinearAlgebra
+using JSON3
 using PowerDiff
 
 include(joinpath(@__DIR__, "..", "src", "app.jl"))
 
-# The sensitivities tellegen serves are exact derivatives of the KKT system,
-# not regressions or heuristics. This testset states that claim precisely:
-# one dLMP/dd column from PowerDiff matches central finite differences of
-# full re-solves to within finite difference truncation error.
-@testset "dLMP/dd columns are exact (vs central finite differences)" begin
+# The sensitivities tellegen serves come from the KKT system, not regressions
+# or heuristics. This testset states that claim precisely: one dLMP/dd column
+# from PowerDiff matches central finite differences of full re-solves to within
+# finite difference truncation error.
+@testset "dLMP/dd columns match central finite differences" begin
     case = parse_file("pglib_opf_case200_activ.m"; library=:pglib)
     net = DCNetwork(case)
     prob = DCOPFProblem(net)
@@ -45,8 +46,67 @@ include(joinpath(@__DIR__, "..", "src", "app.jl"))
     end
 end
 
-@testset "case registry payloads" begin
+@testset "synthetic layout" begin
+    case = parse_file("pglib_opf_case500_goc.m"; library=:pglib)
+    bbox = (-82.9, 33.3, -79.9, 35.0)
+    coords = Tellegen.synthetic_layout(case; bbox)
+    @test length(coords) == length(Tellegen.case_buses(case))
+    pts = collect(values(coords))
+    @test all(bbox[1] <= p[1] <= bbox[3] && bbox[2] <= p[2] <= bbox[4] for p in pts)
+    # No stacked buses: the force pass must separate every pair.
+    mind = minimum(
+        hypot(pts[i][1] - pts[j][1], pts[i][2] - pts[j][2]) for
+        i in eachindex(pts), j in eachindex(pts) if i < j
+    )
+    @test mind > 1e-5
+    # The layout should fill its territory, not collapse into a filament:
+    # demand a meaningful spread along both axes.
+    for axis in (1, 2)
+        vals = sort([p[axis] for p in pts])
+        iqr = vals[ceil(Int, 0.75 * end)] - vals[ceil(Int, 0.25 * end)]
+        @test iqr > 0.2 * (bbox[axis + 2] - bbox[axis])
+    end
+end
+
+@testset "TAMU coordinates from aux" begin
     spec = first(Tellegen.CASE_SPECS)
+    if Tellegen._staged(spec)
+        coords = Tellegen.aux_coords(joinpath(Tellegen.data_dir(), spec.auxfile))
+        @test length(coords) == 200
+        # Inside the Illinois footprint the case was built on.
+        @test all(-92 < c[1] < -87 && 37 < c[2] < 43 for c in values(coords))
+        # Stack spreading leaves no two buses at the same point.
+        pts = collect(values(coords))
+        @test length(unique(pts)) == length(pts)
+        @test minimum(
+            hypot(pts[i][1] - pts[j][1], pts[i][2] - pts[j][2]) for
+            i in eachindex(pts), j in eachindex(pts) if i < j
+        ) > 1e-5
+    else
+        @info "TAMU data not staged; skipping coordinate tests"
+    end
+end
+
+@testset "case loading fallback is explicit" begin
+    mktempdir() do dir
+        withenv("TELLEGEN_DATA" => dir, "TELLEGEN_ALLOW_FALLBACK" => nothing) do
+            @test_throws ErrorException Tellegen.load_cases!()
+            @test isempty(Tellegen.CASES)
+        end
+        withenv("TELLEGEN_DATA" => dir, "TELLEGEN_ALLOW_FALLBACK" => "1") do
+            Tellegen.load_cases!()
+            @test sort(collect(keys(Tellegen.CASES))) == ["case200", "case500"]
+            @test all(JSON3.read(e.network_json).synthetic_coords for e in values(Tellegen.CASES))
+        end
+        empty!(Tellegen.CASES)
+    end
+end
+
+@testset "case registry payloads" begin
+    # The TAMU spec when its data is staged, the pglib fallback otherwise,
+    # so the testset runs on machines without the distributions.
+    spec = Tellegen._staged(first(Tellegen.CASE_SPECS)) ? first(Tellegen.CASE_SPECS) :
+        first(Tellegen.FALLBACK_SPECS)
     e = Tellegen.build_entry(spec)
 
     payload = lock(e.lock) do

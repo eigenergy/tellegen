@@ -1,0 +1,12 @@
+services:
+  tellegen:
+    image: ${TELLEGEN_IMAGE:?set TELLEGEN_IMAGE}
+    container_name: tellegen
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      TELLEGEN_PORT: "8000"
+    volumes:
+      - ${TELLEGEN_DATA_DIR:?set TELLEGEN_DATA_DIR}:/app/data:ro
+    mem_limit: 6g
+    restart: unless-stopped

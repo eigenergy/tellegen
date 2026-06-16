@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
+  <title id="title">tellegen</title>
+  <desc id="desc">The tellegen wordmark and three node mark on a quiet power flow trace.</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fcfbf7"/>
+      <stop offset="1" stop-color="#ece9e2"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="700" y1="204" x2="1160" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6f787e"/>
+      <stop offset="0.5" stop-color="#b25e00"/>
+      <stop offset="1" stop-color="#20242b"/>
+    </linearGradient>
+    <filter id="grain" x="0" y="0" width="1" height="1">
+      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" seed="7"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.035"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="280" rx="18" fill="url(#paper)"/>
+  <rect width="1200" height="280" rx="18" filter="url(#grain)" opacity="0.55"/>
+
+  <g opacity="0.42" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M42 210C156 154 239 198 337 142C421 94 487 112 570 87C667 57 720 80 804 57C894 32 957 70 1060 44C1102 33 1134 26 1162 24"
+      stroke="#d9d3c6" stroke-width="1.4"/>
+    <path d="M54 70C146 96 215 72 301 96C390 121 448 166 544 150C642 133 706 92 802 112C900 133 967 186 1076 162C1120 152 1150 142 1172 132"
+      stroke="#d9d3c6" stroke-width="1.4"/>
+  </g>
+
+  <g transform="translate(74 72)">
+    <path d="M0 92 L58 0 L116 92" fill="none" stroke="#b25e00" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="0" cy="92" r="13" fill="#b25e00"/>
+    <circle cx="58" cy="0" r="13" fill="#20242b"/>
+    <circle cx="116" cy="92" r="13" fill="#b25e00"/>
+  </g>
+
+  <g transform="translate(228 80)">
+    <text x="0" y="70" fill="#20242b"
+      font-family="Bricolage Grotesque, Avenir Next, Inter, Segoe UI, sans-serif"
+      font-size="82" font-weight="700" letter-spacing="0">tellegen</text>
+    <text x="4" y="118" fill="#6e7378"
+      font-family="IBM Plex Mono, SFMono-Regular, Menlo, Consolas, monospace"
+      font-size="18" letter-spacing="0.4">reactive power flow visualization</text>
+  </g>
+
+  <g transform="translate(700 80)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 116 L92 58 L190 100 L292 36 L406 78"
+      stroke="#20242b" stroke-width="14" opacity="0.08"/>
+    <path d="M0 116 L92 58 L190 100 L292 36 L406 78"
+      stroke="url(#flow)" stroke-width="5"/>
+    <path d="M92 58 L126 8 M190 100 L218 156 M292 36 L342 130"
+      stroke="#6f787e" stroke-width="3.5" opacity="0.58"/>
+    <g stroke="#fcfbf7" stroke-width="4">
+      <circle cx="0" cy="116" r="11" fill="#6f787e"/>
+      <circle cx="92" cy="58" r="16" fill="#b25e00"/>
+      <circle cx="190" cy="100" r="12" fill="#6f787e"/>
+      <circle cx="292" cy="36" r="17" fill="#b25e00"/>
+      <circle cx="406" cy="78" r="12" fill="#6f787e"/>
+      <circle cx="126" cy="8" r="9" fill="#6f787e"/>
+      <circle cx="218" cy="156" r="9" fill="#6f787e"/>
+      <circle cx="342" cy="130" r="9" fill="#6f787e"/>
+    </g>
+  </g>
+
+  <rect x="0.5" y="0.5" width="1199" height="279" rx="18" fill="none" stroke="#d9d3c6"/>
+</svg>

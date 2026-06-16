@@ -1,19 +1,43 @@
 <script lang="ts">
-	import maplibregl from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
-	import { MapboxOverlay } from '@deck.gl/mapbox';
-	import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
-	import type { Layer, PickingInfo } from '@deck.gl/core';
+	import type { Layer, MapView, MapViewState, PickingInfo } from '@deck.gl/core';
+	import type { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+	import type { MapboxOverlay } from '@deck.gl/mapbox';
+	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
 	import type { NetworkBranch, NetworkBus } from '$lib/api';
 	import { branchColor, branchWidth, busRadius, lmpColor, lmpDomain, sensColor } from '$lib/colors';
 	import { app, type CaseState } from '$lib/state.svelte';
 
-	let { onbusclick }: { onbusclick: (caseId: string, busId: number) => void } = $props();
+	let {
+		onbusclick,
+		onplacecase
+	}: {
+		onbusclick: (caseId: string, busId: number) => void;
+		onplacecase: (lon: number, lat: number) => void;
+	} = $props();
 
 	const STYLE = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json';
 
-	let map = $state.raw<maplibregl.Map | null>(null);
+	let map = $state.raw<MapLibreMap | null>(null);
 	let overlay = $state.raw<MapboxOverlay | null>(null);
+
+	type LayerCtors = {
+		PathLayer: typeof PathLayer;
+		ScatterplotLayer: typeof ScatterplotLayer;
+	};
+	type MapboxOverlayPlanViewProps = ConstructorParameters<typeof MapboxOverlay>[0] & {
+		viewState?: StableViewState;
+		views?: InstanceType<typeof MapView>;
+	};
+	type StableViewState = MapViewState & {
+		padding: ReturnType<MapLibreMap['getPadding']>;
+		repeat: boolean;
+	};
+	type CursorState = {
+		isDragging: boolean;
+		isHovering: boolean;
+	};
+	let layerCtors = $state.raw<LayerCtors | null>(null);
 
 	interface CaseDisplay {
 		lmp: Map<number, number>;
@@ -79,28 +103,58 @@
 		};
 	}
 
+	/** Backend case owning a picked layer; null for local case layers. */
 	function caseOf(info: PickingInfo): CaseState | null {
 		const id = info.layer?.id.replace(/^(buses|branches)-/, '');
 		return id ? app.byId(id) : null;
 	}
 
+	/** Escape free text from a dropped file before it goes into tooltip html
+	 * (deck.gl renders the html string as innerHTML). */
+	const esc = (s: string) =>
+		s
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;');
+
 	function tooltip(info: PickingInfo): { html: string } | null {
 		const { object } = info;
 		if (!object) return null;
+		if (info.layer?.id.startsWith('local-subs-')) {
+			// PowerWorld .pwd substation: display data only, position inferred from the diagram.
+			// The name is free text from a dropped file, so escape it; the number
+			// is coerced before interpolation.
+			const s = object as { number: number; name: string };
+			const named = s.name ? ` ${esc(s.name)}` : '';
+			return {
+				html: `<div class="tt"><b>substation ${Number(s.number)}</b>${named}<br><span style="opacity:0.6">.pwd diagram &#8901; approx. position</span></div>`
+			};
+		}
 		const c = caseOf(info);
 		const d = c ? display.get(c.id) : undefined;
 		if ('path' in object) {
 			const b = object as NetworkBranch;
-			const loading = d?.loading.get(b.id) ?? 0;
+			const flow = d
+				? `${((d.loading.get(b.id) ?? 0) * 100).toFixed(0)}% of ${b.rate_mw.toFixed(0)} MW`
+				: `rate ${b.rate_mw.toFixed(0)} MW`;
 			return {
-				html: `<div class="tt"><b>line ${b.from}&#8201;&ndash;&#8201;${b.to}</b>
-					${(loading * 100).toFixed(0)}% of ${b.rate_mw.toFixed(0)} MW</div>`
+				html: `<div class="tt"><b>line ${b.from}&#8201;&ndash;&#8201;${b.to}</b> ${flow}</div>`
 			};
 		}
 		const bus = object as NetworkBus;
+		if (!c) {
+			// Browser-parsed file: topology only, no solution to report.
+			return {
+				html: `<div class="tt"><b>bus ${bus.id}</b>
+					load ${bus.demand_mw.toFixed(0)} MW &#8901; gen ${bus.gen_mw.toFixed(0)} MW<br>
+					<span style="opacity:0.6">local file</span></div>`
+			};
+		}
 		const lmp = d?.lmp.get(bus.id);
 		const sens = d?.mode === 'sens' ? d.sens.get(bus.id) : undefined;
-		const delta = c?.deltas[bus.id] ?? 0;
+		const delta = c.deltas[bus.id] ?? 0;
 		const loadRow =
 			delta === 0
 				? `load ${bus.demand_mw.toFixed(0)} MW`
@@ -116,35 +170,100 @@
 		};
 	}
 
+	async function loadMapModules() {
+		const [maplibre, core, mapbox, layers] = await Promise.all([
+			import('maplibre-gl'),
+			import('@deck.gl/core'),
+			import('@deck.gl/mapbox'),
+			import('@deck.gl/layers')
+		]);
+		return {
+			maplibregl: maplibre.default,
+			MapView: core.MapView,
+			MapboxOverlay: mapbox.MapboxOverlay,
+			PathLayer: layers.PathLayer,
+			ScatterplotLayer: layers.ScatterplotLayer
+		};
+	}
+
 	function initMap(container: HTMLDivElement) {
-		const m = new maplibregl.Map({
-			container,
-			style: STYLE,
-			center: [-85, 36],
-			zoom: 4.5,
-			attributionControl: { compact: true }
-		});
-		const o = new MapboxOverlay({
-			layers: [],
-			getTooltip: tooltip,
-			getCursor: ({ isHovering, isDragging }) =>
-				isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
-		});
-		m.addControl(o);
-		m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-		map = m;
-		overlay = o;
+		let cleanup = () => {};
+		let cancelled = false;
+		void loadMapModules()
+			.then(({ maplibregl, MapView, MapboxOverlay, PathLayer, ScatterplotLayer }) => {
+				if (cancelled) return;
+				layerCtors = { PathLayer, ScatterplotLayer };
+				const m = new maplibregl.Map({
+					container,
+					style: STYLE,
+					center: [-85, 36],
+					zoom: 4.5,
+					canvasContextAttributes: { antialias: true },
+					attributionControl: { compact: true }
+				});
+				const stableViewState = (): StableViewState => {
+					const { lng, lat } = m.getCenter();
+					return {
+						longitude: ((lng + 540) % 360) - 180,
+						latitude: lat,
+						zoom: m.getZoom(),
+						bearing: m.getBearing(),
+						pitch: 0,
+						padding: m.getPadding(),
+						repeat: m.getRenderWorldCopies()
+					};
+				};
+				const deckView = new MapView({ id: 'mapbox', orthographic: true });
+				// The overlay type narrows custom view props; MapboxOverlay forwards them to Deck.
+				const o = new MapboxOverlay({
+					interleaved: false,
+					views: deckView,
+					layers: [],
+					parameters: {
+						depthWriteEnabled: false,
+						depthCompare: 'always'
+					},
+					getTooltip: tooltip,
+					getCursor: ({ isHovering, isDragging }: CursorState) =>
+						app.placingLocalId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
+				} as unknown as MapboxOverlayPlanViewProps);
+				// Keep network marks in plan view while the basemap pitches.
+				const syncDeckView = () => {
+					o.setProps({
+						views: deckView,
+						viewState: stableViewState()
+					} as unknown as MapboxOverlayPlanViewProps);
+				};
+				m.addControl(o);
+				m.on('render', syncDeckView);
+				m.on('click', (e) => {
+					if (app.placingLocalId) onplacecase(e.lngLat.lng, e.lngLat.lat);
+				});
+				syncDeckView();
+				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+				map = m;
+				overlay = o;
+				cleanup = () => {
+					m.off('render', syncDeckView);
+					m.remove();
+					map = null;
+					overlay = null;
+				};
+			})
+			.catch((e) => {
+				if (!cancelled) app.error = `map failed to load: ${e instanceof Error ? e.message : e}`;
+			});
 		return () => {
-			m.remove();
-			map = null;
-			overlay = null;
+			cancelled = true;
+			cleanup();
 		};
 	}
 
 	// Sync deck.gl layers with app state. New layer instances diff cheaply;
 	// updateTriggers tell deck.gl when accessor outputs changed.
 	$effect(() => {
-		if (!overlay) return;
+		if (!overlay || !layerCtors) return;
+		const { PathLayer, ScatterplotLayer } = layerCtors;
 		const layers: Layer[] = [];
 		for (const c of app.cases) {
 			if (!c.network) continue;
@@ -158,6 +277,9 @@
 					getWidth: (b) => branchWidth(d?.loading.get(b.id) ?? 0),
 					widthUnits: 'pixels',
 					widthMinPixels: 1.5,
+					capRounded: true,
+					jointRounded: true,
+					miterLimit: 2,
 					pickable: true,
 					autoHighlight: true,
 					highlightColor: [32, 36, 43, 90],
@@ -174,6 +296,7 @@
 					radiusUnits: 'pixels',
 					getFillColor: busFill(c.id),
 					stroked: true,
+					billboard: true,
 					getLineColor: (b) =>
 						c.id === app.activeCaseId && b.id === app.selectedBus
 							? [32, 36, 43, 255]
@@ -196,24 +319,97 @@
 				})
 			);
 		}
+		// Local cases: topology only, no physics yet, so desaturated graphite
+		// against the warm LMP ramp of solved backend cases. A .pwd display
+		// file contributes substation points only (no topology), in a cooler
+		// slate so they read as diagram-derived positions.
+		for (const c of app.localCases) {
+			if (c.view) {
+				layers.push(
+					new PathLayer<NetworkBranch>({
+						id: `local-branches-${c.id}`,
+						data: c.view.branches,
+						getPath: (b) => b.path,
+						getColor: [138, 131, 117, 150],
+						getWidth: 1.5,
+						widthUnits: 'pixels',
+						widthMinPixels: 1.2,
+						capRounded: true,
+						jointRounded: true,
+						miterLimit: 2,
+						pickable: true
+					}),
+					new ScatterplotLayer<NetworkBus>({
+						id: `local-buses-${c.id}`,
+						data: c.view.buses,
+						getPosition: (b) => [b.lon, b.lat],
+						getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
+						radiusUnits: 'pixels',
+						getFillColor: [110, 115, 120, 200],
+						stroked: true,
+						billboard: true,
+						getLineColor: [46, 42, 34, 110],
+						getLineWidth: 1,
+						lineWidthUnits: 'pixels',
+						pickable: true,
+						autoHighlight: true,
+						highlightColor: [32, 36, 43, 70]
+					})
+				);
+			}
+			if (c.substations) {
+				layers.push(
+					new ScatterplotLayer<{ number: number; name: string; lon: number; lat: number }>({
+						id: `local-subs-${c.id}`,
+						data: c.substations.points,
+						getPosition: (s) => [s.lon, s.lat],
+						getRadius: 5,
+						radiusUnits: 'pixels',
+						radiusMinPixels: 3,
+						getFillColor: [70, 92, 124, 190],
+						stroked: true,
+						billboard: true,
+						getLineColor: [38, 52, 78, 220],
+						getLineWidth: 1,
+						lineWidthUnits: 'pixels',
+						pickable: true,
+						autoHighlight: true,
+						highlightColor: [32, 36, 43, 70]
+					})
+				);
+			}
+		}
 		overlay.setProps({ layers });
 	});
 
-	function boundsFor(target: string | 'all'): maplibregl.LngLatBoundsLike | null {
+	$effect(() => {
+		if (!map) return;
+		map.getCanvas().style.cursor = app.placingLocalId ? 'crosshair' : '';
+	});
+
+	function boundsFor(target: string | 'all'): LngLatBoundsLike | null {
 		let minLon = Infinity;
 		let minLat = Infinity;
 		let maxLon = -Infinity;
 		let maxLat = -Infinity;
 		let seen = false;
-		for (const c of app.cases) {
-			if (!c.network || (target !== 'all' && c.id !== target)) continue;
-			for (const b of c.network.buses) {
+		const fold = (pts: { lon: number; lat: number }[]) => {
+			for (const b of pts) {
 				minLon = Math.min(minLon, b.lon);
 				minLat = Math.min(minLat, b.lat);
 				maxLon = Math.max(maxLon, b.lon);
 				maxLat = Math.max(maxLat, b.lat);
 				seen = true;
 			}
+		};
+		for (const c of app.cases) {
+			if (!c.network || (target !== 'all' && c.id !== target)) continue;
+			fold(c.network.buses);
+		}
+		for (const c of app.localCases) {
+			if (target !== 'all' && c.id !== target) continue;
+			if (c.view) fold(c.view.buses);
+			if (c.substations) fold(c.substations.points);
 		}
 		return seen
 			? [
@@ -229,8 +425,13 @@
 		if (!map) return;
 		const bounds = boundsFor(app.frameTarget);
 		if (!bounds) return;
+		const { clientWidth: w, clientHeight: h } = map.getContainer();
+		const padding =
+			w <= 760
+				? { top: 130, left: 24, right: 24, bottom: Math.min(Math.round(h * 0.5), 330) }
+				: { top: 96, left: 380, right: 60, bottom: 64 };
 		map.fitBounds(bounds, {
-			padding: { top: 96, left: 380, right: 60, bottom: 64 },
+			padding,
 			duration: 1400
 		});
 	});

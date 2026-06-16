@@ -1,0 +1,17 @@
+# Overlay for hosts where an existing reverse proxy owns ports 80 and 443.
+# The proxy routes to the `tellegen` container over the external `edge`
+# network.
+#
+# docker compose --env-file .env \
+#   -f deploy/docker-compose.prod.yml \
+#   -f deploy/docker-compose.edge.yml up -d
+services:
+  tellegen:
+    container_name: tellegen
+    networks:
+      - default
+      - edge
+
+networks:
+  edge:
+    external: true

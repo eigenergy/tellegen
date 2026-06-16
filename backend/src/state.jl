@@ -7,7 +7,7 @@
 struct CaseEntry
     id::String
     name::String
-    case::ParsedCase
+    case
     net::DCNetwork
     prob::DCOPFProblem
     base_d::Vector{Float64}
@@ -19,34 +19,101 @@ end
 
 const CASES = Dict{String,CaseEntry}()
 
-# Both cases are synthetic grids built on a real service territory, so they
-# sit at plausible places on the basemap. Quadratic generator costs make
-# dLMP/dd nonzero across the interior of the feasible region; linear cost
-# cases (most IEEE test systems) have piecewise constant LMPs whose gradient
-# is zero almost everywhere.
+# Operator-staged TAMU distributions (scripts/stage-data.sh); never vendored.
+const DEFAULT_DATA_DIR = normpath(joinpath(@__DIR__, "..", "..", "data"))
+
+data_dir() = normpath(get(ENV, "TELLEGEN_DATA", DEFAULT_DATA_DIR))
+allow_fallback() = lowercase(get(ENV, "TELLEGEN_ALLOW_FALLBACK", "")) in
+                   ("1", "true", "yes", "on")
+
+# The demo cases are TAMU ACTIVSg synthetic grids, served at the geographic
+# coordinates carried in their aux exports. Quadratic generator
+# costs make dLMP/dd nonzero across the interior of the feasible region;
+# linear cost cases (most IEEE test systems) have piecewise constant LMPs
+# whose gradient is zero almost everywhere.
 const CASE_SPECS = (
+    (id="case200", name="ACTIVSg200 (Illinois)",
+        casefile="ACTIVSg200/case_ACTIVSg200.m", auxfile="ACTIVSg200/ACTIVSg200.aux"),
+    (id="case500", name="ACTIVSg500 (South Carolina)",
+        casefile="ACTIVSg500/case_ACTIVSg500.m", auxfile="ACTIVSg500/ACTIVSg500.aux"),
+    (id="case2000", name="ACTIVSg2000 (Texas)",
+        casefile="ACTIVSg2000/case_ACTIVSg2000.m", auxfile="ACTIVSg2000/ACTIVSg2000.aux"),
+)
+
+# Explicit dev fallback for CI and smoke checks without staged TAMU files. The
+# server uses these only when TELLEGEN_ALLOW_FALLBACK=1.
+const FALLBACK_SPECS = (
     (id="case200", name="ACTIVSg200 (Illinois)", file="pglib_opf_case200_activ.m",
         bbox=(-91.4, 37.1, -87.6, 42.4)),
     (id="case500", name="ACTIVSg500 (South Carolina)", file="pglib_opf_case500_goc.m",
         bbox=(-82.9, 33.3, -79.9, 35.0)),
 )
 
+_staged(spec) =
+    isfile(joinpath(data_dir(), spec.casefile)) && isfile(joinpath(data_dir(), spec.auxfile))
+
 function load_cases!()
-    for spec in CASE_SPECS
-        CASES[spec.id] = build_entry(spec)
-        @info "case loaded" spec.id
+    empty!(CASES)  # idempotent: a reload rebuilds rather than accumulating stale entries
+    specs = collect(filter(_staged, CASE_SPECS))
+    if length(specs) == length(CASE_SPECS)
+        load_specs!(specs; fallback=false)
+        length(CASES) == length(CASE_SPECS) || error(
+            "failed to load all staged TAMU cases from $(data_dir())")
+    elseif allow_fallback()
+        missing = setdiff([s.id for s in CASE_SPECS], [s.id for s in specs])
+        @warn "TAMU case data incomplete under $(data_dir()); serving pglib fallbacks with synthetic layout" missing
+        load_specs!(FALLBACK_SPECS; fallback=true)
+        length(CASES) == length(FALLBACK_SPECS) || error(
+            "failed to load all pglib fallback cases")
+    else
+        missing = setdiff([s.id for s in CASE_SPECS], [s.id for s in specs])
+        error(
+            "TAMU case data incomplete under $(data_dir()); missing $(join(missing, ", ")). " *
+            "Run scripts/stage-data.sh or set TELLEGEN_ALLOW_FALLBACK=1 for the pglib dev fallback.")
+    end
+    isempty(CASES) && error(
+        "no cases loaded from staged TAMU data under $(data_dir()) or pglib fallbacks")
+end
+
+function load_specs!(specs; fallback::Bool)
+    for spec in specs
+        # A failed distribution should not block the cases that load.
+        try
+            CASES[spec.id] = build_entry(spec)
+            if fallback
+                @info "case loaded (fallback)" spec.id
+            else
+                @info "case loaded" spec.id
+            end
+        catch err
+            if fallback
+                @error "fallback case failed to load" spec.id err
+            else
+                @error "case failed to load" spec.id err
+            end
+        end
     end
 end
 
 function build_entry(spec)
-    case = parse_file(spec.file; library=:pglib)
+    if haskey(spec, :auxfile)
+        case = parse_file(joinpath(data_dir(), spec.casefile))
+        coords = aux_coords(joinpath(data_dir(), spec.auxfile))
+        unmapped = [bus_id(b) for b in case_buses(case) if !haskey(coords, bus_id(b))]
+        isempty(unmapped) || error(
+            "$(spec.id): aux carries no coordinates for buses $(unmapped[1:min(end, 5)])")
+        synthetic = false
+    else
+        case = parse_file(spec.file; library=:pglib)
+        coords = synthetic_layout(case; bbox=spec.bbox)
+        synthetic = true
+    end
     net = DCNetwork(case)
     prob = DCOPFProblem(net)
     sol = solve!(prob)
-    coords = spectral_layout(case; bbox=spec.bbox)
     # Warm the dLMP/dd cache so request handlers hit a populated cache.
     calc_sensitivity(prob, :lmp, :d)
-    network_json = JSON3.write(network_payload(spec, case, coords))
+    network_json = JSON3.write(network_payload(spec, case, coords; synthetic))
     solution_json = JSON3.write(solution_payload(case, net, sol))
     return CaseEntry(spec.id, spec.name, case, net, prob, copy(prob.d), coords,
         ReentrantLock(), network_json, solution_json)
@@ -70,7 +137,7 @@ end
 
 function target_demand(e::CaseEntry, deltas)
     target = copy(e.base_d)
-    base = e.case.baseMVA
+    base = case_base_mva(e.case)
     for (bus, mw) in deltas
         i = get(e.net.id_map.bus_to_idx, bus, nothing)
         isnothing(i) && continue
@@ -79,37 +146,45 @@ function target_demand(e::CaseEntry, deltas)
     return target
 end
 
-function network_payload(spec, case::ParsedCase, coords)
-    base = case.baseMVA
+function network_payload(spec, case, coords; synthetic::Bool)
+    base = case_base_mva(case)
     demand_mw = Dict{Int,Float64}()
-    for l in case.load
-        l.status == 1 || continue
-        demand_mw[l.load_bus] = get(demand_mw, l.load_bus, 0.0) + l.pd * base
+    for l in case_loads(case)
+        load_in_service(l) || continue
+        bus = load_bus(l)
+        demand_mw[bus] = get(demand_mw, bus, 0.0) + load_p_mw(case, l)
     end
     gen_mw = Dict{Int,Float64}()
-    for g in case.gen
-        g.gen_status == 1 || continue
-        gen_mw[g.gen_bus] = get(gen_mw, g.gen_bus, 0.0) + g.pmax * base
+    for g in case_generators(case)
+        gen_in_service(g) || continue
+        bus = gen_bus(g)
+        gen_mw[bus] = get(gen_mw, bus, 0.0) + gen_pmax_mw(case, g)
     end
-    buses = [(id=b.bus_i,
-              lon=coords[b.bus_i][1],
-              lat=coords[b.bus_i][2],
-              demand_mw=get(demand_mw, b.bus_i, 0.0),
-              gen_mw=get(gen_mw, b.bus_i, 0.0))
-             for b in case.bus]
-    branches = [(id=br.index,
-                 from=br.f_bus,
-                 to=br.t_bus,
-                 rate_mw=br.rate_a * base,
-                 status=br.br_status,
-                 path=[collect(coords[br.f_bus]), collect(coords[br.t_bus])])
-                for br in case.branch]
-    return (id=spec.id, name=spec.name, base_mva=base, synthetic_coords=true,
+    buses = [
+        let id = bus_id(b)
+            (id=id,
+             lon=coords[id][1],
+             lat=coords[id][2],
+             demand_mw=get(demand_mw, id, 0.0),
+             gen_mw=get(gen_mw, id, 0.0))
+        end for b in case_buses(case)
+    ]
+    branches = [
+        let f = branch_from(br), t = branch_to(br)
+            (id=branch_id(br, i),
+             from=f,
+             to=t,
+             rate_mw=branch_rate_mw(case, br),
+             status=branch_status(br),
+             path=[collect(coords[f]), collect(coords[t])])
+        end for (i, br) in enumerate(case_branches(case))
+    ]
+    return (id=spec.id, name=spec.name, base_mva=base, synthetic_coords=synthetic,
         buses=buses, branches=branches)
 end
 
-function solution_payload(case::ParsedCase, net::DCNetwork, sol)
-    base = case.baseMVA
+function solution_payload(case, net::DCNetwork, sol)
+    base = case_base_mva(case)
     lmp = calc_lmp(sol, net)
     bus_ids = net.id_map.bus_ids
     branch_ids = net.id_map.branch_ids
@@ -127,7 +202,7 @@ end
 # Caller must hold `e.lock`: calc_sensitivity reads/writes the cache.
 function sensitivity_payload(e::CaseEntry, bus_id::Int)
     S = calc_sensitivity(e.prob, :lmp, :d)
-    base = e.case.baseMVA
+    base = case_base_mva(e.case)
     col = S.id_to_col[bus_id]
     bus_ids = e.net.id_map.bus_ids
     # Both sides of dLMP/dd are per unit; /base^2 converts to ($/MWh)/MW.

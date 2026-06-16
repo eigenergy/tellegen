@@ -1,12 +1,46 @@
+<script lang="ts" module>
+	// Counter for local case ids; module level so ids stay unique across remounts.
+	let localSeq = 0;
+</script>
+
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { getCases, getNetwork, getSensitivity, getSolution, openSolveStream } from '$lib/api';
 	import { busRadius, lmpDomain, lmpGradient, sensGradient } from '$lib/colors';
-	import { app, CaseState } from '$lib/state.svelte';
+	import {
+		applyGeoSidecar,
+		isGeoSidecarFile,
+		mergeGeoSidecars,
+		parseGeoSidecar,
+		type GeoSidecar
+	} from '$lib/geo-sidecar';
+	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
+	import { placeSyntheticTopology } from '$lib/synthetic-layout';
+	import { formatOf, ingestCase, isDisplayFile, parseDisplay } from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
 	let abort: AbortController | null = null;
 	let closeStream: (() => void) | null = null;
+	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
+	let showFileDropUi = $state(true);
+	let dragDepth = 0;
+
+	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
+
+	onMount(() => {
+		const query = window.matchMedia(FILE_DROP_QUERY);
+		const syncFileDropUi = () => {
+			showFileDropUi = query.matches;
+			if (!showFileDropUi) {
+				dragDepth = 0;
+				app.dragOver = false;
+			}
+		};
+		syncFileDropUi();
+		query.addEventListener('change', syncFileDropUi);
+		return () => query.removeEventListener('change', syncFileDropUi);
+	});
 
 	async function load() {
 		try {
@@ -30,6 +64,8 @@
 	load();
 
 	function activateCase(id: string) {
+		app.activeLocalId = null;
+		app.placingLocalId = null;
 		if (app.activeCaseId !== id) {
 			clearSelection();
 			app.activeCaseId = id;
@@ -37,7 +73,88 @@
 		app.requestFrame(id);
 	}
 
+	function activateLocal(c: LocalCase) {
+		clearSelection();
+		app.activeCaseId = null;
+		app.activeLocalId = c.id;
+		app.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
+		if (c.view || c.substations) app.requestFrame(c.id);
+	}
+
+	function addAndActivateLocal(c: LocalCase) {
+		clearSelection();
+		app.activeCaseId = null;
+		app.addLocal(c);
+		if (c.view || c.substations) app.requestFrame(c.id);
+	}
+
+	function placeLocalCase(lon: number, lat: number) {
+		const id = app.placingLocalId;
+		const c = id ? app.localCases.find((lc) => lc.id === id) : null;
+		if (!c?.topology) return;
+		const view = placeSyntheticTopology(c.topology, { lon, lat });
+		app.updateLocal(c.id, {
+			view,
+			coordsKind: 'synthetic',
+			syntheticCenter: { lon, lat }
+		});
+		app.placingLocalId = null;
+		app.activeLocalId = c.id;
+		app.requestFrame(c.id);
+	}
+
+	function moveLocalCase(c: LocalCase) {
+		app.activeCaseId = null;
+		app.activeLocalId = c.id;
+		app.placingLocalId = c.id;
+	}
+
+	function withGeoSidecar(c: LocalCase, sidecars: GeoSidecar[]): LocalCase {
+		if (!c.topology || sidecars.length === 0) return c;
+		const applied = applyGeoSidecar(c.topology, mergeGeoSidecars(sidecars));
+		return {
+			...c,
+			view: applied.view,
+			coordsKind: 'sidecar',
+			syntheticCenter: undefined,
+			geoSource: applied.sourceLabel,
+			geoWarnings: [
+				`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
+				...(applied.matchedBranches > 0
+					? [`${applied.matchedBranches} branch paths matched from sidecar data`]
+					: []),
+				...applied.warnings
+			]
+		};
+	}
+
+	function applyGeoSidecarsToExisting(sidecars: GeoSidecar[]) {
+		const target =
+			(app.activeLocal?.topology ? app.activeLocal : null) ??
+			app.localCases.find((c) => c.coordsKind === 'synthetic_pending') ??
+			[...app.localCases].reverse().find((c) => c.topology);
+		if (!target?.topology) {
+			app.error = 'drop a case file with the coordinate sidecar, or select a parsed local case first';
+			return;
+		}
+		try {
+			const updated = withGeoSidecar(target, sidecars);
+			app.updateLocal(target.id, updated);
+			app.activeCaseId = null;
+			app.activeLocalId = target.id;
+			app.placingLocalId = null;
+			app.requestFrame(target.id);
+			app.error = null;
+		} catch (e) {
+			app.error = `${sidecars.map((s) => s.sourceNames.join(' + ')).join(' + ')}: ${
+				e instanceof Error ? e.message : e
+			}; use place on map for manual placement`;
+		}
+	}
+
 	async function selectBus(caseId: string, busId: number) {
+		app.activeLocalId = null;
+		app.placingLocalId = null;
 		if (app.activeCaseId !== caseId) app.activeCaseId = caseId;
 		const c = app.byId(caseId);
 		if (!c) return;
@@ -116,6 +233,141 @@
 		runSolve(c, app.selectedBus);
 	}
 
+	// PowerWorld .pwd files store substation symbols at diagram coordinates,
+	// not lat/lon. Auto-generated TAMU layouts are Web Mercator scaled by this
+	// constant with both axes in degrees: x = K·lon and y = K·mercdeg(lat),
+	// where mercdeg is the Mercator ordinate expressed in degrees. So lon = x/K,
+	// and latitude is the inverse gudermannian after converting y/K back to
+	// radians. Hand-edited diagrams drift from this, so positions stay
+	// approximate. Verified against ACTIVSg200/2000 to within ~0.02 deg.
+	const PWD_MERCATOR_K = 535.81608;
+	function pwdToLngLat(x: number, y: number): [number, number] {
+		const lon = x / PWD_MERCATOR_K;
+		const lat = (Math.atan(Math.sinh(((y / PWD_MERCATOR_K) * Math.PI) / 180)) * 180) / Math.PI;
+		return [lon, lat];
+	}
+
+	/** Parse dropped files in the browser via the powerio wasm module. Case
+	 * files (.m, .raw, .aux) become local networks; coordinate sidecars can
+	 * place those networks; a PowerWorld .pwd becomes a substation point
+	 * preview. Files run serially; nothing uploads. */
+	async function ingestFiles(files: FileList | File[]) {
+		const list = Array.from(files);
+		const sidecars: GeoSidecar[] = [];
+		for (const file of list.filter((f) => isGeoSidecarFile(f.name))) {
+			app.parsingFile = true;
+			try {
+				sidecars.push(parseGeoSidecar(file.name, await file.text()));
+				app.error = null;
+			} catch (e) {
+				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
+			} finally {
+				app.parsingFile = false;
+			}
+		}
+
+		let parsedCaseCount = 0;
+		for (const file of list.filter((f) => !isGeoSidecarFile(f.name))) {
+			if (isDisplayFile(file.name)) {
+				app.parsingFile = true;
+				try {
+					const bytes = new Uint8Array(await file.arrayBuffer());
+					const display = await parseDisplay(bytes);
+					const points = display.substations.map((s) => {
+						const [lon, lat] = pwdToLngLat(s.x, s.y);
+						return { number: s.number, name: s.name, lon, lat };
+					});
+					const id = `local-${++localSeq}`;
+					addAndActivateLocal({
+						id,
+						label: file.name.replace(/\.[^.]+$/, ''),
+						fileName: file.name,
+						summary: null,
+						view: null,
+						substations: { points, approximate: true }
+					});
+					app.error = null;
+				} catch (e) {
+					app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
+				} finally {
+					app.parsingFile = false;
+				}
+				continue;
+			}
+			const format = formatOf(file.name);
+			if (!format) {
+				app.error = `${file.name}: not a case or coordinate file (.m, .raw, .aux, .pwd, .csv, .json, .geojson)`;
+				continue;
+			}
+			app.parsingFile = true;
+			try {
+				const text = await file.text();
+				const { network_json, topology, view, ...summary } = await ingestCase(text, format);
+				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
+					app.error = `${file.name}: aux parsed, but no complete network; drop the matching .m or .raw case file`;
+					continue;
+				}
+				const id = `local-${++localSeq}`;
+				const label =
+					summary.name && summary.name !== 'case'
+						? summary.name
+						: file.name.replace(/\.[^.]+$/, '');
+				let local: LocalCase = {
+					id,
+					label,
+					fileName: file.name,
+					summary,
+					networkJson: network_json,
+					topology,
+					coordsKind: summary.coords_kind,
+					view
+				};
+				if (sidecars.length > 0 && local.coordsKind === 'synthetic_pending') {
+					local = withGeoSidecar(local, sidecars);
+				}
+				addAndActivateLocal(local);
+				parsedCaseCount++;
+				app.error = null; // a successful parse clears a prior file's error
+			} catch (e) {
+				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
+			} finally {
+				app.parsingFile = false;
+			}
+		}
+
+		if (sidecars.length > 0 && parsedCaseCount === 0) applyGeoSidecarsToExisting(sidecars);
+	}
+
+	function dragHasFiles(e: DragEvent): boolean {
+		return showFileDropUi && (e.dataTransfer?.types.includes('Files') ?? false);
+	}
+
+	function onDragEnter(e: DragEvent) {
+		if (!dragHasFiles(e)) return;
+		e.preventDefault();
+		dragDepth++;
+		app.dragOver = true;
+	}
+
+	function onDragLeave(e: DragEvent) {
+		if (!dragHasFiles(e)) return;
+		dragDepth = Math.max(0, dragDepth - 1);
+		if (dragDepth === 0) app.dragOver = false;
+	}
+
+	function onDragOver(e: DragEvent) {
+		if (!dragHasFiles(e)) return;
+		e.preventDefault();
+	}
+
+	function onDrop(e: DragEvent) {
+		if (!dragHasFiles(e)) return;
+		e.preventDefault();
+		dragDepth = 0;
+		app.dragOver = false;
+		if (e.dataTransfer) ingestFiles(e.dataTransfer.files);
+	}
+
 	function splitName(name: string): [string, string] {
 		const m = name.match(/^(.*?)\s*\((.*)\)$/);
 		return m ? [m[1], m[2]] : [name, ''];
@@ -134,7 +386,7 @@
 			objective: c.solution.objective,
 			deltaObjective: c.solution.objective - c.baseSolution.objective,
 			uniformLmp: lmpMax - lmpMin < 1 ? lmps[0] : null,
-			// Mark the legend ends when outliers clamp beyond the robust domain.
+			// Mark legend ends when outliers clamp beyond the trimmed domain.
 			lmpLo: { value: domain.lo, clamped: lmpMin < domain.lo - 0.05 },
 			lmpHi: { value: domain.hi, clamped: lmpMax > domain.hi + 0.05 },
 			binding: c.solution.flows.filter((f) => f.loading >= 0.999).length
@@ -213,10 +465,14 @@
 	onkeydown={(e) => {
 		if (e.key === 'Escape') clearSelection();
 	}}
+	ondragenter={onDragEnter}
+	ondragleave={onDragLeave}
+	ondragover={onDragOver}
+	ondrop={onDrop}
 />
 
 <main>
-	<TellegenMap onbusclick={selectBus} />
+	<TellegenMap onbusclick={selectBus} onplacecase={placeLocalCase} />
 
 	<header>
 		<div class="brand">
@@ -228,18 +484,40 @@
 			</svg>
 			<h1>tellegen</h1>
 		</div>
-		{#if app.cases.length > 0}
-			<nav class="cases" aria-label="networks">
-				{#each app.cases as c (c.id)}
-					{@const [cname, cregion] = splitName(c.name)}
-					<button class:active={app.activeCaseId === c.id} onclick={() => activateCase(c.id)}>
-						<span class="cname">{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"
-								></i>{/if}</span>
-						<span class="cregion mono">{cregion}</span>
+		<nav class="cases" aria-label="networks">
+			{#each app.cases as c (c.id)}
+				{@const [cname, cregion] = splitName(c.name)}
+				<button class:active={app.activeCaseId === c.id} onclick={() => activateCase(c.id)}>
+					<span class="cname">{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"
+							></i>{/if}</span>
+					<span class="cregion mono">{cregion}</span>
+				</button>
+			{/each}
+			{#each app.localCases as c (c.id)}
+				<div class="case-chip local" class:active={app.activeLocalId === c.id}>
+					<button class="local-activate" onclick={() => activateLocal(c)}>
+						<span class="cname">{c.label}</span>
+						<span class="cregion mono">local</span>
 					</button>
-				{/each}
-			</nav>
-		{/if}
+					<button
+						class="local-remove mono"
+						aria-label="remove {c.label}"
+						title="remove {c.label}"
+						onclick={() => app.removeLocal(c.id)}>&#10005;</button
+					>
+				</div>
+			{/each}
+			{#if showFileDropUi}
+				<button
+					class="ghost filedrop-ui"
+					title="parsed in your browser; the file never uploads"
+					onclick={() => fileInput?.click()}
+				>
+					<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
+					<span class="cregion mono">case + geo sidecars &mdash; or click</span>
+				</button>
+			{/if}
+		</nav>
 		<span class="kicker mono">differentiable power systems</span>
 	</header>
 
@@ -247,7 +525,78 @@
 		{#if app.error}
 			<p class="error mono">{app.error}</p>
 		{/if}
-		{#if !stats}
+		{#if app.parsingFile}
+			<p class="dim mono blink">parsing&hellip;</p>
+		{/if}
+		{#if app.activeLocal}
+			{@const lc = app.activeLocal}
+			<h2>{lc.label} <span class="region mono">via {lc.fileName}</span></h2>
+			{#if lc.substations}
+				<dl class="mono">
+					<div><dt>substations</dt><dd>{lc.substations.points.length}</dd></div>
+				</dl>
+				<p class="footnote mono">
+					display only &mdash; positions inferred from the PowerWorld diagram, not surveyed
+					latitude and longitude
+				</p>
+				<p class="footnote mono">decoded in your browser by powerio (wasm); never uploaded</p>
+			{:else if lc.summary}
+				<dl class="mono">
+					<div><dt>buses</dt><dd>{lc.summary.n_bus}</dd></div>
+					<div><dt>branches</dt><dd>{lc.summary.n_branch}</dd></div>
+					<div><dt>generators</dt><dd>{lc.summary.n_gen}</dd></div>
+					<div><dt>load</dt><dd>{fmt.format(lc.summary.load_mw)} MW</dd></div>
+					<div><dt>gen capacity</dt><dd>{fmt.format(lc.summary.gen_mw)} MW</dd></div>
+					<div><dt>base MVA</dt><dd>{fmt.format(lc.summary.base_mva)}</dd></div>
+				</dl>
+				{#if lc.summary.warnings.length > 0}
+					<ul class="warnings mono">
+						{#each lc.summary.warnings.slice(0, 4) as w, i (i)}
+							<li>{w}</li>
+						{/each}
+						{#if lc.summary.warnings.length > 4}
+							<li>+{lc.summary.warnings.length - 4} more</li>
+						{/if}
+					</ul>
+				{/if}
+				{#if !lc.view}
+					<p class="footnote mono">
+						no coordinates in this file &mdash; click the map or drop a coordinate sidecar
+					</p>
+				{:else if lc.coordsKind === 'synthetic'}
+					<p class="footnote mono">
+						coordinates: synthetic topology layout centered where you placed it
+					</p>
+				{:else if lc.coordsKind === 'sidecar'}
+					<p class="footnote mono">
+						coordinates: uploaded sidecar data from {lc.geoSource}
+					</p>
+				{/if}
+				{#if lc.geoWarnings && lc.geoWarnings.length > 0}
+					<ul class="warnings mono">
+						{#each lc.geoWarnings.slice(0, 4) as w, i (i)}
+							<li>{w}</li>
+						{/each}
+						{#if lc.geoWarnings.length > 4}
+							<li>+{lc.geoWarnings.length - 4} more</li>
+						{/if}
+					</ul>
+				{/if}
+				<p class="footnote mono">
+					parsed in your browser by powerio (wasm); never uploaded
+				</p>
+			{/if}
+			{#if lc.topology && lc.coordsKind !== 'file'}
+				<button class="reset mono" onclick={() => moveLocalCase(lc)}>
+					{lc.coordsKind === 'synthetic_pending'
+						? 'place on map'
+						: lc.coordsKind === 'sidecar'
+							? 'place manually'
+							: 'move layout'}
+				</button>
+			{/if}
+			<button class="reset mono" onclick={() => app.removeLocal(lc.id)}>remove</button>
+		{:else if !stats}
 			{#if !app.error}
 				<p class="dim mono blink">loading cases&hellip;</p>
 			{/if}
@@ -264,7 +613,9 @@
 				{/if}
 			</dl>
 			{#if app.active?.network?.synthetic_coords}
-				<p class="footnote mono">coordinates: spectral embedding, synthetic</p>
+				<p class="footnote mono">coordinates: topology layout, not geography</p>
+			{:else}
+				<p class="footnote mono">coordinates: TAMU synthetic grid footprint</p>
 			{/if}
 
 			<hr />
@@ -284,7 +635,7 @@
 				{:else}
 					<p class="dim small">
 						Price response across the network per MW of demand added at bus
-						{app.selectedBus}. One exact KKT column, no re-solve.
+						{app.selectedBus}. One KKT sensitivity column, no re-solve.
 					</p>
 					<div class="legend" style:background={sensGradient}></div>
 					<div class="legend-labels mono">
@@ -313,17 +664,6 @@
 					/>
 					{#if predictedDeltaObj !== null && previewing}
 						<p class="pred mono dim">predicted &Delta;cost {signed(predictedDeltaObj)} $/h</p>
-					{/if}
-					{#if c.solving}
-						<p class="dim mono blink small">exact solve streaming&hellip;</p>
-					{/if}
-					{#if c.iterations.length > 1}
-						<Sparkline iterations={c.iterations} />
-						<div class="solve-meta mono dim">
-							<span>ipopt</span>
-							<span>{c.iterations.length} iterations</span>
-							{#if c.solveMs !== null}<span>{c.solveMs} ms</span>{/if}
-						</div>
 					{/if}
 					{#if gradientScore && c.perturbed}
 						<p class="score mono">
@@ -358,8 +698,7 @@
 					{/if}
 				</div>
 				<p class="dim small">
-					Locational marginal prices from the DC optimal power flow. Click any bus to see its
-					demand sensitivity column and perturb its load.
+					DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
 				</p>
 				<div class="legend" style:background={lmpGradient}></div>
 				<div class="legend-labels mono">
@@ -370,6 +709,9 @@
 						<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
 					{/if}
 				</div>
+				<p class="dim small filedrop-note">
+					Drop case files and optional coordinate sidecars; parsing stays in your browser.
+				</p>
 			{/if}
 
 			<hr />
@@ -386,13 +728,75 @@
 		{/if}
 	</aside>
 
+	{#if app.active && (app.active.solving || app.active.iterations.length > 1)}
+		<div class="solvecard">
+			<div class="solvecard-head mono">
+				<span>exact solve</span>
+				{#if app.active.solving}
+					<span class="dim blink">streaming&hellip;</span>
+				{:else}
+					<span class="dim">ipopt</span>
+				{/if}
+			</div>
+			<Sparkline iterations={app.active.iterations} />
+			<div class="solve-meta mono dim">
+				<span>{app.active.iterations.length} iterations</span>
+				{#if app.active.solveMs !== null}<span>{app.active.solveMs} ms</span>{/if}
+			</div>
+		</div>
+	{/if}
+
+	{#if app.dragOver}
+		<div class="dropzone" aria-hidden="true">
+			<div class="dropframe">
+				<p class="mono">drop to parse &mdash; case files or coordinate sidecars</p>
+				<p class="mono hint">parsed in your browser; the file never uploads</p>
+			</div>
+		</div>
+	{/if}
+
+	{#if app.placingLocalId}
+		<div class="placement-cue mono">
+			click the map to place the synthetic topology
+		</div>
+	{/if}
+
 	<footer class="mono">
-		<span>DC OPF</span>
+		<a href="https://electricgrids.engr.tamu.edu/" target="_blank" rel="noreferrer"
+			>ACTIVSg synthetic grids</a
+		>
 		<i class="sep"></i>
-		<span>PowerDiff exact KKT sensitivities</span>
+		<a href="https://github.com/eigenergy/powerio" target="_blank" rel="noreferrer"
+			>powerio parser</a
+		>
 		<i class="sep"></i>
-		<span>powerio parser</span>
+		<a href="https://github.com/eigenergy/tellegen" target="_blank" rel="noreferrer"
+			>tellegen framework</a
+		>
+		<i class="sep"></i>
+		<a href="/privacy">privacy</a>
+		{#if showFileDropUi}
+			<i class="sep filedrop-ui"></i>
+			<span class="drophint filedrop-ui"
+				><span class="arrow">&#8675;</span> drop a case or coordinate file anywhere</span
+			>
+		{/if}
 	</footer>
+
+	{#if showFileDropUi}
+		<input
+			type="file"
+			accept=".m,.raw,.aux,.pwd,.csv,.json,.geojson"
+			multiple
+			hidden
+			bind:this={fileInput}
+			onchange={(e) => {
+				const input = e.currentTarget;
+				if (input.files) ingestFiles(Array.from(input.files));
+				input.value = '';
+			}}
+		/>
+	{/if}
 </main>
 
 <style>
@@ -427,7 +831,7 @@
 		margin: 0;
 		font-size: 22px;
 		font-weight: 600;
-		letter-spacing: -0.02em;
+		letter-spacing: 0;
 	}
 
 	.cases {
@@ -435,9 +839,9 @@
 		gap: 6px;
 	}
 
-	.cases button {
+	.cases > button,
+	.case-chip {
 		display: flex;
-		flex-direction: column;
 		align-items: flex-start;
 		gap: 1px;
 		padding: 5px 12px 4px;
@@ -450,11 +854,51 @@
 		transition: border-color 0.15s ease;
 	}
 
-	.cases button:hover {
+	.cases > button {
+		flex-direction: column;
+	}
+
+	.case-chip {
+		align-items: stretch;
+		gap: 0;
+		padding: 0;
+		overflow: hidden;
+	}
+
+	.case-chip button {
+		font-family: var(--font-display);
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.local-activate {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 1px;
+		min-width: 0;
+		padding: 5px 8px 4px 12px;
+		background: transparent;
+		border: 0;
+	}
+
+	.local-remove {
+		align-self: stretch;
+		padding: 0 7px;
+		background: transparent;
+		border: 0;
+		border-left: 1px solid var(--line);
+		color: var(--ink-faint);
+		font-size: 9px;
+	}
+
+	.cases > button:hover,
+	.case-chip:hover {
 		border-color: var(--accent);
 	}
 
-	.cases button.active {
+	.cases > button.active,
+	.case-chip.active {
 		background: var(--panel);
 		border-color: var(--accent);
 		box-shadow: inset 0 -2px 0 var(--accent);
@@ -479,14 +923,52 @@
 	.cregion {
 		font-size: 9.5px;
 		color: var(--ink-dim);
-		letter-spacing: 0.06em;
+		letter-spacing: 0;
 		text-transform: uppercase;
+	}
+
+	/* Local case chips: dashed border + graphite text, topology only. */
+	.case-chip.local {
+		border-style: dashed;
+		color: var(--ink-dim);
+	}
+
+	.case-chip.local.active {
+		background: var(--panel);
+		border-color: var(--accent);
+		box-shadow: inset 0 -2px 0 var(--accent);
+	}
+
+	/* Ghost chip: standing invitation to drop or pick a case file. */
+	.cases > button.ghost {
+		background: transparent;
+		border: 1px dashed var(--ink-faint);
+		color: var(--ink-dim);
+	}
+
+	.cases > button.ghost:hover {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+	}
+
+	.cases > button.ghost:hover,
+	.cases > button.ghost:hover .cregion {
+		color: var(--accent);
+	}
+
+	.arrow {
+		display: inline-block;
+		animation: bob 1.8s ease-in-out infinite alternate;
+	}
+
+	.local-remove:hover {
+		color: var(--red);
 	}
 
 	.kicker {
 		font-size: 11px;
 		text-transform: uppercase;
-		letter-spacing: 0.18em;
+		letter-spacing: 0;
 		color: var(--ink-dim);
 	}
 
@@ -518,7 +1000,7 @@
 		font-weight: 400;
 		color: var(--ink-dim);
 		text-transform: uppercase;
-		letter-spacing: 0.08em;
+		letter-spacing: 0;
 		margin-left: 4px;
 	}
 
@@ -549,7 +1031,16 @@
 		margin: 8px 0 0;
 		font-size: 10px;
 		color: var(--ink-faint);
-		letter-spacing: 0.04em;
+		letter-spacing: 0;
+	}
+
+	.warnings {
+		margin: 8px 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 10.5px;
+		line-height: 1.5;
+		color: var(--accent);
 	}
 
 	hr {
@@ -680,11 +1171,33 @@
 		color: var(--ink);
 	}
 
+	.solvecard {
+		position: absolute;
+		top: 64px;
+		right: 20px;
+		z-index: 10;
+		width: 240px;
+		padding: 12px 14px 10px;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		backdrop-filter: blur(6px);
+		box-shadow: 0 4px 24px rgba(32, 36, 43, 0.08);
+		animation: rise 0.3s ease-out both;
+	}
+
+	.solvecard-head {
+		display: flex;
+		justify-content: space-between;
+		font-size: 11px;
+		margin-bottom: 6px;
+	}
+
 	.solve-meta {
 		display: flex;
 		gap: 12px;
 		font-size: 10px;
-		margin-top: 2px;
+		margin-top: 4px;
 	}
 
 	.reset {
@@ -769,6 +1282,15 @@
 		pointer-events: none;
 	}
 
+	footer a {
+		pointer-events: auto;
+		color: var(--ink-dim);
+	}
+
+	footer a:hover {
+		color: var(--accent);
+	}
+
 	.sep {
 		width: 4px;
 		height: 4px;
@@ -776,6 +1298,60 @@
 		background: var(--accent-bright);
 		opacity: 0.55;
 		transform: rotate(45deg);
+	}
+
+	.drophint {
+		color: var(--ink-faint);
+	}
+
+	.drophint .arrow {
+		color: var(--accent);
+	}
+
+	.dropzone {
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		pointer-events: none;
+		background: rgba(236, 233, 226, 0.75);
+	}
+
+	.dropframe {
+		position: absolute;
+		inset: 14px;
+		border: 1.5px dashed var(--accent);
+		border-radius: 3px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+	}
+
+	.dropframe p {
+		margin: 0;
+		font-size: 13px;
+	}
+
+	.dropframe .hint {
+		font-size: 11px;
+		color: var(--ink-dim);
+	}
+
+	.placement-cue {
+		position: absolute;
+		left: 50%;
+		bottom: 52px;
+		z-index: 14;
+		transform: translateX(-50%);
+		padding: 8px 12px;
+		background: var(--panel);
+		border: 1px solid var(--accent);
+		border-radius: 3px;
+		color: var(--accent);
+		font-size: 11px;
+		box-shadow: 0 4px 18px rgba(32, 36, 43, 0.1);
+		pointer-events: none;
 	}
 
 	.blink {
@@ -802,10 +1378,172 @@
 		}
 	}
 
+	@keyframes bob {
+		to {
+			transform: translateY(2px);
+		}
+	}
+
+	@media (max-width: 760px) {
+		header {
+			align-items: flex-start;
+			flex-wrap: wrap;
+			gap: 8px;
+			padding: 8px 10px 12px;
+			background: linear-gradient(rgba(236, 233, 226, 0.97), rgba(236, 233, 226, 0.72));
+		}
+
+		.brand {
+			gap: 8px;
+		}
+
+		h1 {
+			font-size: 20px;
+		}
+
+		.kicker {
+			margin-left: auto;
+			font-size: 9.5px;
+			letter-spacing: 0;
+			line-height: 2;
+		}
+
+		.cases {
+			order: 3;
+			width: 100%;
+			overflow-x: auto;
+			padding-bottom: 2px;
+			scrollbar-width: none;
+			scroll-padding: 10px;
+			scroll-snap-type: x proximity;
+			-webkit-overflow-scrolling: touch;
+		}
+
+		.cases::-webkit-scrollbar {
+			display: none;
+		}
+
+		.cases > button,
+		.case-chip {
+			flex: 0 0 auto;
+			max-width: 150px;
+			min-height: 40px;
+			scroll-snap-align: start;
+		}
+
+		.cases > button {
+			padding: 7px 10px 6px;
+		}
+
+		.local-activate {
+			padding: 7px 7px 6px 10px;
+		}
+
+		.local-remove {
+			min-width: 34px;
+		}
+
+		.cname,
+		.cregion {
+			max-width: 100%;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.panel {
+			top: auto;
+			left: 10px;
+			right: 10px;
+			bottom: 40px;
+			width: auto;
+			max-height: 44dvh;
+			padding: 14px 16px;
+		}
+
+		.solvecard {
+			top: 124px;
+			left: auto;
+			right: 10px;
+			width: min(230px, calc(100% - 20px));
+		}
+
+		.mode {
+			flex-wrap: wrap;
+			gap: 7px;
+		}
+
+		.mode button {
+			margin-left: 0;
+		}
+
+		.sizes {
+			flex-wrap: wrap;
+			gap: 8px 12px;
+		}
+
+		.caption {
+			margin-left: 0;
+			flex-basis: 100%;
+		}
+
+		footer {
+			padding: 7px 10px;
+			overflow-x: auto;
+			font-size: 9.5px;
+			white-space: nowrap;
+			pointer-events: auto;
+			scrollbar-width: none;
+		}
+
+		footer::-webkit-scrollbar {
+			display: none;
+		}
+
+		.sep {
+			margin: 0 8px;
+		}
+
+		.filedrop-ui,
+		.filedrop-note {
+			display: none;
+		}
+	}
+
+	@media (hover: none), (pointer: coarse) {
+		.filedrop-ui,
+		.filedrop-note {
+			display: none;
+		}
+	}
+
+	@media (max-width: 420px) {
+		.kicker {
+			display: none;
+		}
+
+		.cases > button,
+		.case-chip {
+			max-width: 132px;
+		}
+
+		.panel {
+			bottom: 34px;
+			max-height: 46dvh;
+		}
+
+		.placement-cue {
+			bottom: 38px;
+			width: calc(100% - 28px);
+			text-align: center;
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		header,
 		.panel,
-		footer {
+		footer,
+		.arrow {
 			animation: none;
 		}
 	}
