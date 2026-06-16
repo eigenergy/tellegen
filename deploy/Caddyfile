@@ -1,10 +1,46 @@
-# Replace with the deployment domain.
+# Standalone example for a shared Caddy edge proxy. When another stack owns
+# ports 80 and 443, keep the app container on an external `edge` network and
+# route to `tellegen:8000`.
+
+(secure_headers) {
+	header {
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		-Server
+	}
+}
+
 tellegen.example.org {
 	encode zstd gzip
-	reverse_proxy 127.0.0.1:8000
+	import secure_headers
 
-	# Add rate limits before broad public traffic. The expensive endpoints are
-	# /api/cases/*/solve and /api/cases/*/sensitivity/*.
-	# Keep /solve compatible with SSE: no response buffering, and write
-	# timeouts long enough for the largest served case.
+	rate_limit {
+		zone tellegen_solve {
+			match {
+				path /api/cases/*/solve
+			}
+			key {remote_host}
+			window 10s
+			events 5
+		}
+		zone tellegen_sensitivity {
+			match {
+				path /api/cases/*/sensitivity/*
+			}
+			key {remote_host}
+			window 10s
+			events 25
+		}
+		zone tellegen_api {
+			match {
+				path /api/*
+			}
+			key {remote_host}
+			window 10s
+			events 100
+		}
+	}
+
+	reverse_proxy tellegen:8000
 }

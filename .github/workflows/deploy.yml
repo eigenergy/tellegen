@@ -9,8 +9,13 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: tellegen-deploy-${{ github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 jobs:
   frontend:
+    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +39,7 @@ jobs:
         working-directory: frontend
 
   backend:
+    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +52,7 @@ jobs:
       - run: TELLEGEN_ALLOW_FALLBACK=1 julia --project=backend backend/test/runtests.jl
 
   image:
+    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     needs: [frontend, backend]
     outputs:
@@ -97,6 +104,7 @@ jobs:
           docker push "${{ steps.meta.outputs.main_tag }}"
 
   deploy:
+    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     needs: image
     environment: demo
@@ -133,44 +141,21 @@ jobs:
             ssh-keyscan -H "$DEPLOY_HOST" > ~/.ssh/known_hosts
           fi
           chmod 600 ~/.ssh/known_hosts
-      - name: Copy compose file
+      - name: Copy deploy files
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
-          ssh -i ~/.ssh/tellegen_deploy "$remote" "mkdir -p '$DEPLOY_PATH/deploy' '$DEPLOY_PATH/data'"
+          ssh -i ~/.ssh/tellegen_deploy "$remote" "mkdir -p '$DEPLOY_PATH/deploy'"
           scp -i ~/.ssh/tellegen_deploy \
             deploy/docker-compose.prod.yml \
-            "$remote:$DEPLOY_PATH/deploy/docker-compose.prod.yml"
+            deploy/docker-compose.edge.yml \
+            deploy/remote-deploy.sh \
+            "$remote:$DEPLOY_PATH/deploy/"
       - name: Deploy image
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           ssh -i ~/.ssh/tellegen_deploy "$remote" "
             cd '$DEPLOY_PATH' &&
-            printf 'TELLEGEN_IMAGE=%s\nTELLEGEN_DATA_DIR=%s\n' '$TELLEGEN_IMAGE' '$DEPLOY_PATH/data' > .env &&
-            docker compose --env-file .env -f deploy/docker-compose.prod.yml pull tellegen &&
-            docker compose --env-file .env -f deploy/docker-compose.prod.yml up -d --remove-orphans
-          "
-      - name: Check host health
-        run: |
-          remote="$DEPLOY_USER@$DEPLOY_HOST"
-          ssh -i ~/.ssh/tellegen_deploy "$remote" "
-            for i in \$(seq 1 90); do
-              health=\$(curl -fsS http://127.0.0.1:8000/api/health) || {
-                sleep 10
-                continue
-              }
-              case \"\$health\" in
-                *'\"case200\"'*'\"case2000\"'*'\"case500\"'*)
-                  exit 0
-                  ;;
-              esac
-              echo \"unexpected health payload: \$health\"
-              if [ \"\$i\" -lt 90 ]; then
-                sleep 10
-              fi
-            done
-            cd '$DEPLOY_PATH'
-            docker compose --env-file .env -f deploy/docker-compose.prod.yml logs --tail=200 tellegen
-            exit 1
+            bash deploy/remote-deploy.sh '$TELLEGEN_IMAGE' '$DEPLOY_PATH/data'
           "
       - name: Check public health
         run: |
@@ -181,11 +166,9 @@ jobs:
               sleep 10
               continue
             }
-            case "$health" in
-              *'"case200"'*'"case2000"'*'"case500"'*)
-                exit 0
-                ;;
-            esac
+            if [[ "$health" == *'"case200"'* && "$health" == *'"case500"'* && "$health" == *'"case2000"'* ]]; then
+              exit 0
+            fi
             echo "unexpected public health payload: $health"
             if [ "$attempt" -lt 30 ]; then
               echo "waiting for public health ($attempt/30)"
