@@ -62,6 +62,7 @@
 		sens: Map<number, number>;
 		sensDomain: SensitivityDomain | null;
 	}
+	type SolvableCase = CaseState | LocalCase;
 
 	// Everything the accessors need, rebuilt when any case's data moves. The
 	// LMP scale normalizes per network: each case is an islanded market, so
@@ -127,10 +128,23 @@
 		};
 	}
 
-	/** Backend case owning a picked layer; null for local case layers. */
-	function caseOf(info: PickingInfo): CaseState | null {
-		const id = info.layer?.id.replace(/^(buses|branches)-/, '');
-		return id ? app.byId(id) : null;
+	function caseDeltas(c: SolvableCase) {
+		return c instanceof CaseState ? c.deltas : (c.deltas ?? {});
+	}
+
+	function isBusLayer(layerId: string | undefined): boolean {
+		return Boolean(layerId?.startsWith('buses-') || layerId?.startsWith('local-buses-'));
+	}
+
+	/** Case owning a picked network layer; null for display-only layers. */
+	function caseOf(info: PickingInfo): SolvableCase | null {
+		const layerId = info.layer?.id;
+		if (!layerId) return null;
+		const backend = layerId.match(/^(?:buses|branches)-(.+)$/);
+		if (backend) return app.byId(backend[1]);
+		const local = layerId.match(/^local-(?:buses|branches)-(.+)$/);
+		if (local) return app.localCases.find((c) => c.id === local[1]) ?? null;
+		return null;
 	}
 
 	/** Escape free text from a dropped file before it goes into tooltip html
@@ -169,7 +183,6 @@
 		}
 		const bus = object as NetworkBus;
 		if (!c) {
-			// Browser parsed file: topology only, no solution to report.
 			return {
 				html: `<div class="tt"><b>bus ${bus.id}</b>
 					load ${bus.demand_mw.toFixed(0)} MW &#8901; gen ${bus.gen_mw.toFixed(0)} MW<br>
@@ -178,7 +191,7 @@
 		}
 		const lmp = d?.lmp.get(bus.id);
 		const sens = d?.mode === 'sens' ? d.sens.get(bus.id) : undefined;
-		const delta = c.deltas[bus.id] ?? 0;
+		const delta = caseDeltas(c)[bus.id] ?? 0;
 		const loadRow =
 			delta === 0
 				? `load ${bus.demand_mw.toFixed(0)} MW`
@@ -187,10 +200,12 @@
 			sens === undefined
 				? ''
 				: `<br>&part;LMP/&part;d ${sens >= 0 ? '+' : ''}${sens.toExponential(2)}`;
+		const localRow =
+			c instanceof CaseState ? '' : '<br><span style="opacity:0.6">local file</span>';
 		return {
 			html: `<div class="tt"><b>bus ${bus.id}</b>
 				LMP ${lmp?.toFixed(2) ?? '&mdash;'} $/MWh<br>
-				${loadRow} &#8901; gen ${bus.gen_mw.toFixed(0)} MW${sensRow}</div>`
+				${loadRow} &#8901; gen ${bus.gen_mw.toFixed(0)} MW${sensRow}${localRow}</div>`
 		};
 	}
 
@@ -248,7 +263,7 @@
 						depthCompare: 'always'
 					},
 					onClick: (info: PickingInfo) => {
-						if (!app.placingLocalId && !info.layer?.id.startsWith('buses-')) onmapclick();
+						if (!app.placingLocalId && !isBusLayer(info.layer?.id)) onmapclick();
 					},
 					getTooltip: tooltip,
 					getCursor: ({ isHovering, isDragging }: CursorState) =>
