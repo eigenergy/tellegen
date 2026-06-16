@@ -81,6 +81,11 @@ export const sensColor = (t: number): RGBA => ramp(SENS_STOPS, (t + 1) / 2);
 export const sensGradient = cssGradient(SENS_STOPS);
 export const sensNeutral: RGBA = SENS_STOPS[2];
 
+export function sensFlatColor(domain: Pick<SensitivityDomain, 'mean'>): RGBA {
+	if (domain.mean === 0) return sensNeutral;
+	return sensColor(domain.mean > 0 ? 0.55 : -0.55);
+}
+
 /** Zero anchored sensitivity domain with a flat column guard. */
 export function sensitivityDomain(values: number[]): SensitivityDomain {
 	if (values.length === 0) {

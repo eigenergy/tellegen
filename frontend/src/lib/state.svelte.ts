@@ -48,6 +48,7 @@ export interface LocalCase {
 	solving?: boolean;
 	solveMs?: number | null;
 	solveBackend?: SolveBackend | null;
+	solveFallbackReason?: string | null;
 	solveSeq?: number;
 	sensitivitySeq?: number;
 	predictedObjective?: number | null;
@@ -74,6 +75,7 @@ export class CaseState {
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveBackend = $state<SolveBackend | null>(null);
+	solveFallbackReason = $state<string | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;
 	/** Monotone token: only the latest sensitivity request may write this case. */

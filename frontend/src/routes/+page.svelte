@@ -14,7 +14,15 @@
 		openSolveStream
 	} from '$lib/api';
 	import type { Network, SensitivityColumn } from '$lib/api';
-	import { busRadius, lmpDomain, lmpGradient, sensGradient, sensitivityDomain } from '$lib/colors';
+	import {
+		busRadius,
+		lmpDomain,
+		lmpGradient,
+		sensFlatColor,
+		sensGradient,
+		sensitivityDomain,
+		type RGBA
+	} from '$lib/colors';
 	import {
 		applyGeoSidecar,
 		isGeoSidecarFile,
@@ -55,6 +63,14 @@
 
 	function touchLocal(c: SolvableCase) {
 		if (!isBackendCase(c)) app.updateLocal(c.id, { ...c });
+	}
+
+	function errorText(e: unknown): string {
+		return e instanceof Error ? e.message : String(e);
+	}
+
+	function rgbaCss([r, g, b, a]: RGBA): string {
+		return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
 	}
 
 	onMount(() => {
@@ -116,6 +132,7 @@
 			solving: c.solving ?? false,
 			solveMs: c.solveMs ?? null,
 			solveBackend: c.solveBackend ?? null,
+			solveFallbackReason: c.solveFallbackReason ?? null,
 			solveSeq: c.solveSeq ?? 0,
 			sensitivitySeq: c.sensitivitySeq ?? 0,
 			predictedObjective: c.predictedObjective ?? null
@@ -238,7 +255,8 @@
 			const json = await getCaseNetworkJson(c.id);
 			c.networkJson = json;
 			return json;
-		} catch {
+		} catch (e) {
+			c.solveFallbackReason = `/case fetch failed: ${errorText(e)}`;
 			return null;
 		}
 	}
@@ -368,12 +386,14 @@
 		app.error = null;
 		c.solving = true;
 		c.solveBackend = null;
+		c.solveFallbackReason = null;
 		c.iterations = [];
 		c.solveMs = null;
 		touchLocal(c);
 		ensureNetworkJson(c).then((networkJson) => {
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (!networkJson) {
+				c.solveFallbackReason ??= 'browser network JSON unavailable';
 				if (isBackendCase(c)) return serverSolve(c, sensBus, seq);
 				c.solving = false;
 				app.error = `${c.label}: local case has no browser network JSON`;
@@ -392,12 +412,13 @@
 					acceptSensitivity(c, sensitivity, sensBus);
 					finishSolve(c, seq, sensBus);
 				})
-				.catch(() => {
+				.catch((e) => {
 					if (seq !== (c.solveSeq ?? 0)) return;
+					c.solveFallbackReason = `browser solve failed: ${errorText(e)}`;
 					if (isBackendCase(c)) serverSolve(c, sensBus, seq);
 					else {
 						c.solving = false;
-						app.error = `${c.label}: browser solve failed`;
+						app.error = `${c.label}: ${c.solveFallbackReason}`;
 						touchLocal(c);
 					}
 				});
@@ -406,6 +427,7 @@
 
 	function serverSolve(c: CaseState, sensBus: number | null, seq = c.solveSeq) {
 		c.solveBackend = 'ipopt-server';
+		c.solveFallbackReason ??= 'browser solve unavailable';
 		closeStream = openSolveStream(c.id, c.deltas, sensBus, {
 			oniteration: (it) => {
 				if (seq !== c.solveSeq) return;
@@ -682,6 +704,7 @@
 	const sensSummary = $derived.by(() =>
 		selectedSensitivity ? sensitivityDomain(selectedSensitivity.values.map((v) => v.value)) : null
 	);
+	const flatSensBackground = $derived(sensSummary ? rgbaCss(sensFlatColor(sensSummary)) : '');
 
 	const selectedLmp = $derived.by(() => {
 		const c = activeSolvable;
@@ -732,6 +755,27 @@
 	const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.abs(v))}`;
 	const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
 	const SIZE_SAMPLES = [10, 100, 500];
+
+	function sliderCurrent() {
+		return sliderValue;
+	}
+
+	function setSliderPreview(value: number | undefined) {
+		if (value === undefined) return;
+		app.previewActive = true;
+		app.previewDeltaMw = value;
+	}
+
+	function solveBackendLabel(c: SolvableCase): string {
+		if (c.solveBackend === 'clarabel-wasm') return 'Clarabel wasm';
+		if (c.solveBackend === 'ipopt-server') return 'server fallback';
+		return c.solving ? 'starting' : 'solve pending';
+	}
+
+	function solveMetaLabel(c: SolvableCase): string {
+		if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
+		return c.solveBackend === 'ipopt-server' ? 'server solve' : 'browser solve';
+	}
 </script>
 
 <svelte:window
@@ -917,7 +961,10 @@
 				{:else}
 					<p class="dim small">Price response per MW of demand added at bus {app.selectedBus}.</p>
 					{#if sensSummary?.flat}
-						<p class="flat-note mono">near uniform {signedExp(sensSummary.mean)}</p>
+						<div class="legend flat" style:background={flatSensBackground}></div>
+						<div class="legend-labels mono single">
+							<span>uniform {signedExp(sensSummary.mean)} ($/MWh)/MW</span>
+						</div>
 					{:else if sensSummary}
 						<div class="legend" style:background={sensGradient}></div>
 						<div class="legend-labels mono">
@@ -938,12 +985,18 @@
 							<button
 								type="button"
 								class:active={app.demandRangeMode === 'local'}
-								onclick={() => setDemandRangeMode('local')}>local</button
+								aria-pressed={app.demandRangeMode === 'local'}
+								aria-label="nearby demand range"
+								title="range around the current demand delta"
+								onclick={() => setDemandRangeMode('local')}>nearby</button
 							>
 							<button
 								type="button"
 								class:active={app.demandRangeMode === 'full'}
-								onclick={() => setDemandRangeMode('full')}>full</button
+								aria-pressed={app.demandRangeMode === 'full'}
+								aria-label="full demand range"
+								title="range from zero load to the local physical limit"
+								onclick={() => setDemandRangeMode('full')}>full range</button
 							>
 						</div>
 						<span class="mono dim">{fmt.format(sliderMin)} to {fmt.format(sliderMax)} MW</span>
@@ -953,7 +1006,7 @@
 						min={sliderMin}
 						max={sliderMax}
 						step="0.5"
-						value={sliderValue}
+						bind:value={sliderCurrent, setSliderPreview}
 						aria-label="demand delta at selected bus"
 						onpointerdown={() => {
 							app.previewActive = true;
@@ -963,16 +1016,12 @@
 							app.previewActive = true;
 							app.previewDeltaMw = sliderValue;
 						}}
-						oninput={(e) => {
-							app.previewActive = true;
-							app.previewDeltaMw = Number(e.currentTarget.value);
-						}}
 						onpointerup={(e) => finishDemandInput(Number(e.currentTarget.value))}
 						onmouseup={(e) => finishDemandInput(Number(e.currentTarget.value))}
 						onclick={(e) => finishDemandInput(Number(e.currentTarget.value))}
 						onkeyup={(e) => finishDemandInput(Number(e.currentTarget.value))}
 						onblur={(e) => finishDemandInput(Number(e.currentTarget.value))}
-						onchange={(e) => commitDelta(Number(e.currentTarget.value))}
+						onchange={(e) => finishDemandInput(Number(e.currentTarget.value))}
 					/>
 					{#if predictedDeltaObj !== null && previewing}
 						<p class="pred mono dim">predicted &Delta;cost {signed(predictedDeltaObj)} $/h</p>
@@ -1046,11 +1095,11 @@
 				<span>exact solve</span>
 				{#if activeSolvable.solving}
 					<span class="dim blink"
-						>{activeSolvable.solveBackend === 'ipopt-server' ? 'Ipopt server' : 'Clarabel wasm'}</span
+						>{solveBackendLabel(activeSolvable)}</span
 					>
 				{:else}
 					<span class="dim"
-						>{activeSolvable.solveBackend === 'ipopt-server' ? 'Ipopt server' : 'Clarabel wasm'}</span
+						>{solveBackendLabel(activeSolvable)}</span
 					>
 				{/if}
 			</div>
@@ -1058,13 +1107,14 @@
 				<Sparkline iterations={activeSolvable.iterations ?? []} />
 			{/if}
 			<div class="solve-meta mono dim">
-				{#if (activeSolvable.iterations ?? []).length > 1}
-					<span>{activeSolvable.iterations?.length} iterations</span>
-				{:else}
-					<span>browser solve</span>
-				{/if}
+				<span>{solveMetaLabel(activeSolvable)}</span>
 				{#if activeSolvable.solveMs != null}<span>{activeSolvable.solveMs} ms</span>{/if}
 			</div>
+			{#if activeSolvable.solveBackend === 'ipopt-server' && activeSolvable.solveFallbackReason}
+				<p class="fallback-reason mono dim" title={activeSolvable.solveFallbackReason}>
+					fallback: {activeSolvable.solveFallbackReason}
+				</p>
+			{/if}
 		</div>
 	{/if}
 
@@ -1433,10 +1483,9 @@
 		margin-top: 4px;
 	}
 
-	.flat-note {
-		margin: 8px 0 0;
-		font-size: 11px;
-		color: var(--ink-dim);
+	.legend-labels.single {
+		justify-content: center;
+		text-align: center;
 	}
 
 	.slider-block {
@@ -1561,6 +1610,13 @@
 		gap: 12px;
 		font-size: 10px;
 		margin-top: 4px;
+	}
+
+	.fallback-reason {
+		margin: 6px 0 0;
+		font-size: 10px;
+		line-height: 1.35;
+		overflow-wrap: anywhere;
 	}
 
 	.reset {
