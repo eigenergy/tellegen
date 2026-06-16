@@ -1,7 +1,7 @@
 /** Lazy loader for the powerio wasm module. Nothing downloads until the
  * first file is dropped; the dropped file is parsed in the browser and never
  * leaves the machine. */
-import type { NetworkBranch, NetworkBus } from './api';
+import type { DemandDeltas, NetworkBranch, NetworkBus, SensitivityColumn, Solution } from './api';
 import wasmUrl from './wasm-pkg/tellegen_bg.wasm?url';
 
 export interface CaseFileSummary {
@@ -87,4 +87,36 @@ export function isDisplayFile(name: string): boolean {
 
 export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
 	return JSON.parse((await powerio()).parse_display(bytes, 'pwd'));
+}
+
+/** The browser DC solve: the exact solution plus, when `sensBus` is given, its
+ * dLMP/dd column — the same shapes the backend serves. */
+export interface BrowserSolution {
+	solution: Solution;
+	sensitivity: SensitivityColumn | null;
+}
+
+/** Solve the DC OPF in the browser at demand = base + `deltas`. `networkJson` is
+ * the raw powerio Network (from the `/case` endpoint or a browser parse). When
+ * `sensBus` is set, the dLMP/dd column for that bus rides along. Runs entirely
+ * in wasm: no server round trip. */
+export async function solveDc(
+	caseId: string,
+	networkJson: string,
+	deltas: DemandDeltas,
+	sensBus: number | null
+): Promise<BrowserSolution> {
+	const request = JSON.stringify({ deltas, sens_bus: sensBus });
+	const out = JSON.parse((await powerio()).solve_dc(networkJson, request));
+	const solution: Solution = {
+		objective: out.objective,
+		lmp: out.lmp,
+		flows: out.flows,
+		dispatch: out.dispatch
+	};
+	const d = out.dlmp_dd;
+	const sensitivity: SensitivityColumn | null = d
+		? { case: caseId, operand: d.operand, parameter: d.parameter, bus: d.bus, units: d.units, values: d.values }
+		: null;
+	return { solution, sensitivity };
 }

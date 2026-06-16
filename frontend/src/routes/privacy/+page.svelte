@@ -13,7 +13,7 @@
 				Dropped `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, and `.geojson`
 				files stay on your device.
 			</li>
-			<li>The browser uses the local file contents to draw a map preview.</li>
+			<li>The browser uses local file contents to draw the map and run DC solves.</li>
 			<li>The server receives ordinary page and API requests for the built in demo cases.</li>
 			<li>There is no analytics product wired to uploaded case contents.</li>
 		</ul>

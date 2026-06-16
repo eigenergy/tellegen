@@ -4,7 +4,7 @@
 
 - `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, TAMU coordinate ingestion
 - `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl
-- `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing
+- `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing and DC solves
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source

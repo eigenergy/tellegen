@@ -8,6 +8,9 @@ use powerio::{parse_display_bytes, DisplayData};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+mod dc;
+use dc::solve_dc_json;
+
 fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
 }
@@ -22,6 +25,17 @@ pub fn parse_case(text: &str, format: &str) -> Result<String, JsError> {
         "warnings": parsed.warnings,
     }))
     .map_err(jserr)
+}
+
+/// Solve the DC OPF in the browser (issue #2). `network_json` is the `network`
+/// object from `parse_case`; `deltas_json` is `{ deltas: { bus: mw }, sens_bus }`
+/// (or empty for the base case). Returns `{ objective, lmp, flows, dispatch,
+/// dlmp_dd }` in the shapes the Julia backend serves — LMPs in $/MWh keyed by
+/// bus id, flows and dispatch in MW, and `dlmp_dd` the ($/MWh)/MW sensitivity
+/// column for `sens_bus` (null when none is requested).
+#[wasm_bindgen]
+pub fn solve_dc(network_json: &str, deltas_json: &str) -> Result<String, JsError> {
+    solve_dc_json(network_json, deltas_json).map_err(jserr)
 }
 
 #[derive(Serialize)]
@@ -79,6 +93,7 @@ struct Topology {
 #[wasm_bindgen]
 pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
     let parsed = powerio::parse_str(text, format).map_err(jserr)?;
+    let mut warnings = parsed.warnings;
     let net = &parsed.network;
 
     let mut demand: BTreeMap<usize, f64> = BTreeMap::new();
@@ -114,41 +129,58 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
             .collect(),
     };
 
-    let view = coords(net).map(|mut cs| {
-        spread_stacks(&mut cs);
-        let buses: Vec<ViewBus> = net
-            .buses
-            .iter()
-            .map(|b| {
-                let (lon, lat) = cs[&b.id.0];
-                ViewBus {
-                    id: b.id.0,
-                    lon,
-                    lat,
-                    demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
-                    gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
-                }
-            })
-            .collect();
-        let branches: Vec<ViewBranch> = net
-            .branches
-            .iter()
-            .enumerate()
-            .filter_map(|(i, br)| {
-                let f = cs.get(&br.from.0)?;
-                let t = cs.get(&br.to.0)?;
-                Some(ViewBranch {
-                    id: i + 1,
-                    from: br.from.0,
-                    to: br.to.0,
-                    rate_mw: br.rate_a,
-                    status: br.in_service as u8,
-                    path: [[f.0, f.1], [t.0, t.1]],
+    let view = {
+        let mut cs = coords(net);
+        if cs.is_empty() {
+            None
+        } else {
+            let missing_buses = net.buses.len().saturating_sub(cs.len());
+            if missing_buses > 0 {
+                warnings.push(format!(
+                    "{missing_buses} bus(es) lacked coordinates and are omitted from the map"
+                ));
+            }
+            spread_stacks(&mut cs);
+            let buses: Vec<ViewBus> = net
+                .buses
+                .iter()
+                .filter_map(|b| {
+                    let &(lon, lat) = cs.get(&b.id.0)?;
+                    Some(ViewBus {
+                        id: b.id.0,
+                        lon,
+                        lat,
+                        demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
+                        gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
+                    })
                 })
-            })
-            .collect();
-        View { buses, branches }
-    });
+                .collect();
+            let branches: Vec<ViewBranch> = net
+                .branches
+                .iter()
+                .enumerate()
+                .filter_map(|(i, br)| {
+                    let f = cs.get(&br.from.0)?;
+                    let t = cs.get(&br.to.0)?;
+                    Some(ViewBranch {
+                        id: i + 1,
+                        from: br.from.0,
+                        to: br.to.0,
+                        rate_mw: br.rate_a,
+                        status: br.in_service as u8,
+                        path: [[f.0, f.1], [t.0, t.1]],
+                    })
+                })
+                .collect();
+            let missing_branches = net.branches.len().saturating_sub(branches.len());
+            if missing_branches > 0 {
+                warnings.push(format!(
+                    "{missing_branches} branch(es) lacked endpoint coordinates and are omitted from the map"
+                ));
+            }
+            Some(View { buses, branches })
+        }
+    };
 
     serde_json::to_string(&serde_json::json!({
         "name": net.name,
@@ -162,7 +194,7 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
         "coords_kind": if view.is_some() { "file" } else { "synthetic_pending" },
         "network_json": serde_json::to_string(net).map_err(jserr)?,
         "topology": topology,
-        "warnings": parsed.warnings,
+        "warnings": warnings,
         "view": view,
     }))
     .map_err(jserr)
@@ -216,25 +248,27 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
 /// substation coordinates differently: 2018-era complete cases (the ACTIVSg
 /// distributions) write them on every bus row (Latitude:1 / Longitude:1);
 /// later exports leave the bus columns empty and point at the Substation
-/// table through SubNumber. Try the bus row first, then the join. All buses
-/// must be covered: a partially placed network misleads.
-fn coords(net: &Network) -> Option<BTreeMap<usize, (f64, f64)>> {
+/// table through SubNumber. Try the bus row first, then the join.
+fn coords(net: &Network) -> BTreeMap<usize, (f64, f64)> {
     let subs = match aux_sections(net) {
         Some(Ok(aux)) => substation_coords(&aux),
         _ => BTreeMap::new(),
     };
     let mut out = BTreeMap::new();
     for b in &net.buses {
-        let p = match (
+        let Some(p) = (match (
             extra_f64(b, &["Longitude:1", "Longitude"]),
             extra_f64(b, &["Latitude:1", "Latitude"]),
         ) {
-            (Some(lon), Some(lat)) => (lon, lat),
-            _ => *extra_f64(b, &["SubNum", "SubNumber"]).and_then(|n| subs.get(&(n as usize)))?,
+            (Some(lon), Some(lat)) => Some((lon, lat)),
+            _ => extra_f64(b, &["SubNum", "SubNumber"])
+                .and_then(|n| subs.get(&(n as usize)).copied()),
+        }) else {
+            continue;
         };
         out.insert(b.id.0, p);
     }
-    (!out.is_empty()).then_some(out)
+    out
 }
 
 /// Substation number => (lon, lat) from the aux Substation table. Field

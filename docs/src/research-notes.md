@@ -178,13 +178,13 @@ server backed simulation tools.
 | ANDES / AGVis | Python dynamics and JS viewer | result inspection |
 
 The gap relevant to tellegen is interactive recomputation: load a case, perturb
-demand or generation, and inspect updated flows and prices. PowerDiff.jl supplies
-the derivative information for that loop today; Rust/WebAssembly is the path to
-moving the DC loop into the browser.
+demand or generation, and inspect updated flows and prices. Rust/WebAssembly now
+runs that DC loop in the browser, with PowerDiff.jl kept as the reference path
+for parity checks and server fallback.
 
 ## Open checks
 
-- Validate Clarabel.rs under wasm in tellegen CI.
+- Add a hosted browser regression that solves a local wasm case end to end.
 - Validate faer sparse factorizations under wasm before starting browser AC
   power flow work.
 - Treat browser OPF landscape claims as public source observations, not proof

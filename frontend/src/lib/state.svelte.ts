@@ -10,6 +10,9 @@ import type {
 } from './api';
 import type { CaseFileSummary, Topology } from './wasm';
 
+export type SolveBackend = 'clarabel-wasm' | 'ipopt-server';
+export type DemandRangeMode = 'local' | 'full';
+
 /** Substations from a PowerWorld .pwd display file. Positions are inferred
  * from diagram coordinates, not surveyed latitude and longitude. */
 export interface LocalSubstations {
@@ -17,13 +20,13 @@ export interface LocalSubstations {
 	approximate: true;
 }
 
-/** A case file parsed in the browser. Topology only, no physics. A .pwd
- * display file has no case summary: substations only. */
+/** A case file parsed in the browser. Network cases can solve after they have
+ * coordinates. A .pwd display file has no case summary: substations only. */
 export interface LocalCase {
 	id: string; // `local-1`, `local-2`, ...
 	label: string;
 	fileName: string;
-	/** Case stats; null for a .pwd display-only entry. */
+	/** Case stats; null for a .pwd display only entry. */
 	summary: CaseFileSummary | null;
 	/** Raw powerio Network JSON for the browser solver branch. */
 	networkJson?: string;
@@ -35,7 +38,20 @@ export interface LocalCase {
 	syntheticCenter?: { lon: number; lat: number };
 	geoSource?: string;
 	geoWarnings?: string[];
-	/** Present for a PowerWorld .pwd display-only entry. */
+	/** Local solve state. Present only for parsed case files, never for .pwd display entries. */
+	network?: Network | null;
+	baseSolution?: Solution | null;
+	solution?: Solution | null;
+	sensitivity?: SensitivityColumn | null;
+	deltas?: DemandDeltas;
+	iterations?: SolveIteration[];
+	solving?: boolean;
+	solveMs?: number | null;
+	solveBackend?: SolveBackend | null;
+	solveSeq?: number;
+	sensitivitySeq?: number;
+	predictedObjective?: number | null;
+	/** Present for a PowerWorld .pwd display only entry. */
 	substations?: LocalSubstations;
 }
 
@@ -45,6 +61,8 @@ export class CaseState {
 	readonly id: string;
 	readonly name: string;
 	network = $state.raw<Network | null>(null);
+	/** Raw powerio Network JSON for the browser solver; fetched lazily. */
+	networkJson = $state.raw<string | null>(null);
 	/** Boot solution at base demand; never changes. */
 	baseSolution = $state.raw<Solution | null>(null);
 	/** Exact solution at the current committed perturbation. */
@@ -55,6 +73,11 @@ export class CaseState {
 	iterations = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
+	solveBackend = $state<SolveBackend | null>(null);
+	/** Monotone token: only the latest solve may write this case. */
+	solveSeq = 0;
+	/** Monotone token: only the latest sensitivity request may write this case. */
+	sensitivitySeq = 0;
 	/** Objective change the gradient predicted for the last commit, to score
 	 * the preview once the exact solve lands. */
 	predictedObjective = $state<number | null>(null);
@@ -76,6 +99,9 @@ export class AppState {
 	selectedBus = $state<number | null>(null);
 	/** Live slider value (MW from base) before commit; null when idle. */
 	previewDeltaMw = $state<number | null>(null);
+	/** True while the demand control should keep the map in LMP preview mode. */
+	previewActive = $state(false);
+	demandRangeMode = $state<DemandRangeMode>('local');
 	sensitivityLoading = $state(false);
 	error = $state<string | null>(null);
 

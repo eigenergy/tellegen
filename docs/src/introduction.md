@@ -9,9 +9,9 @@ refers to Tellegen's theorem and the adjoint sensitivity calculations used by
 PowerDiff.jl.
 
 The app uses a gradient preview, exact commit interaction model. Perturbations
-update the display from KKT sensitivity columns computed by
-[PowerDiff.jl](https://github.com/grid-opt-alg-lab/PowerDiff.jl). Exact DC OPF
-solutions stream back from the server. Case parsing uses
+update the display from KKT sensitivity columns. Exact DC OPF commits run in
+the browser through Rust, Clarabel, and WebAssembly, with PowerDiff.jl kept as
+the reference backend path. Case parsing uses
 [powerio](https://github.com/eigenergy/powerio) in both Rust/WebAssembly and
 Julia.
 
@@ -30,8 +30,8 @@ on geographic footprints, not surveyed infrastructure:
 Each case is an islanded DC OPF instance. Bus color shows locational marginal
 price. Selecting a bus shows the dLMP/dd column for a demand perturbation at
 that bus. Moving the demand slider applies the local sensitivity immediately;
-releasing it sends the perturbation to the server and streams Ipopt iterations
-until the exact solution returns.
+releasing it computes the exact solution with Clarabel in WebAssembly. Bundled
+cases can fall back to the Julia server if browser solve is unavailable.
 
 ## Local Files
 
@@ -40,14 +40,13 @@ WebAssembly build of powerio. Files with coordinates render on the map. Files
 without coordinates can be placed by clicking the map, or paired with local
 coordinate sidecars in `.csv`, `.json`, or `.geojson` form. A dropped PowerWorld
 `.pwd` file is decoded as display data and rendered as approximate substation
-positions.
-
-Dropped files are not uploaded.
+positions. Parsed local case files solve in the browser and are not uploaded.
 
 ## API
 
 - `GET /api/health`
 - `GET /api/cases`
+- `GET /api/cases/{id}/case`
 - `GET /api/cases/{id}/network`
 - `GET /api/cases/{id}/solution`
 - `GET /api/cases/{id}/sensitivity/lmp/d/{bus}`

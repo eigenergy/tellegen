@@ -99,9 +99,11 @@ function build_entry(spec)
     if haskey(spec, :auxfile)
         case = parse_file(joinpath(data_dir(), spec.casefile))
         coords = aux_coords(joinpath(data_dir(), spec.auxfile))
+        # aux_coords already errors if any aux bus lacks coordinates; this
+        # catches the other mismatch: a case bus with no row in the aux at all.
         unmapped = [bus_id(b) for b in case_buses(case) if !haskey(coords, bus_id(b))]
         isempty(unmapped) || error(
-            "$(spec.id): aux carries no coordinates for buses $(unmapped[1:min(end, 5)])")
+            "$(spec.id): $(length(unmapped)) case bus(es) missing from the aux: $(unmapped[1:min(end, 5)])")
         synthetic = false
     else
         case = parse_file(spec.file; library=:pglib)

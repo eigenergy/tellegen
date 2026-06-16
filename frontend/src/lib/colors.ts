@@ -1,5 +1,14 @@
 export type RGBA = [number, number, number, number];
 
+export interface SensitivityDomain {
+	min: number;
+	max: number;
+	mean: number;
+	absMax: number;
+	scale: number;
+	flat: boolean;
+}
+
 function lerp(a: number, b: number, t: number): number {
 	return a + (b - a) * t;
 }
@@ -70,6 +79,30 @@ const SENS_STOPS: RGBA[] = [
 /** t in [-1, 1] */
 export const sensColor = (t: number): RGBA => ramp(SENS_STOPS, (t + 1) / 2);
 export const sensGradient = cssGradient(SENS_STOPS);
+export const sensNeutral: RGBA = SENS_STOPS[2];
+
+/** Zero anchored sensitivity domain with a flat column guard. */
+export function sensitivityDomain(values: number[]): SensitivityDomain {
+	if (values.length === 0) {
+		return { min: 0, max: 0, mean: 0, absMax: 0, scale: 1, flat: true };
+	}
+	const sorted = [...values].sort((a, b) => a - b);
+	const q = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+	const min = sorted[0];
+	const max = sorted[sorted.length - 1];
+	const mean = values.reduce((acc, v) => acc + v, 0) / values.length;
+	const absMax = Math.max(...values.map((v) => Math.abs(v)));
+	const robust = Math.max(Math.abs(q(0.01)), Math.abs(q(0.99)));
+	const flat = max - min <= Math.max(1e-7, 0.01 * absMax);
+	return {
+		min,
+		max,
+		mean,
+		absMax,
+		scale: Math.max(robust, 1e-12),
+		flat
+	};
+}
 
 /** Branch color by loading fraction: warm gray, amber past 0.6, red past 0.9. */
 export function branchColor(loading: number, inService: boolean): RGBA {
