@@ -44,6 +44,13 @@
 
 	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
 	type SolvableCase = CaseState | LocalCase;
+	type DemandRangeAnchor = {
+		caseId: string;
+		bus: number;
+		delta: number;
+	};
+
+	let nearbyRangeAnchor = $state<DemandRangeAnchor | null>(null);
 
 	function isBackendCase(c: SolvableCase): c is CaseState {
 		return c instanceof CaseState;
@@ -63,6 +70,10 @@
 
 	function touchLocal(c: SolvableCase) {
 		if (!isBackendCase(c)) app.updateLocal(c.id, { ...c });
+	}
+
+	function setNearbyRangeAnchor(c: SolvableCase, bus: number, delta = caseDeltas(c)[bus] ?? 0) {
+		nearbyRangeAnchor = { caseId: c.id, bus, delta };
 	}
 
 	function errorText(e: unknown): string {
@@ -303,6 +314,7 @@
 		app.previewDeltaMw = null;
 		app.previewActive = false;
 		app.demandRangeMode = 'local';
+		setNearbyRangeAnchor(c, busId);
 		app.sensitivityLoading = true;
 		c.sensitivity = null;
 		try {
@@ -343,6 +355,7 @@
 		app.previewDeltaMw = null;
 		app.previewActive = false;
 		app.demandRangeMode = 'local';
+		setNearbyRangeAnchor(c, busId);
 		app.sensitivityLoading = true;
 		c.sensitivity = null;
 		touchLocal(c);
@@ -373,6 +386,7 @@
 		app.previewDeltaMw = null;
 		app.previewActive = false;
 		app.demandRangeMode = 'local';
+		nearbyRangeAnchor = null;
 		app.sensitivityLoading = false;
 	}
 
@@ -487,6 +501,7 @@
 		app.previewDeltaMw = app.selectedBus === null ? null : 0;
 		app.previewActive = app.selectedBus !== null;
 		app.demandRangeMode = 'local';
+		if (app.selectedBus !== null) setNearbyRangeAnchor(c, app.selectedBus, 0);
 		if (c.baseSolution) c.solution = c.baseSolution;
 		touchLocal(c);
 		runSolve(c, app.selectedBus);
@@ -666,11 +681,20 @@
 		activeSolvable && app.selectedBus !== null ? (caseDeltas(activeSolvable)[app.selectedBus] ?? 0) : 0
 	);
 	const sliderValue = $derived(app.previewDeltaMw ?? committedDelta);
+	const nearbyRangeCenter = $derived.by(() => {
+		const c = activeSolvable;
+		const bus = app.selectedBus;
+		if (!c || bus === null) return committedDelta;
+		if (nearbyRangeAnchor?.caseId === c.id && nearbyRangeAnchor.bus === bus) {
+			return nearbyRangeAnchor.delta;
+		}
+		return committedDelta;
+	});
 
 	function demandBounds(
 		mode: DemandRangeMode,
 		bus: typeof selectedBusData,
-		committed: number
+		center: number
 	): { min: number; max: number; span: number } {
 		if (!bus) return { min: 0, max: 0, span: 0 };
 		const physicalMin = -Math.ceil(bus.demand_mw);
@@ -678,19 +702,23 @@
 		if (mode === 'full') return { min: physicalMin, max: physicalMax, span: physicalMax - physicalMin };
 		const span = Math.max(5, Math.min(25, 0.1 * Math.max(bus.demand_mw, 50)));
 		return {
-			min: Math.max(physicalMin, committed - span),
-			max: Math.min(physicalMax, committed + span),
+			min: Math.max(physicalMin, center - span),
+			max: Math.min(physicalMax, center + span),
 			span
 		};
 	}
 
-	const sliderBounds = $derived(demandBounds(app.demandRangeMode, selectedBusData, committedDelta));
+	const sliderBounds = $derived(demandBounds(app.demandRangeMode, selectedBusData, nearbyRangeCenter));
 	const sliderMin = $derived(sliderBounds.min);
 	const sliderMax = $derived(sliderBounds.max);
 
 	function setDemandRangeMode(mode: DemandRangeMode) {
 		app.demandRangeMode = mode;
-		const bounds = demandBounds(mode, selectedBusData, committedDelta);
+		const c = activeSolvable;
+		if (mode === 'local' && c && app.selectedBus !== null) {
+			setNearbyRangeAnchor(c, app.selectedBus, sliderValue);
+		}
+		const bounds = demandBounds(mode, selectedBusData, mode === 'local' ? sliderValue : nearbyRangeCenter);
 		if (app.previewDeltaMw === null) return;
 		app.previewDeltaMw = Math.min(bounds.max, Math.max(bounds.min, app.previewDeltaMw));
 	}
@@ -952,28 +980,30 @@
 					<span class="mono dim">bus {app.selectedBus}</span>
 					<button class="mono" onclick={clearSelection}>esc&nbsp;clear</button>
 				</div>
-				{#if previewing}
-					<p class="dim small">
-						{c.solving
-							? 'Exact solve running; the map stays in LMP view.'
-							: 'First order LMP preview. Release for the exact solve.'}
-					</p>
-				{:else}
-					<p class="dim small">Price response per MW of demand added at bus {app.selectedBus}.</p>
-					{#if sensSummary?.flat}
-						<div class="legend flat" style:background={flatSensBackground}></div>
-						<div class="legend-labels mono single">
-							<span>uniform {signedExp(sensSummary.mean)} ($/MWh)/MW</span>
-						</div>
-					{:else if sensSummary}
-						<div class="legend" style:background={sensGradient}></div>
-						<div class="legend-labels mono">
-							<span>&minus;{sensSummary.scale.toExponential(1)}</span>
-							<span>0</span>
-							<span>+{sensSummary.scale.toExponential(1)}</span>
-						</div>
+				<div class="sensitivity-readout" aria-live="polite">
+					{#if previewing}
+						<p class="dim small">
+							{c.solving
+								? 'Exact solve running; the map stays in LMP view.'
+								: 'First order LMP preview. Release for the exact solve.'}
+						</p>
+					{:else}
+						<p class="dim small">Price response per MW of demand added at bus {app.selectedBus}.</p>
+						{#if sensSummary?.flat}
+							<div class="legend flat" style:background={flatSensBackground}></div>
+							<div class="legend-labels mono single">
+								<span>uniform {signedExp(sensSummary.mean)} ($/MWh)/MW</span>
+							</div>
+						{:else if sensSummary}
+							<div class="legend" style:background={sensGradient}></div>
+							<div class="legend-labels mono">
+								<span>&minus;{sensSummary.scale.toExponential(1)}</span>
+								<span>0</span>
+								<span>+{sensSummary.scale.toExponential(1)}</span>
+							</div>
+						{/if}
 					{/if}
-				{/if}
+				</div>
 
 				<div class="slider-block">
 					<div class="slider-head mono">
@@ -987,7 +1017,7 @@
 								class:active={app.demandRangeMode === 'local'}
 								aria-pressed={app.demandRangeMode === 'local'}
 								aria-label="nearby demand range"
-								title="range around the current demand delta"
+								title="range near the selected demand setting"
 								onclick={() => setDemandRangeMode('local')}>nearby</button
 							>
 							<button
@@ -1023,20 +1053,31 @@
 						onblur={(e) => finishDemandInput(Number(e.currentTarget.value))}
 						onchange={(e) => finishDemandInput(Number(e.currentTarget.value))}
 					/>
-					{#if predictedDeltaObj !== null && previewing}
-						<p class="pred mono dim">predicted &Delta;cost {signed(predictedDeltaObj)} $/h</p>
-					{/if}
-					{#if gradientScore && isPerturbed(c)}
-						<p class="score mono">
-							gradient {signed(gradientScore.pred)} &middot; exact {signed(gradientScore.exact)} $/h
+					<div class="demand-feedback">
+						<p class="pred mono dim" aria-hidden={!(predictedDeltaObj !== null && previewing)}>
+							{#if predictedDeltaObj !== null && previewing}
+								predicted &Delta;cost {signed(predictedDeltaObj)} $/h
+							{:else}
+								&nbsp;
+							{/if}
 						</p>
-					{/if}
-					{#if isPerturbed(c)}
-						<button class="reset mono" onclick={() => resetCase(c)}>reset demand</button>
-					{/if}
+						<p class="score mono" aria-hidden={!(gradientScore && isPerturbed(c))}>
+							{#if gradientScore && isPerturbed(c)}
+								gradient {signed(gradientScore.pred)} &middot; exact {signed(gradientScore.exact)}
+								$/h
+							{:else}
+								&nbsp;
+							{/if}
+						</p>
+						<div class="reset-row">
+							{#if isPerturbed(c)}
+								<button class="reset mono" onclick={() => resetCase(c)}>reset demand</button>
+							{/if}
+						</div>
+					</div>
 				</div>
 
-				{#if !previewing}
+				{#if topMovers.length > 0}
 					<table class="mono">
 						<tbody>
 							{#each topMovers as mover (mover.bus)}
@@ -1469,6 +1510,10 @@
 		font-size: 12px;
 	}
 
+	.sensitivity-readout {
+		min-height: 78px;
+	}
+
 	.legend {
 		height: 6px;
 		border-radius: 3px;
@@ -1575,12 +1620,22 @@
 	.pred {
 		margin: 2px 0 0;
 		font-size: 11px;
+		min-height: 16px;
 	}
 
 	.score {
 		margin: 8px 0 0;
 		font-size: 11px;
 		color: var(--ink);
+		min-height: 16px;
+	}
+
+	.demand-feedback {
+		min-height: 78px;
+	}
+
+	.reset-row {
+		min-height: 28px;
 	}
 
 	.solvecard {
