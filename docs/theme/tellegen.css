@@ -12,19 +12,15 @@
 	font-size: 0.95em;
 }
 
-.content img {
-	border-radius: 4px;
-}
-
 .hero-image {
-	margin: 0 0 2rem;
+	margin: 0 0 1.75rem;
 }
 
 .hero-image img {
 	display: block;
 	width: 100%;
-	max-height: 360px;
-	object-fit: cover;
+	max-height: none;
+	object-fit: contain;
 	border-radius: 6px;
 }
 
