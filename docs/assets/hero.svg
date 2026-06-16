@@ -6,7 +6,7 @@
       <stop offset="0" stop-color="#fcfbf7"/>
       <stop offset="1" stop-color="#ece9e2"/>
     </linearGradient>
-    <linearGradient id="flow" x1="520" y1="196" x2="1072" y2="72" gradientUnits="userSpaceOnUse">
+    <linearGradient id="flow" x1="700" y1="204" x2="1160" y2="96" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#6f787e"/>
       <stop offset="0.5" stop-color="#b25e00"/>
       <stop offset="1" stop-color="#20242b"/>
@@ -46,22 +46,22 @@
       font-size="18" letter-spacing="0.4">reactive power flow visualization</text>
   </g>
 
-  <g transform="translate(620 72)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M0 116 L108 54 L220 96 L332 32 L458 74"
+  <g transform="translate(700 80)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 116 L92 58 L190 100 L292 36 L406 78"
       stroke="#20242b" stroke-width="14" opacity="0.08"/>
-    <path d="M0 116 L108 54 L220 96 L332 32 L458 74"
+    <path d="M0 116 L92 58 L190 100 L292 36 L406 78"
       stroke="url(#flow)" stroke-width="5"/>
-    <path d="M108 54 L144 0 M220 96 L250 154 M332 32 L386 132"
+    <path d="M92 58 L126 8 M190 100 L218 156 M292 36 L342 130"
       stroke="#6f787e" stroke-width="3.5" opacity="0.58"/>
     <g stroke="#fcfbf7" stroke-width="4">
       <circle cx="0" cy="116" r="11" fill="#6f787e"/>
-      <circle cx="108" cy="54" r="16" fill="#b25e00"/>
-      <circle cx="220" cy="96" r="12" fill="#6f787e"/>
-      <circle cx="332" cy="32" r="17" fill="#b25e00"/>
-      <circle cx="458" cy="74" r="12" fill="#6f787e"/>
-      <circle cx="144" cy="0" r="9" fill="#6f787e"/>
-      <circle cx="250" cy="154" r="9" fill="#6f787e"/>
-      <circle cx="386" cy="132" r="9" fill="#6f787e"/>
+      <circle cx="92" cy="58" r="16" fill="#b25e00"/>
+      <circle cx="190" cy="100" r="12" fill="#6f787e"/>
+      <circle cx="292" cy="36" r="17" fill="#b25e00"/>
+      <circle cx="406" cy="78" r="12" fill="#6f787e"/>
+      <circle cx="126" cy="8" r="9" fill="#6f787e"/>
+      <circle cx="218" cy="156" r="9" fill="#6f787e"/>
+      <circle cx="342" cy="130" r="9" fill="#6f787e"/>
     </g>
   </g>
 
