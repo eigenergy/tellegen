@@ -3,10 +3,11 @@
 Dropped case files stay in the browser. The current public demo does not upload
 local `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, or `.geojson` files.
 
-MATPOWER `.m`, PSS/E `.raw`, PowerWorld `.aux`, and JSON case formats describe
-network topology. If a case file includes complete coordinates, tellegen draws
-it directly. If coordinates are missing, tellegen creates a local synthetic
-layout and asks the user to place it on the map.
+MATPOWER `.m`, PSS/E `.raw`, and PowerWorld `.aux` files describe network
+topology. If a case file includes complete coordinates, tellegen draws it
+directly. If coordinates are missing, tellegen creates a local synthetic layout
+and asks the user to place it on the map. JSON files are treated as coordinate
+sidecars in this release, not as network case files.
 
 ## Manual Placement
 

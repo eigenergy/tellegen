@@ -1,10 +1,10 @@
 # Display Data
 
 Case files and display files are separate inputs. MATPOWER `.m`, PSS/E `.raw`,
-PowerWorld `.aux`, and JSON case formats describe the network. PowerWorld `.pwd`
-files describe a one line diagram. tellegen reads coordinates from case files
-when they exist and reads diagram positions from display files when they are
-dropped.
+and PowerWorld `.aux` files describe the network. JSON files are accepted as
+coordinate sidecars in this release. PowerWorld `.pwd` files describe a one line
+diagram. tellegen reads coordinates from case files when they exist and reads
+diagram positions from display files when they are dropped.
 
 powerio 0.2.2 added a display API separate from network parsing.
 `parse_display_bytes` and `parse_display_file` return

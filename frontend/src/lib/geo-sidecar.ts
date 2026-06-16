@@ -143,9 +143,13 @@ function addFeature(sidecar: GeoSidecar, feature: JsonRecord) {
 	}
 	if (type === 'MultiLineString') {
 		const paths = Array.isArray(geometry.coordinates)
-			? geometry.coordinates.flatMap((p) => coordPath(p))
+			? geometry.coordinates.map((p) => coordPath(p)).filter((p) => p.length >= 2)
 			: [];
-		addBranchPath(sidecar, props, paths);
+		addBranchEndpoints(sidecar, props, paths);
+		warnOnce(
+			sidecar,
+			'GeoJSON MultiLineString branch paths are skipped; straight segments will be drawn'
+		);
 	}
 }
 
@@ -179,6 +183,26 @@ function addBranchPath(sidecar: GeoSidecar, record: JsonRecord | CsvRecord, path
 		if (!sidecar.busCoords.has(from)) sidecar.busCoords.set(from, path[0]);
 		if (!sidecar.busCoords.has(to)) sidecar.busCoords.set(to, path[path.length - 1]);
 	}
+}
+
+function addBranchEndpoints(
+	sidecar: GeoSidecar,
+	record: JsonRecord | CsvRecord,
+	paths: [number, number][][]
+) {
+	if (paths.length === 0) return;
+	const from = findNumber(record, ['f_bus', 'from', 'from_bus']);
+	const to = findNumber(record, ['t_bus', 'to', 'to_bus']);
+	if (from === null || to === null) return;
+	const first = paths[0][0];
+	const lastPath = paths[paths.length - 1];
+	const last = lastPath[lastPath.length - 1];
+	if (!sidecar.busCoords.has(from)) sidecar.busCoords.set(from, first);
+	if (!sidecar.busCoords.has(to)) sidecar.busCoords.set(to, last);
+}
+
+function warnOnce(sidecar: GeoSidecar, warning: string) {
+	if (!sidecar.warnings.includes(warning)) sidecar.warnings.push(warning);
 }
 
 function pathFromRecord(record: JsonRecord | CsvRecord): [number, number][] {
