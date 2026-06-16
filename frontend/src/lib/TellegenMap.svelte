@@ -8,6 +8,7 @@
 	import {
 		branchColor,
 		branchWidth,
+		busNeutral,
 		busRadius,
 		lmpColor,
 		lmpDomain,
@@ -112,9 +113,9 @@
 	function busFill(caseId: string) {
 		const d = display.get(caseId);
 		return (bus: NetworkBus): [number, number, number, number] => {
-			if (!d) return [180, 175, 165, 200];
+			if (!d) return busNeutral;
 			if (d.mode === 'sens') {
-				if (!d.sensDomain) return [180, 175, 165, 200];
+				if (!d.sensDomain) return busNeutral;
 				if (d.sensDomain.flat) return sensFlatColor(d.sensDomain);
 				return sensColor((d.sens.get(bus.id) ?? 0) / d.sensDomain.scale);
 			}

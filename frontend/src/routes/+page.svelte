@@ -770,6 +770,7 @@
 			.sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
 			.slice(0, 5);
 	});
+	const showMoverSlot = $derived(Boolean(selectedSensitivity && !sensSummary?.flat));
 
 	const previewing = $derived(
 		Boolean(
@@ -1077,19 +1078,23 @@
 					</div>
 				</div>
 
-				{#if topMovers.length > 0}
-					<table class="mono">
-						<tbody>
-							{#each topMovers as mover (mover.bus)}
-								<tr>
-									<td>bus {mover.bus}</td>
-									<td class:pos={mover.value > 0} class:neg={mover.value < 0}>
-										{mover.value >= 0 ? '+' : ''}{mover.value.toExponential(2)}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
+				{#if showMoverSlot}
+					<div class="movers-block">
+						{#if !previewing && topMovers.length > 0}
+							<table class="mono">
+								<tbody>
+									{#each topMovers as mover (mover.bus)}
+										<tr>
+											<td>bus {mover.bus}</td>
+											<td class:pos={mover.value > 0} class:neg={mover.value < 0}>
+												{mover.value >= 0 ? '+' : ''}{mover.value.toExponential(2)}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						{/if}
+					</div>
 				{/if}
 				{:else}
 					<div class="mode">
@@ -1636,6 +1641,10 @@
 
 	.reset-row {
 		min-height: 28px;
+	}
+
+	.movers-block {
+		min-height: 114px;
 	}
 
 	.solvecard {
