@@ -267,7 +267,7 @@
 			c.networkJson = json;
 			return json;
 		} catch (e) {
-			c.solveFallbackReason = `/case fetch failed: ${errorText(e)}`;
+			c.solveFallbackReason = `case fetch failed: ${errorText(e)}`;
 			return null;
 		}
 	}
