@@ -1,0 +1,38 @@
+:root {
+	--content-max-width: 880px;
+	--menu-bar-height: 54px;
+	--tellegen-accent: #c47a33;
+}
+
+.content main {
+	line-height: 1.65;
+}
+
+.content table {
+	font-size: 0.95em;
+}
+
+.content img {
+	border-radius: 4px;
+}
+
+.hero-image {
+	margin: 0 0 2rem;
+}
+
+.hero-image img {
+	display: block;
+	width: 100%;
+	max-height: 360px;
+	object-fit: cover;
+	border-radius: 6px;
+}
+
+a {
+	text-decoration-thickness: 0.08em;
+	text-underline-offset: 0.18em;
+}
+
+.nav-chapters {
+	min-width: 90px;
+}

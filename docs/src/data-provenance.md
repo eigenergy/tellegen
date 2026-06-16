@@ -1,4 +1,4 @@
-# TAMU Geographic Coordinates
+# Data Provenance
 
 The demo cases are TAMU ACTIVSg synthetic grids. They are fictional networks
 built on geographic footprints and include latitude and longitude fields in the
@@ -30,7 +30,7 @@ The backend reads the bus row form in `backend/src/coords.jl`, which covers the
 three served cases. The browser parser in `rust/` also performs the substation
 join, so dropped files of either form resolve when the data is present.
 
-## Co-located buses
+## Buses Sharing Coordinates
 
 Multiple buses can share one substation coordinate. tellegen spreads each group
 on a deterministic ring of about 400 m around the substation point, ordered by
@@ -40,6 +40,13 @@ zoom, and individual buses remain hoverable at street zoom.
 ## Demo size
 
 ACTIVSg2000 is the largest bundled case. On the current demo host it takes about
-1.4 s per exact re-solve and uses a 32 MB dense sensitivity cache. Larger cases,
+1.4 s per exact solve and uses a 32 MB dense sensitivity cache. Larger cases,
 such as Texas7k, parse but require larger sensitivity matrices and longer
 solves than the small demo host is intended to serve.
+
+## Explicit Fallback
+
+Production expects all three TAMU cases to be staged. If they are missing, the
+backend exits. CI and local smoke checks can set `TELLEGEN_ALLOW_FALLBACK=1` to
+serve two pglib cases with synthetic coordinates. Those fallback coordinates are
+labeled as synthetic.

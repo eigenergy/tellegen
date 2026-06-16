@@ -1,4 +1,4 @@
-# Display data in tellegen
+# Display Data
 
 Case files and display files are separate inputs. MATPOWER `.m`, PSS/E `.raw`,
 PowerWorld `.aux`, and JSON case formats describe the network. PowerWorld `.pwd`

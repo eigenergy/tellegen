@@ -1,8 +1,8 @@
-# Direction
+# Architecture
 
 tellegen is the browser interface for power systems cases parsed by powerio and
-solved by PowerDiff.jl. This note records the intended boundary between Rust,
-Svelte, and Julia as of June 2026.
+solved by PowerDiff.jl. This chapter records the intended boundary between
+Rust, Svelte, and Julia as of June 2026.
 
 ## Current boundary
 

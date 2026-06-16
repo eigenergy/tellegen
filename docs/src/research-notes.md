@@ -1,7 +1,8 @@
 # Ecosystem Notes, June 2026
 
 These notes summarize the technical checks behind
-[direction.md](direction.md). Version and maturity claims are point in time.
+[architecture.md](architecture.md). Version and maturity claims are point in
+time.
 
 ## Rust to WebAssembly
 

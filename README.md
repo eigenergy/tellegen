@@ -15,7 +15,11 @@ solutions stream back from the server. Case parsing uses
 [powerio](https://github.com/eigenergy/powerio) in both Rust/WebAssembly and
 Julia.
 
-## Demo
+Full documentation is published with mdBook at
+[eigenergy.github.io/tellegen](https://eigenergy.github.io/tellegen/). The
+source lives in [docs/src/SUMMARY.md](docs/src/SUMMARY.md).
+
+## Demo Behavior
 
 The bundled demo serves three TAMU ACTIVSg synthetic grids at the geographic
 coordinates stored in their PowerWorld aux exports. These are fictional grids
@@ -40,48 +44,6 @@ coordinate sidecars in `.csv`, `.json`, or `.geojson` form. A dropped PowerWorld
 `.pwd` file is decoded as display data and rendered as approximate substation
 positions. Dropped files are not uploaded.
 
-## Sensitivities
-
-The served sensitivity columns are KKT derivatives at the optimum. The backend
-test suite compares dLMP/dd columns from PowerDiff.jl against central finite
-differences of full re-solves:
-
-```sh
-julia --project=backend backend/test/runtests.jl
-```
-
-The objective preview uses the envelope theorem and the selected dLMP/dd
-diagonal term, so the displayed prediction is second order in the demand step.
-
-## Repository layout
-
-- `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, TAMU coordinate ingestion
-- `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl
-- `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing
-- `scripts/`: data staging
-- `deploy/`: deployment compose files and proxy notes
-- `docs/`: architecture and implementation notes
-
-## Documentation
-
-The docs index is [docs/README.md](docs/README.md). The release notes there
-cover data provenance, fallback layout, display file handling, deployment, and
-the caveats that should stay visible in public descriptions of the demo.
-
-## Data
-
-The TAMU distributions are downloaded by the operator and are not vendored. With
-the distributions under `~/Datasets`:
-
-```sh
-scripts/stage-data.sh ~/Datasets
-```
-
-The script stages the six files used by the demo into `data/`. Without all
-three staged cases, the backend exits. For CI or local smoke checks without the
-TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the two pglib
-fallback cases with synthetic coordinates.
-
 ## Development
 
 Backend:
@@ -90,19 +52,6 @@ Backend:
 cd backend
 julia --project=. bootstrap.jl
 ```
-
-PowerIO.jl is in the General registry. PowerDiff.jl is not registered, so
-`backend/Project.toml` pins it through `[sources]` at a git revision:
-
-```sh
-julia --project=backend -e 'using Pkg; Pkg.instantiate()'
-```
-
-Maintainers developing PowerIO.jl or PowerDiff.jl locally can use
-`Pkg.develop`; `backend/Manifest.toml` is ignored so local paths are not
-committed. PowerIO.jl 0.1.2 bundles the powerio 0.2.2 binary as a lazy artifact.
-To test an unreleased powerio build, build `powerio-capi` and set
-`POWERIO_CAPI=/path/to/libpowerio_capi.{dylib,so}`.
 
 WebAssembly module:
 
@@ -120,6 +69,55 @@ npm run dev
 ```
 
 The Vite dev server proxies `/api` to `http://localhost:8000`.
+
+## Data
+
+The TAMU distributions are downloaded by the operator and are not vendored.
+With the distributions under `~/Datasets`:
+
+```sh
+scripts/stage-data.sh ~/Datasets
+```
+
+The script stages the six files used by the demo into `data/`. Without all
+three staged cases, the backend exits. For CI or local smoke checks without the
+TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the two pglib
+fallback cases with synthetic coordinates.
+
+## Tests
+
+The served sensitivity columns are KKT derivatives at the optimum. The backend
+test suite compares dLMP/dd columns from PowerDiff.jl against central finite
+differences of full solves:
+
+```sh
+julia --project=backend backend/test/runtests.jl
+```
+
+Frontend checks:
+
+```sh
+cd frontend
+npm run check
+npm run build
+```
+
+## Repository layout
+
+- `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, TAMU coordinate ingestion
+- `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl
+- `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing
+- `scripts/`: data staging and docs build helpers
+- `deploy/`: deployment compose files and proxy notes
+- `docs/src/`: mdBook documentation source
+
+## Documentation
+
+Install mdBook, then build the docs:
+
+```sh
+scripts/build-docs.sh
+```
 
 ## API
 
@@ -146,7 +144,7 @@ Production deployment uses the image based compose file in
 `deploy/docker-compose.prod.yml`. The GitHub Actions deploy workflow builds and
 pushes `ghcr.io/eigenergy/tellegen:<sha>`, restarts the host container, and
 checks both the local host health endpoint and the public demo URL. Required
-secrets are documented in [deploy/DEPLOY.md](deploy/DEPLOY.md).
+secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 ## Roadmap
 

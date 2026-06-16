@@ -1,4 +1,23 @@
-# Coordinate Sidecars
+# Local Case Files
+
+Dropped case files stay in the browser. The current public demo does not upload
+local `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, or `.geojson` files.
+
+MATPOWER `.m`, PSS/E `.raw`, PowerWorld `.aux`, and JSON case formats describe
+network topology. If a case file includes complete coordinates, tellegen draws
+it directly. If coordinates are missing, tellegen creates a local synthetic
+layout and asks the user to place it on the map.
+
+## Manual Placement
+
+For no coordinate files such as a plain `case14.m`, tellegen computes a
+deterministic topology layout from buses and in service branches. The user then
+clicks the map to center that synthetic layout at the chosen location.
+
+The placed local case can be moved later with the case panel move action. The
+first version uses explicit click placement rather than drag movement.
+
+## Coordinate Sidecars
 
 Some case files contain network topology but keep map coordinates in separate
 GIS files. tellegen accepts those files as local sidecars: drop the case file
@@ -52,5 +71,5 @@ also provide bus coordinates for its `f_bus` and `t_bus` properties.
 ## Display Files
 
 PowerWorld `.pwd` files are still treated as display overlays. They can show
-substation symbols, but they are not assumed to map one-to-one onto buses in a
+substation symbols, but they are not assumed to map one to one onto buses in a
 case file.

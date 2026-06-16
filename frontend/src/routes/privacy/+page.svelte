@@ -20,7 +20,7 @@
 	</section>
 
 	<section>
-		<h2>Future Opt-In Sharing</h2>
+		<h2>Future Opt In Sharing</h2>
 		<p>
 			If tellegen adds a sharing feature, it will be explicit. The action will say
 			what will be sent and will require a separate confirmation before upload.

@@ -3,6 +3,7 @@ backend/Manifest.toml
 
 # Node
 node_modules/
+docs/book/
 frontend/build/
 frontend/.svelte-kit/
 
