@@ -1,0 +1,4 @@
+# The pglib MATPOWER fixtures are embedded (include_str!) as the offline fallback
+# cases; they are upstream data, not project source. Mark them vendored so they
+# don't skew the GitHub language breakdown.
+rust/fixtures/pglib/*.m linguist-vendored

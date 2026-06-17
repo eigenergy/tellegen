@@ -45,6 +45,8 @@
 
 	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
 	const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
+	// Open on South Carolina by default: it has the most interesting price action.
+	const DEFAULT_CASE_ID = 'case500';
 	type SolvableCase = CaseState | LocalCase;
 	type DemandRangeAnchor = {
 		caseId: string;
@@ -53,6 +55,8 @@
 	};
 
 	let nearbyRangeAnchor = $state<DemandRangeAnchor | null>(null);
+	// Default cases the user has closed; drives the restore affordance. Seeded in load().
+	let hiddenDefaults = $state<Set<string>>(new Set());
 
 	function isBackendCase(c: SolvableCase): c is CaseState {
 		return c instanceof CaseState;
@@ -101,6 +105,7 @@
 		const hidden = readHiddenDefaultCases();
 		hidden.add(id);
 		writeHiddenDefaultCases(hidden);
+		hiddenDefaults = new Set(hidden);
 	}
 
 	function restoreDefaultCases() {
@@ -109,6 +114,7 @@
 		} catch {
 			// Ignore storage failures and reload from the server.
 		}
+		hiddenDefaults = new Set();
 		load();
 	}
 
@@ -134,10 +140,12 @@
 		try {
 			const summaries = await getCases();
 			const hidden = readHiddenDefaultCases();
+			hiddenDefaults = new Set(hidden);
 			app.cases = summaries.filter((s) => !hidden.has(s.id)).map((s) => new CaseState(s));
 			app.activeLocalId = null;
 			app.placingLocalId = null;
-			app.activeCaseId = app.cases[0]?.id ?? null;
+			app.activeCaseId =
+				app.cases.find((c) => c.id === DEFAULT_CASE_ID)?.id ?? app.cases[0]?.id ?? null;
 			const active = app.active;
 			if (active) await loadBackendCase(active, true);
 			else app.requestFrame('all');
@@ -780,7 +788,10 @@
 		center: number
 	): { min: number; max: number; span: number } {
 		if (!bus) return { min: 0, max: 0, span: 0 };
-		const physicalMin = -Math.ceil(bus.demand_mw);
+		// Floor, not ceil: -ceil(demand) can push base + delta below zero for
+		// non-integer demand, which the server rejects (400) and which is
+		// physically meaningless (demand cannot go negative).
+		const physicalMin = -Math.floor(bus.demand_mw);
 		const physicalMax = Math.max(Math.ceil(bus.demand_mw), 50);
 		if (mode === 'full')
 			return { min: physicalMin, max: physicalMax, span: physicalMax - physicalMin };
@@ -884,12 +895,13 @@
 		app.previewDeltaMw = value;
 	}
 
-	function solveBackendLabel(c: SolvableCase): string {
-		if (c.solveBackend === 'clarabel-wasm') return 'Clarabel wasm';
-		if (c.solveBackend === 'clarabel-wasm-server-sensitivity')
-			return 'Clarabel wasm + server dLMP/dd';
-		if (c.solveBackend === 'rust-server') return 'server fallback';
-		return c.solving ? 'starting' : 'solve pending';
+	function solveLocationLabel(c: SolvableCase): string {
+		if (c.solving) return 'solving…';
+		if (c.solveBackend === 'rust-server') return 'on the server';
+		// clarabel-wasm and clarabel-wasm-server-sensitivity both solve the OPF
+		// in the browser (the sensitivity column may come from the server, but the
+		// solve itself is local).
+		return 'in your browser';
 	}
 
 	function solveMetaLabel(c: SolvableCase): string {
@@ -970,7 +982,13 @@
 				</button>
 			{/if}
 		</nav>
-		<span class="kicker mono">differentiable power systems</span>
+		<span class="kicker mono">
+			<a href="https://github.com/eigenergy" target="_blank" rel="noreferrer"
+				>eigenergy group @ michigan ece</a
+			>
+			<i class="sep"></i>
+			<a href="https://eigenergy.github.io/tellegen/" target="_blank" rel="noreferrer">docs</a>
+		</span>
 	</header>
 
 	<aside class="panel">
@@ -1116,7 +1134,7 @@
 
 			<hr />
 
-			{#if app.selectedBus !== null && selectedSensitivity}
+			{#if app.selectedBus !== null && (selectedSensitivity || app.sensitivityLoading)}
 				{@const c = activeSolvable as SolvableCase}
 				<div class="mode">
 					<span class="chip">{previewing ? 'LMP preview' : '∂LMP/∂d'}</span>
@@ -1143,6 +1161,11 @@
 								<span>&minus;{sensSummary.scale.toExponential(1)}</span>
 								<span>0</span>
 								<span>+{sensSummary.scale.toExponential(1)}</span>
+							</div>
+						{:else if app.sensitivityLoading}
+							<div class="legend" style:background="var(--line)" style:opacity="0.4"></div>
+							<div class="legend-labels mono single">
+								<span class="blink">computing &part;LMP/&part;d&hellip;</span>
 							</div>
 						{/if}
 					{/if}
@@ -1196,7 +1219,7 @@
 						onblur={(e) => finishDemandInput(Number(e.currentTarget.value))}
 						onchange={(e) => finishDemandInput(Number(e.currentTarget.value))}
 					/>
-					<div class="demand-feedback">
+					<div class="demand-feedback" class:idle={!previewing && !isPerturbed(c)}>
 						<p class="pred mono dim" aria-hidden={!(predictedDeltaObj !== null && previewing)}>
 							{#if predictedDeltaObj !== null && previewing}
 								predicted &Delta;cost {signed(predictedDeltaObj)} $/h
@@ -1280,12 +1303,12 @@
 	{#if activeSolvable && (activeSolvable.solving || activeSolvable.solveMs != null)}
 		<div class="solvecard">
 			<div class="solvecard-head mono">
-				<span>exact solve</span>
-				{#if activeSolvable.solving}
-					<span class="dim blink">{solveBackendLabel(activeSolvable)}</span>
-				{:else}
-					<span class="dim">{solveBackendLabel(activeSolvable)}</span>
-				{/if}
+				<span
+					><b>exact OPF solve</b>
+					<span class="dim" class:blink={activeSolvable.solving}
+						>{solveLocationLabel(activeSolvable)}</span
+					></span
+				>
 			</div>
 			{#if (activeSolvable.iterations ?? []).length > 1}
 				<Sparkline iterations={activeSolvable.iterations ?? []} />
@@ -1313,6 +1336,12 @@
 
 	{#if app.placingLocalId}
 		<div class="placement-cue mono">click the map to place the synthetic topology</div>
+	{/if}
+
+	{#if casesLoaded && hiddenDefaults.size > 0}
+		<button class="restore-defaults mono" onclick={restoreDefaultCases}>
+			&#8634; restore default cases
+		</button>
 	{/if}
 
 	<footer class="mono">
@@ -1529,10 +1558,41 @@
 	}
 
 	.kicker {
+		display: flex;
+		align-items: center;
 		font-size: 11px;
 		text-transform: uppercase;
 		letter-spacing: 0;
 		color: var(--ink-dim);
+	}
+
+	.kicker a {
+		color: var(--ink-dim);
+		text-decoration: none;
+	}
+
+	.kicker a:hover {
+		color: var(--accent);
+	}
+
+	.restore-defaults {
+		position: absolute;
+		bottom: 34px;
+		left: 20px;
+		z-index: 10;
+		padding: 6px 11px;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		color: var(--ink-dim);
+		font-size: 11px;
+		cursor: pointer;
+		box-shadow: 0 2px 10px rgba(32, 36, 43, 0.1);
+	}
+
+	.restore-defaults:hover {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 
 	.panel {
@@ -1661,7 +1721,7 @@
 	}
 
 	.sensitivity-readout {
-		min-height: 78px;
+		min-height: 58px;
 	}
 
 	.legend {
@@ -1784,6 +1844,18 @@
 		min-height: 78px;
 	}
 
+	/* On a fresh selection (no preview, no perturbation) the predicted/gradient/
+	   reset rows are empty; collapse the reserved block so the panel isn't padded
+	   with whitespace. The reservation returns during interaction to avoid jumps. */
+	.demand-feedback.idle {
+		min-height: 0;
+	}
+
+	.demand-feedback.idle .pred,
+	.demand-feedback.idle .score {
+		display: none;
+	}
+
 	.reset-row {
 		min-height: 28px;
 	}
@@ -1808,10 +1880,9 @@
 	}
 
 	.solvecard-head {
-		display: flex;
-		justify-content: space-between;
-		font-size: 11px;
+		font-size: 10.5px;
 		margin-bottom: 6px;
+		white-space: nowrap;
 	}
 
 	.solve-meta {

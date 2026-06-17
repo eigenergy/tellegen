@@ -156,7 +156,11 @@ export async function solveDc(
 			const baseRequest = JSON.stringify({ deltas, sens_bus: null });
 			return {
 				...parseSolveOutput(caseId, (await powerio()).solve_dc(networkJson, baseRequest)),
-				sensitivityError: errorText(e)
+				// A permanent capability failure (the sens build's relaxed SIMD, which
+				// Safari rejects) gets a plain-language note; transient errors keep detail.
+				sensitivityError: isPermanentWasmLoadFailure(errorText(e))
+					? 'needs SIMD this browser does not support (try Chrome or Firefox)'
+					: errorText(e)
 			};
 		}
 	}
