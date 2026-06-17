@@ -1,0 +1,775 @@
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::Infallible,
+    env,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Instant,
+};
+
+use axum::{
+    extract::{Path as AxumPath, Query, State},
+    http::{header::CONTENT_TYPE, HeaderValue, StatusCode},
+    response::{
+        sse::{Event, Sse},
+        IntoResponse, Response,
+    },
+    routing::{any, get},
+    Json, Router,
+};
+use powerio::network::Network;
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+use tower_http::{
+    services::{ServeDir, ServeFile},
+    trace::TraceLayer,
+};
+
+use crate::{
+    dc::{
+        solve_network, DcSolveOutput, DcSolveRequest, DispatchValue, DlmpDdColumn, FlowValue,
+        LmpValue, SensitivityValue,
+    },
+    geo::{complete_coords_for, synthetic_layout, Coords},
+};
+
+const DEFAULT_PORT: u16 = 8000;
+
+const CASE_SPECS: &[CaseSpec] = &[
+    CaseSpec::staged(
+        "case200",
+        "ACTIVSg200 (Illinois)",
+        "ACTIVSg200/case_ACTIVSg200.m",
+        "ACTIVSg200/ACTIVSg200.aux",
+    ),
+    CaseSpec::staged(
+        "case500",
+        "ACTIVSg500 (South Carolina)",
+        "ACTIVSg500/case_ACTIVSg500.m",
+        "ACTIVSg500/ACTIVSg500.aux",
+    ),
+    CaseSpec::staged(
+        "case2000",
+        "ACTIVSg2000 (Texas)",
+        "ACTIVSg2000/case_ACTIVSg2000.m",
+        "ACTIVSg2000/ACTIVSg2000.aux",
+    ),
+];
+
+const FALLBACK_SPECS: &[FallbackSpec] = &[
+    FallbackSpec {
+        id: "case200",
+        name: "ACTIVSg200 (Illinois)",
+        text: include_str!("../fixtures/pglib/pglib_opf_case200_activ.m"),
+        bbox: (-91.4, 37.1, -87.6, 42.4),
+    },
+    FallbackSpec {
+        id: "case500",
+        name: "ACTIVSg500 (South Carolina)",
+        text: include_str!("../fixtures/pglib/pglib_opf_case500_goc.m"),
+        bbox: (-82.9, 33.3, -79.9, 35.0),
+    },
+];
+
+#[derive(Clone, Copy)]
+struct CaseSpec {
+    id: &'static str,
+    name: &'static str,
+    casefile: &'static str,
+    auxfile: &'static str,
+}
+
+impl CaseSpec {
+    const fn staged(
+        id: &'static str,
+        name: &'static str,
+        casefile: &'static str,
+        auxfile: &'static str,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            casefile,
+            auxfile,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FallbackSpec {
+    id: &'static str,
+    name: &'static str,
+    text: &'static str,
+    bbox: (f64, f64, f64, f64),
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    cases: Arc<BTreeMap<String, Arc<CaseEntry>>>,
+}
+
+struct CaseEntry {
+    id: String,
+    name: String,
+    network: Network,
+    network_json: String,
+    view: NetworkPayload,
+    base_solution: SolutionPayload,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CaseSummary {
+    pub id: String,
+    pub name: String,
+    pub n_bus: usize,
+    pub n_branch: usize,
+    pub n_gen: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct HealthPayload {
+    pub status: &'static str,
+    pub cases: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct NetworkPayload {
+    pub id: String,
+    pub name: String,
+    pub base_mva: f64,
+    pub synthetic_coords: bool,
+    pub buses: Vec<NetworkBus>,
+    pub branches: Vec<NetworkBranch>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct NetworkBus {
+    pub id: usize,
+    pub lon: f64,
+    pub lat: f64,
+    pub demand_mw: f64,
+    pub gen_mw: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct NetworkBranch {
+    pub id: usize,
+    pub from: usize,
+    pub to: usize,
+    pub rate_mw: f64,
+    pub status: u8,
+    pub path: [[f64; 2]; 2],
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SolutionPayload {
+    pub objective: f64,
+    pub lmp: Vec<LmpValue>,
+    pub flows: Vec<FlowValue>,
+    pub dispatch: Vec<DispatchValue>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SensitivityPayload {
+    pub case: String,
+    pub operand: &'static str,
+    pub parameter: &'static str,
+    pub bus: usize,
+    pub units: &'static str,
+    pub values: Vec<SensitivityValue>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DemandQuery {
+    d: Option<String>,
+    sens: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct ErrorPayload {
+    error: String,
+}
+
+#[derive(Debug)]
+struct ApiError {
+    status: StatusCode,
+    message: String,
+}
+
+impl ApiError {
+    fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            message: message.into(),
+        }
+    }
+
+    fn internal(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: message.into(),
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (
+            self.status,
+            Json(ErrorPayload {
+                error: self.message,
+            }),
+        )
+            .into_response()
+    }
+}
+
+type ApiResult<T> = Result<T, ApiError>;
+
+impl AppState {
+    pub fn load_from_env() -> Result<Self, String> {
+        Self::load(data_dir(), allow_fallback())
+    }
+
+    pub fn load(data_dir: PathBuf, allow_fallback: bool) -> Result<Self, String> {
+        let staged_specs: Vec<_> = CASE_SPECS
+            .iter()
+            .copied()
+            .filter(|spec| staged(&data_dir, spec))
+            .collect();
+        let mut cases = BTreeMap::new();
+
+        if staged_specs.len() == CASE_SPECS.len() {
+            for spec in staged_specs {
+                let entry = build_staged_entry(&data_dir, spec)?;
+                cases.insert(entry.id.clone(), Arc::new(entry));
+            }
+        } else if allow_fallback {
+            tracing::warn!(
+                data_dir = %data_dir.display(),
+                "TAMU case data incomplete; serving embedded pglib fallback cases"
+            );
+            for spec in FALLBACK_SPECS {
+                let entry = build_fallback_entry(spec)?;
+                cases.insert(entry.id.clone(), Arc::new(entry));
+            }
+        } else {
+            let loaded: Vec<_> = staged_specs.iter().map(|s| s.id).collect();
+            let missing: Vec<_> = CASE_SPECS
+                .iter()
+                .map(|s| s.id)
+                .filter(|id| !loaded.contains(id))
+                .collect();
+            return Err(format!(
+                "TAMU case data incomplete under {}; missing {}. Run scripts/stage-data.sh or set TELLEGEN_ALLOW_FALLBACK=1 for the pglib dev fallback.",
+                data_dir.display(),
+                missing.join(", ")
+            ));
+        }
+
+        if cases.is_empty() {
+            return Err(format!("no cases loaded from {}", data_dir.display()));
+        }
+        Ok(Self {
+            cases: Arc::new(cases),
+        })
+    }
+
+    fn case(&self, id: &str) -> ApiResult<Arc<CaseEntry>> {
+        self.cases
+            .get(id)
+            .cloned()
+            .ok_or_else(|| ApiError::not_found(format!("unknown case {id}")))
+    }
+
+    fn case_ids(&self) -> Vec<String> {
+        self.cases.keys().cloned().collect()
+    }
+}
+
+pub async fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
+    init_tracing();
+    let state = Arc::new(AppState::load_from_env()?);
+    let frontend = frontend_build_dir();
+    let app = router(state, frontend);
+    let addr: SocketAddr = format!(
+        "{}:{}",
+        env::var("TELLEGEN_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
+        env::var("TELLEGEN_PORT")
+            .ok()
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(DEFAULT_PORT)
+    )
+    .parse()?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    tracing::info!(%addr, "tellegen Rust server listening");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
+    let app = Router::new()
+        .route("/api/health", get(health))
+        .route("/api/cases", get(cases))
+        .route("/api/cases/{id}/case", get(case_network_json))
+        .route("/api/cases/{id}/network", get(network))
+        .route("/api/cases/{id}/solution", get(solution))
+        .route("/api/cases/{id}/sensitivity/lmp/d/{bus}", get(sensitivity))
+        .route("/api/cases/{id}/solve", get(solve_stream))
+        .route("/api/{*path}", any(api_not_found))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
+
+    if let Some(dir) = frontend_build.filter(|dir| dir.is_dir()) {
+        let index = dir.join("index.html");
+        app.fallback_service(
+            ServeDir::new(dir)
+                .append_index_html_on_directories(true)
+                .fallback(ServeFile::new(index)),
+        )
+    } else {
+        app
+    }
+}
+
+async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let ids = state.case_ids();
+    let status = if ids.is_empty() {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+    (
+        status,
+        Json(HealthPayload {
+            status: if ids.is_empty() { "degraded" } else { "ok" },
+            cases: ids,
+        }),
+    )
+}
+
+async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
+    Json(
+        state
+            .cases
+            .values()
+            .map(|entry| CaseSummary {
+                id: entry.id.clone(),
+                name: entry.name.clone(),
+                n_bus: entry.network.buses.len(),
+                n_branch: entry.network.branches.len(),
+                n_gen: entry
+                    .network
+                    .generators
+                    .iter()
+                    .filter(|gen| gen.in_service)
+                    .count(),
+            })
+            .collect(),
+    )
+}
+
+async fn case_network_json(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<String>,
+) -> ApiResult<impl IntoResponse> {
+    let entry = state.case(&id)?;
+    Ok((
+        [(CONTENT_TYPE, HeaderValue::from_static("application/json"))],
+        entry.network_json.clone(),
+    ))
+}
+
+async fn network(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<String>,
+) -> ApiResult<Json<NetworkPayload>> {
+    Ok(Json(state.case(&id)?.view.clone()))
+}
+
+async fn solution(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<String>,
+) -> ApiResult<Json<SolutionPayload>> {
+    Ok(Json(state.case(&id)?.base_solution.clone()))
+}
+
+async fn api_not_found() -> ApiError {
+    ApiError::not_found("unknown API route")
+}
+
+async fn sensitivity(
+    State(state): State<Arc<AppState>>,
+    AxumPath((id, bus)): AxumPath<(String, usize)>,
+    Query(query): Query<DemandQuery>,
+) -> ApiResult<Json<SensitivityPayload>> {
+    let entry = state.case(&id)?;
+    if !entry.network.buses.iter().any(|b| b.id.0 == bus) {
+        return Err(ApiError::not_found(format!("unknown bus {bus}")));
+    }
+    let request = DcSolveRequest {
+        deltas: parse_deltas(query.d.as_deref()),
+        sens_bus: Some(bus),
+    };
+    let id_for_task = entry.id.clone();
+    let output = tokio::task::spawn_blocking(move || solve_network(&entry.network, &request))
+        .await
+        .map_err(|e| ApiError::internal(format!("solve task failed: {e}")))?
+        .map_err(ApiError::internal)?;
+    let Some(col) = output.dlmp_dd else {
+        return Err(ApiError::not_found(format!("unknown bus {bus}")));
+    };
+    Ok(Json(sensitivity_payload(&id_for_task, col)))
+}
+
+async fn solve_stream(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<String>,
+    Query(query): Query<DemandQuery>,
+) -> ApiResult<Sse<ReceiverStream<Result<Event, Infallible>>>> {
+    let entry = state.case(&id)?;
+    if let Some(bus) = query.sens {
+        if !entry.network.buses.iter().any(|b| b.id.0 == bus) {
+            return Err(ApiError::not_found(format!("unknown bus {bus}")));
+        }
+    }
+
+    let request = DcSolveRequest {
+        deltas: parse_deltas(query.d.as_deref()),
+        sens_bus: query.sens,
+    };
+    let (tx, rx) = mpsc::channel(8);
+    let id_for_task = entry.id.clone();
+    tokio::task::spawn_blocking(move || {
+        send_event(
+            &tx,
+            "status",
+            &serde_json::json!({ "phase": "solving", "case": id_for_task.as_str() }),
+        );
+        let start = Instant::now();
+        match solve_network(&entry.network, &request) {
+            Ok(output) => {
+                let solve_ms = start.elapsed().as_secs_f64() * 1000.0;
+                let solution = solution_payload(&output);
+                send_event(
+                    &tx,
+                    "solution",
+                    &serde_json::json!({
+                        "case": id_for_task.as_str(),
+                        "solve_ms": (solve_ms * 10.0).round() / 10.0,
+                        "objective": solution.objective,
+                        "lmp": solution.lmp,
+                        "flows": solution.flows,
+                        "dispatch": solution.dispatch,
+                    }),
+                );
+                if let Some(col) = output.dlmp_dd {
+                    send_event(&tx, "sensitivity", &sensitivity_payload(&id_for_task, col));
+                }
+                send_event(&tx, "done", &serde_json::json!({ "ok": true }));
+            }
+            Err(error) => {
+                send_event(&tx, "fail", &serde_json::json!({ "error": error }));
+            }
+        }
+    });
+    Ok(Sse::new(ReceiverStream::new(rx)))
+}
+
+fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, String> {
+    let case_path = data_dir.join(spec.casefile);
+    let aux_path = data_dir.join(spec.auxfile);
+    let case = powerio::format::parse_file(&case_path, Some("m"))
+        .map_err(|e| format!("{}: {e}", case_path.display()))?
+        .network;
+    let aux = powerio::format::parse_file(&aux_path, Some("aux"))
+        .map_err(|e| format!("{}: {e}", aux_path.display()))?
+        .network;
+    let coords = complete_coords_for(&case, &aux, spec.auxfile)?;
+    build_entry(spec.id, spec.name, case, coords, false)
+}
+
+fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
+    let case = powerio::parse_str(spec.text, "m")
+        .map_err(|e| format!("{} fallback parse failed: {e}", spec.id))?
+        .network;
+    let coords = synthetic_layout(&case, spec.bbox);
+    build_entry(spec.id, spec.name, case, coords, true)
+}
+
+fn build_entry(
+    id: &str,
+    name: &str,
+    network: Network,
+    coords: Coords,
+    synthetic_coords: bool,
+) -> Result<CaseEntry, String> {
+    let network_json = network.to_json().map_err(|e| e.to_string())?;
+    let base = solve_network(&network, &DcSolveRequest::default())?;
+    let view = network_payload(id, name, &network, &coords, synthetic_coords)?;
+    Ok(CaseEntry {
+        id: id.into(),
+        name: name.into(),
+        network,
+        network_json,
+        view,
+        base_solution: solution_payload(&base),
+    })
+}
+
+fn network_payload(
+    id: &str,
+    name: &str,
+    net: &Network,
+    coords: &Coords,
+    synthetic_coords: bool,
+) -> Result<NetworkPayload, String> {
+    let mut demand = BTreeMap::<usize, f64>::new();
+    for load in net.loads.iter().filter(|load| load.in_service) {
+        *demand.entry(load.bus.0).or_default() += load.p;
+    }
+    let mut generation = BTreeMap::<usize, f64>::new();
+    for gen in net.generators.iter().filter(|gen| gen.in_service) {
+        *generation.entry(gen.bus.0).or_default() += gen.pmax;
+    }
+    let buses = net
+        .buses
+        .iter()
+        .map(|bus| {
+            let &(lon, lat) = coords
+                .get(&bus.id.0)
+                .ok_or_else(|| format!("{}: missing coordinates for bus {}", id, bus.id.0))?;
+            Ok(NetworkBus {
+                id: bus.id.0,
+                lon,
+                lat,
+                demand_mw: demand.get(&bus.id.0).copied().unwrap_or(0.0),
+                gen_mw: generation.get(&bus.id.0).copied().unwrap_or(0.0),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let branches = net
+        .branches
+        .iter()
+        .enumerate()
+        .map(|(i, br)| {
+            let &(from_lon, from_lat) = coords.get(&br.from.0).ok_or_else(|| {
+                format!(
+                    "{}: missing coordinates for branch from bus {}",
+                    id, br.from.0
+                )
+            })?;
+            let &(to_lon, to_lat) = coords.get(&br.to.0).ok_or_else(|| {
+                format!("{}: missing coordinates for branch to bus {}", id, br.to.0)
+            })?;
+            Ok(NetworkBranch {
+                id: i + 1,
+                from: br.from.0,
+                to: br.to.0,
+                rate_mw: br.rate_a,
+                status: br.in_service as u8,
+                path: [[from_lon, from_lat], [to_lon, to_lat]],
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(NetworkPayload {
+        id: id.into(),
+        name: name.into(),
+        base_mva: net.base_mva,
+        synthetic_coords,
+        buses,
+        branches,
+    })
+}
+
+fn solution_payload(output: &DcSolveOutput) -> SolutionPayload {
+    SolutionPayload {
+        objective: output.objective,
+        lmp: output.lmp.clone(),
+        flows: output.flows.clone(),
+        dispatch: output.dispatch.clone(),
+    }
+}
+
+fn sensitivity_payload(case: &str, col: DlmpDdColumn) -> SensitivityPayload {
+    SensitivityPayload {
+        case: case.into(),
+        operand: col.operand,
+        parameter: col.parameter,
+        bus: col.bus,
+        units: col.units,
+        values: col.values,
+    }
+}
+
+fn parse_deltas(input: Option<&str>) -> HashMap<usize, f64> {
+    input
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|part| {
+            let (bus, mw) = part.split_once(':')?;
+            Some((bus.parse::<usize>().ok()?, mw.parse::<f64>().ok()?))
+        })
+        .collect()
+}
+
+fn send_event<T: Serialize>(
+    tx: &mpsc::Sender<Result<Event, Infallible>>,
+    event: &str,
+    payload: &T,
+) {
+    if let Ok(data) = serde_json::to_string(payload) {
+        let _ = tx.blocking_send(Ok(Event::default().event(event).data(data)));
+    }
+}
+
+fn staged(data_dir: &Path, spec: &CaseSpec) -> bool {
+    data_dir.join(spec.casefile).is_file() && data_dir.join(spec.auxfile).is_file()
+}
+
+fn data_dir() -> PathBuf {
+    env::var_os("TELLEGEN_DATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            first_existing(default_data_dirs()).unwrap_or_else(|| PathBuf::from("data"))
+        })
+}
+
+fn frontend_build_dir() -> Option<PathBuf> {
+    env::var_os("TELLEGEN_FRONTEND_BUILD")
+        .map(PathBuf::from)
+        .or_else(|| first_existing(default_frontend_dirs()))
+}
+
+fn first_existing(candidates: Vec<PathBuf>) -> Option<PathBuf> {
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn default_data_dirs() -> Vec<PathBuf> {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    vec![
+        cwd.join("data"),
+        cwd.join("../data"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data"),
+    ]
+}
+
+fn default_frontend_dirs() -> Vec<PathBuf> {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    vec![
+        cwd.join("frontend/build"),
+        cwd.join("../frontend/build"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../frontend/build"),
+    ]
+}
+
+fn allow_fallback() -> bool {
+    matches!(
+        env::var("TELLEGEN_ALLOW_FALLBACK")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "tellegen=info,tower_http=warn".into());
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use std::sync::OnceLock;
+    use tower::ServiceExt;
+
+    fn fallback_state() -> Arc<AppState> {
+        static STATE: OnceLock<Arc<AppState>> = OnceLock::new();
+        Arc::clone(STATE.get_or_init(|| {
+            Arc::new(AppState::load(PathBuf::from("/definitely/no/tellegen/data"), true).unwrap())
+        }))
+    }
+
+    async fn get(path: &str) -> (StatusCode, serde_json::Value) {
+        let res = router(fallback_state(), None)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn health_lists_fallback_cases() {
+        let (status, body) = get("/api/health").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["cases"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn case_endpoints_have_expected_shapes() {
+        let (status, cases) = get("/api/cases").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(cases.as_array().unwrap().len(), 2);
+        assert_eq!(cases[0]["n_gen"], 38);
+
+        let (status, network) = get("/api/cases/case200/network").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(network["id"], "case200");
+        assert!(network["synthetic_coords"].as_bool().unwrap());
+        assert!(network["buses"].as_array().unwrap().len() >= 200);
+
+        let (status, solution) = get("/api/cases/case200/solution").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(solution["objective"].as_f64().unwrap().is_finite());
+        assert!(solution["lmp"].as_array().unwrap().len() >= 200);
+    }
+
+    #[tokio::test]
+    async fn sensitivity_ignores_malformed_deltas() {
+        let (status, body) = get("/api/cases/case200/sensitivity/lmp/d/1?d=1:5,junk,2:bad").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["case"], "case200");
+        assert_eq!(body["bus"], 1);
+        assert!(body["values"].as_array().unwrap().len() >= 200);
+    }
+
+    #[tokio::test]
+    async fn missing_case_and_bus_return_json_404() {
+        let (status, body) = get("/api/cases/nope/network").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body["error"].as_str().unwrap().contains("unknown case"));
+
+        let (status, body) = get("/api/cases/case200/sensitivity/lmp/d/999999").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body["error"].as_str().unwrap().contains("unknown bus"));
+
+        let (status, body) = get("/api/unknown").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("unknown API route"));
+    }
+
+    #[tokio::test]
+    async fn fallback_requires_explicit_flag() {
+        let err = match AppState::load(PathBuf::from("/definitely/no/tellegen/data"), false) {
+            Ok(_) => panic!("fallback load should require TELLEGEN_ALLOW_FALLBACK=1"),
+            Err(err) => err,
+        };
+        assert!(err.contains("TELLEGEN_ALLOW_FALLBACK=1"));
+    }
+}

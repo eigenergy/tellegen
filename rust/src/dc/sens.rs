@@ -436,7 +436,7 @@ pub fn dlmp_dd_perunit(
 }
 
 /// dLMP/dd in served units, ($/MWh)/MW: the per-unit sensitivity divided by
-/// `base_mva^2` (both LMP and demand are per unit), as the backend serves it.
+/// `base_mva^2` (both LMP and demand are per unit), as the HTTP API serves it.
 pub fn dlmp_dd(dc: &DcNetwork, sol: &DcSolution, buses: &[usize]) -> Result<Vec<Vec<f64>>, String> {
     let b2 = dc.base_mva * dc.base_mva;
     Ok(dlmp_dd_perunit(dc, sol, buses)?
@@ -522,7 +522,7 @@ mod tests {
         }
     }
 
-    /// Parity check mirroring the backend's `runtests.jl`: compute the full
+    /// Parity check mirroring the Julia reference `runtests.jl`: compute the full
     /// dLMP/dd matrix, take the three columns with the largest norm (the most
     /// significant sensitivities, away from near-kink buses), and compare each to
     /// central differences with the same 1 MW step. Returns the worst relative
@@ -555,7 +555,7 @@ mod tests {
 
     #[test]
     fn parity_with_finite_differences_activsg200() {
-        // The backend's exact-sensitivity criterion (runtests.jl) on the Rust
+        // The reference exact-sensitivity criterion (runtests.jl) on the Rust
         // path: the top sensitivity columns match central differences within
         // 1e-3. Skips when the data is absent.
         let path = concat!(

@@ -2,14 +2,17 @@
 
 use std::collections::BTreeMap;
 
-use powerio::format::powerworld::{aux_sections, AuxFile};
-use powerio::network::{Bus, Network};
 use powerio::{parse_display_bytes, DisplayData};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-mod dc;
+pub mod dc;
+pub mod geo;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod server;
+
 use dc::solve_dc_json;
+use geo::{network_coords, spread_stacks};
 
 fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
@@ -30,7 +33,7 @@ pub fn parse_case(text: &str, format: &str) -> Result<String, JsError> {
 /// Solve the DC OPF in the browser (issue #2). `network_json` is the `network`
 /// object from `parse_case`; `deltas_json` is `{ deltas: { bus: mw }, sens_bus }`
 /// (or empty for the base case). Returns `{ objective, lmp, flows, dispatch,
-/// dlmp_dd }` in the shapes the Julia backend serves — LMPs in $/MWh keyed by
+/// dlmp_dd }` in the shapes the HTTP API serves — LMPs in $/MWh keyed by
 /// bus id, flows and dispatch in MW, and `dlmp_dd` the ($/MWh)/MW sensitivity
 /// column for `sens_bus` (null when none is requested).
 #[wasm_bindgen]
@@ -87,7 +90,7 @@ struct Topology {
 
 /// Everything the drop panel needs from one parse: counts, total load and
 /// capacity, parse warnings, and a `view` of buses and branches in the shape
-/// the tellegen backend serves, placed at the coordinates the file carries
+/// the tellegen API serves, placed at the coordinates the file carries
 /// (PowerWorld complete case aux exports).
 /// `view` is null when the file has no coordinates.
 #[wasm_bindgen]
@@ -130,7 +133,7 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
     };
 
     let view = {
-        let mut cs = coords(net);
+        let mut cs = network_coords(net);
         if cs.is_empty() {
             None
         } else {
@@ -187,7 +190,7 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
         "base_mva": net.base_mva,
         "n_bus": net.buses.len(),
         "n_branch": net.branches.len(),
-        "n_gen": net.generators.len(),
+        "n_gen": net.generators.iter().filter(|g| g.in_service).count(),
         "load_mw": demand.values().sum::<f64>(),
         "gen_mw": gen.values().sum::<f64>(),
         "has_coords": view.is_some(),
@@ -241,97 +244,6 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
         // DisplayData is #[non_exhaustive]; PowerWorld is the only arm today.
         #[allow(unreachable_patterns)]
         _ => Err(JsError::new("unsupported display format")),
-    }
-}
-
-/// Bus id => (lon, lat). Two generations of PowerWorld export carry
-/// substation coordinates differently: 2018-era complete cases (the ACTIVSg
-/// distributions) write them on every bus row (Latitude:1 / Longitude:1);
-/// later exports leave the bus columns empty and point at the Substation
-/// table through SubNumber. Try the bus row first, then the join.
-fn coords(net: &Network) -> BTreeMap<usize, (f64, f64)> {
-    let subs = match aux_sections(net) {
-        Some(Ok(aux)) => substation_coords(&aux),
-        _ => BTreeMap::new(),
-    };
-    let mut out = BTreeMap::new();
-    for b in &net.buses {
-        let Some(p) = (match (
-            extra_f64(b, &["Longitude:1", "Longitude"]),
-            extra_f64(b, &["Latitude:1", "Latitude"]),
-        ) {
-            (Some(lon), Some(lat)) => Some((lon, lat)),
-            _ => extra_f64(b, &["SubNum", "SubNumber"])
-                .and_then(|n| subs.get(&(n as usize)).copied()),
-        }) else {
-            continue;
-        };
-        out.insert(b.id.0, p);
-    }
-    out
-}
-
-/// Substation number => (lon, lat) from the aux Substation table. Field
-/// names span the export generations: SubNum/Number, Latitude/Longitude.
-fn substation_coords(aux: &AuxFile) -> BTreeMap<usize, (f64, f64)> {
-    let mut out = BTreeMap::new();
-    for obj in aux.data_of("Substation") {
-        let (Some(num), Some(lat), Some(lon)) = (
-            obj.field_index("SubNum")
-                .or_else(|| obj.field_index("Number")),
-            obj.field_index("Latitude"),
-            obj.field_index("Longitude"),
-        ) else {
-            continue;
-        };
-        for row in &obj.rows {
-            let field = |i: usize| row.values.get(i).and_then(|v| v.trim().parse::<f64>().ok());
-            let (Some(n), Some(la), Some(lo)) = (field(num), field(lat), field(lon)) else {
-                continue;
-            };
-            out.insert(n as usize, (lo, la));
-        }
-    }
-    out
-}
-
-fn extra_f64(b: &Bus, keys: &[&str]) -> Option<f64> {
-    keys.iter().find_map(|k| match b.extras.get(*k) {
-        Some(serde_json::Value::Number(n)) => n.as_f64(),
-        Some(serde_json::Value::String(s)) => s.trim().parse().ok(),
-        _ => None,
-    })
-}
-
-/// Buses at one substation share its coordinate exactly. Place each
-/// co-located group on a small ring (~400 m) so every bus stays hoverable at
-/// street zoom; at network zoom the group still reads as one substation.
-/// Mirrors backend/src/coords.jl. Deterministic: ordered by bus id.
-fn spread_stacks(cs: &mut BTreeMap<usize, (f64, f64)>) {
-    const RADIUS: f64 = 0.004;
-    let mut groups: BTreeMap<(u64, u64), Vec<usize>> = BTreeMap::new();
-    for (&id, &(lon, lat)) in cs.iter() {
-        groups
-            .entry((lon.to_bits(), lat.to_bits()))
-            .or_default()
-            .push(id);
-    }
-    for ids in groups.values() {
-        if ids.len() < 2 {
-            continue;
-        }
-        let (lon0, lat0) = cs[&ids[0]];
-        let lonscale = lat0.to_radians().cos().max(0.2);
-        for (j, id) in ids.iter().enumerate() {
-            let theta = std::f64::consts::TAU * j as f64 / ids.len() as f64;
-            cs.insert(
-                *id,
-                (
-                    lon0 + RADIUS * theta.cos() / lonscale,
-                    lat0 + RADIUS * theta.sin(),
-                ),
-            );
-        }
     }
 }
 

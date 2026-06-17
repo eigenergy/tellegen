@@ -6,4 +6,7 @@ mod model;
 mod sens;
 mod solve;
 
-pub use api::solve_dc_json;
+pub use api::{
+    solve_dc_json, solve_network, DcSolveOutput, DcSolveRequest, DispatchValue, DlmpDdColumn,
+    FlowValue, LmpValue, SensitivityValue,
+};
