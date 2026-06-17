@@ -8,7 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install wasm-pack --locked
 COPY rust /build/rust
-RUN wasm-pack build /build/rust --target web --out-dir /out/wasm-pkg
+RUN RUSTFLAGS="-C target-feature=-simd128,-relaxed-simd" \
+    wasm-pack build /build/rust --target web --out-dir /out/wasm-pkg -- --no-default-features
+RUN wasm-pack build /build/rust --target web --out-dir /out/wasm-sens-pkg --out-name tellegen_sens
 
 # ---- frontend build ----
 FROM node:22-slim AS frontend
@@ -17,6 +19,7 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 COPY --from=wasm /out/wasm-pkg ./src/lib/wasm-pkg
+COPY --from=wasm /out/wasm-sens-pkg ./src/lib/wasm-sens-pkg
 RUN npm run build
 
 # ---- rust backend ----

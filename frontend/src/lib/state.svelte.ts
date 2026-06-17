@@ -10,7 +10,7 @@ import type {
 } from './api';
 import type { CaseFileSummary, Topology } from './wasm';
 
-export type SolveBackend = 'clarabel-wasm' | 'rust-server';
+export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
 export type DemandRangeMode = 'local' | 'full';
 
 /** Substations from a PowerWorld .pwd display file. Positions are inferred

@@ -11,6 +11,7 @@ use powerio::network::Network;
 use serde::{Deserialize, Serialize};
 
 use super::model::DcNetwork;
+#[cfg(feature = "sensitivity")]
 use super::sens::dlmp_dd;
 use super::solve::solve;
 
@@ -150,6 +151,7 @@ pub fn solve_network(net: &Network, req: &DcSolveRequest) -> Result<DcSolveOutpu
         })
         .collect();
 
+    #[cfg(feature = "sensitivity")]
     let dlmp = match req.sens_bus.and_then(|b| bus_idx.get(&b).copied()) {
         Some(si) => {
             let col = dlmp_dd(&dc, &sol, &[si])?;
@@ -169,6 +171,8 @@ pub fn solve_network(net: &Network, req: &DcSolveRequest) -> Result<DcSolveOutpu
         }
         None => None,
     };
+    #[cfg(not(feature = "sensitivity"))]
+    let dlmp = None;
 
     Ok(DcSolveOutput {
         objective: sol.objective,
@@ -249,6 +253,7 @@ mod tests {
         assert_eq!(gens, vec![2]);
     }
 
+    #[cfg(feature = "sensitivity")]
     #[test]
     fn sensitivity_column_present_when_requested() {
         let out = solve_dc_json(&case3_json(), r#"{"sens_bus": 2}"#).expect("solve_dc");

@@ -3,6 +3,7 @@
  * leaves the machine. */
 import type { DemandDeltas, NetworkBranch, NetworkBus, SensitivityColumn, Solution } from './api';
 import wasmUrl from './wasm-pkg/tellegen_bg.wasm?url';
+import sensWasmUrl from './wasm-sens-pkg/tellegen_sens_bg.wasm?url';
 
 export interface CaseFileSummary {
 	name: string;
@@ -45,6 +46,7 @@ export interface IngestedCase extends CaseFileSummary {
 }
 
 let ready: Promise<typeof import('./wasm-pkg/tellegen')> | null = null;
+let sensitivityReady: Promise<typeof import('./wasm-sens-pkg/tellegen_sens')> | null = null;
 
 function powerio() {
 	ready ??= import('./wasm-pkg/tellegen')
@@ -59,6 +61,19 @@ function powerio() {
 			throw e;
 		});
 	return ready;
+}
+
+function powerioSensitivity() {
+	sensitivityReady ??= import('./wasm-sens-pkg/tellegen_sens')
+		.then(async (mod) => {
+			await mod.default({ module_or_path: sensWasmUrl });
+			return mod;
+		})
+		.catch((e) => {
+			sensitivityReady = null;
+			throw e;
+		});
+	return sensitivityReady;
 }
 
 /** powerio format token from a file name; null for non-case files. */
@@ -94,12 +109,13 @@ export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
 export interface BrowserSolution {
 	solution: Solution;
 	sensitivity: SensitivityColumn | null;
+	sensitivityError?: string;
 }
 
 /** Solve the DC OPF in the browser at demand = base + `deltas`. `networkJson` is
  * the raw powerio Network (from the `/case` endpoint or a browser parse). When
- * `sensBus` is set, the dLMP/dd column for that bus rides along. Runs entirely
- * in wasm: no server round trip. */
+ * `sensBus` is set, the dLMP/dd column is loaded from the sensitivity wasm
+ * package when the browser supports that module. */
 export async function solveDc(
 	caseId: string,
 	networkJson: string,
@@ -107,7 +123,22 @@ export async function solveDc(
 	sensBus: number | null
 ): Promise<BrowserSolution> {
 	const request = JSON.stringify({ deltas, sens_bus: sensBus });
-	const out = JSON.parse((await powerio()).solve_dc(networkJson, request));
+	if (sensBus !== null) {
+		try {
+			return parseSolveOutput(caseId, (await powerioSensitivity()).solve_dc(networkJson, request));
+		} catch (e) {
+			const baseRequest = JSON.stringify({ deltas, sens_bus: null });
+			return {
+				...parseSolveOutput(caseId, (await powerio()).solve_dc(networkJson, baseRequest)),
+				sensitivityError: errorText(e)
+			};
+		}
+	}
+	return parseSolveOutput(caseId, (await powerio()).solve_dc(networkJson, request));
+}
+
+function parseSolveOutput(caseId: string, json: string): BrowserSolution {
+	const out = JSON.parse(json);
 	const solution: Solution = {
 		objective: out.objective,
 		lmp: out.lmp,
@@ -119,4 +150,8 @@ export async function solveDc(
 		? { case: caseId, operand: d.operand, parameter: d.parameter, bus: d.bus, units: d.units, values: d.values }
 		: null;
 	return { solution, sensitivity };
+}
+
+function errorText(e: unknown): string {
+	return e instanceof Error ? e.message : String(e);
 }

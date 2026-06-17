@@ -347,7 +347,11 @@
 			const networkJson = await ensureNetworkJson(c);
 			if (networkJson) {
 				const { sensitivity } = await solveDc(caseId, networkJson, c.deltas, busId);
-				if (!ac.signal.aborted) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+				if (!ac.signal.aborted && sensitivity) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+				else if (!ac.signal.aborted) {
+					const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
+					if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
+				}
 			} else {
 				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
 				if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
@@ -385,8 +389,11 @@
 		c.sensitivity = null;
 		touchLocal(c);
 		try {
-			const { sensitivity } = await solveDc(localId, c.networkJson, c.deltas ?? {}, busId);
+			const { sensitivity, sensitivityError } = await solveDc(localId, c.networkJson, c.deltas ?? {}, busId);
 			if (!ac.signal.aborted) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+			if (!ac.signal.aborted && !sensitivity && sensitivityError) {
+				app.error = `${c.label}: browser sensitivity unavailable: ${sensitivityError}`;
+			}
 		} catch (e) {
 			if (!ac.signal.aborted) app.error = `${c.label}: ${e instanceof Error ? e.message : e}`;
 		} finally {
@@ -442,12 +449,28 @@
 			c.solveBackend = 'clarabel-wasm';
 			touchLocal(c);
 			solveDc(c.id, networkJson, caseDeltas(c), sensBus)
-				.then(({ solution, sensitivity }) => {
+				.then(async ({ solution, sensitivity, sensitivityError }) => {
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
 					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0) c.baseSolution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
-					acceptSensitivity(c, sensitivity, sensBus);
+					if (sensitivity || sensBus === null) {
+						acceptSensitivity(c, sensitivity, sensBus);
+					} else if (sensitivityError && isBackendCase(c)) {
+						try {
+							const col = await getSensitivity(c.id, sensBus, c.deltas);
+							if (seq !== c.solveSeq) return;
+							c.solveBackend = 'clarabel-wasm-server-sensitivity';
+							acceptSensitivity(c, col, sensBus);
+						} catch (e) {
+							if (seq !== c.solveSeq) return;
+							c.solveFallbackReason = `server sensitivity failed: ${errorText(e)}`;
+							serverSolve(c, sensBus, seq);
+							return;
+						}
+					} else if (sensitivityError && !isBackendCase(c)) {
+						app.error = `${c.label}: browser sensitivity unavailable: ${sensitivityError}`;
+					}
 					finishSolve(c, seq, sensBus);
 				})
 				.catch((e) => {
@@ -821,12 +844,14 @@
 
 	function solveBackendLabel(c: SolvableCase): string {
 		if (c.solveBackend === 'clarabel-wasm') return 'Clarabel wasm';
+		if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'Clarabel wasm + server dLMP/dd';
 		if (c.solveBackend === 'rust-server') return 'server fallback';
 		return c.solving ? 'starting' : 'solve pending';
 	}
 
 	function solveMetaLabel(c: SolvableCase): string {
 		if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
+		if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'server dLMP/dd';
 		return c.solveBackend === 'rust-server' ? 'server solve' : 'browser solve';
 	}
 </script>

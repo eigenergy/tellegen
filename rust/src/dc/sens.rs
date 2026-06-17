@@ -11,8 +11,8 @@
 //! (`solve!` in `src/prob/dc_opf.jl`) that puts the solution at strict
 //! complementarity before the derivative is taken.
 //!
-//! The nonsymmetric KKT Jacobian is factorized with faer's sparse LU (pure Rust,
-//! wasm-safe; validated on a real case matrix in the tests, per faer-rs#222).
+//! The nonsymmetric KKT Jacobian is factorized with faer's sparse LU, enabled in
+//! the native server and the optional sensitivity wasm package.
 
 use faer::linalg::solvers::Solve;
 use faer::sparse::{SparseColMat, Triplet};

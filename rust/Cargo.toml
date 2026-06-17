@@ -17,10 +17,16 @@ powerio = "0.2.2"
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# DC OPF QP solver. Default features only: the BLAS/LAPACK/SDP/faer paths stay
-# off, so the build is pure Rust (QDLDL + amd) and compiles to wasm32 as-is.
+# DC OPF QP solver. Default features only: the BLAS/LAPACK/SDP paths stay off,
+# so the build is pure Rust (QDLDL + amd) and compiles to wasm32 as-is.
 clarabel = "0.11.1"
-faer = { version = "0.24.0", default-features = false, features = ["std", "linalg", "sparse", "sparse-linalg"] }
+# Sparse LU for dLMP/dd. The core browser wasm builds with --no-default-features
+# so Safari does not have to parse faer's wasm SIMD kernels at startup.
+faer = { version = "0.24.0", default-features = false, features = ["std", "linalg", "sparse", "sparse-linalg"], optional = true }
+
+[features]
+default = ["sensitivity"]
+sensitivity = ["dep:faer"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 axum = "0.8.4"
