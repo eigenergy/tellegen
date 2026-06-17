@@ -136,8 +136,8 @@
 	function caseOf(info: PickingInfo): SolvableCase | null {
 		const layerId = info.layer?.id;
 		if (!layerId) return null;
-		const backend = layerId.match(/^(?:buses|branches)-(.+)$/);
-		if (backend) return app.byId(backend[1]);
+		const bundled = layerId.match(/^(?:buses|branches)-(.+)$/);
+		if (bundled) return app.byId(bundled[1]);
 		const local = layerId.match(/^local-(?:buses|branches)-(.+)$/);
 		if (local) return app.localCases.find((c) => c.id === local[1]) ?? null;
 		return null;

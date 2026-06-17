@@ -40,6 +40,7 @@
 	let closeStream: (() => void) | null = null;
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
 	let showFileDropUi = $state(true);
+	let casesLoaded = $state(false);
 	let dragDepth = 0;
 
 	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
@@ -113,7 +114,9 @@
 			);
 			app.requestFrame('all');
 		} catch (e) {
-			app.error = `backend unreachable: ${e instanceof Error ? e.message : e}`;
+			app.error = `server unreachable: ${e instanceof Error ? e.message : e}`;
+		} finally {
+			casesLoaded = true;
 		}
 	}
 
@@ -169,6 +172,17 @@
 		app.requestFrame(id);
 	}
 
+	function removeBackendCase(c: CaseState, event?: MouseEvent) {
+		event?.stopPropagation();
+		if (app.activeCaseId === c.id) {
+			closeStream?.();
+			closeStream = null;
+			c.solveSeq++;
+			clearSelection();
+		}
+		app.removeCase(c.id);
+	}
+
 	function activateLocal(c: LocalCase) {
 		clearSelection();
 		// Mirror activateCase's reset: a local and a backend case are mutually
@@ -180,6 +194,17 @@
 		app.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
 		if (c.view || c.substations) app.requestFrame(c.id);
 		maybeStartLocalSolve(c.id);
+	}
+
+	function removeLocalCase(c: LocalCase, event?: MouseEvent) {
+		event?.stopPropagation();
+		if (app.activeLocalId === c.id) {
+			closeStream?.();
+			closeStream = null;
+			c.solveSeq = (c.solveSeq ?? 0) + 1;
+			clearSelection();
+		}
+		app.removeLocal(c.id);
 	}
 
 	function addAndActivateLocal(c: LocalCase) {
@@ -391,8 +416,7 @@
 	}
 
 	// Exact DC solve in the browser (wasm). On any failure, or when the network
-	// JSON can't be fetched, reconcile via the server stream — which also shows
-	// the interior point iterations.
+	// JSON can't be fetched, reconcile via the server stream.
 	function runSolve(c: SolvableCase, sensBus: number | null) {
 		closeStream?.();
 		c.solveSeq = (c.solveSeq ?? 0) + 1;
@@ -440,7 +464,7 @@
 	}
 
 	function serverSolve(c: CaseState, sensBus: number | null, seq = c.solveSeq) {
-		c.solveBackend = 'ipopt-server';
+		c.solveBackend = 'rust-server';
 		c.solveFallbackReason ??= 'browser solve unavailable';
 		closeStream = openSolveStream(c.id, c.deltas, sensBus, {
 			oniteration: (it) => {
@@ -797,13 +821,13 @@
 
 	function solveBackendLabel(c: SolvableCase): string {
 		if (c.solveBackend === 'clarabel-wasm') return 'Clarabel wasm';
-		if (c.solveBackend === 'ipopt-server') return 'server fallback';
+		if (c.solveBackend === 'rust-server') return 'server fallback';
 		return c.solving ? 'starting' : 'solve pending';
 	}
 
 	function solveMetaLabel(c: SolvableCase): string {
 		if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
-		return c.solveBackend === 'ipopt-server' ? 'server solve' : 'browser solve';
+		return c.solveBackend === 'rust-server' ? 'server solve' : 'browser solve';
 	}
 </script>
 
@@ -838,23 +862,31 @@
 		<nav class="cases" aria-label="networks">
 			{#each app.cases as c (c.id)}
 				{@const [cname, cregion] = splitName(c.name)}
-				<button class:active={app.activeCaseId === c.id} onclick={() => activateCase(c.id)}>
-					<span class="cname">{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"
-							></i>{/if}</span>
-					<span class="cregion mono">{cregion}</span>
-				</button>
+				<div class="case-chip" class:active={app.activeCaseId === c.id}>
+					<button class="case-activate" onclick={() => activateCase(c.id)}>
+						<span class="cname">{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"
+								></i>{/if}</span>
+						<span class="cregion mono">{cregion}</span>
+					</button>
+					<button
+						class="case-remove mono"
+						aria-label="remove {c.name} from this browser"
+						title="remove {c.name} from this browser"
+						onclick={(e) => removeBackendCase(c, e)}>&#10005;</button
+					>
+				</div>
 			{/each}
 			{#each app.localCases as c (c.id)}
 				<div class="case-chip local" class:active={app.activeLocalId === c.id}>
-					<button class="local-activate" onclick={() => activateLocal(c)}>
+					<button class="case-activate" onclick={() => activateLocal(c)}>
 						<span class="cname">{c.label}</span>
 						<span class="cregion mono">local</span>
 					</button>
 					<button
-						class="local-remove mono"
+						class="case-remove mono"
 						aria-label="remove {c.label}"
 						title="remove {c.label}"
-						onclick={() => app.removeLocal(c.id)}>&#10005;</button
+						onclick={(e) => removeLocalCase(c, e)}>&#10005;</button
 					>
 				</div>
 			{/each}
@@ -946,11 +978,15 @@
 							: 'move layout'}
 				</button>
 			{/if}
-			<button class="reset mono" onclick={() => app.removeLocal(lc.id)}>remove</button>
+			<button class="reset mono" onclick={() => removeLocalCase(lc)}>remove</button>
 		{/if}
 		{#if !stats}
 			{#if !app.error && !app.activeLocal}
-				<p class="dim mono blink">loading cases&hellip;</p>
+				{#if casesLoaded && app.cases.length === 0}
+					<p class="dim mono">no default cases loaded</p>
+				{:else}
+					<p class="dim mono blink">loading cases&hellip;</p>
+				{/if}
 			{/if}
 		{:else}
 			{#if !app.activeLocal}
@@ -1156,7 +1192,7 @@
 				<span>{solveMetaLabel(activeSolvable)}</span>
 				{#if activeSolvable.solveMs != null}<span>{activeSolvable.solveMs} ms</span>{/if}
 			</div>
-			{#if activeSolvable.solveBackend === 'ipopt-server' && activeSolvable.solveFallbackReason}
+			{#if activeSolvable.solveBackend === 'rust-server' && activeSolvable.solveFallbackReason}
 				<p class="fallback-reason mono dim" title={activeSolvable.solveFallbackReason}>
 					fallback: {activeSolvable.solveFallbackReason}
 				</p>
@@ -1281,6 +1317,7 @@
 		gap: 0;
 		padding: 0;
 		overflow: hidden;
+		position: relative;
 	}
 
 	.case-chip button {
@@ -1289,25 +1326,38 @@
 		cursor: pointer;
 	}
 
-	.local-activate {
+	.case-activate {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 1px;
 		min-width: 0;
-		padding: 5px 8px 4px 12px;
+		width: 100%;
+		padding: 5px 24px 4px 12px;
 		background: transparent;
 		border: 0;
 	}
 
-	.local-remove {
-		align-self: stretch;
-		padding: 0 7px;
+	.case-remove {
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		display: grid;
+		place-items: center;
+		width: 18px;
+		height: 18px;
+		padding: 0;
 		background: transparent;
 		border: 0;
-		border-left: 1px solid var(--line);
 		color: var(--ink-faint);
 		font-size: 9px;
+		line-height: 1;
+	}
+
+	.case-remove:hover,
+	.case-remove:focus-visible {
+		background: var(--accent-soft);
+		color: var(--red);
 	}
 
 	.cases > button:hover,
@@ -1315,7 +1365,6 @@
 		border-color: var(--accent);
 	}
 
-	.cases > button.active,
 	.case-chip.active {
 		background: var(--panel);
 		border-color: var(--accent);
@@ -1377,10 +1426,6 @@
 	.arrow {
 		display: inline-block;
 		animation: bob 1.8s ease-in-out infinite alternate;
-	}
-
-	.local-remove:hover {
-		color: var(--red);
 	}
 
 	.kicker {
@@ -1918,12 +1963,13 @@
 			padding: 7px 10px 6px;
 		}
 
-		.local-activate {
-			padding: 7px 7px 6px 10px;
+		.case-activate {
+			padding: 7px 24px 6px 10px;
 		}
 
-		.local-remove {
-			min-width: 34px;
+		.case-remove {
+			width: 22px;
+			height: 22px;
 		}
 
 		.cname,

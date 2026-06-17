@@ -90,7 +90,7 @@ export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
 }
 
 /** The browser DC solve: the exact solution plus, when `sensBus` is given, its
- * dLMP/dd column — the same shapes the backend serves. */
+ * dLMP/dd column — the same shapes the server serves. */
 export interface BrowserSolution {
 	solution: Solution;
 	sensitivity: SensitivityColumn | null;

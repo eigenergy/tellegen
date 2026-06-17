@@ -10,7 +10,7 @@ import type {
 } from './api';
 import type { CaseFileSummary, Topology } from './wasm';
 
-export type SolveBackend = 'clarabel-wasm' | 'ipopt-server';
+export type SolveBackend = 'clarabel-wasm' | 'rust-server';
 export type DemandRangeMode = 'local' | 'full';
 
 /** Substations from a PowerWorld .pwd display file. Positions are inferred
@@ -56,7 +56,7 @@ export interface LocalCase {
 	substations?: LocalSubstations;
 }
 
-/** One islanded network with its own solver instance on the backend. API
+/** One islanded network with its own solver state on the server. API
  * payloads are reassigned wholesale, so $state.raw throughout. */
 export class CaseState {
 	readonly id: string;
@@ -109,7 +109,7 @@ export class AppState {
 
 	/** Case files parsed in the browser via the powerio wasm module. */
 	localCases = $state.raw<LocalCase[]>([]);
-	/** Local case the panel shows; clicking a backend case or a bus clears it. */
+	/** Local case the panel shows; clicking a bundled case or a bus clears it. */
 	activeLocalId = $state<string | null>(null);
 	placingLocalId = $state<string | null>(null);
 	dragOver = $state(false);
@@ -139,6 +139,33 @@ export class AppState {
 
 	updateLocal(id: string, patch: Partial<LocalCase>) {
 		this.localCases = this.localCases.map((c) => (c.id === id ? { ...c, ...patch } : c));
+	}
+
+	removeCase(id: string) {
+		const wasActive = this.activeCaseId === id;
+		this.cases = this.cases.filter((c) => c.id !== id);
+		if (!wasActive) return;
+
+		this.selectedBus = null;
+		this.previewDeltaMw = null;
+		this.previewActive = false;
+		this.demandRangeMode = 'local';
+		this.sensitivityLoading = false;
+
+		this.activeCaseId = this.cases[0]?.id ?? null;
+		if (this.activeCaseId) {
+			this.requestFrame(this.activeCaseId);
+			return;
+		}
+
+		const nextLocal =
+			this.localCases.find((c) => c.view || c.substations || c.coordsKind === 'synthetic_pending') ??
+			this.localCases[0] ??
+			null;
+		this.activeLocalId = nextLocal?.id ?? null;
+		this.placingLocalId = nextLocal?.coordsKind === 'synthetic_pending' ? nextLocal.id : null;
+		if (nextLocal?.view || nextLocal?.substations) this.requestFrame(nextLocal.id);
+		else this.requestFrame('all');
 	}
 
 	removeLocal(id: string) {

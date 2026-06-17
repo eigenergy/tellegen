@@ -107,9 +107,9 @@ export interface SolveStreamHandlers {
 	ondone?: () => void;
 }
 
-/** Open the SSE solve stream: exact re-solve at base + deltas, interior point
- * iterations as they happen, then the solution and (if `sensBus` is given)
- * the sensitivity column at the new operating point. Returns a closer. */
+/** Open the SSE solve stream: exact re-solve at base + deltas, then the
+ * solution and (if `sensBus` is given) the sensitivity column at the new
+ * operating point. Returns a closer. */
 export function openSolveStream(
 	caseId: string,
 	deltas: DemandDeltas,
