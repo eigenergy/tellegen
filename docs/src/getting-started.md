@@ -2,14 +2,14 @@
 
 ## Repository Layout
 
-- `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl
-- `rust/`: Rust crate, WebAssembly parser/solver, and native HTTP server
+- `frontend/`: tellegen frontend
+- `rust/`: tellegen backend and WebAssembly packages
 - `reference/julia-backend/`: Julia PowerDiff.jl parity harness
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
 
-## Backend
+## tellegen backend
 
 ```sh
 cargo run --manifest-path rust/Cargo.toml --bin tellegen-server
@@ -35,7 +35,7 @@ cd frontend
 npm run wasm
 ```
 
-## Frontend
+## tellegen frontend
 
 ```sh
 cd frontend
@@ -55,9 +55,9 @@ scripts/stage-data.sh ~/Datasets
 ```
 
 The script stages the six files used by the demo into `data/`. Without all
-three staged cases, the server exits. For CI or local smoke checks without the
-TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the two pglib
-fallback cases with synthetic coordinates.
+three staged cases, the tellegen backend exits. For CI or local smoke checks
+without the TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the
+two pglib fallback cases with synthetic coordinates.
 
 ## Docs
 

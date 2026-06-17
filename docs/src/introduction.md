@@ -10,8 +10,8 @@ PowerDiff.jl.
 
 The app uses a gradient preview, exact commit interaction model. Perturbations
 update the display from KKT sensitivity columns. Exact DC OPF commits run in
-the browser through Rust, Clarabel, and WebAssembly, with PowerDiff.jl kept as
-the reference path. Case parsing uses
+the tellegen frontend through Clarabel and WebAssembly, with PowerDiff.jl kept
+as the reference path. Case parsing uses
 [powerio](https://github.com/eigenergy/powerio).
 
 ## Demo
@@ -30,7 +30,7 @@ Each case is an islanded DC OPF instance. Bus color shows locational marginal
 price. Selecting a bus shows the dLMP/dd column for a demand perturbation at
 that bus. Moving the demand slider applies the local sensitivity immediately;
 releasing it computes the exact solution with Clarabel in WebAssembly. Bundled
-cases can fall back to the Rust server if browser solve is unavailable.
+cases can fall back to the tellegen backend if browser solve is unavailable.
 
 ## Local Files
 

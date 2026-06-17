@@ -6,8 +6,8 @@ on:
   pull_request:
 
 jobs:
-  # Test the Rust solver/server, then build the wasm module before the frontend
-  # that imports it.
+  # Test the tellegen backend, then build the wasm module before the tellegen
+  # frontend imports it.
   frontend:
     runs-on: ubuntu-latest
     steps:

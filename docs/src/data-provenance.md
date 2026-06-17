@@ -47,6 +47,6 @@ solves than the small demo host is intended to serve.
 ## Explicit Fallback
 
 Production expects all three TAMU cases to be staged. If they are missing, the
-server exits. CI and local smoke checks can set `TELLEGEN_ALLOW_FALLBACK=1` to
-serve two pglib cases with synthetic coordinates. Those fallback coordinates are
-labeled as synthetic.
+tellegen backend exits. CI and local smoke checks can set
+`TELLEGEN_ALLOW_FALLBACK=1` to serve two pglib cases with synthetic coordinates.
+Those fallback coordinates are labeled as synthetic.

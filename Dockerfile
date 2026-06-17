@@ -22,7 +22,7 @@ COPY --from=wasm /out/wasm-pkg ./src/lib/wasm-pkg
 COPY --from=wasm /out/wasm-sens-pkg ./src/lib/wasm-sens-pkg
 RUN npm run build && npm run smoke:build
 
-# ---- rust backend ----
+# ---- tellegen backend ----
 FROM rust:slim AS server
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -41,7 +41,7 @@ COPY --from=frontend /app/build /app/frontend/build
 ENV TELLEGEN_FRONTEND_BUILD=/app/frontend/build
 ENV TELLEGEN_DATA=/app/data
 EXPOSE 8000
-# The Rust server parses the staged cases and solves the base DC OPF at boot.
+# The tellegen backend parses the staged cases and solves the base DC OPF at boot.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \
     CMD curl -fsS http://localhost:8000/api/health | grep -q '"ok"' || exit 1
 

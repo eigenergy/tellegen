@@ -2,9 +2,9 @@
 
 Most public OPF test cases do not include geographic coordinates. tellegen uses
 synthetic topology layouts in two places: the explicit pglib dev fallback, and
-browser parsed local files that the user places on the map. The server API
-marks fallback coordinates with `synthetic_coords: true`; local files are
-labeled in the panel as synthetic layouts.
+browser parsed local files that the user places on the map. The tellegen
+backend API marks fallback coordinates with `synthetic_coords: true`; local
+files are labeled in the panel as synthetic layouts.
 
 ## Deterministic Seed
 
@@ -21,11 +21,11 @@ square:
 - attraction `d^2 / k` along branches;
 - capped displacement with a linearly cooled temperature.
 
-The force pass is `O(iterations * n^2)`. On the server it runs once at boot and
-the resulting network payload is cached. In the browser, local dropped files use
-the same deterministic force idea with a lighter seed and iteration count, then
-scale into a small footprint around the user's chosen map point. Once placed,
-the local network solves in browser WebAssembly.
+The force pass is `O(iterations * n^2)`. In the tellegen backend it runs once
+at boot and the resulting network payload is cached. In the browser, local
+dropped files use the same deterministic force idea with a lighter seed and
+iteration count, then scale into a small footprint around the user's chosen map
+point. Once placed, the local network solves in browser WebAssembly.
 
 ## Determinism
 

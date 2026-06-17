@@ -11,7 +11,7 @@ sidecars in this release, not as network case files.
 
 After a parsed local case has coordinates, either from the file, a sidecar, or
 manual placement, tellegen solves the DC OPF in browser WebAssembly. Local case
-files do not call the server solve endpoints.
+files do not call the tellegen backend solve endpoints.
 
 ## Manual Placement
 
@@ -24,7 +24,7 @@ first version uses explicit click placement rather than drag movement.
 
 After placement, the local case enters the same bus selection and demand slider
 workflow as the bundled demo cases. The solve card reports the browser solve
-time and does not show server iterations.
+time and does not show backend iterations.
 
 ## Coordinate Sidecars
 
@@ -33,8 +33,8 @@ GIS files. tellegen accepts those files as local sidecars: drop the case file
 with one or more `.csv`, `.json`, or `.geojson` files, or drop the sidecars
 after selecting a parsed local case.
 
-All files stay in the browser. The server does not receive dropped case files
-or sidecars.
+All files stay in the browser. The tellegen backend does not receive dropped
+case files or sidecars.
 
 ## Bus Coordinates
 

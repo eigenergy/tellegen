@@ -80,7 +80,7 @@ Sources: [Clarabel issue 133](https://github.com/oxfordcontrol/Clarabel.rs/issue
 [nalgebra wasm](https://www.nalgebra.org/docs/user_guide/wasm_and_embedded_targets/),
 [Jangda et al.](https://ar5iv.labs.arxiv.org/html/1901.09056).
 
-## Frontend
+## tellegen frontend
 
 ### Svelte 5
 
@@ -124,9 +124,9 @@ consumer fetches a file rather than inlining the module.
 Sources: [Svelte packaging](https://svelte.dev/docs/kit/packaging),
 [Vite assets](https://vite.dev/guide/features).
 
-## Rust server
+## tellegen backend
 
-The production server uses Rust so the deployed runtime shares the parser,
+The tellegen backend uses Rust so the deployed runtime shares the parser,
 solver, and sensitivity implementation with the browser WebAssembly module.
 `axum` fits the API shape: JSON routes, shared immutable case state, SSE for
 fallback solves, and static file serving through `tower-http`.
@@ -173,9 +173,10 @@ server backed simulation tools.
 | ANDES / AGVis | Python dynamics and JS viewer | result inspection |
 
 The gap relevant to tellegen is interactive recomputation: load a case, perturb
-demand or generation, and inspect updated flows and prices. Rust/WebAssembly now
-runs that DC loop in the browser, with the Rust server providing bundled case
-fallbacks and PowerDiff.jl kept as the reference path for parity checks.
+demand or generation, and inspect updated flows and prices. The shared
+Rust/WebAssembly path now runs that DC loop in the browser, with the tellegen
+backend providing bundled case fallbacks and PowerDiff.jl kept as the reference
+path for parity checks.
 
 ## Open checks
 

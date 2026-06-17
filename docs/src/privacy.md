@@ -1,14 +1,15 @@
 # Privacy
 
 tellegen parses dropped case files in your browser. Those files are not
-uploaded to the server by the current public demo.
+uploaded to the tellegen backend by the current public demo.
 
 ## Current Demo
 
 - Dropped `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, and `.geojson` files
   stay on your device.
 - The browser uses local file contents to draw the map and run DC solves.
-- The server receives ordinary page and API requests for the bundled demo cases.
+- The tellegen backend receives ordinary page and API requests for the bundled
+  demo cases.
 - There is no analytics product wired to uploaded case contents.
 
 ## Future Opt In Sharing
