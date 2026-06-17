@@ -20,7 +20,7 @@ end
 const CASES = Dict{String,CaseEntry}()
 
 # Operator-staged TAMU distributions (scripts/stage-data.sh); never vendored.
-const DEFAULT_DATA_DIR = normpath(joinpath(@__DIR__, "..", "..", "data"))
+const DEFAULT_DATA_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "data"))
 
 data_dir() = normpath(get(ENV, "TELLEGEN_DATA", DEFAULT_DATA_DIR))
 allow_fallback() = lowercase(get(ENV, "TELLEGEN_ALLOW_FALLBACK", "")) in

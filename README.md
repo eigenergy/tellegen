@@ -10,10 +10,10 @@ PowerDiff.jl.
 
 tellegen uses a gradient preview, exact commit interaction model. Perturbations
 update the display from KKT sensitivity columns. Exact DC OPF commits run in the
-browser through Rust, Clarabel, and WebAssembly; the Julia server path with
-PowerDiff.jl and Ipopt remains the fallback. Case parsing uses
-[powerio](https://github.com/eigenergy/powerio) in both Rust/WebAssembly and
-Julia.
+browser through Rust, Clarabel, and WebAssembly; bundled cases can fall back to
+the Rust server using the same solver path. Case parsing uses
+[powerio](https://github.com/eigenergy/powerio). PowerDiff.jl remains as a
+reference harness for parity checks.
 
 Full documentation is published with mdBook at
 [eigenergy.github.io/tellegen](https://eigenergy.github.io/tellegen/). The
@@ -35,7 +35,7 @@ Each case is an islanded DC OPF instance. Bus color shows locational marginal
 price. Selecting a bus shows the dLMP/dd column for a demand perturbation at
 that bus. Moving the demand slider applies the local sensitivity immediately;
 releasing it computes the exact solution with Clarabel in WebAssembly. Bundled
-cases can fall back to the Julia server if browser solve is unavailable.
+cases can fall back to the Rust server if browser solve is unavailable.
 
 Dropped `.m`, `.raw`, and `.aux` files are parsed in the browser by the
 WebAssembly build of powerio. Files with coordinates render on the map. Files
@@ -49,8 +49,7 @@ positions. Parsed local case files solve in the browser and are not uploaded.
 Backend:
 
 ```sh
-cd backend
-julia --project=. bootstrap.jl
+cargo run --manifest-path rust/Cargo.toml --bin tellegen-server
 ```
 
 WebAssembly module:
@@ -80,18 +79,23 @@ scripts/stage-data.sh ~/Datasets
 ```
 
 The script stages the six files used by the demo into `data/`. Without all
-three staged cases, the backend exits. For CI or local smoke checks without the
+three staged cases, the server exits. For CI or local smoke checks without the
 TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the two pglib
 fallback cases with synthetic coordinates.
 
 ## Tests
 
-The served sensitivity columns are KKT derivatives at the optimum. The backend
-test suite compares dLMP/dd columns from PowerDiff.jl against central finite
-differences of full solves:
+The served sensitivity columns are KKT derivatives at the optimum. Rust tests
+cover the solver, the sensitivity columns, and the HTTP API:
 
 ```sh
-julia --project=backend backend/test/runtests.jl
+cargo test --manifest-path rust/Cargo.toml
+```
+
+The Julia reference harness remains available for PowerDiff.jl parity checks:
+
+```sh
+julia --project=reference/julia-backend reference/julia-backend/test/runtests.jl
 ```
 
 Frontend checks:
@@ -104,9 +108,9 @@ npm run build
 
 ## Repository layout
 
-- `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, TAMU coordinate ingestion
 - `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl
-- `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing and DC solves
+- `rust/`: Rust crate, WebAssembly parser/solver, and native HTTP server
+- `reference/julia-backend/`: Julia PowerDiff.jl parity harness
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -131,7 +135,7 @@ scripts/build-docs.sh
 
 The sensitivity and server solve endpoints accept `?d=bus:mw,bus:mw`, where each
 value is a MW delta from the base case. The solve stream emits `status`,
-`iteration`, `solution`, optional `sensitivity`, and `done` events.
+`solution`, optional `sensitivity`, and `done` events.
 
 ## Deployment
 

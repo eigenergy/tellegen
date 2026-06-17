@@ -2,9 +2,9 @@
 
 ## Repository Layout
 
-- `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, TAMU coordinate ingestion
 - `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl
-- `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing and DC solves
+- `rust/`: Rust crate, WebAssembly parser/solver, and native HTTP server
+- `reference/julia-backend/`: Julia PowerDiff.jl parity harness
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -12,22 +12,21 @@
 ## Backend
 
 ```sh
-cd backend
-julia --project=. bootstrap.jl
+cargo run --manifest-path rust/Cargo.toml --bin tellegen-server
 ```
 
-PowerIO.jl is in the General registry. PowerDiff.jl is not registered, so
-`backend/Project.toml` pins it through `[sources]` at a git revision:
+Set `TELLEGEN_ALLOW_FALLBACK=1` to run without staged TAMU data:
 
 ```sh
-julia --project=backend -e 'using Pkg; Pkg.instantiate()'
+TELLEGEN_ALLOW_FALLBACK=1 cargo run --manifest-path rust/Cargo.toml --bin tellegen-server
 ```
 
-Maintainers developing PowerIO.jl or PowerDiff.jl locally can use
-`Pkg.develop`; `backend/Manifest.toml` is ignored so local paths are not
-committed. PowerIO.jl 0.1.2 bundles the powerio 0.2.2 binary as a lazy artifact.
-To test an unreleased powerio build, build `powerio-capi` and set
-`POWERIO_CAPI=/path/to/libpowerio_capi.{dylib,so}`.
+The Julia reference harness is kept for PowerDiff.jl parity checks:
+
+```sh
+julia --project=reference/julia-backend -e 'using Pkg; Pkg.instantiate()'
+julia --project=reference/julia-backend reference/julia-backend/test/runtests.jl
+```
 
 ## WebAssembly Module
 
@@ -56,7 +55,7 @@ scripts/stage-data.sh ~/Datasets
 ```
 
 The script stages the six files used by the demo into `data/`. Without all
-three staged cases, the backend exits. For CI or local smoke checks without the
+three staged cases, the server exits. For CI or local smoke checks without the
 TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the two pglib
 fallback cases with synthetic coordinates.
 

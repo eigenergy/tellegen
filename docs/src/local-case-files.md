@@ -11,7 +11,7 @@ sidecars in this release, not as network case files.
 
 After a parsed local case has coordinates, either from the file, a sidecar, or
 manual placement, tellegen solves the DC OPF in browser WebAssembly. Local case
-files do not call the backend solve endpoints.
+files do not call the server solve endpoints.
 
 ## Manual Placement
 

@@ -26,9 +26,9 @@ PowerWorld aux exports have used two coordinate layouts:
 - Later exports can leave the bus latitude and longitude columns empty and
   reference the `Substation` table through `SubNumber`.
 
-The backend reads the bus row form in `backend/src/coords.jl`, which covers the
-three served cases. The browser parser in `rust/` also performs the substation
-join, so dropped files of either form resolve when the data is present.
+The Rust parser reads the bus row form for the three served cases and also
+performs the substation join, so dropped files of either form resolve when the
+data is present.
 
 ## Buses Sharing Coordinates
 
@@ -47,6 +47,6 @@ solves than the small demo host is intended to serve.
 ## Explicit Fallback
 
 Production expects all three TAMU cases to be staged. If they are missing, the
-backend exits. CI and local smoke checks can set `TELLEGEN_ALLOW_FALLBACK=1` to
+server exits. CI and local smoke checks can set `TELLEGEN_ALLOW_FALLBACK=1` to
 serve two pglib cases with synthetic coordinates. Those fallback coordinates are
 labeled as synthetic.
