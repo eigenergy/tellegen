@@ -685,6 +685,7 @@ fn init_tracing() {
 mod tests {
     use super::*;
     use axum::body::{to_bytes, Body};
+    use axum::http::HeaderMap;
     use std::sync::OnceLock;
     use tower::ServiceExt;
 
@@ -695,7 +696,7 @@ mod tests {
         }))
     }
 
-    async fn get(path: &str) -> (StatusCode, serde_json::Value) {
+    async fn get_raw(path: &str) -> (StatusCode, HeaderMap, String) {
         let res = router(fallback_state(), None)
             .oneshot(
                 axum::http::Request::builder()
@@ -706,8 +707,14 @@ mod tests {
             .await
             .unwrap();
         let status = res.status();
+        let headers = res.headers().clone();
         let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        (status, serde_json::from_slice(&body).unwrap())
+        (status, headers, String::from_utf8(body.to_vec()).unwrap())
+    }
+
+    async fn get(path: &str) -> (StatusCode, serde_json::Value) {
+        let (status, _headers, body) = get_raw(path).await;
+        (status, serde_json::from_str(&body).unwrap())
     }
 
     #[tokio::test]
@@ -762,6 +769,32 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("unknown API route"));
+    }
+
+    #[tokio::test]
+    async fn solve_stream_emits_expected_events() {
+        let (status, headers, body) =
+            get_raw("/api/cases/case200/solve?sens=1&d=1:5,junk,2:bad").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(headers[CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("text/event-stream"));
+        let events: Vec<_> = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("event:"))
+            .map(str::trim)
+            .collect();
+        assert_eq!(events, ["status", "solution", "sensitivity", "done"]);
+        assert!(body.contains(r#""case":"case200""#));
+        assert!(body.contains(r#""solve_ms":"#));
+    }
+
+    #[tokio::test]
+    async fn solve_stream_rejects_missing_bus() {
+        let (status, body) = get("/api/cases/case200/solve?sens=999999").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body["error"].as_str().unwrap().contains("unknown bus"));
     }
 
     #[tokio::test]
