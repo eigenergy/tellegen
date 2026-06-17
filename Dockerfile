@@ -1,12 +1,17 @@
 # ---- rust: wasm module ----
-FROM rust:slim AS wasm
+# Pin the build and runtime to the same Debian release (trixie) so the server
+# binary's glibc matches the runtime image; an unpinned rust:slim floats to the
+# latest Debian and broke against debian:bookworm-slim (glibc 2.41 vs 2.36).
+FROM rust:1-slim-trixie AS wasm
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # The tellegen crate depends on the crates.io powerio release, so cargo fetches
 # the source itself; nothing to clone here.
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install wasm-pack --version 0.15.0 --locked
+# Prebuilt wasm-pack binary (statically linked) instead of compiling from source.
+RUN curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz \
+    | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/wasm-pack'
 COPY rust /build/rust
 RUN RUSTFLAGS="-C target-feature=-simd128,-relaxed-simd" \
     wasm-pack build /build/rust --target web --out-dir /out/wasm-pkg -- --no-default-features
@@ -23,7 +28,7 @@ COPY --from=wasm /out/wasm-sens-pkg ./src/lib/wasm-sens-pkg
 RUN npm run build && npm run smoke:build
 
 # ---- tellegen backend ----
-FROM rust:slim AS server
+FROM rust:1-slim-trixie AS server
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
@@ -31,7 +36,7 @@ COPY rust ./rust
 RUN cargo build --manifest-path rust/Cargo.toml --release --bin tellegen-server
 
 # ---- runtime ----
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
