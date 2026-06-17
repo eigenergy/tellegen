@@ -33,6 +33,7 @@
 	import { app, CaseState, type DemandRangeMode, type LocalCase } from '$lib/state.svelte';
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
 	import { formatOf, ingestCase, isDisplayFile, parseDisplay, solveDc } from '$lib/wasm';
+	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
 	let abort: AbortController | null = null;
@@ -194,6 +195,7 @@
 			solution: c.solution ?? null,
 			sensitivity: c.sensitivity ?? null,
 			deltas: c.deltas ?? {},
+			iterations: c.iterations ?? [],
 			solving: c.solving ?? false,
 			solveMs: c.solveMs ?? null,
 			solveBackend: c.solveBackend ?? null,
@@ -501,6 +503,7 @@
 		c.solving = true;
 		c.solveBackend = null;
 		c.solveFallbackReason = null;
+		c.iterations = [];
 		c.solveMs = null;
 		touchLocal(c);
 		ensureNetworkJson(c).then((networkJson) => {
@@ -517,9 +520,10 @@
 			c.solveBackend = 'clarabel-wasm';
 			touchLocal(c);
 			solveDc(c.id, networkJson, caseDeltas(c), sensBus)
-				.then(async ({ solution, sensitivity, sensitivityError }) => {
+				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
+					c.iterations = iterations;
 					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0) c.baseSolution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
 					if (sensitivity || sensBus === null) {
@@ -565,6 +569,7 @@
 			onsolution: (sol) => {
 				if (seq !== c.solveSeq) return;
 				c.solution = sol;
+				c.iterations = sol.iterations ?? [];
 				c.solveMs = sol.solve_ms;
 			},
 			onsensitivity: (col) => {
@@ -927,6 +932,7 @@
 	}
 
 	function solveMetaLabel(c: SolvableCase): string {
+		if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
 		if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'server dLMP/dd';
 		return c.solveBackend === 'rust-server' ? 'server solve' : 'browser solve';
 	}
@@ -1320,6 +1326,9 @@
 					<span class="dim">{solveBackendLabel(activeSolvable)}</span>
 				{/if}
 			</div>
+			{#if (activeSolvable.iterations ?? []).length > 1}
+				<Sparkline iterations={activeSolvable.iterations ?? []} />
+			{/if}
 			<div class="solve-meta mono dim">
 				<span>{solveMetaLabel(activeSolvable)}</span>
 				{#if activeSolvable.solveMs != null}<span>{activeSolvable.solveMs} ms</span>{/if}

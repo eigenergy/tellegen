@@ -1,7 +1,14 @@
 /** Lazy loader for the powerio wasm module. Nothing downloads until the
  * first file is dropped; the dropped file is parsed in the browser and never
  * leaves the machine. */
-import type { DemandDeltas, NetworkBranch, NetworkBus, SensitivityColumn, Solution } from './api';
+import type {
+	DemandDeltas,
+	NetworkBranch,
+	NetworkBus,
+	SensitivityColumn,
+	Solution,
+	SolveIteration
+} from './api';
 import wasmUrl from './wasm-pkg/tellegen_bg.wasm?url';
 import sensWasmUrl from './wasm-sens-pkg/tellegen_sens_bg.wasm?url';
 
@@ -128,6 +135,7 @@ export interface BrowserSolution {
 	solution: Solution;
 	sensitivity: SensitivityColumn | null;
 	sensitivityError?: string;
+	iterations: SolveIteration[];
 }
 
 /** Solve the DC OPF in the browser at demand = base + `deltas`. `networkJson` is
@@ -174,7 +182,7 @@ function parseSolveOutput(caseId: string, json: string): BrowserSolution {
 				values: d.values
 			}
 		: null;
-	return { solution, sensitivity };
+	return { solution, sensitivity, iterations: out.iterations ?? [] };
 }
 
 function errorText(e: unknown): string {

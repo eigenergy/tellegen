@@ -12,3 +12,4 @@ pub use api::{
     DcSolveRequest, DispatchValue, DlmpDdColumn, FlowValue, LmpValue, SensitivityValue,
 };
 pub use model::DcNetwork;
+pub use solve::SolveIteration;

@@ -33,7 +33,7 @@ use tower_http::{
 use crate::{
     dc::{
         solve_prebuilt, solve_prebuilt_cancellable, DcNetwork, DcSolveOutput, DcSolveRequest,
-        DispatchValue, DlmpDdColumn, FlowValue, LmpValue, SensitivityValue,
+        DispatchValue, DlmpDdColumn, FlowValue, LmpValue, SensitivityValue, SolveIteration,
     },
     geo::{complete_coords_for, synthetic_layout, Coords},
 };
@@ -179,6 +179,7 @@ pub struct SolutionPayload {
     pub lmp: Vec<LmpValue>,
     pub flows: Vec<FlowValue>,
     pub dispatch: Vec<DispatchValue>,
+    pub iterations: Vec<SolveIteration>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -526,6 +527,7 @@ async fn solve_stream(
                         "lmp": solution.lmp,
                         "flows": solution.flows,
                         "dispatch": solution.dispatch,
+                        "iterations": solution.iterations,
                     }),
                 )
                 .await;
@@ -690,6 +692,7 @@ fn solution_payload(output: &DcSolveOutput) -> SolutionPayload {
         lmp: output.lmp.clone(),
         flows: output.flows.clone(),
         dispatch: output.dispatch.clone(),
+        iterations: output.iterations.clone(),
     }
 }
 

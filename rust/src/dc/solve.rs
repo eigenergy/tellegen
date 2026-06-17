@@ -25,15 +25,27 @@
 //! PowerDiff `src/prob/kkt_dc_opf.jl` and `src/sens/lmp.jl`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use clarabel::algebra::CscMatrix;
 use clarabel::solver::{
     DefaultInfo, DefaultSettings, DefaultSolver, IPSolver, SolverStatus,
     SupportedConeT::{NonnegativeConeT, ZeroConeT},
 };
+use serde::Serialize;
 
 use super::model::DcNetwork;
+
+/// One interior-point iterate: the iteration index, the primal objective, and
+/// the primal and dual residuals. Collected once per Clarabel iteration to draw
+/// the convergence plot. Shape matches the frontend `SolveIteration`.
+#[derive(Clone, Debug, Serialize)]
+pub struct SolveIteration {
+    pub iter: u32,
+    pub objective: f64,
+    pub inf_pr: f64,
+    pub inf_du: f64,
+}
 
 /// Primal and dual solution of the DC OPF, in per unit. Dual names and signs
 /// follow PowerDiff's `DCOPFSolution`. `nu_bal` is the LMP (per-unit
@@ -55,6 +67,7 @@ pub struct DcSolution {
     pub gamma_ub: Vec<f64>,
     pub gamma_lb: Vec<f64>,
     pub objective: f64,
+    pub iterations: Vec<SolveIteration>,
 }
 
 impl DcSolution {
@@ -222,9 +235,20 @@ pub fn solve_cancellable(
 
     let mut solver = DefaultSolver::new(&p_mat, &q, &a_mat, &b, &cones, settings)
         .map_err(|e| format!("Clarabel setup failed: {e:?}"))?;
-    if let Some(flag) = cancel {
-        // Checked once per interior-point iteration; true stops the solve.
-        solver.set_termination_callback(move |_info: &DefaultInfo<f64>| flag.load(Ordering::Relaxed));
+    // Record every interior-point iterate for the convergence plot, and (when a
+    // cancel flag is present) stop the solve at the next iteration if it flips.
+    let trace: Arc<Mutex<Vec<SolveIteration>>> = Arc::new(Mutex::new(Vec::new()));
+    {
+        let trace = trace.clone();
+        solver.set_termination_callback(move |info: &DefaultInfo<f64>| {
+            trace.lock().unwrap().push(SolveIteration {
+                iter: info.iterations,
+                objective: info.cost_primal,
+                inf_pr: info.res_primal,
+                inf_du: info.res_dual,
+            });
+            cancel.as_ref().is_some_and(|f| f.load(Ordering::Relaxed))
+        });
     }
     solver.solve();
 
@@ -235,6 +259,7 @@ pub fn solve_cancellable(
     if !matches!(status, SolverStatus::Solved | SolverStatus::AlmostSolved) {
         return Err(format!("DC OPF solve did not converge: {status:?}"));
     }
+    let iterations = std::mem::take(&mut *trace.lock().unwrap());
 
     let x = &solver.solution.x;
     let z = &solver.solution.z;
@@ -256,6 +281,7 @@ pub fn solve_cancellable(
         gamma_ub: (0..m).map(|e| z[r_phaseub(e)]).collect(),
         gamma_lb: (0..m).map(|e| z[r_phaselb(e)]).collect(),
         objective: solver.solution.obj_val,
+        iterations,
     };
     Ok(sol)
 }

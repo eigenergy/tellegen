@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use super::model::DcNetwork;
 #[cfg(feature = "sensitivity")]
 use super::sens::dlmp_dd;
-use super::solve::solve_cancellable;
+use super::solve::{solve_cancellable, SolveIteration};
 
 /// A solve request: demand deltas in MW keyed by original bus id (the operating
 /// point is `base demand + deltas`), and an optional bus to return the dLMP/dd
@@ -41,6 +41,8 @@ pub struct DcSolveOutput {
     pub flows: Vec<FlowValue>,
     pub dispatch: Vec<DispatchValue>,
     pub dlmp_dd: Option<DlmpDdColumn>,
+    /// The interior-point convergence trace, for the solve card sparkline.
+    pub iterations: Vec<SolveIteration>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -204,6 +206,7 @@ pub fn solve_prebuilt_cancellable(
         flows: flows_payload,
         dispatch: dispatch_payload,
         dlmp_dd: dlmp,
+        iterations: sol.iterations,
     })
 }
 
@@ -254,6 +257,13 @@ mod tests {
             .sum();
         assert!((total - 90.0).abs() < 1e-2, "dispatch total {total}");
         assert!(v["dlmp_dd"].is_null());
+        // The interior-point convergence trace is captured for the solve plot.
+        let iters = v["iterations"].as_array().unwrap();
+        assert!(!iters.is_empty(), "expected a convergence trace");
+        for it in iters {
+            assert!(it["inf_pr"].as_f64().unwrap().is_finite());
+            assert!(it["objective"].as_f64().unwrap().is_finite());
+        }
     }
 
     #[test]

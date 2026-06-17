@@ -48,6 +48,14 @@ export interface CaseSummary {
 	n_gen: number;
 }
 
+/** One interior-point iterate from the solver, for the convergence plot. */
+export interface SolveIteration {
+	iter: number;
+	objective: number;
+	inf_pr: number;
+	inf_du: number;
+}
+
 /** Demand deltas in MW keyed by bus id, encoded as `bus:mw,bus:mw`. */
 export type DemandDeltas = Record<number, number>;
 
@@ -93,7 +101,9 @@ export function getSensitivity(
 }
 
 export interface SolveStreamHandlers {
-	onsolution?: (sol: Solution & { case: string; solve_ms: number }) => void;
+	onsolution?: (
+		sol: Solution & { case: string; solve_ms: number; iterations: SolveIteration[] }
+	) => void;
 	onsensitivity?: (col: SensitivityColumn) => void;
 	onfail?: (message: string) => void;
 	ondone?: () => void;

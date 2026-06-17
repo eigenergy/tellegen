@@ -5,7 +5,8 @@ import type {
 	NetworkBranch,
 	NetworkBus,
 	SensitivityColumn,
-	Solution
+	Solution,
+	SolveIteration
 } from './api';
 import type { CaseFileSummary, Topology } from './wasm';
 
@@ -43,6 +44,7 @@ export interface LocalCase {
 	solution?: Solution | null;
 	sensitivity?: SensitivityColumn | null;
 	deltas?: DemandDeltas;
+	iterations?: SolveIteration[];
 	solving?: boolean;
 	solveMs?: number | null;
 	solveBackend?: SolveBackend | null;
@@ -69,6 +71,7 @@ export class CaseState {
 	sensitivity = $state.raw<SensitivityColumn | null>(null);
 	/** Committed demand deltas (MW from base, keyed by bus). */
 	deltas = $state.raw<DemandDeltas>({});
+	iterations = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveBackend = $state<SolveBackend | null>(null);
