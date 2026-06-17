@@ -113,6 +113,9 @@ export class CaseState {
 	solveSeq = 0;
 	/** Monotone token: only the latest sensitivity request may write this case. */
 	sensitivitySeq = 0;
+	/** Closer for this case's in-flight server solve stream, if any. Owned per
+	 * case so closing one case's stream never strands another's solve. */
+	closeStream: (() => void) | null = null;
 	/** Objective change the gradient predicted for the last commit, to score
 	 * the preview once the exact solve lands. */
 	predictedObjective = $state<number | null>(null);

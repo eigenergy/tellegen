@@ -37,7 +37,6 @@
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
 	let abort: AbortController | null = null;
-	let closeStream: (() => void) | null = null;
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
 	let showFileDropUi = $state(true);
 	let casesLoaded = $state(false);
@@ -205,8 +204,8 @@
 		event?.stopPropagation();
 		rememberHiddenDefaultCase(c.id);
 		if (app.activeCaseId === c.id) {
-			closeStream?.();
-			closeStream = null;
+			c.closeStream?.();
+			c.closeStream = null;
 			c.solveSeq++;
 			clearSelection();
 		}
@@ -231,8 +230,8 @@
 	function removeLocalCase(c: LocalCase, event?: MouseEvent) {
 		event?.stopPropagation();
 		if (app.activeLocalId === c.id) {
-			closeStream?.();
-			closeStream = null;
+			// Local cases solve in the browser only (no server stream); the seq bump
+			// invalidates any in-flight browser solve.
 			c.solveSeq = (c.solveSeq ?? 0) + 1;
 			clearSelection();
 		}
@@ -457,7 +456,11 @@
 	// Exact DC solve in the browser (wasm). On any failure, or when the network
 	// JSON can't be fetched, reconcile via the server stream.
 	function runSolve(c: SolvableCase, sensBus: number | null) {
-		closeStream?.();
+		// Cancel this case's own previous server stream, if any (backend only).
+		if (isBackendCase(c)) {
+			c.closeStream?.();
+			c.closeStream = null;
+		}
 		c.solveSeq = (c.solveSeq ?? 0) + 1;
 		const seq = c.solveSeq;
 		app.error = null;
@@ -522,7 +525,7 @@
 	function serverSolve(c: CaseState, sensBus: number | null, seq = c.solveSeq) {
 		c.solveBackend = 'rust-server';
 		c.solveFallbackReason ??= 'browser solve unavailable';
-		closeStream = openSolveStream(c.id, c.deltas, sensBus, {
+		c.closeStream = openSolveStream(c.id, c.deltas, sensBus, {
 			onsolution: (sol) => {
 				if (seq !== c.solveSeq) return;
 				c.solution = sol;
