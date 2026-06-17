@@ -63,6 +63,20 @@
 		return isBackendCase(c) ? app.activeCaseId === c.id : app.activeLocalId === c.id;
 	}
 
+	// A backend CaseState has a stable identity, but updateLocal replaces a
+	// LocalCase object on every change, so a captured reference goes stale. Re-fetch
+	// the live local case by id so an async solve checks its seq tokens against the
+	// current object and a stale solve bails instead of clobbering a newer one.
+	function liveCase(c: SolvableCase): SolvableCase | null {
+		return isBackendCase(c) ? c : (app.localCases.find((lc) => lc.id === c.id) ?? null);
+	}
+	function solveSeqOf(c: SolvableCase): number {
+		return liveCase(c)?.solveSeq ?? 0;
+	}
+	function sensSeqOf(c: SolvableCase): number {
+		return liveCase(c)?.sensitivitySeq ?? 0;
+	}
+
 	function caseDeltas(c: SolvableCase) {
 		return isBackendCase(c) ? c.deltas : (c.deltas ?? {});
 	}
@@ -366,13 +380,13 @@
 		if (!col || busId === null) return;
 		if (col.bus !== busId) return;
 		if (!isActiveSolveCase(c) || app.selectedBus !== busId) return;
-		if (sensitivitySeq !== undefined && sensitivitySeq !== (c.sensitivitySeq ?? 0)) return;
+		if (sensitivitySeq !== undefined && sensitivitySeq !== sensSeqOf(c)) return;
 		c.sensitivity = col;
 		touchLocal(c);
 	}
 
 	function finishSolve(c: SolvableCase, seq: number, sensBus: number | null) {
-		if (seq !== (c.solveSeq ?? 0)) return;
+		if (seq !== solveSeqOf(c)) return;
 		c.solving = false;
 		if (isActiveSolveCase(c) && app.selectedBus === sensBus) {
 			app.previewActive = false;
@@ -507,7 +521,7 @@
 		c.solveMs = null;
 		touchLocal(c);
 		ensureNetworkJson(c).then((networkJson) => {
-			if (seq !== (c.solveSeq ?? 0)) return;
+			if (seq !== solveSeqOf(c)) return;
 			if (!networkJson) {
 				c.solveFallbackReason ??= 'browser network JSON unavailable';
 				if (isBackendCase(c)) return serverSolve(c, sensBus, seq);
@@ -521,7 +535,7 @@
 			touchLocal(c);
 			solveDc(c.id, networkJson, caseDeltas(c), sensBus)
 				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
-					if (seq !== (c.solveSeq ?? 0)) return;
+					if (seq !== solveSeqOf(c)) return;
 					c.solution = solution;
 					c.iterations = iterations;
 					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0) c.baseSolution = solution;
@@ -550,7 +564,7 @@
 					finishSolve(c, seq, sensBus);
 				})
 				.catch((e) => {
-					if (seq !== (c.solveSeq ?? 0)) return;
+					if (seq !== solveSeqOf(c)) return;
 					c.solveFallbackReason = `browser solve failed: ${errorText(e)}`;
 					if (isBackendCase(c)) serverSolve(c, sensBus, seq);
 					else {

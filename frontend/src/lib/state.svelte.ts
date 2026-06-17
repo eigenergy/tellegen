@@ -138,15 +138,11 @@ export class AppState {
 	}
 
 	updateLocal(id: string, patch: Partial<LocalCase>) {
-		// Mutate the existing entry in place so its object identity stays stable.
-		// The solve and sensitivity seq tokens live on the LocalCase object, and an
-		// in-flight solve closure holds that same reference; replacing the object
-		// here would detach those closures from the live seq, letting a stale solve
-		// clobber a newer one. Reassign the array (raw state) to fire reactivity.
-		const existing = this.localCases.find((c) => c.id === id);
-		if (!existing) return;
-		Object.assign(existing, patch);
-		this.localCases = [...this.localCases];
+		// Replace the entry with a new object so $derived reads of it (the solve
+		// card, sensitivity readout) see a changed reference and re-render. Stale
+		// async solves are kept from clobbering a newer one by re-checking the live
+		// case's solveSeq/sensitivitySeq in the callbacks (see liveCase in +page).
+		this.localCases = this.localCases.map((c) => (c.id === id ? { ...c, ...patch } : c));
 	}
 
 	removeCase(id: string) {
