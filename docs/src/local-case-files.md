@@ -6,10 +6,10 @@ local `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, or `.geojson` files.
 MATPOWER `.m`, PSS/E `.raw`, and PowerWorld `.aux` files describe network
 topology. If a case file includes complete coordinates, tellegen draws it
 directly. If coordinates are missing, tellegen creates a local synthetic layout
-and asks the user to place it on the map. JSON files are treated as coordinate
-sidecars in this release, not as network case files.
+and asks the user to place it on the map. JSON files are treated as geographic
+files in this release, not as network case files.
 
-After a parsed local case has coordinates, either from the file, a sidecar, or
+After a parsed local case has coordinates, either from the file, a geographic file, or
 manual placement, tellegen solves the DC OPF in browser WebAssembly. Local case
 files do not call the tellegen backend solve endpoints.
 
@@ -26,19 +26,19 @@ After placement, the local case enters the same bus selection and demand slider
 workflow as the bundled demo cases. The solve card reports the browser solve
 time and does not show backend iterations.
 
-## Coordinate Sidecars
+## Geographic Files
 
 Some case files contain network topology but keep map coordinates in separate
-GIS files. tellegen accepts those files as local sidecars: drop the case file
-with one or more `.csv`, `.json`, or `.geojson` files, or drop the sidecars
+GIS files. tellegen accepts those files as local geographic files: drop the case file
+with one or more `.csv`, `.json`, or `.geojson` files, or drop the geographic files
 after selecting a parsed local case.
 
 All files stay in the browser. The tellegen backend does not receive dropped
-case files or sidecars.
+case files or geographic files.
 
 ## Bus Coordinates
 
-The sidecar must identify buses by the same ids used in the case file. CSV and
+The geographic file must identify buses by the same ids used in the case file. CSV and
 JSON records can use these field names:
 
 | Meaning | Accepted fields |
@@ -56,7 +56,7 @@ bus_i,Lat,Lon
 ```
 
 tellegen requires coordinates for every bus before it draws a geographic local
-case. If the sidecar is incomplete, the local case stays in manual placement
+case. If the geographic file is incomplete, the local case stays in manual placement
 mode and the panel lists the first missing buses.
 
 ## Branch Paths

@@ -40,7 +40,7 @@ cases can fall back to the tellegen backend if browser solve is unavailable.
 Dropped `.m`, `.raw`, and `.aux` files are parsed in the browser by the
 WebAssembly build of powerio. Files with coordinates render on the map. Files
 without coordinates can be placed by clicking the map, or paired with local
-coordinate sidecars in `.csv`, `.json`, or `.geojson` form. A dropped PowerWorld
+geographic files in `.csv`, `.json`, or `.geojson` form. A dropped PowerWorld
 `.pwd` file is decoded as display data and rendered as approximate substation
 positions. Parsed local case files solve in the browser and are not uploaded.
 

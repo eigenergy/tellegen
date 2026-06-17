@@ -37,7 +37,8 @@ if (!existsSync(appDir)) fail('_app directory is missing');
 const htmlFiles = [fallbackPath, ...(existsSync(indexPath) ? [indexPath] : [])];
 const html = htmlFiles.map(read);
 const htmlIds = new Set(html.flatMap(svelteKitIds));
-if (htmlIds.size !== 1) fail(`expected one SvelteKit bootstrap id, found ${[...htmlIds].join(', ')}`);
+if (htmlIds.size !== 1)
+	fail(`expected one SvelteKit bootstrap id, found ${[...htmlIds].join(', ')}`);
 const [bootstrapId] = htmlIds;
 
 const jsRefs = new Set();

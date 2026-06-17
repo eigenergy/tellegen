@@ -2,7 +2,7 @@
 
 Case files and display files are separate inputs. MATPOWER `.m`, PSS/E `.raw`,
 and PowerWorld `.aux` files describe the network. JSON files are accepted as
-coordinate sidecars in this release. PowerWorld `.pwd` files describe a one line
+geographic files in this release. PowerWorld `.pwd` files describe a one line
 diagram. tellegen reads coordinates from case files when they exist and reads
 diagram positions from display files when they are dropped.
 
@@ -52,7 +52,7 @@ The format should decide:
 - whether coordinates are geographic or diagram based;
 - whether elements are referenced by id, substation number, name, or a combined
   key;
-- whether display data is embedded in a case JSON file or stored as a sidecar.
+- whether display data is embedded in a case JSON file or stored as a separate geographic file.
 
 Existing `.pwd` parsing gives powerio a migration path from PowerWorld diagrams.
 

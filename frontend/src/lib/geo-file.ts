@@ -1,14 +1,14 @@
 import type { NetworkBranch, NetworkBus } from './api';
 import type { Topology } from './wasm';
 
-export interface GeoSidecar {
+export interface GeoFile {
 	sourceNames: string[];
 	busCoords: Map<number, [number, number]>;
 	branchPaths: Map<string, [number, number][]>;
 	warnings: string[];
 }
 
-export interface AppliedGeoSidecar {
+export interface AppliedGeoFile {
 	view: { buses: NetworkBus[]; branches: NetworkBranch[] };
 	sourceLabel: string;
 	matchedBuses: number;
@@ -19,46 +19,46 @@ export interface AppliedGeoSidecar {
 type CsvRecord = Record<string, string>;
 type JsonRecord = Record<string, unknown>;
 
-export function isGeoSidecarFile(name: string): boolean {
+export function isGeoFile(name: string): boolean {
 	const ext = name.split('.').pop()?.toLowerCase();
 	return ext === 'csv' || ext === 'json' || ext === 'geojson';
 }
 
-export function mergeGeoSidecars(sidecars: GeoSidecar[]): GeoSidecar {
-	const merged: GeoSidecar = {
+export function mergeGeoFiles(geoFiles: GeoFile[]): GeoFile {
+	const merged: GeoFile = {
 		sourceNames: [],
 		busCoords: new Map(),
 		branchPaths: new Map(),
 		warnings: []
 	};
-	for (const sidecar of sidecars) {
-		merged.sourceNames.push(...sidecar.sourceNames);
-		for (const [id, coord] of sidecar.busCoords) merged.busCoords.set(id, coord);
-		for (const [key, path] of sidecar.branchPaths) merged.branchPaths.set(key, path);
-		merged.warnings.push(...sidecar.warnings);
+	for (const geoFile of geoFiles) {
+		merged.sourceNames.push(...geoFile.sourceNames);
+		for (const [id, coord] of geoFile.busCoords) merged.busCoords.set(id, coord);
+		for (const [key, path] of geoFile.branchPaths) merged.branchPaths.set(key, path);
+		merged.warnings.push(...geoFile.warnings);
 	}
 	return merged;
 }
 
-export function parseGeoSidecar(name: string, text: string): GeoSidecar {
+export function parseGeoFile(name: string, text: string): GeoFile {
 	const ext = name.split('.').pop()?.toLowerCase();
-	const sidecar: GeoSidecar = {
+	const geoFile: GeoFile = {
 		sourceNames: [name],
 		busCoords: new Map(),
 		branchPaths: new Map(),
 		warnings: []
 	};
-	if (ext === 'csv') parseCsvSidecar(sidecar, text);
-	else parseJsonSidecar(sidecar, text);
-	if (sidecar.busCoords.size === 0 && sidecar.branchPaths.size === 0) {
+	if (ext === 'csv') parseCsvGeoFile(geoFile, text);
+	else parseJsonGeoFile(geoFile, text);
+	if (geoFile.busCoords.size === 0 && geoFile.branchPaths.size === 0) {
 		throw new Error('no bus coordinates or branch paths found');
 	}
-	return sidecar;
+	return geoFile;
 }
 
-export function applyGeoSidecar(topology: Topology, sidecar: GeoSidecar): AppliedGeoSidecar {
+export function applyGeoFile(topology: Topology, geoFile: GeoFile): AppliedGeoFile {
 	const buses = [...topology.buses].sort((a, b) => a.id - b.id);
-	const missing = buses.filter((bus) => !sidecar.busCoords.has(bus.id)).map((bus) => bus.id);
+	const missing = buses.filter((bus) => !geoFile.busCoords.has(bus.id)).map((bus) => bus.id);
 	if (missing.length > 0) {
 		const shown = missing.slice(0, 8).join(', ');
 		throw new Error(
@@ -69,15 +69,13 @@ export function applyGeoSidecar(topology: Topology, sidecar: GeoSidecar): Applie
 	}
 
 	let matchedBranches = 0;
-	const busCoords = sidecar.busCoords;
+	const busCoords = geoFile.busCoords;
 	const branches = topology.branches.map((branch) => {
 		const from = busCoords.get(branch.from)!;
 		const to = busCoords.get(branch.to)!;
-		const path =
-			sidecar.branchPaths.get(branchKey(branch.id)) ??
-			sidecar.branchPaths.get(edgeKey(branch.from, branch.to)) ??
-			sidecar.branchPaths.get(edgeKey(branch.to, branch.from)) ??
-			[from, to];
+		const path = geoFile.branchPaths.get(branchKey(branch.id)) ??
+			geoFile.branchPaths.get(edgeKey(branch.from, branch.to)) ??
+			geoFile.branchPaths.get(edgeKey(branch.to, branch.from)) ?? [from, to];
 		if (path.length > 2) matchedBranches++;
 		return {
 			id: branch.id,
@@ -97,35 +95,35 @@ export function applyGeoSidecar(topology: Topology, sidecar: GeoSidecar): Applie
 			}),
 			branches
 		},
-		sourceLabel: sidecar.sourceNames.join(' + '),
+		sourceLabel: geoFile.sourceNames.join(' + '),
 		matchedBuses: buses.length,
 		matchedBranches,
-		warnings: sidecar.warnings
+		warnings: geoFile.warnings
 	};
 }
 
-function parseCsvSidecar(sidecar: GeoSidecar, text: string) {
+function parseCsvGeoFile(geoFile: GeoFile, text: string) {
 	const rows = parseCsv(text);
 	if (rows.length === 0) throw new Error('empty CSV');
 	for (const row of rows) {
-		addPointRecord(sidecar, row);
-		addBranchRecord(sidecar, row);
+		addPointRecord(geoFile, row);
+		addBranchRecord(geoFile, row);
 	}
 }
 
-function parseJsonSidecar(sidecar: GeoSidecar, text: string) {
+function parseJsonGeoFile(geoFile: GeoFile, text: string) {
 	const data = JSON.parse(text) as unknown;
 	if (isFeatureCollection(data)) {
-		for (const feature of data.features) addFeature(sidecar, feature);
+		for (const feature of data.features) addFeature(geoFile, feature);
 		return;
 	}
 	for (const record of collectRecords(data)) {
-		addPointRecord(sidecar, record);
-		addBranchRecord(sidecar, record);
+		addPointRecord(geoFile, record);
+		addBranchRecord(geoFile, record);
 	}
 }
 
-function addFeature(sidecar: GeoSidecar, feature: JsonRecord) {
+function addFeature(geoFile: GeoFile, feature: JsonRecord) {
 	const props = asRecord(feature.properties) ?? {};
 	const geometry = asRecord(feature.geometry);
 	if (!geometry) return;
@@ -133,60 +131,60 @@ function addFeature(sidecar: GeoSidecar, feature: JsonRecord) {
 	if (type === 'Point') {
 		const id = findNumber(props, ['bus_i', 'bus', 'bus_id', 'id', 'number']);
 		const coord = firstCoord(geometry.coordinates);
-		if (id !== null && coord) sidecar.busCoords.set(id, coord);
+		if (id !== null && coord) geoFile.busCoords.set(id, coord);
 		return;
 	}
 	if (type === 'LineString') {
 		const path = coordPath(geometry.coordinates);
-		addBranchPath(sidecar, props, path);
+		addBranchPath(geoFile, props, path);
 		return;
 	}
 	if (type === 'MultiLineString') {
 		const paths = Array.isArray(geometry.coordinates)
 			? geometry.coordinates.map((p) => coordPath(p)).filter((p) => p.length >= 2)
 			: [];
-		addBranchEndpoints(sidecar, props, paths);
+		addBranchEndpoints(geoFile, props, paths);
 		warnOnce(
-			sidecar,
+			geoFile,
 			'GeoJSON MultiLineString branch paths are skipped; straight segments will be drawn'
 		);
 	}
 }
 
-function addPointRecord(sidecar: GeoSidecar, record: JsonRecord | CsvRecord) {
+function addPointRecord(geoFile: GeoFile, record: JsonRecord | CsvRecord) {
 	const id = findNumber(record, ['bus_i', 'bus', 'bus_id', 'bus number', 'number', 'id']);
 	const lat = findNumber(record, ['lat', 'latitude', 'y']);
 	const lon = findNumber(record, ['lon', 'lng', 'longitude', 'x']);
 	if (id === null || lat === null || lon === null) return;
 	if (!validCoord(lon, lat)) return;
-	sidecar.busCoords.set(id, [lon, lat]);
+	geoFile.busCoords.set(id, [lon, lat]);
 }
 
-function addBranchRecord(sidecar: GeoSidecar, record: JsonRecord | CsvRecord) {
+function addBranchRecord(geoFile: GeoFile, record: JsonRecord | CsvRecord) {
 	const from = findNumber(record, ['f_bus', 'from', 'from_bus']);
 	const to = findNumber(record, ['t_bus', 'to', 'to_bus']);
 	const path = pathFromRecord(record);
 	if (path.length < 2) return;
-	addBranchPath(sidecar, record, path);
-	if (from !== null && !sidecar.busCoords.has(from)) sidecar.busCoords.set(from, path[0]);
-	if (to !== null && !sidecar.busCoords.has(to)) sidecar.busCoords.set(to, path[path.length - 1]);
+	addBranchPath(geoFile, record, path);
+	if (from !== null && !geoFile.busCoords.has(from)) geoFile.busCoords.set(from, path[0]);
+	if (to !== null && !geoFile.busCoords.has(to)) geoFile.busCoords.set(to, path[path.length - 1]);
 }
 
-function addBranchPath(sidecar: GeoSidecar, record: JsonRecord | CsvRecord, path: [number, number][]) {
+function addBranchPath(geoFile: GeoFile, record: JsonRecord | CsvRecord, path: [number, number][]) {
 	if (path.length < 2) return;
 	const from = findNumber(record, ['f_bus', 'from', 'from_bus']);
 	const to = findNumber(record, ['t_bus', 'to', 'to_bus']);
 	const id = findNumber(record, ['branch', 'branch_id', 'branch number', 'cats_id', 'id']);
-	if (id !== null) sidecar.branchPaths.set(branchKey(id), path);
+	if (id !== null) geoFile.branchPaths.set(branchKey(id), path);
 	if (from !== null && to !== null) {
-		sidecar.branchPaths.set(edgeKey(from, to), path);
-		if (!sidecar.busCoords.has(from)) sidecar.busCoords.set(from, path[0]);
-		if (!sidecar.busCoords.has(to)) sidecar.busCoords.set(to, path[path.length - 1]);
+		geoFile.branchPaths.set(edgeKey(from, to), path);
+		if (!geoFile.busCoords.has(from)) geoFile.busCoords.set(from, path[0]);
+		if (!geoFile.busCoords.has(to)) geoFile.busCoords.set(to, path[path.length - 1]);
 	}
 }
 
 function addBranchEndpoints(
-	sidecar: GeoSidecar,
+	geoFile: GeoFile,
 	record: JsonRecord | CsvRecord,
 	paths: [number, number][][]
 ) {
@@ -197,12 +195,12 @@ function addBranchEndpoints(
 	const first = paths[0][0];
 	const lastPath = paths[paths.length - 1];
 	const last = lastPath[lastPath.length - 1];
-	if (!sidecar.busCoords.has(from)) sidecar.busCoords.set(from, first);
-	if (!sidecar.busCoords.has(to)) sidecar.busCoords.set(to, last);
+	if (!geoFile.busCoords.has(from)) geoFile.busCoords.set(from, first);
+	if (!geoFile.busCoords.has(to)) geoFile.busCoords.set(to, last);
 }
 
-function warnOnce(sidecar: GeoSidecar, warning: string) {
-	if (!sidecar.warnings.includes(warning)) sidecar.warnings.push(warning);
+function warnOnce(geoFile: GeoFile, warning: string) {
+	if (!geoFile.warnings.includes(warning)) geoFile.warnings.push(warning);
 }
 
 function pathFromRecord(record: JsonRecord | CsvRecord): [number, number][] {
@@ -265,7 +263,9 @@ function collectRecords(data: unknown): JsonRecord[] {
 	if (Array.isArray(data)) return data.flatMap(collectRecords);
 	const record = asRecord(data);
 	if (!record) return [];
-	const direct = Object.values(record).flatMap((value) => (Array.isArray(value) ? collectRecords(value) : []));
+	const direct = Object.values(record).flatMap((value) =>
+		Array.isArray(value) ? collectRecords(value) : []
+	);
 	return direct.length > 0 ? direct : [record];
 }
 
@@ -291,9 +291,7 @@ function normalizeKey(key: string): string {
 
 function coordPath(raw: unknown): [number, number][] {
 	if (!Array.isArray(raw)) return [];
-	return raw
-		.map(firstCoord)
-		.filter((coord): coord is [number, number] => coord !== null);
+	return raw.map(firstCoord).filter((coord): coord is [number, number] => coord !== null);
 }
 
 function firstCoord(raw: unknown): [number, number] | null {
@@ -304,7 +302,9 @@ function firstCoord(raw: unknown): [number, number] | null {
 }
 
 function validCoord(lon: number, lat: number): boolean {
-	return Number.isFinite(lon) && Number.isFinite(lat) && Math.abs(lon) <= 180 && Math.abs(lat) <= 90;
+	return (
+		Number.isFinite(lon) && Number.isFinite(lat) && Math.abs(lon) <= 180 && Math.abs(lat) <= 90
+	);
 }
 
 function branchKey(id: number): string {

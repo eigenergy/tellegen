@@ -71,7 +71,9 @@
 		const active = app.active ?? app.activeLocal;
 		const selected = app.selectedBus;
 		const activeSensitivity =
-			active && selected !== null && active.sensitivity?.bus === selected ? active.sensitivity : null;
+			active && selected !== null && active.sensitivity?.bus === selected
+				? active.sensitivity
+				: null;
 		const activeDeltas = active instanceof CaseState ? active.deltas : (active?.deltas ?? {});
 		const previewStep =
 			active && selected !== null && app.previewDeltaMw !== null && activeSensitivity
@@ -295,18 +297,35 @@
 						rebuildTimer = null;
 					}
 				};
+				// A rebuilt map that holds a live context for a while proves the GPU
+				// recovered, so the rebuild budget is forgiven (see below). Clear that
+				// pending forgiveness the moment another loss arrives.
+				let stabilizeTimer: ReturnType<typeof setTimeout> | null = null;
+				const clearStabilize = () => {
+					if (stabilizeTimer !== null) {
+						clearTimeout(stabilizeTimer);
+						stabilizeTimer = null;
+					}
+				};
+				// At most one rebuild per map instance: the 1500ms timer and
+				// webglcontextrestored both call rebuild for a single loss, so guard
+				// against counting that loss twice against the budget.
+				let rebuilt = false;
 				const rebuild = () => {
 					clearRebuild();
-					if (cancelled) return;
+					if (cancelled || rebuilt) return;
 					if (glRebuilds >= 6) {
-						app.error = 'the map lost its graphics context repeatedly; reload the page to restore it';
+						app.error =
+							'the map lost its graphics context repeatedly; reload the page to restore it';
 						return;
 					}
+					rebuilt = true;
 					glRebuilds++;
 					mapGen++;
 				};
 				const onContextLost = () => {
 					overlay = null; // stop the layer effect touching a dead overlay
+					clearStabilize(); // a fresh loss is not a stable recovery
 					rebuildTimer ??= setTimeout(rebuild, 1500);
 				};
 				document.addEventListener('visibilitychange', onVisible);
@@ -317,11 +336,21 @@
 
 				map = m;
 				overlay = o;
-				// A remounted map opens at the default view; re-frame to the active grid.
-				if (mapGen > 0) app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
+				if (mapGen > 0) {
+					// A remounted map opens at the default view; re-frame to the active grid.
+					app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
+					// This is a rebuilt map. Once it has held a live context without
+					// another loss, zero the budget so the cap only ever catches a tight
+					// loss loop, not recoveries spread across a long session.
+					stabilizeTimer = setTimeout(() => {
+						glRebuilds = 0;
+						stabilizeTimer = null;
+					}, 10000);
+				}
 
 				cleanup = () => {
 					clearRebuild();
+					clearStabilize();
 					document.removeEventListener('visibilitychange', onVisible);
 					window.removeEventListener('focus', repaint);
 					window.removeEventListener('pageshow', repaint);
@@ -381,8 +410,7 @@
 						c.id === app.activeCaseId && b.id === app.selectedBus
 							? [32, 36, 43, 255]
 							: [46, 42, 34, 110],
-					getLineWidth: (b) =>
-						c.id === app.activeCaseId && b.id === app.selectedBus ? 2.5 : 1,
+					getLineWidth: (b) => (c.id === app.activeCaseId && b.id === app.selectedBus ? 2.5 : 1),
 					lineWidthUnits: 'pixels',
 					pickable: true,
 					autoHighlight: true,
@@ -439,8 +467,7 @@
 							c.id === app.activeLocalId && b.id === app.selectedBus
 								? [32, 36, 43, 255]
 								: [46, 42, 34, 110],
-						getLineWidth: (b) =>
-							c.id === app.activeLocalId && b.id === app.selectedBus ? 2.5 : 1,
+						getLineWidth: (b) => (c.id === app.activeLocalId && b.id === app.selectedBus ? 2.5 : 1),
 						lineWidthUnits: 'pixels',
 						pickable: true,
 						autoHighlight: true,

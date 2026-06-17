@@ -24,16 +24,15 @@
 		type RGBA
 	} from '$lib/colors';
 	import {
-		applyGeoSidecar,
-		isGeoSidecarFile,
-		mergeGeoSidecars,
-		parseGeoSidecar,
-		type GeoSidecar
-	} from '$lib/geo-sidecar';
+		applyGeoFile,
+		isGeoFile,
+		mergeGeoFiles,
+		parseGeoFile,
+		type GeoFile
+	} from '$lib/geo-file';
 	import { app, CaseState, type DemandRangeMode, type LocalCase } from '$lib/state.svelte';
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
 	import { formatOf, ingestCase, isDisplayFile, parseDisplay, solveDc } from '$lib/wasm';
-	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
 	let abort: AbortController | null = null;
@@ -181,7 +180,7 @@
 			id: c.id,
 			name: c.label,
 			base_mva: c.summary.base_mva,
-			synthetic_coords: c.coordsKind !== 'file' && c.coordsKind !== 'sidecar',
+			synthetic_coords: c.coordsKind !== 'file' && c.coordsKind !== 'geofile',
 			buses: c.view.buses,
 			branches: c.view.branches
 		};
@@ -195,7 +194,6 @@
 			solution: c.solution ?? null,
 			sensitivity: c.sensitivity ?? null,
 			deltas: c.deltas ?? {},
-			iterations: c.iterations ?? [],
 			solving: c.solving ?? false,
 			solveMs: c.solveMs ?? null,
 			solveBackend: c.solveBackend ?? null,
@@ -277,12 +275,15 @@
 		const c = id ? app.localCases.find((lc) => lc.id === id) : null;
 		if (!c?.topology) return;
 		const view = placeSyntheticTopology(c.topology, { lon, lat });
-		app.updateLocal(c.id, withLocalSolveState({
-			...c,
-			view,
-			coordsKind: 'synthetic',
-			syntheticCenter: { lon, lat }
-		}));
+		app.updateLocal(
+			c.id,
+			withLocalSolveState({
+				...c,
+				view,
+				coordsKind: 'synthetic',
+				syntheticCenter: { lon, lat }
+			})
+		);
 		app.placingLocalId = null;
 		app.activeLocalId = c.id;
 		app.requestFrame(c.id);
@@ -295,36 +296,36 @@
 		app.placingLocalId = c.id;
 	}
 
-	function withGeoSidecar(c: LocalCase, sidecars: GeoSidecar[]): LocalCase {
-		if (!c.topology || sidecars.length === 0) return c;
-		const applied = applyGeoSidecar(c.topology, mergeGeoSidecars(sidecars));
+	function withGeoFile(c: LocalCase, geoFiles: GeoFile[]): LocalCase {
+		if (!c.topology || geoFiles.length === 0) return c;
+		const applied = applyGeoFile(c.topology, mergeGeoFiles(geoFiles));
 		return withLocalSolveState({
 			...c,
 			view: applied.view,
-			coordsKind: 'sidecar',
+			coordsKind: 'geofile',
 			syntheticCenter: undefined,
 			geoSource: applied.sourceLabel,
 			geoWarnings: [
 				`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
 				...(applied.matchedBranches > 0
-					? [`${applied.matchedBranches} branch paths matched from sidecar data`]
+					? [`${applied.matchedBranches} branch paths matched from geographic file data`]
 					: []),
 				...applied.warnings
 			]
 		});
 	}
 
-	function applyGeoSidecarsToExisting(sidecars: GeoSidecar[]) {
+	function applyGeoFilesToExisting(geoFiles: GeoFile[]) {
 		const target =
 			(app.activeLocal?.topology ? app.activeLocal : null) ??
 			app.localCases.find((c) => c.coordsKind === 'synthetic_pending') ??
 			[...app.localCases].reverse().find((c) => c.topology);
 		if (!target?.topology) {
-			app.error = 'drop a case file with the coordinate sidecar, or select a parsed local case first';
+			app.error = 'drop a case file with the geographic file, or select a parsed local case first';
 			return;
 		}
 		try {
-			const updated = withGeoSidecar(target, sidecars);
+			const updated = withGeoFile(target, geoFiles);
 			app.updateLocal(target.id, updated);
 			app.activeCaseId = null;
 			app.activeLocalId = target.id;
@@ -333,7 +334,7 @@
 			maybeStartLocalSolve(target.id);
 			app.error = null;
 		} catch (e) {
-			app.error = `${sidecars.map((s) => s.sourceNames.join(' + ')).join(' + ')}: ${
+			app.error = `${geoFiles.map((s) => s.sourceNames.join(' + ')).join(' + ')}: ${
 				e instanceof Error ? e.message : e
 			}; use place on map for manual placement`;
 		}
@@ -404,7 +405,8 @@
 			const networkJson = await ensureNetworkJson(c);
 			if (networkJson) {
 				const { sensitivity } = await solveDc(caseId, networkJson, c.deltas, busId);
-				if (!ac.signal.aborted && sensitivity) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+				if (!ac.signal.aborted && sensitivity)
+					acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
 				else if (!ac.signal.aborted) {
 					const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
 					if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
@@ -446,10 +448,20 @@
 		c.sensitivity = null;
 		touchLocal(c);
 		try {
-			const { sensitivity, sensitivityError } = await solveDc(localId, c.networkJson, c.deltas ?? {}, busId);
+			const { sensitivity, sensitivityError } = await solveDc(
+				localId,
+				c.networkJson,
+				c.deltas ?? {},
+				busId
+			);
 			if (!ac.signal.aborted) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
-			if (!ac.signal.aborted && !sensitivity && sensitivityError) {
-				app.error = `${c.label}: browser sensitivity unavailable: ${sensitivityError}`;
+			if (!ac.signal.aborted && !sensitivity) {
+				// A null column without an error means the solve ran but produced no
+				// dLMP/dd for this bus; local cases have no server fallback, so say so
+				// instead of leaving the panel in LMP view with no explanation.
+				app.error = `${c.label}: browser sensitivity unavailable${
+					sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'
+				}`;
 			}
 		} catch (e) {
 			if (!ac.signal.aborted) app.error = `${c.label}: ${e instanceof Error ? e.message : e}`;
@@ -489,7 +501,6 @@
 		c.solving = true;
 		c.solveBackend = null;
 		c.solveFallbackReason = null;
-		c.iterations = [];
 		c.solveMs = null;
 		touchLocal(c);
 		ensureNetworkJson(c).then((networkJson) => {
@@ -513,7 +524,9 @@
 					c.solveMs = Math.round(performance.now() - t0);
 					if (sensitivity || sensBus === null) {
 						acceptSensitivity(c, sensitivity, sensBus);
-					} else if (sensitivityError && isBackendCase(c)) {
+					} else if (isBackendCase(c)) {
+						// No browser sensitivity column (whether the solve threw or just
+						// produced none): reconcile via the server for backend cases.
 						try {
 							const col = await getSensitivity(c.id, sensBus, c.deltas);
 							if (seq !== c.solveSeq) return;
@@ -525,8 +538,10 @@
 							serverSolve(c, sensBus, seq);
 							return;
 						}
-					} else if (sensitivityError && !isBackendCase(c)) {
-						app.error = `${c.label}: browser sensitivity unavailable: ${sensitivityError}`;
+					} else {
+						// Local case: no server fallback, so report the gap (including a null
+						// column with no error) instead of silently staying in LMP view.
+						app.error = `${c.label}: browser sensitivity unavailable${sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'}`;
 					}
 					finishSolve(c, seq, sensBus);
 				})
@@ -547,10 +562,6 @@
 		c.solveBackend = 'rust-server';
 		c.solveFallbackReason ??= 'browser solve unavailable';
 		closeStream = openSolveStream(c.id, c.deltas, sensBus, {
-			oniteration: (it) => {
-				if (seq !== c.solveSeq) return;
-				c.iterations = [...c.iterations, it];
-			},
 			onsolution: (sol) => {
 				if (seq !== c.solveSeq) return;
 				c.solution = sol;
@@ -626,16 +637,16 @@
 	}
 
 	/** Parse dropped files in the browser via the powerio wasm module. Case
-	 * files (.m, .raw, .aux) become local networks; coordinate sidecars can
+	 * files (.m, .raw, .aux) become local networks; geographic files can
 	 * place those networks; a PowerWorld .pwd becomes a substation point
 	 * preview. Files run serially; nothing uploads. */
 	async function ingestFiles(files: FileList | File[]) {
 		const list = Array.from(files);
-		const sidecars: GeoSidecar[] = [];
-		for (const file of list.filter((f) => isGeoSidecarFile(f.name))) {
+		const geoFiles: GeoFile[] = [];
+		for (const file of list.filter((f) => isGeoFile(f.name))) {
 			app.parsingFile = true;
 			try {
-				sidecars.push(parseGeoSidecar(file.name, await file.text()));
+				geoFiles.push(parseGeoFile(file.name, await file.text()));
 				app.error = null;
 			} catch (e) {
 				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
@@ -645,7 +656,7 @@
 		}
 
 		let parsedCaseCount = 0;
-		for (const file of list.filter((f) => !isGeoSidecarFile(f.name))) {
+		for (const file of list.filter((f) => !isGeoFile(f.name))) {
 			if (isDisplayFile(file.name)) {
 				app.parsingFile = true;
 				try {
@@ -700,8 +711,8 @@
 					coordsKind: summary.coords_kind,
 					view
 				};
-				if (sidecars.length > 0 && local.coordsKind === 'synthetic_pending') {
-					local = withGeoSidecar(local, sidecars);
+				if (geoFiles.length > 0 && local.coordsKind === 'synthetic_pending') {
+					local = withGeoFile(local, geoFiles);
 				}
 				addAndActivateLocal(local);
 				parsedCaseCount++;
@@ -713,7 +724,7 @@
 			}
 		}
 
-		if (sidecars.length > 0 && parsedCaseCount === 0) applyGeoSidecarsToExisting(sidecars);
+		if (geoFiles.length > 0 && parsedCaseCount === 0) applyGeoFilesToExisting(geoFiles);
 	}
 
 	function dragHasFiles(e: DragEvent): boolean {
@@ -782,7 +793,9 @@
 	});
 
 	const committedDelta = $derived(
-		activeSolvable && app.selectedBus !== null ? (caseDeltas(activeSolvable)[app.selectedBus] ?? 0) : 0
+		activeSolvable && app.selectedBus !== null
+			? (caseDeltas(activeSolvable)[app.selectedBus] ?? 0)
+			: 0
 	);
 	const sliderValue = $derived(app.previewDeltaMw ?? committedDelta);
 	const nearbyRangeCenter = $derived.by(() => {
@@ -803,7 +816,8 @@
 		if (!bus) return { min: 0, max: 0, span: 0 };
 		const physicalMin = -Math.ceil(bus.demand_mw);
 		const physicalMax = Math.max(Math.ceil(bus.demand_mw), 50);
-		if (mode === 'full') return { min: physicalMin, max: physicalMax, span: physicalMax - physicalMin };
+		if (mode === 'full')
+			return { min: physicalMin, max: physicalMax, span: physicalMax - physicalMin };
 		const span = Math.max(5, Math.min(25, 0.1 * Math.max(bus.demand_mw, 50)));
 		return {
 			min: Math.max(physicalMin, center - span),
@@ -812,7 +826,9 @@
 		};
 	}
 
-	const sliderBounds = $derived(demandBounds(app.demandRangeMode, selectedBusData, nearbyRangeCenter));
+	const sliderBounds = $derived(
+		demandBounds(app.demandRangeMode, selectedBusData, nearbyRangeCenter)
+	);
 	const sliderMin = $derived(sliderBounds.min);
 	const sliderMax = $derived(sliderBounds.max);
 
@@ -822,7 +838,11 @@
 		if (mode === 'local' && c && app.selectedBus !== null) {
 			setNearbyRangeAnchor(c, app.selectedBus, sliderValue);
 		}
-		const bounds = demandBounds(mode, selectedBusData, mode === 'local' ? sliderValue : nearbyRangeCenter);
+		const bounds = demandBounds(
+			mode,
+			selectedBusData,
+			mode === 'local' ? sliderValue : nearbyRangeCenter
+		);
 		if (app.previewDeltaMw === null) return;
 		app.previewDeltaMw = Math.min(bounds.max, Math.max(bounds.min, app.previewDeltaMw));
 	}
@@ -861,8 +881,7 @@
 
 	const gradientScore = $derived.by(() => {
 		const c = activeSolvable;
-		if (!c?.solution || !c.baseSolution || c.predictedObjective == null || c.solving)
-			return null;
+		if (!c?.solution || !c.baseSolution || c.predictedObjective == null || c.solving) return null;
 		const exact = c.solution.objective - c.baseSolution.objective;
 		return { pred: c.predictedObjective, exact };
 	});
@@ -879,8 +898,8 @@
 	const previewing = $derived(
 		Boolean(
 			activeSolvable?.solving ||
-				app.previewActive ||
-				(app.previewDeltaMw !== null && Math.abs(sliderValue - committedDelta) >= 0.25)
+			app.previewActive ||
+			(app.previewDeltaMw !== null && Math.abs(sliderValue - committedDelta) >= 0.25)
 		)
 	);
 
@@ -901,13 +920,13 @@
 
 	function solveBackendLabel(c: SolvableCase): string {
 		if (c.solveBackend === 'clarabel-wasm') return 'Clarabel wasm';
-		if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'Clarabel wasm + server dLMP/dd';
+		if (c.solveBackend === 'clarabel-wasm-server-sensitivity')
+			return 'Clarabel wasm + server dLMP/dd';
 		if (c.solveBackend === 'rust-server') return 'server fallback';
 		return c.solving ? 'starting' : 'solve pending';
 	}
 
 	function solveMetaLabel(c: SolvableCase): string {
-		if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
 		if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'server dLMP/dd';
 		return c.solveBackend === 'rust-server' ? 'server solve' : 'browser solve';
 	}
@@ -946,8 +965,9 @@
 				{@const [cname, cregion] = splitName(c.name)}
 				<div class="case-chip" class:active={app.activeCaseId === c.id}>
 					<button class="case-activate" onclick={() => activateCase(c.id)}>
-						<span class="cname">{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"
-								></i>{/if}</span>
+						<span class="cname"
+							>{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"></i>{/if}</span
+						>
 						<span class="cregion mono">{cregion}</span>
 					</button>
 					<button
@@ -979,7 +999,7 @@
 					onclick={() => fileInput?.click()}
 				>
 					<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
-					<span class="cregion mono">case + geo sidecars &mdash; or click</span>
+					<span class="cregion mono">case + geographic files &mdash; or click</span>
 				</button>
 			{/if}
 		</nav>
@@ -998,21 +1018,42 @@
 			<h2>{lc.label} <span class="region mono">via {lc.fileName}</span></h2>
 			{#if lc.substations}
 				<dl class="mono">
-					<div><dt>substations</dt><dd>{lc.substations.points.length}</dd></div>
+					<div>
+						<dt>substations</dt>
+						<dd>{lc.substations.points.length}</dd>
+					</div>
 				</dl>
 				<p class="footnote mono">
-					display only &mdash; positions inferred from the PowerWorld diagram, not surveyed
-					latitude and longitude
+					display only &mdash; positions inferred from the PowerWorld diagram, not surveyed latitude
+					and longitude
 				</p>
 				<p class="footnote mono">decoded in your browser by powerio (wasm); never uploaded</p>
 			{:else if lc.summary}
 				<dl class="mono">
-					<div><dt>buses</dt><dd>{lc.summary.n_bus}</dd></div>
-					<div><dt>branches</dt><dd>{lc.summary.n_branch}</dd></div>
-					<div><dt>generators</dt><dd>{lc.summary.n_gen}</dd></div>
-					<div><dt>load</dt><dd>{fmt.format(lc.summary.load_mw)} MW</dd></div>
-					<div><dt>gen capacity</dt><dd>{fmt.format(lc.summary.gen_mw)} MW</dd></div>
-					<div><dt>base MVA</dt><dd>{fmt.format(lc.summary.base_mva)}</dd></div>
+					<div>
+						<dt>buses</dt>
+						<dd>{lc.summary.n_bus}</dd>
+					</div>
+					<div>
+						<dt>branches</dt>
+						<dd>{lc.summary.n_branch}</dd>
+					</div>
+					<div>
+						<dt>generators</dt>
+						<dd>{lc.summary.n_gen}</dd>
+					</div>
+					<div>
+						<dt>load</dt>
+						<dd>{fmt.format(lc.summary.load_mw)} MW</dd>
+					</div>
+					<div>
+						<dt>gen capacity</dt>
+						<dd>{fmt.format(lc.summary.gen_mw)} MW</dd>
+					</div>
+					<div>
+						<dt>base MVA</dt>
+						<dd>{fmt.format(lc.summary.base_mva)}</dd>
+					</div>
 				</dl>
 				{#if lc.summary.warnings.length > 0}
 					<ul class="warnings mono">
@@ -1026,15 +1067,15 @@
 				{/if}
 				{#if !lc.view}
 					<p class="footnote mono">
-						no coordinates in this file &mdash; click the map or drop a coordinate sidecar
+						no coordinates in this file &mdash; click the map or drop a geographic file
 					</p>
 				{:else if lc.coordsKind === 'synthetic'}
 					<p class="footnote mono">
 						coordinates: synthetic topology layout centered where you placed it
 					</p>
-				{:else if lc.coordsKind === 'sidecar'}
+				{:else if lc.coordsKind === 'geofile'}
 					<p class="footnote mono">
-						coordinates: uploaded sidecar data from {lc.geoSource}
+						coordinates: geographic file data from {lc.geoSource}
 					</p>
 				{/if}
 				{#if lc.geoWarnings && lc.geoWarnings.length > 0}
@@ -1047,15 +1088,13 @@
 						{/if}
 					</ul>
 				{/if}
-				<p class="footnote mono">
-					parsed in your browser by powerio (wasm); never uploaded
-				</p>
+				<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 			{/if}
 			{#if lc.topology && lc.coordsKind !== 'file'}
 				<button class="reset mono" onclick={() => moveLocalCase(lc)}>
 					{lc.coordsKind === 'synthetic_pending'
 						? 'place on map'
-						: lc.coordsKind === 'sidecar'
+						: lc.coordsKind === 'geofile'
 							? 'place manually'
 							: 'move layout'}
 				</button>
@@ -1078,12 +1117,27 @@
 				{@const [cname, cregion] = splitName(app.active?.name ?? '')}
 				<h2>{cname} <span class="region mono">{cregion}</span></h2>
 				<dl class="mono">
-					<div><dt>buses</dt><dd>{stats.buses}</dd></div>
-					<div><dt>branches</dt><dd>{stats.branches}</dd></div>
-					<div><dt>binding lines</dt><dd>{stats.binding}</dd></div>
-					<div><dt>objective</dt><dd>{fmt.format(stats.objective)} $/h</dd></div>
+					<div>
+						<dt>buses</dt>
+						<dd>{stats.buses}</dd>
+					</div>
+					<div>
+						<dt>branches</dt>
+						<dd>{stats.branches}</dd>
+					</div>
+					<div>
+						<dt>binding lines</dt>
+						<dd>{stats.binding}</dd>
+					</div>
+					<div>
+						<dt>objective</dt>
+						<dd>{fmt.format(stats.objective)} $/h</dd>
+					</div>
 					{#if isPerturbed(activeSolvable)}
-						<div class="delta"><dt>vs base</dt><dd>{signed(stats.deltaObjective)} $/h</dd></div>
+						<div class="delta">
+							<dt>vs base</dt>
+							<dd>{signed(stats.deltaObjective)} $/h</dd>
+						</div>
 					{/if}
 				</dl>
 				{#if app.active?.network?.synthetic_coords}
@@ -1217,29 +1271,29 @@
 						{/if}
 					</div>
 				{/if}
-				{:else}
-					<div class="mode">
-						<span class="chip">LMP</span>
-						<span class="mono dim">$/MWh</span>
-						{#if app.sensitivityLoading}
-							<span class="mono dim blink">&part; loading&hellip;</span>
-						{/if}
-					</div>
-					<p class="dim small">
-						DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
-					</p>
-					<div class="legend" style:background={lmpGradient}></div>
-					<div class="legend-labels mono">
-						{#if stats.uniformLmp !== null}
-							<span>uniform {fmt.format(stats.uniformLmp)} $/MWh, no congestion</span>
-						{:else}
-							<span>{stats.lmpLo.clamped ? '≤' : ''}{fmt.format(stats.lmpLo.value)}</span>
-							<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
-						{/if}
-					</div>
-					<p class="dim small filedrop-note">
-						Drop case files and optional coordinate sidecars; parsing stays in your browser.
-					</p>
+			{:else}
+				<div class="mode">
+					<span class="chip">LMP</span>
+					<span class="mono dim">$/MWh</span>
+					{#if app.sensitivityLoading}
+						<span class="mono dim blink">&part; loading&hellip;</span>
+					{/if}
+				</div>
+				<p class="dim small">
+					DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
+				</p>
+				<div class="legend" style:background={lmpGradient}></div>
+				<div class="legend-labels mono">
+					{#if stats.uniformLmp !== null}
+						<span>uniform {fmt.format(stats.uniformLmp)} $/MWh, no congestion</span>
+					{:else}
+						<span>{stats.lmpLo.clamped ? '≤' : ''}{fmt.format(stats.lmpLo.value)}</span>
+						<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
+					{/if}
+				</div>
+				<p class="dim small filedrop-note">
+					Drop case files and optional geographic files; parsing stays in your browser.
+				</p>
 			{/if}
 
 			<hr />
@@ -1261,18 +1315,11 @@
 			<div class="solvecard-head mono">
 				<span>exact solve</span>
 				{#if activeSolvable.solving}
-					<span class="dim blink"
-						>{solveBackendLabel(activeSolvable)}</span
-					>
+					<span class="dim blink">{solveBackendLabel(activeSolvable)}</span>
 				{:else}
-					<span class="dim"
-						>{solveBackendLabel(activeSolvable)}</span
-					>
+					<span class="dim">{solveBackendLabel(activeSolvable)}</span>
 				{/if}
 			</div>
-			{#if (activeSolvable.iterations ?? []).length > 1}
-				<Sparkline iterations={activeSolvable.iterations ?? []} />
-			{/if}
 			<div class="solve-meta mono dim">
 				<span>{solveMetaLabel(activeSolvable)}</span>
 				{#if activeSolvable.solveMs != null}<span>{activeSolvable.solveMs} ms</span>{/if}
@@ -1288,16 +1335,14 @@
 	{#if app.dragOver}
 		<div class="dropzone" aria-hidden="true">
 			<div class="dropframe">
-				<p class="mono">drop to parse &mdash; case files or coordinate sidecars</p>
+				<p class="mono">drop to parse &mdash; case files or geographic files</p>
 				<p class="mono hint">parsed in your browser; the file never uploads</p>
 			</div>
 		</div>
 	{/if}
 
 	{#if app.placingLocalId}
-		<div class="placement-cue mono">
-			click the map to place the synthetic topology
-		</div>
+		<div class="placement-cue mono">click the map to place the synthetic topology</div>
 	{/if}
 
 	<footer class="mono">

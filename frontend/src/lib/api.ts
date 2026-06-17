@@ -48,13 +48,6 @@ export interface CaseSummary {
 	n_gen: number;
 }
 
-export interface SolveIteration {
-	iter: number;
-	objective: number;
-	inf_pr: number;
-	inf_du: number;
-}
-
 /** Demand deltas in MW keyed by bus id, encoded as `bus:mw,bus:mw`. */
 export type DemandDeltas = Record<number, number>;
 
@@ -100,7 +93,6 @@ export function getSensitivity(
 }
 
 export interface SolveStreamHandlers {
-	oniteration?: (it: SolveIteration) => void;
 	onsolution?: (sol: Solution & { case: string; solve_ms: number }) => void;
 	onsensitivity?: (col: SensitivityColumn) => void;
 	onfail?: (message: string) => void;
@@ -127,7 +119,6 @@ export function openSolveStream(
 		finished = true;
 		es.close();
 	};
-	es.addEventListener('iteration', (e) => handlers.oniteration?.(JSON.parse(e.data)));
 	es.addEventListener('solution', (e) => handlers.onsolution?.(JSON.parse(e.data)));
 	es.addEventListener('sensitivity', (e) => handlers.onsensitivity?.(JSON.parse(e.data)));
 	es.addEventListener('fail', (e) => {

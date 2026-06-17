@@ -5,8 +5,7 @@ import type {
 	NetworkBranch,
 	NetworkBus,
 	SensitivityColumn,
-	Solution,
-	SolveIteration
+	Solution
 } from './api';
 import type { CaseFileSummary, Topology } from './wasm';
 
@@ -32,7 +31,7 @@ export interface LocalCase {
 	networkJson?: string;
 	/** Topology for synthetic placement when the file has no coordinates. */
 	topology?: Topology;
-	coordsKind?: 'file' | 'synthetic_pending' | 'synthetic' | 'sidecar';
+	coordsKind?: 'file' | 'synthetic_pending' | 'synthetic' | 'geofile';
 	/** Map geometry when the file carried or received coordinates. */
 	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 	syntheticCenter?: { lon: number; lat: number };
@@ -44,7 +43,6 @@ export interface LocalCase {
 	solution?: Solution | null;
 	sensitivity?: SensitivityColumn | null;
 	deltas?: DemandDeltas;
-	iterations?: SolveIteration[];
 	solving?: boolean;
 	solveMs?: number | null;
 	solveBackend?: SolveBackend | null;
@@ -71,7 +69,6 @@ export class CaseState {
 	sensitivity = $state.raw<SensitivityColumn | null>(null);
 	/** Committed demand deltas (MW from base, keyed by bus). */
 	deltas = $state.raw<DemandDeltas>({});
-	iterations = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveBackend = $state<SolveBackend | null>(null);
@@ -138,7 +135,15 @@ export class AppState {
 	}
 
 	updateLocal(id: string, patch: Partial<LocalCase>) {
-		this.localCases = this.localCases.map((c) => (c.id === id ? { ...c, ...patch } : c));
+		// Mutate the existing entry in place so its object identity stays stable.
+		// The solve and sensitivity seq tokens live on the LocalCase object, and an
+		// in-flight solve closure holds that same reference; replacing the object
+		// here would detach those closures from the live seq, letting a stale solve
+		// clobber a newer one. Reassign the array (raw state) to fire reactivity.
+		const existing = this.localCases.find((c) => c.id === id);
+		if (!existing) return;
+		Object.assign(existing, patch);
+		this.localCases = [...this.localCases];
 	}
 
 	removeCase(id: string) {
@@ -159,7 +164,9 @@ export class AppState {
 		}
 
 		const nextLocal =
-			this.localCases.find((c) => c.view || c.substations || c.coordsKind === 'synthetic_pending') ??
+			this.localCases.find(
+				(c) => c.view || c.substations || c.coordsKind === 'synthetic_pending'
+			) ??
 			this.localCases[0] ??
 			null;
 		this.activeLocalId = nextLocal?.id ?? null;

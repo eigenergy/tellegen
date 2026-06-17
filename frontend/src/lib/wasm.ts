@@ -81,7 +81,17 @@ function powerioSensitivity() {
 }
 
 function isPermanentWasmLoadFailure(message: string): boolean {
-	return /WebAssembly|wasm|compile|parse|unsupported|invalid opcode|relaxed/i.test(message);
+	// Latch only genuine browser-capability failures the sensitivity module can
+	// never recover from in this browser: no WebAssembly, or an opcode the
+	// engine rejects (the sens build uses relaxed SIMD). Transient fetch or
+	// instantiate failures (offline, 503, aborted navigation) routinely carry
+	// the .wasm URL or "Failed to fetch" in their message, so keying on the bare
+	// word "wasm"/"compile" wrongly disables the feature for the whole session.
+	// Those stay retryable, matching the powerio() loader.
+	if (/Failed to fetch|NetworkError|load failed|aborted|ERR_/i.test(message)) return false;
+	return /CompileError|LinkError|invalid opcode|unsupported|relaxed|WebAssembly is not defined/i.test(
+		message
+	);
 }
 
 /** powerio format token from a file name; null for non-case files. */
@@ -155,7 +165,14 @@ function parseSolveOutput(caseId: string, json: string): BrowserSolution {
 	};
 	const d = out.dlmp_dd;
 	const sensitivity: SensitivityColumn | null = d
-		? { case: caseId, operand: d.operand, parameter: d.parameter, bus: d.bus, units: d.units, values: d.values }
+		? {
+				case: caseId,
+				operand: d.operand,
+				parameter: d.parameter,
+				bus: d.bus,
+				units: d.units,
+				values: d.values
+			}
 		: null;
 	return { solution, sensitivity };
 }
