@@ -30,7 +30,7 @@
 		parseGeoFile,
 		type GeoFile
 	} from '$lib/geo-file';
-	import { app, CaseState, type DemandRangeMode, type LocalCase } from '$lib/state.svelte';
+	import { app, CaseState, LocalCase, type DemandRangeMode } from '$lib/state.svelte';
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
 	import { formatOf, ingestCase, isDisplayFile, parseDisplay, solveDc } from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
@@ -63,30 +63,12 @@
 		return isBackendCase(c) ? app.activeCaseId === c.id : app.activeLocalId === c.id;
 	}
 
-	// A backend CaseState has a stable identity, but updateLocal replaces a
-	// LocalCase object on every change, so a captured reference goes stale. Re-fetch
-	// the live local case by id so an async solve checks its seq tokens against the
-	// current object and a stale solve bails instead of clobbering a newer one.
-	function liveCase(c: SolvableCase): SolvableCase | null {
-		return isBackendCase(c) ? c : (app.localCases.find((lc) => lc.id === c.id) ?? null);
-	}
-	function solveSeqOf(c: SolvableCase): number {
-		return liveCase(c)?.solveSeq ?? 0;
-	}
-	function sensSeqOf(c: SolvableCase): number {
-		return liveCase(c)?.sensitivitySeq ?? 0;
-	}
-
 	function caseDeltas(c: SolvableCase) {
 		return isBackendCase(c) ? c.deltas : (c.deltas ?? {});
 	}
 
 	function isPerturbed(c: SolvableCase | null): boolean {
 		return c ? Object.values(caseDeltas(c)).some((mw) => mw !== 0) : false;
-	}
-
-	function touchLocal(c: SolvableCase) {
-		if (!isBackendCase(c)) app.updateLocal(c.id, { ...c });
 	}
 
 	function setNearbyRangeAnchor(c: SolvableCase, bus: number, delta = caseDeltas(c)[bus] ?? 0) {
@@ -201,32 +183,11 @@
 		};
 	}
 
-	function withLocalSolveState(c: LocalCase): LocalCase {
-		return {
-			...c,
-			network: localNetwork(c) ?? c.network ?? null,
-			baseSolution: c.baseSolution ?? null,
-			solution: c.solution ?? null,
-			sensitivity: c.sensitivity ?? null,
-			deltas: c.deltas ?? {},
-			iterations: c.iterations ?? [],
-			solving: c.solving ?? false,
-			solveMs: c.solveMs ?? null,
-			solveBackend: c.solveBackend ?? null,
-			solveFallbackReason: c.solveFallbackReason ?? null,
-			solveSeq: c.solveSeq ?? 0,
-			sensitivitySeq: c.sensitivitySeq ?? 0,
-			predictedObjective: c.predictedObjective ?? null
-		};
-	}
-
 	function maybeStartLocalSolve(id: string) {
 		const c = app.localCases.find((lc) => lc.id === id);
 		if (!c?.networkJson || !c.view || !c.summary) return;
-		const prepared = withLocalSolveState({ ...c, network: localNetwork(c) });
-		app.updateLocal(id, prepared);
-		const current = app.localCases.find((lc) => lc.id === id);
-		if (current?.networkJson && current.network && !current.solution) runSolve(current, null);
+		c.network = localNetwork(c) ?? c.network ?? null;
+		if (c.networkJson && c.network && !c.solution) runSolve(c, null);
 	}
 
 	async function activateCase(id: string) {
@@ -281,7 +242,7 @@
 	function addAndActivateLocal(c: LocalCase) {
 		clearSelection();
 		app.activeCaseId = null;
-		app.addLocal(withLocalSolveState(c));
+		app.addLocal(c);
 		if (c.view || c.substations) app.requestFrame(c.id);
 		maybeStartLocalSolve(c.id);
 	}
@@ -290,16 +251,9 @@
 		const id = app.placingLocalId;
 		const c = id ? app.localCases.find((lc) => lc.id === id) : null;
 		if (!c?.topology) return;
-		const view = placeSyntheticTopology(c.topology, { lon, lat });
-		app.updateLocal(
-			c.id,
-			withLocalSolveState({
-				...c,
-				view,
-				coordsKind: 'synthetic',
-				syntheticCenter: { lon, lat }
-			})
-		);
+		c.view = placeSyntheticTopology(c.topology, { lon, lat });
+		c.coordsKind = 'synthetic';
+		c.syntheticCenter = { lon, lat };
 		app.placingLocalId = null;
 		app.activeLocalId = c.id;
 		app.requestFrame(c.id);
@@ -315,20 +269,18 @@
 	function withGeoFile(c: LocalCase, geoFiles: GeoFile[]): LocalCase {
 		if (!c.topology || geoFiles.length === 0) return c;
 		const applied = applyGeoFile(c.topology, mergeGeoFiles(geoFiles));
-		return withLocalSolveState({
-			...c,
-			view: applied.view,
-			coordsKind: 'geofile',
-			syntheticCenter: undefined,
-			geoSource: applied.sourceLabel,
-			geoWarnings: [
-				`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
-				...(applied.matchedBranches > 0
-					? [`${applied.matchedBranches} branch paths matched from geographic file data`]
-					: []),
-				...applied.warnings
-			]
-		});
+		c.view = applied.view;
+		c.coordsKind = 'geofile';
+		c.syntheticCenter = undefined;
+		c.geoSource = applied.sourceLabel;
+		c.geoWarnings = [
+			`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
+			...(applied.matchedBranches > 0
+				? [`${applied.matchedBranches} branch paths matched from geographic file data`]
+				: []),
+			...applied.warnings
+		];
+		return c;
 	}
 
 	function applyGeoFilesToExisting(geoFiles: GeoFile[]) {
@@ -341,8 +293,7 @@
 			return;
 		}
 		try {
-			const updated = withGeoFile(target, geoFiles);
-			app.updateLocal(target.id, updated);
+			withGeoFile(target, geoFiles);
 			app.activeCaseId = null;
 			app.activeLocalId = target.id;
 			app.placingLocalId = null;
@@ -380,19 +331,17 @@
 		if (!col || busId === null) return;
 		if (col.bus !== busId) return;
 		if (!isActiveSolveCase(c) || app.selectedBus !== busId) return;
-		if (sensitivitySeq !== undefined && sensitivitySeq !== sensSeqOf(c)) return;
+		if (sensitivitySeq !== undefined && sensitivitySeq !== (c.sensitivitySeq ?? 0)) return;
 		c.sensitivity = col;
-		touchLocal(c);
 	}
 
 	function finishSolve(c: SolvableCase, seq: number, sensBus: number | null) {
-		if (seq !== solveSeqOf(c)) return;
+		if (seq !== (c.solveSeq ?? 0)) return;
 		c.solving = false;
 		if (isActiveSolveCase(c) && app.selectedBus === sensBus) {
 			app.previewActive = false;
 			app.previewDeltaMw = null;
 		}
-		touchLocal(c);
 	}
 
 	async function selectBus(caseId: string, busId: number) {
@@ -462,7 +411,6 @@
 		setNearbyRangeAnchor(c, busId);
 		app.sensitivityLoading = true;
 		c.sensitivity = null;
-		touchLocal(c);
 		try {
 			const { sensitivity, sensitivityError } = await solveDc(
 				localId,
@@ -497,7 +445,6 @@
 		if (lc) {
 			lc.sensitivitySeq = (lc.sensitivitySeq ?? 0) + 1;
 			lc.sensitivity = null;
-			touchLocal(lc);
 		}
 		app.selectedBus = null;
 		app.previewDeltaMw = null;
@@ -519,23 +466,20 @@
 		c.solveFallbackReason = null;
 		c.iterations = [];
 		c.solveMs = null;
-		touchLocal(c);
 		ensureNetworkJson(c).then((networkJson) => {
-			if (seq !== solveSeqOf(c)) return;
+			if (seq !== (c.solveSeq ?? 0)) return;
 			if (!networkJson) {
 				c.solveFallbackReason ??= 'browser network JSON unavailable';
 				if (isBackendCase(c)) return serverSolve(c, sensBus, seq);
 				c.solving = false;
 				app.error = `${c.label}: local case has no browser network JSON`;
-				touchLocal(c);
 				return;
 			}
 			const t0 = performance.now();
 			c.solveBackend = 'clarabel-wasm';
-			touchLocal(c);
 			solveDc(c.id, networkJson, caseDeltas(c), sensBus)
 				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
-					if (seq !== solveSeqOf(c)) return;
+					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
 					c.iterations = iterations;
 					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0) c.baseSolution = solution;
@@ -564,13 +508,12 @@
 					finishSolve(c, seq, sensBus);
 				})
 				.catch((e) => {
-					if (seq !== solveSeqOf(c)) return;
+					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solveFallbackReason = `browser solve failed: ${errorText(e)}`;
 					if (isBackendCase(c)) serverSolve(c, sensBus, seq);
 					else {
 						c.solving = false;
 						app.error = `${c.label}: ${c.solveFallbackReason}`;
-						touchLocal(c);
 					}
 				});
 		});
@@ -614,7 +557,6 @@
 		c.deltas = deltas;
 		app.previewDeltaMw = value;
 		app.previewActive = true;
-		touchLocal(c);
 		runSolve(c, bus);
 	}
 
@@ -637,7 +579,6 @@
 		app.demandRangeMode = 'local';
 		if (app.selectedBus !== null) setNearbyRangeAnchor(c, app.selectedBus, 0);
 		if (c.baseSolution) c.solution = c.baseSolution;
-		touchLocal(c);
 		runSolve(c, app.selectedBus);
 	}
 
@@ -686,14 +627,16 @@
 						return { number: s.number, name: s.name, lon, lat };
 					});
 					const id = `local-${++localSeq}`;
-					addAndActivateLocal({
-						id,
-						label: file.name.replace(/\.[^.]+$/, ''),
-						fileName: file.name,
-						summary: null,
-						view: null,
-						substations: { points, approximate: true }
-					});
+					addAndActivateLocal(
+						new LocalCase({
+							id,
+							label: file.name.replace(/\.[^.]+$/, ''),
+							fileName: file.name,
+							summary: null,
+							view: null,
+							substations: { points, approximate: true }
+						})
+					);
 					app.error = null;
 				} catch (e) {
 					app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
@@ -720,7 +663,7 @@
 					summary.name && summary.name !== 'case'
 						? summary.name
 						: file.name.replace(/\.[^.]+$/, '');
-				let local: LocalCase = {
+				const local = new LocalCase({
 					id,
 					label,
 					fileName: file.name,
@@ -729,9 +672,9 @@
 					topology,
 					coordsKind: summary.coords_kind,
 					view
-				};
+				});
 				if (geoFiles.length > 0 && local.coordsKind === 'synthetic_pending') {
-					local = withGeoFile(local, geoFiles);
+					withGeoFile(local, geoFiles);
 				}
 				addAndActivateLocal(local);
 				parsedCaseCount++;

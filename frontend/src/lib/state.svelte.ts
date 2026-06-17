@@ -20,40 +20,73 @@ export interface LocalSubstations {
 	approximate: true;
 }
 
-/** A case file parsed in the browser. Network cases can solve after they have
- * coordinates. A .pwd display file has no case summary: substations only. */
-export interface LocalCase {
+type CoordsKind = 'file' | 'synthetic_pending' | 'synthetic' | 'geofile';
+type LocalView = { buses: NetworkBus[]; branches: NetworkBranch[] };
+
+/** The fields a parsed file supplies at creation; the solve state defaults. */
+export interface LocalCaseInit {
 	id: string; // `local-1`, `local-2`, ...
 	label: string;
 	fileName: string;
-	/** Case stats; null for a .pwd display only entry. */
-	summary: CaseFileSummary | null;
-	/** Raw powerio Network JSON for the browser solver branch. */
+	summary?: CaseFileSummary | null;
 	networkJson?: string;
-	/** Topology for synthetic placement when the file has no coordinates. */
 	topology?: Topology;
-	coordsKind?: 'file' | 'synthetic_pending' | 'synthetic' | 'geofile';
-	/** Map geometry when the file carried or received coordinates. */
-	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
-	syntheticCenter?: { lon: number; lat: number };
-	geoSource?: string;
-	geoWarnings?: string[];
-	/** Local solve state. Present only for parsed case files, never for .pwd display entries. */
-	network?: Network | null;
-	baseSolution?: Solution | null;
-	solution?: Solution | null;
-	sensitivity?: SensitivityColumn | null;
-	deltas?: DemandDeltas;
-	iterations?: SolveIteration[];
-	solving?: boolean;
-	solveMs?: number | null;
-	solveBackend?: SolveBackend | null;
-	solveFallbackReason?: string | null;
-	solveSeq?: number;
-	sensitivitySeq?: number;
-	predictedObjective?: number | null;
-	/** Present for a PowerWorld .pwd display only entry. */
+	coordsKind?: CoordsKind;
+	view?: LocalView | null;
 	substations?: LocalSubstations;
+}
+
+/** A case file parsed in the browser. Network cases can solve after they have
+ * coordinates; a .pwd display file has no case summary, substations only. A
+ * class with a stable identity and reactive fields, like CaseState: the solve
+ * and sensitivity flows mutate fields directly (each is $state, so the panel
+ * re-renders) and the seq tokens stay attached across overlapping async
+ * callbacks, so a stale solve can neither freeze the UI nor clobber a newer one. */
+export class LocalCase {
+	readonly id: string;
+	readonly label: string;
+	readonly fileName: string;
+	/** Case stats; null for a .pwd display only entry. */
+	summary = $state.raw<CaseFileSummary | null>(null);
+	/** Raw powerio Network JSON for the browser solver branch. */
+	networkJson = $state.raw<string | undefined>(undefined);
+	/** Topology for synthetic placement when the file has no coordinates. */
+	topology = $state.raw<Topology | undefined>(undefined);
+	coordsKind = $state.raw<CoordsKind | undefined>(undefined);
+	/** Map geometry when the file carried or received coordinates. */
+	view = $state.raw<LocalView | null>(null);
+	syntheticCenter = $state.raw<{ lon: number; lat: number } | undefined>(undefined);
+	geoSource = $state.raw<string | undefined>(undefined);
+	geoWarnings = $state.raw<string[] | undefined>(undefined);
+	network = $state.raw<Network | null>(null);
+	baseSolution = $state.raw<Solution | null>(null);
+	solution = $state.raw<Solution | null>(null);
+	sensitivity = $state.raw<SensitivityColumn | null>(null);
+	deltas = $state.raw<DemandDeltas>({});
+	iterations = $state.raw<SolveIteration[]>([]);
+	solving = $state(false);
+	solveMs = $state<number | null>(null);
+	solveBackend = $state<SolveBackend | null>(null);
+	solveFallbackReason = $state<string | null>(null);
+	/** Monotone token: only the latest solve may write this case. */
+	solveSeq = 0;
+	/** Monotone token: only the latest sensitivity request may write this case. */
+	sensitivitySeq = 0;
+	predictedObjective = $state<number | null>(null);
+	/** Present for a PowerWorld .pwd display only entry. */
+	substations = $state.raw<LocalSubstations | undefined>(undefined);
+
+	constructor(init: LocalCaseInit) {
+		this.id = init.id;
+		this.label = init.label;
+		this.fileName = init.fileName;
+		this.summary = init.summary ?? null;
+		this.networkJson = init.networkJson;
+		this.topology = init.topology;
+		this.coordsKind = init.coordsKind;
+		this.view = init.view ?? null;
+		this.substations = init.substations;
+	}
 }
 
 /** One islanded network with its own solver state on the server. API
@@ -138,11 +171,12 @@ export class AppState {
 	}
 
 	updateLocal(id: string, patch: Partial<LocalCase>) {
-		// Replace the entry with a new object so $derived reads of it (the solve
-		// card, sensitivity readout) see a changed reference and re-render. Stale
-		// async solves are kept from clobbering a newer one by re-checking the live
-		// case's solveSeq/sensitivitySeq in the callbacks (see liveCase in +page).
-		this.localCases = this.localCases.map((c) => (c.id === id ? { ...c, ...patch } : c));
+		// LocalCase is a class with a stable identity and reactive fields, so a
+		// field write is enough; assign onto the existing instance rather than
+		// replacing it. Mutating in place keeps the seq tokens attached to the same
+		// object an in-flight solve closure holds.
+		const c = this.localCases.find((lc) => lc.id === id);
+		if (c) Object.assign(c, patch);
 	}
 
 	removeCase(id: string) {
