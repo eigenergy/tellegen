@@ -609,13 +609,13 @@ mpc.branch = [
 % INFO    : === Translation Options ===
 % INFO    : Phase Angle Bound:           30.0 (deg.)
 % INFO    : Setting Flat Start
-% INFO    : 
+% INFO    :
 % INFO    : === Generator Bounds Update Notes ===
-% INFO    : 
+% INFO    :
 % INFO    : === Base KV Replacement Notes ===
-% INFO    : 
+% INFO    :
 % INFO    : === Transformer Setting Replacement Notes ===
-% INFO    : 
+% INFO    :
 % INFO    : === Line Capacity Monotonicity Notes ===
 % INFO    : Updated Thermal Rating: on line 2-1 : Rate B, Rate C - 0.0, 0.0 -> 100.0, 100.0
 % INFO    : Updated Thermal Rating: on line 1-119 : Rate B, Rate C - 0.0, 0.0 -> 221.1, 221.1
@@ -862,7 +862,7 @@ mpc.branch = [
 % INFO    : Updated Thermal Rating: on transformer 189-187 : Rate B, Rate C - 0.0, 0.0 -> 740.0, 740.0
 % INFO    : Updated Thermal Rating: on transformer 196-195 : Rate B, Rate C - 0.0, 0.0 -> 87.7, 87.7
 % INFO    : Updated Thermal Rating: on transformer 197-195 : Rate B, Rate C - 0.0, 0.0 -> 87.7, 87.7
-% INFO    : 
+% INFO    :
 % INFO    : === Voltage Setpoint Replacement Notes ===
 % INFO    : Bus 1	: V=1.0191524, theta=-7.085196 -> V=1.0, theta=0.0
 % INFO    : Bus 2	: V=1.0190346, theta=-7.098018 -> V=1.0, theta=0.0
@@ -1064,7 +1064,7 @@ mpc.branch = [
 % INFO    : Bus 198	: V=1.0232234, theta=-6.849765 -> V=1.0, theta=0.0
 % INFO    : Bus 199	: V=1.0438791, theta=-5.721465 -> V=1.0, theta=0.0
 % INFO    : Bus 200	: V=1.0259148, theta=-9.367606 -> V=1.0, theta=0.0
-% INFO    : 
+% INFO    :
 % INFO    : === Generator Setpoint Replacement Notes ===
 % INFO    : Gen at bus 49	: Pg=1.36, Qg=0.88 -> Pg=2.945, Qg=0.78
 % INFO    : Gen at bus 49	: Vg=1.04 -> Vg=1.0
@@ -1153,5 +1153,5 @@ mpc.branch = [
 % INFO    : Gen at bus 189	: Vg=1.04 -> Vg=1.0
 % INFO    : Gen at bus 196	: Vg=1.04 -> Vg=1.0
 % INFO    : Gen at bus 197	: Vg=1.04 -> Vg=1.0
-% INFO    : 
+% INFO    :
 % INFO    : === Writing Matpower Case File Notes ===
