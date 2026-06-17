@@ -41,9 +41,11 @@
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
 	let showFileDropUi = $state(true);
 	let casesLoaded = $state(false);
+	let loadingBackendCase = $state<string | null>(null);
 	let dragDepth = 0;
 
 	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
+	const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 	type SolvableCase = CaseState | LocalCase;
 	type DemandRangeAnchor = {
 		caseId: string;
@@ -81,6 +83,40 @@
 		return e instanceof Error ? e.message : String(e);
 	}
 
+	function readHiddenDefaultCases(): Set<string> {
+		if (typeof localStorage === 'undefined') return new Set();
+		try {
+			const parsed = JSON.parse(localStorage.getItem(HIDDEN_DEFAULT_CASES_KEY) ?? '[]');
+			return new Set(Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : []);
+		} catch {
+			return new Set();
+		}
+	}
+
+	function writeHiddenDefaultCases(ids: Set<string>) {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			localStorage.setItem(HIDDEN_DEFAULT_CASES_KEY, JSON.stringify([...ids].sort()));
+		} catch {
+			// Current session removal still works; persistence is best effort.
+		}
+	}
+
+	function rememberHiddenDefaultCase(id: string) {
+		const hidden = readHiddenDefaultCases();
+		hidden.add(id);
+		writeHiddenDefaultCases(hidden);
+	}
+
+	function restoreDefaultCases() {
+		try {
+			if (typeof localStorage !== 'undefined') localStorage.removeItem(HIDDEN_DEFAULT_CASES_KEY);
+		} catch {
+			// Ignore storage failures and reload from the server.
+		}
+		load();
+	}
+
 	function rgbaCss([r, g, b, a]: RGBA): string {
 		return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
 	}
@@ -102,17 +138,14 @@
 	async function load() {
 		try {
 			const summaries = await getCases();
-			app.cases = summaries.map((s) => new CaseState(s));
-			app.activeCaseId = summaries[0]?.id ?? null;
-			await Promise.all(
-				app.cases.map(async (c) => {
-					const [network, solution] = await Promise.all([getNetwork(c.id), getSolution(c.id)]);
-					c.network = network;
-					c.baseSolution = solution;
-					c.solution = solution;
-				})
-			);
-			app.requestFrame('all');
+			const hidden = readHiddenDefaultCases();
+			app.cases = summaries.filter((s) => !hidden.has(s.id)).map((s) => new CaseState(s));
+			app.activeLocalId = null;
+			app.placingLocalId = null;
+			app.activeCaseId = app.cases[0]?.id ?? null;
+			const active = app.active;
+			if (active) await loadBackendCase(active, true);
+			else app.requestFrame('all');
 		} catch (e) {
 			app.error = `server unreachable: ${e instanceof Error ? e.message : e}`;
 		} finally {
@@ -121,6 +154,26 @@
 	}
 
 	load();
+
+	async function loadBackendCase(c: CaseState, frame = false) {
+		if (c.network && c.solution && c.baseSolution) {
+			if (frame && app.activeCaseId === c.id) app.requestFrame(c.id);
+			return;
+		}
+		loadingBackendCase = c.id;
+		try {
+			const [network, solution] = await Promise.all([getNetwork(c.id), getSolution(c.id)]);
+			if (!app.byId(c.id)) return;
+			c.network = network;
+			c.baseSolution = solution;
+			c.solution = solution;
+			if (frame && app.activeCaseId === c.id) app.requestFrame(c.id);
+		} catch (e) {
+			if (app.byId(c.id)) app.error = `${c.name}: ${errorText(e)}`;
+		} finally {
+			if (loadingBackendCase === c.id) loadingBackendCase = null;
+		}
+	}
 
 	function localNetwork(c: LocalCase): Network | null {
 		if (!c.summary || !c.view) return null;
@@ -162,18 +215,20 @@
 		if (current?.networkJson && current.network && !current.solution) runSolve(current, null);
 	}
 
-	function activateCase(id: string) {
+	async function activateCase(id: string) {
 		app.activeLocalId = null;
 		app.placingLocalId = null;
 		if (app.activeCaseId !== id) {
 			clearSelection();
 			app.activeCaseId = id;
 		}
-		app.requestFrame(id);
+		const c = app.byId(id);
+		if (c) await loadBackendCase(c, true);
 	}
 
-	function removeBackendCase(c: CaseState, event?: MouseEvent) {
+	async function removeBackendCase(c: CaseState, event?: MouseEvent) {
 		event?.stopPropagation();
+		rememberHiddenDefaultCase(c.id);
 		if (app.activeCaseId === c.id) {
 			closeStream?.();
 			closeStream = null;
@@ -181,6 +236,8 @@
 			clearSelection();
 		}
 		app.removeCase(c.id);
+		const active = app.active;
+		if (active) await loadBackendCase(active, true);
 	}
 
 	function activateLocal(c: LocalCase) {
@@ -1009,6 +1066,9 @@
 			{#if !app.error && !app.activeLocal}
 				{#if casesLoaded && app.cases.length === 0}
 					<p class="dim mono">no default cases loaded</p>
+					<button class="reset mono" onclick={restoreDefaultCases}>restore defaults</button>
+				{:else if loadingBackendCase}
+					<p class="dim mono blink">loading selected case&hellip;</p>
 				{:else}
 					<p class="dim mono blink">loading cases&hellip;</p>
 				{/if}

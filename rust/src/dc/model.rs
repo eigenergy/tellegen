@@ -258,6 +258,7 @@ impl DcNetwork {
     /// deduplicated `(row, col, value)` triplets in `(row, col)` order. Parallel
     /// branches between the same pair of buses are accumulated. Zero-weight
     /// (open / zero-admittance) branches contribute nothing.
+    #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
     pub fn susceptance_coo(&self) -> Vec<(usize, usize, f64)> {
         let mut acc: BTreeMap<(usize, usize), f64> = BTreeMap::new();
         for e in 0..self.m {

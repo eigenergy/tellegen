@@ -47,6 +47,7 @@ export interface IngestedCase extends CaseFileSummary {
 
 let ready: Promise<typeof import('./wasm-pkg/tellegen')> | null = null;
 let sensitivityReady: Promise<typeof import('./wasm-sens-pkg/tellegen_sens')> | null = null;
+let sensitivityUnsupported: string | null = null;
 
 function powerio() {
 	ready ??= import('./wasm-pkg/tellegen')
@@ -64,16 +65,23 @@ function powerio() {
 }
 
 function powerioSensitivity() {
+	if (sensitivityUnsupported) return Promise.reject(new Error(sensitivityUnsupported));
 	sensitivityReady ??= import('./wasm-sens-pkg/tellegen_sens')
 		.then(async (mod) => {
 			await mod.default({ module_or_path: sensWasmUrl });
 			return mod;
 		})
 		.catch((e) => {
+			const message = errorText(e);
 			sensitivityReady = null;
+			if (isPermanentWasmLoadFailure(message)) sensitivityUnsupported = message;
 			throw e;
 		});
 	return sensitivityReady;
+}
+
+function isPermanentWasmLoadFailure(message: string): boolean {
+	return /WebAssembly|wasm|compile|parse|unsupported|invalid opcode|relaxed/i.test(message);
 }
 
 /** powerio format token from a file name; null for non-case files. */

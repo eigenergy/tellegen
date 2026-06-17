@@ -36,6 +36,7 @@ use super::model::DcNetwork;
 /// follow PowerDiff's `DCOPFSolution`. `nu_bal` is the LMP (per-unit
 /// $/per-unit-MW); divide by `base_mva` for $/MWh.
 #[derive(Clone)]
+#[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
 pub struct DcSolution {
     pub va: Vec<f64>,
     pub pg: Vec<f64>,

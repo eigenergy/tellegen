@@ -104,6 +104,7 @@ Frontend checks:
 cd frontend
 npm run check
 npm run build
+npm run smoke:build
 ```
 
 ## Repository layout
@@ -136,6 +137,9 @@ scripts/build-docs.sh
 The sensitivity and server solve endpoints accept `?d=bus:mw,bus:mw`, where each
 value is a MW delta from the base case. The solve stream emits `status`,
 `solution`, optional `sensitivity`, and `done` events.
+
+Server solve work is bounded by `TELLEGEN_SOLVER_CONCURRENCY` (default `2`) and
+`TELLEGEN_SOLVER_TIMEOUT_SECS` (default `30`).
 
 ## Deployment
 

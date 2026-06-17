@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "smoke:build": "node scripts/smoke-build.mjs",
     "wasm": "npm run wasm:core && npm run wasm:sens",
     "wasm:core": "RUSTFLAGS=\"-C target-feature=-simd128,-relaxed-simd\" wasm-pack build ../rust --target web --out-dir ../frontend/src/lib/wasm-pkg -- --no-default-features",
     "wasm:sens": "wasm-pack build ../rust --target web --out-dir ../frontend/src/lib/wasm-sens-pkg --out-name tellegen_sens",

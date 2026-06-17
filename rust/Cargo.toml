@@ -30,7 +30,7 @@ sensitivity = ["dep:faer"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 axum = "0.8.4"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-stream = "0.1"
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"

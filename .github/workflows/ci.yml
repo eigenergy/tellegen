@@ -18,7 +18,7 @@ jobs:
           workspaces: rust
       - run: cargo test --manifest-path rust/Cargo.toml
       - name: Install wasm-pack
-        run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+        run: cargo install wasm-pack --version 0.15.0 --locked
       - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-pkg -- --no-default-features
         env:
           RUSTFLAGS: -C target-feature=-simd128,-relaxed-simd
@@ -33,6 +33,8 @@ jobs:
       - run: npm run check
         working-directory: frontend
       - run: npm run build
+        working-directory: frontend
+      - run: npm run smoke:build
         working-directory: frontend
 
   # Julia reference: PowerIO from the General registry, PowerDiff from the git

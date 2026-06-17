@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 # The tellegen crate depends on the crates.io powerio release, so cargo fetches
 # the source itself; nothing to clone here.
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install wasm-pack --locked
+RUN cargo install wasm-pack --version 0.15.0 --locked
 COPY rust /build/rust
 RUN RUSTFLAGS="-C target-feature=-simd128,-relaxed-simd" \
     wasm-pack build /build/rust --target web --out-dir /out/wasm-pkg -- --no-default-features
@@ -20,7 +20,7 @@ RUN npm ci
 COPY frontend/ ./
 COPY --from=wasm /out/wasm-pkg ./src/lib/wasm-pkg
 COPY --from=wasm /out/wasm-sens-pkg ./src/lib/wasm-sens-pkg
-RUN npm run build
+RUN npm run build && npm run smoke:build
 
 # ---- rust backend ----
 FROM rust:slim AS server

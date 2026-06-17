@@ -1,11 +1,11 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     convert::Infallible,
     env,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -20,7 +20,7 @@ use axum::{
 };
 use powerio::network::Network;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::{
     services::{ServeDir, ServeFile},
@@ -36,6 +36,8 @@ use crate::{
 };
 
 const DEFAULT_PORT: u16 = 8000;
+const DEFAULT_SOLVER_CONCURRENCY: usize = 2;
+const DEFAULT_SOLVER_TIMEOUT_SECS: u64 = 30;
 
 const CASE_SPECS: &[CaseSpec] = &[
     CaseSpec::staged(
@@ -108,6 +110,8 @@ struct FallbackSpec {
 #[derive(Clone)]
 pub struct AppState {
     cases: Arc<BTreeMap<String, Arc<CaseEntry>>>,
+    solver_permits: Arc<Semaphore>,
+    solver_timeout: Duration,
 }
 
 struct CaseEntry {
@@ -212,6 +216,20 @@ impl ApiError {
             message: message.into(),
         }
     }
+
+    fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    fn service_unavailable(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            message: message.into(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -274,6 +292,8 @@ impl AppState {
         }
         Ok(Self {
             cases: Arc::new(cases),
+            solver_permits: Arc::new(Semaphore::new(solver_concurrency())),
+            solver_timeout: solver_timeout(),
         })
     }
 
@@ -324,10 +344,21 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
 
     if let Some(dir) = frontend_build.filter(|dir| dir.is_dir()) {
         let index = dir.join("index.html");
+        let fallback = if dir.join("200.html").is_file() {
+            dir.join("200.html")
+        } else {
+            index
+        };
         app.fallback_service(
             ServeDir::new(dir)
                 .append_index_html_on_directories(true)
-                .fallback(ServeFile::new(index)),
+                .precompressed_br()
+                .precompressed_gzip()
+                .fallback(
+                    ServeFile::new(fallback)
+                        .precompressed_br()
+                        .precompressed_gzip(),
+                ),
         )
     } else {
         app
@@ -409,19 +440,26 @@ async fn sensitivity(
     if !entry.network.buses.iter().any(|b| b.id.0 == bus) {
         return Err(ApiError::not_found(format!("unknown bus {bus}")));
     }
-    let request = DcSolveRequest {
-        deltas: parse_deltas(query.d.as_deref()),
-        sens_bus: Some(bus),
-    };
-    let id_for_task = entry.id.clone();
-    let output = tokio::task::spawn_blocking(move || solve_network(&entry.network, &request))
-        .await
-        .map_err(|e| ApiError::internal(format!("solve task failed: {e}")))?
-        .map_err(ApiError::internal)?;
-    let Some(col) = output.dlmp_dd else {
-        return Err(ApiError::not_found(format!("unknown bus {bus}")));
-    };
-    Ok(Json(sensitivity_payload(&id_for_task, col)))
+    #[cfg(not(feature = "sensitivity"))]
+    {
+        let _ = query;
+        return Err(ApiError::service_unavailable("sensitivity disabled"));
+    }
+    #[cfg(feature = "sensitivity")]
+    {
+        let deltas = parse_deltas(query.d.as_deref())?;
+        validate_deltas(&entry, &deltas)?;
+        let request = DcSolveRequest {
+            deltas,
+            sens_bus: Some(bus),
+        };
+        let id_for_task = entry.id.clone();
+        let output = run_solve_limited(state, entry, request).await?;
+        let Some(col) = output.dlmp_dd else {
+            return Err(ApiError::not_found(format!("unknown bus {bus}")));
+        };
+        Ok(Json(sensitivity_payload(&id_for_task, col)))
+    }
 }
 
 async fn solve_stream(
@@ -435,21 +473,28 @@ async fn solve_stream(
             return Err(ApiError::not_found(format!("unknown bus {bus}")));
         }
     }
+    #[cfg(not(feature = "sensitivity"))]
+    if query.sens.is_some() {
+        return Err(ApiError::service_unavailable("sensitivity disabled"));
+    }
 
+    let deltas = parse_deltas(query.d.as_deref())?;
+    validate_deltas(&entry, &deltas)?;
     let request = DcSolveRequest {
-        deltas: parse_deltas(query.d.as_deref()),
+        deltas,
         sens_bus: query.sens,
     };
     let (tx, rx) = mpsc::channel(8);
     let id_for_task = entry.id.clone();
-    tokio::task::spawn_blocking(move || {
+    tokio::spawn(async move {
         send_event(
             &tx,
             "status",
             &serde_json::json!({ "phase": "solving", "case": id_for_task.as_str() }),
-        );
+        )
+        .await;
         let start = Instant::now();
-        match solve_network(&entry.network, &request) {
+        match run_solve_limited(state, entry, request).await {
             Ok(output) => {
                 let solve_ms = start.elapsed().as_secs_f64() * 1000.0;
                 let solution = solution_payload(&output);
@@ -464,18 +509,45 @@ async fn solve_stream(
                         "flows": solution.flows,
                         "dispatch": solution.dispatch,
                     }),
-                );
+                )
+                .await;
                 if let Some(col) = output.dlmp_dd {
-                    send_event(&tx, "sensitivity", &sensitivity_payload(&id_for_task, col));
+                    send_event(&tx, "sensitivity", &sensitivity_payload(&id_for_task, col)).await;
                 }
-                send_event(&tx, "done", &serde_json::json!({ "ok": true }));
+                send_event(&tx, "done", &serde_json::json!({ "ok": true })).await;
             }
             Err(error) => {
-                send_event(&tx, "fail", &serde_json::json!({ "error": error }));
+                send_event(&tx, "fail", &serde_json::json!({ "error": error.message })).await;
             }
         }
     });
     Ok(Sse::new(ReceiverStream::new(rx)))
+}
+
+async fn run_solve_limited(
+    state: Arc<AppState>,
+    entry: Arc<CaseEntry>,
+    request: DcSolveRequest,
+) -> ApiResult<DcSolveOutput> {
+    let timeout = state.solver_timeout;
+    tokio::time::timeout(timeout, async move {
+        let permit = state
+            .solver_permits
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| ApiError::service_unavailable("solver unavailable"))?;
+        let handle = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            solve_network(&entry.network, &request)
+        });
+        handle
+            .await
+            .map_err(|e| ApiError::internal(format!("solve task failed: {e}")))?
+            .map_err(ApiError::internal)
+    })
+    .await
+    .map_err(|_| ApiError::service_unavailable("solve timed out"))?
 }
 
 fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, String> {
@@ -604,24 +676,68 @@ fn sensitivity_payload(case: &str, col: DlmpDdColumn) -> SensitivityPayload {
     }
 }
 
-fn parse_deltas(input: Option<&str>) -> HashMap<usize, f64> {
-    input
-        .unwrap_or("")
-        .split(',')
-        .filter_map(|part| {
-            let (bus, mw) = part.split_once(':')?;
-            Some((bus.parse::<usize>().ok()?, mw.parse::<f64>().ok()?))
-        })
-        .collect()
+fn parse_deltas(input: Option<&str>) -> ApiResult<HashMap<usize, f64>> {
+    let mut deltas = HashMap::new();
+    let mut seen = HashSet::new();
+    for raw in input.unwrap_or("").split(',') {
+        let part = raw.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (bus, mw) = part
+            .split_once(':')
+            .ok_or_else(|| ApiError::bad_request(format!("invalid demand delta {part:?}")))?;
+        let bus = bus
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| ApiError::bad_request(format!("invalid demand delta bus {bus:?}")))?;
+        if bus == 0 {
+            return Err(ApiError::bad_request("demand delta bus must be positive"));
+        }
+        if !seen.insert(bus) {
+            return Err(ApiError::bad_request(format!(
+                "duplicate demand delta for bus {bus}"
+            )));
+        }
+        let mw = mw
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| ApiError::bad_request(format!("invalid demand delta MW {mw:?}")))?;
+        if !mw.is_finite() {
+            return Err(ApiError::bad_request(format!(
+                "demand delta for bus {bus} must be finite"
+            )));
+        }
+        deltas.insert(bus, mw);
+    }
+    Ok(deltas)
 }
 
-fn send_event<T: Serialize>(
+fn validate_deltas(entry: &CaseEntry, deltas: &HashMap<usize, f64>) -> ApiResult<()> {
+    for (&bus, &delta) in deltas {
+        let base = entry
+            .view
+            .buses
+            .iter()
+            .find(|b| b.id == bus)
+            .ok_or_else(|| ApiError::bad_request(format!("unknown demand delta bus {bus}")))?
+            .demand_mw;
+        if base + delta < -1e-9 {
+            return Err(ApiError::bad_request(format!(
+                "demand delta for bus {bus} would make demand negative"
+            )));
+        }
+    }
+    Ok(())
+}
+
+async fn send_event<T: Serialize>(
     tx: &mpsc::Sender<Result<Event, Infallible>>,
     event: &str,
     payload: &T,
 ) {
     if let Ok(data) = serde_json::to_string(payload) {
-        let _ = tx.blocking_send(Ok(Event::default().event(event).data(data)));
+        let _ = tx.send(Ok(Event::default().event(event).data(data))).await;
     }
 }
 
@@ -675,6 +791,24 @@ fn allow_fallback() -> bool {
     )
 }
 
+fn solver_concurrency() -> usize {
+    env::var("TELLEGEN_SOLVER_CONCURRENCY")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_SOLVER_CONCURRENCY)
+}
+
+fn solver_timeout() -> Duration {
+    Duration::from_secs(
+        env::var("TELLEGEN_SOLVER_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(DEFAULT_SOLVER_TIMEOUT_SECS),
+    )
+}
+
 fn init_tracing() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| "tellegen=info,tower_http=warn".into());
@@ -686,7 +820,9 @@ mod tests {
     use super::*;
     use axum::body::{to_bytes, Body};
     use axum::http::HeaderMap;
+    use std::fs;
     use std::sync::OnceLock;
+    use std::time::{SystemTime, UNIX_EPOCH};
     use tower::ServiceExt;
 
     fn fallback_state() -> Arc<AppState> {
@@ -717,6 +853,21 @@ mod tests {
         (status, serde_json::from_str(&body).unwrap())
     }
 
+    async fn static_get(path: &str, dir: PathBuf) -> (StatusCode, String) {
+        let res = router(fallback_state(), Some(dir))
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        (status, String::from_utf8(body.to_vec()).unwrap())
+    }
+
     #[tokio::test]
     async fn health_lists_fallback_cases() {
         let (status, body) = get("/api/health").await;
@@ -745,12 +896,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sensitivity_ignores_malformed_deltas() {
-        let (status, body) = get("/api/cases/case200/sensitivity/lmp/d/1?d=1:5,junk,2:bad").await;
+    async fn static_fallback_serves_200_html_without_index() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("tellegen-static-{suffix}"));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("200.html"),
+            "<!doctype html><title>tellegen</title>",
+        )
+        .unwrap();
+
+        let (status, body) = static_get("/", dir.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("tellegen"));
+
+        let (status, body) = static_get("/map/path", dir.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("tellegen"));
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[tokio::test]
+    async fn sensitivity_returns_payload() {
+        let (status, body) = get("/api/cases/case200/sensitivity/lmp/d/1?d=1:5").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["case"], "case200");
         assert_eq!(body["bus"], 1);
         assert!(body["values"].as_array().unwrap().len() >= 200);
+    }
+
+    #[cfg(not(feature = "sensitivity"))]
+    #[tokio::test]
+    async fn sensitivity_returns_unavailable_without_feature() {
+        let (status, body) = get("/api/cases/case200/sensitivity/lmp/d/1").await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("sensitivity disabled"));
+    }
+
+    #[tokio::test]
+    async fn demand_delta_validation_rejects_bad_requests() {
+        for path in [
+            "/api/cases/case200/solve?d=junk",
+            "/api/cases/case200/solve?d=1:notnum",
+            "/api/cases/case200/solve?d=1:NaN",
+            "/api/cases/case200/solve?d=1:5,1:6",
+            "/api/cases/case200/solve?d=999999:1",
+            "/api/cases/case200/solve?d=1:-999999",
+        ] {
+            let (status, body) = get(path).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {body}");
+            assert!(body["error"].as_str().unwrap().len() > 5);
+        }
     }
 
     #[tokio::test]
@@ -772,9 +976,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn solve_stream_emits_expected_events() {
-        let (status, headers, body) =
-            get_raw("/api/cases/case200/solve?sens=1&d=1:5,junk,2:bad").await;
+    async fn solve_stream_emits_solution_events() {
+        let (status, headers, body) = get_raw("/api/cases/case200/solve?d=1:5").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(headers[CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("text/event-stream"));
+        let events: Vec<_> = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("event:"))
+            .map(str::trim)
+            .collect();
+        assert_eq!(events, ["status", "solution", "done"]);
+        assert!(body.contains(r#""case":"case200""#));
+        assert!(body.contains(r#""solve_ms":"#));
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[tokio::test]
+    async fn solve_stream_emits_sensitivity_when_requested() {
+        let (status, headers, body) = get_raw("/api/cases/case200/solve?sens=1&d=1:5").await;
         assert_eq!(status, StatusCode::OK);
         assert!(headers[CONTENT_TYPE]
             .to_str()
@@ -788,6 +1010,17 @@ mod tests {
         assert_eq!(events, ["status", "solution", "sensitivity", "done"]);
         assert!(body.contains(r#""case":"case200""#));
         assert!(body.contains(r#""solve_ms":"#));
+    }
+
+    #[cfg(not(feature = "sensitivity"))]
+    #[tokio::test]
+    async fn solve_stream_rejects_sensitivity_without_feature() {
+        let (status, body) = get("/api/cases/case200/solve?sens=1").await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("sensitivity disabled"));
     }
 
     #[tokio::test]
