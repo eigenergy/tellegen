@@ -107,8 +107,9 @@ pub fn solve_dc_json(network_json: &str, deltas_json: &str) -> Result<String, St
 }
 
 pub fn solve_network(net: &Network, req: &DcSolveRequest) -> Result<DcSolveOutput, String> {
-    let dc = DcNetwork::from_network(net)?;
-    solve_prebuilt(&dc, req)
+    // The one-shot wasm path: build the model and hand ownership straight to the
+    // solve, so there is no cache to protect and nothing to clone.
+    solve_owned(DcNetwork::from_network(net)?, req, None)
 }
 
 /// Solve at `base demand + deltas` from an already-built [`DcNetwork`]. The
@@ -127,9 +128,16 @@ pub fn solve_prebuilt_cancellable(
     req: &DcSolveRequest,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<DcSolveOutput, String> {
-    // Clone the prebuilt model and perturb only its demand. Every other field is
-    // constant for the case, so this is a flat Vec copy, not a topology rebuild.
-    let mut dc = base_dc.clone();
+    // Clone the cached model so the perturbation never touches it; every field
+    // but demand is constant for the case, so this is a flat Vec copy.
+    solve_owned(base_dc.clone(), req, cancel)
+}
+
+fn solve_owned(
+    mut dc: DcNetwork,
+    req: &DcSolveRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<DcSolveOutput, String> {
     let base = dc.base_mva;
 
     // Original bus id -> dense index, for routing deltas and the sensitivity bus.

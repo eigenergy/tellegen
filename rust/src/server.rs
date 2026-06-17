@@ -33,7 +33,7 @@ use tower_http::{
 use crate::{
     dc::{
         solve_prebuilt, solve_prebuilt_cancellable, DcNetwork, DcSolveOutput, DcSolveRequest,
-        DispatchValue, DlmpDdColumn, FlowValue, LmpValue, SensitivityValue, SolveIteration,
+        DispatchValue, DlmpDdColumn, FlowValue, LmpValue, SensitivityValue,
     },
     geo::{complete_coords_for, synthetic_layout, Coords},
 };
@@ -179,7 +179,6 @@ pub struct SolutionPayload {
     pub lmp: Vec<LmpValue>,
     pub flows: Vec<FlowValue>,
     pub dispatch: Vec<DispatchValue>,
-    pub iterations: Vec<SolveIteration>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -527,7 +526,7 @@ async fn solve_stream(
                         "lmp": solution.lmp,
                         "flows": solution.flows,
                         "dispatch": solution.dispatch,
-                        "iterations": solution.iterations,
+                        "iterations": output.iterations,
                     }),
                 )
                 .await;
@@ -551,26 +550,33 @@ async fn run_solve_limited(
     cancel: Arc<AtomicBool>,
 ) -> ApiResult<DcSolveOutput> {
     let timeout = state.solver_timeout;
-    // Hold a permit only for the bounded solve window. The blocking solve owns
-    // the permit and the cancel flag; on timeout we flip the flag so the solve
-    // stops at its next interior-point iteration and releases the permit, rather
-    // than running to convergence while the request has already given up.
-    let permit = state
-        .solver_permits
-        .clone()
-        .acquire_owned()
-        .await
-        .map_err(|_| ApiError::service_unavailable("solver unavailable"))?;
-    let dc = entry.dc.clone();
     let task_cancel = cancel.clone();
-    let handle = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        solve_prebuilt_cancellable(&dc, &request, Some(task_cancel))
-    });
-    match tokio::time::timeout(timeout, handle).await {
-        Ok(joined) => joined
-            .map_err(|e| ApiError::internal(format!("solve task failed: {e}")))?
-            .map_err(ApiError::internal),
+    // One deadline bounds the whole operation: the wait for a solver permit and
+    // the solve itself. Acquiring inside the timeout means a saturated pool
+    // returns "solve timed out" instead of queueing unbounded. On timeout we
+    // flip the cancel flag so an in-flight solve stops at its next interior-point
+    // iteration and releases its permit, instead of running to convergence for a
+    // request that already gave up (the cancel is observed within one iteration,
+    // sub-millisecond for the served cases).
+    let result = tokio::time::timeout(timeout, async move {
+        let permit = state
+            .solver_permits
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| ApiError::service_unavailable("solver unavailable"))?;
+        let dc = entry.dc.clone();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            solve_prebuilt_cancellable(&dc, &request, Some(task_cancel))
+        })
+        .await
+        .map_err(|e| ApiError::internal(format!("solve task failed: {e}")))?
+        .map_err(ApiError::internal)
+    })
+    .await;
+    match result {
+        Ok(r) => r,
         Err(_) => {
             cancel.store(true, Ordering::Relaxed);
             Err(ApiError::service_unavailable("solve timed out"))
@@ -692,7 +698,6 @@ fn solution_payload(output: &DcSolveOutput) -> SolutionPayload {
         lmp: output.lmp.clone(),
         flows: output.flows.clone(),
         dispatch: output.dispatch.clone(),
-        iterations: output.iterations.clone(),
     }
 }
 
