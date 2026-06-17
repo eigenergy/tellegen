@@ -23,9 +23,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+      - run: cargo test --manifest-path rust/Cargo.toml
       - name: Install wasm-pack
-        run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
-      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-pkg
+        run: cargo install wasm-pack --version 0.15.0 --locked
+      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-pkg -- --no-default-features
+        env:
+          RUSTFLAGS: -C target-feature=-simd128,-relaxed-simd
+      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-sens-pkg --out-name tellegen_sens
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -37,24 +41,13 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-
-  backend:
-    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: "1.11"
-      - uses: julia-actions/cache@v2
-      - name: Instantiate backend
-        run: julia --project=backend -e 'using Pkg; Pkg.instantiate()'
-      - run: TELLEGEN_ALLOW_FALLBACK=1 julia --project=backend backend/test/runtests.jl
+      - run: npm run smoke:build
+        working-directory: frontend
 
   image:
     if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    needs: [frontend, backend]
+    needs: [frontend]
     outputs:
       sha_tag: ${{ steps.meta.outputs.sha_tag }}
       main_tag: ${{ steps.meta.outputs.main_tag }}
@@ -85,7 +78,7 @@ jobs:
             --env TELLEGEN_ALLOW_FALLBACK=1 \
             "${{ steps.meta.outputs.sha_tag }}"
           for attempt in $(seq 1 90); do
-            if curl -fsS http://127.0.0.1:8000/api/health; then
+            if curl -fsS http://127.0.0.1:8000/api/health && curl -fsS http://127.0.0.1:8000/ | grep -q 'tellegen'; then
               exit 0
             fi
             echo "waiting for container health ($attempt/90)"

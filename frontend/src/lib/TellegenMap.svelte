@@ -35,6 +35,11 @@
 
 	let map = $state.raw<MapLibreMap | null>(null);
 	let overlay = $state.raw<MapboxOverlay | null>(null);
+	// Bumped to remount the map after a WebGL context is lost and cannot be
+	// repainted in place. See initMap's context-loss handling.
+	let mapGen = $state(0);
+	// Cap automatic remounts so sustained GPU pressure cannot loop forever.
+	let glRebuilds = 0;
 
 	type LayerCtors = {
 		PathLayer: typeof PathLayer;
@@ -66,7 +71,9 @@
 		const active = app.active ?? app.activeLocal;
 		const selected = app.selectedBus;
 		const activeSensitivity =
-			active && selected !== null && active.sensitivity?.bus === selected ? active.sensitivity : null;
+			active && selected !== null && active.sensitivity?.bus === selected
+				? active.sensitivity
+				: null;
 		const activeDeltas = active instanceof CaseState ? active.deltas : (active?.deltas ?? {});
 		const previewStep =
 			active && selected !== null && app.previewDeltaMw !== null && activeSensitivity
@@ -136,8 +143,8 @@
 	function caseOf(info: PickingInfo): SolvableCase | null {
 		const layerId = info.layer?.id;
 		if (!layerId) return null;
-		const backend = layerId.match(/^(?:buses|branches)-(.+)$/);
-		if (backend) return app.byId(backend[1]);
+		const bundled = layerId.match(/^(?:buses|branches)-(.+)$/);
+		if (bundled) return app.byId(bundled[1]);
 		const local = layerId.match(/^local-(?:buses|branches)-(.+)$/);
 		if (local) return app.localCases.find((c) => c.id === local[1]) ?? null;
 		return null;
@@ -219,6 +226,31 @@
 		};
 	}
 
+	type MapModules = Awaited<ReturnType<typeof loadMapModules>>;
+
+	// The deck overlay options. interleaved:true renders the network into
+	// maplibre's own WebGL2 context instead of a second canvas, so the page
+	// holds one GL context rather than two. Safari evicts WebGL contexts under
+	// memory and tab pressure, and one context survives that far better; the
+	// deck layers also inherit maplibre's 4096 canvas clamp. The flat positron
+	// basemap writes no depth, so the overlay always draws on top.
+	function buildOverlay(MapboxOverlay: MapModules['MapboxOverlay']): MapboxOverlay {
+		return new MapboxOverlay({
+			interleaved: true,
+			layers: [],
+			parameters: {
+				depthWriteEnabled: false,
+				depthCompare: 'always'
+			},
+			onClick: (info: PickingInfo) => {
+				if (!app.placingLocalId && !isBusLayer(info.layer?.id)) onmapclick();
+			},
+			getTooltip: tooltip,
+			getCursor: ({ isHovering, isDragging }: CursorState) =>
+				app.placingLocalId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
+		});
+	}
+
 	function initMap(container: HTMLDivElement) {
 		let cleanup = () => {};
 		let cancelled = false;
@@ -234,28 +266,94 @@
 					canvasContextAttributes: { antialias: true },
 					attributionControl: { compact: true }
 				});
-				const o = new MapboxOverlay({
-					interleaved: false,
-					layers: [],
-					parameters: {
-						depthWriteEnabled: false,
-						depthCompare: 'always'
-					},
-					onClick: (info: PickingInfo) => {
-						if (!app.placingLocalId && !isBusLayer(info.layer?.id)) onmapclick();
-					},
-					getTooltip: tooltip,
-					getCursor: ({ isHovering, isDragging }: CursorState) =>
-						app.placingLocalId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
-				});
+				const o = buildOverlay(MapboxOverlay);
 				m.addControl(o);
 				m.on('click', (e) => {
 					if (app.placingLocalId) onplacecase(e.lngLat.lng, e.lngLat.lat);
 				});
 				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+
+				// WebGL resilience on Safari. Two failure modes seen in the wild:
+				//   1. The canvas backing store is discarded while the tab is idle or
+				//      backgrounded, so the map shows blank until something forces a
+				//      redraw. A manual window resize fixes it; do that automatically
+				//      when the tab returns to the foreground.
+				//   2. The whole GL context is lost under pressure. maplibre rebuilds
+				//      its painter on restore but not the deck custom layer (its Deck
+				//      still holds the dead context), so a clean remount is simplest:
+				//      bump mapGen to tear the map down and build it again.
+				const repaint = () => {
+					if (cancelled) return;
+					m.resize();
+					m.triggerRepaint();
+				};
+				const onVisible = () => {
+					if (document.visibilityState === 'visible') repaint();
+				};
+				let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
+				const clearRebuild = () => {
+					if (rebuildTimer !== null) {
+						clearTimeout(rebuildTimer);
+						rebuildTimer = null;
+					}
+				};
+				// A rebuilt map that holds a live context for a while proves the GPU
+				// recovered, so the rebuild budget is forgiven (see below). Clear that
+				// pending forgiveness the moment another loss arrives.
+				let stabilizeTimer: ReturnType<typeof setTimeout> | null = null;
+				const clearStabilize = () => {
+					if (stabilizeTimer !== null) {
+						clearTimeout(stabilizeTimer);
+						stabilizeTimer = null;
+					}
+				};
+				// At most one rebuild per map instance: the 1500ms timer and
+				// webglcontextrestored both call rebuild for a single loss, so guard
+				// against counting that loss twice against the budget.
+				let rebuilt = false;
+				const rebuild = () => {
+					clearRebuild();
+					if (cancelled || rebuilt) return;
+					if (glRebuilds >= 6) {
+						app.error =
+							'the map lost its graphics context repeatedly; reload the page to restore it';
+						return;
+					}
+					rebuilt = true;
+					glRebuilds++;
+					mapGen++;
+				};
+				const onContextLost = () => {
+					overlay = null; // stop the layer effect touching a dead overlay
+					clearStabilize(); // a fresh loss is not a stable recovery
+					rebuildTimer ??= setTimeout(rebuild, 1500);
+				};
+				document.addEventListener('visibilitychange', onVisible);
+				window.addEventListener('focus', repaint);
+				window.addEventListener('pageshow', repaint);
+				m.on('webglcontextlost', onContextLost);
+				m.on('webglcontextrestored', rebuild);
+
 				map = m;
 				overlay = o;
+				if (mapGen > 0) {
+					// A remounted map opens at the default view; re-frame to the active grid.
+					app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
+					// This is a rebuilt map. Once it has held a live context without
+					// another loss, zero the budget so the cap only ever catches a tight
+					// loss loop, not recoveries spread across a long session.
+					stabilizeTimer = setTimeout(() => {
+						glRebuilds = 0;
+						stabilizeTimer = null;
+					}, 10000);
+				}
+
 				cleanup = () => {
+					clearRebuild();
+					clearStabilize();
+					document.removeEventListener('visibilitychange', onVisible);
+					window.removeEventListener('focus', repaint);
+					window.removeEventListener('pageshow', repaint);
 					m.remove();
 					map = null;
 					overlay = null;
@@ -312,8 +410,7 @@
 						c.id === app.activeCaseId && b.id === app.selectedBus
 							? [32, 36, 43, 255]
 							: [46, 42, 34, 110],
-					getLineWidth: (b) =>
-						c.id === app.activeCaseId && b.id === app.selectedBus ? 2.5 : 1,
+					getLineWidth: (b) => (c.id === app.activeCaseId && b.id === app.selectedBus ? 2.5 : 1),
 					lineWidthUnits: 'pixels',
 					pickable: true,
 					autoHighlight: true,
@@ -370,8 +467,7 @@
 							c.id === app.activeLocalId && b.id === app.selectedBus
 								? [32, 36, 43, 255]
 								: [46, 42, 34, 110],
-						getLineWidth: (b) =>
-							c.id === app.activeLocalId && b.id === app.selectedBus ? 2.5 : 1,
+						getLineWidth: (b) => (c.id === app.activeLocalId && b.id === app.selectedBus ? 2.5 : 1),
 						lineWidthUnits: 'pixels',
 						pickable: true,
 						autoHighlight: true,
@@ -470,7 +566,9 @@
 	});
 </script>
 
-<div class="map" {@attach initMap}></div>
+{#key mapGen}
+	<div class="map" {@attach initMap}></div>
+{/key}
 
 <style>
 	.map {

@@ -24,25 +24,27 @@
 		type RGBA
 	} from '$lib/colors';
 	import {
-		applyGeoSidecar,
-		isGeoSidecarFile,
-		mergeGeoSidecars,
-		parseGeoSidecar,
-		type GeoSidecar
-	} from '$lib/geo-sidecar';
-	import { app, CaseState, type DemandRangeMode, type LocalCase } from '$lib/state.svelte';
+		applyGeoFile,
+		isGeoFile,
+		mergeGeoFiles,
+		parseGeoFile,
+		type GeoFile
+	} from '$lib/geo-file';
+	import { app, CaseState, LocalCase, type DemandRangeMode } from '$lib/state.svelte';
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
 	import { formatOf, ingestCase, isDisplayFile, parseDisplay, solveDc } from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
 	let abort: AbortController | null = null;
-	let closeStream: (() => void) | null = null;
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
 	let showFileDropUi = $state(true);
+	let casesLoaded = $state(false);
+	let loadingBackendCase = $state<string | null>(null);
 	let dragDepth = 0;
 
 	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
+	const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 	type SolvableCase = CaseState | LocalCase;
 	type DemandRangeAnchor = {
 		caseId: string;
@@ -68,16 +70,46 @@
 		return c ? Object.values(caseDeltas(c)).some((mw) => mw !== 0) : false;
 	}
 
-	function touchLocal(c: SolvableCase) {
-		if (!isBackendCase(c)) app.updateLocal(c.id, { ...c });
-	}
-
 	function setNearbyRangeAnchor(c: SolvableCase, bus: number, delta = caseDeltas(c)[bus] ?? 0) {
 		nearbyRangeAnchor = { caseId: c.id, bus, delta };
 	}
 
 	function errorText(e: unknown): string {
 		return e instanceof Error ? e.message : String(e);
+	}
+
+	function readHiddenDefaultCases(): Set<string> {
+		if (typeof localStorage === 'undefined') return new Set();
+		try {
+			const parsed = JSON.parse(localStorage.getItem(HIDDEN_DEFAULT_CASES_KEY) ?? '[]');
+			return new Set(Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : []);
+		} catch {
+			return new Set();
+		}
+	}
+
+	function writeHiddenDefaultCases(ids: Set<string>) {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			localStorage.setItem(HIDDEN_DEFAULT_CASES_KEY, JSON.stringify([...ids].sort()));
+		} catch {
+			// Current session removal still works; persistence is best effort.
+		}
+	}
+
+	function rememberHiddenDefaultCase(id: string) {
+		const hidden = readHiddenDefaultCases();
+		hidden.add(id);
+		writeHiddenDefaultCases(hidden);
+	}
+
+	function restoreDefaultCases() {
+		try {
+			if (typeof localStorage !== 'undefined') localStorage.removeItem(HIDDEN_DEFAULT_CASES_KEY);
+		} catch {
+			// Ignore storage failures and reload from the server.
+		}
+		load();
 	}
 
 	function rgbaCss([r, g, b, a]: RGBA): string {
@@ -101,23 +133,42 @@
 	async function load() {
 		try {
 			const summaries = await getCases();
-			app.cases = summaries.map((s) => new CaseState(s));
-			app.activeCaseId = summaries[0]?.id ?? null;
-			await Promise.all(
-				app.cases.map(async (c) => {
-					const [network, solution] = await Promise.all([getNetwork(c.id), getSolution(c.id)]);
-					c.network = network;
-					c.baseSolution = solution;
-					c.solution = solution;
-				})
-			);
-			app.requestFrame('all');
+			const hidden = readHiddenDefaultCases();
+			app.cases = summaries.filter((s) => !hidden.has(s.id)).map((s) => new CaseState(s));
+			app.activeLocalId = null;
+			app.placingLocalId = null;
+			app.activeCaseId = app.cases[0]?.id ?? null;
+			const active = app.active;
+			if (active) await loadBackendCase(active, true);
+			else app.requestFrame('all');
 		} catch (e) {
-			app.error = `backend unreachable: ${e instanceof Error ? e.message : e}`;
+			app.error = `server unreachable: ${e instanceof Error ? e.message : e}`;
+		} finally {
+			casesLoaded = true;
 		}
 	}
 
 	load();
+
+	async function loadBackendCase(c: CaseState, frame = false) {
+		if (c.network && c.solution && c.baseSolution) {
+			if (frame && app.activeCaseId === c.id) app.requestFrame(c.id);
+			return;
+		}
+		loadingBackendCase = c.id;
+		try {
+			const [network, solution] = await Promise.all([getNetwork(c.id), getSolution(c.id)]);
+			if (!app.byId(c.id)) return;
+			c.network = network;
+			c.baseSolution = solution;
+			c.solution = solution;
+			if (frame && app.activeCaseId === c.id) app.requestFrame(c.id);
+		} catch (e) {
+			if (app.byId(c.id)) app.error = `${c.name}: ${errorText(e)}`;
+		} finally {
+			if (loadingBackendCase === c.id) loadingBackendCase = null;
+		}
+	}
 
 	function localNetwork(c: LocalCase): Network | null {
 		if (!c.summary || !c.view) return null;
@@ -125,48 +176,43 @@
 			id: c.id,
 			name: c.label,
 			base_mva: c.summary.base_mva,
-			synthetic_coords: c.coordsKind !== 'file' && c.coordsKind !== 'sidecar',
+			synthetic_coords: c.coordsKind !== 'file' && c.coordsKind !== 'geofile',
 			buses: c.view.buses,
 			branches: c.view.branches
-		};
-	}
-
-	function withLocalSolveState(c: LocalCase): LocalCase {
-		return {
-			...c,
-			network: localNetwork(c) ?? c.network ?? null,
-			baseSolution: c.baseSolution ?? null,
-			solution: c.solution ?? null,
-			sensitivity: c.sensitivity ?? null,
-			deltas: c.deltas ?? {},
-			iterations: c.iterations ?? [],
-			solving: c.solving ?? false,
-			solveMs: c.solveMs ?? null,
-			solveBackend: c.solveBackend ?? null,
-			solveFallbackReason: c.solveFallbackReason ?? null,
-			solveSeq: c.solveSeq ?? 0,
-			sensitivitySeq: c.sensitivitySeq ?? 0,
-			predictedObjective: c.predictedObjective ?? null
 		};
 	}
 
 	function maybeStartLocalSolve(id: string) {
 		const c = app.localCases.find((lc) => lc.id === id);
 		if (!c?.networkJson || !c.view || !c.summary) return;
-		const prepared = withLocalSolveState({ ...c, network: localNetwork(c) });
-		app.updateLocal(id, prepared);
-		const current = app.localCases.find((lc) => lc.id === id);
-		if (current?.networkJson && current.network && !current.solution) runSolve(current, null);
+		c.network = localNetwork(c) ?? c.network ?? null;
+		if (c.networkJson && c.network && !c.solution) runSolve(c, null);
 	}
 
-	function activateCase(id: string) {
+	async function activateCase(id: string) {
 		app.activeLocalId = null;
 		app.placingLocalId = null;
 		if (app.activeCaseId !== id) {
 			clearSelection();
 			app.activeCaseId = id;
 		}
-		app.requestFrame(id);
+		const c = app.byId(id);
+		if (c) await loadBackendCase(c, true);
+	}
+
+	async function removeBackendCase(c: CaseState, event?: MouseEvent) {
+		event?.stopPropagation();
+		rememberHiddenDefaultCase(c.id);
+		// Tear down this case's own in-flight server stream whether or not it is the
+		// active case (a non-active case can still hold a live stream), and bump the
+		// seq so any detached handler no-ops.
+		c.closeStream?.();
+		c.closeStream = null;
+		c.solveSeq++;
+		if (app.activeCaseId === c.id) clearSelection();
+		app.removeCase(c.id);
+		const active = app.active;
+		if (active) await loadBackendCase(active, true);
 	}
 
 	function activateLocal(c: LocalCase) {
@@ -182,10 +228,21 @@
 		maybeStartLocalSolve(c.id);
 	}
 
+	function removeLocalCase(c: LocalCase, event?: MouseEvent) {
+		event?.stopPropagation();
+		if (app.activeLocalId === c.id) {
+			// Local cases solve in the browser only (no server stream); the seq bump
+			// invalidates any in-flight browser solve.
+			c.solveSeq = (c.solveSeq ?? 0) + 1;
+			clearSelection();
+		}
+		app.removeLocal(c.id);
+	}
+
 	function addAndActivateLocal(c: LocalCase) {
 		clearSelection();
 		app.activeCaseId = null;
-		app.addLocal(withLocalSolveState(c));
+		app.addLocal(c);
 		if (c.view || c.substations) app.requestFrame(c.id);
 		maybeStartLocalSolve(c.id);
 	}
@@ -194,13 +251,9 @@
 		const id = app.placingLocalId;
 		const c = id ? app.localCases.find((lc) => lc.id === id) : null;
 		if (!c?.topology) return;
-		const view = placeSyntheticTopology(c.topology, { lon, lat });
-		app.updateLocal(c.id, withLocalSolveState({
-			...c,
-			view,
-			coordsKind: 'synthetic',
-			syntheticCenter: { lon, lat }
-		}));
+		c.view = placeSyntheticTopology(c.topology, { lon, lat });
+		c.coordsKind = 'synthetic';
+		c.syntheticCenter = { lon, lat };
 		app.placingLocalId = null;
 		app.activeLocalId = c.id;
 		app.requestFrame(c.id);
@@ -213,37 +266,34 @@
 		app.placingLocalId = c.id;
 	}
 
-	function withGeoSidecar(c: LocalCase, sidecars: GeoSidecar[]): LocalCase {
-		if (!c.topology || sidecars.length === 0) return c;
-		const applied = applyGeoSidecar(c.topology, mergeGeoSidecars(sidecars));
-		return withLocalSolveState({
-			...c,
-			view: applied.view,
-			coordsKind: 'sidecar',
-			syntheticCenter: undefined,
-			geoSource: applied.sourceLabel,
-			geoWarnings: [
-				`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
-				...(applied.matchedBranches > 0
-					? [`${applied.matchedBranches} branch paths matched from sidecar data`]
-					: []),
-				...applied.warnings
-			]
-		});
+	function withGeoFile(c: LocalCase, geoFiles: GeoFile[]): LocalCase {
+		if (!c.topology || geoFiles.length === 0) return c;
+		const applied = applyGeoFile(c.topology, mergeGeoFiles(geoFiles));
+		c.view = applied.view;
+		c.coordsKind = 'geofile';
+		c.syntheticCenter = undefined;
+		c.geoSource = applied.sourceLabel;
+		c.geoWarnings = [
+			`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
+			...(applied.matchedBranches > 0
+				? [`${applied.matchedBranches} branch paths matched from geographic file data`]
+				: []),
+			...applied.warnings
+		];
+		return c;
 	}
 
-	function applyGeoSidecarsToExisting(sidecars: GeoSidecar[]) {
+	function applyGeoFilesToExisting(geoFiles: GeoFile[]) {
 		const target =
 			(app.activeLocal?.topology ? app.activeLocal : null) ??
 			app.localCases.find((c) => c.coordsKind === 'synthetic_pending') ??
 			[...app.localCases].reverse().find((c) => c.topology);
 		if (!target?.topology) {
-			app.error = 'drop a case file with the coordinate sidecar, or select a parsed local case first';
+			app.error = 'drop a case file with the geographic file, or select a parsed local case first';
 			return;
 		}
 		try {
-			const updated = withGeoSidecar(target, sidecars);
-			app.updateLocal(target.id, updated);
+			withGeoFile(target, geoFiles);
 			app.activeCaseId = null;
 			app.activeLocalId = target.id;
 			app.placingLocalId = null;
@@ -251,7 +301,7 @@
 			maybeStartLocalSolve(target.id);
 			app.error = null;
 		} catch (e) {
-			app.error = `${sidecars.map((s) => s.sourceNames.join(' + ')).join(' + ')}: ${
+			app.error = `${geoFiles.map((s) => s.sourceNames.join(' + ')).join(' + ')}: ${
 				e instanceof Error ? e.message : e
 			}; use place on map for manual placement`;
 		}
@@ -283,7 +333,6 @@
 		if (!isActiveSolveCase(c) || app.selectedBus !== busId) return;
 		if (sensitivitySeq !== undefined && sensitivitySeq !== (c.sensitivitySeq ?? 0)) return;
 		c.sensitivity = col;
-		touchLocal(c);
 	}
 
 	function finishSolve(c: SolvableCase, seq: number, sensBus: number | null) {
@@ -293,7 +342,6 @@
 			app.previewActive = false;
 			app.previewDeltaMw = null;
 		}
-		touchLocal(c);
 	}
 
 	async function selectBus(caseId: string, busId: number) {
@@ -322,7 +370,12 @@
 			const networkJson = await ensureNetworkJson(c);
 			if (networkJson) {
 				const { sensitivity } = await solveDc(caseId, networkJson, c.deltas, busId);
-				if (!ac.signal.aborted) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+				if (!ac.signal.aborted && sensitivity)
+					acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+				else if (!ac.signal.aborted) {
+					const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
+					if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
+				}
 			} else {
 				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
 				if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
@@ -358,10 +411,22 @@
 		setNearbyRangeAnchor(c, busId);
 		app.sensitivityLoading = true;
 		c.sensitivity = null;
-		touchLocal(c);
 		try {
-			const { sensitivity } = await solveDc(localId, c.networkJson, c.deltas ?? {}, busId);
+			const { sensitivity, sensitivityError } = await solveDc(
+				localId,
+				c.networkJson,
+				c.deltas ?? {},
+				busId
+			);
 			if (!ac.signal.aborted) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+			if (!ac.signal.aborted && !sensitivity) {
+				// A null column without an error means the solve ran but produced no
+				// dLMP/dd for this bus; local cases have no server fallback, so say so
+				// instead of leaving the panel in LMP view with no explanation.
+				app.error = `${c.label}: browser sensitivity unavailable${
+					sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'
+				}`;
+			}
 		} catch (e) {
 			if (!ac.signal.aborted) app.error = `${c.label}: ${e instanceof Error ? e.message : e}`;
 		} finally {
@@ -380,7 +445,6 @@
 		if (lc) {
 			lc.sensitivitySeq = (lc.sensitivitySeq ?? 0) + 1;
 			lc.sensitivity = null;
-			touchLocal(lc);
 		}
 		app.selectedBus = null;
 		app.previewDeltaMw = null;
@@ -391,10 +455,13 @@
 	}
 
 	// Exact DC solve in the browser (wasm). On any failure, or when the network
-	// JSON can't be fetched, reconcile via the server stream — which also shows
-	// the interior point iterations.
+	// JSON can't be fetched, reconcile via the server stream.
 	function runSolve(c: SolvableCase, sensBus: number | null) {
-		closeStream?.();
+		// Cancel this case's own previous server stream, if any (backend only).
+		if (isBackendCase(c)) {
+			c.closeStream?.();
+			c.closeStream = null;
+		}
 		c.solveSeq = (c.solveSeq ?? 0) + 1;
 		const seq = c.solveSeq;
 		app.error = null;
@@ -403,7 +470,6 @@
 		c.solveFallbackReason = null;
 		c.iterations = [];
 		c.solveMs = null;
-		touchLocal(c);
 		ensureNetworkJson(c).then((networkJson) => {
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (!networkJson) {
@@ -411,19 +477,38 @@
 				if (isBackendCase(c)) return serverSolve(c, sensBus, seq);
 				c.solving = false;
 				app.error = `${c.label}: local case has no browser network JSON`;
-				touchLocal(c);
 				return;
 			}
 			const t0 = performance.now();
 			c.solveBackend = 'clarabel-wasm';
-			touchLocal(c);
 			solveDc(c.id, networkJson, caseDeltas(c), sensBus)
-				.then(({ solution, sensitivity }) => {
+				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
+					c.iterations = iterations;
 					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0) c.baseSolution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
-					acceptSensitivity(c, sensitivity, sensBus);
+					if (sensitivity || sensBus === null) {
+						acceptSensitivity(c, sensitivity, sensBus);
+					} else if (isBackendCase(c)) {
+						// No browser sensitivity column (whether the solve threw or just
+						// produced none): reconcile via the server for backend cases.
+						try {
+							const col = await getSensitivity(c.id, sensBus, c.deltas);
+							if (seq !== c.solveSeq) return;
+							c.solveBackend = 'clarabel-wasm-server-sensitivity';
+							acceptSensitivity(c, col, sensBus);
+						} catch (e) {
+							if (seq !== c.solveSeq) return;
+							c.solveFallbackReason = `server sensitivity failed: ${errorText(e)}`;
+							serverSolve(c, sensBus, seq);
+							return;
+						}
+					} else {
+						// Local case: no server fallback, so report the gap (including a null
+						// column with no error) instead of silently staying in LMP view.
+						app.error = `${c.label}: browser sensitivity unavailable${sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'}`;
+					}
 					finishSolve(c, seq, sensBus);
 				})
 				.catch((e) => {
@@ -433,23 +518,19 @@
 					else {
 						c.solving = false;
 						app.error = `${c.label}: ${c.solveFallbackReason}`;
-						touchLocal(c);
 					}
 				});
 		});
 	}
 
 	function serverSolve(c: CaseState, sensBus: number | null, seq = c.solveSeq) {
-		c.solveBackend = 'ipopt-server';
+		c.solveBackend = 'rust-server';
 		c.solveFallbackReason ??= 'browser solve unavailable';
-		closeStream = openSolveStream(c.id, c.deltas, sensBus, {
-			oniteration: (it) => {
-				if (seq !== c.solveSeq) return;
-				c.iterations = [...c.iterations, it];
-			},
+		c.closeStream = openSolveStream(c.id, c.deltas, sensBus, {
 			onsolution: (sol) => {
 				if (seq !== c.solveSeq) return;
 				c.solution = sol;
+				c.iterations = sol.iterations ?? [];
 				c.solveMs = sol.solve_ms;
 			},
 			onsensitivity: (col) => {
@@ -480,7 +561,6 @@
 		c.deltas = deltas;
 		app.previewDeltaMw = value;
 		app.previewActive = true;
-		touchLocal(c);
 		runSolve(c, bus);
 	}
 
@@ -503,7 +583,6 @@
 		app.demandRangeMode = 'local';
 		if (app.selectedBus !== null) setNearbyRangeAnchor(c, app.selectedBus, 0);
 		if (c.baseSolution) c.solution = c.baseSolution;
-		touchLocal(c);
 		runSolve(c, app.selectedBus);
 	}
 
@@ -522,16 +601,16 @@
 	}
 
 	/** Parse dropped files in the browser via the powerio wasm module. Case
-	 * files (.m, .raw, .aux) become local networks; coordinate sidecars can
+	 * files (.m, .raw, .aux) become local networks; geographic files can
 	 * place those networks; a PowerWorld .pwd becomes a substation point
 	 * preview. Files run serially; nothing uploads. */
 	async function ingestFiles(files: FileList | File[]) {
 		const list = Array.from(files);
-		const sidecars: GeoSidecar[] = [];
-		for (const file of list.filter((f) => isGeoSidecarFile(f.name))) {
+		const geoFiles: GeoFile[] = [];
+		for (const file of list.filter((f) => isGeoFile(f.name))) {
 			app.parsingFile = true;
 			try {
-				sidecars.push(parseGeoSidecar(file.name, await file.text()));
+				geoFiles.push(parseGeoFile(file.name, await file.text()));
 				app.error = null;
 			} catch (e) {
 				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
@@ -541,7 +620,7 @@
 		}
 
 		let parsedCaseCount = 0;
-		for (const file of list.filter((f) => !isGeoSidecarFile(f.name))) {
+		for (const file of list.filter((f) => !isGeoFile(f.name))) {
 			if (isDisplayFile(file.name)) {
 				app.parsingFile = true;
 				try {
@@ -552,14 +631,16 @@
 						return { number: s.number, name: s.name, lon, lat };
 					});
 					const id = `local-${++localSeq}`;
-					addAndActivateLocal({
-						id,
-						label: file.name.replace(/\.[^.]+$/, ''),
-						fileName: file.name,
-						summary: null,
-						view: null,
-						substations: { points, approximate: true }
-					});
+					addAndActivateLocal(
+						new LocalCase({
+							id,
+							label: file.name.replace(/\.[^.]+$/, ''),
+							fileName: file.name,
+							summary: null,
+							view: null,
+							substations: { points, approximate: true }
+						})
+					);
 					app.error = null;
 				} catch (e) {
 					app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
@@ -586,7 +667,7 @@
 					summary.name && summary.name !== 'case'
 						? summary.name
 						: file.name.replace(/\.[^.]+$/, '');
-				let local: LocalCase = {
+				const local = new LocalCase({
 					id,
 					label,
 					fileName: file.name,
@@ -595,9 +676,9 @@
 					topology,
 					coordsKind: summary.coords_kind,
 					view
-				};
-				if (sidecars.length > 0 && local.coordsKind === 'synthetic_pending') {
-					local = withGeoSidecar(local, sidecars);
+				});
+				if (geoFiles.length > 0 && local.coordsKind === 'synthetic_pending') {
+					withGeoFile(local, geoFiles);
 				}
 				addAndActivateLocal(local);
 				parsedCaseCount++;
@@ -609,7 +690,7 @@
 			}
 		}
 
-		if (sidecars.length > 0 && parsedCaseCount === 0) applyGeoSidecarsToExisting(sidecars);
+		if (geoFiles.length > 0 && parsedCaseCount === 0) applyGeoFilesToExisting(geoFiles);
 	}
 
 	function dragHasFiles(e: DragEvent): boolean {
@@ -678,7 +759,9 @@
 	});
 
 	const committedDelta = $derived(
-		activeSolvable && app.selectedBus !== null ? (caseDeltas(activeSolvable)[app.selectedBus] ?? 0) : 0
+		activeSolvable && app.selectedBus !== null
+			? (caseDeltas(activeSolvable)[app.selectedBus] ?? 0)
+			: 0
 	);
 	const sliderValue = $derived(app.previewDeltaMw ?? committedDelta);
 	const nearbyRangeCenter = $derived.by(() => {
@@ -699,7 +782,8 @@
 		if (!bus) return { min: 0, max: 0, span: 0 };
 		const physicalMin = -Math.ceil(bus.demand_mw);
 		const physicalMax = Math.max(Math.ceil(bus.demand_mw), 50);
-		if (mode === 'full') return { min: physicalMin, max: physicalMax, span: physicalMax - physicalMin };
+		if (mode === 'full')
+			return { min: physicalMin, max: physicalMax, span: physicalMax - physicalMin };
 		const span = Math.max(5, Math.min(25, 0.1 * Math.max(bus.demand_mw, 50)));
 		return {
 			min: Math.max(physicalMin, center - span),
@@ -708,7 +792,9 @@
 		};
 	}
 
-	const sliderBounds = $derived(demandBounds(app.demandRangeMode, selectedBusData, nearbyRangeCenter));
+	const sliderBounds = $derived(
+		demandBounds(app.demandRangeMode, selectedBusData, nearbyRangeCenter)
+	);
 	const sliderMin = $derived(sliderBounds.min);
 	const sliderMax = $derived(sliderBounds.max);
 
@@ -718,7 +804,11 @@
 		if (mode === 'local' && c && app.selectedBus !== null) {
 			setNearbyRangeAnchor(c, app.selectedBus, sliderValue);
 		}
-		const bounds = demandBounds(mode, selectedBusData, mode === 'local' ? sliderValue : nearbyRangeCenter);
+		const bounds = demandBounds(
+			mode,
+			selectedBusData,
+			mode === 'local' ? sliderValue : nearbyRangeCenter
+		);
 		if (app.previewDeltaMw === null) return;
 		app.previewDeltaMw = Math.min(bounds.max, Math.max(bounds.min, app.previewDeltaMw));
 	}
@@ -757,8 +847,7 @@
 
 	const gradientScore = $derived.by(() => {
 		const c = activeSolvable;
-		if (!c?.solution || !c.baseSolution || c.predictedObjective == null || c.solving)
-			return null;
+		if (!c?.solution || !c.baseSolution || c.predictedObjective == null || c.solving) return null;
 		const exact = c.solution.objective - c.baseSolution.objective;
 		return { pred: c.predictedObjective, exact };
 	});
@@ -775,8 +864,8 @@
 	const previewing = $derived(
 		Boolean(
 			activeSolvable?.solving ||
-				app.previewActive ||
-				(app.previewDeltaMw !== null && Math.abs(sliderValue - committedDelta) >= 0.25)
+			app.previewActive ||
+			(app.previewDeltaMw !== null && Math.abs(sliderValue - committedDelta) >= 0.25)
 		)
 	);
 
@@ -797,13 +886,16 @@
 
 	function solveBackendLabel(c: SolvableCase): string {
 		if (c.solveBackend === 'clarabel-wasm') return 'Clarabel wasm';
-		if (c.solveBackend === 'ipopt-server') return 'server fallback';
+		if (c.solveBackend === 'clarabel-wasm-server-sensitivity')
+			return 'Clarabel wasm + server dLMP/dd';
+		if (c.solveBackend === 'rust-server') return 'server fallback';
 		return c.solving ? 'starting' : 'solve pending';
 	}
 
 	function solveMetaLabel(c: SolvableCase): string {
 		if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
-		return c.solveBackend === 'ipopt-server' ? 'server solve' : 'browser solve';
+		if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'server dLMP/dd';
+		return c.solveBackend === 'rust-server' ? 'server solve' : 'browser solve';
 	}
 </script>
 
@@ -838,23 +930,32 @@
 		<nav class="cases" aria-label="networks">
 			{#each app.cases as c (c.id)}
 				{@const [cname, cregion] = splitName(c.name)}
-				<button class:active={app.activeCaseId === c.id} onclick={() => activateCase(c.id)}>
-					<span class="cname">{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"
-							></i>{/if}</span>
-					<span class="cregion mono">{cregion}</span>
-				</button>
+				<div class="case-chip" class:active={app.activeCaseId === c.id}>
+					<button class="case-activate" onclick={() => activateCase(c.id)}>
+						<span class="cname"
+							>{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"></i>{/if}</span
+						>
+						<span class="cregion mono">{cregion}</span>
+					</button>
+					<button
+						class="case-remove mono"
+						aria-label="remove {c.name} from this browser"
+						title="remove {c.name} from this browser"
+						onclick={(e) => removeBackendCase(c, e)}>&#10005;</button
+					>
+				</div>
 			{/each}
 			{#each app.localCases as c (c.id)}
 				<div class="case-chip local" class:active={app.activeLocalId === c.id}>
-					<button class="local-activate" onclick={() => activateLocal(c)}>
+					<button class="case-activate" onclick={() => activateLocal(c)}>
 						<span class="cname">{c.label}</span>
 						<span class="cregion mono">local</span>
 					</button>
 					<button
-						class="local-remove mono"
+						class="case-remove mono"
 						aria-label="remove {c.label}"
 						title="remove {c.label}"
-						onclick={() => app.removeLocal(c.id)}>&#10005;</button
+						onclick={(e) => removeLocalCase(c, e)}>&#10005;</button
 					>
 				</div>
 			{/each}
@@ -865,7 +966,7 @@
 					onclick={() => fileInput?.click()}
 				>
 					<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
-					<span class="cregion mono">case + geo sidecars &mdash; or click</span>
+					<span class="cregion mono">case + geographic files &mdash; or click</span>
 				</button>
 			{/if}
 		</nav>
@@ -884,21 +985,42 @@
 			<h2>{lc.label} <span class="region mono">via {lc.fileName}</span></h2>
 			{#if lc.substations}
 				<dl class="mono">
-					<div><dt>substations</dt><dd>{lc.substations.points.length}</dd></div>
+					<div>
+						<dt>substations</dt>
+						<dd>{lc.substations.points.length}</dd>
+					</div>
 				</dl>
 				<p class="footnote mono">
-					display only &mdash; positions inferred from the PowerWorld diagram, not surveyed
-					latitude and longitude
+					display only &mdash; positions inferred from the PowerWorld diagram, not surveyed latitude
+					and longitude
 				</p>
 				<p class="footnote mono">decoded in your browser by powerio (wasm); never uploaded</p>
 			{:else if lc.summary}
 				<dl class="mono">
-					<div><dt>buses</dt><dd>{lc.summary.n_bus}</dd></div>
-					<div><dt>branches</dt><dd>{lc.summary.n_branch}</dd></div>
-					<div><dt>generators</dt><dd>{lc.summary.n_gen}</dd></div>
-					<div><dt>load</dt><dd>{fmt.format(lc.summary.load_mw)} MW</dd></div>
-					<div><dt>gen capacity</dt><dd>{fmt.format(lc.summary.gen_mw)} MW</dd></div>
-					<div><dt>base MVA</dt><dd>{fmt.format(lc.summary.base_mva)}</dd></div>
+					<div>
+						<dt>buses</dt>
+						<dd>{lc.summary.n_bus}</dd>
+					</div>
+					<div>
+						<dt>branches</dt>
+						<dd>{lc.summary.n_branch}</dd>
+					</div>
+					<div>
+						<dt>generators</dt>
+						<dd>{lc.summary.n_gen}</dd>
+					</div>
+					<div>
+						<dt>load</dt>
+						<dd>{fmt.format(lc.summary.load_mw)} MW</dd>
+					</div>
+					<div>
+						<dt>gen capacity</dt>
+						<dd>{fmt.format(lc.summary.gen_mw)} MW</dd>
+					</div>
+					<div>
+						<dt>base MVA</dt>
+						<dd>{fmt.format(lc.summary.base_mva)}</dd>
+					</div>
 				</dl>
 				{#if lc.summary.warnings.length > 0}
 					<ul class="warnings mono">
@@ -912,15 +1034,15 @@
 				{/if}
 				{#if !lc.view}
 					<p class="footnote mono">
-						no coordinates in this file &mdash; click the map or drop a coordinate sidecar
+						no coordinates in this file &mdash; click the map or drop a geographic file
 					</p>
 				{:else if lc.coordsKind === 'synthetic'}
 					<p class="footnote mono">
 						coordinates: synthetic topology layout centered where you placed it
 					</p>
-				{:else if lc.coordsKind === 'sidecar'}
+				{:else if lc.coordsKind === 'geofile'}
 					<p class="footnote mono">
-						coordinates: uploaded sidecar data from {lc.geoSource}
+						coordinates: geographic file data from {lc.geoSource}
 					</p>
 				{/if}
 				{#if lc.geoWarnings && lc.geoWarnings.length > 0}
@@ -933,36 +1055,56 @@
 						{/if}
 					</ul>
 				{/if}
-				<p class="footnote mono">
-					parsed in your browser by powerio (wasm); never uploaded
-				</p>
+				<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 			{/if}
 			{#if lc.topology && lc.coordsKind !== 'file'}
 				<button class="reset mono" onclick={() => moveLocalCase(lc)}>
 					{lc.coordsKind === 'synthetic_pending'
 						? 'place on map'
-						: lc.coordsKind === 'sidecar'
+						: lc.coordsKind === 'geofile'
 							? 'place manually'
 							: 'move layout'}
 				</button>
 			{/if}
-			<button class="reset mono" onclick={() => app.removeLocal(lc.id)}>remove</button>
+			<button class="reset mono" onclick={() => removeLocalCase(lc)}>remove</button>
 		{/if}
 		{#if !stats}
 			{#if !app.error && !app.activeLocal}
-				<p class="dim mono blink">loading cases&hellip;</p>
+				{#if casesLoaded && app.cases.length === 0}
+					<p class="dim mono">no default cases loaded</p>
+					<button class="reset mono" onclick={restoreDefaultCases}>restore defaults</button>
+				{:else if loadingBackendCase}
+					<p class="dim mono blink">loading selected case&hellip;</p>
+				{:else}
+					<p class="dim mono blink">loading cases&hellip;</p>
+				{/if}
 			{/if}
 		{:else}
 			{#if !app.activeLocal}
 				{@const [cname, cregion] = splitName(app.active?.name ?? '')}
 				<h2>{cname} <span class="region mono">{cregion}</span></h2>
 				<dl class="mono">
-					<div><dt>buses</dt><dd>{stats.buses}</dd></div>
-					<div><dt>branches</dt><dd>{stats.branches}</dd></div>
-					<div><dt>binding lines</dt><dd>{stats.binding}</dd></div>
-					<div><dt>objective</dt><dd>{fmt.format(stats.objective)} $/h</dd></div>
+					<div>
+						<dt>buses</dt>
+						<dd>{stats.buses}</dd>
+					</div>
+					<div>
+						<dt>branches</dt>
+						<dd>{stats.branches}</dd>
+					</div>
+					<div>
+						<dt>binding lines</dt>
+						<dd>{stats.binding}</dd>
+					</div>
+					<div>
+						<dt>objective</dt>
+						<dd>{fmt.format(stats.objective)} $/h</dd>
+					</div>
 					{#if isPerturbed(activeSolvable)}
-						<div class="delta"><dt>vs base</dt><dd>{signed(stats.deltaObjective)} $/h</dd></div>
+						<div class="delta">
+							<dt>vs base</dt>
+							<dd>{signed(stats.deltaObjective)} $/h</dd>
+						</div>
 					{/if}
 				</dl>
 				{#if app.active?.network?.synthetic_coords}
@@ -1096,29 +1238,29 @@
 						{/if}
 					</div>
 				{/if}
-				{:else}
-					<div class="mode">
-						<span class="chip">LMP</span>
-						<span class="mono dim">$/MWh</span>
-						{#if app.sensitivityLoading}
-							<span class="mono dim blink">&part; loading&hellip;</span>
-						{/if}
-					</div>
-					<p class="dim small">
-						DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
-					</p>
-					<div class="legend" style:background={lmpGradient}></div>
-					<div class="legend-labels mono">
-						{#if stats.uniformLmp !== null}
-							<span>uniform {fmt.format(stats.uniformLmp)} $/MWh, no congestion</span>
-						{:else}
-							<span>{stats.lmpLo.clamped ? '≤' : ''}{fmt.format(stats.lmpLo.value)}</span>
-							<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
-						{/if}
-					</div>
-					<p class="dim small filedrop-note">
-						Drop case files and optional coordinate sidecars; parsing stays in your browser.
-					</p>
+			{:else}
+				<div class="mode">
+					<span class="chip">LMP</span>
+					<span class="mono dim">$/MWh</span>
+					{#if app.sensitivityLoading}
+						<span class="mono dim blink">&part; loading&hellip;</span>
+					{/if}
+				</div>
+				<p class="dim small">
+					DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
+				</p>
+				<div class="legend" style:background={lmpGradient}></div>
+				<div class="legend-labels mono">
+					{#if stats.uniformLmp !== null}
+						<span>uniform {fmt.format(stats.uniformLmp)} $/MWh, no congestion</span>
+					{:else}
+						<span>{stats.lmpLo.clamped ? '≤' : ''}{fmt.format(stats.lmpLo.value)}</span>
+						<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
+					{/if}
+				</div>
+				<p class="dim small filedrop-note">
+					Drop case files and optional geographic files; parsing stays in your browser.
+				</p>
 			{/if}
 
 			<hr />
@@ -1140,13 +1282,9 @@
 			<div class="solvecard-head mono">
 				<span>exact solve</span>
 				{#if activeSolvable.solving}
-					<span class="dim blink"
-						>{solveBackendLabel(activeSolvable)}</span
-					>
+					<span class="dim blink">{solveBackendLabel(activeSolvable)}</span>
 				{:else}
-					<span class="dim"
-						>{solveBackendLabel(activeSolvable)}</span
-					>
+					<span class="dim">{solveBackendLabel(activeSolvable)}</span>
 				{/if}
 			</div>
 			{#if (activeSolvable.iterations ?? []).length > 1}
@@ -1156,7 +1294,7 @@
 				<span>{solveMetaLabel(activeSolvable)}</span>
 				{#if activeSolvable.solveMs != null}<span>{activeSolvable.solveMs} ms</span>{/if}
 			</div>
-			{#if activeSolvable.solveBackend === 'ipopt-server' && activeSolvable.solveFallbackReason}
+			{#if activeSolvable.solveBackend === 'rust-server' && activeSolvable.solveFallbackReason}
 				<p class="fallback-reason mono dim" title={activeSolvable.solveFallbackReason}>
 					fallback: {activeSolvable.solveFallbackReason}
 				</p>
@@ -1167,16 +1305,14 @@
 	{#if app.dragOver}
 		<div class="dropzone" aria-hidden="true">
 			<div class="dropframe">
-				<p class="mono">drop to parse &mdash; case files or coordinate sidecars</p>
+				<p class="mono">drop to parse &mdash; case files or geographic files</p>
 				<p class="mono hint">parsed in your browser; the file never uploads</p>
 			</div>
 		</div>
 	{/if}
 
 	{#if app.placingLocalId}
-		<div class="placement-cue mono">
-			click the map to place the synthetic topology
-		</div>
+		<div class="placement-cue mono">click the map to place the synthetic topology</div>
 	{/if}
 
 	<footer class="mono">
@@ -1281,6 +1417,7 @@
 		gap: 0;
 		padding: 0;
 		overflow: hidden;
+		position: relative;
 	}
 
 	.case-chip button {
@@ -1289,25 +1426,38 @@
 		cursor: pointer;
 	}
 
-	.local-activate {
+	.case-activate {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 1px;
 		min-width: 0;
-		padding: 5px 8px 4px 12px;
+		width: 100%;
+		padding: 5px 24px 4px 12px;
 		background: transparent;
 		border: 0;
 	}
 
-	.local-remove {
-		align-self: stretch;
-		padding: 0 7px;
+	.case-remove {
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		display: grid;
+		place-items: center;
+		width: 18px;
+		height: 18px;
+		padding: 0;
 		background: transparent;
 		border: 0;
-		border-left: 1px solid var(--line);
 		color: var(--ink-faint);
 		font-size: 9px;
+		line-height: 1;
+	}
+
+	.case-remove:hover,
+	.case-remove:focus-visible {
+		background: var(--accent-soft);
+		color: var(--red);
 	}
 
 	.cases > button:hover,
@@ -1315,7 +1465,6 @@
 		border-color: var(--accent);
 	}
 
-	.cases > button.active,
 	.case-chip.active {
 		background: var(--panel);
 		border-color: var(--accent);
@@ -1377,10 +1526,6 @@
 	.arrow {
 		display: inline-block;
 		animation: bob 1.8s ease-in-out infinite alternate;
-	}
-
-	.local-remove:hover {
-		color: var(--red);
 	}
 
 	.kicker {
@@ -1918,12 +2063,13 @@
 			padding: 7px 10px 6px;
 		}
 
-		.local-activate {
-			padding: 7px 7px 6px 10px;
+		.case-activate {
+			padding: 7px 24px 6px 10px;
 		}
 
-		.local-remove {
-			min-width: 34px;
+		.case-remove {
+			width: 22px;
+			height: 22px;
 		}
 
 		.cname,

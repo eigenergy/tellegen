@@ -16,5 +16,5 @@ PowerIO = "0.1.2"
 
 [sources]
 # PowerDiff is unregistered. Pin a reviewed upstream commit for reproducible
-# backend solves; do not rely on local checkouts.
+# reference solves; do not rely on local checkouts.
 PowerDiff = {url = "https://github.com/grid-opt-alg-lab/PowerDiff.jl.git", rev = "0617642499fabdf9d2d4a89076c5444ad26238cf"}

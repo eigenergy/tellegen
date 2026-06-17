@@ -10,7 +10,7 @@ import type {
 } from './api';
 import type { CaseFileSummary, Topology } from './wasm';
 
-export type SolveBackend = 'clarabel-wasm' | 'ipopt-server';
+export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
 export type DemandRangeMode = 'local' | 'full';
 
 /** Substations from a PowerWorld .pwd display file. Positions are inferred
@@ -20,43 +20,76 @@ export interface LocalSubstations {
 	approximate: true;
 }
 
-/** A case file parsed in the browser. Network cases can solve after they have
- * coordinates. A .pwd display file has no case summary: substations only. */
-export interface LocalCase {
+type CoordsKind = 'file' | 'synthetic_pending' | 'synthetic' | 'geofile';
+type LocalView = { buses: NetworkBus[]; branches: NetworkBranch[] };
+
+/** The fields a parsed file supplies at creation; the solve state defaults. */
+export interface LocalCaseInit {
 	id: string; // `local-1`, `local-2`, ...
 	label: string;
 	fileName: string;
-	/** Case stats; null for a .pwd display only entry. */
-	summary: CaseFileSummary | null;
-	/** Raw powerio Network JSON for the browser solver branch. */
+	summary?: CaseFileSummary | null;
 	networkJson?: string;
-	/** Topology for synthetic placement when the file has no coordinates. */
 	topology?: Topology;
-	coordsKind?: 'file' | 'synthetic_pending' | 'synthetic' | 'sidecar';
-	/** Map geometry when the file carried or received coordinates. */
-	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
-	syntheticCenter?: { lon: number; lat: number };
-	geoSource?: string;
-	geoWarnings?: string[];
-	/** Local solve state. Present only for parsed case files, never for .pwd display entries. */
-	network?: Network | null;
-	baseSolution?: Solution | null;
-	solution?: Solution | null;
-	sensitivity?: SensitivityColumn | null;
-	deltas?: DemandDeltas;
-	iterations?: SolveIteration[];
-	solving?: boolean;
-	solveMs?: number | null;
-	solveBackend?: SolveBackend | null;
-	solveFallbackReason?: string | null;
-	solveSeq?: number;
-	sensitivitySeq?: number;
-	predictedObjective?: number | null;
-	/** Present for a PowerWorld .pwd display only entry. */
+	coordsKind?: CoordsKind;
+	view?: LocalView | null;
 	substations?: LocalSubstations;
 }
 
-/** One islanded network with its own solver instance on the backend. API
+/** A case file parsed in the browser. Network cases can solve after they have
+ * coordinates; a .pwd display file has no case summary, substations only. A
+ * class with a stable identity and reactive fields, like CaseState: the solve
+ * and sensitivity flows mutate fields directly (each is $state, so the panel
+ * re-renders) and the seq tokens stay attached across overlapping async
+ * callbacks, so a stale solve can neither freeze the UI nor clobber a newer one. */
+export class LocalCase {
+	readonly id: string;
+	readonly label: string;
+	readonly fileName: string;
+	/** Case stats; null for a .pwd display only entry. */
+	summary = $state.raw<CaseFileSummary | null>(null);
+	/** Raw powerio Network JSON for the browser solver branch. */
+	networkJson = $state.raw<string | undefined>(undefined);
+	/** Topology for synthetic placement when the file has no coordinates. */
+	topology = $state.raw<Topology | undefined>(undefined);
+	coordsKind = $state.raw<CoordsKind | undefined>(undefined);
+	/** Map geometry when the file carried or received coordinates. */
+	view = $state.raw<LocalView | null>(null);
+	syntheticCenter = $state.raw<{ lon: number; lat: number } | undefined>(undefined);
+	geoSource = $state.raw<string | undefined>(undefined);
+	geoWarnings = $state.raw<string[] | undefined>(undefined);
+	network = $state.raw<Network | null>(null);
+	baseSolution = $state.raw<Solution | null>(null);
+	solution = $state.raw<Solution | null>(null);
+	sensitivity = $state.raw<SensitivityColumn | null>(null);
+	deltas = $state.raw<DemandDeltas>({});
+	iterations = $state.raw<SolveIteration[]>([]);
+	solving = $state(false);
+	solveMs = $state<number | null>(null);
+	solveBackend = $state<SolveBackend | null>(null);
+	solveFallbackReason = $state<string | null>(null);
+	/** Monotone token: only the latest solve may write this case. */
+	solveSeq = 0;
+	/** Monotone token: only the latest sensitivity request may write this case. */
+	sensitivitySeq = 0;
+	predictedObjective = $state<number | null>(null);
+	/** Present for a PowerWorld .pwd display only entry. */
+	substations = $state.raw<LocalSubstations | undefined>(undefined);
+
+	constructor(init: LocalCaseInit) {
+		this.id = init.id;
+		this.label = init.label;
+		this.fileName = init.fileName;
+		this.summary = init.summary ?? null;
+		this.networkJson = init.networkJson;
+		this.topology = init.topology;
+		this.coordsKind = init.coordsKind;
+		this.view = init.view ?? null;
+		this.substations = init.substations;
+	}
+}
+
+/** One islanded network with its own solver state on the server. API
  * payloads are reassigned wholesale, so $state.raw throughout. */
 export class CaseState {
 	readonly id: string;
@@ -80,6 +113,9 @@ export class CaseState {
 	solveSeq = 0;
 	/** Monotone token: only the latest sensitivity request may write this case. */
 	sensitivitySeq = 0;
+	/** Closer for this case's in-flight server solve stream, if any. Owned per
+	 * case so closing one case's stream never strands another's solve. */
+	closeStream: (() => void) | null = null;
 	/** Objective change the gradient predicted for the last commit, to score
 	 * the preview once the exact solve lands. */
 	predictedObjective = $state<number | null>(null);
@@ -109,7 +145,7 @@ export class AppState {
 
 	/** Case files parsed in the browser via the powerio wasm module. */
 	localCases = $state.raw<LocalCase[]>([]);
-	/** Local case the panel shows; clicking a backend case or a bus clears it. */
+	/** Local case the panel shows; clicking a bundled case or a bus clears it. */
 	activeLocalId = $state<string | null>(null);
 	placingLocalId = $state<string | null>(null);
 	dragOver = $state(false);
@@ -137,8 +173,33 @@ export class AppState {
 		this.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
 	}
 
-	updateLocal(id: string, patch: Partial<LocalCase>) {
-		this.localCases = this.localCases.map((c) => (c.id === id ? { ...c, ...patch } : c));
+	removeCase(id: string) {
+		const wasActive = this.activeCaseId === id;
+		this.cases = this.cases.filter((c) => c.id !== id);
+		if (!wasActive) return;
+
+		this.selectedBus = null;
+		this.previewDeltaMw = null;
+		this.previewActive = false;
+		this.demandRangeMode = 'local';
+		this.sensitivityLoading = false;
+
+		this.activeCaseId = this.cases[0]?.id ?? null;
+		if (this.activeCaseId) {
+			this.requestFrame(this.activeCaseId);
+			return;
+		}
+
+		const nextLocal =
+			this.localCases.find(
+				(c) => c.view || c.substations || c.coordsKind === 'synthetic_pending'
+			) ??
+			this.localCases[0] ??
+			null;
+		this.activeLocalId = nextLocal?.id ?? null;
+		this.placingLocalId = nextLocal?.coordsKind === 'synthetic_pending' ? nextLocal.id : null;
+		if (nextLocal?.view || nextLocal?.substations) this.requestFrame(nextLocal.id);
+		else this.requestFrame('all');
 	}
 
 	removeLocal(id: string) {

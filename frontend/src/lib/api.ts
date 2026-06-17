@@ -48,6 +48,7 @@ export interface CaseSummary {
 	n_gen: number;
 }
 
+/** One interior-point iterate from the solver, for the convergence plot. */
 export interface SolveIteration {
 	iter: number;
 	objective: number;
@@ -100,16 +101,17 @@ export function getSensitivity(
 }
 
 export interface SolveStreamHandlers {
-	oniteration?: (it: SolveIteration) => void;
-	onsolution?: (sol: Solution & { case: string; solve_ms: number }) => void;
+	onsolution?: (
+		sol: Solution & { case: string; solve_ms: number; iterations: SolveIteration[] }
+	) => void;
 	onsensitivity?: (col: SensitivityColumn) => void;
 	onfail?: (message: string) => void;
 	ondone?: () => void;
 }
 
-/** Open the SSE solve stream: exact re-solve at base + deltas, interior point
- * iterations as they happen, then the solution and (if `sensBus` is given)
- * the sensitivity column at the new operating point. Returns a closer. */
+/** Open the SSE solve stream: exact re-solve at base + deltas, then the
+ * solution and (if `sensBus` is given) the sensitivity column at the new
+ * operating point. Returns a closer. */
 export function openSolveStream(
 	caseId: string,
 	deltas: DemandDeltas,
@@ -127,7 +129,6 @@ export function openSolveStream(
 		finished = true;
 		es.close();
 	};
-	es.addEventListener('iteration', (e) => handlers.oniteration?.(JSON.parse(e.data)));
 	es.addEventListener('solution', (e) => handlers.onsolution?.(JSON.parse(e.data)));
 	es.addEventListener('sensitivity', (e) => handlers.onsensitivity?.(JSON.parse(e.data)));
 	es.addEventListener('fail', (e) => {

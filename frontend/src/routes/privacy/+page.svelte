@@ -2,16 +2,16 @@
 	<a class="back mono" href="/">back to tellegen</a>
 	<h1>Privacy</h1>
 	<p>
-		tellegen parses dropped case files in your browser. Those files are not uploaded
-		to the server by the current public demo.
+		tellegen parses dropped case files in your browser. Those files are not uploaded to the server
+		by the current public demo.
 	</p>
 
 	<section>
 		<h2>Current Demo</h2>
 		<ul>
 			<li>
-				Dropped `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, and `.geojson`
-				files stay on your device.
+				Dropped `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, and `.geojson` files stay on your
+				device.
 			</li>
 			<li>The browser uses local file contents to draw the map and run DC solves.</li>
 			<li>The server receives ordinary page and API requests for the built in demo cases.</li>
@@ -22,8 +22,8 @@
 	<section>
 		<h2>Future Opt In Sharing</h2>
 		<p>
-			If tellegen adds a sharing feature, it will be explicit. The action will say
-			what will be sent and will require a separate confirmation before upload.
+			If tellegen adds a sharing feature, it will be explicit. The action will say what will be sent
+			and will require a separate confirmation before upload.
 		</p>
 		<p>Planned defaults for shared files:</p>
 		<ul>
@@ -37,15 +37,33 @@
 	<section>
 		<h2>Hosting And Legal Notes</h2>
 		<p>
-			The public demo is intended to run on Hetzner infrastructure. Before accepting
-			uploaded user files, the operator will conclude Hetzner's Data Processing
-			Agreement and publish controller contact details.
+			The public demo is intended to run on Hetzner infrastructure. Before accepting uploaded user
+			files, the operator will conclude Hetzner's Data Processing Agreement and publish controller
+			contact details.
 		</p>
 		<ul>
-			<li><a href="https://docs.hetzner.com/general/company-and-policy/data-protection-at-hetzner/" target="_blank" rel="noreferrer">Hetzner data protection notes</a></li>
-			<li><a href="https://gdpr-info.eu/art-5-gdpr/" target="_blank" rel="noreferrer">GDPR Article 5</a></li>
-			<li><a href="https://gdpr-info.eu/art-6-gdpr/" target="_blank" rel="noreferrer">GDPR Article 6</a></li>
-			<li><a href="https://gdpr-info.eu/art-13-gdpr/" target="_blank" rel="noreferrer">GDPR Article 13</a></li>
+			<li>
+				<a
+					href="https://docs.hetzner.com/general/company-and-policy/data-protection-at-hetzner/"
+					target="_blank"
+					rel="noreferrer">Hetzner data protection notes</a
+				>
+			</li>
+			<li>
+				<a href="https://gdpr-info.eu/art-5-gdpr/" target="_blank" rel="noreferrer"
+					>GDPR Article 5</a
+				>
+			</li>
+			<li>
+				<a href="https://gdpr-info.eu/art-6-gdpr/" target="_blank" rel="noreferrer"
+					>GDPR Article 6</a
+				>
+			</li>
+			<li>
+				<a href="https://gdpr-info.eu/art-13-gdpr/" target="_blank" rel="noreferrer"
+					>GDPR Article 13</a
+				>
+			</li>
 		</ul>
 	</section>
 </main>

@@ -10,10 +10,10 @@ PowerDiff.jl.
 
 tellegen uses a gradient preview, exact commit interaction model. Perturbations
 update the display from KKT sensitivity columns. Exact DC OPF commits run in the
-browser through Rust, Clarabel, and WebAssembly; the Julia server path with
-PowerDiff.jl and Ipopt remains the fallback. Case parsing uses
-[powerio](https://github.com/eigenergy/powerio) in both Rust/WebAssembly and
-Julia.
+tellegen frontend through Clarabel and WebAssembly; bundled cases can fall back
+to the tellegen backend using the same solver path. Case parsing uses
+[powerio](https://github.com/eigenergy/powerio). PowerDiff.jl remains as a
+reference harness for parity checks.
 
 Full documentation is published with mdBook at
 [eigenergy.github.io/tellegen](https://eigenergy.github.io/tellegen/). The
@@ -35,22 +35,21 @@ Each case is an islanded DC OPF instance. Bus color shows locational marginal
 price. Selecting a bus shows the dLMP/dd column for a demand perturbation at
 that bus. Moving the demand slider applies the local sensitivity immediately;
 releasing it computes the exact solution with Clarabel in WebAssembly. Bundled
-cases can fall back to the Julia server if browser solve is unavailable.
+cases can fall back to the tellegen backend if browser solve is unavailable.
 
 Dropped `.m`, `.raw`, and `.aux` files are parsed in the browser by the
 WebAssembly build of powerio. Files with coordinates render on the map. Files
 without coordinates can be placed by clicking the map, or paired with local
-coordinate sidecars in `.csv`, `.json`, or `.geojson` form. A dropped PowerWorld
+geographic files in `.csv`, `.json`, or `.geojson` form. A dropped PowerWorld
 `.pwd` file is decoded as display data and rendered as approximate substation
 positions. Parsed local case files solve in the browser and are not uploaded.
 
 ## Development
 
-Backend:
+tellegen backend:
 
 ```sh
-cd backend
-julia --project=. bootstrap.jl
+cargo run --manifest-path rust/Cargo.toml --bin tellegen-server
 ```
 
 WebAssembly module:
@@ -60,7 +59,7 @@ cd frontend
 npm run wasm
 ```
 
-Frontend:
+tellegen frontend:
 
 ```sh
 cd frontend
@@ -80,33 +79,39 @@ scripts/stage-data.sh ~/Datasets
 ```
 
 The script stages the six files used by the demo into `data/`. Without all
-three staged cases, the backend exits. For CI or local smoke checks without the
-TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the two pglib
-fallback cases with synthetic coordinates.
+three staged cases, the tellegen backend exits. For CI or local smoke checks
+without the TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the
+two pglib fallback cases with synthetic coordinates.
 
 ## Tests
 
-The served sensitivity columns are KKT derivatives at the optimum. The backend
-test suite compares dLMP/dd columns from PowerDiff.jl against central finite
-differences of full solves:
+The served sensitivity columns are KKT derivatives at the optimum. tellegen
+backend tests cover the solver, the sensitivity columns, and the API:
 
 ```sh
-julia --project=backend backend/test/runtests.jl
+cargo test --manifest-path rust/Cargo.toml
 ```
 
-Frontend checks:
+The Julia reference harness remains available for PowerDiff.jl parity checks:
+
+```sh
+julia --project=reference/julia-backend reference/julia-backend/test/runtests.jl
+```
+
+tellegen frontend checks:
 
 ```sh
 cd frontend
 npm run check
 npm run build
+npm run smoke:build
 ```
 
 ## Repository layout
 
-- `backend/`: Julia API server, Oxygen.jl, PowerDiff.jl, TAMU coordinate ingestion
-- `frontend/`: SvelteKit 5 static app, MapLibre GL, deck.gl
-- `rust/`: tellegen Rust crate, compiled to WebAssembly for browser parsing and DC solves
+- `frontend/`: tellegen frontend
+- `rust/`: tellegen backend and WebAssembly packages
+- `reference/julia-backend/`: Julia PowerDiff.jl parity harness
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -129,9 +134,12 @@ scripts/build-docs.sh
 - `GET /api/cases/{id}/sensitivity/lmp/d/{bus}`
 - `GET /api/cases/{id}/solve`
 
-The sensitivity and server solve endpoints accept `?d=bus:mw,bus:mw`, where each
-value is a MW delta from the base case. The solve stream emits `status`,
-`iteration`, `solution`, optional `sensitivity`, and `done` events.
+The sensitivity and tellegen backend solve endpoints accept `?d=bus:mw,bus:mw`,
+where each value is a MW delta from the base case. The solve stream emits
+`status`, `solution`, optional `sensitivity`, and `done` events.
+
+The tellegen backend solve work is bounded by `TELLEGEN_SOLVER_CONCURRENCY`
+(default `2`) and `TELLEGEN_SOLVER_TIMEOUT_SECS` (default `30`).
 
 ## Deployment
 

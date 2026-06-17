@@ -1,4 +1,5 @@
-# Run with: julia --project=backend backend/test/runtests.jl
+# Run with:
+# julia --project=reference/julia-backend reference/julia-backend/test/runtests.jl
 
 using Test
 using LinearAlgebra

@@ -6,7 +6,8 @@ on:
   pull_request:
 
 jobs:
-  # Build the wasm module before the frontend that imports it.
+  # Test the tellegen backend, then build the wasm module before the tellegen
+  # frontend imports it.
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -17,8 +18,11 @@ jobs:
           workspaces: rust
       - run: cargo test --manifest-path rust/Cargo.toml
       - name: Install wasm-pack
-        run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
-      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-pkg
+        run: cargo install wasm-pack --version 0.15.0 --locked
+      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-pkg -- --no-default-features
+        env:
+          RUSTFLAGS: -C target-feature=-simd128,-relaxed-simd
+      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-sens-pkg --out-name tellegen_sens
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -26,14 +30,18 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
       - run: npm run check
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+      - run: npm run smoke:build
+        working-directory: frontend
 
-  # Backend: PowerIO from the General registry (compat-pinned in Project.toml),
-  # PowerDiff from the git rev in [sources]. Resolves fresh each run.
-  backend:
+  # Julia reference: PowerIO from the General registry, PowerDiff from the git
+  # rev in [sources]. This is not the production backend.
+  julia-reference:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +49,6 @@ jobs:
         with:
           version: "1.11"
       - uses: julia-actions/cache@v2
-      - name: Instantiate backend
-        run: julia --project=backend -e 'using Pkg; Pkg.instantiate()'
-      - run: TELLEGEN_ALLOW_FALLBACK=1 julia --project=backend backend/test/runtests.jl
+      - name: Instantiate Julia reference
+        run: julia --project=reference/julia-backend -e 'using Pkg; Pkg.instantiate()'
+      - run: TELLEGEN_ALLOW_FALLBACK=1 julia --project=reference/julia-backend reference/julia-backend/test/runtests.jl

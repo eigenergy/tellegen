@@ -1,8 +1,8 @@
 # Deployment
 
-tellegen deploys as one container: the Julia API server with the built static
-frontend copied into the image. Production can run behind an existing Caddy
-edge proxy that owns ports 80 and 443.
+tellegen deploys as one container: the tellegen backend with the built tellegen
+frontend copied into the image. Production can run behind an existing Caddy edge
+proxy that owns ports 80 and 443.
 
 ## Requirements
 
@@ -99,7 +99,7 @@ TELLEGEN_DEPLOY_ENABLED=true
 Leave that variable unset until the host has staged data, an `edge` network,
 and GHCR pull access. Once enabled, the workflow:
 
-1. runs the frontend and backend checks;
+1. runs the tellegen backend and tellegen frontend checks;
 2. builds the Docker image;
 3. starts the image in Actions and checks `/api/health` with fallback data;
 4. pushes `ghcr.io/eigenergy/tellegen:<sha>` and `ghcr.io/eigenergy/tellegen:main`;
@@ -156,14 +156,15 @@ timeouts on `/api/cases/*/solve`.
 
 ## Capacity
 
-The staged 200, 500, and 2000 bus cases use about 3 GB resident memory on the
-current host. ACTIVSg2000 dominates memory and solve time because of its dense
-sensitivity cache and Ipopt workspace. Solve requests serialize per case behind
-a lock. Read endpoints serve pre-serialized JSON.
+The staged 200, 500, and 2000 bus cases are parsed at boot, and the base DC OPF
+solution is cached for each case. Browser WebAssembly handles the normal exact
+solve path; the tellegen backend recomputes fallback solves on demand. Read
+endpoints serve prebuilt case payloads.
 
 ## Public Hardening
 
 - Keep the Caddy rate limits on solve and sensitivity endpoints.
 - Keep staged data mounted read only.
-- Add request body limits before adding any server side upload endpoint.
-- Current file drop parsing runs in the browser and does not reach the server.
+- Add request body limits before adding any tellegen backend upload endpoint.
+- Current file drop parsing runs in the browser and does not reach the tellegen
+  backend.

@@ -80,7 +80,7 @@ Sources: [Clarabel issue 133](https://github.com/oxfordcontrol/Clarabel.rs/issue
 [nalgebra wasm](https://www.nalgebra.org/docs/user_guide/wasm_and_embedded_targets/),
 [Jangda et al.](https://ar5iv.labs.arxiv.org/html/1901.09056).
 
-## Frontend
+## tellegen frontend
 
 ### Svelte 5
 
@@ -124,20 +124,15 @@ consumer fetches a file rather than inlining the module.
 Sources: [Svelte packaging](https://svelte.dev/docs/kit/packaging),
 [Vite assets](https://vite.dev/guide/features).
 
-## Julia backend
+## tellegen backend
 
-Oxygen.jl is a small HTTP layer over HTTP.jl and fits the current API shape.
-Genie.jl is a larger full stack option and is not needed for a Svelte frontend.
-The backend workload is dominated by solver work, not many small HTTP requests.
+The tellegen backend uses Rust so the deployed runtime shares the parser,
+solver, and sensitivity implementation with the browser WebAssembly module.
+`axum` fits the API shape: JSON routes, shared immutable case state, SSE for
+fallback solves, and static file serving through `tower-http`.
 
-For deployment, a long running Julia process is sufficient. Package images and
-precompile workloads reduce first use latency after boot; `juliac --trim` and
-related static compilation work remained experimental in the sources checked
-for this note.
-
-Sources: [Julia 1.9 highlights](https://julialang.org/blog/2023/04/julia-1.9-highlights/),
-[PrecompileTools](https://julialang.github.io/PrecompileTools.jl/stable/),
-[Julia 1.12 static compilation review](https://viralinstruction.com/posts/aoc2025/).
+PowerDiff.jl remains useful as an independent reference implementation for DC
+parity checks. It is not part of the production image.
 
 ## Julia to WebAssembly
 
@@ -178,9 +173,10 @@ server backed simulation tools.
 | ANDES / AGVis | Python dynamics and JS viewer | result inspection |
 
 The gap relevant to tellegen is interactive recomputation: load a case, perturb
-demand or generation, and inspect updated flows and prices. Rust/WebAssembly now
-runs that DC loop in the browser, with PowerDiff.jl kept as the reference path
-for parity checks and server fallback.
+demand or generation, and inspect updated flows and prices. The shared
+Rust/WebAssembly path now runs that DC loop in the browser, with the tellegen
+backend providing bundled case fallbacks and PowerDiff.jl kept as the reference
+path for parity checks.
 
 ## Open checks
 

@@ -1,7 +1,8 @@
 # tellegen Rust
 
-This crate builds the browser WebAssembly module used by the frontend. It
-depends on powerio for case and display parsing.
+This crate builds the browser WebAssembly module used by the frontend and the
+native Rust server used in deployment. It depends on powerio for case and
+display parsing.
 
 ## Exports
 
@@ -30,3 +31,14 @@ wasm-pack build --target web --out-dir ../frontend/src/lib/wasm-pkg
 ```
 
 The frontend imports the generated package lazily when a file is dropped.
+
+## Server
+
+From the repository root:
+
+```sh
+cargo run --manifest-path rust/Cargo.toml --bin tellegen-server
+```
+
+The server reads staged TAMU data from `TELLEGEN_DATA` or `data/`. Set
+`TELLEGEN_ALLOW_FALLBACK=1` for local smoke checks without staged TAMU files.

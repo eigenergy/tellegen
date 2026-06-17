@@ -24,18 +24,34 @@
 //! then makes `nu_bal` the (positive) marginal cost, i.e. the LMP. See
 //! PowerDiff `src/prob/kkt_dc_opf.jl` and `src/sens/lmp.jl`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
 use clarabel::algebra::CscMatrix;
 use clarabel::solver::{
-    DefaultSettings, DefaultSolver, IPSolver, SolverStatus,
+    DefaultInfo, DefaultSettings, DefaultSolver, IPSolver, SolverStatus,
     SupportedConeT::{NonnegativeConeT, ZeroConeT},
 };
+use serde::Serialize;
 
 use super::model::DcNetwork;
+
+/// One interior-point iterate: the iteration index, the primal objective, and
+/// the primal and dual residuals. Collected once per Clarabel iteration to draw
+/// the convergence plot. Shape matches the frontend `SolveIteration`.
+#[derive(Clone, Debug, Serialize)]
+pub struct SolveIteration {
+    pub iter: u32,
+    pub objective: f64,
+    pub inf_pr: f64,
+    pub inf_du: f64,
+}
 
 /// Primal and dual solution of the DC OPF, in per unit. Dual names and signs
 /// follow PowerDiff's `DCOPFSolution`. `nu_bal` is the LMP (per-unit
 /// $/per-unit-MW); divide by `base_mva` for $/MWh.
 #[derive(Clone)]
+#[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
 pub struct DcSolution {
     pub va: Vec<f64>,
     pub pg: Vec<f64>,
@@ -51,6 +67,7 @@ pub struct DcSolution {
     pub gamma_ub: Vec<f64>,
     pub gamma_lb: Vec<f64>,
     pub objective: f64,
+    pub iterations: Vec<SolveIteration>,
 }
 
 impl DcSolution {
@@ -61,8 +78,23 @@ impl DcSolution {
 }
 
 /// Assemble and solve the DC OPF for `dc`. Returns the primal dispatch, flows,
-/// shedding, and the full dual set.
+/// shedding, and the full dual set. The uncancellable convenience entry point
+/// the tests and the sensitivity finite-difference checks use; the solve paths
+/// go through [`solve_cancellable`].
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn solve(dc: &DcNetwork) -> Result<DcSolution, String> {
+    solve_cancellable(dc, None)
+}
+
+/// As [`solve`], but `cancel` (when present) is polled once per interior-point
+/// iteration through Clarabel's termination callback; flipping it true halts the
+/// solve at the next iteration and returns `Err`. The server uses this to drop a
+/// solve that has timed out or whose client disconnected, releasing the solver
+/// permit instead of running to convergence.
+pub fn solve_cancellable(
+    dc: &DcNetwork,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<DcSolution, String> {
     let (n, m, k) = (dc.n, dc.m, dc.k);
 
     // Variable vector x = [va(n), pg(k), f(m), psh(n)].
@@ -203,12 +235,31 @@ pub fn solve(dc: &DcNetwork) -> Result<DcSolution, String> {
 
     let mut solver = DefaultSolver::new(&p_mat, &q, &a_mat, &b, &cones, settings)
         .map_err(|e| format!("Clarabel setup failed: {e:?}"))?;
+    // Record every interior-point iterate for the convergence plot, and (when a
+    // cancel flag is present) stop the solve at the next iteration if it flips.
+    let trace: Arc<Mutex<Vec<SolveIteration>>> = Arc::new(Mutex::new(Vec::new()));
+    {
+        let trace = trace.clone();
+        solver.set_termination_callback(move |info: &DefaultInfo<f64>| {
+            trace.lock().unwrap().push(SolveIteration {
+                iter: info.iterations,
+                objective: info.cost_primal,
+                inf_pr: info.res_primal,
+                inf_du: info.res_dual,
+            });
+            cancel.as_ref().is_some_and(|f| f.load(Ordering::Relaxed))
+        });
+    }
     solver.solve();
 
     let status = solver.solution.status;
+    if matches!(status, SolverStatus::CallbackTerminated) {
+        return Err("DC OPF solve cancelled".into());
+    }
     if !matches!(status, SolverStatus::Solved | SolverStatus::AlmostSolved) {
         return Err(format!("DC OPF solve did not converge: {status:?}"));
     }
+    let iterations = std::mem::take(&mut *trace.lock().unwrap());
 
     let x = &solver.solution.x;
     let z = &solver.solution.z;
@@ -230,6 +281,7 @@ pub fn solve(dc: &DcNetwork) -> Result<DcSolution, String> {
         gamma_ub: (0..m).map(|e| z[r_phaseub(e)]).collect(),
         gamma_lb: (0..m).map(|e| z[r_phaselb(e)]).collect(),
         objective: solver.solution.obj_val,
+        iterations,
     };
     Ok(sol)
 }
