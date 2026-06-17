@@ -4,7 +4,10 @@ use std::{
     env,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
@@ -29,8 +32,8 @@ use tower_http::{
 
 use crate::{
     dc::{
-        solve_network, DcSolveOutput, DcSolveRequest, DispatchValue, DlmpDdColumn, FlowValue,
-        LmpValue, SensitivityValue,
+        solve_prebuilt, solve_prebuilt_cancellable, DcNetwork, DcSolveOutput, DcSolveRequest,
+        DispatchValue, DlmpDdColumn, FlowValue, LmpValue, SensitivityValue,
     },
     geo::{complete_coords_for, synthetic_layout, Coords},
 };
@@ -119,6 +122,9 @@ struct CaseEntry {
     name: String,
     network: Network,
     network_json: String,
+    /// The DC model built once at load. Solves clone this and perturb only the
+    /// demand vector, so a demand drag never re-runs normalize-and-reindex.
+    dc: Arc<DcNetwork>,
     view: NetworkPayload,
     base_solution: SolutionPayload,
 }
@@ -454,7 +460,8 @@ async fn sensitivity(
             sens_bus: Some(bus),
         };
         let id_for_task = entry.id.clone();
-        let output = run_solve_limited(state, entry, request).await?;
+        let cancel = Arc::new(AtomicBool::new(false));
+        let output = run_solve_limited(state, entry, request, cancel).await?;
         let Some(col) = output.dlmp_dd else {
             return Err(ApiError::not_found(format!("unknown bus {bus}")));
         };
@@ -494,7 +501,18 @@ async fn solve_stream(
         )
         .await;
         let start = Instant::now();
-        match run_solve_limited(state, entry, request).await {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let result = tokio::select! {
+            biased;
+            // Client hung up: cancel the in-flight solve and drop the stream so
+            // its solver permit is released instead of pinned to convergence.
+            _ = tx.closed() => {
+                cancel.store(true, Ordering::Relaxed);
+                return;
+            }
+            r = run_solve_limited(state, entry, request, cancel.clone()) => r,
+        };
+        match result {
             Ok(output) => {
                 let solve_ms = start.elapsed().as_secs_f64() * 1000.0;
                 let solution = solution_payload(&output);
@@ -528,26 +546,34 @@ async fn run_solve_limited(
     state: Arc<AppState>,
     entry: Arc<CaseEntry>,
     request: DcSolveRequest,
+    cancel: Arc<AtomicBool>,
 ) -> ApiResult<DcSolveOutput> {
     let timeout = state.solver_timeout;
-    tokio::time::timeout(timeout, async move {
-        let permit = state
-            .solver_permits
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| ApiError::service_unavailable("solver unavailable"))?;
-        let handle = tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            solve_network(&entry.network, &request)
-        });
-        handle
-            .await
+    // Hold a permit only for the bounded solve window. The blocking solve owns
+    // the permit and the cancel flag; on timeout we flip the flag so the solve
+    // stops at its next interior-point iteration and releases the permit, rather
+    // than running to convergence while the request has already given up.
+    let permit = state
+        .solver_permits
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| ApiError::service_unavailable("solver unavailable"))?;
+    let dc = entry.dc.clone();
+    let task_cancel = cancel.clone();
+    let handle = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        solve_prebuilt_cancellable(&dc, &request, Some(task_cancel))
+    });
+    match tokio::time::timeout(timeout, handle).await {
+        Ok(joined) => joined
             .map_err(|e| ApiError::internal(format!("solve task failed: {e}")))?
-            .map_err(ApiError::internal)
-    })
-    .await
-    .map_err(|_| ApiError::service_unavailable("solve timed out"))?
+            .map_err(ApiError::internal),
+        Err(_) => {
+            cancel.store(true, Ordering::Relaxed);
+            Err(ApiError::service_unavailable("solve timed out"))
+        }
+    }
 }
 
 fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, String> {
@@ -579,13 +605,15 @@ fn build_entry(
     synthetic_coords: bool,
 ) -> Result<CaseEntry, String> {
     let network_json = network.to_json().map_err(|e| e.to_string())?;
-    let base = solve_network(&network, &DcSolveRequest::default())?;
+    let dc = Arc::new(DcNetwork::from_network(&network)?);
+    let base = solve_prebuilt(&dc, &DcSolveRequest::default())?;
     let view = network_payload(id, name, &network, &coords, synthetic_coords)?;
     Ok(CaseEntry {
         id: id.into(),
         name: name.into(),
         network,
         network_json,
+        dc,
         view,
         base_solution: solution_payload(&base),
     })

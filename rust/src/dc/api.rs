@@ -6,6 +6,8 @@
 //! natively; `lib.rs` wraps it as the `solve_dc` wasm export.
 
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use powerio::network::Network;
 use serde::{Deserialize, Serialize};
@@ -13,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use super::model::DcNetwork;
 #[cfg(feature = "sensitivity")]
 use super::sens::dlmp_dd;
-use super::solve::solve;
+use super::solve::solve_cancellable;
 
 /// A solve request: demand deltas in MW keyed by original bus id (the operating
 /// point is `base demand + deltas`), and an optional bus to return the dLMP/dd
@@ -103,7 +105,29 @@ pub fn solve_dc_json(network_json: &str, deltas_json: &str) -> Result<String, St
 }
 
 pub fn solve_network(net: &Network, req: &DcSolveRequest) -> Result<DcSolveOutput, String> {
-    let mut dc = DcNetwork::from_network(net)?;
+    let dc = DcNetwork::from_network(net)?;
+    solve_prebuilt(&dc, req)
+}
+
+/// Solve at `base demand + deltas` from an already-built [`DcNetwork`]. The
+/// constant topology (susceptance, limits, id maps, reference bus) is reused as
+/// is; only the demand vector is perturbed. The server builds the model once per
+/// case and calls this on every solve, so a demand drag never re-runs the
+/// normalize-and-reindex that `DcNetwork::from_network` performs.
+pub fn solve_prebuilt(dc: &DcNetwork, req: &DcSolveRequest) -> Result<DcSolveOutput, String> {
+    solve_prebuilt_cancellable(dc, req, None)
+}
+
+/// As [`solve_prebuilt`], threading an optional cancel flag into the solve so a
+/// timed-out or abandoned solve can be stopped (see [`solve_cancellable`]).
+pub fn solve_prebuilt_cancellable(
+    base_dc: &DcNetwork,
+    req: &DcSolveRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<DcSolveOutput, String> {
+    // Clone the prebuilt model and perturb only its demand. Every other field is
+    // constant for the case, so this is a flat Vec copy, not a topology rebuild.
+    let mut dc = base_dc.clone();
     let base = dc.base_mva;
 
     // Original bus id -> dense index, for routing deltas and the sensitivity bus.
@@ -121,7 +145,7 @@ pub fn solve_network(net: &Network, req: &DcSolveRequest) -> Result<DcSolveOutpu
         }
     }
 
-    let sol = solve(&dc)?;
+    let sol = solve_cancellable(&dc, cancel)?;
     let lmp = sol.lmp_usd_per_mwh(base);
 
     let lmp_payload = (0..dc.n)

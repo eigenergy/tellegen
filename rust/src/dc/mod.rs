@@ -8,6 +8,7 @@ mod sens;
 mod solve;
 
 pub use api::{
-    solve_dc_json, solve_network, DcSolveOutput, DcSolveRequest, DispatchValue, DlmpDdColumn,
-    FlowValue, LmpValue, SensitivityValue,
+    solve_dc_json, solve_network, solve_prebuilt, solve_prebuilt_cancellable, DcSolveOutput,
+    DcSolveRequest, DispatchValue, DlmpDdColumn, FlowValue, LmpValue, SensitivityValue,
 };
+pub use model::DcNetwork;
