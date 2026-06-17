@@ -35,6 +35,11 @@
 
 	let map = $state.raw<MapLibreMap | null>(null);
 	let overlay = $state.raw<MapboxOverlay | null>(null);
+	// Bumped to remount the map after a WebGL context is lost and cannot be
+	// repainted in place. See initMap's context-loss handling.
+	let mapGen = $state(0);
+	// Cap automatic remounts so sustained GPU pressure cannot loop forever.
+	let glRebuilds = 0;
 
 	type LayerCtors = {
 		PathLayer: typeof PathLayer;
@@ -219,6 +224,31 @@
 		};
 	}
 
+	type MapModules = Awaited<ReturnType<typeof loadMapModules>>;
+
+	// The deck overlay options. interleaved:true renders the network into
+	// maplibre's own WebGL2 context instead of a second canvas, so the page
+	// holds one GL context rather than two. Safari evicts WebGL contexts under
+	// memory and tab pressure, and one context survives that far better; the
+	// deck layers also inherit maplibre's 4096 canvas clamp. The flat positron
+	// basemap writes no depth, so the overlay always draws on top.
+	function buildOverlay(MapboxOverlay: MapModules['MapboxOverlay']): MapboxOverlay {
+		return new MapboxOverlay({
+			interleaved: true,
+			layers: [],
+			parameters: {
+				depthWriteEnabled: false,
+				depthCompare: 'always'
+			},
+			onClick: (info: PickingInfo) => {
+				if (!app.placingLocalId && !isBusLayer(info.layer?.id)) onmapclick();
+			},
+			getTooltip: tooltip,
+			getCursor: ({ isHovering, isDragging }: CursorState) =>
+				app.placingLocalId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
+		});
+	}
+
 	function initMap(container: HTMLDivElement) {
 		let cleanup = () => {};
 		let cancelled = false;
@@ -234,28 +264,67 @@
 					canvasContextAttributes: { antialias: true },
 					attributionControl: { compact: true }
 				});
-				const o = new MapboxOverlay({
-					interleaved: false,
-					layers: [],
-					parameters: {
-						depthWriteEnabled: false,
-						depthCompare: 'always'
-					},
-					onClick: (info: PickingInfo) => {
-						if (!app.placingLocalId && !isBusLayer(info.layer?.id)) onmapclick();
-					},
-					getTooltip: tooltip,
-					getCursor: ({ isHovering, isDragging }: CursorState) =>
-						app.placingLocalId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
-				});
+				const o = buildOverlay(MapboxOverlay);
 				m.addControl(o);
 				m.on('click', (e) => {
 					if (app.placingLocalId) onplacecase(e.lngLat.lng, e.lngLat.lat);
 				});
 				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+
+				// WebGL resilience on Safari. Two failure modes seen in the wild:
+				//   1. The canvas backing store is discarded while the tab is idle or
+				//      backgrounded, so the map shows blank until something forces a
+				//      redraw. A manual window resize fixes it; do that automatically
+				//      when the tab returns to the foreground.
+				//   2. The whole GL context is lost under pressure. maplibre rebuilds
+				//      its painter on restore but not the deck custom layer (its Deck
+				//      still holds the dead context), so a clean remount is simplest:
+				//      bump mapGen to tear the map down and build it again.
+				const repaint = () => {
+					if (cancelled) return;
+					m.resize();
+					m.triggerRepaint();
+				};
+				const onVisible = () => {
+					if (document.visibilityState === 'visible') repaint();
+				};
+				let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
+				const clearRebuild = () => {
+					if (rebuildTimer !== null) {
+						clearTimeout(rebuildTimer);
+						rebuildTimer = null;
+					}
+				};
+				const rebuild = () => {
+					clearRebuild();
+					if (cancelled) return;
+					if (glRebuilds >= 6) {
+						app.error = 'the map lost its graphics context repeatedly; reload the page to restore it';
+						return;
+					}
+					glRebuilds++;
+					mapGen++;
+				};
+				const onContextLost = () => {
+					overlay = null; // stop the layer effect touching a dead overlay
+					rebuildTimer ??= setTimeout(rebuild, 1500);
+				};
+				document.addEventListener('visibilitychange', onVisible);
+				window.addEventListener('focus', repaint);
+				window.addEventListener('pageshow', repaint);
+				m.on('webglcontextlost', onContextLost);
+				m.on('webglcontextrestored', rebuild);
+
 				map = m;
 				overlay = o;
+				// A remounted map opens at the default view; re-frame to the active grid.
+				if (mapGen > 0) app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
+
 				cleanup = () => {
+					clearRebuild();
+					document.removeEventListener('visibilitychange', onVisible);
+					window.removeEventListener('focus', repaint);
+					window.removeEventListener('pageshow', repaint);
 					m.remove();
 					map = null;
 					overlay = null;
@@ -470,7 +539,9 @@
 	});
 </script>
 
-<div class="map" {@attach initMap}></div>
+{#key mapGen}
+	<div class="map" {@attach initMap}></div>
+{/key}
 
 <style>
 	.map {
