@@ -170,15 +170,6 @@ export class AppState {
 		this.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
 	}
 
-	updateLocal(id: string, patch: Partial<LocalCase>) {
-		// LocalCase is a class with a stable identity and reactive fields, so a
-		// field write is enough; assign onto the existing instance rather than
-		// replacing it. Mutating in place keeps the seq tokens attached to the same
-		// object an in-flight solve closure holds.
-		const c = this.localCases.find((lc) => lc.id === id);
-		if (c) Object.assign(c, patch);
-	}
-
 	removeCase(id: string) {
 		const wasActive = this.activeCaseId === id;
 		this.cases = this.cases.filter((c) => c.id !== id);
