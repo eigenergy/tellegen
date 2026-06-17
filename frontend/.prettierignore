@@ -1,0 +1,7 @@
+# Generated and vendored output
+.svelte-kit/
+build/
+node_modules/
+src/lib/wasm-pkg/
+src/lib/wasm-sens-pkg/
+package-lock.json
