@@ -203,12 +203,13 @@
 	async function removeBackendCase(c: CaseState, event?: MouseEvent) {
 		event?.stopPropagation();
 		rememberHiddenDefaultCase(c.id);
-		if (app.activeCaseId === c.id) {
-			c.closeStream?.();
-			c.closeStream = null;
-			c.solveSeq++;
-			clearSelection();
-		}
+		// Tear down this case's own in-flight server stream whether or not it is the
+		// active case (a non-active case can still hold a live stream), and bump the
+		// seq so any detached handler no-ops.
+		c.closeStream?.();
+		c.closeStream = null;
+		c.solveSeq++;
+		if (app.activeCaseId === c.id) clearSelection();
 		app.removeCase(c.id);
 		const active = app.active;
 		if (active) await loadBackendCase(active, true);
