@@ -154,13 +154,14 @@ export async function solveDc(
 			return parseSolveOutput(caseId, (await powerioSensitivity()).solve_dc(networkJson, request));
 		} catch (e) {
 			const baseRequest = JSON.stringify({ deltas, sens_bus: null });
+			const message = errorText(e);
 			return {
 				...parseSolveOutput(caseId, (await powerio()).solve_dc(networkJson, baseRequest)),
 				// A permanent capability failure (the sens build's relaxed SIMD, which
-				// Safari rejects) gets a plain-language note; transient errors keep detail.
-				sensitivityError: isPermanentWasmLoadFailure(errorText(e))
+				// Safari rejects) gets a plain language note; transient errors keep detail.
+				sensitivityError: isPermanentWasmLoadFailure(message)
 					? 'needs SIMD this browser does not support (try Chrome or Firefox)'
-					: errorText(e)
+					: message
 			};
 		}
 	}
