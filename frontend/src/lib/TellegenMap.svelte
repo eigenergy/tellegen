@@ -108,8 +108,13 @@
 					}
 				}
 			}
+			// While a sensitivity is still loading for the selected bus, stay in sens
+			// mode (renders neutral, not the prior LMP palette) so the node colors
+			// don't flash orange->purple between the old and new selection.
 			const mode: 'lmp' | 'sens' =
-				isActive && selected !== null && domain && !previewing ? 'sens' : 'lmp';
+				isActive && selected !== null && (domain || app.sensitivityLoading) && !previewing
+					? 'sens'
+					: 'lmp';
 			perCase.set(c.id, { lmp, lo, hi, loading, mode, sens, sensDomain: domain });
 		};
 		for (const c of app.cases) addCase(c);
@@ -336,9 +341,12 @@
 
 				map = m;
 				overlay = o;
+				// Frame the active grid once the map is ready. The initial frame request
+				// (from the case load) can fire before the async map import finishes and
+				// be lost; re-issuing it here ensures the first view is the active case,
+				// not the default world view. A remount opens at the default view too.
+				app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
 				if (mapGen > 0) {
-					// A remounted map opens at the default view; re-frame to the active grid.
-					app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
 					// This is a rebuilt map. Once it has held a live context without
 					// another loss, zero the budget so the cap only ever catches a tight
 					// loss loop, not recoveries spread across a long session.

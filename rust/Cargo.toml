@@ -43,3 +43,11 @@ lto = true
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 ureq = "3.3.0"
+
+# The browser sensitivity build (faer -> pulp) emits wasm relaxed SIMD opcodes
+# that Safari rejects when it validates the module, so the dLMP/dd module failed
+# to load there. This fork gates pulp's RelaxedSimd arch on the relaxed-simd
+# target feature (which the default wasm build does not set), removing the
+# opcodes so the module validates on Safari. No effect on the native build.
+[patch.crates-io]
+pulp = { git = "https://github.com/samtalki/pulp.git", branch = "wasm-relaxed-simd-cfg-gate" }
