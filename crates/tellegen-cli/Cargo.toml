@@ -1,0 +1,20 @@
+[package]
+name = "tellegen-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for the tellegen power flow engine (stateless JSON solves)."
+
+[[bin]]
+name = "tellegen"
+path = "src/main.rs"
+
+[dependencies]
+# Default features (sensitivity). Native, but deliberately NOT acopf-pounce, so the
+# CLI binary stays Apache-2.0 / MIT (no EPL). Phase 5 widens the feature set for the
+# parity/repro harness.
+tellegen = { package = "tellegen-core", path = "../tellegen-core" }
+
+[lints]
+workspace = true

@@ -45,6 +45,31 @@ jobs:
       - run: npm run smoke:build
         working-directory: apps/web
 
+  # Format, lint, supply chain, and the EPL boundary. Keeps the shipping crates
+  # warning-clean and proves the EPL-2.0 pounce backend never enters a wasm,
+  # server, or CLI build (it is native-only, behind the non-default acopf-pounce
+  # feature that only the benchmarks crate enables).
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - run: cargo fmt --all --check
+      - run: cargo clippy -p tellegen-core -p tellegen-wasm -p tellegen-server -p tellegen-cli --all-targets -- -D warnings
+      - uses: EmbarkStudios/cargo-deny-action@v2
+      - name: EPL boundary (pounce must not ship in wasm/server/cli)
+        run: |
+          for p in "tellegen-wasm --target wasm32-unknown-unknown" tellegen-server tellegen-cli; do
+            if cargo tree -p $p 2>/dev/null | grep -qi pounce; then
+              echo "EPL pounce backend leaked into: $p" >&2
+              exit 1
+            fi
+          done
+          echo "ok: no EPL pounce in wasm/server/cli"
+
   # Julia reference: PowerIO from the General registry, PowerDiff from the git
   # rev in [sources]. This is not the production backend.
   julia-reference:

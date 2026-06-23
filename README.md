@@ -49,20 +49,20 @@ positions. Parsed local case files solve in the browser and are not uploaded.
 tellegen backend:
 
 ```sh
-cargo run --manifest-path rust/Cargo.toml --bin tellegen-server
+cargo run -p tellegen-server
 ```
 
 WebAssembly module:
 
 ```sh
-cd frontend
+cd apps/web
 npm run wasm
 ```
 
 tellegen frontend:
 
 ```sh
-cd frontend
+cd apps/web
 npm install
 npm run dev
 ```
@@ -89,7 +89,7 @@ The served sensitivity columns are KKT derivatives at the optimum. tellegen
 backend tests cover the solver, the sensitivity columns, and the API:
 
 ```sh
-cargo test --manifest-path rust/Cargo.toml
+cargo test --workspace
 ```
 
 The Julia reference harness remains available for PowerDiff.jl parity checks:
@@ -101,7 +101,7 @@ julia --project=reference/julia-backend reference/julia-backend/test/runtests.jl
 tellegen frontend checks:
 
 ```sh
-cd frontend
+cd apps/web
 npm run check
 npm run build
 npm run smoke:build
@@ -109,8 +109,9 @@ npm run smoke:build
 
 ## Repository layout
 
-- `frontend/`: tellegen frontend
-- `rust/`: tellegen backend and WebAssembly packages
+- `apps/web/`: tellegen frontend (SvelteKit)
+- `crates/`: Rust workspace — `tellegen-core` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
+- `packages/`: shared TypeScript (reserved for `@tellegen/engine`)
 - `reference/julia-backend/`: Julia PowerDiff.jl parity harness
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes

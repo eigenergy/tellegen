@@ -6,6 +6,7 @@ members = [
   "crates/tellegen-core",
   "crates/tellegen-wasm",
   "crates/tellegen-server",
+  "crates/tellegen-cli",
   "crates/benchmarks",
 ]
 default-members = ["crates/tellegen-core"]

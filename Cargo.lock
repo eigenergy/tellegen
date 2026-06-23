@@ -1780,6 +1780,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tellegen-cli"
+version = "0.1.0"
+dependencies = [
+ "tellegen-core",
+]
+
+[[package]]
 name = "tellegen-core"
 version = "0.1.0"
 dependencies = [

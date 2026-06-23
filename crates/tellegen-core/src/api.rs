@@ -1210,7 +1210,10 @@ mod tests {
         // Every operand/parameter the matrix lists for `f` must be engine-supported.
         let check = |f: Problem, sys: &dyn Differentiable| {
             let c = caps.iter().find(|c| c.formulation == f).unwrap();
-            assert!(c.available, "{f:?} probed but the matrix lists it unavailable");
+            assert!(
+                c.available,
+                "{f:?} probed but the matrix lists it unavailable"
+            );
             for o in &c.operands {
                 assert!(
                     sys.operand_len(*o).is_some(),
