@@ -309,7 +309,7 @@ fn solve_dcopf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
 
 /// Apply the request's operating-point edits to an owned [`DcNetwork`] and solve the
 /// DC OPF, returning the perturbed model alongside its solution. Kept separate from
-/// [`dcopf_assemble`] so a [`Session`](crate::session::Session) can retain the solved
+/// [`dcopf_assemble`] so a [`Study`](crate::study::Study) can retain the solved
 /// model + solution and build a `DcKkt` for first-order previews without re-solving.
 pub(crate) fn dcopf_solved(
     mut dc: DcNetwork,
@@ -324,7 +324,7 @@ pub(crate) fn dcopf_solved(
 }
 
 /// Assemble the DC OPF [`SolveResponse`] (and any requested sensitivity cells) from a
-/// solved model. Shared by the one-shot path and the cached [`Session`] path.
+/// solved model. Shared by the one-shot path and the cached [`Study`] path.
 #[cfg_attr(not(feature = "sensitivity"), allow(unused_variables))]
 pub(crate) fn dcopf_assemble(
     dc: &DcNetwork,
@@ -417,7 +417,7 @@ pub(crate) fn acpf_solved(
 }
 
 /// Assemble the AC power flow [`SolveResponse`] (and sensitivity cells) from a solved
-/// model. Shared by the one-shot path and the cached [`Session`] path.
+/// model. Shared by the one-shot path and the cached [`Study`] path.
 #[cfg(feature = "sensitivity")]
 pub(crate) fn acpf_assemble(
     acnet: &super::model::AcNetwork,

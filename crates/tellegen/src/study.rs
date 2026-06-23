@@ -1,15 +1,15 @@
 //! A build-once, solve-many interactive handle over the engine — the stateful face of
 //! the same driver [`solve_json`](crate::solve_json) exposes statelessly.
 //!
-//! Parse and build the model **once**, then [`commit`](Session::commit) exact-re-solves
-//! at the new operating point and [`preview`](Session::preview) returns a first-order
+//! Parse and build the model **once**, then [`commit`](Study::commit) exact-re-solves
+//! at the new operating point and [`preview`](Study::preview) returns a first-order
 //! linearization at the committed point with no re-solve. This is the reactive hot path
 //! the browser pays a full network re-parse for today (`solve_json` rebuilds the network
 //! on every call); the first-order column the sensitivity driver already produces *is*
 //! the preview.
 //!
-//! A `Session` owns an ordered edit log, so it is also the unit a UI saves and replays
-//! (the "study"): the base case plus the edits that produced the current operating point.
+//! A `Study` is the base case plus an ordered edit log — the unit a UI saves and replays —
+//! and it fully reconstructs the current operating point by replaying that log.
 //!
 //! v1 implements the continuous active-demand drag ([`NetworkEdit::AddLoad`]) over the
 //! two default-feature formulations — DC OPF and AC power flow. The enum and the solved
@@ -70,7 +70,7 @@ pub struct Preview {
     /// marginal price dotted with the demand step (`Σ lmp_b · Δp_b`).
     pub objective_delta: Option<f64>,
     /// Always `true`: a continuous edit's preview is a local linearization, valid only
-    /// until a binding constraint changes. [`commit`](Session::commit) is the truth.
+    /// until a binding constraint changes. [`commit`](Study::commit) is the truth.
     pub local_only: bool,
 }
 
@@ -91,7 +91,7 @@ pub struct PreviewValue {
     pub value: f64,
 }
 
-/// The committed solved state, retained so [`preview`](Session::preview) can build the
+/// The committed solved state, retained so [`preview`](Study::preview) can build the
 /// formulation's differentiable system without re-solving.
 enum Solved {
     Dc(DcNetwork, DcSolution),
@@ -99,9 +99,9 @@ enum Solved {
 }
 
 /// A stateful, build-once handle. Construct with a network and a formulation; the base
-/// model is built once and the base case solved immediately, so [`solution`](Session::solution)
-/// and [`preview`](Session::preview) are available right away.
-pub struct Session {
+/// model is built once and the base case solved immediately, so [`solution`](Study::solution)
+/// and [`preview`](Study::preview) are available right away.
+pub struct Study {
     formulation: Problem,
     base_dc: Option<DcNetwork>,
     base_ac: Option<AcNetwork>,
@@ -111,7 +111,7 @@ pub struct Session {
     last: SolveResponse,
 }
 
-impl Session {
+impl Study {
     /// Parse `network_json` (powerio `Network` JSON), build the model for `formulation`,
     /// and solve the base case. The parse/normalize/index cost is paid once here, not on
     /// every solve.
@@ -120,7 +120,7 @@ impl Session {
         Self::from_network(&net, formulation)
     }
 
-    /// As [`new`](Session::new) from an already-parsed [`Network`].
+    /// As [`new`](Study::new) from an already-parsed [`Network`].
     pub fn from_network(net: &Network, formulation: Problem) -> Result<Self, String> {
         let options = SolveOptions::default();
         let req = bare_request(formulation, &options);
@@ -129,7 +129,7 @@ impl Session {
                 let base = DcNetwork::from_network(net)?;
                 let (dc, sol) = dcopf_solved(base.clone(), &req, None)?;
                 let last = dcopf_assemble(&dc, &sol, &req)?;
-                Ok(Session {
+                Ok(Study {
                     formulation,
                     base_dc: Some(base),
                     base_ac: None,
@@ -143,7 +143,7 @@ impl Session {
                 let base = AcNetwork::from_network(net)?;
                 let (ac, sol) = acpf_solved(base.clone(), &req)?;
                 let last = acpf_assemble(&ac, &sol, &req)?;
-                Ok(Session {
+                Ok(Study {
                     formulation,
                     base_dc: None,
                     base_ac: Some(base),
@@ -154,12 +154,12 @@ impl Session {
                 })
             }
             other => Err(format!(
-                "Session does not yet support {other:?}; use solve_json for stateless {other:?} solves"
+                "Study does not yet support {other:?}; use solve_json for stateless {other:?} solves"
             )),
         }
     }
 
-    /// The formulation this session solves.
+    /// The formulation this study solves.
     pub fn formulation(&self) -> Problem {
         self.formulation
     }
@@ -211,8 +211,8 @@ impl Session {
                 self.last = resp.clone();
                 Ok(resp)
             }
-            // from_network only constructs DcOpf / AcPf sessions.
-            _ => unreachable!("session formulation is dcopf or acpf"),
+            // from_network only constructs DcOpf / AcPf studys.
+            _ => unreachable!("study formulation is dcopf or acpf"),
         }
     }
 
@@ -254,10 +254,10 @@ impl Session {
     }
 }
 
-impl std::fmt::Debug for Session {
+impl std::fmt::Debug for Study {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // The cached models are large; summarize rather than dump them.
-        f.debug_struct("Session")
+        f.debug_struct("Study")
             .field("formulation", &self.formulation)
             .field("edits", &self.log.len())
             .finish_non_exhaustive()
@@ -383,29 +383,29 @@ mod tests {
 
     #[test]
     fn commit_matches_solve_json() {
-        // A Session commit is the stateful face of the same driver: the response is
+        // A Study commit is the stateful face of the same driver: the response is
         // byte-identical to the stateless solve_json at the same operating point.
         let net = case3_json();
-        let mut s = Session::new(&net, Problem::DcOpf).expect("session");
+        let mut s = Study::new(&net, Problem::DcOpf).expect("study");
         let resp = s
             .commit(
                 &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
                 SolveOptions::default(),
             )
             .expect("commit");
-        let from_session = serde_json::to_string(&resp).unwrap();
+        let from_study = serde_json::to_string(&resp).unwrap();
         let stateless = crate::solve_json(
             &net,
             r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0}}}"#,
         )
         .expect("solve_json");
-        assert_eq!(from_session, stateless);
+        assert_eq!(from_study, stateless);
     }
 
     #[test]
     fn edits_accumulate_across_commits() {
         let net = case3_json();
-        let mut a = Session::new(&net, Problem::DcOpf).unwrap();
+        let mut a = Study::new(&net, Problem::DcOpf).unwrap();
         a.commit(
             &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
             SolveOptions::default(),
@@ -419,7 +419,7 @@ mod tests {
             .unwrap();
         assert_eq!(a.edits().len(), 2);
         // Two commits of +30 then +20 reach the same point as one +50.
-        let mut b = Session::new(&net, Problem::DcOpf).unwrap();
+        let mut b = Study::new(&net, Problem::DcOpf).unwrap();
         let once = b
             .commit(
                 &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
@@ -437,9 +437,9 @@ mod tests {
         // The preview at the committed (base) point predicts the LMP change of a small
         // demand step; the DC OPF QP is smooth, so first order ≈ the exact commit.
         let net = case3_json();
-        let session = Session::new(&net, Problem::DcOpf).unwrap();
+        let study = Study::new(&net, Problem::DcOpf).unwrap();
         let step = 1.0_f64; // MW
-        let prev = session
+        let prev = study
             .preview(
                 &[NetworkEdit::AddLoad { bus: 2, p_mw: step }],
                 &[Operand::Price(Power::Active)],
@@ -450,9 +450,9 @@ mod tests {
         assert_eq!(prev.operands[0].units, "$/MWh");
 
         let base: Value =
-            serde_json::from_str(&serde_json::to_string(session.solution()).unwrap()).unwrap();
-        let mut committed_session = Session::new(&net, Problem::DcOpf).unwrap();
-        let committed = committed_session
+            serde_json::from_str(&serde_json::to_string(study.solution()).unwrap()).unwrap();
+        let mut committed_study = Study::new(&net, Problem::DcOpf).unwrap();
+        let committed = committed_study
             .commit(
                 &[NetworkEdit::AddLoad { bus: 2, p_mw: step }],
                 SolveOptions::default(),
@@ -483,8 +483,8 @@ mod tests {
     #[test]
     fn preview_without_an_edit_is_zero() {
         let net = case3_json();
-        let session = Session::new(&net, Problem::DcOpf).unwrap();
-        let prev = session
+        let study = Study::new(&net, Problem::DcOpf).unwrap();
+        let prev = study
             .preview(&[], &[Operand::Price(Power::Active)])
             .unwrap();
         assert_eq!(prev.objective_delta, Some(0.0));
@@ -492,10 +492,10 @@ mod tests {
     }
 
     #[test]
-    fn session_rejects_unsupported_formulation() {
-        // SOCWR / AC OPF (and anything else) are not wired into the Session yet; the
+    fn study_rejects_unsupported_formulation() {
+        // SOCWR / AC OPF (and anything else) are not wired into the Study yet; the
         // error names solve_json as the stateless route.
-        let err = Session::new(&case3_json(), Problem::Socwr).unwrap_err();
+        let err = Study::new(&case3_json(), Problem::Socwr).unwrap_err();
         assert!(err.contains("does not yet support"), "got: {err}");
     }
 

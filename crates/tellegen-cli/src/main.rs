@@ -10,7 +10,7 @@
 //! ```
 //!
 //! This is the stateless face of the engine; interactive, build-once workflows use
-//! the `Session` API (see the core crate). Phase 5 will grow this into the full
+//! the `Study` API (see the core crate). Phase 5 will grow this into the full
 //! parity/repro harness (M5).
 
 use std::io::Read;

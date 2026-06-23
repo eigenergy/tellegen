@@ -34,9 +34,9 @@ mod model;
 pub mod problem;
 #[cfg(feature = "sensitivity")]
 mod sens;
-#[cfg(feature = "sensitivity")]
-pub mod session;
 mod solve;
+#[cfg(feature = "sensitivity")]
+pub mod study;
 
 #[cfg(feature = "sensitivity")]
 pub use api::SensRequest;
@@ -75,6 +75,6 @@ pub use sens::{
     Mode, Operand, Parameter, Power, RowMeta, Selector, SensError, SensitivityMatrix, SolveSpec,
     TapKind, VoltageKind, GB,
 };
-#[cfg(feature = "sensitivity")]
-pub use session::{NetworkEdit, Preview, PreviewColumn, PreviewValue, Session};
 pub use solve::SolveIteration;
+#[cfg(feature = "sensitivity")]
+pub use study::{NetworkEdit, Preview, PreviewColumn, PreviewValue, Study};

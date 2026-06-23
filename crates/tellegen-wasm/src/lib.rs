@@ -59,6 +59,89 @@ pub fn capabilities_json() -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Stateful study (build once, solve many) — the reactive hot path
+// ---------------------------------------------------------------------------
+
+/// A build-once handle over the engine, exported to JS. Construct once per case (the
+/// network is parsed and the model built here); then [`commit`](Study::commit)
+/// exact-re-solves and [`preview`](Study::preview) returns a first-order linearization
+/// at the committed point — neither re-parses the network, unlike `solve_json` / `solve_dc`
+/// which rebuild it on every call. This is the path a reactive drag should use.
+///
+/// Arguments and results are JSON in the engine's `Study` shapes: edits are a
+/// `NetworkEdit[]` (e.g. `[{"kind":"add_load","bus":2,"p_mw":50}]`), `preview` watches an
+/// `Operand[]` (e.g. `[{"Price":"Active"}]`) and returns a `Preview`, `commit` returns a
+/// `SolveResponse`. Only in the sensitivity build (preview needs the differentiable path).
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+pub struct Study(tellegen::Study);
+
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+impl Study {
+    /// Build a study over `network_json` for `formulation` (`"dcopf"` or `"acpf"`),
+    /// solving the base case. Errors on an unknown or not-yet-supported formulation.
+    #[wasm_bindgen(constructor)]
+    pub fn new(network_json: &str, formulation: &str) -> Result<Study, JsError> {
+        let problem = parse_problem(formulation)?;
+        tellegen::Study::new(network_json, problem)
+            .map(Study)
+            .map_err(jserr)
+    }
+
+    /// Apply `edits_json` (a `NetworkEdit[]`) at the committed point and exact-re-solve.
+    /// Advances the committed point; returns the `SolveResponse` JSON.
+    pub fn commit(&mut self, edits_json: &str) -> Result<String, JsError> {
+        let edits = parse_edits(edits_json)?;
+        let resp = self
+            .0
+            .commit(&edits, tellegen::SolveOptions::default())
+            .map_err(jserr)?;
+        serde_json::to_string(&resp).map_err(jserr)
+    }
+
+    /// First-order preview of `edits_json` (a `NetworkEdit[]`) for the `watched_json`
+    /// operands (an `Operand[]`), at the committed point, without re-solving. Returns the
+    /// `Preview` JSON.
+    pub fn preview(&self, edits_json: &str, watched_json: &str) -> Result<String, JsError> {
+        let edits = parse_edits(edits_json)?;
+        let watched: Vec<tellegen::Operand> = serde_json::from_str(watched_json)
+            .map_err(|e| jserr(format!("bad watched-operands JSON: {e}")))?;
+        let prev = self.0.preview(&edits, &watched).map_err(jserr)?;
+        serde_json::to_string(&prev).map_err(jserr)
+    }
+
+    /// The most recent committed solution as `SolveResponse` JSON.
+    pub fn solution(&self) -> Result<String, JsError> {
+        serde_json::to_string(self.0.solution()).map_err(jserr)
+    }
+
+    /// The formulation tag (`"dcopf"` / `"acpf"`).
+    pub fn formulation(&self) -> String {
+        serde_json::to_value(self.0.formulation())
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default()
+    }
+}
+
+/// Parse a formulation tag (`Problem` is serde-lowercase: dcpf/dcopf/acpf/socwr/acopf).
+#[cfg(feature = "sensitivity")]
+fn parse_problem(formulation: &str) -> Result<tellegen::Problem, JsError> {
+    serde_json::from_value(serde_json::Value::String(formulation.to_string()))
+        .map_err(|_| jserr(format!("unknown formulation '{formulation}'")))
+}
+
+/// Parse a `NetworkEdit[]`; empty/blank is no edits.
+#[cfg(feature = "sensitivity")]
+fn parse_edits(edits_json: &str) -> Result<Vec<tellegen::NetworkEdit>, JsError> {
+    if edits_json.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str(edits_json).map_err(|e| jserr(format!("bad edits JSON: {e}")))
+}
+
+// ---------------------------------------------------------------------------
 // DC compatibility shape (the frontend's current `solveDc` contract)
 // ---------------------------------------------------------------------------
 
@@ -583,5 +666,27 @@ mpc.gencost = [
         for e in values {
             assert!(e["value"].as_f64().unwrap().is_finite());
         }
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn study_argument_parsing() {
+        // The `#[wasm_bindgen] Study` struct can't be exercised natively (returning
+        // an exported struct crosses the wasm ABI), and JsError can't be constructed
+        // off-wasm — so the end-to-end binding is covered by the browser (Playwright) and
+        // the engine `tellegen::Study` is unit-tested in the engine crate. Here we cover
+        // this shim's own logic: parsing the JSON arguments (success paths).
+        assert!(matches!(
+            parse_problem("dcopf").unwrap(),
+            tellegen::Problem::DcOpf
+        ));
+        assert!(matches!(
+            parse_problem("acpf").unwrap(),
+            tellegen::Problem::AcPf
+        ));
+        let edits = parse_edits(r#"[{"kind":"add_load","bus":3,"p_mw":10.0}]"#).unwrap();
+        assert_eq!(edits.len(), 1);
+        assert!(parse_edits("").unwrap().is_empty());
+        assert!(parse_edits("   ").unwrap().is_empty());
     }
 }
