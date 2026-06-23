@@ -34,3 +34,6 @@ tower = { version = "0.5", features = ["util"] }
 [features]
 default = ["sensitivity"]
 sensitivity = ["tellegen/sensitivity"]
+
+[lints]
+workspace = true

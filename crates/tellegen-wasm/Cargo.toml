@@ -22,3 +22,6 @@ serde_json.workspace = true
 default = []
 sensitivity = ["tellegen/sensitivity"]
 conic = ["tellegen/conic"]
+
+[lints]
+workspace = true

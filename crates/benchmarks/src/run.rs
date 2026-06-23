@@ -6,7 +6,9 @@
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use tellegen::{ac_pf, socwr_opf, AcNetwork, AcPolar, DcNetwork, Iterations, SocWrSolution, SolveRequest};
+use tellegen::{
+    ac_pf, socwr_opf, AcNetwork, AcPolar, DcNetwork, Iterations, SocWrSolution, SolveRequest,
+};
 
 use crate::baseline::BaselineRow;
 use crate::corpus::CaseFile;
@@ -324,7 +326,8 @@ fn run_acopf(
     // for the near-infeasible giants the flat start cannot crack); otherwise fall back to
     // the flat-start entry point. Each backend's `_warm` variant tries the reconstructed
     // point first and the flat-start schedule after, so warm-starting never loses a case.
-    let run_interiors = || warm.map_or_else(|| tellegen::acopf(ac), |w| tellegen::acopf_warm(ac, w));
+    let run_interiors =
+        || warm.map_or_else(|| tellegen::acopf(ac), |w| tellegen::acopf_warm(ac, w));
     let run_pounce = || {
         warm.map_or_else(
             || tellegen::acopf_pounce(ac),

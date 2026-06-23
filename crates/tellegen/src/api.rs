@@ -36,13 +36,14 @@ use super::sens::{
 /// `"dcpf"`/`"dcopf"`/`"acpf"`/`"socwr"`/`"acopf"`. A plain (not internally
 /// tagged) enum so a request that omits it defaults to [`DcOpf`](Problem::DcOpf),
 /// and `{}` is a valid base-case DC OPF request.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Problem {
     /// DC power flow: angles and flows at the fixed generator setpoints. No prices,
     /// no dispatch, no sensitivity.
     DcPf,
     /// DC OPF: the LMP / dispatch / flow workhorse. Differentiable via the DC KKT.
+    #[default]
     DcOpf,
     /// AC polar Newton power flow. Voltages and nodal injections. Differentiable
     /// via the AC Newton system.
@@ -52,12 +53,6 @@ pub enum Problem {
     /// Full nonlinear AC OPF. Native-only (the wasm build errors cleanly).
     /// Differentiable via the AC OPF KKT.
     Acopf,
-}
-
-impl Default for Problem {
-    fn default() -> Self {
-        Problem::DcOpf
-    }
 }
 
 /// Operating-point edits applied before the model is built. Today: demand deltas
@@ -1195,41 +1190,66 @@ mod tests {
         assert_eq!(v["vm"].as_array().unwrap().len(), 3);
     }
 
-    /// Guard against the static capability matrix drifting from the engine: probe
-    /// each available system on case3 and assert the listed operands/parameters are
-    /// exactly the ones whose `operand_len`/`parameter_len` are `Some`.
+    /// Guard against the static capability matrix drifting from the engine: build each
+    /// available system on case3 and assert every operand/parameter the matrix lists is
+    /// one the engine actually supports (`operand_len`/`parameter_len` are `Some`). Covers
+    /// DC OPF always, and — behind their features — AC PF, SOCWR, and AC OPF, so a UI menu
+    /// driven by `capabilities_json` can never offer a cell that errors at solve time.
+    /// (DESIGN §8 open item: the guard used to probe only `dcopf`.)
     #[cfg(feature = "sensitivity")]
     #[test]
     fn capabilities_match_engine() {
-        use super::super::model::DcNetwork;
-        use super::super::sens::DcKkt;
+        use super::super::formulation::AcPolar;
+        use super::super::model::{AcNetwork, DcNetwork};
+        use super::super::problem::{ac_pf, dcopf};
+        use super::super::sens::{AcNewton, DcKkt, Differentiable};
 
-        let dc = DcNetwork::from_network(&powerio::parse_str(CASE3, "matpower").unwrap().network)
-            .unwrap();
-        let sol = super::super::problem::dcopf(&dc).unwrap();
-        let sys = DcKkt::new(&dc, &sol);
-
+        let net = powerio::parse_str(CASE3, "matpower").unwrap().network;
         let caps = formulation_caps();
-        let dcopf = caps
-            .iter()
-            .find(|c| c.formulation == Problem::DcOpf)
-            .unwrap();
-        for o in &dcopf.operands {
-            assert!(
-                sys.operand_len(*o).is_some(),
-                "listed operand {o:?} unsupported"
-            );
+
+        // Every operand/parameter the matrix lists for `f` must be engine-supported.
+        let check = |f: Problem, sys: &dyn Differentiable| {
+            let c = caps.iter().find(|c| c.formulation == f).unwrap();
+            assert!(c.available, "{f:?} probed but the matrix lists it unavailable");
+            for o in &c.operands {
+                assert!(
+                    sys.operand_len(*o).is_some(),
+                    "{f:?}: listed operand {o:?} unsupported by the engine"
+                );
+            }
+            for p in &c.parameters {
+                assert!(
+                    sys.parameter_len(*p).is_some(),
+                    "{f:?}: listed parameter {p:?} unsupported by the engine"
+                );
+            }
+        };
+
+        // DC OPF (always available under `sensitivity`).
+        let dc = DcNetwork::from_network(&net).unwrap();
+        let dc_sol = dcopf(&dc).unwrap();
+        check(Problem::DcOpf, &DcKkt::new(&dc, &dc_sol));
+
+        // AC power flow (Newton system).
+        let ac = AcNetwork::from_network(&net).unwrap();
+        let ac_sol = ac_pf(&AcPolar::new(), &ac).unwrap();
+        check(Problem::AcPf, &AcNewton::new(&ac, &ac_sol));
+
+        // SOCWR conic relaxation.
+        #[cfg(feature = "conic")]
+        {
+            let soc = super::super::problem::socwr_opf(&ac).unwrap();
+            let sys = super::super::sens::ConicKkt::new(&ac, &soc).unwrap();
+            check(Problem::Socwr, &sys);
         }
-        for p in &dcopf.parameters {
-            assert!(
-                sys.parameter_len(*p).is_some(),
-                "listed parameter {p:?} unsupported"
-            );
+
+        // Full nonlinear AC OPF (native-only; warm-started best-of-backends, as the
+        // public endpoint solves it).
+        #[cfg(feature = "acopf")]
+        {
+            let sol = super::solve_acopf_best(&ac).unwrap();
+            let sys = super::super::sens::AcOpfKkt::new(&ac, &sol).unwrap();
+            check(Problem::Acopf, &sys);
         }
-        // And nothing supported is missing from the list (spot-check the closed set).
-        assert!(sys.operand_len(Operand::Price(Power::Active)).is_some());
-        assert!(sys
-            .parameter_len(Parameter::SeriesAdmittance(GB::Susceptance))
-            .is_some());
     }
 }

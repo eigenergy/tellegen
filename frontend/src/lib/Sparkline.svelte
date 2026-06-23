@@ -6,19 +6,27 @@
 	const W = 240;
 	const H = 30;
 
-	// Primal infeasibility on a log scale: the canonical interior point
-	// convergence picture, a staircase falling to the tolerance floor.
+	// Primal infeasibility on a FIXED log10 axis: top = 1e0 (problem scale), bottom
+	// = the solver feasibility tolerance (tol_feas = 1e-9 in crates/tellegen/src/solve.rs).
+	// inf_pr is Clarabel's *relative* primal residual, so it runs ~1 -> tol for every
+	// well-posed solve; rescaling each trace to its own min/max made every curve fill
+	// the box identically (the "same shape every solve" bug). Anchoring to fixed
+	// bounds lets the descent depth and per-iterate path vary with the operating point.
+	const Y_TOP = 0; // log10(1e0)
+	const Y_BOT = -9; // log10(tol_feas)
 	const points = $derived.by(() => {
 		if (iterations.length < 2) return '';
-		const ys = iterations.map((it) => Math.log10(Math.max(it.inf_pr, 1e-14)));
-		const ymin = Math.min(...ys);
-		const ymax = Math.max(...ys);
-		const span = ymax - ymin || 1;
 		const n = iterations.length;
+		const span = Y_TOP - Y_BOT;
 		return iterations
-			.map((_, k) => {
+			.map((it, k) => {
+				const v = Number(it.inf_pr);
+				// Floor non-finite/non-positive residuals at the tolerance so a bad
+				// iterate can't poison the polyline with NaN coordinates.
+				const logv = Number.isFinite(v) && v > 0 ? Math.log10(v) : Y_BOT;
+				const clamped = Math.min(Y_TOP, Math.max(Y_BOT, logv));
 				const x = ((k / (n - 1)) * (W - 6) + 3).toFixed(1);
-				const y = (3 + ((ymax - ys[k]) / span) * (H - 6)).toFixed(1);
+				const y = (3 + ((Y_TOP - clamped) / span) * (H - 6)).toFixed(1);
 				return `${x},${y}`;
 			})
 			.join(' ');

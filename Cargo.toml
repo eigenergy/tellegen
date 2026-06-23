@@ -23,6 +23,14 @@ powerio = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Shared lints, opted into per crate with `[lints] workspace = true`. Kept modest so a
+# `cargo clippy -- -D warnings` CI gate stays green: clippy's default `all`, plus guards
+# against a stray `todo!`/`dbg!` reaching a shipped build.
+[workspace.lints.clippy]
+all = "warn"
+todo = "warn"
+dbg_macro = "warn"
+
 # Profiles only take effect at the workspace root. `opt-level = "s"` + `lto` keep the
 # browser wasm small (the size constraint that matters for the shipped app); the
 # server inherits the same release profile.

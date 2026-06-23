@@ -67,7 +67,10 @@ fn dropped_aux_parses_solves_and_differentiates() {
         .unwrap()
         .iter()
         .all(|l| l["usd_per_mwh"].as_f64().unwrap().is_finite()));
-    assert!(base["objective"].as_f64().unwrap().is_finite() && base["objective"].as_f64().unwrap() > 0.0);
+    assert!(
+        base["objective"].as_f64().unwrap().is_finite()
+            && base["objective"].as_f64().unwrap() > 0.0
+    );
     assert!(
         !base["iterations"].as_array().unwrap().is_empty(),
         "no convergence trace"

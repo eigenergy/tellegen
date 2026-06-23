@@ -56,3 +56,6 @@ acopf = ["conic", "dep:interiors", "dep:sparsetools", "dep:spsolve", "dep:getran
 # Alternative AC OPF solver backend: the `pounce` Ipopt port. Implies `acopf`.
 # Non-default, native-only, EPL-2.0 deps.
 acopf-pounce = ["acopf", "dep:pounce-nlp", "dep:pounce-algorithm", "dep:pounce-common"]
+
+[lints]
+workspace = true

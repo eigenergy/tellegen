@@ -578,7 +578,10 @@ fn build_request(
     sens_bus: Option<usize>,
 ) -> SolveRequest {
     let mut request = SolveRequest::default();
-    request.edits.deltas = deltas.into_iter().map(|(bus, mw)| (bus as i64, mw)).collect();
+    request.edits.deltas = deltas
+        .into_iter()
+        .map(|(bus, mw)| (bus as i64, mw))
+        .collect();
     #[cfg(feature = "sensitivity")]
     if let Some(idx) = sens_bus.and_then(|bus| entry.dc.bus_ids.iter().position(|&id| id == bus)) {
         request.sensitivities = vec![SensRequest {

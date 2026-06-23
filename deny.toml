@@ -1,0 +1,67 @@
+# Supply-chain governance for the tellegen workspace.
+#
+# The load-bearing rule is the EPL boundary. The `pounce` Ipopt-port AC-OPF backend
+# is EPL-2.0 and native-only, gated behind the non-default `acopf-pounce` feature —
+# which ONLY `crates/benchmarks` enables. It must never enter the wasm, server, CLI,
+# or default builds.
+#
+# cargo-deny checks the whole resolved graph, so the pounce-* crates DO appear here
+# (pulled in via benchmarks) and are permitted by the per-crate EPL exceptions below.
+# That allowance alone does NOT prove they stay out of the shipped builds — that is
+# enforced in CI by per-feature `cargo tree -i pounce-nlp` assertions on the wasm and
+# server feature sets (see .github/workflows/ci.yml). This file's job is narrower but
+# still essential: pin EPL-2.0 to exactly the known pounce crates and fail on any
+# other copyleft or unknown license creeping in anywhere in the tree.
+
+[licenses]
+# Anything not listed here is denied. Permissive licenses only; copyleft is excluded
+# by omission (and EPL is re-admitted for pounce-* via `exceptions`).
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "BSL-1.0",
+    "CC0-1.0",
+]
+confidence-threshold = 0.9
+exceptions = [
+    # EPL-2.0, native-only, behind `acopf-pounce` (benchmarks only). Never shipped in
+    # the wasm/server/CLI/default builds — that isolation is verified by `cargo tree`
+    # in CI, not by this allowance.
+    { allow = ["EPL-2.0"], crate = "pounce-nlp" },
+    { allow = ["EPL-2.0"], crate = "pounce-algorithm" },
+    { allow = ["EPL-2.0"], crate = "pounce-common" },
+    { allow = ["EPL-2.0"], crate = "pounce-linalg" },
+    { allow = ["EPL-2.0"], crate = "pounce-linsol" },
+    { allow = ["EPL-2.0"], crate = "pounce-feral" },
+    { allow = ["EPL-2.0"], crate = "pounce-qp" },
+    { allow = ["EPL-2.0"], crate = "pounce-presolve" },
+    { allow = ["EPL-2.0"], crate = "pounce-l1penalty" },
+    { allow = ["EPL-2.0"], crate = "pounce-observability" },
+]
+
+[advisories]
+# RustSec advisory DB. Security advisories fail the check; add IDs to `ignore` only
+# with a documented rationale.
+ignore = [
+    # `paste` (proc-macro helper) was archived by its author — an unmaintained notice,
+    # not a vulnerability. Pulled in transitively by faer -> gemm -> pulp for SIMD
+    # codegen; there is no safe upgrade until that matmul stack drops it. Re-evaluate
+    # on faer upgrades. https://rustsec.org/advisories/RUSTSEC-2024-0436
+    "RUSTSEC-2024-0436",
+]
+
+[bans]
+# Surface accidental duplicate versions without failing the build.
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
