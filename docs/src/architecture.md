@@ -13,8 +13,8 @@ The repository is a Cargo workspace and a web app side by side.
   five formulations, returning a formulation-agnostic result and analytical sensitivities.
 - `crates/tellegen-wasm` — the `wasm-bindgen` adapter that exposes the engine to the
   browser, built with `wasm-pack`.
-- `crates/tellegen-server` — a native HTTP server that serves bundled cases and solves
-  them, including formulations the browser does not run.
+- `crates/tellegen-server` — a native HTTP server that serves the bundled cases and the
+  static single-page app.
 - `crates/tellegen-cli` — a command-line front end over the engine's stateless JSON API.
 - `crates/benchmarks` — a non-shipping harness that runs the PGLib-OPF corpus for
   validation and timing. It is the only crate that enables the optional EPL-licensed
@@ -43,10 +43,10 @@ own KKT or Newton system; the sensitivity driver solves that system, forward or 
 for the requested columns. Adding a formulation, operand, or parameter is a matter of
 implementing the contract, not of special-casing the callers.
 
-The convex and power-flow paths are pure Rust and compile to WebAssembly, so the same
-code runs on a server and in the browser. The full nonlinear AC OPF is native-only; the
-browser's AC-grade option is the SOCWR relaxation, and full AC OPF is offloaded to a
-native context (the server, the CLI, or a future desktop app).
+Every formulation is pure Rust and compiles to WebAssembly, so the same code runs
+natively and in the browser — including the full nonlinear AC OPF, whose interior-point
+backend (the `interiors` crate) is pure Rust. The browser solves all five formulations;
+nothing is offloaded to a server.
 
 ## The two API faces
 
@@ -70,27 +70,27 @@ one contract.
 
 `crates/tellegen-wasm` is built in two tiers:
 
+- a **full** package, built with the `acopf` feature (`faer`, `simd128`, no relaxed-SIMD),
+  which carries all five formulations, the `Study`, and the analytical sensitivity columns,
+  and loads on current browsers, Safari 16.4+ included; and
 - a **core** package, built `--no-default-features` with `simd128` and `relaxed-simd`
-  disabled, which loads on every WebAssembly-capable browser and runs the exact solves; and
-- a **sensitivity** package, built with the `sensitivity` feature (`faer`, `simd128`,
-  no relaxed-SIMD), which adds the `Study` and the analytical sensitivity columns and loads
-  on current browsers, Safari 16.4+ included.
+  disabled — a smaller DC-only fallback that loads on any WebAssembly-capable browser.
 
 The app's reactive loop uses the `Study`: a drag calls `preview` (a first-order LMP and
 objective update, in WebAssembly, with no server round-trip) and release calls `commit`
-(an exact re-solve that also returns the displayed sensitivity column). When a browser
-cannot build the `Study`, the app falls back to the server for bundled cases. Local
-dropped-in case files solve only in the browser and are never uploaded.
+(an exact re-solve that also returns the displayed sensitivity column). DC OPF, SOCWR, and
+the full nonlinear AC OPF all solve in the browser; case files dropped into the app solve
+in the browser and are never uploaded.
 
-## Native solving and licensing
+## The AC-OPF backends and licensing
 
-The server and the CLI run the same engine natively. The nonlinear AC OPF has two
-backends: a default interior-point program under the engine's own Apache-2.0/MIT license,
-and an optional faster backend behind the `acopf-pounce` feature that links EPL-2.0
-dependencies. Only the `benchmarks` crate enables `acopf-pounce`; the shipped engine, wasm
-adapter, server, and CLI remain Apache-2.0/MIT, and CI fails the build if the EPL
-dependencies ever appear in them. The attribution and the per-feature licensing are
-recorded in `crates/tellegen/NOTICE`.
+The full nonlinear AC OPF has two backends: a default interior-point program (the
+`interiors` crate, pure Rust) under the engine's own Apache-2.0/MIT license — this is the
+one compiled into the browser — and an optional faster backend behind the `acopf-pounce`
+feature that links EPL-2.0 dependencies. Only the `benchmarks` crate enables
+`acopf-pounce`; the shipped engine, wasm adapter, server, and CLI remain Apache-2.0/MIT,
+and CI fails the build if the EPL dependencies ever appear in them. The attribution and the
+per-feature licensing are recorded in `crates/tellegen/NOTICE`.
 
 ## Sources
 

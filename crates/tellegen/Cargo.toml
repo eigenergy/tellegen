@@ -42,6 +42,13 @@ getrandom = { version = "0.2", features = ["js"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
 
+# On wasm32 the std clock panics ("time not implemented on this platform"), so the AC OPF
+# restart budget — its only wall-clock use — reads time through `web-time` (backed by
+# `performance.now()`) on that target. Native targets keep `std::time` untouched. The dep
+# is wasm-only and inert unless the `acopf` feature pulls in the code that uses it.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "0.2"
+
 [features]
 default = ["sensitivity"]
 sensitivity = ["dep:faer", "dep:num-complex"]

@@ -34,13 +34,15 @@
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
 	import {
 		createStudy,
+		FORMULATIONS,
 		formatOf,
 		ingestCase,
 		isDisplayFile,
 		isPermanentSensFailure,
 		parseDisplay,
 		solveDc,
-		type BrowserStudy
+		type BrowserStudy,
+		type Formulation
 	} from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
@@ -89,6 +91,16 @@
 
 	function errorText(e: unknown): string {
 		return e instanceof Error ? e.message : String(e);
+	}
+
+	/** The short menu label for a formulation tag (e.g. `acopf` -> `AC OPF`). */
+	function formulationLabel(id: Formulation): string {
+		return FORMULATIONS.find((f) => f.id === id)?.label ?? id;
+	}
+
+	/** The display name of a case: a backend case's `name`, a local case's `label`. */
+	function caseName(c: SolvableCase): string {
+		return isBackendCase(c) ? c.name : c.label;
 	}
 
 	function readHiddenDefaultCases(): Set<string> {
@@ -345,15 +357,19 @@
 	// when the Study is created, so a drag re-solves (commit) and previews without
 	// re-parsing. Kept in a WeakMap off the reactive/raw case payloads — the wasm
 	// handle is neither serialized nor part of any $state.
-	const caseStudies = new WeakMap<SolvableCase, { study: BrowserStudy; networkJson: string }>();
+	const caseStudies = new WeakMap<
+		SolvableCase,
+		{ study: BrowserStudy; networkJson: string; formulation: Formulation }
+	>();
 	// Latch a permanent sensitivity-module failure (the sens build's relaxed SIMD,
 	// which Safari rejects) per case so we don't retry createStudy — and the same
 	// permanent error — on every drag. Transient failures are not latched.
 	const studyUnavailable = new WeakMap<SolvableCase, string>();
 
-	// The case's Study, building it once for `networkJson` and rebuilding (after
-	// free) if the JSON changed. Returns null when the sens module can't load; the
-	// caller then falls back to solveDc/the server, surfacing solveFallbackReason.
+	// The case's Study, building it once for `(networkJson, formulation)` and rebuilding
+	// (after free) if either changed — so picking a new formulation re-parses and re-solves
+	// under that formulation. Returns null when the sens module can't load; the caller then
+	// falls back to solveDc/the server, surfacing solveFallbackReason.
 	async function getStudy(c: SolvableCase, networkJson: string): Promise<BrowserStudy | null> {
 		const latched = studyUnavailable.get(c);
 		if (latched) {
@@ -361,14 +377,15 @@
 			return null;
 		}
 		const cached = caseStudies.get(c);
-		if (cached && cached.networkJson === networkJson) return cached.study;
+		if (cached && cached.networkJson === networkJson && cached.formulation === c.formulation)
+			return cached.study;
 		if (cached) {
 			cached.study.free();
 			caseStudies.delete(c);
 		}
 		try {
-			const study = await createStudy(networkJson);
-			caseStudies.set(c, { study, networkJson });
+			const study = await createStudy(networkJson, c.formulation);
+			caseStudies.set(c, { study, networkJson, formulation: c.formulation });
 			return study;
 		} catch (e) {
 			const message = errorText(e);
@@ -380,6 +397,23 @@
 			c.solveFallbackReason ??= `browser study unavailable: ${message}`;
 			return null;
 		}
+	}
+
+	// The dLMP/dd column at `busId` for the case's active formulation, solved in the browser.
+	// DC OPF takes the light per-call `solveDc` path (byte-identical to the prior behavior, so
+	// no regression for the default). AC OPF / SOCWR go through the Study, whose exact re-solve
+	// returns the column under the right formulation; the column is null (with the reason on
+	// `solveFallbackReason`) when the Study can't be built. Throws only on a hard browser error.
+	async function browserSensitivity(
+		c: SolvableCase,
+		networkJson: string,
+		busId: number
+	): Promise<SensitivityColumn | null> {
+		if (c.formulation === 'dcopf') {
+			return (await solveDc(c.id, networkJson, caseDeltas(c), busId)).sensitivity;
+		}
+		const study = await getStudy(c, networkJson);
+		return study ? study.sensitivity(c.id, caseDeltas(c), busId) : null;
 	}
 
 	// Release a case's Study (if any) when the case is removed.
@@ -438,26 +472,36 @@
 		app.sensitivityLoading = true;
 		c.sensitivity = null;
 		try {
-			// The dLMP/dd column from the browser solver; the server is the fallback.
+			// The dLMP/dd column from the browser solver (under the case's formulation). DC OPF
+			// may reconcile a null column via the server; AC OPF / SOCWR are browser-only, so a
+			// null column there is reported, never sent to the DC-only server.
 			const networkJson = await ensureNetworkJson(c);
 			if (networkJson) {
-				const { sensitivity } = await solveDc(caseId, networkJson, c.deltas, busId);
+				const sensitivity = await browserSensitivity(c, networkJson, busId);
 				if (!ac.signal.aborted && sensitivity)
 					acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
-				else if (!ac.signal.aborted) {
+				else if (!ac.signal.aborted && c.formulation === 'dcopf') {
 					const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
 					if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
+				} else if (!ac.signal.aborted && !sensitivity) {
+					app.error = `${c.name}: ${formulationLabel(c.formulation)} sensitivity unavailable in the browser${c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''}`;
 				}
-			} else {
+			} else if (c.formulation === 'dcopf') {
 				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
 				if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
+			} else if (!ac.signal.aborted) {
+				app.error = `${c.name}: ${formulationLabel(c.formulation)} needs the browser network JSON, which is unavailable`;
 			}
 		} catch {
-			try {
-				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
-				if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
-			} catch (e2) {
-				if (!ac.signal.aborted && !(e2 instanceof DOMException)) app.error = String(e2);
+			// The browser path threw. DC OPF reconciles via the server; AC OPF / SOCWR have no
+			// server fallback (nothing is solved on the server), so the column stays absent.
+			if (c.formulation === 'dcopf') {
+				try {
+					const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
+					if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
+				} catch (e2) {
+					if (!ac.signal.aborted && !(e2 instanceof DOMException)) app.error = String(e2);
+				}
 			}
 		} finally {
 			if (abort === ac) app.sensitivityLoading = false;
@@ -484,19 +528,14 @@
 		app.sensitivityLoading = true;
 		c.sensitivity = null;
 		try {
-			const { sensitivity, sensitivityError } = await solveDc(
-				localId,
-				c.networkJson,
-				c.deltas ?? {},
-				busId
-			);
+			const sensitivity = await browserSensitivity(c, c.networkJson, busId);
 			if (!ac.signal.aborted) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
 			if (!ac.signal.aborted && !sensitivity) {
-				// A null column without an error means the solve ran but produced no
-				// dLMP/dd for this bus; local cases have no server fallback, so say so
+				// A null column means the solve ran but produced no dLMP/dd for this bus (or the
+				// Study could not be built); local cases have no server fallback, so say so
 				// instead of leaving the panel in LMP view with no explanation.
-				app.error = `${c.label}: browser sensitivity unavailable${
-					sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'
+				app.error = `${c.label}: ${formulationLabel(c.formulation)} sensitivity unavailable in the browser${
+					c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ' (no dLMP/dd column for this bus)'
 				}`;
 			}
 		} catch (e) {
@@ -584,6 +623,18 @@
 					disposeStudy(c);
 					c.solveFallbackReason ??= `browser study commit failed: ${errorText(e)}`;
 				}
+			}
+
+			// The DC fallbacks below (per-call browser solve_dc; the server stream) only solve
+			// DC OPF, so they are valid only for the DC formulation. For AC OPF / SOCWR the
+			// Study is the sole solver (nothing is solved on the server), so a Study failure
+			// there is terminal: surface it rather than silently returning a DC solution.
+			if (c.formulation !== 'dcopf') {
+				if (seq !== (c.solveSeq ?? 0)) return;
+				c.solving = false;
+				const why = c.solveFallbackReason ?? 'browser study unavailable';
+				app.error = `${caseName(c)}: ${formulationLabel(c.formulation)} runs only in the browser Study, which is unavailable: ${why}`;
+				return;
 			}
 
 			// Fallback: the original per-call browser solve (re-parses each time). Used
@@ -693,6 +744,33 @@
 		app.demandRangeMode = 'local';
 		if (app.selectedBus !== null) setNearbyRangeAnchor(c, app.selectedBus, 0);
 		if (c.baseSolution) c.solution = c.baseSolution;
+		runSolve(c, app.selectedBus);
+	}
+
+	// Switch the active case to a new OPF formulation. Solving every formulation stays
+	// entirely in the browser via the Study (nothing is routed to the server), so this
+	// disposes the old Study — `getStudy` rebuilds it for the new formulation, re-parsing
+	// and re-solving the base — then re-solves at the committed demand. The base solution
+	// is dropped so it is recaptured under the new formulation (a DC and an AC objective
+	// are not comparable). A no-op when the choice is unchanged.
+	function changeFormulation(c: SolvableCase, next: Formulation) {
+		if (c.formulation === next) return;
+		c.formulation = next;
+		// The committed point carries over (same demand), but the model and its solution do
+		// not; drop the Study and the cached solutions so they rebuild under `next`.
+		disposeStudy(c);
+		c.baseSolution = null;
+		c.solution = null;
+		c.iterations = [];
+		c.solveMs = null;
+		c.predictedObjective = null;
+		app.previewLmp = null;
+		previewObjective = null;
+		app.error = null;
+		// The current sensitivity column was computed under the old formulation; clear it so
+		// the overlay recomputes (the Study returns the new column with the re-solve below).
+		c.sensitivity = null;
+		c.sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
 		runSolve(c, app.selectedBus);
 	}
 
@@ -1285,6 +1363,30 @@
 				{:else}
 					<p class="footnote mono">coordinates: TAMU synthetic grid footprint</p>
 				{/if}
+			{/if}
+
+			{#if activeSolvable}
+				{@const c = activeSolvable}
+				<div class="formulation">
+					<label class="formulation-row mono" for="formulation-select">
+						<span>formulation</span>
+						<select
+							id="formulation-select"
+							class="mono"
+							disabled={c.solving}
+							value={c.formulation}
+							onchange={(e) => changeFormulation(c, e.currentTarget.value as Formulation)}
+						>
+							{#each FORMULATIONS as f (f.id)}
+								<option value={f.id}>{f.label}</option>
+							{/each}
+						</select>
+					</label>
+					<p class="dim small formulation-hint">
+						{FORMULATIONS.find((f) => f.id === c.formulation)?.hint}
+						&middot; solved in your browser
+					</p>
+				</div>
 			{/if}
 
 			<hr />
@@ -1906,6 +2008,56 @@
 
 	.slider-head .val {
 		color: var(--ink);
+	}
+
+	.formulation {
+		margin-top: 12px;
+	}
+
+	.formulation-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		font-size: 12px;
+		color: var(--ink);
+	}
+
+	.formulation-row select {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		padding: 3px 22px 3px 8px;
+		border: 1px solid var(--line);
+		border-radius: 2px;
+		background: rgba(252, 251, 247, 0.55);
+		color: var(--ink);
+		cursor: pointer;
+		/* Native arrow on the right, drawn so the control reads as a control in the panel. */
+		appearance: none;
+		-webkit-appearance: none;
+		background-image: linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+			linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
+		background-position:
+			right 10px center,
+			right 6px center;
+		background-size:
+			4px 4px,
+			4px 4px;
+		background-repeat: no-repeat;
+	}
+
+	.formulation-row select:hover:not(:disabled) {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	.formulation-row select:disabled {
+		opacity: 0.55;
+		cursor: progress;
+	}
+
+	.formulation-hint {
+		margin: 6px 0 0;
 	}
 
 	.range-mode {

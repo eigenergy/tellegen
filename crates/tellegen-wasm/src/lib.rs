@@ -19,6 +19,15 @@ fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
 }
 
+/// Route Rust panics to `console.error` (with a JS stack) once. Without this a wasm panic
+/// surfaces only as the opaque `unreachable` trap; with it the engine's panic message — the
+/// real failure — is visible in the browser console and in the `JsError` chain.
+fn install_panic_hook() {
+    use std::sync::Once;
+    static HOOK: Once = Once::new();
+    HOOK.call_once(console_error_panic_hook::set_once);
+}
+
 /// Parse a case file (MATPOWER, PSS/E RAW, PowerWorld aux, PowerModels or
 /// egret JSON) and return `{"network": ..., "warnings": [...]}` as JSON.
 #[wasm_bindgen]
@@ -87,6 +96,7 @@ impl Study {
     /// Errors on an unknown or not-built formulation.
     #[wasm_bindgen(constructor)]
     pub fn new(network_json: &str, formulation: &str) -> Result<Study, JsError> {
+        install_panic_hook();
         let problem = parse_problem(formulation)?;
         tellegen::Study::new(network_json, problem)
             .map(Study)
@@ -105,6 +115,7 @@ impl Study {
         edits_json: &str,
         sensitivities_json: &str,
     ) -> Result<String, JsError> {
+        install_panic_hook();
         let edits = parse_edits(edits_json)?;
         let sensitivities = parse_sensitivities(sensitivities_json)?;
         let resp = self

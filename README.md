@@ -151,7 +151,6 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 - library packaging with `@sveltejs/package`
 - canonical display data in powerio
-- surfacing the engine's AC power flow and SOCWR formulations in the browser UI
 
 ## License
 

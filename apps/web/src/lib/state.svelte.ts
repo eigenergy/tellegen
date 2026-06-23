@@ -8,7 +8,7 @@ import type {
 	Solution,
 	SolveIteration
 } from './api';
-import type { CaseFileSummary, Topology } from './wasm';
+import { DEFAULT_FORMULATION, type CaseFileSummary, type Formulation, type Topology } from './wasm';
 
 export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
 export type DemandRangeMode = 'local' | 'full';
@@ -63,6 +63,9 @@ export class LocalCase {
 	solution = $state.raw<Solution | null>(null);
 	sensitivity = $state.raw<SensitivityColumn | null>(null);
 	deltas = $state.raw<DemandDeltas>({});
+	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
+	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
+	formulation = $state<Formulation>(DEFAULT_FORMULATION);
 	iterations = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
@@ -104,6 +107,9 @@ export class CaseState {
 	sensitivity = $state.raw<SensitivityColumn | null>(null);
 	/** Committed demand deltas (MW from base, keyed by bus). */
 	deltas = $state.raw<DemandDeltas>({});
+	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
+	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
+	formulation = $state<Formulation>(DEFAULT_FORMULATION);
 	iterations = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);

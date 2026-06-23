@@ -218,28 +218,55 @@ function deltasToEdits(deltas: DemandDeltas): NetworkEdit[] {
 		.map(([bus, p_mw]) => ({ kind: 'add_load', bus: Number(bus), p_mw }));
 }
 
-/** The single (formulation, operand, parameter) cell the UI drives today: a DC-OPF
- * study whose sensitivity column is ∂(price, active) / ∂(demand, active). Centralized
- * so `createStudy` and the Study's `commit`/`preview` requests read one source — adding
- * a capability later is a one-line edit here, not a hunt through string literals. */
+/** The (operand, parameter) cell the UI drives: a study whose sensitivity column is
+ * ∂(price, active) / ∂(demand, active). The *formulation* is no longer fixed here — it is
+ * a parameter threaded from the UI's selector through `createStudy` (every formulation the
+ * full wasm build carries returns LMP, so this same column applies to all of them). The
+ * operand/parameter stay centralized so `createStudy` and the Study's `commit`/`preview`
+ * requests read one source. */
 const STUDY_CAPABILITY = {
-	/** Formulation tag for `new Study(networkJson, formulation)`. */
-	formulation: 'dcopf',
 	/** The watched operand: locational marginal price (active power). */
 	operand: { Price: 'Active' },
 	/** The varied parameter: bus demand (active power). */
 	parameter: { Demand: 'Active' }
 } as const;
 
+/** The formulations the full wasm build solves entirely in the browser. Each returns LMP,
+ * so the price map, legend, and the ∂LMP/∂d overlay apply unchanged to all of them. Tags
+ * are the engine's serde-lowercase `Problem` variants accepted by `new Study(json, tag)`.
+ * `dcopf` is the default (zero regression from the prior fixed behavior). */
+export type Formulation = 'dcopf' | 'acopf' | 'socwr';
+
+/** UI-facing formulation menu: tag, a short label, and a one-line description. The order
+ * is the menu order; `dcopf` is first and is the default. */
+export const FORMULATIONS: ReadonlyArray<{
+	id: Formulation;
+	label: string;
+	hint: string;
+}> = [
+	{ id: 'dcopf', label: 'DC OPF', hint: 'linear DC optimal power flow (fast, the default)' },
+	{
+		id: 'acopf',
+		label: 'AC OPF',
+		hint: 'full nonlinear AC optimal power flow (interior-point)'
+	},
+	{ id: 'socwr', label: 'SOCWR', hint: 'second-order cone (Jabr) relaxation of AC OPF' }
+];
+
+/** The default formulation: DC OPF, preserving the prior fixed behavior byte-for-byte. */
+export const DEFAULT_FORMULATION: Formulation = 'dcopf';
+
 /** The `Operand[]` JSON `Study.preview` watches (the LMP column). */
 const PREVIEW_OPERANDS_JSON = JSON.stringify([STUDY_CAPABILITY.operand]);
 
-/** The `SensRequest[]` JSON for `Study.commit`: the ∂LMP/∂demand column at `sensBus`,
- * or `[]` when no bus is selected (no sensitivity is computed in that solve). */
-function sensitivitiesJson(sensBus: number | null): string {
-	if (sensBus === null) return '[]';
+/** The `SensRequest[]` JSON for `Study.commit`: the ∂LMP/∂demand column at the dense bus
+ * `index`, or `[]` when there is none. NOTE: `SensRequest.indices` are **dense positional**
+ * indices into the bus axis (0-based), *not* external bus ids — `BrowserStudy` translates
+ * the selected external bus id to its dense index before calling this. */
+function sensitivitiesJson(index: number | null): string {
+	if (index === null) return '[]';
 	return JSON.stringify([
-		{ operand: STUDY_CAPABILITY.operand, parameter: STUDY_CAPABILITY.parameter, indices: [sensBus] }
+		{ operand: STUDY_CAPABILITY.operand, parameter: STUDY_CAPABILITY.parameter, indices: [index] }
 	]);
 }
 
@@ -328,29 +355,63 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
  * network (unlike `solveDc`, which rebuilds the DcNetwork on every call). */
 export class BrowserStudy {
 	#study: import('./wasm-sens-pkg/tellegen_sens').Study;
+	/** External bus id -> dense positional bus index, built once from the committed solution's
+	 * LMP ordering (each `lmp[i].bus` sits at dense index `i`). The engine keys `SensRequest`
+	 * by this dense index, not the external bus id, so the selected bus must be translated
+	 * before a sensitivity request. Null until first needed; the bus set is solve-invariant. */
+	#busToIndex: Map<number, number> | null = null;
 
 	constructor(study: import('./wasm-sens-pkg/tellegen_sens').Study) {
 		this.#study = study;
 	}
 
-	/** Exact DC solve at demand = committed + `deltas`, advancing the committed point.
-	 * When `sensBus` is set, the ∂LMP/∂demand column at that bus is computed in the *same*
-	 * solve and returned (no second round-trip); otherwise `sensitivity` is null. `caseId`
-	 * labels the returned column. Returns the UI Solution, the interior-point iterates, and
-	 * the sensitivity column. */
+	/** The dense bus index the engine expects for `sensBus` (an external bus id), or null when
+	 * no bus is selected or the id is unknown. Memoizes the id->index map from the committed
+	 * solution's LMP order — the same axis order the engine's dense sensitivity columns use. */
+	#senseIndex(sensBus: number | null): number | null {
+		if (sensBus === null) return null;
+		if (!this.#busToIndex) {
+			const sol: StudySolveResponse = JSON.parse(this.#study.solution());
+			this.#busToIndex = new Map((sol.lmp ?? []).map((e, i) => [e.bus, i]));
+		}
+		return this.#busToIndex.get(sensBus) ?? null;
+	}
+
+	/** Exact solve at demand = committed + `deltas`, advancing the committed point. When
+	 * `sensBus` is set, the ∂LMP/∂demand column at that bus is computed in the *same* solve
+	 * and returned (no second round-trip); otherwise `sensitivity` is null. `caseId` labels
+	 * the returned column. Returns the UI Solution, the solver iterates, and the column. */
 	commit(
 		caseId: string,
 		deltas: DemandDeltas,
 		sensBus: number | null
 	): { solution: Solution; iterations: SolveIteration[]; sensitivity: SensitivityColumn | null } {
 		const out: StudyCommitOutput = JSON.parse(
-			this.#study.commit(JSON.stringify(deltasToEdits(deltas)), sensitivitiesJson(sensBus))
+			this.#study.commit(
+				JSON.stringify(deltasToEdits(deltas)),
+				sensitivitiesJson(this.#senseIndex(sensBus))
+			)
 		);
 		return {
 			solution: solveResponseToSolution(out.solution),
 			iterations: out.iterations ?? [],
 			sensitivity: sensBus === null ? null : sensitivityColumn(caseId, out.sensitivities)
 		};
+	}
+
+	/** The ∂LMP/∂demand column at `sensBus` for this study's formulation, computed by an
+	 * exact re-solve at demand = committed + `deltas` (the same one-call path `commit` uses,
+	 * but returning only the column). Used when a bus is selected so the overlay matches the
+	 * active formulation — DC OPF, AC OPF, or SOCWR — rather than always the DC sensitivity.
+	 * `caseId` labels the column; returns null when no bus-keyed column comes back. */
+	sensitivity(caseId: string, deltas: DemandDeltas, sensBus: number): SensitivityColumn | null {
+		const out: StudyCommitOutput = JSON.parse(
+			this.#study.commit(
+				JSON.stringify(deltasToEdits(deltas)),
+				sensitivitiesJson(this.#senseIndex(sensBus))
+			)
+		);
+		return sensitivityColumn(caseId, out.sensitivities);
 	}
 
 	/** First-order LMP preview for `deltas` at the committed point, with no
@@ -372,12 +433,14 @@ export class BrowserStudy {
 	}
 }
 
-/** Construct a build-once Study over `networkJson`, parsing the network and
- * solving the base case once. Throws if the sens module can't load; the caller
- * must catch and fall back (see `isPermanentSensFailure`). */
+/** Construct a build-once Study over `networkJson` for `formulation`, parsing the network
+ * and solving the base case once. `formulation` is a `Problem` tag (`dcopf`/`acopf`/`socwr`,
+ * defaulting to DC OPF); the full wasm build solves every one entirely in the browser.
+ * Throws if the sens module can't load (or the formulation is unknown/not built); the
+ * caller must catch and fall back (see `isPermanentSensFailure`). */
 export async function createStudy(
 	networkJson: string,
-	formulation: string = STUDY_CAPABILITY.formulation
+	formulation: Formulation = DEFAULT_FORMULATION
 ): Promise<BrowserStudy> {
 	const mod = await powerioSensitivity();
 	return new BrowserStudy(new mod.Study(networkJson, formulation));

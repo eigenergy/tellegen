@@ -17,11 +17,23 @@ powerio.workspace = true
 wasm-bindgen = "0.2"
 serde.workspace = true
 serde_json.workspace = true
+# Forwards Rust panics to a readable console.error with a JS stack, instead of the bare
+# `unreachable` trap a wasm panic otherwise surfaces. Installed once per entry point.
+console_error_panic_hook = "0.1"
 
 [features]
 default = []
+# Gates the `#[wasm_bindgen] Study` export and the dLMP/dd column in `solve_dc`.
 sensitivity = ["tellegen/sensitivity"]
-conic = ["tellegen/conic"]
+# The SOCWR (Jabr) conic relaxation. Pulls `sensitivity` so the Study export stays
+# present, mirroring the engine's `conic = ["sensitivity"]`.
+conic = ["sensitivity", "tellegen/conic"]
+# The full nonlinear AC OPF (interiors NLP backend). Pure Rust; compiles to wasm
+# (getrandom/js is enabled in the engine). Pulls `conic` (hence `sensitivity`), so a
+# browser build with `acopf` also exports the `Study` and the dLMP/dd column — the AC
+# OPF warm-starts from the SOCWR relaxation. The EPL `acopf-pounce` backend is NOT
+# forwarded here — the browser build stays Apache-2.0/MIT.
+acopf = ["conic", "tellegen/acopf"]
 
 [lints]
 workspace = true

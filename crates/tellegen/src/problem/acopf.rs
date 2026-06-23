@@ -26,7 +26,15 @@
 
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::time::{Duration, Instant};
+// `Duration` is a clock-free value type, so it always comes from `std`. `Instant` reads the
+// wall clock, which panics on `wasm32-unknown-unknown` ("time not implemented on this
+// platform"); there it comes from `web-time` (backed by `performance.now()`), keeping the AC
+// OPF restart budget working in the browser. Native targets use `std::time::Instant` as before.
+use std::time::Duration;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 
 use interiors::{nlp, Lambda, NonlinearConstraint, ObjectiveFunction, Options, ProgressMonitor};
 use sparsetools::coo::Coo;

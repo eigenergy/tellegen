@@ -9,7 +9,7 @@
 		"smoke:build": "node scripts/smoke-build.mjs",
 		"wasm": "npm run wasm:core && npm run wasm:sens",
 		"wasm:core": "RUSTFLAGS=\"-C target-feature=-simd128,-relaxed-simd\" wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../apps/web/src/lib/wasm-pkg --out-name tellegen -- --no-default-features",
-		"wasm:sens": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../apps/web/src/lib/wasm-sens-pkg --out-name tellegen_sens -- --features sensitivity",
+		"wasm:sens": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../apps/web/src/lib/wasm-sens-pkg --out-name tellegen_sens -- --features acopf",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
