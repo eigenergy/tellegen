@@ -307,46 +307,63 @@ fn solve_dcopf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
     dcopf_response(dc, req, None)
 }
 
-/// Solve the DC OPF for an owned [`DcNetwork`] and assemble the response. Shared by
-/// [`solve_dcopf`] (build-then-solve) and [`solve_prebuilt`] (cached model).
-#[cfg_attr(not(feature = "sensitivity"), allow(unused_variables))]
-fn dcopf_response(
+/// Apply the request's operating-point edits to an owned [`DcNetwork`] and solve the
+/// DC OPF, returning the perturbed model alongside its solution. Kept separate from
+/// [`dcopf_assemble`] so a [`Session`](crate::session::Session) can retain the solved
+/// model + solution and build a `DcKkt` for first-order previews without re-solving.
+pub(crate) fn dcopf_solved(
     mut dc: DcNetwork,
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
-) -> Result<SolveResponse, String> {
-    let base = dc.base_mva;
+) -> Result<(DcNetwork, super::solve::DcSolution), String> {
     dc.allow_shed = req.options.shed;
     let bus_idx = bus_index_map(&dc.bus_ids);
     apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas);
-
     let sol = dcopf_cancellable(&dc, cancel)?;
+    Ok((dc, sol))
+}
+
+/// Assemble the DC OPF [`SolveResponse`] (and any requested sensitivity cells) from a
+/// solved model. Shared by the one-shot path and the cached [`Session`] path.
+#[cfg_attr(not(feature = "sensitivity"), allow(unused_variables))]
+pub(crate) fn dcopf_assemble(
+    dc: &DcNetwork,
+    sol: &super::solve::DcSolution,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
+    let base = dc.base_mva;
     let lmp = sol.lmp_usd_per_mwh(base);
 
     #[cfg(feature = "sensitivity")]
-    let sensitivities = run_cells(&super::sens::DcKkt::new(&dc, &sol), &req.sensitivities)?;
-
-    let lmp_block = zip_bus(&dc.bus_ids, &lmp);
-    let va = zip_bus(&dc.bus_ids, &sol.va);
-    let flows = dc_branch_flows(&dc.branch_ids, &sol.f, &dc.fmax, base);
-    let dispatch = zip_gen_pg(&dc.gen_ids, &sol.pg, base);
+    let sensitivities = run_cells(&super::sens::DcKkt::new(dc, sol), &req.sensitivities)?;
 
     Ok(SolveResponse {
         formulation: Problem::DcOpf,
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
-        iterations: Some(Iterations::Ipm(sol.iterations)),
-        lmp: Some(lmp_block),
+        iterations: Some(Iterations::Ipm(sol.iterations.clone())),
+        lmp: Some(zip_bus(&dc.bus_ids, &lmp)),
         lmp_q: None,
         vm: None,
-        va: Some(va),
+        va: Some(zip_bus(&dc.bus_ids, &sol.va)),
         w: None,
         injections: None,
-        flows: Some(flows),
-        dispatch: Some(dispatch),
+        flows: Some(dc_branch_flows(&dc.branch_ids, &sol.f, &dc.fmax, base)),
+        dispatch: Some(zip_gen_pg(&dc.gen_ids, &sol.pg, base)),
         #[cfg(feature = "sensitivity")]
         sensitivities,
     })
+}
+
+/// Solve the DC OPF for an owned [`DcNetwork`] and assemble the response. Shared by
+/// [`solve_dcopf`] (build-then-solve) and [`solve_prebuilt`] (cached model).
+fn dcopf_response(
+    dc: DcNetwork,
+    req: &SolveRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<SolveResponse, String> {
+    let (dc, sol) = dcopf_solved(dc, req, cancel)?;
+    dcopf_assemble(&dc, &sol, req)
 }
 
 #[cfg(feature = "sensitivity")]
@@ -383,17 +400,32 @@ fn solve_dcpf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String
 
 #[cfg(feature = "sensitivity")]
 fn solve_acpf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
-    use super::formulation::AcPolar;
-    use super::model::AcNetwork;
-    use super::problem::ac_pf;
-    use super::sens::AcNewton;
+    let (acnet, sol) = acpf_solved(super::model::AcNetwork::from_network(net)?, req)?;
+    acpf_assemble(&acnet, &sol, req)
+}
 
-    let mut acnet = AcNetwork::from_network(net)?;
-    let base = acnet.base_mva;
+/// Apply the request's demand edits to an owned [`AcNetwork`] and solve the AC power
+/// flow, returning the perturbed model and its solution (retained for previews).
+#[cfg(feature = "sensitivity")]
+pub(crate) fn acpf_solved(
+    mut acnet: super::model::AcNetwork,
+    req: &SolveRequest,
+) -> Result<(super::model::AcNetwork, super::problem::AcPfSolution), String> {
     apply_demand_deltas_ac(&mut acnet, &req.edits.deltas);
-    let sol = ac_pf(&AcPolar::new(), &acnet)?;
+    let sol = super::problem::ac_pf(&super::formulation::AcPolar::new(), &acnet)?;
+    Ok((acnet, sol))
+}
 
-    let sensitivities = run_cells(&AcNewton::new(&acnet, &sol), &req.sensitivities)?;
+/// Assemble the AC power flow [`SolveResponse`] (and sensitivity cells) from a solved
+/// model. Shared by the one-shot path and the cached [`Session`] path.
+#[cfg(feature = "sensitivity")]
+pub(crate) fn acpf_assemble(
+    acnet: &super::model::AcNetwork,
+    sol: &super::problem::AcPfSolution,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
+    let base = acnet.base_mva;
+    let sensitivities = run_cells(&super::sens::AcNewton::new(acnet, sol), &req.sensitivities)?;
 
     Ok(SolveResponse {
         formulation: Problem::AcPf,
@@ -533,7 +565,7 @@ pub fn solve_prebuilt_cancellable(
 /// (`DcKkt`, `AcNewton`, `ConicKkt`, `AcOpfKkt`) coerces here; the `dyn` boundary is
 /// crossed once per cell, never inside the linear algebra.
 #[cfg(feature = "sensitivity")]
-fn run_cells(
+pub(crate) fn run_cells(
     sys: &dyn Differentiable,
     cells: &[SensRequest],
 ) -> Result<Vec<SensitivityMatrix>, String> {

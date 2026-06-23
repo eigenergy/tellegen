@@ -34,6 +34,8 @@ mod model;
 pub mod problem;
 #[cfg(feature = "sensitivity")]
 mod sens;
+#[cfg(feature = "sensitivity")]
+pub mod session;
 mod solve;
 
 #[cfg(feature = "sensitivity")]
@@ -73,4 +75,6 @@ pub use sens::{
     Mode, Operand, Parameter, Power, RowMeta, Selector, SensError, SensitivityMatrix, SolveSpec,
     TapKind, VoltageKind, GB,
 };
+#[cfg(feature = "sensitivity")]
+pub use session::{NetworkEdit, Preview, PreviewColumn, PreviewValue, Session};
 pub use solve::SolveIteration;
