@@ -193,3 +193,111 @@ function parseSolveOutput(caseId: string, json: string): BrowserSolution {
 function errorText(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
 }
+
+/** True when the sensitivity wasm module has failed to load in a way it can
+ * never recover from in this browser (no WebAssembly, or the relaxed-SIMD
+ * opcodes the sens build needs). The Study path uses the sens module, so the
+ * caller must fall back to `solveDc`/the server when this is true. */
+export function isPermanentSensFailure(message: string): boolean {
+	return isPermanentWasmLoadFailure(message);
+}
+
+/** One in-place network mutation for the Study handle. `bus` is the original
+ * bus id; `p_mw` is the demand delta in MW. */
+interface NetworkEdit {
+	kind: 'add_load';
+	bus: number;
+	p_mw: number;
+}
+
+/** A `NetworkEdit[]` for the wasm Study, dropping zero deltas so an unchanged
+ * bus is never sent. */
+function deltasToEdits(deltas: DemandDeltas): NetworkEdit[] {
+	return Object.entries(deltas)
+		.filter(([, mw]) => mw !== 0)
+		.map(([bus, p_mw]) => ({ kind: 'add_load', bus: Number(bus), p_mw }));
+}
+
+/** The SolveResponse JSON the Study returns from commit/solution. A superset of
+ * formulations; DC fills objective/lmp/flows/dispatch/iterations. */
+interface StudySolveResponse {
+	formulation: string;
+	status: string;
+	objective: number;
+	iterations?: SolveIteration[];
+	lmp?: { bus: number; value: number }[];
+	flows?: { branch: number; pf: number; loading: number }[];
+	dispatch?: { gen: number; pg: number }[];
+	va?: { bus: number; value: number }[];
+}
+
+/** The Preview JSON the Study returns: first-order operand changes plus the
+ * predicted objective change, with no re-solve. */
+interface StudyPreview {
+	operands: {
+		operand: unknown;
+		values: { element: { Bus?: number }; index: number; value: number }[];
+		units: string;
+	}[];
+	objective_delta: number | null;
+	local_only: boolean;
+}
+
+function solveResponseToSolution(out: StudySolveResponse): Solution {
+	return {
+		objective: out.objective,
+		lmp: (out.lmp ?? []).map((e) => ({ bus: e.bus, usd_per_mwh: e.value })),
+		flows: (out.flows ?? []).map((f) => ({ branch: f.branch, mw: f.pf, loading: f.loading })),
+		dispatch: (out.dispatch ?? []).map((d) => ({ gen: d.gen, mw: d.pg }))
+	};
+}
+
+/** Build-once browser transport for the reactive demand drag. The network is
+ * parsed and the model built when the Study is created; `commit` exact-re-solves
+ * and `preview` returns a first-order linearization, neither re-parsing the
+ * network (unlike `solveDc`, which rebuilds the DcNetwork on every call). */
+export class BrowserStudy {
+	#study: import('./wasm-sens-pkg/tellegen_sens').Study;
+
+	constructor(study: import('./wasm-sens-pkg/tellegen_sens').Study) {
+		this.#study = study;
+	}
+
+	/** Exact DC solve at demand = committed + `deltas`, advancing the committed
+	 * point. Returns the UI Solution and the interior-point iterates. */
+	commit(deltas: DemandDeltas): { solution: Solution; iterations: SolveIteration[] } {
+		const out: StudySolveResponse = JSON.parse(
+			this.#study.commit(JSON.stringify(deltasToEdits(deltas)))
+		);
+		return { solution: solveResponseToSolution(out), iterations: out.iterations ?? [] };
+	}
+
+	/** First-order LMP preview for `deltas` at the committed point, with no
+	 * re-solve: predicted per-bus ΔLMP and the predicted Δobjective. */
+	preview(deltas: DemandDeltas): { lmp: { bus: number; usd_per_mwh: number }[]; objectiveDelta: number | null } {
+		const out: StudyPreview = JSON.parse(
+			this.#study.preview(JSON.stringify(deltasToEdits(deltas)), '[{"Price":"Active"}]')
+		);
+		const lmp = (out.operands[0]?.values ?? [])
+			.filter((v) => v.element.Bus !== undefined)
+			.map((v) => ({ bus: v.element.Bus as number, usd_per_mwh: v.value }));
+		return { lmp, objectiveDelta: out.objective_delta };
+	}
+
+	/** Release the wasm Study; call when discarding it (e.g. the case's
+	 * networkJson changed, or the case was removed). */
+	free() {
+		this.#study.free();
+	}
+}
+
+/** Construct a build-once Study over `networkJson`, parsing the network and
+ * solving the base case once. Throws if the sens module can't load; the caller
+ * must catch and fall back (see `isPermanentSensFailure`). */
+export async function createStudy(
+	networkJson: string,
+	formulation = 'dcopf'
+): Promise<BrowserStudy> {
+	const mod = await powerioSensitivity();
+	return new BrowserStudy(new mod.Study(networkJson, formulation));
+}

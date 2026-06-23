@@ -139,6 +139,14 @@ export class AppState {
 	previewDeltaMw = $state<number | null>(null);
 	/** True while the demand control should keep the map in LMP preview mode. */
 	previewActive = $state(false);
+	/** Engine first-order LMP preview for the live drag: predicted change in LMP
+	 * ($/MWh) per bus at the previewed demand, scoped to the case and bus it was
+	 * computed for. Set by the Study path; null when no Study preview applies (the
+	 * map then falls back to the JS sensitivity-times-step preview). Reassigned
+	 * wholesale, so $state.raw. */
+	previewLmp = $state.raw<{ caseId: string; bus: number; delta: Map<number, number> } | null>(
+		null
+	);
 	demandRangeMode = $state<DemandRangeMode>('local');
 	sensitivityLoading = $state(false);
 	error = $state<string | null>(null);
@@ -181,6 +189,7 @@ export class AppState {
 		this.selectedBus = null;
 		this.previewDeltaMw = null;
 		this.previewActive = false;
+		this.previewLmp = null;
 		this.demandRangeMode = 'local';
 		this.sensitivityLoading = false;
 

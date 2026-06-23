@@ -75,12 +75,23 @@
 				? active.sensitivity
 				: null;
 		const activeDeltas = active instanceof CaseState ? active.deltas : (active?.deltas ?? {});
+		// Engine first-order LMP preview (Study.preview): predicted per-bus ΔLMP for
+		// the live drag, scoped to this case + bus. Preferred over the JS gradient
+		// shift when present; the gradient path stays for the server/Safari case.
+		const enginePreview =
+			active &&
+			selected !== null &&
+			app.previewLmp &&
+			app.previewLmp.caseId === active.id &&
+			app.previewLmp.bus === selected
+				? app.previewLmp.delta
+				: null;
 		const previewStep =
 			active && selected !== null && app.previewDeltaMw !== null && activeSensitivity
 				? app.previewDeltaMw - (activeDeltas[selected] ?? 0)
 				: 0;
 		const previewing = Boolean(
-			active?.solving || app.previewActive || Math.abs(previewStep) >= 0.25
+			active?.solving || app.previewActive || enginePreview || Math.abs(previewStep) >= 0.25
 		);
 
 		const perCase = new Map<string, CaseDisplay>();
@@ -95,14 +106,20 @@
 			const sens = new Map<number, number>();
 			let domain: SensitivityDomain | null = null;
 			const isActive = c === active;
+			if (isActive && enginePreview) {
+				// Engine preview owns the LMP shift: add the predicted ΔLMP per bus.
+				for (const [bus, dlmp] of enginePreview) {
+					lmp.set(bus, (lmp.get(bus) ?? 0) + dlmp);
+				}
+			}
 			if (isActive && activeSensitivity) {
 				const values = activeSensitivity.values.map((v) => v.value);
 				domain = sensitivityDomain(values);
 				for (const v of activeSensitivity.values) {
 					sens.set(v.bus, v.value);
 				}
-				if (previewStep !== 0) {
-					// First order preview: shift LMPs along the gradient.
+				if (!enginePreview && previewStep !== 0) {
+					// Fallback first order preview: shift LMPs along the gradient.
 					for (const v of activeSensitivity.values) {
 						lmp.set(v.bus, (lmp.get(v.bus) ?? 0) + v.value * previewStep);
 					}

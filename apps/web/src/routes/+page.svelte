@@ -32,7 +32,16 @@
 	} from '$lib/geo-file';
 	import { app, CaseState, LocalCase, type DemandRangeMode } from '$lib/state.svelte';
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
-	import { formatOf, ingestCase, isDisplayFile, parseDisplay, solveDc } from '$lib/wasm';
+	import {
+		createStudy,
+		formatOf,
+		ingestCase,
+		isDisplayFile,
+		isPermanentSensFailure,
+		parseDisplay,
+		solveDc,
+		type BrowserStudy
+	} from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
@@ -217,6 +226,7 @@
 		c.closeStream?.();
 		c.closeStream = null;
 		c.solveSeq++;
+		disposeStudy(c);
 		if (app.activeCaseId === c.id) clearSelection();
 		app.removeCase(c.id);
 		const active = app.active;
@@ -244,6 +254,7 @@
 			c.solveSeq = (c.solveSeq ?? 0) + 1;
 			clearSelection();
 		}
+		disposeStudy(c);
 		app.removeLocal(c.id);
 	}
 
@@ -330,6 +341,56 @@
 		}
 	}
 
+	// Build-once browser Study per case: the network is parsed and the model built
+	// when the Study is created, so a drag re-solves (commit) and previews without
+	// re-parsing. Kept in a WeakMap off the reactive/raw case payloads — the wasm
+	// handle is neither serialized nor part of any $state.
+	const caseStudies = new WeakMap<SolvableCase, { study: BrowserStudy; networkJson: string }>();
+	// Latch a permanent sensitivity-module failure (the sens build's relaxed SIMD,
+	// which Safari rejects) per case so we don't retry createStudy — and the same
+	// permanent error — on every drag. Transient failures are not latched.
+	const studyUnavailable = new WeakMap<SolvableCase, string>();
+
+	// The case's Study, building it once for `networkJson` and rebuilding (after
+	// free) if the JSON changed. Returns null when the sens module can't load; the
+	// caller then falls back to solveDc/the server, surfacing solveFallbackReason.
+	async function getStudy(c: SolvableCase, networkJson: string): Promise<BrowserStudy | null> {
+		const latched = studyUnavailable.get(c);
+		if (latched) {
+			c.solveFallbackReason ??= latched;
+			return null;
+		}
+		const cached = caseStudies.get(c);
+		if (cached && cached.networkJson === networkJson) return cached.study;
+		if (cached) {
+			cached.study.free();
+			caseStudies.delete(c);
+		}
+		try {
+			const study = await createStudy(networkJson, 'dcopf');
+			caseStudies.set(c, { study, networkJson });
+			return study;
+		} catch (e) {
+			const message = errorText(e);
+			// Only a genuine browser-capability failure is permanent; latch it so the
+			// case stays on the fallback path. Transient errors stay retryable.
+			if (isPermanentSensFailure(message)) {
+				studyUnavailable.set(c, 'browser study needs SIMD this browser does not support');
+			}
+			c.solveFallbackReason ??= `browser study unavailable: ${message}`;
+			return null;
+		}
+	}
+
+	// Release a case's Study (if any) when the case is removed.
+	function disposeStudy(c: SolvableCase) {
+		const cached = caseStudies.get(c);
+		if (cached) {
+			cached.study.free();
+			caseStudies.delete(c);
+		}
+	}
+
 	function acceptSensitivity(
 		c: SolvableCase,
 		col: SensitivityColumn | null,
@@ -349,6 +410,9 @@
 		if (isActiveSolveCase(c) && app.selectedBus === sensBus) {
 			app.previewActive = false;
 			app.previewDeltaMw = null;
+			// The committed solution supersedes the live engine preview.
+			app.previewLmp = null;
+			previewObjective = null;
 		}
 	}
 
@@ -457,13 +521,61 @@
 		app.selectedBus = null;
 		app.previewDeltaMw = null;
 		app.previewActive = false;
+		app.previewLmp = null;
+		previewObjective = null;
 		app.demandRangeMode = 'local';
 		nearbyRangeAnchor = null;
 		app.sensitivityLoading = false;
 	}
 
-	// Exact DC solve in the browser (wasm). On any failure, or when the network
-	// JSON can't be fetched, reconcile via the server stream.
+	// Reconcile the dLMP/dd column after an exact solve produced none (the Study's
+	// commit returns the solution but not the column). `solveSensitivity` loads it
+	// for the operating point: backend cases use the server, local cases re-solve
+	// in the browser via solveDc. Mirrors the prior runSolve reconciliation.
+	async function reconcileSensitivity(
+		c: SolvableCase,
+		sensBus: number,
+		seq: number,
+		networkJson: string
+	) {
+		if (isBackendCase(c)) {
+			// No browser sensitivity column: reconcile via the server for backend cases.
+			try {
+				const col = await getSensitivity(c.id, sensBus, c.deltas);
+				if (seq !== c.solveSeq) return;
+				c.solveBackend = 'clarabel-wasm-server-sensitivity';
+				acceptSensitivity(c, col, sensBus);
+			} catch (e) {
+				if (seq !== c.solveSeq) return;
+				c.solveFallbackReason = `server sensitivity failed: ${errorText(e)}`;
+				serverSolve(c, sensBus, seq);
+				return;
+			}
+		} else {
+			// Local case: no server fallback. The dLMP/dd column has no Study path, so
+			// load it from the browser solver (one re-parse, on release — not per drag).
+			try {
+				const { sensitivity, sensitivityError } = await solveDc(
+					c.id,
+					networkJson,
+					caseDeltas(c),
+					sensBus
+				);
+				if (seq !== (c.solveSeq ?? 0)) return;
+				if (sensitivity) acceptSensitivity(c, sensitivity, sensBus);
+				else
+					app.error = `${c.label}: browser sensitivity unavailable${sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'}`;
+			} catch (e) {
+				if (seq !== (c.solveSeq ?? 0)) return;
+				app.error = `${c.label}: browser sensitivity unavailable: ${errorText(e)}`;
+			}
+		}
+	}
+
+	// Exact DC solve in the browser (wasm). The build-once Study commits the new
+	// operating point without re-parsing; on a Study failure it falls back to
+	// solveDc, and on any browser failure or missing network JSON it reconciles
+	// via the server stream (backend cases).
 	function runSolve(c: SolvableCase, sensBus: number | null) {
 		// Cancel this case's own previous server stream, if any (backend only).
 		if (isBackendCase(c)) {
@@ -478,7 +590,7 @@
 		c.solveFallbackReason = null;
 		c.iterations = [];
 		c.solveMs = null;
-		ensureNetworkJson(c).then((networkJson) => {
+		ensureNetworkJson(c).then(async (networkJson) => {
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (!networkJson) {
 				c.solveFallbackReason ??= 'browser network JSON unavailable';
@@ -489,6 +601,36 @@
 			}
 			const t0 = performance.now();
 			c.solveBackend = 'clarabel-wasm';
+
+			// Build-once Study path: commit the new operating point (no re-parse).
+			const study = await getStudy(c, networkJson);
+			if (seq !== (c.solveSeq ?? 0)) return;
+			if (study) {
+				try {
+					const { solution, iterations } = study.commit(caseDeltas(c));
+					if (seq !== (c.solveSeq ?? 0)) return;
+					c.solution = solution;
+					c.iterations = iterations;
+					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0)
+						c.baseSolution = solution;
+					c.solveMs = Math.round(performance.now() - t0);
+					// commit yields no dLMP/dd column; reconcile it for the selected bus.
+					if (sensBus !== null) await reconcileSensitivity(c, sensBus, seq, networkJson);
+					if (seq !== (c.solveSeq ?? 0)) return;
+					finishSolve(c, seq, sensBus);
+					return;
+				} catch (e) {
+					if (seq !== (c.solveSeq ?? 0)) return;
+					// A built Study that fails to commit is unexpected; drop it so the next
+					// solve rebuilds, then fall through to the solveDc fallback.
+					disposeStudy(c);
+					c.solveFallbackReason ??= `browser study commit failed: ${errorText(e)}`;
+				}
+			}
+
+			// Fallback: the original per-call browser solve (re-parses each time). Used
+			// when the Study can't be built (e.g. Safari's relaxed-SIMD gap) or a built
+			// Study failed to commit; itself falls to the server for backend cases.
 			solveDc(c.id, networkJson, caseDeltas(c), sensBus)
 				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
 					if (seq !== (c.solveSeq ?? 0)) return;
@@ -562,11 +704,11 @@
 		const c = activeSolvable;
 		const bus = app.selectedBus;
 		if (!c || bus === null) return;
+		// Refresh the engine preview at the commit value (a typed value may not have
+		// driven a drag), then score the commit with the engine's predicted Δobjective.
+		runPreview(c, bus, value);
 		c.predictedObjective = predictedDeltaObj;
-		const deltas = { ...caseDeltas(c) };
-		if (Math.abs(value) < 0.25) delete deltas[bus];
-		else deltas[bus] = value;
-		c.deltas = deltas;
+		c.deltas = previewDeltas(c, bus, value);
 		app.previewDeltaMw = value;
 		app.previewActive = true;
 		runSolve(c, bus);
@@ -586,6 +728,8 @@
 	function resetCase(c: SolvableCase) {
 		c.deltas = {};
 		c.predictedObjective = null;
+		app.previewLmp = null;
+		previewObjective = null;
 		app.previewDeltaMw = app.selectedBus === null ? null : 0;
 		app.previewActive = app.selectedBus !== null;
 		app.demandRangeMode = 'local';
@@ -841,19 +985,29 @@
 		return c.solution.lmp.find((e) => e.bus === app.selectedBus)?.usd_per_mwh ?? null;
 	});
 
-	const selfSens = $derived.by(() => {
-		if (!selectedSensitivity || app.selectedBus === null) return 0;
-		return selectedSensitivity.values.find((v) => v.bus === app.selectedBus)?.value ?? 0;
-	});
+	// Predicted objective change vs the committed point for the live preview. The
+	// engine (Study.preview) owns this for browser-solvable cases; null when no
+	// engine preview applies (server/Safari path), where the first-order fallback
+	// below fills in. Scoped to the case + bus it was computed for. Set by runPreview.
+	let previewObjective = $state.raw<{ caseId: string; bus: number; objectiveDelta: number } | null>(
+		null
+	);
 
-	// Second order objective preview vs base: the exact part up to the
-	// committed point, plus lmp*step + S_bb*step^2/2 along the gradient.
+	// Predicted objective change vs base for the demand readout. Prefer the engine
+	// preview (Study.preview at the committed point, plus the committed part); fall
+	// back to a first-order gradient estimate when no Study preview is available
+	// (server-only cases, or a browser that can't load the sensitivity module).
 	const predictedDeltaObj = $derived.by(() => {
 		const c = activeSolvable;
-		if (!c?.solution || !c.baseSolution || selectedLmp === null) return null;
-		const step = sliderValue - committedDelta;
+		const bus = app.selectedBus;
+		if (!c?.solution || !c.baseSolution || bus === null) return null;
 		const committedPart = c.solution.objective - c.baseSolution.objective;
-		return committedPart + selectedLmp * step + 0.5 * selfSens * step * step;
+		if (previewObjective && previewObjective.caseId === c.id && previewObjective.bus === bus) {
+			return committedPart + previewObjective.objectiveDelta;
+		}
+		if (selectedLmp === null) return null;
+		const step = sliderValue - committedDelta;
+		return committedPart + selectedLmp * step;
 	});
 
 	const gradientScore = $derived.by(() => {
@@ -889,10 +1043,44 @@
 		return sliderValue;
 	}
 
+	// Deltas the live preview would commit: the committed deltas with the slider's
+	// value at the selected bus, applying commitDelta's dead zone so a tiny nudge
+	// reads as "no change at this bus".
+	function previewDeltas(c: SolvableCase, bus: number, value: number) {
+		const deltas = { ...caseDeltas(c) };
+		if (Math.abs(value) < 0.25) delete deltas[bus];
+		else deltas[bus] = value;
+		return deltas;
+	}
+
+	// First-order engine preview for the live drag. Uses the case's already-built
+	// Study (synchronous, no re-parse, no re-solve) to paint predicted per-bus
+	// ΔLMP and the predicted Δobjective. A no-op when the Study isn't built yet or
+	// can't preview (Safari's relaxed-SIMD gap, server-only cases): the map then
+	// falls back to the JS sensitivity-times-step preview.
+	function runPreview(c: SolvableCase, bus: number, value: number) {
+		const study = caseStudies.get(c)?.study;
+		if (!study) return;
+		try {
+			const { lmp, objectiveDelta } = study.preview(previewDeltas(c, bus, value));
+			const delta = new Map<number, number>();
+			for (const e of lmp) delta.set(e.bus, e.usd_per_mwh);
+			app.previewLmp = { caseId: c.id, bus, delta };
+			previewObjective =
+				objectiveDelta === null ? null : { caseId: c.id, bus, objectiveDelta };
+		} catch {
+			// Preview is best effort; on any failure leave the map on its fallback path.
+			app.previewLmp = null;
+			previewObjective = null;
+		}
+	}
+
 	function setSliderPreview(value: number | undefined) {
 		if (value === undefined) return;
 		app.previewActive = true;
 		app.previewDeltaMw = value;
+		const c = activeSolvable;
+		if (c && app.selectedBus !== null) runPreview(c, app.selectedBus, value);
 	}
 
 	function solveLocationLabel(c: SolvableCase): string {
@@ -1204,14 +1392,8 @@
 						step="0.5"
 						bind:value={sliderCurrent, setSliderPreview}
 						aria-label="demand delta at selected bus"
-						onpointerdown={() => {
-							app.previewActive = true;
-							app.previewDeltaMw = sliderValue;
-						}}
-						onkeydown={() => {
-							app.previewActive = true;
-							app.previewDeltaMw = sliderValue;
-						}}
+						onpointerdown={() => setSliderPreview(sliderValue)}
+						onkeydown={() => setSliderPreview(sliderValue)}
 						onpointerup={(e) => finishDemandInput(Number(e.currentTarget.value))}
 						onmouseup={(e) => finishDemandInput(Number(e.currentTarget.value))}
 						onclick={(e) => finishDemandInput(Number(e.currentTarget.value))}
