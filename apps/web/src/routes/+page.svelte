@@ -367,7 +367,7 @@
 			caseStudies.delete(c);
 		}
 		try {
-			const study = await createStudy(networkJson, 'dcopf');
+			const study = await createStudy(networkJson);
 			caseStudies.set(c, { study, networkJson });
 			return study;
 		} catch (e) {
@@ -528,54 +528,10 @@
 		app.sensitivityLoading = false;
 	}
 
-	// Reconcile the dLMP/dd column after an exact solve produced none (the Study's
-	// commit returns the solution but not the column). `solveSensitivity` loads it
-	// for the operating point: backend cases use the server, local cases re-solve
-	// in the browser via solveDc. Mirrors the prior runSolve reconciliation.
-	async function reconcileSensitivity(
-		c: SolvableCase,
-		sensBus: number,
-		seq: number,
-		networkJson: string
-	) {
-		if (isBackendCase(c)) {
-			// No browser sensitivity column: reconcile via the server for backend cases.
-			try {
-				const col = await getSensitivity(c.id, sensBus, c.deltas);
-				if (seq !== c.solveSeq) return;
-				c.solveBackend = 'clarabel-wasm-server-sensitivity';
-				acceptSensitivity(c, col, sensBus);
-			} catch (e) {
-				if (seq !== c.solveSeq) return;
-				c.solveFallbackReason = `server sensitivity failed: ${errorText(e)}`;
-				serverSolve(c, sensBus, seq);
-				return;
-			}
-		} else {
-			// Local case: no server fallback. The dLMP/dd column has no Study path, so
-			// load it from the browser solver (one re-parse, on release — not per drag).
-			try {
-				const { sensitivity, sensitivityError } = await solveDc(
-					c.id,
-					networkJson,
-					caseDeltas(c),
-					sensBus
-				);
-				if (seq !== (c.solveSeq ?? 0)) return;
-				if (sensitivity) acceptSensitivity(c, sensitivity, sensBus);
-				else
-					app.error = `${c.label}: browser sensitivity unavailable${sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'}`;
-			} catch (e) {
-				if (seq !== (c.solveSeq ?? 0)) return;
-				app.error = `${c.label}: browser sensitivity unavailable: ${errorText(e)}`;
-			}
-		}
-	}
-
 	// Exact DC solve in the browser (wasm). The build-once Study commits the new
-	// operating point without re-parsing; on a Study failure it falls back to
-	// solveDc, and on any browser failure or missing network JSON it reconciles
-	// via the server stream (backend cases).
+	// operating point without re-parsing, returning the dLMP/dd column in the same
+	// solve; on a Study failure it falls back to solveDc, and on any browser failure
+	// or missing network JSON it reconciles via the server stream (backend cases).
 	function runSolve(c: SolvableCase, sensBus: number | null) {
 		// Cancel this case's own previous server stream, if any (backend only).
 		if (isBackendCase(c)) {
@@ -602,21 +558,23 @@
 			const t0 = performance.now();
 			c.solveBackend = 'clarabel-wasm';
 
-			// Build-once Study path: commit the new operating point (no re-parse).
+			// Build-once Study path: commit the new operating point (no re-parse). The
+			// dLMP/dd column for the selected bus is computed in the same solve and comes
+			// back with it, so there is no second solve to reconcile it.
 			const study = await getStudy(c, networkJson);
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (study) {
 				try {
-					const { solution, iterations } = study.commit(caseDeltas(c));
+					const { solution, iterations, sensitivity } = study.commit(c.id, caseDeltas(c), sensBus);
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
 					c.iterations = iterations;
 					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0)
 						c.baseSolution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
-					// commit yields no dLMP/dd column; reconcile it for the selected bus.
-					if (sensBus !== null) await reconcileSensitivity(c, sensBus, seq, networkJson);
-					if (seq !== (c.solveSeq ?? 0)) return;
+					// The commit carried the dLMP/dd column; accept it for the selected bus
+					// through the same seq-guarded setter every sensitivity source goes through.
+					if (sensBus !== null && sensitivity) acceptSensitivity(c, sensitivity, sensBus);
 					finishSolve(c, seq, sensBus);
 					return;
 				} catch (e) {
@@ -985,6 +943,14 @@
 		return c.solution.lmp.find((e) => e.bus === app.selectedBus)?.usd_per_mwh ?? null;
 	});
 
+	// Self-sensitivity ∂LMP_bb/∂d at the selected bus: the curvature term the
+	// first-order fallback uses for a second-order objective estimate. Zero when no
+	// sensitivity column is loaded for the bus.
+	const selfSens = $derived.by(() => {
+		if (!selectedSensitivity || app.selectedBus === null) return 0;
+		return selectedSensitivity.values.find((v) => v.bus === app.selectedBus)?.value ?? 0;
+	});
+
 	// Predicted objective change vs the committed point for the live preview. The
 	// engine (Study.preview) owns this for browser-solvable cases; null when no
 	// engine preview applies (server/Safari path), where the first-order fallback
@@ -995,8 +961,9 @@
 
 	// Predicted objective change vs base for the demand readout. Prefer the engine
 	// preview (Study.preview at the committed point, plus the committed part); fall
-	// back to a first-order gradient estimate when no Study preview is available
-	// (server-only cases, or a browser that can't load the sensitivity module).
+	// back to a second-order gradient estimate when no Study preview is available
+	// (server-only cases, or a browser that can't load the sensitivity module): the
+	// exact committed part plus lmp·step + S_bb·step²/2 along the gradient.
 	const predictedDeltaObj = $derived.by(() => {
 		const c = activeSolvable;
 		const bus = app.selectedBus;
@@ -1007,7 +974,7 @@
 		}
 		if (selectedLmp === null) return null;
 		const step = sliderValue - committedDelta;
-		return committedPart + selectedLmp * step;
+		return committedPart + selectedLmp * step + 0.5 * selfSens * step * step;
 	});
 
 	const gradientScore = $derived.by(() => {

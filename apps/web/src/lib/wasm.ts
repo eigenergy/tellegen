@@ -218,6 +218,31 @@ function deltasToEdits(deltas: DemandDeltas): NetworkEdit[] {
 		.map(([bus, p_mw]) => ({ kind: 'add_load', bus: Number(bus), p_mw }));
 }
 
+/** The single (formulation, operand, parameter) cell the UI drives today: a DC-OPF
+ * study whose sensitivity column is ∂(price, active) / ∂(demand, active). Centralized
+ * so `createStudy` and the Study's `commit`/`preview` requests read one source — adding
+ * a capability later is a one-line edit here, not a hunt through string literals. */
+const STUDY_CAPABILITY = {
+	/** Formulation tag for `new Study(networkJson, formulation)`. */
+	formulation: 'dcopf',
+	/** The watched operand: locational marginal price (active power). */
+	operand: { Price: 'Active' },
+	/** The varied parameter: bus demand (active power). */
+	parameter: { Demand: 'Active' }
+} as const;
+
+/** The `Operand[]` JSON `Study.preview` watches (the LMP column). */
+const PREVIEW_OPERANDS_JSON = JSON.stringify([STUDY_CAPABILITY.operand]);
+
+/** The `SensRequest[]` JSON for `Study.commit`: the ∂LMP/∂demand column at `sensBus`,
+ * or `[]` when no bus is selected (no sensitivity is computed in that solve). */
+function sensitivitiesJson(sensBus: number | null): string {
+	if (sensBus === null) return '[]';
+	return JSON.stringify([
+		{ operand: STUDY_CAPABILITY.operand, parameter: STUDY_CAPABILITY.parameter, indices: [sensBus] }
+	]);
+}
+
 /** The SolveResponse JSON the Study returns from commit/solution. A superset of
  * formulations; DC fills objective/lmp/flows/dispatch/iterations. */
 interface StudySolveResponse {
@@ -243,6 +268,51 @@ interface StudyPreview {
 	local_only: boolean;
 }
 
+/** One `SensitivityMatrix` from the engine: `values[r][c] = d(rows[r])/d(cols[c])`,
+ * with row/column metadata naming the source element (`element` is an externally
+ * tagged `ElementId`, e.g. `{ Bus: id }`). */
+interface SensitivityMatrixJson {
+	values: number[][];
+	rows: { element: { Bus?: number }; index: number }[];
+	cols: { element: { Bus?: number }; index: number }[];
+	units: string;
+}
+
+/** The `{ solution, iterations, sensitivities }` JSON the Study's `commit` returns:
+ * the committed `SolveResponse`, its convergence trace, and the watched ∂operand/∂param
+ * columns — so the ∂LMP/∂d column comes back in the same solve, no second round-trip. */
+interface StudyCommitOutput {
+	solution: StudySolveResponse;
+	iterations: SolveIteration[] | null;
+	sensitivities: SensitivityMatrixJson[];
+}
+
+/** Extract the ∂LMP/∂demand column from the first requested `SensitivityMatrix` into the
+ * legacy `SensitivityColumn` the map and legend consume — the same shape `solve_dc`'s
+ * `dlmp_dd` and the server serve. Rows are Price operands per bus; the single column is
+ * the demand-at-`sensBus` parameter, so the column is `values[r][0]` keyed by each row's
+ * source bus id (`rows[r].element.Bus`), and the column bus is `cols[0].element.Bus`.
+ * Returns null when no matrix was requested or it lacks a bus-keyed column. */
+function sensitivityColumn(
+	caseId: string,
+	matrices: SensitivityMatrixJson[]
+): SensitivityColumn | null {
+	const m = matrices[0];
+	const colBus = m?.cols[0]?.element.Bus;
+	if (!m || colBus === undefined) return null;
+	const values = m.rows
+		.map((row, r) => ({ bus: row.element.Bus, value: m.values[r]?.[0] ?? 0 }))
+		.filter((v): v is { bus: number; value: number } => v.bus !== undefined);
+	return {
+		case: caseId,
+		operand: 'lmp',
+		parameter: 'd',
+		bus: colBus,
+		units: m.units,
+		values
+	};
+}
+
 function solveResponseToSolution(out: StudySolveResponse): Solution {
 	return {
 		objective: out.objective,
@@ -263,20 +333,31 @@ export class BrowserStudy {
 		this.#study = study;
 	}
 
-	/** Exact DC solve at demand = committed + `deltas`, advancing the committed
-	 * point. Returns the UI Solution and the interior-point iterates. */
-	commit(deltas: DemandDeltas): { solution: Solution; iterations: SolveIteration[] } {
-		const out: StudySolveResponse = JSON.parse(
-			this.#study.commit(JSON.stringify(deltasToEdits(deltas)))
+	/** Exact DC solve at demand = committed + `deltas`, advancing the committed point.
+	 * When `sensBus` is set, the ∂LMP/∂demand column at that bus is computed in the *same*
+	 * solve and returned (no second round-trip); otherwise `sensitivity` is null. `caseId`
+	 * labels the returned column. Returns the UI Solution, the interior-point iterates, and
+	 * the sensitivity column. */
+	commit(
+		caseId: string,
+		deltas: DemandDeltas,
+		sensBus: number | null
+	): { solution: Solution; iterations: SolveIteration[]; sensitivity: SensitivityColumn | null } {
+		const out: StudyCommitOutput = JSON.parse(
+			this.#study.commit(JSON.stringify(deltasToEdits(deltas)), sensitivitiesJson(sensBus))
 		);
-		return { solution: solveResponseToSolution(out), iterations: out.iterations ?? [] };
+		return {
+			solution: solveResponseToSolution(out.solution),
+			iterations: out.iterations ?? [],
+			sensitivity: sensBus === null ? null : sensitivityColumn(caseId, out.sensitivities)
+		};
 	}
 
 	/** First-order LMP preview for `deltas` at the committed point, with no
 	 * re-solve: predicted per-bus ΔLMP and the predicted Δobjective. */
 	preview(deltas: DemandDeltas): { lmp: { bus: number; usd_per_mwh: number }[]; objectiveDelta: number | null } {
 		const out: StudyPreview = JSON.parse(
-			this.#study.preview(JSON.stringify(deltasToEdits(deltas)), '[{"Price":"Active"}]')
+			this.#study.preview(JSON.stringify(deltasToEdits(deltas)), PREVIEW_OPERANDS_JSON)
 		);
 		const lmp = (out.operands[0]?.values ?? [])
 			.filter((v) => v.element.Bus !== undefined)
@@ -296,7 +377,7 @@ export class BrowserStudy {
  * must catch and fall back (see `isPermanentSensFailure`). */
 export async function createStudy(
 	networkJson: string,
-	formulation = 'dcopf'
+	formulation: string = STUDY_CAPABILITY.formulation
 ): Promise<BrowserStudy> {
 	const mod = await powerioSensitivity();
 	return new BrowserStudy(new mod.Study(networkJson, formulation));
