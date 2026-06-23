@@ -1,0 +1,22 @@
+pglib-bench — PGLib-OPF validation and benchmark harness for tellegen
+
+USAGE:
+    cargo run -p benchmarks --release -- [FLAGS]
+
+FLAGS:
+    --variants typ|api|sad|all   Variant set to run (default: all)
+    --max-bus N                  Skip cases above N buses (default: unlimited)
+    --max-acopf-bus N            Skip the nonlinear AC OPF above N buses (default: 3000)
+    --max-sens-bus N             Skip sensitivity sampling above N buses (default: 1500)
+    --timeout SECS               Per-case wall-clock guard (default: 180)
+    --limit N                    Run only the first N (smallest) cases
+    --no-sens                    Disable finite-difference parity sampling
+    --acopf-backend interiors|pounce|best  AC OPF solver (default: interiors; pounce is the Ipopt
+                                 port; best tries interiors then falls back to pounce)
+    --pglib PATH                 Corpus root (default: $PGLIB_OPF_PATH or ~/Datasets/pglib-opf)
+    --out DIR                    Artifact directory (default: target/pglib-bench)
+    --book                       Also copy the markdown snapshot into book/src
+    -h, --help                   Print this help
+
+The corpus is never vendored; PGLib data is CC BY 4.0 (v23.07, arXiv:1908.02788).
+When the corpus is absent the harness exits cleanly with nothing to do.

@@ -8,8 +8,7 @@ frontend/build/
 frontend/.svelte-kit/
 
 # Rust
-rust/target/
-rust/pkg/
+/target/
 frontend/src/lib/wasm-pkg/
 frontend/src/lib/wasm-sens-pkg/
 

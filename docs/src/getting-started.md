@@ -3,7 +3,7 @@
 ## Repository Layout
 
 - `frontend/`: tellegen frontend
-- `rust/`: tellegen backend and WebAssembly packages
+- `crates/`: the tellegen engine and its wasm, server, and benchmark adapters
 - `reference/julia-backend/`: Julia PowerDiff.jl parity harness
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
@@ -12,13 +12,13 @@
 ## tellegen backend
 
 ```sh
-cargo run --manifest-path rust/Cargo.toml --bin tellegen-server
+cargo run -p tellegen-server
 ```
 
 Set `TELLEGEN_ALLOW_FALLBACK=1` to run without staged TAMU data:
 
 ```sh
-TELLEGEN_ALLOW_FALLBACK=1 cargo run --manifest-path rust/Cargo.toml --bin tellegen-server
+TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
 ```
 
 The Julia reference harness is kept for PowerDiff.jl parity checks:

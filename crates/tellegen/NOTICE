@@ -1,0 +1,32 @@
+phasor
+Copyright 2026 Samuel Talkington and contributors
+
+phasor is a differentiable power flow and optimal power flow engine in Rust: the DC
+optimal power flow and locational marginal price sensitivities, the AC power flow
+voltage sensitivities, the full nonlinear AC optimal power flow, and the SOCWR (Jabr)
+conic relaxation of AC optimal power flow, each with analytic sensitivities. Licensed
+under the Apache License 2.0 or the MIT License, at your option.
+
+The W-space SOCWR formulation follows the standard Jabr second-order-cone relaxation
+(R. A. Jabr, 2006) as implemented in PowerModels.jl
+(https://github.com/lanl-ansi/PowerModels.jl, BSD-3-Clause), used as a formulation
+reference; the implementation here is independent.
+
+Third-party components (optional `acopf-pounce` feature). Enabling the pounce backend
+for the full nonlinear AC optimal power flow links:
+
+- pounce (pounce-nlp, pounce-algorithm, pounce-common, pounce-linalg, pounce-linsol,
+  pounce-feral, pounce-qp, pounce-presolve, pounce-l1penalty, pounce-observability):
+  Eclipse Public License 2.0 (EPL-2.0), https://crates.io/crates/pounce-nlp. These
+  components remain under the EPL-2.0; their source is available on crates.io and a
+  copy of the EPL-2.0 accompanies any binary that bundles them.
+- FERAL (feral, feral-amd, feral-amf, feral-metis, feral-scotch, feral-kahip,
+  feral-ordering-core), pure-Rust sparse ordering/linear-algebra: MIT License.
+
+`acopf-pounce` is off by default, so the engine's default build stays Apache-2.0 / MIT;
+enabling it adds the EPL-2.0 components above.
+
+This material is based upon work supported by the National Science Foundation Graduate
+Research Fellowship under Grant No. DGE-2039655. Any opinion, findings, and conclusions
+or recommendations expressed in this material are those of the author(s) and do not
+necessarily reflect the views of the National Science Foundation.

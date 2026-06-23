@@ -15,24 +15,26 @@ jobs:
       - run: rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust
-      - run: cargo test --manifest-path rust/Cargo.toml
+          workspaces: .
+      - run: cargo test -p tellegen -p tellegen-wasm -p tellegen-server
+        env:
+          TELLEGEN_ALLOW_FALLBACK: "1"
       - name: Install wasm-pack
         run: |
           curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz -o /tmp/wasm-pack.tar.gz
           echo 'c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a  /tmp/wasm-pack.tar.gz' | sha256sum -c -
           tar -xzf /tmp/wasm-pack.tar.gz -C "$HOME/.cargo/bin" --strip-components=1 --wildcards '*/wasm-pack'
           rm -f /tmp/wasm-pack.tar.gz
-      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-pkg -- --no-default-features
-        env:
-          RUSTFLAGS: -C target-feature=-simd128,-relaxed-simd
-      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-sens-pkg --out-name tellegen_sens
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+        working-directory: frontend
+      # `npm run wasm` builds both wasm packages from crates/tellegen-wasm with the
+      # correct out-names and RUSTFLAGS (single source of truth in package.json).
+      - run: npm run wasm
         working-directory: frontend
       - run: npm run lint
         working-directory: frontend

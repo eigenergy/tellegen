@@ -13,7 +13,7 @@ accept `.pwd`.
 
 ## Reading `.pwd`
 
-`rust/src/lib.rs` exports `parse_display(bytes, format)` over
+`crates/tellegen-wasm/src/lib.rs` exports `parse_display(bytes, format)` over
 `powerio::parse_display_bytes`. The frontend reads `.pwd` files with
 `arrayBuffer()` and passes a `Uint8Array` to the WebAssembly module.
 
