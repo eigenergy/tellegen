@@ -11,12 +11,12 @@
 //! A `Study` is the base case plus an ordered edit log — the unit a UI saves and replays —
 //! and it fully reconstructs the current operating point by replaying that log.
 //!
-//! v1 implements the continuous active-demand drag ([`NetworkEdit::AddLoad`]) over the
-//! two default-feature formulations — DC OPF and AC power flow. The enum and the solved
-//! state are `#[non_exhaustive]`/extensible: topology edits, other-parameter edits, and
-//! the conic / AC-OPF formulations slot into the same shape. SOCWR and AC OPF (and any
-//! formulation this build does not include) return a clean error; use `solve_json` for
-//! stateless solves of those.
+//! The formulation coupling is a single boxed [`SolvedState`] trait object: the same
+//! [`Differentiable`] dispatch the stateless driver uses, captured once at construction
+//! and at every commit. Every formulation the build includes is supported — DC OPF and
+//! AC power flow always, the SOCWR relaxation behind `conic`, and the full AC OPF behind
+//! the native-only `acopf` feature — and a formulation this build omits returns a clean
+//! error naming `solve_json` as the stateless route.
 
 use std::collections::HashMap;
 
@@ -31,6 +31,20 @@ use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
 use crate::sens::{AcNewton, DcKkt, Differentiable, ElementId, Mode, Operand, Parameter, Power};
 use crate::solve::DcSolution;
+
+#[cfg(feature = "conic")]
+use crate::api::{socwr_assemble, socwr_solved};
+#[cfg(feature = "conic")]
+use crate::problem::SocWrSolution;
+#[cfg(feature = "conic")]
+use crate::sens::ConicKkt;
+
+#[cfg(feature = "acopf")]
+use crate::api::{acopf_assemble, acopf_solved};
+#[cfg(feature = "acopf")]
+use crate::problem::AcOpfSolution;
+#[cfg(feature = "acopf")]
+use crate::sens::AcOpfKkt;
 
 /// A typed edit to the operating point. v1: the continuous active-demand drag. The enum
 /// is `#[non_exhaustive]` and serde-tagged (`{"kind":"add_load","bus":2,"p_mw":50}`), so
@@ -54,6 +68,15 @@ impl NetworkEdit {
     fn p_mw(&self) -> f64 {
         match self {
             NetworkEdit::AddLoad { p_mw, .. } => *p_mw,
+        }
+    }
+
+    /// The [`Parameter`] this edit perturbs, so [`preview`](Study::preview) differentiates
+    /// the watched operands with respect to the right axis. The active-demand drag maps to
+    /// `Demand(Active)`; new edit kinds add their own arm here.
+    fn parameter(&self) -> Parameter {
+        match self {
+            NetworkEdit::AddLoad { .. } => Parameter::Demand(Power::Active),
         }
     }
 }
@@ -91,23 +114,159 @@ pub struct PreviewValue {
     pub value: f64,
 }
 
-/// The committed solved state, retained so [`preview`](Study::preview) can build the
-/// formulation's differentiable system without re-solving.
-enum Solved {
-    Dc(DcNetwork, DcSolution),
-    AcPf(AcNetwork, AcPfSolution),
+/// The preview callback [`with_system`](SolvedState::with_system) hands the freshly built
+/// KKT to: it runs the watched cells against the borrowed `&dyn Differentiable` and returns
+/// their predicted columns. Factored out so the trait and its impls name one type.
+type PreviewFn<'a> = dyn FnMut(&dyn Differentiable) -> Result<Vec<PreviewColumn>, String> + 'a;
+
+/// The committed solved state of one formulation, retained so [`commit`](Study::commit)
+/// can re-assemble its response (with any watched sensitivity cell) and
+/// [`preview`](Study::preview) can build its differentiable KKT — both without re-solving.
+///
+/// This is the *sole* formulation coupling in the study: a `Box<dyn SolvedState>` carries
+/// the formulation's model + solution and the three operations the study needs over them.
+/// Each implementor builds its KKT *on the stack* in [`with_system`](SolvedState::with_system)
+/// — the same on-the-stack borrow trick `run_cells` uses — so the `&dyn Differentiable`
+/// borrow never escapes the callback and no factorization is ever cached across commits.
+trait SolvedState {
+    /// Re-assemble this formulation's [`SolveResponse`] at the committed point, computing
+    /// any sensitivity cells in `req.sensitivities` in the same pass (no second solve).
+    fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String>;
+
+    /// Build this formulation's differentiable KKT on the stack and hand the borrow to
+    /// `f`. The borrow lives only for the call; `f` runs the preview cells against it.
+    fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String>;
+
+    /// The committed marginal price in served units ($/MWh), per dense bus, for the
+    /// preview's objective delta. `None` for power-flow formulations (no objective).
+    fn lmp(&self) -> Option<Vec<f64>>;
+}
+
+/// DC OPF committed state.
+struct DcState {
+    net: DcNetwork,
+    sol: DcSolution,
+}
+
+impl SolvedState for DcState {
+    fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
+        dcopf_assemble(&self.net, &self.sol, req)
+    }
+    fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
+        f(&DcKkt::new(&self.net, &self.sol))
+    }
+    fn lmp(&self) -> Option<Vec<f64>> {
+        Some(self.sol.lmp_usd_per_mwh(self.net.base_mva))
+    }
+}
+
+/// AC power flow committed state.
+struct AcPfState {
+    net: AcNetwork,
+    sol: AcPfSolution,
+}
+
+impl SolvedState for AcPfState {
+    fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
+        acpf_assemble(&self.net, &self.sol, req)
+    }
+    fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
+        f(&AcNewton::new(&self.net, &self.sol))
+    }
+    fn lmp(&self) -> Option<Vec<f64>> {
+        None
+    }
+}
+
+/// SOCWR conic relaxation committed state.
+#[cfg(feature = "conic")]
+struct ConicState {
+    net: AcNetwork,
+    sol: SocWrSolution,
+}
+
+#[cfg(feature = "conic")]
+impl SolvedState for ConicState {
+    fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
+        socwr_assemble(&self.net, &self.sol, req)
+    }
+    fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
+        let sys = ConicKkt::new(&self.net, &self.sol).map_err(|e| e.to_string())?;
+        f(&sys)
+    }
+    fn lmp(&self) -> Option<Vec<f64>> {
+        // The raw conic price is the balance dual; the served LMP divides by base (the
+        // same `1/base` scale the api applies in `socwr_assemble`).
+        let base = self.net.base_mva;
+        Some(self.sol.lmp.iter().map(|v| v / base).collect())
+    }
+}
+
+/// Full nonlinear AC OPF committed state (native-only).
+#[cfg(feature = "acopf")]
+struct AcOpfState {
+    net: AcNetwork,
+    sol: AcOpfSolution,
+}
+
+#[cfg(feature = "acopf")]
+impl SolvedState for AcOpfState {
+    fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
+        acopf_assemble(&self.net, &self.sol, req)
+    }
+    fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
+        let sys = AcOpfKkt::new(&self.net, &self.sol).map_err(|e| e.to_string())?;
+        f(&sys)
+    }
+    fn lmp(&self) -> Option<Vec<f64>> {
+        let base = self.net.base_mva;
+        Some(self.sol.lmp.iter().map(|v| v / base).collect())
+    }
+}
+
+/// Solve `req`'s formulation at `base + edits` from an owned [`Network`] and box the
+/// committed state. Dispatches **once**, mirroring [`solve_network`](crate::solve_network):
+/// the boxed [`SolvedState`] is the only formulation `match` the study performs, and a
+/// formulation this build omits returns a clean `Err` naming `solve_json`.
+fn solve_state(net: &Network, req: &SolveRequest) -> Result<Box<dyn SolvedState>, String> {
+    match req.formulation {
+        Problem::DcOpf => {
+            let (net, sol) = dcopf_solved(DcNetwork::from_network(net)?, req, None)?;
+            Ok(Box::new(DcState { net, sol }))
+        }
+        Problem::AcPf => {
+            let (net, sol) = acpf_solved(AcNetwork::from_network(net)?, req)?;
+            Ok(Box::new(AcPfState { net, sol }))
+        }
+        #[cfg(feature = "conic")]
+        Problem::Socwr => {
+            let (net, sol) = socwr_solved(AcNetwork::from_network(net)?, req)?;
+            Ok(Box::new(ConicState { net, sol }))
+        }
+        #[cfg(feature = "acopf")]
+        Problem::Acopf => {
+            let (net, sol) = acopf_solved(AcNetwork::from_network(net)?, req)?;
+            Ok(Box::new(AcOpfState { net, sol }))
+        }
+        other => Err(format!(
+            "Study does not support {other:?} in this build; use solve_json for stateless {other:?} solves"
+        )),
+    }
 }
 
 /// A stateful, build-once handle. Construct with a network and a formulation; the base
-/// model is built once and the base case solved immediately, so [`solution`](Study::solution)
-/// and [`preview`](Study::preview) are available right away.
+/// network is retained as the source of truth, and the base case is solved immediately,
+/// so [`solution`](Study::solution) and [`preview`](Study::preview) are available right
+/// away. Every commit re-solves from a fresh clone of that base, so the operating point
+/// is always `base + the whole edit log` — never an accumulated drift.
 pub struct Study {
     formulation: Problem,
-    base_dc: Option<DcNetwork>,
-    base_ac: Option<AcNetwork>,
+    /// The parsed base network: the source of truth re-solved (cloned) at every commit.
+    base: Network,
     options: SolveOptions,
     log: Vec<NetworkEdit>,
-    solved: Solved,
+    /// The committed solved state, the sole formulation coupling.
+    solved: Box<dyn SolvedState>,
     last: SolveResponse,
 }
 
@@ -123,40 +282,22 @@ impl Study {
     /// As [`new`](Study::new) from an already-parsed [`Network`].
     pub fn from_network(net: &Network, formulation: Problem) -> Result<Self, String> {
         let options = SolveOptions::default();
-        let req = bare_request(formulation, &options);
-        match formulation {
-            Problem::DcOpf => {
-                let base = DcNetwork::from_network(net)?;
-                let (dc, sol) = dcopf_solved(base.clone(), &req, None)?;
-                let last = dcopf_assemble(&dc, &sol, &req)?;
-                Ok(Study {
-                    formulation,
-                    base_dc: Some(base),
-                    base_ac: None,
-                    options,
-                    log: Vec::new(),
-                    solved: Solved::Dc(dc, sol),
-                    last,
-                })
-            }
-            Problem::AcPf => {
-                let base = AcNetwork::from_network(net)?;
-                let (ac, sol) = acpf_solved(base.clone(), &req)?;
-                let last = acpf_assemble(&ac, &sol, &req)?;
-                Ok(Study {
-                    formulation,
-                    base_dc: None,
-                    base_ac: Some(base),
-                    options,
-                    log: Vec::new(),
-                    solved: Solved::AcPf(ac, sol),
-                    last,
-                })
-            }
-            other => Err(format!(
-                "Study does not yet support {other:?}; use solve_json for stateless {other:?} solves"
-            )),
-        }
+        let req = SolveRequest {
+            formulation,
+            edits: Edits::default(),
+            options: options.clone(),
+            ..Default::default()
+        };
+        let solved = solve_state(net, &req)?;
+        let last = solved.assemble(&req)?;
+        Ok(Study {
+            formulation,
+            base: net.clone(),
+            options,
+            log: Vec::new(),
+            solved,
+            last,
+        })
     }
 
     /// The formulation this study solves.
@@ -174,83 +315,95 @@ impl Study {
         &self.log
     }
 
-    /// Apply `edits` to the committed operating point and exact-re-solve. This is the
-    /// source of truth; the new solution becomes the committed point. The base model is
-    /// reused (cloned and perturbed), so this never re-parses the network.
+    /// Apply `edits` to the committed operating point and exact-re-solve, with no
+    /// sensitivity cells. The zero-sensitivity convenience over
+    /// [`commit_with`](Study::commit_with).
     pub fn commit(
         &mut self,
         edits: &[NetworkEdit],
         options: SolveOptions,
     ) -> Result<SolveResponse, String> {
-        self.options = options;
-        self.log.extend_from_slice(edits);
-        self.resolve()
+        self.commit_with(edits, &[], options)
     }
 
-    fn resolve(&mut self) -> Result<SolveResponse, String> {
+    /// Apply `edits` to the committed operating point and exact-re-solve, attaching the
+    /// requested `sensitivities` to the response in the **same** solve. This is the
+    /// source of truth; the new solution becomes the committed point. The base network is
+    /// reused (cloned and perturbed), so this never re-parses, and the watched cell rides
+    /// back on `SolveResponse.sensitivities` with no second solve.
+    pub fn commit_with(
+        &mut self,
+        edits: &[NetworkEdit],
+        sensitivities: &[SensRequest],
+        options: SolveOptions,
+    ) -> Result<SolveResponse, String> {
+        self.options = options;
+        self.log.extend_from_slice(edits);
+        self.resolve(sensitivities)
+    }
+
+    fn resolve(&mut self, sensitivities: &[SensRequest]) -> Result<SolveResponse, String> {
         let req = SolveRequest {
             formulation: self.formulation,
             edits: fold(&self.log),
+            sensitivities: sensitivities.to_vec(),
             options: self.options.clone(),
-            ..Default::default()
         };
-        match self.formulation {
-            Problem::DcOpf => {
-                let base = self.base_dc.clone().expect("dc base present for DcOpf");
-                let (dc, sol) = dcopf_solved(base, &req, None)?;
-                let resp = dcopf_assemble(&dc, &sol, &req)?;
-                self.solved = Solved::Dc(dc, sol);
-                self.last = resp.clone();
-                Ok(resp)
-            }
-            Problem::AcPf => {
-                let base = self.base_ac.clone().expect("ac base present for AcPf");
-                let (ac, sol) = acpf_solved(base, &req)?;
-                let resp = acpf_assemble(&ac, &sol, &req)?;
-                self.solved = Solved::AcPf(ac, sol);
-                self.last = resp.clone();
-                Ok(resp)
-            }
-            // from_network only constructs DcOpf / AcPf studys.
-            _ => unreachable!("study formulation is dcopf or acpf"),
-        }
+        // Re-solve from a fresh clone of the base (the source of truth), then assemble the
+        // response — including the requested sensitivity cells — from the committed state.
+        let solved = solve_state(&self.base, &req)?;
+        let resp = solved.assemble(&req)?;
+        self.solved = solved;
+        self.last = resp.clone();
+        Ok(resp)
     }
 
     /// First-order prediction of applying `edits` at the committed point, for each
-    /// `watched` operand, without re-solving. Reuses the committed solution's
-    /// differentiable system: the `dz/dp` column dotted with the demand step. The result
-    /// is a local linearization (`local_only = true`); `commit` to confirm.
+    /// `watched` operand, without re-solving. Builds the committed state's differentiable
+    /// system **fresh** (never a cached factorization) and dots its `dz/dp` column with
+    /// the edit step. The result is a local linearization (`local_only = true`); `commit`
+    /// to confirm. Linearizes at the *last committed* state, not the base.
     pub fn preview(&self, edits: &[NetworkEdit], watched: &[Operand]) -> Result<Preview, String> {
-        // Transient demand step (MW) per original bus id.
+        // Transient step magnitude per original bus id, and the parameter the edits
+        // perturb. v1 has one edit kind, so the parameter is uniform; assert it.
         let mut mag: HashMap<i64, f64> = HashMap::new();
+        let mut parameter: Option<Parameter> = None;
         for e in edits {
             *mag.entry(e.bus()).or_insert(0.0) += e.p_mw();
+            match parameter {
+                None => parameter = Some(e.parameter()),
+                Some(p) if p == e.parameter() => {}
+                Some(_) => {
+                    return Err(
+                        "preview cannot mix edit kinds that map to different parameters".into(),
+                    )
+                }
+            }
         }
+        // Default to the demand parameter when there is no edit (every column is zero).
+        let parameter = parameter.unwrap_or(Parameter::Demand(Power::Active));
 
-        match &self.solved {
-            Solved::Dc(dc, sol) => {
-                let (cols, col_mag) = dense_cols(&dc.bus_ids, &mag);
-                let operands = preview_columns(&DcKkt::new(dc, sol), &cols, &col_mag, watched)?;
-                // ∂objective/∂demand is the committed marginal price: Δobj ≈ Σ lmp_b · Δp_b.
-                let lmp = sol.lmp_usd_per_mwh(dc.base_mva);
-                let objective_delta = cols.iter().zip(&col_mag).map(|(&i, &m)| lmp[i] * m).sum();
-                Ok(Preview {
-                    operands,
-                    objective_delta: Some(objective_delta),
-                    local_only: true,
-                })
-            }
-            Solved::AcPf(ac, sol) => {
-                let (cols, col_mag) = dense_cols(&ac.bus_ids, &mag);
-                let operands = preview_columns(&AcNewton::new(ac, sol), &cols, &col_mag, watched)?;
-                // AC power flow has no objective.
-                Ok(Preview {
-                    operands,
-                    objective_delta: None,
-                    local_only: true,
-                })
-            }
-        }
+        let bus_ids = response_bus_ids(&self.last);
+        let (cols, col_mag) = dense_cols(&bus_ids, &mag);
+
+        let operands = self
+            .solved
+            .with_system(&mut |sys| preview_columns(sys, parameter, &cols, &col_mag, watched))?;
+
+        // ∂objective/∂parameter is the committed marginal price dotted with the step, when
+        // the formulation has an objective: Δobj ≈ Σ lmp_b · Δp_b. `None` for power flow.
+        let objective_delta = self.solved.lmp().map(|lmp| {
+            cols.iter()
+                .zip(&col_mag)
+                .map(|(&i, &m)| lmp[i] * m)
+                .sum::<f64>()
+        });
+
+        Ok(Preview {
+            operands,
+            objective_delta,
+            local_only: true,
+        })
     }
 }
 
@@ -264,15 +417,6 @@ impl std::fmt::Debug for Study {
     }
 }
 
-fn bare_request(formulation: Problem, options: &SolveOptions) -> SolveRequest {
-    SolveRequest {
-        formulation,
-        edits: Edits::default(),
-        options: options.clone(),
-        ..Default::default()
-    }
-}
-
 /// Collapse the edit log to the cumulative demand-delta map the model builders consume.
 fn fold(log: &[NetworkEdit]) -> Edits {
     let mut deltas: HashMap<i64, f64> = HashMap::new();
@@ -282,6 +426,25 @@ fn fold(log: &[NetworkEdit]) -> Edits {
         }
     }
     Edits { deltas }
+}
+
+/// The dense bus-id order of a committed solution, read off whichever per-bus block the
+/// formulation populated (`lmp`/`vm`/`va`/`w`). The preview maps edited bus ids onto these
+/// dense indices, so it must use the same order the committed sensitivity matrix reports.
+fn response_bus_ids(resp: &SolveResponse) -> Vec<usize> {
+    let scalars = resp
+        .lmp
+        .as_deref()
+        .or(resp.vm.as_deref())
+        .or(resp.va.as_deref())
+        .or(resp.w.as_deref());
+    if let Some(s) = scalars {
+        return s.iter().map(|b| b.bus).collect();
+    }
+    if let Some(inj) = resp.injections.as_deref() {
+        return inj.iter().map(|b| b.bus).collect();
+    }
+    Vec::new()
 }
 
 /// Map edited bus ids to dense indices with aligned magnitudes (MW), dropping ids that
@@ -301,10 +464,11 @@ fn dense_cols(bus_ids: &[usize], mag: &HashMap<i64, f64>) -> (Vec<usize>, Vec<f6
     (cols, col_mag)
 }
 
-/// For each watched operand, run the demand sensitivity over the edited buses and dot it
-/// with the demand step to get the predicted operand change (in served units).
+/// For each watched operand, run the `parameter` sensitivity over the edited buses and dot
+/// it with the edit step to get the predicted operand change (in served units).
 fn preview_columns(
     sys: &dyn Differentiable,
+    parameter: Parameter,
     cols: &[usize],
     col_mag: &[f64],
     watched: &[Operand],
@@ -325,7 +489,7 @@ fn preview_columns(
         .iter()
         .map(|&operand| SensRequest {
             operand,
-            parameter: Parameter::Demand(Power::Active),
+            parameter,
             indices: Some(cols.to_vec()),
             mode: Mode::Auto,
         })
@@ -336,8 +500,8 @@ fn preview_columns(
         .iter()
         .zip(mats)
         .map(|(&operand, m)| {
-            // values[r][c] = d(operand_r)/d(demand at cols[c]); the column order matches
-            // col_mag, so the predicted change is the row dotted with the demand step.
+            // values[r][c] = d(operand_r)/d(parameter at cols[c]); the column order matches
+            // col_mag, so the predicted change is the row dotted with the edit step.
             let values = m
                 .values
                 .iter()
@@ -397,6 +561,36 @@ mod tests {
         let stateless = crate::solve_json(
             &net,
             r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0}}}"#,
+        )
+        .expect("solve_json");
+        assert_eq!(from_study, stateless);
+    }
+
+    #[test]
+    fn commit_with_sensitivities_matches_solve_json() {
+        // A commit that carries a Price/Demand cell returns the sensitivity column in the
+        // same solve, byte-equal to the same stateless solve_json request — so the
+        // frontend never needs a second solve for the ∂LMP/∂d column.
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::DcOpf).expect("study");
+        let resp = s
+            .commit_with(
+                &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
+                &[SensRequest {
+                    operand: Operand::Price(Power::Active),
+                    parameter: Parameter::Demand(Power::Active),
+                    indices: Some(vec![1]),
+                    mode: Mode::Auto,
+                }],
+                SolveOptions::default(),
+            )
+            .expect("commit_with");
+        // The cell is present in the committed response (no second solve needed).
+        assert_eq!(resp.sensitivities.len(), 1);
+        let from_study = serde_json::to_string(&resp).unwrap();
+        let stateless = crate::solve_json(
+            &net,
+            r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0}},"sensitivities":[{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"},"indices":[1]}]}"#,
         )
         .expect("solve_json");
         assert_eq!(from_study, stateless);
@@ -492,11 +686,61 @@ mod tests {
     }
 
     #[test]
-    fn study_rejects_unsupported_formulation() {
-        // SOCWR / AC OPF (and anything else) are not wired into the Study yet; the
-        // error names solve_json as the stateless route.
+    fn preview_works_for_ac_pf_study() {
+        // An AC power-flow study has no objective, so the preview's objective_delta is
+        // None, but the watched voltage operand still gets a finite first-order column.
+        let net = case3_json();
+        let study = Study::new(&net, Problem::AcPf).expect("acpf study");
+        let prev = study
+            .preview(
+                &[NetworkEdit::AddLoad { bus: 2, p_mw: 1.0 }],
+                &[Operand::Voltage(crate::sens::VoltageKind::Magnitude)],
+            )
+            .expect("acpf preview");
+        assert!(prev.local_only);
+        assert!(
+            prev.objective_delta.is_none(),
+            "power flow has no objective"
+        );
+        assert_eq!(prev.operands.len(), 1);
+        assert_eq!(prev.operands[0].units, "pu");
+        for v in &prev.operands[0].values {
+            assert!(v.value.is_finite());
+        }
+    }
+
+    #[cfg(feature = "conic")]
+    #[test]
+    fn socwr_study_constructs_and_commits() {
+        // A SOCWR study is constructible and commits successfully through the boxed state
+        // (the conic KKT builds on the stack in with_system / socwr_assemble), and the
+        // commit is byte-equal to the same stateless solve_json request.
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::Socwr).expect("socwr study");
+        assert_eq!(s.formulation(), Problem::Socwr);
+        let resp = s
+            .commit(
+                &[NetworkEdit::AddLoad { bus: 2, p_mw: 10.0 }],
+                SolveOptions::default(),
+            )
+            .expect("socwr commit");
+        assert!(resp.w.is_some(), "socwr reports w");
+        let from_study = serde_json::to_string(&resp).unwrap();
+        let stateless = crate::solve_json(
+            &net,
+            r#"{"formulation":"socwr","edits":{"deltas":{"2":10.0}}}"#,
+        )
+        .expect("solve_json");
+        assert_eq!(from_study, stateless);
+    }
+
+    #[cfg(not(feature = "conic"))]
+    #[test]
+    fn study_rejects_unbuilt_formulation() {
+        // Without the conic feature SOCWR is not in this build; the error names solve_json
+        // as the stateless route.
         let err = Study::new(&case3_json(), Problem::Socwr).unwrap_err();
-        assert!(err.contains("does not yet support"), "got: {err}");
+        assert!(err.contains("does not support"), "got: {err}");
     }
 
     fn lmp_at(v: &Value, bus: usize) -> f64 {

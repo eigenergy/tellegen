@@ -70,8 +70,11 @@ pub fn capabilities_json() -> String {
 ///
 /// Arguments and results are JSON in the engine's `Study` shapes: edits are a
 /// `NetworkEdit[]` (e.g. `[{"kind":"add_load","bus":2,"p_mw":50}]`), `preview` watches an
-/// `Operand[]` (e.g. `[{"Price":"Active"}]`) and returns a `Preview`, `commit` returns a
-/// `SolveResponse`. Only in the sensitivity build (preview needs the differentiable path).
+/// `Operand[]` (e.g. `[{"Price":"Active"}]`) and returns a `Preview`. `commit` takes the
+/// edits plus a `SensRequest[]` of watched cells and returns `{ solution, iterations,
+/// sensitivities }` — the committed [`SolveResponse`] plus the requested ∂operand/∂param
+/// columns, computed in the *same* solve (no second round-trip). Only in the sensitivity
+/// build (preview needs the differentiable path).
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
 pub struct Study(tellegen::Study);
@@ -79,8 +82,9 @@ pub struct Study(tellegen::Study);
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
 impl Study {
-    /// Build a study over `network_json` for `formulation` (`"dcopf"` or `"acpf"`),
-    /// solving the base case. Errors on an unknown or not-yet-supported formulation.
+    /// Build a study over `network_json` for `formulation` (`"dcopf"` / `"acpf"`, and —
+    /// in a build that includes them — `"socwr"` / `"acopf"`), solving the base case.
+    /// Errors on an unknown or not-built formulation.
     #[wasm_bindgen(constructor)]
     pub fn new(network_json: &str, formulation: &str) -> Result<Study, JsError> {
         let problem = parse_problem(formulation)?;
@@ -89,15 +93,25 @@ impl Study {
             .map_err(jserr)
     }
 
-    /// Apply `edits_json` (a `NetworkEdit[]`) at the committed point and exact-re-solve.
-    /// Advances the committed point; returns the `SolveResponse` JSON.
-    pub fn commit(&mut self, edits_json: &str) -> Result<String, JsError> {
+    /// Apply `edits_json` (a `NetworkEdit[]`) at the committed point and exact-re-solve,
+    /// attaching the `sensitivities_json` cells (a `SensRequest[]`, or empty/blank for
+    /// none) in the same solve. Advances the committed point. Returns
+    /// `{ "solution": SolveResponse, "iterations": Iterations, "sensitivities":
+    /// SensitivityMatrix[] }` — `solution` is the full committed response, and
+    /// `iterations` / `sensitivities` mirror its convergence trace and the watched
+    /// columns so the UI renders the ∂LMP/∂d column without a second solve.
+    pub fn commit(
+        &mut self,
+        edits_json: &str,
+        sensitivities_json: &str,
+    ) -> Result<String, JsError> {
         let edits = parse_edits(edits_json)?;
+        let sensitivities = parse_sensitivities(sensitivities_json)?;
         let resp = self
             .0
-            .commit(&edits, tellegen::SolveOptions::default())
+            .commit_with(&edits, &sensitivities, tellegen::SolveOptions::default())
             .map_err(jserr)?;
-        serde_json::to_string(&resp).map_err(jserr)
+        serde_json::to_string(&commit_output(&resp)).map_err(jserr)
     }
 
     /// First-order preview of `edits_json` (a `NetworkEdit[]`) for the `watched_json`
@@ -139,6 +153,29 @@ fn parse_edits(edits_json: &str) -> Result<Vec<tellegen::NetworkEdit>, JsError> 
         return Ok(Vec::new());
     }
     serde_json::from_str(edits_json).map_err(|e| jserr(format!("bad edits JSON: {e}")))
+}
+
+/// Parse a `SensRequest[]` (the watched ∂operand/∂param cells); empty/blank is none.
+/// A cell is `{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"},"indices":[1]}`.
+#[cfg(feature = "sensitivity")]
+fn parse_sensitivities(sens_json: &str) -> Result<Vec<tellegen::SensRequest>, JsError> {
+    if sens_json.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str(sens_json).map_err(|e| jserr(format!("bad sensitivities JSON: {e}")))
+}
+
+/// Wrap a committed [`SolveResponse`] as `{ solution, iterations, sensitivities }`: the
+/// full response under `solution`, with its convergence trace and the watched sensitivity
+/// columns mirrored at the top level so the frontend reads the ∂LMP/∂d column directly off
+/// the commit without a second solve.
+#[cfg(feature = "sensitivity")]
+fn commit_output(resp: &SolveResponse) -> serde_json::Value {
+    serde_json::json!({
+        "solution": resp,
+        "iterations": resp.iterations,
+        "sensitivities": resp.sensitivities,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -688,5 +725,14 @@ mpc.gencost = [
         assert_eq!(edits.len(), 1);
         assert!(parse_edits("").unwrap().is_empty());
         assert!(parse_edits("   ").unwrap().is_empty());
+
+        // The `commit` sensitivity argument: a `SensRequest[]`, empty/blank for none.
+        let sens = parse_sensitivities(
+            r#"[{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"},"indices":[1]}]"#,
+        )
+        .unwrap();
+        assert_eq!(sens.len(), 1);
+        assert!(parse_sensitivities("").unwrap().is_empty());
+        assert!(parse_sensitivities("   ").unwrap().is_empty());
     }
 }

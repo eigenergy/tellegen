@@ -449,16 +449,37 @@ pub(crate) fn acpf_assemble(
 
 #[cfg(feature = "conic")]
 fn solve_socwr(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
-    use super::model::AcNetwork;
-    use super::sens::ConicKkt;
+    let (acnet, sol) = socwr_solved(super::model::AcNetwork::from_network(net)?, req)?;
+    socwr_assemble(&acnet, &sol, req)
+}
 
-    let mut acnet = AcNetwork::from_network(net)?;
-    let base = acnet.base_mva;
+/// Apply the request's demand edits to an owned [`AcNetwork`] and solve the SOCWR
+/// relaxation, returning the perturbed model and its solution (retained for previews).
+/// Kept separate from [`socwr_assemble`] so a [`Study`](crate::study::Study) can retain
+/// the solved model + solution and build a `ConicKkt` without re-solving.
+#[cfg(feature = "conic")]
+pub(crate) fn socwr_solved(
+    mut acnet: super::model::AcNetwork,
+    req: &SolveRequest,
+) -> Result<(super::model::AcNetwork, super::problem::SocWrSolution), String> {
     apply_demand_deltas_ac(&mut acnet, &req.edits.deltas);
     let sol = super::problem::socwr_opf(&acnet)?;
+    Ok((acnet, sol))
+}
+
+/// Assemble the SOCWR [`SolveResponse`] (and sensitivity cells) from a solved model.
+/// Shared by the one-shot path and the cached [`Study`] path.
+#[cfg(feature = "conic")]
+pub(crate) fn socwr_assemble(
+    acnet: &super::model::AcNetwork,
+    sol: &super::problem::SocWrSolution,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
+    use super::sens::ConicKkt;
+    let base = acnet.base_mva;
 
     let sensitivities = {
-        let sys = ConicKkt::new(&acnet, &sol).map_err(|e| e.to_string())?;
+        let sys = ConicKkt::new(acnet, sol).map_err(|e| e.to_string())?;
         run_cells(&sys, &req.sensitivities)?
     };
 
@@ -466,7 +487,7 @@ fn solve_socwr(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
         formulation: Problem::Socwr,
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
-        iterations: Some(Iterations::Ipm(sol.iterations)),
+        iterations: Some(Iterations::Ipm(sol.iterations.clone())),
         lmp: Some(zip_scaled(&acnet.bus_ids, &sol.lmp, 1.0 / base)),
         lmp_q: None,
         vm: None,
@@ -489,20 +510,42 @@ fn solve_socwr(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
 
 #[cfg(feature = "acopf")]
 fn solve_acopf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
-    use super::model::AcNetwork;
-    use super::sens::AcOpfKkt;
+    let (acnet, sol) = acopf_solved(super::model::AcNetwork::from_network(net)?, req)?;
+    acopf_assemble(&acnet, &sol, req)
+}
 
-    let mut acnet = AcNetwork::from_network(net)?;
-    let base = acnet.base_mva;
+/// Apply the request's demand edits to an owned [`AcNetwork`] and solve the full AC OPF
+/// (warm-started best-of-backends unless `warm_start` is off), returning the perturbed
+/// model and its solution (retained for previews). Kept separate from
+/// [`acopf_assemble`] so a [`Study`](crate::study::Study) can retain the solved
+/// model + solution and build an `AcOpfKkt` without re-solving.
+#[cfg(feature = "acopf")]
+pub(crate) fn acopf_solved(
+    mut acnet: super::model::AcNetwork,
+    req: &SolveRequest,
+) -> Result<(super::model::AcNetwork, super::problem::AcOpfSolution), String> {
     apply_demand_deltas_ac(&mut acnet, &req.edits.deltas);
     let sol = if req.options.warm_start {
         solve_acopf_best(&acnet)?
     } else {
         super::problem::acopf(&acnet).map_err(|e| e.to_string())?
     };
+    Ok((acnet, sol))
+}
+
+/// Assemble the AC OPF [`SolveResponse`] (and sensitivity cells) from a solved model.
+/// Shared by the one-shot path and the cached [`Study`] path.
+#[cfg(feature = "acopf")]
+pub(crate) fn acopf_assemble(
+    acnet: &super::model::AcNetwork,
+    sol: &super::problem::AcOpfSolution,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
+    use super::sens::AcOpfKkt;
+    let base = acnet.base_mva;
 
     let sensitivities = {
-        let sys = AcOpfKkt::new(&acnet, &sol).map_err(|e| e.to_string())?;
+        let sys = AcOpfKkt::new(acnet, sol).map_err(|e| e.to_string())?;
         run_cells(&sys, &req.sensitivities)?
     };
 
@@ -510,7 +553,7 @@ fn solve_acopf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
         formulation: Problem::Acopf,
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
-        iterations: Some(Iterations::Ipm(sol.iterations)),
+        iterations: Some(Iterations::Ipm(sol.iterations.clone())),
         lmp: Some(zip_scaled(&acnet.bus_ids, &sol.lmp, 1.0 / base)),
         lmp_q: Some(zip_scaled(&acnet.bus_ids, &sol.lmp_q, 1.0 / base)),
         vm: Some(zip_bus(&acnet.bus_ids, &sol.vm)),
