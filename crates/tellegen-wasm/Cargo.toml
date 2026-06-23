@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # The engine. Core wasm build takes it without default features (no faer); the
 # `sensitivity` feature below forwards to `tellegen/sensitivity` for the sens build.
-tellegen = { path = "../tellegen", default-features = false }
+tellegen = { package = "tellegen-core", path = "../tellegen-core", default-features = false }
 powerio.workspace = true
 wasm-bindgen = "0.2"
 serde.workspace = true

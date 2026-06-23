@@ -149,7 +149,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "tellegen",
+ "tellegen-core",
  "walkdir",
 ]
 
@@ -1780,7 +1780,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tellegen"
+name = "tellegen-core"
 version = "0.1.0"
 dependencies = [
  "clarabel",
@@ -1806,7 +1806,7 @@ dependencies = [
  "powerio",
  "serde",
  "serde_json",
- "tellegen",
+ "tellegen-core",
  "tokio",
  "tokio-stream",
  "tower",
@@ -1822,7 +1822,7 @@ dependencies = [
  "powerio",
  "serde",
  "serde_json",
- "tellegen",
+ "tellegen-core",
  "wasm-bindgen",
 ]
 

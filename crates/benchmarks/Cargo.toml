@@ -13,7 +13,7 @@ path = "src/main.rs"
 [dependencies]
 # The engine, with every native-only backend on for parity coverage. The shared
 # workspace lockfile unifies powerio across the API boundary.
-tellegen = { path = "../tellegen", features = ["conic", "acopf", "acopf-pounce"] }
+tellegen = { package = "tellegen-core", path = "../tellegen-core", features = ["conic", "acopf", "acopf-pounce"] }
 powerio.workspace = true
 walkdir = "2"
 rayon = "1"

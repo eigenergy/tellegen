@@ -23,7 +23,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
-      - run: cargo test -p tellegen -p tellegen-wasm -p tellegen-server
+      - run: cargo test -p tellegen-core -p tellegen-wasm -p tellegen-server
         env:
           TELLEGEN_ALLOW_FALLBACK: "1"
       - name: Install wasm-pack

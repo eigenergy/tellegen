@@ -17,7 +17,7 @@ path = "src/main.rs"
 [dependencies]
 # The engine, with default features (sensitivity). All solves and sensitivities go
 # through it; the server owns only the HTTP transport and case staging.
-tellegen = { path = "../tellegen" }
+tellegen = { package = "tellegen-core", path = "../tellegen-core" }
 powerio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
