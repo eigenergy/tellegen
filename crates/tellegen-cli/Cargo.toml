@@ -14,7 +14,7 @@ path = "src/main.rs"
 # Default features (sensitivity). Native, but deliberately NOT acopf-pounce, so the
 # CLI binary stays Apache-2.0 / MIT (no EPL). Phase 5 widens the feature set for the
 # parity/repro harness.
-tellegen = { package = "tellegen-core", path = "../tellegen-core" }
+tellegen = { path = "../tellegen" }
 
 [lints]
 workspace = true

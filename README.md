@@ -110,7 +110,7 @@ npm run smoke:build
 ## Repository layout
 
 - `apps/web/`: tellegen frontend (SvelteKit)
-- `crates/`: Rust workspace — `tellegen-core` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
+- `crates/`: Rust workspace — `tellegen` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
 - `packages/`: shared TypeScript (reserved for `@tellegen/engine`)
 - `reference/julia-backend/`: Julia PowerDiff.jl parity harness
 - `scripts/`: data staging and docs build helpers

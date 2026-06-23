@@ -7,7 +7,7 @@
 	const H = 30;
 
 	// Primal infeasibility on a FIXED log10 axis: top = 1e0 (problem scale), bottom
-	// = the solver feasibility tolerance (tol_feas = 1e-9 in crates/tellegen-core/src/solve.rs).
+	// = the solver feasibility tolerance (tol_feas = 1e-9 in crates/tellegen/src/solve.rs).
 	// inf_pr is Clarabel's *relative* primal residual, so it runs ~1 -> tol for every
 	// well-posed solve; rescaling each trace to its own min/max made every curve fill
 	// the box identically (the "same shape every solve" bug). Anchoring to fixed

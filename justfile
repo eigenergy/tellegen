@@ -25,7 +25,7 @@ fmt-check:
 
 # CI gate: clippy with warnings denied on the shipping crates.
 clippy:
-    cargo clippy -p tellegen-core -p tellegen-wasm -p tellegen-server -p tellegen-cli --all-targets -- -D warnings
+    cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli --all-targets -- -D warnings
 
 # CI gate: licenses, advisories, bans, sources.
 deny:

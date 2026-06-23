@@ -3,13 +3,13 @@
 # `default-members` keeps a bare `cargo build`/`cargo test`/wasm gate scoped to the
 # engine; the adapters and benchmarks build only when a command selects them.
 members = [
-  "crates/tellegen-core",
+  "crates/tellegen",
   "crates/tellegen-wasm",
   "crates/tellegen-server",
   "crates/tellegen-cli",
   "crates/benchmarks",
 ]
-default-members = ["crates/tellegen-core"]
+default-members = ["crates/tellegen"]
 resolver = "2"
 
 [workspace.package]
