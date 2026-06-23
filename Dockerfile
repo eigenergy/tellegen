@@ -30,9 +30,9 @@ RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm
 # ---- frontend build ----
 FROM node:22-slim AS frontend
 WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json ./
+COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci
-COPY frontend/ ./
+COPY apps/web/ ./
 COPY --from=wasm /out/wasm-pkg ./src/lib/wasm-pkg
 COPY --from=wasm /out/wasm-sens-pkg ./src/lib/wasm-sens-pkg
 RUN npm run build && npm run smoke:build

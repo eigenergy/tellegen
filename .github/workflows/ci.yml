@@ -29,21 +29,21 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-        working-directory: frontend
+        working-directory: apps/web
       # `npm run wasm` builds both wasm packages from crates/tellegen-wasm with the
       # correct out-names and RUSTFLAGS (single source of truth in package.json).
       - run: npm run wasm
-        working-directory: frontend
+        working-directory: apps/web
       - run: npm run lint
-        working-directory: frontend
+        working-directory: apps/web
       - run: npm run check
-        working-directory: frontend
+        working-directory: apps/web
       - run: npm run build
-        working-directory: frontend
+        working-directory: apps/web
       - run: npm run smoke:build
-        working-directory: frontend
+        working-directory: apps/web
 
   # Julia reference: PowerIO from the General registry, PowerDiff from the git
   # rev in [sources]. This is not the production backend.

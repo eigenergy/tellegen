@@ -4,13 +4,13 @@ reference/julia-backend/Manifest.toml
 # Node
 node_modules/
 docs/book/
-frontend/build/
-frontend/.svelte-kit/
+apps/web/build/
+apps/web/.svelte-kit/
 
 # Rust
 /target/
-frontend/src/lib/wasm-pkg/
-frontend/src/lib/wasm-sens-pkg/
+apps/web/src/lib/wasm-pkg/
+apps/web/src/lib/wasm-sens-pkg/
 
 # Operator-staged TAMU case data (scripts/stage-data.sh); never vendored
 data/

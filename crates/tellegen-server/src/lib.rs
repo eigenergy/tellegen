@@ -911,9 +911,9 @@ fn default_data_dirs() -> Vec<PathBuf> {
 fn default_frontend_dirs() -> Vec<PathBuf> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     vec![
-        cwd.join("frontend/build"),
-        cwd.join("../frontend/build"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../frontend/build"),
+        cwd.join("apps/web/build"),
+        cwd.join("../apps/web/build"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/web/build"),
     ]
 }
 
