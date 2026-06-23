@@ -1,4 +1,4 @@
-//! Finite-difference parity for the differentiable sensitivities (`book/src/methodology.md`),
+//! Finite-difference parity for the differentiable sensitivities (`docs/src/methodology.md`),
 //! the second independent baseline. For each sampled `(operand, parameter)` cell we
 //! check two things, mirroring the in-tree `check_parity` / `check_conic_parity`:
 //!

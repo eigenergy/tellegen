@@ -10,8 +10,7 @@
 //! ```
 //!
 //! This is the stateless face of the engine; interactive, build-once workflows use
-//! the `Study` API (see the core crate). Phase 5 will grow this into the full
-//! parity/repro harness (M5).
+//! the `Study` API in the `tellegen` crate.
 
 use std::io::Read;
 use std::process::ExitCode;

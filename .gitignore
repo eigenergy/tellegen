@@ -1,6 +1,3 @@
-# Julia reference
-reference/julia-backend/Manifest.toml
-
 # Node
 node_modules/
 docs/book/

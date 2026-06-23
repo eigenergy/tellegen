@@ -1,5 +1,5 @@
 //! The per-`(case, variant)` result record — one row of the validation matrix
-//! (`book/src/methodology.md`) — and its JSON/CSV-friendly sub-structs. The runner fills
+//! (`docs/src/methodology.md`) — and its JSON/CSV-friendly sub-structs. The runner fills
 //! these; the report module serializes them.
 
 use serde::Serialize;
@@ -139,7 +139,7 @@ pub struct AcPfResult {
 }
 
 /// Finite-difference parity summary for one formulation on one case
-/// (`book/src/methodology.md`). Worst relative errors are reported per parity class; columns below the
+/// (`docs/src/methodology.md`). Worst relative errors are reported per parity class; columns below the
 /// regularization floor are skipped, not counted.
 #[derive(Clone, Debug, Serialize)]
 pub struct ParitySummary {

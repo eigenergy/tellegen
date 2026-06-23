@@ -69,17 +69,3 @@ jobs:
             fi
           done
           echo "ok: no EPL pounce in wasm/server/cli"
-
-  # Julia reference: PowerIO from the General registry, PowerDiff from the git
-  # rev in [sources]. This is not the production backend.
-  julia-reference:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: "1.11"
-      - uses: julia-actions/cache@v2
-      - name: Instantiate Julia reference
-        run: julia --project=reference/julia-backend -e 'using Pkg; Pkg.instantiate()'
-      - run: TELLEGEN_ALLOW_FALLBACK=1 julia --project=reference/julia-backend reference/julia-backend/test/runtests.jl

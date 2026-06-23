@@ -15,7 +15,7 @@ FLAGS:
                                  port; best tries interiors then falls back to pounce)
     --pglib PATH                 Corpus root (default: $PGLIB_OPF_PATH or ~/Datasets/pglib-opf)
     --out DIR                    Artifact directory (default: target/pglib-bench)
-    --book                       Also copy the markdown snapshot into book/src
+    --book                       Also copy the markdown snapshot into docs/src
     -h, --help                   Print this help
 
 The corpus is never vendored; PGLib data is CC BY 4.0 (v23.07, arXiv:1908.02788).

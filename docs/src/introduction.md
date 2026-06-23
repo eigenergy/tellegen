@@ -5,13 +5,11 @@
 # Introduction
 
 tellegen is a reactive visualization interface for power flow cases. The name
-refers to Tellegen's theorem and the adjoint sensitivity calculations used by
-PowerDiff.jl.
+refers to Tellegen's theorem and the adjoint sensitivity calculations.
 
 The app uses a gradient preview, exact commit interaction model. Perturbations
 update the display from KKT sensitivity columns. Exact DC OPF commits run in
-the tellegen frontend through Clarabel and WebAssembly, with PowerDiff.jl kept
-as the reference path. Case parsing uses
+the tellegen frontend through Clarabel and WebAssembly. Case parsing uses
 [powerio](https://github.com/eigenergy/powerio).
 
 ## Demo

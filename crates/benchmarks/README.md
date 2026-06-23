@@ -1,11 +1,11 @@
 # benchmarks
 
-PGLib-OPF validation and benchmark harness for phasor. A non-shipping workspace member
-(native only — it uses `std::fs`, `walkdir`, `rayon`, `csv`, `serde`). It drives phasor's
+PGLib-OPF validation and benchmark harness for tellegen. A non-shipping workspace member
+(native only — it uses `std::fs`, `walkdir`, `rayon`, `csv`, `serde`). It drives tellegen's
 public API over the PGLib-OPF v23.07 corpus and validates against two independent baselines:
-the published PGLib reference solves (`BASELINE.md`) and finite-difference derivatives.
+the published PGLib reference solves and finite-difference derivatives.
 
-See the `book/` (Methodology, Validation, Limitations) for the writeup.
+See the project documentation for the methodology and validation writeup.
 
 ## Run
 
@@ -25,7 +25,7 @@ cargo run -p benchmarks --release -- [flags]
 | `--no-sens` | — | disable finite-difference parity sampling |
 | `--pglib PATH` | env/default | corpus root override |
 | `--out DIR` | `target/pglib-bench` | artifact directory |
-| `--book` | — | also write the snapshot to `book/src/benchmark-results.md` |
+| `--book` | — | also write the snapshot to `docs/src/benchmark-results.md` |
 
 ## Output
 
@@ -35,7 +35,7 @@ deterministic, so the numbers reproduce on the recorded toolchain.
 
 ## What it drives
 
-| stage | phasor entry point |
+| stage | tellegen entry point |
 | --- | --- |
 | DC OPF | `solve_prebuilt` (`DcNetwork::from_network` + the prebuilt solve = `solve_network`) |
 | conic SOCWR | `socwr_opf` |

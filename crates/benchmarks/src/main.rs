@@ -18,7 +18,7 @@
 //!   --no-sens                    disable finite-difference parity sampling
 //!   --pglib PATH                 corpus root (default: $PGLIB_OPF_PATH or ~/Datasets/pglib-opf)
 //!   --out DIR                    artifact directory (default: target/pglib-bench)
-//!   --book                       also copy the markdown snapshot into book/src
+//!   --book                       also copy the markdown snapshot into docs/src
 //! ```
 
 mod baseline;
@@ -231,7 +231,7 @@ fn main() {
 
     if args.book {
         let book_md =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../book/src/benchmark-results.md");
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/src/benchmark-results.md");
         let _ = std::fs::write(&book_md, &md).map_err(|e| eprintln!("book snapshot write: {e}"));
         eprintln!("wrote book snapshot to {}", book_md.display());
     }

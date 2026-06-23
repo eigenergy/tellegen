@@ -1,7 +1,7 @@
-phasor
+tellegen
 Copyright 2026 Samuel Talkington and contributors
 
-phasor is a differentiable power flow and optimal power flow engine in Rust: the DC
+tellegen is a differentiable power flow and optimal power flow engine in Rust: the DC
 optimal power flow and locational marginal price sensitivities, the AC power flow
 voltage sensitivities, the full nonlinear AC optimal power flow, and the SOCWR (Jabr)
 conic relaxation of AC optimal power flow, each with analytic sensitivities. Licensed

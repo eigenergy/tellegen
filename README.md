@@ -5,15 +5,13 @@
 # tellegen
 
 Reactive visualization for power systems optimization. The name refers to
-Tellegen's theorem and the adjoint sensitivity calculations used by
-PowerDiff.jl.
+Tellegen's theorem and the adjoint sensitivity calculations.
 
 tellegen uses a gradient preview, exact commit interaction model. Perturbations
 update the display from KKT sensitivity columns. Exact DC OPF commits run in the
 tellegen frontend through Clarabel and WebAssembly; bundled cases can fall back
 to the tellegen backend using the same solver path. Case parsing uses
-[powerio](https://github.com/eigenergy/powerio). PowerDiff.jl remains as a
-reference harness for parity checks.
+[powerio](https://github.com/eigenergy/powerio).
 
 Full documentation is published with mdBook at
 [eigenergy.github.io/tellegen](https://eigenergy.github.io/tellegen/). The
@@ -92,12 +90,6 @@ backend tests cover the solver, the sensitivity columns, and the API:
 cargo test --workspace
 ```
 
-The Julia reference harness remains available for PowerDiff.jl parity checks:
-
-```sh
-julia --project=reference/julia-backend reference/julia-backend/test/runtests.jl
-```
-
 tellegen frontend checks:
 
 ```sh
@@ -112,7 +104,6 @@ npm run smoke:build
 - `apps/web/`: tellegen frontend (SvelteKit)
 - `crates/`: Rust workspace — `tellegen` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
 - `packages/`: shared TypeScript (reserved for `@tellegen/engine`)
-- `reference/julia-backend/`: Julia PowerDiff.jl parity harness
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -160,8 +151,12 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 - library packaging with `@sveltejs/package`
 - canonical display data in powerio
-- AC operands and AC solver paths as the browser numerical stack matures
+- surfacing the engine's AC power flow and SOCWR formulations in the browser UI
 
 ## License
 
-MIT
+The Rust crates are licensed under either of [Apache-2.0](crates/tellegen/LICENSE-APACHE)
+or [MIT](crates/tellegen/LICENSE-MIT) at your option. The web app under `apps/web/` is
+[MIT](LICENSE). The optional `acopf-pounce` feature links EPL-2.0 components and is not
+part of the shipped engine, wasm, server, or CLI build; the attribution is recorded in
+[crates/tellegen/NOTICE](crates/tellegen/NOTICE).

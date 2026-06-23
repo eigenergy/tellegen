@@ -1,4 +1,4 @@
-//! Result recording (`book/src/benchmark-results.md`): a machine-readable JSON + CSV artifact, one
+//! Result recording (`docs/src/benchmark-results.md`): a machine-readable JSON + CSV artifact, one
 //! row per `(case, variant)`, plus a committed markdown snapshot the mdBook Benchmarks
 //! page renders without the corpus present. Records the toolchain provenance so the
 //! deterministic solves are reproducible.

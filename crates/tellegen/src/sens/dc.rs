@@ -622,7 +622,8 @@ mod tests {
         }
     }
 
-    /// Parity check mirroring the Julia reference `runtests.jl`: compute the full
+    /// Parity check: compute the full sensitivity and compare to central finite
+    /// differences. Compute the full
     /// dLMP/dd matrix, take the three columns with the largest norm (the most
     /// significant sensitivities, away from near-kink buses), and compare each to
     /// central differences with the same 1 MW step. Returns the worst relative
@@ -646,7 +647,7 @@ mod tests {
         let mut order: Vec<usize> = (0..dc.n).collect();
         order.sort_by(|&a, &b| norm(&exact(b)).total_cmp(&norm(&exact(a))));
 
-        let h = 1e-2; // 1 MW at 100 MVA base, as in runtests.jl
+        let h = 1e-2; // 1 MW at 100 MVA base
         let mut worst = 0.0f64;
         for &j in order.iter().take(3) {
             let ex = exact(j);
@@ -660,7 +661,7 @@ mod tests {
 
     #[test]
     fn parity_with_finite_differences_activsg200() {
-        // The reference exact-sensitivity criterion (runtests.jl) on the Rust
+        // The reference exact-sensitivity criterion on the Rust
         // path: the top sensitivity columns match central differences within
         // 1e-3. Skips when the data is absent.
         let path = concat!(
@@ -790,7 +791,7 @@ mod tests {
 
     /// Assert analytic (forward) matches central FD for every (operand, parameter)
     /// pair on `dc`, as a per-column 2-norm relative error — the standard
-    /// sensitivity parity metric, mirroring the reference `runtests.jl`.
+    /// sensitivity parity metric.
     ///
     /// A column whose analytic norm sits below the solve's regularization floor
     /// (the `1e-10` Tikhonov term, scaled to the operand magnitude) carries no

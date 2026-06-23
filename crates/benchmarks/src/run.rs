@@ -40,7 +40,7 @@ pub enum AcopfBackend {
     Best,
 }
 
-/// Run-wide knobs (`book/src/methodology.md`).
+/// Run-wide knobs (`docs/src/methodology.md`).
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
     /// Skip a case whose filename bus count exceeds this (0 = unlimited).

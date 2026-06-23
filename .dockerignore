@@ -1,9 +1,6 @@
 .git
 .github
 
-# Julia reference
-reference/julia-backend/Manifest.toml
-
 # Node
 node_modules
 apps/web/node_modules

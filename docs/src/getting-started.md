@@ -2,9 +2,8 @@
 
 ## Repository Layout
 
-- `frontend/`: tellegen frontend
-- `crates/`: the tellegen engine and its wasm, server, and benchmark adapters
-- `reference/julia-backend/`: Julia PowerDiff.jl parity harness
+- `apps/web/`: tellegen web app (SvelteKit)
+- `crates/`: the tellegen engine and its wasm, server, CLI, and benchmark adapters
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -21,24 +20,17 @@ Set `TELLEGEN_ALLOW_FALLBACK=1` to run without staged TAMU data:
 TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
 ```
 
-The Julia reference harness is kept for PowerDiff.jl parity checks:
-
-```sh
-julia --project=reference/julia-backend -e 'using Pkg; Pkg.instantiate()'
-julia --project=reference/julia-backend reference/julia-backend/test/runtests.jl
-```
-
 ## WebAssembly Module
 
 ```sh
-cd frontend
+cd apps/web
 npm run wasm
 ```
 
 ## tellegen frontend
 
 ```sh
-cd frontend
+cd apps/web
 npm install
 npm run dev
 ```

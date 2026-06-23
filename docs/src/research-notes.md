@@ -175,8 +175,7 @@ server backed simulation tools.
 The gap relevant to tellegen is interactive recomputation: load a case, perturb
 demand or generation, and inspect updated flows and prices. The shared
 Rust/WebAssembly path now runs that DC loop in the browser, with the tellegen
-backend providing bundled case fallbacks and PowerDiff.jl kept as the reference
-path for parity checks.
+backend providing bundled case fallbacks.
 
 ## Open checks
 
