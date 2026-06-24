@@ -332,31 +332,51 @@ impl AppState {
             .collect();
         let mut cases = BTreeMap::new();
 
-        if staged_specs.len() == CASE_SPECS.len() {
-            for spec in staged_specs {
-                let entry = build_staged_entry(&data_dir, spec)?;
-                cases.insert(entry.id.clone(), Arc::new(entry));
+        // Serve whatever cases are staged rather than demanding the full set. A case
+        // added to CASE_SPECS must not break a running deploy because its data has not
+        // been staged yet: it simply appears once the data lands. A case whose files
+        // are present but unparseable is skipped (logged), never fatal, so a bad data
+        // drop cannot crash the server. The embedded fallback is used only when nothing
+        // at all is staged. This keeps the served case set decoupled from any single
+        // hardcoded list, so the deploy never fails over a missing or extra case.
+        if !staged_specs.is_empty() {
+            for spec in &staged_specs {
+                match build_staged_entry(&data_dir, *spec) {
+                    Ok(entry) => {
+                        cases.insert(entry.id.clone(), Arc::new(entry));
+                    }
+                    Err(e) => {
+                        tracing::error!(case = spec.id, "skipping case that failed to load: {e}")
+                    }
+                }
+            }
+            let missing: Vec<_> = CASE_SPECS
+                .iter()
+                .map(|s| s.id)
+                .filter(|id| !cases.contains_key(*id))
+                .collect();
+            if !missing.is_empty() {
+                tracing::warn!(
+                    data_dir = %data_dir.display(),
+                    "serving {} of {} cases; not loaded: {}",
+                    cases.len(),
+                    CASE_SPECS.len(),
+                    missing.join(", ")
+                );
             }
         } else if allow_fallback {
             tracing::warn!(
                 data_dir = %data_dir.display(),
-                "staged case data incomplete; serving embedded pglib fallback cases"
+                "no staged case data; serving embedded pglib fallback cases"
             );
             for spec in FALLBACK_SPECS {
                 let entry = build_fallback_entry(spec)?;
                 cases.insert(entry.id.clone(), Arc::new(entry));
             }
         } else {
-            let loaded: Vec<_> = staged_specs.iter().map(|s| s.id).collect();
-            let missing: Vec<_> = CASE_SPECS
-                .iter()
-                .map(|s| s.id)
-                .filter(|id| !loaded.contains(id))
-                .collect();
             return Err(format!(
-                "staged case data incomplete under {}; missing {}. Run scripts/stage-data.sh or set TELLEGEN_ALLOW_FALLBACK=1 for the pglib dev fallback.",
-                data_dir.display(),
-                missing.join(", ")
+                "no staged case data under {}. Run scripts/stage-data.sh or set TELLEGEN_ALLOW_FALLBACK=1 for the pglib dev fallback.",
+                data_dir.display()
             ));
         }
 
