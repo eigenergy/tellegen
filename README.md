@@ -8,9 +8,9 @@ Reactive visualization for power systems optimization. The name refers to
 Tellegen's theorem and the adjoint sensitivity calculations.
 
 tellegen uses a gradient preview, exact commit interaction model. Perturbations
-update the display from KKT sensitivity columns. Exact DC OPF commits run in the
-tellegen frontend through Clarabel and WebAssembly; bundled cases can fall back
-to the tellegen backend using the same solver path. Case parsing uses
+update the display from KKT sensitivity columns. Exact solves — DC OPF, AC power
+flow, the SOCWR relaxation, and the full nonlinear AC OPF — run in the browser in
+WebAssembly. Case parsing uses
 [powerio](https://github.com/eigenergy/powerio).
 
 Full documentation is published with mdBook at
@@ -29,11 +29,11 @@ on geographic footprints, not surveyed infrastructure:
 | ACTIVSg500 | South Carolina | 500 | 597 |
 | ACTIVSg2000 | Texas | 2000 | 3206 |
 
-Each case is an islanded DC OPF instance. Bus color shows locational marginal
-price. Selecting a bus shows the dLMP/dd column for a demand perturbation at
-that bus. Moving the demand slider applies the local sensitivity immediately;
-releasing it computes the exact solution with Clarabel in WebAssembly. Bundled
-cases can fall back to the tellegen backend if browser solve is unavailable.
+Each case solves as DC OPF by default, with a selector for the full nonlinear AC
+OPF and the SOCWR relaxation — all solved in the browser in WebAssembly. Bus color
+shows locational marginal price. Selecting a bus shows the dLMP/dd column for a
+demand perturbation at that bus. Moving the demand slider applies the local
+sensitivity immediately; releasing it computes the exact solution in WebAssembly.
 
 Dropped `.m`, `.raw`, and `.aux` files are parsed in the browser by the
 WebAssembly build of powerio. Files with coordinates render on the map. Files

@@ -8,8 +8,9 @@ tellegen is a reactive visualization interface for power flow cases. The name
 refers to Tellegen's theorem and the adjoint sensitivity calculations.
 
 The app uses a gradient preview, exact commit interaction model. Perturbations
-update the display from KKT sensitivity columns. Exact DC OPF commits run in
-the tellegen frontend through Clarabel and WebAssembly. Case parsing uses
+update the display from KKT sensitivity columns. Exact solves — DC OPF, AC power
+flow, the SOCWR relaxation, and the full nonlinear AC OPF — run in the browser in
+WebAssembly. Case parsing uses
 [powerio](https://github.com/eigenergy/powerio).
 
 ## Demo
@@ -24,11 +25,11 @@ on geographic footprints, not surveyed infrastructure:
 | ACTIVSg500 | South Carolina | 500 | 597 |
 | ACTIVSg2000 | Texas | 2000 | 3206 |
 
-Each case is an islanded DC OPF instance. Bus color shows locational marginal
-price. Selecting a bus shows the dLMP/dd column for a demand perturbation at
-that bus. Moving the demand slider applies the local sensitivity immediately;
-releasing it computes the exact solution with Clarabel in WebAssembly. Bundled
-cases can fall back to the tellegen backend if browser solve is unavailable.
+Each case solves as DC OPF by default, with a selector for the full nonlinear AC
+OPF and the SOCWR relaxation — all solved in the browser in WebAssembly. Bus color
+shows locational marginal price. Selecting a bus shows the dLMP/dd column for a
+demand perturbation at that bus. Moving the demand slider applies the local
+sensitivity immediately; releasing it computes the exact solution in WebAssembly.
 
 ## Local Files
 
