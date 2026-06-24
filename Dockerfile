@@ -55,11 +55,13 @@ COPY --from=planner /build/recipe.json recipe.json
 # Cook only the server binary's dependencies; this layer is reused across builds
 # whenever Cargo.toml / Cargo.lock are unchanged, even when the crate source
 # changes. Scoping to the bin keeps the benchmark-only dependencies out of the build
-# entirely.
-RUN cargo chef cook --release --recipe-path recipe.json --bin tellegen-server
+# entirely. `-p tellegen-server` selects the package explicitly so the bin resolves
+# regardless of the workspace `default-members` set (which is scoped to the engine);
+# `--locked` fails the build instead of silently editing Cargo.lock.
+RUN cargo chef cook --release --recipe-path recipe.json --locked -p tellegen-server --bin tellegen-server
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-RUN cargo build --release --bin tellegen-server
+RUN cargo build --release --locked -p tellegen-server --bin tellegen-server
 
 # ---- runtime ----
 FROM debian:trixie-slim
