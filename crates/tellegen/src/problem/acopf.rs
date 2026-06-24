@@ -31,10 +31,10 @@ use std::cell::RefCell;
 // platform"); there it comes from `web-time` (backed by `performance.now()`), keeping the AC
 // OPF restart budget working in the browser. Native targets use `std::time::Instant` as before.
 use std::time::Duration;
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 use interiors::{nlp, Lambda, NonlinearConstraint, ObjectiveFunction, Options, ProgressMonitor};
 use sparsetools::coo::Coo;

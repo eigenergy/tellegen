@@ -19,13 +19,14 @@ RUN curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15
 COPY Cargo.toml Cargo.lock /build/
 COPY crates /build/crates
 # The core wasm disables SIMD so Safari (no relaxed SIMD) can parse it, and drops
-# default features so it carries no faer kernels. The sens wasm enables the
-# sensitivity feature (faer); with faer 0.24.1 the kernels stay off relaxed SIMD
-# at the default wasm target, so it validates on Safari too. `--out-name tellegen`
-# keeps the core package's file names stable for the frontend's imports.
+# default features so it carries no faer kernels. The full wasm enables the `acopf`
+# feature — the whole engine (DC OPF, AC power flow, SOCWR, and the full nonlinear AC OPF
+# via the pure-Rust interiors backend) with sensitivities; it stays off relaxed SIMD at the
+# default wasm target, so it validates on Safari too. `--out-name tellegen` keeps the core
+# package's file names stable for the frontend's imports.
 RUN RUSTFLAGS="-C target-feature=-simd128,-relaxed-simd" \
     wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --no-default-features
-RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-sens-pkg --out-name tellegen_sens -- --features sensitivity
+RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-sens-pkg --out-name tellegen_sens -- --features acopf
 
 # ---- frontend build ----
 FROM node:22-slim AS frontend

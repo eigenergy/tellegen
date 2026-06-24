@@ -21,7 +21,9 @@ fn jserr(e: impl std::fmt::Display) -> JsError {
 
 /// Route Rust panics to `console.error` (with a JS stack) once. Without this a wasm panic
 /// surfaces only as the opaque `unreachable` trap; with it the engine's panic message — the
-/// real failure — is visible in the browser console and in the `JsError` chain.
+/// real failure — is visible in the browser console and in the `JsError` chain. Used by the
+/// Study entry points, which are gated on `sensitivity`.
+#[cfg(feature = "sensitivity")]
 fn install_panic_hook() {
     use std::sync::Once;
     static HOOK: Once = Once::new();
