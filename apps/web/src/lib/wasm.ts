@@ -347,8 +347,9 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
 }
 
 /** Build-once browser transport for the reactive demand drag. The network is
- * parsed and the model built when the Study is created; `commit` exact-re-solves
- * and `preview` returns a first-order linearization, neither re-parsing the
+ * parsed and the model built when the Study is created; `commit` solves exactly
+ * at the UI's absolute demand delta state and `preview` returns a first-order
+ * linearization toward an absolute demand delta state, neither re-parsing the
  * network (unlike `solveDc`, which rebuilds the DcNetwork on every call). */
 export class BrowserStudy {
 	#study: import('./wasm-sens-pkg/tellegen_sens').Study;
@@ -374,7 +375,7 @@ export class BrowserStudy {
 		return this.#busToIndex.get(sensBus) ?? null;
 	}
 
-	/** Exact solve at demand = committed + `deltas`, advancing the committed point. When
+	/** Exact solve at demand = base + `deltas`, replacing the committed point. When
 	 * `sensBus` is set, the ∂LMP/∂demand column at that bus is computed in the *same* solve
 	 * and returned (no second round-trip); otherwise `sensitivity` is null. `caseId` labels
 	 * the returned column. Returns the UI Solution, the solver iterates, and the column. */
@@ -384,7 +385,7 @@ export class BrowserStudy {
 		sensBus: number | null
 	): { solution: Solution; iterations: SolveIteration[]; sensitivity: SensitivityColumn | null } {
 		const out: StudyCommitOutput = JSON.parse(
-			this.#study.commit(
+			this.#study.replace_edits(
 				JSON.stringify(deltasToEdits(deltas)),
 				sensitivitiesJson(this.#senseIndex(sensBus))
 			)
@@ -397,13 +398,13 @@ export class BrowserStudy {
 	}
 
 	/** The ∂LMP/∂demand column at `sensBus` for this study's formulation, computed by an
-	 * exact re-solve at demand = committed + `deltas` (the same one-call path `commit` uses,
+	 * exact re-solve at demand = base + `deltas` (the same one-call path `commit` uses,
 	 * but returning only the column). Used when a bus is selected so the overlay matches the
 	 * active formulation — DC OPF, AC OPF, or SOCWR — rather than always the DC sensitivity.
 	 * `caseId` labels the column; returns null when no bus-keyed column comes back. */
 	sensitivity(caseId: string, deltas: DemandDeltas, sensBus: number): SensitivityColumn | null {
 		const out: StudyCommitOutput = JSON.parse(
-			this.#study.commit(
+			this.#study.replace_edits(
 				JSON.stringify(deltasToEdits(deltas)),
 				sensitivitiesJson(this.#senseIndex(sensBus))
 			)
@@ -411,14 +412,15 @@ export class BrowserStudy {
 		return sensitivityColumn(caseId, out.sensitivities);
 	}
 
-	/** First-order LMP preview for `deltas` at the committed point, with no
-	 * re-solve: predicted per-bus ΔLMP and the predicted Δobjective. */
+	/** First-order LMP preview for replacing the committed point with
+	 * demand = base + `deltas`, with no re-solve: predicted per-bus ΔLMP and the
+	 * predicted Δobjective. */
 	preview(deltas: DemandDeltas): {
 		lmp: { bus: number; usd_per_mwh: number }[];
 		objectiveDelta: number | null;
 	} {
 		const out: StudyPreview = JSON.parse(
-			this.#study.preview(JSON.stringify(deltasToEdits(deltas)), PREVIEW_OPERANDS_JSON)
+			this.#study.preview_replacement(JSON.stringify(deltasToEdits(deltas)), PREVIEW_OPERANDS_JSON)
 		);
 		const lmp = (out.operands[0]?.values ?? [])
 			.filter((v) => v.element.Bus !== undefined)

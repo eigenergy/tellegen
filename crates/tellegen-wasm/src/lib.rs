@@ -74,10 +74,11 @@ pub fn capabilities_json() -> String {
 // ---------------------------------------------------------------------------
 
 /// A build-once handle over the engine, exported to JS. Construct once per case (the
-/// network is parsed and the model built here); then [`commit`](Study::commit)
-/// exact-re-solves and [`preview`](Study::preview) returns a first-order linearization
-/// at the committed point — neither re-parses the network, unlike `solve_json` / `solve_dc`
-/// which rebuild it on every call. This is the path a reactive drag should use.
+/// network is parsed and the model built here); then [`replace_edits`](Study::replace_edits)
+/// solves exactly at an absolute edit state and [`preview_replacement`](Study::preview_replacement)
+/// returns a first-order linearization toward an absolute edit state — neither re-parses
+/// the network, unlike `solve_json` / `solve_dc` which rebuild it on every call. This is
+/// the path a reactive drag should use.
 ///
 /// Arguments and results are JSON in the engine's `Study` shapes: edits are a
 /// `NetworkEdit[]` (e.g. `[{"kind":"add_load","bus":2,"p_mw":50}]`), `preview` watches an
@@ -127,6 +128,24 @@ impl Study {
         serde_json::to_string(&commit_output(&resp)).map_err(jserr)
     }
 
+    /// Replace the committed edit set with `edits_json` and exact-re-solve, attaching
+    /// the `sensitivities_json` cells in the same solve. Use this for UI state that stores
+    /// absolute demand deltas from the base case.
+    pub fn replace_edits(
+        &mut self,
+        edits_json: &str,
+        sensitivities_json: &str,
+    ) -> Result<String, JsError> {
+        install_panic_hook();
+        let edits = parse_edits(edits_json)?;
+        let sensitivities = parse_sensitivities(sensitivities_json)?;
+        let resp = self
+            .0
+            .replace_edits_with(&edits, &sensitivities, tellegen::SolveOptions::default())
+            .map_err(jserr)?;
+        serde_json::to_string(&commit_output(&resp)).map_err(jserr)
+    }
+
     /// First-order preview of `edits_json` (a `NetworkEdit[]`) for the `watched_json`
     /// operands (an `Operand[]`), at the committed point, without re-solving. Returns the
     /// `Preview` JSON.
@@ -135,6 +154,24 @@ impl Study {
         let watched: Vec<tellegen::Operand> = serde_json::from_str(watched_json)
             .map_err(|e| jserr(format!("bad watched-operands JSON: {e}")))?;
         let prev = self.0.preview(&edits, &watched).map_err(jserr)?;
+        serde_json::to_string(&prev).map_err(jserr)
+    }
+
+    /// First-order preview for replacing the committed edit set with `edits_json`.
+    /// This accepts absolute demand delta state and internally previews only the step
+    /// from the current committed point.
+    pub fn preview_replacement(
+        &self,
+        edits_json: &str,
+        watched_json: &str,
+    ) -> Result<String, JsError> {
+        let edits = parse_edits(edits_json)?;
+        let watched: Vec<tellegen::Operand> = serde_json::from_str(watched_json)
+            .map_err(|e| jserr(format!("bad watched-operands JSON: {e}")))?;
+        let prev = self
+            .0
+            .preview_replacement(&edits, &watched)
+            .map_err(jserr)?;
         serde_json::to_string(&prev).map_err(jserr)
     }
 

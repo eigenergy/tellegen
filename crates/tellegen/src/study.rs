@@ -17,7 +17,7 @@
 //! AC power flow always, and the SOCWR relaxation behind `conic` — and a formulation this
 //! build omits returns a clean error naming `solve_json` as the stateless route.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use powerio::network::Network;
 use serde::{Deserialize, Serialize};
@@ -302,25 +302,68 @@ impl Study {
         sensitivities: &[SensRequest],
         options: SolveOptions,
     ) -> Result<SolveResponse, String> {
-        self.options = options;
-        self.log.extend_from_slice(edits);
-        self.resolve(sensitivities)
+        let mut next_log = self.log.clone();
+        next_log.extend_from_slice(edits);
+        self.commit_log(next_log, sensitivities, options)
     }
 
-    fn resolve(&mut self, sensitivities: &[SensRequest]) -> Result<SolveResponse, String> {
+    /// Replace the committed edit set with `edits` and exact-re-solve, with no
+    /// sensitivity cells. Use this when the caller owns an absolute state such as
+    /// `base demand + deltas`, rather than an append-only edit log.
+    pub fn replace_edits(
+        &mut self,
+        edits: &[NetworkEdit],
+        options: SolveOptions,
+    ) -> Result<SolveResponse, String> {
+        self.replace_edits_with(edits, &[], options)
+    }
+
+    /// Replace the committed edit set with `edits` and exact-re-solve, attaching the
+    /// requested `sensitivities` to the response in the same solve.
+    ///
+    /// This is the absolute state companion to [`commit_with`](Study::commit_with):
+    /// `commit_with` appends new edits to the study log; `replace_edits_with` treats
+    /// the supplied edits as the whole current operating point.
+    pub fn replace_edits_with(
+        &mut self,
+        edits: &[NetworkEdit],
+        sensitivities: &[SensRequest],
+        options: SolveOptions,
+    ) -> Result<SolveResponse, String> {
+        self.commit_log(edits.to_vec(), sensitivities, options)
+    }
+
+    fn commit_log(
+        &mut self,
+        log: Vec<NetworkEdit>,
+        sensitivities: &[SensRequest],
+        options: SolveOptions,
+    ) -> Result<SolveResponse, String> {
+        let (solved, resp) = self.solve_log(&log, sensitivities, &options)?;
+        self.options = options;
+        self.log = log;
+        self.solved = solved;
+        self.last = resp.clone();
+        Ok(resp)
+    }
+
+    fn solve_log(
+        &self,
+        log: &[NetworkEdit],
+        sensitivities: &[SensRequest],
+        options: &SolveOptions,
+    ) -> Result<(Box<dyn SolvedState>, SolveResponse), String> {
         let req = SolveRequest {
             formulation: self.formulation,
-            edits: fold(&self.log),
+            edits: fold(log),
             sensitivities: sensitivities.to_vec(),
-            options: self.options.clone(),
+            options: options.clone(),
         };
         // Re-solve from a fresh clone of the base (the source of truth), then assemble the
         // response — including the requested sensitivity cells — from the committed state.
         let solved = solve_state(&self.base, &req)?;
         let resp = solved.assemble(&req)?;
-        self.solved = solved;
-        self.last = resp.clone();
-        Ok(resp)
+        Ok((solved, resp))
     }
 
     /// First-order prediction of applying `edits` at the committed point, for each
@@ -370,6 +413,21 @@ impl Study {
             local_only: true,
         })
     }
+
+    /// First-order prediction for replacing the committed edit set with `target`.
+    ///
+    /// This accepts the same absolute edit state as [`replace_edits`](Study::replace_edits)
+    /// while preserving [`preview`](Study::preview)'s semantics internally: it computes
+    /// the incremental step from the current committed edits to `target`, then previews
+    /// that step at the committed point.
+    pub fn preview_replacement(
+        &self,
+        target: &[NetworkEdit],
+        watched: &[Operand],
+    ) -> Result<Preview, String> {
+        let step = replacement_step(&self.log, target);
+        self.preview(&step, watched)
+    }
 }
 
 impl std::fmt::Debug for Study {
@@ -391,6 +449,22 @@ fn fold(log: &[NetworkEdit]) -> Edits {
         }
     }
     Edits { deltas }
+}
+
+/// Compute the incremental edits that move from `current` to `target`, both treated as
+/// absolute edit states. v1 has only additive load edits, so the state is the folded
+/// demand-delta map.
+fn replacement_step(current: &[NetworkEdit], target: &[NetworkEdit]) -> Vec<NetworkEdit> {
+    let current = fold(current).deltas;
+    let target = fold(target).deltas;
+    let mut diff: BTreeMap<i64, f64> = target.into_iter().collect();
+    for (bus, mw) in current {
+        *diff.entry(bus).or_default() -= mw;
+    }
+    diff.into_iter()
+        .filter(|(_, p_mw)| *p_mw != 0.0)
+        .map(|(bus, p_mw)| NetworkEdit::AddLoad { bus, p_mw })
+        .collect()
 }
 
 /// The dense bus-id order of a committed solution, read off whichever per-bus block the
@@ -588,6 +662,108 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&two).unwrap(),
             serde_json::to_string(&once).unwrap()
+        );
+    }
+
+    #[test]
+    fn replace_edits_sets_absolute_operating_point() {
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::DcOpf).unwrap();
+        s.commit(
+            &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+            SolveOptions::default(),
+        )
+        .unwrap();
+        let replaced = s
+            .replace_edits(
+                &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
+                SolveOptions::default(),
+            )
+            .unwrap();
+
+        let stateless = crate::solve_json(
+            &net,
+            r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0}}}"#,
+        )
+        .expect("solve_json");
+        assert_eq!(serde_json::to_string(&replaced).unwrap(), stateless);
+        assert_eq!(s.edits().len(), 1);
+    }
+
+    #[test]
+    fn replace_edits_can_reset_to_base() {
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::DcOpf).unwrap();
+        s.commit(
+            &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+            SolveOptions::default(),
+        )
+        .unwrap();
+        let reset = s.replace_edits(&[], SolveOptions::default()).unwrap();
+        let base = crate::solve_json(&net, r#"{"formulation":"dcopf"}"#).expect("solve_json");
+        assert_eq!(serde_json::to_string(&reset).unwrap(), base);
+        assert!(s.edits().is_empty());
+    }
+
+    #[test]
+    fn failed_replace_keeps_last_committed_point() {
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::DcOpf).unwrap();
+        s.replace_edits(
+            &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+            SolveOptions::default(),
+        )
+        .unwrap();
+        let committed = serde_json::to_string(s.solution()).unwrap();
+
+        let err = s
+            .replace_edits(
+                &[NetworkEdit::AddLoad {
+                    bus: 2,
+                    p_mw: 1_000_000.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap_err();
+        assert!(!err.is_empty());
+        assert_eq!(s.edits().len(), 1);
+        assert_eq!(serde_json::to_string(s.solution()).unwrap(), committed);
+    }
+
+    #[test]
+    fn preview_replacement_uses_delta_from_committed_point() {
+        let net = case3_json();
+        let mut absolute = Study::new(&net, Problem::DcOpf).unwrap();
+        absolute
+            .replace_edits(
+                &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+                SolveOptions::default(),
+            )
+            .unwrap();
+        let toward_fifty = absolute
+            .preview_replacement(
+                &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
+                &[Operand::Price(Power::Active)],
+            )
+            .unwrap();
+
+        let mut incremental = Study::new(&net, Problem::DcOpf).unwrap();
+        incremental
+            .replace_edits(
+                &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+                SolveOptions::default(),
+            )
+            .unwrap();
+        let plus_twenty = incremental
+            .preview(
+                &[NetworkEdit::AddLoad { bus: 2, p_mw: 20.0 }],
+                &[Operand::Price(Power::Active)],
+            )
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_string(&toward_fifty).unwrap(),
+            serde_json::to_string(&plus_twenty).unwrap()
         );
     }
 
