@@ -174,8 +174,9 @@ server backed simulation tools.
 
 The gap relevant to tellegen is interactive recomputation: load a case, perturb
 demand or generation, and inspect updated flows and prices. The shared
-Rust/WebAssembly path now runs the full DC, AC power flow, SOCWR, and AC OPF loop in
-the browser, with the tellegen backend providing bundled case data.
+Rust/WebAssembly path runs DC OPF, AC power flow, and SOCWR in the browser, with
+the tellegen backend providing bundled case data. The full nonlinear AC OPF stays
+on the native roadmap because it needs threads.
 
 ## Open checks
 

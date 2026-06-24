@@ -9,7 +9,7 @@ labels: enhancement
 
 **References.**
 - Relax `W = V V*` to `W ⪰ 0` (`W_ii = |V_i|^2`, `W_ij = wr_ij + i wi_ij`). Real form: `[WR WI; -WI WR] ⪰ 0`.
-- PowerModels `~/Research/PowerModels.jl/src/form/wrm.jl:38`: `@constraint(pm.model, [WR WI; -WI WR] in PSDCone())`. `SDPWRMPowerModel` is dense; `SparseSDPWRMPowerModel` is the chordal (scalable) form.
+- PowerModels `src/form/wrm.jl`: `@constraint(pm.model, [WR WI; -WI WR] in PSDCone())`. `SDPWRMPowerModel` is dense; `SparseSDPWRMPowerModel` is the chordal (scalable) form.
 - Clarabel cone: `SupportedConeT::PSDTriangleConeT(2n)` (triangle vectorization of the `2n x 2n` real block; note its off diagonal `sqrt(2)` scaling).
 - Ordering: `socwr <= sdp <= ac_opf`. SDP is the tighter bound.
 
