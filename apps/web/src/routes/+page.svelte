@@ -608,8 +608,7 @@
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
 					c.iterations = iterations;
-					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0)
-						c.baseSolution = solution;
+					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0) c.baseSolution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
 					// The commit carried the dLMP/dd column; accept it for the selected bus
 					// through the same seq-guarded setter every sensitivity source goes through.
@@ -1113,8 +1112,7 @@
 			const delta = new Map<number, number>();
 			for (const e of lmp) delta.set(e.bus, e.usd_per_mwh);
 			app.previewLmp = { caseId: c.id, bus, delta };
-			previewObjective =
-				objectiveDelta === null ? null : { caseId: c.id, bus, objectiveDelta };
+			previewObjective = objectiveDelta === null ? null : { caseId: c.id, bus, objectiveDelta };
 		} catch {
 			// Preview is best effort; on any failure leave the map on its fallback path.
 			app.previewLmp = null;
@@ -2039,7 +2037,8 @@
 		/* Native arrow on the right, drawn so the control reads as a control in the panel. */
 		appearance: none;
 		-webkit-appearance: none;
-		background-image: linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+		background-image:
+			linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
 			linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
 		background-position:
 			right 10px center,

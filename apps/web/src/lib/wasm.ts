@@ -413,7 +413,10 @@ export class BrowserStudy {
 
 	/** First-order LMP preview for `deltas` at the committed point, with no
 	 * re-solve: predicted per-bus ΔLMP and the predicted Δobjective. */
-	preview(deltas: DemandDeltas): { lmp: { bus: number; usd_per_mwh: number }[]; objectiveDelta: number | null } {
+	preview(deltas: DemandDeltas): {
+		lmp: { bus: number; usd_per_mwh: number }[];
+		objectiveDelta: number | null;
+	} {
 		const out: StudyPreview = JSON.parse(
 			this.#study.preview(JSON.stringify(deltasToEdits(deltas)), PREVIEW_OPERANDS_JSON)
 		);

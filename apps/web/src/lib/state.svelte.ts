@@ -150,9 +150,7 @@ export class AppState {
 	 * computed for. Set by the Study path; null when no Study preview applies (the
 	 * map then falls back to the JS sensitivity-times-step preview). Reassigned
 	 * wholesale, so $state.raw. */
-	previewLmp = $state.raw<{ caseId: string; bus: number; delta: Map<number, number> } | null>(
-		null
-	);
+	previewLmp = $state.raw<{ caseId: string; bus: number; delta: Map<number, number> } | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
 	sensitivityLoading = $state(false);
 	error = $state<string | null>(null);
