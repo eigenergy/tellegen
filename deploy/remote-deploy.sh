@@ -59,6 +59,8 @@ for case in ACTIVSg200 ACTIVSg500 ACTIVSg2000; do
 	need_file "$DATA_DIR/$case/case_$case.m"
 	need_file "$DATA_DIR/$case/$case.aux"
 done
+need_file "$DATA_DIR/CATS/CaliforniaTestSystem.m"
+need_file "$DATA_DIR/CATS/CATS_buses.csv"
 
 umask 077
 printf 'TELLEGEN_IMAGE=%s\nTELLEGEN_DATA_DIR=%s\n' "$IMAGE" "$DATA_DIR" > .env
@@ -102,7 +104,7 @@ done
 echo "==> Checking host health payload"
 for attempt in $(seq 1 90); do
 	payload="$(curl -fsS http://127.0.0.1:8000/api/health 2>/dev/null || true)"
-	if [[ "$payload" == *'"case200"'* && "$payload" == *'"case500"'* && "$payload" == *'"case2000"'* ]]; then
+	if [[ "$payload" == *'"case200"'* && "$payload" == *'"case500"'* && "$payload" == *'"case2000"'* && "$payload" == *'"cats"'* ]]; then
 		echo "==> tellegen host health ok"
 		exit 0
 	fi
@@ -112,4 +114,4 @@ for attempt in $(seq 1 90); do
 	sleep 10
 done
 
-fail_with_logs "host health did not report case200, case500, and case2000"
+fail_with_logs "host health did not report case200, case500, case2000, and cats"

@@ -248,6 +248,7 @@ struct JsonSolveRequest {
 struct DcSolveOutput {
     objective: f64,
     lmp: Vec<LmpValue>,
+    va: Vec<ScalarValue>,
     flows: Vec<FlowValue>,
     dispatch: Vec<DispatchValue>,
     dlmp_dd: Option<DlmpDdColumn>,
@@ -272,6 +273,12 @@ struct FlowValue {
 struct DispatchValue {
     gen: usize,
     mw: f64,
+}
+
+#[derive(Serialize)]
+struct ScalarValue {
+    bus: usize,
+    value: f64,
 }
 
 #[derive(Serialize)]
@@ -362,6 +369,16 @@ fn dc_output(resp: &SolveResponse) -> DcSolveOutput {
             mw: g.pg,
         })
         .collect();
+    let va = resp
+        .va
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(|s| ScalarValue {
+            bus: s.bus,
+            value: s.value,
+        })
+        .collect();
     let iterations = match &resp.iterations {
         Some(Iterations::Ipm(trace)) => trace.clone(),
         _ => Vec::new(),
@@ -369,6 +386,7 @@ fn dc_output(resp: &SolveResponse) -> DcSolveOutput {
     DcSolveOutput {
         objective: resp.objective.unwrap_or(0.0),
         lmp,
+        va,
         flows,
         dispatch,
         dlmp_dd: dc_sensitivity(resp),

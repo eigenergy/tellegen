@@ -57,7 +57,15 @@ web-build:
 web-check:
     cd apps/web && npm run check
 
+# CI gate: fail if the web app is unformatted.
+web-lint:
+    cd apps/web && npm run lint
+
+# CI gate: smoke-check the static build output.
+web-smoke:
+    cd apps/web && npm run smoke:build
+
 # ---- aggregate ----
 
 # Everything CI enforces, in order.
-ci: fmt-check clippy deny epl-guard test
+ci: fmt-check clippy deny epl-guard test wasm web-lint web-check web-build web-smoke

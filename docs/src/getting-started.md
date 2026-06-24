@@ -14,7 +14,7 @@
 cargo run -p tellegen-server
 ```
 
-Set `TELLEGEN_ALLOW_FALLBACK=1` to run without staged TAMU data:
+Set `TELLEGEN_ALLOW_FALLBACK=1` to run without staged demo data:
 
 ```sh
 TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
@@ -39,16 +39,16 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 
 ## Data
 
-The TAMU distributions are downloaded by the operator and are not vendored.
-With the distributions under `~/Datasets`:
+The ACTIVSg and CATS distributions are downloaded by the operator and are not
+vendored. With the distributions under `~/Datasets`:
 
 ```sh
 scripts/stage-data.sh ~/Datasets
 ```
 
-The script stages the six files used by the demo into `data/`. Without all
-three staged cases, the tellegen backend exits. For CI or local smoke checks
-without the TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the
+The script stages the eight files used by the demo into `data/`. Without all
+four staged cases, the tellegen backend exits. For CI or local smoke checks
+without the staged distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the
 two pglib fallback cases with synthetic coordinates.
 
 ## Docs

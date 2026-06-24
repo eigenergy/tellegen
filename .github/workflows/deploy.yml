@@ -23,7 +23,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
-      - run: cargo test -p tellegen -p tellegen-wasm -p tellegen-server
+      - run: cargo test --workspace
         env:
           TELLEGEN_ALLOW_FALLBACK: "1"
       - name: Install wasm-pack
@@ -174,7 +174,7 @@ jobs:
               sleep 10
               continue
             }
-            if [[ "$health" == *'"case200"'* && "$health" == *'"case500"'* && "$health" == *'"case2000"'* ]]; then
+            if [[ "$health" == *'"case200"'* && "$health" == *'"case500"'* && "$health" == *'"case2000"'* && "$health" == *'"cats"'* ]]; then
               exit 0
             fi
             echo "unexpected public health payload: $health"

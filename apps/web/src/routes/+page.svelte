@@ -13,7 +13,7 @@
 		getSolution,
 		openSolveStream
 	} from '$lib/api';
-	import type { Network, SensitivityColumn } from '$lib/api';
+	import type { Network, SensitivityColumn, Solution } from '$lib/api';
 	import {
 		busRadius,
 		lmpDomain,
@@ -30,7 +30,13 @@
 		parseGeoFile,
 		type GeoFile
 	} from '$lib/geo-file';
-	import { app, CaseState, LocalCase, type DemandRangeMode } from '$lib/state.svelte';
+	import {
+		app,
+		CaseState,
+		LocalCase,
+		type DemandRangeMode,
+		type DisplayMode
+	} from '$lib/state.svelte';
 	import { placeSyntheticTopology } from '$lib/synthetic-layout';
 	import {
 		createStudy,
@@ -64,6 +70,14 @@
 		bus: number;
 		delta: number;
 	};
+	type DisplayOption = {
+		mode: DisplayMode;
+		label: string;
+		unit: string;
+		copy: string;
+		gradient: string;
+		values: { bus: number; value: number }[];
+	};
 
 	let nearbyRangeAnchor = $state<DemandRangeAnchor | null>(null);
 	// Default cases the user has closed; drives the restore affordance. Seeded in load().
@@ -96,6 +110,62 @@
 	/** The short menu label for a formulation tag (e.g. `acopf` -> `AC OPF`). */
 	function formulationLabel(id: Formulation): string {
 		return FORMULATIONS.find((f) => f.id === id)?.label ?? id;
+	}
+
+	function formulationHint(id: Formulation): string {
+		return FORMULATIONS.find((f) => f.id === id)?.hint ?? id;
+	}
+
+	function priceCopy(id: Formulation): string {
+		return id === 'socwr'
+			? 'SOCWR active power balance prices. Select a bus for ∂LMP/∂d and demand perturbation.'
+			: 'DC OPF prices. Select a bus for ∂LMP/∂d and demand perturbation.';
+	}
+
+	function displayOptionsFor(c: SolvableCase | null): DisplayOption[] {
+		if (!c?.solution) return [];
+		const options: DisplayOption[] = [
+			{
+				mode: 'lmp',
+				label: 'LMP',
+				unit: '$/MWh',
+				copy: priceCopy(c.formulation),
+				gradient: lmpGradient,
+				values: c.solution.lmp.map((e) => ({ bus: e.bus, value: e.usd_per_mwh }))
+			}
+		];
+		if (c.formulation === 'dcopf' && c.solution.va.length > 0) {
+			options.push({
+				mode: 'angle',
+				label: 'angle',
+				unit: 'rad',
+				copy: 'DC bus voltage phase angle from the current OPF solution.',
+				gradient: lmpGradient,
+				values: c.solution.va
+			});
+		}
+		if (c.formulation === 'socwr' && c.solution.w.length > 0) {
+			options.push({
+				mode: 'voltage',
+				label: '|V|',
+				unit: 'pu',
+				copy: 'SOCWR voltage magnitude from the current relaxed solution.',
+				gradient: lmpGradient,
+				values: c.solution.w.map((s) => ({ bus: s.bus, value: Math.sqrt(Math.max(0, s.value)) }))
+			});
+		}
+		return options;
+	}
+
+	function displayDomain(mode: DisplayMode, values: number[]): { lo: number; hi: number } {
+		if (mode === 'lmp') return lmpDomain(values);
+		if (values.length === 0) return { lo: 0, hi: 1 };
+		const rawLo = Math.min(...values);
+		const rawHi = Math.max(...values);
+		const minSpan = mode === 'voltage' ? 0.02 : 0.04;
+		const span = Math.max(rawHi - rawLo, minSpan);
+		const mid = (rawLo + rawHi) / 2;
+		return { lo: mid - span / 2, hi: mid + span / 2 };
 	}
 
 	/** The display name of a case: a backend case's `name`, a local case's `label`. */
@@ -185,13 +255,25 @@
 			return;
 		}
 		loadingBackendCase = c.id;
+		const requestedFormulation = c.formulation;
 		try {
-			const [network, solution] = await Promise.all([getNetwork(c.id), getSolution(c.id)]);
+			const [network, dcBaseSolution] = await Promise.all([
+				c.network ? Promise.resolve(c.network) : getNetwork(c.id),
+				// The server caches only the DC OPF base solution. Other formulations
+				// must hydrate from the browser Study so their cost, prices, flows, and
+				// voltage fields all come from the selected formulation.
+				requestedFormulation === 'dcopf' ? getSolution(c.id) : Promise.resolve(null)
+			]);
 			if (!app.byId(c.id)) return;
 			c.network = network;
-			c.baseSolution = solution;
-			c.solution = solution;
+			if (dcBaseSolution && c.formulation === requestedFormulation) {
+				c.baseSolution = dcBaseSolution;
+				c.solution = dcBaseSolution;
+			}
 			if (frame && app.activeCaseId === c.id) app.requestFrame(c.id);
+			if (isActiveSolveCase(c) && c.formulation !== 'dcopf' && !c.solution && !c.solving) {
+				runSolve(c, app.selectedBus);
+			}
 		} catch (e) {
 			if (app.byId(c.id)) app.error = `${c.name}: ${errorText(e)}`;
 		} finally {
@@ -359,7 +441,7 @@
 	// handle is neither serialized nor part of any $state.
 	const caseStudies = new WeakMap<
 		SolvableCase,
-		{ study: BrowserStudy; networkJson: string; formulation: Formulation }
+		{ study: BrowserStudy; networkJson: string; formulation: Formulation; baseSolution: Solution }
 	>();
 	// Latch a permanent sensitivity-module failure (the sens build's relaxed SIMD,
 	// which Safari rejects) per case so we don't retry createStudy — and the same
@@ -385,7 +467,8 @@
 		}
 		try {
 			const study = await createStudy(networkJson, c.formulation);
-			caseStudies.set(c, { study, networkJson, formulation: c.formulation });
+			const baseSolution = study.currentSolution();
+			caseStudies.set(c, { study, networkJson, formulation: c.formulation, baseSolution });
 			return study;
 		} catch (e) {
 			const message = errorText(e);
@@ -604,6 +687,8 @@
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (study) {
 				try {
+					const cached = caseStudies.get(c);
+					if (!c.baseSolution && cached?.study === study) c.baseSolution = cached.baseSolution;
 					const { solution, iterations, sensitivity } = study.commit(c.id, caseDeltas(c), sensBus);
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
@@ -920,10 +1005,22 @@
 	const activeSolvable = $derived.by(
 		(): SolvableCase | null => app.active ?? (app.activeLocal?.network ? app.activeLocal : null)
 	);
+	const activeFormulation = $derived(activeSolvable?.formulation ?? 'dcopf');
+
+	const networkStats = $derived.by(() => {
+		const c = activeSolvable;
+		if (!c?.network) return null;
+		return {
+			buses: c.network.buses.length,
+			branches: c.network.branches.length,
+			objective: c.solution?.objective ?? null,
+			binding: c.solution ? c.solution.flows.filter((f) => f.loading >= 0.999).length : null
+		};
+	});
 
 	const stats = $derived.by(() => {
 		const c = activeSolvable;
-		if (!c?.network || !c.solution || !c.baseSolution) return null;
+		if (!c?.network || !c.solution) return null;
 		const lmps = c.solution.lmp.map((e) => e.usd_per_mwh);
 		const domain = lmpDomain(lmps);
 		const lmpMin = Math.min(...lmps);
@@ -932,12 +1029,39 @@
 			buses: c.network.buses.length,
 			branches: c.network.branches.length,
 			objective: c.solution.objective,
-			deltaObjective: c.solution.objective - c.baseSolution.objective,
+			deltaObjective: c.baseSolution ? c.solution.objective - c.baseSolution.objective : null,
 			uniformLmp: lmpMax - lmpMin < 1 ? lmps[0] : null,
 			// Mark legend ends when outliers clamp beyond the trimmed domain.
 			lmpLo: { value: domain.lo, clamped: lmpMin < domain.lo - 0.05 },
 			lmpHi: { value: domain.hi, clamped: lmpMax > domain.hi + 0.05 },
 			binding: c.solution.flows.filter((f) => f.loading >= 0.999).length
+		};
+	});
+
+	const displayOptions = $derived(displayOptionsFor(activeSolvable));
+	$effect(() => {
+		if (
+			displayOptions.length > 0 &&
+			!displayOptions.some((option) => option.mode === app.displayMode)
+		) {
+			app.displayMode = 'lmp';
+		}
+	});
+	const activeDisplay = $derived(
+		displayOptions.find((option) => option.mode === app.displayMode) ?? displayOptions[0] ?? null
+	);
+	const displayStats = $derived.by(() => {
+		if (!activeDisplay) return null;
+		const values = activeDisplay.values.map((entry) => entry.value).filter(Number.isFinite);
+		if (values.length === 0) return null;
+		const domain = displayDomain(activeDisplay.mode, values);
+		const min = Math.min(...values);
+		const max = Math.max(...values);
+		const flatThreshold = activeDisplay.mode === 'lmp' ? 1 : 1e-5;
+		return {
+			lo: { value: domain.lo, clamped: min < domain.lo - flatThreshold / 20 },
+			hi: { value: domain.hi, clamped: max > domain.hi + flatThreshold / 20 },
+			uniform: max - min < flatThreshold ? values[0] : null
 		};
 	});
 
@@ -1083,6 +1207,8 @@
 	const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 	const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.abs(v))}`;
 	const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
+	const displayFmt = (mode: DisplayMode, value: number) =>
+		mode === 'lmp' ? fmt.format(value) : value.toFixed(3);
 	const SIZE_SAMPLES = [10, 100, 500];
 
 	function sliderCurrent() {
@@ -1126,15 +1252,6 @@
 		app.previewDeltaMw = value;
 		const c = activeSolvable;
 		if (c && app.selectedBus !== null) runPreview(c, app.selectedBus, value);
-	}
-
-	function solveLocationLabel(c: SolvableCase): string {
-		if (c.solving) return 'solving…';
-		if (c.solveBackend === 'rust-server') return 'on the server';
-		// clarabel-wasm and clarabel-wasm-server-sensitivity both solve the OPF
-		// in the browser (the sensitivity column may come from the server, but the
-		// solve itself is local).
-		return 'in your browser';
 	}
 
 	function solveMetaLabel(c: SolvableCase): string {
@@ -1319,7 +1436,7 @@
 			{/if}
 			<button class="reset mono" onclick={() => removeLocalCase(lc)}>remove</button>
 		{/if}
-		{#if !stats}
+		{#if !networkStats}
 			{#if !app.error && !app.activeLocal}
 				{#if casesLoaded && app.cases.length === 0}
 					<p class="dim mono">no default cases loaded</p>
@@ -1334,41 +1451,47 @@
 			{#if !app.activeLocal}
 				{@const [cname, cregion] = splitName(app.active?.name ?? '')}
 				<h2>{cname} <span class="region mono">{cregion}</span></h2>
+				{@const deltaObjective = stats?.deltaObjective}
 				<dl class="mono">
 					<div>
 						<dt>buses</dt>
-						<dd>{stats.buses}</dd>
+						<dd>{networkStats.buses}</dd>
 					</div>
 					<div>
 						<dt>branches</dt>
-						<dd>{stats.branches}</dd>
+						<dd>{networkStats.branches}</dd>
 					</div>
 					<div>
 						<dt>binding lines</dt>
-						<dd>{stats.binding}</dd>
+						<dd>{networkStats.binding ?? '…'}</dd>
 					</div>
 					<div>
-						<dt>objective</dt>
-						<dd>{fmt.format(stats.objective)} $/h</dd>
+						<dt>cost</dt>
+						<dd>
+							{#if networkStats.objective === null}
+								<span class="blink">solving&hellip;</span>
+							{:else}
+								{fmt.format(networkStats.objective)} $/h
+							{/if}
+						</dd>
 					</div>
-					{#if isPerturbed(activeSolvable)}
+					{#if isPerturbed(activeSolvable) && deltaObjective !== null && deltaObjective !== undefined}
 						<div class="delta">
 							<dt>vs base</dt>
-							<dd>{signed(stats.deltaObjective)} $/h</dd>
+							<dd>{signed(deltaObjective)} $/h</dd>
 						</div>
 					{/if}
 				</dl>
-				{#if app.active?.network?.synthetic_coords}
-					<p class="footnote mono">coordinates: topology layout, not geography</p>
-				{:else}
-					<p class="footnote mono">coordinates: TAMU synthetic grid footprint</p>
-				{/if}
 			{/if}
 
 			{#if activeSolvable}
 				{@const c = activeSolvable}
 				<div class="formulation">
-					<label class="formulation-row mono" for="formulation-select">
+					<label
+						class="formulation-row mono"
+						for="formulation-select"
+						title={formulationHint(c.formulation)}
+					>
 						<span>formulation</span>
 						<select
 							id="formulation-select"
@@ -1384,10 +1507,6 @@
 							{/each}
 						</select>
 					</label>
-					<p class="dim small formulation-hint">
-						{FORMULATIONS.find((f) => f.id === c.formulation)?.hint}
-						&middot; solved in your browser
-					</p>
 				</div>
 			{/if}
 
@@ -1404,11 +1523,11 @@
 					{#if previewing}
 						<p class="dim small">
 							{c.solving
-								? 'Exact solve running; the map stays in LMP view.'
+								? 'Exact solve running; the map keeps the LMP preview.'
 								: 'First order LMP preview. Release for the exact solve.'}
 						</p>
 					{:else}
-						<p class="dim small">Price response per MW of demand added at bus {app.selectedBus}.</p>
+						<p class="dim small sensitivity-copy">LMP response per MW at bus {app.selectedBus}.</p>
 						{#if sensSummary?.flat}
 							<div class="legend flat" style:background={flatSensBackground}></div>
 							<div class="legend-labels mono single">
@@ -1515,28 +1634,49 @@
 					</div>
 				{/if}
 			{:else}
-				<div class="mode">
-					<span class="chip">LMP</span>
-					<span class="mono dim">$/MWh</span>
+				<div class="mode display-mode">
+					<div class="segment mono" aria-label="bus color variable">
+						{#each displayOptions as option (option.mode)}
+							<button
+								type="button"
+								class:active={app.displayMode === option.mode}
+								aria-pressed={app.displayMode === option.mode}
+								onclick={() => (app.displayMode = option.mode)}>{option.label}</button
+							>
+						{/each}
+					</div>
+					<span class="mono dim">{activeDisplay?.unit ?? ''}</span>
 					{#if app.sensitivityLoading}
 						<span class="mono dim blink">&part; loading&hellip;</span>
 					{/if}
 				</div>
-				<p class="dim small">
-					DC OPF prices. Select a bus for &part;LMP/&part;d and demand perturbation.
-				</p>
-				<div class="legend" style:background={lmpGradient}></div>
-				<div class="legend-labels mono">
-					{#if stats.uniformLmp !== null}
-						<span>uniform {fmt.format(stats.uniformLmp)} $/MWh, no congestion</span>
-					{:else}
-						<span>{stats.lmpLo.clamped ? '≤' : ''}{fmt.format(stats.lmpLo.value)}</span>
-						<span>{stats.lmpHi.clamped ? '≥' : ''}{fmt.format(stats.lmpHi.value)}</span>
-					{/if}
-				</div>
-				<p class="dim small filedrop-note">
-					Drop case files and optional geographic files; parsing stays in your browser.
-				</p>
+				{#if activeDisplay && displayStats}
+					<p class="dim small">{activeDisplay.copy}</p>
+					<div class="legend" style:background={activeDisplay.gradient}></div>
+					<div class="legend-labels mono">
+						{#if displayStats.uniform !== null}
+							<span>
+								uniform {displayFmt(activeDisplay.mode, displayStats.uniform)}
+								{activeDisplay.unit}
+							</span>
+						{:else}
+							<span>
+								{displayStats.lo.clamped ? '≤' : ''}{displayFmt(
+									activeDisplay.mode,
+									displayStats.lo.value
+								)}
+							</span>
+							<span>
+								{displayStats.hi.clamped ? '≥' : ''}{displayFmt(
+									activeDisplay.mode,
+									displayStats.hi.value
+								)}
+							</span>
+						{/if}
+					</div>
+				{:else}
+					<p class="dim small blink">Solving {formulationLabel(activeFormulation)}&hellip;</p>
+				{/if}
 			{/if}
 
 			<hr />
@@ -1556,17 +1696,13 @@
 	{#if activeSolvable && (activeSolvable.solving || activeSolvable.solveMs != null)}
 		<div class="solvecard">
 			<div class="solvecard-head mono">
-				<span
-					><b>exact OPF solve</b>
-					<span class="dim" class:blink={activeSolvable.solving}
-						>{solveLocationLabel(activeSolvable)}</span
-					></span
-				>
+				<span><b>OPF solve</b></span>
 			</div>
 			{#if (activeSolvable.iterations ?? []).length > 1}
 				<Sparkline iterations={activeSolvable.iterations ?? []} />
 			{/if}
 			<div class="solve-meta mono dim">
+				<span class="solve-formulation">{formulationLabel(activeSolvable.formulation)}</span>
 				<span>{solveMetaLabel(activeSolvable)}</span>
 				{#if activeSolvable.solveMs != null}<span>{activeSolvable.solveMs} ms</span>{/if}
 			</div>
@@ -1598,17 +1734,7 @@
 	{/if}
 
 	<footer class="mono">
-		<a href="https://electricgrids.engr.tamu.edu/" target="_blank" rel="noreferrer"
-			>ACTIVSg synthetic grids</a
-		>
-		<i class="sep"></i>
-		<a href="https://github.com/eigenergy/powerio" target="_blank" rel="noreferrer"
-			>powerio parser</a
-		>
-		<i class="sep"></i>
-		<a href="https://github.com/eigenergy/tellegen" target="_blank" rel="noreferrer"
-			>tellegen framework</a
-		>
+		<a href="/credits">credits</a>
 		<i class="sep"></i>
 		<a href="/privacy">privacy</a>
 		{#if showFileDropUi}
@@ -1658,6 +1784,7 @@
 	}
 
 	.brand {
+		flex: 0 0 auto;
 		display: flex;
 		align-items: center;
 		gap: 10px;
@@ -1671,8 +1798,17 @@
 	}
 
 	.cases {
+		flex: 1 1 auto;
+		min-width: 0;
 		display: flex;
 		gap: 6px;
+		justify-content: center;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	.cases::-webkit-scrollbar {
+		display: none;
 	}
 
 	.cases > button,
@@ -1790,9 +1926,10 @@
 
 	/* Ghost chip: standing invitation to drop or pick a case file. */
 	.cases > button.ghost {
-		background: transparent;
-		border: 1px dashed var(--ink-faint);
+		background: rgba(252, 251, 247, 0.36);
+		border: 1px dashed rgba(178, 94, 0, 0.55);
 		color: var(--ink-dim);
+		box-shadow: inset 0 0 0 1px rgba(212, 116, 34, 0.08);
 	}
 
 	.cases > button.ghost:hover {
@@ -1811,12 +1948,14 @@
 	}
 
 	.kicker {
+		flex: 0 0 auto;
 		display: flex;
 		align-items: center;
 		font-size: 11px;
 		text-transform: uppercase;
 		letter-spacing: 0;
 		color: var(--ink-dim);
+		white-space: nowrap;
 	}
 
 	.kicker a {
@@ -1856,7 +1995,7 @@
 		width: 312px;
 		max-height: calc(100% - 110px);
 		overflow-y: auto;
-		padding: 18px 20px;
+		padding: 16px 18px;
 		background: var(--panel);
 		border: 1px solid var(--line);
 		border-radius: 3px;
@@ -1922,7 +2061,7 @@
 	hr {
 		border: 0;
 		border-top: 1px solid var(--line);
-		margin: 14px 0;
+		margin: 12px 0;
 	}
 
 	.mode {
@@ -1930,6 +2069,15 @@
 		align-items: center;
 		gap: 10px;
 		font-size: 12px;
+	}
+
+	.display-mode {
+		gap: 8px;
+	}
+
+	.display-mode .segment button {
+		font-size: 11px;
+		padding: 2px 9px;
 	}
 
 	.chip {
@@ -1943,7 +2091,7 @@
 		white-space: nowrap;
 	}
 
-	.mode button {
+	.mode > button {
 		margin-left: auto;
 		font-size: 10.5px;
 		padding: 2px 7px;
@@ -1954,7 +2102,7 @@
 		cursor: pointer;
 	}
 
-	.mode button:hover {
+	.mode > button:hover {
 		border-color: var(--accent);
 		color: var(--accent);
 	}
@@ -1975,6 +2123,12 @@
 
 	.sensitivity-readout {
 		min-height: 58px;
+	}
+
+	.sensitivity-copy {
+		font-size: 11.5px;
+		line-height: 1.35;
+		white-space: nowrap;
 	}
 
 	.legend {
@@ -2013,7 +2167,7 @@
 	}
 
 	.formulation {
-		margin-top: 12px;
+		margin-top: 10px;
 	}
 
 	.formulation-row {
@@ -2057,10 +2211,6 @@
 	.formulation-row select:disabled {
 		opacity: 0.55;
 		cursor: progress;
-	}
-
-	.formulation-hint {
-		margin: 6px 0 0;
 	}
 
 	.range-mode {
@@ -2191,9 +2341,15 @@
 
 	.solve-meta {
 		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
 		gap: 12px;
 		font-size: 10px;
 		margin-top: 4px;
+	}
+
+	.solve-formulation {
+		color: var(--accent);
 	}
 
 	.fallback-reason {
@@ -2508,15 +2664,13 @@
 			margin: 0 8px;
 		}
 
-		.filedrop-ui,
-		.filedrop-note {
+		.filedrop-ui {
 			display: none;
 		}
 	}
 
 	@media (hover: none), (pointer: coarse) {
-		.filedrop-ui,
-		.filedrop-note {
+		.filedrop-ui {
 			display: none;
 		}
 	}

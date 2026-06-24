@@ -1,6 +1,7 @@
 # Summary
 
 - [Introduction](introduction.md)
+- [Direction](direction.md)
 - [Getting Started](getting-started.md)
 - [Local Case Files](local-case-files.md)
 - [Data Provenance](data-provenance.md)

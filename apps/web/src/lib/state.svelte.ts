@@ -12,6 +12,7 @@ import { DEFAULT_FORMULATION, type CaseFileSummary, type Formulation, type Topol
 
 export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
 export type DemandRangeMode = 'local' | 'full';
+export type DisplayMode = 'lmp' | 'angle' | 'voltage';
 
 /** Substations from a PowerWorld .pwd display file. Positions are inferred
  * from diagram coordinates, not surveyed latitude and longitude. */
@@ -152,6 +153,7 @@ export class AppState {
 	 * wholesale, so $state.raw. */
 	previewLmp = $state.raw<{ caseId: string; bus: number; delta: Map<number, number> } | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
+	displayMode = $state<DisplayMode>('lmp');
 	sensitivityLoading = $state(false);
 	error = $state<string | null>(null);
 

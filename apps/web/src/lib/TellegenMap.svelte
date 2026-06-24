@@ -17,7 +17,7 @@
 		sensitivityDomain,
 		type SensitivityDomain
 	} from '$lib/colors';
-	import { app, CaseState, type LocalCase } from '$lib/state.svelte';
+	import { app, CaseState, type DisplayMode, type LocalCase } from '$lib/state.svelte';
 
 	let {
 		onbusclick,
@@ -53,14 +53,60 @@
 
 	interface CaseDisplay {
 		lmp: Map<number, number>;
-		lo: number;
-		hi: number;
+		scalar: Map<number, number>;
+		scalarLo: number;
+		scalarHi: number;
+		scalarMode: DisplayMode;
+		scalarLabel: string;
+		scalarUnit: string;
 		loading: Map<number, number>;
-		mode: 'lmp' | 'sens';
+		mode: 'lmp' | 'sens' | 'preview';
 		sens: Map<number, number>;
 		sensDomain: SensitivityDomain | null;
+		preview: Map<number, number>;
+		previewDomain: SensitivityDomain | null;
 	}
 	type SolvableCase = CaseState | LocalCase;
+
+	function scalarDomain(mode: DisplayMode, values: number[]): { lo: number; hi: number } {
+		if (mode === 'lmp') return lmpDomain(values);
+		if (values.length === 0) return { lo: 0, hi: 1 };
+		const rawLo = Math.min(...values);
+		const rawHi = Math.max(...values);
+		const minSpan = mode === 'voltage' ? 0.02 : 0.04;
+		const span = Math.max(rawHi - rawLo, minSpan);
+		const mid = (rawLo + rawHi) / 2;
+		return { lo: mid - span / 2, hi: mid + span / 2 };
+	}
+
+	function scalarSeries(c: SolvableCase): {
+		mode: DisplayMode;
+		label: string;
+		unit: string;
+		values: { bus: number; value: number }[];
+	} {
+		if (app.displayMode === 'angle' && c.formulation === 'dcopf' && c.solution?.va.length) {
+			return { mode: 'angle', label: 'angle', unit: 'rad', values: c.solution.va };
+		}
+		if (app.displayMode === 'voltage' && c.formulation === 'socwr' && c.solution?.w.length) {
+			return {
+				mode: 'voltage',
+				label: '|V|',
+				unit: 'pu',
+				values: c.solution.w.map((s) => ({ bus: s.bus, value: Math.sqrt(Math.max(0, s.value)) }))
+			};
+		}
+		return {
+			mode: 'lmp',
+			label: 'LMP',
+			unit: '$/MWh',
+			values: (c.solution?.lmp ?? []).map((s) => ({ bus: s.bus, value: s.usd_per_mwh }))
+		};
+	}
+
+	function formatScalar(mode: DisplayMode, value: number): string {
+		return mode === 'lmp' ? value.toFixed(2) : value.toFixed(3);
+	}
 
 	// Everything the accessors need, rebuilt when any case's data moves. The
 	// LMP scale normalizes per network: each case is an islanded market, so
@@ -99,16 +145,24 @@
 			if (!c.network || !c.solution) return;
 			const lmp = new Map<number, number>();
 			for (const e of c.solution.lmp) lmp.set(e.bus, e.usd_per_mwh);
-			const { lo, hi } = lmpDomain(c.solution.lmp.map((e) => e.usd_per_mwh));
+			const series = scalarSeries(c);
+			const scalar = new Map<number, number>();
+			for (const e of series.values) scalar.set(e.bus, e.value);
+			const { lo: scalarLo, hi: scalarHi } = scalarDomain(
+				series.mode,
+				series.values.map((e) => e.value)
+			);
 			const loading = new Map<number, number>();
 			for (const f of c.solution.flows) loading.set(f.branch, f.loading);
 
 			const sens = new Map<number, number>();
+			const preview = new Map<number, number>();
 			let domain: SensitivityDomain | null = null;
 			const isActive = c === active;
 			if (isActive && enginePreview) {
 				// Engine preview owns the LMP shift: add the predicted ΔLMP per bus.
 				for (const [bus, dlmp] of enginePreview) {
+					preview.set(bus, dlmp);
 					lmp.set(bus, (lmp.get(bus) ?? 0) + dlmp);
 				}
 			}
@@ -121,18 +175,42 @@
 				if (!enginePreview && previewStep !== 0) {
 					// Fallback first order preview: shift LMPs along the gradient.
 					for (const v of activeSensitivity.values) {
-						lmp.set(v.bus, (lmp.get(v.bus) ?? 0) + v.value * previewStep);
+						const dlmp = v.value * previewStep;
+						preview.set(v.bus, dlmp);
+						lmp.set(v.bus, (lmp.get(v.bus) ?? 0) + dlmp);
 					}
 				}
 			}
+			const previewValues = [...preview.values()];
+			const previewDomain = previewValues.length > 0 ? sensitivityDomain(previewValues) : null;
+			const showPreview = Boolean(
+				isActive &&
+				previewDomain &&
+				(app.previewActive || c.solving || enginePreview || Math.abs(previewStep) >= 0.25)
+			);
 			// While a sensitivity is still loading for the selected bus, stay in sens
 			// mode (renders neutral, not the prior LMP palette) so the node colors
 			// don't flash orange->purple between the old and new selection.
-			const mode: 'lmp' | 'sens' =
-				isActive && selected !== null && (domain || app.sensitivityLoading) && !previewing
+			const mode: 'lmp' | 'sens' | 'preview' = showPreview
+				? 'preview'
+				: isActive && selected !== null && (domain || app.sensitivityLoading) && !previewing
 					? 'sens'
 					: 'lmp';
-			perCase.set(c.id, { lmp, lo, hi, loading, mode, sens, sensDomain: domain });
+			perCase.set(c.id, {
+				lmp,
+				scalar,
+				scalarLo,
+				scalarHi,
+				scalarMode: series.mode,
+				scalarLabel: series.label,
+				scalarUnit: series.unit,
+				loading,
+				mode,
+				sens,
+				sensDomain: domain,
+				preview,
+				previewDomain
+			});
 		};
 		for (const c of app.cases) addCase(c);
 		for (const c of app.localCases) addCase(c);
@@ -148,8 +226,13 @@
 				if (d.sensDomain.flat) return sensFlatColor(d.sensDomain);
 				return sensColor((d.sens.get(bus.id) ?? 0) / d.sensDomain.scale);
 			}
-			const mid = (d.lo + d.hi) / 2;
-			return lmpColor(((d.lmp.get(bus.id) ?? mid) - d.lo) / (d.hi - d.lo));
+			if (d.mode === 'preview') {
+				if (!d.previewDomain) return busNeutral;
+				if (d.previewDomain.flat) return sensFlatColor(d.previewDomain);
+				return sensColor((d.preview.get(bus.id) ?? 0) / d.previewDomain.scale);
+			}
+			const mid = (d.scalarLo + d.scalarHi) / 2;
+			return lmpColor(((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo));
 		};
 	}
 
@@ -215,7 +298,9 @@
 			};
 		}
 		const lmp = d?.lmp.get(bus.id);
+		const scalar = d?.scalar.get(bus.id);
 		const sens = d?.mode === 'sens' ? d.sens.get(bus.id) : undefined;
+		const preview = d?.mode === 'preview' ? d.preview.get(bus.id) : undefined;
 		const delta = caseDeltas(c)[bus.id] ?? 0;
 		const loadRow =
 			delta === 0
@@ -225,12 +310,22 @@
 			sens === undefined
 				? ''
 				: `<br>&part;LMP/&part;d ${sens >= 0 ? '+' : ''}${sens.toExponential(2)}`;
+		const previewRow =
+			preview === undefined
+				? ''
+				: `<br>&Delta;LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} $/MWh`;
 		const localRow =
 			c instanceof CaseState ? '' : '<br><span style="opacity:0.6">local file</span>';
+		const scalarRow =
+			!d || d.scalarMode === 'lmp'
+				? `LMP ${lmp?.toFixed(2) ?? '&mdash;'} $/MWh`
+				: `${d.scalarLabel} ${
+						scalar === undefined ? '&mdash;' : formatScalar(d.scalarMode, scalar)
+					} ${d.scalarUnit}<br>LMP ${lmp?.toFixed(2) ?? '&mdash;'} $/MWh`;
 		return {
 			html: `<div class="tt"><b>bus ${bus.id}</b>
-				LMP ${lmp?.toFixed(2) ?? '&mdash;'} $/MWh<br>
-				${loadRow} &#8901; gen ${bus.gen_mw.toFixed(0)} MW${sensRow}${localRow}</div>`
+				${scalarRow}<br>
+				${loadRow} &#8901; gen ${bus.gen_mw.toFixed(0)} MW${sensRow}${previewRow}${localRow}</div>`
 		};
 	}
 

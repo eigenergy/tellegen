@@ -18,15 +18,16 @@ source lives in [docs/src/SUMMARY.md](docs/src/SUMMARY.md).
 
 ## Demo Behavior
 
-The bundled demo serves three TAMU ACTIVSg synthetic grids at the geographic
-coordinates stored in their PowerWorld aux exports. These are fictional grids
-on geographic footprints, not surveyed infrastructure:
+The bundled demo serves three TAMU ACTIVSg synthetic grids and the CATS
+California Test System at their staged geographic coordinates. These are
+synthetic grids on geographic footprints, not surveyed infrastructure:
 
 | case | territory | buses | branches |
 |---|---|---:|---:|
 | ACTIVSg200 | central Illinois | 200 | 245 |
 | ACTIVSg500 | South Carolina | 500 | 597 |
 | ACTIVSg2000 | Texas | 2000 | 3206 |
+| CATS | California | 8870 | 10823 |
 
 Each case solves as DC OPF by default; a selector switches to the SOCWR relaxation,
 solved in the browser in WebAssembly. Bus color shows locational marginal price. Selecting a bus shows the dLMP/dd column for a
@@ -67,16 +68,16 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 
 ## Data
 
-The TAMU distributions are downloaded by the operator and are not vendored.
-With the distributions under `~/Datasets`:
+The ACTIVSg and CATS distributions are downloaded by the operator and are not
+vendored. With the distributions under `~/Datasets`:
 
 ```sh
 scripts/stage-data.sh ~/Datasets
 ```
 
-The script stages the six files used by the demo into `data/`. Without all
-three staged cases, the tellegen backend exits. For CI or local smoke checks
-without the TAMU distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the
+The script stages the eight files used by the demo into `data/`. Without all
+four staged cases, the tellegen backend exits. For CI or local smoke checks
+without the staged distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the
 two pglib fallback cases with synthetic coordinates.
 
 ## Tests

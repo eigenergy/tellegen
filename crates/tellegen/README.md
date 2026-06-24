@@ -4,9 +4,9 @@ Differentiable optimal power flow and sensitivities, in Rust.
 
 `tellegen` solves the DC optimal power flow, the AC power flow, and the SOCWR (Jabr) conic
 relaxation of AC OPF, and computes analytical KKT sensitivities for each through one
-unified `sensitivity(operand, parameter)` function. 
-Case files are parsed through [`powerio`](https://github.com/eigenergy/powerio). 
-Convex problems are solved with the Clarabel solver. 
+unified `sensitivity(operand, parameter)` function.
+Case files are parsed through [`powerio`](https://github.com/eigenergy/powerio).
+Convex problems are solved with the Clarabel solver.
 
 `tellegen` compiles to both native targets and WebAssembly, so it runs on a server and in
 the browser. The full nonlinear AC OPF is on the roadmap; it runs natively, where it can

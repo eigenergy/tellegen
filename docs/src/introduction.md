@@ -14,15 +14,16 @@ flow, and the SOCWR relaxation — run in the browser in WebAssembly. Case parsi
 
 ## Demo
 
-The public demo serves three TAMU ACTIVSg synthetic grids at the geographic
-coordinates stored in their PowerWorld aux exports. These are fictional grids
-on geographic footprints, not surveyed infrastructure:
+The public demo serves three TAMU ACTIVSg synthetic grids and the CATS
+California Test System at their staged geographic coordinates. These are
+synthetic grids on geographic footprints, not surveyed infrastructure:
 
 | case | territory | buses | branches |
 | --- | --- | ---: | ---: |
 | ACTIVSg200 | central Illinois | 200 | 245 |
 | ACTIVSg500 | South Carolina | 500 | 597 |
 | ACTIVSg2000 | Texas | 2000 | 3206 |
+| CATS | California | 8870 | 10823 |
 
 Each case solves as DC OPF by default; a selector switches to the SOCWR relaxation,
 solved in the browser in WebAssembly. Bus color shows locational marginal price. Selecting a bus shows the dLMP/dd column for a

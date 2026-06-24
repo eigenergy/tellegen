@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     convert::Infallible,
-    env,
+    env, fs,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::{
@@ -30,7 +30,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use tellegen::geo::{complete_coords_for, synthetic_layout, Coords};
+use tellegen::geo::{complete_coords_for, spread_stacks, synthetic_layout, Coords};
 use tellegen::{
     solve_prebuilt, solve_prebuilt_cancellable, DcNetwork, Iterations, SolveRequest, SolveResponse,
 };
@@ -42,23 +42,29 @@ const DEFAULT_SOLVER_CONCURRENCY: usize = 2;
 const DEFAULT_SOLVER_TIMEOUT_SECS: u64 = 30;
 
 const CASE_SPECS: &[CaseSpec] = &[
-    CaseSpec::staged(
+    CaseSpec::aux(
         "case200",
         "ACTIVSg200 (Illinois)",
         "ACTIVSg200/case_ACTIVSg200.m",
         "ACTIVSg200/ACTIVSg200.aux",
     ),
-    CaseSpec::staged(
+    CaseSpec::aux(
         "case500",
         "ACTIVSg500 (South Carolina)",
         "ACTIVSg500/case_ACTIVSg500.m",
         "ACTIVSg500/ACTIVSg500.aux",
     ),
-    CaseSpec::staged(
+    CaseSpec::aux(
         "case2000",
         "ACTIVSg2000 (Texas)",
         "ACTIVSg2000/case_ACTIVSg2000.m",
         "ACTIVSg2000/ACTIVSg2000.aux",
+    ),
+    CaseSpec::cats_csv(
+        "cats",
+        "CATS (California)",
+        "CATS/CaliforniaTestSystem.m",
+        "CATS/CATS_buses.csv",
     ),
 ];
 
@@ -82,11 +88,17 @@ struct CaseSpec {
     id: &'static str,
     name: &'static str,
     casefile: &'static str,
-    auxfile: &'static str,
+    coords: CoordSpec,
+}
+
+#[derive(Clone, Copy)]
+enum CoordSpec {
+    Aux(&'static str),
+    CatsBusCsv(&'static str),
 }
 
 impl CaseSpec {
-    const fn staged(
+    const fn aux(
         id: &'static str,
         name: &'static str,
         casefile: &'static str,
@@ -96,7 +108,27 @@ impl CaseSpec {
             id,
             name,
             casefile,
-            auxfile,
+            coords: CoordSpec::Aux(auxfile),
+        }
+    }
+
+    const fn cats_csv(
+        id: &'static str,
+        name: &'static str,
+        casefile: &'static str,
+        csvfile: &'static str,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            casefile,
+            coords: CoordSpec::CatsBusCsv(csvfile),
+        }
+    }
+
+    fn coord_file(self) -> &'static str {
+        match self.coords {
+            CoordSpec::Aux(path) | CoordSpec::CatsBusCsv(path) => path,
         }
     }
 }
@@ -195,6 +227,12 @@ pub struct DispatchValue {
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+pub struct ScalarValue {
+    pub bus: usize,
+    pub value: f64,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
 pub struct SensitivityValue {
     pub bus: usize,
     pub value: f64,
@@ -204,6 +242,8 @@ pub struct SensitivityValue {
 pub struct SolutionPayload {
     pub objective: f64,
     pub lmp: Vec<LmpValue>,
+    pub va: Vec<ScalarValue>,
+    pub w: Vec<ScalarValue>,
     pub flows: Vec<FlowValue>,
     pub dispatch: Vec<DispatchValue>,
 }
@@ -300,7 +340,7 @@ impl AppState {
         } else if allow_fallback {
             tracing::warn!(
                 data_dir = %data_dir.display(),
-                "TAMU case data incomplete; serving embedded pglib fallback cases"
+                "staged case data incomplete; serving embedded pglib fallback cases"
             );
             for spec in FALLBACK_SPECS {
                 let entry = build_fallback_entry(spec)?;
@@ -314,7 +354,7 @@ impl AppState {
                 .filter(|id| !loaded.contains(id))
                 .collect();
             return Err(format!(
-                "TAMU case data incomplete under {}; missing {}. Run scripts/stage-data.sh or set TELLEGEN_ALLOW_FALLBACK=1 for the pglib dev fallback.",
+                "staged case data incomplete under {}; missing {}. Run scripts/stage-data.sh or set TELLEGEN_ALLOW_FALLBACK=1 for the pglib dev fallback.",
                 data_dir.display(),
                 missing.join(", ")
             ));
@@ -549,6 +589,8 @@ async fn solve_stream(
                         "solve_ms": (solve_ms * 10.0).round() / 10.0,
                         "objective": solution.objective,
                         "lmp": solution.lmp,
+                        "va": solution.va,
+                        "w": solution.w,
                         "flows": solution.flows,
                         "dispatch": solution.dispatch,
                         "iterations": iterations,
@@ -639,15 +681,77 @@ async fn run_solve_limited(
 
 fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, String> {
     let case_path = data_dir.join(spec.casefile);
-    let aux_path = data_dir.join(spec.auxfile);
     let case = powerio::format::parse_file(&case_path, Some("m"))
         .map_err(|e| format!("{}: {e}", case_path.display()))?
         .network;
-    let aux = powerio::format::parse_file(&aux_path, Some("aux"))
-        .map_err(|e| format!("{}: {e}", aux_path.display()))?
-        .network;
-    let coords = complete_coords_for(&case, &aux, spec.auxfile)?;
+    let coords = match spec.coords {
+        CoordSpec::Aux(auxfile) => {
+            let aux_path = data_dir.join(auxfile);
+            let aux = powerio::format::parse_file(&aux_path, Some("aux"))
+                .map_err(|e| format!("{}: {e}", aux_path.display()))?
+                .network;
+            complete_coords_for(&case, &aux, auxfile)?
+        }
+        CoordSpec::CatsBusCsv(csvfile) => load_cats_coords(&data_dir.join(csvfile), &case)?,
+    };
     build_entry(spec.id, spec.name, case, coords, false)
+}
+
+fn load_cats_coords(path: &Path, case: &Network) -> Result<Coords, String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut lines = text.lines();
+    let header = lines
+        .next()
+        .ok_or_else(|| format!("{}: empty coordinate CSV", path.display()))?;
+    let headers: Vec<_> = header.split(',').map(str::trim).collect();
+    let col = |name: &str| {
+        headers
+            .iter()
+            .position(|h| h.eq_ignore_ascii_case(name))
+            .ok_or_else(|| format!("{}: missing {name} column", path.display()))
+    };
+    let bus_i = col("bus_i")?;
+    let lat_i = col("Lat")?;
+    let lon_i = col("Lon")?;
+    let needed = bus_i.max(lat_i).max(lon_i);
+    let mut coords = Coords::new();
+    for (idx, line) in lines.enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: Vec<_> = line.split(',').map(str::trim).collect();
+        if row.len() <= needed {
+            return Err(format!(
+                "{}:{}: expected at least {} columns",
+                path.display(),
+                idx + 2,
+                needed + 1
+            ));
+        }
+        let bus = row[bus_i]
+            .parse::<usize>()
+            .map_err(|e| format!("{}:{}: bad bus_i: {e}", path.display(), idx + 2))?;
+        let lat = row[lat_i]
+            .parse::<f64>()
+            .map_err(|e| format!("{}:{}: bad Lat: {e}", path.display(), idx + 2))?;
+        let lon = row[lon_i]
+            .parse::<f64>()
+            .map_err(|e| format!("{}:{}: bad Lon: {e}", path.display(), idx + 2))?;
+        if lat.is_finite() && lon.is_finite() {
+            coords.insert(bus, (lon, lat));
+        }
+    }
+    spread_stacks(&mut coords);
+    for bus in &case.buses {
+        if !coords.contains_key(&bus.id.0) {
+            return Err(format!(
+                "{}: missing coordinates for CATS bus {}",
+                path.display(),
+                bus.id.0
+            ));
+        }
+    }
+    Ok(coords)
 }
 
 fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
@@ -758,6 +862,8 @@ fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
                 usd_per_mwh: s.value,
             })
             .collect(),
+        va: scalar_values(resp.va.as_deref()),
+        w: scalar_values(resp.w.as_deref()),
         flows: resp
             .flows
             .as_deref()
@@ -780,6 +886,17 @@ fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
             })
             .collect(),
     }
+}
+
+fn scalar_values(values: Option<&[tellegen::BusScalar]>) -> Vec<ScalarValue> {
+    values
+        .unwrap_or_default()
+        .iter()
+        .map(|s| ScalarValue {
+            bus: s.bus,
+            value: s.value,
+        })
+        .collect()
 }
 
 /// The dLMP/dd column from the requested Price/Demand cell: rows are buses, the single
@@ -878,7 +995,7 @@ async fn send_event<T: Serialize>(
 }
 
 fn staged(data_dir: &Path, spec: &CaseSpec) -> bool {
-    data_dir.join(spec.casefile).is_file() && data_dir.join(spec.auxfile).is_file()
+    data_dir.join(spec.casefile).is_file() && data_dir.join(spec.coord_file()).is_file()
 }
 
 fn data_dir() -> PathBuf {

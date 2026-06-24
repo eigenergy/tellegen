@@ -27,6 +27,8 @@ export interface Network {
 export interface Solution {
 	objective: number;
 	lmp: { bus: number; usd_per_mwh: number }[];
+	va: { bus: number; value: number }[];
+	w: { bus: number; value: number }[];
 	flows: { branch: number; mw: number; loading: number }[];
 	dispatch: { gen: number; mw: number }[];
 }

@@ -173,6 +173,8 @@ function parseSolveOutput(caseId: string, json: string): BrowserSolution {
 	const solution: Solution = {
 		objective: out.objective,
 		lmp: out.lmp,
+		va: out.va ?? [],
+		w: out.w ?? [],
 		flows: out.flows,
 		dispatch: out.dispatch
 	};
@@ -275,9 +277,10 @@ interface StudySolveResponse {
 	objective: number;
 	iterations?: SolveIteration[];
 	lmp?: { bus: number; value: number }[];
+	va?: { bus: number; value: number }[];
+	w?: { bus: number; value: number }[];
 	flows?: { branch: number; pf: number; loading: number }[];
 	dispatch?: { gen: number; pg: number }[];
-	va?: { bus: number; value: number }[];
 }
 
 /** The Preview JSON the Study returns: first-order operand changes plus the
@@ -341,6 +344,8 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
 	return {
 		objective: out.objective,
 		lmp: (out.lmp ?? []).map((e) => ({ bus: e.bus, usd_per_mwh: e.value })),
+		va: out.va ?? [],
+		w: out.w ?? [],
 		flows: (out.flows ?? []).map((f) => ({ branch: f.branch, mw: f.pf, loading: f.loading })),
 		dispatch: (out.dispatch ?? []).map((d) => ({ gen: d.gen, mw: d.pg }))
 	};
@@ -426,6 +431,12 @@ export class BrowserStudy {
 			.filter((v) => v.element.Bus !== undefined)
 			.map((v) => ({ bus: v.element.Bus as number, usd_per_mwh: v.value }));
 		return { lmp, objectiveDelta: out.objective_delta };
+	}
+
+	/** The Study's current exact solution. Called immediately after Study creation
+	 * to cache the base point for formulation comparisons. */
+	currentSolution(): Solution {
+		return solveResponseToSolution(JSON.parse(this.#study.solution()) as StudySolveResponse);
 	}
 
 	/** Release the wasm Study; call when discarding it (e.g. the case's
