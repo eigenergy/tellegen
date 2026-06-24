@@ -19,6 +19,10 @@ jobs:
       - run: cargo test --workspace
         env:
           TELLEGEN_ALLOW_FALLBACK: "1"
+      # The conic SOCWR path is off by default (it ships only in the sensitivity wasm), so
+      # the workspace test above never exercises it. Run it explicitly so a SOCWR regression
+      # (e.g. the zero-impedance-jumper infeasibility) fails the PR instead of the browser.
+      - run: cargo test -p tellegen --features conic
       - name: Install wasm-pack
         run: |
           curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz -o /tmp/wasm-pack.tar.gz

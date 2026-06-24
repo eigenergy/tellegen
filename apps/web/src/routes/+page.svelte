@@ -702,10 +702,22 @@
 					return;
 				} catch (e) {
 					if (seq !== (c.solveSeq ?? 0)) return;
-					// A built Study that fails to commit is unexpected; drop it so the next
-					// solve rebuilds, then fall through to the solveDc fallback.
+					const msg = errorText(e);
+					// For AC OPF / SOCWR (browser-only) an infeasible operating point is an
+					// expected outcome — demand pushed past what the network can serve — not a
+					// broken Study. Keep the Study (it solves other points) and say so plainly,
+					// instead of the misleading "study unavailable".
+					if (c.formulation !== 'dcopf' && /infeasible/i.test(msg)) {
+						c.solving = false;
+						app.previewActive = false;
+						app.previewDeltaMw = null;
+						app.error = `${caseName(c)}: ${formulationLabel(c.formulation)} has no feasible solution at this demand`;
+						return;
+					}
+					// Any other commit failure is unexpected; drop the Study so the next solve
+					// rebuilds, then fall through to the solveDc fallback.
 					disposeStudy(c);
-					c.solveFallbackReason ??= `browser study commit failed: ${errorText(e)}`;
+					c.solveFallbackReason ??= `browser study commit failed: ${msg}`;
 				}
 			}
 
@@ -1231,6 +1243,25 @@
 	// can't preview (Safari's relaxed-SIMD gap, server-only cases): the map then
 	// falls back to the JS sensitivity-times-step preview.
 	function runPreview(c: SolvableCase, bus: number, value: number) {
+		// Fast path: the committed ∂LMP/∂d column (already solved at the committed point),
+		// scaled by the demand step, is the same first-order linearization the engine preview
+		// returns — without rebuilding the differentiable KKT every drag frame. That engine
+		// preview is ~80 ms/frame on the largest case (CATS, ~8870 buses), which blocked the
+		// main thread and made dragging choppy; reusing the column is O(buses).
+		const col = c.sensitivity;
+		if (col && col.bus === bus) {
+			const committedAtBus = caseDeltas(c)[bus] ?? 0;
+			const step = (Math.abs(value) < 0.25 ? 0 : value) - committedAtBus;
+			const delta = new Map<number, number>();
+			for (const v of col.values) delta.set(v.bus, v.value * step);
+			app.previewLmp = { caseId: c.id, bus, delta };
+			const lmpAtBus = c.solution?.lmp.find((l) => l.bus === bus)?.usd_per_mwh ?? null;
+			previewObjective =
+				lmpAtBus === null ? null : { caseId: c.id, bus, objectiveDelta: lmpAtBus * step };
+			return;
+		}
+		// Fallback (no committed column yet): the engine's first-order preview, which rebuilds
+		// the differentiable system. Best effort — on any failure the map keeps its own path.
 		const study = caseStudies.get(c)?.study;
 		if (!study) return;
 		try {
@@ -1240,7 +1271,6 @@
 			app.previewLmp = { caseId: c.id, bus, delta };
 			previewObjective = objectiveDelta === null ? null : { caseId: c.id, bus, objectiveDelta };
 		} catch {
-			// Preview is best effort; on any failure leave the map on its fallback path.
 			app.previewLmp = null;
 			previewObjective = null;
 		}

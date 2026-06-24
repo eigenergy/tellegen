@@ -151,11 +151,18 @@ impl AcNetwork {
             br_to.push(t);
             g.push(gg);
             b.push(bb);
-            // MATPOWER charging: split evenly, no charging conductance.
+            // MATPOWER charging: split evenly, no charging conductance. A near-zero-impedance
+            // branch is treated as a closed jumper (g = b = 0 above); it carries no line
+            // charging either, since charging scales with a real line's length. Keeping the
+            // charging on such a jumper over-determines the reactive balance at an isolated
+            // zero-injection bus (its only reactive terms are the two charging shunts), forcing
+            // w → 0 against the voltage floor — a spurious SOCWR/AC-OPF infeasibility, while DC
+            // (no reactive, no |V|) stays feasible. (powerio 0.3.3 still emits the charging here.)
+            let charging = if z2 > MIN_Z_SQUARED { br.b / 2.0 } else { 0.0 };
             g_fr.push(0.0);
-            b_fr.push(br.b / 2.0);
+            b_fr.push(charging);
             g_to.push(0.0);
-            b_to.push(br.b / 2.0);
+            b_to.push(charging);
             // to_normalized already maps 0 -> 1 via effective_tap; guard anyway.
             tap.push(if br.tap == 0.0 { 1.0 } else { br.tap });
             shift.push(br.shift);
