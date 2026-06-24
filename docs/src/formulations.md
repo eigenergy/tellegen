@@ -57,6 +57,7 @@ $$ (w^r_{ij})^2 + (w^i_{ij})^2 \le w_i\, w_j. $$
 The relaxation is a convex lower bound on AC OPF, solved with Clarabel's
 second-order-cone support. Entry point: `socwr_opf`.
 
-The convex and power-flow paths are pure Rust and compile to WebAssembly, so the
-same code runs on a server and in the browser. The full nonlinear AC OPF is
-native-only; the browser's AC-grade option is the SOCWR relaxation.
+Every formulation, including the full nonlinear AC OPF, is pure Rust and compiles to
+WebAssembly, so the same code runs on a server and in the browser. In the browser the AC
+OPF uses the single-threaded `interiors` backend; the faster multithreaded `pounce`
+backend is native-only.

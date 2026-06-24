@@ -69,11 +69,12 @@ one contract.
 
 `crates/tellegen-wasm` is built in two tiers:
 
-- a **full** package, built with the `acopf` feature (`faer`, `simd128`, no relaxed-SIMD),
-  which carries all five formulations, the `Study`, and the analytical sensitivity columns,
-  and loads on current browsers, Safari 16.4+ included; and
+- a **full** package, built with the `acopf` feature (`faer`), which carries all five
+  formulations, the `Study`, and the analytical sensitivity columns, and loads on current
+  browsers; and
 - a **core** package, built `--no-default-features` with `simd128` and `relaxed-simd`
-  disabled — a smaller DC-only fallback that loads on any WebAssembly-capable browser.
+  explicitly disabled — a smaller DC-only fallback that loads on any WebAssembly-capable
+  browser.
 
 The app's reactive loop uses the `Study`: a drag calls `preview` (a first-order LMP and
 objective update, in WebAssembly, with no server round-trip) and release calls `commit`

@@ -27,9 +27,9 @@ It links:
 - FERAL (feral, feral-amd, feral-amf, feral-metis, feral-scotch, feral-kahip,
   feral-ordering-core), pure-Rust sparse ordering/linear-algebra: MIT License.
 
-The `pounce` backend (multithreaded, via `rayon`) is the default solver in the native
-builds — the server and the benchmark harness — which therefore include the EPL-2.0
-components above. The browser WebAssembly build and `tellegen-cli` use the `interiors`
+The `pounce` backend (multithreaded, via `rayon`) is the default AC OPF solver in the
+native server, and is linked into the benchmark harness (selectable with
+`--acopf-backend pounce`); both therefore bundle the EPL-2.0 components above. The browser WebAssembly build and `tellegen-cli` use the `interiors`
 backend instead (pure Rust, single-threaded, Apache-2.0/MIT); a fully permissive native
 build selects it with `--no-default-features --features acopf`.
 

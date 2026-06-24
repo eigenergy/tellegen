@@ -8,7 +8,9 @@ sensitivities for each through one unified `sensitivity(operand, parameter)` fro
 door. It parses cases through [`powerio`](https://github.com/eigenergy/powerio),
 solves with Clarabel (convex) and an interior-point NLP solver (AC OPF), and compiles
 to both native targets and WebAssembly, so the same engine runs on a server and in the
-browser. The nonlinear AC OPF is native-only.
+browser, including the full nonlinear AC OPF. In the browser the AC OPF uses the pure-Rust
+single-threaded `interiors` backend; the faster multithreaded `pounce` backend is
+native-only.
 
 ## Status
 

@@ -84,8 +84,8 @@ bash deploy/remote-deploy.sh ghcr.io/eigenergy/tellegen:<sha> "$TELLEGEN_DEPLOY_
 The script validates Docker, Compose, the external `edge` network, the staged
 TAMU files, and the compose config. It pulls the selected image before
 recreating the container, then waits for Docker health and `/api/health`. It
-does not use `--remove-orphans`; the shared edge proxy is owned by the
-maptogrid stack.
+does not use `--remove-orphans`; the shared edge proxy is owned by a separate
+stack.
 
 ## GitHub Actions Deploy
 

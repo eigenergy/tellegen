@@ -131,8 +131,8 @@ solver, and sensitivity implementation with the browser WebAssembly module.
 `axum` fits the API shape: JSON routes, shared immutable case state, SSE for
 fallback solves, and static file serving through `tower-http`.
 
-PowerDiff.jl remains useful as an independent reference implementation for DC
-parity checks. It is not part of the production image.
+The engine is validated against the published PGLib reference solves (PowerModels.jl
+with IPOPT) by the `benchmarks` crate; the Rust path is the production runtime.
 
 ## Julia to WebAssembly
 
@@ -148,8 +148,8 @@ There are two separate efforts to track:
   related experiments, with restrictions on dynamic dispatch, BLAS, allocation,
   and C or Fortran dependencies.
 
-A browser solver for tellegen should therefore be written in Rust or another
-language with a mature wasm compilation path, and validated against PowerDiff.jl.
+A browser solver for tellegen is therefore written in Rust, which has a mature wasm
+compilation path, and validated against the published PGLib reference (PowerModels.jl).
 
 Sources: [julia-wasm](https://github.com/Keno/julia-wasm),
 [WasmTarget.jl](https://github.com/GroupTherapyOrg/WasmTarget.jl).
@@ -174,13 +174,11 @@ server backed simulation tools.
 
 The gap relevant to tellegen is interactive recomputation: load a case, perturb
 demand or generation, and inspect updated flows and prices. The shared
-Rust/WebAssembly path now runs that DC loop in the browser, with the tellegen
-backend providing bundled case fallbacks.
+Rust/WebAssembly path now runs the full DC, AC power flow, SOCWR, and AC OPF loop in
+the browser, with the tellegen backend providing bundled case data.
 
 ## Open checks
 
 - Add a hosted browser regression that solves a local wasm case end to end.
-- Validate faer sparse factorizations under wasm before starting browser AC
-  power flow work.
 - Treat browser OPF landscape claims as public source observations, not proof
   that no private implementation exists.

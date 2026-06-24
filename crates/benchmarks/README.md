@@ -42,6 +42,6 @@ deterministic, so the numbers reproduce on the recorded toolchain.
 | AC OPF | `acopf` (the exact nonconvex optimum vs the published `AC ($/h)`) |
 | AC power flow | `ac_pf(&AcPolar::new(), &AcNetwork::from_network(..))` |
 | AC / conic / AC OPF sensitivities | `AcNewton::new` / `ConicKkt::new` / `AcOpfKkt::new` + `sensitivity` |
-| DC sensitivities | `sensitivity_json` (the only external route to the DC KKT) |
+| DC sensitivities | `solve_json` (the DC KKT via the public solve front door) |
 
 The corpus is never vendored; PGLib data is CC BY 4.0 (v23.07, arXiv:1908.02788).
