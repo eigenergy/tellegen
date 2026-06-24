@@ -46,9 +46,10 @@ jobs:
         working-directory: apps/web
 
   # Format, lint, supply chain, and the EPL boundary. Keeps the shipping crates
-  # warning-clean and proves the EPL-2.0 pounce backend never enters a wasm,
-  # server, or CLI build (it is native-only, behind the non-default acopf-pounce
-  # feature that only the benchmarks crate enables).
+  # warning-clean. The native server ships the EPL-2.0 pounce backend as its default
+  # AC OPF solver (approved: EPL-2.0 is weak file-level copyleft, acknowledged in
+  # NOTICE / LICENSE-EPL). The boundary enforced below keeps pounce OUT of the browser
+  # wasm and the CLI, which stay Apache-2.0/MIT.
   governance:
     runs-on: ubuntu-latest
     steps:
@@ -60,12 +61,15 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli --all-targets -- -D warnings
       - uses: EmbarkStudios/cargo-deny-action@v2
-      - name: EPL boundary (pounce must not ship in wasm/server/cli)
+      - name: EPL boundary (pounce stays out of the browser wasm and the CLI)
         run: |
-          for p in "tellegen-wasm --target wasm32-unknown-unknown" tellegen-server tellegen-cli; do
-            if cargo tree -p $p 2>/dev/null | grep -qi pounce; then
-              echo "EPL pounce backend leaked into: $p" >&2
-              exit 1
-            fi
-          done
-          echo "ok: no EPL pounce in wasm/server/cli"
+          # The browser wasm ships with --features acopf (the interiors backend), and the
+          # CLI stays on its default features; both must remain EPL-free (Apache-2.0/MIT).
+          # The native server ships pounce as its default AC OPF backend by design.
+          if cargo tree -p tellegen-wasm --target wasm32-unknown-unknown --features acopf 2>/dev/null | grep -qi pounce; then
+            echo "EPL pounce leaked into the browser wasm build" >&2; exit 1
+          fi
+          if cargo tree -p tellegen-cli --all-features 2>/dev/null | grep -qi pounce; then
+            echo "EPL pounce leaked into tellegen-cli" >&2; exit 1
+          fi
+          echo "ok: browser wasm + CLI are EPL-free; the native server ships pounce by design"

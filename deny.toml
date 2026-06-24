@@ -1,17 +1,16 @@
 # Supply-chain governance for the tellegen workspace.
 #
 # The load-bearing rule is the EPL boundary. The `pounce` Ipopt-port AC-OPF backend
-# is EPL-2.0 and native-only, gated behind the non-default `acopf-pounce` feature —
-# which ONLY `crates/benchmarks` enables. It must never enter the wasm, server, CLI,
-# or default builds.
+# is EPL-2.0. It is the default AC OPF solver in the native server and benchmark builds,
+# and is kept OUT of the browser wasm and the `tellegen-cli`, which stay Apache-2.0/MIT.
 #
 # cargo-deny checks the whole resolved graph, so the pounce-* crates DO appear here
 # (pulled in via benchmarks) and are permitted by the per-crate EPL exceptions below.
-# That allowance alone does NOT prove they stay out of the shipped builds — that is
-# enforced in CI by per-feature `cargo tree -i pounce-nlp` assertions on the wasm and
-# server feature sets (see .github/workflows/ci.yml). This file's job is narrower but
-# still essential: pin EPL-2.0 to exactly the known pounce crates and fail on any
-# other copyleft or unknown license creeping in anywhere in the tree.
+# That allowance alone does NOT prove where they ship — CI keeps pounce out of the
+# browser wasm and the CLI via per-feature `cargo tree` assertions (see
+# .github/workflows/ci.yml). This file's job is narrower but still essential: pin
+# EPL-2.0 to exactly the known pounce crates and fail on any other copyleft or unknown
+# license creeping in anywhere in the tree.
 
 [licenses]
 # Anything not listed here is denied. Permissive licenses only; copyleft is excluded
@@ -31,9 +30,9 @@ allow = [
 ]
 confidence-threshold = 0.9
 exceptions = [
-    # EPL-2.0, native-only, behind `acopf-pounce` (benchmarks only). Never shipped in
-    # the wasm/server/CLI/default builds — that isolation is verified by `cargo tree`
-    # in CI, not by this allowance.
+    # EPL-2.0. The default AC OPF solver in the native server and benchmark builds; kept
+    # out of the browser wasm and the CLI (verified by `cargo tree` in CI), not by this
+    # allowance.
     { allow = ["EPL-2.0"], crate = "pounce-nlp" },
     { allow = ["EPL-2.0"], crate = "pounce-algorithm" },
     { allow = ["EPL-2.0"], crate = "pounce-common" },

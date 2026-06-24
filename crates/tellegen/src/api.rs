@@ -839,35 +839,40 @@ fn formulation_caps() -> Vec<ProblemCaps> {
     ]
 }
 
-/// Solve the AC OPF the way the benchmark's best-of-backends path does: warm-start
-/// from the SOCWR relaxation when it solves, and fall back to the pounce backend if
-/// the interior path does not converge. This keeps the public differentiable AC OPF
-/// no weaker than the solver the benchmark ships, so the near-infeasible cases the
-/// warm start exists to rescue do not spuriously fail here. (`acopf` implies `conic`,
-/// so the SOCWR solve is available.)
+/// Solve the AC OPF with the best available backend. On a native build with the
+/// `acopf-pounce` feature, the default is the faster multithreaded pounce backend (a
+/// Rust port of Ipopt), warm-started from the SOCWR relaxation, falling back to the
+/// interiors backend if pounce does not converge. The browser wasm build does not
+/// enable `acopf-pounce` — pounce parallelizes with threads (`rayon`), which browser
+/// WebAssembly lacks — so it uses the single-threaded interiors backend, as does any
+/// permissive (Apache-2.0/MIT) build. (`acopf` implies `conic`, so the SOCWR warm
+/// start is available.)
 #[cfg(feature = "acopf")]
 fn solve_acopf_best(
     acnet: &super::model::AcNetwork,
 ) -> Result<super::problem::AcOpfSolution, String> {
     let warm = super::problem::socwr_opf(acnet).ok();
-    let interiors = warm.as_ref().map_or_else(
-        || super::problem::acopf(acnet),
-        |w| super::problem::acopf_warm(acnet, w),
-    );
     #[cfg(feature = "acopf-pounce")]
     {
-        interiors.or_else(|e1| {
+        let pounce = warm.as_ref().map_or_else(
+            || super::problem::acopf_pounce(acnet),
+            |w| super::problem::acopf_pounce_warm(acnet, w),
+        );
+        pounce.or_else(|e1| {
             warm.as_ref()
                 .map_or_else(
-                    || super::problem::acopf_pounce(acnet),
-                    |w| super::problem::acopf_pounce_warm(acnet, w),
+                    || super::problem::acopf(acnet),
+                    |w| super::problem::acopf_warm(acnet, w),
                 )
-                .map_err(|e2| format!("interiors: {e1}; pounce: {e2}"))
+                .map_err(|e2| format!("pounce: {e1}; interiors: {e2}"))
         })
     }
     #[cfg(not(feature = "acopf-pounce"))]
     {
-        interiors
+        warm.as_ref().map_or_else(
+            || super::problem::acopf(acnet),
+            |w| super::problem::acopf_warm(acnet, w),
+        )
     }
 }
 

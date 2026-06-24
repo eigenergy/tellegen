@@ -17,8 +17,7 @@ The repository is a Cargo workspace and a web app side by side.
   static single-page app.
 - `crates/tellegen-cli` — a command-line front end over the engine's stateless JSON API.
 - `crates/benchmarks` — a non-shipping harness that runs the PGLib-OPF corpus for
-  validation and timing. It is the only crate that enables the optional EPL-licensed
-  AC-OPF backend (see [Licensing](#native-solving-and-licensing)).
+  validation and timing.
 - `apps/web` — the SvelteKit application, built as a static single-page app.
 - `packages/` — reserved for a shared TypeScript wrapper over the wasm packages, to be
   populated once a second consumer (a desktop app) exists.
@@ -84,13 +83,15 @@ in the browser and are never uploaded.
 
 ## The AC-OPF backends and licensing
 
-The full nonlinear AC OPF has two backends: a default interior-point program (the
-`interiors` crate, pure Rust) under the engine's own Apache-2.0/MIT license — this is the
-one compiled into the browser — and an optional faster backend behind the `acopf-pounce`
-feature that links EPL-2.0 dependencies. Only the `benchmarks` crate enables
-`acopf-pounce`; the shipped engine, wasm adapter, server, and CLI remain Apache-2.0/MIT,
-and CI fails the build if the EPL dependencies ever appear in them. The attribution and the
-per-feature licensing are recorded in `crates/tellegen/NOTICE`.
+The full nonlinear AC OPF has two solver backends. The default native backend is `pounce`
+— a multithreaded Rust port of Ipopt (EPL-2.0) — used by the server and the benchmark
+harness, where its parallelism (via `rayon`) pays off. Because browser WebAssembly has no
+threads, the browser build and `tellegen-cli` use `interiors` instead: a single-threaded,
+pure-Rust interior-point program under the engine's own Apache-2.0/MIT license, which also
+serves as the fully-permissive backend (`--no-default-features --features acopf`). CI keeps
+`pounce` out of the browser wasm and the CLI; the native server ships it by design. The
+attribution (pounce, FERAL, and Ipopt) and the per-component licensing are recorded in
+`crates/tellegen/NOTICE` and `crates/tellegen/LICENSE-EPL`.
 
 ## Sources
 
