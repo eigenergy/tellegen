@@ -1,0 +1,45 @@
+# benchmarks
+
+PGLib-OPF validation and benchmark harness for tellegen. A non-shipping workspace member
+(native only — it uses `std::fs`, `walkdir`, `rayon`, `csv`, `serde`). It drives tellegen's
+public API over the PGLib-OPF v23.07 corpus and validates against two independent baselines:
+the published PGLib reference solves and finite-difference derivatives.
+
+See the project documentation for the methodology and validation writeup.
+
+## Run
+
+```sh
+# Corpus at $PGLIB_OPF_PATH (default ~/Datasets/pglib-opf); skipped cleanly when absent.
+cargo run -p benchmarks --release -- [flags]
+```
+
+| flag | default | effect |
+| --- | --- | --- |
+| `--variants typ\|api\|sad\|all` | `all` | which operating-condition set |
+| `--max-bus N` | unlimited | skip cases above N buses (reproducible cap) |
+| `--max-sens-bus N` | 1500 | skip finite-difference sampling above N buses |
+| `--timeout SECS` | 180 | per-case wall-clock guard |
+| `--limit N` | — | run only the first N (smallest) cases |
+| `--no-sens` | — | disable finite-difference parity sampling |
+| `--pglib PATH` | env/default | corpus root override |
+| `--out DIR` | `target/pglib-bench` | artifact directory |
+| `--book` | — | also write the snapshot to `docs/src/benchmark-results.md` |
+
+## Output
+
+`results.json` (full records + toolchain provenance), `results.csv` (one flat row per
+`(case, variant)`), and `results.md` (the markdown snapshot the book embeds). The solves are
+deterministic, so the numbers reproduce on the recorded toolchain.
+
+## What it drives
+
+| stage | tellegen entry point |
+| --- | --- |
+| DC OPF | `solve_prebuilt` (`DcNetwork::from_network` + the prebuilt solve = `solve_network`) |
+| conic SOCWR | `socwr_opf` |
+| AC power flow | `ac_pf(&AcPolar::new(), &AcNetwork::from_network(..))` |
+| AC / conic sensitivities | `AcNewton::new` / `ConicKkt::new` + `sensitivity` |
+| DC sensitivities | `solve_json` (the DC KKT via the public solve front door) |
+
+The corpus is never vendored; PGLib data is CC BY 4.0 (v23.07, arXiv:1908.02788).

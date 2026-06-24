@@ -13,7 +13,7 @@ accept `.pwd`.
 
 ## Reading `.pwd`
 
-`rust/src/lib.rs` exports `parse_display(bytes, format)` over
+`crates/tellegen-wasm/src/lib.rs` exports `parse_display(bytes, format)` over
 `powerio::parse_display_bytes`. The frontend reads `.pwd` files with
 `arrayBuffer()` and passes a `Uint8Array` to the WebAssembly module.
 
@@ -32,8 +32,8 @@ y = K * mercdeg(lat)
 mercdeg(lat) = (180 / pi) * ln(tan(pi / 4 + lat * pi / 360))
 ```
 
-The frontend applies the inverse transform in `pwdToLngLat` in
-`frontend/src/routes/+page.svelte`. This places the checked ACTIVSg200 and
+The web app applies the inverse transform in `pwdToLngLat` in
+`apps/web/src/routes/+page.svelte`. This places the checked ACTIVSg200 and
 ACTIVSg2000 diagrams within about 0.02 degrees of their corresponding named
 cities. Hand edited diagrams can differ, so tellegen labels these positions as
 approximate.
@@ -41,7 +41,7 @@ approximate.
 ## Canonical display format
 
 A canonical display format belongs in powerio as a `DisplayData` variant. That
-keeps the format available to Rust, browser wasm, Python, and Julia bindings.
+keeps the format available to Rust, browser wasm, and Python bindings.
 tellegen should consume and render the format rather than define a separate file
 format.
 

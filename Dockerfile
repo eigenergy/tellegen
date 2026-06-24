@@ -6,7 +6,7 @@ FROM rust:1-slim-trixie AS wasm
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# The tellegen crate depends on the crates.io powerio release, so cargo fetches
+# The tellegen crates depend on the crates.io powerio release, so cargo fetches
 # the source itself; nothing to clone here.
 RUN rustup target add wasm32-unknown-unknown
 # Prebuilt wasm-pack binary (statically linked), verified against a pinned digest.
@@ -14,20 +14,26 @@ RUN curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15
     && echo 'c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a  /tmp/wasm-pack.tar.gz' | sha256sum -c - \
     && tar -xzf /tmp/wasm-pack.tar.gz -C /usr/local/bin --strip-components=1 --wildcards '*/wasm-pack' \
     && rm -f /tmp/wasm-pack.tar.gz
-COPY rust /build/rust
-# The core wasm disables SIMD so Safari (no relaxed SIMD) can parse it; it carries
-# no faer kernels. The sens wasm keeps the default target (its faer/pulp linalg
-# emits relaxed SIMD regardless), so Safari falls back to server sensitivity.
+# The whole Cargo workspace: wasm-pack builds the tellegen-wasm member, which
+# path-depends on the tellegen engine and resolves against the root lockfile.
+COPY Cargo.toml Cargo.lock /build/
+COPY crates /build/crates
+# The core wasm disables SIMD so Safari (no relaxed SIMD) can parse it, and drops
+# default features so it carries no faer kernels. The full wasm enables the `conic`
+# feature — the whole engine (DC optimal power flow, AC power flow, and the SOCWR
+# relaxation) with sensitivities; it stays off relaxed SIMD at the default wasm target,
+# so it validates on Safari too. `--out-name tellegen` keeps the core package's file
+# names stable for the frontend's imports.
 RUN RUSTFLAGS="-C target-feature=-simd128,-relaxed-simd" \
-    wasm-pack build /build/rust --target web --out-dir /out/wasm-pkg -- --no-default-features
-RUN wasm-pack build /build/rust --target web --out-dir /out/wasm-sens-pkg --out-name tellegen_sens
+    wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --no-default-features
+RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-sens-pkg --out-name tellegen_sens -- --features conic
 
 # ---- frontend build ----
 FROM node:22-slim AS frontend
 WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json ./
+COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci
-COPY frontend/ ./
+COPY apps/web/ ./
 COPY --from=wasm /out/wasm-pkg ./src/lib/wasm-pkg
 COPY --from=wasm /out/wasm-sens-pkg ./src/lib/wasm-sens-pkg
 RUN npm run build && npm run smoke:build
@@ -40,15 +46,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 WORKDIR /build
 
 FROM chef AS planner
-COPY rust .
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS server
 COPY --from=planner /build/recipe.json recipe.json
-# Cook only the dependencies; this layer is reused across builds whenever
-# Cargo.toml / Cargo.lock are unchanged, even when the crate source changes.
-RUN cargo chef cook --release --recipe-path recipe.json
-COPY rust .
+# Cook only the server binary's dependencies; this layer is reused across builds
+# whenever Cargo.toml / Cargo.lock are unchanged, even when the crate source
+# changes. Scoping to the bin keeps the benchmark-only dependencies out of the build
+# entirely.
+RUN cargo chef cook --release --recipe-path recipe.json --bin tellegen-server
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
 RUN cargo build --release --bin tellegen-server
 
 # ---- runtime ----

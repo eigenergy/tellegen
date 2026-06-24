@@ -1,0 +1,353 @@
+//! AC network data in the vectorized pi-model admittance form. Carries per-branch
+//! series and shunt admittance with transformer tap and phase shift, the per-bus
+//! shunt, the real and reactive demand, and the generator injection aggregated to
+//! buses — everything the polar AC power flow and its voltage sensitivities read,
+//! plus the per-generator bounds and costs the conic OPF optimizes. Built from a
+//! powerio `Network` exactly as [`DcNetwork`](super::DcNetwork) is. Gated with the
+//! faer paths behind `sensitivity`.
+
+use std::collections::BTreeMap;
+
+use num_complex::Complex;
+use powerio::network::{GenCost, Network};
+use powerio::IndexedNetwork;
+
+use super::{normalize_angle_bounds, reconstruct_ids, Ids, MIN_Z_SQUARED};
+
+/// AC network data in the vectorized pi-model admittance form.
+///
+/// Each branch contributes the standard pi-model stamp built from its series
+/// admittance `y = g + j b`, the complex tap `t = tap · e^{j·shift}`, and the
+/// from/to line-charging shunts; [`AcNetwork::ybus`] assembles the bus admittance
+/// matrix `Y`. The net injection at bus `i` is `S_i = V_i · conj((Y V)_i)`, equal
+/// to `(pg_i − pd_i) + j(qg_i − qd_i)`.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct AcNetwork {
+    /// Buses and branches after filtering (in-service, non-isolated).
+    pub n: usize,
+    pub m: usize,
+    /// Branch endpoints in dense bus-index space.
+    pub br_from: Vec<usize>,
+    pub br_to: Vec<usize>,
+    /// Series conductance `g = r/(r²+x²)` and susceptance `b = −x/(r²+x²)` per
+    /// branch (`0` for a near-zero-impedance branch treated as open).
+    pub g: Vec<f64>,
+    pub b: Vec<f64>,
+    /// From/to-side shunt admittance (line charging). A MATPOWER source splits the
+    /// single branch charging `br_b` evenly (`b_fr = b_to = br_b/2`) with no
+    /// charging conductance (`g_fr = g_to = 0`).
+    pub g_fr: Vec<f64>,
+    pub b_fr: Vec<f64>,
+    pub g_to: Vec<f64>,
+    pub b_to: Vec<f64>,
+    /// Transformer tap magnitude (`1` for a plain line) and phase shift (radians).
+    pub tap: Vec<f64>,
+    pub shift: Vec<f64>,
+    /// Per-unit apparent-power thermal limit per branch (`rate_a`; a large sentinel
+    /// stands in for an unlimited `rate_a == 0` branch). The conic OPF caps each
+    /// branch's `|S|` at this with a second-order cone.
+    pub rate_a: Vec<f64>,
+    /// Per-branch voltage-angle-difference bounds (radians): `va_from − va_to ∈
+    /// [angmin, angmax]`. Normalized to the ±60° MATPOWER/PowerModels convention when
+    /// the source leaves them unset or unconstrained (shared with the DC model). The AC
+    /// OPF enforces these as linear inequalities; the conic SOCWR maps them onto the
+    /// W-space products `wr`/`wi`.
+    pub angmin: Vec<f64>,
+    pub angmax: Vec<f64>,
+    /// Branch switching state (1 closed, 0 open). All branches start closed.
+    pub sw: Vec<f64>,
+    /// Per-bus shunt admittance (per unit): conductance `gs`, susceptance `bs`.
+    pub gs: Vec<f64>,
+    pub bs: Vec<f64>,
+    /// Per-bus real and reactive demand (per unit).
+    pub pd: Vec<f64>,
+    pub qd: Vec<f64>,
+    /// Per-bus aggregated scheduled generation (per unit), the power flow operating
+    /// point.
+    pub pg: Vec<f64>,
+    pub qg: Vec<f64>,
+    /// Generator count.
+    pub k: usize,
+    /// Bus each generator injects at, dense index.
+    pub gen_bus: Vec<usize>,
+    /// Per-unit generator real and reactive output bounds, per generator. The
+    /// conic OPF optimizes over these; the power flow uses the per-bus aggregates.
+    pub pmin: Vec<f64>,
+    pub pmax: Vec<f64>,
+    pub qmin: Vec<f64>,
+    pub qmax: Vec<f64>,
+    /// Per-unit generation cost `cq[g] pg² + cl[g] pg + cc[g]` per generator.
+    pub cq: Vec<f64>,
+    pub cl: Vec<f64>,
+    pub cc: Vec<f64>,
+    /// Dense generator index -> original source generator id.
+    pub gen_ids: Vec<usize>,
+    /// Per-bus voltage magnitude bounds, and the per-bus magnitude setpoint: the
+    /// regulating generator's voltage setpoint (`vg`) at PV and slack buses, the bus
+    /// voltage elsewhere. The power flow holds PV/slack magnitudes at this value; it also
+    /// seeds the flat start.
+    pub vm_min: Vec<f64>,
+    pub vm_max: Vec<f64>,
+    pub vm_set: Vec<f64>,
+    /// Reference (slack) bus, dense index.
+    pub slack: usize,
+    /// Dense index -> original source id, as in [`DcNetwork`](super::DcNetwork).
+    pub bus_ids: Vec<usize>,
+    pub branch_ids: Vec<usize>,
+    /// System base power (MVA).
+    pub base_mva: f64,
+}
+
+impl AcNetwork {
+    /// Build the AC model from a parsed powerio `Network`, normalizing through
+    /// `Network::to_normalized` (per unit, radians, filtered, densely reindexed,
+    /// reference inferred) and extracting the complex pi-model admittance.
+    pub fn from_network(raw: &Network) -> Result<AcNetwork, String> {
+        let norm = raw.to_normalized().map_err(|e| e.to_string())?;
+        let view = IndexedNetwork::new(&norm);
+        let Ids {
+            n,
+            m,
+            k,
+            bus_ids,
+            branch_ids,
+            gen_ids,
+        } = reconstruct_ids(raw, &view)?;
+
+        let pd = view.pd().to_vec();
+        let qd = view.qd().to_vec();
+        let gs = view.gs().to_vec();
+        let bs = view.bs().to_vec();
+
+        let branches = view.branches();
+        let mut br_from = Vec::with_capacity(m);
+        let mut br_to = Vec::with_capacity(m);
+        let mut g = Vec::with_capacity(m);
+        let mut b = Vec::with_capacity(m);
+        let mut g_fr = Vec::with_capacity(m);
+        let mut b_fr = Vec::with_capacity(m);
+        let mut g_to = Vec::with_capacity(m);
+        let mut b_to = Vec::with_capacity(m);
+        let mut tap = Vec::with_capacity(m);
+        let mut shift = Vec::with_capacity(m);
+        let mut rate_a = Vec::with_capacity(m);
+        let mut angmin = Vec::with_capacity(m);
+        let mut angmax = Vec::with_capacity(m);
+        for br in branches {
+            let f = view
+                .bus_index(br.from)
+                .ok_or_else(|| format!("branch from-bus {} not in index", br.from))?;
+            let t = view
+                .bus_index(br.to)
+                .ok_or_else(|| format!("branch to-bus {} not in index", br.to))?;
+            let z2 = br.r * br.r + br.x * br.x;
+            let (gg, bb) = if z2 > MIN_Z_SQUARED {
+                (br.r / z2, -br.x / z2)
+            } else {
+                (0.0, 0.0)
+            };
+            br_from.push(f);
+            br_to.push(t);
+            g.push(gg);
+            b.push(bb);
+            // MATPOWER charging: split evenly, no charging conductance.
+            g_fr.push(0.0);
+            b_fr.push(br.b / 2.0);
+            g_to.push(0.0);
+            b_to.push(br.b / 2.0);
+            // to_normalized already maps 0 -> 1 via effective_tap; guard anyway.
+            tap.push(if br.tap == 0.0 { 1.0 } else { br.tap });
+            shift.push(br.shift);
+            // rate_a == 0 means unlimited; a large sentinel keeps the cone uniform.
+            rate_a.push(if br.rate_a > 0.0 { br.rate_a } else { 1.0e3 });
+            let (amin, amax) = normalize_angle_bounds(br.angmin, br.angmax);
+            angmin.push(amin);
+            angmax.push(amax);
+        }
+        let sw = vec![1.0; m];
+
+        // Voltage-magnitude bounds, and the per-bus magnitude setpoint. The setpoint
+        // starts from the bus voltage and is overwritten below by each in-service
+        // generator's voltage setpoint (vg) at its bus, so PV and slack buses regulate to
+        // the generator setpoint (last-wins per bus, as MATPOWER does), not the bus.vm
+        // guess.
+        let vm_min: Vec<f64> = norm.buses.iter().map(|bus| bus.vmin).collect();
+        let vm_max: Vec<f64> = norm.buses.iter().map(|bus| bus.vmax).collect();
+        let mut vm_set: Vec<f64> = norm
+            .buses
+            .iter()
+            .map(|bus| if bus.vm > 0.0 { bus.vm } else { 1.0 })
+            .collect();
+
+        let gens = view.generators();
+        // Per-bus aggregates (power flow operating point) and per-generator data
+        // (the conic OPF decision variables) in one pass.
+        let mut pg = vec![0.0; n];
+        let mut qg = vec![0.0; n];
+        let mut gen_bus = Vec::with_capacity(k);
+        let mut pmin = Vec::with_capacity(k);
+        let mut pmax = Vec::with_capacity(k);
+        let mut qmin = Vec::with_capacity(k);
+        let mut qmax = Vec::with_capacity(k);
+        let mut cq = Vec::with_capacity(k);
+        let mut cl = Vec::with_capacity(k);
+        let mut cc = Vec::with_capacity(k);
+        for gen in gens {
+            let bus = view
+                .bus_index(gen.bus)
+                .ok_or_else(|| format!("generator bus {} not in index", gen.bus))?;
+            pg[bus] += gen.pg;
+            qg[bus] += gen.qg;
+            // Regulate this bus's magnitude to the generator's voltage setpoint, clamped
+            // into the bus magnitude band: the power flow holds PV/slack magnitudes at
+            // `vm_set` with no `vm` column to bound them, so an out-of-band `vg` would pin
+            // the bus at an infeasible magnitude and the sensitivity would linearize there.
+            if gen.vg > 0.0 {
+                vm_set[bus] = gen.vg.clamp(vm_min[bus], vm_max[bus]);
+            }
+            let (q, l, c) = ac_cost_coeffs(gen.cost.as_ref())?;
+            gen_bus.push(bus);
+            pmin.push(gen.pmin);
+            pmax.push(gen.pmax);
+            qmin.push(gen.qmin);
+            qmax.push(gen.qmax);
+            cq.push(q);
+            cl.push(l);
+            cc.push(c);
+        }
+
+        let slack = *view
+            .reference_bus_indices()
+            .first()
+            .ok_or("normalized network has no reference bus")?;
+
+        Ok(AcNetwork {
+            n,
+            m,
+            br_from,
+            br_to,
+            g,
+            b,
+            g_fr,
+            b_fr,
+            g_to,
+            b_to,
+            tap,
+            shift,
+            rate_a,
+            angmin,
+            angmax,
+            sw,
+            gs,
+            bs,
+            pd,
+            qd,
+            pg,
+            qg,
+            k,
+            gen_bus,
+            pmin,
+            pmax,
+            qmin,
+            qmax,
+            cq,
+            cl,
+            cc,
+            gen_ids,
+            vm_min,
+            vm_max,
+            vm_set,
+            slack,
+            bus_ids,
+            branch_ids,
+            base_mva: raw.base_mva,
+        })
+    }
+
+    /// The complex bus admittance matrix `Y` as summed `(row, col, value)`
+    /// triplets in `(row, col)` order. Each branch stamps its pi-model
+    /// coefficients
+    ///
+    /// ```text
+    /// yff = (y + y_fr) / tap²     yft = −y / conj(t)
+    /// ytf = −y / t                ytt =  y + y_to
+    /// ```
+    ///
+    /// scaled by the switching state, with `y = g + j b`, `t = tap · e^{j·shift}`,
+    /// `y_fr = g_fr + j b_fr`, `y_to = g_to + j b_to`; the bus shunt `gs + j bs`
+    /// lands on the diagonal. Open (`sw = 0`) branches contribute nothing.
+    pub fn ybus(&self) -> Vec<(usize, usize, Complex<f64>)> {
+        let mut acc: BTreeMap<(usize, usize), Complex<f64>> = BTreeMap::new();
+        for i in 0..self.n {
+            *acc.entry((i, i)).or_default() += Complex::new(self.gs[i], self.bs[i]);
+        }
+        for e in 0..self.m {
+            if self.sw[e] == 0.0 {
+                continue;
+            }
+            let (yff, yft, ytf, ytt) = self.branch_admittance(e);
+            let (f, t) = (self.br_from[e], self.br_to[e]);
+            *acc.entry((f, f)).or_default() += yff;
+            *acc.entry((f, t)).or_default() += yft;
+            *acc.entry((t, f)).or_default() += ytf;
+            *acc.entry((t, t)).or_default() += ytt;
+        }
+        acc.into_iter().map(|((r, c), v)| (r, c, v)).collect()
+    }
+
+    /// The pi-model branch admittance coefficients `(yff, yft, ytf, ytt)` of branch
+    /// `e`, scaled by the switching state so an open (`sw = 0`) branch returns all
+    /// zeros:
+    ///
+    /// ```text
+    /// yff = (y + y_fr) / tap²     yft = −y / conj(t)
+    /// ytf = −y / t                ytt =  y + y_to
+    /// ```
+    ///
+    /// with `y = g + j b`, `t = tap · e^{j·shift}`, `y_fr = g_fr + j b_fr`,
+    /// `y_to = g_to + j b_to`. The one source of this algebra, shared by `ybus`, the
+    /// AC flow-operand sensitivity, and its finite-difference test.
+    pub(crate) fn branch_admittance(
+        &self,
+        e: usize,
+    ) -> (Complex<f64>, Complex<f64>, Complex<f64>, Complex<f64>) {
+        let sw = self.sw[e];
+        let y = Complex::new(self.g[e], self.b[e]);
+        let tapc = Complex::from_polar(self.tap[e], self.shift[e]);
+        let y_fr = Complex::new(self.g_fr[e], self.b_fr[e]);
+        let y_to = Complex::new(self.g_to[e], self.b_to[e]);
+        let tap2 = self.tap[e] * self.tap[e];
+        (
+            (y + y_fr) / tap2 * sw,
+            -y / tapc.conj() * sw,
+            -y / tapc * sw,
+            (y + y_to) * sw,
+        )
+    }
+}
+
+/// Quadratic, linear, and constant cost coefficients `(cq, cl, cc)` for one
+/// generator. Like [`DcNetwork`](super::DcNetwork)'s `cost_coeffs` but keeps the
+/// constant term, which the AC OPF objective needs to match the reference (the DC
+/// LMP/dispatch is invariant to it, so the DC path drops it). Coefficients arrive
+/// already per unit from `to_normalized`.
+fn ac_cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64, f64), String> {
+    let Some(c) = cost else {
+        return Ok((0.0, 0.0, 0.0));
+    };
+    if c.model != 2 {
+        return Err("only polynomial gen-cost model 2 is supported".into());
+    }
+    let mut v = c.coeffs.clone();
+    while v.len() > 1 && v[0].abs() <= super::LEADING_COST_COEFF_TOL {
+        v.remove(0);
+    }
+    match v.len() {
+        0 => Ok((0.0, 0.0, 0.0)),
+        1 => Ok((0.0, 0.0, v[0])),
+        2 => Ok((0.0, v[0], v[1])),
+        3 => Ok((v[0], v[1], v[2])),
+        _ => Err("only constant, linear, and quadratic gen costs are supported".into()),
+    }
+}

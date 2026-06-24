@@ -1,0 +1,33 @@
+[package]
+name = "tellegen-wasm"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WebAssembly browser adapter for the tellegen power flow engine."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The engine. Core wasm build takes it without default features (no faer); the
+# `sensitivity` feature below forwards to `tellegen/sensitivity` for the sens build.
+tellegen = { path = "../tellegen", default-features = false }
+powerio.workspace = true
+wasm-bindgen = "0.2"
+serde.workspace = true
+serde_json.workspace = true
+# Forwards Rust panics to a readable console.error with a JS stack, instead of the bare
+# `unreachable` trap a wasm panic otherwise surfaces. Installed once per entry point.
+console_error_panic_hook = "0.1"
+
+[features]
+default = []
+# Gates the `#[wasm_bindgen] Study` export and the dLMP/dd column in `solve_dc`.
+sensitivity = ["tellegen/sensitivity"]
+# The SOCWR (Jabr) conic relaxation. Pulls `sensitivity` so the Study export stays
+# present, mirroring the engine's `conic = ["sensitivity"]`.
+conic = ["sensitivity", "tellegen/conic"]
+
+[lints]
+workspace = true

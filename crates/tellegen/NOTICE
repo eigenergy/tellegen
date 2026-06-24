@@ -1,0 +1,13 @@
+tellegen
+Copyright 2026 Samuel Talkington and contributors
+
+tellegen is a differentiable power flow engine in Rust. The engine supports computing solutions to power flow (PF) problems (DC/AC), optimal power flow (OPF) problems (DC/SOCWR/AC), and differentiating the solutions of said problems with respect to their problem parameters.
+
+With tellegen, you can differentiate things like locational marginal prices, the voltage magnitudes obtained at an AC power flow solutions, and even the solutions obtained by the Jabr Relaxation of ACOPF. All sensitivities are computing analytically. The package is licensed under the Apache License 2.0 or the MIT License, at your option.
+
+The W-space SOCWR formulation follows the standard Jabr second-order-cone (SOC) relaxation (R. A. Jabr, 2006) as implemented in PowerModels.jl (https://github.com/lanl-ansi/PowerModels.jl, BSD-3-Clause). PowerModels.jl was used as a formulation reference.
+
+This material is based upon work supported by the National Science Foundation Graduate
+Research Fellowship under Grant No. DGE-2039655. Any opinion, findings, and conclusions
+or recommendations expressed in this material are those of the author(s) and do not
+necessarily reflect the views of the National Science Foundation.

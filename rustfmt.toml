@@ -1,0 +1,3 @@
+# Stable rustfmt only — keep the config minimal so `cargo fmt --check` is a
+# reliable CI gate without depending on nightly-only options.
+edition = "2021"

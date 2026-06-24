@@ -9,7 +9,7 @@ proxy that owns ports 80 and 443.
 - Docker Engine with the Compose plugin
 - 4 GB RAM minimum; 8 GB recommended for the bundled cases
 - external Docker network `edge`, owned by the Caddy edge stack
-- staged TAMU data under the deploy path's `data/` directory
+- staged demo data under the deploy path's `data/` directory
 - GHCR pull access on the host, or a public `ghcr.io/eigenergy/tellegen` package
 
 ## Shared Edge Layout
@@ -26,7 +26,7 @@ The staged case data should live under the deploy path, for example:
 $TELLEGEN_DEPLOY_PATH/data
 ```
 
-It must contain all six files:
+It must contain all eight files:
 
 ```text
 ACTIVSg200/case_ACTIVSg200.m
@@ -35,9 +35,11 @@ ACTIVSg500/case_ACTIVSg500.m
 ACTIVSg500/ACTIVSg500.aux
 ACTIVSg2000/case_ACTIVSg2000.m
 ACTIVSg2000/ACTIVSg2000.aux
+CATS/CaliforniaTestSystem.m
+CATS/CATS_buses.csv
 ```
 
-Without all three staged cases, production deploy should fail before replacing
+Without all four staged cases, production deploy should fail before replacing
 the working container.
 
 ## Local Build Deploy
@@ -47,7 +49,7 @@ For a host that builds from source:
 ```sh
 git clone <repo> /opt/tellegen
 cd /opt/tellegen
-scripts/stage-data.sh /path/to/tamu-datasets
+scripts/stage-data.sh /path/to/datasets
 docker compose -f docker-compose.yml -f deploy/docker-compose.edge.yml up -d --build
 ```
 
@@ -82,10 +84,10 @@ bash deploy/remote-deploy.sh ghcr.io/eigenergy/tellegen:<sha> "$TELLEGEN_DEPLOY_
 ```
 
 The script validates Docker, Compose, the external `edge` network, the staged
-TAMU files, and the compose config. It pulls the selected image before
+case files, and the compose config. It pulls the selected image before
 recreating the container, then waits for Docker health and `/api/health`. It
-does not use `--remove-orphans`; the shared edge proxy is owned by the
-maptogrid stack.
+does not use `--remove-orphans`; the shared edge proxy is owned by a separate
+stack.
 
 ## GitHub Actions Deploy
 
@@ -142,7 +144,7 @@ ssh "$DEPLOY_HOST" docker inspect tellegen --format '{{if index .NetworkSettings
 curl -fsS "${TELLEGEN_DEMO_URL%/}/api/health"
 ```
 
-Both health checks should report `case200`, `case500`, and `case2000`.
+Both health checks should report `case200`, `case500`, `case2000`, and `cats`.
 
 ## Reverse Proxy
 
@@ -156,10 +158,10 @@ timeouts on `/api/cases/*/solve`.
 
 ## Capacity
 
-The staged 200, 500, and 2000 bus cases are parsed at boot, and the base DC OPF
-solution is cached for each case. Browser WebAssembly handles the normal exact
-solve path; the tellegen backend recomputes fallback solves on demand. Read
-endpoints serve prebuilt case payloads.
+The staged 200, 500, 2000, and CATS cases are parsed at boot, and the base DC
+OPF solution is cached for each case. Browser WebAssembly handles the normal
+exact solve path; the tellegen backend recomputes fallback solves on demand.
+Read endpoints serve prebuilt case payloads.
 
 ## Public Hardening
 

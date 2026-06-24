@@ -1,0 +1,40 @@
+[workspace]
+# The engine plus its three adapters and the non-shipping validation harness.
+# `default-members` keeps a bare `cargo build`/`cargo test`/wasm gate scoped to the
+# engine; the adapters and benchmarks build only when a command selects them.
+members = [
+  "crates/tellegen",
+  "crates/tellegen-wasm",
+  "crates/tellegen-server",
+  "crates/tellegen-cli",
+  "crates/benchmarks",
+]
+default-members = ["crates/tellegen"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/eigenergy/tellegen"
+
+[workspace.dependencies]
+# Caret range over the 0.3.x line (transmission `Network`, PSS/E v34/v35). The
+# shared lockfile unifies the version across the engine and every adapter.
+powerio = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Shared lints, opted into per crate with `[lints] workspace = true`. Kept modest so a
+# `cargo clippy -- -D warnings` CI gate stays green: clippy's default `all`, plus guards
+# against a stray `todo!`/`dbg!` reaching a shipped build.
+[workspace.lints.clippy]
+all = "warn"
+todo = "warn"
+dbg_macro = "warn"
+
+# Profiles only take effect at the workspace root. `opt-level = "s"` + `lto` keep the
+# browser wasm small (the size constraint that matters for the shipped app); the
+# server inherits the same release profile.
+[profile.release]
+opt-level = "s"
+lto = true

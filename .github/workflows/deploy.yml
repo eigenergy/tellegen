@@ -22,31 +22,31 @@ jobs:
       - run: rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust
-      - run: cargo test --manifest-path rust/Cargo.toml
+          workspaces: .
+      - run: cargo test --workspace
+        env:
+          TELLEGEN_ALLOW_FALLBACK: "1"
       - name: Install wasm-pack
         run: |
           curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz -o /tmp/wasm-pack.tar.gz
           echo 'c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a  /tmp/wasm-pack.tar.gz' | sha256sum -c -
           tar -xzf /tmp/wasm-pack.tar.gz -C "$HOME/.cargo/bin" --strip-components=1 --wildcards '*/wasm-pack'
           rm -f /tmp/wasm-pack.tar.gz
-      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-pkg -- --no-default-features
-        env:
-          RUSTFLAGS: -C target-feature=-simd128,-relaxed-simd
-      - run: wasm-pack build rust --target web --out-dir ../frontend/src/lib/wasm-sens-pkg --out-name tellegen_sens
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-        working-directory: frontend
+        working-directory: apps/web
+      - run: npm run wasm
+        working-directory: apps/web
       - run: npm run check
-        working-directory: frontend
+        working-directory: apps/web
       - run: npm run build
-        working-directory: frontend
+        working-directory: apps/web
       - run: npm run smoke:build
-        working-directory: frontend
+        working-directory: apps/web
 
   image:
     if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
@@ -174,7 +174,7 @@ jobs:
               sleep 10
               continue
             }
-            if [[ "$health" == *'"case200"'* && "$health" == *'"case500"'* && "$health" == *'"case2000"'* ]]; then
+            if [[ "$health" == *'"case200"'* && "$health" == *'"case500"'* && "$health" == *'"case2000"'* && "$health" == *'"cats"'* ]]; then
               exit 0
             fi
             echo "unexpected public health payload: $health"

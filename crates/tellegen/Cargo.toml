@@ -1,0 +1,38 @@
+[package]
+name = "tellegen"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Differentiable power flow, optimal power flow, and sensitivities in Rust."
+readme = "README.md"
+keywords = ["opf", "power-flow", "differentiable", "sensitivity"]
+categories = ["science", "mathematics"]
+
+[dependencies]
+powerio.workspace = true
+# DC/conic OPF QP/SOCP solver. Default features only (QDLDL + amd), so it stays pure
+# Rust and compiles to wasm32 as-is.
+clarabel = "0.11.1"
+# Sparse LU for the sensitivity solves. Optional so a consumer that only needs the
+# solve can drop it (the browser core build does). 0.24.1 gates pulp's wasm
+# relaxed-SIMD opcodes behind the `relaxed-simd` target feature, which the default
+# wasm build does not set, so the sensitivity module validates on Safari without the
+# pulp patch the old tellegen crate carried.
+faer = { version = "0.24.1", default-features = false, features = ["std", "linalg", "sparse", "sparse-linalg"], optional = true }
+# Complex bus admittance and the polar power flow Jacobian (AC paths). Pure Rust,
+# already pulled by faer. Optional and tied to `sensitivity`.
+num-complex = { version = "0.4", default-features = false, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+
+[features]
+default = ["sensitivity"]
+sensitivity = ["dep:faer", "dep:num-complex"]
+# The SOCWR (Jabr) conic relaxation of AC OPF and its KKT sensitivities. Solved with
+# Clarabel's second-order cone support (already linked); the sensitivity reuses the faer
+# paths, so `conic` pulls `sensitivity`. Additive, no new dependency.
+conic = ["sensitivity"]
+
+[lints]
+workspace = true

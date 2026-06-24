@@ -1,90 +1,52 @@
 # Architecture
 
-tellegen is the browser interface for power systems cases parsed by powerio and
-solved in browser WebAssembly, with fallback through the tellegen backend for
-bundled cases. This chapter records the intended boundary between the tellegen
-backend, the tellegen frontend, and the Julia reference harness as of June 2026.
+tellegen is a differentiable power flow and optimal power flow engine, written in Rust and compiled to both native targets and WebAssembly, with a SvelteKit app that runs the engine in the browser.
 
-## Current boundary
+## Repository layout
 
-- **powerio** parses, encodes, and owns the network and display formats.
-- **tellegen backend** owns the shared numerical path and API. It builds browser
-  WebAssembly against powerio and handles browser parsing, display decoding,
-  bundled case loading, DC OPF, dLMP/dd columns, and fallback solves.
-- **tellegen frontend** owns interaction, rendering, and the gradient preview,
-  exact commit loop.
-- **Julia reference** owns PowerDiff.jl parity checks. It is not part of the
-  production runtime.
+A Cargo workspace and a web app, side by side.
 
-This split keeps format support in powerio, interface code in tellegen, and the
-reference checks in PowerDiff.jl. Local dropped case files solve only in the
-browser and are not uploaded.
+- `crates/tellegen` — the engine. It parses a case (through powerio) and solves any formulation, returning a formulation-agnostic result and analytical sensitivities.
+- `crates/tellegen-wasm` — the `wasm-bindgen` adapter that exposes the engine to the browser, built with `wasm-pack`.
+- `crates/tellegen-server` — a native HTTP server that serves the bundled cases and the static app.
+- `crates/tellegen-cli` — a command-line front end over the engine's JSON API.
+- `crates/benchmarks` — a non-shipping harness that runs the PGLib-OPF corpus for validation and timing.
+- `apps/web` — the SvelteKit app, built as a static single-page app.
+- `packages/` — reserved for a shared TypeScript wrapper over the wasm packages.
 
-## Placement of solver work
+powerio owns parsing and the network and display formats; the engine and the app depend on it.
 
-The browser runs the DC path because the numerical code is written in Rust and
-compiled to WebAssembly. PowerDiff.jl itself depends on JuMP, Ipopt, and sparse
-linear algebra that do not have a supported Julia WebAssembly path.
+## The engine
 
-The implemented order is:
+`crates/tellegen` solves four formulations through one interface:
 
-1. Use server computed sensitivity matrices for browser matrix vector previews.
-2. Port DC OPF to Rust/WebAssembly, with PowerDiff.jl as the reference.
-3. Port dLMP/dd columns for the solved DC active set.
-4. Move the bundled case API and fallback solves to the tellegen backend.
+- **DC power flow** and **DC OPF** — a B–θ linear/quadratic program;
+- **AC power flow** — a polar Newton solve; and
+- **SOCWR** — the Jabr second-order-cone relaxation of AC OPF, in W-space.
 
-Clarabel.rs runs the DC LP/QP solves in the shared tellegen numerical code. DC
-sensitivities use a linear solve against the active KKT system. AC power flow
-requires separate validation of sparse linear algebra under WebAssembly. AC OPF
-is not implemented in the tellegen backend.
+Every formulation returns the same result shape — locational marginal prices, voltages, branch flows, and dispatch — and exposes analytical **sensitivities** of any output (an `Operand`) with respect to any input (a `Parameter`) through one implicit-differentiation contract, `Differentiable`. Each solved formulation builds its KKT or Newton system; the sensitivity driver solves that system, forward or adjoint, for the requested columns. Adding a formulation, operand, or parameter means implementing the contract, not special-casing the callers.
 
-## tellegen frontend and packaging
+The whole engine is pure Rust and compiles to WebAssembly, so the same code runs natively and in the browser. The convex solves use Clarabel; the sensitivities use faer. The full nonlinear AC OPF (an interior-point program) is on the [desktop and mobile roadmap](tauri-roadmap.md): it parallelizes across threads, which the browser does not have.
 
-The current application already uses the intended interaction model:
-sensitivity preview in the browser, exact solve in the browser, and bundled
-case fallback to the tellegen backend when WebAssembly solve fails.
+## The two API faces
 
-The next packaging step is to turn the Svelte code into a library with
-`@sveltejs/package`. The package should export map components, typed case data,
-layer accessors, theme inputs, and the WebAssembly parser entry points. deck.gl,
-MapLibre, and Svelte should remain peer dependencies.
+One numerical core, two faces that share a driver and a result type:
 
-When the package is introduced, shared reactive state should move behind context
-or explicit object instances rather than module singletons so server side
-rendering does not share state across requests.
+- **Stateless** — `solve_json(network, request)` and `capabilities_json()`. Each call parses, solves, and returns. This is the face for one-shot callers: the HTTP server, the CLI, fixtures, and the initial case load.
+- **Stateful** — the `Study`. It builds the model once. `commit` applies a set of `NetworkEdit`s and re-solves exactly, optionally returning the requested sensitivity columns in the same solve; `preview` returns a first-order update at the committed point with no re-solve. This is the reactive hot path: a demand drag previews and commits without re-parsing the network every frame.
 
-## Research summary
+## In the browser
 
-- Use wasm-pack and wasm-bindgen for browser WebAssembly. The Component Model
-  does not replace wasm-bindgen for DOM and browser library integration.
-- Use deck.gl and MapLibre on WebGL2. The current grid sizes are below deck.gl's
-  documented performance limits. WebGPU can be reconsidered when deck.gl has
-  picking and basemap interleaving on that backend.
-- Use `$state.raw` for large immutable payloads in Svelte 5.
-- Keep PowerDiff.jl as a reference path, not as production infrastructure.
+`crates/tellegen-wasm` ships two packages:
 
-## Roadmap
+- a **full** package (the `conic` feature) carrying DC power flow, DC OPF, AC power flow, SOCWR, the `Study`, and the sensitivity columns; and
+- a **core** package (`--no-default-features`, SIMD disabled) — a smaller DC-only fallback that loads on any WebAssembly-capable browser.
 
-1. Package the tellegen frontend library surface.
-2. Keep PowerDiff.jl parity tests as the acceptance criterion for the DC
-   path.
-3. Validate sparse Rust linear algebra in WebAssembly before starting browser AC
-   power flow.
-4. Choose a separate tellegen backend numerical path before adding AC OPF.
+The app's reactive loop runs on the `Study`: a drag calls `preview` (a first-order LMP and objective update, in WebAssembly, no server round-trip) and release calls `commit` (an exact re-solve that also returns the displayed sensitivity column). Every formulation solves in the browser; dropped-in case files solve there too and are never uploaded.
 
 ## Sources
 
-- Rust to wasm: [wasm-bindgen](https://github.com/wasm-bindgen/wasm-bindgen),
-  [wasm-pack](https://crates.io/crates/wasm-pack)
-- Browser wasm features: [wasm SIMD](https://caniuse.com/wasm-simd),
-  [wasm threads](https://caniuse.com/wasm-threads),
-  [COOP/COEP](https://web.dev/articles/coop-coep)
-- Solvers and linear algebra: [Clarabel.rs](https://github.com/oxfordcontrol/Clarabel.rs),
-  [faer](https://docs.rs/faer/latest/faer/),
-  [faer wasm sparse issue](https://github.com/sarah-quinones/faer-rs/issues/222)
-- Rendering: [deck.gl performance](https://deck.gl/docs/developer-guide/performance),
-  [deck.gl WebGPU status](https://deck.gl/docs/developer-guide/webgpu)
-- Svelte: [$state](https://svelte.dev/docs/svelte/$state),
-  [packaging](https://svelte.dev/docs/kit/packaging)
-- Julia to wasm: [julia-wasm](https://github.com/Keno/julia-wasm),
-  [WasmTarget.jl](https://github.com/GroupTherapyOrg/WasmTarget.jl)
+- Rust to WebAssembly: [wasm-bindgen](https://github.com/wasm-bindgen/wasm-bindgen), [wasm-pack](https://crates.io/crates/wasm-pack)
+- Solvers and linear algebra: [Clarabel.rs](https://github.com/oxfordcontrol/Clarabel.rs), [faer](https://docs.rs/faer/latest/faer/)
+- Convex relaxation: R. A. Jabr, "Radial distribution load flow using conic programming," IEEE Transactions on Power Systems, 21(3), 2006.
+- Svelte: [`$state`](https://svelte.dev/docs/svelte/$state)

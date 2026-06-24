@@ -1,0 +1,8 @@
+# Pin the toolchain so local builds match CI and the Docker image (which builds
+# on rust:1-slim-trixie). Bump deliberately, not implicitly. The wasm target is
+# listed so `wasm-pack build` and `cargo build --target wasm32-unknown-unknown`
+# work after a bare `rustup` install.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
