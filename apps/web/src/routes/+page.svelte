@@ -755,6 +755,8 @@
 	// are not comparable). A no-op when the choice is unchanged.
 	function changeFormulation(c: SolvableCase, next: Formulation) {
 		if (c.formulation === next) return;
+		// Disabled menu items (e.g. AC OPF, coming soon) are not selectable in the engine yet.
+		if (FORMULATIONS.find((f) => f.id === next)?.disabled) return;
 		c.formulation = next;
 		// The committed point carries over (same demand), but the model and its solution do
 		// not; drop the Study and the cached solutions so they rebuild under `next`.
@@ -1378,7 +1380,9 @@
 							onchange={(e) => changeFormulation(c, e.currentTarget.value as Formulation)}
 						>
 							{#each FORMULATIONS as f (f.id)}
-								<option value={f.id}>{f.label}</option>
+								<option value={f.id} disabled={f.disabled}>
+									{f.label}{f.disabled ? ' (coming soon)' : ''}
+								</option>
 							{/each}
 						</select>
 					</label>

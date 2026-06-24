@@ -9,8 +9,7 @@ Tellegen's theorem and the adjoint sensitivity calculations.
 
 tellegen uses a gradient preview, exact commit interaction model. Perturbations
 update the display from KKT sensitivity columns. Exact solves — DC OPF, AC power
-flow, the SOCWR relaxation, and the full nonlinear AC OPF — run in the browser in
-WebAssembly. Case parsing uses
+flow, and the SOCWR relaxation — run in the browser in WebAssembly. Case parsing uses
 [powerio](https://github.com/eigenergy/powerio).
 
 Full documentation is published with mdBook at
@@ -29,9 +28,8 @@ on geographic footprints, not surveyed infrastructure:
 | ACTIVSg500 | South Carolina | 500 | 597 |
 | ACTIVSg2000 | Texas | 2000 | 3206 |
 
-Each case solves as DC OPF by default, with a selector for the full nonlinear AC
-OPF and the SOCWR relaxation — all solved in the browser in WebAssembly. Bus color
-shows locational marginal price. Selecting a bus shows the dLMP/dd column for a
+Each case solves as DC OPF by default; a selector switches to the SOCWR relaxation,
+solved in the browser in WebAssembly. Bus color shows locational marginal price. Selecting a bus shows the dLMP/dd column for a
 demand perturbation at that bus. Moving the demand slider applies the local
 sensitivity immediately; releasing it computes the exact solution in WebAssembly.
 
@@ -155,7 +153,5 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 ## License
 
 The Rust crates are licensed under either of [Apache-2.0](crates/tellegen/LICENSE-APACHE)
-or [MIT](crates/tellegen/LICENSE-MIT) at your option. The web app under `apps/web/` is
-[MIT](LICENSE). The optional `acopf-pounce` feature links EPL-2.0 components and is not
-part of the shipped engine, wasm, server, or CLI build; the attribution is recorded in
-[crates/tellegen/NOTICE](crates/tellegen/NOTICE).
+or [MIT](crates/tellegen/LICENSE-MIT), at your option. The web app under `apps/web/` is
+[MIT](LICENSE). See [crates/tellegen/NOTICE](crates/tellegen/NOTICE) for attributions.

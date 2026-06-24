@@ -18,11 +18,9 @@ then
 
 - DC OPF — `solve_prebuilt` (objective, dispatch, LMPs);
 - conic SOCWR — `socwr_opf` (objective, gap, W-space primals);
-- AC OPF — `acopf` (the exact nonconvex optimum vs the published `AC ($/h)`);
 - AC power flow — `ac_pf` (convergence, residual);
-- sensitivities — the typed engines (`AcNewton` / `ConicKkt` / `AcOpfKkt` with
-  `sensitivity`) and the `solve_json` front door, which carries the DC
-  sensitivities.
+- sensitivities — the typed engines (`AcNewton` / `ConicKkt` with `sensitivity`)
+  and the `solve_json` front door, which carries the DC sensitivities.
 
 ## Timing
 
@@ -32,9 +30,9 @@ sensitivity). Solves run single-threaded for clean timing.
 
 ## Metrics
 
-1. **OPF correctness** vs the published reference — the DC objective, the exact AC
-   OPF objective, the SOCWR relaxation lower bound, and the SOC gap, rolled up into
-   a per-case reproduction verdict (see [Validation](validation.md)).
+1. **OPF correctness** vs the published reference — the DC objective, the SOCWR
+   relaxation lower bound, and the SOC gap, rolled up into a per-case reproduction
+   verdict (see [Validation](validation.md)).
 2. **Sensitivity parity** — adjoint equals forward, and central finite differences
    against the analytic columns, classified per parity class (see
    [the sensitivity contract](sensitivity-contract.md)).

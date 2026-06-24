@@ -3,10 +3,10 @@
 //! Parse a powerio [`Network`], apply operating-point edits, solve the requested
 //! formulation, attach any requested sensitivity cells, and serve a
 //! formulation-agnostic response. The frontend picks three things in one request:
-//! the **problem** it solves (`dcpf`/`dcopf`/`acpf`/`socwr`/`acopf`), the
-//! **operand** it differentiates, and the **parameter** it differentiates with
-//! respect to. The same physical vocabulary the [`sensitivity`] driver uses
-//! ([`Operand`]/[`Parameter`]) crosses the JSON edge unchanged.
+//! the **problem** it solves (`dcpf`/`dcopf`/`acpf`/`socwr`), the **operand** it
+//! differentiates, and the **parameter** it differentiates with respect to. The same
+//! physical vocabulary the [`sensitivity`] driver uses ([`Operand`]/[`Parameter`])
+//! crosses the JSON edge unchanged.
 //!
 //! Keeping the JSON layer here (not behind `#[wasm_bindgen]`) makes it testable
 //! natively; the wasm crate wraps [`solve_json`] and [`capabilities_json`].
@@ -32,10 +32,14 @@ use super::sens::{
 // Request
 // ---------------------------------------------------------------------------
 
-/// Which problem to solve. The five solve paths, as the lowercase JSON tags
-/// `"dcpf"`/`"dcopf"`/`"acpf"`/`"socwr"`/`"acopf"`. A plain (not internally
-/// tagged) enum so a request that omits it defaults to [`DcOpf`](Problem::DcOpf),
-/// and `{}` is a valid base-case DC OPF request.
+/// Which problem to solve. The convex/power-flow solve paths, as the lowercase JSON
+/// tags `"dcpf"`/`"dcopf"`/`"acpf"`/`"socwr"`. A plain (not internally tagged) enum
+/// so a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a
+/// valid base-case DC OPF request.
+///
+/// The `"acopf"` tag (full nonlinear AC OPF) is retained for wire-format stability
+/// but is not solved by this build: [`capabilities_json`] reports it unavailable and
+/// requesting it returns a clean `Err`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Problem {
@@ -50,8 +54,8 @@ pub enum Problem {
     AcPf,
     /// SOCWR (Jabr) conic relaxation of AC OPF. Differentiable via the conic KKT.
     Socwr,
-    /// Full nonlinear AC OPF. Native-only (the wasm build errors cleanly).
-    /// Differentiable via the AC OPF KKT.
+    /// Full nonlinear AC OPF. Not available in this build (the dispatch errors
+    /// cleanly); the tag is kept so the JSON contract stays stable.
     Acopf,
 }
 
@@ -72,11 +76,11 @@ pub struct Edits {
 #[derive(Clone, Debug, Deserialize)]
 pub struct SolveOptions {
     /// Permit load shedding on the DC paths. Default `false`: an unservable case
-    /// reports infeasible (the published PGLib behavior). Ignored by AC/conic/acopf.
+    /// reports infeasible (the published PGLib behavior). Ignored by AC/conic.
     #[serde(default)]
     pub shed: bool,
-    /// Warm-start the AC OPF from the SOCWR relaxation (the best-of-backends path).
-    /// Default `true`. Ignored by every other formulation.
+    /// Retained for wire-format stability; inert in this build (it gated the AC OPF
+    /// warm start). Default `true`, ignored by every formulation this build solves.
     #[serde(default = "default_true")]
     pub warm_start: bool,
 }
@@ -166,7 +170,7 @@ pub enum SolveStatus {
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum Iterations {
-    /// Interior-point iterate trace (dcopf / socwr / acopf).
+    /// Interior-point iterate trace (dcopf / socwr).
     Ipm(Vec<SolveIteration>),
     /// Newton iteration count and final infinity-norm mismatch (acpf).
     Newton { count: usize, residual: f64 },
@@ -227,13 +231,14 @@ pub struct SolveResponse {
     pub objective: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iterations: Option<Iterations>,
-    /// Active nodal price (dcopf / socwr / acopf).
+    /// Active nodal price (dcopf / socwr).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lmp: Option<Vec<BusScalar>>,
-    /// Reactive nodal price (acopf).
+    /// Reactive nodal price. Always `None` in this build; the field is retained for
+    /// wire-format stability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lmp_q: Option<Vec<BusScalar>>,
-    /// Voltage magnitude, per unit (acpf / acopf). SOCWR reports `w`, not `vm`.
+    /// Voltage magnitude, per unit (acpf). SOCWR reports `w`, not `vm`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vm: Option<Vec<BusScalar>>,
     /// Voltage angle, radians (every path except socwr, which is W-space).
@@ -295,10 +300,9 @@ pub fn solve_network(net: &Network, req: &SolveRequest) -> Result<SolveResponse,
         Problem::Socwr => solve_socwr(net, req),
         #[cfg(not(feature = "conic"))]
         Problem::Socwr => Err("socwr requires the `conic` feature".into()),
-        #[cfg(feature = "acopf")]
-        Problem::Acopf => solve_acopf(net, req),
-        #[cfg(not(feature = "acopf"))]
-        Problem::Acopf => Err("acopf is native-only and not available in this build".into()),
+        Problem::Acopf => {
+            Err("acopf (full nonlinear AC OPF) is not available in this build".into())
+        }
     }
 }
 
@@ -508,72 +512,6 @@ pub(crate) fn socwr_assemble(
     })
 }
 
-#[cfg(feature = "acopf")]
-fn solve_acopf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
-    let (acnet, sol) = acopf_solved(super::model::AcNetwork::from_network(net)?, req)?;
-    acopf_assemble(&acnet, &sol, req)
-}
-
-/// Apply the request's demand edits to an owned [`AcNetwork`] and solve the full AC OPF
-/// (warm-started best-of-backends unless `warm_start` is off), returning the perturbed
-/// model and its solution (retained for previews). Kept separate from
-/// [`acopf_assemble`] so a [`Study`](crate::study::Study) can retain the solved
-/// model + solution and build an `AcOpfKkt` without re-solving.
-#[cfg(feature = "acopf")]
-pub(crate) fn acopf_solved(
-    mut acnet: super::model::AcNetwork,
-    req: &SolveRequest,
-) -> Result<(super::model::AcNetwork, super::problem::AcOpfSolution), String> {
-    apply_demand_deltas_ac(&mut acnet, &req.edits.deltas);
-    let sol = if req.options.warm_start {
-        solve_acopf_best(&acnet)?
-    } else {
-        super::problem::acopf(&acnet).map_err(|e| e.to_string())?
-    };
-    Ok((acnet, sol))
-}
-
-/// Assemble the AC OPF [`SolveResponse`] (and sensitivity cells) from a solved model.
-/// Shared by the one-shot path and the cached [`Study`] path.
-#[cfg(feature = "acopf")]
-pub(crate) fn acopf_assemble(
-    acnet: &super::model::AcNetwork,
-    sol: &super::problem::AcOpfSolution,
-    req: &SolveRequest,
-) -> Result<SolveResponse, String> {
-    use super::sens::AcOpfKkt;
-    let base = acnet.base_mva;
-
-    let sensitivities = {
-        let sys = AcOpfKkt::new(acnet, sol).map_err(|e| e.to_string())?;
-        run_cells(&sys, &req.sensitivities)?
-    };
-
-    Ok(SolveResponse {
-        formulation: Problem::Acopf,
-        status: SolveStatus::Optimal,
-        objective: Some(sol.objective),
-        iterations: Some(Iterations::Ipm(sol.iterations.clone())),
-        lmp: Some(zip_scaled(&acnet.bus_ids, &sol.lmp, 1.0 / base)),
-        lmp_q: Some(zip_scaled(&acnet.bus_ids, &sol.lmp_q, 1.0 / base)),
-        vm: Some(zip_bus(&acnet.bus_ids, &sol.vm)),
-        va: Some(zip_bus(&acnet.bus_ids, &sol.va)),
-        w: None,
-        injections: None,
-        flows: Some(ac_branch_flows(
-            &acnet.branch_ids,
-            &sol.pf,
-            &sol.qf,
-            &sol.pt,
-            &sol.qt,
-            &acnet.rate_a,
-            base,
-        )),
-        dispatch: Some(zip_gen_pq(&acnet.gen_ids, &sol.pg, &sol.qg, base)),
-        sensitivities,
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Cached DC fast path (build the model once, solve per request)
 // ---------------------------------------------------------------------------
@@ -605,8 +543,8 @@ pub fn solve_prebuilt_cancellable(
 
 /// Run each requested cell against the solved system and rescale to served units.
 /// Takes `&dyn Differentiable` — the contract type — so every concrete system
-/// (`DcKkt`, `AcNewton`, `ConicKkt`, `AcOpfKkt`) coerces here; the `dyn` boundary is
-/// crossed once per cell, never inside the linear algebra.
+/// (`DcKkt`, `AcNewton`, `ConicKkt`) coerces here; the `dyn` boundary is crossed once
+/// per cell, never inside the linear algebra.
 #[cfg(feature = "sensitivity")]
 pub(crate) fn run_cells(
     sys: &dyn Differentiable,
@@ -653,7 +591,7 @@ fn rescale_to_served(m: &mut SensitivityMatrix, scale: f64, op: Operand, par: Pa
 #[derive(Clone, Debug, Serialize)]
 pub struct ProblemCaps {
     pub formulation: Problem,
-    /// Built in this binary (acopf is `false` on wasm).
+    /// Built in this binary (acopf is always `false`; it is not in this build).
     pub available: bool,
     /// Output blocks this formulation fills, e.g. `["lmp","va","flows","dispatch"]`.
     pub blocks: Vec<&'static str>,
@@ -799,81 +737,19 @@ fn formulation_caps() -> Vec<ProblemCaps> {
                 Parameter::ShuntAdmittance(GB::Susceptance),
             ],
         },
+        // Full nonlinear AC OPF: not in this build. The entry is kept (with the same
+        // output blocks it would fill) so the `acopf` tag stays in the matrix and the UI
+        // can grey it out, but `available` is `false` and it offers no sensitivity cells.
         ProblemCaps {
             formulation: Problem::Acopf,
-            available: cfg!(feature = "acopf"),
+            available: false,
             blocks: vec!["lmp", "lmp_q", "vm", "va", "flows", "dispatch"],
             #[cfg(feature = "sensitivity")]
-            operands: vec![
-                Operand::Price(Power::Active),
-                Operand::Price(Power::Reactive),
-                Operand::Voltage(VoltageKind::Magnitude),
-                Operand::Voltage(VoltageKind::Angle),
-                Operand::Dispatch(Power::Active),
-                Operand::Dispatch(Power::Reactive),
-                Operand::Flow {
-                    power: Power::Active,
-                    end: End::From,
-                },
-                Operand::Flow {
-                    power: Power::Active,
-                    end: End::To,
-                },
-                Operand::Flow {
-                    power: Power::Reactive,
-                    end: End::From,
-                },
-                Operand::Flow {
-                    power: Power::Reactive,
-                    end: End::To,
-                },
-            ],
+            operands: vec![],
             #[cfg(feature = "sensitivity")]
-            parameters: vec![
-                Parameter::Demand(Power::Active),
-                Parameter::Demand(Power::Reactive),
-                Parameter::Cost(CostTerm::Quadratic),
-                Parameter::Cost(CostTerm::Linear),
-            ],
+            parameters: vec![],
         },
     ]
-}
-
-/// Solve the AC OPF with the best available backend. On a native build with the
-/// `acopf-pounce` feature, the default is the faster multithreaded pounce backend (a
-/// Rust port of Ipopt), warm-started from the SOCWR relaxation, falling back to the
-/// interiors backend if pounce does not converge. The browser wasm build does not
-/// enable `acopf-pounce` — pounce parallelizes with threads (`rayon`), which browser
-/// WebAssembly lacks — so it uses the single-threaded interiors backend, as does any
-/// permissive (Apache-2.0/MIT) build. (`acopf` implies `conic`, so the SOCWR warm
-/// start is available.)
-#[cfg(feature = "acopf")]
-fn solve_acopf_best(
-    acnet: &super::model::AcNetwork,
-) -> Result<super::problem::AcOpfSolution, String> {
-    let warm = super::problem::socwr_opf(acnet).ok();
-    #[cfg(feature = "acopf-pounce")]
-    {
-        let pounce = warm.as_ref().map_or_else(
-            || super::problem::acopf_pounce(acnet),
-            |w| super::problem::acopf_pounce_warm(acnet, w),
-        );
-        pounce.or_else(|e1| {
-            warm.as_ref()
-                .map_or_else(
-                    || super::problem::acopf(acnet),
-                    |w| super::problem::acopf_warm(acnet, w),
-                )
-                .map_err(|e2| format!("pounce: {e1}; interiors: {e2}"))
-        })
-    }
-    #[cfg(not(feature = "acopf-pounce"))]
-    {
-        warm.as_ref().map_or_else(
-            || super::problem::acopf(acnet),
-            |w| super::problem::acopf_warm(acnet, w),
-        )
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1176,11 +1052,12 @@ mod tests {
             .map(|f| f["formulation"].as_str().unwrap())
             .collect();
         assert_eq!(tags, vec!["dcpf", "dcopf", "acpf", "socwr", "acopf"]);
-        // DC OPF is always built; acopf is gated on the native-only feature.
+        // DC OPF is always built; acopf is not in this build, so it reports unavailable
+        // (the tag stays in the matrix for a stable wire contract).
         let dcopf = arr.iter().find(|f| f["formulation"] == "dcopf").unwrap();
         assert_eq!(dcopf["available"], true);
         let acopf = arr.iter().find(|f| f["formulation"] == "acopf").unwrap();
-        assert_eq!(acopf["available"], cfg!(feature = "acopf"));
+        assert_eq!(acopf["available"], false);
     }
 
     #[cfg(feature = "sensitivity")]
@@ -1252,29 +1129,19 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "acopf"))]
     #[test]
-    fn acopf_is_native_only_off_build() {
+    fn acopf_is_not_available_in_this_build() {
+        // The full nonlinear AC OPF is not built on this branch; requesting it errors
+        // cleanly rather than degrading silently.
         let err = solve_json(&case3_json(), r#"{"formulation":"acopf"}"#).unwrap_err();
-        assert!(err.contains("native-only"), "got: {err}");
-    }
-
-    #[cfg(feature = "acopf")]
-    #[test]
-    fn acopf_reports_active_and_reactive_prices() {
-        let out = solve_json(&case3_json(), r#"{"formulation":"acopf"}"#).expect("solve");
-        let v: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["formulation"], "acopf");
-        assert_eq!(v["lmp"].as_array().unwrap().len(), 3);
-        assert_eq!(v["lmp_q"].as_array().unwrap().len(), 3);
-        assert_eq!(v["vm"].as_array().unwrap().len(), 3);
+        assert!(err.contains("not available in this build"), "got: {err}");
     }
 
     /// Guard against the static capability matrix drifting from the engine: build each
     /// available system on case3 and assert every operand/parameter the matrix lists is
     /// one the engine actually supports (`operand_len`/`parameter_len` are `Some`). Covers
-    /// DC OPF always, and — behind their features — AC PF, SOCWR, and AC OPF, so a UI menu
-    /// driven by `capabilities_json` can never offer a cell that errors at solve time.
+    /// DC OPF and AC PF always, and SOCWR behind the `conic` feature, so a UI menu driven
+    /// by `capabilities_json` can never offer a cell that errors at solve time.
     /// (DESIGN §8 open item: the guard used to probe only `dcopf`.)
     #[cfg(feature = "sensitivity")]
     #[test]
@@ -1324,15 +1191,6 @@ mod tests {
             let soc = super::super::problem::socwr_opf(&ac).unwrap();
             let sys = super::super::sens::ConicKkt::new(&ac, &soc).unwrap();
             check(Problem::Socwr, &sys);
-        }
-
-        // Full nonlinear AC OPF (native-only; warm-started best-of-backends, as the
-        // public endpoint solves it).
-        #[cfg(feature = "acopf")]
-        {
-            let sol = super::solve_acopf_best(&ac).unwrap();
-            let sys = super::super::sens::AcOpfKkt::new(&ac, &sol).unwrap();
-            check(Problem::Acopf, &sys);
         }
     }
 }

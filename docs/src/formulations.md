@@ -1,7 +1,8 @@
 # Formulations
 
-tellegen solves five formulations through one interface, each driven from the
-engine's public API. Every formulation returns the same result shape — locational
+tellegen solves the DC power flow and DC OPF, the AC power flow, and the Jabr SOCWR
+relaxation through one interface, each driven from the engine's public API. Every
+formulation returns the same result shape — locational
 marginal prices, voltages, branch flows, and generator dispatch — and exposes
 analytical sensitivities through the contract described in
 [the sensitivity contract](sensitivity-contract.md).
@@ -31,21 +32,6 @@ magnitude — and the solve takes damped steps with a backtracking line search f
 the setpoint start plus a few perturbations, keeping the lowest-residual result.
 Entry point: `ac_pf`.
 
-## AC OPF (polar, exact)
-
-The full nonconvex AC optimal power flow in polar coordinates, with explicit
-branch-flow variables so the only nonlinearity is the per-branch Ohm flow
-definition:
-
-$$ \min_{\theta,\, V_m,\, p_g,\, q_g}\ \sum_g c_q\, p_g^2 + c_l\, p_g + c_c $$
-
-subject to nodal active and reactive balance, the flow definitions, apparent-power
-thermal limits $p_f^2 + q_f^2 \le \overline{S}^2$ at both ends, the
-angle-difference limits, and the voltage, generation, and flow box bounds. Unlike
-the SOCWR relaxation this is the exact optimum that PGLib's `AC ($/h)` column
-reports. It is solved with a primal–dual interior-point method (pure Rust),
-behind the non-default `acopf` feature. Entry point: `acopf`.
-
 ## Conic SOCWR (Jabr)
 
 The Jabr second-order-cone relaxation lifts the voltage product to W-space
@@ -57,7 +43,6 @@ $$ (w^r_{ij})^2 + (w^i_{ij})^2 \le w_i\, w_j. $$
 The relaxation is a convex lower bound on AC OPF, solved with Clarabel's
 second-order-cone support. Entry point: `socwr_opf`.
 
-Every formulation, including the full nonlinear AC OPF, is pure Rust and compiles to
-WebAssembly, so the same code runs on a server and in the browser. In the browser the AC
-OPF uses the single-threaded `interiors` backend; the faster multithreaded `pounce`
-backend is native-only.
+Every formulation is pure Rust and compiles to WebAssembly, so the same code runs on a
+server and in the browser. The full nonlinear AC OPF (an interior-point program) is on the
+roadmap; it runs natively, where it can use threads.

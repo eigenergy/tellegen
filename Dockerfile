@@ -19,14 +19,14 @@ RUN curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15
 COPY Cargo.toml Cargo.lock /build/
 COPY crates /build/crates
 # The core wasm disables SIMD so Safari (no relaxed SIMD) can parse it, and drops
-# default features so it carries no faer kernels. The full wasm enables the `acopf`
-# feature — the whole engine (DC OPF, AC power flow, SOCWR, and the full nonlinear AC OPF
-# via the pure-Rust interiors backend) with sensitivities; it stays off relaxed SIMD at the
-# default wasm target, so it validates on Safari too. `--out-name tellegen` keeps the core
-# package's file names stable for the frontend's imports.
+# default features so it carries no faer kernels. The full wasm enables the `conic`
+# feature — the whole engine (DC optimal power flow, AC power flow, and the SOCWR
+# relaxation) with sensitivities; it stays off relaxed SIMD at the default wasm target,
+# so it validates on Safari too. `--out-name tellegen` keeps the core package's file
+# names stable for the frontend's imports.
 RUN RUSTFLAGS="-C target-feature=-simd128,-relaxed-simd" \
     wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --no-default-features
-RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-sens-pkg --out-name tellegen_sens -- --features acopf
+RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-sens-pkg --out-name tellegen_sens -- --features conic
 
 # ---- frontend build ----
 FROM node:22-slim AS frontend
@@ -54,8 +54,8 @@ FROM chef AS server
 COPY --from=planner /build/recipe.json recipe.json
 # Cook only the server binary's dependencies; this layer is reused across builds
 # whenever Cargo.toml / Cargo.lock are unchanged, even when the crate source
-# changes. Scoping to the bin keeps the native-only benchmark deps (the EPL pounce
-# backend) out of the build entirely.
+# changes. Scoping to the bin keeps the benchmark-only dependencies out of the build
+# entirely.
 RUN cargo chef cook --release --recipe-path recipe.json --bin tellegen-server
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates

@@ -11,9 +11,7 @@ name = "tellegen"
 path = "src/main.rs"
 
 [dependencies]
-# Default features (sensitivity). Native, but deliberately NOT acopf-pounce, so the
-# CLI binary stays Apache-2.0 / MIT (no EPL). Phase 5 widens the feature set for the
-# parity/repro harness.
+# Default features (sensitivity). The convex/relaxation engine, Apache-2.0 / MIT.
 tellegen = { path = "../tellegen" }
 
 [lints]

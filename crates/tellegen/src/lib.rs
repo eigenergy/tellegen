@@ -1,13 +1,11 @@
 //! tellegen: differentiable optimal power flow and sensitivities.
 //!
-//! Parses a case through [`powerio`] and solves any of five formulations — DC power
-//! flow, DC OPF, AC power flow, the SOCWR (Jabr) conic relaxation, and the full
-//! nonlinear AC OPF — returning a formulation-agnostic result: locational marginal
-//! prices, voltages, branch flows, generator dispatch, and analytical KKT
-//! sensitivities of any [`Operand`] with respect to any [`Parameter`]. The convex
-//! and power-flow paths are pure Rust and compile to native targets and
-//! WebAssembly, so the same engine runs on a server and in the browser; the
-//! nonlinear AC OPF is native-only.
+//! Parses a case through [`powerio`] and solves any of four formulations — DC power
+//! flow, DC OPF, AC power flow, and the SOCWR (Jabr) conic relaxation — returning a
+//! formulation-agnostic result: locational marginal prices, voltages, branch flows,
+//! generator dispatch, and analytical KKT sensitivities of any [`Operand`] with
+//! respect to any [`Parameter`]. Every path is pure Rust and compiles to native
+//! targets and WebAssembly, so the same engine runs on a server and in the browser.
 //!
 //! [`solve_json`] is the one front door (a [`SolveRequest`] in, a [`SolveResponse`]
 //! out); [`capabilities_json`] reports which `(formulation, operand, parameter)`
@@ -49,24 +47,14 @@ pub use formulation::{AcPolar, Dc, Formulation, SocWr};
 #[cfg(feature = "sensitivity")]
 pub use model::AcNetwork;
 pub use model::DcNetwork;
-#[cfg(feature = "acopf-pounce")]
-pub use problem::acopf_pounce;
-#[cfg(all(feature = "acopf-pounce", feature = "conic"))]
-pub use problem::acopf_pounce_warm;
-#[cfg(all(feature = "acopf", feature = "conic"))]
-pub use problem::acopf_warm;
 #[cfg(feature = "sensitivity")]
 pub use problem::{
     ac_pf, build_pf, dc_pf, AcPfFormulation, AcPfLayout, AcPfSolution, DcPfSolution, PfFormulation,
     PfSystem,
 };
-#[cfg(feature = "acopf")]
-pub use problem::{acopf, AcOpfSolution};
 #[cfg(feature = "conic")]
 pub use problem::{build_conic_opf, socwr_opf, ConicOpfFormulation, SocWrSolution};
 pub use problem::{build_opf, OpfFormulation, OpfProgram};
-#[cfg(feature = "acopf")]
-pub use sens::AcOpfKkt;
 #[cfg(feature = "conic")]
 pub use sens::ConicKkt;
 #[cfg(feature = "sensitivity")]

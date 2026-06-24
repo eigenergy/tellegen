@@ -13,15 +13,10 @@ tellegen's DC objective (constant cost term included) is compared against the
 published `DC ($/h)`. The per-unit cost scaling cancels exactly, so the comparison
 is in $/h directly.
 
-## AC OPF objective
-
-tellegen's exact AC OPF objective (`acopf` objective, constant cost included) is
-compared against the published `AC ($/h)` — the same nonconvex optimum the baseline
-reports. The SOCWR below lower-bounds this same AC optimum.
-
 ## Relaxation lower bound
 
-The SOCWR objective (`socwr_opf` objective) must lower-bound the AC optimum:
+The SOCWR objective (`socwr_opf` objective) must lower-bound the published AC optimum
+(`AC ($/h)`):
 
 $$ \text{socwr} \le \text{AC} + \text{tol}. $$
 

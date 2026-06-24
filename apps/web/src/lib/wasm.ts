@@ -243,14 +243,11 @@ export const FORMULATIONS: ReadonlyArray<{
 	id: Formulation;
 	label: string;
 	hint: string;
+	disabled?: boolean;
 }> = [
-	{ id: 'dcopf', label: 'DC OPF', hint: 'linear DC optimal power flow (fast, the default)' },
-	{
-		id: 'acopf',
-		label: 'AC OPF',
-		hint: 'full nonlinear AC optimal power flow (interior-point)'
-	},
-	{ id: 'socwr', label: 'SOCWR', hint: 'second-order cone (Jabr) relaxation of AC OPF' }
+	{ id: 'dcopf', label: 'DC OPF', hint: 'DC optimal power flow (the default)' },
+	{ id: 'socwr', label: 'SOCWR', hint: 'Jabr second-order-cone relaxation of AC OPF' },
+	{ id: 'acopf', label: 'AC OPF', hint: 'full nonlinear AC optimal power flow', disabled: true }
 ];
 
 /** The default formulation: DC OPF, preserving the prior fixed behavior byte-for-byte. */

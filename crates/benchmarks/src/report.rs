@@ -85,7 +85,6 @@ struct CsvRow<'a> {
     gens: usize,
     status: &'a str,
     repro_dc: &'a str,
-    repro_ac: &'a str,
     repro_soc: &'a str,
     dc_obj: Option<f64>,
     dc_baseline: Option<f64>,
@@ -99,11 +98,6 @@ struct CsvRow<'a> {
     soc_delta_gap: Option<f64>,
     soc_bound_ok: Option<bool>,
     soc_iters: Option<usize>,
-    acopf_obj: Option<f64>,
-    acopf_baseline_ac: Option<f64>,
-    acopf_rel_err: Option<f64>,
-    acopf_iters: Option<usize>,
-    acopf_converged: Option<bool>,
     acpf_converged: Option<bool>,
     acpf_iters: Option<usize>,
     acpf_residual: Option<f64>,
@@ -112,7 +106,6 @@ struct CsvRow<'a> {
     t_build_ac_ms: f64,
     t_dc_ms: f64,
     t_soc_ms: f64,
-    t_acopf_ms: f64,
     t_acpf_ms: f64,
     t_sens_ms: f64,
     worst_adj_fwd: Option<f64>,
@@ -161,7 +154,6 @@ pub fn write_csv(path: &Path, records: &[Record]) -> std::io::Result<()> {
             gens: r.gens,
             status: status_str(r.status),
             repro_dc: r.repro.dc.mark(),
-            repro_ac: r.repro.ac.mark(),
             repro_soc: r.repro.soc.mark(),
             dc_obj: r.dc.objective,
             dc_baseline: r.dc.baseline,
@@ -175,11 +167,6 @@ pub fn write_csv(path: &Path, records: &[Record]) -> std::io::Result<()> {
             soc_delta_gap: r.soc.delta_gap,
             soc_bound_ok: r.soc.bound_ok,
             soc_iters: r.soc.iterations,
-            acopf_obj: r.acopf.objective,
-            acopf_baseline_ac: r.acopf.baseline_ac,
-            acopf_rel_err: r.acopf.rel_err,
-            acopf_iters: r.acopf.iterations,
-            acopf_converged: r.acopf.converged,
             acpf_converged: r.acpf.converged,
             acpf_iters: r.acpf.iterations,
             acpf_residual: r.acpf.residual,
@@ -188,7 +175,6 @@ pub fn write_csv(path: &Path, records: &[Record]) -> std::io::Result<()> {
             t_build_ac_ms: r.timings.build_ac_ms,
             t_dc_ms: r.timings.dc_ms,
             t_soc_ms: r.timings.soc_ms,
-            t_acopf_ms: r.timings.acopf_ms,
             t_acpf_ms: r.timings.acpf_ms,
             t_sens_ms: r.timings.sens_ms,
             worst_adj_fwd: adj,
@@ -283,33 +269,30 @@ pub fn render_markdown(prov: &Provenance, records: &[Record]) -> String {
     s.push_str("## OPF correctness vs PGLib BASELINE\n\n");
     s.push_str(
         "tellegen's objective against the published value, per formulation: the DC OPF ($/h, \
-         constant cost included) vs the published DC, the exact nonlinear AC OPF vs the \
-         published AC, and the SOCWR relaxation (a lower bound on AC). `Δgap` is tellegen's SOC \
-         gap minus the published SOC gap; near zero is the steelman result (same Jabr family). \
-         The **reproduces** column is `DC·AC·SOC`: ✓ matches the published objective (DC within \
-         1%, AC within 0.1%), `inf✓` infeasible consistent with the published `inf.`, ✓lb a \
-         valid lower bound whose gap matches the published SOC, lb a valid bound with a looser \
-         gap, ✗ a mismatch (a converged but differing objective), ✗nc an AC OPF that did \
-         not converge (no objective produced), — no baseline.\n\n",
+         constant cost included) vs the published DC, and the SOCWR relaxation (a lower bound on \
+         AC) vs the published AC. `Δgap` is tellegen's SOC gap minus the published SOC gap; near \
+         zero is the steelman result (same Jabr family). The **reproduces** column is `DC·SOC`: ✓ \
+         matches the published objective (DC within 1%), `inf✓` infeasible consistent with the \
+         published `inf.`, ✓lb a valid lower bound whose gap matches the published SOC, lb a \
+         valid bound with a looser gap, ✗ a mismatch (a converged but differing objective), — no \
+         baseline.\n\n",
     );
     s.push_str(
-        "| case | var | buses | DC $/h | PGLib DC | AC OPF $/h | PGLib AC | SOCWR $/h | Δgap | reproduces |\n\
-         | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |\n",
+        "| case | var | buses | DC $/h | PGLib DC | SOCWR $/h | PGLib AC | Δgap | reproduces |\n\
+         | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | :---: |\n",
     );
     for r in records.iter().filter(|r| r.status != Status::Skipped) {
         s.push_str(&format!(
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {}·{}·{} |\n",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {}·{} |\n",
             r.case.replace("pglib_opf_", ""),
             r.variant.tag(),
             r.buses,
             fnum(r.dc.objective, 1),
             fnum(r.dc.baseline, 1),
-            fnum(r.acopf.objective, 1),
-            fnum(r.acopf.baseline_ac, 1),
             fnum(r.soc.objective, 1),
+            fnum(r.soc.baseline_ac, 1),
             fnum(r.soc.delta_gap, 2),
             r.repro.dc.mark(),
-            r.repro.ac.mark(),
             r.repro.soc.mark(),
         ));
     }
@@ -340,8 +323,8 @@ pub fn render_markdown(prov: &Provenance, records: &[Record]) -> String {
     s.push_str("## Performance (wall time per stage)\n\n");
     s.push_str("Median milliseconds per stage, by size band. Solves are single-threaded.\n\n");
     s.push_str(
-        "| band | cases | parse | build | DC | SOCWR | AC OPF | AC PF | sens |\n\
-         | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n",
+        "| band | cases | parse | build | DC | SOCWR | AC PF | sens |\n\
+         | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n",
     );
     s.push_str(&perf_band_table(records));
     s.push('\n');
@@ -389,27 +372,24 @@ fn reproduction_summary(records: &[Record]) -> String {
         records.iter().filter(|r| pred(sel(r))).count()
     };
     let dc = |r: &Record| r.repro.dc;
-    let ac = |r: &Record| r.repro.ac;
     let soc = |r: &Record| r.repro.soc;
     let has_base = |x: Repro| x != Repro::Missing;
     let reproduced = |x: Repro| matches!(x, Repro::Match | Repro::BoundMatch);
     let consistent = |x: Repro| matches!(x, Repro::InfeasibleConsistent | Repro::BoundLoose);
-    let mismatch = |x: Repro| matches!(x, Repro::Mismatch | Repro::NonConvergence);
+    let mismatch = |x: Repro| matches!(x, Repro::Mismatch);
 
     let mut s = String::new();
     s.push_str(
         "Corpus roll-up of the per-case marks in the table below. \"Reproduced\" is an \
-         objective match (DC within 1%, AC within 0.1%) or, for the SOCWR relaxation, a valid \
-         lower bound whose gap matches the published SOC gap. \"Consistent\" is an acceptable \
-         non-exact agreement: a DC the baseline also reports infeasible, or a SOCWR lower bound \
-         with a looser gap. \"Mismatch\" is a differing objective, a non-converged AC OPF, or a \
-         lower-bound violation.\n\n",
+         objective match (DC within 1%) or, for the SOCWR relaxation, a valid lower bound whose \
+         gap matches the published SOC gap. \"Consistent\" is an acceptable non-exact agreement: \
+         a DC the baseline also reports infeasible, or a SOCWR lower bound with a looser gap. \
+         \"Mismatch\" is a differing objective or a lower-bound violation.\n\n",
     );
     s.push_str("| formulation | reproduced | consistent | mismatch | with baseline |\n");
     s.push_str("| --- | ---: | ---: | ---: | ---: |\n");
     for (name, sel) in [
         ("DC OPF", &dc as &dyn Fn(&Record) -> Repro),
-        ("AC OPF", &ac),
         ("SOCWR (lower bound)", &soc),
     ] {
         s.push_str(&format!(
@@ -516,19 +496,18 @@ fn perf_band_table(records: &[Record]) -> String {
         }
         let col = |f: &dyn Fn(&Record) -> f64| median(rs.iter().map(|r| f(r)).collect());
         s.push_str(&format!(
-            "| {b} | {} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} |\n",
+            "| {b} | {} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} |\n",
             rs.len(),
             col(&|r| r.timings.parse_ms),
             col(&|r| r.timings.build_dc_ms + r.timings.build_ac_ms),
             col(&|r| r.timings.dc_ms),
             col(&|r| r.timings.soc_ms),
-            col(&|r| r.timings.acopf_ms),
             col(&|r| r.timings.acpf_ms),
             col(&|r| r.timings.sens_ms),
         ));
     }
     if s.is_empty() {
-        s.push_str("| — | — | — | — | — | — | — | — | — |\n");
+        s.push_str("| — | — | — | — | — | — | — | — |\n");
     }
     s
 }

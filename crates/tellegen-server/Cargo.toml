@@ -15,10 +15,9 @@ name = "tellegen-server"
 path = "src/main.rs"
 
 [dependencies]
-# The engine. The server's default build enables the native pounce AC OPF backend
-# (EPL-2.0, multithreaded, the faster solver) for the full formulation set; a fully
-# permissive build is `--no-default-features --features acopf` (the interiors backend,
-# Apache-2.0/MIT). The server owns only the HTTP transport and case staging.
+# The engine, with the convex/relaxation formulation set (DC power flow, DC optimal
+# power flow, AC power flow, and the SOCWR conic relaxation) and sensitivities. The
+# server owns only the HTTP transport and case staging.
 tellegen = { path = "../tellegen" }
 powerio.workspace = true
 serde.workspace = true
@@ -34,10 +33,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower = { version = "0.5", features = ["util"] }
 
 [features]
-default = ["sensitivity", "acopf-pounce"]
+default = ["sensitivity", "conic"]
 sensitivity = ["tellegen/sensitivity"]
-acopf = ["tellegen/acopf"]
-acopf-pounce = ["tellegen/acopf-pounce"]
+conic = ["tellegen/conic"]
 
 [lints]
 workspace = true

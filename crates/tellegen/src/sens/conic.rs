@@ -86,7 +86,7 @@ impl<'a> ConicKkt<'a> {
         // sized from the layout rebuilt from `net`. A solution paired with a differently
         // sized network would index out of range, or — if the sizes happen to coincide —
         // silently assemble the slack `s = b − Ax` against the wrong primal. Reject the
-        // mismatch, matching `AcOpfKkt::new`.
+        // mismatch.
         if sol.x.len() != nvar || sol.z.len() != ncon {
             return Err(SensError::Assembly(
                 "SOCWR solution does not match the network layout".into(),

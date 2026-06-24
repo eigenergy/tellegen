@@ -11,9 +11,10 @@ name = "pglib-bench"
 path = "src/main.rs"
 
 [dependencies]
-# The engine, with every native-only backend on for parity coverage. The shared
-# workspace lockfile unifies powerio across the API boundary.
-tellegen = { path = "../tellegen", features = ["conic", "acopf", "acopf-pounce"] }
+# The engine, with the conic (SOCWR) relaxation on for parity coverage alongside the
+# DC and AC-power-flow paths. The shared workspace lockfile unifies powerio across the
+# API boundary.
+tellegen = { path = "../tellegen", features = ["conic"] }
 powerio.workspace = true
 walkdir = "2"
 rayon = "1"

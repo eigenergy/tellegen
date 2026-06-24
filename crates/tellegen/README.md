@@ -2,21 +2,21 @@
 
 Differentiable optimal power flow and sensitivities, in Rust.
 
-tellegen solves the DC optimal power flow, the AC power flow, the SOCWR (Jabr) conic
-relaxation of AC OPF, and the full nonlinear AC OPF, and computes analytical KKT
-sensitivities for each through one unified `sensitivity(operand, parameter)` front
-door. It parses cases through [`powerio`](https://github.com/eigenergy/powerio),
-solves with Clarabel (convex) and an interior-point NLP solver (AC OPF), and compiles
-to both native targets and WebAssembly, so the same engine runs on a server and in the
-browser, including the full nonlinear AC OPF. In the browser the AC OPF uses the pure-Rust
-single-threaded `interiors` backend; the faster multithreaded `pounce` backend is
-native-only.
+`tellegen` solves the DC optimal power flow, the AC power flow, and the SOCWR (Jabr) conic
+relaxation of AC OPF, and computes analytical KKT sensitivities for each through one
+unified `sensitivity(operand, parameter)` function. 
+Case files are parsed through [`powerio`](https://github.com/eigenergy/powerio). 
+Convex problems are solved with the Clarabel solver. 
+
+`tellegen` compiles to both native targets and WebAssembly, so it runs on a server and in
+the browser. The full nonlinear AC OPF is on the roadmap; it runs natively, where it can
+use threads.
 
 ## Status
 
 Early (v0.1.0). DC OPF (locational marginal prices, branch flows, generator dispatch),
-AC power flow voltage sensitivities, the SOCWR conic relaxation with sensitivities, and
-the full AC OPF — all under the one object-safe `Differentiable` sensitivity contract.
+AC power flow voltage sensitivities, and the SOCWR conic relaxation with sensitivities —
+all under the one object-safe `Differentiable` sensitivity contract.
 
 ## Use
 

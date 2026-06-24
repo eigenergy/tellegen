@@ -18,7 +18,6 @@ cargo run -p benchmarks --release -- [flags]
 | --- | --- | --- |
 | `--variants typ\|api\|sad\|all` | `all` | which operating-condition set |
 | `--max-bus N` | unlimited | skip cases above N buses (reproducible cap) |
-| `--max-acopf-bus N` | 3000 | skip the nonlinear AC OPF above N buses |
 | `--max-sens-bus N` | 1500 | skip finite-difference sampling above N buses |
 | `--timeout SECS` | 180 | per-case wall-clock guard |
 | `--limit N` | — | run only the first N (smallest) cases |
@@ -39,9 +38,8 @@ deterministic, so the numbers reproduce on the recorded toolchain.
 | --- | --- |
 | DC OPF | `solve_prebuilt` (`DcNetwork::from_network` + the prebuilt solve = `solve_network`) |
 | conic SOCWR | `socwr_opf` |
-| AC OPF | `acopf` (the exact nonconvex optimum vs the published `AC ($/h)`) |
 | AC power flow | `ac_pf(&AcPolar::new(), &AcNetwork::from_network(..))` |
-| AC / conic / AC OPF sensitivities | `AcNewton::new` / `ConicKkt::new` / `AcOpfKkt::new` + `sensitivity` |
+| AC / conic sensitivities | `AcNewton::new` / `ConicKkt::new` + `sensitivity` |
 | DC sensitivities | `solve_json` (the DC KKT via the public solve front door) |
 
 The corpus is never vendored; PGLib data is CC BY 4.0 (v23.07, arXiv:1908.02788).

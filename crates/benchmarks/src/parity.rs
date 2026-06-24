@@ -16,9 +16,9 @@
 use powerio::network::Network;
 use serde_json::Value;
 use tellegen::{
-    ac_pf, acopf, sensitivity, socwr_opf, solve_json, AcNetwork, AcNewton, AcOpfKkt, AcOpfSolution,
-    AcPfSolution, AcPolar, Bound, ConicKkt, CostTerm, Differentiable, Edits, End, Mode, Operand,
-    Parameter, Power, SocWrSolution, SolveRequest, VoltageKind, GB,
+    ac_pf, sensitivity, socwr_opf, solve_json, AcNetwork, AcNewton, AcPfSolution, AcPolar, Bound,
+    ConicKkt, CostTerm, Differentiable, Edits, End, Mode, Operand, Parameter, Power, SocWrSolution,
+    SolveRequest, VoltageKind, GB,
 };
 
 use crate::record::ParitySummary;
@@ -111,33 +111,6 @@ fn ac_operand(sol: &AcPfSolution, op: Operand) -> Option<Vec<f64>> {
     Some(match op {
         Operand::Voltage(VoltageKind::Magnitude) => sol.vm.clone(),
         Operand::Voltage(VoltageKind::Angle) => sol.va.clone(),
-        _ => return None,
-    })
-}
-
-fn acopf_operand(sol: &AcOpfSolution, op: Operand) -> Option<Vec<f64>> {
-    Some(match op {
-        Operand::Voltage(VoltageKind::Magnitude) => sol.vm.clone(),
-        Operand::Voltage(VoltageKind::Angle) => sol.va.clone(),
-        Operand::Dispatch(Power::Active) => sol.pg.clone(),
-        Operand::Dispatch(Power::Reactive) => sol.qg.clone(),
-        Operand::Price(Power::Active) => sol.lmp.clone(),
-        Operand::Flow {
-            power: Power::Active,
-            end: End::From,
-        } => sol.pf.clone(),
-        Operand::Flow {
-            power: Power::Active,
-            end: End::To,
-        } => sol.pt.clone(),
-        Operand::Flow {
-            power: Power::Reactive,
-            end: End::From,
-        } => sol.qf.clone(),
-        Operand::Flow {
-            power: Power::Reactive,
-            end: End::To,
-        } => sol.qt.clone(),
         _ => return None,
     })
 }
@@ -252,31 +225,6 @@ const AC_CELLS: &[(Operand, Parameter)] = &[
     (
         Operand::Voltage(VoltageKind::Magnitude),
         Parameter::Demand(Power::Active),
-    ),
-];
-
-/// AC OPF candidate cells. `AcOpfKkt` supports the Demand and Cost parameters; sample the
-/// price, dispatch, and voltage operands against them.
-const ACOPF_CELLS: &[(Operand, Parameter)] = &[
-    (
-        Operand::Price(Power::Active),
-        Parameter::Demand(Power::Active),
-    ),
-    (
-        Operand::Dispatch(Power::Active),
-        Parameter::Demand(Power::Active),
-    ),
-    (
-        Operand::Voltage(VoltageKind::Magnitude),
-        Parameter::Demand(Power::Reactive),
-    ),
-    (
-        Operand::Voltage(VoltageKind::Angle),
-        Parameter::Demand(Power::Active),
-    ),
-    (
-        Operand::Dispatch(Power::Active),
-        Parameter::Cost(CostTerm::Linear),
     ),
 ];
 
@@ -430,89 +378,6 @@ pub fn ac_parity(net: &AcNetwork) -> ParitySummary {
             let an = col(c);
             // Row i reports bus `fwd.rows[i].index`; the AC voltage operand spans the
             // free buses, not 0..n, so the FD readout must use that dense index.
-            let diff: Vec<f64> = (0..an.len())
-                .map(|i| {
-                    let e = fwd.rows[i].index;
-                    an[i] - (opp[e] - opm[e]) / (2.0 * eps)
-                })
-                .collect();
-            sum.fd_columns += 1;
-            record_rel(&mut sum, op, par, l2(&diff) / norms[c]);
-        }
-    }
-    sum
-}
-
-/// Full AC OPF FD parity for one network. Mirrors [`ac_parity`]: solve the exact AC OPF
-/// once, build the KKT, probe each cell for adjoint/forward consistency, and finite-
-/// difference the significant columns by perturbing the public network fields. The AC OPF
-/// re-solves are the heaviest in the sweep, so this is gated by `--max-sens-bus` like the
-/// others.
-pub fn acopf_parity(net: &AcNetwork) -> ParitySummary {
-    let mut sum = ParitySummary::new("acopf");
-    let sol = match acopf(net) {
-        Ok(s) => s,
-        Err(e) => {
-            sum.notes.push(format!("ac opf solve failed: {e}"));
-            return sum;
-        }
-    };
-    let sys = match AcOpfKkt::new(net, &sol) {
-        Ok(s) => s,
-        Err(e) => {
-            sum.notes.push(format!("ac opf kkt build failed: {e}"));
-            return sum;
-        }
-    };
-
-    for &(op, par) in ACOPF_CELLS {
-        sum.cells_probed += 1;
-        let plen = match sys.parameter_len(par) {
-            Some(n) if n > 0 => n,
-            _ => continue,
-        };
-        let idxs = sample_indices(plen, MAX_COLS);
-        let fwd = match sensitivity(&sys, op, par, Some(&idxs), Mode::Forward) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        sum.cells_supported += 1;
-        if let Ok(adj) = sensitivity(&sys, op, par, Some(&idxs), Mode::Adjoint) {
-            for (rf, ra) in fwd.values.iter().zip(adj.values.iter()) {
-                for (a, b) in rf.iter().zip(ra.iter()) {
-                    sum.worst_adjoint_forward = sum.worst_adjoint_forward.max((a - b).abs());
-                }
-            }
-        }
-        if acopf_operand(&sol, op).is_none() {
-            continue;
-        }
-        let nrows = fwd.values.len();
-        let col = |c: usize| (0..nrows).map(|r| fwd.values[r][c]).collect::<Vec<_>>();
-        let norms: Vec<f64> = (0..fwd.cols.len()).map(|c| l2(&col(c))).collect();
-        let man = norms.iter().cloned().fold(0.0, f64::max);
-        if man < ZERO_FLOOR {
-            continue;
-        }
-        let floor = FLOOR_FRAC * man;
-        let eps = eps_for(par);
-        // `c` jointly indexes `norms`, the analytic column, and the dense parameter index.
-        #[allow(clippy::needless_range_loop)]
-        for c in 0..fwd.cols.len() {
-            if norms[c] < floor {
-                continue;
-            }
-            let dense = fwd.cols[c].index;
-            let (Some(sp), Some(sm)) = (
-                perturb_ac(net, par, dense, eps).and_then(|n| acopf(&n).ok()),
-                perturb_ac(net, par, dense, -eps).and_then(|n| acopf(&n).ok()),
-            ) else {
-                continue;
-            };
-            let (Some(opp), Some(opm)) = (acopf_operand(&sp, op), acopf_operand(&sm, op)) else {
-                continue;
-            };
-            let an = col(c);
             let diff: Vec<f64> = (0..an.len())
                 .map(|i| {
                     let e = fwd.rows[i].index;

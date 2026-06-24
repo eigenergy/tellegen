@@ -1,37 +1,11 @@
 tellegen
 Copyright 2026 Samuel Talkington and contributors
 
-tellegen is a differentiable power flow and optimal power flow engine in Rust: the DC
-optimal power flow and locational marginal price sensitivities, the AC power flow
-voltage sensitivities, the full nonlinear AC optimal power flow, and the SOCWR (Jabr)
-conic relaxation of AC optimal power flow, each with analytic sensitivities. Licensed
-under the Apache License 2.0 or the MIT License, at your option.
+tellegen is a differentiable power flow engine in Rust. The engine supports computing solutions to power flow (PF) problems (DC/AC), optimal power flow (OPF) problems (DC/SOCWR/AC), and differentiating the solutions of said problems with respect to their problem parameters.
 
-The W-space SOCWR formulation follows the standard Jabr second-order-cone relaxation
-(R. A. Jabr, 2006) as implemented in PowerModels.jl
-(https://github.com/lanl-ansi/PowerModels.jl, BSD-3-Clause), used as a formulation
-reference; the implementation here is independent.
+With tellegen, you can differentiate things like locational marginal prices, the voltage magnitudes obtained at an AC power flow solutions, and even the solutions obtained by the Jabr Relaxation of ACOPF. All sensitivities are computing analytically. The package is licensed under the Apache License 2.0 or the MIT License, at your option.
 
-Third-party components: the `pounce` AC OPF backend. The full nonlinear AC OPF is solved
-by default, in native builds, with `pounce` — a Rust port of the Ipopt interior-point
-optimizer (A. Wächter and L. T. Biegler, "On the Implementation of an Interior-Point
-Filter Line-Search Algorithm for Large-Scale Nonlinear Programming," Mathematical
-Programming 106(1), 2006; COIN-OR Ipopt, https://github.com/coin-or/Ipopt, EPL-2.0).
-It links:
-
-- pounce (pounce-nlp, pounce-algorithm, pounce-common, pounce-linalg, pounce-linsol,
-  pounce-feral, pounce-qp, pounce-presolve, pounce-l1penalty, pounce-observability):
-  Eclipse Public License 2.0 (EPL-2.0), https://crates.io/crates/pounce-nlp. These
-  components remain under the EPL-2.0; their source is available on crates.io, and a
-  copy of the EPL-2.0 (see LICENSE-EPL) accompanies any binary that bundles them.
-- FERAL (feral, feral-amd, feral-amf, feral-metis, feral-scotch, feral-kahip,
-  feral-ordering-core), pure-Rust sparse ordering/linear-algebra: MIT License.
-
-The `pounce` backend (multithreaded, via `rayon`) is the default AC OPF solver in the
-native server, and is linked into the benchmark harness (selectable with
-`--acopf-backend pounce`); both therefore bundle the EPL-2.0 components above. The browser WebAssembly build and `tellegen-cli` use the `interiors`
-backend instead (pure Rust, single-threaded, Apache-2.0/MIT); a fully permissive native
-build selects it with `--no-default-features --features acopf`.
+The W-space SOCWR formulation follows the standard Jabr second-order-cone (SOC) relaxation (R. A. Jabr, 2006) as implemented in PowerModels.jl (https://github.com/lanl-ansi/PowerModels.jl, BSD-3-Clause). PowerModels.jl was used as a formulation reference.
 
 This material is based upon work supported by the National Science Foundation Graduate
 Research Fellowship under Grant No. DGE-2039655. Any opinion, findings, and conclusions

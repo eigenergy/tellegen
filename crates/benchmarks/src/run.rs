@@ -6,48 +6,26 @@
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use tellegen::{
-    ac_pf, socwr_opf, AcNetwork, AcPolar, DcNetwork, Iterations, SocWrSolution, SolveRequest,
-};
+use tellegen::{ac_pf, socwr_opf, AcNetwork, AcPolar, DcNetwork, Iterations, SolveRequest};
 
 use crate::baseline::BaselineRow;
 use crate::corpus::CaseFile;
 use crate::parity;
 use crate::record::{Record, Repro, Status};
 
-/// A DC or AC objective within this relative tolerance of the published value reproduces
-/// it. DC is looser (tellegen's DC carries a small flow regularization the PowerModels DC
-/// baseline does not); the exact AC OPF should match the published AC optimum tightly.
+/// A DC objective within this relative tolerance of the published value reproduces it. DC
+/// is looser because tellegen's DC carries a small flow regularization the PowerModels DC
+/// baseline does not.
 const DC_MATCH_TOL: f64 = 1e-2;
-const AC_MATCH_TOL: f64 = 1e-3;
 /// The SOCWR reproduces the published SOC relaxation when its gap is within this many
 /// percentage points of the published SOC gap (the same Jabr relaxation family).
 const SOC_GAP_TOL: f64 = 0.5;
-/// The AC OPF FD parity sweep re-solves the AC OPF many times per case (the heaviest work
-/// in the harness), so it runs only on small cases; the differentiation is unit-tested.
-const ACOPF_PARITY_MAX_BUS: usize = 150;
-
-/// Which nonlinear AC OPF solver backend `run_acopf` drives.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AcopfBackend {
-    /// The default `interiors` MIPS interior point (BSD-3).
-    Interiors,
-    /// The `pounce` Ipopt port (filter line search + restoration; EPL-2.0).
-    Pounce,
-    /// Try `interiors` first, fall back to `pounce` on non-convergence. The two backends
-    /// recover overlapping but not identical subsets of the hardest cases, so best-of-both
-    /// reproduces more than either alone; the case counts as reproduced if either converges.
-    Best,
-}
 
 /// Run-wide knobs (`docs/src/methodology.md`).
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
     /// Skip a case whose filename bus count exceeds this (0 = unlimited).
     pub max_bus: usize,
-    /// Skip the nonlinear AC OPF stage above this bus count (the MIPS interior point is not
-    /// built for the giants), while still running DC / SOCWR / PF. 0 = unlimited.
-    pub max_acopf_bus: usize,
     /// Skip sensitivity sampling above this bus count (the dense solve is the memory
     /// bottleneck), while still solving the OPF/PF.
     pub max_sens_bus: usize,
@@ -55,8 +33,6 @@ pub struct Config {
     pub timeout: Duration,
     /// Whether to finite-difference the sensitivities at all.
     pub sample_sensitivity: bool,
-    /// Which AC OPF backend solves the nonlinear stage.
-    pub acopf_backend: AcopfBackend,
 }
 
 fn ms(t: Instant) -> f64 {
@@ -149,15 +125,7 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
         rec.buses = ac.n;
         rec.branches = ac.m;
         rec.gens = ac.k;
-        let soc = run_soc(&mut rec, ac, &baseline);
-        if cfg.max_acopf_bus == 0 || cf.buses <= cfg.max_acopf_bus {
-            run_acopf(&mut rec, ac, &baseline, cfg.acopf_backend, soc.as_ref());
-        } else {
-            rec.note(format!(
-                "AC OPF skipped: buses {} exceed --max-acopf-bus {}",
-                cf.buses, cfg.max_acopf_bus
-            ));
-        }
+        run_soc(&mut rec, ac, &baseline);
         run_acpf(&mut rec, ac);
     } else if let Some(e) = ac.as_ref().err() {
         rec.soc.error = Some(e.to_string());
@@ -171,9 +139,6 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
         if let Ok(ac) = ac.as_ref() {
             rec.parity.push(parity::ac_parity(ac));
             rec.parity.push(parity::conic_parity(ac));
-            if cf.buses <= ACOPF_PARITY_MAX_BUS {
-                rec.parity.push(parity::acopf_parity(ac));
-            }
         }
         for p in &mut rec.parity {
             p.finalize();
@@ -242,13 +207,8 @@ fn run_dc(rec: &mut Record, dc: &DcNetwork, const_cost: f64, baseline: &Option<B
     }
 }
 
-/// Solve the SOCWR relaxation, record the gap/bound verdict, and return the solution so
-/// the AC OPF stage can warm-start from it (`None` if the relaxation did not solve).
-fn run_soc(
-    rec: &mut Record,
-    ac: &AcNetwork,
-    baseline: &Option<BaselineRow>,
-) -> Option<SocWrSolution> {
+/// Solve the SOCWR relaxation and record the gap/bound verdict.
+fn run_soc(rec: &mut Record, ac: &AcNetwork, baseline: &Option<BaselineRow>) {
     let t = Instant::now();
     let sol = match socwr_opf(ac) {
         Ok(s) => s,
@@ -257,7 +217,7 @@ fn run_soc(
             rec.soc.error = Some(e.to_string());
             rec.note(format!("SOCWR solve failed: {e}"));
             rec.raise(Status::Caveat);
-            return None;
+            return;
         }
     };
     rec.timings.soc_ms = ms(t);
@@ -306,86 +266,6 @@ fn run_soc(
         (Some(true), _) => Repro::BoundLoose,
         (None, _) => Repro::Missing,
     };
-
-    Some(sol)
-}
-
-/// Solve the full nonlinear AC OPF and compare its objective to the published `AC ($/h)`.
-/// This is the exact optimum PGLib reports — the SOCWR only lower-bounds it — so a match
-/// is tellegen reproducing the AC column. The objective already includes the constant cost.
-fn run_acopf(
-    rec: &mut Record,
-    ac: &AcNetwork,
-    baseline: &Option<BaselineRow>,
-    backend: AcopfBackend,
-    warm: Option<&SocWrSolution>,
-) {
-    let t = Instant::now();
-    let baseline_ac = baseline.as_ref().and_then(|b| b.ac);
-    // When the SOCWR relaxation solved, warm-start the nonlinear stage from it (the lever
-    // for the near-infeasible giants the flat start cannot crack); otherwise fall back to
-    // the flat-start entry point. Each backend's `_warm` variant tries the reconstructed
-    // point first and the flat-start schedule after, so warm-starting never loses a case.
-    let run_interiors =
-        || warm.map_or_else(|| tellegen::acopf(ac), |w| tellegen::acopf_warm(ac, w));
-    let run_pounce = || {
-        warm.map_or_else(
-            || tellegen::acopf_pounce(ac),
-            |w| tellegen::acopf_pounce_warm(ac, w),
-        )
-    };
-    let result = match backend {
-        AcopfBackend::Interiors => run_interiors(),
-        AcopfBackend::Pounce => run_pounce(),
-        // Best-of-both: the permissive `interiors` first, `pounce` as the fallback. A case is
-        // reproduced if either converges; only one that defeats both is a non-convergence.
-        AcopfBackend::Best => run_interiors()
-            .or_else(|e1| run_pounce().map_err(|e2| format!("interiors: {e1}; pounce: {e2}"))),
-    };
-    match result {
-        Ok(sol) => {
-            rec.timings.acopf_ms = ms(t);
-            rec.acopf.objective = Some(sol.objective);
-            rec.acopf.iterations = Some(sol.iterations.len());
-            // `acopf` returns `Ok` only when the solve converged.
-            rec.acopf.converged = Some(true);
-            rec.acopf.baseline_ac = baseline_ac;
-            if let Some(acref) = baseline_ac {
-                if acref.abs() > 1e-9 {
-                    let rel = (sol.objective - acref).abs() / acref.abs();
-                    rec.acopf.rel_err = Some(rel);
-                    if rel < AC_MATCH_TOL {
-                        rec.repro.ac = Repro::Match;
-                    } else {
-                        rec.repro.ac = Repro::Mismatch;
-                        rec.note(format!(
-                            "AC OPF {:.1} differs from baseline AC {:.1} ({:.2}%)",
-                            sol.objective,
-                            acref,
-                            rel * 100.0
-                        ));
-                        rec.raise(Status::Caveat);
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            rec.timings.acopf_ms = ms(t);
-            rec.acopf.converged = Some(false);
-            rec.acopf.error = Some(e.to_string());
-            rec.acopf.baseline_ac = baseline_ac;
-            // `acopf` already names the stage in its error, so report it verbatim rather
-            // than re-prefixing it ("AC OPF solve failed: AC OPF solve failed: ...").
-            rec.note(e.to_string());
-            // A finite published AC that tellegen could not produce is a non-reproduction,
-            // but the solver not converging is distinct from computing a wrong optimum;
-            // mark it as such so the roll-up and table do not read as a wrong objective.
-            if baseline_ac.is_some() {
-                rec.repro.ac = Repro::NonConvergence;
-                rec.raise(Status::Caveat);
-            }
-        }
-    }
 }
 
 fn run_acpf(rec: &mut Record, ac: &AcNetwork) {

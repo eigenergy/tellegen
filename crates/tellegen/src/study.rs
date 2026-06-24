@@ -14,9 +14,8 @@
 //! The formulation coupling is a single boxed [`SolvedState`] trait object: the same
 //! [`Differentiable`] dispatch the stateless driver uses, captured once at construction
 //! and at every commit. Every formulation the build includes is supported — DC OPF and
-//! AC power flow always, the SOCWR relaxation behind `conic`, and the full AC OPF behind
-//! the native-only `acopf` feature — and a formulation this build omits returns a clean
-//! error naming `solve_json` as the stateless route.
+//! AC power flow always, and the SOCWR relaxation behind `conic` — and a formulation this
+//! build omits returns a clean error naming `solve_json` as the stateless route.
 
 use std::collections::HashMap;
 
@@ -38,13 +37,6 @@ use crate::api::{socwr_assemble, socwr_solved};
 use crate::problem::SocWrSolution;
 #[cfg(feature = "conic")]
 use crate::sens::ConicKkt;
-
-#[cfg(feature = "acopf")]
-use crate::api::{acopf_assemble, acopf_solved};
-#[cfg(feature = "acopf")]
-use crate::problem::AcOpfSolution;
-#[cfg(feature = "acopf")]
-use crate::sens::AcOpfKkt;
 
 /// A typed edit to the operating point. v1: the continuous active-demand drag. The enum
 /// is `#[non_exhaustive]` and serde-tagged (`{"kind":"add_load","bus":2,"p_mw":50}`), so
@@ -202,28 +194,6 @@ impl SolvedState for ConicState {
     }
 }
 
-/// Full nonlinear AC OPF committed state (native-only).
-#[cfg(feature = "acopf")]
-struct AcOpfState {
-    net: AcNetwork,
-    sol: AcOpfSolution,
-}
-
-#[cfg(feature = "acopf")]
-impl SolvedState for AcOpfState {
-    fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
-        acopf_assemble(&self.net, &self.sol, req)
-    }
-    fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
-        let sys = AcOpfKkt::new(&self.net, &self.sol).map_err(|e| e.to_string())?;
-        f(&sys)
-    }
-    fn lmp(&self) -> Option<Vec<f64>> {
-        let base = self.net.base_mva;
-        Some(self.sol.lmp.iter().map(|v| v / base).collect())
-    }
-}
-
 /// Solve `req`'s formulation at `base + edits` from an owned [`Network`] and box the
 /// committed state. Dispatches **once**, mirroring [`solve_network`](crate::solve_network):
 /// the boxed [`SolvedState`] is the only formulation `match` the study performs, and a
@@ -242,11 +212,6 @@ fn solve_state(net: &Network, req: &SolveRequest) -> Result<Box<dyn SolvedState>
         Problem::Socwr => {
             let (net, sol) = socwr_solved(AcNetwork::from_network(net)?, req)?;
             Ok(Box::new(ConicState { net, sol }))
-        }
-        #[cfg(feature = "acopf")]
-        Problem::Acopf => {
-            let (net, sol) = acopf_solved(AcNetwork::from_network(net)?, req)?;
-            Ok(Box::new(AcOpfState { net, sol }))
         }
         other => Err(format!(
             "Study does not support {other:?} in this build; use solve_json for stateless {other:?} solves"

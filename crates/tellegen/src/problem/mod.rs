@@ -28,10 +28,6 @@ use clarabel::solver::SupportedConeT;
 use crate::formulation::Formulation;
 use crate::model::DcNetwork;
 
-#[cfg(feature = "acopf")]
-mod acopf;
-#[cfg(feature = "acopf-pounce")]
-mod acopf_pounce;
 #[cfg(feature = "conic")]
 mod conic;
 mod dc;
@@ -40,16 +36,6 @@ mod pf_ac;
 #[cfg(feature = "sensitivity")]
 mod pf_dc;
 
-#[cfg(all(feature = "acopf", feature = "conic"))]
-pub use acopf::acopf_warm;
-#[cfg(feature = "acopf")]
-pub(crate) use acopf::AcOpfModel;
-#[cfg(feature = "acopf")]
-pub use acopf::{acopf, AcOpfSolution};
-#[cfg(feature = "acopf-pounce")]
-pub use acopf_pounce::acopf_pounce;
-#[cfg(all(feature = "acopf-pounce", feature = "conic"))]
-pub use acopf_pounce::acopf_pounce_warm;
 #[cfg(feature = "conic")]
 pub(crate) use conic::SocWrLayout;
 #[cfg(feature = "conic")]

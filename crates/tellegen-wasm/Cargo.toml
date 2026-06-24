@@ -28,12 +28,6 @@ sensitivity = ["tellegen/sensitivity"]
 # The SOCWR (Jabr) conic relaxation. Pulls `sensitivity` so the Study export stays
 # present, mirroring the engine's `conic = ["sensitivity"]`.
 conic = ["sensitivity", "tellegen/conic"]
-# The full nonlinear AC OPF (interiors NLP backend). Pure Rust; compiles to wasm
-# (getrandom/js is enabled in the engine). Pulls `conic` (hence `sensitivity`), so a
-# browser build with `acopf` also exports the `Study` and the dLMP/dd column — the AC
-# OPF warm-starts from the SOCWR relaxation. The EPL `acopf-pounce` backend is NOT
-# forwarded here — the browser build stays Apache-2.0/MIT.
-acopf = ["conic", "tellegen/acopf"]
 
 [lints]
 workspace = true

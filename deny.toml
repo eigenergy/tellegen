@@ -1,20 +1,13 @@
 # Supply-chain governance for the tellegen workspace.
 #
-# The load-bearing rule is the EPL boundary. The `pounce` Ipopt-port AC-OPF backend
-# is EPL-2.0. It is the default AC OPF solver in the native server and benchmark builds,
-# and is kept OUT of the browser wasm and the `tellegen-cli`, which stay Apache-2.0/MIT.
-#
-# cargo-deny checks the whole resolved graph, so the pounce-* crates DO appear here
-# (pulled in via benchmarks) and are permitted by the per-crate EPL exceptions below.
-# That allowance alone does NOT prove where they ship — CI keeps pounce out of the
-# browser wasm and the CLI via per-feature `cargo tree` assertions (see
-# .github/workflows/ci.yml). This file's job is narrower but still essential: pin
-# EPL-2.0 to exactly the known pounce crates and fail on any other copyleft or unknown
-# license creeping in anywhere in the tree.
+# Every crate in the resolved graph must carry a permissive license. The list below is
+# the whole allow-set; anything not on it fails the check. This branch ships only the
+# convex/relaxation engine (Clarabel + faer), so the whole tree is Apache-2.0/MIT and
+# compatible permissive licenses — there is no copyleft dependency to carve out.
 
 [licenses]
 # Anything not listed here is denied. Permissive licenses only; copyleft is excluded
-# by omission (and EPL is re-admitted for pounce-* via `exceptions`).
+# by omission.
 allow = [
     "Apache-2.0",
     "MIT",
@@ -29,21 +22,6 @@ allow = [
     "CC0-1.0",
 ]
 confidence-threshold = 0.9
-exceptions = [
-    # EPL-2.0. The default AC OPF solver in the native server and benchmark builds; kept
-    # out of the browser wasm and the CLI (verified by `cargo tree` in CI), not by this
-    # allowance.
-    { allow = ["EPL-2.0"], crate = "pounce-nlp" },
-    { allow = ["EPL-2.0"], crate = "pounce-algorithm" },
-    { allow = ["EPL-2.0"], crate = "pounce-common" },
-    { allow = ["EPL-2.0"], crate = "pounce-linalg" },
-    { allow = ["EPL-2.0"], crate = "pounce-linsol" },
-    { allow = ["EPL-2.0"], crate = "pounce-feral" },
-    { allow = ["EPL-2.0"], crate = "pounce-qp" },
-    { allow = ["EPL-2.0"], crate = "pounce-presolve" },
-    { allow = ["EPL-2.0"], crate = "pounce-l1penalty" },
-    { allow = ["EPL-2.0"], crate = "pounce-observability" },
-]
 
 [advisories]
 # RustSec advisory DB. Security advisories fail the check; add IDs to `ignore` only

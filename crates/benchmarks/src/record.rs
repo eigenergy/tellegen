@@ -25,7 +25,6 @@ pub struct Timings {
     pub build_ac_ms: f64,
     pub dc_ms: f64,
     pub soc_ms: f64,
-    pub acopf_ms: f64,
     pub acpf_ms: f64,
     pub sens_ms: f64,
 }
@@ -69,20 +68,6 @@ pub struct SocResult {
     pub error: Option<String>,
 }
 
-/// Full nonlinear AC OPF result vs the BASELINE `AC ($/h)` column — the exact optimum
-/// PGLib publishes, which the SOCWR relaxation only lower-bounds. The objective already
-/// includes the constant cost term.
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct AcOpfResult {
-    pub objective: Option<f64>,
-    pub iterations: Option<usize>,
-    pub converged: Option<bool>,
-    pub baseline_ac: Option<f64>,
-    /// `|objective − baseline| / |baseline|`.
-    pub rel_err: Option<f64>,
-    pub error: Option<String>,
-}
-
 /// Whether tellegen reproduces the published PGLib value for one formulation — the answer
 /// to "is tellegen reproducing PGLib?" at a glance.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -97,9 +82,6 @@ pub enum Repro {
     InfeasibleConsistent,
     /// tellegen solved but the objective differs from the published value beyond tolerance.
     Mismatch,
-    /// The solver did not converge, so tellegen produced no objective to compare. Distinct
-    /// from `Mismatch`: a non-reproduction, but not a wrong optimum.
-    NonConvergence,
     /// No baseline to compare against, or the stage was not run.
     #[default]
     Missing,
@@ -114,7 +96,6 @@ impl Repro {
             Repro::BoundLoose => "lb",
             Repro::InfeasibleConsistent => "inf✓",
             Repro::Mismatch => "✗",
-            Repro::NonConvergence => "✗nc",
             Repro::Missing => "—",
         }
     }
@@ -124,7 +105,6 @@ impl Repro {
 #[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct ReproVerdict {
     pub dc: Repro,
-    pub ac: Repro,
     pub soc: Repro,
 }
 
@@ -211,7 +191,6 @@ pub struct Record {
     pub status: Status,
     pub dc: DcResult,
     pub soc: SocResult,
-    pub acopf: AcOpfResult,
     pub acpf: AcPfResult,
     pub repro: ReproVerdict,
     pub parity: Vec<ParitySummary>,
@@ -230,7 +209,6 @@ impl Record {
             status: Status::Solved,
             dc: DcResult::default(),
             soc: SocResult::default(),
-            acopf: AcOpfResult::default(),
             acpf: AcPfResult::default(),
             repro: ReproVerdict::default(),
             parity: Vec::new(),

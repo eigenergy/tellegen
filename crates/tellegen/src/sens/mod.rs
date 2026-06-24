@@ -21,16 +21,12 @@ use faer::sparse::{SparseColMat, Triplet};
 use faer::Mat;
 
 mod ac;
-#[cfg(feature = "acopf")]
-mod acopf;
 #[cfg(feature = "conic")]
 mod conic;
 mod contract;
 mod dc;
 
 pub use ac::AcNewton;
-#[cfg(feature = "acopf")]
-pub use acopf::AcOpfKkt;
 #[cfg(feature = "conic")]
 pub use conic::ConicKkt;
 pub use contract::{
