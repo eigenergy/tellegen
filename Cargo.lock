@@ -1070,9 +1070,9 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "powerio"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6ae5ddcd00eb5b4e82f53d9f24b02845a5450c2f7db76a6559ffeb3f3563441"
+checksum = "2c08e6d823bced1548c9bb4d4d36b713c96ac9e427e8d831ffc97057b8c30e4b"
 dependencies = [
  "lexical-core",
  "num-complex",

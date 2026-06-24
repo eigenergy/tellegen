@@ -414,4 +414,48 @@ mod tests {
             "expected a branch to bind the ±{lim} angle limit, max {max_bound}"
         );
     }
+
+    /// A near-zero-impedance jumper (r = x = 0) to a dangling zero-injection bus carries
+    /// line charging in the source data. Keeping that charging leaves the isolated bus's
+    /// reactive balance with only the two charging shunts, forcing `|V|² → 0` against the
+    /// voltage floor and making SOCWR spuriously infeasible (the CATS bug). The model zeroes
+    /// the charging on such a jumper, so the relaxation stays feasible.
+    #[test]
+    fn zero_impedance_jumper_to_dangling_bus_stays_feasible() {
+        const CASE: &str = "\
+function mpc = jumpertest
+mpc.version = '2';
+mpc.baseMVA = 100;
+mpc.bus = [
+ 1 3 0  0  0 0 1 1 0 230 1 1.1 0.9;
+ 2 1 90 30 0 0 1 1 0 230 1 1.1 0.9;
+ 3 2 0  0  0 0 1 1 0 230 1 1.1 0.9;
+ 4 1 0  0  0 0 1 1 0 230 1 1.1 0.9;
+];
+mpc.gen = [
+ 1 0  0 300 -300 1 100 1 250 10 0 0 0 0 0 0 0 0 0 0 0;
+ 3 60 0 300 -300 1 100 1 270 10 0 0 0 0 0 0 0 0 0 0 0;
+];
+mpc.branch = [
+ 1 2 0.01 0.1 0    250 250 250 0 0 1 -360 360;
+ 1 3 0.01 0.1 0    250 250 250 0 0 1 -360 360;
+ 2 3 0.01 0.1 0    250 250 250 0 0 1 -360 360;
+ 3 4 0    0   0.05 250 250 250 0 0 1 -360 360;
+];
+mpc.gencost = [
+ 2 0 0 3 0.11  5   0;
+ 2 0 0 3 0.085 1.2 0;
+];
+";
+        let net = powerio::parse_str(CASE, "matpower").expect("parse").network;
+        let ac = crate::model::AcNetwork::from_network(&net).expect("build ac");
+        // The jumper (the r = x = 0 branch, g = b = 0) carries no line charging.
+        let jumper = (0..ac.m)
+            .find(|&e| ac.g[e] == 0.0 && ac.b[e] == 0.0)
+            .expect("a zero-impedance jumper branch");
+        assert_eq!(ac.b_fr[jumper], 0.0, "jumper keeps spurious charging");
+        assert_eq!(ac.b_to[jumper], 0.0);
+        // And the relaxation is feasible (was PrimalInfeasible before the fix).
+        socwr_opf(&ac).expect("socwr feasible once the jumper charging is dropped");
+    }
 }
