@@ -15,3 +15,4 @@
 - [Deployment](deployment.md)
 - [Privacy](privacy.md)
 - [Research Notes](research-notes.md)
+- [Desktop and mobile (roadmap)](tauri-roadmap.md)
