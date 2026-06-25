@@ -54,7 +54,7 @@ impl DcPfSolution {
 }
 
 /// A formulation that can assemble a power flow system — the dispatch point the
-/// generic [`build_pf`] calls, the power-flow analogue of
+/// generic [`build_pf`] calls, the power flow analogue of
 /// [`OpfFormulation`](super::OpfFormulation). Not sealed.
 pub trait PfFormulation: Formulation {
     /// Assemble the power flow system for `model` at the given bus injections.

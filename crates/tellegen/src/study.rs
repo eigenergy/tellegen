@@ -130,7 +130,7 @@ trait SolvedState {
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String>;
 
     /// The committed marginal price in served units ($/MWh), per dense bus, for the
-    /// preview's objective delta. `None` for power-flow formulations (no objective).
+    /// preview's objective delta. `None` for power flow formulations (no objective).
     fn lmp(&self) -> Option<Vec<f64>>;
 }
 
@@ -828,7 +828,7 @@ mod tests {
 
     #[test]
     fn preview_works_for_ac_pf_study() {
-        // An AC power-flow study has no objective, so the preview's objective_delta is
+        // An AC power flow study has no objective, so the preview's objective_delta is
         // None, but the watched voltage operand still gets a finite first-order column.
         let net = case3_json();
         let study = Study::new(&net, Problem::AcPf).expect("acpf study");

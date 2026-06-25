@@ -1,0 +1,12 @@
+<!-- Enable single-dollar inline math ($...$) alongside the $$...$$ and \(...\) that
+     mdBook's MathJax support handles by default. MathJax 2 collects every
+     text/x-mathjax-config block at startup, so load order does not matter. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    tex2jax: {
+      inlineMath: [['$', '$'], ['\\(', '\\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']],
+      processEscapes: true
+    }
+  });
+</script>

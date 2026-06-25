@@ -11,7 +11,7 @@ are whatever the current harness run writes; they are not reproduced here.
 
 tellegen's DC objective (constant cost term included) is compared against the
 published `DC ($/h)`. The per-unit cost scaling cancels exactly, so the comparison
-is in $/h directly.
+is in dollars per hour directly.
 
 ## Relaxation lower bound
 
