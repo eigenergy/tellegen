@@ -32,7 +32,7 @@ use super::sens::{
 // Request
 // ---------------------------------------------------------------------------
 
-/// Which problem to solve. The convex/power-flow solve paths, as the lowercase JSON
+/// Which problem to solve. The convex/power flow solve paths, as the lowercase JSON
 /// tags `"dcpf"`/`"dcopf"`/`"acpf"`/`"socwr"`. A plain (not internally tagged) enum
 /// so a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a
 /// valid base-case DC OPF request.

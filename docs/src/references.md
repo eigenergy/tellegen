@@ -17,7 +17,7 @@ The benchmark corpus and the reference solves.
 
 - **Jabr SOCWR**: R. A. Jabr, *Radial distribution load flow using conic
   programming*, IEEE Transactions on Power Systems, 21(3), 2006 — the W-space
-  second-order-cone relaxation, as also implemented in
+  second-order cone relaxation, as also implemented in
   [PowerModels.jl](https://github.com/lanl-ansi/PowerModels.jl) (BSD-3-Clause). The
   conic implementation in tellegen is independent.
 

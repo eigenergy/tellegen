@@ -42,7 +42,7 @@ The two are algebraically identical; `Mode::Auto` picks the smaller dimension.
 
 Finite differences validate the analytic columns per cell:
 
-- **clean** — active-power-routed cells, relative error $< 10^{-3}$.
+- **clean** — cells routed through active power, relative error $< 10^{-3}$.
 - **Jabr-coupled / soft** — squared-voltage or reactive cells, looser (the cone's
   degenerate directions).
 - **norm-floor skip** — columns below the regularization floor carry no resolvable

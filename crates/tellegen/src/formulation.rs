@@ -68,7 +68,7 @@ impl Formulation for AcPolar {
     }
 }
 
-/// The SOCWR (Jabr) second-order-cone relaxation of AC OPF. Zero-sized: it selects
+/// The SOCWR (Jabr) second-order cone relaxation of AC OPF. Zero-sized: it selects
 /// the conic assembly into Clarabel's standard form, it holds no data.
 ///
 /// In the W-space (`w_i = |V_i|²`, `wr_ij = Re(V_i V_j*)`, `wi_ij = Im(V_i V_j*)`)

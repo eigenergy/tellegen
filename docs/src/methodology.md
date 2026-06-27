@@ -8,7 +8,7 @@ absent.
 ## Corpus
 
 PGLib-OPF v23.07 at `$PGLIB_OPF_PATH`: 66 base, 66 congested (`api/`), and 66
-small-angle (`sad/`) MATPOWER files, spanning a wide range of bus counts at
+small-angle (`sad/`) MATPOWER files, spanning a range of bus counts at
 baseMVA 100. PGLib data is CC BY 4.0 (see [References](references.md)).
 
 ## What is driven

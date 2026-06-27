@@ -10,6 +10,8 @@ build-dir = "docs/book"
 create-missing = false
 
 [output.html]
+mathjax-support = true
+theme = "docs/theme"
 additional-css = ["docs/theme/tellegen.css"]
 default-theme = "light"
 edit-url-template = "https://github.com/eigenergy/tellegen/edit/main/{path}"

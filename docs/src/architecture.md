@@ -22,7 +22,7 @@ powerio owns parsing and the network and display formats; the engine and the app
 
 - **DC power flow** and **DC OPF** — a B–θ linear/quadratic program;
 - **AC power flow** — a polar Newton solve; and
-- **SOCWR** — the Jabr second-order-cone relaxation of AC OPF, in W-space.
+- **SOCWR** — the Jabr second-order cone relaxation of AC OPF, in W-space.
 
 Every formulation returns the same result shape — locational marginal prices, voltages, branch flows, and dispatch — and exposes analytical **sensitivities** of any output (an `Operand`) with respect to any input (a `Parameter`) through one implicit-differentiation contract, `Differentiable`. Each solved formulation builds its KKT or Newton system; the sensitivity driver solves that system, forward or adjoint, for the requested columns. Adding a formulation, operand, or parameter means implementing the contract, not special-casing the callers.
 
