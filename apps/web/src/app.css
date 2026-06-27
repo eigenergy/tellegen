@@ -207,3 +207,115 @@ a {
 		animation: none;
 	}
 }
+
+/* control panel regions: classes used by more than one split region component
+   (NetworkStats, FormulationSelector, SensitivityReadout, DemandSlider,
+   TopMovers, DisplayControls, SizeLegend, LocalCaseDetails) plus ControlPanel
+   itself. Kept global so Svelte scoping does not drop them. Moved verbatim from
+   ControlPanel.svelte; the .mode / .display-mode / @media source order is
+   preserved so the cascade resolves exactly as before. */
+.region {
+	font-size: 10px;
+	font-weight: 400;
+	color: var(--ink-dim);
+	text-transform: uppercase;
+	letter-spacing: 0;
+	margin-left: 4px;
+}
+
+.mode {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 12px;
+}
+
+.display-mode {
+	gap: 8px;
+}
+
+.display-mode .segment button {
+	font-size: 11px;
+	padding: 2px 9px;
+}
+
+.small {
+	font-size: 12px;
+	line-height: 1.55;
+}
+
+.legend {
+	height: 6px;
+	border-radius: 3px;
+	margin-top: 6px;
+}
+
+.legend-labels {
+	display: flex;
+	justify-content: space-between;
+	font-size: 10.5px;
+	color: var(--ink-faint);
+	margin-top: 4px;
+}
+
+.legend-labels.single {
+	justify-content: center;
+	text-align: center;
+}
+
+.segment {
+	display: inline-flex;
+	border: 1px solid var(--line);
+	border-radius: 2px;
+	overflow: hidden;
+	background: rgba(252, 251, 247, 0.55);
+}
+
+.segment button {
+	padding: 2px 8px;
+	border: 0;
+	background: transparent;
+	color: var(--ink-dim);
+	font: inherit;
+	cursor: pointer;
+}
+
+.segment button + button {
+	border-left: 1px solid var(--line);
+}
+
+.segment button.active {
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
+.reset {
+	margin-top: 10px;
+	font-size: 10.5px;
+	padding: 3px 10px;
+	background: none;
+	border: 1px solid var(--line);
+	border-radius: 2px;
+	color: var(--ink-dim);
+	cursor: pointer;
+}
+
+.reset:hover {
+	border-color: var(--red);
+	color: var(--red);
+}
+
+.blink {
+	animation: blink 1.2s steps(2) infinite;
+}
+
+@media (max-width: 760px) {
+	.mode {
+		flex-wrap: wrap;
+		gap: 7px;
+	}
+
+	.mode button {
+		margin-left: 0;
+	}
+}
