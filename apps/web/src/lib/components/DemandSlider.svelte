@@ -4,6 +4,15 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+
+	// Fill the track from the Δ=0 baseline to the thumb, so the slider reads as a
+	// signed magnitude. The fill's stationary edge sits at zero and marks the
+	// commit reference; the moving edge tracks the thumb.
+	const sliderSpan = $derived(Math.max(ctrl.sliderMax - ctrl.sliderMin, 1e-9));
+	const valPct = $derived(((ctrl.sliderValue - ctrl.sliderMin) / sliderSpan) * 100);
+	const zeroPct = $derived(Math.max(0, Math.min(100, ((0 - ctrl.sliderMin) / sliderSpan) * 100)));
+	const fillLo = $derived(Math.max(0, Math.min(valPct, zeroPct)));
+	const fillHi = $derived(Math.min(100, Math.max(valPct, zeroPct)));
 </script>
 
 {#if ctrl.activeSolvable}
@@ -39,6 +48,7 @@
 			min={ctrl.sliderMin}
 			max={ctrl.sliderMax}
 			step="0.5"
+			style="--fill-lo:{fillLo}%; --fill-hi:{fillHi}%"
 			bind:value={ctrl.sliderCurrent, ctrl.setSliderPreview}
 			aria-label="demand delta at selected bus"
 			onpointerdown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
@@ -106,8 +116,15 @@
 		appearance: none;
 		width: 100%;
 		height: 4px;
-		background: var(--line);
-		border-radius: 2px;
+		background:
+			linear-gradient(
+				90deg,
+				transparent 0 var(--fill-lo, 0%),
+				rgb(var(--accent-rgb) / 0.32) var(--fill-lo, 0%) var(--fill-hi, 0%),
+				transparent var(--fill-hi, 0%) 100%
+			),
+			var(--line);
+		border-radius: var(--radius-xs);
 		outline-offset: 4px;
 		margin: 6px 0;
 	}
@@ -119,9 +136,12 @@
 		height: 14px;
 		border-radius: 50%;
 		background: var(--accent);
-		border: 2px solid #fcfbf7;
-		box-shadow: 0 1px 4px rgba(32, 36, 43, 0.3);
+		border: 2px solid var(--paper);
+		box-shadow: var(--shadow-thumb);
 		cursor: ew-resize;
+		transition:
+			transform var(--dur-fast) var(--ease-out),
+			box-shadow var(--dur-fast) var(--ease-out);
 	}
 
 	input[type='range']::-moz-range-thumb {
@@ -129,9 +149,41 @@
 		height: 14px;
 		border-radius: 50%;
 		background: var(--accent);
-		border: 2px solid #fcfbf7;
-		box-shadow: 0 1px 4px rgba(32, 36, 43, 0.3);
+		border: 2px solid var(--paper);
+		box-shadow: var(--shadow-thumb);
 		cursor: ew-resize;
+		transition:
+			transform var(--dur-fast) var(--ease-out),
+			box-shadow var(--dur-fast) var(--ease-out);
+	}
+
+	input[type='range']:active::-webkit-slider-thumb,
+	input[type='range']:focus-visible::-webkit-slider-thumb {
+		transform: scale(1.15);
+		box-shadow: 0 2px 7px rgb(var(--ink-rgb) / 0.35);
+	}
+
+	input[type='range']:active::-moz-range-thumb,
+	input[type='range']:focus-visible::-moz-range-thumb {
+		transform: scale(1.15);
+		box-shadow: 0 2px 7px rgb(var(--ink-rgb) / 0.35);
+	}
+
+	/* Coarse pointers: a larger track and thumb for a comfortable touch target. */
+	@media (hover: none), (pointer: coarse) {
+		input[type='range'] {
+			height: 6px;
+		}
+
+		input[type='range']::-webkit-slider-thumb {
+			width: 20px;
+			height: 20px;
+		}
+
+		input[type='range']::-moz-range-thumb {
+			width: 20px;
+			height: 20px;
+		}
 	}
 
 	.pred {

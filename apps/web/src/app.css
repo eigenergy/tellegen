@@ -20,6 +20,7 @@
 	/* channel forms of the grounds, so scrims and shadows derive from one source */
 	--bg-rgb: 236 233 226;
 	--ink-rgb: 32 36 43;
+	--accent-rgb: 178 94 0;
 	--paper: #fcfbf7;
 
 	/* semantic color roles: call sites use these, not the raw primitives above */
