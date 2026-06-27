@@ -1,223 +1,53 @@
-<script lang="ts" module>
-	// Counter for local case ids; module level so ids stay unique across remounts.
-	let localSeq = 0;
-</script>
-
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { busRadius, sensGradient } from '$lib/colors';
+	import { setAppState, setController } from '$lib/context.svelte';
+	import { createController, type SolvableCase } from '$lib/controller.svelte';
 	import {
-		getCaseNetworkJson,
-		getCases,
-		getNetwork,
-		getSensitivity,
-		getSolution,
-		openSolveStream
-	} from '$lib/api';
-	import type { Network, SensitivityColumn, Solution } from '$lib/api';
-	import {
-		busRadius,
-		lmpDomain,
-		lmpGradient,
-		sensFlatColor,
-		sensGradient,
-		sensitivityDomain,
-		type RGBA
-	} from '$lib/colors';
-	import {
-		applyGeoFile,
-		isGeoFile,
-		mergeGeoFiles,
-		parseGeoFile,
-		type GeoFile
-	} from '$lib/geo-file';
-	import {
-		app,
-		CaseState,
-		LocalCase,
-		type DemandRangeMode,
-		type DisplayMode
-	} from '$lib/state.svelte';
-	import { placeSyntheticTopology } from '$lib/synthetic-layout';
-	import {
-		createStudy,
-		FORMULATIONS,
-		formatOf,
-		ingestCase,
-		isDisplayFile,
-		isPermanentSensFailure,
-		parseDisplay,
-		solveDc,
-		type BrowserStudy,
-		type Formulation
-	} from '$lib/wasm';
+		displayFmt,
+		fmt,
+		formulationHint,
+		formulationLabel,
+		signed,
+		signedExp,
+		solveMetaLabel,
+		splitName
+	} from '$lib/format';
+	import { createAppState } from '$lib/state.svelte';
+	import { FORMULATIONS, type Formulation } from '$lib/wasm';
 	import Sparkline from '$lib/Sparkline.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
-	let abort: AbortController | null = null;
-	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
-	let showFileDropUi = $state(true);
-	let casesLoaded = $state(false);
-	let loadingBackendCase = $state<string | null>(null);
-	let dragDepth = 0;
-
 	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
-	const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
-	// Open on South Carolina by default: it has the most interesting price action.
-	const DEFAULT_CASE_ID = 'case500';
-	type SolvableCase = CaseState | LocalCase;
-	type DemandRangeAnchor = {
-		caseId: string;
-		bus: number;
-		delta: number;
-	};
-	type DisplayOption = {
-		mode: DisplayMode;
-		label: string;
-		unit: string;
-		copy: string;
-		gradient: string;
-		values: { bus: number; value: number }[];
-	};
+	const SIZE_SAMPLES = [10, 100, 500];
 
-	let nearbyRangeAnchor = $state<DemandRangeAnchor | null>(null);
-	// Default cases the user has closed; drives the restore affordance. Seeded in load().
-	let hiddenDefaults = $state<Set<string>>(new Set());
+	const app = createAppState();
+	const ctrl = createController(app);
+	setAppState(app);
+	setController(ctrl);
 
-	function isBackendCase(c: SolvableCase): c is CaseState {
-		return c instanceof CaseState;
-	}
+	ctrl.load();
 
-	function isActiveSolveCase(c: SolvableCase): boolean {
-		return isBackendCase(c) ? app.activeCaseId === c.id : app.activeLocalId === c.id;
-	}
+	let dragDepth = 0;
+	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
 
-	function caseDeltas(c: SolvableCase) {
-		return isBackendCase(c) ? c.deltas : (c.deltas ?? {});
-	}
-
-	function isPerturbed(c: SolvableCase | null): boolean {
-		return c ? Object.values(caseDeltas(c)).some((mw) => mw !== 0) : false;
-	}
-
-	function setNearbyRangeAnchor(c: SolvableCase, bus: number, delta = caseDeltas(c)[bus] ?? 0) {
-		nearbyRangeAnchor = { caseId: c.id, bus, delta };
-	}
-
-	function errorText(e: unknown): string {
-		return e instanceof Error ? e.message : String(e);
-	}
-
-	/** The short menu label for a formulation tag (e.g. `acopf` -> `AC OPF`). */
-	function formulationLabel(id: Formulation): string {
-		return FORMULATIONS.find((f) => f.id === id)?.label ?? id;
-	}
-
-	function formulationHint(id: Formulation): string {
-		return FORMULATIONS.find((f) => f.id === id)?.hint ?? id;
-	}
-
-	function priceCopy(id: Formulation): string {
-		return id === 'socwr'
-			? 'SOCWR active power balance prices. Select a bus for ∂LMP/∂d and demand perturbation.'
-			: 'DC OPF prices. Select a bus for ∂LMP/∂d and demand perturbation.';
-	}
-
-	function displayOptionsFor(c: SolvableCase | null): DisplayOption[] {
-		if (!c?.solution) return [];
-		const options: DisplayOption[] = [
-			{
-				mode: 'lmp',
-				label: 'LMP',
-				unit: '$/MWh',
-				copy: priceCopy(c.formulation),
-				gradient: lmpGradient,
-				values: c.solution.lmp.map((e) => ({ bus: e.bus, value: e.usd_per_mwh }))
-			}
-		];
-		if (c.formulation === 'dcopf' && c.solution.va.length > 0) {
-			options.push({
-				mode: 'angle',
-				label: 'angle',
-				unit: 'rad',
-				copy: 'DC bus voltage phase angle from the current OPF solution.',
-				gradient: lmpGradient,
-				values: c.solution.va
-			});
+	// Fall back to LMP coloring when the active formulation drops the selected
+	// display variable (e.g. leaving SOCWR removes |V|). The one effect that
+	// stays in the page shell; everything else lives on the controller.
+	$effect(() => {
+		if (
+			ctrl.displayOptions.length > 0 &&
+			!ctrl.displayOptions.some((option) => option.mode === app.displayMode)
+		) {
+			app.displayMode = 'lmp';
 		}
-		if (c.formulation === 'socwr' && c.solution.w.length > 0) {
-			options.push({
-				mode: 'voltage',
-				label: '|V|',
-				unit: 'pu',
-				copy: 'SOCWR voltage magnitude from the current relaxed solution.',
-				gradient: lmpGradient,
-				values: c.solution.w.map((s) => ({ bus: s.bus, value: Math.sqrt(Math.max(0, s.value)) }))
-			});
-		}
-		return options;
-	}
-
-	function displayDomain(mode: DisplayMode, values: number[]): { lo: number; hi: number } {
-		if (mode === 'lmp') return lmpDomain(values);
-		if (values.length === 0) return { lo: 0, hi: 1 };
-		const rawLo = Math.min(...values);
-		const rawHi = Math.max(...values);
-		const minSpan = mode === 'voltage' ? 0.02 : 0.04;
-		const span = Math.max(rawHi - rawLo, minSpan);
-		const mid = (rawLo + rawHi) / 2;
-		return { lo: mid - span / 2, hi: mid + span / 2 };
-	}
-
-	/** The display name of a case: a backend case's `name`, a local case's `label`. */
-	function caseName(c: SolvableCase): string {
-		return isBackendCase(c) ? c.name : c.label;
-	}
-
-	function readHiddenDefaultCases(): Set<string> {
-		if (typeof localStorage === 'undefined') return new Set();
-		try {
-			const parsed = JSON.parse(localStorage.getItem(HIDDEN_DEFAULT_CASES_KEY) ?? '[]');
-			return new Set(Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : []);
-		} catch {
-			return new Set();
-		}
-	}
-
-	function writeHiddenDefaultCases(ids: Set<string>) {
-		if (typeof localStorage === 'undefined') return;
-		try {
-			localStorage.setItem(HIDDEN_DEFAULT_CASES_KEY, JSON.stringify([...ids].sort()));
-		} catch {
-			// Current session removal still works; persistence is best effort.
-		}
-	}
-
-	function rememberHiddenDefaultCase(id: string) {
-		const hidden = readHiddenDefaultCases();
-		hidden.add(id);
-		writeHiddenDefaultCases(hidden);
-		hiddenDefaults = new Set(hidden);
-	}
-
-	function restoreDefaultCases() {
-		try {
-			if (typeof localStorage !== 'undefined') localStorage.removeItem(HIDDEN_DEFAULT_CASES_KEY);
-		} catch {
-			// Ignore storage failures and reload from the server.
-		}
-		hiddenDefaults = new Set();
-		load();
-	}
-
-	function rgbaCss([r, g, b, a]: RGBA): string {
-		return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
-	}
+	});
 
 	onMount(() => {
 		const query = window.matchMedia(FILE_DROP_QUERY);
 		const syncFileDropUi = () => {
-			showFileDropUi = query.matches;
-			if (!showFileDropUi) {
+			ctrl.showFileDropUi = query.matches;
+			if (!ctrl.showFileDropUi) {
 				dragDepth = 0;
 				app.dragOver = false;
 			}
@@ -227,760 +57,8 @@
 		return () => query.removeEventListener('change', syncFileDropUi);
 	});
 
-	async function load() {
-		try {
-			const summaries = await getCases();
-			const hidden = readHiddenDefaultCases();
-			hiddenDefaults = new Set(hidden);
-			app.cases = summaries.filter((s) => !hidden.has(s.id)).map((s) => new CaseState(s));
-			app.activeLocalId = null;
-			app.placingLocalId = null;
-			app.activeCaseId =
-				app.cases.find((c) => c.id === DEFAULT_CASE_ID)?.id ?? app.cases[0]?.id ?? null;
-			const active = app.active;
-			if (active) await loadBackendCase(active, true);
-			else app.requestFrame('all');
-		} catch (e) {
-			app.error = `server unreachable: ${e instanceof Error ? e.message : e}`;
-		} finally {
-			casesLoaded = true;
-		}
-	}
-
-	load();
-
-	async function loadBackendCase(c: CaseState, frame = false) {
-		if (c.network && c.solution && c.baseSolution) {
-			if (frame && app.activeCaseId === c.id) app.requestFrame(c.id);
-			return;
-		}
-		loadingBackendCase = c.id;
-		const requestedFormulation = c.formulation;
-		try {
-			const [network, dcBaseSolution] = await Promise.all([
-				c.network ? Promise.resolve(c.network) : getNetwork(c.id),
-				// The server caches only the DC OPF base solution. Other formulations
-				// must hydrate from the browser Study so their cost, prices, flows, and
-				// voltage fields all come from the selected formulation.
-				requestedFormulation === 'dcopf' ? getSolution(c.id) : Promise.resolve(null)
-			]);
-			if (!app.byId(c.id)) return;
-			c.network = network;
-			if (dcBaseSolution && c.formulation === requestedFormulation) {
-				c.baseSolution = dcBaseSolution;
-				c.solution = dcBaseSolution;
-			}
-			if (frame && app.activeCaseId === c.id) app.requestFrame(c.id);
-			if (isActiveSolveCase(c) && c.formulation !== 'dcopf' && !c.solution && !c.solving) {
-				runSolve(c, app.selectedBus);
-			}
-		} catch (e) {
-			if (app.byId(c.id)) app.error = `${c.name}: ${errorText(e)}`;
-		} finally {
-			if (loadingBackendCase === c.id) loadingBackendCase = null;
-		}
-	}
-
-	function localNetwork(c: LocalCase): Network | null {
-		if (!c.summary || !c.view) return null;
-		return {
-			id: c.id,
-			name: c.label,
-			base_mva: c.summary.base_mva,
-			synthetic_coords: c.coordsKind !== 'file' && c.coordsKind !== 'geofile',
-			buses: c.view.buses,
-			branches: c.view.branches
-		};
-	}
-
-	function maybeStartLocalSolve(id: string) {
-		const c = app.localCases.find((lc) => lc.id === id);
-		if (!c?.networkJson || !c.view || !c.summary) return;
-		c.network = localNetwork(c) ?? c.network ?? null;
-		if (c.networkJson && c.network && !c.solution) runSolve(c, null);
-	}
-
-	async function activateCase(id: string) {
-		app.activeLocalId = null;
-		app.placingLocalId = null;
-		if (app.activeCaseId !== id) {
-			clearSelection();
-			app.activeCaseId = id;
-		}
-		const c = app.byId(id);
-		if (c) await loadBackendCase(c, true);
-	}
-
-	async function removeBackendCase(c: CaseState, event?: MouseEvent) {
-		event?.stopPropagation();
-		rememberHiddenDefaultCase(c.id);
-		// Tear down this case's own in-flight server stream whether or not it is the
-		// active case (a non-active case can still hold a live stream), and bump the
-		// seq so any detached handler no-ops.
-		c.closeStream?.();
-		c.closeStream = null;
-		c.solveSeq++;
-		disposeStudy(c);
-		if (app.activeCaseId === c.id) clearSelection();
-		app.removeCase(c.id);
-		const active = app.active;
-		if (active) await loadBackendCase(active, true);
-	}
-
-	function activateLocal(c: LocalCase) {
-		clearSelection();
-		// Mirror activateCase's reset: a local and a backend case are mutually
-		// exclusive, so drop the backend selection. Otherwise app.active (derived
-		// from activeCaseId) stays set and its solve card keeps hovering over the
-		// local view.
-		app.activeCaseId = null;
-		app.activeLocalId = c.id;
-		app.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
-		if (c.view || c.substations) app.requestFrame(c.id);
-		maybeStartLocalSolve(c.id);
-	}
-
-	function removeLocalCase(c: LocalCase, event?: MouseEvent) {
-		event?.stopPropagation();
-		if (app.activeLocalId === c.id) {
-			// Local cases solve in the browser only (no server stream); the seq bump
-			// invalidates any in-flight browser solve.
-			c.solveSeq = (c.solveSeq ?? 0) + 1;
-			clearSelection();
-		}
-		disposeStudy(c);
-		app.removeLocal(c.id);
-	}
-
-	function addAndActivateLocal(c: LocalCase) {
-		clearSelection();
-		app.activeCaseId = null;
-		app.addLocal(c);
-		if (c.view || c.substations) app.requestFrame(c.id);
-		maybeStartLocalSolve(c.id);
-	}
-
-	function placeLocalCase(lon: number, lat: number) {
-		const id = app.placingLocalId;
-		const c = id ? app.localCases.find((lc) => lc.id === id) : null;
-		if (!c?.topology) return;
-		c.view = placeSyntheticTopology(c.topology, { lon, lat });
-		c.coordsKind = 'synthetic';
-		c.syntheticCenter = { lon, lat };
-		app.placingLocalId = null;
-		app.activeLocalId = c.id;
-		app.requestFrame(c.id);
-		maybeStartLocalSolve(c.id);
-	}
-
-	function moveLocalCase(c: LocalCase) {
-		app.activeCaseId = null;
-		app.activeLocalId = c.id;
-		app.placingLocalId = c.id;
-	}
-
-	function withGeoFile(c: LocalCase, geoFiles: GeoFile[]): LocalCase {
-		if (!c.topology || geoFiles.length === 0) return c;
-		const applied = applyGeoFile(c.topology, mergeGeoFiles(geoFiles));
-		c.view = applied.view;
-		c.coordsKind = 'geofile';
-		c.syntheticCenter = undefined;
-		c.geoSource = applied.sourceLabel;
-		c.geoWarnings = [
-			`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
-			...(applied.matchedBranches > 0
-				? [`${applied.matchedBranches} branch paths matched from geographic file data`]
-				: []),
-			...applied.warnings
-		];
-		return c;
-	}
-
-	function applyGeoFilesToExisting(geoFiles: GeoFile[]) {
-		const target =
-			(app.activeLocal?.topology ? app.activeLocal : null) ??
-			app.localCases.find((c) => c.coordsKind === 'synthetic_pending') ??
-			[...app.localCases].reverse().find((c) => c.topology);
-		if (!target?.topology) {
-			app.error = 'drop a case file with the geographic file, or select a parsed local case first';
-			return;
-		}
-		try {
-			withGeoFile(target, geoFiles);
-			app.activeCaseId = null;
-			app.activeLocalId = target.id;
-			app.placingLocalId = null;
-			app.requestFrame(target.id);
-			maybeStartLocalSolve(target.id);
-			app.error = null;
-		} catch (e) {
-			app.error = `${geoFiles.map((s) => s.sourceNames.join(' + ')).join(' + ')}: ${
-				e instanceof Error ? e.message : e
-			}; use place on map for manual placement`;
-		}
-	}
-
-	// Fetch and cache the raw powerio Network JSON for the browser solver.
-	// Returns null when it can't be loaded, so callers fall back to the server.
-	async function ensureNetworkJson(c: SolvableCase): Promise<string | null> {
-		if (!isBackendCase(c)) return c.networkJson ?? null;
-		if (c.networkJson) return c.networkJson;
-		try {
-			const json = await getCaseNetworkJson(c.id);
-			c.networkJson = json;
-			return json;
-		} catch (e) {
-			c.solveFallbackReason = `case fetch failed: ${errorText(e)}`;
-			return null;
-		}
-	}
-
-	// Build-once browser Study per case: the network is parsed and the model built
-	// when the Study is created, so a drag re-solves (commit) and previews without
-	// re-parsing. Kept in a WeakMap off the reactive/raw case payloads — the wasm
-	// handle is neither serialized nor part of any $state.
-	const caseStudies = new WeakMap<
-		SolvableCase,
-		{ study: BrowserStudy; networkJson: string; formulation: Formulation; baseSolution: Solution }
-	>();
-	// Latch a permanent sensitivity-module failure (the sens build's relaxed SIMD,
-	// which Safari rejects) per case so we don't retry createStudy — and the same
-	// permanent error — on every drag. Transient failures are not latched.
-	const studyUnavailable = new WeakMap<SolvableCase, string>();
-
-	// The case's Study, building it once for `(networkJson, formulation)` and rebuilding
-	// (after free) if either changed — so picking a new formulation re-parses and re-solves
-	// under that formulation. Returns null when the sens module can't load; the caller then
-	// falls back to solveDc/the server, surfacing solveFallbackReason.
-	async function getStudy(c: SolvableCase, networkJson: string): Promise<BrowserStudy | null> {
-		const latched = studyUnavailable.get(c);
-		if (latched) {
-			c.solveFallbackReason ??= latched;
-			return null;
-		}
-		const cached = caseStudies.get(c);
-		if (cached && cached.networkJson === networkJson && cached.formulation === c.formulation)
-			return cached.study;
-		if (cached) {
-			cached.study.free();
-			caseStudies.delete(c);
-		}
-		try {
-			const study = await createStudy(networkJson, c.formulation);
-			const baseSolution = study.currentSolution();
-			caseStudies.set(c, { study, networkJson, formulation: c.formulation, baseSolution });
-			return study;
-		} catch (e) {
-			const message = errorText(e);
-			// Only a genuine browser-capability failure is permanent; latch it so the
-			// case stays on the fallback path. Transient errors stay retryable.
-			if (isPermanentSensFailure(message)) {
-				studyUnavailable.set(c, 'browser study needs SIMD this browser does not support');
-			}
-			c.solveFallbackReason ??= `browser study unavailable: ${message}`;
-			return null;
-		}
-	}
-
-	// The dLMP/dd column at `busId` for the case's active formulation, solved in the browser.
-	// DC OPF takes the light per-call `solveDc` path (byte-identical to the prior behavior, so
-	// no regression for the default). AC OPF / SOCWR go through the Study, whose exact re-solve
-	// returns the column under the right formulation; the column is null (with the reason on
-	// `solveFallbackReason`) when the Study can't be built. Throws only on a hard browser error.
-	async function browserSensitivity(
-		c: SolvableCase,
-		networkJson: string,
-		busId: number
-	): Promise<SensitivityColumn | null> {
-		if (c.formulation === 'dcopf') {
-			return (await solveDc(c.id, networkJson, caseDeltas(c), busId)).sensitivity;
-		}
-		const study = await getStudy(c, networkJson);
-		return study ? study.sensitivity(c.id, caseDeltas(c), busId) : null;
-	}
-
-	// Release a case's Study (if any) when the case is removed.
-	function disposeStudy(c: SolvableCase) {
-		const cached = caseStudies.get(c);
-		if (cached) {
-			cached.study.free();
-			caseStudies.delete(c);
-		}
-	}
-
-	function acceptSensitivity(
-		c: SolvableCase,
-		col: SensitivityColumn | null,
-		busId: number | null,
-		sensitivitySeq?: number
-	) {
-		if (!col || busId === null) return;
-		if (col.bus !== busId) return;
-		if (!isActiveSolveCase(c) || app.selectedBus !== busId) return;
-		if (sensitivitySeq !== undefined && sensitivitySeq !== (c.sensitivitySeq ?? 0)) return;
-		c.sensitivity = col;
-	}
-
-	function finishSolve(c: SolvableCase, seq: number, sensBus: number | null) {
-		if (seq !== (c.solveSeq ?? 0)) return;
-		c.solving = false;
-		if (isActiveSolveCase(c) && app.selectedBus === sensBus) {
-			app.previewActive = false;
-			app.previewDeltaMw = null;
-			// The committed solution supersedes the live engine preview.
-			app.previewLmp = null;
-			previewObjective = null;
-		}
-	}
-
-	async function selectBus(caseId: string, busId: number) {
-		app.activeLocalId = null;
-		app.placingLocalId = null;
-		if (app.activeCaseId !== caseId) {
-			clearSelection();
-			app.activeCaseId = caseId;
-		}
-		const c = app.byId(caseId);
-		if (!c) return;
-		abort?.abort();
-		const ac = new AbortController();
-		abort = ac;
-		const sensitivitySeq = ++c.sensitivitySeq;
-		app.error = null;
-		app.selectedBus = busId;
-		app.previewDeltaMw = null;
-		app.previewActive = false;
-		app.demandRangeMode = 'local';
-		setNearbyRangeAnchor(c, busId);
-		app.sensitivityLoading = true;
-		c.sensitivity = null;
-		try {
-			// The dLMP/dd column from the browser solver (under the case's formulation). DC OPF
-			// may reconcile a null column via the server; AC OPF / SOCWR are browser-only, so a
-			// null column there is reported, never sent to the DC-only server.
-			const networkJson = await ensureNetworkJson(c);
-			if (networkJson) {
-				const sensitivity = await browserSensitivity(c, networkJson, busId);
-				if (!ac.signal.aborted && sensitivity)
-					acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
-				else if (!ac.signal.aborted && c.formulation === 'dcopf') {
-					const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
-					if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
-				} else if (!ac.signal.aborted && !sensitivity) {
-					app.error = `${c.name}: ${formulationLabel(c.formulation)} sensitivity unavailable in the browser${c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''}`;
-				}
-			} else if (c.formulation === 'dcopf') {
-				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
-				if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
-			} else if (!ac.signal.aborted) {
-				app.error = `${c.name}: ${formulationLabel(c.formulation)} needs the browser network JSON, which is unavailable`;
-			}
-		} catch {
-			// The browser path threw. DC OPF reconciles via the server; AC OPF / SOCWR have no
-			// server fallback (nothing is solved on the server), so the column stays absent.
-			if (c.formulation === 'dcopf') {
-				try {
-					const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
-					if (!ac.signal.aborted) acceptSensitivity(c, col, busId, sensitivitySeq);
-				} catch (e2) {
-					if (!ac.signal.aborted && !(e2 instanceof DOMException)) app.error = String(e2);
-				}
-			}
-		} finally {
-			if (abort === ac) app.sensitivityLoading = false;
-		}
-	}
-
-	async function selectLocalBus(localId: string, busId: number) {
-		const c = app.localCases.find((lc) => lc.id === localId);
-		if (!c?.networkJson || !c.network) return;
-		app.activeCaseId = null;
-		app.activeLocalId = localId;
-		app.placingLocalId = null;
-		abort?.abort();
-		const ac = new AbortController();
-		abort = ac;
-		c.sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
-		const sensitivitySeq = c.sensitivitySeq;
-		app.error = null;
-		app.selectedBus = busId;
-		app.previewDeltaMw = null;
-		app.previewActive = false;
-		app.demandRangeMode = 'local';
-		setNearbyRangeAnchor(c, busId);
-		app.sensitivityLoading = true;
-		c.sensitivity = null;
-		try {
-			const sensitivity = await browserSensitivity(c, c.networkJson, busId);
-			if (!ac.signal.aborted) acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
-			if (!ac.signal.aborted && !sensitivity) {
-				// A null column means the solve ran but produced no dLMP/dd for this bus (or the
-				// Study could not be built); local cases have no server fallback, so say so
-				// instead of leaving the panel in LMP view with no explanation.
-				app.error = `${c.label}: ${formulationLabel(c.formulation)} sensitivity unavailable in the browser${
-					c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ' (no dLMP/dd column for this bus)'
-				}`;
-			}
-		} catch (e) {
-			if (!ac.signal.aborted) app.error = `${c.label}: ${e instanceof Error ? e.message : e}`;
-		} finally {
-			if (abort === ac) app.sensitivityLoading = false;
-		}
-	}
-
-	function clearSelection() {
-		abort?.abort();
-		const c = app.active;
-		if (c) {
-			c.sensitivitySeq++;
-			c.sensitivity = null;
-		}
-		const lc = app.activeLocal;
-		if (lc) {
-			lc.sensitivitySeq = (lc.sensitivitySeq ?? 0) + 1;
-			lc.sensitivity = null;
-		}
-		app.selectedBus = null;
-		app.previewDeltaMw = null;
-		app.previewActive = false;
-		app.previewLmp = null;
-		previewObjective = null;
-		app.demandRangeMode = 'local';
-		nearbyRangeAnchor = null;
-		app.sensitivityLoading = false;
-	}
-
-	// Exact DC solve in the browser (wasm). The build-once Study commits the new
-	// operating point without re-parsing, returning the dLMP/dd column in the same
-	// solve; on a Study failure it falls back to solveDc, and on any browser failure
-	// or missing network JSON it reconciles via the server stream (backend cases).
-	function runSolve(c: SolvableCase, sensBus: number | null) {
-		// Cancel this case's own previous server stream, if any (backend only).
-		if (isBackendCase(c)) {
-			c.closeStream?.();
-			c.closeStream = null;
-		}
-		c.solveSeq = (c.solveSeq ?? 0) + 1;
-		const seq = c.solveSeq;
-		app.error = null;
-		c.solving = true;
-		c.solveBackend = null;
-		c.solveFallbackReason = null;
-		c.iterations = [];
-		c.solveMs = null;
-		ensureNetworkJson(c).then(async (networkJson) => {
-			if (seq !== (c.solveSeq ?? 0)) return;
-			if (!networkJson) {
-				c.solveFallbackReason ??= 'browser network JSON unavailable';
-				if (isBackendCase(c)) return serverSolve(c, sensBus, seq);
-				c.solving = false;
-				app.error = `${c.label}: local case has no browser network JSON`;
-				return;
-			}
-			const t0 = performance.now();
-			c.solveBackend = 'clarabel-wasm';
-
-			// Build-once Study path: commit the new operating point (no re-parse). The
-			// dLMP/dd column for the selected bus is computed in the same solve and comes
-			// back with it, so there is no second solve to reconcile it.
-			const study = await getStudy(c, networkJson);
-			if (seq !== (c.solveSeq ?? 0)) return;
-			if (study) {
-				try {
-					const cached = caseStudies.get(c);
-					if (!c.baseSolution && cached?.study === study) c.baseSolution = cached.baseSolution;
-					const { solution, iterations, sensitivity } = study.commit(c.id, caseDeltas(c), sensBus);
-					if (seq !== (c.solveSeq ?? 0)) return;
-					c.solution = solution;
-					c.iterations = iterations;
-					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0) c.baseSolution = solution;
-					c.solveMs = Math.round(performance.now() - t0);
-					// The commit carried the dLMP/dd column; accept it for the selected bus
-					// through the same seq-guarded setter every sensitivity source goes through.
-					if (sensBus !== null && sensitivity) acceptSensitivity(c, sensitivity, sensBus);
-					finishSolve(c, seq, sensBus);
-					return;
-				} catch (e) {
-					if (seq !== (c.solveSeq ?? 0)) return;
-					const msg = errorText(e);
-					// For AC OPF / SOCWR (browser-only) an infeasible operating point is an
-					// expected outcome — demand pushed past what the network can serve — not a
-					// broken Study. Keep the Study (it solves other points) and say so plainly,
-					// instead of the misleading "study unavailable".
-					if (c.formulation !== 'dcopf' && /infeasible/i.test(msg)) {
-						c.solving = false;
-						app.previewActive = false;
-						app.previewDeltaMw = null;
-						app.error = `${caseName(c)}: ${formulationLabel(c.formulation)} has no feasible solution at this demand`;
-						return;
-					}
-					// Any other commit failure is unexpected; drop the Study so the next solve
-					// rebuilds, then fall through to the solveDc fallback.
-					disposeStudy(c);
-					c.solveFallbackReason ??= `browser study commit failed: ${msg}`;
-				}
-			}
-
-			// The DC fallbacks below (per-call browser solve_dc; the server stream) only solve
-			// DC OPF, so they are valid only for the DC formulation. For AC OPF / SOCWR the
-			// Study is the sole solver (nothing is solved on the server), so a Study failure
-			// there is terminal: surface it rather than silently returning a DC solution.
-			if (c.formulation !== 'dcopf') {
-				if (seq !== (c.solveSeq ?? 0)) return;
-				c.solving = false;
-				const why = c.solveFallbackReason ?? 'browser study unavailable';
-				app.error = `${caseName(c)}: ${formulationLabel(c.formulation)} runs only in the browser Study, which is unavailable: ${why}`;
-				return;
-			}
-
-			// Fallback: the original per-call browser solve (re-parses each time). Used
-			// when the Study can't be built (e.g. Safari's relaxed-SIMD gap) or a built
-			// Study failed to commit; itself falls to the server for backend cases.
-			solveDc(c.id, networkJson, caseDeltas(c), sensBus)
-				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
-					if (seq !== (c.solveSeq ?? 0)) return;
-					c.solution = solution;
-					c.iterations = iterations;
-					if (!c.baseSolution && Object.keys(caseDeltas(c)).length === 0) c.baseSolution = solution;
-					c.solveMs = Math.round(performance.now() - t0);
-					if (sensitivity || sensBus === null) {
-						acceptSensitivity(c, sensitivity, sensBus);
-					} else if (isBackendCase(c)) {
-						// No browser sensitivity column (whether the solve threw or just
-						// produced none): reconcile via the server for backend cases.
-						try {
-							const col = await getSensitivity(c.id, sensBus, c.deltas);
-							if (seq !== c.solveSeq) return;
-							c.solveBackend = 'clarabel-wasm-server-sensitivity';
-							acceptSensitivity(c, col, sensBus);
-						} catch (e) {
-							if (seq !== c.solveSeq) return;
-							c.solveFallbackReason = `server sensitivity failed: ${errorText(e)}`;
-							serverSolve(c, sensBus, seq);
-							return;
-						}
-					} else {
-						// Local case: no server fallback, so report the gap (including a null
-						// column with no error) instead of silently staying in LMP view.
-						app.error = `${c.label}: browser sensitivity unavailable${sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'}`;
-					}
-					finishSolve(c, seq, sensBus);
-				})
-				.catch((e) => {
-					if (seq !== (c.solveSeq ?? 0)) return;
-					c.solveFallbackReason = `browser solve failed: ${errorText(e)}`;
-					if (isBackendCase(c)) serverSolve(c, sensBus, seq);
-					else {
-						c.solving = false;
-						app.error = `${c.label}: ${c.solveFallbackReason}`;
-					}
-				});
-		});
-	}
-
-	function serverSolve(c: CaseState, sensBus: number | null, seq = c.solveSeq) {
-		c.solveBackend = 'rust-server';
-		c.solveFallbackReason ??= 'browser solve unavailable';
-		c.closeStream = openSolveStream(c.id, c.deltas, sensBus, {
-			onsolution: (sol) => {
-				if (seq !== c.solveSeq) return;
-				c.solution = sol;
-				c.iterations = sol.iterations ?? [];
-				c.solveMs = sol.solve_ms;
-			},
-			onsensitivity: (col) => {
-				if (seq !== c.solveSeq) return;
-				acceptSensitivity(c, col, sensBus);
-			},
-			onfail: (msg) => {
-				if (seq !== c.solveSeq) return;
-				c.solving = false;
-				app.previewActive = false;
-				app.previewDeltaMw = null;
-				app.error = msg;
-			},
-			ondone: () => {
-				finishSolve(c, seq, sensBus);
-			}
-		});
-	}
-
-	function commitDelta(value: number) {
-		const c = activeSolvable;
-		const bus = app.selectedBus;
-		if (!c || bus === null) return;
-		// Refresh the engine preview at the commit value (a typed value may not have
-		// driven a drag), then score the commit with the engine's predicted Δobjective.
-		runPreview(c, bus, value);
-		c.predictedObjective = predictedDeltaObj;
-		c.deltas = previewDeltas(c, bus, value);
-		app.previewDeltaMw = value;
-		app.previewActive = true;
-		runSolve(c, bus);
-	}
-
-	function finishDemandInput(value: number) {
-		if (Math.abs(value - committedDelta) < 0.25) {
-			if (!activeSolvable?.solving) {
-				app.previewActive = false;
-				app.previewDeltaMw = null;
-			}
-			return;
-		}
-		commitDelta(value);
-	}
-
-	function resetCase(c: SolvableCase) {
-		c.deltas = {};
-		c.predictedObjective = null;
-		app.previewLmp = null;
-		previewObjective = null;
-		app.previewDeltaMw = app.selectedBus === null ? null : 0;
-		app.previewActive = app.selectedBus !== null;
-		app.demandRangeMode = 'local';
-		if (app.selectedBus !== null) setNearbyRangeAnchor(c, app.selectedBus, 0);
-		if (c.baseSolution) c.solution = c.baseSolution;
-		runSolve(c, app.selectedBus);
-	}
-
-	// Switch the active case to a new OPF formulation. Solving every formulation stays
-	// entirely in the browser via the Study (nothing is routed to the server), so this
-	// disposes the old Study — `getStudy` rebuilds it for the new formulation, re-parsing
-	// and re-solving the base — then re-solves at the committed demand. The base solution
-	// is dropped so it is recaptured under the new formulation (a DC and an AC objective
-	// are not comparable). A no-op when the choice is unchanged.
-	function changeFormulation(c: SolvableCase, next: Formulation) {
-		if (c.formulation === next) return;
-		// Disabled menu items (e.g. AC OPF, coming soon) are not selectable in the engine yet.
-		if (FORMULATIONS.find((f) => f.id === next)?.disabled) return;
-		c.formulation = next;
-		// The committed point carries over (same demand), but the model and its solution do
-		// not; drop the Study and the cached solutions so they rebuild under `next`.
-		disposeStudy(c);
-		c.baseSolution = null;
-		c.solution = null;
-		c.iterations = [];
-		c.solveMs = null;
-		c.predictedObjective = null;
-		app.previewLmp = null;
-		previewObjective = null;
-		app.error = null;
-		// The current sensitivity column was computed under the old formulation; clear it so
-		// the overlay recomputes (the Study returns the new column with the re-solve below).
-		c.sensitivity = null;
-		c.sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
-		runSolve(c, app.selectedBus);
-	}
-
-	// PowerWorld .pwd files store substation symbols at diagram coordinates,
-	// not lat/lon. Auto-generated TAMU layouts are Web Mercator scaled by this
-	// constant with both axes in degrees: x = K·lon and y = K·mercdeg(lat),
-	// where mercdeg is the Mercator ordinate expressed in degrees. So lon = x/K,
-	// and latitude is the inverse gudermannian after converting y/K back to
-	// radians. Hand-edited diagrams drift from this, so positions stay
-	// approximate. Verified against ACTIVSg200/2000 to within ~0.02 deg.
-	const PWD_MERCATOR_K = 535.81608;
-	function pwdToLngLat(x: number, y: number): [number, number] {
-		const lon = x / PWD_MERCATOR_K;
-		const lat = (Math.atan(Math.sinh(((y / PWD_MERCATOR_K) * Math.PI) / 180)) * 180) / Math.PI;
-		return [lon, lat];
-	}
-
-	/** Parse dropped files in the browser via the powerio wasm module. Case
-	 * files (.m, .raw, .aux) become local networks; geographic files can
-	 * place those networks; a PowerWorld .pwd becomes a substation point
-	 * preview. Files run serially; nothing uploads. */
-	async function ingestFiles(files: FileList | File[]) {
-		const list = Array.from(files);
-		const geoFiles: GeoFile[] = [];
-		for (const file of list.filter((f) => isGeoFile(f.name))) {
-			app.parsingFile = true;
-			try {
-				geoFiles.push(parseGeoFile(file.name, await file.text()));
-				app.error = null;
-			} catch (e) {
-				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
-			} finally {
-				app.parsingFile = false;
-			}
-		}
-
-		let parsedCaseCount = 0;
-		for (const file of list.filter((f) => !isGeoFile(f.name))) {
-			if (isDisplayFile(file.name)) {
-				app.parsingFile = true;
-				try {
-					const bytes = new Uint8Array(await file.arrayBuffer());
-					const display = await parseDisplay(bytes);
-					const points = display.substations.map((s) => {
-						const [lon, lat] = pwdToLngLat(s.x, s.y);
-						return { number: s.number, name: s.name, lon, lat };
-					});
-					const id = `local-${++localSeq}`;
-					addAndActivateLocal(
-						new LocalCase({
-							id,
-							label: file.name.replace(/\.[^.]+$/, ''),
-							fileName: file.name,
-							summary: null,
-							view: null,
-							substations: { points, approximate: true }
-						})
-					);
-					app.error = null;
-				} catch (e) {
-					app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
-				} finally {
-					app.parsingFile = false;
-				}
-				continue;
-			}
-			const format = formatOf(file.name);
-			if (!format) {
-				app.error = `${file.name}: not a case or coordinate file (.m, .raw, .aux, .pwd, .csv, .json, .geojson)`;
-				continue;
-			}
-			app.parsingFile = true;
-			try {
-				const text = await file.text();
-				const { network_json, topology, view, ...summary } = await ingestCase(text, format);
-				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
-					app.error = `${file.name}: aux parsed, but no complete network; drop the matching .m or .raw case file`;
-					continue;
-				}
-				const id = `local-${++localSeq}`;
-				const label =
-					summary.name && summary.name !== 'case'
-						? summary.name
-						: file.name.replace(/\.[^.]+$/, '');
-				const local = new LocalCase({
-					id,
-					label,
-					fileName: file.name,
-					summary,
-					networkJson: network_json,
-					topology,
-					coordsKind: summary.coords_kind,
-					view
-				});
-				if (geoFiles.length > 0 && local.coordsKind === 'synthetic_pending') {
-					withGeoFile(local, geoFiles);
-				}
-				addAndActivateLocal(local);
-				parsedCaseCount++;
-				app.error = null; // a successful parse clears a prior file's error
-			} catch (e) {
-				app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
-			} finally {
-				app.parsingFile = false;
-			}
-		}
-
-		if (geoFiles.length > 0 && parsedCaseCount === 0) applyGeoFilesToExisting(geoFiles);
-	}
-
 	function dragHasFiles(e: DragEvent): boolean {
-		return showFileDropUi && (e.dataTransfer?.types.includes('Files') ?? false);
+		return ctrl.showFileDropUi && (e.dataTransfer?.types.includes('Files') ?? false);
 	}
 
 	function onDragEnter(e: DragEvent) {
@@ -1006,294 +84,13 @@
 		e.preventDefault();
 		dragDepth = 0;
 		app.dragOver = false;
-		if (e.dataTransfer) ingestFiles(e.dataTransfer.files);
-	}
-
-	function splitName(name: string): [string, string] {
-		const m = name.match(/^(.*?)\s*\((.*)\)$/);
-		return m ? [m[1], m[2]] : [name, ''];
-	}
-
-	const activeSolvable = $derived.by(
-		(): SolvableCase | null => app.active ?? (app.activeLocal?.network ? app.activeLocal : null)
-	);
-	const activeFormulation = $derived(activeSolvable?.formulation ?? 'dcopf');
-
-	const networkStats = $derived.by(() => {
-		const c = activeSolvable;
-		if (!c?.network) return null;
-		return {
-			buses: c.network.buses.length,
-			branches: c.network.branches.length,
-			objective: c.solution?.objective ?? null,
-			binding: c.solution ? c.solution.flows.filter((f) => f.loading >= 0.999).length : null
-		};
-	});
-
-	const stats = $derived.by(() => {
-		const c = activeSolvable;
-		if (!c?.network || !c.solution) return null;
-		const lmps = c.solution.lmp.map((e) => e.usd_per_mwh);
-		const domain = lmpDomain(lmps);
-		const lmpMin = Math.min(...lmps);
-		const lmpMax = Math.max(...lmps);
-		return {
-			buses: c.network.buses.length,
-			branches: c.network.branches.length,
-			objective: c.solution.objective,
-			deltaObjective: c.baseSolution ? c.solution.objective - c.baseSolution.objective : null,
-			uniformLmp: lmpMax - lmpMin < 1 ? lmps[0] : null,
-			// Mark legend ends when outliers clamp beyond the trimmed domain.
-			lmpLo: { value: domain.lo, clamped: lmpMin < domain.lo - 0.05 },
-			lmpHi: { value: domain.hi, clamped: lmpMax > domain.hi + 0.05 },
-			binding: c.solution.flows.filter((f) => f.loading >= 0.999).length
-		};
-	});
-
-	const displayOptions = $derived(displayOptionsFor(activeSolvable));
-	$effect(() => {
-		if (
-			displayOptions.length > 0 &&
-			!displayOptions.some((option) => option.mode === app.displayMode)
-		) {
-			app.displayMode = 'lmp';
-		}
-	});
-	const activeDisplay = $derived(
-		displayOptions.find((option) => option.mode === app.displayMode) ?? displayOptions[0] ?? null
-	);
-	const displayStats = $derived.by(() => {
-		if (!activeDisplay) return null;
-		const values = activeDisplay.values.map((entry) => entry.value).filter(Number.isFinite);
-		if (values.length === 0) return null;
-		const domain = displayDomain(activeDisplay.mode, values);
-		const min = Math.min(...values);
-		const max = Math.max(...values);
-		const flatThreshold = activeDisplay.mode === 'lmp' ? 1 : 1e-5;
-		return {
-			lo: { value: domain.lo, clamped: min < domain.lo - flatThreshold / 20 },
-			hi: { value: domain.hi, clamped: max > domain.hi + flatThreshold / 20 },
-			uniform: max - min < flatThreshold ? values[0] : null
-		};
-	});
-
-	const selectedBusData = $derived.by(() => {
-		const c = activeSolvable;
-		if (!c?.network || app.selectedBus === null) return null;
-		return c.network.buses.find((b) => b.id === app.selectedBus) ?? null;
-	});
-
-	const committedDelta = $derived(
-		activeSolvable && app.selectedBus !== null
-			? (caseDeltas(activeSolvable)[app.selectedBus] ?? 0)
-			: 0
-	);
-	const sliderValue = $derived(app.previewDeltaMw ?? committedDelta);
-	const nearbyRangeCenter = $derived.by(() => {
-		const c = activeSolvable;
-		const bus = app.selectedBus;
-		if (!c || bus === null) return committedDelta;
-		if (nearbyRangeAnchor?.caseId === c.id && nearbyRangeAnchor.bus === bus) {
-			return nearbyRangeAnchor.delta;
-		}
-		return committedDelta;
-	});
-
-	function demandBounds(
-		mode: DemandRangeMode,
-		bus: typeof selectedBusData,
-		center: number
-	): { min: number; max: number; span: number } {
-		if (!bus) return { min: 0, max: 0, span: 0 };
-		// Floor, not ceil: -ceil(demand) can push base + delta below zero for
-		// non-integer demand, which the server rejects (400) and which is
-		// physically meaningless (demand cannot go negative).
-		const physicalMin = -Math.floor(bus.demand_mw);
-		const physicalMax = Math.max(Math.ceil(bus.demand_mw), 50);
-		if (mode === 'full')
-			return { min: physicalMin, max: physicalMax, span: physicalMax - physicalMin };
-		const span = Math.max(5, Math.min(25, 0.1 * Math.max(bus.demand_mw, 50)));
-		return {
-			min: Math.max(physicalMin, center - span),
-			max: Math.min(physicalMax, center + span),
-			span
-		};
-	}
-
-	const sliderBounds = $derived(
-		demandBounds(app.demandRangeMode, selectedBusData, nearbyRangeCenter)
-	);
-	const sliderMin = $derived(sliderBounds.min);
-	const sliderMax = $derived(sliderBounds.max);
-
-	function setDemandRangeMode(mode: DemandRangeMode) {
-		app.demandRangeMode = mode;
-		const c = activeSolvable;
-		if (mode === 'local' && c && app.selectedBus !== null) {
-			setNearbyRangeAnchor(c, app.selectedBus, sliderValue);
-		}
-		const bounds = demandBounds(
-			mode,
-			selectedBusData,
-			mode === 'local' ? sliderValue : nearbyRangeCenter
-		);
-		if (app.previewDeltaMw === null) return;
-		app.previewDeltaMw = Math.min(bounds.max, Math.max(bounds.min, app.previewDeltaMw));
-	}
-
-	const selectedSensitivity = $derived.by(() => {
-		const c = activeSolvable;
-		if (!c?.sensitivity || app.selectedBus === null) return null;
-		return c.sensitivity.bus === app.selectedBus ? c.sensitivity : null;
-	});
-
-	const sensSummary = $derived.by(() =>
-		selectedSensitivity ? sensitivityDomain(selectedSensitivity.values.map((v) => v.value)) : null
-	);
-	const flatSensBackground = $derived(sensSummary ? rgbaCss(sensFlatColor(sensSummary)) : '');
-
-	const selectedLmp = $derived.by(() => {
-		const c = activeSolvable;
-		if (!c?.solution || app.selectedBus === null) return null;
-		return c.solution.lmp.find((e) => e.bus === app.selectedBus)?.usd_per_mwh ?? null;
-	});
-
-	// Self-sensitivity ∂LMP_bb/∂d at the selected bus: the curvature term the
-	// first-order fallback uses for a second-order objective estimate. Zero when no
-	// sensitivity column is loaded for the bus.
-	const selfSens = $derived.by(() => {
-		if (!selectedSensitivity || app.selectedBus === null) return 0;
-		return selectedSensitivity.values.find((v) => v.bus === app.selectedBus)?.value ?? 0;
-	});
-
-	// Predicted objective change vs the committed point for the live preview. The
-	// engine (Study.preview) owns this for browser-solvable cases; null when no
-	// engine preview applies (server/Safari path), where the first-order fallback
-	// below fills in. Scoped to the case + bus it was computed for. Set by runPreview.
-	let previewObjective = $state.raw<{ caseId: string; bus: number; objectiveDelta: number } | null>(
-		null
-	);
-
-	// Predicted objective change vs base for the demand readout. Prefer the engine
-	// preview (Study.preview at the committed point, plus the committed part); fall
-	// back to a second-order gradient estimate when no Study preview is available
-	// (server-only cases, or a browser that can't load the sensitivity module): the
-	// exact committed part plus lmp·step + S_bb·step²/2 along the gradient.
-	const predictedDeltaObj = $derived.by(() => {
-		const c = activeSolvable;
-		const bus = app.selectedBus;
-		if (!c?.solution || !c.baseSolution || bus === null) return null;
-		const committedPart = c.solution.objective - c.baseSolution.objective;
-		if (previewObjective && previewObjective.caseId === c.id && previewObjective.bus === bus) {
-			return committedPart + previewObjective.objectiveDelta;
-		}
-		if (selectedLmp === null) return null;
-		const step = sliderValue - committedDelta;
-		return committedPart + selectedLmp * step + 0.5 * selfSens * step * step;
-	});
-
-	const gradientScore = $derived.by(() => {
-		const c = activeSolvable;
-		if (!c?.solution || !c.baseSolution || c.predictedObjective == null || c.solving) return null;
-		const exact = c.solution.objective - c.baseSolution.objective;
-		return { pred: c.predictedObjective, exact };
-	});
-
-	const topMovers = $derived.by(() => {
-		if (!selectedSensitivity || sensSummary?.flat) return [];
-		return [...selectedSensitivity.values]
-			.filter((v) => v.bus !== app.selectedBus)
-			.sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-			.slice(0, 5);
-	});
-	const showMoverSlot = $derived(Boolean(selectedSensitivity && !sensSummary?.flat));
-
-	const previewing = $derived(
-		Boolean(
-			activeSolvable?.solving ||
-			app.previewActive ||
-			(app.previewDeltaMw !== null && Math.abs(sliderValue - committedDelta) >= 0.25)
-		)
-	);
-
-	const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
-	const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.abs(v))}`;
-	const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
-	const displayFmt = (mode: DisplayMode, value: number) =>
-		mode === 'lmp' ? fmt.format(value) : value.toFixed(3);
-	const SIZE_SAMPLES = [10, 100, 500];
-
-	function sliderCurrent() {
-		return sliderValue;
-	}
-
-	// Deltas the live preview would commit: the committed deltas with the slider's
-	// value at the selected bus, applying commitDelta's dead zone so a tiny nudge
-	// reads as "no change at this bus".
-	function previewDeltas(c: SolvableCase, bus: number, value: number) {
-		const deltas = { ...caseDeltas(c) };
-		if (Math.abs(value) < 0.25) delete deltas[bus];
-		else deltas[bus] = value;
-		return deltas;
-	}
-
-	// First-order engine preview for the live drag. Uses the case's already-built
-	// Study (synchronous, no re-parse, no re-solve) to paint predicted per-bus
-	// ΔLMP and the predicted Δobjective. A no-op when the Study isn't built yet or
-	// can't preview (Safari's relaxed-SIMD gap, server-only cases): the map then
-	// falls back to the JS sensitivity-times-step preview.
-	function runPreview(c: SolvableCase, bus: number, value: number) {
-		// Fast path: the committed ∂LMP/∂d column (already solved at the committed point),
-		// scaled by the demand step, is the same first-order linearization the engine preview
-		// returns — without rebuilding the differentiable KKT every drag frame. That engine
-		// preview is ~80 ms/frame on the largest case (CATS, ~8870 buses), which blocked the
-		// main thread and made dragging choppy; reusing the column is O(buses).
-		const col = c.sensitivity;
-		if (col && col.bus === bus) {
-			const committedAtBus = caseDeltas(c)[bus] ?? 0;
-			const step = (Math.abs(value) < 0.25 ? 0 : value) - committedAtBus;
-			const delta = new Map<number, number>();
-			for (const v of col.values) delta.set(v.bus, v.value * step);
-			app.previewLmp = { caseId: c.id, bus, delta };
-			const lmpAtBus = c.solution?.lmp.find((l) => l.bus === bus)?.usd_per_mwh ?? null;
-			previewObjective =
-				lmpAtBus === null ? null : { caseId: c.id, bus, objectiveDelta: lmpAtBus * step };
-			return;
-		}
-		// Fallback (no committed column yet): the engine's first-order preview, which rebuilds
-		// the differentiable system. Best effort — on any failure the map keeps its own path.
-		const study = caseStudies.get(c)?.study;
-		if (!study) return;
-		try {
-			const { lmp, objectiveDelta } = study.preview(previewDeltas(c, bus, value));
-			const delta = new Map<number, number>();
-			for (const e of lmp) delta.set(e.bus, e.usd_per_mwh);
-			app.previewLmp = { caseId: c.id, bus, delta };
-			previewObjective = objectiveDelta === null ? null : { caseId: c.id, bus, objectiveDelta };
-		} catch {
-			app.previewLmp = null;
-			previewObjective = null;
-		}
-	}
-
-	function setSliderPreview(value: number | undefined) {
-		if (value === undefined) return;
-		app.previewActive = true;
-		app.previewDeltaMw = value;
-		const c = activeSolvable;
-		if (c && app.selectedBus !== null) runPreview(c, app.selectedBus, value);
-	}
-
-	function solveMetaLabel(c: SolvableCase): string {
-		if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
-		if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'server dLMP/dd';
-		return c.solveBackend === 'rust-server' ? 'server solve' : 'browser solve';
+		if (e.dataTransfer) ctrl.ingestFiles(e.dataTransfer.files);
 	}
 </script>
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === 'Escape') clearSelection();
+		if (e.key === 'Escape') ctrl.clearSelection();
 	}}
 	ondragenter={onDragEnter}
 	ondragleave={onDragLeave}
@@ -1303,10 +100,10 @@
 
 <main>
 	<TellegenMap
-		onbusclick={selectBus}
-		onlocalbusclick={selectLocalBus}
-		onplacecase={placeLocalCase}
-		onmapclick={clearSelection}
+		onbusclick={ctrl.selectBus}
+		onlocalbusclick={ctrl.selectLocalBus}
+		onplacecase={ctrl.placeLocalCase}
+		onmapclick={ctrl.clearSelection}
 	/>
 
 	<header>
@@ -1323,7 +120,7 @@
 			{#each app.cases as c (c.id)}
 				{@const [cname, cregion] = splitName(c.name)}
 				<div class="case-chip" class:active={app.activeCaseId === c.id}>
-					<button class="case-activate" onclick={() => activateCase(c.id)}>
+					<button class="case-activate" onclick={() => ctrl.activateCase(c.id)}>
 						<span class="cname"
 							>{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"></i>{/if}</span
 						>
@@ -1333,13 +130,13 @@
 						class="case-remove mono"
 						aria-label="remove {c.name} from this browser"
 						title="remove {c.name} from this browser"
-						onclick={(e) => removeBackendCase(c, e)}>&#10005;</button
+						onclick={(e) => ctrl.removeBackendCase(c, e)}>&#10005;</button
 					>
 				</div>
 			{/each}
 			{#each app.localCases as c (c.id)}
 				<div class="case-chip local" class:active={app.activeLocalId === c.id}>
-					<button class="case-activate" onclick={() => activateLocal(c)}>
+					<button class="case-activate" onclick={() => ctrl.activateLocal(c)}>
 						<span class="cname">{c.label}</span>
 						<span class="cregion mono">local</span>
 					</button>
@@ -1347,11 +144,11 @@
 						class="case-remove mono"
 						aria-label="remove {c.label}"
 						title="remove {c.label}"
-						onclick={(e) => removeLocalCase(c, e)}>&#10005;</button
+						onclick={(e) => ctrl.removeLocalCase(c, e)}>&#10005;</button
 					>
 				</div>
 			{/each}
-			{#if showFileDropUi}
+			{#if ctrl.showFileDropUi}
 				<button
 					class="ghost filedrop-ui"
 					title="parsed in your browser; the file never uploads"
@@ -1456,7 +253,7 @@
 				<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 			{/if}
 			{#if lc.topology && lc.coordsKind !== 'file'}
-				<button class="reset mono" onclick={() => moveLocalCase(lc)}>
+				<button class="reset mono" onclick={() => ctrl.moveLocalCase(lc)}>
 					{lc.coordsKind === 'synthetic_pending'
 						? 'place on map'
 						: lc.coordsKind === 'geofile'
@@ -1464,14 +261,14 @@
 							: 'move layout'}
 				</button>
 			{/if}
-			<button class="reset mono" onclick={() => removeLocalCase(lc)}>remove</button>
+			<button class="reset mono" onclick={() => ctrl.removeLocalCase(lc)}>remove</button>
 		{/if}
-		{#if !networkStats}
+		{#if !ctrl.networkStats}
 			{#if !app.error && !app.activeLocal}
-				{#if casesLoaded && app.cases.length === 0}
+				{#if ctrl.casesLoaded && app.cases.length === 0}
 					<p class="dim mono">no default cases loaded</p>
-					<button class="reset mono" onclick={restoreDefaultCases}>restore defaults</button>
-				{:else if loadingBackendCase}
+					<button class="reset mono" onclick={ctrl.restoreDefaultCases}>restore defaults</button>
+				{:else if ctrl.loadingBackendCase}
 					<p class="dim mono blink">loading selected case&hellip;</p>
 				{:else}
 					<p class="dim mono blink">loading cases&hellip;</p>
@@ -1481,31 +278,31 @@
 			{#if !app.activeLocal}
 				{@const [cname, cregion] = splitName(app.active?.name ?? '')}
 				<h2>{cname} <span class="region mono">{cregion}</span></h2>
-				{@const deltaObjective = stats?.deltaObjective}
+				{@const deltaObjective = ctrl.stats?.deltaObjective}
 				<dl class="mono">
 					<div>
 						<dt>buses</dt>
-						<dd>{networkStats.buses}</dd>
+						<dd>{ctrl.networkStats.buses}</dd>
 					</div>
 					<div>
 						<dt>branches</dt>
-						<dd>{networkStats.branches}</dd>
+						<dd>{ctrl.networkStats.branches}</dd>
 					</div>
 					<div>
 						<dt>binding lines</dt>
-						<dd>{networkStats.binding ?? '…'}</dd>
+						<dd>{ctrl.networkStats.binding ?? '…'}</dd>
 					</div>
 					<div>
 						<dt>cost</dt>
 						<dd>
-							{#if networkStats.objective === null}
+							{#if ctrl.networkStats.objective === null}
 								<span class="blink">solving&hellip;</span>
 							{:else}
-								{fmt.format(networkStats.objective)} $/h
+								{fmt.format(ctrl.networkStats.objective)} $/h
 							{/if}
 						</dd>
 					</div>
-					{#if isPerturbed(activeSolvable) && deltaObjective !== null && deltaObjective !== undefined}
+					{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null && deltaObjective !== undefined}
 						<div class="delta">
 							<dt>vs base</dt>
 							<dd>{signed(deltaObjective)} $/h</dd>
@@ -1514,8 +311,8 @@
 				</dl>
 			{/if}
 
-			{#if activeSolvable}
-				{@const c = activeSolvable}
+			{#if ctrl.activeSolvable}
+				{@const c = ctrl.activeSolvable}
 				<div class="formulation">
 					<label
 						class="formulation-row mono"
@@ -1528,7 +325,7 @@
 							class="mono"
 							disabled={c.solving}
 							value={c.formulation}
-							onchange={(e) => changeFormulation(c, e.currentTarget.value as Formulation)}
+							onchange={(e) => ctrl.changeFormulation(c, e.currentTarget.value as Formulation)}
 						>
 							{#each FORMULATIONS as f (f.id)}
 								<option value={f.id} disabled={f.disabled}>
@@ -1542,15 +339,15 @@
 
 			<hr />
 
-			{#if app.selectedBus !== null && (selectedSensitivity || app.sensitivityLoading)}
-				{@const c = activeSolvable as SolvableCase}
+			{#if app.selectedBus !== null && (ctrl.selectedSensitivity || app.sensitivityLoading)}
+				{@const c = ctrl.activeSolvable as SolvableCase}
 				<div class="mode">
-					<span class="chip">{previewing ? 'LMP preview' : '∂LMP/∂d'}</span>
+					<span class="chip">{ctrl.previewing ? 'LMP preview' : '∂LMP/∂d'}</span>
 					<span class="mono dim">bus {app.selectedBus}</span>
-					<button class="mono" onclick={clearSelection}>esc&nbsp;clear</button>
+					<button class="mono" onclick={ctrl.clearSelection}>esc&nbsp;clear</button>
 				</div>
 				<div class="sensitivity-readout" aria-live="polite">
-					{#if previewing}
+					{#if ctrl.previewing}
 						<p class="dim small">
 							{c.solving
 								? 'Exact solve running; the map keeps the LMP preview.'
@@ -1558,17 +355,17 @@
 						</p>
 					{:else}
 						<p class="dim small sensitivity-copy">LMP response per MW at bus {app.selectedBus}.</p>
-						{#if sensSummary?.flat}
-							<div class="legend flat" style:background={flatSensBackground}></div>
+						{#if ctrl.sensSummary?.flat}
+							<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 							<div class="legend-labels mono single">
-								<span>uniform {signedExp(sensSummary.mean)} ($/MWh)/MW</span>
+								<span>uniform {signedExp(ctrl.sensSummary.mean)} ($/MWh)/MW</span>
 							</div>
-						{:else if sensSummary}
+						{:else if ctrl.sensSummary}
 							<div class="legend" style:background={sensGradient}></div>
 							<div class="legend-labels mono">
-								<span>&minus;{sensSummary.scale.toExponential(1)}</span>
+								<span>&minus;{ctrl.sensSummary.scale.toExponential(1)}</span>
 								<span>0</span>
-								<span>+{sensSummary.scale.toExponential(1)}</span>
+								<span>+{ctrl.sensSummary.scale.toExponential(1)}</span>
 							</div>
 						{:else if app.sensitivityLoading}
 							<div class="legend" style:background="var(--line)" style:opacity="0.4"></div>
@@ -1582,7 +379,7 @@
 				<div class="slider-block">
 					<div class="slider-head mono">
 						<span>&Delta; demand</span>
-						<span class="val">{signed(sliderValue)} MW</span>
+						<span class="val">{signed(ctrl.sliderValue)} MW</span>
 					</div>
 					<div class="range-mode">
 						<div class="segment mono" aria-label="demand range">
@@ -1592,7 +389,7 @@
 								aria-pressed={app.demandRangeMode === 'local'}
 								aria-label="nearby demand range"
 								title="range near the selected demand setting"
-								onclick={() => setDemandRangeMode('local')}>nearby</button
+								onclick={() => ctrl.setDemandRangeMode('local')}>nearby</button
 							>
 							<button
 								type="button"
@@ -1600,57 +397,57 @@
 								aria-pressed={app.demandRangeMode === 'full'}
 								aria-label="full demand range"
 								title="range from zero load to the local physical limit"
-								onclick={() => setDemandRangeMode('full')}>full range</button
+								onclick={() => ctrl.setDemandRangeMode('full')}>full range</button
 							>
 						</div>
-						<span class="mono dim">{fmt.format(sliderMin)} to {fmt.format(sliderMax)} MW</span>
+						<span class="mono dim">{fmt.format(ctrl.sliderMin)} to {fmt.format(ctrl.sliderMax)} MW</span>
 					</div>
 					<input
 						type="range"
-						min={sliderMin}
-						max={sliderMax}
+						min={ctrl.sliderMin}
+						max={ctrl.sliderMax}
 						step="0.5"
-						bind:value={sliderCurrent, setSliderPreview}
+						bind:value={ctrl.sliderCurrent, ctrl.setSliderPreview}
 						aria-label="demand delta at selected bus"
-						onpointerdown={() => setSliderPreview(sliderValue)}
-						onkeydown={() => setSliderPreview(sliderValue)}
-						onpointerup={(e) => finishDemandInput(Number(e.currentTarget.value))}
-						onmouseup={(e) => finishDemandInput(Number(e.currentTarget.value))}
-						onclick={(e) => finishDemandInput(Number(e.currentTarget.value))}
-						onkeyup={(e) => finishDemandInput(Number(e.currentTarget.value))}
-						onblur={(e) => finishDemandInput(Number(e.currentTarget.value))}
-						onchange={(e) => finishDemandInput(Number(e.currentTarget.value))}
+						onpointerdown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
+						onkeydown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
+						onpointerup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
+						onmouseup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
+						onclick={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
+						onkeyup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
+						onblur={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
+						onchange={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
 					/>
-					<div class="demand-feedback" class:idle={!previewing && !isPerturbed(c)}>
-						<p class="pred mono dim" aria-hidden={!(predictedDeltaObj !== null && previewing)}>
-							{#if predictedDeltaObj !== null && previewing}
-								predicted &Delta;cost {signed(predictedDeltaObj)} $/h
+					<div class="demand-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
+						<p class="pred mono dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
+							{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
+								predicted &Delta;cost {signed(ctrl.predictedDeltaObj)} $/h
 							{:else}
 								&nbsp;
 							{/if}
 						</p>
-						<p class="score mono" aria-hidden={!(gradientScore && isPerturbed(c))}>
-							{#if gradientScore && isPerturbed(c)}
-								gradient {signed(gradientScore.pred)} &middot; exact {signed(gradientScore.exact)}
+						<p class="score mono" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
+							{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
+								gradient {signed(ctrl.gradientScore.pred)} &middot; exact {signed(ctrl.gradientScore.exact)}
 								$/h
 							{:else}
 								&nbsp;
 							{/if}
 						</p>
 						<div class="reset-row">
-							{#if isPerturbed(c)}
-								<button class="reset mono" onclick={() => resetCase(c)}>reset demand</button>
+							{#if ctrl.isPerturbed(c)}
+								<button class="reset mono" onclick={() => ctrl.resetCase(c)}>reset demand</button>
 							{/if}
 						</div>
 					</div>
 				</div>
 
-				{#if showMoverSlot}
+				{#if ctrl.showMoverSlot}
 					<div class="movers-block">
-						{#if !previewing && topMovers.length > 0}
+						{#if !ctrl.previewing && ctrl.topMovers.length > 0}
 							<table class="mono">
 								<tbody>
-									{#each topMovers as mover (mover.bus)}
+									{#each ctrl.topMovers as mover (mover.bus)}
 										<tr>
 											<td>bus {mover.bus}</td>
 											<td class:pos={mover.value > 0} class:neg={mover.value < 0}>
@@ -1666,7 +463,7 @@
 			{:else}
 				<div class="mode display-mode">
 					<div class="segment mono" aria-label="bus color variable">
-						{#each displayOptions as option (option.mode)}
+						{#each ctrl.displayOptions as option (option.mode)}
 							<button
 								type="button"
 								class:active={app.displayMode === option.mode}
@@ -1675,37 +472,37 @@
 							>
 						{/each}
 					</div>
-					<span class="mono dim">{activeDisplay?.unit ?? ''}</span>
+					<span class="mono dim">{ctrl.activeDisplay?.unit ?? ''}</span>
 					{#if app.sensitivityLoading}
 						<span class="mono dim blink">&part; loading&hellip;</span>
 					{/if}
 				</div>
-				{#if activeDisplay && displayStats}
-					<p class="dim small">{activeDisplay.copy}</p>
-					<div class="legend" style:background={activeDisplay.gradient}></div>
+				{#if ctrl.activeDisplay && ctrl.displayStats}
+					<p class="dim small">{ctrl.activeDisplay.copy}</p>
+					<div class="legend" style:background={ctrl.activeDisplay.gradient}></div>
 					<div class="legend-labels mono">
-						{#if displayStats.uniform !== null}
+						{#if ctrl.displayStats.uniform !== null}
 							<span>
-								uniform {displayFmt(activeDisplay.mode, displayStats.uniform)}
-								{activeDisplay.unit}
+								uniform {displayFmt(ctrl.activeDisplay.mode, ctrl.displayStats.uniform)}
+								{ctrl.activeDisplay.unit}
 							</span>
 						{:else}
 							<span>
-								{displayStats.lo.clamped ? '≤' : ''}{displayFmt(
-									activeDisplay.mode,
-									displayStats.lo.value
+								{ctrl.displayStats.lo.clamped ? '≤' : ''}{displayFmt(
+									ctrl.activeDisplay.mode,
+									ctrl.displayStats.lo.value
 								)}
 							</span>
 							<span>
-								{displayStats.hi.clamped ? '≥' : ''}{displayFmt(
-									activeDisplay.mode,
-									displayStats.hi.value
+								{ctrl.displayStats.hi.clamped ? '≥' : ''}{displayFmt(
+									ctrl.activeDisplay.mode,
+									ctrl.displayStats.hi.value
 								)}
 							</span>
 						{/if}
 					</div>
 				{:else}
-					<p class="dim small blink">Solving {formulationLabel(activeFormulation)}&hellip;</p>
+					<p class="dim small blink">Solving {formulationLabel(ctrl.activeFormulation)}&hellip;</p>
 				{/if}
 			{/if}
 
@@ -1723,22 +520,22 @@
 		{/if}
 	</aside>
 
-	{#if activeSolvable && (activeSolvable.solving || activeSolvable.solveMs != null)}
+	{#if ctrl.activeSolvable && (ctrl.activeSolvable.solving || ctrl.activeSolvable.solveMs != null)}
 		<div class="solvecard">
 			<div class="solvecard-head mono">
 				<span><b>OPF solve</b></span>
 			</div>
-			{#if (activeSolvable.iterations ?? []).length > 1}
-				<Sparkline iterations={activeSolvable.iterations ?? []} />
+			{#if (ctrl.activeSolvable.iterations ?? []).length > 1}
+				<Sparkline iterations={ctrl.activeSolvable.iterations ?? []} />
 			{/if}
 			<div class="solve-meta mono dim">
-				<span class="solve-formulation">{formulationLabel(activeSolvable.formulation)}</span>
-				<span>{solveMetaLabel(activeSolvable)}</span>
-				{#if activeSolvable.solveMs != null}<span>{activeSolvable.solveMs} ms</span>{/if}
+				<span class="solve-formulation">{formulationLabel(ctrl.activeSolvable.formulation)}</span>
+				<span>{solveMetaLabel(ctrl.activeSolvable)}</span>
+				{#if ctrl.activeSolvable.solveMs != null}<span>{ctrl.activeSolvable.solveMs} ms</span>{/if}
 			</div>
-			{#if activeSolvable.solveBackend === 'rust-server' && activeSolvable.solveFallbackReason}
-				<p class="fallback-reason mono dim" title={activeSolvable.solveFallbackReason}>
-					fallback: {activeSolvable.solveFallbackReason}
+			{#if ctrl.activeSolvable.solveBackend === 'rust-server' && ctrl.activeSolvable.solveFallbackReason}
+				<p class="fallback-reason mono dim" title={ctrl.activeSolvable.solveFallbackReason}>
+					fallback: {ctrl.activeSolvable.solveFallbackReason}
 				</p>
 			{/if}
 		</div>
@@ -1757,8 +554,8 @@
 		<div class="placement-cue mono">click the map to place the synthetic topology</div>
 	{/if}
 
-	{#if casesLoaded && hiddenDefaults.size > 0}
-		<button class="restore-defaults mono" onclick={restoreDefaultCases}>
+	{#if ctrl.casesLoaded && ctrl.hiddenDefaults.size > 0}
+		<button class="restore-defaults mono" onclick={ctrl.restoreDefaultCases}>
 			&#8634; restore default cases
 		</button>
 	{/if}
@@ -1767,7 +564,7 @@
 		<a href="/credits">credits</a>
 		<i class="sep"></i>
 		<a href="/privacy">privacy</a>
-		{#if showFileDropUi}
+		{#if ctrl.showFileDropUi}
 			<i class="sep filedrop-ui"></i>
 			<span class="drophint filedrop-ui"
 				><span class="arrow">&#8675;</span> drop a case or coordinate file anywhere</span
@@ -1775,7 +572,7 @@
 		{/if}
 	</footer>
 
-	{#if showFileDropUi}
+	{#if ctrl.showFileDropUi}
 		<input
 			type="file"
 			accept=".m,.raw,.aux,.pwd,.csv,.json,.geojson"
@@ -1784,7 +581,7 @@
 			bind:this={fileInput}
 			onchange={(e) => {
 				const input = e.currentTarget;
-				if (input.files) ingestFiles(Array.from(input.files));
+				if (input.files) ctrl.ingestFiles(Array.from(input.files));
 				input.value = '';
 			}}
 		/>

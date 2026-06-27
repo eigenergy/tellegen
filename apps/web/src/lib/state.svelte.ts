@@ -235,4 +235,8 @@ export class AppState {
 	}
 }
 
+export function createAppState(): AppState {
+	return new AppState();
+}
+
 export const app = new AppState();

@@ -17,7 +17,8 @@
 		sensitivityDomain,
 		type SensitivityDomain
 	} from '$lib/colors';
-	import { app, CaseState, type DisplayMode, type LocalCase } from '$lib/state.svelte';
+	import { CaseState, type DisplayMode, type LocalCase } from '$lib/state.svelte';
+	import { getAppState } from '$lib/context.svelte';
 
 	let {
 		onbusclick,
@@ -30,6 +31,8 @@
 		onplacecase: (lon: number, lat: number) => void;
 		onmapclick: () => void;
 	} = $props();
+
+	const app = getAppState();
 
 	const STYLE = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json';
 
