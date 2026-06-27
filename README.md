@@ -43,10 +43,18 @@ positions. Parsed local case files solve in the browser and are not uploaded.
 
 ## Development
 
+Prerequisites:
+
+- Rust from [rust-toolchain.toml](rust-toolchain.toml), including `rustfmt`, `clippy`,
+  and the `wasm32-unknown-unknown` target
+- Node.js 22 or newer
+- `wasm-pack` 0.15.x for the browser WebAssembly build
+- mdBook 0.5.x for local documentation builds
+
 tellegen backend:
 
 ```sh
-cargo run -p tellegen-server
+TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
 ```
 
 WebAssembly module:
@@ -60,7 +68,7 @@ tellegen frontend:
 
 ```sh
 cd apps/web
-npm install
+npm ci
 npm run dev
 ```
 
@@ -75,10 +83,10 @@ vendored. With the distributions under `~/Datasets`:
 scripts/stage-data.sh ~/Datasets
 ```
 
-The script stages the eight files used by the demo into `data/`. Without all
-four staged cases, the tellegen backend exits. For CI or local smoke checks
-without the staged distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the
-two pglib fallback cases with synthetic coordinates.
+The script stages any complete case pairs it finds into `data/`. The backend
+serves the staged subset; if nothing is staged, it exits unless
+`TELLEGEN_ALLOW_FALLBACK=1` is set. That fallback serves two pglib cases with
+synthetic coordinates for CI and local smoke checks.
 
 ## Tests
 
@@ -155,4 +163,5 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 The Rust crates are licensed under either of [Apache-2.0](crates/tellegen/LICENSE-APACHE)
 or [MIT](crates/tellegen/LICENSE-MIT), at your option. The web app under `apps/web/` is
-[MIT](LICENSE). See [crates/tellegen/NOTICE](crates/tellegen/NOTICE) for attributions.
+[MIT](LICENSE). See [crates/tellegen/NOTICE](crates/tellegen/NOTICE) and
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for attributions.
