@@ -255,7 +255,7 @@ a {
 	display: flex;
 	justify-content: space-between;
 	font-size: 10.5px;
-	color: var(--ink-faint);
+	color: var(--ink-dim);
 	margin-top: 4px;
 }
 
@@ -318,5 +318,34 @@ a {
 
 	.mode button {
 		margin-left: 0;
+	}
+}
+
+/* Keyboard focus ring: one accent ring for every interactive element. */
+:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+
+/* Coarse pointers: comfortable hit targets for the toggle and reset controls. */
+@media (hover: none), (pointer: coarse) {
+	.segment button {
+		min-height: 36px;
+	}
+
+	.reset {
+		min-height: 36px;
+	}
+}
+
+/* Honor reduced-motion everywhere: collapse animations and transitions. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
 	}
 }
