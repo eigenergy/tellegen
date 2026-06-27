@@ -1344,32 +1344,6 @@
 		animation: blink 1.2s steps(2) infinite;
 	}
 
-	@keyframes drop {
-		from {
-			opacity: 0;
-			transform: translateY(-8px);
-		}
-	}
-
-	@keyframes rise {
-		from {
-			opacity: 0;
-			transform: translateY(8px);
-		}
-	}
-
-	@keyframes blink {
-		50% {
-			opacity: 0.35;
-		}
-	}
-
-	@keyframes bob {
-		to {
-			transform: translateY(2px);
-		}
-	}
-
 	@media (max-width: 760px) {
 		header {
 			align-items: flex-start;
