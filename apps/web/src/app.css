@@ -129,6 +129,42 @@ a {
 	text-decoration: none;
 }
 
+/* chrome classes shared by more than one split component; kept global so Svelte
+   scoping does not drop them. Moved verbatim from the page <style>. */
+.dim {
+	color: var(--ink-dim);
+}
+
+.arrow {
+	display: inline-block;
+	animation: bob 1.8s ease-in-out infinite alternate;
+}
+
+.sep {
+	width: 4px;
+	height: 4px;
+	margin: 0 10px;
+	background: var(--accent-bright);
+	opacity: 0.55;
+	transform: rotate(45deg);
+}
+
+@media (max-width: 760px) {
+	.sep {
+		margin: 0 8px;
+	}
+
+	.filedrop-ui {
+		display: none;
+	}
+}
+
+@media (hover: none), (pointer: coarse) {
+	.filedrop-ui {
+		display: none;
+	}
+}
+
 /* shared animations, global so split components can reference them */
 @keyframes drop {
 	from {
@@ -165,5 +201,9 @@ a {
 		--dur-bob: 0.01ms;
 		--delay-panel: 0s;
 		--delay-footer: 0s;
+	}
+
+	.arrow {
+		animation: none;
 	}
 }
