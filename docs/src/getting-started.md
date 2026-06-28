@@ -8,6 +8,14 @@
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
 
+## Prerequisites
+
+- Rust from `rust-toolchain.toml`, including `rustfmt`, `clippy`, and the
+  `wasm32-unknown-unknown` target
+- Node.js 22 or newer
+- `wasm-pack` 0.15.x for browser WebAssembly builds
+- mdBook 0.5.x for local documentation builds
+
 ## tellegen backend
 
 ```sh
@@ -46,10 +54,10 @@ vendored. With the distributions under `~/Datasets`:
 scripts/stage-data.sh ~/Datasets
 ```
 
-The script stages the eight files used by the demo into `data/`. Without all
-four staged cases, the tellegen backend exits. For CI or local smoke checks
-without the staged distributions, set `TELLEGEN_ALLOW_FALLBACK=1` to serve the
-two pglib fallback cases with synthetic coordinates.
+The script stages any complete case pairs it finds into `data/`. The backend
+serves the staged subset; if nothing is staged, it exits unless
+`TELLEGEN_ALLOW_FALLBACK=1` is set. That fallback serves two pglib cases with
+synthetic coordinates for CI and local smoke checks.
 
 ## Docs
 

@@ -51,7 +51,7 @@ is intended to serve.
 
 ## Explicit Fallback
 
-Production expects all four demo cases to be staged. If they are missing, the
-tellegen backend exits. CI and local smoke checks can set
-`TELLEGEN_ALLOW_FALLBACK=1` to serve two pglib cases with synthetic coordinates.
-Those fallback coordinates are labeled as synthetic.
+The backend serves whichever complete demo cases are staged. If no complete
+case pair is staged, it exits unless `TELLEGEN_ALLOW_FALLBACK=1` is set. CI and
+local smoke checks use that fallback to serve two pglib cases with synthetic
+coordinates. Those fallback coordinates are labeled as synthetic.

@@ -18,5 +18,8 @@ data/
 # Env
 .env
 
+# Local release planning scratch files
+ISSUE-DRAFTS.md
+
 # Playwright MCP scratch output
 .playwright-mcp/

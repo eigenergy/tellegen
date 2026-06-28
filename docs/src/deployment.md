@@ -26,7 +26,7 @@ The staged case data should live under the deploy path, for example:
 $TELLEGEN_DEPLOY_PATH/data
 ```
 
-It must contain all eight files:
+Each staged case needs its case file and coordinate file:
 
 ```text
 ACTIVSg200/case_ACTIVSg200.m
@@ -39,8 +39,10 @@ CATS/CaliforniaTestSystem.m
 CATS/CATS_buses.csv
 ```
 
-Without all four staged cases, production deploy should fail before replacing
-the working container.
+The server serves the staged subset. If no complete case pair is staged, the
+container exits unless `TELLEGEN_ALLOW_FALLBACK=1` is set for a CI or local
+smoke check. Production deploys should stage the intended public case set before
+enabling the workflow.
 
 ## Local Build Deploy
 
@@ -83,11 +85,11 @@ Use the host deploy script for normal deploys and rollbacks:
 bash deploy/remote-deploy.sh ghcr.io/eigenergy/tellegen:<sha> "$TELLEGEN_DEPLOY_PATH/data"
 ```
 
-The script validates Docker, Compose, the external `edge` network, the staged
-case files, and the compose config. It pulls the selected image before
-recreating the container, then waits for Docker health and `/api/health`. It
-does not use `--remove-orphans`; the shared edge proxy is owned by a separate
-stack.
+The script validates Docker, Compose, the external `edge` network, that at
+least one case directory exists, and the compose config. It pulls the selected
+image before recreating the container, then waits for Docker health and
+`/api/health`. It does not use `--remove-orphans`; the shared edge proxy is
+owned by a separate stack.
 
 ## GitHub Actions Deploy
 
@@ -144,7 +146,9 @@ ssh "$DEPLOY_HOST" docker inspect tellegen --format '{{if index .NetworkSettings
 curl -fsS "${TELLEGEN_DEMO_URL%/}/api/health"
 ```
 
-Both health checks should report `case200`, `case500`, `case2000`, and `cats`.
+Both health checks should report `status: "ok"` and a nonempty `cases` array.
+For the full public demo, that array should contain `case200`, `case500`,
+`case2000`, and `cats`.
 
 ## Reverse Proxy
 
@@ -158,10 +162,10 @@ timeouts on `/api/cases/*/solve`.
 
 ## Capacity
 
-The staged 200, 500, 2000, and CATS cases are parsed at boot, and the base DC
-OPF solution is cached for each case. Browser WebAssembly handles the normal
-exact solve path; the tellegen backend recomputes fallback solves on demand.
-Read endpoints serve prebuilt case payloads.
+Staged cases are parsed at boot, and the base DC OPF solution is cached for
+each case. Browser WebAssembly handles the normal exact solve path; the
+tellegen backend recomputes fallback solves on demand. Read endpoints serve
+prebuilt case payloads.
 
 ## Public Hardening
 
