@@ -7,7 +7,7 @@
 {#if app.dragOver}
 	<div class="dropzone" aria-hidden="true">
 		<div class="dropframe">
-			<p class="mono">drop to parse &mdash; case files or geographic files</p>
+			<p class="mono">drop to parse: case files or geographic files</p>
 			<p class="mono hint">parsed in your browser; the file never uploads</p>
 		</div>
 	</div>

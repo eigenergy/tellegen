@@ -57,7 +57,7 @@
 				onclick={() => fileInput?.click()}
 			>
 				<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
-				<span class="cregion mono">case + geographic files &mdash; or click</span>
+				<span class="cregion mono">case + geographic files, or click</span>
 			</button>
 		{/if}
 	</nav>

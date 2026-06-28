@@ -1,4 +1,5 @@
 import type { NetworkBranch, NetworkBus } from './api';
+import { extent } from './format';
 import type { Topology } from './wasm';
 
 export interface PlacedNetwork {
@@ -275,10 +276,8 @@ function relaxEdges(pos: Point[], initial: Point[], edges: [number, number][]) {
 }
 
 function normalize(pos: Point[]): Point[] {
-	const xs = pos.map((p) => p.x);
-	const ys = pos.map((p) => p.y);
-	const [minX, maxX] = [Math.min(...xs), Math.max(...xs)];
-	const [minY, maxY] = [Math.min(...ys), Math.max(...ys)];
+	const { min: minX, max: maxX } = extent(pos.map((p) => p.x));
+	const { min: minY, max: maxY } = extent(pos.map((p) => p.y));
 	const sx = maxX - minX || 1;
 	const sy = maxY - minY || 1;
 	return pos.map((p) => ({

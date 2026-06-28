@@ -11,7 +11,7 @@
 		busNeutral,
 		busRadius,
 		lmpColor,
-		lmpDomain,
+		scalarDomain,
 		sensColor,
 		sensFlatColor,
 		sensitivityDomain,
@@ -70,17 +70,6 @@
 		previewDomain: SensitivityDomain | null;
 	}
 	type SolvableCase = CaseState | LocalCase;
-
-	function scalarDomain(mode: DisplayMode, values: number[]): { lo: number; hi: number } {
-		if (mode === 'lmp') return lmpDomain(values);
-		if (values.length === 0) return { lo: 0, hi: 1 };
-		const rawLo = Math.min(...values);
-		const rawHi = Math.max(...values);
-		const minSpan = mode === 'voltage' ? 0.02 : 0.04;
-		const span = Math.max(rawHi - rawLo, minSpan);
-		const mid = (rawLo + rawHi) / 2;
-		return { lo: mid - span / 2, hi: mid + span / 2 };
-	}
 
 	function scalarSeries(c: SolvableCase): {
 		mode: DisplayMode;

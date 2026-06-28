@@ -16,6 +16,9 @@
 <aside class="panel">
 	{#if app.error}
 		<p class="error mono">{app.error}</p>
+		{#if !ctrl.casesLoaded}
+			<button class="reset mono" onclick={ctrl.load}>retry</button>
+		{/if}
 	{/if}
 	{#if app.parsingFile}
 		<p class="dim mono blink">parsing&hellip;</p>

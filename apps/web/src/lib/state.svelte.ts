@@ -24,6 +24,11 @@ export interface LocalSubstations {
 type CoordsKind = 'file' | 'synthetic_pending' | 'synthetic' | 'geofile';
 type LocalView = { buses: NetworkBus[]; branches: NetworkBranch[] };
 
+/** A case is perturbed when any committed demand delta is nonzero. Shared by both
+ * solvable case classes so the "perturbed" rule stays single-sourced. */
+const hasPerturbation = (deltas: DemandDeltas): boolean =>
+	Object.values(deltas).some((mw) => mw !== 0);
+
 /** The fields a parsed file supplies at creation; the solve state defaults. */
 export interface LocalCaseInit {
 	id: string; // `local-1`, `local-2`, ...
@@ -93,7 +98,7 @@ export class LocalCase {
 	}
 
 	get perturbed(): boolean {
-		return Object.values(this.deltas).some((mw) => mw !== 0);
+		return hasPerturbation(this.deltas);
 	}
 }
 
@@ -137,7 +142,7 @@ export class CaseState {
 	}
 
 	get perturbed(): boolean {
-		return Object.values(this.deltas).some((mw) => mw !== 0);
+		return hasPerturbation(this.deltas);
 	}
 }
 
@@ -203,12 +208,31 @@ export class AppState {
 		this.demandRangeMode = 'local';
 		this.sensitivityLoading = false;
 
+		this.activateFallback();
+	}
+
+	removeLocal(id: string) {
+		const wasActive = this.activeLocalId === id;
+		this.localCases = this.localCases.filter((c) => c.id !== id);
+		if (this.placingLocalId === id) this.placingLocalId = null;
+		if (!wasActive) return;
+
+		this.activeLocalId = null;
+		// A backend case can still be active; only pick a fallback when nothing is.
+		if (this.activeCaseId !== null) return;
+
+		this.activateFallback();
+	}
+
+	// Pick the next active case after a removal: the first remaining backend case,
+	// else a remaining local case that can render (a view or substations) or is
+	// awaiting placement, else the first remaining local. Frames whatever it picks.
+	activateFallback() {
 		this.activeCaseId = this.cases[0]?.id ?? null;
 		if (this.activeCaseId) {
 			this.requestFrame(this.activeCaseId);
 			return;
 		}
-
 		const nextLocal =
 			this.localCases.find(
 				(c) => c.view || c.substations || c.coordsKind === 'synthetic_pending'
@@ -219,18 +243,6 @@ export class AppState {
 		this.placingLocalId = nextLocal?.coordsKind === 'synthetic_pending' ? nextLocal.id : null;
 		if (nextLocal?.view || nextLocal?.substations) this.requestFrame(nextLocal.id);
 		else this.requestFrame('all');
-	}
-
-	removeLocal(id: string) {
-		this.localCases = this.localCases.filter((c) => c.id !== id);
-		if (this.placingLocalId === id) this.placingLocalId = null;
-		if (this.activeLocalId === id) {
-			this.activeLocalId = null;
-			if (this.activeCaseId === null) {
-				this.activeCaseId = this.cases[0]?.id ?? null;
-				if (this.activeCaseId) this.requestFrame(this.activeCaseId);
-			}
-		}
 	}
 
 	requestFrame(target: string | 'all') {

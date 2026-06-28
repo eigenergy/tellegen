@@ -17,8 +17,8 @@
 			</div>
 		</dl>
 		<p class="footnote mono">
-			display only &mdash; positions inferred from the PowerWorld diagram, not surveyed latitude
-			and longitude
+			display only: positions inferred from the PowerWorld diagram, not surveyed latitude and
+			longitude
 		</p>
 		<p class="footnote mono">decoded in your browser by powerio (wasm); never uploaded</p>
 	{:else if lc.summary}
@@ -60,7 +60,7 @@
 		{/if}
 		{#if !lc.view}
 			<p class="footnote mono">
-				no coordinates in this file &mdash; click the map or drop a geographic file
+				no coordinates in this file: click the map or drop a geographic file
 			</p>
 		{:else if lc.coordsKind === 'synthetic'}
 			<p class="footnote mono">

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getController } from '$lib/context.svelte';
+	import { signedExp } from '$lib/format';
 
 	const ctrl = getController();
 </script>
@@ -12,7 +13,7 @@
 					<tr>
 						<td>bus {mover.bus}</td>
 						<td class:pos={mover.value > 0} class:neg={mover.value < 0}>
-							{mover.value >= 0 ? '+' : ''}{mover.value.toExponential(2)}
+							{signedExp(mover.value)}
 						</td>
 					</tr>
 				{/each}

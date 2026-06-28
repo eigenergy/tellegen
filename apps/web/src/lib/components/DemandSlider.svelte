@@ -70,7 +70,9 @@
 			</p>
 			<p class="score mono" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
 				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
-					gradient {signed(ctrl.gradientScore.pred)} &middot; exact {signed(ctrl.gradientScore.exact)}
+					gradient {signed(ctrl.gradientScore.pred)} &middot; exact {signed(
+						ctrl.gradientScore.exact
+					)}
 					$/h
 				{:else}
 					&nbsp;

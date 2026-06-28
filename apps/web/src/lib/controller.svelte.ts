@@ -7,14 +7,8 @@ import {
 	openSolveStream
 } from '$lib/api';
 import type { Network, NetworkBus, SensitivityColumn, Solution } from '$lib/api';
-import { lmpDomain, lmpGradient, sensFlatColor, sensitivityDomain } from '$lib/colors';
-import {
-	applyGeoFile,
-	isGeoFile,
-	mergeGeoFiles,
-	parseGeoFile,
-	type GeoFile
-} from '$lib/geo-file';
+import { lmpGradient, scalarDomain, sensFlatColor, sensitivityDomain } from '$lib/colors';
+import { applyGeoFile, isGeoFile, mergeGeoFiles, parseGeoFile, type GeoFile } from '$lib/geo-file';
 import {
 	CaseState,
 	LocalCase,
@@ -35,10 +29,7 @@ import {
 	type BrowserStudy,
 	type Formulation
 } from '$lib/wasm';
-import { errorText, formulationLabel, priceCopy, rgbaCss } from '$lib/format';
-
-// Counter for local case ids; module level so ids stay unique across remounts.
-let localSeq = 0;
+import { errorText, extent, formulationLabel, priceCopy, rgbaCss } from '$lib/format';
 
 const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
@@ -76,6 +67,24 @@ export class Controller {
 	// which Safari rejects) per case so we don't retry createStudy — and the same
 	// permanent error — on every drag. Transient failures are not latched.
 	studyUnavailable = new WeakMap<SolvableCase, string>();
+	// In-flight Study builds, keyed per case, so two overlapping getStudy calls for
+	// the same case share one createStudy instead of each building (and leaking) a
+	// wasm Study. Cleared once the build settles or the case is disposed.
+	studyBuilds = new WeakMap<
+		SolvableCase,
+		{
+			networkJson: string;
+			formulation: Formulation;
+			token: object;
+			promise: Promise<BrowserStudy | null>;
+		}
+	>();
+	// Local case id counter. An instance field (not a module global) so it is scoped
+	// to this controller — the singleton-free shape the rest of the app relies on.
+	localSeq = 0;
+	// In-flight initial case-list load, so a remount during the first fetch dedupes
+	// instead of firing a second concurrent load().
+	loading: Promise<void> | null = null;
 
 	nearbyRangeAnchor = $state<DemandRangeAnchor | null>(null);
 	// Default cases the user has closed; drives the restore affordance. Seeded in load().
@@ -117,6 +126,30 @@ export class Controller {
 		this.nearbyRangeAnchor = { caseId: c.id, bus, delta };
 	}
 
+	// Shared reset for both bus-select entry points: cancel any in-flight request,
+	// bump the per-case sensitivity token, and clear the selection/preview state so
+	// the panel starts the new selection clean. Returns the live AbortController and
+	// the sensitivity seq the caller guards its async writes with.
+	beginBusSelection(
+		c: SolvableCase,
+		busId: number
+	): { ac: AbortController; sensitivitySeq: number } {
+		this.abort?.abort();
+		const ac = new AbortController();
+		this.abort = ac;
+		const sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
+		c.sensitivitySeq = sensitivitySeq;
+		this.app.error = null;
+		this.app.selectedBus = busId;
+		this.app.previewDeltaMw = null;
+		this.app.previewActive = false;
+		this.app.demandRangeMode = 'local';
+		this.setNearbyRangeAnchor(c, busId);
+		this.app.sensitivityLoading = true;
+		c.sensitivity = null;
+		return { ac, sensitivitySeq };
+	}
+
 	displayOptionsFor(c: SolvableCase | null): DisplayOption[] {
 		if (!c?.solution) return [];
 		const options: DisplayOption[] = [
@@ -150,17 +183,6 @@ export class Controller {
 			});
 		}
 		return options;
-	}
-
-	displayDomain(mode: DisplayMode, values: number[]): { lo: number; hi: number } {
-		if (mode === 'lmp') return lmpDomain(values);
-		if (values.length === 0) return { lo: 0, hi: 1 };
-		const rawLo = Math.min(...values);
-		const rawHi = Math.max(...values);
-		const minSpan = mode === 'voltage' ? 0.02 : 0.04;
-		const span = Math.max(rawHi - rawLo, minSpan);
-		const mid = (rawLo + rawHi) / 2;
-		return { lo: mid - span / 2, hi: mid + span / 2 };
 	}
 
 	/** The display name of a case: a backend case's `name`, a local case's `label`. */
@@ -226,25 +248,51 @@ export class Controller {
 		const cached = this.caseStudies.get(c);
 		if (cached && cached.networkJson === networkJson && cached.formulation === c.formulation)
 			return cached.study;
+		// Coalesce concurrent builds for the same (case, networkJson, formulation): a
+		// bus-select sensitivity fetch and a solve can both reach here before either
+		// createStudy resolves. Without this each builds its own wasm Study and the
+		// later set() orphans the earlier one (a leaked handle), and the cache can end
+		// up holding an instance the live solve never committed on.
+		const inflight = this.studyBuilds.get(c);
+		if (inflight && inflight.networkJson === networkJson && inflight.formulation === c.formulation)
+			return inflight.promise;
+		// Different params, or no build pending: drop any stale Study before rebuilding.
 		if (cached) {
 			cached.study.free();
 			this.caseStudies.delete(c);
 		}
-		try {
-			const study = await createStudy(networkJson, c.formulation);
-			const baseSolution = study.currentSolution();
-			this.caseStudies.set(c, { study, networkJson, formulation: c.formulation, baseSolution });
-			return study;
-		} catch (e) {
-			const message = errorText(e);
-			// Only a genuine browser-capability failure is permanent; latch it so the
-			// case stays on the fallback path. Transient errors stay retryable.
-			if (isPermanentSensFailure(message)) {
-				this.studyUnavailable.set(c, 'browser study needs SIMD this browser does not support');
+		const formulation = c.formulation;
+		// Identity for this build attempt: the post-await guards compare against it
+		// (rather than the promise) so a superseding build or a disposal wins the cache.
+		const token = {};
+		const build = (async (): Promise<BrowserStudy | null> => {
+			try {
+				const study = await createStudy(networkJson, formulation);
+				// The case may have switched formulation or been disposed (removed, or its
+				// list reloaded) while building; don't cache a now-unwanted Study, and free
+				// the orphan so its wasm memory is released.
+				if (c.formulation !== formulation || this.studyBuilds.get(c)?.token !== token) {
+					study.free();
+					return null;
+				}
+				const baseSolution = study.currentSolution();
+				this.caseStudies.set(c, { study, networkJson, formulation, baseSolution });
+				return study;
+			} catch (e) {
+				const message = errorText(e);
+				// Only a genuine browser-capability failure is permanent; latch it so the
+				// case stays on the fallback path. Transient errors stay retryable.
+				if (isPermanentSensFailure(message)) {
+					this.studyUnavailable.set(c, 'browser study needs SIMD this browser does not support');
+				}
+				c.solveFallbackReason ??= `browser study unavailable: ${message}`;
+				return null;
+			} finally {
+				if (this.studyBuilds.get(c)?.token === token) this.studyBuilds.delete(c);
 			}
-			c.solveFallbackReason ??= `browser study unavailable: ${message}`;
-			return null;
-		}
+		})();
+		this.studyBuilds.set(c, { networkJson, formulation, token, promise: build });
+		return build;
 	}
 
 	// The dLMP/dd column at `busId` for the case's active formulation, solved in the browser.
@@ -271,6 +319,8 @@ export class Controller {
 			cached.study.free();
 			this.caseStudies.delete(c);
 		}
+		// Cancel any in-flight build: when it resolves it sees its entry gone and frees.
+		this.studyBuilds.delete(c);
 	}
 
 	acceptSensitivity(
@@ -388,9 +438,8 @@ export class Controller {
 		if (!this.activeDisplay) return null;
 		const values = this.activeDisplay.values.map((entry) => entry.value).filter(Number.isFinite);
 		if (values.length === 0) return null;
-		const domain = this.displayDomain(this.activeDisplay.mode, values);
-		const min = Math.min(...values);
-		const max = Math.max(...values);
+		const domain = scalarDomain(this.activeDisplay.mode, values);
+		const { min, max } = extent(values);
 		const flatThreshold = this.activeDisplay.mode === 'lmp' ? 1 : 1e-5;
 		return {
 			lo: { value: domain.lo, clamped: min < domain.lo - flatThreshold / 20 },
@@ -495,32 +544,49 @@ export class Controller {
 	previewing = $derived.by(() =>
 		Boolean(
 			this.activeSolvable?.solving ||
-				this.app.previewActive ||
-				(this.app.previewDeltaMw !== null &&
-					Math.abs(this.sliderValue - this.committedDelta) >= 0.25)
+			this.app.previewActive ||
+			(this.app.previewDeltaMw !== null && Math.abs(this.sliderValue - this.committedDelta) >= 0.25)
 		)
 	);
 
 	// ===== actions =====
 
-	load = async () => {
-		try {
-			const summaries = await getCases();
-			const hidden = this.readHiddenDefaultCases();
-			this.hiddenDefaults = new Set(hidden);
-			this.app.cases = summaries.filter((s) => !hidden.has(s.id)).map((s) => new CaseState(s));
-			this.app.activeLocalId = null;
-			this.app.placingLocalId = null;
-			this.app.activeCaseId =
-				this.app.cases.find((c) => c.id === DEFAULT_CASE_ID)?.id ?? this.app.cases[0]?.id ?? null;
-			const active = this.app.active;
-			if (active) await this.loadBackendCase(active, true);
-			else this.app.requestFrame('all');
-		} catch (e) {
-			this.app.error = `server unreachable: ${e instanceof Error ? e.message : e}`;
-		} finally {
-			this.casesLoaded = true;
-		}
+	load = (): Promise<void> => {
+		// A remount can call load() again before the first getCases() resolves; dedupe
+		// so two concurrent loads can't double-fetch the case list and double-fit the map.
+		if (this.loading) return this.loading;
+		this.loading = (async () => {
+			try {
+				const summaries = await getCases();
+				const hidden = this.readHiddenDefaultCases();
+				this.hiddenDefaults = new Set(hidden);
+				// Tear down the cases being replaced so their wasm Studies are freed and any
+				// live server stream is closed; the bulk reload otherwise orphans them (the
+				// Study WeakMaps key off the old objects, so their free() never runs).
+				for (const old of this.app.cases) {
+					old.closeStream?.();
+					old.closeStream = null;
+					old.solveSeq++;
+					this.disposeStudy(old);
+				}
+				this.app.cases = summaries.filter((s) => !hidden.has(s.id)).map((s) => new CaseState(s));
+				this.app.activeLocalId = null;
+				this.app.placingLocalId = null;
+				this.app.activeCaseId =
+					this.app.cases.find((c) => c.id === DEFAULT_CASE_ID)?.id ?? this.app.cases[0]?.id ?? null;
+				const active = this.app.active;
+				if (active) await this.loadBackendCase(active, true);
+				else this.app.requestFrame('all');
+				// Mark loaded only on success, so a failed first load is retried on the next
+				// mount (the page guards the call with `if (!ctrl.casesLoaded)`).
+				this.casesLoaded = true;
+			} catch (e) {
+				this.app.error = `server unreachable: ${e instanceof Error ? e.message : e}`;
+			} finally {
+				this.loading = null;
+			}
+		})();
+		return this.loading;
 	};
 
 	loadBackendCase = async (c: CaseState, frame = false) => {
@@ -685,18 +751,7 @@ export class Controller {
 		}
 		const c = this.app.byId(caseId);
 		if (!c) return;
-		this.abort?.abort();
-		const ac = new AbortController();
-		this.abort = ac;
-		const sensitivitySeq = ++c.sensitivitySeq;
-		this.app.error = null;
-		this.app.selectedBus = busId;
-		this.app.previewDeltaMw = null;
-		this.app.previewActive = false;
-		this.app.demandRangeMode = 'local';
-		this.setNearbyRangeAnchor(c, busId);
-		this.app.sensitivityLoading = true;
-		c.sensitivity = null;
+		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
 			// The dLMP/dd column from the browser solver (under the case's formulation). DC OPF
 			// may reconcile a null column via the server; AC OPF / SOCWR are browser-only, so a
@@ -740,19 +795,7 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.app.activeLocalId = localId;
 		this.app.placingLocalId = null;
-		this.abort?.abort();
-		const ac = new AbortController();
-		this.abort = ac;
-		c.sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
-		const sensitivitySeq = c.sensitivitySeq;
-		this.app.error = null;
-		this.app.selectedBus = busId;
-		this.app.previewDeltaMw = null;
-		this.app.previewActive = false;
-		this.app.demandRangeMode = 'local';
-		this.setNearbyRangeAnchor(c, busId);
-		this.app.sensitivityLoading = true;
-		c.sensitivity = null;
+		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
 			const sensitivity = await this.browserSensitivity(c, c.networkJson, busId);
 			if (!ac.signal.aborted) this.acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
@@ -944,8 +987,12 @@ export class Controller {
 			onfail: (msg) => {
 				if (seq !== c.solveSeq) return;
 				c.solving = false;
-				this.app.previewActive = false;
-				this.app.previewDeltaMw = null;
+				// Only the active case owns the global preview fields (mirror finishSolve); a
+				// background case's fallback failure must not collapse the active case's preview.
+				if (this.isActiveSolveCase(c)) {
+					this.app.previewActive = false;
+					this.app.previewDeltaMw = null;
+				}
 				this.app.error = msg;
 			},
 			ondone: () => {
@@ -1051,7 +1098,7 @@ export class Controller {
 						const [lon, lat] = this.pwdToLngLat(s.x, s.y);
 						return { number: s.number, name: s.name, lon, lat };
 					});
-					const id = `local-${++localSeq}`;
+					const id = `local-${++this.localSeq}`;
 					this.addAndActivateLocal(
 						new LocalCase({
 							id,
@@ -1083,7 +1130,7 @@ export class Controller {
 					this.app.error = `${file.name}: aux parsed, but no complete network; drop the matching .m or .raw case file`;
 					continue;
 				}
-				const id = `local-${++localSeq}`;
+				const id = `local-${++this.localSeq}`;
 				const label =
 					summary.name && summary.name !== 'case'
 						? summary.name
@@ -1098,7 +1145,11 @@ export class Controller {
 					coordsKind: summary.coords_kind,
 					view
 				});
-				if (geoFiles.length > 0 && local.coordsKind === 'synthetic_pending') {
+				// A co-dropped geographic file places (or repositions) the network. Apply it
+				// for any parsed case that carries topology, not just synthetic ones, so a geo
+				// overlay dropped alongside a case that already has coordinates takes effect
+				// instead of being silently discarded.
+				if (geoFiles.length > 0 && local.topology) {
 					this.withGeoFile(local, geoFiles);
 				}
 				this.addAndActivateLocal(local);
@@ -1161,7 +1212,8 @@ export class Controller {
 			const delta = new Map<number, number>();
 			for (const e of lmp) delta.set(e.bus, e.usd_per_mwh);
 			this.app.previewLmp = { caseId: c.id, bus, delta };
-			this.previewObjective = objectiveDelta === null ? null : { caseId: c.id, bus, objectiveDelta };
+			this.previewObjective =
+				objectiveDelta === null ? null : { caseId: c.id, bus, objectiveDelta };
 		} catch {
 			this.app.previewLmp = null;
 			this.previewObjective = null;

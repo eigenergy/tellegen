@@ -40,6 +40,20 @@ export function rgbaCss([r, g, b, a]: RGBA): string {
 	return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
 }
 
+/** Min and max of a numeric array in one pass. Used instead of
+ * `Math.min(...values)` / `Math.max(...values)`, which throw a RangeError once the
+ * argument count exceeds the engine limit (~65k on JavaScriptCore) — reachable on a
+ * dropped case with tens of thousands of buses. */
+export function extent(values: number[]): { min: number; max: number } {
+	let min = Infinity;
+	let max = -Infinity;
+	for (const v of values) {
+		if (v < min) min = v;
+		if (v > max) max = v;
+	}
+	return { min, max };
+}
+
 export const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 export const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.abs(v))}`;
 export const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;

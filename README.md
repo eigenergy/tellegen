@@ -8,9 +8,9 @@ Reactive visualization for power systems optimization. The name refers to
 Tellegen's theorem and the adjoint sensitivity calculations.
 
 tellegen uses a gradient preview, exact commit interaction model. Perturbations
-update the display from KKT sensitivity columns. Exact solves — DC OPF, AC power
-flow, and the SOCWR relaxation — run in the browser in WebAssembly. Case parsing uses
-[powerio](https://github.com/eigenergy/powerio).
+update the display from KKT sensitivity columns. Exact solves for DC OPF and the
+SOCWR relaxation run in the browser in WebAssembly; full AC OPF is in progress.
+Case parsing uses [powerio](https://github.com/eigenergy/powerio).
 
 Full documentation is published with mdBook at
 [eigenergy.github.io/tellegen](https://eigenergy.github.io/tellegen/). The
