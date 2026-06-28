@@ -23,7 +23,10 @@
 	--accent-rgb: 178 94 0;
 	--paper: #fcfbf7;
 
-	/* semantic color roles: call sites use these, not the raw primitives above */
+	/* Semantic role + scale layer, kept as the target vocabulary for a future
+	   migration. Most call sites still reference the raw primitives above and
+	   hardcoded values; only a handful of these (e.g. --radius-xs, --shadow-thumb,
+	   --dur-fast, --ease-out, the channel forms) are wired up so far. */
 	--surface-page: var(--bg);
 	--surface-panel: var(--panel);
 	--surface-chip: rgb(252 251 247 / 0.65);
@@ -231,6 +234,25 @@ a {
 	font-size: 12px;
 }
 
+/* Kept global (not scoped into SensitivityReadout) so the @media (max-width: 760px)
+   `.mode button { margin-left: 0 }` override below wins by source order, as it did
+   before the component split. Scoping this would raise its specificity past that rule. */
+.mode > button {
+	margin-left: auto;
+	font-size: 10.5px;
+	padding: 2px 7px;
+	background: none;
+	border: 1px solid var(--line);
+	border-radius: 2px;
+	color: var(--ink-dim);
+	cursor: pointer;
+}
+
+.mode > button:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
 .display-mode {
 	gap: 8px;
 }
@@ -255,7 +277,7 @@ a {
 	display: flex;
 	justify-content: space-between;
 	font-size: 10.5px;
-	color: var(--ink-dim);
+	color: var(--ink-faint);
 	margin-top: 4px;
 }
 

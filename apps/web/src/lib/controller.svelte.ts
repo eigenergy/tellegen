@@ -110,7 +110,7 @@ export class Controller {
 	}
 
 	isPerturbed(c: SolvableCase | null): boolean {
-		return c ? Object.values(this.caseDeltas(c)).some((mw) => mw !== 0) : false;
+		return c?.perturbed ?? false;
 	}
 
 	setNearbyRangeAnchor(c: SolvableCase, bus: number, delta = this.caseDeltas(c)[bus] ?? 0) {
@@ -372,27 +372,9 @@ export class Controller {
 			buses: c.network.buses.length,
 			branches: c.network.branches.length,
 			objective: c.solution?.objective ?? null,
+			deltaObjective:
+				c.solution && c.baseSolution ? c.solution.objective - c.baseSolution.objective : null,
 			binding: c.solution ? c.solution.flows.filter((f) => f.loading >= 0.999).length : null
-		};
-	});
-
-	stats = $derived.by(() => {
-		const c = this.activeSolvable;
-		if (!c?.network || !c.solution) return null;
-		const lmps = c.solution.lmp.map((e) => e.usd_per_mwh);
-		const domain = lmpDomain(lmps);
-		const lmpMin = Math.min(...lmps);
-		const lmpMax = Math.max(...lmps);
-		return {
-			buses: c.network.buses.length,
-			branches: c.network.branches.length,
-			objective: c.solution.objective,
-			deltaObjective: c.baseSolution ? c.solution.objective - c.baseSolution.objective : null,
-			uniformLmp: lmpMax - lmpMin < 1 ? lmps[0] : null,
-			// Mark legend ends when outliers clamp beyond the trimmed domain.
-			lmpLo: { value: domain.lo, clamped: lmpMin < domain.lo - 0.05 },
-			lmpHi: { value: domain.hi, clamped: lmpMax > domain.hi + 0.05 },
-			binding: c.solution.flows.filter((f) => f.loading >= 0.999).length
 		};
 	});
 

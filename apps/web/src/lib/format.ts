@@ -3,9 +3,9 @@ import type { RGBA } from './colors';
 import type { DisplayMode, SolveBackend } from './state.svelte';
 import { FORMULATIONS, type Formulation } from './wasm';
 
-export function errorText(e: unknown): string {
-	return e instanceof Error ? e.message : String(e);
-}
+// errorText is defined once in wasm.ts (its first consumer) and surfaced here so UI
+// code can import it alongside the other formatting helpers.
+export { errorText } from './wasm';
 
 /** The short menu label for a formulation tag (e.g. `acopf` -> `AC OPF`). */
 export function formulationLabel(id: Formulation): string {

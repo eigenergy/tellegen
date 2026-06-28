@@ -7,19 +7,18 @@
 	import PlacementCue from '$lib/components/PlacementCue.svelte';
 	import RestoreDefaultsButton from '$lib/components/RestoreDefaultsButton.svelte';
 	import SolveCard from '$lib/components/SolveCard.svelte';
-	import { setAppState, setController } from '$lib/context.svelte';
-	import { createController } from '$lib/controller.svelte';
-	import { createAppState } from '$lib/state.svelte';
+	import { getAppState, getController } from '$lib/context.svelte';
 	import TellegenMap from '$lib/TellegenMap.svelte';
 
 	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
 
-	const app = createAppState();
-	const ctrl = createController(app);
-	setAppState(app);
-	setController(ctrl);
+	const app = getAppState();
+	const ctrl = getController();
 
-	ctrl.load();
+	// The controller is created once on the layout and persists across navigation,
+	// so only fetch the backend case list on the first visit; a remount (returning
+	// from /credits) keeps the cases, deltas, and local cases already loaded.
+	if (!ctrl.casesLoaded) ctrl.load();
 
 	let dragDepth = 0;
 

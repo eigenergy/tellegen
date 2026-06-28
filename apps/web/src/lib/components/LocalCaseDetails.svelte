@@ -124,7 +124,7 @@
 	.footnote {
 		margin: 8px 0 0;
 		font-size: 10px;
-		color: var(--ink-dim);
+		color: var(--ink-faint);
 		letter-spacing: 0;
 	}
 

@@ -9,7 +9,7 @@
 {#if ctrl.networkStats}
 	{@const stats = ctrl.networkStats}
 	{@const [cname, cregion] = splitName(app.active?.name ?? '')}
-	{@const deltaObjective = ctrl.stats?.deltaObjective}
+	{@const deltaObjective = stats.deltaObjective}
 	<h2>{cname} <span class="region mono">{cregion}</span></h2>
 	<dl class="mono">
 		<div>
@@ -34,7 +34,7 @@
 				{/if}
 			</dd>
 		</div>
-		{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null && deltaObjective !== undefined}
+		{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null}
 			<div class="delta">
 				<dt>vs base</dt>
 				<dd>{signed(deltaObjective)} $/h</dd>

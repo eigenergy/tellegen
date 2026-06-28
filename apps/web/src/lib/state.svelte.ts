@@ -91,6 +91,10 @@ export class LocalCase {
 		this.view = init.view ?? null;
 		this.substations = init.substations;
 	}
+
+	get perturbed(): boolean {
+		return Object.values(this.deltas).some((mw) => mw !== 0);
+	}
 }
 
 /** One islanded network with its own solver state on the server. API

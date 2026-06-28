@@ -54,21 +54,9 @@
 		white-space: nowrap;
 	}
 
-	.mode > button {
-		margin-left: auto;
-		font-size: 10.5px;
-		padding: 2px 7px;
-		background: none;
-		border: 1px solid var(--line);
-		border-radius: 2px;
-		color: var(--ink-dim);
-		cursor: pointer;
-	}
-
-	.mode > button:hover {
-		border-color: var(--accent);
-		color: var(--accent);
-	}
+	/* .mode > button lives in the global .mode block in app.css, not here: scoping
+	   it would raise its specificity above the global @media (max-width: 760px)
+	   override and break the mobile layout. See the note by .mode in app.css. */
 
 	.sensitivity-readout {
 		min-height: 58px;

@@ -192,7 +192,7 @@ function parseSolveOutput(caseId: string, json: string): BrowserSolution {
 	return { solution, sensitivity, iterations: out.iterations ?? [] };
 }
 
-function errorText(e: unknown): string {
+export function errorText(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
 }
 
