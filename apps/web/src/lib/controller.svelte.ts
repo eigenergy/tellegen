@@ -7,14 +7,16 @@ import {
 	openSolveStream
 } from '$lib/api';
 import type { Network, NetworkBus, SensitivityColumn, Solution } from '$lib/api';
-import { lmpGradient, scalarDomain, sensFlatColor, sensitivityDomain } from '$lib/colors';
+import { scalarDomain, sensFlatColor, sensitivityDomain } from '$lib/colors';
+import { caseDeltas as sharedCaseDeltas, displayMetaFor, displaySeriesFor } from '$lib/display';
 import { applyGeoFile, isGeoFile, mergeGeoFiles, parseGeoFile, type GeoFile } from '$lib/geo-file';
 import {
 	CaseState,
 	LocalCase,
 	type AppState,
 	type DemandRangeMode,
-	type DisplayMode
+	type FallbackTarget,
+	type SolvableCase
 } from '$lib/state.svelte';
 import { placeSyntheticTopology } from '$lib/synthetic-layout';
 import {
@@ -29,26 +31,18 @@ import {
 	type BrowserStudy,
 	type Formulation
 } from '$lib/wasm';
-import { errorText, extent, formulationLabel, priceCopy, rgbaCss } from '$lib/format';
+import { errorText, extent, formulationLabel, rgbaCss } from '$lib/format';
 
 const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
 const DEFAULT_CASE_ID = 'case500';
 const PWD_MERCATOR_K = 535.81608;
 
-export type SolvableCase = CaseState | LocalCase;
+export type { SolvableCase };
 type DemandRangeAnchor = {
 	caseId: string;
 	bus: number;
 	delta: number;
-};
-export type DisplayOption = {
-	mode: DisplayMode;
-	label: string;
-	unit: string;
-	copy: string;
-	gradient: string;
-	values: { bus: number; value: number }[];
 };
 
 export class Controller {
@@ -115,7 +109,7 @@ export class Controller {
 	}
 
 	caseDeltas(c: SolvableCase) {
-		return this.isBackendCase(c) ? c.deltas : (c.deltas ?? {});
+		return sharedCaseDeltas(c);
 	}
 
 	isPerturbed(c: SolvableCase | null): boolean {
@@ -148,41 +142,6 @@ export class Controller {
 		this.app.sensitivityLoading = true;
 		c.sensitivity = null;
 		return { ac, sensitivitySeq };
-	}
-
-	displayOptionsFor(c: SolvableCase | null): DisplayOption[] {
-		if (!c?.solution) return [];
-		const options: DisplayOption[] = [
-			{
-				mode: 'lmp',
-				label: 'LMP',
-				unit: '$/MWh',
-				copy: priceCopy(c.formulation),
-				gradient: lmpGradient,
-				values: c.solution.lmp.map((e) => ({ bus: e.bus, value: e.usd_per_mwh }))
-			}
-		];
-		if (c.formulation === 'dcopf' && c.solution.va.length > 0) {
-			options.push({
-				mode: 'angle',
-				label: 'angle',
-				unit: 'rad',
-				copy: 'DC bus voltage phase angle from the current OPF solution.',
-				gradient: lmpGradient,
-				values: c.solution.va
-			});
-		}
-		if (c.formulation === 'socwr' && c.solution.w.length > 0) {
-			options.push({
-				mode: 'voltage',
-				label: '|V|',
-				unit: 'pu',
-				copy: 'SOCWR voltage magnitude from the current relaxed solution.',
-				gradient: lmpGradient,
-				values: c.solution.w.map((s) => ({ bus: s.bus, value: Math.sqrt(Math.max(0, s.value)) }))
-			});
-		}
-		return options;
 	}
 
 	/** The display name of a case: a backend case's `name`, a local case's `label`. */
@@ -428,12 +387,18 @@ export class Controller {
 		};
 	});
 
-	displayOptions = $derived(this.displayOptionsFor(this.activeSolvable));
-	activeDisplay = $derived(
-		this.displayOptions.find((option) => option.mode === this.app.displayMode) ??
+	displayOptions = $derived(displayMetaFor(this.activeSolvable));
+	activeDisplay = $derived.by(() => {
+		const activeMeta =
+			this.displayOptions.find((option) => option.mode === this.app.displayMode) ??
 			this.displayOptions[0] ??
-			null
-	);
+			null;
+		if (!activeMeta) return null;
+		// Drive the values off the resolved mode, not app.displayMode, so the
+		// displayOptions[0] fallback holds while displayMode is stale relative to the
+		// formulation (e.g. leaving SOCWR before +page resets it to 'lmp').
+		return { ...activeMeta, values: displaySeriesFor(this.activeSolvable, activeMeta.mode) };
+	});
 	displayStats = $derived.by(() => {
 		if (!this.activeDisplay) return null;
 		const values = this.activeDisplay.values.map((entry) => entry.value).filter(Number.isFinite);
@@ -632,6 +597,18 @@ export class Controller {
 		if (c) await this.loadBackendCase(c, true);
 	};
 
+	// Hydrate whichever case a removal promoted to active: a backend case needs its
+	// network/solution loaded (re-framing the map onto it), a local needs a browser
+	// solve. `none` (no case promoted, or the active case was untouched) is a no-op.
+	private hydrateFallback = async (t: FallbackTarget) => {
+		if (t.kind === 'backend') {
+			const c = this.app.byId(t.id);
+			if (c) await this.loadBackendCase(c, true);
+		} else if (t.kind === 'local') {
+			this.maybeStartLocalSolve(t.id);
+		}
+	};
+
 	removeBackendCase = async (c: CaseState, event?: MouseEvent) => {
 		event?.stopPropagation();
 		this.rememberHiddenDefaultCase(c.id);
@@ -643,9 +620,7 @@ export class Controller {
 		c.solveSeq++;
 		this.disposeStudy(c);
 		if (this.app.activeCaseId === c.id) this.clearSelection();
-		this.app.removeCase(c.id);
-		const active = this.app.active;
-		if (active) await this.loadBackendCase(active, true);
+		await this.hydrateFallback(this.app.removeCase(c.id));
 	};
 
 	activateLocal = (c: LocalCase) => {
@@ -661,7 +636,7 @@ export class Controller {
 		this.maybeStartLocalSolve(c.id);
 	};
 
-	removeLocalCase = (c: LocalCase, event?: MouseEvent) => {
+	removeLocalCase = async (c: LocalCase, event?: MouseEvent) => {
 		event?.stopPropagation();
 		if (this.app.activeLocalId === c.id) {
 			// Local cases solve in the browser only (no server stream); the seq bump
@@ -670,7 +645,7 @@ export class Controller {
 			this.clearSelection();
 		}
 		this.disposeStudy(c);
-		this.app.removeLocal(c.id);
+		await this.hydrateFallback(this.app.removeLocal(c.id));
 	};
 
 	addAndActivateLocal = (c: LocalCase) => {

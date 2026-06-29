@@ -22,6 +22,7 @@
 	--ink-rgb: 32 36 43;
 	--accent-rgb: 178 94 0;
 	--paper: #fcfbf7;
+	--paper-rgb: 252 251 247;
 
 	/* Semantic role + scale layer, kept as the target vocabulary for a future
 	   migration. Most call sites still reference the raw primitives above and
@@ -29,8 +30,8 @@
 	   --dur-fast, --ease-out, the channel forms) are wired up so far. */
 	--surface-page: var(--bg);
 	--surface-panel: var(--panel);
-	--surface-chip: rgb(252 251 247 / 0.65);
-	--surface-control: rgb(252 251 247 / 0.55);
+	--surface-chip: rgb(var(--paper-rgb) / 0.65);
+	--surface-control: rgb(var(--paper-rgb) / 0.55);
 	--border-default: var(--line);
 	--border-strong: var(--accent);
 	--text-primary: var(--ink);
@@ -291,7 +292,7 @@ a {
 	border: 1px solid var(--line);
 	border-radius: 2px;
 	overflow: hidden;
-	background: rgba(252, 251, 247, 0.55);
+	background: var(--surface-control);
 }
 
 .segment button {

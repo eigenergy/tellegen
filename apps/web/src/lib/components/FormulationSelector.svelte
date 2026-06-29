@@ -52,7 +52,7 @@
 		padding: 3px 22px 3px 8px;
 		border: 1px solid var(--line);
 		border-radius: 2px;
-		background: rgba(252, 251, 247, 0.55);
+		background: var(--surface-control);
 		color: var(--ink);
 		cursor: pointer;
 		/* Native arrow on the right, drawn so the control reads as a control in the panel. */

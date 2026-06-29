@@ -54,10 +54,7 @@
 			onpointerdown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
 			onkeydown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
 			onpointerup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
-			onmouseup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
-			onclick={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
 			onkeyup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
-			onblur={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
 			onchange={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
 		/>
 		<div class="demand-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>

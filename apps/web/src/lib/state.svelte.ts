@@ -14,6 +14,14 @@ export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' 
 export type DemandRangeMode = 'local' | 'full';
 export type DisplayMode = 'lmp' | 'angle' | 'voltage';
 
+/** The case a removal promoted to active, so the caller can hydrate it: a backend
+ * case needs its network/solution loaded, a local needs a browser solve, and
+ * `none` means nothing remains (or the removal left the active case untouched). */
+export type FallbackTarget =
+	| { kind: 'backend'; id: string }
+	| { kind: 'local'; id: string }
+	| { kind: 'none' };
+
 /** Substations from a PowerWorld .pwd display file. Positions are inferred
  * from diagram coordinates, not surveyed latitude and longitude. */
 export interface LocalSubstations {
@@ -146,6 +154,9 @@ export class CaseState {
 	}
 }
 
+/** A case the solver can run: a server-backed case or a browser-parsed local case. */
+export type SolvableCase = CaseState | LocalCase;
+
 export class AppState {
 	cases = $state.raw<CaseState[]>([]);
 	activeCaseId = $state<string | null>(null);
@@ -196,10 +207,10 @@ export class AppState {
 		this.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
 	}
 
-	removeCase(id: string) {
+	removeCase(id: string): FallbackTarget {
 		const wasActive = this.activeCaseId === id;
 		this.cases = this.cases.filter((c) => c.id !== id);
-		if (!wasActive) return;
+		if (!wasActive) return { kind: 'none' };
 
 		this.selectedBus = null;
 		this.previewDeltaMw = null;
@@ -208,30 +219,30 @@ export class AppState {
 		this.demandRangeMode = 'local';
 		this.sensitivityLoading = false;
 
-		this.activateFallback();
+		return this.activateFallback();
 	}
 
-	removeLocal(id: string) {
+	removeLocal(id: string): FallbackTarget {
 		const wasActive = this.activeLocalId === id;
 		this.localCases = this.localCases.filter((c) => c.id !== id);
 		if (this.placingLocalId === id) this.placingLocalId = null;
-		if (!wasActive) return;
+		if (!wasActive) return { kind: 'none' };
 
 		this.activeLocalId = null;
 		// A backend case can still be active; only pick a fallback when nothing is.
-		if (this.activeCaseId !== null) return;
+		if (this.activeCaseId !== null) return { kind: 'none' };
 
-		this.activateFallback();
+		return this.activateFallback();
 	}
 
 	// Pick the next active case after a removal: the first remaining backend case,
 	// else a remaining local case that can render (a view or substations) or is
 	// awaiting placement, else the first remaining local. Frames whatever it picks.
-	activateFallback() {
+	activateFallback(): FallbackTarget {
 		this.activeCaseId = this.cases[0]?.id ?? null;
 		if (this.activeCaseId) {
 			this.requestFrame(this.activeCaseId);
-			return;
+			return { kind: 'backend', id: this.activeCaseId };
 		}
 		const nextLocal =
 			this.localCases.find(
@@ -243,6 +254,7 @@ export class AppState {
 		this.placingLocalId = nextLocal?.coordsKind === 'synthetic_pending' ? nextLocal.id : null;
 		if (nextLocal?.view || nextLocal?.substations) this.requestFrame(nextLocal.id);
 		else this.requestFrame('all');
+		return nextLocal ? { kind: 'local', id: nextLocal.id } : { kind: 'none' };
 	}
 
 	requestFrame(target: string | 'all') {

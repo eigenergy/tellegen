@@ -134,7 +134,7 @@
 		align-items: flex-start;
 		gap: 1px;
 		padding: 5px 12px 4px;
-		background: rgba(252, 251, 247, 0.65);
+		background: var(--surface-chip);
 		border: 1px solid var(--line);
 		border-radius: 3px;
 		cursor: pointer;

@@ -17,6 +17,7 @@
 		sensitivityDomain,
 		type SensitivityDomain
 	} from '$lib/colors';
+	import { caseDeltas, displayMetaFor, displaySeriesFor } from '$lib/display';
 	import { CaseState, type DisplayMode, type LocalCase } from '$lib/state.svelte';
 	import { getAppState } from '$lib/context.svelte';
 
@@ -71,31 +72,6 @@
 	}
 	type SolvableCase = CaseState | LocalCase;
 
-	function scalarSeries(c: SolvableCase): {
-		mode: DisplayMode;
-		label: string;
-		unit: string;
-		values: { bus: number; value: number }[];
-	} {
-		if (app.displayMode === 'angle' && c.formulation === 'dcopf' && c.solution?.va.length) {
-			return { mode: 'angle', label: 'angle', unit: 'rad', values: c.solution.va };
-		}
-		if (app.displayMode === 'voltage' && c.formulation === 'socwr' && c.solution?.w.length) {
-			return {
-				mode: 'voltage',
-				label: '|V|',
-				unit: 'pu',
-				values: c.solution.w.map((s) => ({ bus: s.bus, value: Math.sqrt(Math.max(0, s.value)) }))
-			};
-		}
-		return {
-			mode: 'lmp',
-			label: 'LMP',
-			unit: '$/MWh',
-			values: (c.solution?.lmp ?? []).map((s) => ({ bus: s.bus, value: s.usd_per_mwh }))
-		};
-	}
-
 	function formatScalar(mode: DisplayMode, value: number): string {
 		return mode === 'lmp' ? value.toFixed(2) : value.toFixed(3);
 	}
@@ -112,7 +88,7 @@
 			active && selected !== null && active.sensitivity?.bus === selected
 				? active.sensitivity
 				: null;
-		const activeDeltas = active instanceof CaseState ? active.deltas : (active?.deltas ?? {});
+		const activeDeltas = active ? caseDeltas(active) : {};
 		// Engine first-order LMP preview (Study.preview): predicted per-bus ΔLMP for
 		// the live drag, scoped to this case + bus. Preferred over the JS gradient
 		// shift when present; the gradient path stays for the server/Safari case.
@@ -137,12 +113,17 @@
 			if (!c.network || !c.solution) return;
 			const lmp = new Map<number, number>();
 			for (const e of c.solution.lmp) lmp.set(e.bus, e.usd_per_mwh);
-			const series = scalarSeries(c);
+			// Resolve the active display mode against what this case can show, falling
+			// back to LMP when the chosen mode doesn't apply (e.g. |V| under DC OPF).
+			const meta = displayMetaFor(c);
+			const activeMeta = meta.find((o) => o.mode === app.displayMode) ?? meta[0] ?? null;
+			const scalarMode = activeMeta?.mode ?? 'lmp';
+			const seriesValues = displaySeriesFor(c, scalarMode);
 			const scalar = new Map<number, number>();
-			for (const e of series.values) scalar.set(e.bus, e.value);
+			for (const e of seriesValues) scalar.set(e.bus, e.value);
 			const { lo: scalarLo, hi: scalarHi } = scalarDomain(
-				series.mode,
-				series.values.map((e) => e.value)
+				scalarMode,
+				seriesValues.map((e) => e.value)
 			);
 			const loading = new Map<number, number>();
 			for (const f of c.solution.flows) loading.set(f.branch, f.loading);
@@ -193,9 +174,9 @@
 				scalar,
 				scalarLo,
 				scalarHi,
-				scalarMode: series.mode,
-				scalarLabel: series.label,
-				scalarUnit: series.unit,
+				scalarMode,
+				scalarLabel: activeMeta?.label ?? 'LMP',
+				scalarUnit: activeMeta?.unit ?? '$/MWh',
 				loading,
 				mode,
 				sens,
@@ -226,10 +207,6 @@
 			const mid = (d.scalarLo + d.scalarHi) / 2;
 			return lmpColor(((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo));
 		};
-	}
-
-	function caseDeltas(c: SolvableCase) {
-		return c instanceof CaseState ? c.deltas : (c.deltas ?? {});
 	}
 
 	function isBusLayer(layerId: string | undefined): boolean {
