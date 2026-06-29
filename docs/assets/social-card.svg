@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">tellegen</title>
+  <desc id="desc">tellegen: a power grid colored by locational marginal price with the adjoint price sensitivity rippling out from a selected bus.</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fcfbf7"/>
+      <stop offset="1" stop-color="#ece5d9"/>
+    </linearGradient>
+    <radialGradient id="ripple" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#b25e00" stop-opacity="0.16"/>
+      <stop offset="0.7" stop-color="#b25e00" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#b25e00" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#paper)"/>
+
+  <!-- lockup -->
+  <g transform="translate(570 92)">
+    <path d="M0 54 L30 0 L60 54" fill="none" stroke="#b25e00" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="0"  cy="54" r="7.5" fill="#b25e00"/>
+    <circle cx="30" cy="0"  r="7.5" fill="#20242b"/>
+    <circle cx="60" cy="54" r="7.5" fill="#b25e00"/>
+  </g>
+  <text x="600" y="236" text-anchor="middle" fill="#20242b"
+    font-family="'Bricolage Grotesque', 'Bricolage Grotesque Variable', 'Inter', 'Avenir Next', 'Segoe UI', sans-serif"
+    font-size="94" font-weight="800" letter-spacing="0">tellegen</text>
+  <rect x="526" y="258" width="148" height="5" rx="2.5" fill="#b25e00"/>
+  <text x="600" y="291" text-anchor="middle"
+    font-family="'IBM Plex Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
+    font-size="18" letter-spacing="0.2" fill="#43484e">interactive optimal power flow, in your browser</text>
+
+  <!-- network -->
+  <g transform="translate(-250 286)">
+    <path d="M548 150 C560 92 636 64 712 70 C792 56 884 60 966 78 C1052 70 1132 96 1150 150 C1166 206 1132 268 1052 292 C966 314 868 300 776 306 C690 312 596 300 560 258 C534 226 540 188 548 150 Z"
+      fill="#f6f0e5" stroke="#d9d3c6" stroke-width="1.2" stroke-dasharray="3 6" opacity="0.7"/>
+
+    <circle cx="816" cy="196" r="78" fill="url(#ripple)"/>
+    <g fill="none" stroke="#b25e00" stroke-linecap="round">
+      <circle cx="816" cy="196" r="34" stroke-opacity="0.30" stroke-width="1.4"/>
+      <circle cx="816" cy="196" r="52" stroke-opacity="0.18" stroke-width="1.4"/>
+      <circle cx="816" cy="196" r="72" stroke-opacity="0.09" stroke-width="1.4"/>
+    </g>
+
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <g stroke="#8a8375" stroke-width="2" opacity="0.85">
+        <path d="M588 118 L638 182"/>
+        <path d="M588 118 L704 96"/>
+        <path d="M638 182 L606 252"/>
+        <path d="M638 182 L688 284"/>
+        <path d="M606 252 L688 284"/>
+        <path d="M704 96 L802 132"/>
+        <path d="M720 206 L688 284"/>
+        <path d="M638 182 L720 206"/>
+        <path d="M886 100 L972 158"/>
+        <path d="M902 228 L882 292"/>
+        <path d="M902 228 L986 250"/>
+        <path d="M972 158 L986 250"/>
+        <path d="M986 250 L1096 272"/>
+        <path d="M1062 206 L1096 272"/>
+        <path d="M1062 206 L1112 158"/>
+        <path d="M1046 114 L1112 158"/>
+        <path d="M882 292 L902 228"/>
+      </g>
+      <g stroke="#d47422" stroke-width="3" opacity="0.92">
+        <path d="M972 158 L1046 114"/>
+        <path d="M802 132 L886 100"/>
+      </g>
+      <path d="M1046 114 L1062 206" stroke="#b3261e" stroke-width="3.4"/>
+    </g>
+
+    <g fill="none" stroke-linecap="round" stroke-width="3" opacity="0.95">
+      <path d="M816 196 L802 132" stroke="#8e4f9c"/>
+      <path d="M816 196 L886 100" stroke="#762a83"/>
+      <path d="M816 196 L720 206" stroke="#2f8f4f"/>
+      <path d="M816 196 L902 228" stroke="#1b7837"/>
+    </g>
+
+    <g stroke="#fcfbf7" stroke-width="2.5">
+      <circle cx="588" cy="118" r="10" fill="#ecb242"/>
+      <circle cx="638" cy="182" r="12" fill="#d47422"/>
+      <circle cx="606" cy="252" r="8"  fill="#f6e3b4"/>
+      <circle cx="704" cy="96"  r="9"  fill="#ecb242"/>
+      <circle cx="688" cy="284" r="8"  fill="#ecb242"/>
+      <circle cx="972" cy="158" r="10" fill="#7a1e0a"/>
+      <circle cx="986" cy="250" r="8"  fill="#d47422"/>
+      <circle cx="1046" cy="114" r="10" fill="#a03815"/>
+      <circle cx="1062" cy="206" r="9"  fill="#7a1e0a"/>
+      <circle cx="1096" cy="272" r="8"  fill="#d47422"/>
+      <circle cx="1112" cy="158" r="9"  fill="#a03815"/>
+      <circle cx="882" cy="292" r="8"  fill="#ecb242"/>
+    </g>
+
+    <g stroke-width="2.5">
+      <circle cx="720" cy="206" r="11" fill="#d47422" stroke="#2f8f4f"/>
+      <circle cx="902" cy="228" r="12" fill="#a03815" stroke="#1b7837"/>
+      <circle cx="802" cy="132" r="10" fill="#a03815" stroke="#8e4f9c"/>
+      <circle cx="886" cy="100" r="9"  fill="#d47422" stroke="#762a83"/>
+    </g>
+
+    <circle cx="816" cy="196" r="17" fill="#20242b" stroke="#fcfbf7" stroke-width="3.5"/>
+    <circle cx="816" cy="196" r="8.5" fill="#ffb000"/>
+    <text x="816" y="252" text-anchor="middle"
+      font-family="'IBM Plex Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
+      font-size="18" fill="#20242b"
+      style="paint-order:stroke;stroke:#fcfbf7;stroke-width:4px;stroke-linejoin:round">&#8706;&#955;/&#8706;d</text>
+  </g>
+</svg>

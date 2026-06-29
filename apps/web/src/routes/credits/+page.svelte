@@ -1,3 +1,13 @@
+<script lang="ts">
+	import SeoHead from '$lib/components/SeoHead.svelte';
+</script>
+
+<SeoHead
+	path="/credits/"
+	title="Credits — tellegen"
+	description="Credits for tellegen demo case data, software, map tiles, and open source sources used by the public browser demo."
+/>
+
 <main class="credits">
 	<a class="back mono" href="/">back to tellegen</a>
 	<h1>Credits</h1>

@@ -1,3 +1,4 @@
-// Static SPA: all data is fetched from the API at runtime.
-export const ssr = false;
-export const prerender = false;
+// The shell is prerendered; case data is fetched from the API after hydration.
+export const ssr = true;
+export const prerender = true;
+export const trailingSlash = 'always';

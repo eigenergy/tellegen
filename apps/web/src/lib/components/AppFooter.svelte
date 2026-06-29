@@ -5,9 +5,9 @@
 </script>
 
 <footer class="mono">
-	<a href="/credits">credits</a>
+	<a href="/credits/">credits</a>
 	<i class="sep"></i>
-	<a href="/privacy">privacy</a>
+	<a href="/privacy/">privacy</a>
 	{#if ctrl.showFileDropUi}
 		<i class="sep filedrop-ui"></i>
 		<span class="drophint filedrop-ui"
