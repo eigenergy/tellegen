@@ -1,3 +1,6 @@
+import { extent } from './format';
+import type { DisplayMode } from './state.svelte';
+
 export type RGBA = [number, number, number, number];
 
 export interface SensitivityDomain {
@@ -64,6 +67,19 @@ export function lmpDomain(values: number[]): { lo: number; hi: number } {
 	return { lo: mid - span / 2, hi: mid + span / 2 };
 }
 
+/** Center a scalar display variable (bus voltage angle, |V|) on a symmetric domain
+ * with a per-mode minimum span; LMP keeps its own robust quantile domain. Shared by
+ * the control panel readout and the map color scale. */
+export function scalarDomain(mode: DisplayMode, values: number[]): { lo: number; hi: number } {
+	if (mode === 'lmp') return lmpDomain(values);
+	if (values.length === 0) return { lo: 0, hi: 1 };
+	const { min: rawLo, max: rawHi } = extent(values);
+	const minSpan = mode === 'voltage' ? 0.02 : 0.04;
+	const span = Math.max(rawHi - rawLo, minSpan);
+	const mid = (rawLo + rawHi) / 2;
+	return { lo: mid - span / 2, hi: mid + span / 2 };
+}
+
 /** Diverging sensitivity ramp: green (price falls per MW of demand) through
  * a paper-toned neutral to purple (price rises). The green/purple pair stays
  * legible under CVD and shares no hue with the warm LMP ramp, so the two
@@ -99,7 +115,10 @@ export function sensitivityDomain(values: number[]): SensitivityDomain {
 	const min = sorted[0];
 	const max = sorted[sorted.length - 1];
 	const mean = values.reduce((acc, v) => acc + v, 0) / values.length;
-	const absMax = Math.max(...values.map((v) => Math.abs(v)));
+	// The largest absolute value sits at one sorted extreme; computing it from the
+	// endpoints avoids spreading one argument per bus into Math.max (a RangeError on
+	// very large cases).
+	const absMax = Math.max(Math.abs(min), Math.abs(max));
 	const robust = Math.max(Math.abs(q(0.01)), Math.abs(q(0.99)));
 	const flat = max - min <= Math.max(1e-7, 0.01 * absMax);
 	return {
