@@ -7,8 +7,13 @@ import type {
 	SensitivityColumn,
 	Solution,
 	SolveIteration
-} from './api';
-import { DEFAULT_FORMULATION, type CaseFileSummary, type Formulation, type Topology } from './wasm';
+} from './api.js';
+import {
+	DEFAULT_FORMULATION,
+	type CaseFileSummary,
+	type Formulation,
+	type Topology
+} from './wasm.js';
 
 export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
 export type DemandRangeMode = 'local' | 'full';

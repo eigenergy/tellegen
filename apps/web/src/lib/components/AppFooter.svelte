@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getController } from '$lib/context.svelte';
+	import { getController } from '../context.svelte.js';
 
 	const ctrl = getController();
 </script>

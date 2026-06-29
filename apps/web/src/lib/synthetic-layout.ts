@@ -1,6 +1,6 @@
-import type { NetworkBranch, NetworkBus } from './api';
-import { extent } from './format';
-import type { Topology } from './wasm';
+import type { NetworkBranch, NetworkBus } from './api.js';
+import { extent } from './format.js';
+import type { Topology } from './wasm.js';
 
 export interface PlacedNetwork {
 	buses: NetworkBus[];

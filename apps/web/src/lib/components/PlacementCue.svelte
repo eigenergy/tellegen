@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getAppState } from '$lib/context.svelte';
+	import { getAppState } from '../context.svelte.js';
 
 	const app = getAppState();
 </script>

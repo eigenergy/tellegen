@@ -1,6 +1,6 @@
 import { getContext, setContext } from 'svelte';
-import type { AppState } from './state.svelte';
-import type { Controller } from './controller.svelte';
+import type { AppState } from './state.svelte.js';
+import type { Controller } from './controller.svelte.js';
 
 const APP = Symbol('tellegen.app');
 const CTRL = Symbol('tellegen.controller');

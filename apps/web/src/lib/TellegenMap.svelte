@@ -4,7 +4,7 @@
 	import type { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 	import type { MapboxOverlay } from '@deck.gl/mapbox';
 	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
-	import type { NetworkBranch, NetworkBus } from '$lib/api';
+	import type { NetworkBranch, NetworkBus } from './api.js';
 	import {
 		branchColor,
 		branchWidth,
@@ -16,10 +16,10 @@
 		sensFlatColor,
 		sensitivityDomain,
 		type SensitivityDomain
-	} from '$lib/colors';
-	import { caseDeltas, displayMetaFor, displaySeriesFor } from '$lib/display';
-	import { CaseState, type DisplayMode, type LocalCase } from '$lib/state.svelte';
-	import { getAppState } from '$lib/context.svelte';
+	} from './colors.js';
+	import { caseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
+	import { CaseState, type DisplayMode, type LocalCase } from './state.svelte.js';
+	import { getAppState } from './context.svelte.js';
 
 	let {
 		onbusclick,

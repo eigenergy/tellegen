@@ -1,7 +1,7 @@
-import type { DemandDeltas } from './api';
-import { lmpGradient } from './colors';
-import { priceCopy } from './format';
-import { CaseState, type DisplayMode, type SolvableCase } from './state.svelte';
+import type { DemandDeltas } from './api.js';
+import { lmpGradient } from './colors.js';
+import { priceCopy } from './format.js';
+import { CaseState, type DisplayMode, type SolvableCase } from './state.svelte.js';
 
 /** One bus-color variable the panel and map can show, without its per-bus values.
  * The values for the active mode are fetched separately via `displaySeriesFor`, so

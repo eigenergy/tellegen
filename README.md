@@ -64,7 +64,7 @@ cd apps/web
 npm run wasm
 ```
 
-tellegen frontend:
+tellegen frontend demo:
 
 ```sh
 cd apps/web
@@ -73,6 +73,20 @@ npm run dev
 ```
 
 The Vite dev server proxies `/api` to `http://localhost:8000`.
+
+Frontend package:
+
+```sh
+cd apps/web
+npm run package
+```
+
+The package is `tellegen-frontend`. It exports `tellegen-frontend`,
+`tellegen-frontend/map`, `tellegen-frontend/components`,
+`tellegen-frontend/types`, `tellegen-frontend/wasm`, and
+`tellegen-frontend/styles.css`. See
+[docs/src/frontend-package.md](docs/src/frontend-package.md) for a consuming app
+example.
 
 ## Data
 
@@ -102,15 +116,15 @@ tellegen frontend checks:
 ```sh
 cd apps/web
 npm run check
+npm run package
 npm run build
 npm run smoke:build
 ```
 
 ## Repository layout
 
-- `apps/web/`: tellegen frontend (SvelteKit)
+- `apps/web/`: `tellegen-frontend` package and SvelteKit demo
 - `crates/`: Rust workspace — `tellegen` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
-- `packages/`: shared TypeScript (reserved for `@tellegen/engine`)
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -156,7 +170,7 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 ## Roadmap
 
-- library packaging with `@sveltejs/package`
+- harden the frontend package boundary with outside consumers
 - canonical display data in powerio
 
 ## License

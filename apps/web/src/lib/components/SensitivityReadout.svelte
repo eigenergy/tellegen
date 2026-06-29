@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { sensGradient } from '$lib/colors';
-	import { getAppState, getController } from '$lib/context.svelte';
-	import { signedExp } from '$lib/format';
+	import { sensGradient } from '../colors.js';
+	import { getAppState, getController } from '../context.svelte.js';
+	import { signedExp } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();

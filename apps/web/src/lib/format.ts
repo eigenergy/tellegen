@@ -1,11 +1,11 @@
-import type { SolveIteration } from './api';
-import type { RGBA } from './colors';
-import type { DisplayMode, SolveBackend } from './state.svelte';
-import { FORMULATIONS, type Formulation } from './wasm';
+import type { SolveIteration } from './api.js';
+import type { RGBA } from './colors.js';
+import type { DisplayMode, SolveBackend } from './state.svelte.js';
+import { FORMULATIONS, type Formulation } from './wasm.js';
 
 // errorText is defined once in wasm.ts (its first consumer) and surfaced here so UI
 // code can import it alongside the other formatting helpers.
-export { errorText } from './wasm';
+export { errorText } from './wasm.js';
 
 /** The short menu label for a formulation tag (e.g. `acopf` -> `AC OPF`). */
 export function formulationLabel(id: Formulation): string {

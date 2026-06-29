@@ -1,27 +1,31 @@
 <script lang="ts">
-	import { getController } from '$lib/context.svelte';
-	import { formulationLabel, solveMetaLabel } from '$lib/format';
-	import Sparkline from '$lib/Sparkline.svelte';
+	import { getController } from '../context.svelte.js';
+	import { formulationLabel, solveMetaLabel } from '../format.js';
+	import Sparkline from '../Sparkline.svelte';
 
 	const ctrl = getController();
+	const active = $derived(ctrl.activeSolvable);
+	const iterations = $derived(active?.iterations ?? []);
 </script>
 
-{#if ctrl.activeSolvable && (ctrl.activeSolvable.solving || ctrl.activeSolvable.solveMs != null)}
+{#if active && (active.solving || active.solveMs != null)}
 	<div class="solvecard">
 		<div class="solvecard-head mono">
 			<span><b>OPF solve</b></span>
 		</div>
-		{#if (ctrl.activeSolvable.iterations ?? []).length > 1}
-			<Sparkline iterations={ctrl.activeSolvable.iterations ?? []} />
+		{#if iterations.length > 1}
+			{#key iterations}
+				<Sparkline {iterations} />
+			{/key}
 		{/if}
 		<div class="solve-meta mono dim">
-			<span class="solve-formulation">{formulationLabel(ctrl.activeSolvable.formulation)}</span>
-			<span>{solveMetaLabel(ctrl.activeSolvable)}</span>
-			{#if ctrl.activeSolvable.solveMs != null}<span>{ctrl.activeSolvable.solveMs} ms</span>{/if}
+			<span class="solve-formulation">{formulationLabel(active.formulation)}</span>
+			<span>{solveMetaLabel(active)}</span>
+			{#if active.solveMs != null}<span>{active.solveMs} ms</span>{/if}
 		</div>
-		{#if ctrl.activeSolvable.solveBackend === 'rust-server' && ctrl.activeSolvable.solveFallbackReason}
-			<p class="fallback-reason mono dim" title={ctrl.activeSolvable.solveFallbackReason}>
-				fallback: {ctrl.activeSolvable.solveFallbackReason}
+		{#if active.solveBackend === 'rust-server' && active.solveFallbackReason}
+			<p class="fallback-reason mono dim" title={active.solveFallbackReason}>
+				fallback: {active.solveFallbackReason}
 			</p>
 		{/if}
 	</div>

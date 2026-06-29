@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { getController } from '$lib/context.svelte';
-	import { signedExp } from '$lib/format';
+	import { getController } from '../context.svelte.js';
+	import { signedExp } from '../format.js';
 
 	const ctrl = getController();
 </script>

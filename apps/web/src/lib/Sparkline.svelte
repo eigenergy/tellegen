@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SolveIteration } from '$lib/api';
+	import type { SolveIteration } from './api.js';
 
 	let { iterations }: { iterations: SolveIteration[] } = $props();
 
@@ -49,7 +49,7 @@
 			residual
 		</text>
 		<text class="axis-label x-label" x={W - R} y={H - 4} text-anchor="end">iterations</text>
-		<polyline {points} />
+		<polyline {points} pathLength="1" />
 	</svg>
 {/if}
 
@@ -80,5 +80,21 @@
 		stroke-width: 1.5;
 		stroke-linejoin: round;
 		vector-effect: non-scaling-stroke;
+		stroke-dasharray: 1;
+		stroke-dashoffset: 1;
+		animation: sparkline-draw var(--dur-slow) var(--ease-out) forwards;
+	}
+
+	@keyframes sparkline-draw {
+		to {
+			stroke-dashoffset: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		polyline {
+			animation: none;
+			stroke-dashoffset: 0;
+		}
 	}
 </style>

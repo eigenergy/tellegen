@@ -2,6 +2,7 @@
 node_modules/
 docs/book/
 apps/web/build/
+apps/web/dist/
 apps/web/.svelte-kit/
 
 # Rust

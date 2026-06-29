@@ -1,5 +1,5 @@
-import { extent } from './format';
-import type { DisplayMode } from './state.svelte';
+import { extent } from './format.js';
+import type { DisplayMode } from './state.svelte.js';
 
 export type RGBA = [number, number, number, number];
 
