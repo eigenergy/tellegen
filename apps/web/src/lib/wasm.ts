@@ -90,7 +90,7 @@ function powerioSensitivity() {
 function isPermanentWasmLoadFailure(message: string): boolean {
 	// Latch only genuine browser-capability failures the sensitivity module can
 	// never recover from in this browser: no WebAssembly, or an opcode the
-	// engine rejects (the sens build uses relaxed SIMD). Transient fetch or
+	// engine rejects. Transient fetch or
 	// instantiate failures (offline, 503, aborted navigation) routinely carry
 	// the .wasm URL or "Failed to fetch" in their message, so keying on the bare
 	// word "wasm"/"compile" wrongly disables the feature for the whole session.
@@ -157,10 +157,8 @@ export async function solveDc(
 			const message = errorText(e);
 			return {
 				...parseSolveOutput(caseId, (await powerio()).solve_dc(networkJson, baseRequest)),
-				// A permanent capability failure (the sens build's relaxed SIMD, which
-				// Safari rejects) gets a plain language note; transient errors keep detail.
 				sensitivityError: isPermanentWasmLoadFailure(message)
-					? 'needs SIMD this browser does not support (try Chrome or Firefox)'
+					? 'sensitivity wasm is not supported by this browser'
 					: message
 			};
 		}
@@ -197,9 +195,8 @@ export function errorText(e: unknown): string {
 }
 
 /** True when the sensitivity wasm module has failed to load in a way it can
- * never recover from in this browser (no WebAssembly, or the relaxed-SIMD
- * opcodes the sens build needs). The Study path uses the sens module, so the
- * caller must fall back to `solveDc`/the server when this is true. */
+ * never recover from in this browser. The Study path uses the sens module, so
+ * the caller must fall back to `solveDc`/the server when this is true. */
 export function isPermanentSensFailure(message: string): boolean {
 	return isPermanentWasmLoadFailure(message);
 }

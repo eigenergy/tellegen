@@ -57,9 +57,9 @@ export class Controller {
 		SolvableCase,
 		{ study: BrowserStudy; networkJson: string; formulation: Formulation; baseSolution: Solution }
 	>();
-	// Latch a permanent sensitivity-module failure (the sens build's relaxed SIMD,
-	// which Safari rejects) per case so we don't retry createStudy — and the same
-	// permanent error — on every drag. Transient failures are not latched.
+	// Latch a permanent sensitivity-module failure per case so we don't retry
+	// createStudy — and the same permanent error — on every drag. Transient
+	// failures are not latched.
 	studyUnavailable = new WeakMap<SolvableCase, string>();
 	// In-flight Study builds, keyed per case, so two overlapping getStudy calls for
 	// the same case share one createStudy instead of each building (and leaking) a
@@ -88,7 +88,7 @@ export class Controller {
 	showFileDropUi = $state(true);
 	// Predicted objective change vs the committed point for the live preview. The
 	// engine (Study.preview) owns this for browser-solvable cases; null when no
-	// engine preview applies (server/Safari path), where the first-order fallback
+	// engine preview applies (server or browser fallback path), where the first-order fallback
 	// below fills in. Scoped to the case + bus it was computed for. Set by runPreview.
 	previewObjective = $state.raw<{ caseId: string; bus: number; objectiveDelta: number } | null>(
 		null
@@ -242,7 +242,7 @@ export class Controller {
 				// Only a genuine browser-capability failure is permanent; latch it so the
 				// case stays on the fallback path. Transient errors stay retryable.
 				if (isPermanentSensFailure(message)) {
-					this.studyUnavailable.set(c, 'browser study needs SIMD this browser does not support');
+					this.studyUnavailable.set(c, 'browser study wasm is not supported by this browser');
 				}
 				c.solveFallbackReason ??= `browser study unavailable: ${message}`;
 				return null;
@@ -900,7 +900,7 @@ export class Controller {
 			}
 
 			// Fallback: the original per-call browser solve (re-parses each time). Used
-			// when the Study can't be built (e.g. Safari's relaxed-SIMD gap) or a built
+			// when the Study can't be built or a built
 			// Study failed to commit; itself falls to the server for backend cases.
 			solveDc(c.id, networkJson, this.caseDeltas(c), sensBus)
 				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
@@ -1158,7 +1158,7 @@ export class Controller {
 	// First-order engine preview for the live drag. Uses the case's already-built
 	// Study (synchronous, no re-parse, no re-solve) to paint predicted per-bus
 	// ΔLMP and the predicted Δobjective. A no-op when the Study isn't built yet or
-	// can't preview (Safari's relaxed-SIMD gap, server-only cases): the map then
+	// can't preview (browser fallback path, server-only cases): the map then
 	// falls back to the JS sensitivity-times-step preview.
 	runPreview = (c: SolvableCase, bus: number, value: number) => {
 		// Fast path: the committed ∂LMP/∂d column (already solved at the committed point),

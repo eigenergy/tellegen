@@ -322,7 +322,7 @@ pub(crate) fn dcopf_solved(
 ) -> Result<(DcNetwork, super::solve::DcSolution), String> {
     dc.allow_shed = req.options.shed;
     let bus_idx = bus_index_map(&dc.bus_ids);
-    apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas);
+    apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas)?;
     let sol = dcopf_cancellable(&dc, cancel)?;
     Ok((dc, sol))
 }
@@ -375,7 +375,7 @@ fn solve_dcpf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String
     let mut dc = DcNetwork::from_network(net)?;
     let base = dc.base_mva;
     let bus_idx = bus_index_map(&dc.bus_ids);
-    apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas);
+    apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas)?;
 
     // Net per-unit injection per dense bus: generator setpoints minus (edited) load.
     // The slack absorbs the imbalance; its injection entry is recomputed, not echoed.
@@ -415,7 +415,7 @@ pub(crate) fn acpf_solved(
     mut acnet: super::model::AcNetwork,
     req: &SolveRequest,
 ) -> Result<(super::model::AcNetwork, super::problem::AcPfSolution), String> {
-    apply_demand_deltas_ac(&mut acnet, &req.edits.deltas);
+    apply_demand_deltas_ac(&mut acnet, &req.edits.deltas)?;
     let sol = super::problem::ac_pf(&super::formulation::AcPolar::new(), &acnet)?;
     Ok((acnet, sol))
 }
@@ -466,7 +466,7 @@ pub(crate) fn socwr_solved(
     mut acnet: super::model::AcNetwork,
     req: &SolveRequest,
 ) -> Result<(super::model::AcNetwork, super::problem::SocWrSolution), String> {
-    apply_demand_deltas_ac(&mut acnet, &req.edits.deltas);
+    apply_demand_deltas_ac(&mut acnet, &req.edits.deltas)?;
     let sol = super::problem::socwr_opf(&acnet)?;
     Ok((acnet, sol))
 }
@@ -765,29 +765,54 @@ fn apply_demand_deltas(
     dc: &mut DcNetwork,
     bus_idx: &HashMap<usize, usize>,
     deltas: &HashMap<i64, f64>,
-) {
+) -> Result<(), String> {
     let base = dc.base_mva;
     for (&bus, &mw) in deltas {
-        if bus > 0 {
-            if let Some(&i) = bus_idx.get(&(bus as usize)) {
-                dc.demand[i] += mw / base;
-            }
+        if bus <= 0 {
+            return Err("demand delta bus must be positive".into());
         }
+        if !mw.is_finite() {
+            return Err(format!("demand delta for bus {bus} must be finite"));
+        }
+        let i = *bus_idx
+            .get(&(bus as usize))
+            .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
+        if dc.demand[i] * base + mw < -1e-9 {
+            return Err(format!(
+                "demand delta for bus {bus} would make demand negative"
+            ));
+        }
+        dc.demand[i] += mw / base;
     }
+    Ok(())
 }
 
 /// AC analogue of [`apply_demand_deltas`]: active-power demand deltas onto `pd`.
 #[cfg(feature = "sensitivity")]
-fn apply_demand_deltas_ac(acnet: &mut super::model::AcNetwork, deltas: &HashMap<i64, f64>) {
+fn apply_demand_deltas_ac(
+    acnet: &mut super::model::AcNetwork,
+    deltas: &HashMap<i64, f64>,
+) -> Result<(), String> {
     let base = acnet.base_mva;
     let idx = bus_index_map(&acnet.bus_ids);
     for (&bus, &mw) in deltas {
-        if bus > 0 {
-            if let Some(&i) = idx.get(&(bus as usize)) {
-                acnet.pd[i] += mw / base;
-            }
+        if bus <= 0 {
+            return Err("demand delta bus must be positive".into());
         }
+        if !mw.is_finite() {
+            return Err(format!("demand delta for bus {bus} must be finite"));
+        }
+        let i = *idx
+            .get(&(bus as usize))
+            .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
+        if acnet.pd[i] * base + mw < -1e-9 {
+            return Err(format!(
+                "demand delta for bus {bus} would make demand negative"
+            ));
+        }
+        acnet.pd[i] += mw / base;
     }
+    Ok(())
 }
 
 fn zip_bus(ids: &[usize], vals: &[f64]) -> Vec<BusScalar> {
@@ -987,6 +1012,29 @@ mod tests {
         let lmp0 = base["lmp"][0]["value"].as_f64().unwrap();
         let lmp1 = bumped["lmp"][0]["value"].as_f64().unwrap();
         assert!(lmp1 > lmp0, "LMP should rise with demand: {lmp0} -> {lmp1}");
+    }
+
+    #[test]
+    fn unknown_demand_delta_bus_errors() {
+        let err = solve_json(
+            &case3_json(),
+            r#"{"formulation":"dcopf","edits":{"deltas":{"999":1.0}}}"#,
+        )
+        .unwrap_err();
+        assert!(err.contains("unknown demand delta bus 999"), "got: {err}");
+    }
+
+    #[test]
+    fn demand_delta_cannot_make_demand_negative() {
+        let err = solve_json(
+            &case3_json(),
+            r#"{"formulation":"dcopf","edits":{"deltas":{"2":-1000.0}}}"#,
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("demand delta for bus 2 would make demand negative"),
+            "got: {err}"
+        );
     }
 
     #[test]
