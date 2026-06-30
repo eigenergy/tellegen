@@ -4,6 +4,9 @@ docs/book/
 apps/web/build/
 apps/web/dist/
 apps/web/.svelte-kit/
+apps/web/playwright-report/
+apps/web/test-results/
+examples/browser-minimal/dist/
 packages/engine/dist/
 
 # Rust

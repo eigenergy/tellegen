@@ -1,0 +1,17 @@
+{
+  "name": "@tellegen/example-browser-minimal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -p tsconfig.json && vite build"
+  },
+  "dependencies": {
+    "@tellegen/engine": "file:../../packages/engine"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vite": "^6.3.0"
+  }
+}
