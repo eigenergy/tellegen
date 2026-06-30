@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { getAppState, getController } from '$lib/context.svelte';
-	import { fmt } from '$lib/format';
+	import { getAppState, getController } from '../context.svelte.js';
+	import { fmt } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();

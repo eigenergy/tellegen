@@ -1,5 +1,5 @@
-import type { NetworkBranch, NetworkBus } from './api';
-import type { Topology } from './wasm';
+import type { NetworkBranch, NetworkBus } from './api.js';
+import type { Topology } from './wasm.js';
 
 export interface GeoFile {
 	sourceNames: string[];

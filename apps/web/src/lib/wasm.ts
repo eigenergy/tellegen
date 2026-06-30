@@ -8,7 +8,7 @@ import type {
 	SensitivityColumn,
 	Solution,
 	SolveIteration
-} from './api';
+} from './api.js';
 import wasmUrl from './wasm-pkg/tellegen_bg.wasm?url';
 import sensWasmUrl from './wasm-sens-pkg/tellegen_sens_bg.wasm?url';
 
@@ -52,12 +52,12 @@ export interface IngestedCase extends CaseFileSummary {
 	view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 }
 
-let ready: Promise<typeof import('./wasm-pkg/tellegen')> | null = null;
-let sensitivityReady: Promise<typeof import('./wasm-sens-pkg/tellegen_sens')> | null = null;
+let ready: Promise<typeof import('./wasm-pkg/tellegen.js')> | null = null;
+let sensitivityReady: Promise<typeof import('./wasm-sens-pkg/tellegen_sens.js')> | null = null;
 let sensitivityUnsupported: string | null = null;
 
 function powerio() {
-	ready ??= import('./wasm-pkg/tellegen')
+	ready ??= import('./wasm-pkg/tellegen.js')
 		.then(async (mod) => {
 			await mod.default({ module_or_path: wasmUrl });
 			return mod;
@@ -73,7 +73,7 @@ function powerio() {
 
 function powerioSensitivity() {
 	if (sensitivityUnsupported) return Promise.reject(new Error(sensitivityUnsupported));
-	sensitivityReady ??= import('./wasm-sens-pkg/tellegen_sens')
+	sensitivityReady ??= import('./wasm-sens-pkg/tellegen_sens.js')
 		.then(async (mod) => {
 			await mod.default({ module_or_path: sensWasmUrl });
 			return mod;
@@ -357,14 +357,14 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
  * linearization toward an absolute demand delta state, neither re-parsing the
  * network (unlike `solveDc`, which rebuilds the DcNetwork on every call). */
 export class BrowserStudy {
-	#study: import('./wasm-sens-pkg/tellegen_sens').Study;
+	#study: import('./wasm-sens-pkg/tellegen_sens.js').Study;
 	/** External bus id -> dense positional bus index, built once from the committed solution's
 	 * LMP ordering (each `lmp[i].bus` sits at dense index `i`). The engine keys `SensRequest`
 	 * by this dense index, not the external bus id, so the selected bus must be translated
 	 * before a sensitivity request. Null until first needed; the bus set is solve-invariant. */
 	#busToIndex: Map<number, number> | null = null;
 
-	constructor(study: import('./wasm-sens-pkg/tellegen_sens').Study) {
+	constructor(study: import('./wasm-sens-pkg/tellegen_sens.js').Study) {
 		this.#study = study;
 	}
 

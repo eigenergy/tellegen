@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { busRadius } from '$lib/colors';
+	import { busRadius } from '../colors.js';
 
 	const SIZE_SAMPLES = [10, 100, 500];
 </script>

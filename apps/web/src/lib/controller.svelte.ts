@@ -5,11 +5,11 @@ import {
 	getSensitivity,
 	getSolution,
 	openSolveStream
-} from '$lib/api';
-import type { Network, NetworkBus, SensitivityColumn, Solution } from '$lib/api';
-import { scalarDomain, sensFlatColor, sensitivityDomain } from '$lib/colors';
-import { caseDeltas as sharedCaseDeltas, displayMetaFor, displaySeriesFor } from '$lib/display';
-import { applyGeoFile, isGeoFile, mergeGeoFiles, parseGeoFile, type GeoFile } from '$lib/geo-file';
+} from './api.js';
+import type { Network, NetworkBus, SensitivityColumn, Solution } from './api.js';
+import { scalarDomain, sensFlatColor, sensitivityDomain } from './colors.js';
+import { caseDeltas as sharedCaseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
+import { applyGeoFile, isGeoFile, mergeGeoFiles, parseGeoFile, type GeoFile } from './geo-file.js';
 import {
 	CaseState,
 	LocalCase,
@@ -17,8 +17,8 @@ import {
 	type DemandRangeMode,
 	type FallbackTarget,
 	type SolvableCase
-} from '$lib/state.svelte';
-import { placeSyntheticTopology } from '$lib/synthetic-layout';
+} from './state.svelte.js';
+import { placeSyntheticTopology } from './synthetic-layout.js';
 import {
 	createStudy,
 	FORMULATIONS,
@@ -30,8 +30,8 @@ import {
 	solveDc,
 	type BrowserStudy,
 	type Formulation
-} from '$lib/wasm';
-import { errorText, extent, formulationLabel, rgbaCss } from '$lib/format';
+} from './wasm.js';
+import { errorText, extent, formulationLabel, rgbaCss } from './format.js';
 
 const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.

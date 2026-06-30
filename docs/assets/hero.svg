@@ -1,69 +1,121 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" role="img" aria-labelledby="title desc">
   <title id="title">tellegen</title>
-  <desc id="desc">The tellegen wordmark and three node mark on a quiet power flow trace.</desc>
+  <desc id="desc">The tellegen wordmark beside a geographic power network, buses colored by locational marginal price, with the adjoint price sensitivity rippling out from a selected bus.</desc>
   <defs>
     <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#fcfbf7"/>
-      <stop offset="1" stop-color="#ece9e2"/>
+      <stop offset="1" stop-color="#efe9de"/>
     </linearGradient>
-    <linearGradient id="flow" x1="700" y1="204" x2="1160" y2="96" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#6f787e"/>
-      <stop offset="0.5" stop-color="#b25e00"/>
-      <stop offset="1" stop-color="#20242b"/>
-    </linearGradient>
-    <filter id="grain" x="0" y="0" width="1" height="1">
-      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" seed="7"/>
-      <feColorMatrix type="saturate" values="0"/>
-      <feComponentTransfer>
-        <feFuncA type="table" tableValues="0 0.035"/>
-      </feComponentTransfer>
-    </filter>
+    <radialGradient id="ripple" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#b25e00" stop-opacity="0.16"/>
+      <stop offset="0.7" stop-color="#b25e00" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#b25e00" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
-  <rect width="1200" height="280" rx="18" fill="url(#paper)"/>
-  <rect width="1200" height="280" rx="18" filter="url(#grain)" opacity="0.55"/>
+  <rect width="1200" height="340" rx="16" fill="url(#paper)"/>
 
-  <g opacity="0.42" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M42 210C156 154 239 198 337 142C421 94 487 112 570 87C667 57 720 80 804 57C894 32 957 70 1060 44C1102 33 1134 26 1162 24"
-      stroke="#d9d3c6" stroke-width="1.4"/>
-    <path d="M54 70C146 96 215 72 301 96C390 121 448 166 544 150C642 133 706 92 802 112C900 133 967 186 1076 162C1120 152 1150 142 1172 132"
-      stroke="#d9d3c6" stroke-width="1.4"/>
+  <!-- service territory, the geographic footprint the grid sits on -->
+  <path d="M548 150 C560 92 636 64 712 70 C792 56 884 60 966 78 C1052 70 1132 96 1150 150 C1166 206 1132 268 1052 292 C966 314 868 300 776 306 C690 312 596 300 560 258 C534 226 540 188 548 150 Z"
+    fill="#f6f0e5" stroke="#d9d3c6" stroke-width="1.2" stroke-dasharray="3 6" opacity="0.7"/>
+
+  <!-- adjoint ripple: the sensitivity propagating from the selected bus -->
+  <circle cx="816" cy="196" r="78" fill="url(#ripple)"/>
+  <g fill="none" stroke="#b25e00" stroke-linecap="round">
+    <circle cx="816" cy="196" r="34" stroke-opacity="0.30" stroke-width="1.4"/>
+    <circle cx="816" cy="196" r="52" stroke-opacity="0.18" stroke-width="1.4"/>
+    <circle cx="816" cy="196" r="72" stroke-opacity="0.09" stroke-width="1.4"/>
   </g>
 
-  <g transform="translate(74 72)">
-    <path d="M0 92 L58 0 L116 92" fill="none" stroke="#b25e00" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="0" cy="92" r="13" fill="#b25e00"/>
-    <circle cx="58" cy="0" r="13" fill="#20242b"/>
-    <circle cx="116" cy="92" r="13" fill="#b25e00"/>
-  </g>
-
-  <g transform="translate(228 80)">
-    <text x="0" y="70" fill="#20242b"
-      font-family="Bricolage Grotesque, Avenir Next, Inter, Segoe UI, sans-serif"
-      font-size="82" font-weight="700" letter-spacing="0">tellegen</text>
-    <text x="4" y="118" fill="#6e7378"
-      font-family="IBM Plex Mono, SFMono-Regular, Menlo, Consolas, monospace"
-      font-size="18" letter-spacing="0.4">reactive power flow visualization</text>
-  </g>
-
-  <g transform="translate(700 80)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M0 116 L92 58 L190 100 L292 36 L406 78"
-      stroke="#20242b" stroke-width="14" opacity="0.08"/>
-    <path d="M0 116 L92 58 L190 100 L292 36 L406 78"
-      stroke="url(#flow)" stroke-width="5"/>
-    <path d="M92 58 L126 8 M190 100 L218 156 M292 36 L342 130"
-      stroke="#6f787e" stroke-width="3.5" opacity="0.58"/>
-    <g stroke="#fcfbf7" stroke-width="4">
-      <circle cx="0" cy="116" r="11" fill="#6f787e"/>
-      <circle cx="92" cy="58" r="16" fill="#b25e00"/>
-      <circle cx="190" cy="100" r="12" fill="#6f787e"/>
-      <circle cx="292" cy="36" r="17" fill="#b25e00"/>
-      <circle cx="406" cy="78" r="12" fill="#6f787e"/>
-      <circle cx="126" cy="8" r="9" fill="#6f787e"/>
-      <circle cx="218" cy="156" r="9" fill="#6f787e"/>
-      <circle cx="342" cy="130" r="9" fill="#6f787e"/>
+  <!-- transmission lines: gray at rest, amber when loaded, red when binding -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#8a8375" stroke-width="2" opacity="0.85">
+      <path d="M588 118 L638 182"/>
+      <path d="M588 118 L704 96"/>
+      <path d="M638 182 L606 252"/>
+      <path d="M638 182 L688 284"/>
+      <path d="M606 252 L688 284"/>
+      <path d="M704 96 L802 132"/>
+      <path d="M720 206 L688 284"/>
+      <path d="M638 182 L720 206"/>
+      <path d="M886 100 L972 158"/>
+      <path d="M902 228 L882 292"/>
+      <path d="M902 228 L986 250"/>
+      <path d="M972 158 L986 250"/>
+      <path d="M986 250 L1096 272"/>
+      <path d="M1062 206 L1096 272"/>
+      <path d="M1062 206 L1112 158"/>
+      <path d="M1046 114 L1112 158"/>
+      <path d="M882 292 L902 228"/>
     </g>
+    <g stroke="#d47422" stroke-width="3" opacity="0.92">
+      <path d="M972 158 L1046 114"/>
+      <path d="M802 132 L886 100"/>
+    </g>
+    <path d="M1046 114 L1062 206" stroke="#b3261e" stroke-width="3.4"/>
   </g>
 
-  <rect x="0.5" y="0.5" width="1199" height="279" rx="18" fill="none" stroke="#d9d3c6"/>
+  <!-- adjoint edges: how price at the neighbors moves with demand at the selected bus -->
+  <g fill="none" stroke-linecap="round" stroke-width="3" opacity="0.95">
+    <path d="M816 196 L802 132" stroke="#8e4f9c"/>
+    <path d="M816 196 L886 100" stroke="#762a83"/>
+    <path d="M816 196 L720 206" stroke="#2f8f4f"/>
+    <path d="M816 196 L902 228" stroke="#1b7837"/>
+  </g>
+
+  <!-- buses: area by capacity, color by locational marginal price -->
+  <g stroke="#fcfbf7" stroke-width="2.5">
+    <circle cx="588" cy="118" r="10" fill="#ecb242"/>
+    <circle cx="638" cy="182" r="12" fill="#d47422"/>
+    <circle cx="606" cy="252" r="8"  fill="#f6e3b4"/>
+    <circle cx="704" cy="96"  r="9"  fill="#ecb242"/>
+    <circle cx="688" cy="284" r="8"  fill="#ecb242"/>
+    <circle cx="972" cy="158" r="10" fill="#7a1e0a"/>
+    <circle cx="986" cy="250" r="8"  fill="#d47422"/>
+    <circle cx="1046" cy="114" r="10" fill="#a03815"/>
+    <circle cx="1062" cy="206" r="9"  fill="#7a1e0a"/>
+    <circle cx="1096" cy="272" r="8"  fill="#d47422"/>
+    <circle cx="1112" cy="158" r="9"  fill="#a03815"/>
+    <circle cx="882" cy="292" r="8"  fill="#ecb242"/>
+  </g>
+
+  <!-- neighbors of the selected bus, ringed by the sign of their price response -->
+  <g stroke-width="2.5">
+    <circle cx="720" cy="206" r="11" fill="#d47422" stroke="#2f8f4f"/>
+    <circle cx="902" cy="228" r="12" fill="#a03815" stroke="#1b7837"/>
+    <circle cx="802" cy="132" r="10" fill="#a03815" stroke="#8e4f9c"/>
+    <circle cx="886" cy="100" r="9"  fill="#d47422" stroke="#762a83"/>
+  </g>
+
+  <!-- the selected bus -->
+  <circle cx="816" cy="196" r="17" fill="#20242b" stroke="#fcfbf7" stroke-width="3.5"/>
+  <circle cx="816" cy="196" r="8.5" fill="#ffb000"/>
+
+  <text x="816" y="252" text-anchor="middle"
+    font-family="'IBM Plex Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
+    font-size="18" fill="#20242b"
+    style="paint-order:stroke;stroke:#fcfbf7;stroke-width:4px;stroke-linejoin:round">&#8706;&#955;/&#8706;d</text>
+
+  <!-- wordmark lockup -->
+  <g transform="translate(78 70)">
+    <path d="M4 56 L34 4 L64 56" fill="none" stroke="#b25e00" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="4"  cy="56" r="7.5" fill="#b25e00"/>
+    <circle cx="34" cy="4"  r="7.5" fill="#20242b"/>
+    <circle cx="64" cy="56" r="7.5" fill="#b25e00"/>
+  </g>
+
+  <text x="74" y="200" fill="#20242b"
+    font-family="'Bricolage Grotesque', 'Bricolage Grotesque Variable', 'Inter', 'Avenir Next', 'Segoe UI', sans-serif"
+    font-size="76" font-weight="800" letter-spacing="0">tellegen</text>
+
+  <rect x="76" y="216" width="118" height="4" rx="2" fill="#b25e00"/>
+
+  <text x="76" y="248"
+    font-family="'IBM Plex Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
+    font-size="15.5" letter-spacing="0.2" fill="#43484e">interactive optimal power flow,</text>
+  <text x="76" y="272"
+    font-family="'IBM Plex Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
+    font-size="15.5" letter-spacing="0.2" fill="#6e7378">in your browser</text>
+
+  <rect x="0.5" y="0.5" width="1199" height="339" rx="16" fill="none" stroke="#d9d3c6"/>
 </svg>

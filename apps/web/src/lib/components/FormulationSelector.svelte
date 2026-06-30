@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { getController } from '$lib/context.svelte';
-	import { formulationHint } from '$lib/format';
-	import { FORMULATIONS, type Formulation } from '$lib/wasm';
+	import { getController } from '../context.svelte.js';
+	import { formulationHint } from '../format.js';
+	import { FORMULATIONS, type Formulation } from '../wasm.js';
 
 	const ctrl = getController();
 </script>

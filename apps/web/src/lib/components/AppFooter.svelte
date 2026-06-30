@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { getController } from '$lib/context.svelte';
+	import { getController } from '../context.svelte.js';
 
 	const ctrl = getController();
 </script>
 
 <footer class="mono">
-	<a href="/credits">credits</a>
+	<a href="/credits/">credits</a>
 	<i class="sep"></i>
-	<a href="/privacy">privacy</a>
+	<a href="/privacy/">privacy</a>
 	{#if ctrl.showFileDropUi}
 		<i class="sep filedrop-ui"></i>
 		<span class="drophint filedrop-ui"

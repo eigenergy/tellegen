@@ -1,3 +1,13 @@
+<script lang="ts">
+	import SeoHead from '$lib/components/SeoHead.svelte';
+</script>
+
+<SeoHead
+	path="/privacy/"
+	title="Privacy — tellegen"
+	description="How tellegen handles dropped case files in the public demo: local browser parsing, runtime requests for demo cases, and planned opt in sharing defaults."
+/>
+
 <main class="privacy">
 	<a class="back mono" href="/">back to tellegen</a>
 	<h1>Privacy</h1>

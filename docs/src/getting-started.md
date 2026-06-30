@@ -2,7 +2,7 @@
 
 ## Repository Layout
 
-- `apps/web/`: tellegen web app (SvelteKit)
+- `apps/web/`: `tellegen-frontend` package and SvelteKit demo
 - `crates/`: the tellegen engine and its wasm, server, CLI, and benchmark adapters
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
@@ -35,7 +35,7 @@ cd apps/web
 npm run wasm
 ```
 
-## tellegen frontend
+## tellegen frontend demo
 
 ```sh
 cd apps/web
@@ -44,6 +44,19 @@ npm run dev
 ```
 
 The Vite dev server proxies `/api` to `http://localhost:8000`.
+
+## Frontend Package
+
+`apps/web` also builds the `tellegen-frontend` package:
+
+```sh
+cd apps/web
+npm run package
+```
+
+`npm run build` packages `src/lib` first, then builds the demo. Another Svelte
+app can consume the package through the export map documented in
+[Frontend Package](frontend-package.md).
 
 ## Data
 

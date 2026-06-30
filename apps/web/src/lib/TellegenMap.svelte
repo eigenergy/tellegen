@@ -4,7 +4,7 @@
 	import type { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 	import type { MapboxOverlay } from '@deck.gl/mapbox';
 	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
-	import type { NetworkBranch, NetworkBus } from '$lib/api';
+	import type { NetworkBranch, NetworkBus } from './api.js';
 	import {
 		branchColor,
 		branchWidth,
@@ -16,10 +16,10 @@
 		sensFlatColor,
 		sensitivityDomain,
 		type SensitivityDomain
-	} from '$lib/colors';
-	import { caseDeltas, displayMetaFor, displaySeriesFor } from '$lib/display';
-	import { CaseState, type DisplayMode, type LocalCase } from '$lib/state.svelte';
-	import { getAppState } from '$lib/context.svelte';
+	} from './colors.js';
+	import { caseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
+	import { CaseState, type DisplayMode, type LocalCase } from './state.svelte.js';
+	import { getAppState } from './context.svelte.js';
 
 	let {
 		onbusclick,
@@ -161,14 +161,25 @@
 				previewDomain &&
 				(app.previewActive || c.solving || enginePreview || Math.abs(previewStep) >= 0.25)
 			);
+			// The sensitivity and demand-preview overlays are price-space fields (∂LMP/∂d
+			// and the ΔLMP preview). They only paint the map under the LMP display mode;
+			// under angle or |V| the map stays on the chosen scalar and the sensitivity
+			// shows in the side panel, so selecting a bus never silently overrides the
+			// angle/|V| coloring with the price ramp.
+			const sensEligible = scalarMode === 'lmp';
 			// While a sensitivity is still loading for the selected bus, stay in sens
 			// mode (renders neutral, not the prior LMP palette) so the node colors
 			// don't flash orange->purple between the old and new selection.
-			const mode: 'lmp' | 'sens' | 'preview' = showPreview
-				? 'preview'
-				: isActive && selected !== null && (domain || app.sensitivityLoading) && !previewing
-					? 'sens'
-					: 'lmp';
+			const mode: 'lmp' | 'sens' | 'preview' =
+				sensEligible && showPreview
+					? 'preview'
+					: sensEligible &&
+						  isActive &&
+						  selected !== null &&
+						  (domain || app.sensitivityLoading) &&
+						  !previewing
+						? 'sens'
+						: 'lmp';
 			perCase.set(c.id, {
 				lmp,
 				scalar,
