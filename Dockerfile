@@ -34,11 +34,15 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY packages/engine/package.json packages/engine/package.json
+COPY packages/svelte/package.json packages/svelte/package.json
 COPY examples/browser-minimal/package.json examples/browser-minimal/package.json
+COPY examples/svelte-minimal/package.json examples/svelte-minimal/package.json
 RUN npm ci --ignore-scripts
 COPY apps/web apps/web
 COPY packages/engine packages/engine
+COPY packages/svelte packages/svelte
 COPY examples/browser-minimal examples/browser-minimal
+COPY examples/svelte-minimal examples/svelte-minimal
 COPY crates/tellegen/src/api.rs crates/tellegen/src/api.rs
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
 COPY --from=wasm /out/wasm-sens-pkg ./packages/engine/src/wasm-sens-pkg
