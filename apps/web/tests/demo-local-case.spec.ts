@@ -2,31 +2,25 @@ import { expect, test } from '@playwright/test';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
 
-test('dropped local case reaches the browser solve path', async ({ page }) => {
+test('selected local case reaches the browser solve path', async ({ page }) => {
 	await page.route('**/api/cases', (route) => {
 		void route.fulfill({ json: [] });
 	});
 
 	await page.goto('/');
 
-	await page.evaluate(
-		({ caseText, coordsText }) => {
-			const transfer = new DataTransfer();
-			transfer.items.add(new File([coordsText], 'case14-coords.csv', { type: 'text/csv' }));
-			transfer.items.add(new File([caseText], 'case14synthetic.m', { type: 'text/plain' }));
-
-			for (const type of ['dragenter', 'dragover', 'drop']) {
-				window.dispatchEvent(
-					new DragEvent(type, {
-						bubbles: true,
-						cancelable: true,
-						dataTransfer: transfer
-					})
-				);
-			}
+	await page.locator('input[type="file"]').setInputFiles([
+		{
+			name: 'case14-coords.csv',
+			mimeType: 'text/csv',
+			buffer: Buffer.from(CASE14_COORDS)
 		},
-		{ caseText: CASE14, coordsText: CASE14_COORDS }
-	);
+		{
+			name: 'case14synthetic.m',
+			mimeType: 'text/plain',
+			buffer: Buffer.from(CASE14)
+		}
+	]);
 
 	await expect(page.getByRole('heading', { name: /case14synthetic/i })).toBeVisible({
 		timeout: 30_000

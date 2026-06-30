@@ -67,20 +67,18 @@
 		<i class="sep"></i>
 		<a href={config.docsHref} target="_blank" rel="noreferrer">docs</a>
 	</span>
-	{#if ctrl.showFileDropUi}
-		<input
-			type="file"
-			accept=".m,.raw,.aux,.pwd,.csv,.json,.geojson"
-			multiple
-			hidden
-			bind:this={fileInput}
-			onchange={(e) => {
-				const input = e.currentTarget;
-				if (input.files) ctrl.ingestFiles(Array.from(input.files));
-				input.value = '';
-			}}
-		/>
-	{/if}
+	<input
+		type="file"
+		accept=".m,.raw,.aux,.pwd,.csv,.json,.geojson"
+		multiple
+		hidden
+		bind:this={fileInput}
+		onchange={(e) => {
+			const input = e.currentTarget;
+			if (input.files) ctrl.ingestFiles(Array.from(input.files));
+			input.value = '';
+		}}
+	/>
 </header>
 
 <style>
