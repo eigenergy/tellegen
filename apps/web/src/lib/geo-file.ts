@@ -1,5 +1,5 @@
 import type { NetworkBranch, NetworkBus } from './api.js';
-import type { Topology } from './wasm.js';
+import type { Topology } from '@tellegen/engine';
 
 export interface GeoFile {
 	sourceNames: string[];

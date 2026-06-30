@@ -36,10 +36,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: |
+            packages/engine/package-lock.json
+            apps/web/package-lock.json
       - run: npm ci
-        working-directory: apps/web
+        working-directory: packages/engine
       - run: npm run wasm
+        working-directory: packages/engine
+      - run: npm run build
+        working-directory: packages/engine
+      - run: npm ci
         working-directory: apps/web
       - run: npm run check
         working-directory: apps/web

@@ -30,4 +30,4 @@ export type {
 	Topology,
 	TopologyBranch,
 	TopologyBus
-} from './wasm.js';
+} from '@tellegen/engine';

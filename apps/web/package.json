@@ -33,20 +33,15 @@
 			"types": "./dist/types.d.ts",
 			"default": "./dist/types.js"
 		},
-		"./wasm": {
-			"types": "./dist/wasm.d.ts",
-			"default": "./dist/wasm.js"
-		},
 		"./styles.css": "./src/app.css"
 	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "npm run package && vite build",
-		"package": "svelte-kit sync && svelte-package --tsconfig ./tsconfig.json && node scripts/keep-wasm-assets.mjs",
+		"engine:build": "npm --prefix ../../packages/engine run build",
+		"package": "svelte-kit sync && svelte-package --tsconfig ./tsconfig.json",
 		"smoke:build": "node scripts/smoke-build.mjs",
-		"wasm": "npm run wasm:core && npm run wasm:sens",
-		"wasm:core": "RUSTFLAGS=\"-C target-feature=-simd128,-relaxed-simd\" wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../apps/web/src/lib/wasm-pkg --out-name tellegen -- --no-default-features",
-		"wasm:sens": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../apps/web/src/lib/wasm-sens-pkg --out-name tellegen_sens -- --features conic",
+		"wasm": "npm --prefix ../../packages/engine run wasm",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync",
 		"prepack": "npm run package",
@@ -60,6 +55,9 @@
 		"@deck.gl/mapbox": "^9.1.0",
 		"maplibre-gl": "^5.0.0",
 		"svelte": "^5.30.0"
+	},
+	"dependencies": {
+		"@tellegen/engine": "file:../../packages/engine"
 	},
 	"devDependencies": {
 		"@deck.gl/core": "^9.1.0",

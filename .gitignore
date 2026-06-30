@@ -4,11 +4,14 @@ docs/book/
 apps/web/build/
 apps/web/dist/
 apps/web/.svelte-kit/
+packages/engine/dist/
 
 # Rust
 /target/
 apps/web/src/lib/wasm-pkg/
 apps/web/src/lib/wasm-sens-pkg/
+packages/engine/src/wasm-pkg/
+packages/engine/src/wasm-sens-pkg/
 
 # Operator-staged TAMU case data (scripts/stage-data.sh); never vendored
 data/

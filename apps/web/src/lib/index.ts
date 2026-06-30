@@ -9,6 +9,8 @@ export {
 	DEFAULT_FORMULATION,
 	FORMULATIONS,
 	BrowserStudy,
+	Study,
+	capabilities,
 	createStudy,
 	errorText,
 	formatOf,
@@ -16,8 +18,9 @@ export {
 	isDisplayFile,
 	isPermanentSensFailure,
 	parseDisplay,
-	solveDc
-} from './wasm.js';
+	solveDc,
+	solveJson
+} from '@tellegen/engine';
 
 export type {
 	CaseSummary,
@@ -49,4 +52,4 @@ export type {
 	Topology,
 	TopologyBranch,
 	TopologyBus
-} from './wasm.js';
+} from '@tellegen/engine';
