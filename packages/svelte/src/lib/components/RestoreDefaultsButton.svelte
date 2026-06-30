@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { getController } from '../context.svelte.js';
+	import { getController, getUiConfig } from '../context.svelte.js';
 
 	const ctrl = getController();
+	const config = getUiConfig();
 </script>
 
-{#if ctrl.casesLoaded && ctrl.hiddenDefaults.size > 0}
+{#if config.loadDefaultCases && ctrl.casesLoaded && ctrl.hiddenDefaults.size > 0}
 	<button class="restore-defaults mono" onclick={ctrl.restoreDefaultCases}>
 		&#8634; restore default cases
 	</button>

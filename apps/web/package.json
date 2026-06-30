@@ -18,13 +18,10 @@
 		"lint": "prettier --check ."
 	},
 	"dependencies": {
-		"@tellegen/engine": "file:../../packages/engine"
+		"@tellegen/svelte": "file:../../packages/svelte"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.56.1",
-		"@deck.gl/core": "^9.1.0",
-		"@deck.gl/layers": "^9.1.0",
-		"@deck.gl/mapbox": "^9.1.0",
 		"@fontsource-variable/bricolage-grotesque": "^5.1.0",
 		"@fontsource/ibm-plex-mono": "^5.2.7",
 		"@sveltejs/adapter-static": "^3.0.8",
@@ -32,7 +29,6 @@
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
 		"prettier": "^3.8.4",
 		"prettier-plugin-svelte": "^3.5.2",
-		"maplibre-gl": "^5.0.0",
 		"svelte": "^5.30.0",
 		"svelte-check": "^4.1.0",
 		"typescript": "^5.7.0",

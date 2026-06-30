@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getAppState, getController } from '../context.svelte.js';
+	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import DemandSlider from './DemandSlider.svelte';
 	import DisplayControls from './DisplayControls.svelte';
 	import FormulationSelector from './FormulationSelector.svelte';
@@ -11,6 +11,7 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	const config = getUiConfig();
 </script>
 
 <aside class="panel">
@@ -29,8 +30,12 @@
 	{#if !ctrl.networkStats}
 		{#if !app.error && !app.activeLocal}
 			{#if ctrl.casesLoaded && app.cases.length === 0}
-				<p class="dim mono">no default cases loaded</p>
-				<button class="reset mono" onclick={ctrl.restoreDefaultCases}>restore defaults</button>
+				<p class="dim mono">
+					{config.loadDefaultCases ? 'no default cases loaded' : 'drop a case file to begin'}
+				</p>
+				{#if config.loadDefaultCases}
+					<button class="reset mono" onclick={ctrl.restoreDefaultCases}>restore defaults</button>
+				{/if}
 			{:else if ctrl.loadingBackendCase}
 				<p class="dim mono blink">loading selected case&hellip;</p>
 			{:else}

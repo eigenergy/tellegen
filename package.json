@@ -7,8 +7,10 @@
   "type": "module",
   "workspaces": [
     "packages/engine",
+    "packages/svelte",
     "apps/web",
-    "examples/browser-minimal"
+    "examples/browser-minimal",
+    "examples/svelte-minimal"
   ],
   "scripts": {
     "wasm": "npm --workspace @tellegen/engine run wasm",
@@ -17,17 +19,22 @@
     "check:engine": "npm --workspace @tellegen/engine run check",
     "build:engine": "npm --workspace @tellegen/engine run build",
     "pack:engine": "npm --workspace @tellegen/engine pack --dry-run",
+    "check:svelte": "npm --workspace @tellegen/svelte run check",
+    "build:svelte": "npm --workspace @tellegen/svelte run build",
+    "pack:svelte": "npm --workspace @tellegen/svelte run pack:dry-run",
     "test:import": "npm --workspace @tellegen/engine run test:import",
-    "build:example": "npm --workspace @tellegen/example-browser-minimal run build",
+    "build:example:browser": "npm --workspace @tellegen/example-browser-minimal run build",
+    "build:example:svelte": "npm --workspace @tellegen/example-svelte-minimal run build",
+    "build:example": "npm run build:example:browser && npm run build:example:svelte",
     "lint:web": "npm --workspace tellegen-frontend run lint",
-    "check:web": "npm --workspace tellegen-frontend run check",
-    "build:web": "npm --workspace tellegen-frontend run build",
+    "check:web": "npm run build:svelte && npm --workspace tellegen-frontend run check",
+    "build:web": "npm run build:svelte && npm --workspace tellegen-frontend run build",
     "smoke:web": "npm --workspace tellegen-frontend run smoke:build",
     "test:browser": "npm --workspace tellegen-frontend run test:browser",
     "lint": "npm run lint:web",
-    "check": "npm run check:engine && npm run check:web",
-    "build": "npm run build:engine && npm run build:example && npm run build:web",
+    "check": "npm run check:engine && npm run check:svelte && npm run check:web",
+    "build": "npm run build:engine && npm run build:svelte && npm run build:example && npm run build:web",
     "test:downstream": "npm run test:import",
-    "ci:js": "npm run check && npm run build && npm run smoke:web && npm run test:downstream"
+    "ci:js": "npm run check && npm run build && npm run pack:svelte && npm run smoke:web && npm run test:downstream"
   }
 }

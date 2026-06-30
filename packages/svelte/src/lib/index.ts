@@ -1,6 +1,19 @@
+export { default as TellegenProvider } from './TellegenProvider.svelte';
+export { default as TellegenShell } from './TellegenShell.svelte';
+export { default as TellegenViewer } from './TellegenViewer.svelte';
 export { default as TellegenMap } from './TellegenMap.svelte';
 
-export { getAppState, getController, setAppState, setController } from './context.svelte.js';
+export {
+	DEFAULT_TELLEGEN_UI_CONFIG,
+	getAppState,
+	getController,
+	getUiConfig,
+	resolveTellegenUiConfig,
+	setAppState,
+	setController,
+	setUiConfig
+} from './context.svelte.js';
+export { createApiClient } from './api.js';
 export { Controller, createController } from './controller.svelte.js';
 export { AppState, CaseState, LocalCase, createAppState } from './state.svelte.js';
 
@@ -31,8 +44,12 @@ export type {
 	SensitivityColumn,
 	Solution,
 	SolveIteration,
-	SolveStreamHandlers
+	SolveStreamHandlers,
+	TellegenApiClient,
+	TellegenApiClientOptions
 } from './api.js';
+export type { TellegenUiConfig, TellegenUiOptions } from './context.svelte.js';
+export type { ControllerOptions } from './controller.svelte.js';
 export type { DisplayOption } from './display.js';
 export type {
 	DemandRangeMode,

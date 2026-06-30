@@ -7,7 +7,10 @@ apps/web/.svelte-kit/
 apps/web/playwright-report/
 apps/web/test-results/
 examples/browser-minimal/dist/
+examples/svelte-minimal/dist/
 packages/engine/dist/
+packages/svelte/.svelte-kit/
+packages/svelte/dist/
 *.tgz
 
 # Rust

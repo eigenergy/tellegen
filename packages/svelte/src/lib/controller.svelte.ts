@@ -1,11 +1,4 @@
-import {
-	getCaseNetworkJson,
-	getCases,
-	getNetwork,
-	getSensitivity,
-	getSolution,
-	openSolveStream
-} from './api.js';
+import { createApiClient, type TellegenApiClient } from './api.js';
 import type { Network, NetworkBus, SensitivityColumn, Solution } from './api.js';
 import { scalarDomain, sensFlatColor, sensitivityDomain } from './colors.js';
 import { caseDeltas as sharedCaseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
@@ -45,8 +38,14 @@ type DemandRangeAnchor = {
 	delta: number;
 };
 
+export interface ControllerOptions {
+	api?: TellegenApiClient;
+	apiBase?: string;
+}
+
 export class Controller {
 	app: AppState;
+	api: TellegenApiClient;
 	abort: AbortController | null = null;
 
 	// Build-once browser Study per case: the network is parsed and the model built
@@ -94,8 +93,9 @@ export class Controller {
 		null
 	);
 
-	constructor(app: AppState) {
+	constructor(app: AppState, options: ControllerOptions = {}) {
 		this.app = app;
+		this.api = options.api ?? createApiClient({ apiBase: options.apiBase });
 	}
 
 	// ===== helpers =====
@@ -313,7 +313,7 @@ export class Controller {
 		if (!this.isBackendCase(c)) return c.networkJson ?? null;
 		if (c.networkJson) return c.networkJson;
 		try {
-			const json = await getCaseNetworkJson(c.id);
+			const json = await this.api.getCaseNetworkJson(c.id);
 			c.networkJson = json;
 			return json;
 		} catch (e) {
@@ -522,7 +522,7 @@ export class Controller {
 		if (this.loading) return this.loading;
 		this.loading = (async () => {
 			try {
-				const summaries = await getCases();
+				const summaries = await this.api.getCases();
 				const hidden = this.readHiddenDefaultCases();
 				this.hiddenDefaults = new Set(hidden);
 				// Tear down the cases being replaced so their wasm Studies are freed and any
@@ -563,11 +563,11 @@ export class Controller {
 		const requestedFormulation = c.formulation;
 		try {
 			const [network, dcBaseSolution] = await Promise.all([
-				c.network ? Promise.resolve(c.network) : getNetwork(c.id),
+				c.network ? Promise.resolve(c.network) : this.api.getNetwork(c.id),
 				// The server caches only the DC OPF base solution. Other formulations
 				// must hydrate from the browser Study so their cost, prices, flows, and
 				// voltage fields all come from the selected formulation.
-				requestedFormulation === 'dcopf' ? getSolution(c.id) : Promise.resolve(null)
+				requestedFormulation === 'dcopf' ? this.api.getSolution(c.id) : Promise.resolve(null)
 			]);
 			if (!this.app.byId(c.id)) return;
 			c.network = network;
@@ -737,13 +737,13 @@ export class Controller {
 				if (!ac.signal.aborted && sensitivity)
 					this.acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
 				else if (!ac.signal.aborted && c.formulation === 'dcopf') {
-					const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
+					const col = await this.api.getSensitivity(caseId, busId, c.deltas, ac.signal);
 					if (!ac.signal.aborted) this.acceptSensitivity(c, col, busId, sensitivitySeq);
 				} else if (!ac.signal.aborted && !sensitivity) {
 					this.app.error = `${c.name}: ${formulationLabel(c.formulation)} sensitivity unavailable in the browser${c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''}`;
 				}
 			} else if (c.formulation === 'dcopf') {
-				const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
+				const col = await this.api.getSensitivity(caseId, busId, c.deltas, ac.signal);
 				if (!ac.signal.aborted) this.acceptSensitivity(c, col, busId, sensitivitySeq);
 			} else if (!ac.signal.aborted) {
 				this.app.error = `${c.name}: ${formulationLabel(c.formulation)} needs the browser network JSON, which is unavailable`;
@@ -753,7 +753,7 @@ export class Controller {
 			// server fallback (nothing is solved on the server), so the column stays absent.
 			if (c.formulation === 'dcopf') {
 				try {
-					const col = await getSensitivity(caseId, busId, c.deltas, ac.signal);
+					const col = await this.api.getSensitivity(caseId, busId, c.deltas, ac.signal);
 					if (!ac.signal.aborted) this.acceptSensitivity(c, col, busId, sensitivitySeq);
 				} catch (e2) {
 					if (!ac.signal.aborted && !(e2 instanceof DOMException)) this.app.error = String(e2);
@@ -916,7 +916,7 @@ export class Controller {
 						// No browser sensitivity column (whether the solve threw or just
 						// produced none): reconcile via the server for backend cases.
 						try {
-							const col = await getSensitivity(c.id, sensBus, c.deltas);
+							const col = await this.api.getSensitivity(c.id, sensBus, c.deltas);
 							if (seq !== c.solveSeq) return;
 							c.solveBackend = 'clarabel-wasm-server-sensitivity';
 							this.acceptSensitivity(c, col, sensBus);
@@ -948,7 +948,7 @@ export class Controller {
 	serverSolve = (c: CaseState, sensBus: number | null, seq = c.solveSeq) => {
 		c.solveBackend = 'rust-server';
 		c.solveFallbackReason ??= 'browser solve unavailable';
-		c.closeStream = openSolveStream(c.id, c.deltas, sensBus, {
+		c.closeStream = this.api.openSolveStream(c.id, c.deltas, sensBus, {
 			onsolution: (sol) => {
 				if (seq !== c.solveSeq) return;
 				c.solution = sol;
@@ -1216,6 +1216,6 @@ export class Controller {
 	sliderCurrent = () => this.sliderValue;
 }
 
-export function createController(app: AppState): Controller {
-	return new Controller(app);
+export function createController(app: AppState, options: ControllerOptions = {}): Controller {
+	return new Controller(app, options);
 }

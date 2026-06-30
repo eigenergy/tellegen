@@ -5,7 +5,9 @@
 - `apps/web/`: private SvelteKit hosted demo
 - `crates/`: the tellegen engine and its wasm, server, CLI, and benchmark adapters
 - `packages/engine/`: public `@tellegen/engine` browser package
+- `packages/svelte/`: public `@tellegen/svelte` component package
 - `examples/browser-minimal/`: minimal downstream Vite example
+- `examples/svelte-minimal/`: minimal Svelte example using the component package
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -36,6 +38,7 @@ TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
 npm ci
 npm run wasm
 npm run build:engine
+npm run build:svelte
 ```
 
 ## tellegen frontend demo
@@ -51,15 +54,17 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 
 ## Framework Package
 
-`@tellegen/engine` is the package that ships to npm:
+Preview the package contents before publishing:
 
 ```sh
 npm run pack:engine
+npm run pack:svelte
 ```
 
-`apps/web` is a private demo workspace. It consumes `@tellegen/engine` through
-the same package boundary as external applications. The package boundary is
-documented in [Framework Packages](frontend-package.md).
+Use `@tellegen/svelte` for the map, panels, local file flow, and solve card. Use
+`@tellegen/engine` for apps that want case parsing and browser solves without
+the tellegen UI. The hosted app is a private demo workspace that consumes
+`@tellegen/svelte` like another Svelte app would.
 
 ## Data
 

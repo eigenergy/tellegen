@@ -13,5 +13,4 @@ export { default as SensitivityReadout } from './components/SensitivityReadout.s
 export { default as SizeLegend } from './components/SizeLegend.svelte';
 export { default as SolveCard } from './components/SolveCard.svelte';
 export { default as TopMovers } from './components/TopMovers.svelte';
-export { default as SeoHead } from './components/SeoHead.svelte';
 export { default as Sparkline } from './Sparkline.svelte';

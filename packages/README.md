@@ -1,14 +1,11 @@
 # Packages
 
-The first JavaScript release publishes one package:
-
 - `engine/` is `@tellegen/engine`, the browser engine package for case parsing,
   wasm solves, `Study` preview and commit, sensitivities, and generated
-  TypeScript contracts.
+  TypeScript types.
+- `svelte/` is `@tellegen/svelte`, the Svelte component package for the map,
+  panels, local file flow, and solve card.
 
-`apps/web` and `examples/browser-minimal` are npm workspaces, but they are not
-published packages. `apps/web` is the hosted demo. `examples/browser-minimal`
-is the downstream import smoke test and integration reference.
-
-Add another package under `packages/` only when its API is reusable outside the
-current hosted demo layout.
+`apps/web`, `examples/browser-minimal`, and `examples/svelte-minimal` are npm
+workspaces, but they are not published packages. `apps/web` is the hosted demo.
+The examples are downstream import checks and integration references.

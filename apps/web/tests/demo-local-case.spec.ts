@@ -38,6 +38,8 @@ test('dropped local case reaches the browser solve path', async ({ page }) => {
 	const solveCard = page.locator('.solvecard');
 	await expect(solveCard).toContainText('OPF solve', { timeout: 60_000 });
 	await expect(solveCard).toContainText('DC OPF');
+	await expect(solveCard).toContainText(/\d+ iterations/);
+	await expect(solveCard.getByLabel('residual by solver iteration')).toBeVisible();
 	await expect(solveCard).toContainText(/\d+ ms/);
 	await expect(solveCard).not.toContainText('server solve');
 	await expect(solveCard.locator('.fallback-reason')).toHaveCount(0);

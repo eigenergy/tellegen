@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { getAppState, getController } from '../context.svelte.js';
+	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { splitName } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
+	const config = getUiConfig();
 
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
 </script>
@@ -62,11 +63,9 @@
 		{/if}
 	</nav>
 	<span class="kicker mono">
-		<a href="https://github.com/eigenergy" target="_blank" rel="noreferrer"
-			>eigenergy group @ michigan ece</a
-		>
+		<a href={config.orgHref} target="_blank" rel="noreferrer">{config.orgLabel}</a>
 		<i class="sep"></i>
-		<a href="https://eigenergy.github.io/tellegen/" target="_blank" rel="noreferrer">docs</a>
+		<a href={config.docsHref} target="_blank" rel="noreferrer">docs</a>
 	</span>
 	{#if ctrl.showFileDropUi}
 		<input

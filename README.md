@@ -80,13 +80,15 @@ Framework package:
 
 ```sh
 npm run pack:engine
+npm run pack:svelte
 ```
 
-The public browser package is `@tellegen/engine`. It exports case parsing,
-browser wasm solving, `Study` preview and commit calls, sensitivities, and
-generated TypeScript contracts. `apps/web` is a private hosted demo that consumes
-the package. See [docs/src/frontend-package.md](docs/src/frontend-package.md)
-for the package boundary.
+The public browser packages are `@tellegen/engine` and `@tellegen/svelte`.
+`@tellegen/engine` exports case parsing, browser wasm solving, `Study` preview
+and commit calls, sensitivities, and generated TypeScript types.
+`@tellegen/svelte` exports the map, panels, local file flow, and solve card as
+Svelte components. `apps/web` is a private hosted demo that consumes the Svelte
+package. See [docs/src/frontend-package.md](docs/src/frontend-package.md).
 
 ## Data
 
@@ -125,7 +127,9 @@ npm run test:import
 - `apps/web/`: private SvelteKit hosted demo
 - `crates/`: Rust workspace — `tellegen` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
 - `packages/engine/`: public `@tellegen/engine` browser package
+- `packages/svelte/`: public `@tellegen/svelte` component package
 - `examples/browser-minimal/`: minimal downstream Vite example
+- `examples/svelte-minimal/`: minimal Svelte example using the component package
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -171,7 +175,6 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 ## Roadmap
 
-- add reusable Svelte visualization components after the engine API stabilizes
 - canonical display data in powerio
 
 ## License

@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "allowArbitraryExtensions": true,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": false,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "module": "ESNext",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "outDir": "dist",
+    "rootDir": "src",
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true,
+    "target": "ES2022",
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*", "*.svelte"]
+}
