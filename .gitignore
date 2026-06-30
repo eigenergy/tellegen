@@ -8,11 +8,10 @@ apps/web/playwright-report/
 apps/web/test-results/
 examples/browser-minimal/dist/
 packages/engine/dist/
+*.tgz
 
 # Rust
 /target/
-apps/web/src/lib/wasm-pkg/
-apps/web/src/lib/wasm-sens-pkg/
 packages/engine/src/wasm-pkg/
 packages/engine/src/wasm-sens-pkg/
 

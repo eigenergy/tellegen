@@ -3,10 +3,14 @@
 The reusable browser engine lives in `packages/engine` and is published as
 `@tellegen/engine`. Start there for new applications.
 
-`apps/web` is the hosted demo and Svelte UI package. It consumes
+`apps/web` is the hosted demo. It is a private npm workspace that consumes
 `@tellegen/engine`, adds the map, panels, local file placement, default case
-loading, and demo specific state management. Those app internals are useful
-examples, but they are not the engine contract.
+loading, and demo state. Those internals are useful examples, but they are not
+the package contract.
+
+The first npm release includes only `@tellegen/engine`. A Svelte component
+package can come later when there is a reusable component API that is not tied
+to the current demo layout.
 
 ## Which Package To Use
 
@@ -19,8 +23,8 @@ Use `@tellegen/engine` when an app needs:
 - sensitivity requests; or
 - generated TypeScript contracts.
 
-Use `tellegen-frontend` only when an app wants to reuse the hosted demo map or
-Svelte shell components. It peers on Svelte, deck.gl, and MapLibre.
+Use `apps/web` as source code reference when an app wants to copy a map or panel
+pattern. Do not import it as a package.
 
 ## Engine Entry Point
 

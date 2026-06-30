@@ -13,10 +13,10 @@ npm install @tellegen/engine
 For local development in this repository:
 
 ```sh
-npm --prefix packages/engine run wasm
-npm --prefix packages/engine run build
-npm --prefix examples/browser-minimal install
-npm --prefix examples/browser-minimal run dev
+npm ci
+npm run wasm
+npm run build:engine
+npm --workspace @tellegen/example-browser-minimal run dev
 ```
 
 The package expects a bundler that understands wasm assets imported with `?url`. Vite and SvelteKit handle that path.

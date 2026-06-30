@@ -4,6 +4,15 @@
   "description": "Browser engine package for tellegen case parsing, solving, studies, previews, and sensitivities.",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eigenergy/tellegen.git",
+    "directory": "packages/engine"
+  },
+  "bugs": {
+    "url": "https://github.com/eigenergy/tellegen/issues"
+  },
+  "homepage": "https://eigenergy.github.io/tellegen/",
   "types": "./dist/index.d.ts",
   "files": [
     "dist"
@@ -27,7 +36,8 @@
     "wasm:core": "RUSTFLAGS=\"-C target-feature=-simd128,-relaxed-simd\" wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --no-default-features",
     "wasm:sens": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-sens-pkg --out-name tellegen_sens -- --features conic",
     "check": "npm run contracts:check && tsc -p tsconfig.json --noEmit",
-    "test:import": "node scripts/import-smoke.mjs"
+    "test:import": "node scripts/import-smoke.mjs",
+    "pack:dry-run": "npm pack --dry-run"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

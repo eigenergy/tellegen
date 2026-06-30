@@ -107,12 +107,11 @@ A few calls are now well grounded, so they do not need relitigating:
 ## Roadmap
 
 **Near term: become a framework, not an application.** The Rust core is built
-against powerio and compiles to both wasm and native (done). The Svelte package
-surface now builds with `@sveltejs/package`: it exports the map, demo
-components, typed case and solution data, display helpers, and the wasm parser
-and solver as standalone entry points; deck.gl, MapLibre, and Svelte are peers;
-the wasm loads through `?url`. The demo is the reference consumer. The remaining
-near term work is hardening that package boundary as outside apps use it.
+against powerio and compiles to both wasm and native (done). `@tellegen/engine`
+is the first framework package: it exports case parsing, browser wasm solving,
+`Study` preview and commit calls, sensitivities, and generated contracts. The
+hosted demo is the reference consumer. The remaining near term work is hardening
+that package boundary as outside apps use it.
 
 **Mid term: the DC pipeline in the browser (landed).** DC OPF (via Clarabel.rs)
 and the dLMP/dd sensitivities are reimplemented in Rust and compiled to wasm, so

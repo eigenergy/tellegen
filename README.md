@@ -60,33 +60,33 @@ TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
 WebAssembly module:
 
 ```sh
-cd apps/web
+npm ci
 npm run wasm
+npm run build:engine
 ```
 
 tellegen frontend demo:
 
 ```sh
-cd apps/web
 npm ci
-npm run dev
+npm run wasm
+npm run build:engine
+npm --workspace tellegen-frontend run dev
 ```
 
 The Vite dev server proxies `/api` to `http://localhost:8000`.
 
-Frontend package:
+Framework package:
 
 ```sh
-cd apps/web
-npm run package
+npm run pack:engine
 ```
 
-The package is `tellegen-frontend`. It exports `tellegen-frontend`,
-`tellegen-frontend/map`, `tellegen-frontend/components`,
-`tellegen-frontend/types`, `tellegen-frontend/wasm`, and
-`tellegen-frontend/styles.css`. See
-[docs/src/frontend-package.md](docs/src/frontend-package.md) for a consuming app
-example.
+The public browser package is `@tellegen/engine`. It exports case parsing,
+browser wasm solving, `Study` preview and commit calls, sensitivities, and
+generated TypeScript contracts. `apps/web` is a private hosted demo that consumes
+the package. See [docs/src/frontend-package.md](docs/src/frontend-package.md)
+for the package boundary.
 
 ## Data
 
@@ -114,17 +114,18 @@ cargo test --workspace
 tellegen frontend checks:
 
 ```sh
-cd apps/web
 npm run check
-npm run package
 npm run build
-npm run smoke:build
+npm run smoke:web
+npm run test:import
 ```
 
 ## Repository layout
 
-- `apps/web/`: `tellegen-frontend` package and SvelteKit demo
+- `apps/web/`: private SvelteKit hosted demo
 - `crates/`: Rust workspace — `tellegen` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
+- `packages/engine/`: public `@tellegen/engine` browser package
+- `examples/browser-minimal/`: minimal downstream Vite example
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -170,7 +171,7 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 ## Roadmap
 
-- harden the frontend package boundary with outside consumers
+- add reusable Svelte visualization components after the engine API stabilizes
 - canonical display data in powerio
 
 ## License

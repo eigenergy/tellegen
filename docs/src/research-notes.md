@@ -112,10 +112,10 @@ Sources: [deck.gl performance](https://deck.gl/docs/developer-guide/performance)
 
 ### Packaging
 
-Use `@sveltejs/package` when tellegen becomes a library. Export Svelte
-components, data types, layer accessors, theme inputs, and wasm parser entry
-points. Use `svelte` and `types` export conditions, `files: ["dist"]`, and peer
-dependencies for Svelte, deck.gl, and MapLibre. Do not import `$app/*` from
+The first reusable surface is `@tellegen/engine`, not a Svelte component
+package. It exports case parsing, browser wasm solving, `Study` calls, and
+generated contracts. A Svelte package can come later if map and panel components
+become reusable outside the hosted demo layout. Do not import `$app/*` from
 library code.
 
 Ship the wasm asset with `new URL(..., import.meta.url)` or Vite `?url` so the

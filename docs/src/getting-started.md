@@ -2,8 +2,10 @@
 
 ## Repository Layout
 
-- `apps/web/`: `tellegen-frontend` package and SvelteKit demo
+- `apps/web/`: private SvelteKit hosted demo
 - `crates/`: the tellegen engine and its wasm, server, CLI, and benchmark adapters
+- `packages/engine/`: public `@tellegen/engine` browser package
+- `examples/browser-minimal/`: minimal downstream Vite example
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -31,32 +33,33 @@ TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
 ## WebAssembly Module
 
 ```sh
-cd apps/web
+npm ci
 npm run wasm
+npm run build:engine
 ```
 
 ## tellegen frontend demo
 
 ```sh
-cd apps/web
-npm install
-npm run dev
+npm ci
+npm run wasm
+npm run build:engine
+npm --workspace tellegen-frontend run dev
 ```
 
 The Vite dev server proxies `/api` to `http://localhost:8000`.
 
-## Frontend Package
+## Framework Package
 
-`apps/web` also builds the `tellegen-frontend` package:
+`@tellegen/engine` is the package that ships to npm:
 
 ```sh
-cd apps/web
-npm run package
+npm run pack:engine
 ```
 
-`npm run build` packages `src/lib` first, then builds the demo. Another Svelte
-app can consume the package through the export map documented in
-[Frontend Package](frontend-package.md).
+`apps/web` is a private demo workspace. It consumes `@tellegen/engine` through
+the same package boundary as external applications. The package boundary is
+documented in [Framework Packages](frontend-package.md).
 
 ## Data
 

@@ -233,7 +233,7 @@ if (check) {
   const current = readFileSync(outputPath, "utf8");
   if (current !== generated) {
     console.error(
-      "Generated engine contracts are stale. Run `npm --prefix packages/engine run contracts`.",
+      "Generated engine contracts are stale. Run `npm run contracts` from the repository root.",
     );
     process.exit(1);
   }

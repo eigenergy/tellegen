@@ -1,0 +1,33 @@
+{
+  "name": "tellegen-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JavaScript workspace for the tellegen browser engine, hosted demo, and examples.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/engine",
+    "apps/web",
+    "examples/browser-minimal"
+  ],
+  "scripts": {
+    "wasm": "npm --workspace @tellegen/engine run wasm",
+    "contracts": "npm --workspace @tellegen/engine run contracts",
+    "contracts:check": "npm --workspace @tellegen/engine run contracts:check",
+    "check:engine": "npm --workspace @tellegen/engine run check",
+    "build:engine": "npm --workspace @tellegen/engine run build",
+    "pack:engine": "npm --workspace @tellegen/engine pack --dry-run",
+    "test:import": "npm --workspace @tellegen/engine run test:import",
+    "build:example": "npm --workspace @tellegen/example-browser-minimal run build",
+    "lint:web": "npm --workspace tellegen-frontend run lint",
+    "check:web": "npm --workspace tellegen-frontend run check",
+    "build:web": "npm --workspace tellegen-frontend run build",
+    "smoke:web": "npm --workspace tellegen-frontend run smoke:build",
+    "test:browser": "npm --workspace tellegen-frontend run test:browser",
+    "lint": "npm run lint:web",
+    "check": "npm run check:engine && npm run check:web",
+    "build": "npm run build:engine && npm run build:example && npm run build:web",
+    "test:downstream": "npm run test:import",
+    "ci:js": "npm run check && npm run build && npm run smoke:web && npm run test:downstream"
+  }
+}

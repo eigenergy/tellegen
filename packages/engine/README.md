@@ -15,10 +15,11 @@ The public contract version is `CONTRACT_VERSION`, which matches the package ver
 Run the generator after Rust API changes:
 
 ```sh
-npm --prefix packages/engine run contracts
+npm run contracts
 ```
 
-CI runs `npm run build` in `packages/engine`, and that runs `contracts:check`. A stale generated contract fails the build.
+CI runs `npm run build:engine` from the repository root, and that runs
+`contracts:check`. A stale generated contract fails the build.
 
 Breaking contract changes:
 
@@ -30,3 +31,18 @@ Nonbreaking changes:
 
 - Adding optional fields.
 - Adding new formulation ids, solve statuses, operands, or parameters when existing values keep their meaning.
+
+## Release
+
+Build and inspect the package from the repository root:
+
+```sh
+npm ci
+npm run wasm
+npm run build:engine
+npm run pack:engine
+```
+
+Only this package is published in the first framework release. The hosted demo
+under `apps/web` is private and consumes `@tellegen/engine` through the same
+workspace dependency used by downstream examples.

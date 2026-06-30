@@ -36,23 +36,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            packages/engine/package-lock.json
-            apps/web/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
-        working-directory: packages/engine
       - run: npm run wasm
-        working-directory: packages/engine
-      - run: npm run build
-        working-directory: packages/engine
-      - run: npm ci
-        working-directory: apps/web
-      - run: npm run check
-        working-directory: apps/web
-      - run: npm run build
-        working-directory: apps/web
-      - run: npm run smoke:build
-        working-directory: apps/web
+      - run: npm run build:engine
+      - run: npm run check:web
+      - run: npm run build:web
+      - run: npm run smoke:web
 
   image:
     if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
