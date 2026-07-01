@@ -28,7 +28,9 @@ use crate::api::{
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
-use crate::sens::{AcNewton, DcKkt, Differentiable, ElementId, Mode, Operand, Parameter, Power};
+use crate::sens::{
+    AcNewton, Axis, DcKkt, Differentiable, ElementId, Mode, Operand, Parameter, Power,
+};
 use crate::solve::DcSolution;
 
 #[cfg(feature = "conic")]
@@ -38,10 +40,12 @@ use crate::problem::SocWrSolution;
 #[cfg(feature = "conic")]
 use crate::sens::ConicKkt;
 
-/// A typed edit to the operating point. v1: the continuous active-demand drag. The enum
-/// is `#[non_exhaustive]` and serde-tagged (`{"kind":"add_load","bus":2,"p_mw":50}`), so
-/// topology and other-parameter edits extend the wire format without breaking a client
-/// that knows only the demand edit.
+/// A typed edit to the operating point: the continuous active-demand drag and the
+/// branch thermal-rating drag. The enum is `#[non_exhaustive]` and serde-tagged
+/// (`{"kind":"add_load","bus":2,"p_mw":50}` /
+/// `{"kind":"adjust_branch_rating","branch":3,"delta_mw":-25}`), so topology and
+/// other-parameter edits extend the wire format without breaking a client that knows
+/// only the demand edit.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
@@ -49,26 +53,35 @@ pub enum NetworkEdit {
     /// Add `p_mw` to the active demand at the bus with this original id. Repeated edits
     /// accumulate; the committed operating point is the base case plus the whole log.
     AddLoad { bus: i64, p_mw: f64 },
+    /// Add `delta_mw` to the thermal rating of the branch with this original id.
+    /// Accumulates like `AddLoad`; the committed limit is the base rating plus the log.
+    AdjustBranchRating { branch: i64, delta_mw: f64 },
 }
 
 impl NetworkEdit {
-    fn bus(&self) -> i64 {
+    /// The edited element's original id, on the axis [`parameter`](Self::parameter) names.
+    fn element_id(&self) -> i64 {
         match self {
             NetworkEdit::AddLoad { bus, .. } => *bus,
+            NetworkEdit::AdjustBranchRating { branch, .. } => *branch,
         }
     }
-    fn p_mw(&self) -> f64 {
+    /// The edit's step magnitude in MW along its parameter.
+    fn magnitude_mw(&self) -> f64 {
         match self {
             NetworkEdit::AddLoad { p_mw, .. } => *p_mw,
+            NetworkEdit::AdjustBranchRating { delta_mw, .. } => *delta_mw,
         }
     }
 
     /// The [`Parameter`] this edit perturbs, so [`preview`](Study::preview) differentiates
     /// the watched operands with respect to the right axis. The active-demand drag maps to
-    /// `Demand(Active)`; new edit kinds add their own arm here.
+    /// `Demand(Active)`, the rating drag to `LineLimit`; new edit kinds add their own arm
+    /// here.
     fn parameter(&self) -> Parameter {
         match self {
             NetworkEdit::AddLoad { .. } => Parameter::Demand(Power::Active),
+            NetworkEdit::AdjustBranchRating { .. } => Parameter::LineLimit,
         }
     }
 }
@@ -132,6 +145,14 @@ trait SolvedState {
     /// The committed marginal price in served units ($/MWh), per dense bus, for the
     /// preview's objective delta. `None` for power flow formulations (no objective).
     fn lmp(&self) -> Option<Vec<f64>>;
+
+    /// The committed flow-limit shadow price in served units ($/MWh per MW of rating),
+    /// per dense branch, for the rating preview's objective delta: ∂objective/∂rating
+    /// = −shadow. `None` when the formulation exposes no flow-limit duals; the preview
+    /// then reports no objective delta rather than a partial one.
+    fn line_shadow_prices(&self) -> Option<Vec<f64>> {
+        None
+    }
 }
 
 /// DC OPF committed state.
@@ -149,6 +170,20 @@ impl SolvedState for DcState {
     }
     fn lmp(&self) -> Option<Vec<f64>> {
         Some(self.sol.lmp_usd_per_mwh(self.net.base_mva))
+    }
+    fn line_shadow_prices(&self) -> Option<Vec<f64>> {
+        // Both limit rows relax when the rating grows, so the shadow is the dual sum;
+        // the raw duals are per-unit, and the served value divides by base (the same
+        // scaling as the LMP).
+        let base = self.net.base_mva;
+        Some(
+            self.sol
+                .lam_ub
+                .iter()
+                .zip(&self.sol.lam_lb)
+                .map(|(&ub, &lb)| (ub + lb) / base)
+                .collect(),
+        )
     }
 }
 
@@ -372,40 +407,88 @@ impl Study {
     /// the edit step. The result is a local linearization (`local_only = true`); `commit`
     /// to confirm. Linearizes at the *last committed* state, not the base.
     pub fn preview(&self, edits: &[NetworkEdit], watched: &[Operand]) -> Result<Preview, String> {
-        // Transient step magnitude per original bus id, and the parameter the edits
-        // perturb. v1 has one edit kind, so the parameter is uniform; assert it.
-        let mut mag: HashMap<i64, f64> = HashMap::new();
-        let mut parameter: Option<Parameter> = None;
+        // Group step magnitudes by the parameter each edit perturbs, keyed by the edited
+        // element's original id. A mixed edit set previews as the sum of the groups'
+        // first-order terms (the linearization is additive across parameters). Groups
+        // keep first-appearance order so errors and results are a function of the
+        // request alone.
+        let mut groups: Vec<(Parameter, HashMap<i64, f64>)> = Vec::new();
         for e in edits {
-            *mag.entry(e.bus()).or_insert(0.0) += e.p_mw();
-            match parameter {
-                None => parameter = Some(e.parameter()),
-                Some(p) if p == e.parameter() => {}
-                Some(_) => {
-                    return Err(
-                        "preview cannot mix edit kinds that map to different parameters".into(),
-                    )
+            let p = e.parameter();
+            let group = match groups.iter_mut().find(|(gp, _)| *gp == p) {
+                Some((_, g)) => g,
+                None => {
+                    groups.push((p, HashMap::new()));
+                    &mut groups.last_mut().expect("just pushed").1
                 }
-            }
+            };
+            *group.entry(e.element_id()).or_insert(0.0) += e.magnitude_mw();
         }
-        // Default to the demand parameter when there is no edit (every column is zero).
-        let parameter = parameter.unwrap_or(Parameter::Demand(Power::Active));
 
+        // Dense element ids per parameter axis, from the committed response's ordering
+        // (the same order the sensitivity matrix reports).
         let bus_ids = response_bus_ids(&self.last);
-        let (cols, col_mag) = dense_cols(&bus_ids, &mag);
+        let branch_ids = response_branch_ids(&self.last);
 
-        let operands = self
-            .solved
-            .with_system(&mut |sys| preview_columns(sys, parameter, &cols, &col_mag, watched))?;
+        // An empty edit set previews as a zero demand step, preserving the demand-only
+        // behavior (zero columns; objective delta 0 for OPF, None for power flow).
+        if groups.is_empty() {
+            groups.push((Parameter::Demand(Power::Active), HashMap::new()));
+        }
 
-        // ∂objective/∂parameter is the committed marginal price dotted with the step, when
-        // the formulation has an objective: Δobj ≈ Σ lmp_b · Δp_b. `None` for power flow.
-        let objective_delta = self.solved.lmp().map(|lmp| {
-            cols.iter()
-                .zip(&col_mag)
-                .map(|(&i, &m)| lmp[i] * m)
-                .sum::<f64>()
-        });
+        let resolved: Vec<(Parameter, Vec<usize>, Vec<f64>)> = groups
+            .iter()
+            .map(|(p, mag)| {
+                let ids = match p.axis() {
+                    Axis::Branch => &branch_ids,
+                    _ => &bus_ids,
+                };
+                let (cols, col_mag) = dense_cols(ids, mag);
+                (*p, cols, col_mag)
+            })
+            .collect();
+
+        // Run each group's cells against one freshly built system, summing the per-operand
+        // predictions elementwise: rows range over the operand axis, identical across
+        // groups, so the merge is a plain vector add.
+        let operands = self.solved.with_system(&mut |sys| {
+            let mut merged: Option<Vec<PreviewColumn>> = None;
+            for (parameter, cols, col_mag) in &resolved {
+                let cols = preview_columns(sys, *parameter, cols, col_mag, watched)?;
+                merged = Some(match merged.take() {
+                    None => cols,
+                    Some(acc) => merge_preview_columns(acc, cols)?,
+                });
+            }
+            Ok(merged.unwrap_or_default())
+        })?;
+
+        // First-order objective change, summed across groups: Σ lmp_b · Δp_b for a demand
+        // step, −Σ μ_e · Δfmax_e for a rating step (relaxing a binding limit lowers cost).
+        // `None` when any group's dual vector is unavailable (power flow, or a formulation
+        // without line shadow prices) — a partial sum would misreport the prediction.
+        let mut objective_delta = Some(0.0);
+        for (parameter, cols, col_mag) in &resolved {
+            let contribution = match parameter {
+                Parameter::LineLimit => self.solved.line_shadow_prices().map(|mu| {
+                    -cols
+                        .iter()
+                        .zip(col_mag)
+                        .map(|(&i, &m)| mu[i] * m)
+                        .sum::<f64>()
+                }),
+                _ => self.solved.lmp().map(|lmp| {
+                    cols.iter()
+                        .zip(col_mag)
+                        .map(|(&i, &m)| lmp[i] * m)
+                        .sum::<f64>()
+                }),
+            };
+            objective_delta = match (objective_delta, contribution) {
+                (Some(acc), Some(x)) => Some(acc + x),
+                _ => None,
+            };
+        }
 
         Ok(Preview {
             operands,
@@ -440,31 +523,45 @@ impl std::fmt::Debug for Study {
     }
 }
 
-/// Collapse the edit log to the cumulative demand-delta map the model builders consume.
+/// Collapse the edit log to the cumulative delta maps the model builders consume.
 fn fold(log: &[NetworkEdit]) -> Edits {
     let mut deltas: HashMap<i64, f64> = HashMap::new();
+    let mut rates: HashMap<i64, f64> = HashMap::new();
     for e in log {
         match e {
             NetworkEdit::AddLoad { bus, p_mw } => *deltas.entry(*bus).or_insert(0.0) += *p_mw,
+            NetworkEdit::AdjustBranchRating { branch, delta_mw } => {
+                *rates.entry(*branch).or_insert(0.0) += *delta_mw
+            }
         }
     }
-    Edits { deltas }
+    Edits { deltas, rates }
 }
 
 /// Compute the incremental edits that move from `current` to `target`, both treated as
-/// absolute edit states. v1 has only additive load edits, so the state is the folded
-/// demand-delta map.
+/// absolute edit states. Every edit kind is additive, so the state is the pair of folded
+/// delta maps and the step is their difference.
 fn replacement_step(current: &[NetworkEdit], target: &[NetworkEdit]) -> Vec<NetworkEdit> {
-    let current = fold(current).deltas;
-    let target = fold(target).deltas;
-    let mut diff: BTreeMap<i64, f64> = target.into_iter().collect();
-    for (bus, mw) in current {
-        *diff.entry(bus).or_default() -= mw;
+    fn diff(current: HashMap<i64, f64>, target: HashMap<i64, f64>) -> BTreeMap<i64, f64> {
+        let mut diff: BTreeMap<i64, f64> = target.into_iter().collect();
+        for (id, mw) in current {
+            *diff.entry(id).or_default() -= mw;
+        }
+        diff.retain(|_, mw| *mw != 0.0);
+        diff
     }
-    diff.into_iter()
-        .filter(|(_, p_mw)| *p_mw != 0.0)
+    let current = fold(current);
+    let target = fold(target);
+    let mut step: Vec<NetworkEdit> = diff(current.deltas, target.deltas)
+        .into_iter()
         .map(|(bus, p_mw)| NetworkEdit::AddLoad { bus, p_mw })
-        .collect()
+        .collect();
+    step.extend(
+        diff(current.rates, target.rates)
+            .into_iter()
+            .map(|(branch, delta_mw)| NetworkEdit::AdjustBranchRating { branch, delta_mw }),
+    );
+    step
 }
 
 /// The dense bus-id order of a committed solution, read off whichever per-bus block the
@@ -486,21 +583,58 @@ fn response_bus_ids(resp: &SolveResponse) -> Vec<usize> {
     Vec::new()
 }
 
-/// Map edited bus ids to dense indices with aligned magnitudes (MW), dropping ids that
-/// are not in this case.
-fn dense_cols(bus_ids: &[usize], mag: &HashMap<i64, f64>) -> (Vec<usize>, Vec<f64>) {
-    let idx: HashMap<usize, usize> = bus_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+/// The dense branch-id order of a committed solution, read off the flows block — the
+/// branch-axis counterpart of [`response_bus_ids`].
+fn response_branch_ids(resp: &SolveResponse) -> Vec<usize> {
+    resp.flows
+        .as_deref()
+        .map(|flows| flows.iter().map(|f| f.branch).collect())
+        .unwrap_or_default()
+}
+
+/// Map edited element ids to dense indices with aligned magnitudes (MW), dropping ids
+/// that are not in this case.
+fn dense_cols(ids: &[usize], mag: &HashMap<i64, f64>) -> (Vec<usize>, Vec<f64>) {
+    let idx: HashMap<usize, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
     let mut cols = Vec::new();
     let mut col_mag = Vec::new();
-    for (&bus, &m) in mag {
-        if bus > 0 {
-            if let Some(&i) = idx.get(&(bus as usize)) {
+    for (&id, &m) in mag {
+        if id > 0 {
+            if let Some(&i) = idx.get(&(id as usize)) {
                 cols.push(i);
                 col_mag.push(m);
             }
         }
     }
     (cols, col_mag)
+}
+
+/// Sum two per-operand prediction sets elementwise. The row axis is the operand's own
+/// (identical across parameter groups), so the merge is positional; a group whose edits
+/// named no known element carries empty values and defers to the other side.
+fn merge_preview_columns(
+    mut acc: Vec<PreviewColumn>,
+    other: Vec<PreviewColumn>,
+) -> Result<Vec<PreviewColumn>, String> {
+    if acc.len() != other.len() {
+        return Err("preview merge: operand count mismatch".into());
+    }
+    for (a, o) in acc.iter_mut().zip(other) {
+        if a.values.is_empty() {
+            *a = o;
+            continue;
+        }
+        if o.values.is_empty() {
+            continue;
+        }
+        if a.values.len() != o.values.len() {
+            return Err("preview merge: operand row mismatch".into());
+        }
+        for (av, ov) in a.values.iter_mut().zip(o.values) {
+            av.value += ov.value;
+        }
+    }
+    Ok(acc)
 }
 
 /// For each watched operand, run the `parameter` sensitivity over the edited buses and dot
@@ -560,11 +694,16 @@ fn preview_columns(
         .collect())
 }
 
-/// The served unit of a predicted operand delta. The sensitivity is `(operand)/MW`
-/// (differentiated w.r.t. active demand); the predicted value is already multiplied by
-/// the MW step, so it carries the operand unit — strip the `/MW` denominator and parens.
+/// The served unit of a predicted operand delta. The sensitivity is `(operand)/MW` or
+/// `(operand)/MVA` (differentiated w.r.t. active demand or a thermal rating); the
+/// predicted value is already multiplied by the MW step, so it carries the operand
+/// unit — strip the denominator and parens.
 fn operand_unit(ratio: &str) -> String {
-    let s = ratio.strip_suffix("/MW").unwrap_or(ratio).trim();
+    let s = ratio
+        .strip_suffix("/MW")
+        .or_else(|| ratio.strip_suffix("/MVA"))
+        .unwrap_or(ratio)
+        .trim();
     s.strip_prefix('(')
         .and_then(|inner| inner.strip_suffix(')'))
         .unwrap_or(s)
@@ -813,6 +952,249 @@ mod tests {
         }
         // Adding load raises system cost: the objective gradient is positive.
         assert!(prev.objective_delta.unwrap() > 0.0);
+    }
+
+    #[test]
+    fn commit_with_rating_edit_matches_solve_json() {
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::DcOpf).expect("study");
+        let resp = s
+            .commit(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: 3,
+                    delta_mw: -210.0,
+                }],
+                SolveOptions::default(),
+            )
+            .expect("commit");
+        let stateless = crate::solve_json(
+            &net,
+            r#"{"formulation":"dcopf","edits":{"rates":{"3":-210.0}}}"#,
+        )
+        .expect("solve_json");
+        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+    }
+
+    #[test]
+    fn rating_preview_is_first_order_accurate_on_a_binding_line() {
+        // Congest the bus2-bus3 line through the rating edit itself (250 -> 40 MW,
+        // the same operating point as sens/dc.rs's congested_case3), then preview a
+        // further 1 MW tightening against the exact re-solve.
+        let net = case3_json();
+        let mut study = Study::new(&net, Problem::DcOpf).unwrap();
+        study
+            .replace_edits(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: 3,
+                    delta_mw: -210.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap();
+
+        let step = -1.0_f64; // MW
+        let prev = study
+            .preview(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: 3,
+                    delta_mw: step,
+                }],
+                &[Operand::Price(Power::Active)],
+            )
+            .unwrap();
+        assert_eq!(prev.operands.len(), 1);
+        assert_eq!(prev.operands[0].units, "$/MWh");
+
+        let committed: Value =
+            serde_json::from_str(&serde_json::to_string(study.solution()).unwrap()).unwrap();
+        let mut exact_study = Study::new(&net, Problem::DcOpf).unwrap();
+        let exact = exact_study
+            .replace_edits(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: 3,
+                    delta_mw: -210.0 + step,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap();
+        let exact_json: Value =
+            serde_json::from_str(&serde_json::to_string(&exact).unwrap()).unwrap();
+
+        let mut moved = 0.0_f64;
+        for col in &prev.operands[0].values {
+            let bus = match col.element {
+                ElementId::Bus(b) => b,
+                _ => panic!("price operand should be bus-keyed"),
+            };
+            let exact_delta = lmp_at(&exact_json, bus) - lmp_at(&committed, bus);
+            assert!(
+                (col.value - exact_delta).abs() < 1e-3,
+                "bus {bus}: predicted Δlmp {} vs exact {exact_delta}",
+                col.value
+            );
+            moved = moved.max(col.value.abs());
+        }
+        // The binding line's rating must actually move prices, so this is a real
+        // validation rather than a trivial 0 == 0.
+        assert!(
+            moved > 1e-5,
+            "rating preview at binding line is trivial: {moved}"
+        );
+
+        // Tightening a binding limit raises cost, and the gradient objective agrees
+        // with the exact re-solve to first order.
+        let pred_obj = prev.objective_delta.expect("dc opf has an objective");
+        let exact_obj =
+            exact_json["objective"].as_f64().unwrap() - committed["objective"].as_f64().unwrap();
+        assert!(
+            pred_obj > 0.0,
+            "tightening a binding limit should raise cost"
+        );
+        assert!(
+            (pred_obj - exact_obj).abs() <= 0.15 * exact_obj.abs() + 1e-9,
+            "objective gradient {pred_obj} vs exact {exact_obj}"
+        );
+    }
+
+    #[test]
+    fn rating_preview_on_a_non_binding_line_is_zero() {
+        // Uncongested base: no line binds, so the rating column and its objective
+        // gradient are exactly zero.
+        let net = case3_json();
+        let study = Study::new(&net, Problem::DcOpf).unwrap();
+        let prev = study
+            .preview(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: 3,
+                    delta_mw: -10.0,
+                }],
+                &[Operand::Price(Power::Active)],
+            )
+            .unwrap();
+        for v in &prev.operands[0].values {
+            assert!(v.value.abs() < 1e-9, "expected zero, got {}", v.value);
+        }
+        assert!(prev.objective_delta.unwrap().abs() < 1e-9);
+    }
+
+    #[test]
+    fn mixed_demand_and_rating_edits_fold_replay_and_preview() {
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::DcOpf).unwrap();
+        let resp = s
+            .commit(
+                &[
+                    NetworkEdit::AddLoad { bus: 2, p_mw: 20.0 },
+                    NetworkEdit::AdjustBranchRating {
+                        branch: 3,
+                        delta_mw: -210.0,
+                    },
+                ],
+                SolveOptions::default(),
+            )
+            .unwrap();
+        let stateless = crate::solve_json(
+            &net,
+            r#"{"formulation":"dcopf","edits":{"deltas":{"2":20.0},"rates":{"3":-210.0}}}"#,
+        )
+        .unwrap();
+        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+
+        // A mixed preview is the sum of the groups' first-order terms (this used to
+        // error on mixed edit kinds, which replacement_step now legitimately emits).
+        let prev = s
+            .preview(
+                &[
+                    NetworkEdit::AddLoad { bus: 2, p_mw: 1.0 },
+                    NetworkEdit::AdjustBranchRating {
+                        branch: 3,
+                        delta_mw: -1.0,
+                    },
+                ],
+                &[Operand::Price(Power::Active)],
+            )
+            .unwrap();
+        assert_eq!(prev.operands.len(), 1);
+        assert!(!prev.operands[0].values.is_empty());
+        assert!(prev.objective_delta.is_some());
+
+        // Resetting a mixed log replays to the base solve (replacement_step emits
+        // both edit kinds).
+        let reset = s.replace_edits(&[], SolveOptions::default()).unwrap();
+        let base = crate::solve_json(&net, r#"{"formulation":"dcopf"}"#).unwrap();
+        assert_eq!(serde_json::to_string(&reset).unwrap(), base);
+        assert!(s.edits().is_empty());
+    }
+
+    #[test]
+    fn rating_edit_validation_errors() {
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::DcOpf).unwrap();
+        let err = s
+            .commit(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: 99,
+                    delta_mw: -10.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap_err();
+        assert!(err.contains("unknown rating delta branch 99"), "got: {err}");
+        let err = s
+            .commit(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: 3,
+                    delta_mw: -250.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap_err();
+        assert!(
+            err.contains("would make the line limit non-positive"),
+            "got: {err}"
+        );
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn acpf_rejects_rating_edits() {
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::AcPf).expect("acpf study");
+        let err = s
+            .commit(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: 3,
+                    delta_mw: -10.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap_err();
+        assert!(
+            err.contains("branch rating edits are not supported by acpf"),
+            "got: {err}"
+        );
+    }
+
+    #[cfg(feature = "conic")]
+    #[test]
+    fn socwr_commit_with_rating_edit_matches_solve_json() {
+        let net = case3_json();
+        let mut s = Study::new(&net, Problem::Socwr).expect("socwr study");
+        let resp = s
+            .commit(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: 3,
+                    delta_mw: -210.0,
+                }],
+                SolveOptions::default(),
+            )
+            .expect("commit");
+        let stateless = crate::solve_json(
+            &net,
+            r#"{"formulation":"socwr","edits":{"rates":{"3":-210.0}}}"#,
+        )
+        .expect("solve_json");
+        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
     }
 
     #[test]
