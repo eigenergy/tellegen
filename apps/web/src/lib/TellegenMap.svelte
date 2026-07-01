@@ -91,7 +91,7 @@
 		const activeDeltas = active ? caseDeltas(active) : {};
 		// Engine first-order LMP preview (Study.preview): predicted per-bus ΔLMP for
 		// the live drag, scoped to this case + bus. Preferred over the JS gradient
-		// shift when present; the gradient path stays for the server/Safari case.
+		// shift when present; the gradient path stays for server and browser fallbacks.
 		const enginePreview =
 			active &&
 			selected !== null &&

@@ -314,22 +314,30 @@ pub fn solve_dc_json(network_json: &str, deltas_json: &str) -> Result<String, St
     let dc = DcNetwork::from_network(&net)?;
 
     // A default request is a base-case DC OPF; layer on the operating-point deltas.
-    // The engine ignores non-positive bus ids, so the raw map crosses unchanged.
+    // The engine validates the raw map, so the wasm path rejects the same unknown
+    // bus and negative demand edits as the HTTP path.
     let mut request = SolveRequest::default();
     request.edits.deltas = req.deltas;
 
     // The dLMP/dd column: a Price/Demand sensitivity cell over the single sens bus.
     // Only meaningful in the sensitivity build; the core build leaves `dlmp_dd` null.
     #[cfg(feature = "sensitivity")]
-    if let Some(bus) = req.sens_bus.and_then(|b| (b > 0).then_some(b as usize)) {
-        if let Some(idx) = dc.bus_ids.iter().position(|&id| id == bus) {
-            request.sensitivities = vec![tellegen::SensRequest {
-                operand: tellegen::Operand::Price(tellegen::Power::Active),
-                parameter: tellegen::Parameter::Demand(tellegen::Power::Active),
-                indices: Some(vec![idx]),
-                mode: tellegen::Mode::Auto,
-            }];
+    if let Some(raw_bus) = req.sens_bus {
+        if raw_bus <= 0 {
+            return Err(format!("unknown bus {raw_bus}"));
         }
+        let bus = raw_bus as usize;
+        let idx = dc
+            .bus_ids
+            .iter()
+            .position(|&id| id == bus)
+            .ok_or_else(|| format!("unknown bus {bus}"))?;
+        request.sensitivities = vec![tellegen::SensRequest {
+            operand: tellegen::Operand::Price(tellegen::Power::Active),
+            parameter: tellegen::Parameter::Demand(tellegen::Power::Active),
+            indices: Some(vec![idx]),
+            mode: tellegen::Mode::Auto,
+        }];
     }
 
     let resp = tellegen::solve_prebuilt(&dc, &request)?;
@@ -757,6 +765,15 @@ mpc.gencost = [
         );
     }
 
+    #[test]
+    fn solve_dc_unknown_delta_bus_errors() {
+        let err = solve_dc_json(&case14_json(), r#"{"deltas": {"999999": 1.0}}"#).unwrap_err();
+        assert!(
+            err.contains("unknown demand delta bus 999999"),
+            "got: {err}"
+        );
+    }
+
     #[cfg(feature = "sensitivity")]
     #[test]
     fn solve_dc_sensitivity_column_present_when_requested() {
@@ -770,6 +787,44 @@ mpc.gencost = [
         assert_eq!(values.len(), 14);
         for e in values {
             assert!(e["value"].as_f64().unwrap().is_finite());
+        }
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn solve_dc_unknown_sensitivity_bus_errors() {
+        let err = solve_dc_json(&case14_json(), r#"{"sens_bus": 999999}"#).unwrap_err();
+        assert!(err.contains("unknown bus 999999"), "got: {err}");
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn solve_dc_sensitivity_matches_engine_contract() {
+        let compat: Value =
+            serde_json::from_str(&solve_dc_json(&case14_json(), r#"{"sens_bus": 3}"#).unwrap())
+                .unwrap();
+        let engine_req = r#"{"formulation":"dcopf","sensitivities":[{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"},"indices":[2]}]}"#;
+        let engine: Value =
+            serde_json::from_str(&tellegen::solve_json(&case14_json(), engine_req).unwrap())
+                .unwrap();
+
+        let compat_values = compat["dlmp_dd"]["values"].as_array().unwrap();
+        let engine_rows = engine["sensitivities"][0]["rows"].as_array().unwrap();
+        let engine_values = engine["sensitivities"][0]["values"].as_array().unwrap();
+        assert_eq!(compat_values.len(), engine_values.len());
+        for ((compat_row, engine_row), engine_value_row) in
+            compat_values.iter().zip(engine_rows).zip(engine_values)
+        {
+            assert_eq!(
+                compat_row["bus"].as_u64(),
+                engine_row["element"]["Bus"].as_u64()
+            );
+            let compat_value = compat_row["value"].as_f64().unwrap();
+            let engine_value = engine_value_row[0].as_f64().unwrap();
+            assert!(
+                (compat_value - engine_value).abs() < 1e-10,
+                "{compat_value} != {engine_value}"
+            );
         }
     }
 

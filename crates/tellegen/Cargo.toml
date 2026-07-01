@@ -14,12 +14,11 @@ powerio.workspace = true
 # DC/conic OPF QP/SOCP solver. Default features only (QDLDL + amd), so it stays pure
 # Rust and compiles to wasm32 as-is.
 clarabel = "0.11.1"
-# Sparse LU for the sensitivity solves. Optional so a consumer that only needs the
-# solve can drop it (the browser core build does). 0.24.1 gates pulp's wasm
-# relaxed-SIMD opcodes behind the `relaxed-simd` target feature, which the default
-# wasm build does not set, so the sensitivity module validates on Safari without the
-# pulp patch the old tellegen crate carried.
-faer = { version = "0.24.1", default-features = false, features = ["std", "linalg", "sparse", "sparse-linalg"], optional = true }
+# Sparse LU for the sensitivity solves. Optional so a consumer that only needs
+# the solve can drop it (the browser core build does). faer pulls pulp with
+# default features off and only `std`/`x86-v3`, so pulp's `relaxed-simd` feature
+# is not part of the wasm sensitivity build.
+faer = { version = "0.24.4", default-features = false, features = ["std", "linalg", "sparse", "sparse-linalg"], optional = true }
 # Complex bus admittance and the polar power flow Jacobian (AC paths). Pure Rust,
 # already pulled by faer. Optional and tied to `sensitivity`.
 num-complex = { version = "0.4", default-features = false, optional = true }
