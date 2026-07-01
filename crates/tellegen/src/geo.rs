@@ -250,7 +250,9 @@ mod tests {
             m += &format!(" {i} {} 0.01 0.1 0 100 100 100 0 0 1 -360 360;\n", i + 1);
         }
         m += "];\nmpc.gencost = [\n 2 0 0 3 0.1 5 0;\n];\n";
-        powerio::parse_str(&m, "matpower").expect("parse chain").network
+        powerio::parse_str(&m, "matpower")
+            .expect("parse chain")
+            .network
     }
 
     #[test]
