@@ -6,7 +6,11 @@
 	const app = getAppState();
 	const ctrl = getController();
 	const unitTitle =
-		'LMP is measured in $/MWh and demand is perturbed in MW, so dLMP/dd has units ($/MWh)/MW.';
+		'LMP is measured in $/MWh and demand is perturbed in MW, so dLMP/dd has units ($/MWh)/MW. ' +
+		'DC LMPs move only when a binding constraint changes, so most nudges in this slider range ' +
+		'shift prices very little unless the active set changes.';
+
+	const previewStep = $derived(ctrl.sliderValue - ctrl.committedDelta);
 </script>
 
 <div class="mode">
@@ -21,9 +25,27 @@
 				? 'Exact solve running; the map keeps the LMP preview.'
 				: 'First order LMP preview. Release for the exact solve.'}
 		</p>
+		{#if ctrl.sensSummary?.flat}
+			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
+			<div class="legend-labels mono single">
+				<span>uniform {signedExp(ctrl.sensSummary.mean * previewStep)} $/MWh</span>
+			</div>
+		{:else if ctrl.previewScale}
+			<!-- The bounds are fixed for the whole drag (column scale × full slider
+			     deflection), so the ramp ends label the colors: full green/purple is
+			     the predicted ΔLMP at full deflection, and intensity grows with the
+			     step instead of renormalizing every frame. -->
+			<div class="legend" style:background={sensGradient}></div>
+			<div class="legend-labels mono">
+				<span>&minus;{ctrl.previewScale.toExponential(1)}</span>
+				<span>&Delta;LMP $/MWh</span>
+				<span>+{ctrl.previewScale.toExponential(1)}</span>
+			</div>
+		{/if}
 	{:else}
 		<p class="dim small sensitivity-copy" title={unitTitle}>
 			LMP response per MW of demand at bus {app.selectedBus}.
+			<span class="hint-dot mono" title={unitTitle} aria-label={unitTitle}>i</span>
 		</p>
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>

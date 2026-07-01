@@ -105,6 +105,20 @@ export function sensFlatColor(domain: Pick<SensitivityDomain, 'mean'>): RGBA {
 	return sensColor(domain.mean > 0 ? FLAT_SENSITIVITY_TINT : -FLAT_SENSITIVITY_TINT);
 }
 
+/** The fixed normalization for a slider drag: predicted ΔLMP divides by
+ * scale × maxAbsStep, so color intensity is linear in the step and saturates at
+ * full deflection for the column's robust-max buses. A per-frame domain over
+ * column × step would cancel the step exactly (sensitivityDomain is degree-1
+ * homogeneous), freezing the intensity. Null for flat columns, whose scale is
+ * meaningless. */
+export function previewScaleFor(
+	domain: Pick<SensitivityDomain, 'scale' | 'flat'>,
+	maxAbsStep: number
+): number | null {
+	if (domain.flat) return null;
+	return domain.scale * Math.max(maxAbsStep, 1e-9);
+}
+
 /** Zero anchored sensitivity domain with a flat column guard. */
 export function sensitivityDomain(values: number[]): SensitivityDomain {
 	if (values.length === 0) {

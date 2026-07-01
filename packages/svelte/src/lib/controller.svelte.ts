@@ -1,6 +1,6 @@
 import { ApiError, createApiClient, type TellegenApiClient } from './api.js';
 import type { Network, NetworkBus, SensitivityColumn, Solution } from './api.js';
-import { scalarDomain, sensFlatColor, sensitivityDomain } from './colors.js';
+import { previewScaleFor, scalarDomain, sensFlatColor, sensitivityDomain } from './colors.js';
 import { caseDeltas as sharedCaseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
 import { applyGeoFile, isGeoFile, mergeGeoFiles, parseGeoFile, type GeoFile } from './geo-file.js';
 import {
@@ -458,6 +458,20 @@ export class Controller {
 			: null
 	);
 	flatSensBackground = $derived(this.sensSummary ? rgbaCss(sensFlatColor(this.sensSummary)) : '');
+
+	// The fixed preview normalization for a drag. Both inputs are stable while
+	// dragging (slider bounds are anchored per selection; committedDelta moves only
+	// on commit), so the scale never shifts under the pointer and intensity is
+	// linear in the step.
+	previewMaxAbsStep = $derived.by(() =>
+		Math.max(
+			Math.abs(this.sliderMin - this.committedDelta),
+			Math.abs(this.sliderMax - this.committedDelta)
+		)
+	);
+	previewScale = $derived.by(() =>
+		this.sensSummary ? previewScaleFor(this.sensSummary, this.previewMaxAbsStep) : null
+	);
 
 	selectedLmp = $derived.by(() => {
 		const c = this.activeSolvable;
