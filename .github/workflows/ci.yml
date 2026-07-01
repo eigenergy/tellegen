@@ -44,6 +44,7 @@ jobs:
       - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
       - run: npm run lint:web
       - run: npm run check:svelte
+      - run: npm run test:svelte
       - run: npm run check:web
       - run: npm run test:svelte-packed
       # build:web rebuilds @tellegen/svelte, which check:web (just above) already

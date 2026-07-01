@@ -61,6 +61,10 @@ engine-build:
 svelte-check:
     npm run check:svelte
 
+# CI gate: unit tests for the Svelte package's api/color helpers.
+svelte-test:
+    npm run test:svelte
+
 # Build the Svelte component package.
 svelte-build:
     npm run build:svelte
@@ -100,4 +104,4 @@ web-browser:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order.
-ci: fmt-check clippy deny epl-guard test wasm engine-check engine-build js-import web-lint svelte-check web-check svelte-packed web-build web-smoke web-browser
+ci: fmt-check clippy deny epl-guard test wasm engine-check engine-build js-import web-lint svelte-check svelte-test web-check svelte-packed web-build web-smoke web-browser

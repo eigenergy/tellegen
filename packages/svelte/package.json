@@ -42,6 +42,7 @@
   "scripts": {
     "build": "svelte-package",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
     "pack:dry-run": "npm pack --dry-run --cache ../../node_modules/.cache/npm-pack"
   },
   "dependencies": {
@@ -60,6 +61,7 @@
     "svelte": "^5.30.0",
     "svelte-check": "^4.1.0",
     "typescript": "^5.7.0",
-    "vite": "^6.3.0"
+    "vite": "^6.3.0",
+    "vitest": "^4.1.9"
   }
 }

@@ -23,6 +23,7 @@
     "build:svelte": "npm --workspace @tellegen/svelte run build",
     "pack:svelte": "npm --workspace @tellegen/svelte run pack:dry-run",
     "test:import": "npm --workspace @tellegen/engine run test:import",
+    "test:svelte": "npm --workspace @tellegen/svelte run test",
     "test:svelte-packed": "node scripts/svelte-packed-smoke.mjs",
     "build:example:browser": "npm --workspace @tellegen/example-browser-minimal run build",
     "build:example:svelte": "npm --workspace @tellegen/example-svelte-minimal run build",
