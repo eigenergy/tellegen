@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync } from "node:fs";
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,5 +9,10 @@ const distDir = join(packageDir, "dist");
 mkdirSync(distDir, { recursive: true });
 
 for (const dir of ["wasm-pkg", "wasm-sens-pkg"]) {
-  cpSync(join(sourceDir, dir), join(distDir, dir), { recursive: true });
+  const targetDir = join(distDir, dir);
+  cpSync(join(sourceDir, dir), targetDir, { recursive: true });
+  writeFileSync(
+    join(targetDir, ".npmignore"),
+    "# Include wasm-pack output in the @tellegen/engine tarball.\n",
+  );
 }
