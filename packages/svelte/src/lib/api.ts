@@ -8,6 +8,7 @@ import type {
 } from '@tellegen/engine';
 
 export type {
+	BranchRatingDeltas,
 	CaseSummary,
 	DemandDeltas,
 	Network,

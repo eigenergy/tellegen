@@ -98,6 +98,8 @@
 	<TellegenMap
 		onbusclick={ctrl.selectBus}
 		onlocalbusclick={ctrl.selectLocalBus}
+		onbranchclick={ctrl.selectBranch}
+		onlocalbranchclick={ctrl.selectLocalBranch}
 		onplacecase={ctrl.placeLocalCase}
 		onmapclick={ctrl.clearSelection}
 	/>

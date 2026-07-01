@@ -5,17 +5,34 @@
 
 	const app = getAppState();
 	const ctrl = getController();
-	const unitTitle =
+	const busUnitTitle =
 		'LMP is measured in $/MWh and demand is perturbed in MW, so dLMP/dd has units ($/MWh)/MW. ' +
 		'DC LMPs move only when a binding constraint changes, so most nudges in this slider range ' +
 		'shift prices very little unless the active set changes.';
+	const branchUnitTitle =
+		'LMP is measured in $/MWh and the rating is perturbed in MVA, so dLMP/dfmax has units ' +
+		"($/MWh)/MVA. The column is zero unless the line's limit is binding.";
 
-	const previewStep = $derived(ctrl.sliderValue - ctrl.committedDelta);
+	// Branch mode: the selection is a line and the column is ∂LMP/∂rating; the
+	// legend and preview pipeline are identical (both columns are bus-keyed).
+	const branchMode = $derived(app.selectedBranch !== null);
+	const unitTitle = $derived(branchMode ? branchUnitTitle : busUnitTitle);
+	const units = $derived(branchMode ? '($/MWh)/MVA' : '($/MWh)/MW');
+
+	const previewStep = $derived(
+		branchMode
+			? ctrl.ratingSliderValue - ctrl.committedRating
+			: ctrl.sliderValue - ctrl.committedDelta
+	);
 </script>
 
 <div class="mode">
-	<span class="chip">{ctrl.previewing ? 'LMP preview' : '∂LMP/∂d'}</span>
-	<span class="mono dim">bus {app.selectedBus}</span>
+	<span class="chip">
+		{ctrl.previewing ? 'LMP preview' : branchMode ? '∂LMP/∂rating' : '∂LMP/∂d'}
+	</span>
+	<span class="mono dim">
+		{#if branchMode}line {app.selectedBranch}{:else}bus {app.selectedBus}{/if}
+	</span>
 	<button class="mono" onclick={ctrl.clearSelection}>esc&nbsp;clear</button>
 </div>
 <div class="sensitivity-readout" aria-live="polite">
@@ -44,13 +61,17 @@
 		{/if}
 	{:else}
 		<p class="dim small sensitivity-copy" title={unitTitle}>
-			LMP response per MW of demand at bus {app.selectedBus}.
+			{#if branchMode}
+				LMP response per MVA of rating on line {app.selectedBranch}.
+			{:else}
+				LMP response per MW of demand at bus {app.selectedBus}.
+			{/if}
 			<span class="hint-dot mono" title={unitTitle} aria-label={unitTitle}>i</span>
 		</p>
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels mono single">
-				<span>uniform {signedExp(ctrl.sensSummary.mean)} ($/MWh)/MW</span>
+				<span>uniform {signedExp(ctrl.sensSummary.mean)} {units}</span>
 			</div>
 		{:else if ctrl.sensSummary}
 			<div class="legend" style:background={sensGradient}></div>
@@ -62,7 +83,9 @@
 		{:else if app.sensitivityLoading}
 			<div class="legend" style:background="var(--line)" style:opacity="0.4"></div>
 			<div class="legend-labels mono single">
-				<span class="blink">computing &part;LMP/&part;d&hellip;</span>
+				<span class="blink">
+					computing {#if branchMode}&part;LMP/&part;fmax{:else}&part;LMP/&part;d{/if}&hellip;
+				</span>
 			</div>
 		{/if}
 	{/if}

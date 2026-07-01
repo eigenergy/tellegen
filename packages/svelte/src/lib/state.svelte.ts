@@ -10,8 +10,10 @@ import type {
 } from './api.js';
 import {
 	DEFAULT_FORMULATION,
+	type BranchRatingDeltas,
 	type CaseFileSummary,
 	type Formulation,
+	type SensTarget,
 	type Topology
 } from '@tellegen/engine';
 
@@ -37,10 +39,10 @@ export interface LocalSubstations {
 type CoordsKind = 'file' | 'synthetic_pending' | 'synthetic' | 'geofile';
 type LocalView = { buses: NetworkBus[]; branches: NetworkBranch[] };
 
-/** A case is perturbed when any committed demand delta is nonzero. Shared by both
- * solvable case classes so the "perturbed" rule stays single-sourced. */
-const hasPerturbation = (deltas: DemandDeltas): boolean =>
-	Object.values(deltas).some((mw) => mw !== 0);
+/** A case is perturbed when any committed demand or rating delta is nonzero. Shared
+ * by both solvable case classes so the "perturbed" rule stays single-sourced. */
+const hasPerturbation = (edits: Record<number, number>): boolean =>
+	Object.values(edits).some((mw) => mw !== 0);
 
 /** The fields a parsed file supplies at creation; the solve state defaults. */
 export interface LocalCaseInit {
@@ -82,6 +84,8 @@ export class LocalCase {
 	solution = $state.raw<Solution | null>(null);
 	sensitivity = $state.raw<SensitivityColumn | null>(null);
 	deltas = $state.raw<DemandDeltas>({});
+	/** Committed branch rating deltas (MW from base, keyed by branch). */
+	ratings = $state.raw<BranchRatingDeltas>({});
 	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
 	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
 	formulation = $state<Formulation>(DEFAULT_FORMULATION);
@@ -111,7 +115,7 @@ export class LocalCase {
 	}
 
 	get perturbed(): boolean {
-		return hasPerturbation(this.deltas);
+		return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
 	}
 }
 
@@ -130,6 +134,8 @@ export class CaseState {
 	sensitivity = $state.raw<SensitivityColumn | null>(null);
 	/** Committed demand deltas (MW from base, keyed by bus). */
 	deltas = $state.raw<DemandDeltas>({});
+	/** Committed branch rating deltas (MW from base, keyed by branch). */
+	ratings = $state.raw<BranchRatingDeltas>({});
 	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
 	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
 	formulation = $state<Formulation>(DEFAULT_FORMULATION);
@@ -155,7 +161,7 @@ export class CaseState {
 	}
 
 	get perturbed(): boolean {
-		return hasPerturbation(this.deltas);
+		return hasPerturbation(this.deltas) || hasPerturbation(this.ratings);
 	}
 }
 
@@ -167,16 +173,24 @@ export class AppState {
 	activeCaseId = $state<string | null>(null);
 	/** Selected bus in the active case. */
 	selectedBus = $state<number | null>(null);
+	/** Selected branch in the active case; mutually exclusive with selectedBus. */
+	selectedBranch = $state<number | null>(null);
 	/** Live slider value (MW from base) before commit; null when idle. */
 	previewDeltaMw = $state<number | null>(null);
+	/** Live rating slider value (MW from base) before commit; null when idle. */
+	previewRatingMw = $state<number | null>(null);
 	/** True while the demand control should keep the map in LMP preview mode. */
 	previewActive = $state(false);
 	/** Engine first-order LMP preview for the live drag: predicted change in LMP
-	 * ($/MWh) per bus at the previewed demand, scoped to the case and bus it was
-	 * computed for. Set by the Study path; null when no Study preview applies (the
-	 * map then falls back to the JS sensitivity-times-step preview). Reassigned
-	 * wholesale, so $state.raw. */
-	previewLmp = $state.raw<{ caseId: string; bus: number; delta: Map<number, number> } | null>(null);
+	 * ($/MWh) per bus at the previewed edit, scoped to the case and selection
+	 * target (bus or branch) it was computed for. Set by the Study path; null when
+	 * no Study preview applies (the map then falls back to the JS
+	 * sensitivity-times-step preview). Reassigned wholesale, so $state.raw. */
+	previewLmp = $state.raw<{
+		caseId: string;
+		target: SensTarget;
+		delta: Map<number, number>;
+	} | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
 	displayMode = $state<DisplayMode>('lmp');
 	sensitivityLoading = $state(false);
@@ -230,7 +244,9 @@ export class AppState {
 		if (!wasActive) return { kind: 'none' };
 
 		this.selectedBus = null;
+		this.selectedBranch = null;
 		this.previewDeltaMw = null;
+		this.previewRatingMw = null;
 		this.previewActive = false;
 		this.previewLmp = null;
 		this.demandRangeMode = 'local';

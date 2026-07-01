@@ -80,7 +80,7 @@ const study = await createStudy(parsed.network_json, "dcopf");
 
 try {
   const preview = study.preview({ 3: 25 });
-  const committed = study.commit(parsed.name, { 3: 25 }, 3);
+  const committed = study.commit(parsed.name, { 3: 25 }, {}, { bus: 3 });
   console.log(preview.objectiveDelta, committed.sensitivity);
 } finally {
   study.free();

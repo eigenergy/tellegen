@@ -17,7 +17,7 @@ export { ApiError, createApiClient } from './api.js';
 export { Controller, createController } from './controller.svelte.js';
 export { AppState, CaseState, LocalCase, createAppState } from './state.svelte.js';
 
-export { caseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
+export { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
 export {
 	DEFAULT_FORMULATION,
 	FORMULATIONS,
@@ -36,6 +36,7 @@ export {
 } from '@tellegen/engine';
 
 export type {
+	BranchRatingDeltas,
 	CaseSummary,
 	DemandDeltas,
 	Network,
@@ -66,6 +67,7 @@ export type {
 	DisplayPreview,
 	Formulation,
 	IngestedCase,
+	SensTarget,
 	Topology,
 	TopologyBranch,
 	TopologyBus

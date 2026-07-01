@@ -1,4 +1,4 @@
-import type { DemandDeltas } from './api.js';
+import type { BranchRatingDeltas, DemandDeltas } from './api.js';
 import { lmpGradient } from './colors.js';
 import { priceCopy } from './format.js';
 import { CaseState, type DisplayMode, type SolvableCase } from './state.svelte.js';
@@ -70,4 +70,10 @@ export function displaySeriesFor(
  * case always carries a deltas map; a local case defaults to an empty one. */
 export function caseDeltas(c: SolvableCase): DemandDeltas {
 	return c instanceof CaseState ? c.deltas : (c.deltas ?? {});
+}
+
+/** The committed branch rating deltas for a case (MW from base, keyed by branch).
+ * The rating counterpart of `caseDeltas`. */
+export function caseRatings(c: SolvableCase): BranchRatingDeltas {
+	return c instanceof CaseState ? c.ratings : (c.ratings ?? {});
 }

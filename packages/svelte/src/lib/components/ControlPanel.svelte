@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
+	import BindingLines from './BindingLines.svelte';
 	import DemandSlider from './DemandSlider.svelte';
 	import DisplayControls from './DisplayControls.svelte';
 	import FormulationSelector from './FormulationSelector.svelte';
 	import LocalCaseDetails from './LocalCaseDetails.svelte';
 	import NetworkStats from './NetworkStats.svelte';
+	import RatingSlider from './RatingSlider.svelte';
 	import SensitivityReadout from './SensitivityReadout.svelte';
 	import SizeLegend from './SizeLegend.svelte';
 	import TopMovers from './TopMovers.svelte';
@@ -54,12 +56,24 @@
 			<FormulationSelector />
 		{/if}
 
+		{#if !app.placingLocalId}
+			<BindingLines />
+		{/if}
+
 		<hr />
 
 		{#if app.selectedBus !== null && (ctrl.selectedSensitivity || app.sensitivityLoading)}
 			<SensitivityReadout />
 
 			<DemandSlider />
+
+			{#if ctrl.showMoverSlot}
+				<TopMovers />
+			{/if}
+		{:else if app.selectedBranch !== null && (ctrl.selectedSensitivity || app.sensitivityLoading)}
+			<SensitivityReadout />
+
+			<RatingSlider />
 
 			{#if ctrl.showMoverSlot}
 				<TopMovers />

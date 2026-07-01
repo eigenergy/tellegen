@@ -117,8 +117,10 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 	// recovered column renders the sensitivity readout.
 	sensitivityStatus = 200;
 	await page.getByRole('button', { name: 'retry', exact: true }).click();
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible();
+	// Wait for the settled readout (the chip also renders while loading) before
+	// counting requests, so the assertion doesn't race the in-flight fetch.
+	await expect(page.getByText('LMP response per MW of demand at bus 2')).toBeVisible();
 	await expect(error).toHaveCount(0);
-	expect(sensitivityFetches).toBe(2);
+	await expect.poll(() => sensitivityFetches).toBe(2);
 	expect(casesFetches).toBe(1);
 });
