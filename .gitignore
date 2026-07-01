@@ -8,6 +8,7 @@ apps/web/playwright-report/
 apps/web/test-results/
 examples/browser-minimal/dist/
 examples/svelte-minimal/dist/
+examples/svelte-minimal/.svelte-kit/
 packages/engine/dist/
 packages/svelte/.svelte-kit/
 packages/svelte/dist/

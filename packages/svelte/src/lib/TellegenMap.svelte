@@ -1,5 +1,6 @@
 <script lang="ts">
 	import 'maplibre-gl/dist/maplibre-gl.css';
+	import { tick } from 'svelte';
 	import type { Layer, PickingInfo } from '@deck.gl/core';
 	import type { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 	import type { MapboxOverlay } from '@deck.gl/mapbox';
@@ -221,6 +222,31 @@
 		return Boolean(layerId?.startsWith('buses-') || layerId?.startsWith('local-buses-'));
 	}
 
+	const selectedBusCue = $derived.by(() => {
+		const busId = app.selectedBus;
+		const c = app.active ?? app.activeLocal;
+		if (!c || busId === null) return null;
+		const buses =
+			app.active?.network?.buses ?? app.activeLocal?.network?.buses ?? app.activeLocal?.view?.buses ?? [];
+		const bus = buses.find((b) => b.id === busId);
+		return bus ? { key: `${c.id}-${bus.id}`, id: bus.id, lon: bus.lon, lat: bus.lat } : null;
+	});
+	let selectedCueEl = $state.raw<HTMLDivElement | null>(null);
+
+	function syncSelectedCue() {
+		if (!map || !selectedCueEl || !selectedBusCue) return;
+		const point = map.project([selectedBusCue.lon, selectedBusCue.lat]);
+		const { clientWidth, clientHeight } = map.getContainer();
+		const inRange =
+			point.x >= -40 &&
+			point.y >= -40 &&
+			point.x <= clientWidth + 40 &&
+			point.y <= clientHeight + 40;
+		selectedCueEl.style.left = `${point.x}px`;
+		selectedCueEl.style.top = `${point.y}px`;
+		selectedCueEl.style.display = inRange ? 'block' : 'none';
+	}
+
 	/** Case owning a picked network layer; null for display-only layers. */
 	function caseOf(info: PickingInfo): SolvableCase | null {
 		const layerId = info.layer?.id;
@@ -384,6 +410,7 @@
 				const onVisible = () => {
 					if (document.visibilityState === 'visible') repaint();
 				};
+				const syncCue = () => syncSelectedCue();
 				let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
 				const clearRebuild = () => {
 					if (rebuildTimer !== null) {
@@ -427,6 +454,10 @@
 				window.addEventListener('pageshow', repaint);
 				m.on('webglcontextlost', onContextLost);
 				m.on('webglcontextrestored', rebuild);
+				m.on('load', syncCue);
+				m.on('move', syncCue);
+				m.on('resize', syncCue);
+				m.on('zoom', syncCue);
 
 				map = m;
 				overlay = o;
@@ -451,6 +482,10 @@
 					document.removeEventListener('visibilitychange', onVisible);
 					window.removeEventListener('focus', repaint);
 					window.removeEventListener('pageshow', repaint);
+					m.off('load', syncCue);
+					m.off('move', syncCue);
+					m.off('resize', syncCue);
+					m.off('zoom', syncCue);
 					m.remove();
 					map = null;
 					overlay = null;
@@ -613,6 +648,13 @@
 		map.getCanvas().style.cursor = app.placingLocalId ? 'crosshair' : '';
 	});
 
+	$effect(() => {
+		if (!map) return;
+		void mapGen;
+		void selectedBusCue?.key;
+		void tick().then(syncSelectedCue);
+	});
+
 	function boundsFor(target: string | 'all'): LngLatBoundsLike | null {
 		let minLon = Infinity;
 		let minLat = Infinity;
@@ -664,7 +706,14 @@
 </script>
 
 {#key mapGen}
-	<div class="map" {@attach initMap}></div>
+	<div class="map-stage">
+		<div class="map" {@attach initMap}></div>
+		{#if selectedBusCue}
+			{#key selectedBusCue.key}
+				<div class="selected-bus-cue" bind:this={selectedCueEl} aria-hidden="true"></div>
+			{/key}
+		{/if}
+	</div>
 {/key}
 
 {#if app.placingLocalId && map}
@@ -682,10 +731,66 @@
 {/if}
 
 <style>
+	.map-stage,
 	.map {
 		position: absolute;
 		inset: 0;
+	}
+
+	.map {
 		background: var(--bg);
+	}
+
+	.selected-bus-cue {
+		position: absolute;
+		z-index: calc(var(--z-chrome) - 1);
+		display: none;
+		width: 28px;
+		height: 28px;
+		margin: -14px 0 0 -14px;
+		border: 2px solid #2f6fbb;
+		border-radius: 999px;
+		background: rgba(47, 111, 187, 0.1);
+		box-shadow:
+			0 0 0 4px rgba(47, 111, 187, 0.12),
+			0 0 18px rgba(47, 111, 187, 0.24);
+		pointer-events: none;
+		animation:
+			selected-bus-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
+			selected-bus-pulse 1.8s ease-in-out 420ms infinite;
+	}
+
+	@keyframes selected-bus-pop {
+		0% {
+			opacity: 0;
+			transform: scale(0.35);
+		}
+		65% {
+			opacity: 0.95;
+			transform: scale(1.35);
+		}
+		100% {
+			opacity: 0.9;
+			transform: scale(1);
+		}
+	}
+
+	@keyframes selected-bus-pulse {
+		0%,
+		100% {
+			opacity: 0.9;
+			transform: scale(1);
+			box-shadow:
+				0 0 0 4px rgba(47, 111, 187, 0.12),
+				0 0 18px rgba(47, 111, 187, 0.24);
+		}
+		50% {
+			opacity: 0.48;
+			transform: scale(1.22);
+			box-shadow:
+				0 0 0 8px rgba(47, 111, 187, 0.08),
+				0 0 28px rgba(47, 111, 187, 0.18);
+		}
 	}
 
 	/* Keyboard/touch equivalent to clicking the map while placing a local case;
@@ -712,15 +817,34 @@
 		}
 	}
 
-	/* Lift the bottom-right controls clear of the footer strip. */
 	.map :global(.maplibregl-ctrl-bottom-right) {
-		bottom: 30px;
+		right: 20px;
+		bottom: 18px;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 6px;
+	}
+
+	.map :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
+		float: none;
+		margin: 0;
 	}
 
 	.map :global(.maplibregl-ctrl-attrib) {
+		order: -1;
+		position: relative;
+		right: 2px;
+		width: auto;
+		min-width: 0;
+		max-width: calc(100vw - 96px);
+		box-sizing: border-box;
 		background: rgba(252, 251, 247, 0.75);
 		font-family: var(--font-mono);
 		font-size: 10px;
+		white-space: nowrap;
+		text-align: right;
+		box-shadow: var(--elev-1);
 	}
 
 	.map :global(.maplibregl-ctrl-attrib a) {
@@ -737,5 +861,20 @@
 		padding: 8px 10px !important;
 		border-radius: 2px;
 		box-shadow: 0 2px 10px rgba(32, 36, 43, 0.12);
+	}
+
+	@media (max-width: 760px) {
+		.map :global(.maplibregl-ctrl-attrib) {
+			width: auto;
+			min-width: 0;
+			right: 0;
+			white-space: normal;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.selected-bus-cue {
+			animation: none;
+		}
 	}
 </style>

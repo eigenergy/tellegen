@@ -1,6 +1,6 @@
 # Third Party Notices
 
-This file records attribution sources for the repository and public demo. It
+This page records attribution sources for the repository and public demo. It
 does not replace the license metadata in `Cargo.lock`, `package-lock.json`, or
 the source distributions for each dependency.
 

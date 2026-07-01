@@ -20,5 +20,6 @@
   - [References](references.md)
 - [Deployment](deployment.md)
 - [Privacy](privacy.md)
+- [Third Party Notices](third-party-notices.md)
 - [Research Notes](research-notes.md)
 - [Desktop and mobile (roadmap)](tauri-roadmap.md)

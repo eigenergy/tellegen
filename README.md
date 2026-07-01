@@ -182,4 +182,4 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 The Rust crates are licensed under either of [Apache-2.0](crates/tellegen/LICENSE-APACHE)
 or [MIT](crates/tellegen/LICENSE-MIT), at your option. The web app under `apps/web/` is
 [MIT](LICENSE). See [crates/tellegen/NOTICE](crates/tellegen/NOTICE) and
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for attributions.
+[docs/src/third-party-notices.md](docs/src/third-party-notices.md) for attributions.

@@ -5,6 +5,8 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	const unitTitle =
+		'LMP is measured in $/MWh and demand is perturbed in MW, so dLMP/dd has units ($/MWh)/MW.';
 </script>
 
 <div class="mode">
@@ -20,7 +22,9 @@
 				: 'First order LMP preview. Release for the exact solve.'}
 		</p>
 	{:else}
-		<p class="dim small sensitivity-copy">LMP response per MW at bus {app.selectedBus}.</p>
+		<p class="dim small sensitivity-copy" title={unitTitle}>
+			LMP response per MW of demand at bus {app.selectedBus}.
+		</p>
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels mono single">

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import AppFooter from './components/AppFooter.svelte';
 	import AppHeader from './components/AppHeader.svelte';
+	import BusPicker from './components/BusPicker.svelte';
 	import ControlPanel from './components/ControlPanel.svelte';
 	import DropZone from './components/DropZone.svelte';
 	import PlacementCue from './components/PlacementCue.svelte';
@@ -104,6 +105,7 @@
 	<AppHeader />
 	<ControlPanel />
 	<SolveCard />
+	<BusPicker />
 	<DropZone />
 	<PlacementCue />
 	<RestoreDefaultsButton />

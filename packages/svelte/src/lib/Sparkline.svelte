@@ -3,12 +3,12 @@
 
 	let { iterations }: { iterations: SolveIteration[] } = $props();
 
-	const W = 240;
-	const H = 54;
-	const T = 4;
+	const W = 300;
+	const H = 86;
+	const T = 6;
 	const R = 4;
-	const B = 18;
-	const L = 30;
+	const B = 22;
+	const L = 38;
 	const PLOT_W = W - L - R;
 	const PLOT_H = H - T - B;
 	const Y_TOP = 0; // log10(1e0)
@@ -57,7 +57,7 @@
 	svg {
 		display: block;
 		width: 100%;
-		height: 54px;
+		height: 86px;
 		overflow: visible;
 	}
 
@@ -70,14 +70,14 @@
 	.axis-label {
 		fill: var(--text-tertiary);
 		font-family: var(--font-mono);
-		font-size: 8.5px;
+		font-size: 9px;
 		letter-spacing: 0;
 	}
 
 	polyline {
 		fill: none;
 		stroke: var(--accent);
-		stroke-width: 1.5;
+		stroke-width: 1.8;
 		stroke-linejoin: round;
 		vector-effect: non-scaling-stroke;
 		stroke-dasharray: 1;

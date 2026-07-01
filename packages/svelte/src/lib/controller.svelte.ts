@@ -298,7 +298,7 @@ export class Controller {
 	finishSolve(c: SolvableCase, seq: number, sensBus: number | null) {
 		if (seq !== (c.solveSeq ?? 0)) return;
 		c.solving = false;
-		if (this.isActiveSolveCase(c) && this.app.selectedBus === sensBus) {
+		if (sensBus !== null && this.isActiveSolveCase(c) && this.app.selectedBus === sensBus) {
 			this.app.previewActive = false;
 			this.app.previewDeltaMw = null;
 			// The committed solution supersedes the live engine preview.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { getAppState, getController } from '../context.svelte.js';
 
 	const app = getAppState();
@@ -9,6 +10,7 @@
 	let query = $state('');
 	let open = $state(false);
 	let highlighted = $state(0);
+	let inputEl = $state.raw<HTMLInputElement | undefined>(undefined);
 
 	const results = $derived(
 		query.trim() === ''
@@ -40,29 +42,54 @@
 			commit(results[activeIndex].id);
 		}
 	}
+
+	onMount(() => {
+		function onWindowKeydown(e: KeyboardEvent) {
+			if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.key !== '/') return;
+			const target = e.target;
+			if (
+				target instanceof HTMLElement &&
+				(target.isContentEditable || target.closest('input, textarea, select'))
+			) {
+				return;
+			}
+			if (!inputEl || buses.length === 0) return;
+			e.preventDefault();
+			open = true;
+			highlighted = 0;
+			inputEl.focus();
+			inputEl.select();
+		}
+
+		window.addEventListener('keydown', onWindowKeydown);
+		return () => window.removeEventListener('keydown', onWindowKeydown);
+	});
 </script>
 
 {#if buses.length > 0}
 	<div
-		class="picker"
+		class="bus-lookup"
+		title="Press / to focus bus lookup"
 		onfocusout={(e) => {
 			if (!e.currentTarget.contains(e.relatedTarget as Node | null)) open = false;
 		}}
 	>
-		<label class="mono dim" for="bus-picker-input">jump to bus</label>
+		<label class="mono dim" for="bus-lookup-input">bus lookup</label>
 		<input
-			id="bus-picker-input"
+			id="bus-lookup-input"
 			class="mono"
 			type="text"
 			inputmode="numeric"
 			autocomplete="off"
-			placeholder="bus id&hellip;"
+			placeholder="bus id"
 			role="combobox"
+			aria-keyshortcuts="/"
 			aria-expanded={open}
-			aria-controls="bus-picker-listbox"
+			aria-controls="bus-lookup-listbox"
 			aria-activedescendant={open && results.length > 0
-				? `bus-picker-opt-${results[activeIndex].id}`
+				? `bus-lookup-opt-${results[activeIndex].id}`
 				: undefined}
+			bind:this={inputEl}
 			bind:value={query}
 			onfocus={() => (open = true)}
 			oninput={() => {
@@ -72,10 +99,10 @@
 			onkeydown={onKeydown}
 		/>
 		{#if open && results.length > 0}
-			<ul class="mono" id="bus-picker-listbox" role="listbox" aria-label="matching buses">
+			<ul class="mono" id="bus-lookup-listbox" role="listbox" aria-label="matching buses">
 				{#each results as bus, i (bus.id)}
 					<li
-						id="bus-picker-opt-{bus.id}"
+						id="bus-lookup-opt-{bus.id}"
 						role="option"
 						aria-selected={i === activeIndex}
 						class:active={i === activeIndex}
@@ -95,21 +122,32 @@
 {/if}
 
 <style>
-	.picker {
-		position: relative;
-		margin-bottom: 10px;
+	.bus-lookup {
+		position: absolute;
+		right: 72px;
+		bottom: 18px;
+		z-index: var(--z-chrome);
+		width: 246px;
+		box-sizing: border-box;
+		padding: 7px 10px;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-sm, 3px);
+		backdrop-filter: blur(6px);
+		box-shadow: var(--elev-2);
+		animation: rise var(--dur-med) var(--ease-out) both;
 	}
 
 	label {
 		display: block;
 		font-size: 10px;
 		text-transform: uppercase;
-		margin-bottom: 4px;
+		margin-bottom: 3px;
 	}
 
 	input {
 		width: 100%;
-		padding: 5px 8px;
+		padding: 4px 8px;
 		font-size: 12.5px;
 		background: var(--surface-control);
 		border: 1px solid var(--line);
@@ -154,7 +192,36 @@
 		position: absolute;
 		top: calc(100% + 2px);
 		left: 0;
+		right: 0;
+		padding: 6px 8px;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-xs, 2px);
+		box-shadow: var(--elev-1);
 		font-size: 10.5px;
 		margin: 4px 0 0;
+	}
+
+	@media (max-width: 760px) {
+		.bus-lookup {
+			top: 106px;
+			left: 10px;
+			right: 10px;
+			bottom: auto;
+			width: auto;
+			padding: 8px 10px 10px;
+		}
+	}
+
+	@media (max-width: 420px) {
+		.bus-lookup {
+			top: 106px;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.bus-lookup {
+			animation: none;
+		}
 	}
 </style>

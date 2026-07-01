@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
-	import BusPicker from './BusPicker.svelte';
 	import DemandSlider from './DemandSlider.svelte';
 	import DisplayControls from './DisplayControls.svelte';
 	import FormulationSelector from './FormulationSelector.svelte';
@@ -55,8 +54,6 @@
 			<FormulationSelector />
 		{/if}
 
-		<BusPicker />
-
 		<hr />
 
 		{#if app.selectedBus !== null && (ctrl.selectedSensitivity || app.sensitivityLoading)}
@@ -80,11 +77,11 @@
 <style>
 	.panel {
 		position: absolute;
-		top: 64px;
+		top: 76px;
 		left: 20px;
 		z-index: 10;
 		width: 312px;
-		max-height: calc(100% - 110px);
+		max-height: calc(100% - 122px);
 		overflow-y: auto;
 		padding: 16px 18px;
 		background: var(--panel);
@@ -120,6 +117,7 @@
 			width: auto;
 			max-height: 44dvh;
 			padding: 14px 16px;
+			background: var(--paper);
 		}
 	}
 

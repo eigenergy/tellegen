@@ -3,12 +3,16 @@
 	import { signedExp } from '../format.js';
 
 	const ctrl = getController();
+	const unitTitle =
+		'LMP is measured in $/MWh and demand is perturbed in MW, so dLMP/dd has units ($/MWh)/MW.';
 </script>
 
 <div class="movers-block">
 	{#if !ctrl.previewing && ctrl.topMovers.length > 0}
 		<table class="mono">
-			<caption class="mono dim">largest LMP sensitivity, ($/MWh)/MW</caption>
+			<caption class="mono dim" title={unitTitle}>
+				largest &Delta;LMP per MW demand <span class="unit">($/MWh)/MW</span>
+			</caption>
 			<tbody>
 				{#each ctrl.topMovers as mover (mover.bus)}
 					<tr>
@@ -39,6 +43,10 @@
 		text-align: left;
 		font-size: 10.5px;
 		margin-bottom: 4px;
+	}
+
+	.unit {
+		white-space: nowrap;
 	}
 
 	td {

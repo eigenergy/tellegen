@@ -106,8 +106,9 @@ Use the engine package when you want to build your own UI:
 import { createStudy, formatOf, ingestCase, solveJson } from "@tellegen/engine";
 ```
 
-The engine package imports its wasm files through `?url`, so consuming apps need
-a bundler with wasm asset support. Vite and SvelteKit handle that path.
+The engine package resolves its wasm files relative to the package module. Apps
+must serve package asset files from `node_modules`; Vite and SvelteKit handle
+that path.
 
 ## Examples
 

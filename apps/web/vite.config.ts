@@ -1,5 +1,8 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
+import { defineConfig, searchForWorkspaceRoot } from 'vite';
+
+const configDir = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
 	plugins: [sveltekit()],
@@ -28,6 +31,9 @@ export default defineConfig({
 		}
 	},
 	server: {
+		fs: {
+			allow: [searchForWorkspaceRoot(configDir)]
+		},
 		proxy: {
 			'/api': 'http://localhost:8000'
 		}

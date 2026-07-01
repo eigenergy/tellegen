@@ -34,11 +34,11 @@
 <style>
 	.solvecard {
 		position: absolute;
-		top: 64px;
+		top: 76px;
 		right: 20px;
 		z-index: 10;
-		width: 240px;
-		padding: 12px 14px 10px;
+		width: 300px;
+		padding: 13px 15px 11px;
 		background: var(--panel);
 		border: 1px solid var(--line);
 		border-radius: 3px;
@@ -57,9 +57,9 @@
 		display: flex;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 12px;
+		gap: 10px 14px;
 		font-size: 10px;
-		margin-top: 4px;
+		margin-top: 6px;
 	}
 
 	.solve-formulation {
@@ -75,10 +75,10 @@
 
 	@media (max-width: 760px) {
 		.solvecard {
-			top: 124px;
+			top: 184px;
 			left: auto;
 			right: 10px;
-			width: min(230px, calc(100% - 20px));
+			width: min(300px, calc(100% - 20px));
 		}
 	}
 </style>

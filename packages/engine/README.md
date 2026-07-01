@@ -8,6 +8,9 @@ The package has no SvelteKit dependency. Host apps import the top level package 
 import { browserWasmTransport, createStudy, solveJson } from "@tellegen/engine";
 ```
 
+The wasm files are resolved relative to the package module. Host apps must serve
+package asset files from `node_modules`.
+
 ## Contracts
 
 The public contract version is `CONTRACT_VERSION`, which matches the package version. `CONTRACT_SOURCE_SHA256` records the `crates/tellegen/src/api.rs` content used to generate `src/generated/contracts.ts`.

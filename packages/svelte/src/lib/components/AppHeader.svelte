@@ -58,7 +58,7 @@
 				onclick={() => fileInput?.click()}
 			>
 				<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
-				<span class="cregion mono">case + geographic files, or click</span>
+				<span class="cregion mono">case + geo files</span>
 			</button>
 		{/if}
 	</nav>
@@ -146,6 +146,9 @@
 
 	.case-chip {
 		align-items: stretch;
+		flex: 0 0 auto;
+		width: max-content;
+		max-width: 156px;
 		gap: 0;
 		padding: 0;
 		overflow: visible;
@@ -165,7 +168,7 @@
 		gap: 1px;
 		min-width: 0;
 		width: 100%;
-		padding: 5px 24px 4px 12px;
+		padding: 5px 20px 4px 10px;
 		background: transparent;
 		border: 0;
 	}
@@ -235,6 +238,17 @@
 		text-transform: uppercase;
 	}
 
+	.case-chip .cregion {
+		white-space: nowrap;
+	}
+
+	.case-chip .cname,
+	.case-chip .cregion {
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
 	/* Local case chips: dashed border + graphite text, topology only. */
 	.case-chip.local {
 		border-style: dashed;
@@ -253,6 +267,10 @@
 		border: 1px dashed rgba(178, 94, 0, 0.55);
 		color: var(--text-secondary);
 		box-shadow: inset 0 0 0 1px rgba(212, 116, 34, 0.08);
+	}
+
+	.cases > button.ghost .cregion {
+		white-space: nowrap;
 	}
 
 	.cases > button.ghost:hover {

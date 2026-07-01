@@ -5,14 +5,26 @@
 	const app = getAppState();
 	const ctrl = getController();
 
-	// Fill the track from the Δ=0 baseline to the thumb, so the slider reads as a
-	// signed magnitude. The fill's stationary edge sits at zero and marks the
-	// commit reference; the moving edge tracks the thumb.
+	// Fill from the committed demand to the live thumb. The local number line stays
+	// stable after release; only the committed tick moves.
+	const thumbSizePx = 14;
 	const sliderSpan = $derived(Math.max(ctrl.sliderMax - ctrl.sliderMin, 1e-9));
-	const valPct = $derived(((ctrl.sliderValue - ctrl.sliderMin) / sliderSpan) * 100);
-	const zeroPct = $derived(Math.max(0, Math.min(100, ((0 - ctrl.sliderMin) / sliderSpan) * 100)));
-	const fillLo = $derived(Math.max(0, Math.min(valPct, zeroPct)));
-	const fillHi = $derived(Math.min(100, Math.max(valPct, zeroPct)));
+	const valFrac = $derived(
+		Math.max(0, Math.min(1, (ctrl.sliderValue - ctrl.sliderMin) / sliderSpan))
+	);
+	const neutralFrac = $derived(
+		Math.max(0, Math.min(1, (ctrl.committedDelta - ctrl.sliderMin) / sliderSpan))
+	);
+	const thumbAlignedPos = (frac: number) =>
+		`calc(${frac * 100}% + ${(0.5 - frac) * thumbSizePx}px)`;
+	const valPos = $derived(thumbAlignedPos(valFrac));
+	const neutralPos = $derived(thumbAlignedPos(neutralFrac));
+	const fillLo = $derived(valFrac < neutralFrac ? valPos : neutralPos);
+	const fillHi = $derived(valFrac < neutralFrac ? neutralPos : valPos);
+	const sliderTip =
+		'The black tick marks the last committed demand. Drag the knob to preview a new demand; release to solve and move the tick to that point.';
+	const scoreTip =
+		'Gradient is the estimate of total cost change versus base before the solve finishes. It uses the selected bus LMP times the demand step, plus local curvature when the preview engine is unavailable. Exact is the resolved OPF objective change.';
 </script>
 
 {#if ctrl.activeSolvable}
@@ -43,20 +55,25 @@
 			</div>
 			<span class="mono dim">{fmt.format(ctrl.sliderMin)} to {fmt.format(ctrl.sliderMax)} MW</span>
 		</div>
-		<input
-			type="range"
-			min={ctrl.sliderMin}
-			max={ctrl.sliderMax}
-			step="0.5"
-			style="--fill-lo:{fillLo}%; --fill-hi:{fillHi}%"
-			bind:value={ctrl.sliderCurrent, ctrl.setSliderPreview}
-			aria-label="demand delta at selected bus"
-			onpointerdown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
-			onkeydown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
-			onpointerup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
-			onkeyup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
-			onchange={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
-		/>
+		<div
+			class="slider-track"
+			style="--fill-lo:{fillLo}; --fill-hi:{fillHi}; --neutral-pos:{neutralPos}"
+			title={sliderTip}
+		>
+			<input
+				type="range"
+				min={ctrl.sliderMin}
+				max={ctrl.sliderMax}
+				step="any"
+				bind:value={ctrl.sliderCurrent, ctrl.setSliderPreview}
+				aria-label="demand delta at selected bus"
+				onpointerdown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
+				onkeydown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
+				onpointerup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
+				onkeyup={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
+				onchange={(e) => ctrl.finishDemandInput(Number(e.currentTarget.value))}
+			/>
+		</div>
 		<div class="demand-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
 			<p class="pred mono dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
 				{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
@@ -67,10 +84,12 @@
 			</p>
 			<p class="score mono" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
 				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
-					gradient {signed(ctrl.gradientScore.pred)} &middot; exact {signed(
-						ctrl.gradientScore.exact
-					)}
-					$/h
+					<span title={scoreTip}>
+						gradient {signed(ctrl.gradientScore.pred)} &middot; exact {signed(
+							ctrl.gradientScore.exact
+						)}
+						$/h
+					</span>
 				{:else}
 					&nbsp;
 				{/if}
@@ -110,11 +129,36 @@
 		font-size: 10.5px;
 	}
 
+	.slider-track {
+		position: relative;
+		margin: 6px 0;
+		isolation: isolate;
+	}
+
+	.slider-track::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: var(--neutral-pos, 50%);
+		z-index: 0;
+		width: 2px;
+		height: 16px;
+		background: var(--ink);
+		border-radius: 1px;
+		box-shadow: 0 0 0 1px rgb(var(--paper-rgb) / 0.72);
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+	}
+
 	input[type='range'] {
 		-webkit-appearance: none;
 		appearance: none;
+		position: relative;
+		z-index: 1;
 		width: 100%;
 		height: 4px;
+		padding: 7px 0;
+		box-sizing: content-box;
 		background:
 			linear-gradient(
 				90deg,
@@ -123,9 +167,10 @@
 				transparent var(--fill-hi, 0%) 100%
 			),
 			var(--line);
+		background-clip: content-box;
 		border-radius: var(--radius-xs);
 		outline-offset: 4px;
-		margin: 6px 0;
+		margin: 0;
 	}
 
 	input[type='range']::-webkit-slider-thumb {

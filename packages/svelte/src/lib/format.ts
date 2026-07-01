@@ -18,8 +18,8 @@ export function formulationHint(id: Formulation): string {
 
 export function priceCopy(id: Formulation): string {
 	return id === 'socwr'
-		? 'SOCWR active power balance prices. Select a bus for ∂LMP/∂d and demand perturbation.'
-		: 'DC OPF prices. Select a bus for ∂LMP/∂d and demand perturbation.';
+		? 'Select a bus to see how relaxed prices change.'
+		: 'Select a bus to see how prices change.';
 }
 
 export function splitName(name: string): [string, string] {
