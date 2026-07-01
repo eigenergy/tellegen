@@ -67,13 +67,62 @@ function defaultEventSource(): typeof EventSource {
 	return EventSource;
 }
 
+/** A failed API request. `status` is the HTTP status, or 0 for a network
+ * failure (the request never completed). `serverMessage` is the backend's
+ * own `{"error": ...}` copy when the response carried one; edge-proxy
+ * rejections (e.g. Caddy 429s) have none. */
+export class ApiError extends Error {
+	status: number;
+	serverMessage: string | null;
+
+	constructor(message: string, status: number, serverMessage: string | null) {
+		super(message);
+		this.name = 'ApiError';
+		this.status = status;
+		this.serverMessage = serverMessage;
+	}
+}
+
+function userMessage(status: number, serverMessage: string | null): string {
+	if (status === 0) return 'server unreachable, check your connection';
+	if (status === 429) return 'rate limited; wait a few seconds and try again';
+	if (status >= 500) return 'server error, try again';
+	return serverMessage ?? `request failed (HTTP ${status})`;
+}
+
+async function checkedFetch(
+	fetchImpl: FetchLike,
+	url: string,
+	signal?: AbortSignal
+): Promise<Response> {
+	let res: Response;
+	try {
+		res = await fetchImpl(url, { signal });
+	} catch (e) {
+		// Aborts must pass through unchanged: the controller filters them by
+		// DOMException to distinguish cancellation from failure.
+		if (e instanceof DOMException) throw e;
+		throw new ApiError(userMessage(0, null), 0, null);
+	}
+	if (!res.ok) {
+		let serverMessage: string | null = null;
+		try {
+			const body = (await res.json()) as { error?: unknown };
+			if (typeof body.error === 'string') serverMessage = body.error;
+		} catch {
+			// non-JSON body (edge-proxy rejections); keep serverMessage null
+		}
+		throw new ApiError(userMessage(res.status, serverMessage), res.status, serverMessage);
+	}
+	return res;
+}
+
 async function getJson<T>(
 	fetchImpl: FetchLike,
 	url: string,
 	signal?: AbortSignal
 ): Promise<T> {
-	const res = await fetchImpl(url, { signal });
-	if (!res.ok) throw new Error('server unreachable, try again');
+	const res = await checkedFetch(fetchImpl, url, signal);
 	return res.json() as Promise<T>;
 }
 
@@ -95,8 +144,7 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 		getNetwork: (caseId) => getJson<Network>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/network`)),
 		async getCaseNetworkJson(caseId, signal) {
 			const url = apiPath(apiBase, `/cases/${caseId}/case`);
-			const res = await fetchImpl(url, { signal });
-			if (!res.ok) throw new Error('server unreachable, try again');
+			const res = await checkedFetch(fetchImpl, url, signal);
 			return res.text();
 		},
 		getSolution: (caseId) =>
@@ -138,7 +186,11 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 				// never reaches here because finish() already ran.
 				if (!finished) {
 					finish();
-					handlers.onfail?.('solve stream interrupted');
+					// EventSource exposes no status code, so this covers both a lost
+					// connection and a rate-limited stream open.
+					handlers.onfail?.(
+						'solve stream interrupted; server busy or rate limited, try again in a few seconds'
+					);
 				}
 			};
 			return finish;

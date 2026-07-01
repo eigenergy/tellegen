@@ -18,7 +18,7 @@
 	{#if app.error}
 		<p class="error mono">{app.error}</p>
 		<div class="error-actions">
-			<button class="reset mono" onclick={ctrl.load}>retry</button>
+			<button class="reset mono" onclick={ctrl.retryError}>retry</button>
 			<button class="reset mono" onclick={() => (app.error = null)}>dismiss</button>
 		</div>
 	{/if}

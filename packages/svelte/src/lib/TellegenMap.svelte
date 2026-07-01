@@ -20,7 +20,7 @@
 	} from './colors.js';
 	import { caseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
 	import { CaseState, type DisplayMode, type LocalCase } from './state.svelte.js';
-	import { getAppState } from './context.svelte.js';
+	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt } from './format.js';
 
 	let {
@@ -36,6 +36,7 @@
 	} = $props();
 
 	const app = getAppState();
+	const ctrl = getController();
 
 	const STYLE = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json';
 
@@ -71,6 +72,10 @@
 		sensDomain: SensitivityDomain | null;
 		preview: Map<number, number>;
 		previewDomain: SensitivityDomain | null;
+		/** Fixed drag normalization (column scale × full slider deflection); the
+		 * per-frame previewDomain is degree-1 homogeneous in the step, which would
+		 * cancel the step out of the color and freeze the intensity. */
+		previewScale: number | null;
 	}
 	type SolvableCase = CaseState | LocalCase;
 
@@ -191,7 +196,8 @@
 				sens,
 				sensDomain: domain,
 				preview,
-				previewDomain
+				previewDomain,
+				previewScale: isActive ? ctrl.previewScale : null
 			});
 		};
 		for (const c of app.cases) addCase(c);
@@ -209,6 +215,13 @@
 				return sensColor((d.sens.get(bus.id) ?? 0) / d.sensDomain.scale);
 			}
 			if (d.mode === 'preview') {
+				// Fixed drag scale first, so intensity tracks the step. It also bypasses
+				// the per-frame domain's flat guard, whose absolute epsilon misreads a
+				// structured column at a tiny step as flat. previewScale is null when the
+				// committed column itself is flat, which falls through to the flat tint.
+				if (d.previewScale) {
+					return sensColor((d.preview.get(bus.id) ?? 0) / d.previewScale);
+				}
 				if (!d.previewDomain) return busNeutral;
 				if (d.previewDomain.flat) return sensFlatColor(d.previewDomain);
 				return sensColor((d.preview.get(bus.id) ?? 0) / d.previewDomain.scale);

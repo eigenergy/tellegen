@@ -77,17 +77,5 @@
 		color: var(--ink);
 	}
 
-	.hint-dot {
-		display: inline-grid;
-		place-items: center;
-		width: 15px;
-		height: 15px;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		color: var(--text-secondary);
-		background: var(--surface-control);
-		font-size: 10px;
-		line-height: 1;
-		cursor: help;
-	}
+	/* .hint-dot lives in the shared stylesheet; SensitivityReadout uses it too. */
 </style>
