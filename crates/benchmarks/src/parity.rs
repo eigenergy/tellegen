@@ -486,12 +486,14 @@ pub fn dc_parity(net: &Network) -> ParitySummary {
         let plus = SolveRequest {
             edits: Edits {
                 deltas: [(bus, STEP_MW)].into_iter().collect(),
+                ..Default::default()
             },
             ..Default::default()
         };
         let minus = SolveRequest {
             edits: Edits {
                 deltas: [(bus, -STEP_MW)].into_iter().collect(),
+                ..Default::default()
             },
             ..Default::default()
         };
