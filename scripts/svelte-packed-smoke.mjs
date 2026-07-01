@@ -6,18 +6,11 @@ import {
   readFile,
   readdir,
   rm,
-  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  sep,
-} from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const tmpRoot = await mkdtemp(join(tmpdir(), "tellegen-svelte-packed-"));
@@ -25,7 +18,6 @@ const packDir = join(tmpRoot, "packages");
 const consumerDir = join(tmpRoot, "consumer");
 const npmCacheDir = join(tmpRoot, "npm-cache");
 const keepTmp = process.env.TELLEGEN_KEEP_SMOKE_TMP === "1";
-const rootNodeModules = join(repoRoot, "node_modules");
 
 function run(command, args, options = {}) {
   const cwd = options.cwd ?? repoRoot;
@@ -44,7 +36,9 @@ function run(command, args, options = {}) {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(" ")} failed with ${result.status}`);
+    throw new Error(
+      `${command} ${args.join(" ")} failed with ${result.status}`,
+    );
   }
   return result.stdout ?? "";
 }
@@ -52,20 +46,19 @@ function run(command, args, options = {}) {
 function parsePackedPath(stdout) {
   const [entry] = JSON.parse(stdout);
   if (!entry?.filename) throw new Error("npm pack did not report a tarball");
-  return isAbsolute(entry.filename) ? entry.filename : join(packDir, entry.filename);
+  return isAbsolute(entry.filename)
+    ? entry.filename
+    : join(packDir, entry.filename);
+}
+
+function packageFileSpec(path) {
+  return `file:${relative(consumerDir, path).split(sep).join("/")}`;
 }
 
 async function packWorkspace(workspace) {
   const stdout = run(
     "npm",
-    [
-      "--workspace",
-      workspace,
-      "pack",
-      "--pack-destination",
-      packDir,
-      "--json",
-    ],
+    ["--workspace", workspace, "pack", "--pack-destination", packDir, "--json"],
     { capture: true },
   );
   return parsePackedPath(stdout);
@@ -85,42 +78,6 @@ async function listFiles(root) {
   return files;
 }
 
-async function exists(path) {
-  try {
-    await lstat(path);
-    return true;
-  } catch (e) {
-    if (e?.code === "ENOENT") return false;
-    throw e;
-  }
-}
-
-async function linkInstalledDependencies() {
-  if (!(await exists(rootNodeModules))) {
-    throw new Error("missing node_modules; run npm ci before the packed smoke");
-  }
-  const consumerNodeModules = join(consumerDir, "node_modules");
-  await mkdir(consumerNodeModules, { recursive: true });
-
-  for (const entry of await readdir(rootNodeModules, { withFileTypes: true })) {
-    if (entry.name === "@tellegen" || entry.name.startsWith(".")) continue;
-    const source = join(rootNodeModules, entry.name);
-    const target = join(consumerNodeModules, entry.name);
-    if (entry.name.startsWith("@") && entry.isDirectory()) {
-      await mkdir(target, { recursive: true });
-      for (const scoped of await readdir(source, { withFileTypes: true })) {
-        await symlink(
-          join(source, scoped.name),
-          join(target, scoped.name),
-          scoped.isDirectory() ? "dir" : "file",
-        );
-      }
-    } else {
-      await symlink(source, target, entry.isDirectory() ? "dir" : "file");
-    }
-  }
-}
-
 async function assertSveltePeer() {
   const sveltePackage = JSON.parse(
     await readFile(
@@ -138,7 +95,7 @@ async function assertSveltePeer() {
   }
 }
 
-async function writeConsumer() {
+async function writeConsumer(engineTarball, svelteTarball) {
   const sveltePackage = JSON.parse(
     await readFile(join(repoRoot, "packages/svelte/package.json"), "utf8"),
   );
@@ -162,6 +119,10 @@ async function writeConsumer() {
         type: "module",
         scripts: {
           build: "svelte-check --tsconfig ./tsconfig.json && vite build",
+        },
+        dependencies: {
+          "@tellegen/engine": packageFileSpec(engineTarball),
+          "@tellegen/svelte": packageFileSpec(svelteTarball),
         },
         devDependencies,
       },
@@ -303,9 +264,7 @@ try {
   await mkdir(packDir, { recursive: true });
   const engineTarball = await packWorkspace("@tellegen/engine");
   const svelteTarball = await packWorkspace("@tellegen/svelte");
-  await writeConsumer();
-  await linkInstalledDependencies();
-  await assertSveltePeer();
+  await writeConsumer(engineTarball, svelteTarball);
   run(
     "npm",
     [
@@ -315,12 +274,10 @@ try {
       "--ignore-scripts",
       "--legacy-peer-deps",
       "--package-lock=false",
-      "--no-save",
-      pathToFileURL(engineTarball).href,
-      pathToFileURL(svelteTarball).href,
     ],
     { cwd: consumerDir },
   );
+  await assertSveltePeer();
   await assertTarballInstall();
   run("npm", ["run", "build"], { cwd: consumerDir });
   await assertBuildOutput();
