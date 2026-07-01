@@ -112,14 +112,14 @@ Sources: [deck.gl performance](https://deck.gl/docs/developer-guide/performance)
 
 ### Packaging
 
-The first reusable surface is `@tellegen/engine`, not a Svelte component
-package. It exports case parsing, browser wasm solving, `Study` calls, and
-generated contracts. A Svelte package can come later if map and panel components
-become reusable outside the hosted demo layout. Do not import `$app/*` from
-library code.
+The first reusable surfaces are `@tellegen/engine` and `@tellegen/svelte`.
+`@tellegen/engine` exports case parsing, browser wasm solving, `Study` calls,
+and generated contracts. `@tellegen/svelte` exports the map, panels, local file
+flow, solve card, state provider, and full viewer as Svelte components. Library
+code must not import `$app/*`.
 
-Ship the wasm asset with `new URL(..., import.meta.url)` or Vite `?url` so the
-consumer fetches a file rather than inlining the module.
+Ship wasm assets with `new URL(..., import.meta.url)` so the consumer fetches
+files from the installed package rather than from a workspace path.
 
 Sources: [Svelte packaging](https://svelte.dev/docs/kit/packaging),
 [Vite assets](https://vite.dev/guide/features).

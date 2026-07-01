@@ -315,7 +315,7 @@ impl AcPfSolution {
 
 /// A formulation that can drive a Newton AC power flow — the dispatch point the
 /// generic [`ac_pf`] calls, the AC analogue of
-/// [`PfFormulation`](super::PfFormulation). The two methods are the polar physics:
+/// [`DcPfFormulation`](super::DcPfFormulation). The two methods are the polar physics:
 /// the bus injections and the Newton Jacobian. Not sealed.
 pub trait AcPfFormulation: Formulation {
     /// Bus power injections and the bus current `Y V` at state `(vm, va)`.

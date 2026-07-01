@@ -539,7 +539,7 @@ impl Differentiable for DcKkt<'_> {
 mod tests {
     use super::*;
     use crate::model::{parse_case3, DcNetwork};
-    use crate::problem::dcopf;
+    use crate::problem::dc_opf;
     use crate::sens::{sensitivity, Mode};
     use faer::linalg::solvers::Solve;
     use faer::sparse::{SparseColMat, Triplet};
@@ -554,8 +554,8 @@ mod tests {
         dp.demand[j] += eps;
         let mut dm = dc.clone();
         dm.demand[j] -= eps;
-        let sp = dcopf(&dp).expect("solve +eps");
-        let sm = dcopf(&dm).expect("solve -eps");
+        let sp = dc_opf(&dp).expect("solve +eps");
+        let sm = dc_opf(&dm).expect("solve -eps");
         (0..dc.n)
             .map(|i| (sp.nu_bal[i] - sm.nu_bal[i]) / (2.0 * eps))
             .collect()
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn dlmp_dd_matches_central_differences_three_bus() {
         let dc = parse_case3();
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
         let buses: Vec<usize> = (0..dc.n).collect();
         let sys = DcKkt::new(&dc, &sol);
         // m.values[i][j] = d(price_i)/d(demand_j).
@@ -635,7 +635,7 @@ mod tests {
             .expect("parse")
             .network;
         let dc = DcNetwork::from_network(&net).expect("model");
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
 
         let all: Vec<usize> = (0..dc.n).collect();
         let sys = DcKkt::new(&dc, &sol);
@@ -761,8 +761,8 @@ mod tests {
         p: usize,
         eps: f64,
     ) -> Vec<f64> {
-        let sp = dcopf(&perturbed(dc, parameter, p, eps)).expect("solve +eps");
-        let sm = dcopf(&perturbed(dc, parameter, p, -eps)).expect("solve -eps");
+        let sp = dc_opf(&perturbed(dc, parameter, p, eps)).expect("solve +eps");
+        let sm = dc_opf(&perturbed(dc, parameter, p, -eps)).expect("solve -eps");
         let op = operand_vec(&sp, operand);
         let om = operand_vec(&sm, operand);
         (0..op.len())
@@ -799,7 +799,7 @@ mod tests {
     /// relative comparison — so for those we only confirm the FD likewise finds
     /// nothing large, guarding against a missed term.
     fn check_parity(dc: &DcNetwork, label: &str) {
-        let sol = dcopf(dc).expect("solve");
+        let sol = dc_opf(dc).expect("solve");
         let sys = DcKkt::new(dc, &sol);
         for &op in &OPERANDS {
             let floor = 1e-4 * l2(&operand_vec(&sol, op)).max(1.0);
@@ -854,7 +854,7 @@ mod tests {
     #[test]
     fn shedding_regime_kkt_is_consistent() {
         let dc = shedding_case3();
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
         // The case must actually shed for this to test the shedding regime.
         let total_shed: f64 = sol.psh.iter().sum();
         assert!(
@@ -892,7 +892,7 @@ mod tests {
     #[test]
     fn sensitivity_parity_congested() {
         let dc = congested_case3();
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
         // The case must actually congest (a line dual is nonzero) and not shed, so
         // the line-limit parity is a real test rather than a trivial 0 == 0.
         let binding_line = (0..dc.m)
@@ -925,7 +925,7 @@ mod tests {
     #[test]
     fn adjoint_equals_forward() {
         for dc in [parse_case3(), congested_case3(), shedding_case3()] {
-            let sol = dcopf(&dc).expect("solve");
+            let sol = dc_opf(&dc).expect("solve");
             let sys = DcKkt::new(&dc, &sol);
             for &op in &OPERANDS {
                 for &par in &PARAMETERS {
@@ -951,7 +951,7 @@ mod tests {
         // Auto resolves to forward when params <= operands, adjoint otherwise; both
         // give the same matrix, so Auto must equal an explicit direction everywhere.
         let dc = congested_case3();
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
         let sys = DcKkt::new(&dc, &sol);
         for &op in &OPERANDS {
             for &par in &PARAMETERS {
@@ -969,7 +969,7 @@ mod tests {
     #[test]
     fn unsupported_requests_surface_errors() {
         let dc = parse_case3();
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
         let sys = DcKkt::new(&dc, &sol);
         // Reactive price has no DC analogue.
         assert!(matches!(
@@ -998,7 +998,7 @@ mod tests {
     #[test]
     fn matrix_metadata_names_source_elements() {
         let dc = parse_case3();
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
         let sys = DcKkt::new(&dc, &sol);
         // Dispatch (per generator) against demand (per bus): a non-square matrix.
         let m = sensitivity(

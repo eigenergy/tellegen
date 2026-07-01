@@ -49,3 +49,22 @@ Use `TellegenProvider` and `TellegenShell` when state should survive route chang
   <TellegenShell />
 </TellegenProvider>
 ```
+
+## Release
+
+Build and inspect the package from the repository root:
+
+```sh
+npm ci
+npm run wasm
+npm run build:engine
+npm run build:svelte
+npm run pack:svelte
+npm run test:svelte-packed
+```
+
+`@tellegen/svelte` is published with `@tellegen/engine` in the first framework
+release. The package ships only `dist`, the README, license metadata, and
+package metadata. The packed smoke test installs the generated tarballs into a
+temporary Svelte consumer and builds it so missing exports, styles, or wasm
+assets fail before publish.

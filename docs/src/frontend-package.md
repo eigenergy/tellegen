@@ -2,6 +2,9 @@
 
 The reusable browser packages live under `packages/`.
 
+The first framework release publishes both `@tellegen/engine` and
+`@tellegen/svelte`.
+
 Use `@tellegen/svelte` when a Svelte app wants the map, panels, local file flow,
 and solve card as components.
 

@@ -10,4 +10,12 @@ services:
       # three cases, the server exits unless TELLEGEN_ALLOW_FALLBACK=1 is set.
       - ./data:/app/data:ro
     mem_limit: 6g
+    pids_limit: 512
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped

@@ -52,7 +52,7 @@ npm --workspace tellegen-frontend run dev
 
 The Vite dev server proxies `/api` to `http://localhost:8000`.
 
-## Framework Package
+## Framework Packages
 
 Preview the package contents before publishing:
 

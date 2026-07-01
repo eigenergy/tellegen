@@ -29,8 +29,9 @@ npm run build:svelte
 npm --workspace @tellegen/example-svelte-minimal run dev
 ```
 
-The package expects a bundler that understands wasm assets imported with `?url`.
-Vite and SvelteKit handle that path.
+The engine package resolves wasm assets relative to its packaged modules with
+`new URL(..., import.meta.url)`. Vite and SvelteKit handle that path for the
+Svelte package and for custom engine consumers.
 
 ## Svelte Viewer
 

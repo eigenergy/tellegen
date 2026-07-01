@@ -45,6 +45,7 @@ jobs:
       - run: npm run lint:web
       - run: npm run check:svelte
       - run: npm run check:web
+      - run: npm run test:svelte-packed
       # build:web rebuilds @tellegen/svelte, which check:web (just above) already
       # built; call the frontend build directly to skip that redundant rebuild.
       - run: npm --workspace tellegen-frontend run build
@@ -93,6 +94,11 @@ jobs:
             --name tellegen-smoke \
             --publish 127.0.0.1:8000:8000 \
             --env TELLEGEN_ALLOW_FALLBACK=1 \
+            --read-only \
+            --tmpfs /tmp:size=64m,noexec,nosuid,nodev \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 512 \
             tellegen:ci
           for attempt in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8000/api/health && curl -fsS http://127.0.0.1:8000/ | grep -q 'tellegen'; then

@@ -72,8 +72,9 @@ Patch versions are for bug fixes and docs that do not change public APIs.
 ## Package Release
 
 The package publish workflow is `.github/workflows/npm-publish.yml`. Manual runs
-build wasm, build packages, run downstream import checks, run `npm pack
---dry-run`, and upload packed `.tgz` artifacts for inspection.
+build wasm, build packages, run downstream import checks, run packed Svelte
+consumer smoke tests, run `npm pack --dry-run`, and upload packed `.tgz`
+artifacts for inspection.
 
 Publishing is gated by tags named `engine-vX.Y.Z` for `@tellegen/engine` and
 `svelte-vX.Y.Z` for `@tellegen/svelte`. The workflow checks that each tag
@@ -86,5 +87,7 @@ Publishing requires either npm trusted publishing for this repository or an
 
 CI installs JavaScript dependencies once from the root lockfile, builds
 `packages/engine` before `packages/svelte`, builds the hosted demo, builds both
-examples, runs package dry runs, and runs a browser test against the hosted demo
-shell.
+examples, installs the packed Svelte tarball into a temporary downstream
+consumer, and runs a browser test against the hosted demo shell. The root
+`ci:js` script covers JS checks, builds, the Svelte package dry run, hosted demo
+smoke, and downstream smoke tests.

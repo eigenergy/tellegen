@@ -101,6 +101,8 @@ jobs:
           fi
       - name: Pack dry run
         run: npm run pack:svelte
+      - name: Downstream packed package smoke
+        run: npm run test:svelte-packed
       - name: Create package artifact directory
         run: mkdir -p "$RUNNER_TEMP/tellegen-package"
       - name: Pack artifact

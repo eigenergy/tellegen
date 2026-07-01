@@ -23,7 +23,7 @@ use powerio::network::Network;
 use serde::{Deserialize, Serialize};
 
 use crate::api::{
-    acpf_assemble, acpf_solved, dcopf_assemble, dcopf_solved, run_cells, Edits, Problem,
+    ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells, Edits, Problem,
     SensRequest, SolveOptions, SolveRequest, SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
@@ -142,7 +142,7 @@ struct DcState {
 
 impl SolvedState for DcState {
     fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
-        dcopf_assemble(&self.net, &self.sol, req)
+        dc_opf_assemble(&self.net, &self.sol, req)
     }
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
         f(&DcKkt::new(&self.net, &self.sol))
@@ -160,7 +160,7 @@ struct AcPfState {
 
 impl SolvedState for AcPfState {
     fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
-        acpf_assemble(&self.net, &self.sol, req)
+        ac_pf_assemble(&self.net, &self.sol, req)
     }
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
         f(&AcNewton::new(&self.net, &self.sol))
@@ -201,11 +201,11 @@ impl SolvedState for ConicState {
 fn solve_state(net: &Network, req: &SolveRequest) -> Result<Box<dyn SolvedState>, String> {
     match req.formulation {
         Problem::DcOpf => {
-            let (net, sol) = dcopf_solved(DcNetwork::from_network(net)?, req, None)?;
+            let (net, sol) = dc_opf_solved(DcNetwork::from_network(net)?, req, None)?;
             Ok(Box::new(DcState { net, sol }))
         }
         Problem::AcPf => {
-            let (net, sol) = acpf_solved(AcNetwork::from_network(net)?, req)?;
+            let (net, sol) = ac_pf_solved(AcNetwork::from_network(net)?, req)?;
             Ok(Box::new(AcPfState { net, sol }))
         }
         #[cfg(feature = "conic")]

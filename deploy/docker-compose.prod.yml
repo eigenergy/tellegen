@@ -11,4 +11,12 @@ services:
     volumes:
       - ${TELLEGEN_DATA_DIR:?set TELLEGEN_DATA_DIR}:/app/data:ro
     mem_limit: 6g
+    pids_limit: 512
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped

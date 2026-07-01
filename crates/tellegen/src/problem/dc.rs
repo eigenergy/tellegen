@@ -207,15 +207,15 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcSolution {
 /// price `nu_bal`). The uncancellable convenience entry point the tests and the
 /// sensitivity finite-difference checks use. The public solve entry is `api`.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn dcopf(model: &DcNetwork) -> Result<DcSolution, String> {
-    dcopf_cancellable(model, None)
+pub(crate) fn dc_opf(model: &DcNetwork) -> Result<DcSolution, String> {
+    dc_opf_cancellable(model, None)
 }
 
-/// As [`dcopf`], but `cancel` (when present) is polled once per interior-point
+/// As [`dc_opf`], but `cancel` (when present) is polled once per interior-point
 /// iteration; flipping it true halts the solve at the next iteration and returns
 /// `Err`. The server uses this to drop a solve that has timed out or whose client
 /// disconnected, releasing the solver permit instead of running to convergence.
-pub(crate) fn dcopf_cancellable(
+pub(crate) fn dc_opf_cancellable(
     model: &DcNetwork,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<DcSolution, String> {
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn uncongested_three_bus_economic_dispatch() {
         let dc = parse_case3();
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
 
         // DC power balance is lossless: sum(pg) + sum(psh) == sum(demand).
         let total_pg: f64 = sol.pg.iter().sum();
@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn marginal_cost_equals_nodal_price() {
         let dc = parse_case3();
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
         // Both generators are interior (between gmin and gmax), so generator
         // stationarity reduces to 2 cq g + cl == nu_bal at the gen bus. This is
         // the LMP sign and scale, independent of the analytic dispatch.
@@ -306,7 +306,7 @@ mod tests {
         // load bus, the regime the served cases never reach.
         let mut dc = parse_case3();
         dc.gmax = vec![0.4, 0.4];
-        let sol = dcopf(&dc).expect("solve");
+        let sol = dc_opf(&dc).expect("solve");
 
         let total_pg: f64 = sol.pg.iter().sum();
         let total_psh: f64 = sol.psh.iter().sum();
@@ -343,7 +343,7 @@ mod tests {
             .expect("parse ACTIVSg200")
             .network;
         let dc = DcNetwork::from_network(&net).expect("build DcNetwork");
-        let sol = dcopf(&dc).expect("solve ACTIVSg200");
+        let sol = dc_opf(&dc).expect("solve ACTIVSg200");
 
         // Power balance identity: sum(pg) + sum(psh) == sum(demand).
         let total_pg: f64 = sol.pg.iter().sum();

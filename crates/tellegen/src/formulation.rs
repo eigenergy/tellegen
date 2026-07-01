@@ -1,8 +1,8 @@
 //! Formulations: the physics / variable-space axis of a power flow problem.
 //!
 //! A [`Formulation`] is a zero-sized type. The problem builders in [`crate::problem`]
-//! (`build_opf`, later `build_pf`) are generic over it, so each formulation gets its
-//! own monomorphized assembly loop. Runtime selection is a single `match` from a
+//! (`build_opf`, `build_dc_pf`, and `ac_pf`) are generic over it, so each formulation
+//! gets its own monomorphized assembly loop. Runtime selection is a single `match` from a
 //! string to a concrete type at the `api` boundary; everything downstream is static.
 //!
 //! [`Dc`] is the linearized B-theta model; [`AcPolar`] is the full nonlinear AC
@@ -11,8 +11,8 @@
 //! third-party formulations are a goal.
 
 /// The formulation axis. Carries the runtime tag; the assembly dispatch points
-/// live on the problem-specific sub-traits ([`crate::problem::OpfFormulation`], and
-/// later a power flow analogue).
+/// live on the problem-specific sub-traits, such as
+/// [`crate::problem::OpfFormulation`].
 ///
 /// Not sealed. Where a sub-trait method carries an invariant outside impls must not
 /// break, seal that one method rather than the whole trait. Kept dyn compatible so a

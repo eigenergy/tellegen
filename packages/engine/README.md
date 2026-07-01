@@ -46,6 +46,8 @@ npm run build:engine
 npm run pack:engine
 ```
 
-Only this package is published in the first framework release. The hosted demo
-under `apps/web` is private and consumes `@tellegen/engine` through the same
-workspace dependency used by downstream examples.
+The first framework release publishes this package and `@tellegen/svelte`.
+`@tellegen/engine` is the lower level browser package for custom UIs and for the
+Svelte package. The hosted demo under `apps/web` is private and consumes
+`@tellegen/svelte` through the same workspace file dependency used by the local
+examples.

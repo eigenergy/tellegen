@@ -76,7 +76,7 @@ npm --workspace tellegen-frontend run dev
 
 The Vite dev server proxies `/api` to `http://localhost:8000`.
 
-Framework package:
+Framework packages:
 
 ```sh
 npm run pack:engine
@@ -119,7 +119,7 @@ tellegen frontend checks:
 npm run check
 npm run build
 npm run smoke:web
-npm run test:import
+npm run test:downstream
 ```
 
 ## Repository layout
@@ -157,7 +157,11 @@ where each value is a MW delta from the base case. The solve stream emits
 `status`, `solution`, optional `sensitivity`, and `done` events.
 
 The tellegen backend solve work is bounded by `TELLEGEN_SOLVER_CONCURRENCY`
-(default `2`) and `TELLEGEN_SOLVER_TIMEOUT_SECS` (default `30`).
+(default `2`) and `TELLEGEN_SOLVER_TIMEOUT_SECS` (default `30`). Public solve
+routes are also rate limited per client: 5 solve requests and 25 sensitivity
+requests per 10 seconds by default. Tune with
+`TELLEGEN_RATE_LIMIT_WINDOW_SECS`, `TELLEGEN_SOLVE_RATE_LIMIT_EVENTS`, and
+`TELLEGEN_SENSITIVITY_RATE_LIMIT_EVENTS`.
 
 ## Deployment
 

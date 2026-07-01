@@ -76,14 +76,17 @@ RUN cargo build --release --locked -p tellegen-server --bin tellegen-server
 # ---- runtime ----
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 tellegen \
+    && useradd --system --uid 10001 --gid tellegen --home-dir /app --shell /usr/sbin/nologin tellegen
 WORKDIR /app
 COPY --from=server /build/target/release/tellegen-server /usr/local/bin/tellegen-server
-COPY --from=frontend /app/apps/web/build /app/frontend/build
+COPY --chown=10001:10001 --from=frontend /app/apps/web/build /app/frontend/build
 
 ENV TELLEGEN_FRONTEND_BUILD=/app/frontend/build
 ENV TELLEGEN_DATA=/app/data
 EXPOSE 8000
+USER 10001:10001
 # The tellegen backend parses the staged cases and solves the base DC OPF at boot.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \
     CMD curl -fsS http://localhost:8000/api/health | grep -q '"ok"' || exit 1

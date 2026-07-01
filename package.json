@@ -23,6 +23,7 @@
     "build:svelte": "npm --workspace @tellegen/svelte run build",
     "pack:svelte": "npm --workspace @tellegen/svelte run pack:dry-run",
     "test:import": "npm --workspace @tellegen/engine run test:import",
+    "test:svelte-packed": "node scripts/svelte-packed-smoke.mjs",
     "build:example:browser": "npm --workspace @tellegen/example-browser-minimal run build",
     "build:example:svelte": "npm --workspace @tellegen/example-svelte-minimal run build",
     "build:example": "npm run build:example:browser && npm run build:example:svelte",
@@ -34,7 +35,7 @@
     "lint": "npm run lint:web",
     "check": "npm run check:engine && npm run check:svelte && npm run check:web",
     "build": "npm run build:engine && npm run build:svelte && npm run build:example && npm --workspace tellegen-frontend run build",
-    "test:downstream": "npm run test:import",
+    "test:downstream": "npm run test:import && npm run test:svelte-packed",
     "ci:js": "npm run check && npm run build && npm run pack:svelte && npm run smoke:web && npm run test:downstream"
   }
 }
