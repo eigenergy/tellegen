@@ -59,17 +59,21 @@ pub enum Problem {
     Acopf,
 }
 
-/// Operating-point edits applied before the model is built. Today: demand deltas
-/// in MW keyed by original bus id (the operating point is `base demand + delta`),
-/// the same `deltas` map the DC path has always taken. A struct (not a bare map)
-/// so the structural-edit vocabulary (add line, add generator, retune a parameter)
-/// can grow without breaking the wire format: a client that knows only `deltas`
-/// keeps working.
+/// Operating-point edits applied before the model is built: demand deltas in MW
+/// keyed by original bus id (the operating point is `base demand + delta`) and
+/// branch rating deltas in MW keyed by original branch id (the thermal limit is
+/// `base rating + delta`). A struct (not a bare map) so the structural-edit
+/// vocabulary (add line, add generator, retune a parameter) can grow without
+/// breaking the wire format: a client that knows only `deltas` keeps working.
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct Edits {
     /// Active-power demand delta in MW per original bus id.
     #[serde(default)]
     pub deltas: HashMap<i64, f64>,
+    /// Thermal rating delta in MW per original branch id. Supported by the DC OPF
+    /// and SOCWR paths; the AC power flow has no flow limits and rejects them.
+    #[serde(default)]
+    pub rates: HashMap<i64, f64>,
 }
 
 /// Solve options orthogonal to the formulation choice.
@@ -127,7 +131,7 @@ fn default_mode() -> Mode {
 /// ```json
 /// {
 ///   "formulation": "dcopf",
-///   "edits": { "deltas": { "2": 50.0 } },
+///   "edits": { "deltas": { "2": 50.0 }, "rates": { "3": -25.0 } },
 ///   "sensitivities": [
 ///     { "operand": {"Price":"Active"}, "parameter": {"Demand":"Active"}, "indices": [1] }
 ///   ],
@@ -321,8 +325,10 @@ pub(crate) fn dc_opf_solved(
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<(DcNetwork, super::solve::DcSolution), String> {
     dc.allow_shed = req.options.shed;
-    let bus_idx = bus_index_map(&dc.bus_ids);
+    let bus_idx = id_index_map(&dc.bus_ids);
     apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas)?;
+    let branch_idx = id_index_map(&dc.branch_ids);
+    apply_rating_deltas(&mut dc, &branch_idx, &req.edits.rates)?;
     let sol = dc_opf_cancellable(&dc, cancel)?;
     Ok((dc, sol))
 }
@@ -372,9 +378,12 @@ fn dc_opf_response(
 
 #[cfg(feature = "sensitivity")]
 fn solve_dc_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+    // Flow limits do not constrain a power flow, so a rating edit cannot enter
+    // the model.
+    reject_rating_deltas(&req.edits.rates, "dcpf")?;
     let mut dc = DcNetwork::from_network(net)?;
     let base = dc.base_mva;
-    let bus_idx = bus_index_map(&dc.bus_ids);
+    let bus_idx = id_index_map(&dc.bus_ids);
     apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas)?;
 
     // Net per-unit injection per dense bus: generator setpoints minus (edited) load.
@@ -415,6 +424,7 @@ pub(crate) fn ac_pf_solved(
     mut acnet: super::model::AcNetwork,
     req: &SolveRequest,
 ) -> Result<(super::model::AcNetwork, super::problem::AcPfSolution), String> {
+    reject_rating_deltas(&req.edits.rates, "acpf")?;
     apply_demand_deltas_ac(&mut acnet, &req.edits.deltas)?;
     let sol = super::problem::ac_pf(&super::formulation::AcPolar::new(), &acnet)?;
     Ok((acnet, sol))
@@ -467,6 +477,7 @@ pub(crate) fn socwr_solved(
     req: &SolveRequest,
 ) -> Result<(super::model::AcNetwork, super::problem::SocWrSolution), String> {
     apply_demand_deltas_ac(&mut acnet, &req.edits.deltas)?;
+    apply_rating_deltas_ac(&mut acnet, &req.edits.rates)?;
     let sol = super::problem::socwr_opf(&acnet)?;
     Ok((acnet, sol))
 }
@@ -756,8 +767,10 @@ fn formulation_caps() -> Vec<ProblemCaps> {
 // Element-id joins and edit application
 // ---------------------------------------------------------------------------
 
-fn bus_index_map(bus_ids: &[usize]) -> HashMap<usize, usize> {
-    bus_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect()
+/// Original element id → dense model index, for any id-ordered axis (buses,
+/// branches).
+fn id_index_map(ids: &[usize]) -> HashMap<usize, usize> {
+    ids.iter().enumerate().map(|(i, &id)| (id, i)).collect()
 }
 
 /// `deltas` sorted by bus id. `HashMap`'s randomized hashing means iterating it
@@ -822,12 +835,84 @@ fn apply_demand_deltas_ac(
     deltas: &HashMap<i64, f64>,
 ) -> Result<(), String> {
     let base = acnet.base_mva;
-    let idx = bus_index_map(&acnet.bus_ids);
+    let idx = id_index_map(&acnet.bus_ids);
     for (bus, mw) in sorted_deltas(deltas) {
         let i = resolve_demand_delta(bus, mw, &idx, base, |i| acnet.pd[i])?;
         acnet.pd[i] += mw / base;
     }
     Ok(())
+}
+
+/// Validate one branch rating delta and resolve its branch to a dense index. Mirrors
+/// [`resolve_demand_delta`]: a positive branch id, a finite delta, a known in-model
+/// branch, and a delta that keeps the limit positive are enforced identically for
+/// the DC and SOCWR appliers.
+fn resolve_rating_delta(
+    branch: i64,
+    mw: f64,
+    branch_idx: &HashMap<usize, usize>,
+    base_mva: f64,
+    current_limit_pu: impl Fn(usize) -> f64,
+) -> Result<usize, String> {
+    if branch <= 0 {
+        return Err("rating delta branch must be positive".into());
+    }
+    if !mw.is_finite() {
+        return Err(format!("rating delta for branch {branch} must be finite"));
+    }
+    let key =
+        usize::try_from(branch).map_err(|_| format!("unknown rating delta branch {branch}"))?;
+    let i = *branch_idx
+        .get(&key)
+        .ok_or_else(|| format!("unknown rating delta branch {branch}"))?;
+    if current_limit_pu(i) * base_mva + mw <= 1e-9 {
+        return Err(format!(
+            "rating delta for branch {branch} would make the line limit non-positive"
+        ));
+    }
+    Ok(i)
+}
+
+/// Perturb the thermal limits: `fmax += delta` (per unit) at each named branch.
+fn apply_rating_deltas(
+    dc: &mut DcNetwork,
+    branch_idx: &HashMap<usize, usize>,
+    rates: &HashMap<i64, f64>,
+) -> Result<(), String> {
+    let base = dc.base_mva;
+    for (branch, mw) in sorted_deltas(rates) {
+        let i = resolve_rating_delta(branch, mw, branch_idx, base, |i| dc.fmax[i])?;
+        dc.fmax[i] += mw / base;
+    }
+    Ok(())
+}
+
+/// SOCWR analogue of [`apply_rating_deltas`]: rating deltas onto the apparent-power
+/// limit `rate_a`.
+#[cfg(feature = "conic")]
+fn apply_rating_deltas_ac(
+    acnet: &mut super::model::AcNetwork,
+    rates: &HashMap<i64, f64>,
+) -> Result<(), String> {
+    let base = acnet.base_mva;
+    let idx = id_index_map(&acnet.branch_ids);
+    for (branch, mw) in sorted_deltas(rates) {
+        let i = resolve_rating_delta(branch, mw, &idx, base, |i| acnet.rate_a[i])?;
+        acnet.rate_a[i] += mw / base;
+    }
+    Ok(())
+}
+
+/// The AC power flow has no flow limits, so a rating edit cannot enter the model;
+/// reject it instead of silently solving without it.
+#[cfg(feature = "sensitivity")]
+fn reject_rating_deltas(rates: &HashMap<i64, f64>, formulation: &str) -> Result<(), String> {
+    if rates.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "branch rating edits are not supported by {formulation}"
+    ))
 }
 
 fn zip_bus(ids: &[usize], vals: &[f64]) -> Vec<BusScalar> {

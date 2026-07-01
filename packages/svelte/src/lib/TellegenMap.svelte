@@ -18,7 +18,7 @@
 		sensitivityDomain,
 		type SensitivityDomain
 	} from './colors.js';
-	import { caseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
+	import { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
 	import { CaseState, type DisplayMode, type LocalCase } from './state.svelte.js';
 	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt } from './format.js';
@@ -26,11 +26,15 @@
 	let {
 		onbusclick,
 		onlocalbusclick,
+		onbranchclick,
+		onlocalbranchclick,
 		onplacecase,
 		onmapclick
 	}: {
 		onbusclick: (caseId: string, busId: number) => void;
 		onlocalbusclick: (caseId: string, busId: number) => void;
+		onbranchclick?: (caseId: string, branchId: number) => void;
+		onlocalbranchclick?: (caseId: string, branchId: number) => void;
 		onplacecase: (lon: number, lat: number) => void;
 		onmapclick: () => void;
 	} = $props();
@@ -86,26 +90,39 @@
 	// shift individual buses without rescaling.
 	const display = $derived.by(() => {
 		const active = app.active ?? app.activeLocal;
-		const selected = app.selectedBus;
+		const selectedBus = app.selectedBus;
+		const selectedBranch = app.selectedBranch;
+		// The active case's column for the live selection: the ∂LMP/∂d column at the
+		// selected bus, or the ∂LMP/∂rating column at the selected branch. Both are
+		// bus-keyed value maps, so the color pipeline below is target-agnostic.
 		const activeSensitivity =
-			active && selected !== null && active.sensitivity?.bus === selected
+			active &&
+			((selectedBus !== null && active.sensitivity?.bus === selectedBus) ||
+				(selectedBranch !== null && active.sensitivity?.branch === selectedBranch))
 				? active.sensitivity
 				: null;
 		const activeDeltas = active ? caseDeltas(active) : {};
+		const activeRatings = active ? caseRatings(active) : {};
 		// Engine first-order LMP preview (Study.preview): predicted per-bus ΔLMP for
-		// the live drag, scoped to this case + bus. Preferred over the JS gradient
-		// shift when present; the gradient path stays for server and browser fallbacks.
+		// the live drag, scoped to this case + selection target. Preferred over the JS
+		// gradient shift when present; the gradient path stays for server and browser
+		// fallbacks.
 		const enginePreview =
 			active &&
-			selected !== null &&
 			app.previewLmp &&
 			app.previewLmp.caseId === active.id &&
-			app.previewLmp.bus === selected
+			('bus' in app.previewLmp.target
+				? app.previewLmp.target.bus === selectedBus
+				: app.previewLmp.target.branch === selectedBranch)
 				? app.previewLmp.delta
 				: null;
 		const previewStep =
-			active && selected !== null && app.previewDeltaMw !== null && activeSensitivity
-				? app.previewDeltaMw - (activeDeltas[selected] ?? 0)
+			active && activeSensitivity
+				? selectedBus !== null && app.previewDeltaMw !== null
+					? app.previewDeltaMw - (activeDeltas[selectedBus] ?? 0)
+					: selectedBranch !== null && app.previewRatingMw !== null
+						? app.previewRatingMw - (activeRatings[selectedBranch] ?? 0)
+						: 0
 				: 0;
 		const previewing = Boolean(
 			active?.solving || app.previewActive || enginePreview || Math.abs(previewStep) >= 0.25
@@ -178,7 +195,7 @@
 					? 'preview'
 					: sensEligible &&
 						  isActive &&
-						  selected !== null &&
+						  (selectedBus !== null || selectedBranch !== null) &&
 						  (domain || app.sensitivityLoading) &&
 						  !previewing
 						? 'sens'
@@ -231,8 +248,15 @@
 		};
 	}
 
-	function isBusLayer(layerId: string | undefined): boolean {
-		return Boolean(layerId?.startsWith('buses-') || layerId?.startsWith('local-buses-'));
+	// Layers whose click selects something (a bus or a branch); the overlay-level
+	// click handler must not treat those clicks as "empty map" and clear the selection.
+	function isSelectableLayer(layerId: string | undefined): boolean {
+		return Boolean(
+			layerId?.startsWith('buses-') ||
+				layerId?.startsWith('local-buses-') ||
+				layerId?.startsWith('branches-') ||
+				layerId?.startsWith('local-branches-')
+		);
 	}
 
 	const selectedBusCue = $derived.by(() => {
@@ -376,7 +400,7 @@
 				depthCompare: 'always'
 			},
 			onClick: (info: PickingInfo) => {
-				if (!app.placingLocalId && !isBusLayer(info.layer?.id)) onmapclick();
+				if (!app.placingLocalId && !isSelectableLayer(info.layer?.id)) onmapclick();
 			},
 			getTooltip: tooltip,
 			getCursor: ({ isHovering, isDragging }: CursorState) =>
@@ -527,8 +551,16 @@
 					id: `branches-${c.id}`,
 					data: c.network.branches,
 					getPath: (b) => b.path,
-					getColor: (b) => branchColor(d?.loading.get(b.id) ?? 0, b.status === 1),
-					getWidth: (b) => branchWidth(d?.loading.get(b.id) ?? 0),
+					// The selected branch draws in the selection blue of the bus halo cue,
+					// wider, so the ∂LMP/∂rating source line reads at a glance.
+					getColor: (b) =>
+						c.id === app.activeCaseId && b.id === app.selectedBranch
+							? [47, 111, 187, 255]
+							: branchColor(d?.loading.get(b.id) ?? 0, b.status === 1),
+					getWidth: (b) =>
+						c.id === app.activeCaseId && b.id === app.selectedBranch
+							? Math.max(branchWidth(d?.loading.get(b.id) ?? 0) + 2, 4.5)
+							: branchWidth(d?.loading.get(b.id) ?? 0),
 					widthUnits: 'pixels',
 					widthMinPixels: 1.5,
 					capRounded: true,
@@ -537,9 +569,15 @@
 					pickable: true,
 					autoHighlight: true,
 					highlightColor: [32, 36, 43, 90],
+					onClick: (info: PickingInfo) => {
+						const branch = info.object as NetworkBranch | undefined;
+						if (!branch || !onbranchclick) return false;
+						onbranchclick(c.id, branch.id);
+						return true;
+					},
 					updateTriggers: {
-						getColor: [display],
-						getWidth: [display]
+						getColor: [display, app.selectedBranch, app.activeCaseId],
+						getWidth: [display, app.selectedBranch, app.activeCaseId]
 					}
 				}),
 				new ScatterplotLayer<NetworkBus>({
@@ -586,17 +624,34 @@
 						data: c.view.branches,
 						getPath: (b) => b.path,
 						getColor: (b) =>
-							d ? branchColor(d.loading.get(b.id) ?? 0, b.status === 1) : [138, 131, 117, 150],
-						getWidth: (b) => (d ? branchWidth(d.loading.get(b.id) ?? 0) : 1.5),
+							c.id === app.activeLocalId && b.id === app.selectedBranch
+								? [47, 111, 187, 255]
+								: d
+									? branchColor(d.loading.get(b.id) ?? 0, b.status === 1)
+									: [138, 131, 117, 150],
+						getWidth: (b) =>
+							c.id === app.activeLocalId && b.id === app.selectedBranch
+								? Math.max((d ? branchWidth(d.loading.get(b.id) ?? 0) : 1.5) + 2, 4.5)
+								: d
+									? branchWidth(d.loading.get(b.id) ?? 0)
+									: 1.5,
 						widthUnits: 'pixels',
 						widthMinPixels: 1.2,
 						capRounded: true,
 						jointRounded: true,
 						miterLimit: 2,
 						pickable: true,
+						autoHighlight: true,
+						highlightColor: [32, 36, 43, 90],
+						onClick: (info: PickingInfo) => {
+							const branch = info.object as NetworkBranch | undefined;
+							if (!branch || !onlocalbranchclick) return false;
+							onlocalbranchclick(c.id, branch.id);
+							return true;
+						},
 						updateTriggers: {
-							getColor: [display],
-							getWidth: [display]
+							getColor: [display, app.selectedBranch, app.activeLocalId],
+							getWidth: [display, app.selectedBranch, app.activeLocalId]
 						}
 					}),
 					new ScatterplotLayer<NetworkBus>({

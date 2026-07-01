@@ -1,7 +1,12 @@
 import { ApiError, createApiClient, type TellegenApiClient } from './api.js';
-import type { Network, NetworkBus, SensitivityColumn, Solution } from './api.js';
+import type { BranchRatingDeltas, Network, NetworkBus, SensitivityColumn, Solution } from './api.js';
 import { previewScaleFor, scalarDomain, sensFlatColor, sensitivityDomain } from './colors.js';
-import { caseDeltas as sharedCaseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
+import {
+	caseDeltas as sharedCaseDeltas,
+	caseRatings as sharedCaseRatings,
+	displayMetaFor,
+	displaySeriesFor
+} from './display.js';
 import { applyGeoFile, isGeoFile, mergeGeoFiles, parseGeoFile, type GeoFile } from './geo-file.js';
 import {
 	CaseState,
@@ -22,7 +27,8 @@ import {
 	parseDisplay,
 	solveDc,
 	type BrowserStudy,
-	type Formulation
+	type Formulation,
+	type SensTarget
 } from '@tellegen/engine';
 import { errorText, extent, formulationLabel, rgbaCss } from './format.js';
 
@@ -93,10 +99,19 @@ export class Controller {
 	// Predicted objective change vs the committed point for the live preview. The
 	// engine (Study.preview) owns this for browser-solvable cases; null when no
 	// engine preview applies (server or browser fallback path), where the first-order fallback
-	// below fills in. Scoped to the case + bus it was computed for. Set by runPreview.
-	previewObjective = $state.raw<{ caseId: string; bus: number; objectiveDelta: number } | null>(
-		null
-	);
+	// below fills in. Scoped to the case + selection target it was computed for.
+	// Set by runPreview / runRatingPreview.
+	previewObjective = $state.raw<{
+		caseId: string;
+		target: SensTarget;
+		objectiveDelta: number;
+	} | null>(null);
+	// Per-MW objective slope for the rating drag, cached per (case, branch, committed
+	// point) so each drag frame stays O(buses): the engine's first-order preview at a
+	// +1 MW rating step is taken once, then scaled by the live step. Invalidated on
+	// commit, selection, and formulation change. Not $state; only runRatingPreview
+	// reads it, and previewObjective carries the rendered value.
+	ratingSlope: { caseId: string; branch: number; slope: number } | null = null;
 
 	constructor(app: AppState, options: ControllerOptions = {}) {
 		this.app = app;
@@ -115,6 +130,22 @@ export class Controller {
 
 	caseDeltas(c: SolvableCase) {
 		return sharedCaseDeltas(c);
+	}
+
+	caseRatings(c: SolvableCase): BranchRatingDeltas {
+		return sharedCaseRatings(c);
+	}
+
+	/** True when the case carries any nonzero committed rating delta. Rating edits
+	 * solve only through the browser Study; the solveDc and server fallbacks would
+	 * silently drop them, so callers gate on this before falling back. */
+	hasRatingEdits(c: SolvableCase): boolean {
+		return Object.values(this.caseRatings(c)).some((mw) => mw !== 0);
+	}
+
+	/** True when two selection targets name the same bus or branch. */
+	sameTarget(a: SensTarget, b: SensTarget): boolean {
+		return 'bus' in a ? 'bus' in b && a.bus === b.bus : 'branch' in b && a.branch === b.branch;
 	}
 
 	isPerturbed(c: SolvableCase | null): boolean {
@@ -140,10 +171,38 @@ export class Controller {
 		c.sensitivitySeq = sensitivitySeq;
 		this.app.error = null;
 		this.app.selectedBus = busId;
+		this.app.selectedBranch = null;
 		this.app.previewDeltaMw = null;
+		this.app.previewRatingMw = null;
 		this.app.previewActive = false;
 		this.app.demandRangeMode = 'local';
 		this.setNearbyRangeAnchor(c, busId);
+		this.ratingSlope = null;
+		this.app.sensitivityLoading = true;
+		c.sensitivity = null;
+		return { ac, sensitivitySeq };
+	}
+
+	// The branch-select counterpart of beginBusSelection: same abort/seq discipline,
+	// but the selection lands on a branch and the demand preview fields are cleared.
+	beginBranchSelection(
+		c: SolvableCase,
+		branchId: number
+	): { ac: AbortController; sensitivitySeq: number } {
+		this.abort?.abort();
+		const ac = new AbortController();
+		this.abort = ac;
+		const sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
+		c.sensitivitySeq = sensitivitySeq;
+		this.app.error = null;
+		this.app.selectedBranch = branchId;
+		this.app.selectedBus = null;
+		this.app.previewDeltaMw = null;
+		this.app.previewRatingMw = null;
+		this.app.previewActive = false;
+		this.app.demandRangeMode = 'local';
+		this.nearbyRangeAnchor = null;
+		this.ratingSlope = null;
 		this.app.sensitivityLoading = true;
 		c.sensitivity = null;
 		return { ac, sensitivitySeq };
@@ -259,21 +318,26 @@ export class Controller {
 		return build;
 	}
 
-	// The dLMP/dd column at `busId` for the case's active formulation, solved in the browser.
-	// DC OPF takes the light per-call `solveDc` path (byte-identical to the prior behavior, so
-	// no regression for the default). AC OPF / SOCWR go through the Study, whose exact re-solve
-	// returns the column under the right formulation; the column is null (with the reason on
-	// `solveFallbackReason`) when the Study can't be built. Throws only on a hard browser error.
+	// The ∂LMP/∂parameter column at `target` for the case's active formulation, solved in
+	// the browser. A bus column on an unedited-ratings DC OPF case takes the light per-call
+	// `solveDc` path (byte-identical to the prior behavior, so no regression for the
+	// default); everything else — AC OPF / SOCWR, a branch target, or any committed rating
+	// edit (which solveDc cannot apply) — goes through the Study, whose exact re-solve
+	// returns the column under the right formulation and operating point. The column is
+	// null (with the reason on `solveFallbackReason`) when the Study can't be built.
+	// Throws only on a hard browser error.
 	async browserSensitivity(
 		c: SolvableCase,
 		networkJson: string,
-		busId: number
+		target: SensTarget
 	): Promise<SensitivityColumn | null> {
-		if (c.formulation === 'dcopf') {
-			return (await solveDc(c.id, networkJson, this.caseDeltas(c), busId)).sensitivity;
+		if ('bus' in target && c.formulation === 'dcopf' && !this.hasRatingEdits(c)) {
+			return (await solveDc(c.id, networkJson, this.caseDeltas(c), target.bus)).sensitivity;
 		}
 		const study = await this.getStudy(c, networkJson);
-		return study ? study.sensitivity(c.id, this.caseDeltas(c), busId) : null;
+		return study
+			? study.sensitivity(c.id, this.caseDeltas(c), this.caseRatings(c), target)
+			: null;
 	}
 
 	// Release a case's Study (if any) when the case is removed.
@@ -290,22 +354,35 @@ export class Controller {
 	acceptSensitivity(
 		c: SolvableCase,
 		col: SensitivityColumn | null,
-		busId: number | null,
+		target: SensTarget | null,
 		sensitivitySeq?: number
 	) {
-		if (!col || busId === null) return;
-		if (col.bus !== busId) return;
-		if (!this.isActiveSolveCase(c) || this.app.selectedBus !== busId) return;
+		if (!col || target === null) return;
+		// The column must name the target it was requested for, and the target must
+		// still be the live selection.
+		const matches =
+			'bus' in target
+				? col.bus === target.bus && this.app.selectedBus === target.bus
+				: col.branch === target.branch && this.app.selectedBranch === target.branch;
+		if (!matches) return;
+		if (!this.isActiveSolveCase(c)) return;
 		if (sensitivitySeq !== undefined && sensitivitySeq !== (c.sensitivitySeq ?? 0)) return;
 		c.sensitivity = col;
 	}
 
-	finishSolve(c: SolvableCase, seq: number, sensBus: number | null) {
+	finishSolve(c: SolvableCase, seq: number, target: SensTarget | null) {
 		if (seq !== (c.solveSeq ?? 0)) return;
 		c.solving = false;
-		if (sensBus !== null && this.isActiveSolveCase(c) && this.app.selectedBus === sensBus) {
+		const selectionLive =
+			target !== null &&
+			this.isActiveSolveCase(c) &&
+			('bus' in target
+				? this.app.selectedBus === target.bus
+				: this.app.selectedBranch === target.branch);
+		if (selectionLive) {
 			this.app.previewActive = false;
 			this.app.previewDeltaMw = null;
+			this.app.previewRatingMw = null;
 			// The committed solution supersedes the live engine preview.
 			this.app.previewLmp = null;
 			this.previewObjective = null;
@@ -424,6 +501,23 @@ export class Controller {
 		return c.network.buses.find((b) => b.id === this.app.selectedBus) ?? null;
 	});
 
+	selectedBranchData = $derived.by(() => {
+		const c = this.activeSolvable;
+		if (!c?.network || this.app.selectedBranch === null) return null;
+		return c.network.branches.find((b) => b.id === this.app.selectedBranch) ?? null;
+	});
+
+	// The sensitivity target of the current selection: the selected bus (∂LMP/∂d),
+	// else the selected branch (∂LMP/∂rating), else null. Selections are mutually
+	// exclusive, so bus-first ordering is only a tiebreak for impossible states.
+	selectionTarget = $derived.by((): SensTarget | null =>
+		this.app.selectedBus !== null
+			? { bus: this.app.selectedBus }
+			: this.app.selectedBranch !== null
+				? { branch: this.app.selectedBranch }
+				: null
+	);
+
 	committedDelta = $derived.by(() =>
 		this.activeSolvable && this.app.selectedBus !== null
 			? (this.caseDeltas(this.activeSolvable)[this.app.selectedBus] ?? 0)
@@ -446,10 +540,35 @@ export class Controller {
 	sliderMin = $derived(this.sliderBounds.min);
 	sliderMax = $derived(this.sliderBounds.max);
 
+	committedRating = $derived.by(() =>
+		this.activeSolvable && this.app.selectedBranch !== null
+			? (this.caseRatings(this.activeSolvable)[this.app.selectedBranch] ?? 0)
+			: 0
+	);
+	ratingSliderValue = $derived.by(() => this.app.previewRatingMw ?? this.committedRating);
+
+	// Rating slider bounds, absolute around zero delta: ±20% of the base rating,
+	// clamped to [5, 50] MW, and never below 1 - rate so the committed limit
+	// rate + Δ stays at least 1 MW. Disabled when no branch is selected or the
+	// line's rating is synthesized (rate_mw <= 0), which has no physical limit
+	// to perturb.
+	ratingBounds = $derived.by(() => {
+		const b = this.selectedBranchData;
+		if (!b || b.rate_mw <= 0) return { min: 0, max: 0, disabled: true };
+		const span = Math.min(50, Math.max(5, 0.2 * b.rate_mw));
+		return { min: Math.max(-(b.rate_mw - 1), -span), max: span, disabled: false };
+	});
+
 	selectedSensitivity = $derived.by(() => {
 		const c = this.activeSolvable;
-		if (!c?.sensitivity || this.app.selectedBus === null) return null;
-		return c.sensitivity.bus === this.app.selectedBus ? c.sensitivity : null;
+		if (!c?.sensitivity) return null;
+		if (this.app.selectedBus !== null) {
+			return c.sensitivity.bus === this.app.selectedBus ? c.sensitivity : null;
+		}
+		if (this.app.selectedBranch !== null) {
+			return c.sensitivity.branch === this.app.selectedBranch ? c.sensitivity : null;
+		}
+		return null;
 	});
 
 	sensSummary = $derived.by(() =>
@@ -460,14 +579,20 @@ export class Controller {
 	flatSensBackground = $derived(this.sensSummary ? rgbaCss(sensFlatColor(this.sensSummary)) : '');
 
 	// The fixed preview normalization for a drag. Both inputs are stable while
-	// dragging (slider bounds are anchored per selection; committedDelta moves only
-	// on commit), so the scale never shifts under the pointer and intensity is
-	// linear in the step.
+	// dragging (slider bounds are anchored per selection; the committed value moves
+	// only on commit), so the scale never shifts under the pointer and intensity is
+	// linear in the step. A branch selection normalizes over the rating slider's
+	// deflection instead of the demand slider's.
 	previewMaxAbsStep = $derived.by(() =>
-		Math.max(
-			Math.abs(this.sliderMin - this.committedDelta),
-			Math.abs(this.sliderMax - this.committedDelta)
-		)
+		this.app.selectedBranch !== null
+			? Math.max(
+					Math.abs(this.ratingBounds.min - this.committedRating),
+					Math.abs(this.ratingBounds.max - this.committedRating)
+				)
+			: Math.max(
+					Math.abs(this.sliderMin - this.committedDelta),
+					Math.abs(this.sliderMax - this.committedDelta)
+				)
 	);
 	previewScale = $derived.by(() =>
 		this.sensSummary ? previewScaleFor(this.sensSummary, this.previewMaxAbsStep) : null
@@ -487,24 +612,26 @@ export class Controller {
 		return this.selectedSensitivity.values.find((v) => v.bus === this.app.selectedBus)?.value ?? 0;
 	});
 
-	// Predicted objective change vs base for the demand readout. Prefer the engine
-	// preview (Study.preview at the committed point, plus the committed part); fall
-	// back to a second-order gradient estimate when no Study preview is available
+	// Predicted objective change vs base for the demand/rating readout. Prefer the
+	// engine preview (Study.preview at the committed point, plus the committed part);
+	// fall back to a second-order gradient estimate when no Study preview is available
 	// (server-only cases, or a browser that can't load the sensitivity module): the
-	// exact committed part plus lmp·step + S_bb·step²/2 along the gradient.
+	// exact committed part plus lmp·step + S_bb·step²/2 along the gradient. The
+	// gradient fallback is demand-only — a rating step has no LMP-at-bus analogue —
+	// so a branch selection without an engine slope shows no prediction.
 	predictedDeltaObj = $derived.by(() => {
 		const c = this.activeSolvable;
-		const bus = this.app.selectedBus;
-		if (!c?.solution || !c.baseSolution || bus === null) return null;
+		const target = this.selectionTarget;
+		if (!c?.solution || !c.baseSolution || target === null) return null;
 		const committedPart = c.solution.objective - c.baseSolution.objective;
 		if (
 			this.previewObjective &&
 			this.previewObjective.caseId === c.id &&
-			this.previewObjective.bus === bus
+			this.sameTarget(this.previewObjective.target, target)
 		) {
 			return committedPart + this.previewObjective.objectiveDelta;
 		}
-		if (this.selectedLmp === null) return null;
+		if ('branch' in target || this.selectedLmp === null) return null;
 		const step = this.sliderValue - this.committedDelta;
 		return committedPart + this.selectedLmp * step + 0.5 * this.selfSens * step * step;
 	});
@@ -529,7 +656,10 @@ export class Controller {
 		Boolean(
 			this.activeSolvable?.solving ||
 			this.app.previewActive ||
-			(this.app.previewDeltaMw !== null && Math.abs(this.sliderValue - this.committedDelta) >= 0.25)
+			(this.app.previewDeltaMw !== null &&
+				Math.abs(this.sliderValue - this.committedDelta) >= 0.25) ||
+			(this.app.previewRatingMw !== null &&
+				Math.abs(this.ratingSliderValue - this.committedRating) >= 0.25)
 		)
 	);
 
@@ -596,7 +726,7 @@ export class Controller {
 			}
 			if (frame && this.app.activeCaseId === c.id) this.app.requestFrame(c.id);
 			if (this.isActiveSolveCase(c) && c.formulation !== 'dcopf' && !c.solution && !c.solving) {
-				this.runSolve(c, this.app.selectedBus);
+				this.runSolve(c, this.selectionTarget);
 			}
 		} catch (e) {
 			if (this.app.byId(c.id)) {
@@ -758,9 +888,9 @@ export class Controller {
 				// null column there is reported, never sent to the DC-only server.
 				const networkJson = await this.ensureNetworkJson(c);
 				if (networkJson) {
-					const sensitivity = await this.browserSensitivity(c, networkJson, busId);
+					const sensitivity = await this.browserSensitivity(c, networkJson, { bus: busId });
 					if (!ac.signal.aborted && sensitivity) {
-						this.acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+						this.acceptSensitivity(c, sensitivity, { bus: busId }, sensitivitySeq);
 						handled = true;
 					} else if (!ac.signal.aborted && c.formulation !== 'dcopf') {
 						this.app.error = `${c.name}: ${formulationLabel(c.formulation)} sensitivity unavailable in the browser${c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''}`;
@@ -779,7 +909,16 @@ export class Controller {
 				handled = c.formulation !== 'dcopf';
 			}
 			if (!handled && !ac.signal.aborted && c.formulation === 'dcopf') {
-				await this.fetchServerSensitivity(c, busId, ac, sensitivitySeq);
+				if (this.hasRatingEdits(c)) {
+					// The server solves at base ratings, so its column would come from the
+					// wrong operating point once rating edits are committed. Fail instead
+					// of silently reconciling there.
+					this.fail(`${c.name}: line rating edits solve only in the browser engine`, () =>
+						this.selectBus(c.id, busId)
+					);
+				} else {
+					await this.fetchServerSensitivity(c, busId, ac, sensitivitySeq);
+				}
 			}
 		} finally {
 			if (this.abort === ac) this.app.sensitivityLoading = false;
@@ -805,7 +944,7 @@ export class Controller {
 		}
 		try {
 			const col = await this.api.getSensitivity(c.id, busId, c.deltas, ac.signal);
-			if (!ac.signal.aborted) this.acceptSensitivity(c, col, busId, sensitivitySeq);
+			if (!ac.signal.aborted) this.acceptSensitivity(c, col, { bus: busId }, sensitivitySeq);
 		} catch (e) {
 			if (e instanceof DOMException) return;
 			if (e instanceof ApiError && e.status === 429) {
@@ -841,8 +980,8 @@ export class Controller {
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
-			const sensitivity = await this.browserSensitivity(c, c.networkJson, busId);
-			if (!ac.signal.aborted) this.acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+			const sensitivity = await this.browserSensitivity(c, c.networkJson, { bus: busId });
+			if (!ac.signal.aborted) this.acceptSensitivity(c, sensitivity, { bus: busId }, sensitivitySeq);
 			if (!ac.signal.aborted && !sensitivity) {
 				// A null column means the solve ran but produced no dLMP/dd for this bus (or the
 				// Study could not be built); local cases have no server fallback, so say so
@@ -854,6 +993,85 @@ export class Controller {
 		} catch (e) {
 			if (!ac.signal.aborted) {
 				this.fail(`${c.label}: ${errorText(e)}`, () => this.selectLocalBus(localId, busId));
+			}
+		} finally {
+			if (this.abort === ac) this.app.sensitivityLoading = false;
+		}
+	};
+
+	/** The terminal message when a case with committed rating edits cannot use the
+	 * browser Study: the solveDc and server fallbacks solve at base ratings, so
+	 * there is no correct fallback to take. */
+	private ratingEditsFallbackError(c: SolvableCase): string {
+		return `${this.caseName(c)}: line rating edits solve only in the browser engine${
+			c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''
+		}`;
+	}
+
+	/** The terminal message for a branch selection that produced no ∂LMP/∂rating
+	 * column. Branch columns solve only in the browser Study — the server has no
+	 * fmax endpoint — so there is nothing to reconcile against; say so. */
+	private failBranchSensitivity(c: SolvableCase, retry: () => void) {
+		this.fail(
+			`${this.caseName(c)}: ∂LMP/∂rating solves only in the browser engine${
+				c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''
+			}`,
+			retry
+		);
+	}
+
+	selectBranch = async (caseId: string, branchId: number) => {
+		this.app.activeLocalId = null;
+		this.app.placingLocalId = null;
+		if (this.app.activeCaseId !== caseId) {
+			this.clearSelection();
+			this.app.activeCaseId = caseId;
+		}
+		const c = this.app.byId(caseId);
+		if (!c) return;
+		const { ac, sensitivitySeq } = this.beginBranchSelection(c, branchId);
+		try {
+			// The ∂LMP/∂rating column comes from the browser Study only; unlike selectBus
+			// there is never a server fallback (the server has no fmax endpoint), so a
+			// null column is terminal for the selection.
+			const networkJson = await this.ensureNetworkJson(c);
+			const sensitivity = networkJson
+				? await this.browserSensitivity(c, networkJson, { branch: branchId })
+				: null;
+			if (ac.signal.aborted) return;
+			if (sensitivity) {
+				this.acceptSensitivity(c, sensitivity, { branch: branchId }, sensitivitySeq);
+			} else if (sensitivitySeq === (c.sensitivitySeq ?? 0)) {
+				this.failBranchSensitivity(c, () => this.selectBranch(caseId, branchId));
+			}
+		} catch (e) {
+			// A late failure must not clobber a newer selection's state.
+			if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
+				this.fail(`${c.name}: ${errorText(e)}`, () => this.selectBranch(caseId, branchId));
+			}
+		} finally {
+			if (this.abort === ac) this.app.sensitivityLoading = false;
+		}
+	};
+
+	selectLocalBranch = async (localId: string, branchId: number) => {
+		const c = this.app.localCases.find((lc) => lc.id === localId);
+		if (!c?.networkJson || !c.network) return;
+		this.app.activeCaseId = null;
+		this.app.activeLocalId = localId;
+		this.app.placingLocalId = null;
+		const { ac, sensitivitySeq } = this.beginBranchSelection(c, branchId);
+		try {
+			const sensitivity = await this.browserSensitivity(c, c.networkJson, { branch: branchId });
+			if (ac.signal.aborted) return;
+			if (sensitivity) {
+				this.acceptSensitivity(c, sensitivity, { branch: branchId }, sensitivitySeq);
+			} else if (sensitivitySeq === (c.sensitivitySeq ?? 0)) {
+				this.failBranchSensitivity(c, () => this.selectLocalBranch(localId, branchId));
+			}
+		} catch (e) {
+			if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
+				this.fail(`${c.label}: ${errorText(e)}`, () => this.selectLocalBranch(localId, branchId));
 			}
 		} finally {
 			if (this.abort === ac) this.app.sensitivityLoading = false;
@@ -873,20 +1091,25 @@ export class Controller {
 			lc.sensitivity = null;
 		}
 		this.app.selectedBus = null;
+		this.app.selectedBranch = null;
 		this.app.previewDeltaMw = null;
+		this.app.previewRatingMw = null;
 		this.app.previewActive = false;
 		this.app.previewLmp = null;
 		this.previewObjective = null;
+		this.ratingSlope = null;
 		this.app.demandRangeMode = 'local';
 		this.nearbyRangeAnchor = null;
 		this.app.sensitivityLoading = false;
 	};
 
-	// Exact DC solve in the browser (wasm). The build-once Study commits the new
-	// operating point without re-parsing, returning the dLMP/dd column in the same
-	// solve; on a Study failure it falls back to solveDc, and on any browser failure
-	// or missing network JSON it reconciles via the server stream (backend cases).
-	runSolve = (c: SolvableCase, sensBus: number | null) => {
+	// Exact solve in the browser (wasm). The build-once Study commits the new
+	// operating point without re-parsing, returning the ∂LMP/∂parameter column for
+	// the selection target in the same solve; on a Study failure it falls back to
+	// solveDc, and on any browser failure or missing network JSON it reconciles via
+	// the server stream (backend cases). Rating edits never fall back: solveDc and
+	// the server both solve at base ratings, so a Study failure there is terminal.
+	runSolve = (c: SolvableCase, target: SensTarget | null) => {
 		// Cancel this case's own previous server stream, if any (backend only).
 		if (this.isBackendCase(c)) {
 			c.closeStream?.();
@@ -904,7 +1127,12 @@ export class Controller {
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (!networkJson) {
 				c.solveFallbackReason ??= 'browser network JSON unavailable';
-				if (this.isBackendCase(c)) return this.serverSolve(c, sensBus, seq);
+				if (this.hasRatingEdits(c)) {
+					c.solving = false;
+					this.app.error = this.ratingEditsFallbackError(c);
+					return;
+				}
+				if (this.isBackendCase(c)) return this.serverSolve(c, target, seq);
 				c.solving = false;
 				this.app.error = `${c.label}: local case has no browser network JSON`;
 				return;
@@ -913,8 +1141,8 @@ export class Controller {
 			c.solveBackend = 'clarabel-wasm';
 
 			// Build-once Study path: commit the new operating point (no re-parse). The
-			// dLMP/dd column for the selected bus is computed in the same solve and comes
-			// back with it, so there is no second solve to reconcile it.
+			// ∂LMP/∂parameter column for the selection target is computed in the same
+			// solve and comes back with it, so there is no second solve to reconcile it.
 			const study = await this.getStudy(c, networkJson);
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (study) {
@@ -924,7 +1152,8 @@ export class Controller {
 					const { solution, iterations, sensitivity } = study.commit(
 						c.id,
 						this.caseDeltas(c),
-						sensBus
+						this.caseRatings(c),
+						target
 					);
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
@@ -932,10 +1161,10 @@ export class Controller {
 					if (!c.baseSolution && Object.keys(this.caseDeltas(c)).length === 0)
 						c.baseSolution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
-					// The commit carried the dLMP/dd column; accept it for the selected bus
+					// The commit carried the sensitivity column; accept it for the selection
 					// through the same seq-guarded setter every sensitivity source goes through.
-					if (sensBus !== null && sensitivity) this.acceptSensitivity(c, sensitivity, sensBus);
-					this.finishSolve(c, seq, sensBus);
+					if (target !== null && sensitivity) this.acceptSensitivity(c, sensitivity, target);
+					this.finishSolve(c, seq, target);
 					return;
 				} catch (e) {
 					if (seq !== (c.solveSeq ?? 0)) return;
@@ -948,6 +1177,7 @@ export class Controller {
 						c.solving = false;
 						this.app.previewActive = false;
 						this.app.previewDeltaMw = null;
+						this.app.previewRatingMw = null;
 						this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} has no feasible solution at this demand`;
 						return;
 					}
@@ -970,9 +1200,21 @@ export class Controller {
 				return;
 			}
 
+			// Neither solveDc nor the server stream can apply rating edits; falling
+			// through would silently solve at base ratings, so stop here instead.
+			if (this.hasRatingEdits(c)) {
+				if (seq !== (c.solveSeq ?? 0)) return;
+				c.solving = false;
+				this.app.error = this.ratingEditsFallbackError(c);
+				return;
+			}
+
 			// Fallback: the original per-call browser solve (re-parses each time). Used
 			// when the Study can't be built or a built
 			// Study failed to commit; itself falls to the server for backend cases.
+			// Only a bus target can ride along (solveDc has no branch parameter); a
+			// branch target's column stays absent, and selectBranch owns its errors.
+			const sensBus = target && 'bus' in target ? target.bus : null;
 			solveDc(c.id, networkJson, this.caseDeltas(c), sensBus)
 				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
 					if (seq !== (c.solveSeq ?? 0)) return;
@@ -982,7 +1224,7 @@ export class Controller {
 						c.baseSolution = solution;
 					c.solveMs = Math.round(performance.now() - t0);
 					if (sensitivity || sensBus === null) {
-						this.acceptSensitivity(c, sensitivity, sensBus);
+						this.acceptSensitivity(c, sensitivity, target);
 					} else if (this.isBackendCase(c)) {
 						// No browser sensitivity column (whether the solve threw or just
 						// produced none): reconcile via the server for backend cases.
@@ -990,11 +1232,11 @@ export class Controller {
 							const col = await this.api.getSensitivity(c.id, sensBus, c.deltas);
 							if (seq !== c.solveSeq) return;
 							c.solveBackend = 'clarabel-wasm-server-sensitivity';
-							this.acceptSensitivity(c, col, sensBus);
+							this.acceptSensitivity(c, col, target);
 						} catch (e) {
 							if (seq !== c.solveSeq) return;
 							c.solveFallbackReason = `server sensitivity failed: ${errorText(e)}`;
-							this.serverSolve(c, sensBus, seq);
+							this.serverSolve(c, target, seq);
 							return;
 						}
 					} else {
@@ -1002,12 +1244,12 @@ export class Controller {
 						// column with no error) instead of silently staying in LMP view.
 						this.app.error = `${c.label}: browser sensitivity unavailable${sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'}`;
 					}
-					this.finishSolve(c, seq, sensBus);
+					this.finishSolve(c, seq, target);
 				})
 				.catch((e) => {
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solveFallbackReason = `browser solve failed: ${errorText(e)}`;
-					if (this.isBackendCase(c)) this.serverSolve(c, sensBus, seq);
+					if (this.isBackendCase(c)) this.serverSolve(c, target, seq);
 					else {
 						c.solving = false;
 						this.app.error = `${c.label}: ${c.solveFallbackReason}`;
@@ -1016,9 +1258,11 @@ export class Controller {
 		});
 	};
 
-	serverSolve = (c: CaseState, sensBus: number | null, seq = c.solveSeq) => {
+	serverSolve = (c: CaseState, target: SensTarget | null, seq = c.solveSeq) => {
 		c.solveBackend = 'rust-server';
 		c.solveFallbackReason ??= 'browser solve unavailable';
+		// The server computes bus columns only; a branch target streams no sensitivity.
+		const sensBus = target && 'bus' in target ? target.bus : null;
 		c.closeStream = this.api.openSolveStream(c.id, c.deltas, sensBus, {
 			onsolution: (sol) => {
 				if (seq !== c.solveSeq) return;
@@ -1028,7 +1272,7 @@ export class Controller {
 			},
 			onsensitivity: (col) => {
 				if (seq !== c.solveSeq) return;
-				this.acceptSensitivity(c, col, sensBus);
+				this.acceptSensitivity(c, col, target);
 			},
 			onfail: (msg) => {
 				if (seq !== c.solveSeq) return;
@@ -1038,13 +1282,14 @@ export class Controller {
 				if (this.isActiveSolveCase(c)) {
 					this.app.previewActive = false;
 					this.app.previewDeltaMw = null;
+					this.app.previewRatingMw = null;
 				}
 				this.fail(`${this.caseName(c)}: ${formulationLabel(c.formulation)} ${msg}`, () =>
-					this.runSolve(c, sensBus)
+					this.runSolve(c, target)
 				);
 			},
 			ondone: () => {
-				this.finishSolve(c, seq, sensBus);
+				this.finishSolve(c, seq, target);
 			}
 		});
 	};
@@ -1060,7 +1305,7 @@ export class Controller {
 		c.deltas = this.previewDeltas(c, bus, value);
 		this.app.previewDeltaMw = value;
 		this.app.previewActive = true;
-		this.runSolve(c, bus);
+		this.runSolve(c, { bus });
 	};
 
 	finishDemandInput = (value: number) => {
@@ -1076,15 +1321,18 @@ export class Controller {
 
 	resetCase = (c: SolvableCase) => {
 		c.deltas = {};
+		c.ratings = {};
 		c.predictedObjective = null;
 		this.app.previewLmp = null;
 		this.previewObjective = null;
+		this.ratingSlope = null;
 		this.app.previewDeltaMw = this.app.selectedBus === null ? null : 0;
-		this.app.previewActive = this.app.selectedBus !== null;
+		this.app.previewRatingMw = this.app.selectedBranch === null ? null : 0;
+		this.app.previewActive = this.app.selectedBus !== null || this.app.selectedBranch !== null;
 		this.app.demandRangeMode = 'local';
 		if (this.app.selectedBus !== null) this.setNearbyRangeAnchor(c, this.app.selectedBus, 0);
 		if (c.baseSolution) c.solution = c.baseSolution;
-		this.runSolve(c, this.app.selectedBus);
+		this.runSolve(c, this.selectionTarget);
 	};
 
 	// Switch the active case to a new OPF formulation. Solving every formulation stays
@@ -1108,12 +1356,13 @@ export class Controller {
 		c.predictedObjective = null;
 		this.app.previewLmp = null;
 		this.previewObjective = null;
+		this.ratingSlope = null;
 		this.app.error = null;
 		// The current sensitivity column was computed under the old formulation; clear it so
 		// the overlay recomputes (the Study returns the new column with the re-solve below).
 		c.sensitivity = null;
 		c.sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
-		this.runSolve(c, this.app.selectedBus);
+		this.runSolve(c, this.selectionTarget);
 	};
 
 	/** Parse dropped files in the browser via the powerio wasm module. Case
@@ -1245,10 +1494,12 @@ export class Controller {
 			const step = (Math.abs(value) < 0.25 ? 0 : value) - committedAtBus;
 			const delta = new Map<number, number>();
 			for (const v of col.values) delta.set(v.bus, v.value * step);
-			this.app.previewLmp = { caseId: c.id, bus, delta };
+			this.app.previewLmp = { caseId: c.id, target: { bus }, delta };
 			const lmpAtBus = c.solution?.lmp.find((l) => l.bus === bus)?.usd_per_mwh ?? null;
 			this.previewObjective =
-				lmpAtBus === null ? null : { caseId: c.id, bus, objectiveDelta: lmpAtBus * step };
+				lmpAtBus === null
+					? null
+					: { caseId: c.id, target: { bus }, objectiveDelta: lmpAtBus * step };
 			return;
 		}
 		// Fallback (no committed column yet): the engine's first-order preview, which rebuilds
@@ -1256,12 +1507,17 @@ export class Controller {
 		const study = this.caseStudies.get(c)?.study;
 		if (!study) return;
 		try {
-			const { lmp, objectiveDelta } = study.preview(this.previewDeltas(c, bus, value));
+			const { lmp, objectiveDelta } = study.preview(
+				this.previewDeltas(c, bus, value),
+				this.caseRatings(c)
+			);
 			const delta = new Map<number, number>();
 			for (const e of lmp) delta.set(e.bus, e.usd_per_mwh);
-			this.app.previewLmp = { caseId: c.id, bus, delta };
+			this.app.previewLmp = { caseId: c.id, target: { bus }, delta };
 			this.previewObjective =
-				objectiveDelta === null ? null : { caseId: c.id, bus, objectiveDelta };
+				objectiveDelta === null
+					? null
+					: { caseId: c.id, target: { bus }, objectiveDelta };
 		} catch {
 			this.app.previewLmp = null;
 			this.previewObjective = null;
@@ -1276,6 +1532,95 @@ export class Controller {
 		if (c && this.app.selectedBus !== null) this.runPreview(c, this.app.selectedBus, value);
 	};
 
+	// Ratings the live preview would commit: the committed rating deltas with the
+	// slider's value at the selected branch, applying commitRating's dead zone so a
+	// tiny nudge reads as "no change at this line".
+	previewRatings(c: SolvableCase, branch: number, value: number): BranchRatingDeltas {
+		const ratings = { ...this.caseRatings(c) };
+		if (Math.abs(value) < 0.25) delete ratings[branch];
+		else ratings[branch] = value;
+		return ratings;
+	}
+
+	// First-order engine preview for the live rating drag, mirroring runPreview: the
+	// committed ∂LMP/∂rating column scaled by the rating step paints predicted per-bus
+	// ΔLMP without touching the engine per frame. The predicted Δobjective comes from
+	// a per-MW slope taken once from Study.preview at a +1 MW step off the committed
+	// point (preview is replacement-absolute, so the absolute ratings map is built),
+	// then scaled by the live step; null when no Study slope is available.
+	runRatingPreview = (c: SolvableCase, branch: number, value: number) => {
+		const committedAtBranch = this.caseRatings(c)[branch] ?? 0;
+		const step = (Math.abs(value) < 0.25 ? 0 : value) - committedAtBranch;
+		const col = c.sensitivity;
+		if (col && col.branch === branch) {
+			const delta = new Map<number, number>();
+			for (const v of col.values) delta.set(v.bus, v.value * step);
+			this.app.previewLmp = { caseId: c.id, target: { branch }, delta };
+		}
+		if (this.ratingSlope?.caseId !== c.id || this.ratingSlope.branch !== branch) {
+			this.ratingSlope = null;
+			const study = this.caseStudies.get(c)?.study;
+			if (study) {
+				try {
+					const { objectiveDelta } = study.preview(
+						this.caseDeltas(c),
+						this.previewRatings(c, branch, committedAtBranch + 1)
+					);
+					if (objectiveDelta !== null) {
+						this.ratingSlope = { caseId: c.id, branch, slope: objectiveDelta };
+					}
+				} catch {
+					// Best effort; the readout just shows no prediction.
+				}
+			}
+		}
+		this.previewObjective =
+			this.ratingSlope === null
+				? null
+				: {
+						caseId: c.id,
+						target: { branch },
+						objectiveDelta: this.ratingSlope.slope * step
+					};
+	};
+
+	setRatingPreview = (value: number | undefined) => {
+		if (value === undefined) return;
+		this.app.previewActive = true;
+		this.app.previewRatingMw = value;
+		const c = this.activeSolvable;
+		if (c && this.app.selectedBranch !== null) {
+			this.runRatingPreview(c, this.app.selectedBranch, value);
+		}
+	};
+
+	commitRating = (value: number) => {
+		const c = this.activeSolvable;
+		const branch = this.app.selectedBranch;
+		if (!c || branch === null) return;
+		// Refresh the engine preview at the commit value (a typed value may not have
+		// driven a drag), then score the commit with the engine's predicted Δobjective.
+		this.runRatingPreview(c, branch, value);
+		c.predictedObjective = this.predictedDeltaObj;
+		c.ratings = this.previewRatings(c, branch, value);
+		// The slope was taken at the old committed point; the next drag re-derives it.
+		this.ratingSlope = null;
+		this.app.previewRatingMw = value;
+		this.app.previewActive = true;
+		this.runSolve(c, this.selectionTarget);
+	};
+
+	finishRatingInput = (value: number) => {
+		if (Math.abs(value - this.committedRating) < 0.25) {
+			if (!this.activeSolvable?.solving) {
+				this.app.previewActive = false;
+				this.app.previewRatingMw = null;
+			}
+			return;
+		}
+		this.commitRating(value);
+	};
+
 	restoreDefaultCases = () => {
 		try {
 			if (typeof localStorage !== 'undefined') localStorage.removeItem(HIDDEN_DEFAULT_CASES_KEY);
@@ -1287,6 +1632,7 @@ export class Controller {
 	};
 
 	sliderCurrent = () => this.sliderValue;
+	ratingSliderCurrent = () => this.ratingSliderValue;
 }
 
 export function createController(app: AppState, options: ControllerOptions = {}): Controller {

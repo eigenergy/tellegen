@@ -911,8 +911,11 @@ mpc.gencost = [
             parse_problem("acpf").unwrap(),
             tellegen::Problem::AcPf
         ));
-        let edits = parse_edits(r#"[{"kind":"add_load","bus":3,"p_mw":10.0}]"#).unwrap();
-        assert_eq!(edits.len(), 1);
+        let edits = parse_edits(
+            r#"[{"kind":"add_load","bus":3,"p_mw":10.0},{"kind":"adjust_branch_rating","branch":2,"delta_mw":-25.0}]"#,
+        )
+        .unwrap();
+        assert_eq!(edits.len(), 2);
         assert!(parse_edits("").unwrap().is_empty());
         assert!(parse_edits("   ").unwrap().is_empty());
 

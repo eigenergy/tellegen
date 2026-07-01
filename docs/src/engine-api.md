@@ -40,10 +40,15 @@ The facade has the same methods as the direct exports:
 - `createStudy(networkJson, formulation)` — builds a browser `Study`.
 - `Study` / `BrowserStudy` — browser handle with:
   - `currentSolution()`
-  - `preview(deltas)`
-  - `commit(caseId, deltas, sensBus)`
-  - `sensitivity(caseId, deltas, sensBus)`
+  - `preview(deltas, rates?)`
+  - `commit(caseId, deltas, rates, target)`
+  - `sensitivity(caseId, deltas, rates, target)`
   - `free()`
+
+`deltas` are demand deltas in MW keyed by bus id; `rates` are thermal rating
+deltas in MW keyed by branch id. `target` is `{ bus }` for the ∂LMP/∂d column,
+`{ branch }` for the ∂LMP/∂rating column (nonzero only on binding lines), or
+`null` for no column.
 
 Call `free()` when a host app discards a study.
 
