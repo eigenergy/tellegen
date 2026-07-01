@@ -1,19 +1,19 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     convert::Infallible,
     env, fs,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
 
 use axum::{
-    extract::{Path as AxumPath, Query, State},
-    http::{header::CONTENT_TYPE, HeaderValue, StatusCode},
+    extract::{ConnectInfo, Path as AxumPath, Query, State},
+    http::{header::CONTENT_TYPE, HeaderMap, HeaderValue, StatusCode},
     response::{
         sse::{Event, Sse},
         IntoResponse, Response,
@@ -40,6 +40,10 @@ use tellegen::{ElementId, Mode, Operand, Parameter, Power, SensRequest, Sensitiv
 const DEFAULT_PORT: u16 = 8000;
 const DEFAULT_SOLVER_CONCURRENCY: usize = 2;
 const DEFAULT_SOLVER_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_RATE_LIMIT_WINDOW_SECS: u64 = 10;
+const DEFAULT_SOLVE_RATE_LIMIT_EVENTS: usize = 5;
+const DEFAULT_SENSITIVITY_RATE_LIMIT_EVENTS: usize = 25;
+const RATE_LIMIT_BUCKET_CAP: usize = 8192;
 
 const CASE_SPECS: &[CaseSpec] = &[
     CaseSpec::aux(
@@ -146,6 +150,42 @@ pub struct AppState {
     cases: Arc<BTreeMap<String, Arc<CaseEntry>>>,
     solver_permits: Arc<Semaphore>,
     solver_timeout: Duration,
+    expensive_rate_limits: RateLimitConfig,
+    expensive_requests: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
+}
+
+#[derive(Clone, Copy)]
+struct RateLimit {
+    events: usize,
+    window: Duration,
+}
+
+#[derive(Clone, Copy)]
+struct RateLimitConfig {
+    solve: RateLimit,
+    sensitivity: RateLimit,
+}
+
+#[derive(Clone, Copy)]
+enum ExpensiveEndpoint {
+    Solve,
+    Sensitivity,
+}
+
+impl ExpensiveEndpoint {
+    fn name(self) -> &'static str {
+        match self {
+            ExpensiveEndpoint::Solve => "solve",
+            ExpensiveEndpoint::Sensitivity => "sensitivity",
+        }
+    }
+
+    fn limit(self, config: RateLimitConfig) -> RateLimit {
+        match self {
+            ExpensiveEndpoint::Solve => config.solve,
+            ExpensiveEndpoint::Sensitivity => config.sensitivity,
+        }
+    }
 }
 
 struct CaseEntry {
@@ -303,6 +343,13 @@ impl ApiError {
             message: message.into(),
         }
     }
+
+    fn too_many_requests(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            message: message.into(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -387,6 +434,8 @@ impl AppState {
             cases: Arc::new(cases),
             solver_permits: Arc::new(Semaphore::new(solver_concurrency())),
             solver_timeout: solver_timeout(),
+            expensive_rate_limits: rate_limit_config(),
+            expensive_requests: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -399,6 +448,43 @@ impl AppState {
 
     fn case_ids(&self) -> Vec<String> {
         self.cases.keys().cloned().collect()
+    }
+
+    fn check_expensive_rate_limit(
+        &self,
+        endpoint: ExpensiveEndpoint,
+        client: &str,
+    ) -> ApiResult<()> {
+        let limit = endpoint.limit(self.expensive_rate_limits);
+        if limit.events == 0 {
+            return Ok(());
+        }
+
+        let now = Instant::now();
+        let key = format!("{}:{client}", endpoint.name());
+        let mut buckets = self
+            .expensive_requests
+            .lock()
+            .map_err(|_| ApiError::internal("rate limiter unavailable"))?;
+        {
+            let bucket = buckets.entry(key).or_default();
+            prune_rate_bucket(bucket, now, limit.window);
+            if bucket.len() >= limit.events {
+                return Err(ApiError::too_many_requests(format!(
+                    "{} rate limit exceeded",
+                    endpoint.name()
+                )));
+            }
+            bucket.push_back(now);
+        }
+
+        if buckets.len() > RATE_LIMIT_BUCKET_CAP {
+            buckets.retain(|_, bucket| {
+                prune_rate_bucket(bucket, now, limit.window);
+                !bucket.is_empty()
+            });
+        }
+        Ok(())
     }
 }
 
@@ -418,7 +504,11 @@ pub async fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
     .parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "tellegen Rust server listening");
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -526,9 +616,13 @@ async fn api_not_found() -> ApiError {
 
 async fn sensitivity(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    connect_info: ConnectInfo<SocketAddr>,
     AxumPath((id, bus)): AxumPath<(String, usize)>,
     Query(query): Query<DemandQuery>,
 ) -> ApiResult<Json<SensitivityPayload>> {
+    let client = expensive_client_key(&headers, &connect_info);
+    state.check_expensive_rate_limit(ExpensiveEndpoint::Sensitivity, &client)?;
     let entry = state.case(&id)?;
     if !entry.network.buses.iter().any(|b| b.id.0 == bus) {
         return Err(ApiError::not_found(format!("unknown bus {bus}")));
@@ -555,9 +649,13 @@ async fn sensitivity(
 
 async fn solve_stream(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    connect_info: ConnectInfo<SocketAddr>,
     AxumPath(id): AxumPath<String>,
     Query(query): Query<DemandQuery>,
 ) -> ApiResult<Sse<ReceiverStream<Result<Event, Infallible>>>> {
+    let client = expensive_client_key(&headers, &connect_info);
+    state.check_expensive_rate_limit(ExpensiveEndpoint::Solve, &client)?;
     let entry = state.case(&id)?;
     if let Some(bus) = query.sens {
         if !entry.network.buses.iter().any(|b| b.id.0 == bus) {
@@ -995,6 +1093,14 @@ fn validate_deltas(entry: &CaseEntry, deltas: &HashMap<usize, f64>) -> ApiResult
             .find(|b| b.id == bus)
             .ok_or_else(|| ApiError::bad_request(format!("unknown demand delta bus {bus}")))?
             .demand_mw;
+        // A bus in the full network but excluded from the DC model (an isolated
+        // MATPOWER type 4 bus) would fail deep inside the engine as "unknown" and
+        // surface as a 500; reject it here with an accurate message instead.
+        if !entry.dc.bus_ids.contains(&bus) {
+            return Err(ApiError::bad_request(format!(
+                "demand delta bus {bus} is isolated and excluded from the model"
+            )));
+        }
         if base + delta < -1e-9 {
             return Err(ApiError::bad_request(format!(
                 "demand delta for bus {bus} would make demand negative"
@@ -1082,6 +1188,93 @@ fn solver_timeout() -> Duration {
     )
 }
 
+fn rate_limit_config() -> RateLimitConfig {
+    let window = Duration::from_secs(
+        env::var("TELLEGEN_RATE_LIMIT_WINDOW_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(DEFAULT_RATE_LIMIT_WINDOW_SECS),
+    );
+    RateLimitConfig {
+        solve: RateLimit {
+            events: env_rate_limit_events(
+                "TELLEGEN_SOLVE_RATE_LIMIT_EVENTS",
+                DEFAULT_SOLVE_RATE_LIMIT_EVENTS,
+            ),
+            window,
+        },
+        sensitivity: RateLimit {
+            events: env_rate_limit_events(
+                "TELLEGEN_SENSITIVITY_RATE_LIMIT_EVENTS",
+                DEFAULT_SENSITIVITY_RATE_LIMIT_EVENTS,
+            ),
+            window,
+        },
+    }
+}
+
+fn env_rate_limit_events(name: &str, default: usize) -> usize {
+    env::var(name)
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(default)
+}
+
+fn expensive_client_key(headers: &HeaderMap, connect_info: &ConnectInfo<SocketAddr>) -> String {
+    let peer = connect_info.0.ip();
+    if trusted_proxy_peer(peer) {
+        // Take the rightmost x-forwarded-for entry: it is the one appended by the
+        // nearest proxy. The leftmost entries are client-supplied under proxies that
+        // append rather than replace, which would let a client mint a fresh rate
+        // limit key per request.
+        if let Some(key) = headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.split(',').rev().find_map(clean_client_key))
+        {
+            return key;
+        }
+        if let Some(key) = headers
+            .get("x-real-ip")
+            .and_then(|v| v.to_str().ok())
+            .and_then(clean_client_key)
+        {
+            return key;
+        }
+    }
+    peer.to_string()
+}
+
+fn trusted_proxy_peer(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => ip.is_loopback() || ip.is_private(),
+        IpAddr::V6(ip) => {
+            let first = ip.segments()[0];
+            ip.is_loopback() || (first & 0xfe00) == 0xfc00
+        }
+    }
+}
+
+fn clean_client_key(candidate: &str) -> Option<String> {
+    let trimmed = candidate.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.chars().take(128).collect())
+    }
+}
+
+fn prune_rate_bucket(bucket: &mut VecDeque<Instant>, now: Instant, window: Duration) {
+    while bucket
+        .front()
+        .and_then(|seen| now.checked_duration_since(*seen))
+        .is_some_and(|age| age >= window)
+    {
+        bucket.pop_front();
+    }
+}
+
 fn init_tracing() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| "tellegen_server=info,tower_http=warn".into());
@@ -1094,7 +1287,10 @@ mod tests {
     use axum::body::{to_bytes, Body};
     use axum::http::HeaderMap;
     use std::fs;
-    use std::sync::OnceLock;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering as AtomicOrdering},
+        OnceLock,
+    };
     use std::time::{SystemTime, UNIX_EPOCH};
     use tower::ServiceExt;
 
@@ -1106,10 +1302,19 @@ mod tests {
     }
 
     async fn get_raw(path: &str) -> (StatusCode, HeaderMap, String) {
+        static NEXT_CLIENT: AtomicUsize = AtomicUsize::new(1);
+        let id = NEXT_CLIENT.fetch_add(1, AtomicOrdering::Relaxed);
+        let client = format!("203.0.113.{id}");
+        get_raw_from(path, &client).await
+    }
+
+    async fn get_raw_from(path: &str, client: &str) -> (StatusCode, HeaderMap, String) {
         let res = router(fallback_state(), None)
             .oneshot(
                 axum::http::Request::builder()
                     .uri(path)
+                    .header("x-forwarded-for", client)
+                    .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1123,6 +1328,11 @@ mod tests {
 
     async fn get(path: &str) -> (StatusCode, serde_json::Value) {
         let (status, _headers, body) = get_raw(path).await;
+        (status, serde_json::from_str(&body).unwrap())
+    }
+
+    async fn get_from(path: &str, client: &str) -> (StatusCode, serde_json::Value) {
+        let (status, _headers, body) = get_raw_from(path, client).await;
         (status, serde_json::from_str(&body).unwrap())
     }
 
@@ -1246,6 +1456,68 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("unknown API route"));
+    }
+
+    #[tokio::test]
+    async fn solve_route_rate_limits_same_client_before_case_lookup() {
+        let client = "198.51.100.10";
+        for _ in 0..DEFAULT_SOLVE_RATE_LIMIT_EVENTS {
+            let (status, body) = get_from("/api/cases/nope/solve", client).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+            assert!(body["error"].as_str().unwrap().contains("unknown case"));
+        }
+
+        let (status, body) = get_from("/api/cases/nope/solve", client).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert!(body["error"].as_str().unwrap().contains("rate limit"));
+    }
+
+    #[tokio::test]
+    async fn rate_limit_keys_on_rightmost_forwarded_entry() {
+        // Proxies that append leave client-supplied entries on the left of
+        // x-forwarded-for; only the rightmost entry comes from the proxy itself.
+        // Varying left entries must not mint fresh rate limit keys.
+        for i in 0..DEFAULT_SOLVE_RATE_LIMIT_EVENTS {
+            let spoofed = format!("203.0.113.{i}, 198.51.100.77");
+            let (status, _) = get_from("/api/cases/nope/solve", &spoofed).await;
+            assert_eq!(status, StatusCode::NOT_FOUND);
+        }
+        let (status, body) =
+            get_from("/api/cases/nope/solve", "203.0.113.250, 198.51.100.77").await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert!(body["error"].as_str().unwrap().contains("rate limit"));
+    }
+
+    #[test]
+    fn validate_deltas_rejects_isolated_bus_delta() {
+        // Patch an isolated (type 4) bus onto the case200 fixture: it exists in
+        // the full network view but DcNetwork::from_network excludes it from the
+        // model, so a delta there must 400 with an accurate message instead of
+        // failing deep in the engine as a 500.
+        let spec = &FALLBACK_SPECS[0];
+        let start = spec.text.find("mpc.bus = [").unwrap();
+        let end = start + spec.text[start..].find("\n];").unwrap();
+        let mut patched = String::with_capacity(spec.text.len() + 64);
+        patched.push_str(&spec.text[..end]);
+        patched.push_str(
+            "\n\t201\t 4\t 0.0\t 0.0\t 0.0\t 0.0\t 1\t 1.0\t 0.0\t 115.0\t 4\t 1.1\t 0.9;",
+        );
+        patched.push_str(&spec.text[end..]);
+
+        let case = powerio::parse_str(&patched, "m").unwrap().network;
+        let coords: Coords = case
+            .buses
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (b.id.0, (i as f64, 0.0)))
+            .collect();
+        let entry = build_entry("iso", "iso", case, coords, true).unwrap();
+
+        let err = validate_deltas(&entry, &HashMap::from([(201usize, 1.0)])).unwrap_err();
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert!(err.message.contains("isolated"), "got: {}", err.message);
+
+        validate_deltas(&entry, &HashMap::from([(1usize, 1.0)])).unwrap();
     }
 
     #[tokio::test]

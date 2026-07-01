@@ -1,10 +1,19 @@
 # Framework Quickstart
 
-The first integration reference is [`examples/browser-minimal`](https://github.com/eigenergy/tellegen/tree/main/examples/browser-minimal). It is a plain Vite and TypeScript app that imports `@tellegen/engine`; it does not import from `apps/web`.
+There are two integration references:
+
+- [`examples/svelte-minimal`](https://github.com/eigenergy/tellegen/tree/main/examples/svelte-minimal) imports `@tellegen/svelte` and renders the full viewer for local files only.
+- [`examples/browser-minimal`](https://github.com/eigenergy/tellegen/tree/main/examples/browser-minimal) imports `@tellegen/engine` directly and builds its own simple UI.
 
 ## Install
 
-For a downstream app:
+For a Svelte app:
+
+```sh
+npm install @tellegen/svelte
+```
+
+For a custom UI:
 
 ```sh
 npm install @tellegen/engine
@@ -13,24 +22,61 @@ npm install @tellegen/engine
 For local development in this repository:
 
 ```sh
-npm --prefix packages/engine run wasm
-npm --prefix packages/engine run build
-npm --prefix examples/browser-minimal install
-npm --prefix examples/browser-minimal run dev
+npm ci
+npm run wasm
+npm run build:engine
+npm run build:svelte
+npm --workspace @tellegen/example-svelte-minimal run dev
 ```
 
-The package expects a bundler that understands wasm assets imported with `?url`. Vite and SvelteKit handle that path.
+The engine package resolves wasm assets relative to its packaged modules with
+`new URL(..., import.meta.url)`. Vite and SvelteKit handle that path for the
+Svelte package and for custom engine consumers.
 
-## Tiny Case Flow
+## Svelte Viewer
+
+```svelte
+<script lang="ts">
+  import { TellegenViewer } from "@tellegen/svelte";
+  import "@tellegen/svelte/styles.css";
+</script>
+
+<TellegenViewer />
+```
+
+For local files only:
+
+```svelte
+<script lang="ts">
+  import { TellegenViewer } from "@tellegen/svelte";
+  import "@tellegen/svelte/styles.css";
+</script>
+
+<TellegenViewer loadDefaultCases={false} showFooter={false} />
+```
+
+Run the local example:
+
+```sh
+npm --workspace @tellegen/example-svelte-minimal run dev
+```
+
+## Engine Flow
+
+Run the engine example:
+
+```sh
+npm --workspace @tellegen/example-browser-minimal run dev
+```
 
 ```ts
-import { browserWasmTransport, formatOf } from "@tellegen/engine";
+import { createStudy, formatOf, ingestCase } from "@tellegen/engine";
 
 const format = formatOf("case14.m");
 if (!format) throw new Error("unsupported case format");
 
-const parsed = await browserWasmTransport.ingestCase(caseText, format);
-const study = await browserWasmTransport.createStudy(parsed.network_json, "dcopf");
+const parsed = await ingestCase(caseText, format);
+const study = await createStudy(parsed.network_json, "dcopf");
 
 try {
   const preview = study.preview({ 3: 25 });
@@ -52,4 +98,7 @@ The call sequence is:
 
 ## Privacy Boundary
 
-Dropped files stay in the browser when the browser wasm transport is used. The parser, solve, preview, commit, and sensitivity paths all run in WebAssembly in the page. A host app only sends data to a server if it chooses an HTTP transport or writes its own upload path.
+Dropped files stay in the browser when the browser wasm path is used. The
+parser, solve, preview, commit, and sensitivity paths all run in WebAssembly in
+the page. A host app only sends data to a server if it chooses an HTTP path or
+writes its own upload path.

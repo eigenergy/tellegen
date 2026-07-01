@@ -49,8 +49,8 @@ pub use model::AcNetwork;
 pub use model::DcNetwork;
 #[cfg(feature = "sensitivity")]
 pub use problem::{
-    ac_pf, build_pf, dc_pf, AcPfFormulation, AcPfLayout, AcPfSolution, DcPfSolution, PfFormulation,
-    PfSystem,
+    ac_pf, build_dc_pf, dc_pf, AcPfFormulation, AcPfLayout, AcPfSolution, DcPfFormulation,
+    DcPfSolution, DcPfSystem,
 };
 #[cfg(feature = "conic")]
 pub use problem::{build_conic_opf, socwr_opf, ConicOpfFormulation, SocWrSolution};

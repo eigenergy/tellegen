@@ -15,7 +15,7 @@ RUN curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15
     && tar -xzf /tmp/wasm-pack.tar.gz -C /usr/local/bin --strip-components=1 --wildcards '*/wasm-pack' \
     && rm -f /tmp/wasm-pack.tar.gz
 # The whole Cargo workspace: wasm-pack builds the tellegen-wasm member, which
-# path-depends on the tellegen engine and resolves against the root lockfile.
+# depends on the tellegen engine and resolves against the root lockfile.
 COPY Cargo.toml Cargo.lock /build/
 COPY crates /build/crates
 # The core wasm disables SIMD so Safari (no relaxed SIMD) can parse it, and drops
@@ -31,17 +31,22 @@ RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm
 # ---- frontend build ----
 FROM node:22-slim AS frontend
 WORKDIR /app
-COPY packages/engine/package.json packages/engine/package-lock.json ./packages/engine/
-RUN cd packages/engine && npm ci
-COPY packages/engine ./packages/engine
-COPY crates/tellegen/src/api.rs ./crates/tellegen/src/api.rs
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+COPY packages/engine/package.json packages/engine/package.json
+COPY packages/svelte/package.json packages/svelte/package.json
+COPY examples/browser-minimal/package.json examples/browser-minimal/package.json
+COPY examples/svelte-minimal/package.json examples/svelte-minimal/package.json
+RUN npm ci --ignore-scripts
+COPY apps/web apps/web
+COPY packages/engine packages/engine
+COPY packages/svelte packages/svelte
+COPY examples/browser-minimal examples/browser-minimal
+COPY examples/svelte-minimal examples/svelte-minimal
+COPY crates/tellegen/src/api.rs crates/tellegen/src/api.rs
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
 COPY --from=wasm /out/wasm-sens-pkg ./packages/engine/src/wasm-sens-pkg
-RUN cd packages/engine && npm run build
-COPY apps/web/package.json apps/web/package-lock.json ./apps/web/
-RUN cd apps/web && npm ci
-COPY apps/web ./apps/web
-RUN cd apps/web && npm run build && npm run smoke:build
+RUN npm run build:engine && npm run build:web && npm run smoke:web
 
 # ---- tellegen backend (cargo-chef: dependency compile is a cacheable layer) ----
 FROM rust:1-slim-trixie AS chef
@@ -59,7 +64,7 @@ FROM chef AS server
 COPY --from=planner /build/recipe.json recipe.json
 # Cook only the server binary's dependencies; this layer is reused across builds
 # whenever Cargo.toml / Cargo.lock are unchanged, even when the crate source
-# changes. Scoping to the bin keeps the benchmark-only dependencies out of the build
+# changes. Scoping to the bin keeps the benchmark dependencies out of the build
 # entirely. `-p tellegen-server` selects the package explicitly so the bin resolves
 # regardless of the workspace `default-members` set (which is scoped to the engine);
 # `--locked` fails the build instead of silently editing Cargo.lock.
@@ -71,14 +76,17 @@ RUN cargo build --release --locked -p tellegen-server --bin tellegen-server
 # ---- runtime ----
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 tellegen \
+    && useradd --system --uid 10001 --gid tellegen --home-dir /app --shell /usr/sbin/nologin tellegen
 WORKDIR /app
 COPY --from=server /build/target/release/tellegen-server /usr/local/bin/tellegen-server
-COPY --from=frontend /app/apps/web/build /app/frontend/build
+COPY --chown=10001:10001 --from=frontend /app/apps/web/build /app/frontend/build
 
 ENV TELLEGEN_FRONTEND_BUILD=/app/frontend/build
 ENV TELLEGEN_DATA=/app/data
 EXPOSE 8000
+USER 10001:10001
 # The tellegen backend parses the staged cases and solves the base DC OPF at boot.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \
     CMD curl -fsS http://localhost:8000/api/health | grep -q '"ok"' || exit 1

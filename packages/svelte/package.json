@@ -1,0 +1,65 @@
+{
+  "name": "@tellegen/svelte",
+  "version": "0.1.0",
+  "description": "Svelte components for tellegen power system maps, local case files, and browser solves.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eigenergy/tellegen.git",
+    "directory": "packages/svelte"
+  },
+  "bugs": {
+    "url": "https://github.com/eigenergy/tellegen/issues"
+  },
+  "homepage": "https://eigenergy.github.io/tellegen/",
+  "svelte": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./components": {
+      "types": "./dist/components.d.ts",
+      "svelte": "./dist/components.js",
+      "default": "./dist/components.js"
+    },
+    "./map": {
+      "types": "./dist/map.d.ts",
+      "svelte": "./dist/map.js",
+      "default": "./dist/map.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "scripts": {
+    "build": "svelte-package",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "pack:dry-run": "npm pack --dry-run --cache ../../node_modules/.cache/npm-pack"
+  },
+  "dependencies": {
+    "@deck.gl/core": "^9.1.0",
+    "@deck.gl/layers": "^9.1.0",
+    "@deck.gl/mapbox": "^9.1.0",
+    "@tellegen/engine": "^0.1.0",
+    "maplibre-gl": "^5.0.0"
+  },
+  "peerDependencies": {
+    "svelte": ">=5.30 <6"
+  },
+  "devDependencies": {
+    "@sveltejs/package": "^2.3.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "svelte": "^5.30.0",
+    "svelte-check": "^4.1.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.3.0"
+  }
+}

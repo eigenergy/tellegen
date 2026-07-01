@@ -36,23 +36,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            packages/engine/package-lock.json
-            apps/web/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
-        working-directory: packages/engine
       - run: npm run wasm
-        working-directory: packages/engine
-      - run: npm run build
-        working-directory: packages/engine
-      - run: npm ci
-        working-directory: apps/web
-      - run: npm run check
-        working-directory: apps/web
-      - run: npm run build
-        working-directory: apps/web
-      - run: npm run smoke:build
-        working-directory: apps/web
+      - run: npm run build:engine
+      - run: npm run check:svelte
+      - run: npm run check:web
+      # build:web rebuilds @tellegen/svelte, which check:web (just above) already
+      # built; call the frontend build directly to skip that redundant rebuild.
+      - run: npm --workspace tellegen-frontend run build
+      - run: npm run smoke:web
 
   image:
     if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
@@ -90,6 +83,11 @@ jobs:
             --name tellegen-smoke \
             --publish 127.0.0.1:8000:8000 \
             --env TELLEGEN_ALLOW_FALLBACK=1 \
+            --read-only \
+            --tmpfs /tmp:size=64m,noexec,nosuid,nodev \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 512 \
             "${{ steps.meta.outputs.sha_tag }}"
           for attempt in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8000/api/health && curl -fsS http://127.0.0.1:8000/ | grep -q 'tellegen'; then
@@ -134,7 +132,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate deploy secrets
         run: |
-          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_PATH DEMO_URL; do
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_PATH DEMO_URL DEPLOY_KNOWN_HOSTS; do
             if [ -z "${!name}" ]; then
               echo "$name is not set"
               exit 1
@@ -146,14 +144,7 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/tellegen_deploy
           chmod 600 ~/.ssh/tellegen_deploy
-          # Pin the host key from a secret when provided; otherwise fall back to
-          # trust-on-first-use (a spoofed host could intercept that one deploy).
-          if [ -n "${DEPLOY_KNOWN_HOSTS:-}" ]; then
-            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          else
-            echo "TELLEGEN_DEPLOY_KNOWN_HOSTS not set; trusting the host key on first contact" >&2
-            ssh-keyscan -H "$DEPLOY_HOST" > ~/.ssh/known_hosts
-          fi
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
       - name: Copy deploy files
         run: |

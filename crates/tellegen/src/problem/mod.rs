@@ -4,7 +4,7 @@
 //! [`build_opf`] turns a [`DcNetwork`] and a formulation into an [`OpfProgram`] in
 //! Clarabel's standard form; [`crate::solve::run`] solves it and a
 //! formulation-specific readout maps the raw primal/dual vectors back into named
-//! blocks. [`build_pf`](pf_dc::build_pf) is the power flow analogue. Formulations
+//! blocks. [`build_dc_pf`](pf_dc::build_dc_pf) is the power flow analogue. Formulations
 //! assemble their programs through the shared [`ProgramBuilder`], which owns the
 //! sparse `(P, q, A, b)` accumulation so each formulation writes only its own blocks.
 //!
@@ -41,14 +41,14 @@ pub(crate) use conic::SocWrLayout;
 #[cfg(feature = "conic")]
 pub use conic::{build_conic_opf, socwr_opf, ConicOpfFormulation, SocWrSolution};
 #[cfg_attr(not(test), allow(unused_imports))]
-pub(crate) use dc::dcopf;
-pub(crate) use dc::dcopf_cancellable;
+pub(crate) use dc::dc_opf;
+pub(crate) use dc::dc_opf_cancellable;
 #[cfg(feature = "sensitivity")]
 pub(crate) use pf_ac::{ac_injections, ac_jacobian};
 #[cfg(feature = "sensitivity")]
 pub use pf_ac::{ac_pf, AcPfFormulation, AcPfLayout, AcPfSolution};
 #[cfg(feature = "sensitivity")]
-pub use pf_dc::{build_pf, dc_pf, DcPfSolution, PfFormulation, PfSystem};
+pub use pf_dc::{build_dc_pf, dc_pf, DcPfFormulation, DcPfSolution, DcPfSystem};
 
 /// A sparse convex program in Clarabel's standard form
 /// `min 1/2 x'Px + q'x  s.t. Ax + s = b, s in K`. Produced by [`build_opf`] and

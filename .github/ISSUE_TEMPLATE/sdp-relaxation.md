@@ -13,7 +13,7 @@ labels: enhancement
 - Clarabel cone: `SupportedConeT::PSDTriangleConeT(2n)` (triangle vectorization of the `2n x 2n` real block; note its off diagonal `sqrt(2)` scaling).
 - Ordering: `socwr <= sdp <= ac_opf`. SDP is the tighter bound.
 
-**Mirror.** `problem/conic.rs` (`SocWrLayout`, `assemble_conic_opf`, `socwr_opf`, `SocWrSolution`); `sens/conic.rs` (`ConicKkt`); `formulation.rs`; `api.rs` (`Problem`, `solve_network`, `socwr_solved` / `socwr_assemble`, `capabilities_json`); `study.rs` (`ConicState`); `lib.rs`; `apps/web/src/lib/wasm.ts` (`FORMULATIONS`).
+**Mirror.** `problem/conic.rs` (`SocWrLayout`, `assemble_conic_opf`, `socwr_opf`, `SocWrSolution`); `sens/conic.rs` (`ConicKkt`); `formulation.rs`; `api.rs` (`Problem`, `solve_network`, `socwr_solved` / `socwr_assemble`, `capabilities_json`); `study.rs` (`ConicState`); `lib.rs`; `packages/engine/src/index.ts` (`FORMULATIONS`).
 
 **Phase A: forward bound (moderate).**
 1. Add `Problem::Sdp` (tag `"sdp"`) and an `Sdp` formulation behind `conic`.
@@ -31,6 +31,6 @@ Acceptance: finite difference parity of the SDP sensitivity columns in `crates/b
 
 **Do not break.** DC, AC power flow, and SOCWR and their sensitivities stay identical.
 
-**Verify.** `cargo test --workspace`; `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo deny check`; `cargo build -p tellegen-wasm --target wasm32-unknown-unknown --features conic`; `cd apps/web && npm run check && npm run build && npm run smoke:build`.
+**Verify.** `cargo test --workspace`; `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo deny check`; `cargo build -p tellegen-wasm --target wasm32-unknown-unknown --features conic`; `npm run check && npm run build && npm run smoke:web`.
 
 **Staging.** Land Phase A first and verify the tighter bound. Phase B is independent. Do not block A on it.

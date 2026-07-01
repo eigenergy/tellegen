@@ -14,7 +14,8 @@ flow, and the SOCWR relaxation — run in the browser in WebAssembly. Case parsi
 
 ## Demo
 
-The public demo serves three TAMU ACTIVSg synthetic grids and the CATS
+The public demo at [tellegen.dev](https://tellegen.dev) serves three TAMU
+ACTIVSg synthetic grids and the CATS
 California Test System at their staged geographic coordinates. These are
 synthetic grids on geographic footprints, not surveyed infrastructure:
 

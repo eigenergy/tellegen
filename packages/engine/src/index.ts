@@ -13,9 +13,6 @@ import type {
   SolveResponse,
   SolveIteration,
 } from "./generated/contracts.js";
-import wasmUrl from "./wasm-pkg/tellegen_bg.wasm?url";
-import sensWasmUrl from "./wasm-sens-pkg/tellegen_sens_bg.wasm?url";
-
 export {
   CONTRACT_SOURCE_SHA256,
   CONTRACT_VERSION,
@@ -87,6 +84,9 @@ let sensitivityReady: Promise<
 let sensitivityUnsupported: string | null = null;
 
 function powerio() {
+  // Resolve the wasm asset only when the solver is used. SvelteKit's dev mode
+  // SSR pass can evaluate this module without touching the wasm loader.
+  const wasmUrl = new URL("./wasm-pkg/tellegen_bg.wasm", import.meta.url).href;
   ready ??= import("./wasm-pkg/tellegen.js")
     .then(async (mod) => {
       await mod.default({ module_or_path: wasmUrl });
@@ -104,9 +104,13 @@ function powerio() {
 function powerioSensitivity() {
   if (sensitivityUnsupported)
     return Promise.reject(new Error(sensitivityUnsupported));
+  const wasmUrl = new URL(
+    "./wasm-sens-pkg/tellegen_sens_bg.wasm",
+    import.meta.url,
+  ).href;
   sensitivityReady ??= import("./wasm-sens-pkg/tellegen_sens.js")
     .then(async (mod) => {
-      await mod.default({ module_or_path: sensWasmUrl });
+      await mod.default({ module_or_path: wasmUrl });
       return mod;
     })
     .catch((e) => {

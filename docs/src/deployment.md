@@ -44,6 +44,10 @@ container exits unless `TELLEGEN_ALLOW_FALLBACK=1` is set for a CI or local
 smoke check. Production deploys should stage the intended public case set before
 enabling the workflow.
 
+Treat every staged case as public. The browser fetches the full staged network
+JSON through `/api/cases/{id}/case` so it can build browser studies and exact
+solves locally.
+
 ## Local Build Deploy
 
 For a host that builds from source:
@@ -74,10 +78,11 @@ docker compose -p tellegen --env-file .env \
 ```
 
 The production compose file binds `127.0.0.1:8000`, mounts staged data read
-only, and sets the memory limit. The edge overlay adds the fixed container name
-and external `edge` network membership needed by the Caddy route. The fixed
-Compose project name matters because the shared Caddy edge stack is a separate
-project.
+only, runs with a read only root filesystem, drops Linux capabilities, blocks
+new privileges, caps process count, and sets the memory limit. The edge overlay
+adds the fixed container name and external `edge` network membership needed by
+the Caddy route. The fixed Compose project name matters because the shared Caddy
+edge stack is a separate project.
 
 Use the host deploy script for normal deploys and rollbacks:
 
@@ -119,12 +124,9 @@ Required repository secrets:
 - `TELLEGEN_DEPLOY_SSH_KEY`
 - `TELLEGEN_DEPLOY_PATH`, for example `/opt/tellegen`
 - `TELLEGEN_DEMO_URL`, for example `https://tellegen.dev`
-
-Optional but recommended:
-
 - `TELLEGEN_DEPLOY_KNOWN_HOSTS`: the pinned SSH host key for the deploy host,
-  the output of `ssh-keyscan <host>`. When set, the workflow uses it instead of
-  scanning the host key fresh each run.
+  the verified output of `ssh-keyscan -H <host>` or an equivalent known hosts
+  entry. The workflow refuses to deploy without this secret.
 
 The workflow does not send the GitHub Actions token to the host. The host must
 already be able to pull the GHCR image, or the GHCR package must be public.
@@ -155,8 +157,15 @@ For the full public demo, that array should contain `case200`, `case500`,
 `deploy/Caddyfile` is a sample route for a shared edge proxy. Tellegen CI does
 not mutate proxy config files.
 
+The sample route sets HSTS, CSP, permissions policy, referrer policy, frame
+ancestor denial, and content type sniffing protection. The CSP allows the
+current SvelteKit bootstrap, WebAssembly compilation, MapLibre blob workers, and
+CARTO tile images.
+
 A Caddy image with `github.com/mholt/caddy-ratelimit` is needed for the sample
-rate limits; stock Caddy does not include that module. Keep solve endpoints
+rate limits; stock Caddy does not include that module. The tellegen backend also
+enforces solve and sensitivity rate limits with the same defaults, so the
+container has a guard even when the proxy module is absent. Keep solve endpoints
 compatible with SSE: do not buffer responses, and do not use short write
 timeouts on `/api/cases/*/solve`.
 
@@ -169,8 +178,18 @@ prebuilt case payloads.
 
 ## Public Hardening
 
-- Keep the Caddy rate limits on solve and sensitivity endpoints.
+- Keep the Caddy security headers and rate limits on solve and sensitivity
+  endpoints.
+- Keep the backend rate limits enabled. Defaults are 5 solve requests and 25
+  sensitivity requests per client per 10 seconds. Set
+  `TELLEGEN_SOLVE_RATE_LIMIT_EVENTS=0` or
+  `TELLEGEN_SENSITIVITY_RATE_LIMIT_EVENTS=0` only for local debugging.
+- Keep the image running as the bundled unprivileged user and keep the compose
+  read only filesystem, dropped capabilities, no new privileges, process cap,
+  and memory cap.
 - Keep staged data mounted read only.
+- Stage only cases that are cleared for public distribution; the demo serves the
+  full network JSON for each staged case.
 - Add request body limits before adding any tellegen backend upload endpoint.
 - Current file drop parsing runs in the browser and does not reach the tellegen
   backend.

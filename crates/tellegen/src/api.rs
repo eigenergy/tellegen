@@ -19,7 +19,7 @@ use powerio::network::Network;
 use serde::{Deserialize, Serialize};
 
 use super::model::DcNetwork;
-use super::problem::dcopf_cancellable;
+use super::problem::dc_opf_cancellable;
 use super::solve::SolveIteration;
 
 #[cfg(feature = "sensitivity")]
@@ -287,13 +287,13 @@ pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, Stri
 /// `Err` rather than degrading silently.
 pub fn solve_network(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
     match req.formulation {
-        Problem::DcOpf => solve_dcopf(net, req),
+        Problem::DcOpf => solve_dc_opf(net, req),
         #[cfg(feature = "sensitivity")]
-        Problem::DcPf => solve_dcpf(net, req),
+        Problem::DcPf => solve_dc_pf(net, req),
         #[cfg(not(feature = "sensitivity"))]
         Problem::DcPf => Err("dcpf requires the `sensitivity` feature".into()),
         #[cfg(feature = "sensitivity")]
-        Problem::AcPf => solve_acpf(net, req),
+        Problem::AcPf => solve_ac_pf(net, req),
         #[cfg(not(feature = "sensitivity"))]
         Problem::AcPf => Err("acpf requires the `sensitivity` feature".into()),
         #[cfg(feature = "conic")]
@@ -306,16 +306,16 @@ pub fn solve_network(net: &Network, req: &SolveRequest) -> Result<SolveResponse,
     }
 }
 
-fn solve_dcopf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_dc_opf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
     let dc = DcNetwork::from_network(net)?;
-    dcopf_response(dc, req, None)
+    dc_opf_response(dc, req, None)
 }
 
 /// Apply the request's operating-point edits to an owned [`DcNetwork`] and solve the
 /// DC OPF, returning the perturbed model alongside its solution. Kept separate from
-/// [`dcopf_assemble`] so a [`Study`](crate::study::Study) can retain the solved
+/// [`dc_opf_assemble`] so a [`Study`](crate::study::Study) can retain the solved
 /// model + solution and build a `DcKkt` for first-order previews without re-solving.
-pub(crate) fn dcopf_solved(
+pub(crate) fn dc_opf_solved(
     mut dc: DcNetwork,
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
@@ -323,14 +323,14 @@ pub(crate) fn dcopf_solved(
     dc.allow_shed = req.options.shed;
     let bus_idx = bus_index_map(&dc.bus_ids);
     apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas)?;
-    let sol = dcopf_cancellable(&dc, cancel)?;
+    let sol = dc_opf_cancellable(&dc, cancel)?;
     Ok((dc, sol))
 }
 
 /// Assemble the DC OPF [`SolveResponse`] (and any requested sensitivity cells) from a
 /// solved model. Shared by the one-shot path and the cached [`Study`] path.
 #[cfg_attr(not(feature = "sensitivity"), allow(unused_variables))]
-pub(crate) fn dcopf_assemble(
+pub(crate) fn dc_opf_assemble(
     dc: &DcNetwork,
     sol: &super::solve::DcSolution,
     req: &SolveRequest,
@@ -360,18 +360,18 @@ pub(crate) fn dcopf_assemble(
 }
 
 /// Solve the DC OPF for an owned [`DcNetwork`] and assemble the response. Shared by
-/// [`solve_dcopf`] (build-then-solve) and [`solve_prebuilt`] (cached model).
-fn dcopf_response(
+/// [`solve_dc_opf`] (build-then-solve) and [`solve_prebuilt`] (cached model).
+fn dc_opf_response(
     dc: DcNetwork,
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<SolveResponse, String> {
-    let (dc, sol) = dcopf_solved(dc, req, cancel)?;
-    dcopf_assemble(&dc, &sol, req)
+    let (dc, sol) = dc_opf_solved(dc, req, cancel)?;
+    dc_opf_assemble(&dc, &sol, req)
 }
 
 #[cfg(feature = "sensitivity")]
-fn solve_dcpf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_dc_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
     let mut dc = DcNetwork::from_network(net)?;
     let base = dc.base_mva;
     let bus_idx = bus_index_map(&dc.bus_ids);
@@ -403,15 +403,15 @@ fn solve_dcpf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String
 }
 
 #[cfg(feature = "sensitivity")]
-fn solve_acpf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
-    let (acnet, sol) = acpf_solved(super::model::AcNetwork::from_network(net)?, req)?;
-    acpf_assemble(&acnet, &sol, req)
+fn solve_ac_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+    let (acnet, sol) = ac_pf_solved(super::model::AcNetwork::from_network(net)?, req)?;
+    ac_pf_assemble(&acnet, &sol, req)
 }
 
 /// Apply the request's demand edits to an owned [`AcNetwork`] and solve the AC power
 /// flow, returning the perturbed model and its solution (retained for previews).
 #[cfg(feature = "sensitivity")]
-pub(crate) fn acpf_solved(
+pub(crate) fn ac_pf_solved(
     mut acnet: super::model::AcNetwork,
     req: &SolveRequest,
 ) -> Result<(super::model::AcNetwork, super::problem::AcPfSolution), String> {
@@ -423,7 +423,7 @@ pub(crate) fn acpf_solved(
 /// Assemble the AC power flow [`SolveResponse`] (and sensitivity cells) from a solved
 /// model. Shared by the one-shot path and the cached [`Study`] path.
 #[cfg(feature = "sensitivity")]
-pub(crate) fn acpf_assemble(
+pub(crate) fn ac_pf_assemble(
     acnet: &super::model::AcNetwork,
     sol: &super::problem::AcPfSolution,
     req: &SolveRequest,
@@ -534,7 +534,7 @@ pub fn solve_prebuilt_cancellable(
 ) -> Result<SolveResponse, String> {
     // Clone the cached model so the perturbation never touches it; every field but
     // demand is constant for the case, so this is a flat Vec copy.
-    dcopf_response(base_dc.clone(), req, cancel)
+    dc_opf_response(base_dc.clone(), req, cancel)
 }
 
 // ---------------------------------------------------------------------------
@@ -760,6 +760,47 @@ fn bus_index_map(bus_ids: &[usize]) -> HashMap<usize, usize> {
     bus_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect()
 }
 
+/// `deltas` sorted by bus id. `HashMap`'s randomized hashing means iterating it
+/// directly could surface a different validation error first on different runs of
+/// the same invalid request; a deterministic order keeps `apply_demand_deltas`'s
+/// error a function of the request alone.
+fn sorted_deltas(deltas: &HashMap<i64, f64>) -> Vec<(i64, f64)> {
+    let mut entries: Vec<(i64, f64)> = deltas.iter().map(|(&bus, &mw)| (bus, mw)).collect();
+    entries.sort_unstable_by_key(|&(bus, _)| bus);
+    entries
+}
+
+/// Validate one demand delta and resolve its bus to a dense index. Shared by the DC
+/// and AC/SOCWR appliers so a positive bus id, a finite delta, a known bus, and a
+/// delta that doesn't drive demand negative are enforced identically for both.
+/// `bus` is cast through `usize::try_from`, not `as`, so a bus id that doesn't fit
+/// `usize` (reachable on the 32-bit wasm32 target) is rejected as unknown instead of
+/// silently truncating onto whatever bus the wrapped value happens to name.
+fn resolve_demand_delta(
+    bus: i64,
+    mw: f64,
+    bus_idx: &HashMap<usize, usize>,
+    base_mva: f64,
+    current_demand_pu: impl Fn(usize) -> f64,
+) -> Result<usize, String> {
+    if bus <= 0 {
+        return Err("demand delta bus must be positive".into());
+    }
+    if !mw.is_finite() {
+        return Err(format!("demand delta for bus {bus} must be finite"));
+    }
+    let key = usize::try_from(bus).map_err(|_| format!("unknown demand delta bus {bus}"))?;
+    let i = *bus_idx
+        .get(&key)
+        .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
+    if current_demand_pu(i) * base_mva + mw < -1e-9 {
+        return Err(format!(
+            "demand delta for bus {bus} would make demand negative"
+        ));
+    }
+    Ok(i)
+}
+
 /// Establish the operating point: `demand += delta` (per unit) at each named bus.
 fn apply_demand_deltas(
     dc: &mut DcNetwork,
@@ -767,21 +808,8 @@ fn apply_demand_deltas(
     deltas: &HashMap<i64, f64>,
 ) -> Result<(), String> {
     let base = dc.base_mva;
-    for (&bus, &mw) in deltas {
-        if bus <= 0 {
-            return Err("demand delta bus must be positive".into());
-        }
-        if !mw.is_finite() {
-            return Err(format!("demand delta for bus {bus} must be finite"));
-        }
-        let i = *bus_idx
-            .get(&(bus as usize))
-            .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
-        if dc.demand[i] * base + mw < -1e-9 {
-            return Err(format!(
-                "demand delta for bus {bus} would make demand negative"
-            ));
-        }
+    for (bus, mw) in sorted_deltas(deltas) {
+        let i = resolve_demand_delta(bus, mw, bus_idx, base, |i| dc.demand[i])?;
         dc.demand[i] += mw / base;
     }
     Ok(())
@@ -795,21 +823,8 @@ fn apply_demand_deltas_ac(
 ) -> Result<(), String> {
     let base = acnet.base_mva;
     let idx = bus_index_map(&acnet.bus_ids);
-    for (&bus, &mw) in deltas {
-        if bus <= 0 {
-            return Err("demand delta bus must be positive".into());
-        }
-        if !mw.is_finite() {
-            return Err(format!("demand delta for bus {bus} must be finite"));
-        }
-        let i = *idx
-            .get(&(bus as usize))
-            .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
-        if acnet.pd[i] * base + mw < -1e-9 {
-            return Err(format!(
-                "demand delta for bus {bus} would make demand negative"
-            ));
-        }
+    for (bus, mw) in sorted_deltas(deltas) {
+        let i = resolve_demand_delta(bus, mw, &idx, base, |i| acnet.pd[i])?;
         acnet.pd[i] += mw / base;
     }
     Ok(())
@@ -1102,8 +1117,8 @@ mod tests {
         assert_eq!(tags, vec!["dcpf", "dcopf", "acpf", "socwr", "acopf"]);
         // DC OPF is always built; acopf is not in this build, so it reports unavailable
         // (the tag stays in the matrix for a stable wire contract).
-        let dcopf = arr.iter().find(|f| f["formulation"] == "dcopf").unwrap();
-        assert_eq!(dcopf["available"], true);
+        let dc_opf = arr.iter().find(|f| f["formulation"] == "dcopf").unwrap();
+        assert_eq!(dc_opf["available"], true);
         let acopf = arr.iter().find(|f| f["formulation"] == "acopf").unwrap();
         assert_eq!(acopf["available"], false);
     }
@@ -1196,7 +1211,7 @@ mod tests {
     fn capabilities_match_engine() {
         use super::super::formulation::AcPolar;
         use super::super::model::{AcNetwork, DcNetwork};
-        use super::super::problem::{ac_pf, dcopf};
+        use super::super::problem::{ac_pf, dc_opf};
         use super::super::sens::{AcNewton, DcKkt, Differentiable};
 
         let net = powerio::parse_str(CASE3, "matpower").unwrap().network;
@@ -1225,7 +1240,7 @@ mod tests {
 
         // DC OPF (always available under `sensitivity`).
         let dc = DcNetwork::from_network(&net).unwrap();
-        let dc_sol = dcopf(&dc).unwrap();
+        let dc_sol = dc_opf(&dc).unwrap();
         check(Problem::DcOpf, &DcKkt::new(&dc, &dc_sol));
 
         // AC power flow (Newton system).

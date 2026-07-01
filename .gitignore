@@ -7,12 +7,15 @@ apps/web/.svelte-kit/
 apps/web/playwright-report/
 apps/web/test-results/
 examples/browser-minimal/dist/
+examples/svelte-minimal/dist/
+examples/svelte-minimal/.svelte-kit/
 packages/engine/dist/
+packages/svelte/.svelte-kit/
+packages/svelte/dist/
+*.tgz
 
 # Rust
 /target/
-apps/web/src/lib/wasm-pkg/
-apps/web/src/lib/wasm-sens-pkg/
 packages/engine/src/wasm-pkg/
 packages/engine/src/wasm-sens-pkg/
 
@@ -30,3 +33,6 @@ ISSUE-DRAFTS.md
 
 # Playwright MCP scratch output
 .playwright-mcp/
+
+# Private working notes (not published)
+notes/

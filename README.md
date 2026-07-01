@@ -7,14 +7,32 @@
 Reactive visualization for power systems optimization. The name refers to
 Tellegen's theorem and the adjoint sensitivity calculations.
 
+**Live demo: [tellegen.dev](https://tellegen.dev)**
+
 tellegen uses a gradient preview, exact commit interaction model. Perturbations
-update the display from KKT sensitivity columns. Exact solves for DC OPF and the
-SOCWR relaxation run in the browser in WebAssembly; full AC OPF is in progress.
-Case parsing uses [powerio](https://github.com/eigenergy/powerio).
+update the display from KKT sensitivity columns. Exact solves for DC OPF, AC
+power flow, and the SOCWR relaxation run in the browser in WebAssembly; full AC
+OPF is in progress. Case parsing uses
+[powerio](https://github.com/eigenergy/powerio).
 
 Full documentation is published with mdBook at
 [eigenergy.github.io/tellegen](https://eigenergy.github.io/tellegen/). The
 source lives in [docs/src/SUMMARY.md](docs/src/SUMMARY.md).
+
+## Packages
+
+```sh
+npm install @tellegen/svelte   # map, panels, and solve card as Svelte components
+npm install @tellegen/engine   # case parsing and wasm solves, framework agnostic
+```
+
+`@tellegen/engine` exports case parsing, browser wasm solving, `Study` preview
+and commit calls, sensitivities, and generated TypeScript types.
+`@tellegen/svelte` exports the map, panels, local file flow, and solve card as
+Svelte components. Both packages are MIT licensed. Start with the
+[framework quickstart](https://eigenergy.github.io/tellegen/framework-quickstart.html);
+`examples/browser-minimal/` and `examples/svelte-minimal/` are working
+integrations of each package.
 
 ## Demo Behavior
 
@@ -60,33 +78,34 @@ TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
 WebAssembly module:
 
 ```sh
-cd apps/web
+npm ci
 npm run wasm
+npm run build:engine
 ```
 
 tellegen frontend demo:
 
 ```sh
-cd apps/web
 npm ci
-npm run dev
+npm run wasm
+npm run build:engine
+npm run build:svelte
+npm --workspace tellegen-frontend run dev
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:8000`.
+The Vite dev server proxies `/api` to `http://localhost:8000`. `apps/web`
+resolves `@tellegen/svelte` through its built `dist/`, so `build:svelte` must
+run before the dev server starts.
 
-Frontend package:
+Framework package tarballs:
 
 ```sh
-cd apps/web
-npm run package
+npm run pack:engine
+npm run pack:svelte
 ```
 
-The package is `tellegen-frontend`. It exports `tellegen-frontend`,
-`tellegen-frontend/map`, `tellegen-frontend/components`,
-`tellegen-frontend/types`, `tellegen-frontend/wasm`, and
-`tellegen-frontend/styles.css`. See
-[docs/src/frontend-package.md](docs/src/frontend-package.md) for a consuming app
-example.
+`apps/web` is a private hosted demo that consumes the Svelte package. See
+[docs/src/frontend-package.md](docs/src/frontend-package.md).
 
 ## Data
 
@@ -114,17 +133,20 @@ cargo test --workspace
 tellegen frontend checks:
 
 ```sh
-cd apps/web
 npm run check
-npm run package
 npm run build
-npm run smoke:build
+npm run smoke:web
+npm run test:downstream
 ```
 
 ## Repository layout
 
-- `apps/web/`: `tellegen-frontend` package and SvelteKit demo
+- `apps/web/`: private SvelteKit hosted demo
 - `crates/`: Rust workspace — `tellegen` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
+- `packages/engine/`: public `@tellegen/engine` browser package
+- `packages/svelte/`: public `@tellegen/svelte` component package
+- `examples/browser-minimal/`: minimal downstream Vite example
+- `examples/svelte-minimal/`: minimal Svelte example using the component package
 - `scripts/`: data staging and docs build helpers
 - `deploy/`: deployment compose files and proxy notes
 - `docs/src/`: mdBook documentation source
@@ -152,7 +174,11 @@ where each value is a MW delta from the base case. The solve stream emits
 `status`, `solution`, optional `sensitivity`, and `done` events.
 
 The tellegen backend solve work is bounded by `TELLEGEN_SOLVER_CONCURRENCY`
-(default `2`) and `TELLEGEN_SOLVER_TIMEOUT_SECS` (default `30`).
+(default `2`) and `TELLEGEN_SOLVER_TIMEOUT_SECS` (default `30`). Public solve
+routes are also rate limited per client: 5 solve requests and 25 sensitivity
+requests per 10 seconds by default. Tune with
+`TELLEGEN_RATE_LIMIT_WINDOW_SECS`, `TELLEGEN_SOLVE_RATE_LIMIT_EVENTS`, and
+`TELLEGEN_SENSITIVITY_RATE_LIMIT_EVENTS`.
 
 ## Deployment
 
@@ -170,12 +196,15 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 ## Roadmap
 
-- harden the frontend package boundary with outside consumers
-- canonical display data in powerio
+The roadmap lives on the
+[direction page](https://eigenergy.github.io/tellegen/direction.html): near
+term, harden the framework package boundary; mid term, make the no-backend
+deployment the default; long term, AC in the browser.
 
 ## License
 
 The Rust crates are licensed under either of [Apache-2.0](crates/tellegen/LICENSE-APACHE)
-or [MIT](crates/tellegen/LICENSE-MIT), at your option. The web app under `apps/web/` is
+or [MIT](crates/tellegen/LICENSE-MIT), at your option. The npm packages
+`@tellegen/engine` and `@tellegen/svelte` and the web app under `apps/web/` are
 [MIT](LICENSE). See [crates/tellegen/NOTICE](crates/tellegen/NOTICE) and
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for attributions.
+[docs/src/third-party-notices.md](docs/src/third-party-notices.md) for attributions.

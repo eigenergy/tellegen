@@ -5,13 +5,16 @@
 node_modules
 apps/web/node_modules
 apps/web/build
+apps/web/dist
 apps/web/.svelte-kit
-apps/web/src/lib/wasm-pkg
-apps/web/src/lib/wasm-sens-pkg
+examples/browser-minimal/dist
+examples/svelte-minimal/dist
 packages/engine/node_modules
 packages/engine/dist
 packages/engine/src/wasm-pkg
 packages/engine/src/wasm-sens-pkg
+packages/svelte/.svelte-kit
+packages/svelte/dist
 
 # Rust build artifacts (the workspace target/ lives at the repo root now)
 target

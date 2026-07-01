@@ -1,9 +1,9 @@
 # tellegen monorepo task runner — `just` lists recipes, `just ci` runs the gates.
 #
-# The Rust side is a Cargo workspace (crates/*); the web app (apps/web) is a
-# standalone npm package for now (packages/ is reserved for a future shared
-# @tellegen/engine). This file is the single place that knows how the pieces fit
-# together across the two languages.
+# The Rust side is a Cargo workspace (crates/*). The JavaScript side is an npm
+# workspace covering packages/engine, packages/svelte, apps/web,
+# examples/browser-minimal, and examples/svelte-minimal. This file is the
+# single place that knows how the pieces fit together across the two languages.
 
 # List recipes.
 default:
@@ -43,29 +43,61 @@ epl-guard:
     done
     echo "ok: no EPL pounce in wasm / server / cli"
 
-# ---- WebAssembly + web (apps/web) ----
+# ---- JavaScript workspace ----
 
-# Build both wasm packages (core + sensitivity) into apps/web/src/lib.
+# Build both wasm packages (core + sensitivity) into packages/engine.
 wasm:
-    cd apps/web && npm run wasm
+    npm run wasm
 
-# Build the web app (expects `just wasm` first).
+# Type-check the engine package.
+engine-check:
+    npm run check:engine
+
+# Build the engine package.
+engine-build:
+    npm run build:engine
+
+# Type-check the Svelte component package.
+svelte-check:
+    npm run check:svelte
+
+# Build the Svelte component package.
+svelte-build:
+    npm run build:svelte
+
+# CI gate: install the packed tarballs into a temporary consumer and build it.
+svelte-packed:
+    npm run test:svelte-packed
+
+# Build the minimal downstream example.
+example-build:
+    npm run build:example
+
+# CI gate: package-level import smoke test.
+js-import:
+    npm run test:import
+
+# Build the web app (expects `just wasm` and `just engine-build` first).
 web-build:
-    cd apps/web && npm run build
+    npm run build:web
 
 # Type-check + svelte-check the web app.
 web-check:
-    cd apps/web && npm run check
+    npm run check:web
 
 # CI gate: fail if the web app is unformatted.
 web-lint:
-    cd apps/web && npm run lint
+    npm run lint:web
 
 # CI gate: smoke-check the static build output.
 web-smoke:
-    cd apps/web && npm run smoke:build
+    npm run smoke:web
+
+# CI gate: browser coverage for the hosted demo local file flow.
+web-browser:
+    npm run test:browser
 
 # ---- aggregate ----
 
-# Everything CI enforces, in order.
-ci: fmt-check clippy deny epl-guard test wasm web-lint web-check web-build web-smoke
+# Everything CI enforces locally, in order.
+ci: fmt-check clippy deny epl-guard test wasm engine-check engine-build js-import web-lint svelte-check web-check svelte-packed web-build web-smoke web-browser

@@ -8,21 +8,21 @@ use crate::model::DcNetwork;
 use crate::solve::solve_sparse;
 
 /// The assembled (grounded) linear system of a power flow, `A x = rhs`. Produced
-/// by [`build_pf`] and solved by [`crate::solve::solve_sparse`]. `triplets` are
+/// by [`build_dc_pf`] and solved by [`crate::solve::solve_sparse`]. `triplets` are
 /// the `(row, col, value)` entries of the square `dim x dim` operator (duplicates
 /// summed). Formulations construct one through [`Self::new`].
 #[non_exhaustive]
-pub struct PfSystem {
+pub struct DcPfSystem {
     pub(crate) dim: usize,
     pub(crate) triplets: Vec<(usize, usize, f64)>,
     pub(crate) rhs: Vec<f64>,
 }
 
-impl PfSystem {
+impl DcPfSystem {
     /// Bundle the operator (as summed `(row, col, value)` triplets) and the
     /// right-hand side into a `dim x dim` system.
     pub fn new(dim: usize, triplets: Vec<(usize, usize, f64)>, rhs: Vec<f64>) -> Self {
-        PfSystem { dim, triplets, rhs }
+        DcPfSystem { dim, triplets, rhs }
     }
 }
 
@@ -54,27 +54,29 @@ impl DcPfSolution {
 }
 
 /// A formulation that can assemble a power flow system — the dispatch point the
-/// generic [`build_pf`] calls, the power flow analogue of
+/// generic [`build_dc_pf`] calls, the power flow analogue of
 /// [`OpfFormulation`](super::OpfFormulation). Not sealed.
-pub trait PfFormulation: Formulation {
+pub trait DcPfFormulation: Formulation {
     /// Assemble the power flow system for `model` at the given bus injections.
     /// `injection[i]` is the net per-unit real-power injection at dense bus `i`
     /// (generation minus load); it must have length `model.n`. The reference-bus
     /// entry is ignored — the slack bus absorbs whatever closes the balance.
-    fn assemble_pf(&self, model: &DcNetwork, injection: &[f64]) -> PfSystem;
+    fn assemble_pf(&self, model: &DcNetwork, injection: &[f64]) -> DcPfSystem;
 }
 
 /// Build the power flow system for `model` at `injection` under formulation `f`.
 /// Generic over the formulation, like [`build_opf`](super::build_opf); the runtime
 /// `match` lives in `api`, above this. `injection` must have length `model.n`.
-pub fn build_pf<F: PfFormulation>(f: &F, model: &DcNetwork, injection: &[f64]) -> PfSystem {
+pub fn build_dc_pf<F: DcPfFormulation>(f: &F, model: &DcNetwork, injection: &[f64]) -> DcPfSystem {
     f.assemble_pf(model, injection)
 }
 
-impl PfFormulation for Dc {
-    fn assemble_pf(&self, dc: &DcNetwork, injection: &[f64]) -> PfSystem {
+impl DcPfFormulation for Dc {
+    fn assemble_pf(&self, dc: &DcNetwork, injection: &[f64]) -> DcPfSystem {
         let n = dc.n;
         let r = dc.ref_bus;
+        // There is no `DcPfLayout`: rows and columns are the dense bus angle
+        // indices, with the reference bus kept as an identity row.
         // Ground the singular susceptance Laplacian: drop the reference row and
         // column and put a 1 on the reference diagonal, so the system enforces
         // `theta[ref] = 0` and the reduced Laplacian carries the rest. `B[i,ref]`
@@ -90,7 +92,7 @@ impl PfFormulation for Dc {
         // rhs = injection, with the reference entry zeroed to match its identity row.
         let mut rhs = injection.to_vec();
         rhs[r] = 0.0;
-        PfSystem::new(n, triplets, rhs)
+        DcPfSystem::new(n, triplets, rhs)
     }
 }
 
@@ -125,7 +127,7 @@ pub fn dc_pf(model: &DcNetwork, injection: &[f64]) -> Result<DcPfSolution, Strin
             model.n
         ));
     }
-    let sys = build_pf(&Dc::new(), model, injection);
+    let sys = build_dc_pf(&Dc::new(), model, injection);
     let theta = solve_sparse(sys.dim, &sys.triplets, &sys.rhs)?;
     Ok(read_dc_pf(model, &theta))
 }
@@ -134,7 +136,7 @@ pub fn dc_pf(model: &DcNetwork, injection: &[f64]) -> Result<DcPfSolution, Strin
 mod tests {
     use super::*;
     use crate::model::parse_case3;
-    use crate::problem::dcopf;
+    use crate::problem::dc_opf;
 
     fn approx(a: f64, b: f64, tol: f64, what: &str) {
         assert!((a - b).abs() < tol, "{what}: expected {b}, got {a}");
@@ -178,11 +180,11 @@ mod tests {
     fn dc_power_flow_reproduces_opf_dispatch() {
         // The OPF solves for an optimal dispatch and the angles that carry it.
         // Feeding that dispatch back as fixed injections must reproduce exactly the
-        // same angles and flows, because build_pf and build_opf share one B-theta
+        // same angles and flows, because build_dc_pf and build_opf share one B-theta
         // formulation and ground at the same reference. This ties the new problem
         // to the already-validated one.
         let dc = parse_case3();
-        let opf = dcopf(&dc).expect("dc opf");
+        let opf = dc_opf(&dc).expect("dc opf");
 
         let mut injection: Vec<f64> = (0..dc.n).map(|i| opf.psh[i] - dc.demand[i]).collect();
         for j in 0..dc.k {

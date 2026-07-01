@@ -33,36 +33,24 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            packages/engine/package-lock.json
-            examples/browser-minimal/package-lock.json
-            apps/web/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
-        working-directory: packages/engine
       # `npm run wasm` builds both wasm packages from crates/tellegen-wasm with the
       # correct out-names and RUSTFLAGS (single source of truth in the engine package).
       - run: npm run wasm
-        working-directory: packages/engine
-      - run: npm run build
-        working-directory: packages/engine
-      - run: npm ci
-        working-directory: examples/browser-minimal
+      - run: npm run check:engine
+      - run: npm run build:engine
       - run: npm run test:import
-        working-directory: packages/engine
-      - run: npm ci
-        working-directory: apps/web
-      - run: npx playwright install --with-deps chromium
-        working-directory: apps/web
-      - run: npm run lint
-        working-directory: apps/web
-      - run: npm run check
-        working-directory: apps/web
-      - run: npm run build
-        working-directory: apps/web
-      - run: npm run smoke:build
-        working-directory: apps/web
+      - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
+      - run: npm run lint:web
+      - run: npm run check:svelte
+      - run: npm run check:web
+      - run: npm run test:svelte-packed
+      # build:web rebuilds @tellegen/svelte, which check:web (just above) already
+      # built; call the frontend build directly to skip that redundant rebuild.
+      - run: npm --workspace tellegen-frontend run build
+      - run: npm run smoke:web
       - run: npm run test:browser
-        working-directory: apps/web
 
   # Format, lint, and supply chain. Keeps the shipping crates warning-clean and the
   # whole dependency graph on permissive licenses (Apache-2.0/MIT).
@@ -106,6 +94,11 @@ jobs:
             --name tellegen-smoke \
             --publish 127.0.0.1:8000:8000 \
             --env TELLEGEN_ALLOW_FALLBACK=1 \
+            --read-only \
+            --tmpfs /tmp:size=64m,noexec,nosuid,nodev \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 512 \
             tellegen:ci
           for attempt in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8000/api/health && curl -fsS http://127.0.0.1:8000/ | grep -q 'tellegen'; then

@@ -1,0 +1,9 @@
+html,
+body,
+#app {
+	min-height: 100%;
+}
+
+#app {
+	min-height: 100dvh;
+}

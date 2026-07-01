@@ -14,8 +14,8 @@ It shows the downstream app flow:
 Run it from the repository root:
 
 ```sh
-npm --prefix packages/engine run wasm
-npm --prefix packages/engine run build
-npm --prefix examples/browser-minimal install
-npm --prefix examples/browser-minimal run dev
+npm ci
+npm run wasm
+npm run build:engine
+npm --workspace @tellegen/example-browser-minimal run dev
 ```

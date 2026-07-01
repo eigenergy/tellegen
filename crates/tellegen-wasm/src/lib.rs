@@ -319,6 +319,21 @@ pub fn solve_dc_json(network_json: &str, deltas_json: &str) -> Result<String, St
     let mut request = SolveRequest::default();
     request.edits.deltas = req.deltas;
 
+    // The engine's bus index only holds model buses, so a demand delta at a bus
+    // excluded from the DC model (an isolated MATPOWER type-4 bus) would error
+    // deep in the engine as "unknown". Reject it here with an accurate message;
+    // a bus id absent from the network entirely still errors as unknown.
+    for &bus in request.edits.deltas.keys() {
+        let Ok(key) = usize::try_from(bus) else {
+            continue;
+        };
+        if !dc.bus_ids.contains(&key) && net.buses.iter().any(|b| b.id.0 == key) {
+            return Err(format!(
+                "demand delta bus {bus} is isolated and excluded from the model"
+            ));
+        }
+    }
+
     // The dLMP/dd column: a Price/Demand sensitivity cell over the single sens bus.
     // Only meaningful in the sensitivity build; the core build leaves `dlmp_dd` null.
     #[cfg(feature = "sensitivity")]
@@ -326,18 +341,27 @@ pub fn solve_dc_json(network_json: &str, deltas_json: &str) -> Result<String, St
         if raw_bus <= 0 {
             return Err(format!("unknown bus {raw_bus}"));
         }
-        let bus = raw_bus as usize;
-        let idx = dc
-            .bus_ids
-            .iter()
-            .position(|&id| id == bus)
-            .ok_or_else(|| format!("unknown bus {bus}"))?;
-        request.sensitivities = vec![tellegen::SensRequest {
-            operand: tellegen::Operand::Price(tellegen::Power::Active),
-            parameter: tellegen::Parameter::Demand(tellegen::Power::Active),
-            indices: Some(vec![idx]),
-            mode: tellegen::Mode::Auto,
-        }];
+        let bus = match usize::try_from(raw_bus) {
+            Ok(b) => b,
+            Err(_) => return Err(format!("unknown bus {raw_bus}")),
+        };
+        match dc.bus_ids.iter().position(|&id| id == bus) {
+            Some(idx) => {
+                request.sensitivities = vec![tellegen::SensRequest {
+                    operand: tellegen::Operand::Price(tellegen::Power::Active),
+                    parameter: tellegen::Parameter::Demand(tellegen::Power::Active),
+                    indices: Some(vec![idx]),
+                    mode: tellegen::Mode::Auto,
+                }];
+            }
+            // A bus that exists in the full network but was excluded from the DC
+            // model (e.g. an isolated MATPOWER type-4 bus) has no DC sensitivity
+            // to report; solve without a sensitivity column instead of erroring
+            // the whole request. A bus id absent from the network entirely is
+            // still rejected below.
+            None if net.buses.iter().any(|b| b.id.0 == bus) => {}
+            None => return Err(format!("unknown bus {bus}")),
+        }
     }
 
     let resp = tellegen::solve_prebuilt(&dc, &request)?;
@@ -774,6 +798,25 @@ mpc.gencost = [
         );
     }
 
+    #[test]
+    fn solve_dc_delta_at_isolated_bus_errors_as_isolated_not_unknown() {
+        // Bus 15 (type 4) exists in the raw network but is excluded from the DC
+        // model, so a demand delta there cannot enter the solve. It must be
+        // rejected as isolated, not with the misleading "unknown bus" message.
+        let case_with_isolated_bus = CASE14_NO_COORDS.replace(
+            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n];",
+            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n 15 4 0 0 0 0 1 1 0 230 1 1.1 0.9;\n];",
+        );
+        let network_json = powerio::parse_str(&case_with_isolated_bus, "m")
+            .expect("parse")
+            .network
+            .to_json()
+            .expect("to_json");
+
+        let err = solve_dc_json(&network_json, r#"{"deltas": {"15": 1.0}}"#).unwrap_err();
+        assert!(err.contains("isolated"), "got: {err}");
+    }
+
     #[cfg(feature = "sensitivity")]
     #[test]
     fn solve_dc_sensitivity_column_present_when_requested() {
@@ -795,6 +838,30 @@ mpc.gencost = [
     fn solve_dc_unknown_sensitivity_bus_errors() {
         let err = solve_dc_json(&case14_json(), r#"{"sens_bus": 999999}"#).unwrap_err();
         assert!(err.contains("unknown bus 999999"), "got: {err}");
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn solve_dc_sensitivity_at_isolated_bus_omits_column_without_erroring() {
+        // Bus 15 (type 4 = isolated) exists in the raw network and would render as
+        // a normal marker on a map, but DcNetwork::from_network excludes isolated
+        // buses from the solved model. Requesting a sensitivity column there must
+        // not error the whole solve -- it should come back with dlmp_dd left null,
+        // the same as before this bus existed.
+        let case_with_isolated_bus = CASE14_NO_COORDS.replace(
+            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n];",
+            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n 15 4 0 0 0 0 1 1 0 230 1 1.1 0.9;\n];",
+        );
+        let network_json = powerio::parse_str(&case_with_isolated_bus, "m")
+            .expect("parse")
+            .network
+            .to_json()
+            .expect("to_json");
+
+        let out = solve_dc_json(&network_json, r#"{"sens_bus": 15}"#).expect("solve_dc");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert!(v["objective"].as_f64().unwrap() > 0.0);
+        assert!(v["dlmp_dd"].is_null(), "got: {v}");
     }
 
     #[cfg(feature = "sensitivity")]

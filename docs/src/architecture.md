@@ -1,6 +1,6 @@
 # Architecture
 
-tellegen is a differentiable power flow and optimal power flow engine, written in Rust and compiled to both native targets and WebAssembly. The browser framework package is `@tellegen/engine`; the SvelteKit hosted demo is one consumer of it.
+tellegen is a differentiable power flow and optimal power flow engine, written in Rust and compiled to both native targets and WebAssembly. The public browser framework packages are `@tellegen/engine` and `@tellegen/svelte`; the SvelteKit hosted demo is one private consumer of them.
 
 ## Repository layout
 
@@ -12,8 +12,10 @@ A Cargo workspace and a web app, side by side.
 - `crates/tellegen-cli` — a command-line front end over the engine's JSON API.
 - `crates/benchmarks` — a non-shipping harness that runs the PGLib-OPF corpus for validation and timing.
 - `packages/engine` — the public browser engine package, generated TypeScript contracts, and browser wasm transport.
-- `apps/web` — the SvelteKit hosted demo and optional UI package that consumes `@tellegen/engine`.
+- `packages/svelte` — the public Svelte component package for maps, panels, local case files, and browser solves.
+- `apps/web` — the private SvelteKit hosted demo that consumes `@tellegen/svelte`.
 - `examples/browser-minimal` — a minimal downstream app that imports `@tellegen/engine` directly.
+- `examples/svelte-minimal` — a minimal downstream app that imports `@tellegen/svelte`.
 
 powerio owns parsing and the network and display formats; the engine and the app depend on it.
 
@@ -36,15 +38,18 @@ One numerical core, two faces that share a driver and a result type:
 - **Stateless** — `solve_json(network, request)` and `capabilities_json()`. Each call parses, solves, and returns. This is the face for one-shot callers: the HTTP server, the CLI, fixtures, and the initial case load.
 - **Stateful** — the `Study`. It builds the model once. `commit` applies a set of `NetworkEdit`s and re-solves exactly, optionally returning the requested sensitivity columns in the same solve; `preview` returns a first-order update at the committed point with no re-solve. This is the reactive hot path: a demand drag previews and commits without re-parsing the network every frame.
 
-## Browser engine package
+## Browser framework packages
 
 `packages/engine` is the reusable package surface. It exports generated
 contracts, case and display parsing helpers, stateless solve calls, capabilities,
 the browser `Study`, and the browser wasm transport. It has no SvelteKit
 dependency.
 
-`apps/web` consumes that package and layers on the hosted demo UI: map rendering,
-default case loading, local case placement, panels, and interaction state.
+`packages/svelte` consumes `@tellegen/engine` and exports the map, panels, local
+file flow, solve card, state provider, and full viewer as Svelte components.
+
+`apps/web` consumes the Svelte package and keeps demo concerns: routes, SEO,
+credits, privacy, deployment, and bundled case pages.
 
 ## In the browser
 
@@ -53,7 +58,7 @@ default case loading, local case placement, panels, and interaction state.
 - a **full** package (the `conic` feature) carrying DC power flow, DC OPF, AC power flow, SOCWR, the `Study`, and the sensitivity columns; and
 - a **core** package (`--no-default-features`, SIMD disabled) — a smaller DC-only fallback that loads on any WebAssembly-capable browser.
 
-The app's reactive loop runs on the `Study`: a drag calls `preview` (a first-order LMP and objective update, in WebAssembly, no server round-trip) and release calls `commit` (an exact re-solve that also returns the displayed sensitivity column). Every formulation solves in the browser; dropped-in case files solve there too and are never uploaded.
+The Svelte package and the hosted app use the same `Study` loop: a drag calls `preview` (a first-order LMP and objective update, in WebAssembly, no server round-trip) and release calls `commit` (an exact re-solve that also returns the displayed sensitivity column). Every formulation solves in the browser; dropped-in case files solve there too and are never uploaded.
 
 ## Sources
 

@@ -1,44 +1,124 @@
 # Framework Packages
 
-The reusable browser engine lives in `packages/engine` and is published as
-`@tellegen/engine`. Start there for new applications.
+The reusable browser packages live under `packages/`.
 
-`apps/web` is the hosted demo and Svelte UI package. It consumes
-`@tellegen/engine`, adds the map, panels, local file placement, default case
-loading, and demo specific state management. Those app internals are useful
-examples, but they are not the engine contract.
+The first framework release publishes both `@tellegen/engine` and
+`@tellegen/svelte`.
 
-## Which Package To Use
+Use `@tellegen/svelte` when a Svelte app wants the map, panels, local file flow,
+and solve card as components.
 
-Use `@tellegen/engine` when an app needs:
+Use `@tellegen/engine` when an app wants case parsing, browser WebAssembly
+solves, studies, previews, and sensitivities without the tellegen UI.
 
-- case parsing;
-- display parsing;
-- browser wasm solves;
-- `Study` preview and commit;
-- sensitivity requests; or
-- generated TypeScript contracts.
+`apps/web` is the hosted demo. It consumes `@tellegen/svelte` and keeps only
+route level concerns such as SEO pages, `/credits`, and `/privacy`.
 
-Use `tellegen-frontend` only when an app wants to reuse the hosted demo map or
-Svelte shell components. It peers on Svelte, deck.gl, and MapLibre.
+## Svelte UI Package
 
-## Engine Entry Point
+Install:
 
-```ts
-import {
-  browserWasmTransport,
-  createStudy,
-  formatOf,
-  solveJson
-} from "@tellegen/engine";
+```sh
+npm install @tellegen/svelte
 ```
 
-The engine package imports its wasm files through `?url`, so consuming apps need
-a bundler with wasm asset support. Vite and SvelteKit work.
+Render the full viewer:
 
-## Demo App Boundary
+```svelte
+<script lang="ts">
+  import { TellegenViewer } from "@tellegen/svelte";
+  import "@tellegen/svelte/styles.css";
+</script>
 
-`apps/web/src/routes` is the hosted app. `apps/web/src/lib` contains the demo map,
-controller, state, and components. These modules can change as the demo changes.
-Downstream apps should not deep import from `apps/web/src/lib` or from generated
-wasm folders.
+<TellegenViewer />
+```
+
+The default viewer loads bundled cases from `/api`, parses dropped local case
+files in the browser, and runs supported local solves in WebAssembly.
+
+`TellegenViewer` accepts:
+
+- `apiBase`, default `/api`
+- `loadDefaultCases`, default `true`
+- `docsHref`
+- `orgHref`
+- `orgLabel`
+- `showFooter`, default `true`
+
+Use a different backend base path like this:
+
+```svelte
+<TellegenViewer apiBase="/tellegen/api" />
+```
+
+Use local files only by disabling bundled case loading:
+
+```svelte
+<script lang="ts">
+  import { TellegenViewer } from "@tellegen/svelte";
+  import "@tellegen/svelte/styles.css";
+</script>
+
+<TellegenViewer loadDefaultCases={false} showFooter={false} />
+```
+
+For apps where state should survive route changes, mount the provider in a
+persistent layout and render the shell on the page:
+
+```svelte
+<script lang="ts">
+  import { TellegenProvider } from "@tellegen/svelte";
+  import "@tellegen/svelte/styles.css";
+
+  let { children } = $props();
+</script>
+
+<TellegenProvider>
+  {@render children()}
+</TellegenProvider>
+```
+
+```svelte
+<script lang="ts">
+  import { TellegenShell } from "@tellegen/svelte";
+</script>
+
+<TellegenShell />
+```
+
+`@tellegen/svelte` also exports lower level pieces for custom shells:
+
+- `TellegenMap`
+- `AppState`, `CaseState`, `LocalCase`, and `createAppState`
+- `Controller` and `createController`
+- `createApiClient`
+- panels and controls from `@tellegen/svelte/components`
+- colors, display helpers, formatting helpers, and public types
+
+## Engine Package
+
+Install:
+
+```sh
+npm install @tellegen/engine
+```
+
+Use the engine package when you want to build your own UI:
+
+```ts
+import { createStudy, formatOf, ingestCase, solveJson } from "@tellegen/engine";
+```
+
+The engine package resolves its wasm files relative to the package module. Apps
+must serve package asset files from `node_modules`; Vite and SvelteKit handle
+that path.
+
+## Examples
+
+- `examples/svelte-minimal` imports `@tellegen/svelte` and runs with
+  `loadDefaultCases={false}` for local files only.
+- `examples/browser-minimal` imports `@tellegen/engine` directly and has no map
+  stack.
+
+Downstream apps should not import from `apps/web/src/lib` or from generated wasm
+folders.
