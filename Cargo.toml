@@ -20,7 +20,7 @@ repository = "https://github.com/eigenergy/tellegen"
 [workspace.dependencies]
 # Caret range over the 0.3.x line (transmission `Network`, PSS/E v34/v35). The
 # shared lockfile unifies the version across the engine and every adapter.
-powerio = "0.3"
+powerio = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

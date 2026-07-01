@@ -234,44 +234,23 @@ fn rescale(v: f64, lo: f64, hi: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use powerio::network::{Branch, Bus, BusId, BusType, SourceFormat};
 
-    fn test_bus(id: usize) -> Bus {
-        Bus {
-            id: BusId(id),
-            kind: BusType::Pq,
-            vm: 1.0,
-            va: 0.0,
-            base_kv: 115.0,
-            vmax: 1.1,
-            vmin: 0.9,
-            evhi: None,
-            evlo: None,
-            area: 1,
-            zone: 1,
-            name: None,
-            extras: Default::default(),
+    /// An n-bus chain network built through the parser: powerio's data structs
+    /// are `#[non_exhaustive]`, so tests construct networks from case text.
+    fn chain_network(n: usize) -> Network {
+        let mut m = String::from(
+            "function mpc = chain\nmpc.version = '2';\nmpc.baseMVA = 100;\nmpc.bus = [\n",
+        );
+        for i in 1..=n {
+            let kind = if i == 1 { 3 } else { 1 };
+            m += &format!(" {i} {kind} 0 0 0 0 1 1 0 115 1 1.1 0.9;\n");
         }
-    }
-
-    fn test_branch(from: usize, to: usize) -> Branch {
-        Branch {
-            from: BusId(from),
-            to: BusId(to),
-            r: 0.01,
-            x: 0.1,
-            b: 0.0,
-            rate_a: 100.0,
-            rate_b: 100.0,
-            rate_c: 100.0,
-            tap: 0.0,
-            shift: 0.0,
-            in_service: true,
-            angmin: -360.0,
-            angmax: 360.0,
-            control: None,
-            extras: Default::default(),
+        m += "];\nmpc.gen = [\n 1 0 0 300 -300 1 100 1 250 10 0 0 0 0 0 0 0 0 0 0 0;\n];\nmpc.branch = [\n";
+        for i in 1..n {
+            m += &format!(" {i} {} 0.01 0.1 0 100 100 100 0 0 1 -360 360;\n", i + 1);
         }
+        m += "];\nmpc.gencost = [\n 2 0 0 3 0.1 5 0;\n];\n";
+        powerio::parse_str(&m, "matpower").expect("parse chain").network
     }
 
     #[test]
@@ -284,23 +263,7 @@ mod tests {
 
     #[test]
     fn synthetic_layout_fills_bbox() {
-        let net = Network {
-            name: "test".into(),
-            base_mva: 100.0,
-            base_frequency: 60.0,
-            buses: (1..=20).map(test_bus).collect(),
-            loads: Vec::new(),
-            shunts: Vec::new(),
-            branches: (1..20).map(|i| test_branch(i, i + 1)).collect(),
-            generators: Vec::new(),
-            storage: Vec::new(),
-            hvdc: Vec::new(),
-            transformers_3w: Vec::new(),
-            areas: Vec::new(),
-            solver: None,
-            source_format: SourceFormat::InMemory,
-            source: None,
-        };
+        let net = chain_network(20);
         let bbox = (-82.9, 33.3, -79.9, 35.0);
         let coords = synthetic_layout(&net, bbox);
         assert_eq!(coords.len(), 20);
