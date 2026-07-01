@@ -1,4 +1,4 @@
-import { createApiClient, type TellegenApiClient } from './api.js';
+import { ApiError, createApiClient, type TellegenApiClient } from './api.js';
 import type { Network, NetworkBus, SensitivityColumn, Solution } from './api.js';
 import { scalarDomain, sensFlatColor, sensitivityDomain } from './colors.js';
 import { caseDeltas as sharedCaseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
@@ -47,6 +47,11 @@ export class Controller {
 	app: AppState;
 	api: TellegenApiClient;
 	abort: AbortController | null = null;
+	// While set (epoch ms), the server sensitivity fallback is rate limited: skip
+	// the request and show the rate-limit copy instead of burning the budget on a
+	// guaranteed rejection. Covers one rate limit window. Not $state; nothing
+	// renders it.
+	sensitivity429Until = 0;
 
 	// Build-once browser Study per case: the network is parsed and the model built
 	// when the Study is created, so a drag re-solves (commit) and previews without
@@ -546,7 +551,7 @@ export class Controller {
 				// mount (the page guards the call with `if (!ctrl.casesLoaded)`).
 				this.casesLoaded = true;
 			} catch (e) {
-				this.app.error = e instanceof Error ? e.message : String(e);
+				this.fail(errorText(e), this.load);
 			} finally {
 				this.loading = null;
 			}
@@ -580,7 +585,9 @@ export class Controller {
 				this.runSolve(c, this.app.selectedBus);
 			}
 		} catch (e) {
-			if (this.app.byId(c.id)) this.app.error = `${c.name}: ${errorText(e)}`;
+			if (this.app.byId(c.id)) {
+				this.fail(`${c.name}: ${errorText(e)}`, () => this.loadBackendCase(c, true));
+			}
 		} finally {
 			if (this.loadingBackendCase === c.id) this.loadingBackendCase = null;
 		}
@@ -727,41 +734,89 @@ export class Controller {
 		const c = this.app.byId(caseId);
 		if (!c) return;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
+		// True once the browser path fully settled the selection (column accepted or
+		// a terminal message shown); false leaves DC OPF one server reconciliation.
+		let handled = false;
 		try {
-			// The dLMP/dd column from the browser solver (under the case's formulation). DC OPF
-			// may reconcile a null column via the server; AC OPF / SOCWR are browser-only, so a
-			// null column there is reported, never sent to the DC-only server.
-			const networkJson = await this.ensureNetworkJson(c);
-			if (networkJson) {
-				const sensitivity = await this.browserSensitivity(c, networkJson, busId);
-				if (!ac.signal.aborted && sensitivity)
-					this.acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
-				else if (!ac.signal.aborted && c.formulation === 'dcopf') {
-					const col = await this.api.getSensitivity(caseId, busId, c.deltas, ac.signal);
-					if (!ac.signal.aborted) this.acceptSensitivity(c, col, busId, sensitivitySeq);
-				} else if (!ac.signal.aborted && !sensitivity) {
-					this.app.error = `${c.name}: ${formulationLabel(c.formulation)} sensitivity unavailable in the browser${c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''}`;
+			try {
+				// The dLMP/dd column from the browser solver (under the case's formulation). DC OPF
+				// may reconcile a null column via the server; AC OPF / SOCWR are browser-only, so a
+				// null column there is reported, never sent to the DC-only server.
+				const networkJson = await this.ensureNetworkJson(c);
+				if (networkJson) {
+					const sensitivity = await this.browserSensitivity(c, networkJson, busId);
+					if (!ac.signal.aborted && sensitivity) {
+						this.acceptSensitivity(c, sensitivity, busId, sensitivitySeq);
+						handled = true;
+					} else if (!ac.signal.aborted && c.formulation !== 'dcopf') {
+						this.app.error = `${c.name}: ${formulationLabel(c.formulation)} sensitivity unavailable in the browser${c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''}`;
+						handled = true;
+					}
+				} else if (c.formulation !== 'dcopf') {
+					if (!ac.signal.aborted) {
+						this.app.error = `${c.name}: ${formulationLabel(c.formulation)} needs the browser network JSON, which is unavailable`;
+					}
+					handled = true;
 				}
-			} else if (c.formulation === 'dcopf') {
-				const col = await this.api.getSensitivity(caseId, busId, c.deltas, ac.signal);
-				if (!ac.signal.aborted) this.acceptSensitivity(c, col, busId, sensitivitySeq);
-			} else if (!ac.signal.aborted) {
-				this.app.error = `${c.name}: ${formulationLabel(c.formulation)} needs the browser network JSON, which is unavailable`;
+			} catch {
+				// The browser path threw; the DC OPF server reconciliation below still
+				// applies. AC OPF / SOCWR have no server fallback (nothing is solved on
+				// the server), so the column stays absent.
+				handled = c.formulation !== 'dcopf';
 			}
-		} catch {
-			// The browser path threw. DC OPF reconciles via the server; AC OPF / SOCWR have no
-			// server fallback (nothing is solved on the server), so the column stays absent.
-			if (c.formulation === 'dcopf') {
-				try {
-					const col = await this.api.getSensitivity(caseId, busId, c.deltas, ac.signal);
-					if (!ac.signal.aborted) this.acceptSensitivity(c, col, busId, sensitivitySeq);
-				} catch (e2) {
-					if (!ac.signal.aborted && !(e2 instanceof DOMException)) this.app.error = String(e2);
-				}
+			if (!handled && !ac.signal.aborted && c.formulation === 'dcopf') {
+				await this.fetchServerSensitivity(c, busId, ac, sensitivitySeq);
 			}
 		} finally {
 			if (this.abort === ac) this.app.sensitivityLoading = false;
 		}
+	};
+
+	/** The one server dLMP/dd request a bus selection may make — the reconciliation
+	 * path when the browser solver produced no column for a DC OPF case. Never
+	 * retries on its own: a second request inside the same rate limit window is a
+	 * guaranteed rejection, and the retry button covers the user need. A 429 opens
+	 * a cooldown for the rest of the window so further selections skip the server
+	 * instead of feeding it. */
+	private fetchServerSensitivity = async (
+		c: CaseState,
+		busId: number,
+		ac: AbortController,
+		sensitivitySeq: number
+	) => {
+		const retryOp = () => this.selectBus(c.id, busId);
+		if (Date.now() < this.sensitivity429Until) {
+			this.fail('rate limited; wait a few seconds and try again', retryOp);
+			return;
+		}
+		try {
+			const col = await this.api.getSensitivity(c.id, busId, c.deltas, ac.signal);
+			if (!ac.signal.aborted) this.acceptSensitivity(c, col, busId, sensitivitySeq);
+		} catch (e) {
+			if (e instanceof DOMException) return;
+			if (e instanceof ApiError && e.status === 429) {
+				this.sensitivity429Until = Date.now() + 10_000;
+			}
+			// A late failure must not clobber a newer selection's state.
+			if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
+				this.fail(errorText(e), retryOp);
+			}
+		}
+	};
+
+	/** Show an error with an optional one-click re-run of the failed operation. */
+	private fail(message: string, retry: (() => void) | null = null) {
+		this.app.error = message;
+		this.app.errorRetry = retry;
+	}
+
+	/** The panel's retry button: re-run the failed operation when one is known,
+	 * else reload the case list. An explicit retry always ends a 429 cooldown. */
+	retryError = () => {
+		const op = this.app.errorRetry;
+		this.app.error = null;
+		this.sensitivity429Until = 0;
+		(op ?? this.load)();
 	};
 
 	selectLocalBus = async (localId: string, busId: number) => {
@@ -783,7 +838,9 @@ export class Controller {
 				}`;
 			}
 		} catch (e) {
-			if (!ac.signal.aborted) this.app.error = `${c.label}: ${e instanceof Error ? e.message : e}`;
+			if (!ac.signal.aborted) {
+				this.fail(`${c.label}: ${errorText(e)}`, () => this.selectLocalBus(localId, busId));
+			}
 		} finally {
 			if (this.abort === ac) this.app.sensitivityLoading = false;
 		}
@@ -968,7 +1025,9 @@ export class Controller {
 					this.app.previewActive = false;
 					this.app.previewDeltaMw = null;
 				}
-				this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} ${msg}`;
+				this.fail(`${this.caseName(c)}: ${formulationLabel(c.formulation)} ${msg}`, () =>
+					this.runSolve(c, sensBus)
+				);
 			},
 			ondone: () => {
 				this.finishSolve(c, seq, sensBus);

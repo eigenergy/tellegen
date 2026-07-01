@@ -13,7 +13,7 @@ export {
 	setController,
 	setUiConfig
 } from './context.svelte.js';
-export { createApiClient } from './api.js';
+export { ApiError, createApiClient } from './api.js';
 export { Controller, createController } from './controller.svelte.js';
 export { AppState, CaseState, LocalCase, createAppState } from './state.svelte.js';
 

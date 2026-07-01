@@ -180,7 +180,19 @@ export class AppState {
 	demandRangeMode = $state<DemandRangeMode>('local');
 	displayMode = $state<DisplayMode>('lmp');
 	sensitivityLoading = $state(false);
-	error = $state<string | null>(null);
+	#error = $state<string | null>(null);
+	/** Re-runs the operation behind the current `error`, when one applies. Every
+	 * write to `error` clears it, so a retry op can never outlive its message. */
+	errorRetry = $state.raw<(() => void) | null>(null);
+
+	get error(): string | null {
+		return this.#error;
+	}
+
+	set error(message: string | null) {
+		this.#error = message;
+		this.errorRetry = null;
+	}
 
 	/** Case files parsed in the browser via the powerio wasm module. */
 	localCases = $state.raw<LocalCase[]>([]);
