@@ -31,12 +31,17 @@ RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm
 # ---- frontend build ----
 FROM node:22-slim AS frontend
 WORKDIR /app
-COPY apps/web/package.json apps/web/package-lock.json ./
-RUN npm ci
-COPY apps/web/ ./
-COPY --from=wasm /out/wasm-pkg ./src/lib/wasm-pkg
-COPY --from=wasm /out/wasm-sens-pkg ./src/lib/wasm-sens-pkg
-RUN npm run build && npm run smoke:build
+COPY packages/engine/package.json packages/engine/package-lock.json ./packages/engine/
+RUN cd packages/engine && npm ci
+COPY packages/engine ./packages/engine
+COPY crates/tellegen/src/api.rs ./crates/tellegen/src/api.rs
+COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
+COPY --from=wasm /out/wasm-sens-pkg ./packages/engine/src/wasm-sens-pkg
+RUN cd packages/engine && npm run build
+COPY apps/web/package.json apps/web/package-lock.json ./apps/web/
+RUN cd apps/web && npm ci
+COPY apps/web ./apps/web
+RUN cd apps/web && npm run build && npm run smoke:build
 
 # ---- tellegen backend (cargo-chef: dependency compile is a cacheable layer) ----
 FROM rust:1-slim-trixie AS chef
@@ -69,7 +74,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=server /build/target/release/tellegen-server /usr/local/bin/tellegen-server
-COPY --from=frontend /app/build /app/frontend/build
+COPY --from=frontend /app/apps/web/build /app/frontend/build
 
 ENV TELLEGEN_FRONTEND_BUILD=/app/frontend/build
 ENV TELLEGEN_DATA=/app/data

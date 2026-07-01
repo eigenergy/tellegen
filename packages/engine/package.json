@@ -1,0 +1,34 @@
+{
+  "name": "@tellegen/engine",
+  "version": "0.1.0",
+  "description": "Browser engine package for tellegen case parsing, solving, studies, previews, and sensitivities.",
+  "license": "MIT",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/generated/contracts.d.ts",
+      "default": "./dist/generated/contracts.js"
+    }
+  },
+  "scripts": {
+    "contracts": "node scripts/generate-contracts.mjs",
+    "contracts:check": "node scripts/generate-contracts.mjs --check",
+    "build": "npm run contracts:check && tsc -p tsconfig.json && node scripts/copy-wasm-assets.mjs",
+    "wasm": "npm run wasm:core && npm run wasm:sens",
+    "wasm:core": "RUSTFLAGS=\"-C target-feature=-simd128,-relaxed-simd\" wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --no-default-features",
+    "wasm:sens": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-sens-pkg --out-name tellegen_sens -- --features conic",
+    "check": "npm run contracts:check && tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

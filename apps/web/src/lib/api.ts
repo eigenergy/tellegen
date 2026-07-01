@@ -1,65 +1,22 @@
-export interface NetworkBus {
-	id: number;
-	lon: number;
-	lat: number;
-	demand_mw: number;
-	gen_mw: number;
-}
+import type {
+	CaseSummary,
+	DemandDeltas,
+	Network,
+	SensitivityColumn,
+	Solution,
+	SolveIteration
+} from '@tellegen/engine';
 
-export interface NetworkBranch {
-	id: number;
-	from: number;
-	to: number;
-	rate_mw: number;
-	status: number;
-	path: [number, number][];
-}
-
-export interface Network {
-	id: string;
-	name: string;
-	base_mva: number;
-	synthetic_coords: boolean;
-	buses: NetworkBus[];
-	branches: NetworkBranch[];
-}
-
-export interface Solution {
-	objective: number;
-	lmp: { bus: number; usd_per_mwh: number }[];
-	va: { bus: number; value: number }[];
-	w: { bus: number; value: number }[];
-	flows: { branch: number; mw: number; loading: number }[];
-	dispatch: { gen: number; mw: number }[];
-}
-
-export interface SensitivityColumn {
-	case: string;
-	operand: string;
-	parameter: string;
-	bus: number;
-	units: string;
-	values: { bus: number; value: number }[];
-}
-
-export interface CaseSummary {
-	id: string;
-	name: string;
-	n_bus: number;
-	n_branch: number;
-	n_gen: number;
-}
-
-/** One interior-point iterate from the solver, for the convergence plot. */
-export interface SolveIteration {
-	iter: number;
-	objective: number;
-	inf_pr: number;
-	inf_du: number;
-}
-
-/** Demand deltas in MW keyed by bus id, encoded as `bus:mw,bus:mw`. */
-export type DemandDeltas = Record<number, number>;
+export type {
+	CaseSummary,
+	DemandDeltas,
+	Network,
+	NetworkBranch,
+	NetworkBus,
+	SensitivityColumn,
+	Solution,
+	SolveIteration
+} from '@tellegen/engine';
 
 function encodeDeltas(deltas: DemandDeltas): string {
 	return Object.entries(deltas)

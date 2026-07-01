@@ -30,7 +30,7 @@ import {
 	solveDc,
 	type BrowserStudy,
 	type Formulation
-} from './wasm.js';
+} from '@tellegen/engine';
 import { errorText, extent, formulationLabel, rgbaCss } from './format.js';
 
 const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';

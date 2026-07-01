@@ -13,7 +13,7 @@ import {
 	type CaseFileSummary,
 	type Formulation,
 	type Topology
-} from './wasm.js';
+} from '@tellegen/engine';
 
 export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
 export type DemandRangeMode = 'local' | 'full';

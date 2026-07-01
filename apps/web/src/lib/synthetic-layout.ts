@@ -1,6 +1,6 @@
 import type { NetworkBranch, NetworkBus } from './api.js';
 import { extent } from './format.js';
-import type { Topology } from './wasm.js';
+import type { Topology } from '@tellegen/engine';
 
 export interface PlacedNetwork {
 	buses: NetworkBus[];

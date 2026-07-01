@@ -8,6 +8,10 @@ apps/web/build
 apps/web/.svelte-kit
 apps/web/src/lib/wasm-pkg
 apps/web/src/lib/wasm-sens-pkg
+packages/engine/node_modules
+packages/engine/dist
+packages/engine/src/wasm-pkg
+packages/engine/src/wasm-sens-pkg
 
 # Rust build artifacts (the workspace target/ lives at the repo root now)
 target
