@@ -206,5 +206,5 @@ deployment the default; long term, AC in the browser.
 The Rust crates are licensed under either of [Apache-2.0](crates/tellegen/LICENSE-APACHE)
 or [MIT](crates/tellegen/LICENSE-MIT), at your option. The npm packages
 `@tellegen/engine` and `@tellegen/svelte` and the web app under `apps/web/` are
-[MIT](LICENSE). See [crates/tellegen/NOTICE](crates/tellegen/NOTICE) and
+[MIT](LICENSE). See
 [docs/src/third-party-notices.md](docs/src/third-party-notices.md) for attributions.
