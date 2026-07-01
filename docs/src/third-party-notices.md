@@ -7,11 +7,12 @@ the source distributions for each dependency.
 ## Project Code
 
 The Rust crates are licensed under either Apache-2.0 or MIT, at your option. The
-web app is MIT licensed. See `LICENSE`, `crates/tellegen/LICENSE-APACHE`,
+npm packages `@tellegen/engine` and `@tellegen/svelte` and the web app are MIT
+licensed. See `LICENSE`, `crates/tellegen/LICENSE-APACHE`,
 `crates/tellegen/LICENSE-MIT`, and `crates/tellegen/NOTICE`.
 
 The engine uses the W space SOCWR formulation as implemented in PowerModels.jl
-as a formulation reference. PowerModels.jl is BSD 3 Clause licensed. The
+as a formulation reference. PowerModels.jl is BSD 3-Clause licensed. The
 tellegen implementation is independent.
 
 ## Direct Software Dependencies

@@ -64,7 +64,7 @@ npm run test:svelte-packed
 ```
 
 `@tellegen/svelte` is published with `@tellegen/engine` in the first framework
-release. The package ships only `dist`, the README, license metadata, and
+release. The package ships only `dist`, the README, the MIT license text, and
 package metadata. The packed smoke test installs the generated tarballs into a
 temporary Svelte consumer and builds it so missing exports, styles, or wasm
 assets fail before publish.

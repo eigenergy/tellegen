@@ -47,10 +47,13 @@ npm run build:svelte
 npm ci
 npm run wasm
 npm run build:engine
+npm run build:svelte
 npm --workspace tellegen-frontend run dev
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:8000`.
+The Vite dev server proxies `/api` to `http://localhost:8000`. `apps/web`
+resolves `@tellegen/svelte` through its built `dist/`, so `build:svelte` must
+run before the dev server starts.
 
 ## Framework Packages
 

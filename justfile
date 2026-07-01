@@ -1,9 +1,9 @@
 # tellegen monorepo task runner — `just` lists recipes, `just ci` runs the gates.
 #
 # The Rust side is a Cargo workspace (crates/*). The JavaScript side is an npm
-# workspace covering packages/engine, apps/web, and examples/browser-minimal.
-# This file is the single place that knows how the pieces fit together across
-# the two languages.
+# workspace covering packages/engine, packages/svelte, apps/web,
+# examples/browser-minimal, and examples/svelte-minimal. This file is the
+# single place that knows how the pieces fit together across the two languages.
 
 # List recipes.
 default:
@@ -57,6 +57,18 @@ engine-check:
 engine-build:
     npm run build:engine
 
+# Type-check the Svelte component package.
+svelte-check:
+    npm run check:svelte
+
+# Build the Svelte component package.
+svelte-build:
+    npm run build:svelte
+
+# CI gate: install the packed tarballs into a temporary consumer and build it.
+svelte-packed:
+    npm run test:svelte-packed
+
 # Build the minimal downstream example.
 example-build:
     npm run build:example
@@ -88,4 +100,4 @@ web-browser:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order.
-ci: fmt-check clippy deny epl-guard test wasm engine-check engine-build js-import web-lint web-check web-build web-smoke web-browser
+ci: fmt-check clippy deny epl-guard test wasm engine-check engine-build js-import web-lint svelte-check web-check svelte-packed web-build web-smoke web-browser

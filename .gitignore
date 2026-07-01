@@ -33,3 +33,6 @@ ISSUE-DRAFTS.md
 
 # Playwright MCP scratch output
 .playwright-mcp/
+
+# Private working notes (not published)
+notes/

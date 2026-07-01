@@ -1,6 +1,10 @@
 # Standalone example for a shared Caddy edge proxy. When another stack owns
 # ports 80 and 443, keep the app container on an external `edge` network and
 # route to `tellegen:8000`.
+#
+# The rate_limit directive is not in stock Caddy; it needs a build with the
+# caddy-ratelimit module (https://github.com/mholt/caddy-ratelimit), e.g.
+# `xcaddy build --with github.com/mholt/caddy-ratelimit`.
 
 (secure_headers) {
 	header {

@@ -1093,6 +1093,14 @@ fn validate_deltas(entry: &CaseEntry, deltas: &HashMap<usize, f64>) -> ApiResult
             .find(|b| b.id == bus)
             .ok_or_else(|| ApiError::bad_request(format!("unknown demand delta bus {bus}")))?
             .demand_mw;
+        // A bus in the full network but excluded from the DC model (an isolated
+        // MATPOWER type 4 bus) would fail deep inside the engine as "unknown" and
+        // surface as a 500; reject it here with an accurate message instead.
+        if !entry.dc.bus_ids.contains(&bus) {
+            return Err(ApiError::bad_request(format!(
+                "demand delta bus {bus} is isolated and excluded from the model"
+            )));
+        }
         if base + delta < -1e-9 {
             return Err(ApiError::bad_request(format!(
                 "demand delta for bus {bus} would make demand negative"
@@ -1216,10 +1224,14 @@ fn env_rate_limit_events(name: &str, default: usize) -> usize {
 fn expensive_client_key(headers: &HeaderMap, connect_info: &ConnectInfo<SocketAddr>) -> String {
     let peer = connect_info.0.ip();
     if trusted_proxy_peer(peer) {
+        // Take the rightmost x-forwarded-for entry: it is the one appended by the
+        // nearest proxy. The leftmost entries are client-supplied under proxies that
+        // append rather than replace, which would let a client mint a fresh rate
+        // limit key per request.
         if let Some(key) = headers
             .get("x-forwarded-for")
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.split(',').find_map(clean_client_key))
+            .and_then(|v| v.split(',').rev().find_map(clean_client_key))
         {
             return key;
         }
@@ -1458,6 +1470,54 @@ mod tests {
         let (status, body) = get_from("/api/cases/nope/solve", client).await;
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
         assert!(body["error"].as_str().unwrap().contains("rate limit"));
+    }
+
+    #[tokio::test]
+    async fn rate_limit_keys_on_rightmost_forwarded_entry() {
+        // Proxies that append leave client-supplied entries on the left of
+        // x-forwarded-for; only the rightmost entry comes from the proxy itself.
+        // Varying left entries must not mint fresh rate limit keys.
+        for i in 0..DEFAULT_SOLVE_RATE_LIMIT_EVENTS {
+            let spoofed = format!("203.0.113.{i}, 198.51.100.77");
+            let (status, _) = get_from("/api/cases/nope/solve", &spoofed).await;
+            assert_eq!(status, StatusCode::NOT_FOUND);
+        }
+        let (status, body) =
+            get_from("/api/cases/nope/solve", "203.0.113.250, 198.51.100.77").await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert!(body["error"].as_str().unwrap().contains("rate limit"));
+    }
+
+    #[test]
+    fn validate_deltas_rejects_isolated_bus_delta() {
+        // Patch an isolated (type 4) bus onto the case200 fixture: it exists in
+        // the full network view but DcNetwork::from_network excludes it from the
+        // model, so a delta there must 400 with an accurate message instead of
+        // failing deep in the engine as a 500.
+        let spec = &FALLBACK_SPECS[0];
+        let start = spec.text.find("mpc.bus = [").unwrap();
+        let end = start + spec.text[start..].find("\n];").unwrap();
+        let mut patched = String::with_capacity(spec.text.len() + 64);
+        patched.push_str(&spec.text[..end]);
+        patched.push_str(
+            "\n\t201\t 4\t 0.0\t 0.0\t 0.0\t 0.0\t 1\t 1.0\t 0.0\t 115.0\t 4\t 1.1\t 0.9;",
+        );
+        patched.push_str(&spec.text[end..]);
+
+        let case = powerio::parse_str(&patched, "m").unwrap().network;
+        let coords: Coords = case
+            .buses
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (b.id.0, (i as f64, 0.0)))
+            .collect();
+        let entry = build_entry("iso", "iso", case, coords, true).unwrap();
+
+        let err = validate_deltas(&entry, &HashMap::from([(201usize, 1.0)])).unwrap_err();
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert!(err.message.contains("isolated"), "got: {}", err.message);
+
+        validate_deltas(&entry, &HashMap::from([(1usize, 1.0)])).unwrap();
     }
 
     #[tokio::test]

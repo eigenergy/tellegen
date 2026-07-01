@@ -7,14 +7,32 @@
 Reactive visualization for power systems optimization. The name refers to
 Tellegen's theorem and the adjoint sensitivity calculations.
 
+**Live demo: [tellegen.dev](https://tellegen.dev)**
+
 tellegen uses a gradient preview, exact commit interaction model. Perturbations
-update the display from KKT sensitivity columns. Exact solves for DC OPF and the
-SOCWR relaxation run in the browser in WebAssembly; full AC OPF is in progress.
-Case parsing uses [powerio](https://github.com/eigenergy/powerio).
+update the display from KKT sensitivity columns. Exact solves for DC OPF, AC
+power flow, and the SOCWR relaxation run in the browser in WebAssembly; full AC
+OPF is in progress. Case parsing uses
+[powerio](https://github.com/eigenergy/powerio).
 
 Full documentation is published with mdBook at
 [eigenergy.github.io/tellegen](https://eigenergy.github.io/tellegen/). The
 source lives in [docs/src/SUMMARY.md](docs/src/SUMMARY.md).
+
+## Packages
+
+```sh
+npm install @tellegen/svelte   # map, panels, and solve card as Svelte components
+npm install @tellegen/engine   # case parsing and wasm solves, framework agnostic
+```
+
+`@tellegen/engine` exports case parsing, browser wasm solving, `Study` preview
+and commit calls, sensitivities, and generated TypeScript types.
+`@tellegen/svelte` exports the map, panels, local file flow, and solve card as
+Svelte components. Both packages are MIT licensed. Start with the
+[framework quickstart](https://eigenergy.github.io/tellegen/framework-quickstart.html);
+`examples/browser-minimal/` and `examples/svelte-minimal/` are working
+integrations of each package.
 
 ## Demo Behavior
 
@@ -71,24 +89,23 @@ tellegen frontend demo:
 npm ci
 npm run wasm
 npm run build:engine
+npm run build:svelte
 npm --workspace tellegen-frontend run dev
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:8000`.
+The Vite dev server proxies `/api` to `http://localhost:8000`. `apps/web`
+resolves `@tellegen/svelte` through its built `dist/`, so `build:svelte` must
+run before the dev server starts.
 
-Framework packages:
+Framework package tarballs:
 
 ```sh
 npm run pack:engine
 npm run pack:svelte
 ```
 
-The public browser packages are `@tellegen/engine` and `@tellegen/svelte`.
-`@tellegen/engine` exports case parsing, browser wasm solving, `Study` preview
-and commit calls, sensitivities, and generated TypeScript types.
-`@tellegen/svelte` exports the map, panels, local file flow, and solve card as
-Svelte components. `apps/web` is a private hosted demo that consumes the Svelte
-package. See [docs/src/frontend-package.md](docs/src/frontend-package.md).
+`apps/web` is a private hosted demo that consumes the Svelte package. See
+[docs/src/frontend-package.md](docs/src/frontend-package.md).
 
 ## Data
 
@@ -179,11 +196,15 @@ secrets are documented in [docs/src/deployment.md](docs/src/deployment.md).
 
 ## Roadmap
 
-- canonical display data in powerio
+The roadmap lives on the
+[direction page](https://eigenergy.github.io/tellegen/direction.html): near
+term, harden the framework package boundary; mid term, make the no-backend
+deployment the default; long term, AC in the browser.
 
 ## License
 
 The Rust crates are licensed under either of [Apache-2.0](crates/tellegen/LICENSE-APACHE)
-or [MIT](crates/tellegen/LICENSE-MIT), at your option. The web app under `apps/web/` is
+or [MIT](crates/tellegen/LICENSE-MIT), at your option. The npm packages
+`@tellegen/engine` and `@tellegen/svelte` and the web app under `apps/web/` are
 [MIT](LICENSE). See [crates/tellegen/NOTICE](crates/tellegen/NOTICE) and
 [docs/src/third-party-notices.md](docs/src/third-party-notices.md) for attributions.

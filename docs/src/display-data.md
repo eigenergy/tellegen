@@ -32,33 +32,25 @@ y = K * mercdeg(lat)
 mercdeg(lat) = (180 / pi) * ln(tan(pi / 4 + lat * pi / 360))
 ```
 
-The web app applies the inverse transform in `pwdToLngLat` in
-`apps/web/src/routes/+page.svelte`. This places the checked ACTIVSg200 and
+The viewer applies the inverse transform in `pwdToLngLat` in
+`packages/svelte/src/lib/controller.svelte.ts`. This places the checked ACTIVSg200 and
 ACTIVSg2000 diagrams within about 0.02 degrees of their corresponding named
 cities. Hand edited diagrams can differ, so tellegen labels these positions as
 approximate.
 
-## Canonical display format
+## Canonical display format (planned)
 
-A canonical display format belongs in powerio as a `DisplayData` variant. That
-keeps the format available to Rust, browser wasm, and Python bindings.
-tellegen should consume and render the format rather than define a separate file
-format.
+A canonical display format is planned in powerio as a `DisplayData` variant, so
+the format is available to Rust, browser wasm, and Python bindings; tellegen
+will consume and render it rather than define a separate file format. The open
+design questions are whether it stores substation coordinates, bus coordinates,
+branch routing, and style hints; whether coordinates are geographic or diagram
+based; how elements are referenced (id, substation number, name, or a combined
+key); and whether display data embeds in a case JSON file or stays a separate
+geographic file.
 
-The format should decide:
-
-- whether it stores substation coordinates, bus coordinates, branch routing, and
-  style hints;
-- whether coordinates are geographic or diagram based;
-- whether elements are referenced by id, substation number, name, or a combined
-  key;
-- whether display data is embedded in a case JSON file or stored as a separate geographic file.
-
-Existing `.pwd` parsing gives powerio a migration path from PowerWorld diagrams.
-
-## Deferred tellegen work
-
-- Fill missing case coordinates from a dropped `.pwd` sibling when the case has
-  a bus to substation mapping.
-- Combine a dropped case and corresponding `.pwd` into one local entry.
-- Export coordinates computed by tellegen in the canonical display format.
+Existing `.pwd` parsing gives powerio a migration path from PowerWorld
+diagrams. Planned on top of the format: filling missing case coordinates from a
+dropped `.pwd` sibling when the case has a bus to substation mapping, combining
+a dropped case and its `.pwd` into one local entry, and exporting coordinates
+computed by tellegen.

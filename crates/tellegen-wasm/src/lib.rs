@@ -319,6 +319,21 @@ pub fn solve_dc_json(network_json: &str, deltas_json: &str) -> Result<String, St
     let mut request = SolveRequest::default();
     request.edits.deltas = req.deltas;
 
+    // The engine's bus index only holds model buses, so a demand delta at a bus
+    // excluded from the DC model (an isolated MATPOWER type-4 bus) would error
+    // deep in the engine as "unknown". Reject it here with an accurate message;
+    // a bus id absent from the network entirely still errors as unknown.
+    for &bus in request.edits.deltas.keys() {
+        let Ok(key) = usize::try_from(bus) else {
+            continue;
+        };
+        if !dc.bus_ids.contains(&key) && net.buses.iter().any(|b| b.id.0 == key) {
+            return Err(format!(
+                "demand delta bus {bus} is isolated and excluded from the model"
+            ));
+        }
+    }
+
     // The dLMP/dd column: a Price/Demand sensitivity cell over the single sens bus.
     // Only meaningful in the sensitivity build; the core build leaves `dlmp_dd` null.
     #[cfg(feature = "sensitivity")]
@@ -781,6 +796,25 @@ mpc.gencost = [
             err.contains("unknown demand delta bus 999999"),
             "got: {err}"
         );
+    }
+
+    #[test]
+    fn solve_dc_delta_at_isolated_bus_errors_as_isolated_not_unknown() {
+        // Bus 15 (type 4) exists in the raw network but is excluded from the DC
+        // model, so a demand delta there cannot enter the solve. It must be
+        // rejected as isolated, not with the misleading "unknown bus" message.
+        let case_with_isolated_bus = CASE14_NO_COORDS.replace(
+            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n];",
+            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n 15 4 0 0 0 0 1 1 0 230 1 1.1 0.9;\n];",
+        );
+        let network_json = powerio::parse_str(&case_with_isolated_bus, "m")
+            .expect("parse")
+            .network
+            .to_json()
+            .expect("to_json");
+
+        let err = solve_dc_json(&network_json, r#"{"deltas": {"15": 1.0}}"#).unwrap_err();
+        assert!(err.contains("isolated"), "got: {err}");
     }
 
     #[cfg(feature = "sensitivity")]
