@@ -41,6 +41,7 @@
 		"engine:build": "npm --prefix ../../packages/engine run build",
 		"package": "svelte-kit sync && svelte-package --tsconfig ./tsconfig.json",
 		"smoke:build": "node scripts/smoke-build.mjs",
+		"test:browser": "playwright test",
 		"wasm": "npm --prefix ../../packages/engine run wasm",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync",
@@ -60,6 +61,7 @@
 		"@tellegen/engine": "file:../../packages/engine"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.56.1",
 		"@deck.gl/core": "^9.1.0",
 		"@deck.gl/layers": "^9.1.0",
 		"@deck.gl/mapbox": "^9.1.0",

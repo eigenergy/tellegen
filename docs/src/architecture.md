@@ -1,6 +1,6 @@
 # Architecture
 
-tellegen is a differentiable power flow and optimal power flow engine, written in Rust and compiled to both native targets and WebAssembly, with a SvelteKit app that runs the engine in the browser.
+tellegen is a differentiable power flow and optimal power flow engine, written in Rust and compiled to both native targets and WebAssembly. The browser framework package is `@tellegen/engine`; the SvelteKit hosted demo is one consumer of it.
 
 ## Repository layout
 
@@ -11,7 +11,9 @@ A Cargo workspace and a web app, side by side.
 - `crates/tellegen-server` — a native HTTP server that serves the bundled cases and the static app.
 - `crates/tellegen-cli` — a command-line front end over the engine's JSON API.
 - `crates/benchmarks` — a non-shipping harness that runs the PGLib-OPF corpus for validation and timing.
-- `apps/web` — the `tellegen-frontend` Svelte package and its static demo app.
+- `packages/engine` — the public browser engine package, generated TypeScript contracts, and browser wasm transport.
+- `apps/web` — the SvelteKit hosted demo and optional UI package that consumes `@tellegen/engine`.
+- `examples/browser-minimal` — a minimal downstream app that imports `@tellegen/engine` directly.
 
 powerio owns parsing and the network and display formats; the engine and the app depend on it.
 
@@ -34,20 +36,19 @@ One numerical core, two faces that share a driver and a result type:
 - **Stateless** — `solve_json(network, request)` and `capabilities_json()`. Each call parses, solves, and returns. This is the face for one-shot callers: the HTTP server, the CLI, fixtures, and the initial case load.
 - **Stateful** — the `Study`. It builds the model once. `commit` applies a set of `NetworkEdit`s and re-solves exactly, optionally returning the requested sensitivity columns in the same solve; `preview` returns a first-order update at the committed point with no re-solve. This is the reactive hot path: a demand drag previews and commits without re-parsing the network every frame.
 
-## Frontend package
+## Browser engine package
 
-`apps/web/src/lib` is the reusable package surface. It exports the map, the demo
-components, the app state and controller, typed API shapes, and the browser wasm
-wrapper through `@sveltejs/package`. `apps/web/src/routes` is the reference demo
-that consumes those library modules.
+`packages/engine` is the reusable package surface. It exports generated
+contracts, case and display parsing helpers, stateless solve calls, capabilities,
+the browser `Study`, and the browser wasm transport. It has no SvelteKit
+dependency.
 
-The package peers on Svelte, deck.gl, and MapLibre. Its wasm wrapper imports the
-generated wasm files with `?url`, so consuming Vite and SvelteKit apps can serve
-the `.wasm` assets through their normal asset pipeline.
+`apps/web` consumes that package and layers on the hosted demo UI: map rendering,
+default case loading, local case placement, panels, and interaction state.
 
 ## In the browser
 
-`crates/tellegen-wasm` ships two packages:
+`@tellegen/engine` ships two wasm packages built from `crates/tellegen-wasm`:
 
 - a **full** package (the `conic` feature) carrying DC power flow, DC OPF, AC power flow, SOCWR, the `Study`, and the sensitivity columns; and
 - a **core** package (`--no-default-features`, SIMD disabled) — a smaller DC-only fallback that loads on any WebAssembly-capable browser.

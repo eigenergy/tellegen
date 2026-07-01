@@ -26,7 +26,8 @@
     "wasm": "npm run wasm:core && npm run wasm:sens",
     "wasm:core": "RUSTFLAGS=\"-C target-feature=-simd128,-relaxed-simd\" wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --no-default-features",
     "wasm:sens": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-sens-pkg --out-name tellegen_sens -- --features conic",
-    "check": "npm run contracts:check && tsc -p tsconfig.json --noEmit"
+    "check": "npm run contracts:check && tsc -p tsconfig.json --noEmit",
+    "test:import": "node scripts/import-smoke.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

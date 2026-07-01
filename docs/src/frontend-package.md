@@ -1,122 +1,44 @@
-# Frontend Package
+# Framework Packages
 
-`apps/web` is both the public demo and the `tellegen-frontend` Svelte package.
-The package exports the map, the demo shell components, the typed case and
-solution data model, and the browser WebAssembly wrapper.
+The reusable browser engine lives in `packages/engine` and is published as
+`@tellegen/engine`. Start there for new applications.
 
-This follows the SvelteKit package convention: `src/lib` is the public package
-surface, while `src/routes` is the demo or documentation app that consumes it.
-That is why the reusable code lives under `apps/web/src/lib` instead of a
-separate top-level `packages/` directory.
+`apps/web` is the hosted demo and Svelte UI package. It consumes
+`@tellegen/engine`, adds the map, panels, local file placement, default case
+loading, and demo specific state management. Those app internals are useful
+examples, but they are not the engine contract.
 
-## Install
+## Which Package To Use
 
-The package peers on Svelte, deck.gl, and MapLibre. A consuming Svelte app should
-install them beside the package:
+Use `@tellegen/engine` when an app needs:
 
-```sh
-npm install tellegen-frontend svelte @deck.gl/core @deck.gl/layers @deck.gl/mapbox maplibre-gl
-```
+- case parsing;
+- display parsing;
+- browser wasm solves;
+- `Study` preview and commit;
+- sensitivity requests; or
+- generated TypeScript contracts.
 
-For local development from this repository, install the package by path:
+Use `tellegen-frontend` only when an app wants to reuse the hosted demo map or
+Svelte shell components. It peers on Svelte, deck.gl, and MapLibre.
 
-```sh
-npm install ../tellegen/apps/web
-```
-
-Use TypeScript `moduleResolution: "bundler"` in the consuming app. SvelteKit
-projects created by the current Svelte CLI already use that setting.
-
-## Entry Points
-
-The package export map is:
-
-- `tellegen-frontend` — root framework exports: `TellegenMap`, state, context,
-  controller, display helpers, and wasm helpers.
-- `tellegen-frontend/map` — map component plus color scales, display helpers,
-  and `TellegenMapProps`.
-- `tellegen-frontend/components` — the demo shell components used by the
-  reference app.
-- `tellegen-frontend/types` — type only imports for network, solution,
-  sensitivity, local case, display, and wasm data.
-- `tellegen-frontend/wasm` — parser, display reader, DC solver, and `Study`
-  wrapper. This entry imports the bundled `.wasm` files through `?url`.
-- `tellegen-frontend/styles.css` — tellegen CSS variables and shared component
-  styles.
-
-## Minimal SvelteKit Use
-
-Import the package CSS once in the app shell:
-
-```svelte
-<script lang="ts">
-	import 'tellegen-frontend/styles.css';
-	import {
-		TellegenMap,
-		createAppState,
-		createController,
-		setAppState,
-		setController
-	} from 'tellegen-frontend';
-
-	const app = createAppState();
-	const ctrl = createController(app);
-
-	setAppState(app);
-	setController(ctrl);
-</script>
-
-<TellegenMap
-	onbusclick={ctrl.selectBus}
-	onlocalbusclick={ctrl.selectLocalBus}
-	onplacecase={ctrl.placeLocalCase}
-	onmapclick={ctrl.clearSelection}
-/>
-```
-
-Call `ctrl.load()` after mount when the app wants bundled cases from the tellegen
-backend. That controller path expects the backend API under `/api`, matching the
-demo:
-
-```ts
-import { onMount } from 'svelte';
-
-onMount(() => {
-	if (!ctrl.casesLoaded) void ctrl.load();
-});
-```
-
-Dropped local case files do not upload. They go through the browser wasm parser
-and solver.
-
-## Using the Wasm Entry Directly
-
-Apps that only need parsing or solving can import the wasm wrapper without the
-map or demo controller:
+## Engine Entry Point
 
 ```ts
 import {
-	DEFAULT_FORMULATION,
-	createStudy,
-	formatOf,
-	ingestCase,
-	solveDc
-} from 'tellegen-frontend/wasm';
-
-const format = formatOf(file.name);
-if (!format) throw new Error('unsupported case format');
-
-const parsed = await ingestCase(await file.text(), format);
-const base = await solveDc(parsed.name, parsed.network_json, {}, null);
-
-const study = await createStudy(parsed.network_json, DEFAULT_FORMULATION);
-try {
-	const preview = study.preview({ 1: 25 });
-	console.log(base.solution.objective, preview.objectiveDelta);
-} finally {
-	study.free();
-}
+  browserWasmTransport,
+  createStudy,
+  formatOf,
+  solveJson
+} from "@tellegen/engine";
 ```
 
-The wasm wrapper loads on demand. The core DC package is the fallback path; the
-sensitivity package carries the `Study` and the conic formulation.
+The engine package imports its wasm files through `?url`, so consuming apps need
+a bundler with wasm asset support. Vite and SvelteKit work.
+
+## Demo App Boundary
+
+`apps/web/src/routes` is the hosted app. `apps/web/src/lib` contains the demo map,
+controller, state, and components. These modules can change as the demo changes.
+Downstream apps should not deep import from `apps/web/src/lib` or from generated
+wasm folders.

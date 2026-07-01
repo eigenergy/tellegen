@@ -1,0 +1,41 @@
+# Transports
+
+The transport boundary is the line between a host app and the tellegen engine.
+
+## Browser Wasm
+
+`@tellegen/engine` ships the browser wasm transport today. It wraps the `wasm-pack` output from `crates/tellegen-wasm` and exposes direct functions plus `browserWasmTransport`.
+
+Use this transport when cases should stay local to the browser:
+
+- dropped case files are parsed in WebAssembly;
+- solves run in WebAssembly;
+- `Study.preview` and `Study.commit` run in WebAssembly;
+- sensitivity requests run in WebAssembly; and
+- no case text or network JSON leaves the browser unless the host app sends it.
+
+The transport has two wasm packages:
+
+- core wasm for parsing and DC solves; and
+- sensitivity wasm for `Study`, SOCWR, capabilities, and generalized sensitivity requests.
+
+The loader is lazy. Host apps can call `preloadCore()` or `preloadSensitivity()` to control when the browser downloads and initializes wasm.
+
+## HTTP
+
+The hosted demo also uses HTTP for bundled case metadata and native server fallback paths. That server is a demo consumer, not a requirement for using `@tellegen/engine`.
+
+An HTTP transport can implement the same shape as `EngineTransport`:
+
+- parse or fetch a network;
+- call a native `solve_json` endpoint;
+- keep a server side study handle; and
+- return the same generated TypeScript contract shapes.
+
+That transport is optional for apps that need server sized cases, audit logs, or native deployment.
+
+## Tauri
+
+The desktop and mobile path can use the same transport contract with a Tauri command layer. The UI keeps the `Study` workflow; only the call boundary changes from browser wasm to native commands.
+
+The Rust contract stays the source of truth. New transports should return the generated `SolveResponse`, `ProblemCaps`, and sensitivity matrix shapes instead of defining parallel types.
