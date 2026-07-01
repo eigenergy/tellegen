@@ -2,6 +2,7 @@
  * first file is dropped; the dropped file is parsed in the browser and never
  * leaves the machine. */
 import type {
+  BranchRatingDeltas,
   BrowserFormulation,
   DemandDeltas,
   NetworkBranch,
@@ -21,6 +22,7 @@ export {
 } from "./generated/contracts.js";
 
 export type {
+  BranchRatingDeltas,
   BrowserFormulation,
   CaseSummary,
   DemandDeltas,
@@ -273,33 +275,45 @@ export function isPermanentSensFailure(message: string): boolean {
   return isPermanentWasmLoadFailure(message);
 }
 
-/** One in-place network mutation for the Study handle. `bus` is the original
- * bus id; `p_mw` is the demand delta in MW. */
-interface NetworkEdit {
-  kind: "add_load";
-  bus: number;
-  p_mw: number;
-}
+/** One in-place network mutation for the Study handle: a demand delta in MW at
+ * an original bus id, or a thermal rating delta in MW at an original branch id. */
+type NetworkEdit =
+  | { kind: "add_load"; bus: number; p_mw: number }
+  | { kind: "adjust_branch_rating"; branch: number; delta_mw: number };
 
 /** A `NetworkEdit[]` for the wasm Study, dropping zero deltas so an unchanged
- * bus is never sent. */
-function deltasToEdits(deltas: DemandDeltas): NetworkEdit[] {
-  return Object.entries(deltas)
+ * element is never sent. */
+function toEdits(deltas: DemandDeltas, rates: BranchRatingDeltas): NetworkEdit[] {
+  const edits: NetworkEdit[] = Object.entries(deltas)
     .filter(([, mw]) => mw !== 0)
     .map(([bus, p_mw]) => ({ kind: "add_load", bus: Number(bus), p_mw }));
+  for (const [branch, delta_mw] of Object.entries(rates)) {
+    if (delta_mw !== 0) {
+      edits.push({ kind: "adjust_branch_rating", branch: Number(branch), delta_mw });
+    }
+  }
+  return edits;
 }
 
-/** The (operand, parameter) cell the UI drives: a study whose sensitivity column is
- * ∂(price, active) / ∂(demand, active). The *formulation* is no longer fixed here — it is
+/** The sensitivity selection target: a bus (the ∂LMP/∂d column at that bus) or a
+ * branch (the ∂LMP/∂rating column at that branch). Ids are the external element
+ * ids; `BrowserStudy` translates them to the engine's dense indices. */
+export type SensTarget = { bus: number } | { branch: number };
+
+/** The (operand, parameter) cells the UI drives: a study whose sensitivity column is
+ * ∂(price, active) / ∂(demand, active) for a bus target, or ∂(price, active) /
+ * ∂(line limit) for a branch target. The *formulation* is no longer fixed here — it is
  * a parameter threaded from the UI's selector through `createStudy` (every formulation the
- * full wasm build carries returns LMP, so this same column applies to all of them). The
- * operand/parameter stay centralized so `createStudy` and the Study's `commit`/`preview`
+ * full wasm build carries returns LMP, so these columns apply to all of them). The
+ * operand/parameters stay centralized so `createStudy` and the Study's `commit`/`preview`
  * requests read one source. */
 const STUDY_CAPABILITY = {
   /** The watched operand: locational marginal price (active power). */
   operand: { Price: "Active" },
-  /** The varied parameter: bus demand (active power). */
+  /** The varied bus parameter: bus demand (active power). */
   parameter: { Demand: "Active" },
+  /** The varied branch parameter: the thermal rating (serde unit variant). */
+  ratingParameter: "LineLimit",
 } as const;
 
 /** The formulations the full wasm build solves entirely in the browser. Each returns LMP,
@@ -336,17 +350,23 @@ export const DEFAULT_FORMULATION: Formulation = "dcopf";
 /** The `Operand[]` JSON `Study.preview` watches (the LMP column). */
 const PREVIEW_OPERANDS_JSON = JSON.stringify([STUDY_CAPABILITY.operand]);
 
-/** The `SensRequest[]` JSON for `Study.commit`: the ∂LMP/∂demand column at the dense bus
- * `index`, or `[]` when there is none. NOTE: `SensRequest.indices` are **dense positional**
- * indices into the bus axis (0-based), *not* external bus ids — `BrowserStudy` translates
- * the selected external bus id to its dense index before calling this. */
-function sensitivitiesJson(index: number | null): string {
-  if (index === null) return "[]";
+/** The `SensRequest[]` JSON for `Study.commit`: the ∂LMP/∂demand column at a dense bus
+ * index, or the ∂LMP/∂rating column at a dense branch index, or `[]` when there is no
+ * target. NOTE: `SensRequest.indices` are **dense positional** indices into the target's
+ * axis (0-based), *not* external ids — `BrowserStudy` translates the selected external id
+ * to its dense index before calling this. */
+function sensitivitiesJson(
+  target: { kind: "bus" | "branch"; index: number } | null,
+): string {
+  if (target === null) return "[]";
   return JSON.stringify([
     {
       operand: STUDY_CAPABILITY.operand,
-      parameter: STUDY_CAPABILITY.parameter,
-      indices: [index],
+      parameter:
+        target.kind === "bus"
+          ? STUDY_CAPABILITY.parameter
+          : STUDY_CAPABILITY.ratingParameter,
+      indices: [target.index],
     },
   ]);
 }
@@ -379,11 +399,11 @@ interface StudyPreview {
 
 /** One `SensitivityMatrix` from the engine: `values[r][c] = d(rows[r])/d(cols[c])`,
  * with row/column metadata naming the source element (`element` is an externally
- * tagged `ElementId`, e.g. `{ Bus: id }`). */
+ * tagged `ElementId`, e.g. `{ Bus: id }` / `{ Branch: id }`). */
 interface SensitivityMatrixJson {
   values: number[][];
-  rows: { element: { Bus?: number }; index: number }[];
-  cols: { element: { Bus?: number }; index: number }[];
+  rows: { element: { Bus?: number; Branch?: number }; index: number }[];
+  cols: { element: { Bus?: number; Branch?: number }; index: number }[];
   units: string;
 }
 
@@ -396,30 +416,31 @@ interface StudyCommitOutput {
   sensitivities: SensitivityMatrixJson[];
 }
 
-/** Extract the ∂LMP/∂demand column from the first requested `SensitivityMatrix` into the
- * legacy `SensitivityColumn` the map and legend consume — the same shape `solve_dc`'s
+/** Extract the ∂LMP/∂parameter column from the first requested `SensitivityMatrix` into
+ * the `SensitivityColumn` the map and legend consume — the same shape `solve_dc`'s
  * `dlmp_dd` and the server serve. Rows are Price operands per bus; the single column is
- * the demand-at-`sensBus` parameter, so the column is `values[r][0]` keyed by each row's
- * source bus id (`rows[r].element.Bus`), and the column bus is `cols[0].element.Bus`.
- * Returns null when no matrix was requested or it lacks a bus-keyed column. */
+ * the selected parameter, so the column is `values[r][0]` keyed by each row's source bus
+ * id, and the source element is `cols[0].element` — a bus for the demand parameter
+ * (`parameter: "d"`) or a branch for the rating parameter (`parameter: "fmax"`). Returns
+ * null when no matrix was requested or its column has no recognized source element. */
 function sensitivityColumn(
   caseId: string,
   matrices: SensitivityMatrixJson[],
 ): SensitivityColumn | null {
   const m = matrices[0];
-  const colBus = m?.cols[0]?.element.Bus;
-  if (!m || colBus === undefined) return null;
+  const el = m?.cols[0]?.element;
+  if (!m || !el) return null;
   const values = m.rows
     .map((row, r) => ({ bus: row.element.Bus, value: m.values[r]?.[0] ?? 0 }))
     .filter((v): v is { bus: number; value: number } => v.bus !== undefined);
-  return {
-    case: caseId,
-    operand: "lmp",
-    parameter: "d",
-    bus: colBus,
-    units: m.units,
-    values,
-  };
+  const shared = { case: caseId, operand: "lmp", units: m.units, values };
+  if (el.Bus !== undefined) {
+    return { ...shared, parameter: "d", bus: el.Bus };
+  }
+  if (el.Branch !== undefined) {
+    return { ...shared, parameter: "fmax", branch: el.Branch };
+  }
+  return null;
 }
 
 function solveResponseToSolution(out: StudySolveResponse): Solution {
@@ -449,31 +470,49 @@ export class BrowserStudy {
    * by this dense index, not the external bus id, so the selected bus must be translated
    * before a sensitivity request. Null until first needed; the bus set is solve-invariant. */
   #busToIndex: Map<number, number> | null = null;
+  /** External branch id -> dense positional branch index, from the committed solution's
+   * flows ordering — the branch-axis counterpart of `#busToIndex`. */
+  #branchToIndex: Map<number, number> | null = null;
 
   constructor(study: import("./wasm-sens-pkg/tellegen_sens.js").Study) {
     this.#study = study;
   }
 
-  /** The dense bus index the engine expects for `sensBus` (an external bus id), or null when
-   * no bus is selected or the id is unknown. Memoizes the id->index map from the committed
-   * solution's LMP order — the same axis order the engine's dense sensitivity columns use. */
-  #senseIndex(sensBus: number | null): number | null {
-    if (sensBus === null) return null;
-    if (!this.#busToIndex) {
-      const sol: StudySolveResponse = JSON.parse(this.#study.solution());
-      this.#busToIndex = new Map((sol.lmp ?? []).map((e, i) => [e.bus, i]));
+  /** The dense-axis sensitivity target the engine expects for a selection (external
+   * ids), or null when nothing is selected or the id is unknown. Memoizes the
+   * id->index maps from the committed solution's LMP / flows order — the same axis
+   * orders the engine's dense sensitivity columns use. */
+  #senseTarget(
+    target: SensTarget | null,
+  ): { kind: "bus" | "branch"; index: number } | null {
+    if (target === null) return null;
+    const sol = () => JSON.parse(this.#study.solution()) as StudySolveResponse;
+    if ("bus" in target) {
+      if (!this.#busToIndex) {
+        this.#busToIndex = new Map((sol().lmp ?? []).map((e, i) => [e.bus, i]));
+      }
+      const index = this.#busToIndex.get(target.bus);
+      return index === undefined ? null : { kind: "bus", index };
     }
-    return this.#busToIndex.get(sensBus) ?? null;
+    if (!this.#branchToIndex) {
+      this.#branchToIndex = new Map(
+        (sol().flows ?? []).map((f, i) => [f.branch, i]),
+      );
+    }
+    const index = this.#branchToIndex.get(target.branch);
+    return index === undefined ? null : { kind: "branch", index };
   }
 
-  /** Exact solve at demand = base + `deltas`, replacing the committed point. When
-   * `sensBus` is set, the ∂LMP/∂demand column at that bus is computed in the *same* solve
-   * and returned (no second round-trip); otherwise `sensitivity` is null. `caseId` labels
-   * the returned column. Returns the UI Solution, the solver iterates, and the column. */
+  /** Exact solve at demand = base + `deltas` and ratings = base + `rates`, replacing
+   * the committed point. When `target` names a bus or branch, its ∂LMP/∂parameter
+   * column is computed in the *same* solve and returned (no second round-trip);
+   * otherwise `sensitivity` is null. `caseId` labels the returned column. Returns the
+   * UI Solution, the solver iterates, and the column. */
   commit(
     caseId: string,
     deltas: DemandDeltas,
-    sensBus: number | null,
+    rates: BranchRatingDeltas,
+    target: SensTarget | null,
   ): {
     solution: Solution;
     iterations: SolveIteration[];
@@ -481,47 +520,51 @@ export class BrowserStudy {
   } {
     const out: StudyCommitOutput = JSON.parse(
       this.#study.replace_edits(
-        JSON.stringify(deltasToEdits(deltas)),
-        sensitivitiesJson(this.#senseIndex(sensBus)),
+        JSON.stringify(toEdits(deltas, rates)),
+        sensitivitiesJson(this.#senseTarget(target)),
       ),
     );
     return {
       solution: solveResponseToSolution(out.solution),
       iterations: out.iterations ?? [],
       sensitivity:
-        sensBus === null ? null : sensitivityColumn(caseId, out.sensitivities),
+        target === null ? null : sensitivityColumn(caseId, out.sensitivities),
     };
   }
 
-  /** The ∂LMP/∂demand column at `sensBus` for this study's formulation, computed by an
-   * exact re-solve at demand = base + `deltas` (the same one-call path `commit` uses,
-   * but returning only the column). Used when a bus is selected so the overlay matches the
-   * active formulation — DC OPF, AC OPF, or SOCWR — rather than always the DC sensitivity.
-   * `caseId` labels the column; returns null when no bus-keyed column comes back. */
+  /** The ∂LMP/∂parameter column at `target` for this study's formulation, computed by
+   * an exact re-solve at the edited point (the same one-call path `commit` uses, but
+   * returning only the column). Used when a bus or branch is selected so the overlay
+   * matches the active formulation rather than always the DC sensitivity. `caseId`
+   * labels the column; returns null when no recognized column comes back. */
   sensitivity(
     caseId: string,
     deltas: DemandDeltas,
-    sensBus: number,
+    rates: BranchRatingDeltas,
+    target: SensTarget,
   ): SensitivityColumn | null {
     const out: StudyCommitOutput = JSON.parse(
       this.#study.replace_edits(
-        JSON.stringify(deltasToEdits(deltas)),
-        sensitivitiesJson(this.#senseIndex(sensBus)),
+        JSON.stringify(toEdits(deltas, rates)),
+        sensitivitiesJson(this.#senseTarget(target)),
       ),
     );
     return sensitivityColumn(caseId, out.sensitivities);
   }
 
   /** First-order LMP preview for replacing the committed point with
-   * demand = base + `deltas`, with no re-solve: predicted per-bus ΔLMP and the
-   * predicted Δobjective. */
-  preview(deltas: DemandDeltas): {
+   * demand = base + `deltas` and ratings = base + `rates`, with no re-solve:
+   * predicted per-bus ΔLMP and the predicted Δobjective. */
+  preview(
+    deltas: DemandDeltas,
+    rates: BranchRatingDeltas = {},
+  ): {
     lmp: { bus: number; usd_per_mwh: number }[];
     objectiveDelta: number | null;
   } {
     const out: StudyPreview = JSON.parse(
       this.#study.preview_replacement(
-        JSON.stringify(deltasToEdits(deltas)),
+        JSON.stringify(toEdits(deltas, rates)),
         PREVIEW_OPERANDS_JSON,
       ),
     );

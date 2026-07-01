@@ -81,6 +81,7 @@ export interface SensRequest {
 
 export interface Edits {
 \tdeltas?: DemandDeltas;
+\trates?: BranchRatingDeltas;
 }
 
 export interface SolveOptions {
@@ -213,7 +214,10 @@ export interface SensitivityColumn {
 \tcase: string;
 \toperand: string;
 \tparameter: string;
-\tbus: number;
+\t/** The selected source bus, for a bus-axis parameter column (∂LMP/∂d). */
+\tbus?: number;
+\t/** The selected source branch, for a branch-axis parameter column (∂LMP/∂fmax). */
+\tbranch?: number;
 \tunits: string;
 \tvalues: { bus: number; value: number }[];
 }
@@ -227,6 +231,8 @@ export interface CaseSummary {
 }
 
 export type DemandDeltas = Record<number, number>;
+
+export type BranchRatingDeltas = Record<number, number>;
 `;
 
 if (check) {

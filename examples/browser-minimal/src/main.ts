@@ -44,7 +44,7 @@ async function main() {
     const edit: DemandDeltas = { [editBus]: 25 };
     const base = study.currentSolution();
     const preview = study.preview(edit);
-    const committed = study.commit(parsed.name, edit, editBus);
+    const committed = study.commit(parsed.name, edit, {}, { bus: editBus });
     const selfSensitivity =
       committed.sensitivity?.values.find((row) => row.bus === editBus)?.value ?? null;
 
