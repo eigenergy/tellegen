@@ -114,7 +114,7 @@
 	}
 
 	dt {
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 	}
 
 	dd {
@@ -124,7 +124,7 @@
 	.footnote {
 		margin: 8px 0 0;
 		font-size: 10px;
-		color: var(--ink-faint);
+		color: var(--text-tertiary);
 		letter-spacing: 0;
 	}
 
@@ -134,6 +134,6 @@
 		list-style: none;
 		font-size: 10.5px;
 		line-height: 1.5;
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 </style>

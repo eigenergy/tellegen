@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
+	import BusPicker from './BusPicker.svelte';
 	import DemandSlider from './DemandSlider.svelte';
 	import DisplayControls from './DisplayControls.svelte';
 	import FormulationSelector from './FormulationSelector.svelte';
@@ -17,9 +18,10 @@
 <aside class="panel">
 	{#if app.error}
 		<p class="error mono">{app.error}</p>
-		{#if !ctrl.casesLoaded}
+		<div class="error-actions">
 			<button class="reset mono" onclick={ctrl.load}>retry</button>
-		{/if}
+			<button class="reset mono" onclick={() => (app.error = null)}>dismiss</button>
+		</div>
 	{/if}
 	{#if app.parsingFile}
 		<p class="dim mono blink">parsing&hellip;</p>
@@ -34,7 +36,9 @@
 					{config.loadDefaultCases ? 'no default cases loaded' : 'drop a case file to begin'}
 				</p>
 				{#if config.loadDefaultCases}
-					<button class="reset mono" onclick={ctrl.restoreDefaultCases}>restore defaults</button>
+					<button class="reset mono" onclick={ctrl.restoreDefaultCases}
+						>restore default cases</button
+					>
 				{/if}
 			{:else if ctrl.loadingBackendCase}
 				<p class="dim mono blink">loading selected case&hellip;</p>
@@ -50,6 +54,8 @@
 		{#if ctrl.activeSolvable}
 			<FormulationSelector />
 		{/if}
+
+		<BusPicker />
 
 		<hr />
 
@@ -98,6 +104,11 @@
 	.error {
 		color: var(--red);
 		font-size: 12px;
+	}
+
+	.error-actions {
+		display: flex;
+		gap: 6px;
 	}
 
 	@media (max-width: 760px) {

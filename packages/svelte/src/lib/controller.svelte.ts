@@ -546,7 +546,7 @@ export class Controller {
 				// mount (the page guards the call with `if (!ctrl.casesLoaded)`).
 				this.casesLoaded = true;
 			} catch (e) {
-				this.app.error = `server unreachable: ${e instanceof Error ? e.message : e}`;
+				this.app.error = e instanceof Error ? e.message : String(e);
 			} finally {
 				this.loading = null;
 			}
@@ -968,7 +968,7 @@ export class Controller {
 					this.app.previewActive = false;
 					this.app.previewDeltaMw = null;
 				}
-				this.app.error = msg;
+				this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} ${msg}`;
 			},
 			ondone: () => {
 				this.finishSolve(c, seq, sensBus);
@@ -1094,7 +1094,7 @@ export class Controller {
 			}
 			const format = formatOf(file.name);
 			if (!format) {
-				this.app.error = `${file.name}: not a case or coordinate file (.m, .raw, .aux, .pwd, .csv, .json, .geojson)`;
+				this.app.error = `${file.name}: not a case or geographic file (.m, .raw, .aux, .pwd, .csv, .json, .geojson)`;
 				continue;
 			}
 			this.app.parsingFile = true;

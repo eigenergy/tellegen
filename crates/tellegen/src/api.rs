@@ -760,6 +760,47 @@ fn bus_index_map(bus_ids: &[usize]) -> HashMap<usize, usize> {
     bus_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect()
 }
 
+/// `deltas` sorted by bus id. `HashMap`'s randomized hashing means iterating it
+/// directly could surface a different validation error first on different runs of
+/// the same invalid request; a deterministic order keeps `apply_demand_deltas`'s
+/// error a function of the request alone.
+fn sorted_deltas(deltas: &HashMap<i64, f64>) -> Vec<(i64, f64)> {
+    let mut entries: Vec<(i64, f64)> = deltas.iter().map(|(&bus, &mw)| (bus, mw)).collect();
+    entries.sort_unstable_by_key(|&(bus, _)| bus);
+    entries
+}
+
+/// Validate one demand delta and resolve its bus to a dense index. Shared by the DC
+/// and AC/SOCWR appliers so a positive bus id, a finite delta, a known bus, and a
+/// delta that doesn't drive demand negative are enforced identically for both.
+/// `bus` is cast through `usize::try_from`, not `as`, so a bus id that doesn't fit
+/// `usize` (reachable on the 32-bit wasm32 target) is rejected as unknown instead of
+/// silently truncating onto whatever bus the wrapped value happens to name.
+fn resolve_demand_delta(
+    bus: i64,
+    mw: f64,
+    bus_idx: &HashMap<usize, usize>,
+    base_mva: f64,
+    current_demand_pu: impl Fn(usize) -> f64,
+) -> Result<usize, String> {
+    if bus <= 0 {
+        return Err("demand delta bus must be positive".into());
+    }
+    if !mw.is_finite() {
+        return Err(format!("demand delta for bus {bus} must be finite"));
+    }
+    let key = usize::try_from(bus).map_err(|_| format!("unknown demand delta bus {bus}"))?;
+    let i = *bus_idx
+        .get(&key)
+        .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
+    if current_demand_pu(i) * base_mva + mw < -1e-9 {
+        return Err(format!(
+            "demand delta for bus {bus} would make demand negative"
+        ));
+    }
+    Ok(i)
+}
+
 /// Establish the operating point: `demand += delta` (per unit) at each named bus.
 fn apply_demand_deltas(
     dc: &mut DcNetwork,
@@ -767,21 +808,8 @@ fn apply_demand_deltas(
     deltas: &HashMap<i64, f64>,
 ) -> Result<(), String> {
     let base = dc.base_mva;
-    for (&bus, &mw) in deltas {
-        if bus <= 0 {
-            return Err("demand delta bus must be positive".into());
-        }
-        if !mw.is_finite() {
-            return Err(format!("demand delta for bus {bus} must be finite"));
-        }
-        let i = *bus_idx
-            .get(&(bus as usize))
-            .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
-        if dc.demand[i] * base + mw < -1e-9 {
-            return Err(format!(
-                "demand delta for bus {bus} would make demand negative"
-            ));
-        }
+    for (bus, mw) in sorted_deltas(deltas) {
+        let i = resolve_demand_delta(bus, mw, bus_idx, base, |i| dc.demand[i])?;
         dc.demand[i] += mw / base;
     }
     Ok(())
@@ -795,21 +823,8 @@ fn apply_demand_deltas_ac(
 ) -> Result<(), String> {
     let base = acnet.base_mva;
     let idx = bus_index_map(&acnet.bus_ids);
-    for (&bus, &mw) in deltas {
-        if bus <= 0 {
-            return Err("demand delta bus must be positive".into());
-        }
-        if !mw.is_finite() {
-            return Err(format!("demand delta for bus {bus} must be finite"));
-        }
-        let i = *idx
-            .get(&(bus as usize))
-            .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
-        if acnet.pd[i] * base + mw < -1e-9 {
-            return Err(format!(
-                "demand delta for bus {bus} would make demand negative"
-            ));
-        }
+    for (bus, mw) in sorted_deltas(deltas) {
+        let i = resolve_demand_delta(bus, mw, &idx, base, |i| acnet.pd[i])?;
         acnet.pd[i] += mw / base;
     }
     Ok(())

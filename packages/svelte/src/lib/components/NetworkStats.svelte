@@ -62,11 +62,11 @@
 	}
 
 	dl .delta dd {
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 
 	dt {
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 	}
 
 	dd {

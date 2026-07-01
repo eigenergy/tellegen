@@ -72,7 +72,7 @@
 
 	.formulation-row select:hover:not(:disabled) {
 		border-color: var(--accent);
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 
 	.formulation-row select:disabled {

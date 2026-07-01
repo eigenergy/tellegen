@@ -11,7 +11,7 @@
 	{#if ctrl.showFileDropUi}
 		<i class="sep filedrop-ui"></i>
 		<span class="drophint filedrop-ui"
-			><span class="arrow">&#8675;</span> drop a case or coordinate file anywhere</span
+			><span class="arrow">&#8675;</span> drop a case or geographic file anywhere</span
 		>
 	{/if}
 </footer>
@@ -27,7 +27,7 @@
 		align-items: center;
 		padding: 8px 20px;
 		font-size: 10.5px;
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 		background: linear-gradient(rgba(236, 233, 226, 0), rgba(236, 233, 226, 0.9));
 		animation: rise 0.5s 0.24s ease-out both;
 		pointer-events: none;
@@ -35,19 +35,19 @@
 
 	footer a {
 		pointer-events: auto;
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 	}
 
 	footer a:hover {
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 
 	.drophint {
-		color: var(--ink-faint);
+		color: var(--text-tertiary);
 	}
 
 	.drophint .arrow {
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 
 	@media (max-width: 760px) {

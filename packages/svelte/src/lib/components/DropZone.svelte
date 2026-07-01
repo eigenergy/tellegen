@@ -41,6 +41,6 @@
 
 	.dropframe .hint {
 		font-size: 11px;
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 	}
 </style>

@@ -63,7 +63,7 @@
 	}
 
 	.solve-formulation {
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 
 	.fallback-reason {

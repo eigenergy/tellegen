@@ -73,7 +73,7 @@ async function getJson<T>(
 	signal?: AbortSignal
 ): Promise<T> {
 	const res = await fetchImpl(url, { signal });
-	if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+	if (!res.ok) throw new Error('server unreachable, try again');
 	return res.json() as Promise<T>;
 }
 
@@ -96,7 +96,7 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 		async getCaseNetworkJson(caseId, signal) {
 			const url = apiPath(apiBase, `/cases/${caseId}/case`);
 			const res = await fetchImpl(url, { signal });
-			if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+			if (!res.ok) throw new Error('server unreachable, try again');
 			return res.text();
 		},
 		getSolution: (caseId) =>
@@ -145,23 +145,3 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 		}
 	};
 }
-
-const defaultClient = createApiClient();
-
-export const getCases = () => defaultClient.getCases();
-export const getNetwork = (caseId: string) => defaultClient.getNetwork(caseId);
-export const getCaseNetworkJson = (caseId: string, signal?: AbortSignal) =>
-	defaultClient.getCaseNetworkJson(caseId, signal);
-export const getSolution = (caseId: string) => defaultClient.getSolution(caseId);
-export const getSensitivity = (
-	caseId: string,
-	bus: number,
-	deltas: DemandDeltas = {},
-	signal?: AbortSignal
-) => defaultClient.getSensitivity(caseId, bus, deltas, signal);
-export const openSolveStream = (
-	caseId: string,
-	deltas: DemandDeltas,
-	sensBus: number | null,
-	handlers: SolveStreamHandlers
-) => defaultClient.openSolveStream(caseId, deltas, sensBus, handlers);

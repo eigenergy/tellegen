@@ -40,8 +40,11 @@ jobs:
       - run: npm ci
       - run: npm run wasm
       - run: npm run build:engine
+      - run: npm run check:svelte
       - run: npm run check:web
-      - run: npm run build:web
+      # build:web rebuilds @tellegen/svelte, which check:web (just above) already
+      # built; call the frontend build directly to skip that redundant rebuild.
+      - run: npm --workspace tellegen-frontend run build
       - run: npm run smoke:web
 
   image:

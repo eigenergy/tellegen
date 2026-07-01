@@ -20,7 +20,7 @@
 		align-items: center;
 		gap: 12px;
 		font-size: 10px;
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 	}
 
 	.size {

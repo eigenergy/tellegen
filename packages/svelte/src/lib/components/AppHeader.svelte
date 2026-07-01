@@ -148,7 +148,7 @@
 		align-items: stretch;
 		gap: 0;
 		padding: 0;
-		overflow: hidden;
+		overflow: visible;
 		position: relative;
 	}
 
@@ -181,14 +181,23 @@
 		padding: 0;
 		background: transparent;
 		border: 0;
-		color: var(--ink-faint);
+		color: var(--text-tertiary);
 		font-size: 9px;
 		line-height: 1;
+	}
+
+	/* The visible button stays small; this pads the actual tap target out to
+	   at least 44px. .case-chip is overflow: visible so this isn't clipped. */
+	.case-remove::before {
+		content: '';
+		position: absolute;
+		inset: -13px;
 	}
 
 	.case-remove:hover,
 	.case-remove:focus-visible {
 		background: var(--accent-soft);
+		border-top-right-radius: 3px;
 		color: var(--red);
 	}
 
@@ -221,7 +230,7 @@
 
 	.cregion {
 		font-size: 9.5px;
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 		letter-spacing: 0;
 		text-transform: uppercase;
 	}
@@ -229,7 +238,7 @@
 	/* Local case chips: dashed border + graphite text, topology only. */
 	.case-chip.local {
 		border-style: dashed;
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 	}
 
 	.case-chip.local.active {
@@ -242,7 +251,7 @@
 	.cases > button.ghost {
 		background: rgba(252, 251, 247, 0.36);
 		border: 1px dashed rgba(178, 94, 0, 0.55);
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 		box-shadow: inset 0 0 0 1px rgba(212, 116, 34, 0.08);
 	}
 
@@ -253,7 +262,7 @@
 
 	.cases > button.ghost:hover,
 	.cases > button.ghost:hover .cregion {
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 
 	.kicker {
@@ -263,17 +272,17 @@
 		font-size: 11px;
 		text-transform: uppercase;
 		letter-spacing: 0;
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 		white-space: nowrap;
 	}
 
 	.kicker a {
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 		text-decoration: none;
 	}
 
 	.kicker a:hover {
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 
 	@media (max-width: 760px) {

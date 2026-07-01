@@ -35,9 +35,14 @@
 	--border-default: var(--line);
 	--border-strong: var(--accent);
 	--text-primary: var(--ink);
-	--text-secondary: var(--ink-dim);
-	--text-tertiary: var(--ink-faint);
-	--text-accent: var(--accent);
+	/* --text-secondary/--text-tertiary/--text-accent are independent from
+	   --ink-dim/--ink-faint/--accent (below) rather than aliased to them:
+	   the primitives stay lighter/warmer for borders, focus rings, and
+	   active-state indicators (3:1 or no minimum applies), while the
+	   text-* tokens are tuned to clear WCAG AA 4.5:1 against --bg. */
+	--text-secondary: #4d5156;
+	--text-tertiary: #636657;
+	--text-accent: #8a4800;
 	--text-danger: var(--red);
 	--data-pos: var(--pos);
 	--data-neg: var(--neg);
@@ -130,14 +135,14 @@ body::after {
 }
 
 a {
-	color: var(--accent);
+	color: var(--text-accent);
 	text-decoration: none;
 }
 
 /* chrome classes shared by more than one split component; kept global so Svelte
    scoping does not drop them. Moved verbatim from the page <style>. */
 .dim {
-	color: var(--ink-dim);
+	color: var(--text-secondary);
 }
 
 .arrow {
@@ -222,7 +227,7 @@ a {
 .region {
 	font-size: 10px;
 	font-weight: 400;
-	color: var(--ink-dim);
+	color: var(--text-secondary);
 	text-transform: uppercase;
 	letter-spacing: 0;
 	margin-left: 4px;
@@ -245,13 +250,13 @@ a {
 	background: none;
 	border: 1px solid var(--line);
 	border-radius: 2px;
-	color: var(--ink-dim);
+	color: var(--text-secondary);
 	cursor: pointer;
 }
 
 .mode > button:hover {
 	border-color: var(--accent);
-	color: var(--accent);
+	color: var(--text-accent);
 }
 
 .display-mode {
@@ -278,7 +283,7 @@ a {
 	display: flex;
 	justify-content: space-between;
 	font-size: 10.5px;
-	color: var(--ink-faint);
+	color: var(--text-tertiary);
 	margin-top: 4px;
 }
 
@@ -299,7 +304,7 @@ a {
 	padding: 2px 8px;
 	border: 0;
 	background: transparent;
-	color: var(--ink-dim);
+	color: var(--text-secondary);
 	font: inherit;
 	cursor: pointer;
 }
@@ -310,7 +315,7 @@ a {
 
 .segment button.active {
 	background: var(--accent-soft);
-	color: var(--accent);
+	color: var(--text-accent);
 }
 
 .reset {
@@ -320,7 +325,7 @@ a {
 	background: none;
 	border: 1px solid var(--line);
 	border-radius: 2px;
-	color: var(--ink-dim);
+	color: var(--text-secondary);
 	cursor: pointer;
 }
 

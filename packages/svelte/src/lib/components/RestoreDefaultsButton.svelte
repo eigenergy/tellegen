@@ -21,7 +21,7 @@
 		background: var(--panel);
 		border: 1px solid var(--line);
 		border-radius: 3px;
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 		font-size: 11px;
 		cursor: pointer;
 		box-shadow: 0 2px 10px rgba(32, 36, 43, 0.1);
@@ -29,6 +29,6 @@
 
 	.restore-defaults:hover {
 		border-color: var(--accent);
-		color: var(--accent);
+		color: var(--text-accent);
 	}
 </style>

@@ -19,7 +19,7 @@
 		background: var(--panel);
 		border: 1px solid var(--accent);
 		border-radius: 3px;
-		color: var(--accent);
+		color: var(--text-accent);
 		font-size: 11px;
 		box-shadow: 0 4px 18px rgba(32, 36, 43, 0.1);
 		pointer-events: none;

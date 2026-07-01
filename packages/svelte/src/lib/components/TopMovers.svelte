@@ -8,6 +8,7 @@
 <div class="movers-block">
 	{#if !ctrl.previewing && ctrl.topMovers.length > 0}
 		<table class="mono">
+			<caption class="mono dim">largest LMP sensitivity, ($/MWh)/MW</caption>
 			<tbody>
 				{#each ctrl.topMovers as mover (mover.bus)}
 					<tr>
@@ -32,6 +33,12 @@
 		margin-top: 12px;
 		border-collapse: collapse;
 		font-size: 12px;
+	}
+
+	caption {
+		text-align: left;
+		font-size: 10.5px;
+		margin-bottom: 4px;
 	}
 
 	td {

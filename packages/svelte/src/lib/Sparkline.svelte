@@ -68,7 +68,7 @@
 	}
 
 	.axis-label {
-		fill: var(--ink-faint);
+		fill: var(--text-tertiary);
 		font-family: var(--font-mono);
 		font-size: 8.5px;
 		letter-spacing: 0;

@@ -48,7 +48,7 @@
 		font-size: 11px;
 		padding: 2px 8px;
 		border: 1px solid var(--accent);
-		color: var(--accent);
+		color: var(--text-accent);
 		background: var(--accent-soft);
 		border-radius: 2px;
 		white-space: nowrap;

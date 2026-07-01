@@ -33,7 +33,7 @@
     "test:browser": "npm --workspace tellegen-frontend run test:browser",
     "lint": "npm run lint:web",
     "check": "npm run check:engine && npm run check:svelte && npm run check:web",
-    "build": "npm run build:engine && npm run build:svelte && npm run build:example && npm run build:web",
+    "build": "npm run build:engine && npm run build:svelte && npm run build:example && npm --workspace tellegen-frontend run build",
     "test:downstream": "npm run test:import",
     "ci:js": "npm run check && npm run build && npm run pack:svelte && npm run smoke:web && npm run test:downstream"
   }

@@ -20,6 +20,7 @@
 	import { caseDeltas, displayMetaFor, displaySeriesFor } from './display.js';
 	import { CaseState, type DisplayMode, type LocalCase } from './state.svelte.js';
 	import { getAppState } from './context.svelte.js';
+	import { displayFmt, fmt } from './format.js';
 
 	let {
 		onbusclick,
@@ -71,10 +72,6 @@
 		previewDomain: SensitivityDomain | null;
 	}
 	type SolvableCase = CaseState | LocalCase;
-
-	function formatScalar(mode: DisplayMode, value: number): string {
-		return mode === 'lmp' ? value.toFixed(2) : value.toFixed(3);
-	}
 
 	// Everything the accessors need, rebuilt when any case's data moves. The
 	// LMP scale normalizes per network: each case is an islanded market, so
@@ -298,10 +295,10 @@
 			c instanceof CaseState ? '' : '<br><span style="opacity:0.6">local file</span>';
 		const scalarRow =
 			!d || d.scalarMode === 'lmp'
-				? `LMP ${lmp?.toFixed(2) ?? '&mdash;'} $/MWh`
+				? `LMP ${lmp === undefined ? '&mdash;' : fmt.format(lmp)} $/MWh`
 				: `${d.scalarLabel} ${
-						scalar === undefined ? '&mdash;' : formatScalar(d.scalarMode, scalar)
-					} ${d.scalarUnit}<br>LMP ${lmp?.toFixed(2) ?? '&mdash;'} $/MWh`;
+						scalar === undefined ? '&mdash;' : displayFmt(d.scalarMode, scalar)
+					} ${d.scalarUnit}<br>LMP ${lmp === undefined ? '&mdash;' : fmt.format(lmp)} $/MWh`;
 		return {
 			html: `<div class="tt"><b>bus ${bus.id}</b>
 				${scalarRow}<br>
@@ -670,11 +667,49 @@
 	<div class="map" {@attach initMap}></div>
 {/key}
 
+{#if app.placingLocalId && map}
+	<button
+		type="button"
+		class="place-at-center mono"
+		onclick={() => {
+			if (!map) return;
+			const center = map.getCenter();
+			onplacecase(center.lng, center.lat);
+		}}
+	>
+		place at map center
+	</button>
+{/if}
+
 <style>
 	.map {
 		position: absolute;
 		inset: 0;
 		background: var(--bg);
+	}
+
+	/* Keyboard/touch equivalent to clicking the map while placing a local case;
+	   sits just above PlacementCue's instruction text so the two don't overlap. */
+	.place-at-center {
+		position: absolute;
+		left: 50%;
+		bottom: 92px;
+		z-index: 15;
+		transform: translateX(-50%);
+		padding: 7px 14px;
+		background: var(--panel);
+		border: 1px solid var(--accent);
+		border-radius: 3px;
+		color: var(--text-accent);
+		font-size: 11px;
+		cursor: pointer;
+		box-shadow: 0 4px 18px rgba(32, 36, 43, 0.1);
+	}
+
+	@media (max-width: 420px) {
+		.place-at-center {
+			bottom: 78px;
+		}
 	}
 
 	/* Lift the bottom-right controls clear of the footer strip. */
@@ -689,7 +724,7 @@
 	}
 
 	.map :global(.maplibregl-ctrl-attrib a) {
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 	}
 
 	.map :global(.deck-tooltip) {

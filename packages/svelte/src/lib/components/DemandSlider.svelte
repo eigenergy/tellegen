@@ -93,7 +93,7 @@
 		display: flex;
 		justify-content: space-between;
 		font-size: 11.5px;
-		color: var(--ink-dim);
+		color: var(--text-secondary);
 		margin-bottom: 4px;
 	}
 
@@ -168,10 +168,16 @@
 		box-shadow: 0 2px 7px rgb(var(--ink-rgb) / 0.35);
 	}
 
-	/* Coarse pointers: a larger track and thumb for a comfortable touch target. */
+	/* Coarse pointers: a larger track and thumb for a comfortable touch target.
+	   The input's own border box grows to a 44px tap target (padding is symmetric,
+	   so the thumb -- centered on the input's box by default -- stays centered on
+	   the thinner painted line); background-clip keeps the visible line itself thin. */
 	@media (hover: none), (pointer: coarse) {
 		input[type='range'] {
 			height: 6px;
+			padding: 19px 0;
+			box-sizing: content-box;
+			background-clip: content-box;
 		}
 
 		input[type='range']::-webkit-slider-thumb {

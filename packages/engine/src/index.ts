@@ -13,9 +13,6 @@ import type {
   SolveResponse,
   SolveIteration,
 } from "./generated/contracts.js";
-import wasmUrl from "./wasm-pkg/tellegen_bg.wasm?url";
-import sensWasmUrl from "./wasm-sens-pkg/tellegen_sens_bg.wasm?url";
-
 export {
   CONTRACT_SOURCE_SHA256,
   CONTRACT_VERSION,
@@ -87,9 +84,15 @@ let sensitivityReady: Promise<
 let sensitivityUnsupported: string | null = null;
 
 function powerio() {
-  ready ??= import("./wasm-pkg/tellegen.js")
-    .then(async (mod) => {
-      await mod.default({ module_or_path: wasmUrl });
+  // The wasm asset is imported here, not at module top level, so that
+  // evaluating this module (e.g. during SvelteKit's dev-mode SSR pass, which
+  // never calls this function) never touches the wasm loader.
+  ready ??= Promise.all([
+    import("./wasm-pkg/tellegen.js"),
+    import("./wasm-pkg/tellegen_bg.wasm?url"),
+  ])
+    .then(async ([mod, wasmMod]) => {
+      await mod.default({ module_or_path: wasmMod.default });
       return mod;
     })
     .catch((e) => {
@@ -104,9 +107,12 @@ function powerio() {
 function powerioSensitivity() {
   if (sensitivityUnsupported)
     return Promise.reject(new Error(sensitivityUnsupported));
-  sensitivityReady ??= import("./wasm-sens-pkg/tellegen_sens.js")
-    .then(async (mod) => {
-      await mod.default({ module_or_path: sensWasmUrl });
+  sensitivityReady ??= Promise.all([
+    import("./wasm-sens-pkg/tellegen_sens.js"),
+    import("./wasm-sens-pkg/tellegen_sens_bg.wasm?url"),
+  ])
+    .then(async ([mod, wasmMod]) => {
+      await mod.default({ module_or_path: wasmMod.default });
       return mod;
     })
     .catch((e) => {
