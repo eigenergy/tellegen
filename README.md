@@ -98,9 +98,7 @@ server surface, hosting, and where the project is going.
 
 ## License
 
-The Rust crates are licensed under either of
-[Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. The npm
-packages `@tellegen/engine` and `@tellegen/svelte` and the web app under
-`apps/web/` are [MIT](LICENSE-MIT). See
+Licensed under either of [Apache-2.0](LICENSE-APACHE) or
+[MIT](LICENSE-MIT), at your option. See
 [docs/src/third-party-notices.md](docs/src/third-party-notices.md) for
 attributions.

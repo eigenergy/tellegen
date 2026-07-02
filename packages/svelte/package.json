@@ -2,7 +2,7 @@
   "name": "@tellegen/svelte",
   "version": "0.1.0",
   "description": "Svelte components for tellegen power system maps, local case files, and browser solves.",
-  "license": "MIT",
+  "license": "(MIT OR Apache-2.0)",
   "type": "module",
   "repository": {
     "type": "git",
