@@ -52,6 +52,15 @@ Treat every staged case as public. The browser fetches the full staged network
 JSON through `/api/cases/{id}/case` so it can build browser studies and exact
 solves locally.
 
+## Server Compute
+
+The compute endpoints — `/api/cases/{id}/solve` (SSE) and the
+`/api/cases/{id}/sensitivity/...` routes — ship disabled and answer 403
+`server compute is disabled`. Set `TELLEGEN_SERVER_COMPUTE=1` to enable them as
+the fallback for browsers that cannot run the WebAssembly engine; the rate
+limits and solver concurrency caps then apply. The data endpoints, including
+the cached base `/solution`, are always served.
+
 ## Local Build Deploy
 
 For a host that builds from source:

@@ -172,6 +172,11 @@ pub struct AppState {
     solver_timeout: Duration,
     expensive_rate_limits: RateLimitConfig,
     expensive_requests: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
+    /// Gate on the compute endpoints (solve stream and sensitivities). Off by
+    /// default so a public deploy serves data and the cached base solutions
+    /// without exposing a path for on-demand solver load; `TELLEGEN_SERVER_COMPUTE`
+    /// turns it on. The cases, network views, and `/solution` stay served.
+    compute_enabled: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -373,6 +378,13 @@ impl ApiError {
             message: message.into(),
         }
     }
+
+    fn forbidden(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: message.into(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -391,7 +403,7 @@ type ApiResult<T> = Result<T, ApiError>;
 
 impl AppState {
     pub fn load_from_env() -> Result<Self, String> {
-        Self::load(data_dir(), allow_fallback())
+        Ok(Self::load(data_dir(), allow_fallback())?.with_compute(server_compute_enabled()))
     }
 
     pub fn load(data_dir: PathBuf, allow_fallback: bool) -> Result<Self, String> {
@@ -459,7 +471,22 @@ impl AppState {
             solver_timeout: solver_timeout(),
             expensive_rate_limits: rate_limit_config(),
             expensive_requests: Arc::new(Mutex::new(HashMap::new())),
+            compute_enabled: false,
         })
+    }
+
+    /// Enable or disable the compute endpoints; `load` defaults to disabled.
+    pub fn with_compute(mut self, enabled: bool) -> Self {
+        self.compute_enabled = enabled;
+        self
+    }
+
+    fn check_compute_enabled(&self) -> ApiResult<()> {
+        if self.compute_enabled {
+            Ok(())
+        } else {
+            Err(ApiError::forbidden("server compute is disabled"))
+        }
     }
 
     fn case(&self, id: &str) -> ApiResult<Arc<CaseEntry>> {
@@ -694,6 +721,7 @@ async fn sensitivity(
     target: SensitivityTarget,
     query: DemandQuery,
 ) -> ApiResult<Json<SensitivityPayload>> {
+    state.check_compute_enabled()?;
     let client = expensive_client_key(&headers, &connect_info);
     state.check_expensive_rate_limit(ExpensiveEndpoint::Sensitivity, &client)?;
     let entry = state.case(&id)?;
@@ -736,6 +764,7 @@ async fn solve_stream(
     AxumPath(id): AxumPath<String>,
     Query(query): Query<DemandQuery>,
 ) -> ApiResult<Sse<ReceiverStream<Result<Event, Infallible>>>> {
+    state.check_compute_enabled()?;
     let client = expensive_client_key(&headers, &connect_info);
     state.check_expensive_rate_limit(ExpensiveEndpoint::Solve, &client)?;
     let entry = state.case(&id)?;
@@ -1416,6 +1445,16 @@ fn allow_fallback() -> bool {
     )
 }
 
+fn server_compute_enabled() -> bool {
+    matches!(
+        env::var("TELLEGEN_SERVER_COMPUTE")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
 fn solver_concurrency() -> usize {
     env::var("TELLEGEN_SOLVER_CONCURRENCY")
         .ok()
@@ -1541,6 +1580,18 @@ mod tests {
     use tower::ServiceExt;
 
     fn fallback_state() -> Arc<AppState> {
+        static STATE: OnceLock<Arc<AppState>> = OnceLock::new();
+        Arc::clone(STATE.get_or_init(|| {
+            Arc::new(
+                AppState::load(PathBuf::from("/definitely/no/tellegen/data"), true)
+                    .unwrap()
+                    .with_compute(true),
+            )
+        }))
+    }
+
+    /// The default state: compute disabled, as a public deploy ships it.
+    fn compute_disabled_state() -> Arc<AppState> {
         static STATE: OnceLock<Arc<AppState>> = OnceLock::new();
         Arc::clone(STATE.get_or_init(|| {
             Arc::new(AppState::load(PathBuf::from("/definitely/no/tellegen/data"), true).unwrap())
@@ -1693,6 +1744,43 @@ mod tests {
         assert_eq!(body["branch"], 1);
         assert!(body.get("bus").is_none());
         assert!(body["values"].as_array().unwrap().len() >= 200);
+    }
+
+    async fn get_with_state(state: Arc<AppState>, path: &str) -> (StatusCode, serde_json::Value) {
+        let res = router(state, None)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(path)
+                    .header("x-forwarded-for", "203.0.113.250")
+                    .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        (
+            status,
+            serde_json::from_str(core::str::from_utf8(&body).unwrap()).unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn compute_endpoints_are_disabled_by_default() {
+        for path in [
+            "/api/cases/case200/sensitivity/lmp/d/1",
+            "/api/cases/case200/sensitivity/lmp/fmax/1",
+            "/api/cases/case200/solve",
+        ] {
+            let (status, body) = get_with_state(compute_disabled_state(), path).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
+            assert_eq!(body["error"], "server compute is disabled", "{path}");
+        }
+        // Data endpoints stay served, including the cached base solution.
+        let (status, _) =
+            get_with_state(compute_disabled_state(), "/api/cases/case200/solution").await;
+        assert_eq!(status, StatusCode::OK);
     }
 
     #[cfg(not(feature = "sensitivity"))]
