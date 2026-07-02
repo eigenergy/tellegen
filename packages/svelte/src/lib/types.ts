@@ -22,7 +22,6 @@ export type {
 	SolveBackend
 } from './state.svelte.js';
 export type {
-	BrowserSolution,
 	CaseFileSummary,
 	DisplayPreview,
 	Formulation,

@@ -23,9 +23,8 @@ import {
 	formatOf,
 	ingestCase,
 	isDisplayFile,
-	isPermanentSensFailure,
+	isPermanentEngineFailure,
 	parseDisplay,
-	solveDcOpf,
 	type BrowserStudy,
 	type Formulation,
 	type SensTarget
@@ -36,6 +35,12 @@ const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
 const DEFAULT_CASE_ID = 'case500';
 const PWD_MERCATOR_K = 535.81608;
+
+/** Terminal copy when nothing can solve: the browser engine is unavailable and
+ * the server declines compute (403). Server compute exists in the codebase but
+ * ships disabled; interest routes to email until it is offered. */
+const WASM_REQUIRED_NOTICE =
+	'this browser cannot run the WebAssembly engine that solves locally, and server side compute is disabled in this demo. it may be offered later; to express interest, email Samuel Talkington at talks@umich.edu';
 
 function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> {
 	if (ms <= 0 || signal.aborted) return Promise.resolve();
@@ -72,6 +77,9 @@ export class Controller {
 	// guaranteed rejection. Covers one rate limit window. Not $state; nothing
 	// renders it.
 	sensitivity429Until = 0;
+	// Latched once any server fallback answers 403: compute is disabled on this
+	// deploy, so later fallbacks show the notice instead of firing doomed requests.
+	serverComputeOff = false;
 
 	// Build-once browser Study per case: the network is parsed and the model built
 	// when the Study is created, so a drag re-solves (commit) and previews without
@@ -151,8 +159,8 @@ export class Controller {
 	}
 
 	/** True when the case carries any nonzero committed rating delta. Rating edits
-	 * solve only through the browser Study; the solveDcOpf and server fallbacks would
-	 * silently drop them, so callers gate on this before falling back. */
+	 * solve only through the browser Study; the server fallback would silently
+	 * drop them, so callers gate on this before falling back. */
 	hasRatingEdits(c: SolvableCase): boolean {
 		return Object.values(this.caseRatings(c)).some((mw) => mw !== 0);
 	}
@@ -275,7 +283,7 @@ export class Controller {
 	// The case's Study, building it once for `(networkJson, formulation)` and rebuilding
 	// (after free) if either changed — so picking a new formulation re-parses and re-solves
 	// under that formulation. Returns null when the sens module can't load; the caller then
-	// falls back to solveDcOpf/the server, surfacing solveFallbackReason.
+	// falls back to the server, surfacing solveFallbackReason.
 	async getStudy(c: SolvableCase, networkJson: string): Promise<BrowserStudy | null> {
 		const latched = this.studyUnavailable.get(c);
 		if (latched) {
@@ -319,7 +327,7 @@ export class Controller {
 				const message = errorText(e);
 				// Only a genuine browser-capability failure is permanent; latch it so the
 				// case stays on the fallback path. Transient errors stay retryable.
-				if (isPermanentSensFailure(message)) {
+				if (isPermanentEngineFailure(message)) {
 					this.studyUnavailable.set(c, 'browser study wasm is not supported by this browser');
 				}
 				c.solveFallbackReason ??= `browser study unavailable: ${message}`;
@@ -947,6 +955,10 @@ export class Controller {
 		sensitivitySeq: number
 	) => {
 		const retryOp = () => this.selectBus(c.id, busId);
+		if (this.serverComputeOff) {
+			this.fail(WASM_REQUIRED_NOTICE, retryOp);
+			return;
+		}
 		if (Date.now() < this.sensitivity429Until) {
 			this.fail('rate limited; wait a few seconds and try again', retryOp);
 			return;
@@ -956,6 +968,13 @@ export class Controller {
 			if (!ac.signal.aborted) this.acceptSensitivity(c, col, { bus: busId }, sensitivitySeq);
 		} catch (e) {
 			if (e instanceof DOMException) return;
+			if (e instanceof ApiError && e.status === 403) {
+				this.serverComputeOff = true;
+				if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
+					this.fail(WASM_REQUIRED_NOTICE, retryOp);
+				}
+				return;
+			}
 			if (e instanceof ApiError && e.status === 429) {
 				this.sensitivity429Until = Date.now() + 10_000;
 			}
@@ -977,6 +996,10 @@ export class Controller {
 		sensitivitySeq: number
 	) => {
 		const retryOp = () => this.selectBranch(c.id, branchId);
+		if (this.serverComputeOff) {
+			this.fail(WASM_REQUIRED_NOTICE, retryOp);
+			return;
+		}
 		if (Date.now() < this.sensitivity429Until) {
 			this.fail('rate limited; wait a few seconds and try again', retryOp);
 			return;
@@ -986,6 +1009,13 @@ export class Controller {
 			if (!ac.signal.aborted) this.acceptSensitivity(c, col, { branch: branchId }, sensitivitySeq);
 		} catch (e) {
 			if (e instanceof DOMException) return;
+			if (e instanceof ApiError && e.status === 403) {
+				this.serverComputeOff = true;
+				if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
+					this.fail(WASM_REQUIRED_NOTICE, retryOp);
+				}
+				return;
+			}
 			if (e instanceof ApiError && e.status === 429) {
 				this.sensitivity429Until = Date.now() + 10_000;
 			}
@@ -1038,8 +1068,8 @@ export class Controller {
 	};
 
 	/** The terminal message when a case with committed rating edits cannot use the
-	 * browser Study: the solveDcOpf and server fallbacks solve at base ratings, so
-	 * there is no correct fallback to take. */
+	 * browser Study: the server fallback solves at base ratings, so there is no
+	 * correct fallback to take. */
 	private ratingEditsFallbackError(c: SolvableCase): string {
 		return `${this.caseName(c)}: line rating edits solve only in the browser engine${
 			c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''
@@ -1166,10 +1196,10 @@ export class Controller {
 
 	// Exact solve in the browser (wasm). The build-once Study commits the new
 	// operating point without re-parsing, returning the ∂LMP/∂parameter column for
-	// the selection target in the same solve; on a Study failure it falls back to
-	// solveDcOpf, and on any browser failure or missing network JSON it reconciles via
-	// the server stream (backend cases). Rating edits never fall back: solveDcOpf and
-	// the server both solve at base ratings, so a Study failure there is terminal.
+	// the selection target in the same solve; on a Study failure or missing network
+	// JSON it reconciles via the server stream (backend cases). Rating edits never
+	// fall back: the server solves at base ratings, so a Study failure there is
+	// terminal.
 	runSolve = (c: SolvableCase, target: SensTarget | null) => {
 		// Cancel this case's own previous server stream, if any (backend only).
 		if (this.isBackendCase(c)) {
@@ -1243,7 +1273,7 @@ export class Controller {
 						return;
 					}
 					// Any other commit failure is unexpected; drop the Study so the next solve
-					// rebuilds, then fall through to the solveDcOpf fallback.
+					// rebuilds, then fall through to the server fallback.
 					this.disposeStudy(c);
 					c.solveFallbackReason ??= `browser study commit failed: ${msg}`;
 				}
@@ -1261,8 +1291,8 @@ export class Controller {
 				return;
 			}
 
-			// Neither solveDcOpf nor the server stream can apply rating edits; falling
-			// through would silently solve at base ratings, so stop here instead.
+			// Neither the server stream nor any other path can apply rating edits;
+			// falling through would silently solve at base ratings, so stop here instead.
 			if (this.hasRatingEdits(c)) {
 				if (seq !== (c.solveSeq ?? 0)) return;
 				c.solving = false;
@@ -1270,56 +1300,34 @@ export class Controller {
 				return;
 			}
 
-			// Fallback: the original per-call browser solve (re-parses each time). Used
-			// when the Study can't be built or a built
-			// Study failed to commit; itself falls to the server for backend cases.
-			// Only a bus target can ride along (solveDcOpf has no branch parameter); a
-			// branch target's column stays absent, and selectBranch owns its errors.
-			const sensBus = target && 'bus' in target ? target.bus : null;
-			solveDcOpf(c.id, networkJson, this.caseDeltas(c), sensBus)
-				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
-					if (seq !== (c.solveSeq ?? 0)) return;
-					c.solution = solution;
-					c.iterations = iterations;
-					if (!c.baseSolution && Object.keys(this.caseDeltas(c)).length === 0)
-						c.baseSolution = solution;
-					c.solveMs = Math.round(performance.now() - t0);
-					if (sensitivity || sensBus === null) {
-						this.acceptSensitivity(c, sensitivity, target);
-					} else if (this.isBackendCase(c)) {
-						// No browser sensitivity column (whether the solve threw or just
-						// produced none): reconcile via the server for backend cases.
-						try {
-							const col = await this.api.getSensitivity(c.id, sensBus, c.deltas);
-							if (seq !== c.solveSeq) return;
-							c.solveBackend = 'clarabel-wasm-server-sensitivity';
-							this.acceptSensitivity(c, col, target);
-						} catch (e) {
-							if (seq !== c.solveSeq) return;
-							c.solveFallbackReason = `server sensitivity failed: ${errorText(e)}`;
-							this.serverSolve(c, target, seq);
-							return;
-						}
-					} else {
-						// Local case: no server fallback, so report the gap (including a null
-						// column with no error) instead of silently staying in LMP view.
-						this.app.error = `${c.label}: browser sensitivity unavailable${sensitivityError ? `: ${sensitivityError}` : ' (no dLMP/dd column for this bus)'}`;
-					}
-					this.finishSolve(c, seq, target);
-				})
-				.catch((e) => {
-					if (seq !== (c.solveSeq ?? 0)) return;
-					c.solveFallbackReason = `browser solve failed: ${errorText(e)}`;
-					if (this.isBackendCase(c)) this.serverSolve(c, target, seq);
-					else {
-						c.solving = false;
-						this.app.error = `${c.label}: ${c.solveFallbackReason}`;
-					}
-				});
+			// Fallback: the server stream for backend cases. The Study is the only
+			// browser solver, so a local case with a failed Study is terminal.
+			if (seq !== (c.solveSeq ?? 0)) return;
+			if (this.isBackendCase(c)) {
+				this.serverSolve(c, target, seq);
+				return;
+			}
+			c.solving = false;
+			this.app.error = `${c.label}: browser solve unavailable${
+				c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''
+			}`;
 		});
 	};
 
 	serverSolve = (c: CaseState, target: SensTarget | null, seq = c.solveSeq) => {
+		// Known-disabled server compute: show the notice instead of opening a
+		// stream that answers 403 without a readable body (EventSource hides it).
+		if (this.serverComputeOff) {
+			if (seq !== c.solveSeq) return;
+			c.solving = false;
+			if (this.isActiveSolveCase(c)) {
+				this.app.previewActive = false;
+				this.app.previewDeltaMw = null;
+				this.app.previewRatingMw = null;
+			}
+			this.fail(WASM_REQUIRED_NOTICE);
+			return;
+		}
 		c.solveBackend = 'rust-server';
 		c.solveFallbackReason ??= 'browser solve unavailable';
 		// The server computes bus columns only; a branch target streams no sensitivity.

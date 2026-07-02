@@ -17,7 +17,6 @@ packages/svelte/dist/
 # Rust
 /target/
 packages/engine/src/wasm-pkg/
-packages/engine/src/wasm-sens-pkg/
 
 # Operator-staged TAMU case data (scripts/stage-data.sh); never vendored
 data/

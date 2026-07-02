@@ -29,9 +29,8 @@ export {
 	formatOf,
 	ingestCase,
 	isDisplayFile,
-	isPermanentSensFailure,
+	isPermanentEngineFailure,
 	parseDisplay,
-	solveDcOpf,
 	solveJson
 } from '@tellegen/engine';
 
@@ -62,7 +61,6 @@ export type {
 	SolveBackend
 } from './state.svelte.js';
 export type {
-	BrowserSolution,
 	CaseFileSummary,
 	DisplayPreview,
 	Formulation,

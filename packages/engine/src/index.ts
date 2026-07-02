@@ -79,67 +79,44 @@ export interface IngestedCase extends CaseFileSummary {
   view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 }
 
-let ready: Promise<typeof import("./wasm-pkg/tellegen.js")> | null = null;
-let sensitivityReady: Promise<
-  typeof import("./wasm-sens-pkg/tellegen_sens.js")
-> | null = null;
-let sensitivityUnsupported: string | null = null;
+let engineReady: Promise<typeof import("./wasm-pkg/tellegen.js")> | null =
+  null;
+let engineUnsupported: string | null = null;
 
-function powerio() {
-  // Resolve the wasm asset only when the solver is used. SvelteKit's dev mode
-  // SSR pass can evaluate this module without touching the wasm loader.
+/** The one wasm module (Study, all formulations, sensitivities). Resolve the
+ * wasm asset only when the engine is used: SvelteKit's dev mode SSR pass can
+ * evaluate this module without touching the wasm loader. */
+function engineModule() {
+  if (engineUnsupported) return Promise.reject(new Error(engineUnsupported));
   const wasmUrl = new URL("./wasm-pkg/tellegen_bg.wasm", import.meta.url).href;
-  ready ??= import("./wasm-pkg/tellegen.js")
-    .then(async (mod) => {
-      await mod.default({ module_or_path: wasmUrl });
-      return mod;
-    })
-    .catch((e) => {
-      // Don't cache a rejected load: a transient failure (chunk fetch or
-      // instantiate) must not disable the feature for the whole session.
-      ready = null;
-      throw e;
-    });
-  return ready;
-}
-
-function powerioSensitivity() {
-  if (sensitivityUnsupported)
-    return Promise.reject(new Error(sensitivityUnsupported));
-  const wasmUrl = new URL(
-    "./wasm-sens-pkg/tellegen_sens_bg.wasm",
-    import.meta.url,
-  ).href;
-  sensitivityReady ??= import("./wasm-sens-pkg/tellegen_sens.js")
+  engineReady ??= import("./wasm-pkg/tellegen.js")
     .then(async (mod) => {
       await mod.default({ module_or_path: wasmUrl });
       return mod;
     })
     .catch((e) => {
       const message = errorText(e);
-      sensitivityReady = null;
-      if (isPermanentWasmLoadFailure(message)) sensitivityUnsupported = message;
+      // Don't cache a rejected load: a transient failure (chunk fetch or
+      // instantiate) must not disable the engine for the whole session.
+      engineReady = null;
+      if (isPermanentWasmLoadFailure(message)) engineUnsupported = message;
       throw e;
     });
-  return sensitivityReady;
+  return engineReady;
 }
 
-export async function preloadCore(): Promise<void> {
-  await powerio();
-}
-
-export async function preloadSensitivity(): Promise<void> {
-  await powerioSensitivity();
+export async function preloadEngine(): Promise<void> {
+  await engineModule();
 }
 
 function isPermanentWasmLoadFailure(message: string): boolean {
-  // Latch only genuine browser-capability failures the sensitivity module can
+  // Latch only genuine browser-capability failures the engine module can
   // never recover from in this browser: no WebAssembly, or an opcode the
   // engine rejects. Transient fetch or
   // instantiate failures (offline, 503, aborted navigation) routinely carry
   // the .wasm URL or "Failed to fetch" in their message, so keying on the bare
-  // word "wasm"/"compile" wrongly disables the feature for the whole session.
-  // Those stay retryable, matching the powerio() loader.
+  // word "wasm"/"compile" wrongly disables the engine for the whole session.
+  // Those stay retryable.
   if (/Failed to fetch|NetworkError|load failed|aborted|ERR_/i.test(message))
     return false;
   return /CompileError|LinkError|invalid opcode|unsupported|relaxed|WebAssembly is not defined/i.test(
@@ -157,7 +134,7 @@ export async function ingestCase(
   text: string,
   format: string,
 ): Promise<IngestedCase> {
-  return JSON.parse((await powerio()).ingest_case(text, format));
+  return JSON.parse((await engineModule()).ingest_case(text, format));
 }
 
 /** Substations from a PowerWorld .pwd display file. x/y are diagram
@@ -175,11 +152,11 @@ export function isDisplayFile(name: string): boolean {
 }
 
 export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
-  return JSON.parse((await powerio()).parse_display(bytes, "pwd"));
+  return JSON.parse((await engineModule()).parse_display(bytes, "pwd"));
 }
 
 export async function capabilities(): Promise<ProblemCaps[]> {
-  return JSON.parse((await powerioSensitivity()).capabilities_json());
+  return JSON.parse((await engineModule()).capabilities_json());
 }
 
 export async function solveJson(
@@ -187,95 +164,18 @@ export async function solveJson(
   request: SolveRequest = {},
 ): Promise<SolveResponse> {
   return JSON.parse(
-    (await powerioSensitivity()).solve_json(
-      networkJson,
-      JSON.stringify(request),
-    ),
+    (await engineModule()).solve_json(networkJson, JSON.stringify(request)),
   );
-}
-
-/** The browser DC solve: the exact solution plus, when `sensBus` is given, its
- * dLMP/dd column — the same shapes the server serves. */
-export interface BrowserSolution {
-  solution: Solution;
-  sensitivity: SensitivityColumn | null;
-  sensitivityError?: string;
-  iterations: SolveIteration[];
-}
-
-/** Solve the DC OPF in the browser at demand = base + `deltas`, one shot: each
- * call re-parses the network and rebuilds the model, and it is the only solve
- * entry the core (no sensitivity) wasm build carries — the fallback when the
- * full module can't load. Use `Study` for repeated solves, previews, and
- * sensitivity work. `networkJson` is the raw powerio Network (from the `/case`
- * endpoint or a browser parse). When `sensBus` is set, the dLMP/dd column is
- * loaded from the sensitivity wasm package when the browser supports that
- * module. */
-export async function solveDcOpf(
-  caseId: string,
-  networkJson: string,
-  deltas: DemandDeltas,
-  sensBus: number | null,
-): Promise<BrowserSolution> {
-  const request = JSON.stringify({ deltas, sens_bus: sensBus });
-  if (sensBus !== null) {
-    try {
-      return parseSolveOutput(
-        caseId,
-        (await powerioSensitivity()).solve_dc(networkJson, request),
-      );
-    } catch (e) {
-      const baseRequest = JSON.stringify({ deltas, sens_bus: null });
-      const message = errorText(e);
-      return {
-        ...parseSolveOutput(
-          caseId,
-          (await powerio()).solve_dc(networkJson, baseRequest),
-        ),
-        sensitivityError: isPermanentWasmLoadFailure(message)
-          ? "sensitivity wasm is not supported by this browser"
-          : message,
-      };
-    }
-  }
-  return parseSolveOutput(
-    caseId,
-    (await powerio()).solve_dc(networkJson, request),
-  );
-}
-
-function parseSolveOutput(caseId: string, json: string): BrowserSolution {
-  const out = JSON.parse(json);
-  const solution: Solution = {
-    objective: out.objective,
-    lmp: out.lmp,
-    va: out.va ?? [],
-    w: out.w ?? [],
-    flows: out.flows,
-    dispatch: out.dispatch,
-  };
-  const d = out.dlmp_dd;
-  const sensitivity: SensitivityColumn | null = d
-    ? {
-        case: caseId,
-        operand: d.operand,
-        parameter: d.parameter,
-        bus: d.bus,
-        units: d.units,
-        values: d.values,
-      }
-    : null;
-  return { solution, sensitivity, iterations: out.iterations ?? [] };
 }
 
 export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** True when the sensitivity wasm module has failed to load in a way it can
- * never recover from in this browser. The Study path uses the sens module, so
- * the caller must fall back to `solveDcOpf`/the server when this is true. */
-export function isPermanentSensFailure(message: string): boolean {
+/** True when the engine wasm module has failed to load in a way it can never
+ * recover from in this browser. Nothing solves client side when this is true;
+ * the caller decides whether a server fallback exists. */
+export function isPermanentEngineFailure(message: string): boolean {
   return isPermanentWasmLoadFailure(message);
 }
 
@@ -466,9 +366,9 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
  * parsed and the model built when the Study is created; `commit` solves exactly
  * at the UI's absolute demand delta state and `preview` returns a first-order
  * linearization toward an absolute demand delta state, neither re-parsing the
- * network (unlike `solveDcOpf`, which rebuilds the DcNetwork on every call). */
+ * network. */
 export class BrowserStudy {
-  #study: import("./wasm-sens-pkg/tellegen_sens.js").Study;
+  #study: import("./wasm-pkg/tellegen.js").Study;
   /** External bus id -> dense positional bus index, built once from the committed solution's
    * LMP ordering (each `lmp[i].bus` sits at dense index `i`). The engine keys `SensRequest`
    * by this dense index, not the external bus id, so the selected bus must be translated
@@ -478,7 +378,7 @@ export class BrowserStudy {
    * flows ordering — the branch-axis counterpart of `#busToIndex`. */
   #branchToIndex: Map<number, number> | null = null;
 
-  constructor(study: import("./wasm-sens-pkg/tellegen_sens.js").Study) {
+  constructor(study: import("./wasm-pkg/tellegen.js").Study) {
     this.#study = study;
   }
 
@@ -596,29 +496,22 @@ export class BrowserStudy {
 /** Construct a build-once Study over `networkJson` for `formulation`, parsing the network
  * and solving the base case once. `formulation` is a `Problem` tag (`dcopf`/`acopf`/`socwr`,
  * defaulting to DC OPF); the full wasm build solves every one entirely in the browser.
- * Throws if the sens module can't load (or the formulation is unknown/not built); the
- * caller must catch and fall back (see `isPermanentSensFailure`). */
+ * Throws if the engine module can't load (or the formulation is unknown/not built); the
+ * caller must catch and fall back (see `isPermanentEngineFailure`). */
 export async function createStudy(
   networkJson: string,
   formulation: Formulation = DEFAULT_FORMULATION,
 ): Promise<BrowserStudy> {
-  const mod = await powerioSensitivity();
+  const mod = await engineModule();
   return new BrowserStudy(new mod.Study(networkJson, formulation));
 }
 
 export interface EngineTransport {
-  preloadCore(): Promise<void>;
-  preloadSensitivity(): Promise<void>;
+  preloadEngine(): Promise<void>;
   ingestCase(text: string, format: string): Promise<IngestedCase>;
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   capabilities(): Promise<ProblemCaps[]>;
   solveJson(networkJson: string, request?: SolveRequest): Promise<SolveResponse>;
-  solveDcOpf(
-    caseId: string,
-    networkJson: string,
-    deltas: DemandDeltas,
-    sensBus: number | null,
-  ): Promise<BrowserSolution>;
   createStudy(
     networkJson: string,
     formulation?: Formulation,
@@ -626,13 +519,11 @@ export interface EngineTransport {
 }
 
 export const browserWasmTransport: EngineTransport = {
-  preloadCore,
-  preloadSensitivity,
+  preloadEngine,
   ingestCase,
   parseDisplay,
   capabilities,
   solveJson,
-  solveDcOpf,
   createStudy,
 };
 
