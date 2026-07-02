@@ -680,7 +680,10 @@ mod tests {
     #[ignore = "heavy: run with --release --ignored"]
     fn parity_with_finite_differences_large_cases() {
         let case = "ACTIVSg500";
-        let path = format!("{}/../data/{case}/case_{case}.m", env!("CARGO_MANIFEST_DIR"));
+        let path = format!(
+            "{}/../data/{case}/case_{case}.m",
+            env!("CARGO_MANIFEST_DIR")
+        );
         match parity_vs_finite_differences(&path) {
             Some(rel) => assert!(rel < 1e-3, "{case} dLMP/dd vs FD rel {rel}"),
             None => eprintln!("skipping {case} parity: {path} not found"),
