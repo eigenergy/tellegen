@@ -18,15 +18,11 @@ RUN curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15
 # depends on the tellegen engine and resolves against the root lockfile.
 COPY Cargo.toml Cargo.lock /build/
 COPY crates /build/crates
-# The core wasm disables SIMD so Safari (no relaxed SIMD) can parse it, and drops
-# default features so it carries no faer kernels. The full wasm enables the `conic`
-# feature — the whole engine (DC optimal power flow, AC power flow, and the SOCWR
-# relaxation) with sensitivities; it stays off relaxed SIMD at the default wasm target,
-# so it validates on Safari too. `--out-name tellegen` keeps the core package's file
-# names stable for the frontend's imports.
-RUN RUSTFLAGS="-C target-feature=-simd128,-relaxed-simd" \
-    wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --no-default-features
-RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-sens-pkg --out-name tellegen_sens -- --features conic
+# The one wasm module: the `conic` feature carries the whole engine (DC optimal
+# power flow, AC power flow, the SOCWR relaxation, the Study) with sensitivities.
+# It stays off relaxed SIMD at the default wasm target, so it validates on Safari.
+# Mirrors the `wasm` script in packages/engine/package.json.
+RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --features conic
 
 # ---- frontend build ----
 FROM node:22-slim AS frontend
@@ -45,7 +41,6 @@ COPY examples/browser-minimal examples/browser-minimal
 COPY examples/svelte-minimal examples/svelte-minimal
 COPY crates/tellegen/src/api.rs crates/tellegen/src/api.rs
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
-COPY --from=wasm /out/wasm-sens-pkg ./packages/engine/src/wasm-sens-pkg
 RUN npm run build:engine && npm run build:web && npm run smoke:web
 
 # ---- tellegen backend (cargo-chef: dependency compile is a cacheable layer) ----

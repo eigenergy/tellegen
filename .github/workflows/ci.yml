@@ -35,8 +35,8 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      # `npm run wasm` builds both wasm packages from crates/tellegen-wasm with the
-      # correct out-names and RUSTFLAGS (single source of truth in the engine package).
+      # `npm run wasm` builds the wasm package from crates/tellegen-wasm with the
+      # correct out-name (single source of truth in the engine package).
       - run: npm run wasm
       - run: npm run check:engine
       - run: npm run build:engine
