@@ -17,6 +17,7 @@
   - [Sensitivity contract](sensitivity-contract.md)
   - [Methodology](methodology.md)
   - [Validation](validation.md)
+  - [Benchmark Results](benchmark-results.md)
   - [References](references.md)
 - [HTTP API](http-api.md)
 - [Deployment](deployment.md)

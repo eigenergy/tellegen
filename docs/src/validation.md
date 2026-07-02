@@ -4,8 +4,9 @@ tellegen is checked against the published PGLib reference solves. For each case 
 variant, `$PGLIB_OPF_PATH/BASELINE.md` tabulates the PowerModels.jl with IPOPT
 reference: `DC ($/h)`, `AC ($/h)`, `QC Gap (%)`, and `SOC Gap (%)`. The
 [Methodology](methodology.md) chapter describes how the harness produces the
-comparison; this chapter records what each comparison asserts. The measured figures
-are whatever the current harness run writes; they are not reproduced here.
+comparison; this chapter records what each comparison asserts. The measured figures are in
+[benchmark results](benchmark-results.md), a committed snapshot of a full
+harness run with its provenance.
 
 ## DC objective
 
