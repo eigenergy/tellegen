@@ -62,7 +62,7 @@ gradient:
 
 - **DC OPF, a sparse LP/QP: shipped.** Clarabel.rs is a pure Rust interior
   point solver (QDLDL factorization, no BLAS) that compiles to and runs in the
-  browser. A 200 to 2000 bus DC OPF is well within its range, and it now runs
+  browser. A 200 to 7000 bus DC OPF is within its range, and it now runs
   client side as the exact commit.
 - **DC sensitivities, the dLMP/dd columns: shipped.** Once the DC OPF is solved,
   the sensitivity column is one linear solve against the KKT factorization for

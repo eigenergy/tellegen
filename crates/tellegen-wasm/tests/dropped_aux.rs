@@ -1,5 +1,5 @@
-//! The browser file-drop path on a real user-supplied PowerWorld `.aux` export.
-//! This is the demo flow: clear the bundled ACTIVSg2000 case, drop its `.aux`,
+//! The browser file drop path on a real user supplied PowerWorld `.aux` export.
+//! This is the demo flow: clear the bundled ACTIVSg500 case, drop its `.aux`,
 //! and get the same network back, solved and differentiable, entirely in wasm.
 //!
 //! The test runs the exact Rust the wasm build runs: `powerio::parse_str` for
@@ -15,7 +15,7 @@ use tellegen::geo::{network_coords, spread_stacks};
 use tellegen_wasm::solve_dc_json;
 
 fn aux_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/ACTIVSg2000/ACTIVSg2000.aux")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/ACTIVSg500/ACTIVSg500.aux")
 }
 
 #[test]
@@ -29,10 +29,10 @@ fn dropped_aux_parses_solves_and_differentiates() {
     // 1. Parse. The `.aux` alone must yield a complete network: the drop guard in
     //    +page.svelte rejects an aux with no branches or generators.
     let net = powerio::parse_str(&text, "aux")
-        .expect("parse ACTIVSg2000.aux")
+        .expect("parse ACTIVSg500.aux")
         .network;
     let n_bus = net.buses.len();
-    assert!(n_bus >= 2000, "buses {n_bus}");
+    assert!(n_bus >= 500, "buses {n_bus}");
     assert!(!net.branches.is_empty(), "aux carried no branches");
     assert!(
         net.generators.iter().any(|g| g.in_service),

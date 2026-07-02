@@ -33,10 +33,9 @@ mercdeg(lat) = (180 / pi) * ln(tan(pi / 4 + lat * pi / 360))
 ```
 
 The viewer applies the inverse transform in `pwdToLngLat` in
-`packages/svelte/src/lib/controller.svelte.ts`. This places the checked ACTIVSg200 and
-ACTIVSg2000 diagrams within about 0.02 degrees of their corresponding named
-cities. Hand edited diagrams can differ, so tellegen labels these positions as
-approximate.
+`packages/svelte/src/lib/controller.svelte.ts`. This places checked ACTIVSg
+diagrams within about 0.02 degrees of their corresponding named cities. Hand
+edited diagrams can differ, so tellegen labels these positions as approximate.
 
 ## Canonical display format (planned)
 

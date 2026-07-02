@@ -38,6 +38,12 @@ export interface TellegenApiClient {
 		deltas?: DemandDeltas,
 		signal?: AbortSignal
 	): Promise<SensitivityColumn>;
+	getBranchSensitivity(
+		caseId: string,
+		branch: number,
+		deltas?: DemandDeltas,
+		signal?: AbortSignal
+	): Promise<SensitivityColumn>;
 	openSolveStream(
 		caseId: string,
 		deltas: DemandDeltas,
@@ -156,6 +162,15 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 			return getJson<SensitivityColumn>(
 				fetchImpl,
 				apiPath(apiBase, `/cases/${caseId}/sensitivity/lmp/d/${bus}${query}`),
+				signal
+			);
+		},
+		getBranchSensitivity(caseId, branch, deltas = {}, signal) {
+			const d = encodeDeltas(deltas);
+			const query = d ? `?d=${encodeURIComponent(d)}` : '';
+			return getJson<SensitivityColumn>(
+				fetchImpl,
+				apiPath(apiBase, `/cases/${caseId}/sensitivity/lmp/fmax/${branch}${query}`),
 				signal
 			);
 		},

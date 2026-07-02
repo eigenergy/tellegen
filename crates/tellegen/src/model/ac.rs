@@ -12,7 +12,7 @@ use num_complex::Complex;
 use powerio::network::{GenCost, Network};
 use powerio::IndexedNetwork;
 
-use super::{normalize_angle_bounds, reconstruct_ids, Ids, MIN_Z_SQUARED};
+use super::{normalize_angle_bounds, quadratic_cost_coeffs, reconstruct_ids, Ids, MIN_Z_SQUARED};
 
 /// AC network data in the vectorized pi-model admittance form.
 ///
@@ -340,21 +340,5 @@ impl AcNetwork {
 /// LMP/dispatch is invariant to it, so the DC path drops it). Coefficients arrive
 /// already per unit from `to_normalized`.
 fn ac_cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64, f64), String> {
-    let Some(c) = cost else {
-        return Ok((0.0, 0.0, 0.0));
-    };
-    if c.model != 2 {
-        return Err("only polynomial gen-cost model 2 is supported".into());
-    }
-    let mut v = c.coeffs.clone();
-    while v.len() > 1 && v[0].abs() <= super::LEADING_COST_COEFF_TOL {
-        v.remove(0);
-    }
-    match v.len() {
-        0 => Ok((0.0, 0.0, 0.0)),
-        1 => Ok((0.0, 0.0, v[0])),
-        2 => Ok((0.0, v[0], v[1])),
-        3 => Ok((v[0], v[1], v[2])),
-        _ => Err("only constant, linear, and quadratic gen costs are supported".into()),
-    }
+    quadratic_cost_coeffs(cost)
 }

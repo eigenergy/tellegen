@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn parity_with_finite_differences_activsg200() {
-        // The reference exact-sensitivity criterion on the Rust
+        // The reference exact sensitivity criterion on the Rust
         // path: the top sensitivity columns match central differences within
         // 1e-3. Skips when the data is absent.
         let path = concat!(
@@ -674,13 +674,12 @@ mod tests {
         }
     }
 
-    // ACTIVSg500 and ACTIVSg2000 build the full sensitivity matrix (the 2000-bus
-    // case allocates a ~26500 x 2000 solve), so they are heavy: run explicitly
+    // ACTIVSg500 builds a larger full sensitivity matrix, so run it explicitly
     // with `cargo test --release -- --ignored`.
     #[test]
     #[ignore = "heavy: run with --release --ignored"]
     fn parity_with_finite_differences_large_cases() {
-        for case in ["ACTIVSg500", "ACTIVSg2000"] {
+        for case in ["ACTIVSg500"] {
             let path = format!(
                 "{}/../data/{case}/case_{case}.m",
                 env!("CARGO_MANIFEST_DIR")

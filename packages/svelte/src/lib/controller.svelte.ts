@@ -37,6 +37,20 @@ const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 const DEFAULT_CASE_ID = 'case500';
 const PWD_MERCATOR_K = 535.81608;
 
+function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> {
+	if (ms <= 0 || signal.aborted) return Promise.resolve();
+	return new Promise((resolve) => {
+		let timeout: ReturnType<typeof setTimeout>;
+		const finish = () => {
+			clearTimeout(timeout);
+			signal.removeEventListener('abort', finish);
+			resolve();
+		};
+		timeout = setTimeout(finish, ms);
+		signal.addEventListener('abort', finish, { once: true });
+	});
+}
+
 export type { SolvableCase };
 type DemandRangeAnchor = {
 	caseId: string;
@@ -319,21 +333,16 @@ export class Controller {
 	}
 
 	// The ∂LMP/∂parameter column at `target` for the case's active formulation, solved in
-	// the browser. A bus column on an unedited-ratings DC OPF case takes the light per-call
-	// `solveDc` path (byte-identical to the prior behavior, so no regression for the
-	// default); everything else — AC OPF / SOCWR, a branch target, or any committed rating
-	// edit (which solveDc cannot apply) — goes through the Study, whose exact re-solve
-	// returns the column under the right formulation and operating point. The column is
-	// null (with the reason on `solveFallbackReason`) when the Study can't be built.
-	// Throws only on a hard browser error.
+	// the browser. Every column — bus or branch, any formulation — comes from the Study's
+	// exact re-solve at the case's operating point. The column is null (with the reason on
+	// `solveFallbackReason`) when the Study can't be built; the selection paths then
+	// reconcile via the server where a DC endpoint exists. Throws only on a hard browser
+	// error.
 	async browserSensitivity(
 		c: SolvableCase,
 		networkJson: string,
 		target: SensTarget
 	): Promise<SensitivityColumn | null> {
-		if ('bus' in target && c.formulation === 'dcopf' && !this.hasRatingEdits(c)) {
-			return (await solveDc(c.id, networkJson, this.caseDeltas(c), target.bus)).sensitivity;
-		}
 		const study = await this.getStudy(c, networkJson);
 		return study
 			? study.sensitivity(c.id, this.caseDeltas(c), this.caseRatings(c), target)
@@ -957,6 +966,35 @@ export class Controller {
 		}
 	};
 
+	/** The one server ∂LMP/∂rating request a branch selection may make — the
+	 * reconciliation path when the browser Study produced no column for a DC OPF
+	 * case, the branch counterpart of `fetchServerSensitivity`. Shares the 429
+	 * cooldown so selections back off the server together. */
+	private fetchServerBranchSensitivity = async (
+		c: CaseState,
+		branchId: number,
+		ac: AbortController,
+		sensitivitySeq: number
+	) => {
+		const retryOp = () => this.selectBranch(c.id, branchId);
+		if (Date.now() < this.sensitivity429Until) {
+			this.fail('rate limited; wait a few seconds and try again', retryOp);
+			return;
+		}
+		try {
+			const col = await this.api.getBranchSensitivity(c.id, branchId, c.deltas, ac.signal);
+			if (!ac.signal.aborted) this.acceptSensitivity(c, col, { branch: branchId }, sensitivitySeq);
+		} catch (e) {
+			if (e instanceof DOMException) return;
+			if (e instanceof ApiError && e.status === 429) {
+				this.sensitivity429Until = Date.now() + 10_000;
+			}
+			if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
+				this.fail(errorText(e), retryOp);
+			}
+		}
+	};
+
 	/** Show an error with an optional one-click re-run of the failed operation. */
 	private fail(message: string, retry: (() => void) | null = null) {
 		this.app.error = message;
@@ -1009,18 +1047,17 @@ export class Controller {
 	}
 
 	/** The terminal message for a branch selection that produced no ∂LMP/∂rating
-	 * column. Branch columns solve only in the browser Study — the server has no
-	 * fmax endpoint — so there is nothing to reconcile against; say so. */
+	 * column after the browser or server path had a chance to provide one. */
 	private failBranchSensitivity(c: SolvableCase, retry: () => void) {
 		this.fail(
-			`${this.caseName(c)}: ∂LMP/∂rating solves only in the browser engine${
+			`${this.caseName(c)}: ∂LMP/∂rating sensitivity unavailable${
 				c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''
 			}`,
 			retry
 		);
 	}
 
-	selectBranch = async (caseId: string, branchId: number) => {
+	selectBranch = async (caseId: string, branchId: number, sensitivityDelayMs = 0) => {
 		this.app.activeLocalId = null;
 		this.app.placingLocalId = null;
 		if (this.app.activeCaseId !== caseId) {
@@ -1030,31 +1067,53 @@ export class Controller {
 		const c = this.app.byId(caseId);
 		if (!c) return;
 		const { ac, sensitivitySeq } = this.beginBranchSelection(c, branchId);
+		const retry = () => this.selectBranch(caseId, branchId);
+		// True once the browser path fully settled the selection (column accepted or
+		// a terminal message shown); false leaves DC OPF one server reconciliation.
+		let handled = false;
 		try {
-			// The ∂LMP/∂rating column comes from the browser Study only; unlike selectBus
-			// there is never a server fallback (the server has no fmax endpoint), so a
-			// null column is terminal for the selection.
-			const networkJson = await this.ensureNetworkJson(c);
-			const sensitivity = networkJson
-				? await this.browserSensitivity(c, networkJson, { branch: branchId })
-				: null;
+			await delayUntilFocusSettles(sensitivityDelayMs, ac.signal);
 			if (ac.signal.aborted) return;
-			if (sensitivity) {
-				this.acceptSensitivity(c, sensitivity, { branch: branchId }, sensitivitySeq);
-			} else if (sensitivitySeq === (c.sensitivitySeq ?? 0)) {
-				this.failBranchSensitivity(c, () => this.selectBranch(caseId, branchId));
+			try {
+				// The ∂LMP/∂rating column from the browser Study (under the case's
+				// formulation). DC OPF may reconcile a null column via the server; AC OPF /
+				// SOCWR are browser-only, so a null column there is terminal.
+				const networkJson = await this.ensureNetworkJson(c);
+				if (networkJson) {
+					const sensitivity = await this.browserSensitivity(c, networkJson, { branch: branchId });
+					if (!ac.signal.aborted && sensitivity) {
+						this.acceptSensitivity(c, sensitivity, { branch: branchId }, sensitivitySeq);
+						handled = true;
+					} else if (!ac.signal.aborted && c.formulation !== 'dcopf') {
+						this.failBranchSensitivity(c, retry);
+						handled = true;
+					}
+				} else if (c.formulation !== 'dcopf') {
+					if (!ac.signal.aborted) this.failBranchSensitivity(c, retry);
+					handled = true;
+				}
+			} catch {
+				// The browser path threw; the DC OPF server reconciliation below still
+				// applies. AC OPF / SOCWR have no server fallback (nothing is solved on
+				// the server), so the column stays absent.
+				handled = c.formulation !== 'dcopf';
 			}
-		} catch (e) {
-			// A late failure must not clobber a newer selection's state.
-			if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
-				this.fail(`${c.name}: ${errorText(e)}`, () => this.selectBranch(caseId, branchId));
+			if (!handled && !ac.signal.aborted && c.formulation === 'dcopf') {
+				if (this.hasRatingEdits(c)) {
+					// The server solves at base ratings, so its column would come from the
+					// wrong operating point once rating edits are committed. Fail instead
+					// of silently reconciling there.
+					this.fail(this.ratingEditsFallbackError(c), retry);
+				} else {
+					await this.fetchServerBranchSensitivity(c, branchId, ac, sensitivitySeq);
+				}
 			}
 		} finally {
 			if (this.abort === ac) this.app.sensitivityLoading = false;
 		}
 	};
 
-	selectLocalBranch = async (localId: string, branchId: number) => {
+	selectLocalBranch = async (localId: string, branchId: number, sensitivityDelayMs = 0) => {
 		const c = this.app.localCases.find((lc) => lc.id === localId);
 		if (!c?.networkJson || !c.network) return;
 		this.app.activeCaseId = null;
@@ -1062,6 +1121,8 @@ export class Controller {
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBranchSelection(c, branchId);
 		try {
+			await delayUntilFocusSettles(sensitivityDelayMs, ac.signal);
+			if (ac.signal.aborted) return;
 			const sensitivity = await this.browserSensitivity(c, c.networkJson, { branch: branchId });
 			if (ac.signal.aborted) return;
 			if (sensitivity) {

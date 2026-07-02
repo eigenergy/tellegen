@@ -3,6 +3,7 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	const FOCUS_FIRST_SENSITIVITY_DELAY_MS = 700;
 
 	// The active case's binding branches (loading at the thermal limit), joined to
 	// the network for identity. Renders nothing when none bind. Each row is a
@@ -23,14 +24,18 @@
 	function select(branchId: number) {
 		const c = ctrl.activeSolvable;
 		if (!c) return;
-		if (ctrl.isBackendCase(c)) ctrl.selectBranch(c.id, branchId);
-		else ctrl.selectLocalBranch(c.id, branchId);
+		if (ctrl.isBackendCase(c)) ctrl.selectBranch(c.id, branchId, FOCUS_FIRST_SENSITIVITY_DELAY_MS);
+		else ctrl.selectLocalBranch(c.id, branchId, FOCUS_FIRST_SENSITIVITY_DELAY_MS);
+		app.requestBranchFocus(c.id, branchId);
 	}
 </script>
 
 {#if bindingLines.length > 0}
 	<div class="binding-lines">
-		<p class="mono dim head" title="lines loaded to their thermal rating; select one to see &part;LMP/&part;rating">
+		<p
+			class="mono dim head"
+			title="lines loaded to their thermal rating; select one to see &part;LMP/&part;rating"
+		>
 			binding lines
 		</p>
 		<ul class="mono">
@@ -39,6 +44,7 @@
 					<button
 						class="mono"
 						class:selected={app.selectedBranch === branch.id}
+						aria-pressed={app.selectedBranch === branch.id}
 						onclick={() => select(branch.id)}
 					>
 						line {branch.from}&#8201;&ndash;&#8201;{branch.to} &middot; {Math.round(
@@ -71,7 +77,7 @@
 
 	li button {
 		width: 100%;
-		padding: 3px 4px;
+		padding: 3px 6px 3px 8px;
 		text-align: left;
 		font-size: 12px;
 		color: var(--ink);
@@ -88,6 +94,10 @@
 
 	li button.selected {
 		color: var(--text-accent);
-		background: var(--accent-soft);
+		background:
+			linear-gradient(90deg, rgba(177, 104, 27, 0.16), rgba(177, 104, 27, 0.05)),
+			var(--accent-soft);
+		box-shadow: inset 3px 0 0 var(--accent);
+		font-weight: 600;
 	}
 </style>
