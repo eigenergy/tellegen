@@ -28,10 +28,10 @@ use crate::api::{
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
+use crate::problem::DcOpfSolution;
 use crate::sens::{
     AcNewton, Axis, DcKkt, Differentiable, ElementId, Mode, Operand, Parameter, Power,
 };
-use crate::solve::DcSolution;
 
 #[cfg(feature = "conic")]
 use crate::api::{socwr_assemble, socwr_solved};
@@ -158,7 +158,7 @@ trait SolvedState {
 /// DC OPF committed state.
 struct DcState {
     net: DcNetwork,
-    sol: DcSolution,
+    sol: DcOpfSolution,
 }
 
 impl SolvedState for DcState {

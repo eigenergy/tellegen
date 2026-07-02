@@ -323,7 +323,7 @@ pub(crate) fn dc_opf_solved(
     mut dc: DcNetwork,
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
-) -> Result<(DcNetwork, super::solve::DcSolution), String> {
+) -> Result<(DcNetwork, super::problem::DcOpfSolution), String> {
     dc.allow_shed = req.options.shed;
     let bus_idx = id_index_map(&dc.bus_ids);
     apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas)?;
@@ -338,7 +338,7 @@ pub(crate) fn dc_opf_solved(
 #[cfg_attr(not(feature = "sensitivity"), allow(unused_variables))]
 pub(crate) fn dc_opf_assemble(
     dc: &DcNetwork,
-    sol: &super::solve::DcSolution,
+    sol: &super::problem::DcOpfSolution,
     req: &SolveRequest,
 ) -> Result<SolveResponse, String> {
     let base = dc.base_mva;
