@@ -11,6 +11,11 @@ files are parsed in WebAssembly, and solves, `Study.preview`, `Study.commit`,
 and sensitivity requests run there as well. No case text or network JSON leaves
 the browser unless the host app sends it.
 
+The wasm instance lives in a dedicated Web Worker, so a multi-second solve
+never blocks the page. When the browser cannot run a module worker the same
+requests execute on the calling thread instead; the API is identical either
+way.
+
 The transport has one wasm package carrying parsing, all solves, `Study`,
 capabilities, and generalized sensitivity requests.
 

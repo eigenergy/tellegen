@@ -1,6 +1,9 @@
-/** Lazy loader for the powerio wasm module. Nothing downloads until the
- * first file is dropped; the dropped file is parsed in the browser and never
- * leaves the machine. */
+/** The browser engine API. Requests run in a dedicated Web Worker when the
+ * browser allows one — a solve never blocks the page — and on the calling
+ * thread otherwise (see host.ts). Nothing downloads until the first engine
+ * call; dropped files are parsed locally and never leave the machine. */
+import { engineHost, type EngineHost } from "./host.js";
+import { isPermanentWasmLoadFailure } from "./errors.js";
 import type {
   BranchRatingDeltas,
   BrowserFormulation,
@@ -79,49 +82,14 @@ export interface IngestedCase extends CaseFileSummary {
   view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 }
 
-let engineReady: Promise<typeof import("./wasm-pkg/tellegen.js")> | null =
-  null;
-let engineUnsupported: string | null = null;
-
-/** The one wasm module (Study, all formulations, sensitivities). Resolve the
- * wasm asset only when the engine is used: SvelteKit's dev mode SSR pass can
- * evaluate this module without touching the wasm loader. */
-function engineModule() {
-  if (engineUnsupported) return Promise.reject(new Error(engineUnsupported));
-  const wasmUrl = new URL("./wasm-pkg/tellegen_bg.wasm", import.meta.url).href;
-  engineReady ??= import("./wasm-pkg/tellegen.js")
-    .then(async (mod) => {
-      await mod.default({ module_or_path: wasmUrl });
-      return mod;
-    })
-    .catch((e) => {
-      const message = errorText(e);
-      // Don't cache a rejected load: a transient failure (chunk fetch or
-      // instantiate) must not disable the engine for the whole session.
-      engineReady = null;
-      if (isPermanentWasmLoadFailure(message)) engineUnsupported = message;
-      throw e;
-    });
-  return engineReady;
-}
-
 export async function preloadEngine(): Promise<void> {
-  await engineModule();
+  await engineHost().call({ op: "preload" });
 }
 
-function isPermanentWasmLoadFailure(message: string): boolean {
-  // Latch only genuine browser-capability failures the engine module can
-  // never recover from in this browser: no WebAssembly, or an opcode the
-  // engine rejects. Transient fetch or
-  // instantiate failures (offline, 503, aborted navigation) routinely carry
-  // the .wasm URL or "Failed to fetch" in their message, so keying on the bare
-  // word "wasm"/"compile" wrongly disables the engine for the whole session.
-  // Those stay retryable.
-  if (/Failed to fetch|NetworkError|load failed|aborted|ERR_/i.test(message))
-    return false;
-  return /CompileError|LinkError|invalid opcode|unsupported|relaxed|WebAssembly is not defined/i.test(
-    message,
-  );
+/** Asserts a request that must carry a payload actually did. */
+function expectText(value: string | null): string {
+  if (value === null) throw new Error("engine returned no payload");
+  return value;
 }
 
 /** powerio format token from a file name; null for non-case files. */
@@ -134,7 +102,9 @@ export async function ingestCase(
   text: string,
   format: string,
 ): Promise<IngestedCase> {
-  return JSON.parse((await engineModule()).ingest_case(text, format));
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "ingest_case", text, format })),
+  );
 }
 
 /** Substations from a PowerWorld .pwd display file. x/y are diagram
@@ -152,11 +122,17 @@ export function isDisplayFile(name: string): boolean {
 }
 
 export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
-  return JSON.parse((await engineModule()).parse_display(bytes, "pwd"));
+  return JSON.parse(
+    expectText(
+      await engineHost().call({ op: "parse_display", bytes, format: "pwd" }),
+    ),
+  );
 }
 
 export async function capabilities(): Promise<ProblemCaps[]> {
-  return JSON.parse((await engineModule()).capabilities_json());
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "capabilities" })),
+  );
 }
 
 export async function solveJson(
@@ -164,13 +140,17 @@ export async function solveJson(
   request: SolveRequest = {},
 ): Promise<SolveResponse> {
   return JSON.parse(
-    (await engineModule()).solve_json(networkJson, JSON.stringify(request)),
+    expectText(
+      await engineHost().call({
+        op: "solve_json",
+        network_json: networkJson,
+        request: JSON.stringify(request),
+      }),
+    ),
   );
 }
 
-export function errorText(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
+export { errorText } from "./errors.js";
 
 /** True when the engine wasm module has failed to load in a way it can never
  * recover from in this browser. Nothing solves client side when this is true;
@@ -366,9 +346,12 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
  * parsed and the model built when the Study is created; `commit` solves exactly
  * at the UI's absolute demand delta state and `preview` returns a first-order
  * linearization toward an absolute demand delta state, neither re-parsing the
- * network. */
+ * network. The wasm Study lives behind the engine host (a dedicated worker
+ * when the browser allows one), so every method is async. */
 export class BrowserStudy {
-  #study: import("./wasm-pkg/tellegen.js").Study;
+  #host: EngineHost;
+  /** The caller-allocated handle naming the wasm Study on the host. */
+  #handle: number;
   /** External bus id -> dense positional bus index, built once from the committed solution's
    * LMP ordering (each `lmp[i].bus` sits at dense index `i`). The engine keys `SensRequest`
    * by this dense index, not the external bus id, so the selected bus must be translated
@@ -378,29 +361,57 @@ export class BrowserStudy {
    * flows ordering — the branch-axis counterpart of `#busToIndex`. */
   #branchToIndex: Map<number, number> | null = null;
 
-  constructor(study: import("./wasm-pkg/tellegen.js").Study) {
-    this.#study = study;
+  constructor(host: EngineHost, handle: number) {
+    this.#host = host;
+    this.#handle = handle;
+  }
+
+  async #solution(): Promise<StudySolveResponse> {
+    return JSON.parse(
+      expectText(
+        await this.#host.call({ op: "study_solution", study: this.#handle }),
+      ),
+    );
+  }
+
+  async #replaceEdits(
+    deltas: DemandDeltas,
+    rates: BranchRatingDeltas,
+    target: SensTarget | null,
+  ): Promise<StudyCommitOutput> {
+    const sensitivities = sensitivitiesJson(await this.#senseTarget(target));
+    return JSON.parse(
+      expectText(
+        await this.#host.call({
+          op: "study_replace_edits",
+          study: this.#handle,
+          edits: JSON.stringify(toEdits(deltas, rates)),
+          sensitivities,
+        }),
+      ),
+    );
   }
 
   /** The dense-axis sensitivity target the engine expects for a selection (external
    * ids), or null when nothing is selected or the id is unknown. Memoizes the
    * id->index maps from the committed solution's LMP / flows order — the same axis
    * orders the engine's dense sensitivity columns use. */
-  #senseTarget(
+  async #senseTarget(
     target: SensTarget | null,
-  ): { kind: "bus" | "branch"; index: number } | null {
+  ): Promise<{ kind: "bus" | "branch"; index: number } | null> {
     if (target === null) return null;
-    const sol = () => JSON.parse(this.#study.solution()) as StudySolveResponse;
     if ("bus" in target) {
       if (!this.#busToIndex) {
-        this.#busToIndex = new Map((sol().lmp ?? []).map((e, i) => [e.bus, i]));
+        const sol = await this.#solution();
+        this.#busToIndex = new Map((sol.lmp ?? []).map((e, i) => [e.bus, i]));
       }
       const index = this.#busToIndex.get(target.bus);
       return index === undefined ? null : { kind: "bus", index };
     }
     if (!this.#branchToIndex) {
+      const sol = await this.#solution();
       this.#branchToIndex = new Map(
-        (sol().flows ?? []).map((f, i) => [f.branch, i]),
+        (sol.flows ?? []).map((f, i) => [f.branch, i]),
       );
     }
     const index = this.#branchToIndex.get(target.branch);
@@ -412,22 +423,17 @@ export class BrowserStudy {
    * column is computed in the *same* solve and returned (no second round-trip);
    * otherwise `sensitivity` is null. `caseId` labels the returned column. Returns the
    * UI Solution, the solver iterates, and the column. */
-  commit(
+  async commit(
     caseId: string,
     deltas: DemandDeltas,
     rates: BranchRatingDeltas,
     target: SensTarget | null,
-  ): {
+  ): Promise<{
     solution: Solution;
     iterations: SolveIteration[];
     sensitivity: SensitivityColumn | null;
-  } {
-    const out: StudyCommitOutput = JSON.parse(
-      this.#study.replace_edits(
-        JSON.stringify(toEdits(deltas, rates)),
-        sensitivitiesJson(this.#senseTarget(target)),
-      ),
-    );
+  }> {
+    const out = await this.#replaceEdits(deltas, rates, target);
     return {
       solution: solveResponseToSolution(out.solution),
       iterations: out.iterations ?? [],
@@ -441,35 +447,34 @@ export class BrowserStudy {
    * returning only the column). Used when a bus or branch is selected so the overlay
    * matches the active formulation rather than always the DC sensitivity. `caseId`
    * labels the column; returns null when no recognized column comes back. */
-  sensitivity(
+  async sensitivity(
     caseId: string,
     deltas: DemandDeltas,
     rates: BranchRatingDeltas,
     target: SensTarget,
-  ): SensitivityColumn | null {
-    const out: StudyCommitOutput = JSON.parse(
-      this.#study.replace_edits(
-        JSON.stringify(toEdits(deltas, rates)),
-        sensitivitiesJson(this.#senseTarget(target)),
-      ),
-    );
+  ): Promise<SensitivityColumn | null> {
+    const out = await this.#replaceEdits(deltas, rates, target);
     return sensitivityColumn(caseId, out.sensitivities);
   }
 
   /** First-order LMP preview for replacing the committed point with
    * demand = base + `deltas` and ratings = base + `rates`, with no re-solve:
    * predicted per-bus ΔLMP and the predicted Δobjective. */
-  preview(
+  async preview(
     deltas: DemandDeltas,
     rates: BranchRatingDeltas = {},
-  ): {
+  ): Promise<{
     lmp: { bus: number; usd_per_mwh: number }[];
     objectiveDelta: number | null;
-  } {
+  }> {
     const out: StudyPreview = JSON.parse(
-      this.#study.preview_replacement(
-        JSON.stringify(toEdits(deltas, rates)),
-        PREVIEW_OPERANDS_JSON,
+      expectText(
+        await this.#host.call({
+          op: "study_preview",
+          study: this.#handle,
+          edits: JSON.stringify(toEdits(deltas, rates)),
+          operands: PREVIEW_OPERANDS_JSON,
+        }),
       ),
     );
     const lmp = (out.operands[0]?.values ?? [])
@@ -480,16 +485,17 @@ export class BrowserStudy {
 
   /** The Study's current exact solution. Called immediately after Study creation
    * to cache the base point for formulation comparisons. */
-  currentSolution(): Solution {
-    return solveResponseToSolution(
-      JSON.parse(this.#study.solution()) as StudySolveResponse,
-    );
+  async currentSolution(): Promise<Solution> {
+    return solveResponseToSolution(await this.#solution());
   }
 
   /** Release the wasm Study; call when discarding it (e.g. the case's
-   * networkJson changed, or the case was removed). */
+   * networkJson changed, or the case was removed). Fire and forget: the
+   * handle is invalid from this call on. */
   free() {
-    this.#study.free();
+    void this.#host
+      .call({ op: "study_free", study: this.#handle })
+      .catch(() => {});
   }
 }
 
@@ -498,12 +504,23 @@ export class BrowserStudy {
  * defaulting to DC OPF); the full wasm build solves every one entirely in the browser.
  * Throws if the engine module can't load (or the formulation is unknown/not built); the
  * caller must catch and fall back (see `isPermanentEngineFailure`). */
+let studySeq = 0;
+
 export async function createStudy(
   networkJson: string,
   formulation: Formulation = DEFAULT_FORMULATION,
 ): Promise<BrowserStudy> {
-  const mod = await engineModule();
-  return new BrowserStudy(new mod.Study(networkJson, formulation));
+  const host = engineHost();
+  // Handles are allocated here, not by the host, so a pending build replayed
+  // onto the fallback host keeps naming the same study.
+  const handle = ++studySeq;
+  await host.call({
+    op: "study_new",
+    study: handle,
+    network_json: networkJson,
+    formulation,
+  });
+  return new BrowserStudy(host, handle);
 }
 
 export interface EngineTransport {
