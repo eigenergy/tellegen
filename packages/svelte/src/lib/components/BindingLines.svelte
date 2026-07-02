@@ -3,7 +3,6 @@
 
 	const app = getAppState();
 	const ctrl = getController();
-	const FOCUS_FIRST_SENSITIVITY_DELAY_MS = 700;
 
 	// The active case's binding branches (loading at the thermal limit), joined to
 	// the network for identity. Renders nothing when none bind. Each row is a
@@ -24,9 +23,8 @@
 	function select(branchId: number) {
 		const c = ctrl.activeSolvable;
 		if (!c) return;
-		if (ctrl.isBackendCase(c)) ctrl.selectBranch(c.id, branchId, FOCUS_FIRST_SENSITIVITY_DELAY_MS);
-		else ctrl.selectLocalBranch(c.id, branchId, FOCUS_FIRST_SENSITIVITY_DELAY_MS);
-		app.requestBranchFocus(c.id, branchId);
+		if (ctrl.isBackendCase(c)) ctrl.selectBranch(c.id, branchId, { focus: true });
+		else ctrl.selectLocalBranch(c.id, branchId, { focus: true });
 	}
 </script>
 

@@ -8,6 +8,9 @@ test('selected local case reaches the browser solve path', async ({ page }) => {
 	});
 
 	await page.goto('/');
+	// The prerendered input exists before hydration attaches its listener; a
+	// drop fired earlier is lost. The empty-cases panel renders only after load.
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{
@@ -45,6 +48,9 @@ test('slider drag shows the step-scaled ΔLMP preview legend', async ({ page }) 
 	});
 
 	await page.goto('/');
+	// The prerendered input exists before hydration attaches its listener; a
+	// drop fired earlier is lost. The empty-cases panel renders only after load.
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
 
 	await page.locator('input[type="file"]').setInputFiles([
 		{

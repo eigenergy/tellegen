@@ -19,6 +19,12 @@ minimizes generation cost subject to the network balance and the thermal and
 generation limits; it is a convex quadratic program solved with Clarabel. Entry
 point: `solve_network` (or `solve_prebuilt` over a prebuilt `DcNetwork`).
 
+Generator costs are quadratic. MATPOWER model 2 polynomial rows are read
+directly; model 1 piecewise linear rows are projected onto a least squares
+quadratic (a least squares line when the quadratic fit is rejected), so
+objectives and prices for such cases are for the fitted curve, not the
+piecewise original.
+
 ## AC power flow (polar)
 
 The nodal power balance in polar coordinates,

@@ -77,6 +77,13 @@ GeoJSON `LineString` features are also accepted. The parser matches a path by
 branch id when present, then by from/to bus ids. A `LineString` endpoint can
 also provide bus coordinates for its `f_bus` and `t_bus` properties.
 
+## Piecewise Costs
+
+A dropped case with MATPOWER model 1 piecewise linear generator costs solves
+against a least squares quadratic fit of its breakpoints
+([formulations](formulations.md)), so its objective and prices differ from a
+solver that carries the piecewise curve exactly.
+
 ## Display Files
 
 PowerWorld `.pwd` files are still treated as display overlays. They can show
