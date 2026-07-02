@@ -54,12 +54,14 @@ solves locally.
 
 ## Server Compute
 
-The compute endpoints — `/api/cases/{id}/solve` (SSE) and the
-`/api/cases/{id}/sensitivity/...` routes — ship disabled and answer 403
+The compute endpoints (`/api/cases/{id}/solve` over SSE and the
+`/api/cases/{id}/sensitivity/...` routes) ship disabled and answer 403
 `server compute is disabled`. Set `TELLEGEN_SERVER_COMPUTE=1` to enable them as
 the fallback for browsers that cannot run the WebAssembly engine; the rate
-limits and solver concurrency caps then apply. The data endpoints, including
-the cached base `/solution`, are always served.
+limits and solver concurrency caps then apply. `/api/compute` reports the gate
+(`{"enabled": bool}`) so the frontend picks honest fallback copy and skips
+requests that would 403. The data endpoints, including the cached base
+`/solution`, are always served.
 
 ## Local Build Deploy
 

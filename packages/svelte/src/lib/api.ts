@@ -44,6 +44,10 @@ export interface TellegenApiClient {
 		deltas?: DemandDeltas,
 		signal?: AbortSignal
 	): Promise<SensitivityColumn>;
+	/** Whether the server's compute endpoints (solve stream, sensitivities) are
+	 * enabled on this deploy, so the frontend can pick honest fallback copy and
+	 * skip doomed requests. */
+	getComputeStatus(signal?: AbortSignal): Promise<{ enabled: boolean }>;
 	openSolveStream(
 		caseId: string,
 		deltas: DemandDeltas,
@@ -173,6 +177,9 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 				apiPath(apiBase, `/cases/${caseId}/sensitivity/lmp/fmax/${branch}${query}`),
 				signal
 			);
+		},
+		getComputeStatus(signal) {
+			return getJson<{ enabled: boolean }>(fetchImpl, apiPath(apiBase, `/compute`), signal);
 		},
 		openSolveStream(caseId, deltas, sensBus, handlers) {
 			const EventSourceImpl = options.EventSource ?? defaultEventSource();

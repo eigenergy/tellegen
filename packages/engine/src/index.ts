@@ -321,12 +321,12 @@ interface StudyCommitOutput {
 }
 
 /** Extract the ∂LMP/∂parameter column from the first requested `SensitivityMatrix` into
- * the `SensitivityColumn` the map and legend consume — the same shape `solve_dc`'s
- * `dlmp_dd` and the server serve. Rows are Price operands per bus; the single column is
- * the selected parameter, so the column is `values[r][0]` keyed by each row's source bus
- * id, and the source element is `cols[0].element` — a bus for the demand parameter
- * (`parameter: "d"`) or a branch for the rating parameter (`parameter: "fmax"`). Returns
- * null when no matrix was requested or its column has no recognized source element. */
+ * the `SensitivityColumn` the map and legend consume, the same shape the server serves.
+ * Rows are Price operands per bus; the single column is the selected parameter, so the
+ * column is `values[r][0]` keyed by each row's source bus id, and the source element is
+ * `cols[0].element`: a bus for the demand parameter (`parameter: "d"`) or a branch for
+ * the rating parameter (`parameter: "fmax"`). Returns null when no matrix was requested
+ * or its column has no recognized source element. */
 function sensitivityColumn(
   caseId: string,
   matrices: SensitivityMatrixJson[],

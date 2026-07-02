@@ -12,8 +12,9 @@ use std::{
 };
 
 use axum::{
-    extract::{ConnectInfo, Path as AxumPath, Query, State},
+    extract::{ConnectInfo, Path as AxumPath, Query, Request, State},
     http::{header::CONTENT_TYPE, HeaderMap, HeaderValue, StatusCode},
+    middleware::{self, Next},
     response::{
         sse::{Event, Sse},
         IntoResponse, Response,
@@ -481,14 +482,6 @@ impl AppState {
         self
     }
 
-    fn check_compute_enabled(&self) -> ApiResult<()> {
-        if self.compute_enabled {
-            Ok(())
-        } else {
-            Err(ApiError::forbidden("server compute is disabled"))
-        }
-    }
-
     fn case(&self, id: &str) -> ApiResult<Arc<CaseEntry>> {
         self.cases
             .get(id)
@@ -563,12 +556,10 @@ pub async fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
-    let app = Router::new()
-        .route("/api/health", get(health))
-        .route("/api/cases", get(cases))
-        .route("/api/cases/{id}/case", get(case_network_json))
-        .route("/api/cases/{id}/network", get(network))
-        .route("/api/cases/{id}/solution", get(solution))
+    // Every route that runs the solver on demand lives on this sub-router, so
+    // the compute gate holds by construction: a new compute endpoint added here
+    // is gated without remembering a per-handler check.
+    let compute_routes = Router::new()
         .route(
             "/api/cases/{id}/sensitivity/lmp/d/{bus}",
             get(sensitivity_demand),
@@ -578,6 +569,19 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
             get(sensitivity_line_limit),
         )
         .route("/api/cases/{id}/solve", get(solve_stream))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_compute,
+        ));
+
+    let app = Router::new()
+        .route("/api/health", get(health))
+        .route("/api/compute", get(compute_status))
+        .route("/api/cases", get(cases))
+        .route("/api/cases/{id}/case", get(case_network_json))
+        .route("/api/cases/{id}/network", get(network))
+        .route("/api/cases/{id}/solution", get(solution))
+        .merge(compute_routes)
         .route("/api/{*path}", any(api_not_found))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -603,6 +607,22 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
     } else {
         app
     }
+}
+
+/// The compute gate for every route on the compute sub-router: 403 unless
+/// `TELLEGEN_SERVER_COMPUTE` enabled the on-demand solver endpoints.
+async fn require_compute(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
+    if state.compute_enabled {
+        next.run(req).await
+    } else {
+        ApiError::forbidden("server compute is disabled").into_response()
+    }
+}
+
+/// Whether the compute endpoints are enabled, so the frontend can pick honest
+/// copy (and skip doomed requests) instead of inferring it from a 403.
+async fn compute_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(serde_json::json!({ "enabled": state.compute_enabled }))
 }
 
 async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -721,7 +741,6 @@ async fn sensitivity(
     target: SensitivityTarget,
     query: DemandQuery,
 ) -> ApiResult<Json<SensitivityPayload>> {
-    state.check_compute_enabled()?;
     let client = expensive_client_key(&headers, &connect_info);
     state.check_expensive_rate_limit(ExpensiveEndpoint::Sensitivity, &client)?;
     let entry = state.case(&id)?;
@@ -764,7 +783,6 @@ async fn solve_stream(
     AxumPath(id): AxumPath<String>,
     Query(query): Query<DemandQuery>,
 ) -> ApiResult<Sse<ReceiverStream<Result<Event, Infallible>>>> {
-    state.check_compute_enabled()?;
     let client = expensive_client_key(&headers, &connect_info);
     state.check_expensive_rate_limit(ExpensiveEndpoint::Solve, &client)?;
     let entry = state.case(&id)?;
@@ -1435,9 +1453,10 @@ fn default_frontend_dirs() -> Vec<PathBuf> {
     ]
 }
 
-fn allow_fallback() -> bool {
+/// A boolean env var: `1`/`true`/`yes`/`on` (case insensitive) enables.
+fn env_flag(name: &str) -> bool {
     matches!(
-        env::var("TELLEGEN_ALLOW_FALLBACK")
+        env::var(name)
             .unwrap_or_default()
             .to_ascii_lowercase()
             .as_str(),
@@ -1445,14 +1464,12 @@ fn allow_fallback() -> bool {
     )
 }
 
+fn allow_fallback() -> bool {
+    env_flag("TELLEGEN_ALLOW_FALLBACK")
+}
+
 fn server_compute_enabled() -> bool {
-    matches!(
-        env::var("TELLEGEN_SERVER_COMPUTE")
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str(),
-        "1" | "true" | "yes" | "on"
-    )
+    env_flag("TELLEGEN_SERVER_COMPUTE")
 }
 
 fn solver_concurrency() -> usize {
@@ -1598,15 +1615,29 @@ mod tests {
         }))
     }
 
+    static NEXT_CLIENT: AtomicUsize = AtomicUsize::new(1);
+
+    fn next_client() -> String {
+        format!(
+            "203.0.113.{}",
+            NEXT_CLIENT.fetch_add(1, AtomicOrdering::Relaxed)
+        )
+    }
+
     async fn get_raw(path: &str) -> (StatusCode, HeaderMap, String) {
-        static NEXT_CLIENT: AtomicUsize = AtomicUsize::new(1);
-        let id = NEXT_CLIENT.fetch_add(1, AtomicOrdering::Relaxed);
-        let client = format!("203.0.113.{id}");
-        get_raw_from(path, &client).await
+        get_raw_with_state(fallback_state(), path, &next_client()).await
     }
 
     async fn get_raw_from(path: &str, client: &str) -> (StatusCode, HeaderMap, String) {
-        let res = router(fallback_state(), None)
+        get_raw_with_state(fallback_state(), path, client).await
+    }
+
+    async fn get_raw_with_state(
+        state: Arc<AppState>,
+        path: &str,
+        client: &str,
+    ) -> (StatusCode, HeaderMap, String) {
+        let res = router(state, None)
             .oneshot(
                 axum::http::Request::builder()
                     .uri(path)
@@ -1747,23 +1778,8 @@ mod tests {
     }
 
     async fn get_with_state(state: Arc<AppState>, path: &str) -> (StatusCode, serde_json::Value) {
-        let res = router(state, None)
-            .oneshot(
-                axum::http::Request::builder()
-                    .uri(path)
-                    .header("x-forwarded-for", "203.0.113.250")
-                    .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let status = res.status();
-        let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        (
-            status,
-            serde_json::from_str(core::str::from_utf8(&body).unwrap()).unwrap(),
-        )
+        let (status, _headers, body) = get_raw_with_state(state, path, &next_client()).await;
+        (status, serde_json::from_str(&body).unwrap())
     }
 
     #[tokio::test]
@@ -1777,10 +1793,17 @@ mod tests {
             assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
             assert_eq!(body["error"], "server compute is disabled", "{path}");
         }
-        // Data endpoints stay served, including the cached base solution.
+        // Data endpoints stay served, including the cached base solution, and
+        // /api/compute reports the gate to the frontend.
         let (status, _) =
             get_with_state(compute_disabled_state(), "/api/cases/case200/solution").await;
         assert_eq!(status, StatusCode::OK);
+        let (status, body) = get_with_state(compute_disabled_state(), "/api/compute").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["enabled"], false);
+        let (status, body) = get_with_state(fallback_state(), "/api/compute").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["enabled"], true);
     }
 
     #[cfg(not(feature = "sensitivity"))]

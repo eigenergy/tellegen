@@ -36,11 +36,14 @@ const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 const DEFAULT_CASE_ID = 'case500';
 const PWD_MERCATOR_K = 535.81608;
 
-/** Terminal copy when nothing can solve: the browser engine is unavailable and
- * the server declines compute (403). Server compute exists in the codebase but
- * ships disabled; interest routes to email until it is offered. */
+/** Terminal copy when nothing can solve. Two facts decide the wording: whether
+ * this browser's engine failure is known permanent, and that the server
+ * declines compute. Server compute exists in the codebase but ships disabled;
+ * interest routes to email until it is offered. */
 const WASM_REQUIRED_NOTICE =
 	'this browser cannot run the WebAssembly engine that solves locally, and server side compute is disabled in this demo. it may be offered later; to express interest, email Samuel Talkington at talks@umich.edu';
+const COMPUTE_OFF_NOTICE =
+	'solving in this browser did not complete, and server side compute is disabled in this demo. retry to run the browser engine again, or email Samuel Talkington at talks@umich.edu to express interest in server compute';
 
 function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> {
 	if (ms <= 0 || signal.aborted) return Promise.resolve();
@@ -341,7 +344,7 @@ export class Controller {
 	}
 
 	// The ∂LMP/∂parameter column at `target` for the case's active formulation, solved in
-	// the browser. Every column — bus or branch, any formulation — comes from the Study's
+	// the browser. Every column, bus or branch, any formulation, comes from the Study's
 	// exact re-solve at the case's operating point. The column is null (with the reason on
 	// `solveFallbackReason`) when the Study can't be built; the selection paths then
 	// reconcile via the server where a DC endpoint exists. Throws only on a hard browser
@@ -687,6 +690,16 @@ export class Controller {
 		// so two concurrent loads can't double-fetch the case list and double-fit the map.
 		if (this.loading) return this.loading;
 		this.loading = (async () => {
+			// Learn the deploy's compute gate up front so fallback paths pick honest
+			// copy and skip doomed requests (the SSE stream cannot see a 403). On
+			// failure assume enabled; the 403 latch in fetchServerColumn still
+			// catches a disabled deploy.
+			void this.api
+				.getComputeStatus()
+				.then((s) => {
+					this.serverComputeOff = !s.enabled;
+				})
+				.catch(() => {});
 			try {
 				const summaries = await this.api.getCases();
 				const hidden = this.readHiddenDefaultCases();
@@ -934,7 +947,7 @@ export class Controller {
 						this.selectBus(c.id, busId)
 					);
 				} else {
-					await this.fetchServerSensitivity(c, busId, ac, sensitivitySeq);
+					await this.fetchServerColumn(c, { bus: busId }, ac, sensitivitySeq);
 				}
 			}
 		} finally {
@@ -942,21 +955,33 @@ export class Controller {
 		}
 	};
 
-	/** The one server dLMP/dd request a bus selection may make — the reconciliation
-	 * path when the browser solver produced no column for a DC OPF case. Never
-	 * retries on its own: a second request inside the same rate limit window is a
-	 * guaranteed rejection, and the retry button covers the user need. A 429 opens
-	 * a cooldown for the rest of the window so further selections skip the server
-	 * instead of feeding it. */
-	private fetchServerSensitivity = async (
+	/** The compute-off terminal copy. Name the browser engine as the cause only
+	 * when its failure is known permanent; otherwise the miss may have been
+	 * transient (a wasm chunk or case JSON fetch), so say what is known and keep
+	 * the retry meaningful. */
+	private computeOffNotice(c: SolvableCase): string {
+		return this.studyUnavailable.has(c) ? WASM_REQUIRED_NOTICE : COMPUTE_OFF_NOTICE;
+	}
+
+	/** The one server ∂LMP/∂parameter request a selection may make: the
+	 * reconciliation path when the browser Study produced no column for a DC OPF
+	 * case. Never retries on its own: a second request inside the same rate limit
+	 * window is a guaranteed rejection, and the retry button covers the user
+	 * need. A 429 opens a cooldown for the rest of the window; the server's own
+	 * compute-disabled 403 latches serverComputeOff for the session (matched on
+	 * `serverMessage` so a proxy or WAF 403 cannot latch a false diagnosis). */
+	private fetchServerColumn = async (
 		c: CaseState,
-		busId: number,
+		target: SensTarget,
 		ac: AbortController,
 		sensitivitySeq: number
 	) => {
-		const retryOp = () => this.selectBus(c.id, busId);
+		const retryOp =
+			'bus' in target
+				? () => this.selectBus(c.id, target.bus)
+				: () => this.selectBranch(c.id, target.branch);
 		if (this.serverComputeOff) {
-			this.fail(WASM_REQUIRED_NOTICE, retryOp);
+			this.fail(this.computeOffNotice(c), retryOp);
 			return;
 		}
 		if (Date.now() < this.sensitivity429Until) {
@@ -964,14 +989,26 @@ export class Controller {
 			return;
 		}
 		try {
-			const col = await this.api.getSensitivity(c.id, busId, c.deltas, ac.signal);
-			if (!ac.signal.aborted) this.acceptSensitivity(c, col, { bus: busId }, sensitivitySeq);
+			const col =
+				'bus' in target
+					? await this.api.getSensitivity(c.id, target.bus, c.deltas, ac.signal)
+					: await this.api.getBranchSensitivity(c.id, target.branch, c.deltas, ac.signal);
+			if (!ac.signal.aborted) {
+				// The solution on screen came from the browser or the served base
+				// solve; the column came from the server. Label the mix.
+				c.solveBackend = 'clarabel-wasm-server-sensitivity';
+				this.acceptSensitivity(c, col, target, sensitivitySeq);
+			}
 		} catch (e) {
 			if (e instanceof DOMException) return;
-			if (e instanceof ApiError && e.status === 403) {
+			if (
+				e instanceof ApiError &&
+				e.status === 403 &&
+				e.serverMessage === 'server compute is disabled'
+			) {
 				this.serverComputeOff = true;
 				if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
-					this.fail(WASM_REQUIRED_NOTICE, retryOp);
+					this.fail(this.computeOffNotice(c), retryOp);
 				}
 				return;
 			}
@@ -979,46 +1016,6 @@ export class Controller {
 				this.sensitivity429Until = Date.now() + 10_000;
 			}
 			// A late failure must not clobber a newer selection's state.
-			if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
-				this.fail(errorText(e), retryOp);
-			}
-		}
-	};
-
-	/** The one server ∂LMP/∂rating request a branch selection may make — the
-	 * reconciliation path when the browser Study produced no column for a DC OPF
-	 * case, the branch counterpart of `fetchServerSensitivity`. Shares the 429
-	 * cooldown so selections back off the server together. */
-	private fetchServerBranchSensitivity = async (
-		c: CaseState,
-		branchId: number,
-		ac: AbortController,
-		sensitivitySeq: number
-	) => {
-		const retryOp = () => this.selectBranch(c.id, branchId);
-		if (this.serverComputeOff) {
-			this.fail(WASM_REQUIRED_NOTICE, retryOp);
-			return;
-		}
-		if (Date.now() < this.sensitivity429Until) {
-			this.fail('rate limited; wait a few seconds and try again', retryOp);
-			return;
-		}
-		try {
-			const col = await this.api.getBranchSensitivity(c.id, branchId, c.deltas, ac.signal);
-			if (!ac.signal.aborted) this.acceptSensitivity(c, col, { branch: branchId }, sensitivitySeq);
-		} catch (e) {
-			if (e instanceof DOMException) return;
-			if (e instanceof ApiError && e.status === 403) {
-				this.serverComputeOff = true;
-				if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
-					this.fail(WASM_REQUIRED_NOTICE, retryOp);
-				}
-				return;
-			}
-			if (e instanceof ApiError && e.status === 429) {
-				this.sensitivity429Until = Date.now() + 10_000;
-			}
 			if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
 				this.fail(errorText(e), retryOp);
 			}
@@ -1122,11 +1119,17 @@ export class Controller {
 					if (!ac.signal.aborted) this.failBranchSensitivity(c, retry);
 					handled = true;
 				}
-			} catch {
+			} catch (e) {
 				// The browser path threw; the DC OPF server reconciliation below still
 				// applies. AC OPF / SOCWR have no server fallback (nothing is solved on
-				// the server), so the column stays absent.
-				handled = c.formulation !== 'dcopf';
+				// the server), so surface the error there instead of leaving the click
+				// looking dead.
+				if (c.formulation !== 'dcopf') {
+					if (!ac.signal.aborted && sensitivitySeq === (c.sensitivitySeq ?? 0)) {
+						this.fail(`${this.caseName(c)}: ${errorText(e)}`, retry);
+					}
+					handled = true;
+				}
 			}
 			if (!handled && !ac.signal.aborted && c.formulation === 'dcopf') {
 				if (this.hasRatingEdits(c)) {
@@ -1135,7 +1138,7 @@ export class Controller {
 					// of silently reconciling there.
 					this.fail(this.ratingEditsFallbackError(c), retry);
 				} else {
-					await this.fetchServerBranchSensitivity(c, branchId, ac, sensitivitySeq);
+					await this.fetchServerColumn(c, { branch: branchId }, ac, sensitivitySeq);
 				}
 			}
 		} finally {
@@ -1279,10 +1282,10 @@ export class Controller {
 				}
 			}
 
-			// The DC fallbacks below (per-call browser solve_dc; the server stream) only solve
-			// DC OPF, so they are valid only for the DC formulation. For AC OPF / SOCWR the
-			// Study is the sole solver (nothing is solved on the server), so a Study failure
-			// there is terminal: surface it rather than silently returning a DC solution.
+			// The server stream below only solves DC OPF, so it is valid only for the
+			// DC formulation. For AC OPF / SOCWR the Study is the sole solver (nothing
+			// is solved on the server), so a Study failure there is terminal: surface
+			// it rather than silently returning a DC solution.
 			if (c.formulation !== 'dcopf') {
 				if (seq !== (c.solveSeq ?? 0)) return;
 				c.solving = false;
@@ -1325,7 +1328,7 @@ export class Controller {
 				this.app.previewDeltaMw = null;
 				this.app.previewRatingMw = null;
 			}
-			this.fail(WASM_REQUIRED_NOTICE);
+			this.fail(this.computeOffNotice(c), () => this.runSolve(c, target));
 			return;
 		}
 		c.solveBackend = 'rust-server';

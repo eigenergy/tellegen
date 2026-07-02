@@ -93,15 +93,26 @@ fn piecewise_quadratic_fit(cost: &GenCost) -> Result<(f64, f64, f64), String> {
     }
 }
 
+/// Least squares line over every breakpoint. The quadratic fit falls back here
+/// when its system is singular or nonconvex (`q < 0`), so interior points must
+/// still weigh in: an endpoints chord would misprice everything between them.
 fn linear_fit(points: &[(f64, f64)]) -> (f64, f64, f64) {
-    let (x0, y0) = points[0];
-    let (x1, y1) = points[points.len() - 1];
-    let slope = if (x1 - x0).abs() <= f64::EPSILON {
-        0.0
-    } else {
-        (y1 - y0) / (x1 - x0)
-    };
-    (0.0, slope, y0 - slope * x0)
+    let n = points.len() as f64;
+    let (mut sx, mut sxx, mut sy, mut sxy) = (0.0, 0.0, 0.0, 0.0);
+    for &(x, y) in points {
+        sx += x;
+        sxx += x * x;
+        sy += y;
+        sxy += x * y;
+    }
+    let det = n * sxx - sx * sx;
+    if det.abs() <= f64::EPSILON * n * sxx.max(1.0) {
+        // All breakpoints at one output level: a flat cost at their mean.
+        return (0.0, 0.0, sy / n);
+    }
+    let slope = (n * sxy - sx * sy) / det;
+    let intercept = (sy - slope * sx) / n;
+    (0.0, slope, intercept)
 }
 
 fn quadratic_fit(points: &[(f64, f64)]) -> Option<(f64, f64, f64)> {
@@ -264,4 +275,45 @@ pub(super) fn reconstruct_ids(raw: &Network, view: &IndexedNetwork) -> Result<Id
         branch_ids,
         gen_ids,
     })
+}
+
+#[cfg(test)]
+mod cost_fit_tests {
+    use super::*;
+
+    fn piecewise(points: &[(f64, f64)]) -> GenCost {
+        GenCost::new(
+            1,
+            0.0,
+            0.0,
+            points.iter().flat_map(|&(x, y)| [x, y]).collect(),
+        )
+    }
+
+    #[test]
+    fn nonconvex_points_fall_back_to_a_least_squares_line() {
+        // Concave points reject the quadratic (q < 0). The line must weigh the
+        // interior breakpoint: the least squares slope over (0,0),(10,100),(200,200)
+        // is 60000/76200, not the endpoints chord slope of 1.
+        let (q, l, _) = quadratic_cost_coeffs(Some(&piecewise(&[
+            (0.0, 0.0),
+            (10.0, 100.0),
+            (200.0, 200.0),
+        ])))
+        .unwrap();
+        assert_eq!(q, 0.0);
+        let expected = 60000.0 / 76200.0;
+        assert!((l - expected).abs() < 1e-9, "expected {expected}, got {l}");
+    }
+
+    #[test]
+    fn exact_quadratic_points_recover_the_curve() {
+        // y = 2x^2 + 3x + 1 at x = 0, 1, 2 solves the normal equations exactly.
+        let (q, l, c) =
+            quadratic_cost_coeffs(Some(&piecewise(&[(0.0, 1.0), (1.0, 6.0), (2.0, 15.0)])))
+                .unwrap();
+        assert!((q - 2.0).abs() < 1e-9, "q {q}");
+        assert!((l - 3.0).abs() < 1e-9, "l {l}");
+        assert!((c - 1.0).abs() < 1e-9, "c {c}");
+    }
 }
