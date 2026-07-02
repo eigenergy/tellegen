@@ -8,8 +8,8 @@ tellegen is a reactive visualization interface for power flow cases. The name
 refers to Tellegen's theorem and the adjoint sensitivity calculations.
 
 The app uses a gradient preview, exact commit interaction model. Perturbations
-update the display from KKT sensitivity columns. Exact solves — DC OPF, AC power
-flow, and the SOCWR relaxation — run in the browser in WebAssembly. Case parsing uses
+update the display from KKT sensitivity columns. Exact solves (DC OPF, AC power
+flow, and the SOCWR relaxation) run in the browser in WebAssembly. Case parsing uses
 [powerio](https://github.com/eigenergy/powerio).
 
 ## Demo

@@ -6,10 +6,8 @@ the source distributions for each dependency.
 
 ## Project Code
 
-The Rust crates are licensed under either Apache-2.0 or MIT, at your option. The
-npm packages `@tellegen/engine` and `@tellegen/svelte` and the web app are MIT
-licensed. See `LICENSE`, `crates/tellegen/LICENSE-APACHE`, and
-`crates/tellegen/LICENSE-MIT`.
+The project, including the Rust crates and the npm packages
+`@tellegen/engine` and `@tellegen/svelte`, is MIT licensed. See `LICENSE`.
 
 The engine uses the W space SOCWR formulation as implemented in PowerModels.jl
 as a formulation reference. PowerModels.jl is BSD 3-Clause licensed. The
@@ -52,8 +50,8 @@ citation:
 > doi:10.1109/TEMPR.2023.3338568.
 
 Embedded fallback cases are from PGLib OPF and are used only when
-`TELLEGEN_ALLOW_FALLBACK=1` is set. PGLib OPF data is CC BY 4.0; the software is
-MIT licensed.
+`TELLEGEN_ALLOW_FALLBACK=1` is set. PGLib OPF data is CC BY 4.0; the PGLib
+software is MIT licensed.
 
 ## Maps
 

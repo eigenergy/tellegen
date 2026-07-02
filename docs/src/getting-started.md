@@ -92,4 +92,4 @@ scripts/build-docs.sh
 ```
 
 CI pins mdBook to `v0.5.3`. For local work, any recent mdBook `0.5.x` release
-should render the book.
+renders the book.

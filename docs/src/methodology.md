@@ -2,8 +2,7 @@
 
 The `benchmarks` crate is a non-shipping workspace member that drives tellegen's
 public API over the PGLib-OPF corpus for validation and timing. It never vendors
-the corpus and reads it from `$PGLIB_OPF_PATH`, skipping cleanly when the path is
-absent.
+the corpus and reads it from `$PGLIB_OPF_PATH`, skipping when the path is absent.
 
 ## Corpus
 
@@ -16,10 +15,10 @@ baseMVA 100. PGLib data is CC BY 4.0 (see [References](references.md)).
 Per `(case, variant)`: parse (through powerio), build `DcNetwork` / `AcNetwork`,
 then
 
-- DC OPF — `solve_prebuilt` (objective, dispatch, LMPs);
-- conic SOCWR — `socwr_opf` (objective, gap, W-space primals);
-- AC power flow — `ac_pf` (convergence, residual);
-- sensitivities — the typed engines (`AcNewton` / `ConicKkt` with `sensitivity`)
+- DC OPF: `solve_prebuilt` (objective, dispatch, LMPs);
+- conic SOCWR: `socwr_opf` (objective, gap, W-space primals);
+- AC power flow: `ac_pf` (convergence, residual);
+- sensitivities: the typed engines (`AcNewton` / `ConicKkt` with `sensitivity`)
   and the `solve_json` front door, which carries the DC sensitivities.
 
 ## Timing
@@ -30,16 +29,16 @@ sensitivity). Solves run single-threaded for clean timing.
 
 ## Metrics
 
-1. **OPF correctness** vs the published reference — the DC objective, the SOCWR
+1. **OPF correctness** vs the published reference: the DC objective, the SOCWR
    relaxation lower bound, and the SOC gap, rolled up into a per-case reproduction
    verdict (see [Validation](validation.md)).
-2. **Sensitivity parity** — adjoint equals forward, and central finite differences
+2. **Sensitivity parity**: adjoint equals forward, and central finite differences
    against the analytic columns, classified per parity class (see
    [the sensitivity contract](sensitivity-contract.md)).
-3. **Feasibility / convergence** — per-case status, interior-point iterations,
+3. **Feasibility / convergence**: per-case status, interior-point iterations,
    residuals.
-4. **Performance** — wall time per stage, and a scaling curve against bus count.
-5. **Coverage** — a per-case status table, including the size caps applied by the
+4. **Performance**: wall time per stage, and a scaling curve against bus count.
+5. **Coverage**: a per-case status table, including the size caps applied by the
    harness flags.
 
 ## Baselines

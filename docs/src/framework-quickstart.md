@@ -98,7 +98,7 @@ The call sequence is:
 
 ## Privacy Boundary
 
-Dropped files stay in the browser when the browser wasm path is used. The
+Dropped files stay in the browser when the app uses the browser wasm path. The
 parser, solve, preview, commit, and sensitivity paths all run in WebAssembly in
 the page. A host app only sends data to a server if it chooses an HTTP path or
 writes its own upload path.

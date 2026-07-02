@@ -2,7 +2,7 @@
 
 Case files and display files are separate inputs. MATPOWER `.m`, PSS/E `.raw`,
 and PowerWorld `.aux` files describe the network. JSON files are accepted as
-geographic files in this release. PowerWorld `.pwd` files describe a one line
+geographic files in this release. PowerWorld `.pwd` files describe a one-line
 diagram. tellegen reads coordinates from case files when they exist and reads
 diagram positions from display files when they are dropped.
 
@@ -23,7 +23,7 @@ does not create buses, branches, or a solvable case.
 ## Projecting `.pwd` coordinates
 
 PowerWorld `.pwd` coordinates are diagram coordinates, not latitude and
-longitude. TAMU generated diagrams use Web Mercator scaled by one constant,
+longitude. TAMU-generated diagrams use Web Mercator scaled by one constant,
 `K = 535.81608`, with both axes expressed in degrees:
 
 ```text
@@ -34,8 +34,8 @@ mercdeg(lat) = (180 / pi) * ln(tan(pi / 4 + lat * pi / 360))
 
 The viewer applies the inverse transform in `pwdToLngLat` in
 `packages/svelte/src/lib/controller.svelte.ts`. This places checked ACTIVSg
-diagrams within about 0.02 degrees of their corresponding named cities. Hand
-edited diagrams can differ, so tellegen labels these positions as approximate.
+diagrams within about 0.02 degrees of their corresponding named cities.
+Hand-edited diagrams can differ, so tellegen labels these positions as approximate.
 
 ## Canonical display format (planned)
 
@@ -50,6 +50,6 @@ geographic file.
 
 Existing `.pwd` parsing gives powerio a migration path from PowerWorld
 diagrams. Planned on top of the format: filling missing case coordinates from a
-dropped `.pwd` sibling when the case has a bus to substation mapping, combining
+dropped `.pwd` sibling when the case has a bus-to-substation mapping, combining
 a dropped case and its `.pwd` into one local entry, and exporting coordinates
 computed by tellegen.

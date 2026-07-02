@@ -15,8 +15,8 @@ files do not call the tellegen backend solve endpoints.
 
 ## Manual Placement
 
-For no coordinate files such as a plain `case14.m`, tellegen computes a
-deterministic topology layout from buses and in service branches. The user then
+For case files with no coordinates, such as a plain `case14.m`, tellegen
+computes a deterministic topology layout from buses and in-service branches. The user then
 clicks the map to center that synthetic layout at the chosen location.
 
 The placed local case can be moved later with the case panel move action. The
@@ -71,7 +71,7 @@ CSV and JSON branch records can use:
 | Branch id | `branch`, `branch_id`, `branch number`, `cats_id`, `id` |
 | From bus | `f_bus`, `from`, `from_bus` |
 | To bus | `t_bus`, `to`, `to_bus` |
-| Endpoint coordinates | `Lat1`, `Lon1`, `Lat2`, `Lon2` and lower case variants |
+| Endpoint coordinates | `Lat1`, `Lon1`, `Lat2`, `Lon2` and lowercase variants |
 
 GeoJSON `LineString` features are also accepted. The parser matches a path by
 branch id when present, then by from/to bus ids. A `LineString` endpoint can

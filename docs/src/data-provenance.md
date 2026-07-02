@@ -48,7 +48,5 @@ zoom, and individual buses remain hoverable at street zoom.
 
 ## Explicit Fallback
 
-The backend serves whichever complete demo cases are staged. If no complete
-case pair is staged, it exits unless `TELLEGEN_ALLOW_FALLBACK=1` is set. CI and
-local smoke checks use that fallback to serve two pglib cases with synthetic
-coordinates. Those fallback coordinates are labeled as synthetic.
+The embedded fallback ([deployment](deployment.md)) serves two PGLib cases
+whose coordinates are synthetic and labeled as synthetic.

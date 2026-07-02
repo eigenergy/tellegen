@@ -18,6 +18,7 @@
   - [Methodology](methodology.md)
   - [Validation](validation.md)
   - [References](references.md)
+- [HTTP API](http-api.md)
 - [Deployment](deployment.md)
 - [Privacy](privacy.md)
 - [Third Party Notices](third-party-notices.md)
