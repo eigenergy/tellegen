@@ -253,6 +253,9 @@ async function assertBuildOutput() {
   if (!wasmFiles.some((file) => /tellegen_bg.*\.wasm$/.test(file))) {
     throw new Error("consumer build did not emit the engine wasm asset");
   }
+  if (!files.some((file) => /worker/.test(file) && file.endsWith(".js"))) {
+    throw new Error("consumer build did not emit the engine worker chunk");
+  }
 
   console.log(`packed Svelte consumer emitted ${wasmFiles.length} wasm assets`);
 }

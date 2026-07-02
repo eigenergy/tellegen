@@ -321,6 +321,7 @@ export class Controller {
 		const build = (async (): Promise<BrowserStudy | null> => {
 			try {
 				const study = await createStudy(networkJson, formulation);
+				const baseSolution = await study.currentSolution();
 				// The case may have switched formulation or been disposed (removed, or its
 				// list reloaded) while building; don't cache a now-unwanted Study, and free
 				// the orphan so its wasm memory is released.
@@ -328,7 +329,6 @@ export class Controller {
 					study.free();
 					return null;
 				}
-				const baseSolution = study.currentSolution();
 				this.caseStudies.set(c, { study, networkJson, formulation, baseSolution });
 				return study;
 			} catch (e) {
@@ -1230,7 +1230,7 @@ export class Controller {
 				try {
 					const cached = this.caseStudies.get(c);
 					if (!c.baseSolution && cached?.study === study) c.baseSolution = cached.baseSolution;
-					const { solution, iterations, sensitivity } = study.commit(
+					const { solution, iterations, sensitivity } = await study.commit(
 						c.id,
 						this.caseDeltas(c),
 						this.caseRatings(c),
@@ -1537,7 +1537,7 @@ export class Controller {
 	};
 
 	// First-order engine preview for the live drag. Uses the case's already-built
-	// Study (synchronous, no re-parse, no re-solve) to paint predicted per-bus
+	// Study (no re-parse, no re-solve) to paint predicted per-bus
 	// ΔLMP and the predicted Δobjective. A no-op when the Study isn't built yet or
 	// can't preview (browser fallback path, server-only cases): the map then
 	// falls back to the JS sensitivity-times-step preview.
@@ -1563,27 +1563,59 @@ export class Controller {
 		}
 		// Fallback (no committed column yet): the engine's first-order preview, which
 		// rebuilds the differentiable system. DC OPF only: the conic rebuild takes
-		// seconds on the large cases, and it would run per input event here. Best
-		// effort; on any failure the map keeps its own path.
-		const study = c.formulation === 'dcopf' ? this.caseStudies.get(c)?.study : undefined;
-		if (!study) return;
-		try {
-			const { lmp, objectiveDelta } = study.preview(
-				this.previewDeltas(c, bus, value),
-				this.caseRatings(c)
-			);
-			const delta = new Map<number, number>();
-			for (const e of lmp) delta.set(e.bus, e.usd_per_mwh);
-			this.app.previewLmp = { caseId: c.id, target: { bus }, delta };
-			this.previewObjective =
-				objectiveDelta === null
-					? null
-					: { caseId: c.id, target: { bus }, objectiveDelta };
-		} catch {
-			this.app.previewLmp = null;
-			this.previewObjective = null;
-		}
+		// seconds on the large cases. The preview is async (the engine runs in a
+		// worker), so drag events queue at most one point: the newest requested
+		// point runs next, intermediate points are dropped. Best effort; on any
+		// failure the map keeps its own path.
+		if (c.formulation !== 'dcopf' || !this.caseStudies.get(c)) return;
+		this.enginePreviewNext = { c, bus, value };
+		void this.pumpEnginePreview();
 	};
+
+	// The newest demand drag point waiting on an engine preview, and whether a
+	// preview call is in flight. Written by runPreview per input event; drained
+	// one call at a time so previews never stack up behind a slow solve.
+	private enginePreviewNext: { c: SolvableCase; bus: number; value: number } | null = null;
+	private enginePreviewBusy = false;
+
+	private async pumpEnginePreview() {
+		if (this.enginePreviewBusy) return;
+		this.enginePreviewBusy = true;
+		try {
+			while (this.enginePreviewNext) {
+				const { c, bus, value } = this.enginePreviewNext;
+				this.enginePreviewNext = null;
+				const study = this.caseStudies.get(c)?.study;
+				if (!study) continue;
+				try {
+					const { lmp, objectiveDelta } = await study.preview(
+						this.previewDeltas(c, bus, value),
+						this.caseRatings(c)
+					);
+					// Apply only while this point is still the live drag target: a
+					// preview that resolves after a re-selection or a commit is stale.
+					if (
+						!this.app.previewActive ||
+						this.activeSolvable !== c ||
+						this.app.selectedBus !== bus
+					)
+						continue;
+					const delta = new Map<number, number>();
+					for (const e of lmp) delta.set(e.bus, e.usd_per_mwh);
+					this.app.previewLmp = { caseId: c.id, target: { bus }, delta };
+					this.previewObjective =
+						objectiveDelta === null ? null : { caseId: c.id, target: { bus }, objectiveDelta };
+				} catch {
+					if (this.activeSolvable === c && this.app.selectedBus === bus) {
+						this.app.previewLmp = null;
+						this.previewObjective = null;
+					}
+				}
+			}
+		} finally {
+			this.enginePreviewBusy = false;
+		}
+	}
 
 	setSliderPreview = (value: number | undefined) => {
 		if (value === undefined) return;
@@ -1632,18 +1664,29 @@ export class Controller {
 			// preview without an objective prediction.
 			const study = c.formulation === 'dcopf' ? this.caseStudies.get(c)?.study : undefined;
 			if (study) {
-				let slope: number | null = null;
-				try {
-					const { objectiveDelta } = study.preview(
-						this.caseDeltas(c),
-						this.previewRatings(c, branch, committedAtBranch + 1)
-					);
-					slope = objectiveDelta;
-				} catch {
-					// Best effort; the readout just shows no prediction.
-				}
-				cached = { caseId: c.id, branch, slope };
-				this.ratingSlope = cached;
+				// Cache the entry before the async preview resolves so per-event calls
+				// don't stack engine calls; the slope fills in when it lands and the
+				// readout refreshes at the current drag position.
+				const entry = { caseId: c.id, branch, slope: null as number | null };
+				cached = entry;
+				this.ratingSlope = entry;
+				const pending = study
+					.preview(this.caseDeltas(c), this.previewRatings(c, branch, committedAtBranch + 1))
+					.then(({ objectiveDelta }) => {
+						if (this.ratingSlope !== entry || objectiveDelta === null) return;
+						this.ratingSlope = { caseId: c.id, branch, slope: objectiveDelta };
+						const live = this.app.previewRatingMw;
+						if (live !== null && this.activeSolvable === c && this.app.selectedBranch === branch) {
+							this.runRatingPreview(c, branch, live);
+						}
+					})
+					.catch(() => {
+						// Best effort; the readout just shows no prediction.
+					})
+					.finally(() => {
+						if (this.ratingSlopePending === pending) this.ratingSlopePending = null;
+					});
+				this.ratingSlopePending = pending;
 			} else {
 				cached = null;
 			}
@@ -1668,13 +1711,23 @@ export class Controller {
 		}
 	};
 
-	commitRating = (value: number) => {
+	// The in-flight slope preview for the rating drag, so a commit that arrives
+	// before it resolves (typed value: input and change in the same tick) can
+	// wait for the slope instead of scoring without a prediction.
+	private ratingSlopePending: Promise<void> | null = null;
+
+	commitRating = async (value: number) => {
 		const c = this.activeSolvable;
 		const branch = this.app.selectedBranch;
 		if (!c || branch === null) return;
 		// Refresh the engine preview at the commit value (a typed value may not have
 		// driven a drag), then score the commit with the engine's predicted Δobjective.
 		this.runRatingPreview(c, branch, value);
+		if (this.ratingSlopePending) {
+			await this.ratingSlopePending;
+			if (this.activeSolvable !== c || this.app.selectedBranch !== branch) return;
+			this.runRatingPreview(c, branch, value);
+		}
 		c.predictedObjective = this.predictedDeltaObj;
 		c.ratings = this.previewRatings(c, branch, value);
 		// The slope was taken at the old committed point; the next drag re-derives it.
