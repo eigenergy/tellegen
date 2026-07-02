@@ -46,9 +46,10 @@ The boundary:
   fast math, and rendering. The Rust it needs is built in this repository against powerio
   and compiled to WebAssembly.
 - **tellegen backend** (Rust): the same numerical core as the browser,
-  compiled native. It hosts the bundled cases and is the fallback solver for
-  engines that cannot run the WebAssembly path. PowerDiff.jl is kept only as a
-  reference harness for parity checks, not as production infrastructure.
+  compiled native. It hosts the bundled cases; its compute endpoints can serve
+  browsers that cannot run the WebAssembly path and ship disabled behind
+  `TELLEGEN_SERVER_COMPUTE`. PowerDiff.jl is kept only as a reference harness
+  for parity checks, not as production infrastructure.
 
 ## Can the browser take the solver?
 
