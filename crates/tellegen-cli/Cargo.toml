@@ -12,7 +12,7 @@ name = "tellegen"
 path = "src/main.rs"
 
 [dependencies]
-# Default features (sensitivity). The convex/relaxation engine, Apache-2.0 / MIT.
+# Default features (sensitivity): the convex/relaxation engine.
 tellegen = { path = "../tellegen" }
 
 [lints]
