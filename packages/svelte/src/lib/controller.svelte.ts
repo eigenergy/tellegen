@@ -1561,9 +1561,11 @@ export class Controller {
 					: { caseId: c.id, target: { bus }, objectiveDelta: lmpAtBus * step };
 			return;
 		}
-		// Fallback (no committed column yet): the engine's first-order preview, which rebuilds
-		// the differentiable system. Best effort — on any failure the map keeps its own path.
-		const study = this.caseStudies.get(c)?.study;
+		// Fallback (no committed column yet): the engine's first-order preview, which
+		// rebuilds the differentiable system. DC OPF only: the conic rebuild takes
+		// seconds on the large cases, and it would run per input event here. Best
+		// effort; on any failure the map keeps its own path.
+		const study = c.formulation === 'dcopf' ? this.caseStudies.get(c)?.study : undefined;
 		if (!study) return;
 		try {
 			const { lmp, objectiveDelta } = study.preview(
@@ -1624,7 +1626,11 @@ export class Controller {
 			// result retried on every input event froze the drag. A drag before
 			// the Study exists caches nothing, so the prediction appears once
 			// the Study lands.
-			const study = this.caseStudies.get(c)?.study;
+			// The slope preview runs only for DC OPF: the conic differentiable
+			// preview takes seconds on the large cases, and freezing the first
+			// drag frame is not worth the Δ$ readout. SOCWR shows the column
+			// preview without an objective prediction.
+			const study = c.formulation === 'dcopf' ? this.caseStudies.get(c)?.study : undefined;
 			if (study) {
 				let slope: number | null = null;
 				try {
