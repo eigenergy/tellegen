@@ -48,8 +48,10 @@ The boundary:
 - **tellegen backend** (Rust): the same numerical core as the browser,
   compiled native. It hosts the bundled cases; its compute endpoints can serve
   browsers that cannot run the WebAssembly path and ship disabled behind
-  `TELLEGEN_SERVER_COMPUTE`. PowerDiff.jl is kept only as a reference harness
-  for parity checks, not as production infrastructure.
+  `TELLEGEN_SERVER_COMPUTE`, a single switch; per endpoint control and
+  authentication come before AC OPF ships as a server product. PowerDiff.jl is
+  kept only as a reference harness for parity checks, not as production
+  infrastructure.
 
 ## Can the browser take the solver?
 

@@ -287,7 +287,7 @@
 	let selectedBranchCueEl = $state.raw<SVGSVGElement | null>(null);
 	let selectedBranchHaloPath = $state.raw<SVGPathElement | null>(null);
 	let selectedBranchLinePath = $state.raw<SVGPathElement | null>(null);
-	let handledBranchFocusSeq = 0;
+	let handledFrameSeq = 0;
 
 	function syncSelectedCue() {
 		if (!map || !selectedCueEl || !selectedBusCue) return;
@@ -348,29 +348,60 @@
 		selectedBranchLinePath.setAttribute('d', d);
 	}
 
-	function syncSelectedCues() {
-		syncSelectedCue();
-		syncSelectedBranchCue();
+	// Coalesce cue syncs to one per animation frame: 'move' fires for every
+	// camera change (including zooms), and each sync reprojects the whole
+	// selected branch path.
+	let cueSyncScheduled = false;
+	function scheduleCueSync() {
+		if (cueSyncScheduled) return;
+		cueSyncScheduled = true;
+		requestAnimationFrame(() => {
+			cueSyncScheduled = false;
+			syncSelectedCue();
+			syncSelectedBranchCue();
+		});
 	}
 
-	function branchFocusPadding(width: number, height: number) {
-		return width <= 760
-			? { top: 130, left: 24, right: 24, bottom: Math.min(Math.round(height * 0.42), 300) }
-			: { top: 106, left: 388, right: 76, bottom: 80 };
+	/** Camera padding that keeps the framed subject clear of the panel chrome.
+	 * The branch variant also clears the rating readout on the panel's lower edge. */
+	function framePadding(width: number, height: number, kind: 'case' | 'branch') {
+		if (width <= 760) {
+			const bottom =
+				kind === 'branch'
+					? Math.min(Math.round(height * 0.42), 300)
+					: Math.min(Math.round(height * 0.5), 330);
+			return { top: 130, left: 24, right: 24, bottom };
+		}
+		return kind === 'branch'
+			? { top: 106, left: 388, right: 76, bottom: 80 }
+			: { top: 96, left: 380, right: 60, bottom: 64 };
 	}
 
-	function branchBounds(path: [number, number][]): LngLatBoundsLike | null {
+	/** Fold lon/lat pairs into LngLat bounds; null when no point is finite. */
+	function foldBounds(
+		points: Iterable<[number, number]>
+	): [[number, number], [number, number]] | null {
 		let minLon = Infinity;
 		let minLat = Infinity;
 		let maxLon = -Infinity;
 		let maxLat = -Infinity;
-		for (const [lon, lat] of path) {
+		for (const [lon, lat] of points) {
 			minLon = Math.min(minLon, lon);
 			minLat = Math.min(minLat, lat);
 			maxLon = Math.max(maxLon, lon);
 			maxLat = Math.max(maxLat, lat);
 		}
 		if (!Number.isFinite(minLon) || !Number.isFinite(minLat)) return null;
+		return [
+			[minLon, minLat],
+			[maxLon, maxLat]
+		];
+	}
+
+	function branchBounds(path: [number, number][]): LngLatBoundsLike | null {
+		const bounds = foldBounds(path);
+		if (!bounds) return null;
+		let [[minLon, minLat], [maxLon, maxLat]] = bounds;
 		if (minLon === maxLon) {
 			minLon -= 0.005;
 			maxLon += 0.005;
@@ -392,22 +423,24 @@
 		);
 	}
 
-	function focusSelectedBranch() {
-		if (!map || !selectedBranchCue) return;
+	/** Fly to the selected branch; true when a camera move started. */
+	function focusSelectedBranch(): boolean {
+		if (!map || !selectedBranchCue) return false;
 		const bounds = branchBounds(selectedBranchCue.path);
-		if (!bounds) return;
+		if (!bounds) return false;
 		const { clientWidth, clientHeight } = map.getContainer();
 		const camera = map.cameraForBounds(bounds, {
-			padding: branchFocusPadding(clientWidth, clientHeight),
+			padding: framePadding(clientWidth, clientHeight, 'branch'),
 			maxZoom: Math.min(map.getZoom() + 2, BRANCH_FOCUS_MAX_ZOOM)
 		});
-		if (!camera?.center) return;
+		if (!camera?.center) return false;
 		map.easeTo({
 			center: camera.center,
 			zoom: camera.zoom ?? map.getZoom(),
 			duration: prefersReducedMotion() ? 0 : BRANCH_FOCUS_MS,
 			easing: (t) => 1 - Math.pow(1 - t, 3)
 		});
+		return true;
 	}
 
 	/** Case owning a picked network layer; null for display-only layers. */
@@ -573,7 +606,7 @@
 				const onVisible = () => {
 					if (document.visibilityState === 'visible') repaint();
 				};
-				const syncCues = () => syncSelectedCues();
+				const syncCues = () => scheduleCueSync();
 				let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
 				const clearRebuild = () => {
 					if (rebuildTimer !== null) {
@@ -617,10 +650,10 @@
 				window.addEventListener('pageshow', repaint);
 				m.on('webglcontextlost', onContextLost);
 				m.on('webglcontextrestored', rebuild);
+				// 'move' fires for every camera change, including zooms.
 				m.on('load', syncCues);
 				m.on('move', syncCues);
 				m.on('resize', syncCues);
-				m.on('zoom', syncCues);
 
 				map = m;
 				overlay = o;
@@ -648,7 +681,7 @@
 					m.off('load', syncCues);
 					m.off('move', syncCues);
 					m.off('resize', syncCues);
-					m.off('zoom', syncCues);
+					app.settleFrame();
 					m.remove();
 					map = null;
 					overlay = null;
@@ -846,45 +879,14 @@
 		if (!map) return;
 		void mapGen;
 		void selectedBusCue?.key;
-		void tick().then(syncSelectedCue);
-	});
-
-	$effect(() => {
-		if (!map) return;
-		void mapGen;
 		void selectedBranchCue?.key;
-		void tick().then(syncSelectedBranchCue);
+		void tick().then(scheduleCueSync);
 	});
 
-	$effect(() => {
-		const seq = app.branchFocusSeq;
-		if (seq === handledBranchFocusSeq || !map || !selectedBranchCue) return;
-		const target = app.branchFocusTarget;
-		if (
-			!target ||
-			target.caseId !== selectedBranchCue.caseId ||
-			target.branchId !== selectedBranchCue.branchId
-		) {
-			return;
-		}
-		handledBranchFocusSeq = seq;
-		focusSelectedBranch();
-	});
-
-	function boundsFor(target: string | 'all'): LngLatBoundsLike | null {
-		let minLon = Infinity;
-		let minLat = Infinity;
-		let maxLon = -Infinity;
-		let maxLat = -Infinity;
-		let seen = false;
+	function boundsFor(target: string): LngLatBoundsLike | null {
+		const points: [number, number][] = [];
 		const fold = (pts: { lon: number; lat: number }[]) => {
-			for (const b of pts) {
-				minLon = Math.min(minLon, b.lon);
-				minLat = Math.min(minLat, b.lat);
-				maxLon = Math.max(maxLon, b.lon);
-				maxLat = Math.max(maxLat, b.lat);
-				seen = true;
-			}
+			for (const b of pts) points.push([b.lon, b.lat]);
 		};
 		for (const c of app.cases) {
 			if (!c.network || (target !== 'all' && c.id !== target)) continue;
@@ -895,29 +897,39 @@
 			if (c.view) fold(c.view.buses);
 			if (c.substations) fold(c.substations.points);
 		}
-		return seen
-			? [
-					[minLon, minLat],
-					[maxLon, maxLat]
-				]
-			: null;
+		return foldBounds(points);
 	}
 
-	// Fly to whatever the header (or initial load) asked for.
+	// Fly to whatever the header, the initial load, or a branch selection asked
+	// for, and settle the request's promise once the camera lands so callers can
+	// defer heavy work past the animation. A branch request waits (unhandled)
+	// until its cue exists; anything unframeable settles immediately.
 	$effect(() => {
-		void app.frameSeq;
-		if (!map) return;
-		const bounds = boundsFor(app.frameTarget);
-		if (!bounds) return;
-		const { clientWidth: w, clientHeight: h } = map.getContainer();
-		const padding =
-			w <= 760
-				? { top: 130, left: 24, right: 24, bottom: Math.min(Math.round(h * 0.5), 330) }
-				: { top: 96, left: 380, right: 60, bottom: 64 };
-		map.fitBounds(bounds, {
-			padding,
-			duration: 1400
+		const seq = app.frameSeq;
+		if (!map || seq === handledFrameSeq) return;
+		const m = map;
+		const target = app.frameTarget;
+		const settle = () => app.settleFrame();
+		if (typeof target === 'object') {
+			const cue = selectedBranchCue;
+			if (!cue || cue.caseId !== target.caseId || cue.branchId !== target.branchId) return;
+			handledFrameSeq = seq;
+			if (focusSelectedBranch()) m.once('moveend', settle);
+			else settle();
+			return;
+		}
+		handledFrameSeq = seq;
+		const bounds = boundsFor(target);
+		if (!bounds) {
+			settle();
+			return;
+		}
+		const { clientWidth: w, clientHeight: h } = m.getContainer();
+		m.fitBounds(bounds, {
+			padding: framePadding(w, h, 'case'),
+			duration: prefersReducedMotion() ? 0 : 1400
 		});
+		m.once('moveend', settle);
 	});
 </script>
 

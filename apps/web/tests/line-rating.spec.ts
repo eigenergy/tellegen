@@ -43,6 +43,9 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	});
 
 	await page.goto('/');
+	// The prerendered input exists before hydration attaches its listener; a
+	// drop fired earlier is lost. The empty-cases panel renders only after load.
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
 	await page.locator('input[type="file"]').setInputFiles([
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3congested.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_CONGESTED) }

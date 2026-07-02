@@ -18,6 +18,8 @@ import {
 } from '@tellegen/engine';
 
 export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
+/** A map framing request: a case id, 'all', or one branch to center. */
+export type FrameTarget = string | 'all' | { caseId: string; branchId: number };
 export type DemandRangeMode = 'local' | 'full';
 export type DisplayMode = 'lmp' | 'angle' | 'voltage';
 
@@ -216,13 +218,13 @@ export class AppState {
 	dragOver = $state(false);
 	parsingFile = $state(false);
 
-	/** Map framing request: bump seq so repeat targets still fly. */
-	frameTarget = $state<string | 'all'>('all');
+	/** Map framing request: bump seq so repeat targets still fly. `requestFrame`
+	 * returns a promise the map resolves when the camera lands (or immediately
+	 * when it cannot fly), so a caller can defer heavy work until the animation
+	 * finishes. */
+	frameTarget = $state.raw<FrameTarget>('all');
 	frameSeq = $state(0);
-	/** Binding line focus request: separate from whole case framing so list
-	 * selection can center the selected line without changing case state. */
-	branchFocusTarget = $state.raw<{ caseId: string; branchId: number } | null>(null);
-	branchFocusSeq = $state(0);
+	#frameSettled: (() => void) | null = null;
 
 	get active(): CaseState | null {
 		return this.cases.find((c) => c.id === this.activeCaseId) ?? null;
@@ -294,14 +296,20 @@ export class AppState {
 		return nextLocal ? { kind: 'local', id: nextLocal.id } : { kind: 'none' };
 	}
 
-	requestFrame(target: string | 'all') {
+	requestFrame(target: FrameTarget): Promise<void> {
+		// A superseded request settles immediately; the new request owns the camera.
+		this.settleFrame();
 		this.frameTarget = target;
 		this.frameSeq++;
+		return new Promise((resolve) => {
+			this.#frameSettled = resolve;
+		});
 	}
 
-	requestBranchFocus(caseId: string, branchId: number) {
-		this.branchFocusTarget = { caseId, branchId };
-		this.branchFocusSeq++;
+	/** The map calls this when the requested camera move has landed. */
+	settleFrame() {
+		this.#frameSettled?.();
+		this.#frameSettled = null;
 	}
 }
 

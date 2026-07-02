@@ -1030,7 +1030,31 @@ fn load_bus_csv_coords(path: &Path, case: &Network) -> Result<Coords, String> {
     Ok(coords)
 }
 
-type BranchPaths = HashMap<BranchPathKey, Vec<[f64; 2]>>;
+/// Branch geometry with one stored copy per feature: `index` maps every id or
+/// endpoint key onto the shared path, so a 10k-feature GeoJSON is held once
+/// instead of once per key.
+#[derive(Default)]
+struct BranchPaths {
+    paths: Vec<Vec<[f64; 2]>>,
+    index: HashMap<BranchPathKey, usize>,
+}
+
+impl BranchPaths {
+    fn insert(&mut self, keys: Vec<BranchPathKey>, path: Vec<[f64; 2]>) {
+        if keys.is_empty() {
+            return;
+        }
+        let slot = self.paths.len();
+        for key in keys {
+            self.index.insert(key, slot);
+        }
+        self.paths.push(path);
+    }
+
+    fn get(&self, key: &BranchPathKey) -> Option<&Vec<[f64; 2]>> {
+        self.index.get(key).map(|&i| &self.paths[i])
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum BranchPathKey {
@@ -1049,7 +1073,7 @@ fn load_branch_paths_from_str(text: &str) -> Result<BranchPaths, String> {
         .get("features")
         .and_then(|v| v.as_array())
         .ok_or_else(|| "expected GeoJSON FeatureCollection with features".to_string())?;
-    let mut paths = BranchPaths::new();
+    let mut paths = BranchPaths::default();
     for feature in features {
         add_branch_feature_paths(feature, &mut paths);
     }
@@ -1074,18 +1098,22 @@ fn add_branch_feature_paths(feature: &serde_json::Value, paths: &mut BranchPaths
     let Some(props) = props else {
         return;
     };
-    if let Some(id) = find_json_number(
-        props,
-        &["branch", "branch_id", "branch number", "cats_id", "id"],
-    ) {
-        paths.insert(BranchPathKey::Id(id), path.clone());
+    // A bare `id` is not accepted as a branch number: RFC 7946 allows a
+    // feature counter under that name, and matching it would silently assign
+    // another line's geometry whenever the counter order differs from the
+    // branch row order.
+    let mut keys = Vec::new();
+    if let Some(id) = find_json_number(props, &["branch", "branch_id", "branch number", "cats_id"])
+    {
+        keys.push(BranchPathKey::Id(id));
     }
     if let (Some(from), Some(to)) = (
         find_json_number(props, &["f_bus", "from", "from_bus"]),
         find_json_number(props, &["t_bus", "to", "to_bus"]),
     ) {
-        paths.insert(BranchPathKey::Edge(from, to), path);
+        keys.push(BranchPathKey::Edge(from, to));
     }
+    paths.insert(keys, path);
 }
 
 fn coord_path(value: Option<&serde_json::Value>) -> Vec<[f64; 2]> {
