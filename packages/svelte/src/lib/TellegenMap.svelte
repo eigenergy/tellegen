@@ -43,6 +43,9 @@
 	const ctrl = getController();
 
 	const STYLE = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json';
+	const CUE_MARGIN_PX = 64;
+	const BRANCH_FOCUS_MS = 850;
+	const BRANCH_FOCUS_MAX_ZOOM = 9.5;
 
 	let map = $state.raw<MapLibreMap | null>(null);
 	let overlay = $state.raw<MapboxOverlay | null>(null);
@@ -268,7 +271,23 @@
 		const bus = buses.find((b) => b.id === busId);
 		return bus ? { key: `${c.id}-${bus.id}`, id: bus.id, lon: bus.lon, lat: bus.lat } : null;
 	});
+	const selectedBranchCue = $derived.by(() => {
+		const branchId = app.selectedBranch;
+		const c = app.active ?? app.activeLocal;
+		if (!c || branchId === null) return null;
+		const branches =
+			c instanceof CaseState ? c.network?.branches : (c.view?.branches ?? c.network?.branches);
+		const branch = branches?.find((b) => b.id === branchId);
+		const path = branch?.path.filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+		return branch && path && path.length >= 2
+			? { key: `${c.id}-${branch.id}`, caseId: c.id, branchId: branch.id, path }
+			: null;
+	});
 	let selectedCueEl = $state.raw<HTMLDivElement | null>(null);
+	let selectedBranchCueEl = $state.raw<SVGSVGElement | null>(null);
+	let selectedBranchHaloPath = $state.raw<SVGPathElement | null>(null);
+	let selectedBranchLinePath = $state.raw<SVGPathElement | null>(null);
+	let handledBranchFocusSeq = 0;
 
 	function syncSelectedCue() {
 		if (!map || !selectedCueEl || !selectedBusCue) return;
@@ -282,6 +301,113 @@
 		selectedCueEl.style.left = `${point.x}px`;
 		selectedCueEl.style.top = `${point.y}px`;
 		selectedCueEl.style.display = inRange ? 'block' : 'none';
+	}
+
+	function syncSelectedBranchCue() {
+		if (
+			!map ||
+			!selectedBranchCueEl ||
+			!selectedBranchHaloPath ||
+			!selectedBranchLinePath ||
+			!selectedBranchCue
+		) {
+			return;
+		}
+		const activeMap = map;
+		const { clientWidth, clientHeight } = activeMap.getContainer();
+		const points = selectedBranchCue.path
+			.map(([lon, lat]) => activeMap.project([lon, lat]))
+			.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+		if (clientWidth === 0 || clientHeight === 0 || points.length < 2) {
+			selectedBranchCueEl.style.display = 'none';
+			return;
+		}
+
+		let minX = Infinity;
+		let minY = Infinity;
+		let maxX = -Infinity;
+		let maxY = -Infinity;
+		const d = points
+			.map((p, i) => {
+				minX = Math.min(minX, p.x);
+				minY = Math.min(minY, p.y);
+				maxX = Math.max(maxX, p.x);
+				maxY = Math.max(maxY, p.y);
+				return `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+			})
+			.join(' ');
+		const inRange =
+			maxX >= -CUE_MARGIN_PX &&
+			maxY >= -CUE_MARGIN_PX &&
+			minX <= clientWidth + CUE_MARGIN_PX &&
+			minY <= clientHeight + CUE_MARGIN_PX;
+
+		selectedBranchCueEl.setAttribute('viewBox', `0 0 ${clientWidth} ${clientHeight}`);
+		selectedBranchCueEl.style.display = inRange ? 'block' : 'none';
+		selectedBranchHaloPath.setAttribute('d', d);
+		selectedBranchLinePath.setAttribute('d', d);
+	}
+
+	function syncSelectedCues() {
+		syncSelectedCue();
+		syncSelectedBranchCue();
+	}
+
+	function branchFocusPadding(width: number, height: number) {
+		return width <= 760
+			? { top: 130, left: 24, right: 24, bottom: Math.min(Math.round(height * 0.42), 300) }
+			: { top: 106, left: 388, right: 76, bottom: 80 };
+	}
+
+	function branchBounds(path: [number, number][]): LngLatBoundsLike | null {
+		let minLon = Infinity;
+		let minLat = Infinity;
+		let maxLon = -Infinity;
+		let maxLat = -Infinity;
+		for (const [lon, lat] of path) {
+			minLon = Math.min(minLon, lon);
+			minLat = Math.min(minLat, lat);
+			maxLon = Math.max(maxLon, lon);
+			maxLat = Math.max(maxLat, lat);
+		}
+		if (!Number.isFinite(minLon) || !Number.isFinite(minLat)) return null;
+		if (minLon === maxLon) {
+			minLon -= 0.005;
+			maxLon += 0.005;
+		}
+		if (minLat === maxLat) {
+			minLat -= 0.005;
+			maxLat += 0.005;
+		}
+		return [
+			[minLon, minLat],
+			[maxLon, maxLat]
+		];
+	}
+
+	function prefersReducedMotion(): boolean {
+		return (
+			typeof window !== 'undefined' &&
+			window.matchMedia('(prefers-reduced-motion: reduce)').matches
+		);
+	}
+
+	function focusSelectedBranch() {
+		if (!map || !selectedBranchCue) return;
+		const bounds = branchBounds(selectedBranchCue.path);
+		if (!bounds) return;
+		const { clientWidth, clientHeight } = map.getContainer();
+		const camera = map.cameraForBounds(bounds, {
+			padding: branchFocusPadding(clientWidth, clientHeight),
+			maxZoom: Math.min(map.getZoom() + 2, BRANCH_FOCUS_MAX_ZOOM)
+		});
+		if (!camera?.center) return;
+		map.easeTo({
+			center: camera.center,
+			zoom: camera.zoom ?? map.getZoom(),
+			duration: prefersReducedMotion() ? 0 : BRANCH_FOCUS_MS,
+			easing: (t) => 1 - Math.pow(1 - t, 3)
+		});
 	}
 
 	/** Case owning a picked network layer; null for display-only layers. */
@@ -447,7 +573,7 @@
 				const onVisible = () => {
 					if (document.visibilityState === 'visible') repaint();
 				};
-				const syncCue = () => syncSelectedCue();
+				const syncCues = () => syncSelectedCues();
 				let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
 				const clearRebuild = () => {
 					if (rebuildTimer !== null) {
@@ -491,10 +617,10 @@
 				window.addEventListener('pageshow', repaint);
 				m.on('webglcontextlost', onContextLost);
 				m.on('webglcontextrestored', rebuild);
-				m.on('load', syncCue);
-				m.on('move', syncCue);
-				m.on('resize', syncCue);
-				m.on('zoom', syncCue);
+				m.on('load', syncCues);
+				m.on('move', syncCues);
+				m.on('resize', syncCues);
+				m.on('zoom', syncCues);
 
 				map = m;
 				overlay = o;
@@ -519,10 +645,10 @@
 					document.removeEventListener('visibilitychange', onVisible);
 					window.removeEventListener('focus', repaint);
 					window.removeEventListener('pageshow', repaint);
-					m.off('load', syncCue);
-					m.off('move', syncCue);
-					m.off('resize', syncCue);
-					m.off('zoom', syncCue);
+					m.off('load', syncCues);
+					m.off('move', syncCues);
+					m.off('resize', syncCues);
+					m.off('zoom', syncCues);
 					m.remove();
 					map = null;
 					overlay = null;
@@ -723,6 +849,28 @@
 		void tick().then(syncSelectedCue);
 	});
 
+	$effect(() => {
+		if (!map) return;
+		void mapGen;
+		void selectedBranchCue?.key;
+		void tick().then(syncSelectedBranchCue);
+	});
+
+	$effect(() => {
+		const seq = app.branchFocusSeq;
+		if (seq === handledBranchFocusSeq || !map || !selectedBranchCue) return;
+		const target = app.branchFocusTarget;
+		if (
+			!target ||
+			target.caseId !== selectedBranchCue.caseId ||
+			target.branchId !== selectedBranchCue.branchId
+		) {
+			return;
+		}
+		handledBranchFocusSeq = seq;
+		focusSelectedBranch();
+	});
+
 	function boundsFor(target: string | 'all'): LngLatBoundsLike | null {
 		let minLon = Infinity;
 		let minLat = Infinity;
@@ -781,6 +929,14 @@
 				<div class="selected-bus-cue" bind:this={selectedCueEl} aria-hidden="true"></div>
 			{/key}
 		{/if}
+		{#if selectedBranchCue}
+			{#key selectedBranchCue.key}
+				<svg class="selected-branch-cue" bind:this={selectedBranchCueEl} aria-hidden="true">
+					<path class="selected-branch-halo" bind:this={selectedBranchHaloPath}></path>
+					<path class="selected-branch-line" bind:this={selectedBranchLinePath}></path>
+				</svg>
+			{/key}
+		{/if}
 	</div>
 {/key}
 
@@ -828,6 +984,39 @@
 			selected-bus-pulse 1.8s ease-in-out 420ms infinite;
 	}
 
+	.selected-branch-cue {
+		position: absolute;
+		inset: 0;
+		z-index: calc(var(--z-chrome) - 1);
+		display: none;
+		width: 100%;
+		height: 100%;
+		overflow: visible;
+		pointer-events: none;
+	}
+
+	.selected-branch-cue path {
+		fill: none;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		vector-effect: non-scaling-stroke;
+	}
+
+	.selected-branch-halo {
+		stroke: rgba(47, 111, 187, 0.2);
+		stroke-width: 14;
+		filter: drop-shadow(0 0 14px rgba(47, 111, 187, 0.2));
+		animation:
+			selected-branch-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
+			selected-branch-pulse 1.8s ease-in-out 420ms infinite;
+	}
+
+	.selected-branch-line {
+		stroke: rgba(47, 111, 187, 0.92);
+		stroke-width: 3;
+		animation: selected-branch-line-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+	}
+
 	@keyframes selected-bus-pop {
 		0% {
 			opacity: 0;
@@ -858,6 +1047,50 @@
 			box-shadow:
 				0 0 0 8px rgba(47, 111, 187, 0.08),
 				0 0 28px rgba(47, 111, 187, 0.18);
+		}
+	}
+
+	@keyframes selected-branch-pop {
+		0% {
+			opacity: 0;
+			stroke-width: 4;
+		}
+		65% {
+			opacity: 0.95;
+			stroke-width: 18;
+		}
+		100% {
+			opacity: 0.82;
+			stroke-width: 14;
+		}
+	}
+
+	@keyframes selected-branch-line-pop {
+		0% {
+			opacity: 0;
+			stroke-width: 1;
+		}
+		65% {
+			opacity: 1;
+			stroke-width: 4;
+		}
+		100% {
+			opacity: 0.95;
+			stroke-width: 3;
+		}
+	}
+
+	@keyframes selected-branch-pulse {
+		0%,
+		100% {
+			opacity: 0.82;
+			stroke-width: 14;
+			filter: drop-shadow(0 0 14px rgba(47, 111, 187, 0.2));
+		}
+		50% {
+			opacity: 0.42;
+			stroke-width: 22;
+			filter: drop-shadow(0 0 24px rgba(47, 111, 187, 0.16));
 		}
 	}
 
@@ -941,7 +1174,9 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.selected-bus-cue {
+		.selected-bus-cue,
+		.selected-branch-halo,
+		.selected-branch-line {
 			animation: none;
 		}
 	}

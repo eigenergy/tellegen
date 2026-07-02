@@ -12,8 +12,9 @@ use std::{
 };
 
 use axum::{
-    extract::{ConnectInfo, Path as AxumPath, Query, State},
+    extract::{ConnectInfo, Path as AxumPath, Query, Request, State},
     http::{header::CONTENT_TYPE, HeaderMap, HeaderValue, StatusCode},
+    middleware::{self, Next},
     response::{
         sse::{Event, Sse},
         IntoResponse, Response,
@@ -58,17 +59,18 @@ const CASE_SPECS: &[CaseSpec] = &[
         "ACTIVSg500/case_ACTIVSg500.m",
         "ACTIVSg500/ACTIVSg500.aux",
     ),
-    CaseSpec::aux(
-        "case2000",
-        "ACTIVSg2000 (Texas)",
-        "ACTIVSg2000/case_ACTIVSg2000.m",
-        "ACTIVSg2000/ACTIVSg2000.aux",
+    CaseSpec::bus_csv(
+        "case7000",
+        "ACTIVSg7000 (Texas)",
+        "ACTIVSg7000/Texas7k_20210804.m",
+        "ACTIVSg7000/Texas7k_lat_long.csv",
     ),
-    CaseSpec::cats_csv(
+    CaseSpec::bus_csv_with_branch_geo(
         "cats",
         "CATS (California)",
         "CATS/CaliforniaTestSystem.m",
         "CATS/CATS_buses.csv",
+        "CATS/CATS_lines.json",
     ),
 ];
 
@@ -93,12 +95,13 @@ struct CaseSpec {
     name: &'static str,
     casefile: &'static str,
     coords: CoordSpec,
+    branch_geo: Option<&'static str>,
 }
 
 #[derive(Clone, Copy)]
 enum CoordSpec {
     Aux(&'static str),
-    CatsBusCsv(&'static str),
+    BusCsv(&'static str),
 }
 
 impl CaseSpec {
@@ -113,10 +116,11 @@ impl CaseSpec {
             name,
             casefile,
             coords: CoordSpec::Aux(auxfile),
+            branch_geo: None,
         }
     }
 
-    const fn cats_csv(
+    const fn bus_csv(
         id: &'static str,
         name: &'static str,
         casefile: &'static str,
@@ -126,13 +130,30 @@ impl CaseSpec {
             id,
             name,
             casefile,
-            coords: CoordSpec::CatsBusCsv(csvfile),
+            coords: CoordSpec::BusCsv(csvfile),
+            branch_geo: None,
+        }
+    }
+
+    const fn bus_csv_with_branch_geo(
+        id: &'static str,
+        name: &'static str,
+        casefile: &'static str,
+        csvfile: &'static str,
+        branch_geo: &'static str,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            casefile,
+            coords: CoordSpec::BusCsv(csvfile),
+            branch_geo: Some(branch_geo),
         }
     }
 
     fn coord_file(self) -> &'static str {
         match self.coords {
-            CoordSpec::Aux(path) | CoordSpec::CatsBusCsv(path) => path,
+            CoordSpec::Aux(path) | CoordSpec::BusCsv(path) => path,
         }
     }
 }
@@ -152,6 +173,11 @@ pub struct AppState {
     solver_timeout: Duration,
     expensive_rate_limits: RateLimitConfig,
     expensive_requests: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
+    /// Gate on the compute endpoints (solve stream and sensitivities). Off by
+    /// default so a public deploy serves data and the cached base solutions
+    /// without exposing a path for on-demand solver load; `TELLEGEN_SERVER_COMPUTE`
+    /// turns it on. The cases, network views, and `/solution` stay served.
+    compute_enabled: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -241,7 +267,7 @@ pub struct NetworkBranch {
     pub to: usize,
     pub rate_mw: f64,
     pub status: u8,
-    pub path: [[f64; 2]; 2],
+    pub path: Vec<[f64; 2]>,
 }
 
 /// The served DC value shapes (the HTTP/JSON contract). The engine returns the
@@ -293,8 +319,11 @@ pub struct SensitivityPayload {
     pub case: String,
     pub operand: &'static str,
     pub parameter: &'static str,
-    pub bus: usize,
-    pub units: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bus: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<usize>,
+    pub units: String,
     pub values: Vec<SensitivityValue>,
 }
 
@@ -350,6 +379,13 @@ impl ApiError {
             message: message.into(),
         }
     }
+
+    fn forbidden(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: message.into(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -368,7 +404,7 @@ type ApiResult<T> = Result<T, ApiError>;
 
 impl AppState {
     pub fn load_from_env() -> Result<Self, String> {
-        Self::load(data_dir(), allow_fallback())
+        Ok(Self::load(data_dir(), allow_fallback())?.with_compute(server_compute_enabled()))
     }
 
     pub fn load(data_dir: PathBuf, allow_fallback: bool) -> Result<Self, String> {
@@ -436,7 +472,14 @@ impl AppState {
             solver_timeout: solver_timeout(),
             expensive_rate_limits: rate_limit_config(),
             expensive_requests: Arc::new(Mutex::new(HashMap::new())),
+            compute_enabled: false,
         })
+    }
+
+    /// Enable or disable the compute endpoints; `load` defaults to disabled.
+    pub fn with_compute(mut self, enabled: bool) -> Self {
+        self.compute_enabled = enabled;
+        self
     }
 
     fn case(&self, id: &str) -> ApiResult<Arc<CaseEntry>> {
@@ -513,14 +556,32 @@ pub async fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
+    // Every route that runs the solver on demand lives on this sub-router, so
+    // the compute gate holds by construction: a new compute endpoint added here
+    // is gated without remembering a per-handler check.
+    let compute_routes = Router::new()
+        .route(
+            "/api/cases/{id}/sensitivity/lmp/d/{bus}",
+            get(sensitivity_demand),
+        )
+        .route(
+            "/api/cases/{id}/sensitivity/lmp/fmax/{branch}",
+            get(sensitivity_line_limit),
+        )
+        .route("/api/cases/{id}/solve", get(solve_stream))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_compute,
+        ));
+
     let app = Router::new()
         .route("/api/health", get(health))
+        .route("/api/compute", get(compute_status))
         .route("/api/cases", get(cases))
         .route("/api/cases/{id}/case", get(case_network_json))
         .route("/api/cases/{id}/network", get(network))
         .route("/api/cases/{id}/solution", get(solution))
-        .route("/api/cases/{id}/sensitivity/lmp/d/{bus}", get(sensitivity))
-        .route("/api/cases/{id}/solve", get(solve_stream))
+        .merge(compute_routes)
         .route("/api/{*path}", any(api_not_found))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -546,6 +607,22 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
     } else {
         app
     }
+}
+
+/// The compute gate for every route on the compute sub-router: 403 unless
+/// `TELLEGEN_SERVER_COMPUTE` enabled the on-demand solver endpoints.
+async fn require_compute(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
+    if state.compute_enabled {
+        next.run(req).await
+    } else {
+        ApiError::forbidden("server compute is disabled").into_response()
+    }
+}
+
+/// Whether the compute endpoints are enabled, so the frontend can pick honest
+/// copy (and skip doomed requests) instead of inferring it from a 403.
+async fn compute_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(serde_json::json!({ "enabled": state.compute_enabled }))
 }
 
 async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -614,18 +691,70 @@ async fn api_not_found() -> ApiError {
     ApiError::not_found("unknown API route")
 }
 
-async fn sensitivity(
+#[derive(Clone, Copy)]
+enum SensitivityTarget {
+    Demand { bus: usize },
+    LineLimit { branch: usize },
+}
+
+async fn sensitivity_demand(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     connect_info: ConnectInfo<SocketAddr>,
     AxumPath((id, bus)): AxumPath<(String, usize)>,
     Query(query): Query<DemandQuery>,
 ) -> ApiResult<Json<SensitivityPayload>> {
+    sensitivity(
+        state,
+        headers,
+        connect_info,
+        id,
+        SensitivityTarget::Demand { bus },
+        query,
+    )
+    .await
+}
+
+async fn sensitivity_line_limit(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    connect_info: ConnectInfo<SocketAddr>,
+    AxumPath((id, branch)): AxumPath<(String, usize)>,
+    Query(query): Query<DemandQuery>,
+) -> ApiResult<Json<SensitivityPayload>> {
+    sensitivity(
+        state,
+        headers,
+        connect_info,
+        id,
+        SensitivityTarget::LineLimit { branch },
+        query,
+    )
+    .await
+}
+
+async fn sensitivity(
+    state: Arc<AppState>,
+    headers: HeaderMap,
+    connect_info: ConnectInfo<SocketAddr>,
+    id: String,
+    target: SensitivityTarget,
+    query: DemandQuery,
+) -> ApiResult<Json<SensitivityPayload>> {
     let client = expensive_client_key(&headers, &connect_info);
     state.check_expensive_rate_limit(ExpensiveEndpoint::Sensitivity, &client)?;
     let entry = state.case(&id)?;
-    if !entry.network.buses.iter().any(|b| b.id.0 == bus) {
-        return Err(ApiError::not_found(format!("unknown bus {bus}")));
+    match target {
+        SensitivityTarget::Demand { bus } => {
+            if !entry.network.buses.iter().any(|b| b.id.0 == bus) {
+                return Err(ApiError::not_found(format!("unknown bus {bus}")));
+            }
+        }
+        SensitivityTarget::LineLimit { branch } => {
+            if !entry.dc.branch_ids.contains(&branch) {
+                return Err(ApiError::not_found(format!("unknown branch {branch}")));
+            }
+        }
     }
     #[cfg(not(feature = "sensitivity"))]
     {
@@ -636,12 +765,12 @@ async fn sensitivity(
     {
         let deltas = parse_deltas(query.d.as_deref())?;
         validate_deltas(&entry, &deltas)?;
-        let request = build_request(&entry, deltas, Some(bus));
+        let request = build_request(&entry, deltas, Some(target));
         let id_for_task = entry.id.clone();
         let cancel = Arc::new(AtomicBool::new(false));
         let output = run_solve_limited(state, entry, request, cancel).await?;
         let Some(m) = output.sensitivities.first() else {
-            return Err(ApiError::not_found(format!("unknown bus {bus}")));
+            return Err(ApiError::not_found("unknown sensitivity target"));
         };
         Ok(Json(sensitivity_payload(&id_for_task, m)))
     }
@@ -669,7 +798,11 @@ async fn solve_stream(
 
     let deltas = parse_deltas(query.d.as_deref())?;
     validate_deltas(&entry, &deltas)?;
-    let request = build_request(&entry, deltas, query.sens);
+    let request = build_request(
+        &entry,
+        deltas,
+        query.sens.map(|bus| SensitivityTarget::Demand { bus }),
+    );
     let (tx, rx) = mpsc::channel(8);
     let id_for_task = entry.id.clone();
     tokio::spawn(async move {
@@ -730,12 +863,11 @@ async fn solve_stream(
 }
 
 /// Build a DC OPF [`SolveRequest`] for the cached case: the operating-point demand
-/// deltas, plus (when a sens bus is given and maps to a dense column) a single
-/// Price/Demand sensitivity cell — the dLMP/dd column the frontend reads.
+/// deltas, plus a single Price sensitivity column when a target is given.
 fn build_request(
     entry: &CaseEntry,
     deltas: HashMap<usize, f64>,
-    sens_bus: Option<usize>,
+    target: Option<SensitivityTarget>,
 ) -> SolveRequest {
     let mut request = SolveRequest::default();
     request.edits.deltas = deltas
@@ -743,16 +875,29 @@ fn build_request(
         .map(|(bus, mw)| (bus as i64, mw))
         .collect();
     #[cfg(feature = "sensitivity")]
-    if let Some(idx) = sens_bus.and_then(|bus| entry.dc.bus_ids.iter().position(|&id| id == bus)) {
+    if let Some((parameter, idx)) = target.and_then(|target| match target {
+        SensitivityTarget::Demand { bus } => entry
+            .dc
+            .bus_ids
+            .iter()
+            .position(|&id| id == bus)
+            .map(|idx| (Parameter::Demand(Power::Active), idx)),
+        SensitivityTarget::LineLimit { branch } => entry
+            .dc
+            .branch_ids
+            .iter()
+            .position(|&id| id == branch)
+            .map(|idx| (Parameter::LineLimit, idx)),
+    }) {
         request.sensitivities = vec![SensRequest {
             operand: Operand::Price(Power::Active),
-            parameter: Parameter::Demand(Power::Active),
+            parameter,
             indices: Some(vec![idx]),
             mode: Mode::Auto,
         }];
     }
     #[cfg(not(feature = "sensitivity"))]
-    let _ = (entry, sens_bus);
+    let _ = (entry, target);
     request
 }
 
@@ -810,27 +955,40 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
                 .network;
             complete_coords_for(&case, &aux, auxfile)?
         }
-        CoordSpec::CatsBusCsv(csvfile) => load_cats_coords(&data_dir.join(csvfile), &case)?,
+        CoordSpec::BusCsv(csvfile) => load_bus_csv_coords(&data_dir.join(csvfile), &case)?,
     };
-    build_entry(spec.id, spec.name, case, coords, false)
+    let branch_paths = spec
+        .branch_geo
+        .and_then(|file| {
+            let path = data_dir.join(file);
+            path.is_file().then(|| load_branch_paths(&path))
+        })
+        .transpose()?;
+    build_entry(spec.id, spec.name, case, coords, branch_paths, false)
 }
 
-fn load_cats_coords(path: &Path, case: &Network) -> Result<Coords, String> {
+fn load_bus_csv_coords(path: &Path, case: &Network) -> Result<Coords, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut lines = text.lines();
     let header = lines
         .next()
         .ok_or_else(|| format!("{}: empty coordinate CSV", path.display()))?;
     let headers: Vec<_> = header.split(',').map(str::trim).collect();
-    let col = |name: &str| {
-        headers
+    let col = |names: &[&str]| {
+        names
             .iter()
-            .position(|h| h.eq_ignore_ascii_case(name))
-            .ok_or_else(|| format!("{}: missing {name} column", path.display()))
+            .find_map(|name| headers.iter().position(|h| h.eq_ignore_ascii_case(name)))
+            .ok_or_else(|| {
+                format!(
+                    "{}: missing one of {} columns",
+                    path.display(),
+                    names.join(", ")
+                )
+            })
     };
-    let bus_i = col("bus_i")?;
-    let lat_i = col("Lat")?;
-    let lon_i = col("Lon")?;
+    let bus_i = col(&["bus_i", "Bus_ID", "bus"])?;
+    let lat_i = col(&["Lat", "lat", "latitude"])?;
+    let lon_i = col(&["Lon", "lng", "lon", "longitude"])?;
     let needed = bus_i.max(lat_i).max(lon_i);
     let mut coords = Coords::new();
     for (idx, line) in lines.enumerate() {
@@ -863,7 +1021,7 @@ fn load_cats_coords(path: &Path, case: &Network) -> Result<Coords, String> {
     for bus in &case.buses {
         if !coords.contains_key(&bus.id.0) {
             return Err(format!(
-                "{}: missing coordinates for CATS bus {}",
+                "{}: missing coordinates for bus {}",
                 path.display(),
                 bus.id.0
             ));
@@ -872,12 +1030,125 @@ fn load_cats_coords(path: &Path, case: &Network) -> Result<Coords, String> {
     Ok(coords)
 }
 
+type BranchPaths = HashMap<BranchPathKey, Vec<[f64; 2]>>;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum BranchPathKey {
+    Id(usize),
+    Edge(usize, usize),
+}
+
+fn load_branch_paths(path: &Path) -> Result<BranchPaths, String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    load_branch_paths_from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn load_branch_paths_from_str(text: &str) -> Result<BranchPaths, String> {
+    let data: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    let features = data
+        .get("features")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "expected GeoJSON FeatureCollection with features".to_string())?;
+    let mut paths = BranchPaths::new();
+    for feature in features {
+        add_branch_feature_paths(feature, &mut paths);
+    }
+    Ok(paths)
+}
+
+fn add_branch_feature_paths(feature: &serde_json::Value, paths: &mut BranchPaths) {
+    let Some(geometry) = feature.get("geometry").and_then(|v| v.as_object()) else {
+        return;
+    };
+    if geometry.get("type").and_then(|v| v.as_str()) != Some("LineString") {
+        return;
+    }
+    let path = coord_path(geometry.get("coordinates"));
+    if path.len() < 2 {
+        return;
+    }
+    let props = feature
+        .get("properties")
+        .and_then(|v| v.as_object())
+        .or_else(|| feature.as_object());
+    let Some(props) = props else {
+        return;
+    };
+    if let Some(id) = find_json_number(
+        props,
+        &["branch", "branch_id", "branch number", "cats_id", "id"],
+    ) {
+        paths.insert(BranchPathKey::Id(id), path.clone());
+    }
+    if let (Some(from), Some(to)) = (
+        find_json_number(props, &["f_bus", "from", "from_bus"]),
+        find_json_number(props, &["t_bus", "to", "to_bus"]),
+    ) {
+        paths.insert(BranchPathKey::Edge(from, to), path);
+    }
+}
+
+fn coord_path(value: Option<&serde_json::Value>) -> Vec<[f64; 2]> {
+    value
+        .and_then(|v| v.as_array())
+        .map(|coords| {
+            coords
+                .iter()
+                .filter_map(|coord| {
+                    let pair = coord.as_array()?;
+                    let lon = pair.first()?.as_f64()?;
+                    let lat = pair.get(1)?.as_f64()?;
+                    valid_coord(lon, lat).then_some([lon, lat])
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn find_json_number(
+    props: &serde_json::Map<String, serde_json::Value>,
+    names: &[&str],
+) -> Option<usize> {
+    let wanted: HashSet<String> = names.iter().map(|name| normalize_key(name)).collect();
+    props.iter().find_map(|(key, value)| {
+        if !wanted.contains(&normalize_key(key)) {
+            return None;
+        }
+        json_number(value)
+    })
+}
+
+fn json_number(value: &serde_json::Value) -> Option<usize> {
+    if let Some(n) = value.as_u64() {
+        return usize::try_from(n).ok();
+    }
+    if let Some(n) = value.as_i64() {
+        return usize::try_from(n).ok();
+    }
+    if let Some(s) = value.as_str() {
+        let clean = s.trim().trim_matches(['"', '\'']);
+        return clean.parse::<usize>().ok();
+    }
+    None
+}
+
+fn normalize_key(key: &str) -> String {
+    key.chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn valid_coord(lon: f64, lat: f64) -> bool {
+    lon.is_finite() && lat.is_finite() && lon.abs() <= 180.0 && lat.abs() <= 90.0
+}
+
 fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
     let case = powerio::parse_str(spec.text, "m")
         .map_err(|e| format!("{} fallback parse failed: {e}", spec.id))?
         .network;
     let coords = synthetic_layout(&case, spec.bbox);
-    build_entry(spec.id, spec.name, case, coords, true)
+    build_entry(spec.id, spec.name, case, coords, None, true)
 }
 
 fn build_entry(
@@ -885,12 +1156,20 @@ fn build_entry(
     name: &str,
     network: Network,
     coords: Coords,
+    branch_paths: Option<BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<CaseEntry, String> {
     let network_json = network.to_json().map_err(|e| e.to_string())?;
     let dc = Arc::new(DcNetwork::from_network(&network)?);
     let base = solve_prebuilt(&dc, &SolveRequest::default())?;
-    let view = network_payload(id, name, &network, &coords, synthetic_coords)?;
+    let view = network_payload(
+        id,
+        name,
+        &network,
+        &coords,
+        branch_paths.as_ref(),
+        synthetic_coords,
+    )?;
     Ok(CaseEntry {
         id: id.into(),
         name: name.into(),
@@ -907,6 +1186,7 @@ fn network_payload(
     name: &str,
     net: &Network,
     coords: &Coords,
+    branch_paths: Option<&BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<NetworkPayload, String> {
     let mut demand = BTreeMap::<usize, f64>::new();
@@ -953,7 +1233,15 @@ fn network_payload(
                 to: br.to.0,
                 rate_mw: br.rate_a,
                 status: br.in_service as u8,
-                path: [[from_lon, from_lat], [to_lon, to_lat]],
+                path: branch_paths
+                    .and_then(|paths| {
+                        paths
+                            .get(&BranchPathKey::Id(i + 1))
+                            .or_else(|| paths.get(&BranchPathKey::Edge(br.from.0, br.to.0)))
+                            .or_else(|| paths.get(&BranchPathKey::Edge(br.to.0, br.from.0)))
+                    })
+                    .cloned()
+                    .unwrap_or_else(|| vec![[from_lon, from_lat], [to_lon, to_lat]]),
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -1017,14 +1305,18 @@ fn scalar_values(values: Option<&[tellegen::BusScalar]>) -> Vec<ScalarValue> {
         .collect()
 }
 
-/// The dLMP/dd column from the requested Price/Demand cell: rows are buses, the single
-/// column is the sens bus. Bus ids come from the matrix's self-describing metadata.
+/// The dLMP/dparameter column from the requested Price cell. Rows are buses, and
+/// the single column names the bus or branch parameter through matrix metadata.
 #[cfg(feature = "sensitivity")]
 fn sensitivity_payload(case: &str, m: &SensitivityMatrix) -> SensitivityPayload {
-    let bus = m.cols.first().map_or(0, |c| match c.element {
-        ElementId::Bus(b) => b,
-        _ => 0,
-    });
+    let (parameter, bus, branch) =
+        m.cols
+            .first()
+            .map_or(("unknown", None, None), |c| match c.element {
+                ElementId::Bus(b) => ("d", Some(b), None),
+                ElementId::Branch(b) => ("fmax", None, Some(b)),
+                _ => ("unknown", None, None),
+            });
     let values = m
         .rows
         .iter()
@@ -1040,9 +1332,10 @@ fn sensitivity_payload(case: &str, m: &SensitivityMatrix) -> SensitivityPayload 
     SensitivityPayload {
         case: case.into(),
         operand: "lmp",
-        parameter: "d",
+        parameter,
         bus,
-        units: "($/MWh)/MW",
+        branch,
+        units: m.units.clone(),
         values,
     }
 }
@@ -1160,14 +1453,23 @@ fn default_frontend_dirs() -> Vec<PathBuf> {
     ]
 }
 
-fn allow_fallback() -> bool {
+/// A boolean env var: `1`/`true`/`yes`/`on` (case insensitive) enables.
+fn env_flag(name: &str) -> bool {
     matches!(
-        env::var("TELLEGEN_ALLOW_FALLBACK")
+        env::var(name)
             .unwrap_or_default()
             .to_ascii_lowercase()
             .as_str(),
         "1" | "true" | "yes" | "on"
     )
+}
+
+fn allow_fallback() -> bool {
+    env_flag("TELLEGEN_ALLOW_FALLBACK")
+}
+
+fn server_compute_enabled() -> bool {
+    env_flag("TELLEGEN_SERVER_COMPUTE")
 }
 
 fn solver_concurrency() -> usize {
@@ -1297,19 +1599,45 @@ mod tests {
     fn fallback_state() -> Arc<AppState> {
         static STATE: OnceLock<Arc<AppState>> = OnceLock::new();
         Arc::clone(STATE.get_or_init(|| {
+            Arc::new(
+                AppState::load(PathBuf::from("/definitely/no/tellegen/data"), true)
+                    .unwrap()
+                    .with_compute(true),
+            )
+        }))
+    }
+
+    /// The default state: compute disabled, as a public deploy ships it.
+    fn compute_disabled_state() -> Arc<AppState> {
+        static STATE: OnceLock<Arc<AppState>> = OnceLock::new();
+        Arc::clone(STATE.get_or_init(|| {
             Arc::new(AppState::load(PathBuf::from("/definitely/no/tellegen/data"), true).unwrap())
         }))
     }
 
+    static NEXT_CLIENT: AtomicUsize = AtomicUsize::new(1);
+
+    fn next_client() -> String {
+        format!(
+            "203.0.113.{}",
+            NEXT_CLIENT.fetch_add(1, AtomicOrdering::Relaxed)
+        )
+    }
+
     async fn get_raw(path: &str) -> (StatusCode, HeaderMap, String) {
-        static NEXT_CLIENT: AtomicUsize = AtomicUsize::new(1);
-        let id = NEXT_CLIENT.fetch_add(1, AtomicOrdering::Relaxed);
-        let client = format!("203.0.113.{id}");
-        get_raw_from(path, &client).await
+        get_raw_with_state(fallback_state(), path, &next_client()).await
     }
 
     async fn get_raw_from(path: &str, client: &str) -> (StatusCode, HeaderMap, String) {
-        let res = router(fallback_state(), None)
+        get_raw_with_state(fallback_state(), path, client).await
+    }
+
+    async fn get_raw_with_state(
+        state: Arc<AppState>,
+        path: &str,
+        client: &str,
+    ) -> (StatusCode, HeaderMap, String) {
+        let res = router(state, None)
             .oneshot(
                 axum::http::Request::builder()
                     .uri(path)
@@ -1378,6 +1706,29 @@ mod tests {
         assert!(solution["lmp"].as_array().unwrap().len() >= 200);
     }
 
+    #[test]
+    fn branch_geojson_paths_match_by_cats_id_and_endpoint_buses() {
+        let paths = load_branch_paths_from_str(
+            r#"{
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "properties": { "CATS_ID": "7", "f_bus": 101, "t_bus": 202 },
+                  "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[-122.0, 37.0], [-121.5, 37.2], [-121.0, 37.4]]
+                  }
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+        let expected = vec![[-122.0, 37.0], [-121.5, 37.2], [-121.0, 37.4]];
+        assert_eq!(paths.get(&BranchPathKey::Id(7)), Some(&expected));
+        assert_eq!(paths.get(&BranchPathKey::Edge(101, 202)), Some(&expected));
+    }
+
     #[tokio::test]
     async fn static_fallback_serves_200_html_without_index() {
         let suffix = SystemTime::now()
@@ -1410,7 +1761,49 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["case"], "case200");
         assert_eq!(body["bus"], 1);
+        assert_eq!(body["parameter"], "d");
         assert!(body["values"].as_array().unwrap().len() >= 200);
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[tokio::test]
+    async fn line_limit_sensitivity_returns_payload() {
+        let (status, body) = get("/api/cases/case200/sensitivity/lmp/fmax/1").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["case"], "case200");
+        assert_eq!(body["parameter"], "fmax");
+        assert_eq!(body["branch"], 1);
+        assert!(body.get("bus").is_none());
+        assert!(body["values"].as_array().unwrap().len() >= 200);
+    }
+
+    async fn get_with_state(state: Arc<AppState>, path: &str) -> (StatusCode, serde_json::Value) {
+        let (status, _headers, body) = get_raw_with_state(state, path, &next_client()).await;
+        (status, serde_json::from_str(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn compute_endpoints_are_disabled_by_default() {
+        for path in [
+            "/api/cases/case200/sensitivity/lmp/d/1",
+            "/api/cases/case200/sensitivity/lmp/fmax/1",
+            "/api/cases/case200/solve",
+        ] {
+            let (status, body) = get_with_state(compute_disabled_state(), path).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
+            assert_eq!(body["error"], "server compute is disabled", "{path}");
+        }
+        // Data endpoints stay served, including the cached base solution, and
+        // /api/compute reports the gate to the frontend.
+        let (status, _) =
+            get_with_state(compute_disabled_state(), "/api/cases/case200/solution").await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, body) = get_with_state(compute_disabled_state(), "/api/compute").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["enabled"], false);
+        let (status, body) = get_with_state(fallback_state(), "/api/compute").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["enabled"], true);
     }
 
     #[cfg(not(feature = "sensitivity"))]
@@ -1511,7 +1904,7 @@ mod tests {
             .enumerate()
             .map(|(i, b)| (b.id.0, (i as f64, 0.0)))
             .collect();
-        let entry = build_entry("iso", "iso", case, coords, true).unwrap();
+        let entry = build_entry("iso", "iso", case, coords, None, true).unwrap();
 
         let err = validate_deltas(&entry, &HashMap::from([(201usize, 1.0)])).unwrap_err();
         assert_eq!(err.status, StatusCode::BAD_REQUEST);

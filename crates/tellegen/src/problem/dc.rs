@@ -9,9 +9,38 @@ use clarabel::solver::SupportedConeT::{NonnegativeConeT, ZeroConeT};
 
 use crate::formulation::Dc;
 use crate::model::DcNetwork;
-use crate::solve::{run, DcSolution, RawSolution};
+use crate::solve::{run, RawSolution, SolveIteration};
 
 use super::{build_opf, OpfFormulation, OpfProgram, ProgramBuilder};
+
+/// Primal and dual solution of the DC OPF, in per unit. `nu_bal` is the LMP
+/// (per-unit $/per-unit-MW); divide by `base_mva` for $/MWh.
+#[derive(Clone)]
+#[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
+pub struct DcOpfSolution {
+    pub va: Vec<f64>,
+    pub pg: Vec<f64>,
+    pub f: Vec<f64>,
+    pub psh: Vec<f64>,
+    pub nu_bal: Vec<f64>,
+    pub lam_ub: Vec<f64>,
+    pub lam_lb: Vec<f64>,
+    pub rho_ub: Vec<f64>,
+    pub rho_lb: Vec<f64>,
+    pub mu_ub: Vec<f64>,
+    pub mu_lb: Vec<f64>,
+    pub gamma_ub: Vec<f64>,
+    pub gamma_lb: Vec<f64>,
+    pub objective: f64,
+    pub iterations: Vec<SolveIteration>,
+}
+
+impl DcOpfSolution {
+    /// LMP per bus in $/MWh (`nu_bal / base_mva`), in dense bus-index order.
+    pub fn lmp_usd_per_mwh(&self, base_mva: f64) -> Vec<f64> {
+        self.nu_bal.iter().map(|v| v / base_mva).collect()
+    }
+}
 
 /// Row and column offsets of the DC OPF program, derived from the network sizes.
 /// Variables are `x = [va(n), pg(k), f(m), psh(n)]`; constraint rows are the
@@ -172,18 +201,18 @@ impl OpfFormulation for Dc {
     }
 }
 
-/// Read the raw Clarabel primal/dual vectors back into a [`DcSolution`].
+/// Read the raw Clarabel primal/dual vectors back into a [`DcOpfSolution`].
 ///
 /// Equality duals carry the Clarabel sign flip (`nu = -z`); the non-negative
 /// inequality duals map straight across. The g-stationarity
 /// `2 cq g + cl = G_inc' nu_bal` then makes `nu_bal` the (positive) marginal cost,
 /// i.e. the LMP.
-fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcSolution {
+fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
     let lay = OpfLayout::dc(dc.n, dc.m, dc.k);
     let (n, m, k) = (dc.n, dc.m, dc.k);
     let x = &raw.x;
     let z = &raw.z;
-    DcSolution {
+    DcOpfSolution {
         va: (0..n).map(|i| x[lay.col_va(i)]).collect(),
         pg: (0..k).map(|j| x[lay.col_pg(j)]).collect(),
         f: (0..m).map(|e| x[lay.col_f(e)]).collect(),
@@ -207,7 +236,7 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcSolution {
 /// price `nu_bal`). The uncancellable convenience entry point the tests and the
 /// sensitivity finite-difference checks use. The public solve entry is `api`.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn dc_opf(model: &DcNetwork) -> Result<DcSolution, String> {
+pub(crate) fn dc_opf(model: &DcNetwork) -> Result<DcOpfSolution, String> {
     dc_opf_cancellable(model, None)
 }
 
@@ -218,7 +247,7 @@ pub(crate) fn dc_opf(model: &DcNetwork) -> Result<DcSolution, String> {
 pub(crate) fn dc_opf_cancellable(
     model: &DcNetwork,
     cancel: Option<Arc<AtomicBool>>,
-) -> Result<DcSolution, String> {
+) -> Result<DcOpfSolution, String> {
     let prog = build_opf(&Dc::new(), model);
     let raw = run(&prog, cancel)?;
     Ok(read_dc_solution(model, &raw))

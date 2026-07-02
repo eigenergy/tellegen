@@ -43,6 +43,7 @@ pub use conic::{build_conic_opf, socwr_opf, ConicOpfFormulation, SocWrSolution};
 #[cfg_attr(not(test), allow(unused_imports))]
 pub(crate) use dc::dc_opf;
 pub(crate) use dc::dc_opf_cancellable;
+pub use dc::DcOpfSolution;
 #[cfg(feature = "sensitivity")]
 pub(crate) use pf_ac::{ac_injections, ac_jacobian};
 #[cfg(feature = "sensitivity")]

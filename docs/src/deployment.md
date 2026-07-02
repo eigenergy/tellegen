@@ -26,17 +26,18 @@ The staged case data should live under the deploy path, for example:
 $TELLEGEN_DEPLOY_PATH/data
 ```
 
-Each staged case needs its case file and coordinate file:
+For the full demo geometry, stage these files:
 
 ```text
 ACTIVSg200/case_ACTIVSg200.m
 ACTIVSg200/ACTIVSg200.aux
 ACTIVSg500/case_ACTIVSg500.m
 ACTIVSg500/ACTIVSg500.aux
-ACTIVSg2000/case_ACTIVSg2000.m
-ACTIVSg2000/ACTIVSg2000.aux
+ACTIVSg7000/Texas7k_20210804.m
+ACTIVSg7000/Texas7k_lat_long.csv
 CATS/CaliforniaTestSystem.m
 CATS/CATS_buses.csv
+CATS/CATS_lines.json
 ```
 
 The server serves the staged subset. If no complete case pair is staged, the
@@ -44,9 +45,23 @@ container exits unless `TELLEGEN_ALLOW_FALLBACK=1` is set for a CI or local
 smoke check. Production deploys should stage the intended public case set before
 enabling the workflow.
 
+`CATS/CATS_gens.csv` is also staged when available. It is source metadata for
+generator locations; the current map does not draw a separate generator layer.
+
 Treat every staged case as public. The browser fetches the full staged network
 JSON through `/api/cases/{id}/case` so it can build browser studies and exact
 solves locally.
+
+## Server Compute
+
+The compute endpoints (`/api/cases/{id}/solve` over SSE and the
+`/api/cases/{id}/sensitivity/...` routes) ship disabled and answer 403
+`server compute is disabled`. Set `TELLEGEN_SERVER_COMPUTE=1` to enable them as
+the fallback for browsers that cannot run the WebAssembly engine; the rate
+limits and solver concurrency caps then apply. `/api/compute` reports the gate
+(`{"enabled": bool}`) so the frontend picks honest fallback copy and skips
+requests that would 403. The data endpoints, including the cached base
+`/solution`, are always served.
 
 ## Local Build Deploy
 
@@ -150,7 +165,7 @@ curl -fsS "${TELLEGEN_DEMO_URL%/}/api/health"
 
 Both health checks should report `status: "ok"` and a nonempty `cases` array.
 For the full public demo, that array should contain `case200`, `case500`,
-`case2000`, and `cats`.
+`case7000`, and `cats`.
 
 ## Reverse Proxy
 

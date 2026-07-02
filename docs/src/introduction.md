@@ -23,7 +23,7 @@ synthetic grids on geographic footprints, not surveyed infrastructure:
 | --- | --- | ---: | ---: |
 | ACTIVSg200 | central Illinois | 200 | 245 |
 | ACTIVSg500 | South Carolina | 500 | 597 |
-| ACTIVSg2000 | Texas | 2000 | 3206 |
+| ACTIVSg7000 | Texas | 6717 | 9140 |
 | CATS | California | 8870 | 10823 |
 
 Each case solves as DC OPF by default; a selector switches to the SOCWR relaxation,

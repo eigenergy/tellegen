@@ -13,8 +13,7 @@
 
 - `browserWasmTransport` — object facade for the browser wasm transport.
 - `createBrowserWasmTransport()` — returns the browser wasm transport facade.
-- `preloadCore()` — initializes the core wasm package.
-- `preloadSensitivity()` — initializes the sensitivity wasm package.
+- `preloadEngine()` — initializes the wasm package.
 
 The facade has the same methods as the direct exports:
 
@@ -22,7 +21,6 @@ The facade has the same methods as the direct exports:
 - `parseDisplay(bytes)`
 - `capabilities()`
 - `solveJson(networkJson, request)`
-- `solveDc(caseId, networkJson, deltas, sensBus)`
 - `createStudy(networkJson, formulation)`
 
 ## Case And Display Helpers
@@ -36,7 +34,6 @@ The facade has the same methods as the direct exports:
 
 - `capabilities()` — returns available formulations, operands, and parameters.
 - `solveJson(networkJson, request)` — stateless solve over the generalized Rust API.
-- `solveDc(caseId, networkJson, deltas, sensBus)` — legacy DC solve shape used by the demo.
 - `createStudy(networkJson, formulation)` — builds a browser `Study`.
 - `Study` / `BrowserStudy` — browser handle with:
   - `currentSolution()`

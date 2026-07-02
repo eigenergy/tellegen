@@ -19,7 +19,7 @@
 use faer::Mat;
 
 use crate::model::DcNetwork;
-use crate::solve::DcSolution;
+use crate::problem::DcOpfSolution;
 
 use super::{
     Axis, CostTerm, Differentiable, ElementId, End, Operand, Parameter, Power, Selector, SensError,
@@ -112,7 +112,7 @@ impl KktIdx {
 /// non-binding phase-angle duals (and clamp the binding side), and canonicalize the
 /// shedding duals / value by regime
 /// (degenerate, lower-bound active, upper-bound active, interior).
-fn snap(dc: &DcNetwork, sol: &DcSolution) -> DcSolution {
+fn snap(dc: &DcNetwork, sol: &DcOpfSolution) -> DcOpfSolution {
     let mut s = sol.clone();
     for e in 0..dc.m {
         let atheta = s.va[dc.br_from[e]] - s.va[dc.br_to[e]];
@@ -180,7 +180,7 @@ fn susceptance_cols(dc: &DcNetwork) -> Vec<Vec<(usize, f64)>> {
 
 /// Assemble the KKT Jacobian `dK/dz` as `(row, col, value)` triplets, hand derived
 /// column by column. `s` must already be snapped to strict complementarity.
-fn kkt_triplets(dc: &DcNetwork, s: &DcSolution, idx: &KktIdx) -> Vec<(usize, usize, f64)> {
+fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, usize, f64)> {
     let (n, m, k) = (dc.n, dc.m, dc.k);
     let tau2 = dc.tau * dc.tau;
     let inc = incidence_by_bus(dc);
@@ -336,7 +336,7 @@ fn kkt_triplets(dc: &DcNetwork, s: &DcSolution, idx: &KktIdx) -> Vec<(usize, usi
 /// stationarity row `tau^2 f + lam_ub - lam_lb - nu_flow = 0`. The solve carries
 /// the inequality duals and the primals but not this equality dual, which the
 /// susceptance and switching Jacobians need.
-fn nu_flow_values(dc: &DcNetwork, s: &DcSolution) -> Vec<f64> {
+fn nu_flow_values(dc: &DcNetwork, s: &DcOpfSolution) -> Vec<f64> {
     let tau2 = dc.tau * dc.tau;
     (0..dc.m)
         .map(|e| tau2 * s.f[e] + s.lam_ub[e] - s.lam_lb[e])
@@ -351,13 +351,13 @@ fn nu_flow_values(dc: &DcNetwork, s: &DcSolution) -> Vec<f64> {
 pub struct DcKkt<'a> {
     dc: &'a DcNetwork,
     idx: KktIdx,
-    snapped: DcSolution,
+    snapped: DcOpfSolution,
     nu_flow: Vec<f64>,
 }
 
 impl<'a> DcKkt<'a> {
     /// Wrap a solved DC OPF, doing the one-time snap and `nu_flow` recovery.
-    pub fn new(dc: &'a DcNetwork, sol: &DcSolution) -> Self {
+    pub fn new(dc: &'a DcNetwork, sol: &DcOpfSolution) -> Self {
         let snapped = snap(dc, sol);
         let idx = KktIdx::new(dc.n, dc.m, dc.k);
         let nu_flow = nu_flow_values(dc, &snapped);
@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn parity_with_finite_differences_activsg200() {
-        // The reference exact-sensitivity criterion on the Rust
+        // The reference exact sensitivity criterion on the Rust
         // path: the top sensitivity columns match central differences within
         // 1e-3. Skips when the data is absent.
         let path = concat!(
@@ -674,21 +674,19 @@ mod tests {
         }
     }
 
-    // ACTIVSg500 and ACTIVSg2000 build the full sensitivity matrix (the 2000-bus
-    // case allocates a ~26500 x 2000 solve), so they are heavy: run explicitly
+    // ACTIVSg500 builds a larger full sensitivity matrix, so run it explicitly
     // with `cargo test --release -- --ignored`.
     #[test]
     #[ignore = "heavy: run with --release --ignored"]
     fn parity_with_finite_differences_large_cases() {
-        for case in ["ACTIVSg500", "ACTIVSg2000"] {
-            let path = format!(
-                "{}/../data/{case}/case_{case}.m",
-                env!("CARGO_MANIFEST_DIR")
-            );
-            match parity_vs_finite_differences(&path) {
-                Some(rel) => assert!(rel < 1e-3, "{case} dLMP/dd vs FD rel {rel}"),
-                None => eprintln!("skipping {case} parity: {path} not found"),
-            }
+        let case = "ACTIVSg500";
+        let path = format!(
+            "{}/../data/{case}/case_{case}.m",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        match parity_vs_finite_differences(&path) {
+            Some(rel) => assert!(rel < 1e-3, "{case} dLMP/dd vs FD rel {rel}"),
+            None => eprintln!("skipping {case} parity: {path} not found"),
         }
     }
 
@@ -714,7 +712,7 @@ mod tests {
 
     /// The operand vector read straight from a solved DC OPF, in the per-unit
     /// units the analytic selector produces.
-    fn operand_vec(sol: &DcSolution, operand: Operand) -> Vec<f64> {
+    fn operand_vec(sol: &DcOpfSolution, operand: Operand) -> Vec<f64> {
         match operand {
             Operand::Price(Power::Active) => sol.nu_bal.clone(),
             Operand::Dispatch(Power::Active) => sol.pg.clone(),

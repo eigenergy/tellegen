@@ -17,7 +17,7 @@
 			<dd>{stats.buses}</dd>
 		</div>
 		<div>
-			<dt>branches</dt>
+			<dt>lines</dt>
 			<dd>{stats.branches}</dd>
 		</div>
 		<div>

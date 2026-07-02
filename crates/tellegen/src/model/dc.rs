@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use powerio::network::{GenCost, Network};
 use powerio::IndexedNetwork;
 
-use super::{normalize_angle_bounds, reconstruct_ids, Ids, MIN_Z_SQUARED};
+use super::{normalize_angle_bounds, quadratic_cost_coeffs, reconstruct_ids, Ids, MIN_Z_SQUARED};
 
 /// Strong-convexity regularization on the flows.
 const DEFAULT_TAU: f64 = 1e-2;
@@ -251,28 +251,14 @@ fn fallback_rate_a(r: f64, x: f64, amin: f64, amax: f64, fr_vmax: f64, to_vmax: 
 /// then read the quadratic and linear terms. A generator with no cost curve is free
 /// (`(0, 0)`).
 fn cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64), String> {
-    let Some(c) = cost else {
-        return Ok((0.0, 0.0));
-    };
-    if c.model != 2 {
-        return Err("only polynomial gen-cost model 2 is supported".into());
-    }
-    let mut v = c.coeffs.clone();
-    while v.len() > 1 && v[0].abs() <= super::LEADING_COST_COEFF_TOL {
-        v.remove(0);
-    }
-    match v.len() {
-        0 | 1 => Ok((0.0, 0.0)),
-        2 => Ok((0.0, v[0])),
-        3 => Ok((v[0], v[1])),
-        _ => Err("only constant, linear, and quadratic gen costs are supported".into()),
-    }
+    let (q, l, _) = quadratic_cost_coeffs(cost)?;
+    Ok((q, l))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::parse_case3;
+    use crate::model::{parse_case3, CASE3};
 
     fn approx(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-6, "expected {b}, got {a}");
@@ -365,6 +351,21 @@ mod tests {
         for &cs in &dc.c_shed {
             approx(cs, 10.0 * marginal);
         }
+    }
+
+    #[test]
+    fn piecewise_costs_project_to_quadratic() {
+        let text = CASE3
+            .replace(" 2 0 0 3 0.11  5   0;", " 1 0 0 3 0 1 100 3 200 7;")
+            .replace(" 2 0 0 3 0.085 1.2 0;", " 1 0 0 2 0 0 100 50;");
+        let net = powerio::parse_str(&text, "matpower")
+            .expect("parse piecewise case3")
+            .network;
+        let dc = DcNetwork::from_network(&net).expect("build piecewise DcNetwork");
+        approx(dc.cq[0], 1.0);
+        approx(dc.cl[0], 1.0);
+        approx(dc.cq[1], 0.0);
+        approx(dc.cl[1], 50.0);
     }
 
     #[test]

@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 
-use powerio::network::{BusType, Network};
+use powerio::network::{BusType, GenCost, Network};
 use powerio::IndexedNetwork;
 
 #[cfg(feature = "sensitivity")]
@@ -38,6 +38,146 @@ pub(super) const MIN_Z_SQUARED: f64 = 1e-10;
 /// because its quadratic term came in as e.g. `1e-17` rather than exactly `0.0`. Real
 /// (per unit) cost coefficients sit far above this. Shared by the DC and AC cost readers.
 pub(super) const LEADING_COST_COEFF_TOL: f64 = 1e-12;
+
+/// Quadratic, linear, and constant cost coefficients `(cq, cl, cc)` for one
+/// generator. MATPOWER model 2 rows are read directly after `to_normalized`
+/// rescales them to per unit. Model 1 rows are piecewise linear costs; the
+/// solver objective is quadratic, so those points are projected onto a
+/// nonnegative quadratic least squares fit.
+pub(super) fn quadratic_cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64, f64), String> {
+    let Some(c) = cost else {
+        return Ok((0.0, 0.0, 0.0));
+    };
+    match c.model {
+        1 => piecewise_quadratic_fit(c),
+        2 => polynomial_quadratic_coeffs(c),
+        _ => Err("only gen-cost models 1 and 2 are supported".into()),
+    }
+}
+
+fn polynomial_quadratic_coeffs(cost: &GenCost) -> Result<(f64, f64, f64), String> {
+    let mut v = cost.coeffs.clone();
+    while v.len() > 1 && v[0].abs() <= LEADING_COST_COEFF_TOL {
+        v.remove(0);
+    }
+    match v.len() {
+        0 => Ok((0.0, 0.0, 0.0)),
+        1 => Ok((0.0, 0.0, v[0])),
+        2 => Ok((0.0, v[0], v[1])),
+        3 => Ok((v[0], v[1], v[2])),
+        _ => Err("only constant, linear, and quadratic gen costs are supported".into()),
+    }
+}
+
+fn piecewise_quadratic_fit(cost: &GenCost) -> Result<(f64, f64, f64), String> {
+    if cost.coeffs.len() != cost.ncost * 2 {
+        return Err("piecewise gen costs must have paired breakpoints".into());
+    }
+    let mut points = Vec::with_capacity(cost.ncost);
+    for pair in cost.coeffs.chunks_exact(2) {
+        let x = pair[0];
+        let y = pair[1];
+        if !x.is_finite() || !y.is_finite() {
+            return Err("piecewise gen costs must be finite".into());
+        }
+        points.push((x, y));
+    }
+    points.sort_by(|a, b| a.0.total_cmp(&b.0));
+    points.dedup_by(|a, b| (a.0 - b.0).abs() <= f64::EPSILON);
+
+    match points.len() {
+        0 => Ok((0.0, 0.0, 0.0)),
+        1 => Ok((0.0, 0.0, points[0].1)),
+        2 => Ok(linear_fit(&points)),
+        _ => Ok(quadratic_fit(&points).unwrap_or_else(|| linear_fit(&points))),
+    }
+}
+
+/// Least squares line over every breakpoint. The quadratic fit falls back here
+/// when its system is singular or nonconvex (`q < 0`), so interior points must
+/// still weigh in: an endpoints chord would misprice everything between them.
+fn linear_fit(points: &[(f64, f64)]) -> (f64, f64, f64) {
+    let n = points.len() as f64;
+    let (mut sx, mut sxx, mut sy, mut sxy) = (0.0, 0.0, 0.0, 0.0);
+    for &(x, y) in points {
+        sx += x;
+        sxx += x * x;
+        sy += y;
+        sxy += x * y;
+    }
+    let det = n * sxx - sx * sx;
+    if det.abs() <= f64::EPSILON * n * sxx.max(1.0) {
+        // All breakpoints at one output level: a flat cost at their mean.
+        return (0.0, 0.0, sy / n);
+    }
+    let slope = (n * sxy - sx * sy) / det;
+    let intercept = (sy - slope * sx) / n;
+    (0.0, slope, intercept)
+}
+
+fn quadratic_fit(points: &[(f64, f64)]) -> Option<(f64, f64, f64)> {
+    let mut s0 = 0.0;
+    let mut s1 = 0.0;
+    let mut s2 = 0.0;
+    let mut s3 = 0.0;
+    let mut s4 = 0.0;
+    let mut t0 = 0.0;
+    let mut t1 = 0.0;
+    let mut t2 = 0.0;
+    for &(x, y) in points {
+        let x2 = x * x;
+        s0 += 1.0;
+        s1 += x;
+        s2 += x2;
+        s3 += x2 * x;
+        s4 += x2 * x2;
+        t0 += y;
+        t1 += x * y;
+        t2 += x2 * y;
+    }
+    let [q, l, c] = solve_3x3([[s4, s3, s2], [s3, s2, s1], [s2, s1, s0]], [t2, t1, t0])?;
+    if q.is_finite() && l.is_finite() && c.is_finite() && q >= 0.0 {
+        Some((q, l, c))
+    } else {
+        None
+    }
+}
+
+fn solve_3x3(mut a: [[f64; 3]; 3], mut b: [f64; 3]) -> Option<[f64; 3]> {
+    for i in 0..3 {
+        let mut pivot = i;
+        for r in (i + 1)..3 {
+            if a[r][i].abs() > a[pivot][i].abs() {
+                pivot = r;
+            }
+        }
+        if a[pivot][i].abs() <= 1e-12 {
+            return None;
+        }
+        if pivot != i {
+            a.swap(i, pivot);
+            b.swap(i, pivot);
+        }
+        let pivot_row = a[i];
+        for r in (i + 1)..3 {
+            let factor = a[r][i] / pivot_row[i];
+            for (elem, p) in a[r].iter_mut().zip(pivot_row).skip(i) {
+                *elem -= factor * p;
+            }
+            b[r] -= factor * b[i];
+        }
+    }
+
+    let mut x = [0.0; 3];
+    for i in (0..3).rev() {
+        let mut rhs = b[i];
+        for (c, value) in x.iter().enumerate().skip(i + 1) {
+            rhs -= a[i][c] * value;
+        }
+        x[i] = rhs / a[i][i];
+    }
+    Some(x)
+}
 
 /// Default angle-difference bounds (radians in, radians out). A `>= pi/2` half-window
 /// (the MATPOWER "unconstrained"
@@ -135,4 +275,45 @@ pub(super) fn reconstruct_ids(raw: &Network, view: &IndexedNetwork) -> Result<Id
         branch_ids,
         gen_ids,
     })
+}
+
+#[cfg(test)]
+mod cost_fit_tests {
+    use super::*;
+
+    fn piecewise(points: &[(f64, f64)]) -> GenCost {
+        GenCost::new(
+            1,
+            0.0,
+            0.0,
+            points.iter().flat_map(|&(x, y)| [x, y]).collect(),
+        )
+    }
+
+    #[test]
+    fn nonconvex_points_fall_back_to_a_least_squares_line() {
+        // Concave points reject the quadratic (q < 0). The line must weigh the
+        // interior breakpoint: the least squares slope over (0,0),(10,100),(200,200)
+        // is 60000/76200, not the endpoints chord slope of 1.
+        let (q, l, _) = quadratic_cost_coeffs(Some(&piecewise(&[
+            (0.0, 0.0),
+            (10.0, 100.0),
+            (200.0, 200.0),
+        ])))
+        .unwrap();
+        assert_eq!(q, 0.0);
+        let expected = 60000.0 / 76200.0;
+        assert!((l - expected).abs() < 1e-9, "expected {expected}, got {l}");
+    }
+
+    #[test]
+    fn exact_quadratic_points_recover_the_curve() {
+        // y = 2x^2 + 3x + 1 at x = 0, 1, 2 solves the normal equations exactly.
+        let (q, l, c) =
+            quadratic_cost_coeffs(Some(&piecewise(&[(0.0, 1.0), (1.0, 6.0), (2.0, 15.0)])))
+                .unwrap();
+        assert!((q - 2.0).abs() < 1e-9, "q {q}");
+        assert!((l - 3.0).abs() < 1e-9, "l {l}");
+        assert!((c - 1.0).abs() < 1e-9, "c {c}");
+    }
 }

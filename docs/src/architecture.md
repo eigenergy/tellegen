@@ -53,10 +53,11 @@ credits, privacy, deployment, and bundled case pages.
 
 ## In the browser
 
-`@tellegen/engine` ships two wasm packages built from `crates/tellegen-wasm`:
-
-- a **full** package (the `conic` feature) carrying DC power flow, DC OPF, AC power flow, SOCWR, the `Study`, and the sensitivity columns; and
-- a **core** package (`--no-default-features`, SIMD disabled) — a smaller DC-only fallback that loads on any WebAssembly-capable browser.
+`@tellegen/engine` ships one wasm package built from `crates/tellegen-wasm`
+(the `conic` feature): DC power flow, DC OPF, AC power flow, SOCWR, the
+`Study`, and the sensitivity columns. A browser that cannot load it does not
+solve; the hosted demo shows a notice, and the server's compute endpoints
+exist as an opt-in fallback (`TELLEGEN_SERVER_COMPUTE`).
 
 The Svelte package and the hosted app use the same `Study` loop: a drag calls `preview` (a first-order LMP and objective update, in WebAssembly, no server round-trip) and release calls `commit` (an exact re-solve that also returns the displayed sensitivity column). Every formulation solves in the browser; dropped-in case files solve there too and are never uploaded.
 

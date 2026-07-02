@@ -251,10 +251,7 @@ async function assertBuildOutput() {
     throw new Error("consumer build did not emit a CSS asset");
   }
   if (!wasmFiles.some((file) => /tellegen_bg.*\.wasm$/.test(file))) {
-    throw new Error("consumer build did not emit the core wasm asset");
-  }
-  if (!wasmFiles.some((file) => /tellegen_sens_bg.*\.wasm$/.test(file))) {
-    throw new Error("consumer build did not emit the sensitivity wasm asset");
+    throw new Error("consumer build did not emit the engine wasm asset");
   }
 
   console.log(`packed Svelte consumer emitted ${wasmFiles.length} wasm assets`);

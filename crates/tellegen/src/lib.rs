@@ -54,7 +54,7 @@ pub use problem::{
 };
 #[cfg(feature = "conic")]
 pub use problem::{build_conic_opf, socwr_opf, ConicOpfFormulation, SocWrSolution};
-pub use problem::{build_opf, OpfFormulation, OpfProgram};
+pub use problem::{build_opf, DcOpfSolution, OpfFormulation, OpfProgram};
 #[cfg(feature = "conic")]
 pub use sens::ConicKkt;
 #[cfg(feature = "sensitivity")]

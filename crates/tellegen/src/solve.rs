@@ -36,35 +36,6 @@ pub(crate) struct RawSolution {
     pub iterations: Vec<SolveIteration>,
 }
 
-/// Primal and dual solution of the DC OPF, in per unit. `nu_bal` is the LMP
-/// (per-unit $/per-unit-MW); divide by `base_mva` for $/MWh.
-#[derive(Clone)]
-#[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
-pub struct DcSolution {
-    pub va: Vec<f64>,
-    pub pg: Vec<f64>,
-    pub f: Vec<f64>,
-    pub psh: Vec<f64>,
-    pub nu_bal: Vec<f64>,
-    pub lam_ub: Vec<f64>,
-    pub lam_lb: Vec<f64>,
-    pub rho_ub: Vec<f64>,
-    pub rho_lb: Vec<f64>,
-    pub mu_ub: Vec<f64>,
-    pub mu_lb: Vec<f64>,
-    pub gamma_ub: Vec<f64>,
-    pub gamma_lb: Vec<f64>,
-    pub objective: f64,
-    pub iterations: Vec<SolveIteration>,
-}
-
-impl DcSolution {
-    /// LMP per bus in $/MWh (`nu_bal / base_mva`), in dense bus-index order.
-    pub fn lmp_usd_per_mwh(&self, base_mva: f64) -> Vec<f64> {
-        self.nu_bal.iter().map(|v| v / base_mva).collect()
-    }
-}
-
 /// Solve `prog` with Clarabel and return the raw primal/dual vectors.
 ///
 /// `cancel` (when present) is polled once per interior-point iteration through

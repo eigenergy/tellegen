@@ -219,6 +219,10 @@ export class AppState {
 	/** Map framing request: bump seq so repeat targets still fly. */
 	frameTarget = $state<string | 'all'>('all');
 	frameSeq = $state(0);
+	/** Binding line focus request: separate from whole case framing so list
+	 * selection can center the selected line without changing case state. */
+	branchFocusTarget = $state.raw<{ caseId: string; branchId: number } | null>(null);
+	branchFocusSeq = $state(0);
 
 	get active(): CaseState | null {
 		return this.cases.find((c) => c.id === this.activeCaseId) ?? null;
@@ -293,6 +297,11 @@ export class AppState {
 	requestFrame(target: string | 'all') {
 		this.frameTarget = target;
 		this.frameSeq++;
+	}
+
+	requestBranchFocus(caseId: string, branchId: number) {
+		this.branchFocusTarget = { caseId, branchId };
+		this.branchFocusSeq++;
 	}
 }
 

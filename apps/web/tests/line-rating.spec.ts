@@ -55,7 +55,47 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await expect(bindingLine).toContainText('line 2');
 	await expect(bindingLine).toContainText('100%');
 
+	const mapCanvas = page.locator('.map canvas').first();
+	await expect(mapCanvas).toBeVisible();
+	const mapBox = await mapCanvas.boundingBox();
+	if (!mapBox) throw new Error('map canvas was not laid out');
+	await page.mouse.move(mapBox.x + mapBox.width * 0.75, mapBox.y + mapBox.height * 0.5);
+	await page.mouse.down();
+	await page.mouse.move(mapBox.x + mapBox.width * 0.25, mapBox.y + mapBox.height * 0.5, {
+		steps: 8
+	});
+	await page.mouse.up();
+
 	await bindingLine.click();
+	await expect(bindingLine).toHaveClass(/selected/);
+	await expect(bindingLine).toHaveAttribute('aria-pressed', 'true');
+	const selectedBranchCue = page.locator('.selected-branch-cue');
+	const selectedBranchPath = selectedBranchCue.locator('.selected-branch-line');
+	await expect(selectedBranchCue).toBeVisible();
+	await expect(selectedBranchPath).toHaveAttribute('d', /^M/);
+	await expect
+		.poll(async () => {
+			const box = await selectedBranchPath.evaluate((el) => {
+				const rect = (el as SVGGraphicsElement).getBoundingClientRect();
+				return {
+					cx: (rect.left + rect.right) / 2,
+					cy: (rect.top + rect.bottom) / 2,
+					width: rect.width,
+					height: rect.height,
+					vw: window.innerWidth,
+					vh: window.innerHeight
+				};
+			});
+			return (
+				box.width > 0 &&
+				box.height > 0 &&
+				box.cx > 380 &&
+				box.cx < box.vw - 60 &&
+				box.cy > 100 &&
+				box.cy < box.vh - 80
+			);
+		})
+		.toBe(true);
 	await expect(page.locator('.chip', { hasText: '∂LMP/∂rating' })).toBeVisible({
 		timeout: 30_000
 	});

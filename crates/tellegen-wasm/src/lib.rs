@@ -6,14 +6,15 @@
 //! and the case-file-drop payload shapes the frontend reads. Case files never leave
 //! the machine: parsing and solving happen here, in the browser.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use powerio::{parse_display_bytes, DisplayData};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use tellegen::geo::{network_coords, spread_stacks};
-use tellegen::{DcNetwork, Iterations, SolveIteration, SolveRequest, SolveResponse};
+#[cfg(feature = "sensitivity")]
+use tellegen::SolveResponse;
 
 fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
@@ -42,21 +43,9 @@ pub fn parse_case(text: &str, format: &str) -> Result<String, JsError> {
     .map_err(jserr)
 }
 
-/// Solve the DC OPF in the browser. `network_json` is the `network` object from
-/// `parse_case`; `deltas_json` is `{ deltas: { bus: mw }, sens_bus }` (or empty for
-/// the base case). Returns `{ objective, lmp, flows, dispatch, dlmp_dd, iterations }`
-/// in the shapes the HTTP API serves — LMPs in $/MWh keyed by bus id, flows and
-/// dispatch in MW, and `dlmp_dd` the ($/MWh)/MW sensitivity column for `sens_bus`
-/// (null when none is requested, or when this build lacks the sensitivity feature).
-#[wasm_bindgen]
-pub fn solve_dc(network_json: &str, deltas_json: &str) -> Result<String, JsError> {
-    solve_dc_json(network_json, deltas_json).map_err(jserr)
-}
-
-/// The generalized solve front door: a [`SolveRequest`](tellegen::SolveRequest) JSON
-/// in, a [`SolveResponse`](tellegen::SolveResponse) JSON out. The frontend migrates to
-/// this once it carries `(formulation, operand, parameter)` state; until then `solve_dc`
-/// is the compatibility shape.
+/// The stateless solve front door: a [`SolveRequest`](tellegen::SolveRequest) JSON
+/// in, a [`SolveResponse`](tellegen::SolveResponse) JSON out. One-shot callers only;
+/// the reactive hot path is the [`Study`].
 #[wasm_bindgen]
 pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, JsError> {
     tellegen::solve_json(network_json, request_json).map_err(jserr)
@@ -77,7 +66,7 @@ pub fn capabilities_json() -> String {
 /// network is parsed and the model built here); then [`replace_edits`](Study::replace_edits)
 /// solves exactly at an absolute edit state and [`preview_replacement`](Study::preview_replacement)
 /// returns a first-order linearization toward an absolute edit state — neither re-parses
-/// the network, unlike `solve_json` / `solve_dc` which rebuild it on every call. This is
+/// the network, unlike `solve_json` which rebuilds it on every call. This is
 /// the path a reactive drag should use.
 ///
 /// Arguments and results are JSON in the engine's `Study` shapes: edits are a
@@ -226,239 +215,6 @@ fn commit_output(resp: &SolveResponse) -> serde_json::Value {
         "iterations": resp.iterations,
         "sensitivities": resp.sensitivities,
     })
-}
-
-// ---------------------------------------------------------------------------
-// DC compatibility shape (the frontend's current `solveDc` contract)
-// ---------------------------------------------------------------------------
-
-/// The DC solve request as the frontend encodes it: demand deltas in MW keyed by
-/// original bus id, and an optional bus to return the dLMP/dd column for.
-#[derive(Deserialize, Default)]
-struct JsonSolveRequest {
-    #[serde(default)]
-    deltas: HashMap<i64, f64>,
-    // Read only in the sensitivity build; the core build leaves `dlmp_dd` null.
-    #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
-    #[serde(default)]
-    sens_bus: Option<i64>,
-}
-
-#[derive(Serialize)]
-struct DcSolveOutput {
-    objective: f64,
-    lmp: Vec<LmpValue>,
-    va: Vec<ScalarValue>,
-    flows: Vec<FlowValue>,
-    dispatch: Vec<DispatchValue>,
-    dlmp_dd: Option<DlmpDdColumn>,
-    /// The interior-point convergence trace, for the solve card sparkline.
-    iterations: Vec<SolveIteration>,
-}
-
-#[derive(Serialize)]
-struct LmpValue {
-    bus: usize,
-    usd_per_mwh: f64,
-}
-
-#[derive(Serialize)]
-struct FlowValue {
-    branch: usize,
-    mw: f64,
-    loading: f64,
-}
-
-#[derive(Serialize)]
-struct DispatchValue {
-    gen: usize,
-    mw: f64,
-}
-
-#[derive(Serialize)]
-struct ScalarValue {
-    bus: usize,
-    value: f64,
-}
-
-#[derive(Serialize)]
-struct DlmpDdColumn {
-    bus: usize,
-    operand: &'static str,
-    parameter: &'static str,
-    units: &'static str,
-    values: Vec<SensitivityValue>,
-}
-
-#[derive(Serialize)]
-struct SensitivityValue {
-    bus: usize,
-    value: f64,
-}
-
-/// Solve the DC OPF for `network_json` at `base demand + deltas` and serve the DC
-/// compatibility shape over the generalized engine. Kept out of `#[wasm_bindgen]` so it
-/// is testable natively; `solve_dc` wraps it.
-///
-/// Building the [`DcNetwork`] once gives both the bus-id → dense-index map the
-/// sensitivity column needs and the cached model [`solve_prebuilt`](tellegen::solve_prebuilt)
-/// reuses, so there is no duplicate model build.
-pub fn solve_dc_json(network_json: &str, deltas_json: &str) -> Result<String, String> {
-    let net = powerio::network::Network::from_json(network_json).map_err(|e| e.to_string())?;
-    let req: JsonSolveRequest = if deltas_json.trim().is_empty() {
-        JsonSolveRequest::default()
-    } else {
-        serde_json::from_str(deltas_json).map_err(|e| format!("bad deltas JSON: {e}"))?
-    };
-
-    let dc = DcNetwork::from_network(&net)?;
-
-    // A default request is a base-case DC OPF; layer on the operating-point deltas.
-    // The engine validates the raw map, so the wasm path rejects the same unknown
-    // bus and negative demand edits as the HTTP path.
-    let mut request = SolveRequest::default();
-    request.edits.deltas = req.deltas;
-
-    // The engine's bus index only holds model buses, so a demand delta at a bus
-    // excluded from the DC model (an isolated MATPOWER type-4 bus) would error
-    // deep in the engine as "unknown". Reject it here with an accurate message;
-    // a bus id absent from the network entirely still errors as unknown.
-    for &bus in request.edits.deltas.keys() {
-        let Ok(key) = usize::try_from(bus) else {
-            continue;
-        };
-        if !dc.bus_ids.contains(&key) && net.buses.iter().any(|b| b.id.0 == key) {
-            return Err(format!(
-                "demand delta bus {bus} is isolated and excluded from the model"
-            ));
-        }
-    }
-
-    // The dLMP/dd column: a Price/Demand sensitivity cell over the single sens bus.
-    // Only meaningful in the sensitivity build; the core build leaves `dlmp_dd` null.
-    #[cfg(feature = "sensitivity")]
-    if let Some(raw_bus) = req.sens_bus {
-        if raw_bus <= 0 {
-            return Err(format!("unknown bus {raw_bus}"));
-        }
-        let bus = match usize::try_from(raw_bus) {
-            Ok(b) => b,
-            Err(_) => return Err(format!("unknown bus {raw_bus}")),
-        };
-        match dc.bus_ids.iter().position(|&id| id == bus) {
-            Some(idx) => {
-                request.sensitivities = vec![tellegen::SensRequest {
-                    operand: tellegen::Operand::Price(tellegen::Power::Active),
-                    parameter: tellegen::Parameter::Demand(tellegen::Power::Active),
-                    indices: Some(vec![idx]),
-                    mode: tellegen::Mode::Auto,
-                }];
-            }
-            // A bus that exists in the full network but was excluded from the DC
-            // model (e.g. an isolated MATPOWER type-4 bus) has no DC sensitivity
-            // to report; solve without a sensitivity column instead of erroring
-            // the whole request. A bus id absent from the network entirely is
-            // still rejected below.
-            None if net.buses.iter().any(|b| b.id.0 == bus) => {}
-            None => return Err(format!("unknown bus {bus}")),
-        }
-    }
-
-    let resp = tellegen::solve_prebuilt(&dc, &request)?;
-    serde_json::to_string(&dc_output(&resp)).map_err(|e| e.to_string())
-}
-
-/// Reshape the generalized [`SolveResponse`] into the DC compatibility output.
-fn dc_output(resp: &SolveResponse) -> DcSolveOutput {
-    let lmp = resp
-        .lmp
-        .as_deref()
-        .unwrap_or_default()
-        .iter()
-        .map(|s| LmpValue {
-            bus: s.bus,
-            usd_per_mwh: s.value,
-        })
-        .collect();
-    let flows = resp
-        .flows
-        .as_deref()
-        .unwrap_or_default()
-        .iter()
-        .map(|f| FlowValue {
-            branch: f.branch,
-            mw: f.pf,
-            loading: f.loading,
-        })
-        .collect();
-    let dispatch = resp
-        .dispatch
-        .as_deref()
-        .unwrap_or_default()
-        .iter()
-        .map(|g| DispatchValue {
-            gen: g.gen,
-            mw: g.pg,
-        })
-        .collect();
-    let va = resp
-        .va
-        .as_deref()
-        .unwrap_or_default()
-        .iter()
-        .map(|s| ScalarValue {
-            bus: s.bus,
-            value: s.value,
-        })
-        .collect();
-    let iterations = match &resp.iterations {
-        Some(Iterations::Ipm(trace)) => trace.clone(),
-        _ => Vec::new(),
-    };
-    DcSolveOutput {
-        objective: resp.objective.unwrap_or(0.0),
-        lmp,
-        va,
-        flows,
-        dispatch,
-        dlmp_dd: dc_sensitivity(resp),
-        iterations,
-    }
-}
-
-/// The dLMP/dd column from the first (and only) requested sensitivity cell: rows are
-/// buses, the single column is the sens bus.
-#[cfg(feature = "sensitivity")]
-fn dc_sensitivity(resp: &SolveResponse) -> Option<DlmpDdColumn> {
-    let m = resp.sensitivities.first()?;
-    let col_bus = match m.cols.first()?.element {
-        tellegen::ElementId::Bus(b) => b,
-        _ => return None,
-    };
-    let values = m
-        .rows
-        .iter()
-        .zip(&m.values)
-        .map(|(row, vals)| SensitivityValue {
-            bus: match row.element {
-                tellegen::ElementId::Bus(b) => b,
-                _ => 0,
-            },
-            value: vals.first().copied().unwrap_or(0.0),
-        })
-        .collect();
-    Some(DlmpDdColumn {
-        bus: col_bus,
-        operand: "lmp",
-        parameter: "d",
-        units: "($/MWh)/MW",
-        values,
-    })
-}
-
-#[cfg(not(feature = "sensitivity"))]
-fn dc_sensitivity(_resp: &SolveResponse) -> Option<DlmpDdColumn> {
-    None
 }
 
 // ---------------------------------------------------------------------------
@@ -748,151 +504,6 @@ mpc.gencost = [
             v["topology"]["buses"][1]["demand_mw"].as_f64().unwrap(),
             21.7
         );
-    }
-
-    fn case14_json() -> String {
-        powerio::parse_str(CASE14_NO_COORDS, "m")
-            .expect("parse")
-            .network
-            .to_json()
-            .expect("to_json")
-    }
-
-    #[test]
-    fn solve_dc_base_shapes() {
-        let out = solve_dc_json(&case14_json(), "").expect("solve_dc");
-        let v: Value = serde_json::from_str(&out).unwrap();
-        assert!(v["objective"].as_f64().unwrap() > 0.0);
-        assert_eq!(v["lmp"].as_array().unwrap().len(), 14);
-        assert_eq!(v["flows"].as_array().unwrap().len(), 20);
-        assert!(!v["dispatch"].as_array().unwrap().is_empty());
-        assert!(v["dlmp_dd"].is_null());
-        let iters = v["iterations"].as_array().unwrap();
-        assert!(!iters.is_empty(), "expected a convergence trace");
-        for it in iters {
-            assert!(it["inf_pr"].as_f64().unwrap().is_finite());
-        }
-    }
-
-    #[test]
-    fn solve_dc_deltas_shift_the_operating_point() {
-        let base: Value =
-            serde_json::from_str(&solve_dc_json(&case14_json(), "").unwrap()).unwrap();
-        let bumped: Value = serde_json::from_str(
-            &solve_dc_json(&case14_json(), r#"{"deltas": {"3": 80.0}}"#).unwrap(),
-        )
-        .unwrap();
-        assert!(
-            (bumped["objective"].as_f64().unwrap() - base["objective"].as_f64().unwrap()).abs()
-                > 1e-6,
-            "demand delta had no effect on the objective"
-        );
-    }
-
-    #[test]
-    fn solve_dc_unknown_delta_bus_errors() {
-        let err = solve_dc_json(&case14_json(), r#"{"deltas": {"999999": 1.0}}"#).unwrap_err();
-        assert!(
-            err.contains("unknown demand delta bus 999999"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn solve_dc_delta_at_isolated_bus_errors_as_isolated_not_unknown() {
-        // Bus 15 (type 4) exists in the raw network but is excluded from the DC
-        // model, so a demand delta there cannot enter the solve. It must be
-        // rejected as isolated, not with the misleading "unknown bus" message.
-        let case_with_isolated_bus = CASE14_NO_COORDS.replace(
-            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n];",
-            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n 15 4 0 0 0 0 1 1 0 230 1 1.1 0.9;\n];",
-        );
-        let network_json = powerio::parse_str(&case_with_isolated_bus, "m")
-            .expect("parse")
-            .network
-            .to_json()
-            .expect("to_json");
-
-        let err = solve_dc_json(&network_json, r#"{"deltas": {"15": 1.0}}"#).unwrap_err();
-        assert!(err.contains("isolated"), "got: {err}");
-    }
-
-    #[cfg(feature = "sensitivity")]
-    #[test]
-    fn solve_dc_sensitivity_column_present_when_requested() {
-        let out = solve_dc_json(&case14_json(), r#"{"sens_bus": 3}"#).expect("solve_dc");
-        let v: Value = serde_json::from_str(&out).unwrap();
-        let s = &v["dlmp_dd"];
-        assert_eq!(s["bus"].as_i64().unwrap(), 3);
-        assert_eq!(s["units"].as_str().unwrap(), "($/MWh)/MW");
-        assert_eq!(s["operand"].as_str().unwrap(), "lmp");
-        let values = s["values"].as_array().unwrap();
-        assert_eq!(values.len(), 14);
-        for e in values {
-            assert!(e["value"].as_f64().unwrap().is_finite());
-        }
-    }
-
-    #[cfg(feature = "sensitivity")]
-    #[test]
-    fn solve_dc_unknown_sensitivity_bus_errors() {
-        let err = solve_dc_json(&case14_json(), r#"{"sens_bus": 999999}"#).unwrap_err();
-        assert!(err.contains("unknown bus 999999"), "got: {err}");
-    }
-
-    #[cfg(feature = "sensitivity")]
-    #[test]
-    fn solve_dc_sensitivity_at_isolated_bus_omits_column_without_erroring() {
-        // Bus 15 (type 4 = isolated) exists in the raw network and would render as
-        // a normal marker on a map, but DcNetwork::from_network excludes isolated
-        // buses from the solved model. Requesting a sensitivity column there must
-        // not error the whole solve -- it should come back with dlmp_dd left null,
-        // the same as before this bus existed.
-        let case_with_isolated_bus = CASE14_NO_COORDS.replace(
-            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n];",
-            " 14 1 14.9 5 0 0 1 1 0 230 1 1.1 0.9;\n 15 4 0 0 0 0 1 1 0 230 1 1.1 0.9;\n];",
-        );
-        let network_json = powerio::parse_str(&case_with_isolated_bus, "m")
-            .expect("parse")
-            .network
-            .to_json()
-            .expect("to_json");
-
-        let out = solve_dc_json(&network_json, r#"{"sens_bus": 15}"#).expect("solve_dc");
-        let v: Value = serde_json::from_str(&out).unwrap();
-        assert!(v["objective"].as_f64().unwrap() > 0.0);
-        assert!(v["dlmp_dd"].is_null(), "got: {v}");
-    }
-
-    #[cfg(feature = "sensitivity")]
-    #[test]
-    fn solve_dc_sensitivity_matches_engine_contract() {
-        let compat: Value =
-            serde_json::from_str(&solve_dc_json(&case14_json(), r#"{"sens_bus": 3}"#).unwrap())
-                .unwrap();
-        let engine_req = r#"{"formulation":"dcopf","sensitivities":[{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"},"indices":[2]}]}"#;
-        let engine: Value =
-            serde_json::from_str(&tellegen::solve_json(&case14_json(), engine_req).unwrap())
-                .unwrap();
-
-        let compat_values = compat["dlmp_dd"]["values"].as_array().unwrap();
-        let engine_rows = engine["sensitivities"][0]["rows"].as_array().unwrap();
-        let engine_values = engine["sensitivities"][0]["values"].as_array().unwrap();
-        assert_eq!(compat_values.len(), engine_values.len());
-        for ((compat_row, engine_row), engine_value_row) in
-            compat_values.iter().zip(engine_rows).zip(engine_values)
-        {
-            assert_eq!(
-                compat_row["bus"].as_u64(),
-                engine_row["element"]["Bus"].as_u64()
-            );
-            let compat_value = compat_row["value"].as_f64().unwrap();
-            let engine_value = engine_value_row[0].as_f64().unwrap();
-            assert!(
-                (compat_value - engine_value).abs() < 1e-10,
-                "{compat_value} != {engine_value}"
-            );
-        }
     }
 
     #[cfg(feature = "sensitivity")]

@@ -14,12 +14,10 @@ Use this transport when cases should stay local to the browser:
 - sensitivity requests run in WebAssembly; and
 - no case text or network JSON leaves the browser unless the host app sends it.
 
-The transport has two wasm packages:
+The transport has one wasm package carrying parsing, all solves, `Study`,
+capabilities, and generalized sensitivity requests.
 
-- core wasm for parsing and DC solves; and
-- sensitivity wasm for `Study`, SOCWR, capabilities, and generalized sensitivity requests.
-
-The loader is lazy. Host apps can call `preloadCore()` or `preloadSensitivity()` to control when the browser downloads and initializes wasm.
+The loader is lazy. Host apps can call `preloadEngine()` to control when the browser downloads and initializes wasm.
 
 ## HTTP
 

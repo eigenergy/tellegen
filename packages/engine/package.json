@@ -32,9 +32,7 @@
     "contracts": "node scripts/generate-contracts.mjs",
     "contracts:check": "node scripts/generate-contracts.mjs --check",
     "build": "npm run contracts:check && tsc -p tsconfig.json && node scripts/copy-wasm-assets.mjs",
-    "wasm": "npm run wasm:core && npm run wasm:sens",
-    "wasm:core": "RUSTFLAGS=\"-C target-feature=-simd128,-relaxed-simd\" wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --no-default-features",
-    "wasm:sens": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-sens-pkg --out-name tellegen_sens -- --features conic",
+    "wasm": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --features conic",
     "check": "npm run contracts:check && tsc -p tsconfig.json --noEmit",
     "test:import": "node scripts/import-smoke.mjs",
     "pack:dry-run": "npm pack --dry-run"
