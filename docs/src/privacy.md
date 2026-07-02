@@ -1,7 +1,7 @@
 # Privacy
 
-tellegen parses dropped case files in your browser. Those files are not
-uploaded to the tellegen backend by the current public demo.
+tellegen parses dropped case files in your browser. The current public demo
+does not upload those files to the tellegen backend.
 
 ## Current Demo
 

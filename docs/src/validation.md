@@ -15,8 +15,8 @@ is in dollars per hour directly.
 
 ## Relaxation lower bound
 
-The SOCWR objective (`socwr_opf` objective) must lower-bound the published AC optimum
-(`AC ($/h)`):
+The SOCWR objective (`socwr_opf` objective) must be a lower bound on the published
+AC optimum (`AC ($/h)`):
 
 $$ \text{socwr} \le \text{AC} + \text{tol}. $$
 
@@ -29,11 +29,11 @@ The gap is
 $$ \text{gap} = \frac{\text{AC} - \text{socwr}}{\text{AC}} \cdot 100, $$
 
 compared against the baseline `SOC Gap (%)`. tellegen's SOCWR is the Jabr SOC
-relaxation — the same family as the baseline `SOC` column — so a near-zero
+relaxation, the same family as the baseline `SOC` column, so a near-zero
 difference in gap is the expected result. The published SOC bound is recovered as
 $\text{AC} \cdot (1 - \text{SOC gap}/100)$.
 
 All three variants are exercised: typical, congested (API), and small-angle (SAD).
-tellegen's `AcNetwork` carries the angle-difference limits and the SOCWR enforces
+tellegen's `AcNetwork` carries the angle difference limits and the SOCWR enforces
 them in W-space, so the SAD relaxation tracks the published SAD SOC. Where a case
-shows a large SOC gap, that is relaxation-quality data, not a failure.
+shows a large SOC gap, that measures relaxation quality, not a failure.

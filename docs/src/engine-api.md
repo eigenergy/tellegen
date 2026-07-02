@@ -4,16 +4,16 @@
 
 ## Constants
 
-- `CONTRACT_VERSION` — the public TypeScript contract version. It matches the package version.
-- `CONTRACT_SOURCE_SHA256` — the `crates/tellegen/src/api.rs` hash used to generate the TypeScript contracts.
-- `FORMULATION_IDS` and `SOLVE_STATUSES` — generated enum tags from the Rust API layer.
-- `FORMULATIONS` and `DEFAULT_FORMULATION` — browser UI formulation list and default formulation.
+- `CONTRACT_VERSION`: the public TypeScript contract version. It matches the package version.
+- `CONTRACT_SOURCE_SHA256`: the `crates/tellegen/src/api.rs` hash used to generate the TypeScript contracts.
+- `FORMULATION_IDS` and `SOLVE_STATUSES`: generated enum tags from the Rust API layer.
+- `FORMULATIONS` and `DEFAULT_FORMULATION`: browser UI formulation list and default formulation.
 
 ## Browser Wasm Transport
 
-- `browserWasmTransport` — object facade for the browser wasm transport.
-- `createBrowserWasmTransport()` — returns the browser wasm transport facade.
-- `preloadEngine()` — initializes the wasm package.
+- `browserWasmTransport`: object facade for the browser wasm transport.
+- `createBrowserWasmTransport()`: returns the browser wasm transport facade.
+- `preloadEngine()`: initializes the wasm package.
 
 The facade has the same methods as the direct exports:
 
@@ -25,17 +25,17 @@ The facade has the same methods as the direct exports:
 
 ## Case And Display Helpers
 
-- `formatOf(name)` — returns `m`, `raw`, or `aux` for supported case names.
-- `isDisplayFile(name)` — returns true for PowerWorld `.pwd` display files.
-- `ingestCase(text, format)` — parses a case and returns a network JSON payload plus summary and topology.
-- `parseDisplay(bytes)` — parses PowerWorld display data for diagram overlays.
+- `formatOf(name)`: returns `m`, `raw`, or `aux` for supported case names.
+- `isDisplayFile(name)`: returns true for PowerWorld `.pwd` display files.
+- `ingestCase(text, format)`: parses a case and returns a network JSON payload plus summary and topology.
+- `parseDisplay(bytes)`: parses PowerWorld display data for diagram overlays.
 
 ## Solves And Studies
 
-- `capabilities()` — returns available formulations, operands, and parameters.
-- `solveJson(networkJson, request)` — stateless solve over the generalized Rust API.
-- `createStudy(networkJson, formulation)` — builds a browser `Study`.
-- `Study` / `BrowserStudy` — browser handle with:
+- `capabilities()`: returns available formulations, operands, and parameters.
+- `solveJson(networkJson, request)`: stateless solve over the generalized Rust API.
+- `createStudy(networkJson, formulation)`: builds a browser `Study`.
+- `Study` / `BrowserStudy`: browser handle with:
   - `currentSolution()`
   - `preview(deltas, rates?)`
   - `commit(caseId, deltas, rates, target)`

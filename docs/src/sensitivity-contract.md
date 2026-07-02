@@ -9,11 +9,11 @@ $$ \frac{dz}{dp} = -\left(\frac{\partial K}{\partial z}\right)^{-1} \frac{\parti
 
 A sensitivity is named for the physical quantities it relates, not a formulation's
 internal variables. The **operand** (what the derivative is *of*) and **parameter**
-(what it is taken *with respect to*) are the orthogonal sub-axes — active/reactive,
-from/to, voltage representation:
+(what it is taken *with respect to*) are the orthogonal sub-axes (active/reactive,
+from/to, voltage representation):
 
-- `Operand` — `Price`, `Dispatch`, `Flow { power, end }`, `Voltage(kind)`.
-- `Parameter` — `Demand`, `Cost`, `LineLimit`, `SeriesAdmittance`, `ShuntAdmittance`,
+- `Operand`: `Price`, `Dispatch`, `Flow { power, end }`, `Voltage(kind)`.
+- `Parameter`: `Demand`, `Cost`, `LineLimit`, `SeriesAdmittance`, `ShuntAdmittance`,
   `VoltageBound`, `GenBound`, `Transformer`, `Switching`.
 
 Each formulation maps a request to its own KKT rows or reports the combination as
@@ -42,10 +42,10 @@ The two are algebraically identical; `Mode::Auto` picks the smaller dimension.
 
 Finite differences validate the analytic columns per cell:
 
-- **clean** — cells routed through active power, relative error $< 10^{-3}$.
-- **Jabr-coupled / soft** — squared-voltage or reactive cells, looser (the cone's
+- **clean**: cells routed through active power, relative error $< 10^{-3}$.
+- **Jabr-coupled / soft**: squared-voltage or reactive cells, looser (the cone's
   degenerate directions).
-- **norm-floor skip** — columns below the regularization floor carry no resolvable
+- **norm-floor skip**: columns below the regularization floor carry no resolvable
   derivative and are not compared.
 
 See [Validation](validation.md) for how these classes are checked, and

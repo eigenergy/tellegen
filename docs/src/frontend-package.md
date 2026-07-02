@@ -1,15 +1,12 @@
 # Framework Packages
 
-The reusable browser packages live under `packages/`.
-
-The first framework release publishes both `@tellegen/engine` and
-`@tellegen/svelte`.
+The reusable browser packages live under `packages/`. The first framework
+release publishes both `@tellegen/engine` and `@tellegen/svelte`.
 
 Use `@tellegen/svelte` when a Svelte app wants the map, panels, local file flow,
-and solve card as components.
-
-Use `@tellegen/engine` when an app wants case parsing, browser WebAssembly
-solves, studies, previews, and sensitivities without the tellegen UI.
+and solve card as components. Use `@tellegen/engine` when an app wants case
+parsing, browser WebAssembly solves, studies, previews, and sensitivities
+without the tellegen UI.
 
 `apps/web` is the hosted demo. It consumes `@tellegen/svelte` and keeps only
 route level concerns such as SEO pages, `/credits`, and `/privacy`.

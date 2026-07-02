@@ -43,7 +43,7 @@ The boundary:
 - **powerio** (Rust): parse, encode, the formats, the network data model. Where
   the canonical display format belongs ([display-data.md](display-data.md)).
 - **tellegen** (browser): powerio's reactive frontend. Owns interaction, the
-  fast math, and rendering. The Rust it needs is built in-repo against powerio
+  fast math, and rendering. The Rust it needs is built in this repository against powerio
   and compiled to WebAssembly.
 - **tellegen backend** (Rust): the same numerical core as the browser,
   compiled native. It hosts the bundled cases and is the fallback solver for
@@ -74,7 +74,7 @@ gradient:
   sparse path has an unresolved crash report, so validate it on real case
   matrices before relying on it.
 - **AC OPF, a nonconvex program: the one genuine holdout.** There is no
-  Ipopt-in-wasm. The options are a second-order cone relaxation through Clarabel
+  Ipopt in wasm. The options are a second-order cone relaxation through Clarabel
   (approximate, well studied for AC OPF) or a Rust nonlinear solver (thin
   ground). Until one matures, AC OPF is the reason to keep a backend.
 
