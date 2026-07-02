@@ -203,11 +203,15 @@ export interface BrowserSolution {
   iterations: SolveIteration[];
 }
 
-/** Solve the DC OPF in the browser at demand = base + `deltas`. `networkJson` is
- * the raw powerio Network (from the `/case` endpoint or a browser parse). When
- * `sensBus` is set, the dLMP/dd column is loaded from the sensitivity wasm
- * package when the browser supports that module. */
-export async function solveDc(
+/** Solve the DC OPF in the browser at demand = base + `deltas`, one shot: each
+ * call re-parses the network and rebuilds the model, and it is the only solve
+ * entry the core (no sensitivity) wasm build carries — the fallback when the
+ * full module can't load. Use `Study` for repeated solves, previews, and
+ * sensitivity work. `networkJson` is the raw powerio Network (from the `/case`
+ * endpoint or a browser parse). When `sensBus` is set, the dLMP/dd column is
+ * loaded from the sensitivity wasm package when the browser supports that
+ * module. */
+export async function solveDcOpf(
   caseId: string,
   networkJson: string,
   deltas: DemandDeltas,
@@ -270,7 +274,7 @@ export function errorText(e: unknown): string {
 
 /** True when the sensitivity wasm module has failed to load in a way it can
  * never recover from in this browser. The Study path uses the sens module, so
- * the caller must fall back to `solveDc`/the server when this is true. */
+ * the caller must fall back to `solveDcOpf`/the server when this is true. */
 export function isPermanentSensFailure(message: string): boolean {
   return isPermanentWasmLoadFailure(message);
 }
@@ -462,7 +466,7 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
  * parsed and the model built when the Study is created; `commit` solves exactly
  * at the UI's absolute demand delta state and `preview` returns a first-order
  * linearization toward an absolute demand delta state, neither re-parsing the
- * network (unlike `solveDc`, which rebuilds the DcNetwork on every call). */
+ * network (unlike `solveDcOpf`, which rebuilds the DcNetwork on every call). */
 export class BrowserStudy {
   #study: import("./wasm-sens-pkg/tellegen_sens.js").Study;
   /** External bus id -> dense positional bus index, built once from the committed solution's
@@ -609,7 +613,7 @@ export interface EngineTransport {
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   capabilities(): Promise<ProblemCaps[]>;
   solveJson(networkJson: string, request?: SolveRequest): Promise<SolveResponse>;
-  solveDc(
+  solveDcOpf(
     caseId: string,
     networkJson: string,
     deltas: DemandDeltas,
@@ -628,7 +632,7 @@ export const browserWasmTransport: EngineTransport = {
   parseDisplay,
   capabilities,
   solveJson,
-  solveDc,
+  solveDcOpf,
   createStudy,
 };
 

@@ -31,7 +31,7 @@ export {
 	isDisplayFile,
 	isPermanentSensFailure,
 	parseDisplay,
-	solveDc,
+	solveDcOpf,
 	solveJson
 } from '@tellegen/engine';
 

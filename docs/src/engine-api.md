@@ -22,7 +22,7 @@ The facade has the same methods as the direct exports:
 - `parseDisplay(bytes)`
 - `capabilities()`
 - `solveJson(networkJson, request)`
-- `solveDc(caseId, networkJson, deltas, sensBus)`
+- `solveDcOpf(caseId, networkJson, deltas, sensBus)`
 - `createStudy(networkJson, formulation)`
 
 ## Case And Display Helpers
@@ -36,7 +36,7 @@ The facade has the same methods as the direct exports:
 
 - `capabilities()` — returns available formulations, operands, and parameters.
 - `solveJson(networkJson, request)` — stateless solve over the generalized Rust API.
-- `solveDc(caseId, networkJson, deltas, sensBus)` — legacy DC solve shape used by the demo.
+- `solveDcOpf(caseId, networkJson, deltas, sensBus)` — one-shot DC OPF; the only solve entry on the core wasm build. Use `Study` for repeated solves and sensitivities.
 - `createStudy(networkJson, formulation)` — builds a browser `Study`.
 - `Study` / `BrowserStudy` — browser handle with:
   - `currentSolution()`

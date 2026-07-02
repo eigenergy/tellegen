@@ -25,7 +25,7 @@ import {
 	isDisplayFile,
 	isPermanentSensFailure,
 	parseDisplay,
-	solveDc,
+	solveDcOpf,
 	type BrowserStudy,
 	type Formulation,
 	type SensTarget
@@ -151,7 +151,7 @@ export class Controller {
 	}
 
 	/** True when the case carries any nonzero committed rating delta. Rating edits
-	 * solve only through the browser Study; the solveDc and server fallbacks would
+	 * solve only through the browser Study; the solveDcOpf and server fallbacks would
 	 * silently drop them, so callers gate on this before falling back. */
 	hasRatingEdits(c: SolvableCase): boolean {
 		return Object.values(this.caseRatings(c)).some((mw) => mw !== 0);
@@ -275,7 +275,7 @@ export class Controller {
 	// The case's Study, building it once for `(networkJson, formulation)` and rebuilding
 	// (after free) if either changed — so picking a new formulation re-parses and re-solves
 	// under that formulation. Returns null when the sens module can't load; the caller then
-	// falls back to solveDc/the server, surfacing solveFallbackReason.
+	// falls back to solveDcOpf/the server, surfacing solveFallbackReason.
 	async getStudy(c: SolvableCase, networkJson: string): Promise<BrowserStudy | null> {
 		const latched = this.studyUnavailable.get(c);
 		if (latched) {
@@ -1038,7 +1038,7 @@ export class Controller {
 	};
 
 	/** The terminal message when a case with committed rating edits cannot use the
-	 * browser Study: the solveDc and server fallbacks solve at base ratings, so
+	 * browser Study: the solveDcOpf and server fallbacks solve at base ratings, so
 	 * there is no correct fallback to take. */
 	private ratingEditsFallbackError(c: SolvableCase): string {
 		return `${this.caseName(c)}: line rating edits solve only in the browser engine${
@@ -1167,8 +1167,8 @@ export class Controller {
 	// Exact solve in the browser (wasm). The build-once Study commits the new
 	// operating point without re-parsing, returning the ∂LMP/∂parameter column for
 	// the selection target in the same solve; on a Study failure it falls back to
-	// solveDc, and on any browser failure or missing network JSON it reconciles via
-	// the server stream (backend cases). Rating edits never fall back: solveDc and
+	// solveDcOpf, and on any browser failure or missing network JSON it reconciles via
+	// the server stream (backend cases). Rating edits never fall back: solveDcOpf and
 	// the server both solve at base ratings, so a Study failure there is terminal.
 	runSolve = (c: SolvableCase, target: SensTarget | null) => {
 		// Cancel this case's own previous server stream, if any (backend only).
@@ -1243,7 +1243,7 @@ export class Controller {
 						return;
 					}
 					// Any other commit failure is unexpected; drop the Study so the next solve
-					// rebuilds, then fall through to the solveDc fallback.
+					// rebuilds, then fall through to the solveDcOpf fallback.
 					this.disposeStudy(c);
 					c.solveFallbackReason ??= `browser study commit failed: ${msg}`;
 				}
@@ -1261,7 +1261,7 @@ export class Controller {
 				return;
 			}
 
-			// Neither solveDc nor the server stream can apply rating edits; falling
+			// Neither solveDcOpf nor the server stream can apply rating edits; falling
 			// through would silently solve at base ratings, so stop here instead.
 			if (this.hasRatingEdits(c)) {
 				if (seq !== (c.solveSeq ?? 0)) return;
@@ -1273,10 +1273,10 @@ export class Controller {
 			// Fallback: the original per-call browser solve (re-parses each time). Used
 			// when the Study can't be built or a built
 			// Study failed to commit; itself falls to the server for backend cases.
-			// Only a bus target can ride along (solveDc has no branch parameter); a
+			// Only a bus target can ride along (solveDcOpf has no branch parameter); a
 			// branch target's column stays absent, and selectBranch owns its errors.
 			const sensBus = target && 'bus' in target ? target.bus : null;
-			solveDc(c.id, networkJson, this.caseDeltas(c), sensBus)
+			solveDcOpf(c.id, networkJson, this.caseDeltas(c), sensBus)
 				.then(async ({ solution, sensitivity, sensitivityError, iterations }) => {
 					if (seq !== (c.solveSeq ?? 0)) return;
 					c.solution = solution;
