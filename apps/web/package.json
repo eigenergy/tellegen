@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": true,
 	"description": "SvelteKit hosted demo for tellegen power system maps.",
-	"license": "(MIT OR Apache-2.0)",
+	"license": "MIT",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",

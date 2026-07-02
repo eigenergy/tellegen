@@ -7,8 +7,7 @@ the source distributions for each dependency.
 ## Project Code
 
 The project, including the Rust crates and the npm packages
-`@tellegen/engine` and `@tellegen/svelte`, is licensed under either
-Apache-2.0 or MIT, at your option. See `LICENSE-APACHE` and `LICENSE-MIT`.
+`@tellegen/engine` and `@tellegen/svelte`, is MIT licensed. See `LICENSE`.
 
 The engine uses the W space SOCWR formulation as implemented in PowerModels.jl
 as a formulation reference. PowerModels.jl is BSD 3-Clause licensed. The

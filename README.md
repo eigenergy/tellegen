@@ -98,7 +98,6 @@ server surface, hosting, and where the project is going.
 
 ## License
 
-Licensed under either of [Apache-2.0](LICENSE-APACHE) or
-[MIT](LICENSE-MIT), at your option. See
+[MIT](LICENSE). See
 [docs/src/third-party-notices.md](docs/src/third-party-notices.md) for
 attributions.
