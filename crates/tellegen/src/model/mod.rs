@@ -147,10 +147,11 @@ fn solve_3x3(mut a: [[f64; 3]; 3], mut b: [f64; 3]) -> Option<[f64; 3]> {
             a.swap(i, pivot);
             b.swap(i, pivot);
         }
+        let pivot_row = a[i];
         for r in (i + 1)..3 {
-            let factor = a[r][i] / a[i][i];
-            for c in i..3 {
-                a[r][c] -= factor * a[i][c];
+            let factor = a[r][i] / pivot_row[i];
+            for (elem, p) in a[r].iter_mut().zip(pivot_row).skip(i) {
+                *elem -= factor * p;
             }
             b[r] -= factor * b[i];
         }
