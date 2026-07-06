@@ -31,7 +31,8 @@ pub struct AcNetwork {
     pub br_from: Vec<usize>,
     pub br_to: Vec<usize>,
     /// Series conductance `g = r/(r²+x²)` and susceptance `b = −x/(r²+x²)` per
-    /// branch (`0` for a near-zero-impedance branch treated as open).
+    /// branch (`0` only for a literal zero-impedance record; a tiny but nonzero
+    /// impedance still gets its true, correspondingly large admittance).
     pub g: Vec<f64>,
     pub b: Vec<f64>,
     /// From/to-side shunt admittance (line charging). A MATPOWER source splits the
@@ -142,7 +143,14 @@ impl AcNetwork {
                 .bus_index(br.to)
                 .ok_or_else(|| format!("branch to-bus {} not in index", br.to))?;
             let z2 = br.r * br.r + br.x * br.x;
-            let (gg, bb) = if z2 > MIN_Z_SQUARED {
+            // Only a literal zero-impedance record (z2 == 0, undivideable) falls back to 0.
+            // A tiny-but-nonzero impedance still gets its true (large) series admittance: it
+            // is a real, near-ideal tie (e.g. a substation bus-splitting jumper), not an open
+            // circuit, and severing it can wrongly strand generation or reactive support (the
+            // same bug fixed for DC in `DcNetwork::from_network`; see
+            // `tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`). The line
+            // charging on such a jumper is still dropped below, unrelated to this guard.
+            let (gg, bb) = if z2 > 0.0 {
                 (br.r / z2, -br.x / z2)
             } else {
                 (0.0, 0.0)
@@ -151,13 +159,17 @@ impl AcNetwork {
             br_to.push(t);
             g.push(gg);
             b.push(bb);
-            // MATPOWER charging: split evenly, no charging conductance. A near-zero-impedance
-            // branch is treated as a closed jumper (g = b = 0 above); it carries no line
-            // charging either, since charging scales with a real line's length. Keeping the
-            // charging on such a jumper over-determines the reactive balance at an isolated
-            // zero-injection bus (its only reactive terms are the two charging shunts), forcing
-            // w → 0 against the voltage floor — a spurious SOCWR/AC-OPF infeasibility, while DC
-            // (no reactive, no |V|) stays feasible. (powerio 0.3.3 still emits the charging here.)
+            // MATPOWER charging: split evenly, no charging conductance. This guard is
+            // independent of the series-admittance one above: a near-ideal tie (z2 below
+            // MIN_Z_SQUARED but not literally zero) now carries its true, large series g/b,
+            // so it is no longer a dangling bus in the series terms; but its charging, which
+            // scales with a real line's length, is still dropped, since it is negligibly
+            // small next to that series admittance and keeping it on a literal zero-impedance
+            // jumper (z2 == 0, g = b = 0, no series coupling at all) over-determines the
+            // reactive balance at an isolated zero-injection bus (its only reactive terms
+            // would be the two charging shunts), forcing w → 0 against the voltage floor — a
+            // spurious SOCWR/AC-OPF infeasibility fixed by PR #13. (powerio 0.3.3 still emits
+            // the charging here.)
             let charging = if z2 > MIN_Z_SQUARED { br.b / 2.0 } else { 0.0 };
             g_fr.push(0.0);
             b_fr.push(charging);
@@ -341,4 +353,50 @@ impl AcNetwork {
 /// already per unit from `to_normalized`.
 fn ac_cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64, f64), String> {
     quadratic_cost_coeffs(cost)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::CASE3;
+
+    fn approx(a: f64, b: f64) {
+        assert!((a - b).abs() < 1e-6, "expected {b}, got {a}");
+    }
+
+    #[test]
+    fn near_zero_impedance_jumper_is_a_tie_not_an_open_circuit() {
+        // Regression for the same CATS bug already fixed in `DcNetwork::from_network`
+        // (see `model::dc::tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`):
+        // a branch with tiny but nonzero impedance (a substation bus-splitting jumper;
+        // CaliforniaTestSystem.m has 11, with z2 down to ~1.5e-12) was falling below the
+        // old `MIN_Z_SQUARED = 1e-10` guard and getting series `g = b = 0` — treated as an
+        // open circuit — instead of the large-but-finite admittance a near-ideal tie
+        // actually has. That silently disconnected the two buses in the pi-model, which
+        // corrupts both AC power flow (Newton on `ybus`) and the SOCWR relaxation (its Ohm
+        // rows read `g`/`b` directly).
+        let text = CASE3.replace(
+            "1 3 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
+            "1 3 1e-7 1e-6 0 250 250 250 0 0 1 -360 360;",
+        );
+        let net = powerio::parse_str(&text, "matpower")
+            .expect("parse jumper case3")
+            .network;
+        let ac = AcNetwork::from_network(&net).expect("build AcNetwork with jumper branch");
+
+        let z2 = 1e-7_f64.powi(2) + 1e-6_f64.powi(2);
+        let expected_g = 1e-7 / z2;
+        let expected_b = -1e-6 / z2;
+        approx(ac.g[1], expected_g); // branch index 1 is the 1-3 jumper
+        approx(ac.b[1], expected_b);
+        assert!(
+            ac.b[1].abs() > 1e5,
+            "jumper susceptance {} should be large, not the near-zero open-circuit value",
+            ac.b[1]
+        );
+        // CASE3's branches all carry zero charging (`br.b == 0`), so this fixture can't
+        // pin the separate charging guard (still keyed to MIN_Z_SQUARED, unaffected by
+        // this fix, and covered by
+        // `problem::conic::tests::zero_impedance_jumper_to_dangling_bus_stays_feasible`).
+    }
 }

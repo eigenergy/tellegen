@@ -415,6 +415,48 @@ mod tests {
         );
     }
 
+    /// Regression for the near-zero-impedance-jumper bug (see
+    /// `model::ac::tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`, and
+    /// `model::dc::tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit` for the
+    /// DC analogue). 11 of CaliforniaTestSystem.m's branches — bus-splitting jumpers with
+    /// real but tiny impedance (z^2 as low as ~1.5e-12) — fell below the old
+    /// `MIN_Z_SQUARED = 1e-10` guard and were dropped to series `g = b = 0`, an open
+    /// circuit, wrongly disconnecting the two buses they tie. Reference value from a
+    /// fresh PowerModels.jl `SOCWRPowerModel` + Ipopt solve on the same file ("Optimal
+    /// Solution Found", scaled and unscaled NLP error ~2.6e-7): $785,165.38. Before the
+    /// fix tellegen reported $785,627.36 here (5.9e-4 relative, close to the ~$785,627
+    /// logged when the jumper-charging fix, PR #13, first made SOCWR feasible on CATS —
+    /// that number was never wrong about feasibility, only about severing the jumpers).
+    /// After the fix it reports $785,195.50 (3.8e-5 relative), a >15x tighter match,
+    /// consistent with the residual being ordinary conic-solver tolerance rather than a
+    /// remaining modeling gap.
+    #[test]
+    fn cats_socwr_objective_matches_reference_after_the_jumper_fix() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../data/CATS/CaliforniaTestSystem.m"
+        );
+        let Ok(text) = std::fs::read_to_string(path) else {
+            eprintln!(
+                "skipping cats_socwr_objective_matches_reference_after_the_jumper_fix: {path} not found"
+            );
+            return;
+        };
+        let net = powerio::parse_str(&text, "matpower")
+            .expect("parse CATS")
+            .network;
+        let ac = crate::model::AcNetwork::from_network(&net).expect("build AcNetwork");
+        let sol = socwr_opf(&ac).expect("solve CATS SOCWR");
+
+        let reference = 785_165.38;
+        let rel = (sol.objective - reference).abs() / reference;
+        assert!(
+            rel < 1e-4,
+            "objective {} vs PowerModels.jl/Ipopt reference {reference} (rel err {rel})",
+            sol.objective
+        );
+    }
+
     /// A near-zero-impedance jumper (r = x = 0) to a dangling zero-injection bus carries
     /// line charging in the source data. Keeping that charging leaves the isolated bus's
     /// reactive balance with only the two charging shunts, forcing `|V|² → 0` against the
