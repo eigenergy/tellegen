@@ -96,6 +96,10 @@ pub struct AcNetwork {
     /// Dense index -> original source id, as in [`DcNetwork`](super::DcNetwork).
     pub bus_ids: Vec<usize>,
     pub branch_ids: Vec<usize>,
+    /// Dense index -> powerio row uid (`None` when the source network carried no
+    /// uids), as in [`DcNetwork`](super::DcNetwork).
+    pub bus_uids: Vec<Option<String>>,
+    pub branch_uids: Vec<Option<String>>,
     /// System base power (MVA).
     pub base_mva: f64,
 }
@@ -114,6 +118,8 @@ impl AcNetwork {
             bus_ids,
             branch_ids,
             gen_ids,
+            bus_uids,
+            branch_uids,
         } = reconstruct_ids(raw, &view)?;
 
         let pd = view.pd().to_vec();
@@ -280,6 +286,8 @@ impl AcNetwork {
             slack,
             bus_ids,
             branch_ids,
+            bus_uids,
+            branch_uids,
             base_mva: raw.base_mva,
         })
     }

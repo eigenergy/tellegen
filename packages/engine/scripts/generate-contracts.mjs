@@ -108,17 +108,22 @@ export type Iterations = SolveIteration[] | NewtonIterations;
 
 export interface BusScalar {
 \tbus: number;
+\t/** powerio row uid, present when the solved network carried uids. */
+\tuid?: string;
 \tvalue: number;
 }
 
 export interface BusInjection {
 \tbus: number;
+\tuid?: string;
 \tp: number;
 \tq: number;
 }
 
 export interface BranchFlow {
 \tbranch: number;
+\t/** powerio row uid, present when the solved network carried uids. */
+\tuid?: string;
 \tpf: number;
 \tloading: number;
 \tqf?: number;
@@ -177,6 +182,8 @@ export interface ProblemCaps {
 
 export interface NetworkBus {
 \tid: number;
+\t/** powerio row uid; always present on an ingested case, absent on older payloads. */
+\tuid?: string;
 \tlon: number;
 \tlat: number;
 \tdemand_mw: number;
@@ -185,6 +192,8 @@ export interface NetworkBus {
 
 export interface NetworkBranch {
 \tid: number;
+\t/** powerio row uid; always present on an ingested case, absent on older payloads. */
+\tuid?: string;
 \tfrom: number;
 \tto: number;
 \trate_mw: number;
@@ -230,9 +239,11 @@ export interface CaseSummary {
 \tn_gen: number;
 }
 
-export type DemandDeltas = Record<number, number>;
+/** Keys are element keys: the original numeric id, or the powerio row uid
+ * string (e.g. "buses:1") when the case carries uids. */
+export type DemandDeltas = Record<number | string, number>;
 
-export type BranchRatingDeltas = Record<number, number>;
+export type BranchRatingDeltas = Record<number | string, number>;
 `;
 
 if (check) {

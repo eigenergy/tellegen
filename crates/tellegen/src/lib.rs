@@ -40,8 +40,8 @@ pub mod study;
 pub use api::SensRequest;
 pub use api::{
     capabilities_json, solve_json, solve_network, solve_prebuilt, solve_prebuilt_cancellable,
-    BranchFlow, BusInjection, BusScalar, Edits, GenDispatch, Iterations, Problem, ProblemCaps,
-    SolveOptions, SolveRequest, SolveResponse, SolveStatus,
+    BranchFlow, BusInjection, BusScalar, Edits, ElementKey, GenDispatch, Iterations, Problem,
+    ProblemCaps, SolveOptions, SolveRequest, SolveResponse, SolveStatus,
 };
 pub use formulation::{AcPolar, Dc, Formulation, SocWr};
 #[cfg(feature = "sensitivity")]

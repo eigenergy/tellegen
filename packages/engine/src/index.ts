@@ -57,12 +57,16 @@ export interface CaseFileSummary {
 
 export interface TopologyBus {
   id: number;
+  /** powerio row uid, stamped at ingest (e.g. "buses:0"). */
+  uid: string;
   demand_mw: number;
   gen_mw: number;
 }
 
 export interface TopologyBranch {
   id: number;
+  /** powerio row uid, stamped at ingest (e.g. "branches:0"). */
+  uid: string;
   from: number;
   to: number;
   rate_mw: number;
@@ -159,21 +163,32 @@ export function isPermanentEngineFailure(message: string): boolean {
   return isPermanentWasmLoadFailure(message);
 }
 
-/** One in-place network mutation for the Study handle: a demand delta in MW at
- * an original bus id, or a thermal rating delta in MW at an original branch id. */
+/** One in-place network mutation for the Study handle: a demand delta in MW, or a
+ * thermal rating delta in MW. The element key is the original numeric id or the
+ * powerio row uid string (e.g. "buses:1"). */
 type NetworkEdit =
-  | { kind: "add_load"; bus: number; p_mw: number }
-  | { kind: "adjust_branch_rating"; branch: number; delta_mw: number };
+  | { kind: "add_load"; bus: number | string; p_mw: number }
+  | { kind: "adjust_branch_rating"; branch: number | string; delta_mw: number };
+
+/** An all-digit record key is the numeric-id form (object keys are strings at
+ * runtime); anything else is a powerio row uid, sent as a string. */
+function toElementKey(key: string): number | string {
+  return /^\d+$/.test(key) ? Number(key) : key;
+}
 
 /** A `NetworkEdit[]` for the wasm Study, dropping zero deltas so an unchanged
  * element is never sent. */
 function toEdits(deltas: DemandDeltas, rates: BranchRatingDeltas): NetworkEdit[] {
   const edits: NetworkEdit[] = Object.entries(deltas)
     .filter(([, mw]) => mw !== 0)
-    .map(([bus, p_mw]) => ({ kind: "add_load", bus: Number(bus), p_mw }));
+    .map(([bus, p_mw]) => ({ kind: "add_load", bus: toElementKey(bus), p_mw }));
   for (const [branch, delta_mw] of Object.entries(rates)) {
     if (delta_mw !== 0) {
-      edits.push({ kind: "adjust_branch_rating", branch: Number(branch), delta_mw });
+      edits.push({
+        kind: "adjust_branch_rating",
+        branch: toElementKey(branch),
+        delta_mw,
+      });
     }
   }
   return edits;

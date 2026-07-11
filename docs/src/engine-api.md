@@ -42,8 +42,12 @@ The facade has the same methods as the direct exports:
   - `sensitivity(caseId, deltas, rates, target)`
   - `free()`
 
-`deltas` are demand deltas in MW keyed by bus id; `rates` are thermal rating
-deltas in MW keyed by branch id. `target` is `{ bus }` for the ∂LMP/∂d column,
+`deltas` are demand deltas in MW keyed by bus; `rates` are thermal rating
+deltas in MW keyed by branch. A key is the original numeric id (bus id, 1-based
+branch position) or the powerio row uid string (`"buses:1"`, `"branches:2"`)
+stamped at ingest — `ingestCase` payloads carry the uid on every topology and
+view element, and solve responses echo it on bus and branch scalars.
+`target` is `{ bus }` for the ∂LMP/∂d column,
 `{ branch }` for the ∂LMP/∂rating column (nonzero only on binding lines), or
 `null` for no column.
 

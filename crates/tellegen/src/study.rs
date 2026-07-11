@@ -23,8 +23,8 @@ use powerio::network::Network;
 use serde::{Deserialize, Serialize};
 
 use crate::api::{
-    ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells, Edits, Problem,
-    SensRequest, SolveOptions, SolveRequest, SolveResponse,
+    ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells, Edits, ElementKey,
+    Problem, SensRequest, SolveOptions, SolveRequest, SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
@@ -45,25 +45,29 @@ use crate::sens::ConicKkt;
 /// (`{"kind":"add_load","bus":2,"p_mw":50}` /
 /// `{"kind":"adjust_branch_rating","branch":3,"delta_mw":-25}`), so topology and
 /// other-parameter edits extend the wire format without breaking a client that knows
-/// only the demand edit.
+/// only the demand edit. The element key is an [`ElementKey`] — the original numeric
+/// id, or the powerio row uid (`"bus":"buses:1"`) when the network carries uids —
+/// so a numeric client's wire shape is unchanged.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum NetworkEdit {
-    /// Add `p_mw` to the active demand at the bus with this original id. Repeated edits
-    /// accumulate; the committed operating point is the base case plus the whole log.
-    AddLoad { bus: i64, p_mw: f64 },
-    /// Add `delta_mw` to the thermal rating of the branch with this original id.
-    /// Accumulates like `AddLoad`; the committed limit is the base rating plus the log.
-    AdjustBranchRating { branch: i64, delta_mw: f64 },
+    /// Add `p_mw` to the active demand at this bus. Repeated edits accumulate; the
+    /// committed operating point is the base case plus the whole log.
+    AddLoad { bus: ElementKey, p_mw: f64 },
+    /// Add `delta_mw` to the thermal rating of this branch. Accumulates like
+    /// `AddLoad`; the committed limit is the base rating plus the log.
+    AdjustBranchRating { branch: ElementKey, delta_mw: f64 },
 }
 
 impl NetworkEdit {
-    /// The edited element's original id, on the axis [`parameter`](Self::parameter) names.
-    fn element_id(&self) -> i64 {
+    /// The edited element's key, on the axis [`parameter`](Self::parameter) names.
+    /// The id and uid forms of the same element are distinct keys in a fold; they
+    /// resolve to the same dense element when applied, so their steps accumulate.
+    fn element_key(&self) -> &ElementKey {
         match self {
-            NetworkEdit::AddLoad { bus, .. } => *bus,
-            NetworkEdit::AdjustBranchRating { branch, .. } => *branch,
+            NetworkEdit::AddLoad { bus, .. } => bus,
+            NetworkEdit::AdjustBranchRating { branch, .. } => branch,
         }
     }
     /// The edit's step magnitude in MW along its parameter.
@@ -408,11 +412,11 @@ impl Study {
     /// to confirm. Linearizes at the *last committed* state, not the base.
     pub fn preview(&self, edits: &[NetworkEdit], watched: &[Operand]) -> Result<Preview, String> {
         // Group step magnitudes by the parameter each edit perturbs, keyed by the edited
-        // element's original id. A mixed edit set previews as the sum of the groups'
+        // element's key. A mixed edit set previews as the sum of the groups'
         // first-order terms (the linearization is additive across parameters). Groups
         // keep first-appearance order so errors and results are a function of the
         // request alone.
-        let mut groups: Vec<(Parameter, HashMap<i64, f64>)> = Vec::new();
+        let mut groups: Vec<(Parameter, HashMap<ElementKey, f64>)> = Vec::new();
         for e in edits {
             let p = e.parameter();
             let group = match groups.iter_mut().find(|(gp, _)| *gp == p) {
@@ -422,13 +426,13 @@ impl Study {
                     &mut groups.last_mut().expect("just pushed").1
                 }
             };
-            *group.entry(e.element_id()).or_insert(0.0) += e.magnitude_mw();
+            *group.entry(e.element_key().clone()).or_insert(0.0) += e.magnitude_mw();
         }
 
-        // Dense element ids per parameter axis, from the committed response's ordering
-        // (the same order the sensitivity matrix reports).
-        let bus_ids = response_bus_ids(&self.last);
-        let branch_ids = response_branch_ids(&self.last);
+        // Dense element ids and uids per parameter axis, from the committed response's
+        // ordering (the same order the sensitivity matrix reports).
+        let bus_axis = response_bus_axis(&self.last);
+        let branch_axis = response_branch_axis(&self.last);
 
         // An empty edit set previews as a zero demand step, preserving the demand-only
         // behavior (zero columns; objective delta 0 for OPF, None for power flow).
@@ -439,11 +443,11 @@ impl Study {
         let resolved: Vec<(Parameter, Vec<usize>, Vec<f64>)> = groups
             .iter()
             .map(|(p, mag)| {
-                let ids = match p.axis() {
-                    Axis::Branch => &branch_ids,
-                    _ => &bus_ids,
+                let axis = match p.axis() {
+                    Axis::Branch => &branch_axis,
+                    _ => &bus_axis,
                 };
-                let (cols, col_mag) = dense_cols(ids, mag);
+                let (cols, col_mag) = dense_cols(axis, mag);
                 (*p, cols, col_mag)
             })
             .collect();
@@ -524,14 +528,18 @@ impl std::fmt::Debug for Study {
 }
 
 /// Collapse the edit log to the cumulative delta maps the model builders consume.
+/// Keys fold as written — the id and uid forms of the same element stay distinct
+/// entries here and accumulate onto the same element when the model applies them.
 fn fold(log: &[NetworkEdit]) -> Edits {
-    let mut deltas: HashMap<i64, f64> = HashMap::new();
-    let mut rates: HashMap<i64, f64> = HashMap::new();
+    let mut deltas: HashMap<ElementKey, f64> = HashMap::new();
+    let mut rates: HashMap<ElementKey, f64> = HashMap::new();
     for e in log {
         match e {
-            NetworkEdit::AddLoad { bus, p_mw } => *deltas.entry(*bus).or_insert(0.0) += *p_mw,
+            NetworkEdit::AddLoad { bus, p_mw } => {
+                *deltas.entry(bus.clone()).or_insert(0.0) += *p_mw
+            }
             NetworkEdit::AdjustBranchRating { branch, delta_mw } => {
-                *rates.entry(*branch).or_insert(0.0) += *delta_mw
+                *rates.entry(branch.clone()).or_insert(0.0) += *delta_mw
             }
         }
     }
@@ -542,10 +550,13 @@ fn fold(log: &[NetworkEdit]) -> Edits {
 /// absolute edit states. Every edit kind is additive, so the state is the pair of folded
 /// delta maps and the step is their difference.
 fn replacement_step(current: &[NetworkEdit], target: &[NetworkEdit]) -> Vec<NetworkEdit> {
-    fn diff(current: HashMap<i64, f64>, target: HashMap<i64, f64>) -> BTreeMap<i64, f64> {
-        let mut diff: BTreeMap<i64, f64> = target.into_iter().collect();
-        for (id, mw) in current {
-            *diff.entry(id).or_default() -= mw;
+    fn diff(
+        current: HashMap<ElementKey, f64>,
+        target: HashMap<ElementKey, f64>,
+    ) -> BTreeMap<ElementKey, f64> {
+        let mut diff: BTreeMap<ElementKey, f64> = target.into_iter().collect();
+        for (key, mw) in current {
+            *diff.entry(key).or_default() -= mw;
         }
         diff.retain(|_, mw| *mw != 0.0);
         diff
@@ -564,10 +575,18 @@ fn replacement_step(current: &[NetworkEdit], target: &[NetworkEdit]) -> Vec<Netw
     step
 }
 
-/// The dense bus-id order of a committed solution, read off whichever per-bus block the
-/// formulation populated (`lmp`/`vm`/`va`/`w`). The preview maps edited bus ids onto these
-/// dense indices, so it must use the same order the committed sensitivity matrix reports.
-fn response_bus_ids(resp: &SolveResponse) -> Vec<usize> {
+/// One dense element axis of a committed solution: the original ids and the row
+/// uids (where carried), both in dense order.
+struct ResponseAxis {
+    ids: Vec<usize>,
+    uids: Vec<Option<String>>,
+}
+
+/// The dense bus axis of a committed solution, read off whichever per-bus block the
+/// formulation populated (`lmp`/`vm`/`va`/`w`). The preview maps edited bus keys onto
+/// these dense indices, so it must use the same order the committed sensitivity
+/// matrix reports.
+fn response_bus_axis(resp: &SolveResponse) -> ResponseAxis {
     let scalars = resp
         .lmp
         .as_deref()
@@ -575,35 +594,72 @@ fn response_bus_ids(resp: &SolveResponse) -> Vec<usize> {
         .or(resp.va.as_deref())
         .or(resp.w.as_deref());
     if let Some(s) = scalars {
-        return s.iter().map(|b| b.bus).collect();
+        return ResponseAxis {
+            ids: s.iter().map(|b| b.bus).collect(),
+            uids: s.iter().map(|b| b.uid.clone()).collect(),
+        };
     }
     if let Some(inj) = resp.injections.as_deref() {
-        return inj.iter().map(|b| b.bus).collect();
+        return ResponseAxis {
+            ids: inj.iter().map(|b| b.bus).collect(),
+            uids: inj.iter().map(|b| b.uid.clone()).collect(),
+        };
     }
-    Vec::new()
+    ResponseAxis {
+        ids: Vec::new(),
+        uids: Vec::new(),
+    }
 }
 
-/// The dense branch-id order of a committed solution, read off the flows block — the
-/// branch-axis counterpart of [`response_bus_ids`].
-fn response_branch_ids(resp: &SolveResponse) -> Vec<usize> {
-    resp.flows
-        .as_deref()
-        .map(|flows| flows.iter().map(|f| f.branch).collect())
-        .unwrap_or_default()
+/// The dense branch axis of a committed solution, read off the flows block — the
+/// branch-axis counterpart of [`response_bus_axis`].
+fn response_branch_axis(resp: &SolveResponse) -> ResponseAxis {
+    match resp.flows.as_deref() {
+        Some(flows) => ResponseAxis {
+            ids: flows.iter().map(|f| f.branch).collect(),
+            uids: flows.iter().map(|f| f.uid.clone()).collect(),
+        },
+        None => ResponseAxis {
+            ids: Vec::new(),
+            uids: Vec::new(),
+        },
+    }
 }
 
-/// Map edited element ids to dense indices with aligned magnitudes (MW), dropping ids
-/// that are not in this case.
-fn dense_cols(ids: &[usize], mag: &HashMap<i64, f64>) -> (Vec<usize>, Vec<f64>) {
-    let idx: HashMap<usize, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+/// Map edited element keys to dense indices with aligned magnitudes (MW), dropping
+/// keys that are not in this case. The uid lookup is built only when a uid key is
+/// present, so a numeric-id drag pays nothing for it.
+fn dense_cols(axis: &ResponseAxis, mag: &HashMap<ElementKey, f64>) -> (Vec<usize>, Vec<f64>) {
+    let idx: HashMap<usize, usize> = axis
+        .ids
+        .iter()
+        .enumerate()
+        .map(|(i, &id)| (id, i))
+        .collect();
+    let uid_idx: Option<HashMap<&str, usize>> = mag
+        .keys()
+        .any(|k| matches!(k, ElementKey::Uid(_)))
+        .then(|| {
+            axis.uids
+                .iter()
+                .enumerate()
+                .filter_map(|(i, uid)| uid.as_deref().map(|u| (u, i)))
+                .collect()
+        });
     let mut cols = Vec::new();
     let mut col_mag = Vec::new();
-    for (&id, &m) in mag {
-        if id > 0 {
-            if let Some(&i) = idx.get(&(id as usize)) {
-                cols.push(i);
-                col_mag.push(m);
-            }
+    for (key, &m) in mag {
+        let dense = match key {
+            ElementKey::Id(id) => usize::try_from(*id)
+                .ok()
+                .and_then(|id| idx.get(&id).copied()),
+            ElementKey::Uid(uid) => uid_idx
+                .as_ref()
+                .and_then(|ix| ix.get(uid.as_str()).copied()),
+        };
+        if let Some(i) = dense {
+            cols.push(i);
+            col_mag.push(m);
         }
     }
     (cols, col_mag)
@@ -731,7 +787,10 @@ mod tests {
         let mut s = Study::new(&net, Problem::DcOpf).expect("study");
         let resp = s
             .commit(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 50.0,
+                }],
                 SolveOptions::default(),
             )
             .expect("commit");
@@ -753,7 +812,10 @@ mod tests {
         let mut s = Study::new(&net, Problem::DcOpf).expect("study");
         let resp = s
             .commit_with(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 50.0,
+                }],
                 &[SensRequest {
                     operand: Operand::Price(Power::Active),
                     parameter: Parameter::Demand(Power::Active),
@@ -774,18 +836,98 @@ mod tests {
         assert_eq!(from_study, stateless);
     }
 
+    /// CASE3 with powerio row uids stamped by hand, in the `ensure_payload_uids`
+    /// scheme; see the api.rs fixture of the same name.
+    fn case3_with_uids_json() -> String {
+        let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        for (i, b) in net.buses.iter_mut().enumerate() {
+            b.uid = Some(format!("buses:{i}"));
+        }
+        for (i, br) in net.branches.iter_mut().enumerate() {
+            br.uid = Some(format!("branches:{i}"));
+        }
+        net.to_json().expect("to_json")
+    }
+
+    #[test]
+    fn uid_keyed_edits_commit_and_preview_like_id_keyed_edits() {
+        // Bus id 2 is row 1 (`buses:1`): the same drag addressed by uid must commit
+        // to the same operating point and preview the same first-order column.
+        let net = case3_with_uids_json();
+        let mut by_id = Study::new(&net, Problem::DcOpf).expect("study");
+        let mut by_uid = Study::new(&net, Problem::DcOpf).expect("study");
+
+        let id_edit = NetworkEdit::AddLoad {
+            bus: 2.into(),
+            p_mw: 50.0,
+        };
+        let uid_edit = NetworkEdit::AddLoad {
+            bus: ElementKey::Uid("buses:1".into()),
+            p_mw: 50.0,
+        };
+
+        let watched = [Operand::Price(Power::Active)];
+        let p_id = by_id
+            .preview(std::slice::from_ref(&id_edit), &watched)
+            .expect("preview");
+        let p_uid = by_uid
+            .preview(std::slice::from_ref(&uid_edit), &watched)
+            .expect("preview");
+        assert_eq!(
+            serde_json::to_string(&p_id).unwrap(),
+            serde_json::to_string(&p_uid).unwrap()
+        );
+
+        let r_id = by_id.commit(&[id_edit], SolveOptions::default()).unwrap();
+        let r_uid = by_uid.commit(&[uid_edit], SolveOptions::default()).unwrap();
+        assert_eq!(
+            serde_json::to_string(&r_id).unwrap(),
+            serde_json::to_string(&r_uid).unwrap()
+        );
+    }
+
+    #[test]
+    fn unknown_uid_key_fails_commit_and_keeps_the_committed_point() {
+        let net = case3_with_uids_json();
+        let mut s = Study::new(&net, Problem::DcOpf).expect("study");
+        let before = serde_json::to_string(s.solution()).unwrap();
+        let err = s
+            .commit(
+                &[NetworkEdit::AddLoad {
+                    bus: ElementKey::Uid("buses:99".into()),
+                    p_mw: 10.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap_err();
+        assert!(
+            err.contains(r#"unknown demand delta bus "buses:99""#),
+            "got: {err}"
+        );
+        assert_eq!(before, serde_json::to_string(s.solution()).unwrap());
+        assert!(s.edits().is_empty());
+    }
+
     #[test]
     fn edits_accumulate_across_commits() {
         let net = case3_json();
         let mut a = Study::new(&net, Problem::DcOpf).unwrap();
         a.commit(
-            &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+            &[NetworkEdit::AddLoad {
+                bus: 2.into(),
+                p_mw: 30.0,
+            }],
             SolveOptions::default(),
         )
         .unwrap();
         let two = a
             .commit(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 20.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 20.0,
+                }],
                 SolveOptions::default(),
             )
             .unwrap();
@@ -794,7 +936,10 @@ mod tests {
         let mut b = Study::new(&net, Problem::DcOpf).unwrap();
         let once = b
             .commit(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 50.0,
+                }],
                 SolveOptions::default(),
             )
             .unwrap();
@@ -809,13 +954,19 @@ mod tests {
         let net = case3_json();
         let mut s = Study::new(&net, Problem::DcOpf).unwrap();
         s.commit(
-            &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+            &[NetworkEdit::AddLoad {
+                bus: 2.into(),
+                p_mw: 30.0,
+            }],
             SolveOptions::default(),
         )
         .unwrap();
         let replaced = s
             .replace_edits(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 50.0,
+                }],
                 SolveOptions::default(),
             )
             .unwrap();
@@ -834,7 +985,10 @@ mod tests {
         let net = case3_json();
         let mut s = Study::new(&net, Problem::DcOpf).unwrap();
         s.commit(
-            &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+            &[NetworkEdit::AddLoad {
+                bus: 2.into(),
+                p_mw: 30.0,
+            }],
             SolveOptions::default(),
         )
         .unwrap();
@@ -849,7 +1003,10 @@ mod tests {
         let net = case3_json();
         let mut s = Study::new(&net, Problem::DcOpf).unwrap();
         s.replace_edits(
-            &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+            &[NetworkEdit::AddLoad {
+                bus: 2.into(),
+                p_mw: 30.0,
+            }],
             SolveOptions::default(),
         )
         .unwrap();
@@ -858,7 +1015,7 @@ mod tests {
         let err = s
             .replace_edits(
                 &[NetworkEdit::AddLoad {
-                    bus: 2,
+                    bus: 2.into(),
                     p_mw: 1_000_000.0,
                 }],
                 SolveOptions::default(),
@@ -875,13 +1032,19 @@ mod tests {
         let mut absolute = Study::new(&net, Problem::DcOpf).unwrap();
         absolute
             .replace_edits(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 30.0,
+                }],
                 SolveOptions::default(),
             )
             .unwrap();
         let toward_fifty = absolute
             .preview_replacement(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 50.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 50.0,
+                }],
                 &[Operand::Price(Power::Active)],
             )
             .unwrap();
@@ -889,13 +1052,19 @@ mod tests {
         let mut incremental = Study::new(&net, Problem::DcOpf).unwrap();
         incremental
             .replace_edits(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 30.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 30.0,
+                }],
                 SolveOptions::default(),
             )
             .unwrap();
         let plus_twenty = incremental
             .preview(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 20.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 20.0,
+                }],
                 &[Operand::Price(Power::Active)],
             )
             .unwrap();
@@ -915,7 +1084,10 @@ mod tests {
         let step = 1.0_f64; // MW
         let prev = study
             .preview(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: step }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: step,
+                }],
                 &[Operand::Price(Power::Active)],
             )
             .unwrap();
@@ -928,7 +1100,10 @@ mod tests {
         let mut committed_study = Study::new(&net, Problem::DcOpf).unwrap();
         let committed = committed_study
             .commit(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: step }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: step,
+                }],
                 SolveOptions::default(),
             )
             .unwrap();
@@ -961,7 +1136,7 @@ mod tests {
         let resp = s
             .commit(
                 &[NetworkEdit::AdjustBranchRating {
-                    branch: 3,
+                    branch: 3.into(),
                     delta_mw: -210.0,
                 }],
                 SolveOptions::default(),
@@ -985,7 +1160,7 @@ mod tests {
         study
             .replace_edits(
                 &[NetworkEdit::AdjustBranchRating {
-                    branch: 3,
+                    branch: 3.into(),
                     delta_mw: -210.0,
                 }],
                 SolveOptions::default(),
@@ -996,7 +1171,7 @@ mod tests {
         let prev = study
             .preview(
                 &[NetworkEdit::AdjustBranchRating {
-                    branch: 3,
+                    branch: 3.into(),
                     delta_mw: step,
                 }],
                 &[Operand::Price(Power::Active)],
@@ -1011,7 +1186,7 @@ mod tests {
         let exact = exact_study
             .replace_edits(
                 &[NetworkEdit::AdjustBranchRating {
-                    branch: 3,
+                    branch: 3.into(),
                     delta_mw: -210.0 + step,
                 }],
                 SolveOptions::default(),
@@ -1065,7 +1240,7 @@ mod tests {
         let prev = study
             .preview(
                 &[NetworkEdit::AdjustBranchRating {
-                    branch: 3,
+                    branch: 3.into(),
                     delta_mw: -10.0,
                 }],
                 &[Operand::Price(Power::Active)],
@@ -1084,9 +1259,12 @@ mod tests {
         let resp = s
             .commit(
                 &[
-                    NetworkEdit::AddLoad { bus: 2, p_mw: 20.0 },
+                    NetworkEdit::AddLoad {
+                        bus: 2.into(),
+                        p_mw: 20.0,
+                    },
                     NetworkEdit::AdjustBranchRating {
-                        branch: 3,
+                        branch: 3.into(),
                         delta_mw: -210.0,
                     },
                 ],
@@ -1105,9 +1283,12 @@ mod tests {
         let prev = s
             .preview(
                 &[
-                    NetworkEdit::AddLoad { bus: 2, p_mw: 1.0 },
+                    NetworkEdit::AddLoad {
+                        bus: 2.into(),
+                        p_mw: 1.0,
+                    },
                     NetworkEdit::AdjustBranchRating {
-                        branch: 3,
+                        branch: 3.into(),
                         delta_mw: -1.0,
                     },
                 ],
@@ -1133,7 +1314,7 @@ mod tests {
         let err = s
             .commit(
                 &[NetworkEdit::AdjustBranchRating {
-                    branch: 99,
+                    branch: 99.into(),
                     delta_mw: -10.0,
                 }],
                 SolveOptions::default(),
@@ -1143,7 +1324,7 @@ mod tests {
         let err = s
             .commit(
                 &[NetworkEdit::AdjustBranchRating {
-                    branch: 3,
+                    branch: 3.into(),
                     delta_mw: -250.0,
                 }],
                 SolveOptions::default(),
@@ -1163,7 +1344,7 @@ mod tests {
         let err = s
             .commit(
                 &[NetworkEdit::AdjustBranchRating {
-                    branch: 3,
+                    branch: 3.into(),
                     delta_mw: -10.0,
                 }],
                 SolveOptions::default(),
@@ -1183,7 +1364,7 @@ mod tests {
         let resp = s
             .commit(
                 &[NetworkEdit::AdjustBranchRating {
-                    branch: 3,
+                    branch: 3.into(),
                     delta_mw: -210.0,
                 }],
                 SolveOptions::default(),
@@ -1216,7 +1397,10 @@ mod tests {
         let study = Study::new(&net, Problem::AcPf).expect("acpf study");
         let prev = study
             .preview(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 1.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 1.0,
+                }],
                 &[Operand::Voltage(crate::sens::VoltageKind::Magnitude)],
             )
             .expect("acpf preview");
@@ -1243,7 +1427,10 @@ mod tests {
         assert_eq!(s.formulation(), Problem::Socwr);
         let resp = s
             .commit(
-                &[NetworkEdit::AddLoad { bus: 2, p_mw: 10.0 }],
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 10.0,
+                }],
                 SolveOptions::default(),
             )
             .expect("socwr commit");
