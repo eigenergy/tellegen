@@ -427,4 +427,42 @@ mod tests {
             sol.objective
         );
     }
+
+    #[test]
+    fn cats_objective_matches_reference_after_the_jumper_fix() {
+        // Regression for the near-zero-impedance-jumper bug (see
+        // `model::dc::tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`).
+        // Before the fix, 11 of CaliforniaTestSystem.m's 10,823 branches — bus-splitting
+        // jumpers with real but tiny impedance (z^2 as low as ~1.5e-12) — fell below the
+        // old `MIN_Z_SQUARED = 1e-10` guard and were dropped to `b = 0`, an open circuit.
+        // That wrongly disconnected the two buses they tie, and tellegen's DC OPF
+        // objective came out $1,131.38/h (1.50e-3 relative) above the PowerModels.jl +
+        // IPOPT reference: $753,291.87 vs $752,160.49 — 100-1000x the relative gap seen
+        // on the other three demo cases (ACTIVSg200/500, Texas7k), none of which have any
+        // branch below that threshold. After the fix, the gap closes to the same
+        // solver-tolerance band as the other cases (~2e-6 relative here).
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/CATS/CaliforniaTestSystem.m"
+        );
+        let Ok(text) = std::fs::read_to_string(path) else {
+            eprintln!(
+                "skipping cats_objective_matches_reference_after_the_jumper_fix: {path} not found"
+            );
+            return;
+        };
+        let net = powerio::parse_str(&text, "matpower")
+            .expect("parse CATS")
+            .network;
+        let dc = DcNetwork::from_network(&net).expect("build DcNetwork");
+        let sol = dc_opf(&dc).expect("solve CATS DC OPF");
+
+        let reference = 752_160.49;
+        let rel = (sol.objective - reference).abs() / reference;
+        assert!(
+            rel < 1e-4,
+            "objective {} vs PowerModels.jl/IPOPT reference {reference} (rel err {rel})",
+            sol.objective
+        );
+    }
 }

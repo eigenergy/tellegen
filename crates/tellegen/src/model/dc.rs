@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use powerio::network::{GenCost, Network};
 use powerio::IndexedNetwork;
 
-use super::{normalize_angle_bounds, quadratic_cost_coeffs, reconstruct_ids, Ids, MIN_Z_SQUARED};
+use super::{normalize_angle_bounds, quadratic_cost_coeffs, reconstruct_ids, Ids};
 
 /// Strong-convexity regularization on the flows.
 const DEFAULT_TAU: f64 = 1e-2;
@@ -37,7 +37,11 @@ pub struct DcNetwork {
     /// Bus each generator injects at, dense index.
     pub gen_bus: Vec<usize>,
     /// Branch susceptance `b = -x / (r^2 + x^2)` (negative for inductive
-    /// branches; `0` for a near-zero-impedance branch treated as open).
+    /// branches; `0` only for a literal zero-impedance record, which cannot be
+    /// divided through). A branch with tiny but nonzero impedance — a
+    /// substation bus-splitting jumper, common in detailed synthetic cases —
+    /// gets a correspondingly large `|b|` rather than being dropped; it is a
+    /// real, near-ideal tie, not an open circuit.
     pub b: Vec<f64>,
     /// Branch switching state (1 closed, 0 open). All branches start closed.
     pub sw: Vec<f64>,
@@ -118,7 +122,12 @@ impl DcNetwork {
                 .bus_index(br.to)
                 .ok_or_else(|| format!("branch to-bus {} not in index", br.to))?;
             let z2 = br.r * br.r + br.x * br.x;
-            let bb = if z2 > MIN_Z_SQUARED { -br.x / z2 } else { 0.0 };
+            // Only a literal zero-impedance record (z2 == 0, undivideable) falls back to 0.
+            // A tiny-but-nonzero impedance still gets its true (large) susceptance: it is a
+            // real, near-ideal tie (e.g. a substation bus-splitting jumper), not an open
+            // circuit, and severing it can wrongly strand generation or reroute flow onto a
+            // costlier path. See `tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`.
+            let bb = if z2 > 0.0 { -br.x / z2 } else { 0.0 };
             let (amin, amax) = normalize_angle_bounds(br.angmin, br.angmax);
             let rate = if br.rate_a > 0.0 {
                 br.rate_a
@@ -432,5 +441,35 @@ mod tests {
         for (i, s) in row_sum.iter().enumerate() {
             assert!(s.abs() < 1e-5, "B row {i} sums to {s}");
         }
+    }
+
+    #[test]
+    fn near_zero_impedance_jumper_is_a_tie_not_an_open_circuit() {
+        // Regression for a CATS-specific DC OPF bug: a branch with tiny but nonzero
+        // impedance (a substation bus-splitting jumper, common in detailed synthetic
+        // cases — CaliforniaTestSystem.m has 11 of them, r and x both ~1e-6 to 1e-7 pu)
+        // was falling below the old `MIN_Z_SQUARED = 1e-10` guard and getting `b = 0`,
+        // i.e. treated as an open circuit. That silently disconnected the two buses in
+        // the B-theta model, wrongly restricting which paths generation could reach and
+        // costing CATS's DC OPF about $1,131/h (0.15%) versus the PowerModels.jl/IPOPT
+        // reference. The branch is a real, near-ideal tie, not a break in the network:
+        // it must carry a correspondingly large susceptance, not zero.
+        let text = CASE3.replace(
+            "1 3 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
+            "1 3 1e-7 1e-6 0 250 250 250 0 0 1 -360 360;",
+        );
+        let net = powerio::parse_str(&text, "matpower")
+            .expect("parse jumper case3")
+            .network;
+        let dc = DcNetwork::from_network(&net).expect("build DcNetwork with jumper branch");
+
+        let z2 = 1e-7_f64.powi(2) + 1e-6_f64.powi(2);
+        let expected_b = -1e-6 / z2;
+        approx(dc.b[1], expected_b); // branch index 1 is the 1-3 jumper
+        assert!(
+            dc.b[1].abs() > 1e5,
+            "jumper susceptance {} should be large, not the near-zero open-circuit value",
+            dc.b[1]
+        );
     }
 }
