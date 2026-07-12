@@ -872,7 +872,7 @@ fn build_request(
     let mut request = SolveRequest::default();
     request.edits.deltas = deltas
         .into_iter()
-        .map(|(bus, mw)| (bus as i64, mw))
+        .map(|(bus, mw)| ((bus as i64).into(), mw))
         .collect();
     #[cfg(feature = "sensitivity")]
     if let Some((parameter, idx)) = target.and_then(|target| match target {

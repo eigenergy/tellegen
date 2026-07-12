@@ -79,6 +79,7 @@ export function applyGeoFile(topology: Topology, geoFile: GeoFile): AppliedGeoFi
 		if (path.length > 2) matchedBranches++;
 		return {
 			id: branch.id,
+			uid: branch.uid,
 			from: branch.from,
 			to: branch.to,
 			rate_mw: branch.rate_mw,
@@ -91,7 +92,7 @@ export function applyGeoFile(topology: Topology, geoFile: GeoFile): AppliedGeoFi
 		view: {
 			buses: buses.map((bus) => {
 				const [lon, lat] = busCoords.get(bus.id)!;
-				return { id: bus.id, lon, lat, demand_mw: bus.demand_mw, gen_mw: bus.gen_mw };
+				return { id: bus.id, uid: bus.uid, lon, lat, demand_mw: bus.demand_mw, gen_mw: bus.gen_mw };
 			}),
 			branches
 		},

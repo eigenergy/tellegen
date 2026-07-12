@@ -70,7 +70,9 @@ pub fn capabilities_json() -> String {
 /// the path a reactive drag should use.
 ///
 /// Arguments and results are JSON in the engine's `Study` shapes: edits are a
-/// `NetworkEdit[]` (e.g. `[{"kind":"add_load","bus":2,"p_mw":50}]`), `preview` watches an
+/// `NetworkEdit[]` (e.g. `[{"kind":"add_load","bus":2,"p_mw":50}]`; the element key
+/// also accepts the powerio row uid string `ingest_case` stamps, e.g.
+/// `"bus":"buses:1"`), `preview` watches an
 /// `Operand[]` (e.g. `[{"Price":"Active"}]`) and returns a `Preview`. `commit` takes the
 /// edits plus a `SensRequest[]` of watched cells and returns `{ solution, iterations,
 /// sensitivities }` — the committed [`SolveResponse`] plus the requested ∂operand/∂param
@@ -224,6 +226,9 @@ fn commit_output(resp: &SolveResponse) -> serde_json::Value {
 #[derive(Serialize)]
 struct ViewBus {
     id: usize,
+    /// powerio row uid — stamped by `ingest_case` before the view is built, so it
+    /// is always present and stable across re-parses of the same file.
+    uid: String,
     lon: f64,
     lat: f64,
     demand_mw: f64,
@@ -233,6 +238,8 @@ struct ViewBus {
 #[derive(Serialize)]
 struct ViewBranch {
     id: usize,
+    /// powerio row uid, as on [`ViewBus`].
+    uid: String,
     from: usize,
     to: usize,
     rate_mw: f64,
@@ -249,6 +256,8 @@ struct View {
 #[derive(Serialize)]
 struct TopologyBus {
     id: usize,
+    /// powerio row uid, as on [`ViewBus`].
+    uid: String,
     demand_mw: f64,
     gen_mw: f64,
 }
@@ -256,10 +265,20 @@ struct TopologyBus {
 #[derive(Serialize)]
 struct TopologyBranch {
     id: usize,
+    /// powerio row uid, as on [`ViewBus`].
+    uid: String,
     from: usize,
     to: usize,
     rate_mw: f64,
     status: u8,
+}
+
+/// The uid `ensure_payload_uids` stamped on this element. It fills every row of
+/// every table, so absence is a broken powerio contract, surfaced as a `JsError`
+/// rather than a panic (`ingest_case` installs no panic hook).
+fn stamped_uid(uid: &Option<String>) -> Result<String, JsError> {
+    uid.clone()
+        .ok_or_else(|| JsError::new("ensure_payload_uids left an element without a uid"))
 }
 
 #[derive(Serialize)]
@@ -275,7 +294,12 @@ struct Topology {
 /// coordinates.
 #[wasm_bindgen]
 pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
-    let parsed = powerio::parse_str(text, format).map_err(jserr)?;
+    let mut parsed = powerio::parse_str(text, format).map_err(jserr)?;
+    // Stamp row uids (`buses:0`, `branches:1`, ...) on every element that the
+    // source format did not already give one (GOC3 carries its own). The stamped
+    // network is what `network_json` serializes, so a Study built from this
+    // payload resolves uid-keyed edits and echoes uids on its response scalars.
+    powerio_pkg::ensure_payload_uids(&mut parsed.network);
     let mut warnings = parsed.warnings;
     let net = &parsed.network;
 
@@ -292,24 +316,30 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
         buses: net
             .buses
             .iter()
-            .map(|b| TopologyBus {
-                id: b.id.0,
-                demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
-                gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
+            .map(|b| {
+                Ok(TopologyBus {
+                    id: b.id.0,
+                    uid: stamped_uid(&b.uid)?,
+                    demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
+                    gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
+                })
             })
-            .collect(),
+            .collect::<Result<_, JsError>>()?,
         branches: net
             .branches
             .iter()
             .enumerate()
-            .map(|(i, br)| TopologyBranch {
-                id: i + 1,
-                from: br.from.0,
-                to: br.to.0,
-                rate_mw: br.rate_a,
-                status: br.in_service as u8,
+            .map(|(i, br)| {
+                Ok(TopologyBranch {
+                    id: i + 1,
+                    uid: stamped_uid(&br.uid)?,
+                    from: br.from.0,
+                    to: br.to.0,
+                    rate_mw: br.rate_a,
+                    status: br.in_service as u8,
+                })
             })
-            .collect(),
+            .collect::<Result<_, JsError>>()?,
     };
 
     let view = {
@@ -329,15 +359,16 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
                 .iter()
                 .filter_map(|b| {
                     let &(lon, lat) = cs.get(&b.id.0)?;
-                    Some(ViewBus {
+                    Some(stamped_uid(&b.uid).map(|uid| ViewBus {
                         id: b.id.0,
+                        uid,
                         lon,
                         lat,
                         demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                         gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
-                    })
+                    }))
                 })
-                .collect();
+                .collect::<Result<_, JsError>>()?;
             let branches: Vec<ViewBranch> = net
                 .branches
                 .iter()
@@ -345,16 +376,17 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
                 .filter_map(|(i, br)| {
                     let f = cs.get(&br.from.0)?;
                     let t = cs.get(&br.to.0)?;
-                    Some(ViewBranch {
+                    Some(stamped_uid(&br.uid).map(|uid| ViewBranch {
                         id: i + 1,
+                        uid,
                         from: br.from.0,
                         to: br.to.0,
                         rate_mw: br.rate_a,
                         status: br.in_service as u8,
                         path: [[f.0, f.1], [t.0, t.1]],
-                    })
+                    }))
                 })
-                .collect();
+                .collect::<Result<_, JsError>>()?;
             let missing_branches = net.branches.len().saturating_sub(branches.len());
             if missing_branches > 0 {
                 warnings.push(format!(
@@ -504,6 +536,13 @@ mpc.gencost = [
             v["topology"]["buses"][1]["demand_mw"].as_f64().unwrap(),
             21.7
         );
+
+        // `ingest_case` stamps powerio row uids before serializing anything, so the
+        // topology and the network payload both carry them: uid-keyed edits resolve
+        // against a Study built from this `network_json`.
+        assert_eq!(v["topology"]["buses"][0]["uid"], "buses:0");
+        assert_eq!(v["topology"]["branches"][1]["uid"], "branches:1");
+        assert!(v["network_json"].as_str().unwrap().contains("buses:0"));
     }
 
     #[cfg(feature = "sensitivity")]
@@ -524,6 +563,12 @@ mpc.gencost = [
         ));
         let edits = parse_edits(
             r#"[{"kind":"add_load","bus":3,"p_mw":10.0},{"kind":"adjust_branch_rating","branch":2,"delta_mw":-25.0}]"#,
+        )
+        .unwrap();
+        assert_eq!(edits.len(), 2);
+        // The element key also accepts the powerio row-uid string form.
+        let edits = parse_edits(
+            r#"[{"kind":"add_load","bus":"buses:2","p_mw":10.0},{"kind":"adjust_branch_rating","branch":"branches:1","delta_mw":-25.0}]"#,
         )
         .unwrap();
         assert_eq!(edits.len(), 2);

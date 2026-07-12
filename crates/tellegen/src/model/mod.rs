@@ -201,7 +201,9 @@ pub(super) fn normalize_angle_bounds(mut amin: f64, mut amax: f64) -> (f64, f64)
 /// Dense sizes and the dense-index -> source-id maps recovered from a normalized
 /// network. `to_normalized` keeps non-isolated buses (and in-service, attached
 /// branches/generators) in source order and reassigns dense ids in that order, so
-/// the k-th surviving raw element is dense index k.
+/// the k-th surviving raw element is dense index k. `bus_uids`/`branch_uids` carry
+/// each surviving element's powerio row uid (`None` when the source network was
+/// never stamped), aligned with `bus_ids`/`branch_ids`.
 pub(super) struct Ids {
     n: usize,
     m: usize,
@@ -209,6 +211,8 @@ pub(super) struct Ids {
     bus_ids: Vec<usize>,
     branch_ids: Vec<usize>,
     gen_ids: Vec<usize>,
+    bus_uids: Vec<Option<String>>,
+    branch_uids: Vec<Option<String>>,
 }
 
 /// Reconstruct the dense sizes and source-id maps for `view`, the shared first step
@@ -217,12 +221,13 @@ pub(super) struct Ids {
 /// assumption broke) or the network has no in-service generators.
 pub(super) fn reconstruct_ids(raw: &Network, view: &IndexedNetwork) -> Result<Ids, String> {
     let n = view.n();
-    let bus_ids: Vec<usize> = raw
+    let surviving_buses: Vec<&powerio::network::Bus> = raw
         .buses
         .iter()
         .filter(|b| b.kind != BusType::Isolated)
-        .map(|b| b.id.0)
         .collect();
+    let bus_ids: Vec<usize> = surviving_buses.iter().map(|b| b.id.0).collect();
+    let bus_uids: Vec<Option<String>> = surviving_buses.iter().map(|b| b.uid.clone()).collect();
     if bus_ids.len() != n {
         return Err(format!(
             "bus id reconstruction mismatch: {} non-isolated raw buses vs {} normalized",
@@ -233,12 +238,16 @@ pub(super) fn reconstruct_ids(raw: &Network, view: &IndexedNetwork) -> Result<Id
     let active: HashSet<usize> = bus_ids.iter().copied().collect();
 
     let m = view.branches().len();
-    let branch_ids: Vec<usize> = raw
+    let surviving_branches: Vec<(usize, &powerio::network::Branch)> = raw
         .branches
         .iter()
         .enumerate()
         .filter(|(_, br)| br.in_service && active.contains(&br.from.0) && active.contains(&br.to.0))
-        .map(|(i, _)| i + 1)
+        .collect();
+    let branch_ids: Vec<usize> = surviving_branches.iter().map(|(i, _)| i + 1).collect();
+    let branch_uids: Vec<Option<String>> = surviving_branches
+        .iter()
+        .map(|(_, br)| br.uid.clone())
         .collect();
     if branch_ids.len() != m {
         return Err(format!(
@@ -274,6 +283,8 @@ pub(super) fn reconstruct_ids(raw: &Network, view: &IndexedNetwork) -> Result<Id
         bus_ids,
         branch_ids,
         gen_ids,
+        bus_uids,
+        branch_uids,
     })
 }
 

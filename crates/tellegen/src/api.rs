@@ -59,21 +59,96 @@ pub enum Problem {
     Acopf,
 }
 
+/// How an edit names its element: the original numeric id (bus id, 1-based branch
+/// position) or the powerio row uid (`"buses:0"`, `"branches:1"`, or a source uid
+/// where the format defines one, e.g. GOC3). Untagged on the wire — a JSON number
+/// (or all-digit string, since JSON object keys are strings) reads as [`Id`](Self::Id),
+/// any other string as [`Uid`](Self::Uid) — so existing numeric clients keep working
+/// unchanged. Uid keys resolve against the uids the network carried when the model
+/// was built (the wasm `ingest_case` stamps them via powerio's
+/// `ensure_payload_uids`); a uid the network does not carry is an unknown-element
+/// error.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ElementKey {
+    /// Original numeric id: bus id or 1-based branch position.
+    Id(i64),
+    /// powerio row uid, e.g. `"branches:1"`.
+    Uid(String),
+}
+
+impl std::fmt::Display for ElementKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ElementKey::Id(id) => write!(f, "{id}"),
+            ElementKey::Uid(uid) => write!(f, "\"{uid}\""),
+        }
+    }
+}
+
+impl From<i64> for ElementKey {
+    fn from(id: i64) -> Self {
+        ElementKey::Id(id)
+    }
+}
+
+impl Serialize for ElementKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            // A numeric key serializes as a JSON number in value position (the
+            // pre-uid `NetworkEdit` wire shape) and as its decimal string in map-key
+            // position (the pre-uid `Edits` wire shape) — serde_json does the
+            // key-position stringification.
+            ElementKey::Id(id) => serializer.serialize_i64(*id),
+            ElementKey::Uid(uid) => serializer.serialize_str(uid),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ElementKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KeyVisitor;
+        impl serde::de::Visitor<'_> for KeyVisitor {
+            type Value = ElementKey;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("an integer element id or a `table:row` uid string")
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<ElementKey, E> {
+                Ok(ElementKey::Id(v))
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<ElementKey, E> {
+                i64::try_from(v)
+                    .map(ElementKey::Id)
+                    .map_err(|_| E::custom(format!("element id {v} out of range")))
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<ElementKey, E> {
+                // JSON object keys arrive as strings, so an all-digit string is the
+                // numeric-id wire form (`{"deltas":{"2":50}}`), never a uid.
+                Ok(match v.parse::<i64>() {
+                    Ok(id) => ElementKey::Id(id),
+                    Err(_) => ElementKey::Uid(v.to_owned()),
+                })
+            }
+        }
+        deserializer.deserialize_any(KeyVisitor)
+    }
+}
+
 /// Operating-point edits applied before the model is built: demand deltas in MW
-/// keyed by original bus id (the operating point is `base demand + delta`) and
-/// branch rating deltas in MW keyed by original branch id (the thermal limit is
-/// `base rating + delta`). A struct (not a bare map) so the structural-edit
-/// vocabulary (add line, add generator, retune a parameter) can grow without
-/// breaking the wire format: a client that knows only `deltas` keeps working.
+/// keyed by bus (the operating point is `base demand + delta`) and branch rating
+/// deltas in MW keyed by branch (the thermal limit is `base rating + delta`). Keys
+/// are [`ElementKey`]s — the original numeric id or the powerio row uid. A struct
+/// (not a bare map) so the structural-edit vocabulary (add line, add generator,
+/// retune a parameter) can grow without breaking the wire format: a client that
+/// knows only `deltas` keeps working.
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct Edits {
-    /// Active-power demand delta in MW per original bus id.
+    /// Active-power demand delta in MW per bus key.
     #[serde(default)]
-    pub deltas: HashMap<i64, f64>,
-    /// Thermal rating delta in MW per original branch id. Supported by the DC OPF
+    pub deltas: HashMap<ElementKey, f64>,
+    /// Thermal rating delta in MW per branch key. Supported by the DC OPF
     /// and SOCWR paths; the AC power flow has no flow limits and rejects them.
     #[serde(default)]
-    pub rates: HashMap<i64, f64>,
+    pub rates: HashMap<ElementKey, f64>,
 }
 
 /// Solve options orthogonal to the formulation choice.
@@ -181,27 +256,37 @@ pub enum Iterations {
 }
 
 /// A scalar keyed by original bus id (LMP, voltage, angle, squared magnitude).
-#[derive(Clone, Copy, Debug, Serialize)]
+/// `uid` is the bus's powerio row uid when the solved network carried one, so an
+/// overlay can re-key on stable identity instead of the positional id.
+#[derive(Clone, Debug, Serialize)]
 pub struct BusScalar {
     pub bus: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
     pub value: f64,
 }
 
-/// A nodal net injection (MW / MVAr), keyed by original bus id. The AC power flow
-/// solution is nodal, not branch-resolved, so it reports these instead of flows.
-#[derive(Clone, Copy, Debug, Serialize)]
+/// A nodal net injection (MW / MVAr), keyed by original bus id (plus the row uid
+/// when carried, as in [`BusScalar`]). The AC power flow solution is nodal, not
+/// branch-resolved, so it reports these instead of flows.
+#[derive(Clone, Debug, Serialize)]
 pub struct BusInjection {
     pub bus: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
     pub p: f64,
     pub q: f64,
 }
 
-/// Branch flows, keyed by original branch id. `pf` (from-end active, MW) and
-/// `loading` (|S|/limit, dimensionless) are present on every formulation that has
-/// flows; the reactive and to-end legs are `None` on the DC paths.
-#[derive(Clone, Copy, Debug, Serialize)]
+/// Branch flows, keyed by original branch id (plus the row uid when carried, as in
+/// [`BusScalar`]). `pf` (from-end active, MW) and `loading` (|S|/limit,
+/// dimensionless) are present on every formulation that has flows; the reactive
+/// and to-end legs are `None` on the DC paths.
+#[derive(Clone, Debug, Serialize)]
 pub struct BranchFlow {
     pub branch: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
     pub pf: f64,
     pub loading: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -325,10 +410,8 @@ pub(crate) fn dc_opf_solved(
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<(DcNetwork, super::problem::DcOpfSolution), String> {
     dc.allow_shed = req.options.shed;
-    let bus_idx = id_index_map(&dc.bus_ids);
-    apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas)?;
-    let branch_idx = id_index_map(&dc.branch_ids);
-    apply_rating_deltas(&mut dc, &branch_idx, &req.edits.rates)?;
+    apply_demand_deltas(&mut dc, &req.edits.deltas)?;
+    apply_rating_deltas(&mut dc, &req.edits.rates)?;
     let sol = dc_opf_cancellable(&dc, cancel)?;
     Ok((dc, sol))
 }
@@ -352,13 +435,19 @@ pub(crate) fn dc_opf_assemble(
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
         iterations: Some(Iterations::Ipm(sol.iterations.clone())),
-        lmp: Some(zip_bus(&dc.bus_ids, &lmp)),
+        lmp: Some(zip_bus(&dc.bus_ids, &dc.bus_uids, &lmp)),
         lmp_q: None,
         vm: None,
-        va: Some(zip_bus(&dc.bus_ids, &sol.va)),
+        va: Some(zip_bus(&dc.bus_ids, &dc.bus_uids, &sol.va)),
         w: None,
         injections: None,
-        flows: Some(dc_branch_flows(&dc.branch_ids, &sol.f, &dc.fmax, base)),
+        flows: Some(dc_branch_flows(
+            &dc.branch_ids,
+            &dc.branch_uids,
+            &sol.f,
+            &dc.fmax,
+            base,
+        )),
         dispatch: Some(zip_gen_pg(&dc.gen_ids, &sol.pg, base)),
         #[cfg(feature = "sensitivity")]
         sensitivities,
@@ -383,8 +472,7 @@ fn solve_dc_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
     reject_rating_deltas(&req.edits.rates, "dcpf")?;
     let mut dc = DcNetwork::from_network(net)?;
     let base = dc.base_mva;
-    let bus_idx = id_index_map(&dc.bus_ids);
-    apply_demand_deltas(&mut dc, &bus_idx, &req.edits.deltas)?;
+    apply_demand_deltas(&mut dc, &req.edits.deltas)?;
 
     // Net per-unit injection per dense bus: generator setpoints minus (edited) load.
     // The slack absorbs the imbalance; its injection entry is recomputed, not echoed.
@@ -402,10 +490,16 @@ fn solve_dc_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
         lmp: None,
         lmp_q: None,
         vm: None,
-        va: Some(zip_bus(&dc.bus_ids, &sol.va)),
+        va: Some(zip_bus(&dc.bus_ids, &dc.bus_uids, &sol.va)),
         w: None,
         injections: None,
-        flows: Some(dc_branch_flows(&dc.branch_ids, &sol.f, &dc.fmax, base)),
+        flows: Some(dc_branch_flows(
+            &dc.branch_ids,
+            &dc.branch_uids,
+            &sol.f,
+            &dc.fmax,
+            base,
+        )),
         dispatch: None,
         sensitivities: Vec::new(),
     })
@@ -451,10 +545,16 @@ pub(crate) fn ac_pf_assemble(
         }),
         lmp: None,
         lmp_q: None,
-        vm: Some(zip_bus(&acnet.bus_ids, &sol.vm)),
-        va: Some(zip_bus(&acnet.bus_ids, &sol.va)),
+        vm: Some(zip_bus(&acnet.bus_ids, &acnet.bus_uids, &sol.vm)),
+        va: Some(zip_bus(&acnet.bus_ids, &acnet.bus_uids, &sol.va)),
         w: None,
-        injections: Some(zip_injections(&acnet.bus_ids, &sol.p, &sol.q, base)),
+        injections: Some(zip_injections(
+            &acnet.bus_ids,
+            &acnet.bus_uids,
+            &sol.p,
+            &sol.q,
+            base,
+        )),
         flows: None,
         dispatch: None,
         sensitivities,
@@ -503,14 +603,20 @@ pub(crate) fn socwr_assemble(
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
         iterations: Some(Iterations::Ipm(sol.iterations.clone())),
-        lmp: Some(zip_scaled(&acnet.bus_ids, &sol.lmp, 1.0 / base)),
+        lmp: Some(zip_scaled(
+            &acnet.bus_ids,
+            &acnet.bus_uids,
+            &sol.lmp,
+            1.0 / base,
+        )),
         lmp_q: None,
         vm: None,
         va: None,
-        w: Some(zip_bus(&acnet.bus_ids, &sol.w)),
+        w: Some(zip_bus(&acnet.bus_ids, &acnet.bus_uids, &sol.w)),
         injections: None,
         flows: Some(ac_branch_flows(
             &acnet.branch_ids,
+            &acnet.branch_uids,
             &sol.pf,
             &sol.qf,
             &sol.pt,
@@ -773,38 +879,80 @@ fn id_index_map(ids: &[usize]) -> HashMap<usize, usize> {
     ids.iter().enumerate().map(|(i, &id)| (id, i)).collect()
 }
 
-/// `deltas` sorted by bus id. `HashMap`'s randomized hashing means iterating it
+/// powerio row uid → dense model index, over a model's dense-aligned uid vector.
+/// Built only when an edit set actually carries a uid key, so numeric-id clients
+/// pay nothing for the uid path.
+fn uid_index_map(uids: &[Option<String>]) -> HashMap<&str, usize> {
+    uids.iter()
+        .enumerate()
+        .filter_map(|(i, uid)| uid.as_deref().map(|u| (u, i)))
+        .collect()
+}
+
+/// Dense-index resolution maps for one edit axis: numeric ids always, uids only
+/// when `keys` contains a uid (see [`uid_index_map`]).
+struct KeyIndex<'a> {
+    ids: HashMap<usize, usize>,
+    uids: Option<HashMap<&'a str, usize>>,
+}
+
+impl<'a> KeyIndex<'a> {
+    fn new(
+        ids: &[usize],
+        uids: &'a [Option<String>],
+        keys: &HashMap<ElementKey, f64>,
+    ) -> KeyIndex<'a> {
+        let needs_uids = keys.keys().any(|k| matches!(k, ElementKey::Uid(_)));
+        KeyIndex {
+            ids: id_index_map(ids),
+            uids: needs_uids.then(|| uid_index_map(uids)),
+        }
+    }
+
+    /// Resolve one key to a dense index; `None` for an unknown element. A numeric
+    /// id is cast through `usize::try_from`, not `as`, so an id that doesn't fit
+    /// `usize` (reachable on the 32-bit wasm32 target) is rejected as unknown
+    /// instead of silently truncating onto whatever element the wrapped value
+    /// happens to name.
+    fn get(&self, key: &ElementKey) -> Option<usize> {
+        match key {
+            ElementKey::Id(id) => {
+                let id = usize::try_from(*id).ok()?;
+                self.ids.get(&id).copied()
+            }
+            ElementKey::Uid(uid) => self.uids.as_ref()?.get(uid.as_str()).copied(),
+        }
+    }
+}
+
+/// `deltas` sorted by key. `HashMap`'s randomized hashing means iterating it
 /// directly could surface a different validation error first on different runs of
 /// the same invalid request; a deterministic order keeps `apply_demand_deltas`'s
 /// error a function of the request alone.
-fn sorted_deltas(deltas: &HashMap<i64, f64>) -> Vec<(i64, f64)> {
-    let mut entries: Vec<(i64, f64)> = deltas.iter().map(|(&bus, &mw)| (bus, mw)).collect();
-    entries.sort_unstable_by_key(|&(bus, _)| bus);
+fn sorted_deltas(deltas: &HashMap<ElementKey, f64>) -> Vec<(&ElementKey, f64)> {
+    let mut entries: Vec<(&ElementKey, f64)> = deltas.iter().map(|(k, &mw)| (k, mw)).collect();
+    entries.sort_unstable_by_key(|&(k, _)| k);
     entries
 }
 
 /// Validate one demand delta and resolve its bus to a dense index. Shared by the DC
-/// and AC/SOCWR appliers so a positive bus id, a finite delta, a known bus, and a
+/// and AC/SOCWR appliers so a positive bus key, a finite delta, a known bus, and a
 /// delta that doesn't drive demand negative are enforced identically for both.
-/// `bus` is cast through `usize::try_from`, not `as`, so a bus id that doesn't fit
-/// `usize` (reachable on the 32-bit wasm32 target) is rejected as unknown instead of
-/// silently truncating onto whatever bus the wrapped value happens to name.
 fn resolve_demand_delta(
-    bus: i64,
+    bus: &ElementKey,
     mw: f64,
-    bus_idx: &HashMap<usize, usize>,
+    idx: &KeyIndex<'_>,
     base_mva: f64,
     current_demand_pu: impl Fn(usize) -> f64,
 ) -> Result<usize, String> {
-    if bus <= 0 {
+    if matches!(bus, ElementKey::Id(id) if *id <= 0) {
         return Err("demand delta bus must be positive".into());
     }
     if !mw.is_finite() {
         return Err(format!("demand delta for bus {bus} must be finite"));
     }
-    let key = usize::try_from(bus).map_err(|_| format!("unknown demand delta bus {bus}"))?;
-    let i = *bus_idx
-        .get(&key)
+    let i = idx
+        .get(bus)
         .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
     if current_demand_pu(i) * base_mva + mw < -1e-9 {
         return Err(format!(
@@ -817,12 +965,12 @@ fn resolve_demand_delta(
 /// Establish the operating point: `demand += delta` (per unit) at each named bus.
 fn apply_demand_deltas(
     dc: &mut DcNetwork,
-    bus_idx: &HashMap<usize, usize>,
-    deltas: &HashMap<i64, f64>,
+    deltas: &HashMap<ElementKey, f64>,
 ) -> Result<(), String> {
     let base = dc.base_mva;
+    let idx = KeyIndex::new(&dc.bus_ids, &dc.bus_uids, deltas);
     for (bus, mw) in sorted_deltas(deltas) {
-        let i = resolve_demand_delta(bus, mw, bus_idx, base, |i| dc.demand[i])?;
+        let i = resolve_demand_delta(bus, mw, &idx, base, |i| dc.demand[i])?;
         dc.demand[i] += mw / base;
     }
     Ok(())
@@ -832,10 +980,10 @@ fn apply_demand_deltas(
 #[cfg(feature = "sensitivity")]
 fn apply_demand_deltas_ac(
     acnet: &mut super::model::AcNetwork,
-    deltas: &HashMap<i64, f64>,
+    deltas: &HashMap<ElementKey, f64>,
 ) -> Result<(), String> {
     let base = acnet.base_mva;
-    let idx = id_index_map(&acnet.bus_ids);
+    let idx = KeyIndex::new(&acnet.bus_ids, &acnet.bus_uids, deltas);
     for (bus, mw) in sorted_deltas(deltas) {
         let i = resolve_demand_delta(bus, mw, &idx, base, |i| acnet.pd[i])?;
         acnet.pd[i] += mw / base;
@@ -844,26 +992,24 @@ fn apply_demand_deltas_ac(
 }
 
 /// Validate one branch rating delta and resolve its branch to a dense index. Mirrors
-/// [`resolve_demand_delta`]: a positive branch id, a finite delta, a known in-model
+/// [`resolve_demand_delta`]: a positive branch key, a finite delta, a known in-model
 /// branch, and a delta that keeps the limit positive are enforced identically for
 /// the DC and SOCWR appliers.
 fn resolve_rating_delta(
-    branch: i64,
+    branch: &ElementKey,
     mw: f64,
-    branch_idx: &HashMap<usize, usize>,
+    idx: &KeyIndex<'_>,
     base_mva: f64,
     current_limit_pu: impl Fn(usize) -> f64,
 ) -> Result<usize, String> {
-    if branch <= 0 {
+    if matches!(branch, ElementKey::Id(id) if *id <= 0) {
         return Err("rating delta branch must be positive".into());
     }
     if !mw.is_finite() {
         return Err(format!("rating delta for branch {branch} must be finite"));
     }
-    let key =
-        usize::try_from(branch).map_err(|_| format!("unknown rating delta branch {branch}"))?;
-    let i = *branch_idx
-        .get(&key)
+    let i = idx
+        .get(branch)
         .ok_or_else(|| format!("unknown rating delta branch {branch}"))?;
     if current_limit_pu(i) * base_mva + mw <= 1e-9 {
         return Err(format!(
@@ -874,14 +1020,11 @@ fn resolve_rating_delta(
 }
 
 /// Perturb the thermal limits: `fmax += delta` (per unit) at each named branch.
-fn apply_rating_deltas(
-    dc: &mut DcNetwork,
-    branch_idx: &HashMap<usize, usize>,
-    rates: &HashMap<i64, f64>,
-) -> Result<(), String> {
+fn apply_rating_deltas(dc: &mut DcNetwork, rates: &HashMap<ElementKey, f64>) -> Result<(), String> {
     let base = dc.base_mva;
+    let idx = KeyIndex::new(&dc.branch_ids, &dc.branch_uids, rates);
     for (branch, mw) in sorted_deltas(rates) {
-        let i = resolve_rating_delta(branch, mw, branch_idx, base, |i| dc.fmax[i])?;
+        let i = resolve_rating_delta(branch, mw, &idx, base, |i| dc.fmax[i])?;
         dc.fmax[i] += mw / base;
     }
     Ok(())
@@ -892,10 +1035,10 @@ fn apply_rating_deltas(
 #[cfg(feature = "conic")]
 fn apply_rating_deltas_ac(
     acnet: &mut super::model::AcNetwork,
-    rates: &HashMap<i64, f64>,
+    rates: &HashMap<ElementKey, f64>,
 ) -> Result<(), String> {
     let base = acnet.base_mva;
-    let idx = id_index_map(&acnet.branch_ids);
+    let idx = KeyIndex::new(&acnet.branch_ids, &acnet.branch_uids, rates);
     for (branch, mw) in sorted_deltas(rates) {
         let i = resolve_rating_delta(branch, mw, &idx, base, |i| acnet.rate_a[i])?;
         acnet.rate_a[i] += mw / base;
@@ -906,7 +1049,7 @@ fn apply_rating_deltas_ac(
 /// The AC power flow has no flow limits, so a rating edit cannot enter the model;
 /// reject it instead of silently solving without it.
 #[cfg(feature = "sensitivity")]
-fn reject_rating_deltas(rates: &HashMap<i64, f64>, formulation: &str) -> Result<(), String> {
+fn reject_rating_deltas(rates: &HashMap<ElementKey, f64>, formulation: &str) -> Result<(), String> {
     if rates.is_empty() {
         return Ok(());
     }
@@ -915,19 +1058,31 @@ fn reject_rating_deltas(rates: &HashMap<i64, f64>, formulation: &str) -> Result<
     ))
 }
 
-fn zip_bus(ids: &[usize], vals: &[f64]) -> Vec<BusScalar> {
+/// The uid for dense index `i`, cloned off a model's dense-aligned uid vector.
+fn uid_at(uids: &[Option<String>], i: usize) -> Option<String> {
+    uids.get(i).cloned().flatten()
+}
+
+fn zip_bus(ids: &[usize], uids: &[Option<String>], vals: &[f64]) -> Vec<BusScalar> {
     ids.iter()
         .zip(vals)
-        .map(|(&bus, &value)| BusScalar { bus, value })
+        .enumerate()
+        .map(|(i, (&bus, &value))| BusScalar {
+            bus,
+            uid: uid_at(uids, i),
+            value,
+        })
         .collect()
 }
 
 #[cfg(feature = "conic")]
-fn zip_scaled(ids: &[usize], vals: &[f64], scale: f64) -> Vec<BusScalar> {
+fn zip_scaled(ids: &[usize], uids: &[Option<String>], vals: &[f64], scale: f64) -> Vec<BusScalar> {
     ids.iter()
         .zip(vals)
-        .map(|(&bus, &v)| BusScalar {
+        .enumerate()
+        .map(|(i, (&bus, &v))| BusScalar {
             bus,
+            uid: uid_at(uids, i),
             value: v * scale,
         })
         .collect()
@@ -959,12 +1114,19 @@ fn zip_gen_pq(gen_ids: &[usize], pg: &[f64], qg: &[f64], base: f64) -> Vec<GenDi
 }
 
 #[cfg(feature = "sensitivity")]
-fn zip_injections(bus_ids: &[usize], p: &[f64], q: &[f64], base: f64) -> Vec<BusInjection> {
+fn zip_injections(
+    bus_ids: &[usize],
+    bus_uids: &[Option<String>],
+    p: &[f64],
+    q: &[f64],
+    base: f64,
+) -> Vec<BusInjection> {
     bus_ids
         .iter()
         .enumerate()
         .map(|(i, &bus)| BusInjection {
             bus,
+            uid: uid_at(bus_uids, i),
             p: p[i] * base,
             q: q[i] * base,
         })
@@ -973,7 +1135,13 @@ fn zip_injections(bus_ids: &[usize], p: &[f64], q: &[f64], base: f64) -> Vec<Bus
 
 /// DC branch flows: from-end active power (MW) and loading (|f|/limit). The reactive
 /// and to-end legs are absent in DC.
-fn dc_branch_flows(branch_ids: &[usize], f: &[f64], fmax: &[f64], base: f64) -> Vec<BranchFlow> {
+fn dc_branch_flows(
+    branch_ids: &[usize],
+    branch_uids: &[Option<String>],
+    f: &[f64],
+    fmax: &[f64],
+    base: f64,
+) -> Vec<BranchFlow> {
     branch_ids
         .iter()
         .enumerate()
@@ -985,6 +1153,7 @@ fn dc_branch_flows(branch_ids: &[usize], f: &[f64], fmax: &[f64], base: f64) -> 
             };
             BranchFlow {
                 branch,
+                uid: uid_at(branch_uids, e),
                 pf: f[e] * base,
                 loading,
                 qf: None,
@@ -1001,6 +1170,7 @@ fn dc_branch_flows(branch_ids: &[usize], f: &[f64], fmax: &[f64], base: f64) -> 
 #[allow(clippy::too_many_arguments)]
 fn ac_branch_flows(
     branch_ids: &[usize],
+    branch_uids: &[Option<String>],
     pf: &[f64],
     qf: &[f64],
     pt: &[f64],
@@ -1021,6 +1191,7 @@ fn ac_branch_flows(
             };
             BranchFlow {
                 branch,
+                uid: uid_at(branch_uids, e),
                 pf: pf[e] * base,
                 loading,
                 qf: Some(qf[e] * base),
@@ -1135,6 +1306,108 @@ mod tests {
             err.contains("demand delta for bus 2 would make demand negative"),
             "got: {err}"
         );
+    }
+
+    /// CASE3 with powerio row uids stamped by hand, in the `ensure_payload_uids`
+    /// scheme (`buses:{row}` / `branches:{row}`). The engine crate does not depend
+    /// on powerio-pkg; the wasm ingest path is what stamps real payloads.
+    fn case3_with_uids_json() -> String {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse")
+            .network;
+        for (i, b) in net.buses.iter_mut().enumerate() {
+            b.uid = Some(format!("buses:{i}"));
+        }
+        for (i, br) in net.branches.iter_mut().enumerate() {
+            br.uid = Some(format!("branches:{i}"));
+        }
+        net.to_json().expect("to_json")
+    }
+
+    #[test]
+    fn element_key_wire_forms() {
+        // Value position: a JSON number and its decimal string both read as the
+        // numeric id (object keys are always strings on the wire); anything else
+        // reads as a uid.
+        assert_eq!(
+            serde_json::from_str::<ElementKey>("2").unwrap(),
+            ElementKey::Id(2)
+        );
+        assert_eq!(
+            serde_json::from_str::<ElementKey>("\"2\"").unwrap(),
+            ElementKey::Id(2)
+        );
+        assert_eq!(
+            serde_json::from_str::<ElementKey>("\"branches:1\"").unwrap(),
+            ElementKey::Uid("branches:1".into())
+        );
+        // An id serializes back as a number, a uid as a string.
+        assert_eq!(serde_json::to_string(&ElementKey::Id(2)).unwrap(), "2");
+        assert_eq!(
+            serde_json::to_string(&ElementKey::Uid("buses:0".into())).unwrap(),
+            "\"buses:0\""
+        );
+    }
+
+    #[test]
+    fn uid_keyed_edits_match_id_keyed_edits() {
+        // Bus id 2 is row 1 (`buses:1`); branch 3 is row 2 (`branches:2`). The same
+        // edit through either key must build the same model, so the responses are
+        // identical.
+        let net = case3_with_uids_json();
+        let by_id: Value = serde_json::from_str(
+            &solve_json(
+                &net,
+                r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0},"rates":{"3":-25.0}}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let by_uid: Value = serde_json::from_str(
+            &solve_json(
+                &net,
+                r#"{"formulation":"dcopf","edits":{"deltas":{"buses:1":50.0},"rates":{"branches:2":-25.0}}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(by_id["objective"], by_uid["objective"]);
+        assert_eq!(by_id["lmp"], by_uid["lmp"]);
+        assert_eq!(by_id["flows"], by_uid["flows"]);
+    }
+
+    #[test]
+    fn unknown_uid_key_errors() {
+        let err = solve_json(
+            &case3_with_uids_json(),
+            r#"{"formulation":"dcopf","edits":{"deltas":{"buses:99":1.0}}}"#,
+        )
+        .unwrap_err();
+        assert!(
+            err.contains(r#"unknown demand delta bus "buses:99""#),
+            "got: {err}"
+        );
+        // A network that was never stamped resolves no uid key at all.
+        let err = solve_json(
+            &case3_json(),
+            r#"{"formulation":"dcopf","edits":{"deltas":{"buses:1":1.0}}}"#,
+        )
+        .unwrap_err();
+        assert!(err.contains("unknown demand delta bus"), "got: {err}");
+    }
+
+    #[test]
+    fn response_scalars_echo_uids() {
+        let out = solve_json(&case3_with_uids_json(), r#"{"formulation":"dcopf"}"#).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["lmp"][1]["uid"], "buses:1");
+        assert_eq!(v["va"][0]["uid"], "buses:0");
+        assert_eq!(v["flows"][0]["uid"], "branches:0");
+        // A network without uids omits the field entirely.
+        let out = solve_json(&case3_json(), r#"{"formulation":"dcopf"}"#).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert!(v["lmp"][1].get("uid").is_none());
+        assert!(v["flows"][0].get("uid").is_none());
     }
 
     #[test]

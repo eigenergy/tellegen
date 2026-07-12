@@ -1083,6 +1083,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "powerio-dist"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe286e29242d0755339539d5d758acfa387e84648287c174298dc3b136005348"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "powerio-pkg"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af8a364217fb3e23acbb5ed6c6bbf62004cac9fe039990d296f7e24d1ba9ffb7"
+dependencies = [
+ "num-complex",
+ "powerio",
+ "powerio-dist",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "private-gemm-x86"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1422,6 +1446,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "powerio",
+ "powerio-pkg",
  "serde",
  "serde_json",
  "tellegen",

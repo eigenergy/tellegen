@@ -40,12 +40,13 @@ export function placeSyntheticTopology(topology: Topology, center: PlacementCent
 	return {
 		buses: buses.map((bus) => {
 			const [lon, lat] = coords.get(bus.id)!;
-			return { id: bus.id, lon, lat, demand_mw: bus.demand_mw, gen_mw: bus.gen_mw };
+			return { id: bus.id, uid: bus.uid, lon, lat, demand_mw: bus.demand_mw, gen_mw: bus.gen_mw };
 		}),
 		branches: topology.branches
 			.filter((branch) => coords.has(branch.from) && coords.has(branch.to))
 			.map((branch) => ({
 				id: branch.id,
+				uid: branch.uid,
 				from: branch.from,
 				to: branch.to,
 				rate_mw: branch.rate_mw,

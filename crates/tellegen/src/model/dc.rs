@@ -81,6 +81,11 @@ pub struct DcNetwork {
     pub branch_ids: Vec<usize>,
     /// Dense generator index -> original source generator id.
     pub gen_ids: Vec<usize>,
+    /// Dense bus index -> powerio row uid (`None` when the source network carried
+    /// no uids). Lets edits address a bus as `"buses:0"` and responses echo the uid.
+    pub bus_uids: Vec<Option<String>>,
+    /// Dense branch index -> powerio row uid; the branch counterpart of `bus_uids`.
+    pub branch_uids: Vec<Option<String>>,
     /// System base power (MVA), for recovering MW / $/MWh from per-unit results.
     pub base_mva: f64,
 }
@@ -101,6 +106,8 @@ impl DcNetwork {
             bus_ids,
             branch_ids,
             gen_ids,
+            bus_uids,
+            branch_uids,
         } = reconstruct_ids(raw, &view)?;
 
         // Per-bus demand (already per unit on the normalized network).
@@ -211,6 +218,8 @@ impl DcNetwork {
             bus_ids,
             branch_ids,
             gen_ids,
+            bus_uids,
+            branch_uids,
             base_mva: raw.base_mva,
         })
     }

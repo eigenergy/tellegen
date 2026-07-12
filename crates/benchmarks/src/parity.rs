@@ -485,14 +485,14 @@ pub fn dc_parity(net: &Network) -> ParitySummary {
         // fails the shed-off solve and that column is skipped below.
         let plus = SolveRequest {
             edits: Edits {
-                deltas: [(bus, STEP_MW)].into_iter().collect(),
+                deltas: [(bus.into(), STEP_MW)].into_iter().collect(),
                 ..Default::default()
             },
             ..Default::default()
         };
         let minus = SolveRequest {
             edits: Edits {
-                deltas: [(bus, -STEP_MW)].into_iter().collect(),
+                deltas: [(bus.into(), -STEP_MW)].into_iter().collect(),
                 ..Default::default()
             },
             ..Default::default()
