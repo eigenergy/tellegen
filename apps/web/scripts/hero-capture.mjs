@@ -9,6 +9,10 @@
 //   --drag   hold the rating slider this fraction of track width from its
 //            current position and capture mid-drag (e.g. 0.25); omit to
 //            capture the committed state
+//   --clean  hide page chrome that fights a print figure: the grain overlay,
+//            the header (which also names the group, so review-copy captures
+//            need this), the footer, zoom buttons, and the bus lookup.
+//            CARTO/OSM attribution stays visible
 //   --out    output path (default hero-<case>-<scale>x.png)
 //
 // The flow mirrors line-rating.spec.ts: wait for the solve card, activate the
@@ -27,6 +31,7 @@ const url = arg('url', 'https://tellegen.dev');
 const caseText = arg('case', 'Texas'); // matches the chip on its region row
 const scale = Number(arg('scale', '2'));
 const drag = arg('drag', null);
+const clean = process.argv.includes('--clean');
 const out = arg('out', `hero-${caseText.toLowerCase().replace(/[^a-z0-9]+/g, '')}-${scale}x.png`);
 
 const browser = await chromium.launch();
@@ -48,6 +53,15 @@ const bindingLine = page.locator('.binding-lines button').first();
 await bindingLine.waitFor({ timeout: 120_000 });
 await bindingLine.click();
 await page.locator('.sensitivity-readout').waitFor();
+
+// After the interactions: the header holds the case chips the script clicks,
+// so it can only be hidden from here on.
+if (clean) {
+	await page.addStyleTag({
+		content:
+			'body::after, header, footer, .maplibregl-ctrl-group, .bus-lookup { display: none !important; }'
+	});
+}
 
 // Basemap tiles and the network layer render asynchronously after the solve.
 await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
