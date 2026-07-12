@@ -61,7 +61,7 @@ const CASE_SPECS: &[CaseSpec] = &[
     ),
     CaseSpec::bus_csv(
         "case7000",
-        "ACTIVSg7000 (Texas)",
+        "Texas7k (Texas)",
         "ACTIVSg7000/Texas7k_20210804.m",
         "ACTIVSg7000/Texas7k_lat_long.csv",
     ),

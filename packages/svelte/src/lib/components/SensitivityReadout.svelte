@@ -24,6 +24,13 @@
 			? ctrl.ratingSliderValue - ctrl.committedRating
 			: ctrl.sliderValue - ctrl.committedDelta
 	);
+
+	// Label the selected line by its bus pair, matching BindingLines and
+	// RatingSlider; fall back to the raw branch id while the network loads.
+	const branchLabel = $derived.by(() => {
+		const b = ctrl.selectedBranchData;
+		return b ? `${b.from} – ${b.to}` : String(app.selectedBranch);
+	});
 </script>
 
 <div class="mode">
@@ -31,7 +38,7 @@
 		{ctrl.previewing ? 'LMP preview' : branchMode ? '∂LMP/∂rating' : '∂LMP/∂d'}
 	</span>
 	<span class="mono dim">
-		{#if branchMode}line {app.selectedBranch}{:else}bus {app.selectedBus}{/if}
+		{#if branchMode}line {branchLabel}{:else}bus {app.selectedBus}{/if}
 	</span>
 	<button class="mono" onclick={ctrl.clearSelection}>esc&nbsp;clear</button>
 </div>
@@ -62,7 +69,7 @@
 	{:else}
 		<p class="dim small sensitivity-copy" title={unitTitle}>
 			{#if branchMode}
-				LMP response per MVA of rating on line {app.selectedBranch}.
+				LMP response per MVA of rating on line {branchLabel}.
 			{:else}
 				LMP response per MW of demand at bus {app.selectedBus}.
 			{/if}
