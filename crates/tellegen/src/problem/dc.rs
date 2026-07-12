@@ -14,7 +14,11 @@ use crate::solve::{run, RawSolution, SolveIteration};
 use super::{build_opf, OpfFormulation, OpfProgram, ProgramBuilder};
 
 /// Primal and dual solution of the DC OPF, in per unit. `nu_bal` is the LMP
-/// (per-unit $/per-unit-MW); divide by `base_mva` for $/MWh.
+/// (per-unit $/per-unit-MW); divide by `base_mva` for $/MWh. `objective` includes
+/// each generator's constant (no-load) cost term, so it is comparable to a
+/// reference OPF objective that includes it — the constant does not enter the QP
+/// (it cannot move the argmin), so it is added back on at readout, as the SOCWR
+/// readout does.
 #[derive(Clone)]
 #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
 pub struct DcOpfSolution {
@@ -212,6 +216,7 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
     let (n, m, k) = (dc.n, dc.m, dc.k);
     let x = &raw.x;
     let z = &raw.z;
+    let cc: f64 = dc.cc.iter().sum();
     DcOpfSolution {
         va: (0..n).map(|i| x[lay.col_va(i)]).collect(),
         pg: (0..k).map(|j| x[lay.col_pg(j)]).collect(),
@@ -226,7 +231,7 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
         mu_lb: (0..n).map(|i| z[lay.r_shedlb(i)]).collect(),
         gamma_ub: (0..m).map(|e| z[lay.r_phaseub(e)]).collect(),
         gamma_lb: (0..m).map(|e| z[lay.r_phaselb(e)]).collect(),
-        objective: raw.objective,
+        objective: raw.objective + cc,
         iterations: raw.iterations.clone(),
     }
 }
@@ -388,5 +393,38 @@ mod tests {
         for v in &lmp {
             assert!(v.is_finite(), "non-finite LMP {v}");
         }
+    }
+
+    #[test]
+    fn objective_matches_reference_including_constant_cost() {
+        // Regression for the dropped-c0 bug: the DC OPF objective must include each
+        // generator's constant (no-load) cost term, not just cq g^2 + cl g. Reference
+        // value from PowerModels.jl + IPOPT on the same file (`run_dc` on
+        // `case_ACTIVSg500.m`), which includes the constant term: $70,784.49. Before
+        // the fix, tellegen reported $54,397.5 here — a case-dependent 1.3x
+        // understatement from silently discarding c0. Skips if the data is absent.
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/ACTIVSg500/case_ACTIVSg500.m"
+        );
+        let Ok(text) = std::fs::read_to_string(path) else {
+            eprintln!(
+                "skipping objective_matches_reference_including_constant_cost: {path} not found"
+            );
+            return;
+        };
+        let net = powerio::parse_str(&text, "matpower")
+            .expect("parse ACTIVSg500")
+            .network;
+        let dc = DcNetwork::from_network(&net).expect("build DcNetwork");
+        let sol = dc_opf(&dc).expect("solve ACTIVSg500");
+
+        let reference = 70_784.49;
+        let rel = (sol.objective - reference).abs() / reference;
+        assert!(
+            rel < 1e-3,
+            "objective {} vs PowerModels.jl/IPOPT reference {reference} (rel err {rel})",
+            sol.objective
+        );
     }
 }

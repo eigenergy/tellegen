@@ -9,7 +9,9 @@
 //! sparse `(P, q, A, b)` accumulation so each formulation writes only its own blocks.
 //!
 //! The DC OPF is the convex QP below — variables, objective, and constraints, with the
-//! named dual on each constraint:
+//! named dual on each constraint. The reported objective also includes `sum(cc)`, each
+//! generator's constant (no-load) cost term, added back on at readout since a constant
+//! cannot move the argmin and so is left out of the QP itself:
 //!
 //! ```text
 //! min  sum(cq g^2 + cl g) + (tau^2/2) ||f||^2 + sum(c_shed psh)

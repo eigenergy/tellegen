@@ -50,10 +50,14 @@ pub struct DcNetwork {
     /// Phase-angle-difference bounds per branch (radians).
     pub angmin: Vec<f64>,
     pub angmax: Vec<f64>,
-    /// Per-unit quadratic and linear generation cost coefficients: the cost of
-    /// generator `i` is `cq[i] pg[i]^2 + cl[i] pg[i]`.
+    /// Per-unit quadratic, linear, and constant (no-load) generation cost
+    /// coefficients: the cost of generator `i` is `cq[i] pg[i]^2 + cl[i] pg[i] +
+    /// cc[i]`. `cc` does not enter the QP objective (a constant does not move the
+    /// argmin), but the solve readout adds `sum(cc)` back onto the reported
+    /// objective so it matches a reference OPF objective that includes it.
     pub cq: Vec<f64>,
     pub cl: Vec<f64>,
+    pub cc: Vec<f64>,
     /// Load-shedding penalty per bus.
     pub c_shed: Vec<f64>,
     /// Per-unit active demand per bus.
@@ -144,16 +148,18 @@ impl DcNetwork {
         let mut gmin = Vec::with_capacity(k);
         let mut cq = Vec::with_capacity(k);
         let mut cl = Vec::with_capacity(k);
+        let mut cc = Vec::with_capacity(k);
         for g in gens {
             let bus = view
                 .bus_index(g.bus)
                 .ok_or_else(|| format!("generator bus {} not in index", g.bus))?;
-            let (q, l) = cost_coeffs(g.cost.as_ref())?;
+            let (q, l, c) = cost_coeffs(g.cost.as_ref())?;
             gen_bus.push(bus);
             gmax.push(g.pmax);
             gmin.push(g.pmin);
             cq.push(q);
             cl.push(l);
+            cc.push(c);
         }
 
         // Shedding cost references the steepest marginal generation cost.
@@ -187,6 +193,7 @@ impl DcNetwork {
             angmax,
             cq,
             cl,
+            cc,
             c_shed,
             demand,
             ref_bus,
@@ -245,14 +252,16 @@ fn fallback_rate_a(r: f64, x: f64, amin: f64, amax: f64, fr_vmax: f64, to_vmax: 
     ymag * fr_vmax.max(to_vmax) * cmax
 }
 
-/// Quadratic and linear cost coefficients `(cq, cl)` for one generator, from its
-/// per-unit polynomial cost. Coefficients arrive already rescaled to per unit by
-/// `to_normalized`, so this only does the polynomial shaping: drop leading zeros,
-/// then read the quadratic and linear terms. A generator with no cost curve is free
-/// (`(0, 0)`).
-fn cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64), String> {
-    let (q, l, _) = quadratic_cost_coeffs(cost)?;
-    Ok((q, l))
+/// Quadratic, linear, and constant cost coefficients `(cq, cl, cc)` for one
+/// generator, from its per-unit polynomial cost. Coefficients arrive already
+/// rescaled to per unit by `to_normalized`, so this only does the polynomial
+/// shaping: drop leading zeros, then read the quadratic, linear, and constant
+/// terms. A generator with no cost curve is free (`(0, 0, 0)`). The QP objective
+/// only wires in `cq` and `cl` (a constant does not move the argmin); the solve
+/// readout adds `sum(cc)` back onto the reported objective, matching how the
+/// AC/SOCWR path (`ac::ac_cost_coeffs`) handles the same constant.
+fn cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64, f64), String> {
+    quadratic_cost_coeffs(cost)
 }
 
 #[cfg(test)]

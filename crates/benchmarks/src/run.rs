@@ -108,14 +108,11 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
         return rec;
     }
 
-    // The constant cost term, shared across formulations; the DC objective omits it.
-    let const_cost: f64 = ac.as_ref().map(|n| n.cc.iter().sum()).unwrap_or(0.0);
-
     if let Ok(dc) = dc.as_ref() {
         rec.buses = dc.n;
         rec.branches = dc.m;
         rec.gens = dc.k;
-        run_dc(&mut rec, dc, const_cost, &baseline);
+        run_dc(&mut rec, dc, &baseline);
     } else if let Some(e) = dc.as_ref().err() {
         rec.dc.error = Some(e.to_string());
         rec.raise(Status::Caveat);
@@ -155,7 +152,7 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
     rec
 }
 
-fn run_dc(rec: &mut Record, dc: &DcNetwork, const_cost: f64, baseline: &Option<BaselineRow>) {
+fn run_dc(rec: &mut Record, dc: &DcNetwork, baseline: &Option<BaselineRow>) {
     let t = Instant::now();
     let out = match tellegen::solve_prebuilt(dc, &SolveRequest::default()) {
         Ok(o) => o,
@@ -182,7 +179,10 @@ fn run_dc(rec: &mut Record, dc: &DcNetwork, const_cost: f64, baseline: &Option<B
     };
     rec.timings.dc_ms = ms(t);
 
-    let objective = out.objective.unwrap_or(0.0) + const_cost;
+    // `out.objective` already includes each generator's constant cost term
+    // (added back on at readout in `DcOpfSolution`), so it is directly comparable
+    // to the published BASELINE value.
+    let objective = out.objective.unwrap_or(0.0);
     rec.dc.objective = Some(objective);
     rec.dc.iterations = Some(match &out.iterations {
         Some(Iterations::Ipm(trace)) => trace.len(),
