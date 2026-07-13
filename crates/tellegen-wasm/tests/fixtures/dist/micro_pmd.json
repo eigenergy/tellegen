@@ -1,0 +1,12 @@
+{
+  "data_model": "ENGINEERING",
+  "settings": {
+    "sbase_default": 1.0,
+    "voltage_scale_factor": 1.0,
+    "power_scale_factor": 1.0,
+    "base_frequency": 60.0
+  },
+  "bus": {
+    "b1": { "terminals": [1, 2, 3], "grounded": [], "status": "ENABLED" }
+  }
+}

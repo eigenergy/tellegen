@@ -5,6 +5,7 @@
 	import DisplayControls from './DisplayControls.svelte';
 	import FormulationSelector from './FormulationSelector.svelte';
 	import LocalCaseDetails from './LocalCaseDetails.svelte';
+	import MulticonductorDetails from './MulticonductorDetails.svelte';
 	import NetworkStats from './NetworkStats.svelte';
 	import RatingSlider from './RatingSlider.svelte';
 	import SensitivityReadout from './SensitivityReadout.svelte';
@@ -30,8 +31,11 @@
 	{#if app.activeLocal}
 		<LocalCaseDetails />
 	{/if}
+	{#if app.activeMulti}
+		<MulticonductorDetails />
+	{/if}
 	{#if !ctrl.networkStats}
-		{#if !app.error && !app.activeLocal}
+		{#if !app.error && !app.activeLocal && !app.activeMulti}
 			{#if ctrl.casesLoaded && app.cases.length === 0}
 				<p class="dim mono">
 					{config.loadDefaultCases ? 'no default cases loaded' : 'drop a case file to begin'}

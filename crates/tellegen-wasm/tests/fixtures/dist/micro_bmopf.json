@@ -1,0 +1,45 @@
+{
+  "name": "micro-bmopf",
+  "base_frequency": 60.0,
+  "bus": {
+    "src": {
+      "terminal_names": ["1", "2", "3", "4"],
+      "perfectly_grounded_terminals": ["4"],
+      "longitude": -83.92,
+      "latitude": 35.96
+    },
+    "load_bus": {
+      "terminal_names": ["1", "2", "3", "4"],
+      "perfectly_grounded_terminals": ["4"],
+      "longitude": -83.90,
+      "latitude": 35.95
+    }
+  },
+  "line": {
+    "l1": {
+      "bus_from": "src",
+      "bus_to": "load_bus",
+      "terminal_map_from": ["1", "2", "3"],
+      "terminal_map_to": ["1", "2", "3"],
+      "linecode": "lc1",
+      "length": 100.0
+    }
+  },
+  "voltage_source": {
+    "vs": {
+      "bus": "src",
+      "terminal_map": ["1", "2", "3", "4"],
+      "v_magnitude": [7200.0, 7200.0, 7200.0, 0.0],
+      "v_angle": [0.0, -2.0944, 2.0944, 0.0]
+    }
+  },
+  "load": {
+    "ld1": {
+      "bus": "load_bus",
+      "terminal_map": ["1", "2", "3", "4"],
+      "configuration": "WYE",
+      "p_nom": [50000.0, 50000.0, 50000.0],
+      "q_nom": [10000.0, 10000.0, 10000.0]
+    }
+  }
+}

@@ -51,6 +51,20 @@
 				>
 			</div>
 		{/each}
+		{#each app.multiCases as c (c.id)}
+			<div class="case-chip local" class:active={app.activeMultiId === c.id}>
+				<button class="case-activate" onclick={() => ctrl.activateMulti(c)}>
+					<span class="cname">{c.label}</span>
+					<span class="cregion mono">multiconductor</span>
+				</button>
+				<button
+					class="case-remove mono"
+					aria-label="remove {c.label}"
+					title="remove {c.label}"
+					onclick={(e) => ctrl.removeMultiCase(c, e)}>&#10005;</button
+				>
+			</div>
+		{/each}
 		{#if ctrl.showFileDropUi}
 			<button
 				class="ghost filedrop-ui"
@@ -69,7 +83,7 @@
 	</span>
 	<input
 		type="file"
-		accept=".m,.raw,.aux,.pwd,.csv,.json,.geojson"
+		accept=".m,.raw,.aux,.dss,.pwd,.csv,.json,.geojson"
 		multiple
 		hidden
 		bind:this={fileInput}

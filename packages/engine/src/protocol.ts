@@ -10,6 +10,7 @@ import type { WasmModule, WasmStudy } from "./module.js";
 export type EngineRequest =
   | { op: "preload" }
   | { op: "ingest_case"; text: string; format: string }
+  | { op: "ingest_dist_case"; text: string; format: string }
   | { op: "parse_display"; bytes: Uint8Array; format: string }
   | { op: "capabilities" }
   | { op: "solve_json"; network_json: string; request: string }
@@ -46,6 +47,8 @@ export function runRequest(
       return null; // loading the module was the work
     case "ingest_case":
       return mod.ingest_case(req.text, req.format);
+    case "ingest_dist_case":
+      return mod.ingest_dist_case(req.text, req.format);
     case "parse_display":
       return mod.parse_display(req.bytes, req.format);
     case "capabilities":

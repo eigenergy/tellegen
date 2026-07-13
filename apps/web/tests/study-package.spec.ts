@@ -41,7 +41,7 @@ test('a saved study package downloads and restores when dropped back in', async 
 		.setInputFiles([
 			{ name: 'restored.pio.json', mimeType: 'application/json', buffer: Buffer.from(text) }
 		]);
-	await expect(page.getByText('click the map to place the synthetic topology')).toBeVisible({
+	await expect(page.getByText('click the map to place the topology layout')).toBeVisible({
 		timeout: 30_000
 	});
 	await expect(page.locator('p.error')).toHaveCount(0);

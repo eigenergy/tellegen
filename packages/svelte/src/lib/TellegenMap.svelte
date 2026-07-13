@@ -20,14 +20,25 @@
 	} from './colors.js';
 	import { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
 	import { CaseState, type DisplayMode, type LocalCase } from './state.svelte.js';
+	import {
+		attachmentColor,
+		edgeColor,
+		edgeWidth,
+		isPhaseTerminal,
+		phaseColor,
+		type PlacedMultiBus,
+		type PlacedMultiEdge
+	} from './multiconductor.js';
 	import { getAppState, getController } from './context.svelte.js';
-	import { displayFmt, fmt } from './format.js';
+	import { displayFmt, fmt, rgbaCss } from './format.js';
+	import type { RGBA } from './colors.js';
 
 	let {
 		onbusclick,
 		onlocalbusclick,
 		onbranchclick,
 		onlocalbranchclick,
+		onmultibusclick,
 		onplacecase,
 		onmapclick
 	}: {
@@ -35,6 +46,7 @@
 		onlocalbusclick: (caseId: string, busId: number) => void;
 		onbranchclick?: (caseId: string, branchId: number) => void;
 		onlocalbranchclick?: (caseId: string, branchId: number) => void;
+		onmultibusclick: (caseId: string, busId: string) => void;
 		onplacecase: (lon: number, lat: number) => void;
 		onmapclick: () => void;
 	} = $props();
@@ -251,6 +263,14 @@
 		};
 	}
 
+	// A multiconductor bus is badged by its dominant attachment role (source,
+	// then generator, IBR, load, shunt); a bus with none stays neutral. The full
+	// per-terminal attachment list expands in the selection overlay.
+	function multiBusFill(b: PlacedMultiBus): [number, number, number, number] {
+		const primary = b.attachmentKinds[0];
+		return primary ? attachmentColor(primary) : busNeutral;
+	}
+
 	// Layers whose click selects something (a bus or a branch); the overlay-level
 	// click handler must not treat those clicks as "empty map" and clear the selection.
 	function isSelectableLayer(layerId: string | undefined): boolean {
@@ -258,7 +278,9 @@
 			layerId?.startsWith('buses-') ||
 				layerId?.startsWith('local-buses-') ||
 				layerId?.startsWith('branches-') ||
-				layerId?.startsWith('local-branches-')
+				layerId?.startsWith('local-branches-') ||
+				layerId?.startsWith('multi-buses-') ||
+				layerId?.startsWith('multi-edges-')
 		);
 	}
 
@@ -288,6 +310,19 @@
 	let selectedBranchHaloPath = $state.raw<SVGPathElement | null>(null);
 	let selectedBranchLinePath = $state.raw<SVGPathElement | null>(null);
 	let handledFrameSeq = 0;
+
+	// The selected multiconductor bus and its incident edges, whose per-conductor
+	// strands and terminal stack the detail overlay draws in screen space.
+	const selectedMultiDetail = $derived.by(() => {
+		const c = app.activeMulti;
+		const busId = c?.selectedBusId ?? null;
+		if (!c?.view || busId === null) return null;
+		const bus = c.view.buses.find((b) => b.id === busId);
+		if (!bus) return null;
+		const edges = c.view.edges.filter((e) => e.from === busId || e.to === busId);
+		return { key: `${c.id}-${busId}`, bus, edges };
+	});
+	let multiDetailEl = $state.raw<SVGSVGElement | null>(null);
 
 	function syncSelectedCue() {
 		if (!map || !selectedCueEl || !selectedBusCue) return;
@@ -348,6 +383,93 @@
 		selectedBranchLinePath.setAttribute('d', d);
 	}
 
+	const col = (c: RGBA) => rgbaCss(c);
+
+	/** A small ground symbol centered at (x, y): a short stem into three
+	 * shrinking bars, the standard earth glyph. */
+	function groundGlyph(x: number, y: number): string {
+		return (
+			`<g class="mc-ground">` +
+			`<line x1="${x}" y1="${y - 4}" x2="${x}" y2="${y}"/>` +
+			`<line x1="${x - 5}" y1="${y}" x2="${x + 5}" y2="${y}"/>` +
+			`<line x1="${x - 3}" y1="${y + 2.5}" x2="${x + 3}" y2="${y + 2.5}"/>` +
+			`<line x1="${x - 1.5}" y1="${y + 5}" x2="${x + 1.5}" y2="${y + 5}"/></g>`
+		);
+	}
+
+	// Draw the selected bus's terminal-level detail in screen space: each incident
+	// edge fans into one strand per conductor (offset perpendicular, colored by
+	// phase), and the bus expands a stack of terminal badges with ground markers
+	// and attachment squares. Rebuilt per frame from map.project, like the branch
+	// cue. Bus ids and terminal names come from the file, so they are escaped.
+	function syncMultiDetail() {
+		if (!map || !multiDetailEl) return;
+		const detail = selectedMultiDetail;
+		if (!detail) {
+			multiDetailEl.style.display = 'none';
+			multiDetailEl.innerHTML = '';
+			return;
+		}
+		const m = map;
+		const { clientWidth, clientHeight } = m.getContainer();
+		if (clientWidth === 0 || clientHeight === 0) {
+			multiDetailEl.style.display = 'none';
+			return;
+		}
+		const { bus, edges } = detail;
+		const busPt = m.project([bus.lon, bus.lat]);
+
+		const STRAND_SPACING = 5;
+		let strands = '';
+		for (const e of edges) {
+			const selectedIsFrom = e.from === bus.id;
+			const other = selectedIsFrom ? e.path[1] : e.path[0];
+			const b = m.project(other);
+			const dx = b.x - busPt.x;
+			const dy = b.y - busPt.y;
+			const len = Math.hypot(dx, dy) || 1;
+			const px = -dy / len;
+			const py = dx / len;
+			const n = e.conductors.length || Math.max(e.n_phases, 1);
+			for (let i = 0; i < n; i++) {
+				const pair = e.conductors[i];
+				const term = (selectedIsFrom ? pair?.[0] : pair?.[1]) ?? '';
+				const off = (i - (n - 1) / 2) * STRAND_SPACING;
+				const ax = (busPt.x + px * off).toFixed(1);
+				const ay = (busPt.y + py * off).toFixed(1);
+				const bx = (b.x + px * off).toFixed(1);
+				const by = (b.y + py * off).toFixed(1);
+				strands += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${col(phaseColor(term))}" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/>`;
+			}
+		}
+
+		// The terminal stack sits to the right of the bus; a leader connects them.
+		const terminals = bus.terminals.slice(0, 12);
+		const STACK_DX = 26;
+		const STACK_DY = 18;
+		const sx = busPt.x + STACK_DX;
+		const top = busPt.y - ((terminals.length - 1) / 2) * STACK_DY;
+		let stack = `<line class="mc-leader" x1="${busPt.x.toFixed(1)}" y1="${busPt.y.toFixed(1)}" x2="${sx.toFixed(1)}" y2="${busPt.y.toFixed(1)}"/>`;
+		terminals.forEach((t, k) => {
+			const cy = top + k * STACK_DY;
+			const grounded = bus.grounded.includes(t);
+			const fill = isPhaseTerminal(t) ? col(phaseColor(t)) : col([120, 114, 102, 255]);
+			if (grounded) stack += groundGlyph(sx - 14, cy);
+			stack += `<circle cx="${sx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6" fill="${fill}" stroke="#20242b" stroke-width="1.2"/>`;
+			stack += `<text class="mc-term" x="${(sx + 11).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${esc(t)}</text>`;
+			// Attachment squares for elements landing on this terminal.
+			const kinds = [...new Set((bus.terminalAttachments[t] ?? []).map((a) => a.kind))];
+			kinds.slice(0, 5).forEach((kind, j) => {
+				const bxp = sx + 26 + j * 9;
+				stack += `<rect x="${bxp.toFixed(1)}" y="${(cy - 4).toFixed(1)}" width="7" height="7" rx="1.5" fill="${col(attachmentColor(kind))}"><title>${esc(kind)}</title></rect>`;
+			});
+		});
+
+		multiDetailEl.setAttribute('viewBox', `0 0 ${clientWidth} ${clientHeight}`);
+		multiDetailEl.style.display = 'block';
+		multiDetailEl.innerHTML = `<g class="mc-strands">${strands}</g><g class="mc-stack">${stack}</g>`;
+	}
+
 	// Coalesce cue syncs to one per animation frame: 'move' fires for every
 	// camera change (including zooms), and each sync reprojects the whole
 	// selected branch path.
@@ -359,6 +481,7 @@
 			cueSyncScheduled = false;
 			syncSelectedCue();
 			syncSelectedBranchCue();
+			syncMultiDetail();
 		});
 	}
 
@@ -477,6 +600,24 @@
 				html: `<div class="tt"><b>substation ${Number(s.number)}</b>${named}<br><span style="opacity:0.6">.pwd diagram &#8901; approx. position</span></div>`
 			};
 		}
+		const layerId = info.layer?.id;
+		if (layerId?.startsWith('multi-edges-')) {
+			const e = object as PlacedMultiEdge;
+			const state = e.kind === 'switch' ? (e.closed ? ' &#8901; closed' : ' &#8901; open') : '';
+			return {
+				html: `<div class="tt"><b>${esc(e.kind)} ${esc(e.from)}&#8201;&ndash;&#8201;${esc(e.to)}</b> ${e.n_phases}&#8202;&phi;${state}</div>`
+			};
+		}
+		if (layerId?.startsWith('multi-buses-')) {
+			const b = object as PlacedMultiBus;
+			const roles = b.attachmentKinds.length ? b.attachmentKinds.join(', ') : 'none';
+			return {
+				html: `<div class="tt"><b>bus ${esc(b.id)}</b>
+					${b.terminals.length} terminals${b.grounded.length ? ` &#8901; ${b.grounded.length} grounded` : ''}<br>
+					load ${b.load_kw.toFixed(0)} kW &#8901; gen ${b.gen_kw.toFixed(0)} kW<br>
+					<span style="opacity:0.6">${esc(roles)}</span></div>`
+			};
+		}
 		const c = caseOf(info);
 		const d = c ? display.get(c.id) : undefined;
 		if ('path' in object) {
@@ -559,11 +700,11 @@
 				depthCompare: 'always'
 			},
 			onClick: (info: PickingInfo) => {
-				if (!app.placingLocalId && !isSelectableLayer(info.layer?.id)) onmapclick();
+				if (!app.placingId && !isSelectableLayer(info.layer?.id)) onmapclick();
 			},
 			getTooltip: tooltip,
 			getCursor: ({ isHovering, isDragging }: CursorState) =>
-				app.placingLocalId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
+				app.placingId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
 		});
 	}
 
@@ -585,7 +726,7 @@
 				const o = buildOverlay(MapboxOverlay);
 				m.addControl(o);
 				m.on('click', (e) => {
-					if (app.placingLocalId) onplacecase(e.lngLat.lng, e.lngLat.lat);
+					if (app.placingId) onplacecase(e.lngLat.lng, e.lngLat.lat);
 				});
 				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
@@ -867,12 +1008,68 @@
 				);
 			}
 		}
+		// Multiconductor cases (viewing only): the bus graph with edges styled by
+		// kind and buses badged by attachment role. Selecting a bus fans its
+		// incident conductors and expands its terminal stack in the SVG overlay.
+		for (const c of app.multiCases) {
+			if (!c.view) continue;
+			const selectedId = c.id === app.activeMultiId ? c.selectedBusId : null;
+			layers.push(
+				new PathLayer<PlacedMultiEdge>({
+					id: `multi-edges-${c.id}`,
+					data: c.view.edges,
+					getPath: (e) => e.path,
+					getColor: (e) => edgeColor(e.kind, e.closed),
+					getWidth: (e) => edgeWidth(e.kind, e.n_phases),
+					widthUnits: 'pixels',
+					widthMinPixels: 1.2,
+					capRounded: true,
+					jointRounded: true,
+					miterLimit: 2,
+					pickable: true,
+					autoHighlight: true,
+					highlightColor: [32, 36, 43, 90]
+				}),
+				new ScatterplotLayer<PlacedMultiBus>({
+					id: `multi-buses-${c.id}`,
+					data: c.view.buses,
+					getPosition: (b) => [b.lon, b.lat],
+					getRadius: (b) => busRadius(Math.max(b.load_kw, b.gen_kw)),
+					radiusUnits: 'pixels',
+					radiusMinPixels: 3,
+					getFillColor: (b) => multiBusFill(b),
+					stroked: true,
+					billboard: true,
+					getLineColor: (b) =>
+						selectedId === b.id
+							? [32, 36, 43, 255]
+							: b.has_source
+								? [63, 111, 187, 220]
+								: [46, 42, 34, 120],
+					getLineWidth: (b) => (selectedId === b.id ? 2.5 : b.has_source ? 2 : 1),
+					lineWidthUnits: 'pixels',
+					pickable: true,
+					autoHighlight: true,
+					highlightColor: [32, 36, 43, 70],
+					onClick: (info: PickingInfo) => {
+						const bus = info.object as PlacedMultiBus | undefined;
+						if (!bus) return false;
+						onmultibusclick(c.id, bus.id);
+						return true;
+					},
+					updateTriggers: {
+						getLineColor: [selectedId],
+						getLineWidth: [selectedId]
+					}
+				})
+			);
+		}
 		overlay.setProps({ layers });
 	});
 
 	$effect(() => {
 		if (!map) return;
-		map.getCanvas().style.cursor = app.placingLocalId ? 'crosshair' : '';
+		map.getCanvas().style.cursor = app.placingId ? 'crosshair' : '';
 	});
 
 	$effect(() => {
@@ -880,6 +1077,7 @@
 		void mapGen;
 		void selectedBusCue?.key;
 		void selectedBranchCue?.key;
+		void selectedMultiDetail?.key;
 		void tick().then(scheduleCueSync);
 	});
 
@@ -896,6 +1094,10 @@
 			if (target !== 'all' && c.id !== target) continue;
 			if (c.view) fold(c.view.buses);
 			if (c.substations) fold(c.substations.points);
+		}
+		for (const c of app.multiCases) {
+			if (target !== 'all' && c.id !== target) continue;
+			if (c.view) fold(c.view.buses);
 		}
 		return foldBounds(points);
 	}
@@ -949,10 +1151,15 @@
 				</svg>
 			{/key}
 		{/if}
+		{#if selectedMultiDetail}
+			<!-- Content is built imperatively in syncMultiDetail (screen-space
+			     projection); file-derived text is escaped there. -->
+			<svg class="multi-detail" bind:this={multiDetailEl} aria-hidden="true"></svg>
+		{/if}
 	</div>
 {/key}
 
-{#if app.placingLocalId && map}
+{#if app.placingId && map}
 	<button
 		type="button"
 		class="place-at-center mono"
@@ -1005,6 +1212,34 @@
 		height: 100%;
 		overflow: visible;
 		pointer-events: none;
+	}
+
+	.multi-detail {
+		position: absolute;
+		inset: 0;
+		z-index: calc(var(--z-chrome) - 1);
+		display: none;
+		width: 100%;
+		height: 100%;
+		overflow: visible;
+		pointer-events: none;
+	}
+
+	.multi-detail :global(.mc-leader) {
+		stroke: rgba(32, 36, 43, 0.35);
+		stroke-width: 1;
+		stroke-dasharray: 2 2;
+	}
+
+	.multi-detail :global(.mc-ground line) {
+		stroke: #3a3a3a;
+		stroke-width: 1.3;
+	}
+
+	.multi-detail :global(.mc-term) {
+		fill: var(--ink, #20242b);
+		font-family: var(--font-mono);
+		font-size: 10px;
 	}
 
 	.selected-branch-cue path {
