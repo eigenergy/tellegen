@@ -53,6 +53,12 @@ describe('classifyJson distribution documents', () => {
 		// A `data_model`-named value that is not a top-level key stays BMOPF.
 		expect(classifyJson(JSON.stringify({ name: 'data_model' }))).toBe('bmopf');
 	});
+
+	it('leaves a GeoJSON FeatureCollection unrouted so it reaches the geo sidecar path', () => {
+		expect(classifyJson(JSON.stringify({ type: 'FeatureCollection', features: [] }))).toBe(
+			'not-json'
+		);
+	});
 });
 
 describe('classifyJson totality', () => {

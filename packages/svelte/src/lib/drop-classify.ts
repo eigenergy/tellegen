@@ -10,7 +10,8 @@
  *     multiconductor is viewed);
  *   - a non-package document is distribution JSON, PMD when it carries the
  *     `data_model` marker and BMOPF otherwise (the same split
- *     `powerio_dist` uses for `.json`).
+ *     `powerio_dist` uses for `.json`), except a GeoJSON FeatureCollection,
+ *     which stays unrouted so the geo sidecar path keeps accepting it.
  *
  * Every function is total: malformed, truncated, or non-JSON input classifies
  * as `not-json` rather than throwing. */
@@ -78,6 +79,10 @@ export function classifyJson(text: string): JsonDropKind {
 		// non-balanced document anyway.
 		return kind === 'multiconductor' ? 'multiconductor-package' : 'balanced-package';
 	}
+	// A GeoJSON FeatureCollection saved as `.json` is coordinate data for the
+	// geo sidecar path, which accepted it before this classifier existed; leave
+	// it unrouted so it falls through.
+	if (Array.isArray((obj as { features?: unknown }).features)) return 'not-json';
 	// Non-package JSON is a distribution document: PMD declares `data_model`,
 	// everything else is routed to BMOPF (which gives the precise parse error
 	// when it is neither).
