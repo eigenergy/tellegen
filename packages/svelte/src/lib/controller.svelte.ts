@@ -801,11 +801,18 @@ export class Controller {
 		}
 	};
 
+	/** Leave the multiconductor view: a backend or local case becoming active is
+	 * mutually exclusive with a multi case, so drop the multi's active/pending ids.
+	 * The multi's per-bus expansion stays on the case for when it is reactivated. */
+	private leaveMulti() {
+		this.app.activeMultiId = null;
+		this.app.placingMultiId = null;
+	}
+
 	activateCase = async (id: string) => {
 		this.app.activeLocalId = null;
 		this.app.placingLocalId = null;
-		this.app.activeMultiId = null;
-		this.app.placingMultiId = null;
+		this.leaveMulti();
 		if (this.app.activeCaseId !== id) {
 			this.clearSelection();
 			this.app.activeCaseId = id;
@@ -847,8 +854,7 @@ export class Controller {
 		// from activeCaseId) stays set and its solve card keeps hovering over the
 		// local view.
 		this.app.activeCaseId = null;
-		this.app.activeMultiId = null;
-		this.app.placingMultiId = null;
+		this.leaveMulti();
 		this.app.activeLocalId = c.id;
 		this.app.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
 		if (c.view || c.substations) this.app.requestFrame(c.id);
@@ -870,6 +876,7 @@ export class Controller {
 	addAndActivateLocal = (c: LocalCase) => {
 		this.clearSelection();
 		this.app.activeCaseId = null;
+		this.leaveMulti();
 		this.app.addLocal(c);
 		if (c.view || c.substations) this.app.requestFrame(c.id);
 		this.maybeStartLocalSolve(c.id);
@@ -924,6 +931,7 @@ export class Controller {
 		try {
 			this.withGeoFile(target, geoFiles);
 			this.app.activeCaseId = null;
+			this.leaveMulti();
 			this.app.activeLocalId = target.id;
 			this.app.placingLocalId = null;
 			this.app.requestFrame(target.id);
@@ -952,6 +960,7 @@ export class Controller {
 	private selectTarget = async (caseId: string, target: SensTarget, focus: boolean) => {
 		this.app.activeLocalId = null;
 		this.app.placingLocalId = null;
+		this.leaveMulti();
 		if (this.app.activeCaseId !== caseId) {
 			this.clearSelection();
 			this.app.activeCaseId = caseId;
@@ -1107,6 +1116,7 @@ export class Controller {
 		const c = this.app.localCases.find((lc) => lc.id === localId);
 		if (!c?.networkJson || !c.network) return;
 		this.app.activeCaseId = null;
+		this.leaveMulti();
 		this.app.activeLocalId = localId;
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
@@ -1167,6 +1177,7 @@ export class Controller {
 		const c = this.app.localCases.find((lc) => lc.id === localId);
 		if (!c?.networkJson || !c.network) return;
 		this.app.activeCaseId = null;
+		this.leaveMulti();
 		this.app.activeLocalId = localId;
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBranchSelection(c, branchId);
