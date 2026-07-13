@@ -8,7 +8,8 @@
 //!
 //! Two pieces of solver policy the instance builders don't own stay here as passes:
 //! [`flatten_gen_costs`] rewrites every generator's cost to a plain quadratic before
-//! the instance is built (the piecewise fit / missing-cost / leading-artifact rules),
+//! the instance is built (the piecewise fit, the missing cost rule, and the leading
+//! artifact strip),
 //! and [`normalize_angle_bounds`] runs per branch afterward. Branch susceptance
 //! (DC) and pi-model admittance (AC) are computed from the `IndexedNetwork` directly:
 //! neither `DcConvention` reproduces tellegen's `-x/(r^2+x^2)`, and the dense branch
@@ -75,8 +76,8 @@ pub(super) type GenCostColumns = (Vec<f64>, Vec<f64>, Vec<f64>);
 /// model 2, three coefficients) via [`quadratic_cost_coeffs`], returning the three
 /// coefficient columns `(cq, cl, cc)` in generator order — the layout both
 /// `DcNetwork` and `AcNetwork` store. This is tellegen's cost policy applied as a
-/// `Network` pre-pass: the piecewise least squares fit, the leading
-/// rounding-artifact strip, and the missing-cost-is-free rule all run here, so the
+/// `Network` pre-pass: the piecewise least squares fit, the leading rounding
+/// artifact strip, and the rule treating a missing cost as free all run here, so the
 /// powerio-prob builders — whose `GenCost::quadratic()` /
 /// `quadratic_with_constant()` return `None` for piecewise, cubic-and-higher, or
 /// absent rows — accept every generator and read back exactly these coefficients.

@@ -134,9 +134,9 @@ impl DcNetwork {
         )
         .map_err(|e| e.to_string())?;
 
-        // Per-bus demand and reference, straight from the instance (moved out, not
-        // cloned: from_network runs per Study commit and preview, and the instance is
-        // freshly built and owned here).
+        // Per-bus demand and reference, moved straight out of the freshly built,
+        // locally owned instance: from_network runs per Study commit and preview, so
+        // this stays clone free.
         let ref_bus = *instance
             .reference_buses
             .first()
