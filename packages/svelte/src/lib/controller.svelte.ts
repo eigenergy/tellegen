@@ -78,8 +78,12 @@ function downloadText(text: string, filename: string, mime: string) {
 	anchor.rel = 'noopener';
 	document.body.appendChild(anchor);
 	anchor.click();
-	anchor.remove();
-	URL.revokeObjectURL(url);
+	// Defer cleanup: revoking the object URL in the same tick as click() can cancel
+	// an in-flight download in some browsers.
+	setTimeout(() => {
+		anchor.remove();
+		URL.revokeObjectURL(url);
+	}, 0);
 }
 
 export type { SolvableCase };
