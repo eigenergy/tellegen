@@ -65,4 +65,6 @@ pub use sens::{
 };
 pub use solve::SolveIteration;
 #[cfg(feature = "sensitivity")]
-pub use study::{NetworkEdit, Preview, PreviewColumn, PreviewValue, Study};
+pub use study::{
+    export_study, ExportedCase, NetworkEdit, Preview, PreviewColumn, PreviewValue, Study,
+};

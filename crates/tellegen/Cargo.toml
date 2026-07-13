@@ -16,6 +16,11 @@ powerio.workspace = true
 # `DcNetwork`/`AcNetwork` build on. Default features only, so the `matrix` bundle
 # writer stays out of the wasm build.
 powerio-prob.workspace = true
+# The `.pio.json` document model, used by the Study save/load/export surface to
+# stamp row uids and carry the edit log as a package study block. Optional and
+# tied to `sensitivity`: only the Study path (which needs the differentiable
+# engine) persists to a package, so the minimal core build never links it.
+powerio-pkg = { workspace = true, optional = true }
 # DC/conic OPF QP/SOCP solver. Default features only (QDLDL + amd), so it stays pure
 # Rust and compiles to wasm32 as-is.
 clarabel = "0.11.1"
@@ -30,9 +35,14 @@ num-complex = { version = "0.4", default-features = false, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+# A multiconductor payload for the fail-closed load test that a study package must be
+# balanced. Already in the tree via powerio-pkg; pinned to the same 0.7 line.
+powerio-dist = "0.7"
+
 [features]
 default = ["sensitivity"]
-sensitivity = ["dep:faer", "dep:num-complex"]
+sensitivity = ["dep:faer", "dep:num-complex", "dep:powerio-pkg"]
 # The SOCWR (Jabr) conic relaxation of AC OPF and its KKT sensitivities. Solved with
 # Clarabel's second-order cone support (already linked); the sensitivity reuses the faer
 # paths, so `conic` pulls `sensitivity`. Additive, no new dependency.

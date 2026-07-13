@@ -1423,6 +1423,8 @@ dependencies = [
  "faer",
  "num-complex",
  "powerio",
+ "powerio-dist",
+ "powerio-pkg",
  "powerio-prob",
  "serde",
  "serde_json",

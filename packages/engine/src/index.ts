@@ -86,6 +86,26 @@ export interface IngestedCase extends CaseFileSummary {
   view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 }
 
+/** A study restored from a saved `.pio.json` package: the ingest payload plus the
+ * restored formulation, solve options, and folded edit state. `deltas` are keyed by
+ * bus id and `rates` by branch id — the numeric keys the sliders use. */
+export interface LoadedPackage extends IngestedCase {
+  formulation: Formulation;
+  options: { shed: boolean; warm_start: boolean };
+  deltas: DemandDeltas;
+  rates: BranchRatingDeltas;
+}
+
+/** A study state written to a target format: the serialized case text, the writer's
+ * fidelity warnings (empty when the conversion is faithful), and the format token and
+ * file extension so a caller can name the download. */
+export interface ExportedCase {
+  text: string;
+  warnings: string[];
+  format: string;
+  extension: string;
+}
+
 export async function preloadEngine(): Promise<void> {
   await engineHost().call({ op: "preload" });
 }
@@ -504,6 +524,16 @@ export class BrowserStudy {
     return solveResponseToSolution(await this.#solution());
   }
 
+  /** Serialize this study as a `.pio.json` package: the base network payload, the
+   * edit log as the study block, and the formulation and solve options under
+   * `study.app["tellegen"]`. The returned text is ready to download or hand to
+   * `exportStudy`. */
+  async savePackage(): Promise<string> {
+    return expectText(
+      await this.#host.call({ op: "study_save_package", study: this.#handle }),
+    );
+  }
+
   /** Release the wasm Study; call when discarding it (e.g. the case's
    * networkJson changed, or the case was removed). Fire and forget: the
    * handle is invalid from this call on. */
@@ -538,6 +568,35 @@ export async function createStudy(
   return new BrowserStudy(host, handle);
 }
 
+/** Restore a study saved by `BrowserStudy.savePackage`: the case, edit sliders,
+ * formulation, and solve options in one step. Rejects on a malformed package or one
+ * that is not a tellegen study (the engine fails the load closed). */
+export async function loadPackage(text: string): Promise<LoadedPackage> {
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "load_package", text })),
+  );
+}
+
+/** Export a saved study package at commit `commit` to a powerio `format` (`matpower`,
+ * `psse`, `powerio-json`, ...). Returns the serialized case text, the writer's fidelity
+ * warnings, and the format token and file extension. */
+export async function exportStudy(
+  packageJson: string,
+  commit: number,
+  format: string,
+): Promise<ExportedCase> {
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "export_study",
+        package_json: packageJson,
+        commit,
+        format,
+      }),
+    ),
+  );
+}
+
 export interface EngineTransport {
   preloadEngine(): Promise<void>;
   ingestCase(text: string, format: string): Promise<IngestedCase>;
@@ -548,6 +607,12 @@ export interface EngineTransport {
     networkJson: string,
     formulation?: Formulation,
   ): Promise<BrowserStudy>;
+  loadPackage(text: string): Promise<LoadedPackage>;
+  exportStudy(
+    packageJson: string,
+    commit: number,
+    format: string,
+  ): Promise<ExportedCase>;
 }
 
 export const browserWasmTransport: EngineTransport = {
@@ -557,6 +622,8 @@ export const browserWasmTransport: EngineTransport = {
   capabilities,
   solveJson,
   createStudy,
+  loadPackage,
+  exportStudy,
 };
 
 export function createBrowserWasmTransport(): EngineTransport {
