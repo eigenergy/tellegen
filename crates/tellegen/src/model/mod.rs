@@ -1,8 +1,19 @@
 //! Network models built from a powerio `Network`: the [`DcNetwork`] B-theta model
 //! and the [`AcNetwork`] pi-model admittance form. Both normalize through
 //! `Network::to_normalized` + `IndexedNetwork` (per unit, radians, filtered, densely
-//! reindexed, reference inferred), then layer on the solver-prep each formulation
-//! needs.
+//! reindexed, reference inferred), build a `powerio-prob` problem instance
+//! (`DcOpfInstance` / `AcOpfInstance`) as the shared owner of case interpretation —
+//! per-unit generator PQ bounds, nodal demand, reference coverage — then layer on the
+//! solver-prep each formulation needs.
+//!
+//! Two pieces of solver policy the instance builders don't own stay here as passes:
+//! [`flatten_gen_costs`] rewrites every generator's cost to a plain quadratic before
+//! the instance is built (the piecewise fit / missing-cost / leading-artifact rules),
+//! and [`normalize_angle_bounds`] runs as an instance post-pass. Branch susceptance
+//! (DC) and pi-model admittance (AC) are computed from the `IndexedNetwork` directly:
+//! neither `DcConvention` reproduces tellegen's `-x/(r^2+x^2)`, and the dense branch
+//! arrays keep every source branch — including a literal zero-impedance record the
+//! instance would skip — so `problem/` and `sens/` stay index-aligned.
 //!
 //! The two formulations split into [`mod@dc`] and [`mod@ac`]; the dense-reindex /
 //! id-reconstruction step they share lives here in [`reconstruct_ids`].
@@ -53,6 +64,27 @@ pub(super) fn quadratic_cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64,
         2 => polynomial_quadratic_coeffs(c),
         _ => Err("only gen-cost models 1 and 2 are supported".into()),
     }
+}
+
+/// Rewrite every generator's cost to a plain quadratic `[cq, cl, cc]` (MATPOWER
+/// model 2, three coefficients) via [`quadratic_cost_coeffs`], returning the
+/// `(cq, cl, cc)` triples in generator order. This is tellegen's cost policy applied
+/// as a `Network` pre-pass: the piecewise least squares fit, the leading
+/// rounding-artifact strip, and the missing-cost-is-free rule all run here, so the
+/// powerio-prob builders — whose `GenCost::quadratic()` /
+/// `quadratic_with_constant()` return `None` for piecewise, cubic-and-higher, or
+/// absent rows — accept every generator and read back exactly these coefficients.
+/// The [`DcOpfInstance`](powerio_prob::DcOpfInstance) carries no constant term, so
+/// the DC caller takes `cc` from the returned triples. Run on the normalized network
+/// (per unit) so the fit sees the same points tellegen fit before this migration.
+pub(super) fn flatten_gen_costs(net: &mut Network) -> Result<Vec<(f64, f64, f64)>, String> {
+    let mut coeffs = Vec::with_capacity(net.generators.len());
+    for gen in &mut net.generators {
+        let (cq, cl, cc) = quadratic_cost_coeffs(gen.cost.as_ref())?;
+        coeffs.push((cq, cl, cc));
+        gen.cost = Some(GenCost::new(2, 0.0, 0.0, vec![cq, cl, cc]));
+    }
+    Ok(coeffs)
 }
 
 fn polynomial_quadratic_coeffs(cost: &GenCost) -> Result<(f64, f64, f64), String> {

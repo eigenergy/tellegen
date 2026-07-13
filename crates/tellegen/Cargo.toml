@@ -11,6 +11,11 @@ categories = ["science", "mathematics"]
 
 [dependencies]
 powerio.workspace = true
+# Matrix-free DC/AC OPF problem instances: the single owner of case interpretation
+# (per-unit generator PQ bounds and costs, nodal demand, reference coverage) that
+# `DcNetwork`/`AcNetwork` build on. Default features only, so the `matrix` bundle
+# writer stays out of the wasm build.
+powerio-prob.workspace = true
 # DC/conic OPF QP/SOCP solver. Default features only (QDLDL + amd), so it stays pure
 # Rust and compiles to wasm32 as-is.
 clarabel = "0.11.1"

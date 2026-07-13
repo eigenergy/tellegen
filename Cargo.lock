@@ -1107,6 +1107,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "powerio-prob"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbea017d6d0caf04463c6e87acb2bc9b0346256404ef10e1d207e023c248931d"
+dependencies = [
+ "powerio",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "private-gemm-x86"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1412,6 +1423,7 @@ dependencies = [
  "faer",
  "num-complex",
  "powerio",
+ "powerio-prob",
  "serde",
  "serde_json",
 ]
