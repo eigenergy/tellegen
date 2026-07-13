@@ -30,7 +30,7 @@ test('a saved study package downloads and restores when dropped back in', async 
 	const download = await downloadPromise;
 	expect(download.suggestedFilename()).toMatch(/\.pio\.json$/);
 	const text = readFileSync(await download.path(), 'utf8');
-	// A real powerio package envelope, not an empty or aborted blob.
+	// Guards against an empty or aborted blob: a real powerio package envelope.
 	expect(text).toContain('powerio.dev/schema/pio-package');
 
 	// Drop the saved package back in. Before the fix this fell into the geo-file

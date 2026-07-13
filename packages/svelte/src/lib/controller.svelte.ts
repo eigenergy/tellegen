@@ -68,8 +68,8 @@ function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> 
 	});
 }
 
-/** Trigger a browser download of in-memory text. Case files never leave the machine,
- * so a save is a local Blob download, not an upload. */
+/** Trigger a browser download of in-memory text. Case files never leave the machine:
+ * a save is a local Blob download. */
 function downloadText(text: string, filename: string, mime: string) {
 	const url = URL.createObjectURL(new Blob([text], { type: mime }));
 	const anchor = document.createElement('a');
