@@ -117,7 +117,7 @@ impl AcNetwork {
     /// layered on from the `IndexedNetwork` afterward.
     pub fn from_network(raw: &Network) -> Result<AcNetwork, String> {
         let mut norm = raw.to_normalized().map_err(|e| e.to_string())?;
-        let costs = flatten_gen_costs(&mut norm)?;
+        let (cq, cl, cc) = flatten_gen_costs(&mut norm)?;
         let view = IndexedNetwork::new(&norm);
         let Ids {
             n,
@@ -230,9 +230,9 @@ impl AcNetwork {
         let vm_max = instance.buses.vm_max;
 
         // Per-bus aggregates (power flow operating point) and per-generator data (the
-        // conic OPF decision variables) from the instance; cost from the pre-pass. The
-        // instance's generator columns follow the normalized generator order, the same
-        // order `flatten_gen_costs` returns, so `costs[i]` pairs with column `i`.
+        // conic OPF decision variables) from the instance; cost (`cq`/`cl`/`cc`) from the
+        // pre-pass. The instance's generator columns follow the normalized generator
+        // order, the same order `flatten_gen_costs` walks, so they line up with column `i`.
         let mut pg = vec![0.0; n];
         let mut qg = vec![0.0; n];
         let gen_bus = instance.generators.bus_of_gen;
@@ -243,9 +243,6 @@ impl AcNetwork {
         let gen_pg = instance.generators.pg;
         let gen_qg = instance.generators.qg;
         let gen_vg = instance.generators.vg;
-        let mut cq = Vec::with_capacity(k);
-        let mut cl = Vec::with_capacity(k);
-        let mut cc = Vec::with_capacity(k);
         for i in 0..k {
             let bus = gen_bus[i];
             pg[bus] += gen_pg[i];
@@ -258,10 +255,6 @@ impl AcNetwork {
             if vg > 0.0 {
                 vm_set[bus] = vg.clamp(vm_min[bus], vm_max[bus]);
             }
-            let (q, l, c) = costs[i];
-            cq.push(q);
-            cl.push(l);
-            cc.push(c);
         }
 
         let slack = *instance

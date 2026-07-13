@@ -107,7 +107,7 @@ impl DcNetwork {
         // Cost policy as a `Network` pre-pass: fit piecewise / strip artifacts / treat
         // a missing cost as free, writing plain quadratics the instance builder reads.
         // The `DcOpfInstance` drops the constant (no-load) term, so `cc` comes from here.
-        let costs = flatten_gen_costs(&mut norm)?;
+        let (cq, cl, cc) = flatten_gen_costs(&mut norm)?;
         let view = IndexedNetwork::new(&norm);
         let Ids {
             n,
@@ -192,18 +192,10 @@ impl DcNetwork {
 
         // Generators: bus and PQ bounds from the instance, cost from the pre-pass.
         // The instance's generator columns follow the normalized generator order, the
-        // same order `flatten_gen_costs` returns, so `costs[i]` pairs with column `i`.
+        // same order `flatten_gen_costs` walks, so `cq`/`cl`/`cc` line up with column `i`.
         let gen_bus = instance.generators.bus_of_gen;
         let gmax = instance.generators.pmax;
         let gmin = instance.generators.pmin;
-        let mut cq = Vec::with_capacity(k);
-        let mut cl = Vec::with_capacity(k);
-        let mut cc = Vec::with_capacity(k);
-        for &(q, l, c) in &costs {
-            cq.push(q);
-            cl.push(l);
-            cc.push(c);
-        }
 
         // Shedding cost references the steepest marginal generation cost.
         let marginal_cost_ub = (0..k)
