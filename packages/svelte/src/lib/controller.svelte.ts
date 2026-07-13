@@ -1448,8 +1448,27 @@ export class Controller {
 	 * preview. Files run serially; nothing uploads. */
 	ingestFiles = async (files: FileList | File[]) => {
 		const list = Array.from(files);
+		let parsedCaseCount = 0;
+
+		// A saved study package (`.pio.json`) shares the `.json` extension with a
+		// geographic file, so sniff and restore packages up front: the geo/case split
+		// below sends every `.json` to the coordinate parser, which would misread a
+		// package as coordinate data. Non-package `.json` files fall through unchanged.
+		const rest: File[] = [];
+		for (const file of list) {
+			if (file.name.toLowerCase().endsWith('.json')) {
+				const outcome = await this.tryRestorePackage(file);
+				if (outcome === 'ok') {
+					parsedCaseCount++;
+					continue;
+				}
+				if (outcome === 'failed') continue;
+			}
+			rest.push(file);
+		}
+
 		const geoFiles: GeoFile[] = [];
-		for (const file of list.filter((f) => isGeoFile(f.name))) {
+		for (const file of rest.filter((f) => isGeoFile(f.name))) {
 			this.app.parsingFile = true;
 			try {
 				geoFiles.push(parseGeoFile(file.name, await file.text()));
@@ -1461,8 +1480,7 @@ export class Controller {
 			}
 		}
 
-		let parsedCaseCount = 0;
-		for (const file of list.filter((f) => !isGeoFile(f.name))) {
+		for (const file of rest.filter((f) => !isGeoFile(f.name))) {
 			if (isDisplayFile(file.name)) {
 				this.app.parsingFile = true;
 				try {
@@ -1493,16 +1511,6 @@ export class Controller {
 			}
 			const format = formatOf(file.name);
 			if (!format) {
-				// A `.json` drop may be a saved study package: sniff its envelope and
-				// restore the case, edits, formulation, and options in one step.
-				if (file.name.toLowerCase().endsWith('.json')) {
-					const outcome = await this.tryRestorePackage(file);
-					if (outcome === 'ok') {
-						parsedCaseCount++;
-						continue;
-					}
-					if (outcome === 'failed') continue;
-				}
 				this.app.error = `${file.name}: not a case or geographic file (.m, .raw, .aux, .pwd, .csv, .json, .geojson)`;
 				continue;
 			}
@@ -1551,9 +1559,9 @@ export class Controller {
 
 	/** Attempt to restore a dropped `.json` as a saved study package. Sniffs the
 	 * `.pio.json` envelope by its `schema` field before invoking the engine, so a plain
-	 * JSON case is left to the normal error path. `ok` when a package restored, `failed`
-	 * when it looked like a package but the engine rejected it (fail-closed message set),
-	 * `not-package` when it is not a study package at all. */
+	 * JSON file falls through to the geo/case handling below. `ok` when a package
+	 * restored, `failed` when it looked like a package but the engine rejected it
+	 * (fail-closed message set), `not-package` when it is not a study package at all. */
 	private tryRestorePackage = async (file: File): Promise<'ok' | 'failed' | 'not-package'> => {
 		let text: string;
 		try {
