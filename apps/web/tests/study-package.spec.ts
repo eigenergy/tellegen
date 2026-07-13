@@ -36,9 +36,11 @@ test('a saved study package downloads and restores when dropped back in', async 
 	// Drop the saved package back in. Before the fix this fell into the geo-file
 	// path and failed with "no bus coordinates or branch paths found"; now it
 	// restores as a coordinate-less local case that asks to be placed.
-	await page.locator('input[type="file"]').setInputFiles([
-		{ name: 'restored.pio.json', mimeType: 'application/json', buffer: Buffer.from(text) }
-	]);
+	await page
+		.locator('input[type="file"]')
+		.setInputFiles([
+			{ name: 'restored.pio.json', mimeType: 'application/json', buffer: Buffer.from(text) }
+		]);
 	await expect(page.getByText('click the map to place the synthetic topology')).toBeVisible({
 		timeout: 30_000
 	});
