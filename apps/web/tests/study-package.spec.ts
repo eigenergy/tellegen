@@ -33,16 +33,24 @@ test('a saved study package downloads and restores when dropped back in', async 
 	// Guards against an empty or aborted blob: a real powerio package envelope.
 	expect(text).toContain('powerio.dev/schema/pio-package');
 
-	// Drop the saved package back in. Before the fix this fell into the geo-file
-	// path and failed with "no bus coordinates or branch paths found"; now it
-	// restores as a coordinate-less local case that asks to be placed.
+	// The applied coordinates live on the network payload, so the layout also
+	// downloads as a canonical `.geo.json` layer.
+	const layoutPromise = page.waitForEvent('download');
+	await page.getByRole('button', { name: /download layout/i }).click();
+	const layout = await layoutPromise;
+	expect(layout.suggestedFilename()).toMatch(/\.geo\.json$/);
+	expect(readFileSync(await layout.path(), 'utf8')).toContain('powerio_geo');
+
+	// Drop the saved package back in. Its `.json` extension also matches the
+	// geographic-file path, so this guards the content sniff; and the package
+	// payload carries the applied coordinates, so the case restores placed and
+	// solves without a placement step.
 	await page
 		.locator('input[type="file"]')
 		.setInputFiles([
 			{ name: 'restored.pio.json', mimeType: 'application/json', buffer: Buffer.from(text) }
 		]);
-	await expect(page.getByText('click the map to place the topology layout')).toBeVisible({
-		timeout: 30_000
-	});
+	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.getByText('click the map to place the topology layout')).toHaveCount(0);
 	await expect(page.locator('p.error')).toHaveCount(0);
 });

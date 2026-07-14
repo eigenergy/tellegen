@@ -32,24 +32,25 @@ y = K * mercdeg(lat)
 mercdeg(lat) = (180 / pi) * ln(tan(pi / 4 + lat * pi / 360))
 ```
 
-The viewer applies the inverse transform in `pwdToLngLat` in
-`packages/svelte/src/lib/controller.svelte.ts`. This places checked ACTIVSg
-diagrams within about 0.02 degrees of their corresponding named cities.
-Hand-edited diagrams can differ, so tellegen labels these positions as approximate.
+The inverse transform is powerio's `pwd_mercator_to_lonlat`; the wasm
+`parse_display` export returns each substation with its projected `lon`/`lat`
+alongside the raw diagram coordinates, so the frontend never reimplements the
+constant. This places checked ACTIVSg diagrams within about 0.02 degrees of
+their corresponding named cities. Hand-edited diagrams can differ, so tellegen
+labels these positions as approximate.
 
-## Canonical display format (planned)
+## The canonical geographic document
 
-A canonical display format is planned in powerio as a `DisplayData` variant, so
-the format is available to Rust, browser wasm, and Python bindings; tellegen
-will consume and render it rather than define a separate file format. The open
-design questions are whether it stores substation coordinates, bus coordinates,
-branch routing, and style hints; whether coordinates are geographic or diagram
-based; how elements are referenced (id, substation number, name, or a combined
-key); and whether display data embeds in a case JSON file or stays a separate
-geographic file.
+powerio 0.7.1 ships the standalone geographic document (`GeoLayer`): element
+points and branch routes in one coordinate space, keyed by uid, external id,
+name, or the branch endpoint pair, written as a GeoJSON `FeatureCollection`
+with the `powerio_geo` foreign member (`.geo.json`). tellegen consumes it
+rather than defining a separate format: dropped geographic sidecars parse
+through its tolerant reader, applied coordinates land on the network
+(`Bus.location`, `Branch.route`), and the case panel exports the current
+layout as a `.geo.json` layer with provenance stamped.
 
-Existing `.pwd` parsing gives powerio a migration path from PowerWorld
-diagrams. Planned on top of the format: filling missing case coordinates from a
-dropped `.pwd` sibling when the case has a bus-to-substation mapping, combining
-a dropped case and its `.pwd` into one local entry, and exporting coordinates
-computed by tellegen.
+On top of it, a dropped `.pwd` sibling fills missing case coordinates through
+the `SubNum` join (`geo_layer_from_pwd` + `apply_substation_points`, projected
+by `pwd_mercator_to_lonlat`), and layouts computed by tellegen export with
+`synthetic`/`manual` provenance.

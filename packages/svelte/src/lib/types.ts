@@ -10,7 +10,6 @@ export type {
 	SolveStreamHandlers
 } from './api.js';
 export type { DisplayOption } from './display.js';
-export type { GeoFile, AppliedGeoFile } from './geo-file.js';
 export type { PlacedNetwork, PlacementCenter } from './synthetic-layout.js';
 export type {
 	DemandRangeMode,
@@ -22,10 +21,14 @@ export type {
 	SolveBackend
 } from './state.svelte.js';
 export type {
+	AppliedGeoCase,
 	CaseFileSummary,
 	DisplayPreview,
 	Formulation,
+	GeoApplyReport,
 	IngestedCase,
+	ParsedGeoLayer,
+	StampedLayoutCase,
 	Topology,
 	TopologyBranch,
 	TopologyBus

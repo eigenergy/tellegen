@@ -3,8 +3,7 @@ import {
 	PIO_PACKAGE_SCHEMA_PREFIX,
 	classifyJson,
 	distExtensionFormat,
-	isStudyPackageText
-} from '../src/lib/drop-classify.js';
+	isStudyPackageText, isGeoFileName } from '../src/lib/drop-classify.js';
 
 const pkg = (fields: Record<string, unknown>) =>
 	JSON.stringify({ schema: `${PIO_PACKAGE_SCHEMA_PREFIX}/0.1`, ...fields });
@@ -83,5 +82,18 @@ describe('isStudyPackageText', () => {
 		for (const bad of ['', '   ', '{', 'not json', 'null', '[]', '42']) {
 			expect(isStudyPackageText(bad)).toBe(false);
 		}
+	});
+});
+
+describe('isGeoFileName', () => {
+	it('routes .csv, .json, and .geojson to the geo sidecar path by extension', () => {
+		expect(isGeoFileName('coords.csv')).toBe(true);
+		expect(isGeoFileName('coords.JSON')).toBe(true);
+		expect(isGeoFileName('coords.geojson')).toBe(true);
+		expect(isGeoFileName('case14.m')).toBe(false);
+		expect(isGeoFileName('case.raw')).toBe(false);
+		expect(isGeoFileName('feeder.dss')).toBe(false);
+		expect(isGeoFileName('diagram.pwd')).toBe(false);
+		expect(isGeoFileName('csv')).toBe(false);
 	});
 });

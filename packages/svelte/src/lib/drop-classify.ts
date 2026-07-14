@@ -39,6 +39,17 @@ export function distExtensionFormat(name: string): 'dss' | null {
 	return name.split('.').pop()?.toLowerCase() === 'dss' ? 'dss' : null;
 }
 
+/** True for geographic sidecar files by extension (`.csv`, `.json`,
+ * `.geojson`). Routable `.json` content (packages, distribution documents) is
+ * consumed by {@link classifyJson} before this applies; what remains parses
+ * through the engine's tolerant geo reader. */
+export function isGeoFileName(name: string): boolean {
+	const dot = name.lastIndexOf('.');
+	if (dot <= 0) return false;
+	const ext = name.slice(dot + 1).toLowerCase();
+	return ext === 'csv' || ext === 'json' || ext === 'geojson';
+}
+
 /** Parse `text` as JSON, returning the top-level object or null. */
 function topLevelObject(text: string): Record<string, unknown> | null {
 	let value: unknown;

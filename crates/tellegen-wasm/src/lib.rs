@@ -17,6 +17,7 @@ use tellegen::geo::{network_coords, spread_stacks};
 use tellegen::SolveResponse;
 
 mod dist;
+mod geo;
 
 fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
@@ -190,6 +191,18 @@ impl Study {
         let package = self.0.to_package().map_err(jserr)?;
         package.to_json().map_err(jserr)
     }
+
+    /// Apply a geographic layer (a canonical `.geo.json` from [`parse_geo`] or
+    /// [`apply_layout`]) onto this study's base network, so a later
+    /// [`save_package`](Study::save_package) or export carries the coordinates
+    /// on screen. Locations are metadata the model never reads; nothing
+    /// re-solves. Returns the apply report JSON.
+    pub fn apply_geo(&mut self, layer_geojson: &str) -> Result<String, JsError> {
+        install_panic_hook();
+        let layer = crate::geo::parse_layer(layer_geojson).map_err(jserr)?;
+        let report = self.0.apply_geo_layer(&layer);
+        serde_json::to_string(&crate::geo::report_value(&report)).map_err(jserr)
+    }
 }
 
 /// Parse a formulation tag (`Problem` is serde-lowercase: dcpf/dcopf/acpf/socwr/acopf).
@@ -327,7 +340,10 @@ struct ViewBranch {
     to: usize,
     rate_mw: f64,
     status: u8,
-    path: [[f64; 2]; 2],
+    /// The rendered polyline: the branch's `route` when a geographic file
+    /// carried one (already endpoint-to-endpoint in file order), else the
+    /// straight segment between the bus points.
+    path: Vec<[f64; 2]>,
 }
 
 #[derive(Serialize)]
@@ -411,7 +427,7 @@ pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
 /// `ingest_case` object as a JSON value so [`load_package`] can reuse it and append
 /// the restored study state. Errors are strings (mapped to `JsError` at the wasm
 /// edge) so the same body runs in native unit tests.
-fn ingest_value(
+pub(crate) fn ingest_value(
     net: &powerio::network::Network,
     mut warnings: Vec<String>,
 ) -> Result<serde_json::Value, String> {
@@ -488,6 +504,12 @@ fn ingest_value(
                 .filter_map(|(i, br)| {
                     let f = cs.get(&br.from.0)?;
                     let t = cs.get(&br.to.0)?;
+                    let path = match &br.route {
+                        Some(route) if route.len() >= 2 => {
+                            route.iter().map(|p| [p.x, p.y]).collect()
+                        }
+                        _ => vec![[f.0, f.1], [t.0, t.1]],
+                    };
                     Some(stamped_uid(&br.uid).map(|uid| ViewBranch {
                         id: i + 1,
                         uid,
@@ -495,7 +517,7 @@ fn ingest_value(
                         to: br.to.0,
                         rate_mw: br.rate_a,
                         status: br.in_service as u8,
-                        path: [[f.0, f.1], [t.0, t.1]],
+                        path,
                     }))
                 })
                 .collect::<Result<_, String>>()?;
@@ -518,12 +540,27 @@ fn ingest_value(
         "load_mw": demand.values().sum::<f64>(),
         "gen_mw": gen.values().sum::<f64>(),
         "has_coords": view.is_some(),
-        "coords_kind": if view.is_some() { "file" } else { "synthetic_pending" },
+        "coords_kind": coords_kind_token(net, view.is_some()),
         "network_json": serde_json::to_string(net).map_err(|e| e.to_string())?,
         "topology": topology,
         "warnings": warnings,
         "view": view,
     }))
+}
+
+/// The coordinate provenance token the frontend placement logic reads:
+/// `synthetic`/`manual` echo a stamped layout's provenance (a restored package
+/// carries it, so the case comes back placed with an honest badge), `file` is
+/// any other located case, and `synthetic_pending` awaits placement.
+fn coords_kind_token(net: &powerio::network::Network, has_view: bool) -> &'static str {
+    if !has_view {
+        return "synthetic_pending";
+    }
+    match net.geo.as_ref().and_then(|g| g.kind) {
+        Some(powerio::geo::CoordsKind::Synthetic) => "synthetic",
+        Some(powerio::geo::CoordsKind::Manual) => "manual",
+        _ => "file",
+    }
 }
 
 #[derive(Serialize)]
@@ -532,6 +569,11 @@ struct ViewSubstation {
     name: String,
     x: f64,
     y: f64,
+    /// Approximate longitude/latitude via powerio's inverse of the projection
+    /// PowerWorld's auto generated layouts use, so the frontend never
+    /// reimplements the Mercator constant.
+    lon: f64,
+    lat: f64,
 }
 
 #[derive(Serialize)]
@@ -543,9 +585,10 @@ struct DisplayView {
 
 /// Decode a PowerWorld `.pwd` display file (binary). Returns the substation
 /// symbols at the diagram coordinates the file stores (x east, y north) plus
-/// the canvas size. These are diagram positions, not geography: the caller
-/// projects them. A `.pwd` carries no buses or branches. `format` is "pwd".
-/// Pure in-memory parsing, no filesystem, so it runs in the browser.
+/// the canvas size, each with the approximate `lon`/`lat` projection
+/// (`pwd_mercator_to_lonlat`; hand edited diagrams drift from it). A `.pwd`
+/// carries no buses or branches. `format` is "pwd". Pure in-memory parsing,
+/// no filesystem, so it runs in the browser.
 #[wasm_bindgen]
 pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
     match parse_display_bytes(bytes, format).map_err(jserr)? {
@@ -553,11 +596,16 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
             substations: d
                 .substations
                 .into_iter()
-                .map(|s| ViewSubstation {
-                    number: s.number,
-                    name: s.name,
-                    x: s.x,
-                    y: s.y,
+                .map(|s| {
+                    let (lon, lat) = powerio::geo::pwd_mercator_to_lonlat(s.x, s.y);
+                    ViewSubstation {
+                        number: s.number,
+                        name: s.name,
+                        x: s.x,
+                        y: s.y,
+                        lon,
+                        lat,
+                    }
                 })
                 .collect(),
             canvas_width: d.canvas_width,
@@ -568,6 +616,56 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
         #[allow(unreachable_patterns)]
         _ => Err(JsError::new("unsupported display format")),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Geographic sidecars, layouts, and `.pwd` promotion (see [`geo`])
+// ---------------------------------------------------------------------------
+
+/// Parse a geographic sidecar (buscoords CSV, aliased CSV/JSON records,
+/// GeoJSON) from raw dropped bytes; `hint` is the file name ("" to sniff).
+/// Returns `{ layer, warnings, n_points, n_routes }` — the layer as its
+/// canonical `.geo.json` document, ready for [`apply_geo`]. Untrusted input
+/// rejects as a `JsError`, never a panic.
+#[wasm_bindgen]
+pub fn parse_geo(bytes: &[u8], hint: &str) -> Result<String, JsError> {
+    geo::parse_geo_impl(bytes, hint).map_err(jserr)
+}
+
+/// Apply a [`parse_geo`] layer onto a case network: matched bus points land in
+/// `Bus.location`, matched routes in `Branch.route` (matching by uid, external
+/// id, name, and the unordered endpoint pair — upstream semantics). Returns
+/// the refreshed `ingest_case` payload plus a `report` of matched/unmatched
+/// counts; errors when nothing matched.
+#[wasm_bindgen]
+pub fn apply_geo(network_json: &str, layer_geojson: &str) -> Result<String, JsError> {
+    geo::apply_geo_impl(network_json, layer_geojson).map_err(jserr)
+}
+
+/// Stamp a computed layout (bus id => `[lon, lat]`) onto a case network with
+/// `kind` provenance (`synthetic` or `manual`). Returns the refreshed
+/// `ingest_case` payload plus `layer`, the stamped layout as a canonical
+/// `.geo.json` document.
+#[wasm_bindgen]
+pub fn apply_layout(network_json: &str, coords_json: &str, kind: &str) -> Result<String, JsError> {
+    geo::apply_layout_impl(network_json, coords_json, kind).map_err(jserr)
+}
+
+/// A case's coordinates as a canonical `.geo.json` document (one point per
+/// located bus, one route per routed branch, provenance preserved). Errors
+/// when the case carries none.
+#[wasm_bindgen]
+pub fn extract_geo(network_json: &str) -> Result<String, JsError> {
+    geo::extract_geo_impl(network_json).map_err(jserr)
+}
+
+/// Fill case coordinates from a PowerWorld `.pwd` sibling: substation symbols
+/// project to approximate longitude/latitude and join onto buses through the
+/// `SubNum` extras key. Returns the refreshed `ingest_case` payload plus a
+/// `report`; errors when no bus joined.
+#[wasm_bindgen]
+pub fn apply_display_geo(network_json: &str, bytes: &[u8]) -> Result<String, JsError> {
+    geo::apply_display_geo_impl(network_json, bytes).map_err(jserr)
 }
 
 #[cfg(test)]

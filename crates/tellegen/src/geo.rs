@@ -1,14 +1,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use powerio::format::powerworld::{aux_sections, AuxFile};
+use powerio::format::powerworld::{aux_sections, AuxFile, PwdDisplay};
+use powerio::geo::{
+    geo_layer_from_pwd, pwd_mercator_to_lonlat, CoordinateSpace, CoordsKind, GeoGeometry, GeoLayer,
+    GeoMeta, Location,
+};
 use powerio::network::{Bus, Network};
 
 pub type Coords = BTreeMap<usize, (f64, f64)>;
 
-/// Bus id => (lon, lat). PowerWorld exports carry substation coordinates in
-/// two shapes: older complete cases write latitude and longitude on every bus
-/// row, while later exports point each bus at the Substation table. Try the bus
-/// row first, then the join.
+/// Bus id => (lon, lat). powerio promotes the substation `Latitude:1`/
+/// `Longitude:1` pair into the typed `Bus.location` at parse, so that is the
+/// primary source. Two PowerWorld shapes stay tellegen-side because upstream
+/// deliberately leaves them in extras: older complete cases write bare
+/// `Latitude`/`Longitude` on every bus row, and later exports point each bus at
+/// the aux `Substation` table through `SubNum`.
 pub fn network_coords(net: &Network) -> Coords {
     let subs = match aux_sections(net) {
         Some(Ok(aux)) => substation_coords(&aux),
@@ -16,19 +22,75 @@ pub fn network_coords(net: &Network) -> Coords {
     };
     let mut out = BTreeMap::new();
     for b in &net.buses {
-        let Some(p) = (match (
-            extra_f64(b, &["Longitude:1", "Longitude"]),
-            extra_f64(b, &["Latitude:1", "Latitude"]),
-        ) {
-            (Some(lon), Some(lat)) => Some((lon, lat)),
-            _ => extra_f64(b, &["SubNum", "SubNumber"])
-                .and_then(|n| subs.get(&(n as usize)).copied()),
-        }) else {
+        let Some(p) = b
+            .location
+            .map(|l| (l.x, l.y))
+            .or_else(|| {
+                match (
+                    extra_f64(b, &["Longitude:1", "Longitude"]),
+                    extra_f64(b, &["Latitude:1", "Latitude"]),
+                ) {
+                    (Some(lon), Some(lat)) => Some((lon, lat)),
+                    _ => None,
+                }
+            })
+            .or_else(|| {
+                extra_f64(b, &["SubNum", "SubNumber"])
+                    .and_then(|n| subs.get(&(n as usize)).copied())
+            })
+        else {
             continue;
         };
         out.insert(b.id.0, p);
     }
     out
+}
+
+/// Stamp a computed layout onto the network: each `coords` entry (bus id =>
+/// lon/lat) becomes that bus's `Bus.location` with `kind` provenance, and the
+/// network's geo meta becomes geographic with the same default. Buses absent
+/// from `coords` keep whatever location they had. Returns how many buses were
+/// placed; zero leaves the geo meta untouched.
+pub fn stamp_layout(net: &mut Network, coords: &Coords, kind: CoordsKind) -> usize {
+    let mut placed = 0;
+    for b in &mut net.buses {
+        if let Some(&(lon, lat)) = coords.get(&b.id.0) {
+            b.location = Some(Location {
+                x: lon,
+                y: lat,
+                kind: Some(kind),
+            });
+            placed += 1;
+        }
+    }
+    if placed > 0 {
+        net.geo = Some(GeoMeta {
+            space: CoordinateSpace::Geographic { crs: None },
+            kind: Some(kind),
+        });
+    }
+    placed
+}
+
+/// The `.pwd` substation layer projected to approximate longitude/latitude:
+/// [`geo_layer_from_pwd`] lifts the diagram symbols, and each point runs
+/// through powerio's [`pwd_mercator_to_lonlat`] inverse so
+/// `apply_substation_points` lands geographic coordinates on the case.
+/// Provenance is [`CoordsKind::Derived`]: the positions come from diagram
+/// geometry, not surveyed geography, and hand edited diagrams drift from the
+/// projection.
+pub fn pwd_lonlat_layer(display: &PwdDisplay) -> GeoLayer {
+    let mut layer = geo_layer_from_pwd(display);
+    for f in &mut layer.features {
+        if let GeoGeometry::Point([x, y]) = f.geometry {
+            let (lon, lat) = pwd_mercator_to_lonlat(x, y);
+            f.geometry = GeoGeometry::Point([lon, lat]);
+        }
+        f.kind = Some(CoordsKind::Derived);
+    }
+    layer.space = CoordinateSpace::Geographic { crs: None };
+    layer.kind = Some(CoordsKind::Derived);
+    layer
 }
 
 pub fn complete_coords_for(case: &Network, aux: &Network, source: &str) -> Result<Coords, String> {
@@ -253,6 +315,97 @@ mod tests {
         powerio::parse_str(&m, "matpower")
             .expect("parse chain")
             .network
+    }
+
+    #[test]
+    fn typed_location_wins_over_extras_fallbacks() {
+        let mut net = chain_network(3);
+        // A typed location (what powerio promotes from `Latitude:1`/`Longitude:1`)
+        // and a conflicting bare-extras pair on the same bus: the typed one wins.
+        net.buses[0].location = Some(Location {
+            x: -84.4,
+            y: 33.7,
+            kind: None,
+        });
+        net.buses[0]
+            .extras
+            .insert("Latitude".to_owned(), serde_json::json!(1.0));
+        net.buses[0]
+            .extras
+            .insert("Longitude".to_owned(), serde_json::json!(2.0));
+        // Bus 2 has only the bare pair, the shape upstream leaves in extras.
+        net.buses[1]
+            .extras
+            .insert("Latitude".to_owned(), serde_json::json!(35.5));
+        net.buses[1]
+            .extras
+            .insert("Longitude".to_owned(), serde_json::json!(-80.1));
+        let coords = network_coords(&net);
+        assert_eq!(coords[&1], (-84.4, 33.7));
+        assert_eq!(coords[&2], (-80.1, 35.5));
+        assert!(!coords.contains_key(&3));
+    }
+
+    #[test]
+    fn stamp_layout_places_buses_with_provenance() {
+        let mut net = chain_network(3);
+        let coords = BTreeMap::from([(1, (-84.0, 33.0)), (2, (-84.1, 33.1))]);
+        let placed = stamp_layout(&mut net, &coords, CoordsKind::Synthetic);
+        assert_eq!(placed, 2);
+        let loc = net.buses[0].location.expect("bus 1 placed");
+        assert_eq!((loc.x, loc.y), (-84.0, 33.0));
+        assert_eq!(loc.kind, Some(CoordsKind::Synthetic));
+        assert!(net.buses[2].location.is_none());
+        let geo = net.geo.as_ref().expect("geo meta stamped");
+        assert_eq!(geo.kind, Some(CoordsKind::Synthetic));
+        assert!(matches!(
+            geo.space,
+            CoordinateSpace::Geographic { crs: None }
+        ));
+        // Locations survive the network JSON round trip, so a package built from
+        // this payload carries the layout.
+        let json = net.to_json().expect("to_json");
+        let back = Network::from_json(&json).expect("from_json");
+        assert_eq!(back.buses[0].location, net.buses[0].location);
+
+        // An empty layout stamps nothing and leaves the meta untouched.
+        let mut untouched = chain_network(2);
+        assert_eq!(
+            stamp_layout(&mut untouched, &BTreeMap::new(), CoordsKind::Manual),
+            0
+        );
+        assert!(untouched.geo.is_none());
+    }
+
+    #[test]
+    fn pwd_layer_projects_to_lonlat_with_derived_provenance() {
+        use powerio::format::powerworld::PwdSubstation;
+        let display = PwdDisplay {
+            canvas_width: 100,
+            canvas_height: 100,
+            stamp: 0,
+            substations: vec![PwdSubstation {
+                number: 7,
+                name: "North".to_owned(),
+                x: -45_000.0,
+                y: 21_000.0,
+            }],
+        };
+        let layer = pwd_lonlat_layer(&display);
+        assert!(matches!(
+            layer.space,
+            CoordinateSpace::Geographic { crs: None }
+        ));
+        assert_eq!(layer.kind, Some(CoordsKind::Derived));
+        assert_eq!(layer.features.len(), 1);
+        let f = &layer.features[0];
+        assert_eq!(f.kind, Some(CoordsKind::Derived));
+        let GeoGeometry::Point([lon, lat]) = f.geometry else {
+            panic!("expected a point");
+        };
+        let (want_lon, want_lat) = pwd_mercator_to_lonlat(-45_000.0, 21_000.0);
+        assert_eq!((lon, lat), (want_lon, want_lat));
+        assert!(lon.abs() <= 180.0 && lat.abs() <= 90.0);
     }
 
     #[test]

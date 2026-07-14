@@ -38,6 +38,15 @@
 			busy = false;
 		}
 	}
+
+	async function downloadLayout(lc: LocalCase) {
+		busy = true;
+		try {
+			await ctrl.downloadGeoLayer(lc);
+		} finally {
+			busy = false;
+		}
+	}
 </script>
 
 {#if app.activeLocal}
@@ -96,9 +105,9 @@
 			<p class="footnote mono">
 				no coordinates in this file: click the map or drop a geographic file
 			</p>
-		{:else if lc.coordsKind === 'synthetic'}
+		{:else if lc.coordsKind === 'synthetic' || lc.coordsKind === 'manual'}
 			<p class="footnote mono">
-				coordinates: synthetic topology layout centered where you placed it
+				coordinates: {lc.coordsKind} topology layout centered where it was placed
 			</p>
 		{:else if lc.coordsKind === 'geofile'}
 			<p class="footnote mono">
@@ -142,6 +151,11 @@
 						</ul>
 					{/if}
 				</div>
+				{#if lc.view}
+					<button class="reset mono" disabled={busy} onclick={() => downloadLayout(lc)}>
+						download layout (.geo.json)
+					</button>
+				{/if}
 			</div>
 			{#if exportWarnings.length > 0}
 				<ul class="warnings mono">
