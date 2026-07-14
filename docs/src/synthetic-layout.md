@@ -25,7 +25,10 @@ The force pass is `O(iterations * n^2)`. In the tellegen backend it runs once
 at boot and the resulting network payload is cached. In the browser, local
 dropped files use the same deterministic force idea with a lighter seed and
 iteration count, then scale into a small footprint around the user's chosen map
-point. Once placed, the local network solves in browser WebAssembly.
+point. Once placed, the local network solves in browser WebAssembly, and the
+layout is stamped into the network payload (`Bus.location`, provenance
+`synthetic`), so saved study packages and exports carry the placement and the
+panel can download it as a `.geo.json` layer.
 
 ## Determinism
 
