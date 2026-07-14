@@ -1556,6 +1556,9 @@ export class Controller {
 	ingestFiles = async (files: FileList | File[]) => {
 		const list = Array.from(files);
 		let parsedCaseCount = 0;
+		// True once a dropped case file took the geographic sidecars; a restored
+		// package or an existing case only takes them when no case file did.
+		let geoLayersConsumed = false;
 
 		// Routable `.json` content (a saved study package, a multiconductor package,
 		// a BMOPF/PMD document) shares the `.json` extension with a geographic file,
@@ -1563,11 +1566,13 @@ export class Controller {
 		// `.json` to the coordinate parser, which would misread these as coordinate
 		// data. Unroutable `.json` files fall through unchanged.
 		const rest: File[] = [];
+		let restoredPackages = 0;
 		for (const file of list) {
 			if (file.name.toLowerCase().endsWith('.json')) {
 				const outcome = await this.ingestJsonDrop(file);
-				if (outcome === 'ok') {
+				if (outcome === 'restored' || outcome === 'viewed') {
 					parsedCaseCount++;
+					if (outcome === 'restored') restoredPackages++;
 					continue;
 				}
 				if (outcome === 'failed') continue;
@@ -1650,6 +1655,7 @@ export class Controller {
 				if (geoLayers.length > 0 && local.networkJson) {
 					try {
 						await this.applyGeoLayers(local, geoLayers);
+						geoLayersConsumed = true;
 					} catch (e) {
 						geoError = `${geoLayers.map((l) => l.name).join(' + ')}: ${errorText(
 							e
@@ -1691,7 +1697,10 @@ export class Controller {
 			);
 		}
 
-		if (geoLayers.length > 0 && parsedCaseCount === 0) {
+		// Unconsumed sidecars apply to the restored package (now the active local
+		// case) so a saved study co-dropped with its coordinates places, or to an
+		// existing case when nothing in the drop parsed at all.
+		if (geoLayers.length > 0 && !geoLayersConsumed && (restoredPackages > 0 || parsedCaseCount === 0)) {
 			await this.applyGeoLayersToExisting(geoLayers);
 		}
 	};
@@ -1724,13 +1733,15 @@ export class Controller {
 		}
 	};
 
-	/** Route a dropped `.json` by its content: a saved study package restores, a
-	 * multiconductor package or a BMOPF/PMD distribution document views, and
-	 * anything else falls through to the caller's geo/case handling. `ok` when a
-	 * case landed, `failed` when the content looked routable but the engine
-	 * rejected it (a fail-closed message is set), `not-package` when the JSON is
-	 * not one we route. `drop-classify` is the single owner of the classification. */
-	private ingestJsonDrop = async (file: File): Promise<'ok' | 'failed' | 'not-package'> => {
+	/** Route a dropped `.json` by its content: a saved study package restores
+	 * (`restored`), a multiconductor package or a BMOPF/PMD distribution
+	 * document views (`viewed`), `failed` means the content looked routable but
+	 * the engine rejected it (a fail-closed message is set), and `not-package`
+	 * falls through to the caller's geo/case handling. `drop-classify` is the
+	 * single owner of the classification. */
+	private ingestJsonDrop = async (
+		file: File
+	): Promise<'restored' | 'viewed' | 'failed' | 'not-package'> => {
 		let text: string;
 		try {
 			text = await file.text();
@@ -1743,20 +1754,21 @@ export class Controller {
 		try {
 			if (kind === 'balanced-package') {
 				this.restoreLocalFromPackage(file.name, await loadPackage(text));
-			} else {
-				const format = kind === 'multiconductor-package' ? 'pio' : kind;
-				const payload = await ingestDistCase(text, format);
-				// BMOPF is the classifier's catch-all and its reader is liberal: an
-				// arbitrary JSON object parses as an empty case (unknown fields land
-				// in extras). Zero buses means this was not a distribution document;
-				// leave the file to the geo sidecar path (which places coordinates
-				// or reports its own precise error) instead of adding a phantom
-				// empty multiconductor case.
-				if (kind === 'bmopf' && payload.n_bus === 0) return 'not-package';
-				this.addMultiCase(file.name, payload);
+				this.app.error = null;
+				return 'restored';
 			}
+			const format = kind === 'multiconductor-package' ? 'pio' : kind;
+			const payload = await ingestDistCase(text, format);
+			// BMOPF is the classifier's catch-all and its reader is liberal: an
+			// arbitrary JSON object parses as an empty case (unknown fields land
+			// in extras). Zero buses means this was not a distribution document;
+			// leave the file to the geo sidecar path (which places coordinates
+			// or reports its own precise error) instead of adding a phantom
+			// empty multiconductor case.
+			if (kind === 'bmopf' && payload.n_bus === 0) return 'not-package';
+			this.addMultiCase(file.name, payload);
 			this.app.error = null;
-			return 'ok';
+			return 'viewed';
 		} catch (e) {
 			this.app.error = `${file.name}: ${errorText(e)}`;
 			return 'failed';
