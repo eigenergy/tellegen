@@ -1615,7 +1615,15 @@ export class Controller {
 				this.restoreLocalFromPackage(file.name, await loadPackage(text));
 			} else {
 				const format = kind === 'multiconductor-package' ? 'pio' : kind;
-				this.addMultiCase(file.name, await ingestDistCase(text, format));
+				const payload = await ingestDistCase(text, format);
+				// BMOPF is the classifier's catch-all and its reader is liberal: an
+				// arbitrary JSON object parses as an empty case (unknown fields land
+				// in extras). Zero buses means this was not a distribution document;
+				// leave the file to the geo sidecar path (which places coordinates
+				// or reports its own precise error) instead of adding a phantom
+				// empty multiconductor case.
+				if (kind === 'bmopf' && payload.n_bus === 0) return 'not-package';
+				this.addMultiCase(file.name, payload);
 			}
 			this.app.error = null;
 			return 'ok';
