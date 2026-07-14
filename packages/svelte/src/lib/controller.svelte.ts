@@ -896,29 +896,25 @@ export class Controller {
 		this.app.requestFrame(c.id);
 		// Persist the layout before the solve kicks off, so the Study builds from
 		// the stamped payload and a save carries the placement.
-		await this.stampLayout(c, 'synthetic');
+		await this.stampLayout(c);
 		this.maybeStartLocalSolve(c.id);
 	};
 
 	/** Write the case's on-screen layout into its network payload
-	 * (`Bus.location` with `kind` provenance), so saves, exports, and the
-	 * `.geo.json` download carry it. Best effort: on an engine failure the view
-	 * still renders, only the layout's persistence is lost. */
-	private stampLayout = async (c: LocalCase, kind: 'synthetic' | 'manual') => {
+	 * (`Bus.location` with `synthetic` provenance — the engine also accepts
+	 * `manual`, which round trips through restored packages), so saves,
+	 * exports, and the `.geo.json` download carry it. Best effort: on an
+	 * engine failure the view still renders, only the layout's persistence is
+	 * lost. */
+	private stampLayout = async (c: LocalCase) => {
 		if (!c.networkJson || !c.view) return;
 		try {
 			const coords = Object.fromEntries(
 				c.view.buses.map((b) => [b.id, [b.lon, b.lat] as [number, number]])
 			);
-			const stamped = await applyLayout(c.networkJson, coords, kind);
+			const stamped = await applyLayout(c.networkJson, coords, 'synthetic');
 			c.networkJson = stamped.network_json;
-			// A live Study keeps solving; sync its base network so the next save
-			// carries the same layout, and re-key its cache entry.
-			const cached = this.caseStudies.get(c);
-			if (cached) {
-				cached.networkJson = stamped.network_json;
-				await cached.study.applyGeoLayer(stamped.layer);
-			}
+			await this.syncCachedStudy(c, stamped.network_json, [stamped.layer]);
 		} catch {
 			// The on-screen view is unaffected; only persistence was lost.
 		}
@@ -973,26 +969,48 @@ export class Controller {
 		}
 		if (!payload) return;
 		const sourceLabel = layers.map((l) => l.name).join(' + ');
-		c.networkJson = networkJson;
+		this.adoptGeoPayload(c, payload, sourceLabel, sourceLabel, [
+			...(routes > 0 ? [`${routes} branch route(s) matched from geographic file data`] : []),
+			...(unmatched > 0 ? [`${unmatched} feature(s) matched no case element`] : []),
+			...warnings
+		]);
+		await this.syncCachedStudy(
+			c,
+			networkJson,
+			layers.map((l) => l.layer)
+		);
+	};
+
+	/** Adopt an engine geo apply onto the case: the refreshed payload becomes
+	 * the case's network and view, provenance flips to the geographic source,
+	 * and the warnings panel gets the placement summary. */
+	private adoptGeoPayload(
+		c: LocalCase,
+		payload: AppliedGeoCase,
+		sourceLabel: string,
+		placedFrom: string,
+		extraWarnings: string[]
+	) {
+		c.networkJson = payload.network_json;
 		c.view = payload.view;
 		c.coordsKind = 'geofile';
 		c.syntheticCenter = undefined;
 		c.geoSource = sourceLabel;
 		c.geoWarnings = [
-			`${payload.view?.buses.length ?? 0} of ${payload.n_bus} buses placed from ${sourceLabel}`,
-			...(routes > 0 ? [`${routes} branch route(s) matched from geographic file data`] : []),
-			...(unmatched > 0 ? [`${unmatched} feature(s) matched no case element`] : []),
-			...payload.warnings,
-			...warnings
+			`${payload.view?.buses.length ?? 0} of ${payload.n_bus} buses placed from ${placedFrom}`,
+			...extraWarnings,
+			...payload.warnings
 		];
-		// Keep a live Study's base network in step (locations are metadata the
-		// model never reads, so nothing re-solves), and re-key its cache entry so
-		// the next solve reuses it instead of rebuilding.
+	}
+
+	/** Keep a live Study's base network in step with a geo change (locations
+	 * are metadata the model never reads, so nothing re-solves), and re-key its
+	 * cache entry so the next solve reuses it instead of rebuilding. */
+	private syncCachedStudy = async (c: SolvableCase, networkJson: string, layers: string[]) => {
 		const cached = this.caseStudies.get(c);
-		if (cached) {
-			cached.networkJson = networkJson;
-			for (const l of layers) await cached.study.applyGeoLayer(l.layer);
-		}
+		if (!cached) return;
+		cached.networkJson = networkJson;
+		for (const layer of layers) await cached.study.applyGeoLayer(layer);
 	};
 
 	applyGeoLayersToExisting = async (layers: GeoLayerFile[]) => {
@@ -1566,13 +1584,13 @@ export class Controller {
 		// `.json` to the coordinate parser, which would misread these as coordinate
 		// data. Unroutable `.json` files fall through unchanged.
 		const rest: File[] = [];
-		let restoredPackages = 0;
+		let restoredAnyPackage = false;
 		for (const file of list) {
 			if (file.name.toLowerCase().endsWith('.json')) {
 				const outcome = await this.ingestJsonDrop(file);
 				if (outcome === 'restored' || outcome === 'viewed') {
 					parsedCaseCount++;
-					if (outcome === 'restored') restoredPackages++;
+					restoredAnyPackage ||= outcome === 'restored';
 					continue;
 				}
 				if (outcome === 'failed') continue;
@@ -1700,7 +1718,7 @@ export class Controller {
 		// Unconsumed sidecars apply to the restored package (now the active local
 		// case) so a saved study co-dropped with its coordinates places, or to an
 		// existing case when nothing in the drop parsed at all.
-		if (geoLayers.length > 0 && !geoLayersConsumed && (restoredPackages > 0 || parsedCaseCount === 0)) {
+		if (geoLayers.length > 0 && !geoLayersConsumed && (restoredAnyPackage || parsedCaseCount === 0)) {
 			await this.applyGeoLayersToExisting(geoLayers);
 		}
 	};
@@ -1715,16 +1733,13 @@ export class Controller {
 		for (const d of displays.filter((entry) => !entry.consumed)) {
 			try {
 				const payload = await applyDisplayGeo(c.networkJson, d.bytes);
-				c.networkJson = payload.network_json;
-				c.view = payload.view;
-				c.coordsKind = 'geofile';
-				c.syntheticCenter = undefined;
-				c.geoSource = d.file.name;
-				c.geoWarnings = [
-					`${payload.view?.buses.length ?? 0} of ${payload.n_bus} buses placed from ${d.file.name} substations`,
-					...payload.report.notes,
-					...payload.warnings
-				];
+				this.adoptGeoPayload(
+					c,
+					payload,
+					d.file.name,
+					`${d.file.name} substations`,
+					payload.report.notes
+				);
 				d.consumed = true;
 				return;
 			} catch {
