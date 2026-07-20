@@ -16,6 +16,8 @@ use tellegen::geo::{network_coords, spread_stacks};
 #[cfg(feature = "sensitivity")]
 use tellegen::SolveResponse;
 
+mod dist;
+
 fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
 }
@@ -383,6 +385,26 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
     powerio_pkg::ensure_payload_uids(&mut parsed.network);
     let value = ingest_value(&parsed.network, parsed.warnings).map_err(jserr)?;
     serde_json::to_string(&value).map_err(jserr)
+}
+
+/// The distribution counterpart of [`ingest_case`]: view a multiconductor case
+/// with no solve. `format` is a distribution reader token (`dss`, `bmopf`,
+/// `pmd`) parsed by [`powerio_dist`], or `pio` for a `.pio.json` package
+/// carrying a multiconductor payload. Returns the drop-panel payload JSON:
+/// name, element counts, connected load/generation (kW), parse warnings,
+/// coordinate provenance, and the bus/terminal graph the frontend renders (see
+/// [`dist`]).
+///
+/// Untrusted input: the parse and package restore return error strings (mapped
+/// to `JsError` here), so a malformed, truncated, or oversized `.dss`/JSON
+/// rejects cleanly and never panics the wasm instance.
+#[wasm_bindgen]
+pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
+    let out = match format {
+        "pio" | "pio-json" | "package" => dist::ingest_dist_package(text),
+        _ => dist::ingest_dist(text, format),
+    };
+    out.map_err(jserr)
 }
 
 /// The drop-panel payload for an already-parsed, uid-stamped network. Returns the

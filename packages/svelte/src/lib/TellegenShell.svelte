@@ -100,7 +100,8 @@
 		onlocalbusclick={ctrl.selectLocalBus}
 		onbranchclick={ctrl.selectBranch}
 		onlocalbranchclick={ctrl.selectLocalBranch}
-		onplacecase={ctrl.placeLocalCase}
+		onmultibusclick={ctrl.selectMultiBus}
+		onplacecase={ctrl.placeCase}
 		onmapclick={ctrl.clearSelection}
 	/>
 

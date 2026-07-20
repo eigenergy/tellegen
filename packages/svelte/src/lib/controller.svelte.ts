@@ -11,25 +11,32 @@ import { applyGeoFile, isGeoFile, mergeGeoFiles, parseGeoFile, type GeoFile } fr
 import {
 	CaseState,
 	LocalCase,
+	MulticonductorCase,
 	type AppState,
 	type DemandRangeMode,
 	type FallbackTarget,
+	type MultiCaseSummary,
+	type MultiCoordsKind,
 	type SolvableCase
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
-import { isStudyPackageText, studyCommitIndex } from './study-package.js';
+import { studyCommitIndex } from './study-package.js';
+import { classifyJson, distExtensionFormat } from './drop-classify.js';
+import { buildGeographicView, placeMultiView } from './multiconductor.js';
 import {
 	createStudy,
 	exportStudy,
 	FORMULATIONS,
 	formatOf,
 	ingestCase,
+	ingestDistCase,
 	isDisplayFile,
 	isPermanentEngineFailure,
 	loadPackage,
 	parseDisplay,
 	type BrowserStudy,
 	type Formulation,
+	type IngestedDistCase,
 	type LoadedPackage,
 	type SensTarget
 } from '@tellegen/engine';
@@ -794,9 +801,18 @@ export class Controller {
 		}
 	};
 
+	/** Leave the multiconductor view: a backend or local case becoming active is
+	 * mutually exclusive with a multi case, so drop the multi's active/pending ids.
+	 * The multi's per-bus expansion stays on the case for when it is reactivated. */
+	private leaveMulti() {
+		this.app.activeMultiId = null;
+		this.app.placingMultiId = null;
+	}
+
 	activateCase = async (id: string) => {
 		this.app.activeLocalId = null;
 		this.app.placingLocalId = null;
+		this.leaveMulti();
 		if (this.app.activeCaseId !== id) {
 			this.clearSelection();
 			this.app.activeCaseId = id;
@@ -838,6 +854,7 @@ export class Controller {
 		// from activeCaseId) stays set and its solve card keeps hovering over the
 		// local view.
 		this.app.activeCaseId = null;
+		this.leaveMulti();
 		this.app.activeLocalId = c.id;
 		this.app.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
 		if (c.view || c.substations) this.app.requestFrame(c.id);
@@ -859,6 +876,7 @@ export class Controller {
 	addAndActivateLocal = (c: LocalCase) => {
 		this.clearSelection();
 		this.app.activeCaseId = null;
+		this.leaveMulti();
 		this.app.addLocal(c);
 		if (c.view || c.substations) this.app.requestFrame(c.id);
 		this.maybeStartLocalSolve(c.id);
@@ -913,6 +931,7 @@ export class Controller {
 		try {
 			this.withGeoFile(target, geoFiles);
 			this.app.activeCaseId = null;
+			this.leaveMulti();
 			this.app.activeLocalId = target.id;
 			this.app.placingLocalId = null;
 			this.app.requestFrame(target.id);
@@ -941,6 +960,7 @@ export class Controller {
 	private selectTarget = async (caseId: string, target: SensTarget, focus: boolean) => {
 		this.app.activeLocalId = null;
 		this.app.placingLocalId = null;
+		this.leaveMulti();
 		if (this.app.activeCaseId !== caseId) {
 			this.clearSelection();
 			this.app.activeCaseId = caseId;
@@ -1096,6 +1116,7 @@ export class Controller {
 		const c = this.app.localCases.find((lc) => lc.id === localId);
 		if (!c?.networkJson || !c.network) return;
 		this.app.activeCaseId = null;
+		this.leaveMulti();
 		this.app.activeLocalId = localId;
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
@@ -1156,6 +1177,7 @@ export class Controller {
 		const c = this.app.localCases.find((lc) => lc.id === localId);
 		if (!c?.networkJson || !c.network) return;
 		this.app.activeCaseId = null;
+		this.leaveMulti();
 		this.app.activeLocalId = localId;
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBranchSelection(c, branchId);
@@ -1193,6 +1215,10 @@ export class Controller {
 			lc.sensitivitySeq = (lc.sensitivitySeq ?? 0) + 1;
 			lc.sensitivity = null;
 		}
+		// Multiconductor cases carry their own bus selection (a string id); clear it
+		// so an Escape or empty-map click collapses the expanded terminal detail.
+		const mc = this.app.activeMulti;
+		if (mc) mc.selectedBusId = null;
 		this.app.selectedBus = null;
 		this.app.selectedBranch = null;
 		this.app.previewDeltaMw = null;
@@ -1454,14 +1480,15 @@ export class Controller {
 		const list = Array.from(files);
 		let parsedCaseCount = 0;
 
-		// A saved study package (`.pio.json`) shares the `.json` extension with a
-		// geographic file, so sniff and restore packages up front: the geo/case split
-		// below sends every `.json` to the coordinate parser, which would misread a
-		// package as coordinate data. Non-package `.json` files fall through unchanged.
+		// Routable `.json` content (a saved study package, a multiconductor package,
+		// a BMOPF/PMD document) shares the `.json` extension with a geographic file,
+		// so classify and consume it up front: the geo/case split below sends every
+		// `.json` to the coordinate parser, which would misread these as coordinate
+		// data. Unroutable `.json` files fall through unchanged.
 		const rest: File[] = [];
 		for (const file of list) {
 			if (file.name.toLowerCase().endsWith('.json')) {
-				const outcome = await this.tryRestorePackage(file);
+				const outcome = await this.ingestJsonDrop(file);
 				if (outcome === 'ok') {
 					parsedCaseCount++;
 					continue;
@@ -1513,9 +1540,15 @@ export class Controller {
 				}
 				continue;
 			}
+			// OpenDSS routes by extension into the multiconductor viewing path.
+			const distFormat = distExtensionFormat(file.name);
+			if (distFormat) {
+				if (await this.ingestDistFile(file, distFormat)) parsedCaseCount++;
+				continue;
+			}
 			const format = formatOf(file.name);
 			if (!format) {
-				this.app.error = `${file.name}: not a case or geographic file (.m, .raw, .aux, .pwd, .csv, .json, .geojson)`;
+				this.app.error = `${file.name}: not a case or geographic file (.m, .raw, .aux, .dss, .pwd, .csv, .json, .geojson)`;
 				continue;
 			}
 			this.app.parsingFile = true;
@@ -1561,22 +1594,37 @@ export class Controller {
 		if (geoFiles.length > 0 && parsedCaseCount === 0) this.applyGeoFilesToExisting(geoFiles);
 	};
 
-	/** Attempt to restore a dropped `.json` as a saved study package. Sniffs the
-	 * `.pio.json` envelope by its `schema` field before invoking the engine, so a plain
-	 * JSON file falls through to the geo/case handling below. `ok` when a package
-	 * restored, `failed` when it looked like a package but the engine rejected it
-	 * (fail-closed message set), `not-package` when it is not a study package at all. */
-	private tryRestorePackage = async (file: File): Promise<'ok' | 'failed' | 'not-package'> => {
+	/** Route a dropped `.json` by its content: a saved study package restores, a
+	 * multiconductor package or a BMOPF/PMD distribution document views, and
+	 * anything else falls through to the caller's geo/case handling. `ok` when a
+	 * case landed, `failed` when the content looked routable but the engine
+	 * rejected it (a fail-closed message is set), `not-package` when the JSON is
+	 * not one we route. `drop-classify` is the single owner of the classification. */
+	private ingestJsonDrop = async (file: File): Promise<'ok' | 'failed' | 'not-package'> => {
 		let text: string;
 		try {
 			text = await file.text();
 		} catch {
 			return 'not-package';
 		}
-		if (!isStudyPackageText(text)) return 'not-package';
+		const kind = classifyJson(text);
+		if (kind === 'not-json') return 'not-package';
 		this.app.parsingFile = true;
 		try {
-			this.restoreLocalFromPackage(file.name, await loadPackage(text));
+			if (kind === 'balanced-package') {
+				this.restoreLocalFromPackage(file.name, await loadPackage(text));
+			} else {
+				const format = kind === 'multiconductor-package' ? 'pio' : kind;
+				const payload = await ingestDistCase(text, format);
+				// BMOPF is the classifier's catch-all and its reader is liberal: an
+				// arbitrary JSON object parses as an empty case (unknown fields land
+				// in extras). Zero buses means this was not a distribution document;
+				// leave the file to the geo sidecar path (which places coordinates
+				// or reports its own precise error) instead of adding a phantom
+				// empty multiconductor case.
+				if (kind === 'bmopf' && payload.n_bus === 0) return 'not-package';
+				this.addMultiCase(file.name, payload);
+			}
 			this.app.error = null;
 			return 'ok';
 		} catch (e) {
@@ -1585,6 +1633,101 @@ export class Controller {
 		} finally {
 			this.app.parsingFile = false;
 		}
+	};
+
+	/** Parse a dropped OpenDSS `.dss` file into a multiconductor viewing case.
+	 * Returns true when a case landed; a parse failure sets the panel error. */
+	private ingestDistFile = async (file: File, format: string): Promise<boolean> => {
+		this.app.parsingFile = true;
+		try {
+			this.addMultiCase(file.name, await ingestDistCase(await file.text(), format));
+			this.app.error = null;
+			return true;
+		} catch (e) {
+			this.app.error = `${file.name}: ${errorText(e)}`;
+			return false;
+		} finally {
+			this.app.parsingFile = false;
+		}
+	};
+
+	/** Build a `MulticonductorCase` from an ingest payload and make it active.
+	 * Geographic cases place immediately; planar/synthetic cases enter placement
+	 * (a map click or "place on map") so the user picks their center. */
+	private addMultiCase(fileName: string, payload: IngestedDistCase) {
+		const { graph, ...summary }: { graph: IngestedDistCase['graph'] } & MultiCaseSummary = payload;
+		const coordsKind = payload.coords_kind as MultiCoordsKind;
+		const label =
+			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
+		const view = coordsKind === 'geographic' ? buildGeographicView(graph) : null;
+		const c = new MulticonductorCase({
+			id: `dist-${++this.localSeq}`,
+			label,
+			fileName,
+			summary,
+			graph,
+			coordsKind,
+			view
+		});
+		this.app.addMulti(c);
+		if (c.placed) this.app.requestFrame(c.id);
+	}
+
+	/** Make a multiconductor case active, framing it when it is placed. */
+	activateMulti = (c: MulticonductorCase) => {
+		this.clearSelection();
+		this.app.activeCaseId = null;
+		this.app.activeLocalId = null;
+		this.app.activeMultiId = c.id;
+		this.app.placingLocalId = null;
+		this.app.placingMultiId = c.placed ? null : c.id;
+		if (c.placed) this.app.requestFrame(c.id);
+	};
+
+	/** Select a bus in a multiconductor case: its terminal stack and incident
+	 * conductors expand. Selecting is viewing detail only — no solve. */
+	selectMultiBus = (caseId: string, busId: string) => {
+		const c = this.app.multiCases.find((mc) => mc.id === caseId);
+		if (!c) return;
+		this.app.activeCaseId = null;
+		this.app.activeLocalId = null;
+		this.app.activeMultiId = caseId;
+		this.app.placingMultiId = null;
+		c.selectedBusId = c.selectedBusId === busId ? null : busId;
+	};
+
+	/** Place a multiconductor case awaiting a center: fit its provided planar
+	 * coordinates when it carries them, else lay it out synthetically. */
+	placeMultiCase = (lon: number, lat: number) => {
+		const id = this.app.placingMultiId;
+		const c = id ? this.app.multiCases.find((mc) => mc.id === id) : null;
+		if (!c?.graph) return;
+		c.view = placeMultiView(c.graph, { lon, lat });
+		c.syntheticCenter = { lon, lat };
+		this.app.placingMultiId = null;
+		this.app.activeMultiId = c.id;
+		this.app.requestFrame(c.id);
+	};
+
+	/** Re-enter placement for a multiconductor case, to move its layout. */
+	moveMultiCase = (c: MulticonductorCase) => {
+		this.app.activeCaseId = null;
+		this.app.activeLocalId = null;
+		this.app.activeMultiId = c.id;
+		this.app.placingMultiId = c.id;
+	};
+
+	removeMultiCase = async (c: MulticonductorCase, event?: MouseEvent) => {
+		event?.stopPropagation();
+		if (this.app.activeMultiId === c.id) c.selectedBusId = null;
+		await this.hydrateFallback(this.app.removeMulti(c.id));
+	};
+
+	/** The unified map click-to-place: a pending multiconductor case takes the
+	 * click first, otherwise a pending local case does. */
+	placeCase = (lon: number, lat: number) => {
+		if (this.app.placingMultiId) this.placeMultiCase(lon, lat);
+		else this.placeLocalCase(lon, lat);
 	};
 
 	/** Build a local case from a restored study package: the same shape a dropped case

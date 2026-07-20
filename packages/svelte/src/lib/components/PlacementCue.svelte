@@ -4,8 +4,8 @@
 	const app = getAppState();
 </script>
 
-{#if app.placingLocalId}
-	<div class="placement-cue mono">click the map to place the synthetic topology</div>
+{#if app.placingId}
+	<div class="placement-cue mono">click the map to place the topology layout</div>
 {/if}
 
 <style>

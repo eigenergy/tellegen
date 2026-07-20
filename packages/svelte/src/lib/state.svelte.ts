@@ -12,10 +12,13 @@ import {
 	DEFAULT_FORMULATION,
 	type BranchRatingDeltas,
 	type CaseFileSummary,
+	type DistGraph,
 	type Formulation,
+	type IngestedDistCase,
 	type SensTarget,
 	type Topology
 } from '@tellegen/engine';
+import type { MultiView } from './multiconductor.js';
 
 export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
 /** A map framing request: a case id, 'all', or one branch to center. */
@@ -170,6 +173,66 @@ export class CaseState {
 /** A case the solver can run: a server-backed case or a browser-parsed local case. */
 export type SolvableCase = CaseState | LocalCase;
 
+/** The multiconductor ingest payload without the graph: the summary counts,
+ * connected load/generation, coordinate provenance, and warnings. */
+export type MultiCaseSummary = Omit<IngestedDistCase, 'graph'>;
+
+/** How a multiconductor case is placed on the map. `geographic` positions drop
+ * straight on; `planar`/`synthetic` need a map center, so they sit `pending`
+ * until the user places them. */
+export type MultiCoordsKind = 'geographic' | 'planar' | 'synthetic';
+
+/** A multiconductor distribution case parsed in the browser, viewed only: no
+ * formulation, no sliders, no Study. It carries the bus/terminal graph, its
+ * placed map view, and the selected bus whose terminal detail expands. Fields
+ * are reactive like the solvable cases so the panel and map track them. */
+export class MulticonductorCase {
+	readonly id: string;
+	readonly label: string;
+	readonly fileName: string;
+	/** Summary counts and coordinate provenance from the parse. */
+	summary = $state.raw<MultiCaseSummary | null>(null);
+	/** The render-ready bus/terminal graph. */
+	graph = $state.raw<DistGraph | null>(null);
+	/** Placement kind resolved at ingest from the case's coordinate space. */
+	coordsKind = $state.raw<MultiCoordsKind>('synthetic');
+	/** The placed map view; null until placed (planar/synthetic await a center). */
+	view = $state.raw<MultiView | null>(null);
+	syntheticCenter = $state.raw<{ lon: number; lat: number } | undefined>(undefined);
+	/** The selected bus id, whose terminal stack and incident conductors expand;
+	 * null when nothing is selected. String-keyed: distribution bus ids are names. */
+	selectedBusId = $state<string | null>(null);
+
+	constructor(init: {
+		id: string;
+		label: string;
+		fileName: string;
+		summary: MultiCaseSummary;
+		graph: DistGraph;
+		coordsKind: MultiCoordsKind;
+		view?: MultiView | null;
+	}) {
+		this.id = init.id;
+		this.label = init.label;
+		this.fileName = init.fileName;
+		this.summary = init.summary;
+		this.graph = init.graph;
+		this.coordsKind = init.coordsKind;
+		this.view = init.view ?? null;
+	}
+
+	/** Whether the case is placed and ready to render. */
+	get placed(): boolean {
+		return this.view !== null;
+	}
+
+	/** The selected bus's placed detail, or null. */
+	get selectedBus() {
+		if (this.selectedBusId === null) return null;
+		return this.view?.buses.find((b) => b.id === this.selectedBusId) ?? null;
+	}
+}
+
 export class AppState {
 	cases = $state.raw<CaseState[]>([]);
 	activeCaseId = $state<string | null>(null);
@@ -215,6 +278,13 @@ export class AppState {
 	/** Local case the panel shows; clicking a bundled case or a bus clears it. */
 	activeLocalId = $state<string | null>(null);
 	placingLocalId = $state<string | null>(null);
+	/** Multiconductor distribution cases parsed in the browser (viewing only). */
+	multiCases = $state.raw<MulticonductorCase[]>([]);
+	/** Multiconductor case the panel shows; mutually exclusive with the solvable
+	 * active ids. */
+	activeMultiId = $state<string | null>(null);
+	/** Multiconductor case awaiting placement on the map. */
+	placingMultiId = $state<string | null>(null);
 	dragOver = $state(false);
 	parsingFile = $state(false);
 
@@ -238,10 +308,40 @@ export class AppState {
 		return this.localCases.find((c) => c.id === this.activeLocalId) ?? null;
 	}
 
+	get activeMulti(): MulticonductorCase | null {
+		return this.multiCases.find((c) => c.id === this.activeMultiId) ?? null;
+	}
+
+	/** Whether any case is awaiting a click-to-place on the map (local or multi). */
+	get placingId(): string | null {
+		return this.placingLocalId ?? this.placingMultiId;
+	}
+
 	addLocal(c: LocalCase) {
 		this.localCases = [...this.localCases, c];
 		this.activeLocalId = c.id;
 		this.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
+	}
+
+	/** Add a multiconductor case and make it active. A case that still needs a
+	 * map center (planar/synthetic, no view yet) enters placement. */
+	addMulti(c: MulticonductorCase) {
+		this.multiCases = [...this.multiCases, c];
+		this.activeCaseId = null;
+		this.activeLocalId = null;
+		this.activeMultiId = c.id;
+		this.placingLocalId = null;
+		this.placingMultiId = c.placed ? null : c.id;
+	}
+
+	removeMulti(id: string): FallbackTarget {
+		const wasActive = this.activeMultiId === id;
+		this.multiCases = this.multiCases.filter((c) => c.id !== id);
+		if (this.placingMultiId === id) this.placingMultiId = null;
+		if (!wasActive) return { kind: 'none' };
+		this.activeMultiId = null;
+		if (this.activeCaseId !== null || this.activeLocalId !== null) return { kind: 'none' };
+		return this.activateFallback();
 	}
 
 	removeCase(id: string): FallbackTarget {
@@ -289,11 +389,23 @@ export class AppState {
 			) ??
 			this.localCases[0] ??
 			null;
-		this.activeLocalId = nextLocal?.id ?? null;
-		this.placingLocalId = nextLocal?.coordsKind === 'synthetic_pending' ? nextLocal.id : null;
-		if (nextLocal?.view || nextLocal?.substations) this.requestFrame(nextLocal.id);
+		if (nextLocal) {
+			this.activeLocalId = nextLocal.id;
+			this.placingLocalId = nextLocal.coordsKind === 'synthetic_pending' ? nextLocal.id : null;
+			if (nextLocal.view || nextLocal.substations) this.requestFrame(nextLocal.id);
+			else this.requestFrame('all');
+			return { kind: 'local', id: nextLocal.id };
+		}
+		this.activeLocalId = null;
+		this.placingLocalId = null;
+		// A multiconductor case is viewing only, so no hydration target: activate
+		// it, frame whatever is placed, and report `none`.
+		const nextMulti = this.multiCases[0] ?? null;
+		this.activeMultiId = nextMulti?.id ?? null;
+		this.placingMultiId = nextMulti && !nextMulti.placed ? nextMulti.id : null;
+		if (nextMulti?.placed) this.requestFrame(nextMulti.id);
 		else this.requestFrame('all');
-		return nextLocal ? { kind: 'local', id: nextLocal.id } : { kind: 'none' };
+		return { kind: 'none' };
 	}
 
 	requestFrame(target: FrameTarget): Promise<void> {

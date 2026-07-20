@@ -16,6 +16,7 @@ crate-type = ["cdylib", "rlib"]
 tellegen = { path = "../tellegen", default-features = false }
 powerio.workspace = true
 powerio-pkg.workspace = true
+powerio-dist.workspace = true
 wasm-bindgen = "0.2"
 serde.workspace = true
 serde_json.workspace = true

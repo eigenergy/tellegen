@@ -7,6 +7,7 @@ export { default as DisplayControls } from './components/DisplayControls.svelte'
 export { default as DropZone } from './components/DropZone.svelte';
 export { default as FormulationSelector } from './components/FormulationSelector.svelte';
 export { default as LocalCaseDetails } from './components/LocalCaseDetails.svelte';
+export { default as MulticonductorDetails } from './components/MulticonductorDetails.svelte';
 export { default as NetworkStats } from './components/NetworkStats.svelte';
 export { default as PlacementCue } from './components/PlacementCue.svelte';
 export { default as RestoreDefaultsButton } from './components/RestoreDefaultsButton.svelte';

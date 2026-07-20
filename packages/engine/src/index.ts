@@ -86,6 +86,87 @@ export interface IngestedCase extends CaseFileSummary {
   view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 }
 
+/** Edge family in the collapsed distribution graph. */
+export type DistEdgeKind = "line" | "switch" | "transformer";
+
+/** Terminal attachment family. */
+export type DistAttachmentKind =
+  | "load"
+  | "generator"
+  | "ibr"
+  | "shunt"
+  | "source";
+
+/** One element connected to a bus terminal. */
+export interface DistGraphAttachment {
+  kind: DistAttachmentKind;
+  id: string;
+}
+
+/** One bus node in the collapsed distribution graph. `xy` is present when the
+ * source carried a position (`[x, y]`, longitude/latitude when the case is
+ * geographic); `terminal_attachments` maps each terminal name to the elements
+ * on it. */
+export interface DistGraphBus {
+  id: string;
+  terminals: string[];
+  grounded: string[];
+  xy?: [number, number];
+  load_kw: number;
+  gen_kw: number;
+  has_source: boolean;
+  terminal_attachments?: Record<string, DistGraphAttachment[]>;
+}
+
+/** One edge in the collapsed distribution graph. `conductors` pairs the
+ * `[from_terminal, to_terminal]` names in conductor order; `closed` is false
+ * for an open switch. */
+export interface DistGraphEdge {
+  kind: DistEdgeKind;
+  id: string;
+  from: string;
+  to: string;
+  conductors: [string, string][];
+  closed: boolean;
+  n_phases: number;
+}
+
+/** The render-ready bus/terminal projection of a distribution network. */
+export interface DistGraph {
+  buses: DistGraphBus[];
+  edges: DistGraphEdge[];
+}
+
+/** One multiconductor parse for the viewing path: element counts, connected
+ * load and generation (kW), parse warnings, coordinate provenance, and the
+ * bus/terminal graph. No solve, no network JSON — distribution cases are viewed,
+ * not solved. `coords_kind` tells the frontend how to place buses: `geographic`
+ * drops `xy` straight onto the map, `planar` fits provided positions into a box
+ * at a placement center, `synthetic` runs the force layout. */
+export interface IngestedDistCase {
+  name: string | null;
+  model: "multiconductor";
+  n_bus: number;
+  n_edge: number;
+  n_line: number;
+  n_switch: number;
+  n_transformer: number;
+  n_load: number;
+  n_generator: number;
+  n_ibr: number;
+  n_source: number;
+  n_shunt: number;
+  load_kw: number;
+  gen_kw: number;
+  base_frequency: number;
+  has_coords: boolean;
+  placed_buses: number;
+  coords_space: "geographic" | "projected" | "diagram" | "unknown" | "none";
+  coords_kind: "geographic" | "planar" | "synthetic";
+  warnings: string[];
+  graph: DistGraph;
+}
+
 /** A study restored from a saved `.pio.json` package: the ingest payload plus the
  * restored formulation, solve options, and folded edit state. `deltas` are keyed by
  * bus id and `rates` by branch id — the numeric keys the sliders use. */
@@ -128,6 +209,21 @@ export async function ingestCase(
 ): Promise<IngestedCase> {
   return JSON.parse(
     expectText(await engineHost().call({ op: "ingest_case", text, format })),
+  );
+}
+
+/** Parse a multiconductor distribution case for viewing. `format` is a
+ * distribution reader token (`dss`, `bmopf`, `pmd`) or `pio` for a `.pio.json`
+ * package carrying a multiconductor payload. Rejects on malformed input or a
+ * balanced package (which the study-restore path handles). */
+export async function ingestDistCase(
+  text: string,
+  format: string,
+): Promise<IngestedDistCase> {
+  return JSON.parse(
+    expectText(
+      await engineHost().call({ op: "ingest_dist_case", text, format }),
+    ),
   );
 }
 
@@ -600,6 +696,7 @@ export async function exportStudy(
 export interface EngineTransport {
   preloadEngine(): Promise<void>;
   ingestCase(text: string, format: string): Promise<IngestedCase>;
+  ingestDistCase(text: string, format: string): Promise<IngestedDistCase>;
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   capabilities(): Promise<ProblemCaps[]>;
   solveJson(networkJson: string, request?: SolveRequest): Promise<SolveResponse>;
@@ -618,6 +715,7 @@ export interface EngineTransport {
 export const browserWasmTransport: EngineTransport = {
   preloadEngine,
   ingestCase,
+  ingestDistCase,
   parseDisplay,
   capabilities,
   solveJson,

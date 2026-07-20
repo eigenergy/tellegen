@@ -25,6 +25,11 @@ powerio = "0.7"
 # `ensure_payload_uids` so tellegen stamps the exact row-uid scheme powerio
 # packages carry, instead of duplicating the format here.
 powerio-pkg = "0.7"
+# The multiconductor distribution model and its lossless readers for OpenDSS,
+# PMD JSON, and BMOPF JSON. The wasm ingest path uses its string readers and
+# `DistNetwork::graph()` projection to view distribution cases (no solve). Wasm
+# checked upstream: `parse_str` and `graph()` touch no filesystem.
+powerio-dist = "0.7"
 # Matrix-free DC/AC OPF problem instances (`DcOpfInstance`/`AcOpfInstance`), the
 # shared owner of case interpretation. Default features only: the `matrix` feature
 # pulls a filesystem bundle writer that has no place in the wasm dependency chain.
