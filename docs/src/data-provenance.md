@@ -35,9 +35,10 @@ PowerWorld aux exports have used two coordinate layouts:
 - Later exports can leave the bus latitude and longitude columns empty and
   reference the `Substation` table through `SubNumber`.
 
-The Rust parser reads the bus row form for the three served cases and also
-performs the substation join, so dropped files of either form resolve when the
-data is present.
+powerio promotes the bus row form (`Latitude:1`/`Longitude:1`) into the typed
+`Bus.location` at parse; tellegen keeps the two fallbacks upstream does not
+cover — bare `Latitude`/`Longitude` bus columns and the `Substation` table join
+— so dropped files of either form resolve when the data is present.
 
 ## Buses Sharing Coordinates
 

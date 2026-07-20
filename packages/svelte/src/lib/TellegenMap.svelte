@@ -423,7 +423,7 @@
 		let strands = '';
 		for (const e of edges) {
 			const selectedIsFrom = e.from === bus.id;
-			const other = selectedIsFrom ? e.path[1] : e.path[0];
+			const other = selectedIsFrom ? e.path[e.path.length - 1] : e.path[0];
 			const b = m.project(other);
 			const dx = b.x - busPt.x;
 			const dy = b.y - busPt.y;

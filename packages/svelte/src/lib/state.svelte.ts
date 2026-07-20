@@ -41,7 +41,7 @@ export interface LocalSubstations {
 	approximate: true;
 }
 
-type CoordsKind = 'file' | 'synthetic_pending' | 'synthetic' | 'geofile';
+type CoordsKind = 'file' | 'synthetic_pending' | 'synthetic' | 'manual' | 'geofile';
 type LocalView = { buses: NetworkBus[]; branches: NetworkBranch[] };
 
 /** A case is perturbed when any committed demand or rating delta is nonzero. Shared

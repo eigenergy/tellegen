@@ -7,7 +7,6 @@ import {
 	displayMetaFor,
 	displaySeriesFor
 } from './display.js';
-import { applyGeoFile, isGeoFile, mergeGeoFiles, parseGeoFile, type GeoFile } from './geo-file.js';
 import {
 	CaseState,
 	LocalCase,
@@ -21,11 +20,15 @@ import {
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
 import { studyCommitIndex } from './study-package.js';
-import { classifyJson, distExtensionFormat } from './drop-classify.js';
+import { classifyJson, distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { buildGeographicView, placeMultiView } from './multiconductor.js';
 import {
+	applyDisplayGeo,
+	applyGeo,
+	applyLayout,
 	createStudy,
 	exportStudy,
+	extractGeo,
 	FORMULATIONS,
 	formatOf,
 	ingestCase,
@@ -34,7 +37,10 @@ import {
 	isPermanentEngineFailure,
 	loadPackage,
 	parseDisplay,
+	parseGeo,
+	type AppliedGeoCase,
 	type BrowserStudy,
+	type DisplayPreview,
 	type Formulation,
 	type IngestedDistCase,
 	type LoadedPackage,
@@ -45,7 +51,16 @@ import { errorText, extent, formulationLabel, rgbaCss } from './format.js';
 const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
 const DEFAULT_CASE_ID = 'case500';
-const PWD_MERCATOR_K = 535.81608;
+
+/** A parsed geographic sidecar awaiting application: the canonical `.geo.json`
+ * layer document from the engine's tolerant reader, its source file name, and
+ * the reader's notes on records it could not use. */
+type GeoLayerFile = { name: string; layer: string; warnings: string[] };
+
+/** A parsed PowerWorld `.pwd` display awaiting routing: a coordinate-less case
+ * in the same drop may consume its substation points (the SubNum join);
+ * otherwise it becomes its own substation preview entry. */
+type DisplayFile = { file: File; bytes: Uint8Array; preview: DisplayPreview; consumed: boolean };
 
 /** Terminal copy when nothing can solve. Two facts decide the wording: whether
  * this browser's engine failure is known permanent, and that the server
@@ -489,19 +504,6 @@ export class Controller {
 		};
 	}
 
-	// PowerWorld .pwd files store substation symbols at diagram coordinates,
-	// not lat/lon. Auto-generated TAMU layouts are Web Mercator scaled by this
-	// constant with both axes in degrees: x = K·lon and y = K·mercdeg(lat),
-	// where mercdeg is the Mercator ordinate expressed in degrees. So lon = x/K,
-	// and latitude is the inverse gudermannian after converting y/K back to
-	// radians. Hand-edited diagrams drift from this, so positions stay
-	// approximate. Verified against ACTIVSg200/2000 to within ~0.02 deg.
-	pwdToLngLat(x: number, y: number): [number, number] {
-		const lon = x / PWD_MERCATOR_K;
-		const lat = (Math.atan(Math.sinh(((y / PWD_MERCATOR_K) * Math.PI) / 180)) * 180) / Math.PI;
-		return [lon, lat];
-	}
-
 	// ===== view-model =====
 
 	activeSolvable = $derived.by(
@@ -882,7 +884,7 @@ export class Controller {
 		this.maybeStartLocalSolve(c.id);
 	};
 
-	placeLocalCase = (lon: number, lat: number) => {
+	placeLocalCase = async (lon: number, lat: number) => {
 		const id = this.app.placingLocalId;
 		const c = id ? this.app.localCases.find((lc) => lc.id === id) : null;
 		if (!c?.topology) return;
@@ -892,7 +894,47 @@ export class Controller {
 		this.app.placingLocalId = null;
 		this.app.activeLocalId = c.id;
 		this.app.requestFrame(c.id);
+		// Persist the layout before the solve kicks off, so the Study builds from
+		// the stamped payload and a save carries the placement.
+		await this.stampLayout(c);
 		this.maybeStartLocalSolve(c.id);
+	};
+
+	/** Write the case's on-screen layout into its network payload
+	 * (`Bus.location` with `synthetic` provenance — the engine also accepts
+	 * `manual`, which round trips through restored packages), so saves,
+	 * exports, and the `.geo.json` download carry it. Best effort: on an
+	 * engine failure the view still renders, only the layout's persistence is
+	 * lost. */
+	private stampLayout = async (c: LocalCase) => {
+		if (!c.networkJson || !c.view) return;
+		try {
+			const coords = Object.fromEntries(
+				c.view.buses.map((b) => [b.id, [b.lon, b.lat] as [number, number]])
+			);
+			const stamped = await applyLayout(c.networkJson, coords, 'synthetic');
+			c.networkJson = stamped.network_json;
+			await this.syncCachedStudy(c, stamped.network_json, [stamped.layer]);
+		} catch {
+			// The on-screen view is unaffected; only persistence was lost.
+		}
+	};
+
+	/** Download the case's coordinates as a `.geo.json` layer: canonical
+	 * GeoJSON with provenance stamped (`synthetic`/`manual` for layouts), the
+	 * document powerio and tellegen both read back. */
+	downloadGeoLayer = async (c: LocalCase): Promise<void> => {
+		if (!c.networkJson) return;
+		try {
+			downloadText(
+				await extractGeo(c.networkJson),
+				`${this.caseFileStem(c)}.geo.json`,
+				'application/geo+json'
+			);
+			this.app.error = null;
+		} catch (e) {
+			this.app.error = `${this.caseName(c)}: could not export the layout: ${errorText(e)}`;
+		}
 	};
 
 	moveLocalCase = (c: LocalCase) => {
@@ -901,35 +943,88 @@ export class Controller {
 		this.app.placingLocalId = c.id;
 	};
 
-	withGeoFile = (c: LocalCase, geoFiles: GeoFile[]): LocalCase => {
-		if (!c.topology || geoFiles.length === 0) return c;
-		const applied = applyGeoFile(c.topology, mergeGeoFiles(geoFiles));
-		c.view = applied.view;
-		c.coordsKind = 'geofile';
-		c.syntheticCenter = undefined;
-		c.geoSource = applied.sourceLabel;
-		c.geoWarnings = [
-			`${applied.matchedBuses} buses placed from ${applied.sourceLabel}`,
-			...(applied.matchedBranches > 0
-				? [`${applied.matchedBranches} branch paths matched from geographic file data`]
-				: []),
-			...applied.warnings
-		];
-		return c;
+	/** Apply parsed geo layers onto a local case, in drop order (a later file
+	 * wins on shared elements). The engine owns matching and the network becomes
+	 * the single owner of the coordinates: matched points land in
+	 * `Bus.location`, routes in `Branch.route`, and the refreshed
+	 * `network_json` replaces the case payload — so a saved package or export
+	 * carries exactly what is on screen. A live Study is synced the same way.
+	 * Throws when a layer matches nothing. */
+	applyGeoLayers = async (c: LocalCase, layers: GeoLayerFile[]): Promise<void> => {
+		if (!c.networkJson || layers.length === 0) return;
+		let payload: AppliedGeoCase | null = null;
+		let networkJson = c.networkJson;
+		const warnings: string[] = [];
+		let routes = 0;
+		let unmatched = 0;
+		for (const l of layers) {
+			payload = await applyGeo(networkJson, l.layer);
+			networkJson = payload.network_json;
+			routes += payload.report.matched_branches;
+			unmatched += payload.report.unmatched_features;
+			warnings.push(
+				...l.warnings.map((w) => `${l.name}: ${w}`),
+				...payload.report.notes.map((n) => `${l.name}: ${n}`)
+			);
+		}
+		if (!payload) return;
+		const sourceLabel = layers.map((l) => l.name).join(' + ');
+		this.adoptGeoPayload(c, payload, sourceLabel, sourceLabel, [
+			...(routes > 0 ? [`${routes} branch route(s) matched from geographic file data`] : []),
+			...(unmatched > 0 ? [`${unmatched} feature(s) matched no case element`] : []),
+			...warnings
+		]);
+		await this.syncCachedStudy(
+			c,
+			networkJson,
+			layers.map((l) => l.layer)
+		);
 	};
 
-	applyGeoFilesToExisting = (geoFiles: GeoFile[]) => {
+	/** Adopt an engine geo apply onto the case: the refreshed payload becomes
+	 * the case's network and view, provenance flips to the geographic source,
+	 * and the warnings panel gets the placement summary. */
+	private adoptGeoPayload(
+		c: LocalCase,
+		payload: AppliedGeoCase,
+		sourceLabel: string,
+		placedFrom: string,
+		extraWarnings: string[]
+	) {
+		c.networkJson = payload.network_json;
+		c.view = payload.view;
+		c.coordsKind = 'geofile';
+		c.syntheticCenter = undefined;
+		c.geoSource = sourceLabel;
+		c.geoWarnings = [
+			`${payload.view?.buses.length ?? 0} of ${payload.n_bus} buses placed from ${placedFrom}`,
+			...extraWarnings,
+			...payload.warnings
+		];
+	}
+
+	/** Keep a live Study's base network in step with a geo change (locations
+	 * are metadata the model never reads, so nothing re-solves), and re-key its
+	 * cache entry so the next solve reuses it instead of rebuilding. */
+	private syncCachedStudy = async (c: SolvableCase, networkJson: string, layers: string[]) => {
+		const cached = this.caseStudies.get(c);
+		if (!cached) return;
+		cached.networkJson = networkJson;
+		for (const layer of layers) await cached.study.applyGeoLayer(layer);
+	};
+
+	applyGeoLayersToExisting = async (layers: GeoLayerFile[]) => {
 		const target =
-			(this.app.activeLocal?.topology ? this.app.activeLocal : null) ??
-			this.app.localCases.find((c) => c.coordsKind === 'synthetic_pending') ??
-			[...this.app.localCases].reverse().find((c) => c.topology);
-		if (!target?.topology) {
+			(this.app.activeLocal?.networkJson ? this.app.activeLocal : null) ??
+			this.app.localCases.find((c) => c.coordsKind === 'synthetic_pending' && c.networkJson) ??
+			[...this.app.localCases].reverse().find((c) => c.networkJson);
+		if (!target?.networkJson) {
 			this.app.error =
 				'drop a case file with the geographic file, or select a parsed local case first';
 			return;
 		}
 		try {
-			this.withGeoFile(target, geoFiles);
+			await this.applyGeoLayers(target, layers);
 			this.app.activeCaseId = null;
 			this.leaveMulti();
 			this.app.activeLocalId = target.id;
@@ -938,9 +1033,9 @@ export class Controller {
 			this.maybeStartLocalSolve(target.id);
 			this.app.error = null;
 		} catch (e) {
-			this.app.error = `${geoFiles.map((s) => s.sourceNames.join(' + ')).join(' + ')}: ${
-				e instanceof Error ? e.message : e
-			}; use place on map for manual placement`;
+			this.app.error = `${layers.map((l) => l.name).join(' + ')}: ${errorText(
+				e
+			)}; use place on map for manual placement`;
 		}
 	};
 
@@ -1479,6 +1574,9 @@ export class Controller {
 	ingestFiles = async (files: FileList | File[]) => {
 		const list = Array.from(files);
 		let parsedCaseCount = 0;
+		// True once a dropped case file took the geographic sidecars; a restored
+		// package or an existing case only takes them when no case file did.
+		let geoLayersConsumed = false;
 
 		// Routable `.json` content (a saved study package, a multiconductor package,
 		// a BMOPF/PMD document) shares the `.json` extension with a geographic file,
@@ -1486,11 +1584,13 @@ export class Controller {
 		// `.json` to the coordinate parser, which would misread these as coordinate
 		// data. Unroutable `.json` files fall through unchanged.
 		const rest: File[] = [];
+		let restoredAnyPackage = false;
 		for (const file of list) {
 			if (file.name.toLowerCase().endsWith('.json')) {
 				const outcome = await this.ingestJsonDrop(file);
-				if (outcome === 'ok') {
+				if (outcome === 'restored' || outcome === 'viewed') {
 					parsedCaseCount++;
+					restoredAnyPackage ||= outcome === 'restored';
 					continue;
 				}
 				if (outcome === 'failed') continue;
@@ -1498,48 +1598,38 @@ export class Controller {
 			rest.push(file);
 		}
 
-		const geoFiles: GeoFile[] = [];
-		for (const file of rest.filter((f) => isGeoFile(f.name))) {
+		const geoLayers: GeoLayerFile[] = [];
+		for (const file of rest.filter((f) => isGeoFileName(f.name))) {
 			this.app.parsingFile = true;
 			try {
-				geoFiles.push(parseGeoFile(file.name, await file.text()));
+				const parsed = await parseGeo(new Uint8Array(await file.arrayBuffer()), file.name);
+				geoLayers.push({ name: file.name, layer: parsed.layer, warnings: parsed.warnings });
 				this.app.error = null;
 			} catch (e) {
-				this.app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
+				this.app.error = `${file.name}: ${errorText(e)}`;
 			} finally {
 				this.app.parsingFile = false;
 			}
 		}
 
-		for (const file of rest.filter((f) => !isGeoFile(f.name))) {
-			if (isDisplayFile(file.name)) {
-				this.app.parsingFile = true;
-				try {
-					const bytes = new Uint8Array(await file.arrayBuffer());
-					const display = await parseDisplay(bytes);
-					const points = display.substations.map((s) => {
-						const [lon, lat] = this.pwdToLngLat(s.x, s.y);
-						return { number: s.number, name: s.name, lon, lat };
-					});
-					const id = `local-${++this.localSeq}`;
-					this.addAndActivateLocal(
-						new LocalCase({
-							id,
-							label: file.name.replace(/\.[^.]+$/, ''),
-							fileName: file.name,
-							summary: null,
-							view: null,
-							substations: { points, approximate: true }
-						})
-					);
-					this.app.error = null;
-				} catch (e) {
-					this.app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
-				} finally {
-					this.app.parsingFile = false;
-				}
-				continue;
+		// PowerWorld .pwd displays parse up front so a coordinate-less case in the
+		// same drop can borrow their substation points (the SubNum join); one that
+		// no case consumes becomes its own substation preview entry below.
+		const displays: DisplayFile[] = [];
+		for (const file of rest.filter((f) => isDisplayFile(f.name))) {
+			this.app.parsingFile = true;
+			try {
+				const bytes = new Uint8Array(await file.arrayBuffer());
+				displays.push({ file, bytes, preview: await parseDisplay(bytes), consumed: false });
+				this.app.error = null;
+			} catch (e) {
+				this.app.error = `${file.name}: ${errorText(e)}`;
+			} finally {
+				this.app.parsingFile = false;
 			}
+		}
+
+		for (const file of rest.filter((f) => !isGeoFileName(f.name) && !isDisplayFile(f.name))) {
 			// OpenDSS routes by extension into the multiconductor viewing path.
 			const distFormat = distExtensionFormat(file.name);
 			if (distFormat) {
@@ -1574,16 +1664,29 @@ export class Controller {
 					coordsKind: summary.coords_kind,
 					view
 				});
-				// A co-dropped geographic file places (or repositions) the network. Apply it
-				// for any parsed case that carries topology, not just synthetic ones, so a geo
-				// overlay dropped alongside a case that already has coordinates takes effect
-				// instead of being silently discarded.
-				if (geoFiles.length > 0 && local.topology) {
-					this.withGeoFile(local, geoFiles);
+				// A co-dropped geographic file places (or repositions) the network. Apply
+				// it for any parsed case, not just synthetic ones, so a geo overlay
+				// dropped alongside a case that already has coordinates takes effect
+				// instead of being silently discarded. A failed apply keeps the parsed
+				// case (placement still works) and surfaces the reason.
+				let geoError: string | null = null;
+				if (geoLayers.length > 0 && local.networkJson) {
+					try {
+						await this.applyGeoLayers(local, geoLayers);
+						geoLayersConsumed = true;
+					} catch (e) {
+						geoError = `${geoLayers.map((l) => l.name).join(' + ')}: ${errorText(
+							e
+						)}; use place on map for manual placement`;
+					}
+				} else if (local.coordsKind === 'synthetic_pending' && local.networkJson) {
+					// No sidecar: a coordinate-less case may still borrow a co-dropped
+					// .pwd's substation points through the SubNum join.
+					await this.fillFromDisplaySibling(local, displays);
 				}
 				this.addAndActivateLocal(local);
 				parsedCaseCount++;
-				this.app.error = null; // a successful parse clears a prior file's error
+				this.app.error = geoError; // a successful parse clears a prior file's error
 			} catch (e) {
 				this.app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
 			} finally {
@@ -1591,16 +1694,69 @@ export class Controller {
 			}
 		}
 
-		if (geoFiles.length > 0 && parsedCaseCount === 0) this.applyGeoFilesToExisting(geoFiles);
+		// A .pwd no case consumed becomes a substation point preview entry, at
+		// the approximate positions the engine projected.
+		for (const d of displays.filter((entry) => !entry.consumed)) {
+			const points = d.preview.substations.map((s) => ({
+				number: s.number,
+				name: s.name,
+				lon: s.lon,
+				lat: s.lat
+			}));
+			this.addAndActivateLocal(
+				new LocalCase({
+					id: `local-${++this.localSeq}`,
+					label: d.file.name.replace(/\.[^.]+$/, ''),
+					fileName: d.file.name,
+					summary: null,
+					view: null,
+					substations: { points, approximate: true }
+				})
+			);
+		}
+
+		// Unconsumed sidecars apply to the restored package (now the active local
+		// case) so a saved study co-dropped with its coordinates places, or to an
+		// existing case when nothing in the drop parsed at all.
+		if (geoLayers.length > 0 && !geoLayersConsumed && (restoredAnyPackage || parsedCaseCount === 0)) {
+			await this.applyGeoLayersToExisting(geoLayers);
+		}
 	};
 
-	/** Route a dropped `.json` by its content: a saved study package restores, a
-	 * multiconductor package or a BMOPF/PMD distribution document views, and
-	 * anything else falls through to the caller's geo/case handling. `ok` when a
-	 * case landed, `failed` when the content looked routable but the engine
-	 * rejected it (a fail-closed message is set), `not-package` when the JSON is
-	 * not one we route. `drop-classify` is the single owner of the classification. */
-	private ingestJsonDrop = async (file: File): Promise<'ok' | 'failed' | 'not-package'> => {
+	/** Fill a coordinate-less case's positions from a co-dropped PowerWorld
+	 * `.pwd`: the display's substation points project to approximate
+	 * longitude/latitude and join onto buses through the `SubNum` extras key.
+	 * The first display that joins wins; one that matches nothing stays
+	 * available as its own preview entry, and the case stays placeable. */
+	private fillFromDisplaySibling = async (c: LocalCase, displays: DisplayFile[]) => {
+		if (!c.networkJson) return;
+		for (const d of displays.filter((entry) => !entry.consumed)) {
+			try {
+				const payload = await applyDisplayGeo(c.networkJson, d.bytes);
+				this.adoptGeoPayload(
+					c,
+					payload,
+					d.file.name,
+					`${d.file.name} substations`,
+					payload.report.notes
+				);
+				d.consumed = true;
+				return;
+			} catch {
+				// No SubNum join against this display; try the next one.
+			}
+		}
+	};
+
+	/** Route a dropped `.json` by its content: a saved study package restores
+	 * (`restored`), a multiconductor package or a BMOPF/PMD distribution
+	 * document views (`viewed`), `failed` means the content looked routable but
+	 * the engine rejected it (a fail-closed message is set), and `not-package`
+	 * falls through to the caller's geo/case handling. `drop-classify` is the
+	 * single owner of the classification. */
+	private ingestJsonDrop = async (
+		file: File
+	): Promise<'restored' | 'viewed' | 'failed' | 'not-package'> => {
 		let text: string;
 		try {
 			text = await file.text();
@@ -1613,20 +1769,21 @@ export class Controller {
 		try {
 			if (kind === 'balanced-package') {
 				this.restoreLocalFromPackage(file.name, await loadPackage(text));
-			} else {
-				const format = kind === 'multiconductor-package' ? 'pio' : kind;
-				const payload = await ingestDistCase(text, format);
-				// BMOPF is the classifier's catch-all and its reader is liberal: an
-				// arbitrary JSON object parses as an empty case (unknown fields land
-				// in extras). Zero buses means this was not a distribution document;
-				// leave the file to the geo sidecar path (which places coordinates
-				// or reports its own precise error) instead of adding a phantom
-				// empty multiconductor case.
-				if (kind === 'bmopf' && payload.n_bus === 0) return 'not-package';
-				this.addMultiCase(file.name, payload);
+				this.app.error = null;
+				return 'restored';
 			}
+			const format = kind === 'multiconductor-package' ? 'pio' : kind;
+			const payload = await ingestDistCase(text, format);
+			// BMOPF is the classifier's catch-all and its reader is liberal: an
+			// arbitrary JSON object parses as an empty case (unknown fields land
+			// in extras). Zero buses means this was not a distribution document;
+			// leave the file to the geo sidecar path (which places coordinates
+			// or reports its own precise error) instead of adding a phantom
+			// empty multiconductor case.
+			if (kind === 'bmopf' && payload.n_bus === 0) return 'not-package';
+			this.addMultiCase(file.name, payload);
 			this.app.error = null;
-			return 'ok';
+			return 'viewed';
 		} catch (e) {
 			this.app.error = `${file.name}: ${errorText(e)}`;
 			return 'failed';

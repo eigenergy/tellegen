@@ -6,8 +6,10 @@ local `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, or `.geojson` files.
 MATPOWER `.m`, PSS/E `.raw`, and PowerWorld `.aux` files describe network
 topology. If a case file includes complete coordinates, tellegen draws it
 directly. If coordinates are missing, tellegen creates a local synthetic layout
-and asks the user to place it on the map. JSON files are treated as geographic
-files in this release, not as network case files.
+and asks the user to place it on the map. Dropped JSON is content sniffed: a
+`.pio.json` study package restores, a BMOPF or PowerModelsDistribution document
+opens the multiconductor viewer, and anything else is read as a geographic
+file.
 
 After a parsed local case has coordinates, either from the file, a geographic file, or
 manual placement, tellegen solves the DC OPF in browser WebAssembly. Local case
@@ -36,6 +38,16 @@ after selecting a parsed local case.
 All files stay in the browser. The tellegen backend does not receive dropped
 case files or geographic files.
 
+Parsing is powerio's `GeoLayer` tolerant reader, running in WebAssembly: it
+accepts headerless OpenDSS buscoords CSV, CSV and JSON records with the aliased
+field names below, and GeoJSON `Point`/`LineString` features, and it rejects
+input carrying no usable coordinates. Applied coordinates land on the network
+itself (`Bus.location`, `Branch.route`), so a saved study package or an
+exported case carries exactly the placement on screen. The case panel can also
+download the current layout as a `.geo.json` layer — canonical GeoJSON with
+provenance stamped (`synthetic` or `manual` for layouts) that powerio and
+tellegen read back.
+
 ## Bus Coordinates
 
 The geographic file must identify buses by the same ids used in the case file. CSV and
@@ -55,9 +67,11 @@ bus_i,Lat,Lon
 2,37.77848161,-121.6259513
 ```
 
-tellegen requires coordinates for every bus before it draws a geographic local
-case. If the geographic file is incomplete, the local case stays in manual placement
-mode and the panel lists the first missing buses.
+A geographic file does not need to cover every bus: matched buses place, and
+the panel reports the matched and unmatched counts. Buses left without
+coordinates are omitted from the map with a warning; a file that matches
+nothing is rejected and the case stays placeable. Records can also match by
+powerio row uid (`buses:3`) or by case insensitive bus name.
 
 ## Branch Paths
 
@@ -73,9 +87,11 @@ CSV and JSON branch records can use:
 | To bus | `t_bus`, `to`, `to_bus` |
 | Endpoint coordinates | `Lat1`, `Lon1`, `Lat2`, `Lon2` and lowercase variants |
 
-GeoJSON `LineString` features are also accepted. The parser matches a path by
-branch id when present, then by from/to bus ids. A `LineString` endpoint can
-also provide bus coordinates for its `f_bus` and `t_bus` properties.
+GeoJSON `LineString` features are also accepted. The reader matches a route by
+uid or branch id when present, then by the unordered from/to bus pair. A
+`LineString` endpoint can also provide bus coordinates for its `f_bus` and
+`t_bus` properties. Applied routes land in `Branch.route` and render as
+polylines instead of straight segments.
 
 ## Piecewise Costs
 
@@ -86,6 +102,8 @@ solver that carries the piecewise curve exactly.
 
 ## Display Files
 
-PowerWorld `.pwd` files are still treated as display overlays. They can show
-substation symbols, but they are not assumed to map one to one onto buses in a
-case file.
+PowerWorld `.pwd` files are display overlays. Dropped alone, they show
+substation symbols at approximate projected positions. Dropped alongside a
+case file that has no coordinates, the substation points join onto buses
+through the `SubNum` field on the bus rows and fill the case's positions; a
+`.pwd` whose numbers match nothing stays a separate overlay entry.

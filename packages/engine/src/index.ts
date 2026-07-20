@@ -51,7 +51,11 @@ export interface CaseFileSummary {
   load_mw: number;
   gen_mw: number;
   has_coords: boolean;
-  coords_kind: "file" | "synthetic_pending";
+  /** Coordinate provenance: `file` for coordinates the case (or a geographic
+   * sidecar) carried, `synthetic`/`manual` for a stamped layout (a restored
+   * package echoes the kind it was saved with), `synthetic_pending` when the
+   * case awaits placement. */
+  coords_kind: "file" | "synthetic_pending" | "synthetic" | "manual";
   warnings: string[];
 }
 
@@ -227,10 +231,19 @@ export async function ingestDistCase(
   );
 }
 
-/** Substations from a PowerWorld .pwd display file. x/y are diagram
- * coordinates as stored (not lat/lon); the caller projects them. */
+/** Substations from a PowerWorld .pwd display file. `x`/`y` are diagram
+ * coordinates as stored; `lon`/`lat` are the engine's approximate projection
+ * (powerio's inverse of the auto layout Mercator — hand edited diagrams
+ * drift from it). */
 export interface DisplayPreview {
-  substations: { number: number; name: string; x: number; y: number }[];
+  substations: {
+    number: number;
+    name: string;
+    x: number;
+    y: number;
+    lon: number;
+    lat: number;
+  }[];
   canvas_width: number;
   canvas_height: number;
 }
@@ -245,6 +258,115 @@ export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
   return JSON.parse(
     expectText(
       await engineHost().call({ op: "parse_display", bytes, format: "pwd" }),
+    ),
+  );
+}
+
+/** A parsed geographic sidecar: the layer as its canonical `.geo.json`
+ * document (hand it to {@link applyGeo} or `BrowserStudy.applyGeoLayer`),
+ * the tolerant reader's notes on records it could not use, and the feature
+ * counts. */
+export interface ParsedGeoLayer {
+  layer: string;
+  warnings: string[];
+  n_points: number;
+  n_routes: number;
+}
+
+/** Result of applying a geographic layer onto a case network. */
+export interface GeoApplyReport {
+  matched_buses: number;
+  matched_branches: number;
+  unmatched_features: number;
+  notes: string[];
+}
+
+/** The refreshed ingest payload after a geo apply: `network_json`, the view,
+ * and the summary all reflect the applied coordinates, and `report` carries
+ * the matched/unmatched counts for the warnings panel. */
+export interface AppliedGeoCase extends IngestedCase {
+  report: GeoApplyReport;
+}
+
+/** The refreshed ingest payload after stamping a layout, plus `layer`, the
+ * stamped layout as a canonical `.geo.json` document (ready to download or
+ * to sync onto a live study). */
+export interface StampedLayoutCase extends IngestedCase {
+  layer: string;
+}
+
+/** Parse a geographic sidecar (buscoords CSV, aliased CSV/JSON records,
+ * GeoJSON) from raw dropped bytes through powerio's tolerant reader. `hint`
+ * is the file name (picks CSV against JSON; "" sniffs). Rejects input with
+ * no usable coordinates. */
+export async function parseGeo(
+  bytes: Uint8Array,
+  hint: string,
+): Promise<ParsedGeoLayer> {
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "parse_geo", bytes, hint })),
+  );
+}
+
+/** Apply a parsed layer onto a case network (matching by uid, external id,
+ * name, and the unordered branch endpoint pair). Rejects when nothing
+ * matched. */
+export async function applyGeo(
+  networkJson: string,
+  layer: string,
+): Promise<AppliedGeoCase> {
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "apply_geo",
+        network_json: networkJson,
+        layer,
+      }),
+    ),
+  );
+}
+
+/** Stamp a computed layout (bus id => [lon, lat]) onto a case network with
+ * its provenance, so saves and exports carry it. */
+export async function applyLayout(
+  networkJson: string,
+  coords: Record<number, [number, number]>,
+  kind: "synthetic" | "manual",
+): Promise<StampedLayoutCase> {
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "apply_layout",
+        network_json: networkJson,
+        coords: JSON.stringify(coords),
+        kind,
+      }),
+    ),
+  );
+}
+
+/** A case's coordinates as a canonical `.geo.json` document. Rejects when the
+ * case carries none. */
+export async function extractGeo(networkJson: string): Promise<string> {
+  return expectText(
+    await engineHost().call({ op: "extract_geo", network_json: networkJson }),
+  );
+}
+
+/** Fill case coordinates from a PowerWorld `.pwd` sibling: substation symbols
+ * project to approximate longitude/latitude and join onto buses through the
+ * `SubNum` extras key. Rejects when no bus joined. */
+export async function applyDisplayGeo(
+  networkJson: string,
+  bytes: Uint8Array,
+): Promise<AppliedGeoCase> {
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "apply_display_geo",
+        network_json: networkJson,
+        bytes,
+      }),
     ),
   );
 }
@@ -630,6 +752,22 @@ export class BrowserStudy {
     );
   }
 
+  /** Apply a parsed geographic layer (the canonical `.geo.json` from
+   * `parseGeo` or `applyLayout`) onto this study's base network, so the next
+   * `savePackage` or export carries the coordinates on screen. Locations are
+   * metadata the model never reads; nothing re-solves. */
+  async applyGeoLayer(layer: string): Promise<GeoApplyReport> {
+    return JSON.parse(
+      expectText(
+        await this.#host.call({
+          op: "study_apply_geo",
+          study: this.#handle,
+          layer,
+        }),
+      ),
+    );
+  }
+
   /** Release the wasm Study; call when discarding it (e.g. the case's
    * networkJson changed, or the case was removed). Fire and forget: the
    * handle is invalid from this call on. */
@@ -698,6 +836,18 @@ export interface EngineTransport {
   ingestCase(text: string, format: string): Promise<IngestedCase>;
   ingestDistCase(text: string, format: string): Promise<IngestedDistCase>;
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
+  parseGeo(bytes: Uint8Array, hint: string): Promise<ParsedGeoLayer>;
+  applyGeo(networkJson: string, layer: string): Promise<AppliedGeoCase>;
+  applyLayout(
+    networkJson: string,
+    coords: Record<number, [number, number]>,
+    kind: "synthetic" | "manual",
+  ): Promise<StampedLayoutCase>;
+  extractGeo(networkJson: string): Promise<string>;
+  applyDisplayGeo(
+    networkJson: string,
+    bytes: Uint8Array,
+  ): Promise<AppliedGeoCase>;
   capabilities(): Promise<ProblemCaps[]>;
   solveJson(networkJson: string, request?: SolveRequest): Promise<SolveResponse>;
   createStudy(
@@ -717,6 +867,11 @@ export const browserWasmTransport: EngineTransport = {
   ingestCase,
   ingestDistCase,
   parseDisplay,
+  parseGeo,
+  applyGeo,
+  applyLayout,
+  extractGeo,
+  applyDisplayGeo,
   capabilities,
   solveJson,
   createStudy,

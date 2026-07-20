@@ -553,6 +553,18 @@ impl Study {
         &self.options
     }
 
+    /// Apply a geographic layer onto the base network: matched bus points land in
+    /// `Bus.location`, matched routes in `Branch.route`. Locations are
+    /// coordinate metadata the model never reads, so nothing re-solves; this keeps
+    /// a live study's package payload consistent with the coordinates on screen
+    /// (a save after this call carries them).
+    pub fn apply_geo_layer(
+        &mut self,
+        layer: &powerio::geo::GeoLayer,
+    ) -> powerio::geo::GeoApplyReport {
+        self.base.apply_geo_layer(layer)
+    }
+
     /// Fold the committed log to absolute demand deltas keyed by bus id and rating
     /// deltas keyed by 1-based branch position — the numeric ids a UI restores its
     /// sliders from after [`from_package`](Study::from_package). A uid key resolves to

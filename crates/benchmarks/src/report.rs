@@ -53,8 +53,11 @@ fn locked_version(lock: &str, name: &str) -> String {
 
 pub fn gather_provenance() -> Provenance {
     let manifest = env!("CARGO_MANIFEST_DIR");
+    // The workspace lockfile sits at the repo root, two levels above this
+    // crate (`crates/benchmarks`); `../Cargo.lock` read the nonexistent
+    // `crates/Cargo.lock` and left every dependency version "unknown".
     let lock =
-        std::fs::read_to_string(Path::new(manifest).join("../Cargo.lock")).unwrap_or_default();
+        std::fs::read_to_string(Path::new(manifest).join("../../Cargo.lock")).unwrap_or_default();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
