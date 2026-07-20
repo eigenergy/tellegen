@@ -9,10 +9,11 @@
 use std::collections::BTreeMap;
 
 use num_complex::Complex;
-use powerio::network::{GenCost, Network};
+use powerio::network::Network;
 use powerio::IndexedNetwork;
+use powerio_prob::{build_ac_opf_instance, AcOpfOptions, Units};
 
-use super::{normalize_angle_bounds, quadratic_cost_coeffs, reconstruct_ids, Ids, MIN_Z_SQUARED};
+use super::{flatten_gen_costs, normalize_angle_bounds, reconstruct_ids, Ids, MIN_Z_SQUARED};
 
 /// AC network data in the vectorized pi-model admittance form.
 ///
@@ -107,9 +108,16 @@ pub struct AcNetwork {
 impl AcNetwork {
     /// Build the AC model from a parsed powerio `Network`, normalizing through
     /// `Network::to_normalized` (per unit, radians, filtered, densely reindexed,
-    /// reference inferred) and extracting the complex pi-model admittance.
+    /// reference inferred) and reading its nodal and generator data from a
+    /// `powerio-prob` [`AcOpfInstance`](powerio_prob::AcOpfInstance): per-unit demand,
+    /// generator PQ bounds and scheduled output, voltage bands and setpoints. The
+    /// cost policy runs first ([`flatten_gen_costs`], so the instance's `GenCost`
+    /// accessors accept every row); the complex pi-model admittance, the line-charging
+    /// drop, the `rate_a == 0` cone sentinel, and the angle-bound normalization are
+    /// layered on from the `IndexedNetwork` afterward.
     pub fn from_network(raw: &Network) -> Result<AcNetwork, String> {
-        let norm = raw.to_normalized().map_err(|e| e.to_string())?;
+        let mut norm = raw.to_normalized().map_err(|e| e.to_string())?;
+        let (cq, cl, cc) = flatten_gen_costs(&mut norm)?;
         let view = IndexedNetwork::new(&norm);
         let Ids {
             n,
@@ -122,8 +130,23 @@ impl AcNetwork {
             branch_uids,
         } = reconstruct_ids(raw, &view)?;
 
-        let pd = view.pd().to_vec();
-        let qd = view.qd().to_vec();
+        let instance = build_ac_opf_instance(
+            &view,
+            &AcOpfOptions {
+                units: Units::PerUnit,
+                skip_zero_impedance: true,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Nodal demand moved out of the instance (from_network runs per Study commit and
+        // preview, and the instance is freshly built and owned here).
+        let pd = instance.buses.p_d;
+        let qd = instance.buses.q_d;
+        // Bus shunts stay on the `IndexedNetwork` aggregates: the instance folds a
+        // self-loop branch's pi-model stamp into `g_s`/`b_s`, but tellegen keeps every
+        // source branch as a dense column (its `ybus` stamps the self-loop onto the
+        // diagonal), so the folded form would double-count it here.
         let gs = view.gs().to_vec();
         let bs = view.bs().to_vec();
 
@@ -192,58 +215,50 @@ impl AcNetwork {
         }
         let sw = vec![1.0; m];
 
-        // Voltage-magnitude bounds, and the per-bus magnitude setpoint. The setpoint
-        // starts from the bus voltage and is overwritten below by each in-service
-        // generator's voltage setpoint (vg) at its bus, so PV and slack buses regulate to
-        // the generator setpoint (last-wins per bus, as MATPOWER does), not the bus.vm
-        // guess.
-        let vm_min: Vec<f64> = norm.buses.iter().map(|bus| bus.vmin).collect();
-        let vm_max: Vec<f64> = norm.buses.iter().map(|bus| bus.vmax).collect();
-        let mut vm_set: Vec<f64> = norm
+        // Voltage-magnitude bounds and the per-bus magnitude setpoint, from the instance.
+        // The setpoint starts from the case voltage (bus.vm, or 1.0 when unset) and is
+        // overwritten below by each in-service generator's voltage setpoint (vg) at its
+        // bus, so PV and slack buses regulate to the generator setpoint (last-wins per bus,
+        // as MATPOWER does), not the bus.vm guess.
+        let mut vm_set: Vec<f64> = instance
             .buses
+            .vm
             .iter()
-            .map(|bus| if bus.vm > 0.0 { bus.vm } else { 1.0 })
+            .map(|&v| if v > 0.0 { v } else { 1.0 })
             .collect();
+        let vm_min = instance.buses.vm_min;
+        let vm_max = instance.buses.vm_max;
 
-        let gens = view.generators();
-        // Per-bus aggregates (power flow operating point) and per-generator data
-        // (the conic OPF decision variables) in one pass.
+        // Per-bus aggregates (power flow operating point) and per-generator data (the
+        // conic OPF decision variables) from the instance; cost (`cq`/`cl`/`cc`) from the
+        // pre-pass. The instance's generator columns follow the normalized generator
+        // order, the same order `flatten_gen_costs` walks, so they line up with column `i`.
         let mut pg = vec![0.0; n];
         let mut qg = vec![0.0; n];
-        let mut gen_bus = Vec::with_capacity(k);
-        let mut pmin = Vec::with_capacity(k);
-        let mut pmax = Vec::with_capacity(k);
-        let mut qmin = Vec::with_capacity(k);
-        let mut qmax = Vec::with_capacity(k);
-        let mut cq = Vec::with_capacity(k);
-        let mut cl = Vec::with_capacity(k);
-        let mut cc = Vec::with_capacity(k);
-        for gen in gens {
-            let bus = view
-                .bus_index(gen.bus)
-                .ok_or_else(|| format!("generator bus {} not in index", gen.bus))?;
-            pg[bus] += gen.pg;
-            qg[bus] += gen.qg;
+        let gen_bus = instance.generators.bus_of_gen;
+        let pmin = instance.generators.pmin;
+        let pmax = instance.generators.pmax;
+        let qmin = instance.generators.qmin;
+        let qmax = instance.generators.qmax;
+        let gen_pg = instance.generators.pg;
+        let gen_qg = instance.generators.qg;
+        let gen_vg = instance.generators.vg;
+        for i in 0..k {
+            let bus = gen_bus[i];
+            pg[bus] += gen_pg[i];
+            qg[bus] += gen_qg[i];
             // Regulate this bus's magnitude to the generator's voltage setpoint, clamped
             // into the bus magnitude band: the power flow holds PV/slack magnitudes at
             // `vm_set` with no `vm` column to bound them, so an out-of-band `vg` would pin
             // the bus at an infeasible magnitude and the sensitivity would linearize there.
-            if gen.vg > 0.0 {
-                vm_set[bus] = gen.vg.clamp(vm_min[bus], vm_max[bus]);
+            let vg = gen_vg[i];
+            if vg > 0.0 {
+                vm_set[bus] = vg.clamp(vm_min[bus], vm_max[bus]);
             }
-            let (q, l, c) = ac_cost_coeffs(gen.cost.as_ref())?;
-            gen_bus.push(bus);
-            pmin.push(gen.pmin);
-            pmax.push(gen.pmax);
-            qmin.push(gen.qmin);
-            qmax.push(gen.qmax);
-            cq.push(q);
-            cl.push(l);
-            cc.push(c);
         }
 
-        let slack = *view
-            .reference_bus_indices()
+        let slack = *instance
+            .reference_buses
             .first()
             .ok_or("normalized network has no reference bus")?;
 
@@ -352,15 +367,6 @@ impl AcNetwork {
             (y + y_to) * sw,
         )
     }
-}
-
-/// Quadratic, linear, and constant cost coefficients `(cq, cl, cc)` for one
-/// generator. Like [`DcNetwork`](super::DcNetwork)'s `cost_coeffs` but keeps the
-/// constant term, which the AC OPF objective needs to match the reference (the DC
-/// LMP/dispatch is invariant to it, so the DC path drops it). Coefficients arrive
-/// already per unit from `to_normalized`.
-fn ac_cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64, f64), String> {
-    quadratic_cost_coeffs(cost)
 }
 
 #[cfg(test)]

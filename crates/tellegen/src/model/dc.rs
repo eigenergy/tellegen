@@ -5,10 +5,11 @@
 
 use std::collections::BTreeMap;
 
-use powerio::network::{GenCost, Network};
-use powerio::IndexedNetwork;
+use powerio::network::Network;
+use powerio::{DcConvention, IndexedNetwork};
+use powerio_prob::{build_dc_opf_instance, DcOpfOptions, Units};
 
-use super::{normalize_angle_bounds, quadratic_cost_coeffs, reconstruct_ids, Ids};
+use super::{flatten_gen_costs, normalize_angle_bounds, reconstruct_ids, Ids};
 
 /// Strong-convexity regularization on the flows.
 const DEFAULT_TAU: f64 = 1e-2;
@@ -94,10 +95,19 @@ impl DcNetwork {
     /// Build the DC OPF model from a parsed powerio `Network`.
     ///
     /// Normalizes through `Network::to_normalized` (per unit, radians, filtered,
-    /// densely reindexed, reference inferred), then layers on the solver-prep:
-    /// default angle-difference bounds and the `rate_a == 0` thermal-limit fallback.
+    /// densely reindexed, reference inferred), builds a `powerio-prob`
+    /// [`DcOpfInstance`](powerio_prob::DcOpfInstance) as the owner of the nodal and
+    /// generator interpretation (per-unit demand, generator PQ bounds, reference
+    /// coverage), then layers on the solver-prep the instance doesn't carry: the cost
+    /// policy ([`flatten_gen_costs`], run before the instance so its `GenCost`
+    /// accessors accept every row), the B-theta susceptance, default
+    /// angle-difference bounds, and the `rate_a == 0` thermal-limit fallback.
     pub fn from_network(raw: &Network) -> Result<DcNetwork, String> {
-        let norm = raw.to_normalized().map_err(|e| e.to_string())?;
+        let mut norm = raw.to_normalized().map_err(|e| e.to_string())?;
+        // Cost policy as a `Network` pre-pass: fit piecewise / strip artifacts / treat
+        // a missing cost as free, writing plain quadratics the instance builder reads.
+        // The `DcOpfInstance` drops the constant (no-load) term, so `cc` comes from here.
+        let (cq, cl, cc) = flatten_gen_costs(&mut norm)?;
         let view = IndexedNetwork::new(&norm);
         let Ids {
             n,
@@ -110,10 +120,37 @@ impl DcNetwork {
             branch_uids,
         } = reconstruct_ids(raw, &view)?;
 
-        // Per-bus demand (already per unit on the normalized network).
-        let demand = view.pd().to_vec();
+        // `PaperPure` and `PerUnit` are inert here: tellegen computes its own
+        // susceptance below (neither `DcConvention` gives `-x/(r^2+x^2)`), and the
+        // normalized network is already per unit (`per_unit_base() == 1`). The instance
+        // is the owner of the generator PQ bounds, nodal demand, and reference coverage.
+        let instance = build_dc_opf_instance(
+            &view,
+            &DcOpfOptions {
+                convention: DcConvention::PaperPure,
+                units: Units::PerUnit,
+                skip_zero_impedance: true,
+            },
+        )
+        .map_err(|e| e.to_string())?;
 
-        // Branches.
+        // Per-bus demand and reference, moved straight out of the freshly built,
+        // locally owned instance: from_network runs per Study commit and preview, so
+        // this stays clone free.
+        let ref_bus = *instance
+            .reference_buses
+            .first()
+            .ok_or("normalized network has no reference bus")?;
+        let demand = instance.p_d;
+
+        // Branches. The B-theta susceptance `b = -x/(r^2+x^2)` (the PowerModels-consistent
+        // DC weight) and the `rate_a == 0` fallback are tellegen's, computed from the
+        // `IndexedNetwork` so every source branch keeps a dense column — including a literal
+        // zero-impedance record, which the instance would skip but `problem/`/`sens/` index
+        // through. A tiny-but-nonzero impedance still gets its true (large) susceptance: it
+        // is a real, near-ideal tie (e.g. a substation bus-splitting jumper), not an open
+        // circuit, and severing it can wrongly strand generation or reroute flow onto a
+        // costlier path. See `tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`.
         let branches = view.branches();
         let mut br_from = Vec::with_capacity(m);
         let mut br_to = Vec::with_capacity(m);
@@ -130,10 +167,6 @@ impl DcNetwork {
                 .ok_or_else(|| format!("branch to-bus {} not in index", br.to))?;
             let z2 = br.r * br.r + br.x * br.x;
             // Only a literal zero-impedance record (z2 == 0, undivideable) falls back to 0.
-            // A tiny-but-nonzero impedance still gets its true (large) susceptance: it is a
-            // real, near-ideal tie (e.g. a substation bus-splitting jumper), not an open
-            // circuit, and severing it can wrongly strand generation or reroute flow onto a
-            // costlier path. See `tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`.
             let bb = if z2 > 0.0 { -br.x / z2 } else { 0.0 };
             let (amin, amax) = normalize_angle_bounds(br.angmin, br.angmax);
             let rate = if br.rate_a > 0.0 {
@@ -157,26 +190,12 @@ impl DcNetwork {
         }
         let sw = vec![1.0; m];
 
-        // Generators.
-        let gens = view.generators();
-        let mut gen_bus = Vec::with_capacity(k);
-        let mut gmax = Vec::with_capacity(k);
-        let mut gmin = Vec::with_capacity(k);
-        let mut cq = Vec::with_capacity(k);
-        let mut cl = Vec::with_capacity(k);
-        let mut cc = Vec::with_capacity(k);
-        for g in gens {
-            let bus = view
-                .bus_index(g.bus)
-                .ok_or_else(|| format!("generator bus {} not in index", g.bus))?;
-            let (q, l, c) = cost_coeffs(g.cost.as_ref())?;
-            gen_bus.push(bus);
-            gmax.push(g.pmax);
-            gmin.push(g.pmin);
-            cq.push(q);
-            cl.push(l);
-            cc.push(c);
-        }
+        // Generators: bus and PQ bounds from the instance, cost from the pre-pass.
+        // The instance's generator columns follow the normalized generator order, the
+        // same order `flatten_gen_costs` walks, so `cq`/`cl`/`cc` line up with column `i`.
+        let gen_bus = instance.generators.bus_of_gen;
+        let gmax = instance.generators.pmax;
+        let gmin = instance.generators.pmin;
 
         // Shedding cost references the steepest marginal generation cost.
         let marginal_cost_ub = (0..k)
@@ -184,14 +203,6 @@ impl DcNetwork {
             .fold(f64::NEG_INFINITY, f64::max)
             .max(1.0);
         let c_shed = vec![DEFAULT_SHED_COST_MULTIPLIER * marginal_cost_ub; n];
-
-        // First reference bus by dense index. The DC OPF dispatch, flows, and
-        // LMPs are invariant to which grounded bus is chosen; only the angle
-        // datum shifts, so the exact pick does not matter.
-        let ref_bus = *view
-            .reference_bus_indices()
-            .first()
-            .ok_or("normalized network has no reference bus")?;
 
         Ok(DcNetwork {
             n,
@@ -268,18 +279,6 @@ fn fallback_rate_a(r: f64, x: f64, amin: f64, amax: f64, fr_vmax: f64, to_vmax: 
     let cmax =
         (fr_vmax * fr_vmax + to_vmax * to_vmax - 2.0 * fr_vmax * to_vmax * theta_max.cos()).sqrt();
     ymag * fr_vmax.max(to_vmax) * cmax
-}
-
-/// Quadratic, linear, and constant cost coefficients `(cq, cl, cc)` for one
-/// generator, from its per-unit polynomial cost. Coefficients arrive already
-/// rescaled to per unit by `to_normalized`, so this only does the polynomial
-/// shaping: drop leading zeros, then read the quadratic, linear, and constant
-/// terms. A generator with no cost curve is free (`(0, 0, 0)`). The QP objective
-/// only wires in `cq` and `cl` (a constant does not move the argmin); the solve
-/// readout adds `sum(cc)` back onto the reported objective, matching how the
-/// AC/SOCWR path (`ac::ac_cost_coeffs`) handles the same constant.
-fn cost_coeffs(cost: Option<&GenCost>) -> Result<(f64, f64, f64), String> {
-    quadratic_cost_coeffs(cost)
 }
 
 #[cfg(test)]

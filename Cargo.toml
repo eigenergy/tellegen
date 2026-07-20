@@ -25,6 +25,10 @@ powerio = "0.7"
 # `ensure_payload_uids` so tellegen stamps the exact row-uid scheme powerio
 # packages carry, instead of duplicating the format here.
 powerio-pkg = "0.7"
+# Matrix-free DC/AC OPF problem instances (`DcOpfInstance`/`AcOpfInstance`), the
+# shared owner of case interpretation. Default features only: the `matrix` feature
+# pulls a filesystem bundle writer that has no place in the wasm dependency chain.
+powerio-prob = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
