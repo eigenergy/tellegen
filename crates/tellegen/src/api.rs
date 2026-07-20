@@ -152,7 +152,7 @@ pub struct Edits {
 }
 
 /// Solve options orthogonal to the formulation choice.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SolveOptions {
     /// Permit load shedding on the DC paths. Default `false`: an unservable case
     /// reports infeasible (the published PGLib behavior). Ignored by AC/conic.

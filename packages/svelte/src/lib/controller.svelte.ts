@@ -17,16 +17,20 @@ import {
 	type SolvableCase
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
+import { isStudyPackageText, studyCommitIndex } from './study-package.js';
 import {
 	createStudy,
+	exportStudy,
 	FORMULATIONS,
 	formatOf,
 	ingestCase,
 	isDisplayFile,
 	isPermanentEngineFailure,
+	loadPackage,
 	parseDisplay,
 	type BrowserStudy,
 	type Formulation,
+	type LoadedPackage,
 	type SensTarget
 } from '@tellegen/engine';
 import { errorText, extent, formulationLabel, rgbaCss } from './format.js';
@@ -62,6 +66,24 @@ function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> 
 		timeout = setTimeout(finish, ms);
 		signal.addEventListener('abort', finish, { once: true });
 	});
+}
+
+/** Trigger a browser download of in-memory text. Case files never leave the machine:
+ * a save is a local Blob download. */
+function downloadText(text: string, filename: string, mime: string) {
+	const url = URL.createObjectURL(new Blob([text], { type: mime }));
+	const anchor = document.createElement('a');
+	anchor.href = url;
+	anchor.download = filename;
+	anchor.rel = 'noopener';
+	document.body.appendChild(anchor);
+	anchor.click();
+	// Defer cleanup: revoking the object URL in the same tick as click() can cancel
+	// an in-flight download in some browsers.
+	setTimeout(() => {
+		anchor.remove();
+		URL.revokeObjectURL(url);
+	}, 0);
 }
 
 export type { SolvableCase };
@@ -1430,8 +1452,27 @@ export class Controller {
 	 * preview. Files run serially; nothing uploads. */
 	ingestFiles = async (files: FileList | File[]) => {
 		const list = Array.from(files);
+		let parsedCaseCount = 0;
+
+		// A saved study package (`.pio.json`) shares the `.json` extension with a
+		// geographic file, so sniff and restore packages up front: the geo/case split
+		// below sends every `.json` to the coordinate parser, which would misread a
+		// package as coordinate data. Non-package `.json` files fall through unchanged.
+		const rest: File[] = [];
+		for (const file of list) {
+			if (file.name.toLowerCase().endsWith('.json')) {
+				const outcome = await this.tryRestorePackage(file);
+				if (outcome === 'ok') {
+					parsedCaseCount++;
+					continue;
+				}
+				if (outcome === 'failed') continue;
+			}
+			rest.push(file);
+		}
+
 		const geoFiles: GeoFile[] = [];
-		for (const file of list.filter((f) => isGeoFile(f.name))) {
+		for (const file of rest.filter((f) => isGeoFile(f.name))) {
 			this.app.parsingFile = true;
 			try {
 				geoFiles.push(parseGeoFile(file.name, await file.text()));
@@ -1443,8 +1484,7 @@ export class Controller {
 			}
 		}
 
-		let parsedCaseCount = 0;
-		for (const file of list.filter((f) => !isGeoFile(f.name))) {
+		for (const file of rest.filter((f) => !isGeoFile(f.name))) {
 			if (isDisplayFile(file.name)) {
 				this.app.parsingFile = true;
 				try {
@@ -1520,6 +1560,108 @@ export class Controller {
 
 		if (geoFiles.length > 0 && parsedCaseCount === 0) this.applyGeoFilesToExisting(geoFiles);
 	};
+
+	/** Attempt to restore a dropped `.json` as a saved study package. Sniffs the
+	 * `.pio.json` envelope by its `schema` field before invoking the engine, so a plain
+	 * JSON file falls through to the geo/case handling below. `ok` when a package
+	 * restored, `failed` when it looked like a package but the engine rejected it
+	 * (fail-closed message set), `not-package` when it is not a study package at all. */
+	private tryRestorePackage = async (file: File): Promise<'ok' | 'failed' | 'not-package'> => {
+		let text: string;
+		try {
+			text = await file.text();
+		} catch {
+			return 'not-package';
+		}
+		if (!isStudyPackageText(text)) return 'not-package';
+		this.app.parsingFile = true;
+		try {
+			this.restoreLocalFromPackage(file.name, await loadPackage(text));
+			this.app.error = null;
+			return 'ok';
+		} catch (e) {
+			this.app.error = `${file.name}: ${errorText(e)}`;
+			return 'failed';
+		} finally {
+			this.app.parsingFile = false;
+		}
+	};
+
+	/** Build a local case from a restored study package: the same shape a dropped case
+	 * takes, with the saved demand/rating deltas and formulation pre-applied. */
+	private restoreLocalFromPackage = (fileName: string, pkg: LoadedPackage) => {
+		const { network_json, topology, view, formulation, deltas, rates, ...summary } = pkg;
+		const id = `local-${++this.localSeq}`;
+		const label =
+			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
+		const local = new LocalCase({
+			id,
+			label,
+			fileName,
+			summary,
+			networkJson: network_json,
+			topology,
+			coordsKind: summary.coords_kind,
+			view
+		});
+		local.deltas = deltas;
+		local.ratings = rates;
+		local.formulation = formulation;
+		this.addAndActivateLocal(local);
+	};
+
+	/** Build (or reuse) the case's Study and commit it at the current edit state, so a
+	 * save or export captures exactly what is on screen. Null (with an error set) when no
+	 * network or Study is available. */
+	private syncedStudy = async (c: SolvableCase): Promise<BrowserStudy | null> => {
+		const networkJson = await this.ensureNetworkJson(c);
+		if (!networkJson) {
+			this.app.error = `${this.caseName(c)}: no network available to save`;
+			return null;
+		}
+		const study = await this.getStudy(c, networkJson);
+		if (!study) {
+			this.app.error = `${this.caseName(c)}: the browser study is unavailable`;
+			return null;
+		}
+		await study.commit(c.id, this.caseDeltas(c), this.caseRatings(c), null);
+		return study;
+	};
+
+	/** Save the active study as a `.pio.json` package and download it. */
+	saveStudyPackage = async (c: SolvableCase): Promise<void> => {
+		const study = await this.syncedStudy(c);
+		if (!study) return;
+		try {
+			downloadText(await study.savePackage(), `${this.caseFileStem(c)}.pio.json`, 'application/json');
+			this.app.error = null;
+		} catch (e) {
+			this.app.error = `${this.caseName(c)}: could not save study: ${errorText(e)}`;
+		}
+	};
+
+	/** Export the active study's committed state to `format` and download it. Returns the
+	 * writer's fidelity warnings so the caller can surface them. */
+	exportStudyAs = async (c: SolvableCase, format: string): Promise<string[]> => {
+		const study = await this.syncedStudy(c);
+		if (!study) return [];
+		try {
+			const packageJson = await study.savePackage();
+			const exported = await exportStudy(packageJson, studyCommitIndex(packageJson), format);
+			downloadText(exported.text, `${this.caseFileStem(c)}.${exported.extension}`, 'text/plain');
+			this.app.error = null;
+			return exported.warnings;
+		} catch (e) {
+			this.app.error = `${this.caseName(c)}: could not export study: ${errorText(e)}`;
+			return [];
+		}
+	};
+
+	/** A filesystem-safe base name for a downloaded case file. */
+	private caseFileStem(c: SolvableCase): string {
+		const base = this.isBackendCase(c) ? c.name : c.label || c.fileName.replace(/\.[^.]+$/, '');
+		return base.replace(/[^\w.-]+/g, '_') || 'study';
+	}
 
 	setDemandRangeMode = (mode: DemandRangeMode) => {
 		this.app.demandRangeMode = mode;

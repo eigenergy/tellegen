@@ -1,9 +1,43 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
 	import { fmt } from '../format.js';
+	import type { LocalCase } from '../state.svelte.js';
 
 	const app = getAppState();
 	const ctrl = getController();
+
+	// Powerio writer tokens the committed state exports to; label carries the extension.
+	const EXPORT_FORMATS = [
+		{ token: 'matpower', label: 'MATPOWER (.m)' },
+		{ token: 'psse', label: 'PSS/E (.raw)' },
+		{ token: 'powermodels-json', label: 'PowerModels (.json)' },
+		{ token: 'pandapower-json', label: 'pandapower (.json)' },
+		{ token: 'powerio-json', label: 'PowerIO (.json)' }
+	];
+
+	let busy = $state(false);
+	let exportOpen = $state(false);
+	let exportWarnings = $state<string[]>([]);
+
+	async function saveStudy(lc: LocalCase) {
+		busy = true;
+		exportWarnings = [];
+		try {
+			await ctrl.saveStudyPackage(lc);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function exportStudy(lc: LocalCase, token: string) {
+		busy = true;
+		try {
+			exportWarnings = await ctrl.exportStudyAs(lc, token);
+			exportOpen = false;
+		} finally {
+			busy = false;
+		}
+	}
 </script>
 
 {#if app.activeLocal}
@@ -82,6 +116,44 @@
 			</ul>
 		{/if}
 		<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
+		{#if lc.networkJson}
+			<div class="study">
+				<button class="reset mono" disabled={busy} onclick={() => saveStudy(lc)}>
+					save study (.pio.json)
+				</button>
+				<div class="export">
+					<button
+						class="reset mono"
+						disabled={busy}
+						aria-expanded={exportOpen}
+						onclick={() => (exportOpen = !exportOpen)}
+					>
+						export committed state…
+					</button>
+					{#if exportOpen}
+						<ul class="export-menu mono">
+							{#each EXPORT_FORMATS as f (f.token)}
+								<li>
+									<button class="reset mono" disabled={busy} onclick={() => exportStudy(lc, f.token)}>
+										{f.label}
+									</button>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			</div>
+			{#if exportWarnings.length > 0}
+				<ul class="warnings mono">
+					{#each exportWarnings.slice(0, 4) as w, i (i)}
+						<li>{w}</li>
+					{/each}
+					{#if exportWarnings.length > 4}
+						<li>+{exportWarnings.length - 4} more</li>
+					{/if}
+				</ul>
+			{/if}
+		{/if}
 	{/if}
 	{#if lc.topology && lc.coordsKind !== 'file'}
 		<button class="reset mono" onclick={() => ctrl.moveLocalCase(lc)}>
@@ -135,5 +207,33 @@
 		font-size: 10.5px;
 		line-height: 1.5;
 		color: var(--text-accent);
+	}
+
+	.study {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 10px;
+	}
+
+	.export {
+		position: relative;
+	}
+
+	.export-menu {
+		position: absolute;
+		z-index: 1;
+		margin: 4px 0 0;
+		padding: 4px;
+		list-style: none;
+		min-width: 100%;
+		background: var(--surface, #fff);
+		border: 1px solid var(--border, rgba(0, 0, 0, 0.15));
+		border-radius: 6px;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+	}
+
+	.export-menu li {
+		white-space: nowrap;
 	}
 </style>

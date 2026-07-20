@@ -20,6 +20,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use powerio::network::Network;
+use powerio_pkg::{ElementRef, NetworkPackage, StudyBlock, StudyCommit, StudyEdit};
 use serde::{Deserialize, Serialize};
 
 use crate::api::{
@@ -89,6 +90,10 @@ impl NetworkEdit {
         }
     }
 }
+
+/// Absolute demand deltas keyed by bus id and rating deltas keyed by 1-based branch
+/// position, the folded edit state a UI restores after loading a saved study.
+pub type FoldedDeltas = (BTreeMap<i64, f64>, BTreeMap<i64, f64>);
 
 /// A first-order preview of an edit at the committed operating point: the predicted
 /// change in each watched operand, the predicted objective change, and the
@@ -269,6 +274,12 @@ pub struct Study {
     base: Network,
     options: SolveOptions,
     log: Vec<NetworkEdit>,
+    /// Commit boundaries partitioning `log` into the batches each [`commit`](Study::commit)
+    /// call appended. Each entry is a running prefix length into `log`, one per commit,
+    /// non-decreasing, with `commit_bounds.last() == log.len()`. A study with no edits
+    /// has no commits. The package study block maps one entry to one `StudyCommit`, so
+    /// `to_package` never flattens the history into a single commit.
+    commit_bounds: Vec<usize>,
     /// The committed solved state, the sole formulation coupling.
     solved: Box<dyn SolvedState>,
     last: SolveResponse,
@@ -299,6 +310,7 @@ impl Study {
             base: net.clone(),
             options,
             log: Vec::new(),
+            commit_bounds: Vec::new(),
             solved,
             last,
         })
@@ -343,7 +355,11 @@ impl Study {
     ) -> Result<SolveResponse, String> {
         let mut next_log = self.log.clone();
         next_log.extend_from_slice(edits);
-        self.commit_log(next_log, sensitivities, options)
+        // Append records one commit per call, so the package study block keeps this
+        // batch as its own `StudyCommit` instead of folding it into the history.
+        let mut next_bounds = self.commit_bounds.clone();
+        next_bounds.push(next_log.len());
+        self.commit_log(next_log, next_bounds, sensitivities, options)
     }
 
     /// Replace the committed edit set with `edits` and exact-re-solve, with no
@@ -369,18 +385,27 @@ impl Study {
         sensitivities: &[SensRequest],
         options: SolveOptions,
     ) -> Result<SolveResponse, String> {
-        self.commit_log(edits.to_vec(), sensitivities, options)
+        // Replacing the operating point discards the append history: the whole absolute
+        // state becomes one commit (or none, when reset to base).
+        let bounds = if edits.is_empty() {
+            Vec::new()
+        } else {
+            vec![edits.len()]
+        };
+        self.commit_log(edits.to_vec(), bounds, sensitivities, options)
     }
 
     fn commit_log(
         &mut self,
         log: Vec<NetworkEdit>,
+        commit_bounds: Vec<usize>,
         sensitivities: &[SensRequest],
         options: SolveOptions,
     ) -> Result<SolveResponse, String> {
         let (solved, resp) = self.solve_log(&log, sensitivities, &options)?;
         self.options = options;
         self.log = log;
+        self.commit_bounds = commit_bounds;
         self.solved = solved;
         self.last = resp.clone();
         Ok(resp)
@@ -515,6 +540,334 @@ impl Study {
         let step = replacement_step(&self.log, target);
         self.preview(&step, watched)
     }
+
+    /// The number of committed edit batches (package study commits). A study with no
+    /// edits has zero; `to_package` writes one `StudyCommit` per batch, so
+    /// `commit`/`materialize` index the same `k` on both sides.
+    pub fn commits(&self) -> usize {
+        self.commit_bounds.len()
+    }
+
+    /// The committed solve options, for a caller persisting or restoring the study.
+    pub fn solve_options(&self) -> &SolveOptions {
+        &self.options
+    }
+
+    /// Fold the committed log to absolute demand deltas keyed by bus id and rating
+    /// deltas keyed by 1-based branch position — the numeric ids a UI restores its
+    /// sliders from after [`from_package`](Study::from_package). A uid key resolves to
+    /// its element's numeric id against the base network; an unresolved key errors.
+    pub fn folded_deltas_by_id(&self) -> Result<FoldedDeltas, String> {
+        let mut deltas: BTreeMap<i64, f64> = BTreeMap::new();
+        let mut rates: BTreeMap<i64, f64> = BTreeMap::new();
+        for edit in &self.log {
+            match edit {
+                NetworkEdit::AddLoad { bus, p_mw } => {
+                    *deltas.entry(bus_id_for_key(&self.base, bus)?).or_default() += *p_mw;
+                }
+                NetworkEdit::AdjustBranchRating { branch, delta_mw } => {
+                    *rates
+                        .entry(branch_id_for_key(&self.base, branch)?)
+                        .or_default() += *delta_mw;
+                }
+            }
+        }
+        Ok((deltas, rates))
+    }
+
+    /// Serialize this study as an ordinary powerio package: the base network is the
+    /// payload (row uids stamped via `ensure_payload_uids`), the edit log is the study
+    /// block (one `StudyCommit` per commit call, each edit keyed by the row's actual
+    /// uid), and the formulation plus solve options ride under `study.app["tellegen"]`
+    /// as a versioned blob. [`from_package`](Study::from_package) is the inverse.
+    pub fn to_package(&self) -> Result<NetworkPackage, String> {
+        // Stamp uids on a clone of the base so edit keys resolve to the exact uids the
+        // payload will carry; source-format uids (e.g. GOC3) are left untouched.
+        let mut net = self.base.clone();
+        powerio_pkg::ensure_payload_uids(&mut net);
+
+        let mut commits: Vec<StudyCommit> = Vec::with_capacity(self.commit_bounds.len());
+        let mut start = 0usize;
+        for &end in &self.commit_bounds {
+            let edits = self.log[start..end]
+                .iter()
+                .map(|e| study_edit_from_network_edit(&net, e))
+                .collect::<Result<Vec<_>, String>>()?;
+            let mut commit = StudyCommit::default();
+            commit.edits = edits;
+            commits.push(commit);
+            start = end;
+        }
+
+        let app = TellegenApp {
+            schema_version: TELLEGEN_APP_SCHEMA_VERSION,
+            formulation: self.formulation,
+            options: self.options.clone(),
+        };
+        let app_value = serde_json::to_value(&app).map_err(|e| e.to_string())?;
+
+        let mut study = StudyBlock::default();
+        study.commits = commits;
+        study.app.insert(TELLEGEN_APP_KEY.to_owned(), app_value);
+
+        let mut package = NetworkPackage::from_balanced(net);
+        package.set_study(study);
+        Ok(package)
+    }
+
+    /// Reconstruct a study from a package [`to_package`](Study::to_package) wrote: the
+    /// balanced payload becomes the base case, `study.app["tellegen"]` restores the
+    /// formulation and solve options, and each `StudyCommit`'s edits replay as one
+    /// commit batch. Fails closed with a typed error — never a silent drop — on a
+    /// non-balanced payload, a missing or wrong-version `app["tellegen"]` blob, an edit
+    /// kind tellegen does not model, or an edit key that does not resolve.
+    pub fn from_package(package: &NetworkPackage) -> Result<Study, String> {
+        let net = package.as_balanced().ok_or(
+            "package payload is not balanced; a tellegen study requires a balanced network",
+        )?;
+
+        let study = package
+            .study()
+            .ok_or("package has no study block; not a tellegen study package")?;
+        let app_value = study.app.get(TELLEGEN_APP_KEY).ok_or(
+            "package study has no app[\"tellegen\"] metadata; not a tellegen study package",
+        )?;
+        let app: TellegenApp = serde_json::from_value(app_value.clone())
+            .map_err(|e| format!("unrecognized app[\"tellegen\"] payload: {e}"))?;
+        if app.schema_version != TELLEGEN_APP_SCHEMA_VERSION {
+            return Err(format!(
+                "unsupported app[\"tellegen\"] schema_version {}; this build reads version {}",
+                app.schema_version, TELLEGEN_APP_SCHEMA_VERSION
+            ));
+        }
+
+        let mut log: Vec<NetworkEdit> = Vec::new();
+        let mut commit_bounds: Vec<usize> = Vec::with_capacity(study.commits.len());
+        for (commit_pos, commit) in study.commits.iter().enumerate() {
+            for (edit_pos, edit) in commit.edits.iter().enumerate() {
+                log.push(
+                    network_edit_from_study_edit(net, edit)
+                        .map_err(|e| format!("study commit {commit_pos} edit {edit_pos}: {e}"))?,
+                );
+            }
+            commit_bounds.push(log.len());
+        }
+
+        // Solve the base, then replay the whole log under the restored options. A key
+        // that fails to resolve (or a case that will not solve) surfaces here as an
+        // `Err`, so a bad package never yields a half-built study.
+        let mut restored = Study::from_network(net, app.formulation)?;
+        restored.commit_log(log, commit_bounds, &[], app.options)?;
+        Ok(restored)
+    }
+}
+
+/// The `app["tellegen"]` blob: the formulation and solve options a package carries so
+/// [`Study::from_package`] restores the same study, versioned so an older reader
+/// rejects a payload it does not understand rather than guessing.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct TellegenApp {
+    schema_version: u32,
+    formulation: Problem,
+    options: SolveOptions,
+}
+
+const TELLEGEN_APP_KEY: &str = "tellegen";
+const TELLEGEN_APP_SCHEMA_VERSION: u32 = 1;
+
+/// Map one tellegen [`NetworkEdit`] to a powerio [`StudyEdit`], keyed by the resolved
+/// row's actual uid. Errors if the edit names an element the base network does not
+/// carry — a study must not persist a dangling edit.
+fn study_edit_from_network_edit(net: &Network, edit: &NetworkEdit) -> Result<StudyEdit, String> {
+    match edit {
+        NetworkEdit::AddLoad { bus, p_mw } => {
+            let uid = bus_uid_for_key(net, bus)?;
+            Ok(StudyEdit::DemandDelta {
+                bus: ElementRef::by_source_uid("buses", uid),
+                p_mw: *p_mw,
+                q_mvar: None,
+            })
+        }
+        NetworkEdit::AdjustBranchRating { branch, delta_mw } => {
+            let uid = branch_uid_for_key(net, branch)?;
+            Ok(StudyEdit::RatingDelta {
+                branch: ElementRef::by_source_uid("branches", uid),
+                delta_mw: *delta_mw,
+            })
+        }
+    }
+}
+
+/// Map one powerio [`StudyEdit`] back to a tellegen [`NetworkEdit`]. Every rejection is
+/// a typed error so [`Study::from_package`] fails closed: an unknown or unsupported
+/// edit kind, a reactive demand delta tellegen cannot model, or a reference that names
+/// no element all reject the package.
+fn network_edit_from_study_edit(net: &Network, edit: &StudyEdit) -> Result<NetworkEdit, String> {
+    match edit {
+        StudyEdit::DemandDelta { bus, p_mw, q_mvar } => {
+            if q_mvar.is_some() {
+                return Err(
+                    "demand delta carries a reactive component, which tellegen does not model"
+                        .into(),
+                );
+            }
+            Ok(NetworkEdit::AddLoad {
+                bus: key_from_ref(net, bus, "buses")?,
+                p_mw: *p_mw,
+            })
+        }
+        StudyEdit::RatingDelta { branch, delta_mw } => Ok(NetworkEdit::AdjustBranchRating {
+            branch: key_from_ref(net, branch, "branches")?,
+            delta_mw: *delta_mw,
+        }),
+        StudyEdit::SetFields { .. } => {
+            Err("study contains a set_fields edit, which tellegen does not model".into())
+        }
+        StudyEdit::Unknown { kind, .. } => {
+            Err(format!("study contains an unsupported edit kind `{kind}`"))
+        }
+        // `StudyEdit` is `#[non_exhaustive]`: a future kind rejects rather than
+        // silently dropping.
+        _ => Err("study contains an edit kind this build does not understand".into()),
+    }
+}
+
+/// The row uid for a bus edit key on the stamped base network. A numeric id names the
+/// bus's `id` field; a uid names the row directly. Both must resolve.
+fn bus_uid_for_key(net: &Network, key: &ElementKey) -> Result<String, String> {
+    let bus = match key {
+        ElementKey::Id(id) => {
+            let id = usize::try_from(*id)
+                .map_err(|_| format!("demand edit bus id {id} out of range"))?;
+            net.buses.iter().find(|b| b.id.0 == id)
+        }
+        ElementKey::Uid(uid) => net.buses.iter().find(|b| b.uid.as_deref() == Some(uid)),
+    };
+    bus.and_then(|b| b.uid.clone())
+        .ok_or_else(|| format!("demand edit names bus {key}, which is not in the network"))
+}
+
+/// The numeric bus id for a bus edit key. A numeric key is the id itself; a uid
+/// resolves to its row's `id` field. Errors on an unresolved uid.
+fn bus_id_for_key(net: &Network, key: &ElementKey) -> Result<i64, String> {
+    match key {
+        ElementKey::Id(id) => Ok(*id),
+        ElementKey::Uid(uid) => net
+            .buses
+            .iter()
+            .find(|b| b.uid.as_deref() == Some(uid))
+            .map(|b| b.id.0 as i64)
+            .ok_or_else(|| {
+                format!("demand edit names bus uid \"{uid}\", which is not in the network")
+            }),
+    }
+}
+
+/// The 1-based branch position for a branch edit key. A numeric key is the position
+/// itself; a uid resolves to its row index + 1. Errors on an unresolved uid.
+fn branch_id_for_key(net: &Network, key: &ElementKey) -> Result<i64, String> {
+    match key {
+        ElementKey::Id(id) => Ok(*id),
+        ElementKey::Uid(uid) => net
+            .branches
+            .iter()
+            .position(|br| br.uid.as_deref() == Some(uid))
+            .map(|pos| (pos + 1) as i64)
+            .ok_or_else(|| {
+                format!("rating edit names branch uid \"{uid}\", which is not in the network")
+            }),
+    }
+}
+
+/// The row uid for a branch edit key on the stamped base network. A numeric id is the
+/// 1-based branch position; a uid names the row directly.
+fn branch_uid_for_key(net: &Network, key: &ElementKey) -> Result<String, String> {
+    let branch = match key {
+        ElementKey::Id(id) => usize::try_from(*id)
+            .ok()
+            .filter(|&pos| pos >= 1)
+            .and_then(|pos| net.branches.get(pos - 1)),
+        ElementKey::Uid(uid) => net
+            .branches
+            .iter()
+            .find(|br| br.uid.as_deref() == Some(uid)),
+    };
+    branch
+        .and_then(|br| br.uid.clone())
+        .ok_or_else(|| format!("rating edit names branch {key}, which is not in the network"))
+}
+
+/// Recover a tellegen [`ElementKey`] from a package [`ElementRef`] on `table`. Prefers
+/// the row's payload identity (`source_uid`); falls back to the row's stamped uid when
+/// only a wire row is given. Rejects a ref on the wrong table or one that resolves to
+/// no uid.
+fn key_from_ref(net: &Network, r: &ElementRef, table: &str) -> Result<ElementKey, String> {
+    if r.table != table {
+        return Err(format!(
+            "study edit reference names table `{}`, expected `{table}`",
+            r.table
+        ));
+    }
+    if let Some(uid) = &r.source_uid {
+        return Ok(ElementKey::Uid(uid.clone()));
+    }
+    let row = r
+        .row
+        .ok_or("study edit reference has neither source_uid nor row")?;
+    let uid = if table == "buses" {
+        net.buses.get(row).and_then(|b| b.uid.clone())
+    } else {
+        net.branches.get(row).and_then(|br| br.uid.clone())
+    };
+    uid.map(ElementKey::Uid)
+        .ok_or_else(|| format!("study edit reference row {row} on `{table}` has no uid"))
+}
+
+/// Export the balanced study state at commit `commit` through a powerio format writer.
+///
+/// Parses a `.pio.json` package, materializes commits `0..=commit` onto the payload via
+/// powerio-pkg (or writes the base payload when the package carries no study commits),
+/// and serializes the result to `format` (`matpower`, `psse`, `powerio-json`, ...). Any
+/// fidelity the target format cannot carry rides back in `warnings` so the caller can
+/// surface it. Untrusted input: malformed, truncated, or wrong-shaped JSON returns a
+/// typed error, never a panic.
+pub fn export_study(
+    package_json: &str,
+    commit: usize,
+    format: &str,
+) -> Result<ExportedCase, String> {
+    let package = NetworkPackage::from_json(package_json)
+        .map_err(|e| format!("invalid .pio.json package: {e}"))?;
+    let target = powerio::target_format_from_name(format)
+        .ok_or_else(|| format!("unknown export format \"{format}\""))?;
+    let balanced = match package.study() {
+        Some(study) if !study.commits.is_empty() => package
+            .materialize_balanced_study_commit(commit)
+            .map_err(|e| format!("materialize study commit {commit}: {e}"))?
+            .ok_or("package payload is not balanced")?,
+        _ => package
+            .as_balanced()
+            .cloned()
+            .ok_or("package payload is not balanced")?,
+    };
+    let conversion = powerio::write_as(&balanced, target).map_err(|e| e.to_string())?;
+    Ok(ExportedCase {
+        text: conversion.text,
+        warnings: conversion.warnings,
+        format: target.token().to_owned(),
+        extension: target.extension().to_owned(),
+    })
+}
+
+/// A study state written to a target format: the serialized case text, the writer's
+/// fidelity warnings (empty for a faithful conversion), and the format token and file
+/// extension so a caller can name the download.
+#[derive(Clone, Debug, Serialize)]
+pub struct ExportedCase {
+    pub text: String,
+    pub warnings: Vec<String>,
+    pub format: String,
+    pub extension: String,
 }
 
 impl std::fmt::Debug for Study {
@@ -1461,5 +1814,336 @@ mod tests {
             .find(|e| e["bus"].as_u64() == Some(bus as u64))
             .map(|e| e["value"].as_f64().unwrap())
             .unwrap_or_else(|| panic!("no lmp for bus {bus}"))
+    }
+
+    // -----------------------------------------------------------------------
+    // Package save / load / export
+    // -----------------------------------------------------------------------
+
+    fn dcopf_objective(network_json: &str) -> f64 {
+        let out = crate::solve_json(network_json, r#"{"formulation":"dcopf"}"#).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        v["objective"].as_f64().unwrap()
+    }
+
+    /// A minimal balanced package on CASE3 carrying `commits` and an optional
+    /// `app["tellegen"]` blob, for fail-closed load tests.
+    fn package_with(commits: Vec<Vec<StudyEdit>>, app: Option<Value>) -> NetworkPackage {
+        let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        powerio_pkg::ensure_payload_uids(&mut net);
+        let mut study = StudyBlock::default();
+        study.commits = commits
+            .into_iter()
+            .map(|edits| {
+                let mut c = StudyCommit::default();
+                c.edits = edits;
+                c
+            })
+            .collect();
+        if let Some(app) = app {
+            study.app.insert("tellegen".to_owned(), app);
+        }
+        let mut package = NetworkPackage::from_balanced(net);
+        package.set_study(study);
+        package
+    }
+
+    fn valid_app() -> Value {
+        serde_json::json!({
+            "schema_version": 1,
+            "formulation": "dcopf",
+            "options": { "shed": false, "warm_start": true }
+        })
+    }
+
+    #[test]
+    fn save_load_round_trip_preserves_solution_and_log() {
+        // A uid-keyed study of a demand edit and a rating edit saves to a package and
+        // loads back to the same committed solution and the same edit log, edit by edit.
+        let net = case3_with_uids_json();
+        let mut s = Study::new(&net, Problem::DcOpf).unwrap();
+        s.commit(
+            &[
+                NetworkEdit::AddLoad {
+                    bus: ElementKey::Uid("buses:1".into()),
+                    p_mw: 20.0,
+                },
+                NetworkEdit::AdjustBranchRating {
+                    branch: ElementKey::Uid("branches:2".into()),
+                    delta_mw: -210.0,
+                },
+            ],
+            SolveOptions::default(),
+        )
+        .unwrap();
+
+        let package = s.to_package().unwrap();
+        let restored = Study::from_package(&package).unwrap();
+
+        assert_eq!(restored.formulation(), Problem::DcOpf);
+        assert_eq!(restored.commits(), s.commits());
+        assert_eq!(
+            serde_json::to_string(restored.solution()).unwrap(),
+            serde_json::to_string(s.solution()).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_string(restored.edits()).unwrap(),
+            serde_json::to_string(s.edits()).unwrap()
+        );
+
+        // The round trip also survives serialization to `.pio.json` text.
+        let text = package.to_json().unwrap();
+        let reparsed = NetworkPackage::from_json(&text).unwrap();
+        let restored2 = Study::from_package(&reparsed).unwrap();
+        assert_eq!(
+            serde_json::to_string(restored2.solution()).unwrap(),
+            serde_json::to_string(s.solution()).unwrap()
+        );
+    }
+
+    #[test]
+    fn id_keyed_edits_round_trip_to_the_same_solution() {
+        // An id-keyed edit persists by the row's uid, so the reloaded log is uid-keyed;
+        // it names the same element and reaches the same committed solution.
+        let net = case3_with_uids_json();
+        let mut s = Study::new(&net, Problem::DcOpf).unwrap();
+        s.commit(
+            &[NetworkEdit::AddLoad {
+                bus: 2.into(),
+                p_mw: 50.0,
+            }],
+            SolveOptions::default(),
+        )
+        .unwrap();
+        let restored = Study::from_package(&s.to_package().unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_string(restored.solution()).unwrap(),
+            serde_json::to_string(s.solution()).unwrap()
+        );
+        // Bus id 2 is row 1: the persisted key is the row uid.
+        let restored_edits = serde_json::to_string(restored.edits()).unwrap();
+        assert!(restored_edits.contains("buses:1"), "got: {restored_edits}");
+    }
+
+    #[test]
+    fn one_study_commit_per_commit_call() {
+        // Two commit calls become two package study commits; materializing commit 0
+        // holds only the first batch, commit 1 holds both.
+        let net = case3_with_uids_json();
+        let mut s = Study::new(&net, Problem::DcOpf).unwrap();
+        s.commit(
+            &[NetworkEdit::AddLoad {
+                bus: ElementKey::Uid("buses:1".into()),
+                p_mw: 30.0,
+            }],
+            SolveOptions::default(),
+        )
+        .unwrap();
+        s.commit(
+            &[NetworkEdit::AddLoad {
+                bus: ElementKey::Uid("buses:1".into()),
+                p_mw: 20.0,
+            }],
+            SolveOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(s.commits(), 2);
+        let package = s.to_package().unwrap();
+        assert_eq!(package.study().unwrap().commits.len(), 2);
+
+        let json = package.to_json().unwrap();
+        let at0 = export_study(&json, 0, "powerio-json").unwrap();
+        let at1 = export_study(&json, 1, "powerio-json").unwrap();
+        // Commit 0 is base + 30 MW; commit 1 is base + 50 MW: strictly higher cost.
+        let obj0 = dcopf_objective(&at0.text);
+        let obj1 = dcopf_objective(&at1.text);
+        assert!(
+            obj1 > obj0,
+            "commit 1 ({obj1}) should cost more than commit 0 ({obj0})"
+        );
+        // Commit 1 reproduces the study's committed objective.
+        assert!((obj1 - s.solution().objective.unwrap()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn export_at_commit_reparses_and_solves_to_the_same_objective() {
+        let net = case3_with_uids_json();
+        let mut s = Study::new(&net, Problem::DcOpf).unwrap();
+        s.commit(
+            &[NetworkEdit::AddLoad {
+                bus: ElementKey::Uid("buses:1".into()),
+                p_mw: 50.0,
+            }],
+            SolveOptions::default(),
+        )
+        .unwrap();
+        let committed = s.solution().objective.unwrap();
+        let json = s.to_package().unwrap().to_json().unwrap();
+        let commit = s.commits() - 1;
+
+        // The exact snapshot format re-solves to the identical objective.
+        let pio = export_study(&json, commit, "powerio-json").unwrap();
+        assert!((dcopf_objective(&pio.text) - committed).abs() < 1e-9);
+
+        // MATPOWER round-trips the folded model too (to solver tolerance).
+        let m = export_study(&json, commit, "matpower").unwrap();
+        assert_eq!(m.extension, "m");
+        let reparsed = powerio::parse_str(&m.text, "matpower")
+            .unwrap()
+            .network
+            .to_json()
+            .unwrap();
+        assert!((dcopf_objective(&reparsed) - committed).abs() < 1e-3);
+    }
+
+    #[test]
+    fn export_with_no_study_commits_writes_the_base_case() {
+        let net = case3_json();
+        let s = Study::new(&net, Problem::DcOpf).unwrap();
+        let json = s.to_package().unwrap().to_json().unwrap();
+        let base = export_study(&json, 0, "powerio-json").unwrap();
+        assert!((dcopf_objective(&base.text) - s.solution().objective.unwrap()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn load_rejects_non_balanced_payload() {
+        // A study package must be balanced; a multiconductor payload rejects on load.
+        let package =
+            NetworkPackage::from_multiconductor(powerio_dist::MulticonductorNetwork::default());
+        let err = Study::from_package(&package).unwrap_err();
+        assert!(err.contains("not balanced"), "got: {err}");
+    }
+
+    #[test]
+    fn load_rejects_unknown_edit_kind() {
+        let package = package_with(
+            vec![vec![StudyEdit::Unknown {
+                kind: "teleport".into(),
+                value: serde_json::json!({ "kind": "teleport" }),
+            }]],
+            Some(valid_app()),
+        );
+        let err = Study::from_package(&package).unwrap_err();
+        assert!(
+            err.contains("unsupported edit kind `teleport`"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn load_rejects_set_fields_edit() {
+        let update = powerio_pkg::ElementUpdate::new(
+            ElementRef::by_source_uid("buses", "buses:0"),
+            std::collections::BTreeMap::new(),
+        );
+        let package = package_with(
+            vec![vec![StudyEdit::SetFields { update }]],
+            Some(valid_app()),
+        );
+        let err = Study::from_package(&package).unwrap_err();
+        assert!(err.contains("set_fields"), "got: {err}");
+    }
+
+    #[test]
+    fn load_rejects_missing_app_metadata() {
+        let package = package_with(
+            vec![vec![StudyEdit::DemandDelta {
+                bus: ElementRef::by_source_uid("buses", "buses:1"),
+                p_mw: 10.0,
+                q_mvar: None,
+            }]],
+            None,
+        );
+        let err = Study::from_package(&package).unwrap_err();
+        assert!(err.contains("app[\"tellegen\"]"), "got: {err}");
+    }
+
+    #[test]
+    fn load_rejects_wrong_app_version() {
+        let mut app = valid_app();
+        app["schema_version"] = serde_json::json!(999);
+        let package = package_with(
+            vec![vec![StudyEdit::DemandDelta {
+                bus: ElementRef::by_source_uid("buses", "buses:1"),
+                p_mw: 10.0,
+                q_mvar: None,
+            }]],
+            Some(app),
+        );
+        let err = Study::from_package(&package).unwrap_err();
+        assert!(err.contains("schema_version 999"), "got: {err}");
+    }
+
+    #[test]
+    fn load_rejects_unresolved_edit_key() {
+        let package = package_with(
+            vec![vec![StudyEdit::DemandDelta {
+                bus: ElementRef::by_source_uid("buses", "buses:99"),
+                p_mw: 10.0,
+                q_mvar: None,
+            }]],
+            Some(valid_app()),
+        );
+        let err = Study::from_package(&package).unwrap_err();
+        assert!(
+            err.contains("unknown demand delta bus") && err.contains("buses:99"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn load_rejects_reactive_demand_delta() {
+        let package = package_with(
+            vec![vec![StudyEdit::DemandDelta {
+                bus: ElementRef::by_source_uid("buses", "buses:1"),
+                p_mw: 10.0,
+                q_mvar: Some(5.0),
+            }]],
+            Some(valid_app()),
+        );
+        let err = Study::from_package(&package).unwrap_err();
+        assert!(err.contains("reactive"), "got: {err}");
+    }
+
+    #[test]
+    fn export_rejects_malformed_package_json() {
+        for bad in ["", "{", "not json", "[]", "null", "{\"schema\":\"x\"}"] {
+            let err = export_study(bad, 0, "matpower").unwrap_err();
+            assert!(!err.is_empty(), "expected an error for {bad:?}");
+        }
+    }
+
+    #[test]
+    fn export_rejects_unknown_format() {
+        let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();
+        let json = s.to_package().unwrap().to_json().unwrap();
+        let err = export_study(&json, 0, "nonesuch").unwrap_err();
+        assert!(err.contains("unknown export format"), "got: {err}");
+    }
+
+    #[cfg(feature = "conic")]
+    #[test]
+    fn socwr_study_round_trips_with_its_formulation_and_options() {
+        let net = case3_with_uids_json();
+        let mut s = Study::new(&net, Problem::Socwr).unwrap();
+        s.commit(
+            &[NetworkEdit::AddLoad {
+                bus: ElementKey::Uid("buses:1".into()),
+                p_mw: 10.0,
+            }],
+            SolveOptions {
+                shed: true,
+                warm_start: false,
+            },
+        )
+        .unwrap();
+        let restored = Study::from_package(&s.to_package().unwrap()).unwrap();
+        assert_eq!(restored.formulation(), Problem::Socwr);
+        assert_eq!(
+            serde_json::to_string(restored.solution()).unwrap(),
+            serde_json::to_string(s.solution()).unwrap()
+        );
     }
 }

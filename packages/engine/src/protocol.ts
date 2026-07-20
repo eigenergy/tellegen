@@ -17,6 +17,9 @@ export type EngineRequest =
   | { op: "study_replace_edits"; study: number; edits: string; sensitivities: string }
   | { op: "study_preview"; study: number; edits: string; operands: string }
   | { op: "study_solution"; study: number }
+  | { op: "study_save_package"; study: number }
+  | { op: "load_package"; text: string }
+  | { op: "export_study"; package_json: string; commit: number; format: string }
   | { op: "study_free"; study: number };
 
 export type WorkerRequest = EngineRequest & { id: number };
@@ -58,6 +61,12 @@ export function runRequest(
       return study(req.study).preview_replacement(req.edits, req.operands);
     case "study_solution":
       return study(req.study).solution();
+    case "study_save_package":
+      return study(req.study).save_package();
+    case "load_package":
+      return mod.load_package(req.text);
+    case "export_study":
+      return mod.export_study(req.package_json, req.commit, req.format);
     case "study_free":
       studies.get(req.study)?.free();
       studies.delete(req.study);
