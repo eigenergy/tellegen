@@ -51,7 +51,7 @@
 		onbranchclick?: (caseId: string, branchId: number) => void;
 		onlocalbranchclick?: (caseId: string, branchId: number) => void;
 		onmultibusclick: (caseId: string, busId: string) => void;
-		onmultiedgeclick: (caseId: string, edgeId: string) => void;
+		onmultiedgeclick?: (caseId: string, edgeId: string) => void;
 		onplacecase: (lon: number, lat: number) => void;
 		onmapclick: () => void;
 	} = $props();
@@ -1042,7 +1042,7 @@
 					highlightColor: [32, 36, 43, 90],
 					onClick: (info: PickingInfo) => {
 						const e = info.object as PlacedMultiEdge | undefined;
-						if (!e) return false;
+						if (!e || !onmultiedgeclick) return false;
 						onmultiedgeclick(c.id, e.id);
 						return true;
 					},

@@ -292,8 +292,20 @@ export interface TransformerMark {
 	angle: number;
 }
 
-/** Midpoint marks for the transformer edges of a placed view. */
+const markCache = new WeakMap<PlacedMultiEdge[], TransformerMark[]>();
+
+/** Midpoint marks for the transformer edges of a placed view. Memoized on the
+ * edges array, which is stable until the view is replaced, so the map's layer
+ * effect can call this every run without regenerating icon attributes. */
 export function transformerMarks(edges: PlacedMultiEdge[]): TransformerMark[] {
+	const cached = markCache.get(edges);
+	if (cached) return cached;
+	const marks = computeTransformerMarks(edges);
+	markCache.set(edges, marks);
+	return marks;
+}
+
+function computeTransformerMarks(edges: PlacedMultiEdge[]): TransformerMark[] {
 	return edges
 		.filter((e) => e.kind === 'transformer')
 		.map((e) => {
