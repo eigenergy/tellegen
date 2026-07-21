@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.1 — 2026-07-21
+
+Multiconductor viewing polish from IEEE 123 feedback: edge selection, a tidy
+feeder tree for synthetic layouts, and IEC transformer symbols (#58).
+
+- Multiconductor edges select like buses: the panel expands the edge's kind,
+  endpoints, phase count, and per-conductor terminal pairing; bus and edge
+  selection are mutually exclusive and Escape clears both (#58).
+- Synthetic layouts detect near-tree graphs and draw them as a tidy tree
+  rooted at the source bus, so radial feeders read as a trunk with laterals;
+  normalization keeps the drawing's aspect ratio for synthetic and
+  planar-coordinate cases alike (#58).
+- Transformer edges carry the IEC two-circle symbol at their midpoints,
+  angled along the edge and tinted by selection (#58).
+- The multiconductor panel legend no longer collapses under the global color
+  ramp rule, and the powerio parsing footnote is removed (#58).
+- `TellegenMap` gains an optional `onmultiedgeclick` prop (#58).
+
 ## 0.1.0 — 2026-07-21
 
 First tagged release: the `tellegen` engine crate, the `tellegen-wasm`,

@@ -1,6 +1,6 @@
 {
   "name": "@tellegen/svelte",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Svelte components for tellegen power system maps, local case files, and browser solves.",
   "license": "MIT",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@tellegen/engine",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Browser engine package for tellegen case parsing, solving, studies, previews, and sensitivities.",
   "license": "MIT",
   "type": "module",

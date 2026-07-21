@@ -1417,7 +1417,7 @@ dependencies = [
 
 [[package]]
 name = "tellegen"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clarabel",
  "faer",
@@ -1432,14 +1432,14 @@ dependencies = [
 
 [[package]]
 name = "tellegen-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tellegen",
 ]
 
 [[package]]
 name = "tellegen-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "powerio",
@@ -1456,7 +1456,7 @@ dependencies = [
 
 [[package]]
 name = "tellegen-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "console_error_panic_hook",
  "powerio",
