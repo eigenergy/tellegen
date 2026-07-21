@@ -4,6 +4,7 @@
 	import {
 		attachmentColor,
 		attachmentGlyph,
+		edgeColor,
 		isPhaseTerminal,
 		phaseColor
 	} from '../multiconductor.js';
@@ -114,11 +115,39 @@
 		{:else}
 			<p class="footnote mono">no attachments on this bus</p>
 		{/if}
+	{:else if mc.selectedEdge}
+		{@const e = mc.selectedEdge}
+		<hr />
+		<h3 class="mono">
+			<i class="swatch" style={`--sc:${rgbaCss([...edgeColor(e.kind, e.closed)])}`}></i>
+			{e.kind} {e.from}&#8201;&ndash;&#8201;{e.to}
+		</h3>
+		<dl class="mono">
+			<div>
+				<dt>phases</dt>
+				<dd>{e.n_phases}&#966; &#8901; {e.conductors.length} conductors</dd>
+			</div>
+			{#if e.kind === 'switch'}
+				<div>
+					<dt>state</dt>
+					<dd>{e.closed ? 'closed' : 'open'}</dd>
+				</div>
+			{/if}
+		</dl>
+		<div class="pairs">
+			{#each e.conductors as [ft, tt], i (i)}
+				<span class="pair">
+					<span class="term" style={`--tc:${terminalColor(ft)}`}>{ft}</span>
+					<span class="pair-dash mono">&ndash;</span>
+					<span class="term" style={`--tc:${terminalColor(tt)}`}>{tt}</span>
+				</span>
+			{/each}
+		</div>
 	{:else if mc.placed}
-		<p class="footnote mono">select a bus to expand its terminals and conductors</p>
+		<p class="footnote mono">select a bus or a line to expand its detail</p>
 	{/if}
 
-	<div class="legend mono">
+	<div class="mc-legend mono">
 		<span class="legend-row">
 			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('1')])}`}></i>a
 			<i class="swatch" style={`--sc:${rgbaCss([...phaseColor('2')])}`}></i>b
@@ -133,8 +162,6 @@
 			{/each}
 		</span>
 	</div>
-
-	<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 
 	{#if !mc.placed}
 		<button class="reset mono" onclick={() => ctrl.moveMultiCase(mc)}>place on map</button>
@@ -184,6 +211,8 @@
 	dd {
 		margin: 0;
 		text-align: right;
+		/* Wrap the label instead of splitting a value sequence like 126 / 0 / 9. */
+		white-space: nowrap;
 	}
 
 	.terminals {
@@ -232,13 +261,37 @@
 		letter-spacing: 0;
 	}
 
-	.legend {
+	/* The global stylesheet's .legend is the 6px color-ramp strip; its height
+	 * leaks into a scoped .legend, so this container carries its own name. */
+	.mc-legend {
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
 		margin-top: 12px;
 		font-size: 10px;
 		color: var(--text-secondary);
+	}
+
+	.pairs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 8px;
+	}
+
+	.pair {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+	}
+
+	.pair-dash {
+		color: var(--text-secondary);
+	}
+
+	h3 .swatch {
+		margin-right: 4px;
+		vertical-align: -1px;
 	}
 
 	.legend-row {

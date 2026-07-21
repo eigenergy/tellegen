@@ -1310,10 +1310,13 @@ export class Controller {
 			lc.sensitivitySeq = (lc.sensitivitySeq ?? 0) + 1;
 			lc.sensitivity = null;
 		}
-		// Multiconductor cases carry their own bus selection (a string id); clear it
-		// so an Escape or empty-map click collapses the expanded terminal detail.
+		// Multiconductor cases carry their own bus/edge selection (string ids);
+		// clear both so an Escape or empty-map click collapses the expanded detail.
 		const mc = this.app.activeMulti;
-		if (mc) mc.selectedBusId = null;
+		if (mc) {
+			mc.selectedBusId = null;
+			mc.selectedEdgeId = null;
+		}
 		this.app.selectedBus = null;
 		this.app.selectedBranch = null;
 		this.app.previewDeltaMw = null;
@@ -1850,7 +1853,21 @@ export class Controller {
 		this.app.activeLocalId = null;
 		this.app.activeMultiId = caseId;
 		this.app.placingMultiId = null;
+		c.selectedEdgeId = null;
 		c.selectedBusId = c.selectedBusId === busId ? null : busId;
+	};
+
+	/** Select an edge in a multiconductor case: its conductor pairing expands in
+	 * the panel. Mutually exclusive with the bus selection. */
+	selectMultiEdge = (caseId: string, edgeId: string) => {
+		const c = this.app.multiCases.find((mc) => mc.id === caseId);
+		if (!c) return;
+		this.app.activeCaseId = null;
+		this.app.activeLocalId = null;
+		this.app.activeMultiId = caseId;
+		this.app.placingMultiId = null;
+		c.selectedBusId = null;
+		c.selectedEdgeId = c.selectedEdgeId === edgeId ? null : edgeId;
 	};
 
 	/** Place a multiconductor case awaiting a center: fit its provided planar
@@ -1876,7 +1893,10 @@ export class Controller {
 
 	removeMultiCase = async (c: MulticonductorCase, event?: MouseEvent) => {
 		event?.stopPropagation();
-		if (this.app.activeMultiId === c.id) c.selectedBusId = null;
+		if (this.app.activeMultiId === c.id) {
+			c.selectedBusId = null;
+			c.selectedEdgeId = null;
+		}
 		await this.hydrateFallback(this.app.removeMulti(c.id));
 	};
 

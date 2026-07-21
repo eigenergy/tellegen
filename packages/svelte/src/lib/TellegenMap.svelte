@@ -2,7 +2,7 @@
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import { tick } from 'svelte';
 	import type { Layer, PickingInfo } from '@deck.gl/core';
-	import type { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+	import type { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 	import type { MapboxOverlay } from '@deck.gl/mapbox';
 	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
 	import type { NetworkBranch, NetworkBus } from './api.js';
@@ -26,9 +26,12 @@
 		edgeWidth,
 		isPhaseTerminal,
 		phaseColor,
+		transformerMarks,
 		type PlacedMultiBus,
-		type PlacedMultiEdge
+		type PlacedMultiEdge,
+		type TransformerMark
 	} from './multiconductor.js';
+	import { transformerIcon } from './transformer-icon.js';
 	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt, rgbaCss } from './format.js';
 	import type { RGBA } from './colors.js';
@@ -39,6 +42,7 @@
 		onbranchclick,
 		onlocalbranchclick,
 		onmultibusclick,
+		onmultiedgeclick,
 		onplacecase,
 		onmapclick
 	}: {
@@ -47,6 +51,7 @@
 		onbranchclick?: (caseId: string, branchId: number) => void;
 		onlocalbranchclick?: (caseId: string, branchId: number) => void;
 		onmultibusclick: (caseId: string, busId: string) => void;
+		onmultiedgeclick: (caseId: string, edgeId: string) => void;
 		onplacecase: (lon: number, lat: number) => void;
 		onmapclick: () => void;
 	} = $props();
@@ -70,6 +75,7 @@
 	type LayerCtors = {
 		PathLayer: typeof PathLayer;
 		ScatterplotLayer: typeof ScatterplotLayer;
+		IconLayer: typeof IconLayer;
 	};
 	type CursorState = {
 		isDragging: boolean;
@@ -679,7 +685,8 @@
 			maplibregl: maplibre.default,
 			MapboxOverlay: mapbox.MapboxOverlay,
 			PathLayer: layers.PathLayer,
-			ScatterplotLayer: layers.ScatterplotLayer
+			ScatterplotLayer: layers.ScatterplotLayer,
+			IconLayer: layers.IconLayer
 		};
 	}
 
@@ -712,9 +719,9 @@
 		let cleanup = () => {};
 		let cancelled = false;
 		void loadMapModules()
-			.then(({ maplibregl, MapboxOverlay, PathLayer, ScatterplotLayer }) => {
+			.then(({ maplibregl, MapboxOverlay, PathLayer, ScatterplotLayer, IconLayer }) => {
 				if (cancelled) return;
-				layerCtors = { PathLayer, ScatterplotLayer };
+				layerCtors = { PathLayer, ScatterplotLayer, IconLayer };
 				const m = new maplibregl.Map({
 					container,
 					style: STYLE,
@@ -841,7 +848,7 @@
 	// updateTriggers tell deck.gl when accessor outputs changed.
 	$effect(() => {
 		if (!overlay || !layerCtors) return;
-		const { PathLayer, ScatterplotLayer } = layerCtors;
+		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
 		const layers: Layer[] = [];
 		for (const c of app.cases) {
 			if (!c.network) continue;
@@ -1014,13 +1021,17 @@
 		for (const c of app.multiCases) {
 			if (!c.view) continue;
 			const selectedId = c.id === app.activeMultiId ? c.selectedBusId : null;
+			const selectedEdgeId = c.id === app.activeMultiId ? c.selectedEdgeId : null;
 			layers.push(
 				new PathLayer<PlacedMultiEdge>({
 					id: `multi-edges-${c.id}`,
 					data: c.view.edges,
 					getPath: (e) => e.path,
-					getColor: (e) => edgeColor(e.kind, e.closed),
-					getWidth: (e) => edgeWidth(e.kind, e.n_phases),
+					// The selected edge draws in the selection blue of the branch cue,
+					// wider, so its panel detail has an obvious source on the map.
+					getColor: (e) =>
+						e.id === selectedEdgeId ? [47, 111, 187, 255] : edgeColor(e.kind, e.closed),
+					getWidth: (e) => edgeWidth(e.kind, e.n_phases) + (e.id === selectedEdgeId ? 2 : 0),
 					widthUnits: 'pixels',
 					widthMinPixels: 1.2,
 					capRounded: true,
@@ -1028,7 +1039,36 @@
 					miterLimit: 2,
 					pickable: true,
 					autoHighlight: true,
-					highlightColor: [32, 36, 43, 90]
+					highlightColor: [32, 36, 43, 90],
+					onClick: (info: PickingInfo) => {
+						const e = info.object as PlacedMultiEdge | undefined;
+						if (!e) return false;
+						onmultiedgeclick(c.id, e.id);
+						return true;
+					},
+					updateTriggers: {
+						getColor: [selectedEdgeId],
+						getWidth: [selectedEdgeId]
+					}
+				}),
+				// The IEC two-circle symbol at each transformer midpoint, rotated into
+				// the edge bearing. Not pickable: hover and click fall through to the
+				// transformer edge beneath it.
+				new IconLayer<TransformerMark>({
+					id: `multi-xfmr-${c.id}`,
+					data: transformerMarks(c.view.edges),
+					getIcon: () => transformerIcon(),
+					getPosition: (m) => m.position,
+					getAngle: (m) => m.angle,
+					billboard: false,
+					getSize: 16,
+					sizeUnits: 'pixels',
+					getColor: (m) =>
+						m.id === selectedEdgeId ? [47, 111, 187, 255] : edgeColor('transformer', true),
+					pickable: false,
+					updateTriggers: {
+						getColor: [selectedEdgeId]
+					}
 				}),
 				new ScatterplotLayer<PlacedMultiBus>({
 					id: `multi-buses-${c.id}`,
