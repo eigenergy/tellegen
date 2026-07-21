@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — 2026-07-14
+## 0.1.0 — 2026-07-21
 
 First tagged release: the `tellegen` engine crate, the `tellegen-wasm`,
 `tellegen-server`, and `tellegen-cli` adapters, and the `@tellegen/engine` and
