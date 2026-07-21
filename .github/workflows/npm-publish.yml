@@ -41,7 +41,7 @@ jobs:
       - name: Verify tag version
         if: startsWith(github.ref, 'refs/tags/engine-v')
         run: |
-          version="$(npm pkg get version --workspace @tellegen/engine | tr -d '"')"
+          version="$(node -p "require('./packages/engine/package.json').version")"
           tag="${GITHUB_REF_NAME#engine-v}"
           if [ "$version" != "$tag" ]; then
             echo "tag engine-v$tag does not match @tellegen/engine version $version"
@@ -93,7 +93,7 @@ jobs:
       - name: Verify tag version
         if: startsWith(github.ref, 'refs/tags/svelte-v')
         run: |
-          version="$(npm pkg get version --workspace @tellegen/svelte | tr -d '"')"
+          version="$(node -p "require('./packages/svelte/package.json').version")"
           tag="${GITHUB_REF_NAME#svelte-v}"
           if [ "$version" != "$tag" ]; then
             echo "tag svelte-v$tag does not match @tellegen/svelte version $version"
