@@ -5,7 +5,9 @@ import {
 	edgeWidth,
 	isPhaseTerminal,
 	phaseColor,
-	placeMultiView
+	placeMultiView,
+	transformerMarks,
+	type PlacedMultiEdge
 } from '../src/lib/multiconductor.js';
 
 /** A small three-bus feeder graph: source -> line -> load bus -> transformer ->
@@ -118,6 +120,75 @@ describe('placeMultiView', () => {
 			expect(Math.abs(b.lon - center.lon)).toBeLessThan(6);
 			expect(Math.abs(b.lat - center.lat)).toBeLessThan(6);
 		}
+	});
+
+	it('roots the synthetic tree layout at the source bus', () => {
+		// src -> load_bus -> secondary is radial; the source-hinted root lands at
+		// the west extreme and depth grows east along the feeder.
+		const view = placeMultiView(graph(false), { lon: 0, lat: 0 });
+		const lon = new Map(view.buses.map((b) => [b.id, b.lon]));
+		expect(lon.get('src')!).toBeLessThan(lon.get('load_bus')!);
+		expect(lon.get('load_bus')!).toBeLessThan(lon.get('secondary')!);
+	});
+
+	it('preserves the aspect ratio of planar drawings', () => {
+		// A 100 x 10 drawing at the equator: the projected ranges keep ~10:1
+		// rather than being stretched to a square.
+		const g = graph(false);
+		g.buses[0].xy = [0, 0];
+		g.buses[1].xy = [50, 10];
+		g.buses[2].xy = [100, 0];
+		const view = placeMultiView(g, { lon: 0, lat: 0 });
+		const lons = view.buses.map((b) => b.lon);
+		const lats = view.buses.map((b) => b.lat);
+		const lonRange = Math.max(...lons) - Math.min(...lons);
+		const latRange = Math.max(...lats) - Math.min(...lats);
+		expect(lonRange / latRange).toBeGreaterThan(8);
+		expect(lonRange / latRange).toBeLessThan(12);
+	});
+});
+
+describe('transformerMarks', () => {
+	function edge(id: string, path: [[number, number], [number, number]]): PlacedMultiEdge {
+		return {
+			id,
+			kind: 'transformer',
+			from: 'a',
+			to: 'b',
+			conductors: [['1', '1']],
+			closed: true,
+			n_phases: 1,
+			path
+		};
+	}
+
+	it('marks transformer midpoints angled along the edge', () => {
+		const marks = transformerMarks([
+			edge('east', [
+				[0, 0],
+				[10, 0]
+			]),
+			edge('north', [
+				[0, 0],
+				[0, 10]
+			])
+		]);
+		expect(marks).toHaveLength(2);
+		expect(marks[0].position).toEqual([5, 0]);
+		expect(marks[0].angle).toBeCloseTo(0, 6);
+		expect(marks[1].position).toEqual([0, 5]);
+		expect(marks[1].angle).toBeCloseTo(90, 6);
+	});
+
+	it('skips lines and switches', () => {
+		const line = {
+			...edge('l', [
+				[0, 0],
+				[1, 1]
+			]),
+			kind: 'line' as const
+		};
+		expect(transformerMarks([line])).toHaveLength(0);
 	});
 });
 

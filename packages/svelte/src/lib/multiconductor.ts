@@ -145,18 +145,21 @@ function projectPlanar(graph: DistGraph, center: PlacementCenter): Map<string, [
 	const ys = placed.map((b) => b.xy![1]);
 	const { min: minX, max: maxX } = extent(xs);
 	const { min: minY, max: maxY } = extent(ys);
-	const sx = maxX - minX || 1;
-	const sy = maxY - minY || 1;
+	// One uniform scale for both axes, so the drawing keeps its aspect ratio
+	// instead of being stretched to fill a square.
+	const s = 0.92 / Math.max(maxX - minX || 1, maxY - minY || 1);
+	const cx = (minX + maxX) / 2;
+	const cy = (minY + maxY) / 2;
 	const span = Math.min(4.5, Math.max(0.32, Math.sqrt(Math.max(placed.length, 1)) * 0.08));
 	const lonScale = Math.max(Math.cos((center.lat * Math.PI) / 180), 0.25);
 	const latSpan = span;
 	const lonSpan = span / lonScale;
 	const coords = new Map<string, [number, number]>();
 	for (const bus of placed) {
-		// Normalize into [0,1] with a small inset, then into the box at center. Y
-		// is flipped so larger planar y reads as further north.
-		const nx = 0.04 + ((bus.xy![0] - minX) / sx) * 0.92;
-		const ny = 0.04 + ((bus.xy![1] - minY) / sy) * 0.92;
+		// Center on [0.5, 0.5], then into the box at center. Larger planar y
+		// reads as further north.
+		const nx = 0.5 + (bus.xy![0] - cx) * s;
+		const ny = 0.5 + (bus.xy![1] - cy) * s;
 		coords.set(bus.id, [
 			center.lon + (nx - 0.5) * lonSpan,
 			center.lat + (ny - 0.5) * latSpan
@@ -199,11 +202,13 @@ function toTopology(graph: DistGraph): { topology: Topology; idByIndex: string[]
 	return { topology, idByIndex };
 }
 
-/** Lay the graph out with the shared synthetic force layout at `center`, then
- * map the numeric-id result back to string bus ids. */
+/** Lay the graph out with the shared synthetic layout at `center`, then map
+ * the numeric-id result back to string bus ids. Source buses are passed as
+ * root hints so a radial feeder's tree layout starts at its substation. */
 function layoutSynthetic(graph: DistGraph, center: PlacementCenter): Map<string, [number, number]> {
 	const { topology, idByIndex } = toTopology(graph);
-	const placed = placeSyntheticTopology(topology, center);
+	const roots = graph.buses.flatMap((b, i) => (b.has_source ? [i] : []));
+	const placed = placeSyntheticTopology(topology, center, { roots });
 	const coords = new Map<string, [number, number]>();
 	for (const bus of placed.buses) {
 		const id = idByIndex[bus.id];
@@ -275,6 +280,44 @@ export function edgeColor(kind: DistEdgeKind, closed: boolean): RGBA {
 export function edgeWidth(kind: DistEdgeKind, nPhases: number): number {
 	const base = 1.4 + 0.7 * Math.min(Math.max(nPhases, 1), 4);
 	return kind === 'transformer' ? base + 1 : base;
+}
+
+/** A transformer symbol mark at an edge midpoint, angled along the edge.
+ * `angle` is degrees counterclockwise from east in the map plane, with the
+ * longitude span compressed by cos(latitude) so the symbol tracks the drawn
+ * bearing rather than the coordinate-space one. */
+export interface TransformerMark {
+	id: string;
+	position: [number, number];
+	angle: number;
+}
+
+const markCache = new WeakMap<PlacedMultiEdge[], TransformerMark[]>();
+
+/** Midpoint marks for the transformer edges of a placed view. Memoized on the
+ * edges array, which is stable until the view is replaced, so the map's layer
+ * effect can call this every run without regenerating icon attributes. */
+export function transformerMarks(edges: PlacedMultiEdge[]): TransformerMark[] {
+	const cached = markCache.get(edges);
+	if (cached) return cached;
+	const marks = computeTransformerMarks(edges);
+	markCache.set(edges, marks);
+	return marks;
+}
+
+function computeTransformerMarks(edges: PlacedMultiEdge[]): TransformerMark[] {
+	return edges
+		.filter((e) => e.kind === 'transformer')
+		.map((e) => {
+			const [[x0, y0], [x1, y1]] = e.path;
+			const latMid = (y0 + y1) / 2;
+			return {
+				id: e.id,
+				position: [(x0 + x1) / 2, latMid] as [number, number],
+				angle:
+					(Math.atan2(y1 - y0, (x1 - x0) * Math.cos((latMid * Math.PI) / 180)) * 180) / Math.PI
+			};
+		});
 }
 
 const ATTACHMENT_COLOR: Record<DistAttachmentKind, RGBA> = {

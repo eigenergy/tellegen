@@ -101,6 +101,7 @@
 		onbranchclick={ctrl.selectBranch}
 		onlocalbranchclick={ctrl.selectLocalBranch}
 		onmultibusclick={ctrl.selectMultiBus}
+		onmultiedgeclick={ctrl.selectMultiEdge}
 		onplacecase={ctrl.placeCase}
 		onmapclick={ctrl.clearSelection}
 	/>

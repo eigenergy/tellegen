@@ -202,6 +202,9 @@ export class MulticonductorCase {
 	/** The selected bus id, whose terminal stack and incident conductors expand;
 	 * null when nothing is selected. String-keyed: distribution bus ids are names. */
 	selectedBusId = $state<string | null>(null);
+	/** The selected edge id, whose conductor pairing expands in the panel;
+	 * mutually exclusive with selectedBusId. */
+	selectedEdgeId = $state<string | null>(null);
 
 	constructor(init: {
 		id: string;
@@ -230,6 +233,12 @@ export class MulticonductorCase {
 	get selectedBus() {
 		if (this.selectedBusId === null) return null;
 		return this.view?.buses.find((b) => b.id === this.selectedBusId) ?? null;
+	}
+
+	/** The selected edge's placed detail, or null. */
+	get selectedEdge() {
+		if (this.selectedEdgeId === null) return null;
+		return this.view?.edges.find((e) => e.id === this.selectedEdgeId) ?? null;
 	}
 }
 
