@@ -40,7 +40,9 @@
 	<span class="mono dim">
 		{#if branchMode}line {branchLabel}{:else}bus {app.selectedBus}{/if}
 	</span>
-	<button class="mono" onclick={ctrl.clearSelection}>esc&nbsp;clear</button>
+	<button class="mono" onclick={ctrl.clearSelection}
+		><span class="key-hint">esc&nbsp;</span>clear</button
+	>
 </div>
 <div class="sensitivity-readout" aria-live="polite">
 	{#if ctrl.previewing}
@@ -122,5 +124,12 @@
 		font-size: 11.5px;
 		line-height: 1.35;
 		white-space: nowrap;
+	}
+
+	/* No Esc key to name on a touch device. */
+	@media (hover: none), (pointer: coarse) {
+		.key-hint {
+			display: none;
+		}
 	}
 </style>

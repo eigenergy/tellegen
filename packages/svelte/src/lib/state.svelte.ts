@@ -297,6 +297,17 @@ export class AppState {
 	dragOver = $state(false);
 	parsingFile = $state(false);
 
+	/** True under `(max-width: 760px)`; the panel renders as a bottom sheet. Set by
+	 * the shell from one media query so panel and map read the same value. */
+	compactLayout = $state(false);
+	/** Height in px the bottom sheet covers; 0 when `compactLayout` is false.
+	 * Read by the map's camera padding and by chrome anchored above the sheet. */
+	sheetInset = $state(0);
+	/** Height in px the header covers at the top of the map, measured by
+	 * `AppHeader`. Wrapping the case tabs onto their own row roughly doubles it,
+	 * so callers that need to clear the header read this rather than a constant. */
+	headerInset = $state(64);
+
 	/** Map framing request: bump seq so repeat targets still fly. `requestFrame`
 	 * returns a promise the map resolves when the camera lands (or immediately
 	 * when it cannot fly), so a caller can defer heavy work until the animation

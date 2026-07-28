@@ -5,6 +5,9 @@
 	const app = getAppState();
 	const ctrl = getController();
 
+	/** Render in the parent's flow instead of as a card floating over the map. */
+	let { inline = false }: { inline?: boolean } = $props();
+
 	const buses = $derived(app.active?.network?.buses ?? app.activeLocal?.view?.buses ?? []);
 
 	let query = $state('');
@@ -27,6 +30,11 @@
 		query = '';
 		open = false;
 		highlighted = 0;
+		// Drop the on-screen keyboard, which otherwise covers the readout the
+		// selection just produced. A keyboard user keeps focus for the next lookup.
+		if (typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches) {
+			inputEl?.blur();
+		}
 	}
 
 	function onKeydown(e: KeyboardEvent) {
@@ -69,6 +77,7 @@
 {#if buses.length > 0}
 	<div
 		class="bus-lookup"
+		class:inline
 		title="Press / to focus bus lookup"
 		onfocusout={(e) => {
 			if (!e.currentTarget.contains(e.relatedTarget as Node | null)) open = false;
@@ -158,6 +167,37 @@
 	input:focus-visible {
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 1px;
+	}
+
+	/* Safari zooms the layout viewport when a focused input is under 16px. */
+	@media (hover: none), (pointer: coarse) {
+		input {
+			min-height: 44px;
+			font-size: 16px;
+			padding: 7px 10px;
+		}
+
+		li {
+			display: flex;
+			align-items: center;
+			min-height: 44px;
+			font-size: 14px;
+		}
+	}
+
+	.bus-lookup.inline {
+		/* relative, not static: the results list is absolute against this block */
+		position: relative;
+		inset: auto;
+		width: auto;
+		margin-top: 12px;
+		padding: 0;
+		background: none;
+		border: 0;
+		border-radius: 0;
+		backdrop-filter: none;
+		box-shadow: none;
+		animation: none;
 	}
 
 	ul {

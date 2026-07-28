@@ -495,11 +495,10 @@
 	 * The branch variant also clears the rating readout on the panel's lower edge. */
 	function framePadding(width: number, height: number, kind: 'case' | 'branch') {
 		if (width <= 760) {
-			const bottom =
-				kind === 'branch'
-					? Math.min(Math.round(height * 0.42), 300)
-					: Math.min(Math.round(height * 0.5), 330);
-			return { top: 130, left: 24, right: 24, bottom };
+			// bottom follows the sheet; capped so a fully open sheet still leaves a band to fit into
+			const clearance = kind === 'branch' ? 16 : 28;
+			const bottom = Math.min(app.sheetInset + clearance, Math.round(height * 0.55));
+			return { top: app.headerInset + 8, left: 24, right: 24, bottom };
 		}
 		return kind === 'branch'
 			? { top: 106, left: 388, right: 76, bottom: 80 }
@@ -551,6 +550,38 @@
 			window.matchMedia('(prefers-reduced-motion: reduce)').matches
 		);
 	}
+
+	function coarsePointer(): boolean {
+		return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+	}
+
+	// Compact chrome anchoring. maplibre's bottom-right controls (attribution and
+	// zoom) sit over the map, so the sheet would bury them; they ride above it
+	// instead. Under CHROME_MIN_BAND_PX of map left they drop out rather than
+	// climb into the header — at that point the sheet covers what they annotate.
+	const CHROME_MIN_BAND_PX = 132;
+
+	let viewportHeight = $state(800);
+
+	$effect(() => {
+		const sync = () => (viewportHeight = window.innerHeight);
+		sync();
+		window.addEventListener('resize', sync);
+		window.addEventListener('orientationchange', sync);
+		return () => {
+			window.removeEventListener('resize', sync);
+			window.removeEventListener('orientationchange', sync);
+		};
+	});
+
+	/** How far the sheet can push the chrome up before it would reach the header. */
+	const chromeLiftCap = $derived(
+		Math.max(0, viewportHeight - app.headerInset - CHROME_MIN_BAND_PX)
+	);
+	const chromeInset = $derived(
+		app.compactLayout ? Math.min(app.sheetInset, chromeLiftCap) : 0
+	);
+	const chromeVisible = $derived(!app.compactLayout || app.sheetInset <= chromeLiftCap);
 
 	/** Fly to the selected branch; true when a camera move started. */
 	function focusSelectedBranch(): boolean {
@@ -699,6 +730,7 @@
 	// deck layers also inherit maplibre's 4096 canvas clamp. The flat positron
 	// basemap writes no depth, so the overlay always draws on top.
 	function buildOverlay(MapboxOverlay: MapModules['MapboxOverlay']): MapboxOverlay {
+		const touch = coarsePointer();
 		return new MapboxOverlay({
 			interleaved: true,
 			layers: [],
@@ -706,10 +738,13 @@
 				depthWriteEnabled: false,
 				depthCompare: 'always'
 			},
+			// a small bus draws ~9px across, well under a fingertip
+			pickingRadius: touch ? 12 : 0,
 			onClick: (info: PickingInfo) => {
 				if (!app.placingId && !isSelectableLayer(info.layer?.id)) onmapclick();
 			},
-			getTooltip: tooltip,
+			// a touch tooltip opens under the finger and stays until the next tap
+			getTooltip: touch ? undefined : tooltip,
 			getCursor: ({ isHovering, isDragging }: CursorState) =>
 				app.placingId ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
 		});
@@ -1121,6 +1156,25 @@
 		void tick().then(scheduleCueSync);
 	});
 
+	// Pan the selected bus into the band the sheet leaves. The delay outlasts the
+	// sheet's snap transition; sheetInset is read inside the timeout so the effect
+	// does not re-run (and re-pan) on every frame of a sheet drag.
+	$effect(() => {
+		const cue = selectedBusCue;
+		if (!map || !cue || !app.compactLayout) return;
+		void cue.key;
+		const m = map;
+		const timer = setTimeout(() => {
+			const { clientHeight } = m.getContainer();
+			const y = m.project([cue.lon, cue.lat]).y;
+			const floor = clientHeight - app.sheetInset - CUE_MARGIN_PX;
+			const ceiling = 104;
+			const dy = y > floor ? y - floor : y < ceiling ? y - ceiling : 0;
+			if (dy !== 0) m.panBy([0, dy], { duration: prefersReducedMotion() ? 0 : 320 });
+		}, 340);
+		return () => clearTimeout(timer);
+	});
+
 	function boundsFor(target: string): LngLatBoundsLike | null {
 		const points: [number, number][] = [];
 		const fold = (pts: { lon: number; lat: number }[]) => {
@@ -1176,7 +1230,11 @@
 </script>
 
 {#key mapGen}
-	<div class="map-stage">
+	<div
+		class="map-stage"
+		class:chrome-clear={!chromeVisible}
+		style="--chrome-inset: {chromeInset}px"
+	>
 		<div class="map" {@attach initMap}></div>
 		{#if selectedBusCue}
 			{#key selectedBusCue.key}
@@ -1203,6 +1261,7 @@
 	<button
 		type="button"
 		class="place-at-center mono"
+		style="--chrome-inset: {chromeInset}px"
 		onclick={() => {
 			if (!map) return;
 			const center = map.getCenter();
@@ -1222,6 +1281,10 @@
 
 	.map {
 		background: var(--bg);
+		/* a long press on the canvas must not raise the iOS callout or magnifier */
+		-webkit-touch-callout: none;
+		-webkit-tap-highlight-color: transparent;
+		user-select: none;
 	}
 
 	.selected-bus-cue {
@@ -1386,7 +1449,7 @@
 	.place-at-center {
 		position: absolute;
 		left: 50%;
-		bottom: 92px;
+		bottom: calc(92px + var(--chrome-inset, 0px));
 		z-index: 15;
 		transform: translateX(-50%);
 		padding: 7px 14px;
@@ -1401,17 +1464,27 @@
 
 	@media (max-width: 420px) {
 		.place-at-center {
-			bottom: 78px;
+			bottom: calc(78px + var(--chrome-inset, 0px));
 		}
 	}
 
 	.map :global(.maplibregl-ctrl-bottom-right) {
 		right: 20px;
-		bottom: 18px;
+		/* rides above the bottom sheet so attribution stays legible */
+		bottom: calc(18px + var(--chrome-inset, 0px));
 		display: flex;
 		flex-direction: column;
 		align-items: flex-end;
 		gap: 6px;
+		transition:
+			bottom var(--dur-med) var(--ease-out),
+			opacity var(--dur-fast) var(--ease-out);
+	}
+
+	/* The sheet has taken the map; nothing left down there to attribute. */
+	.map-stage.chrome-clear :global(.maplibregl-ctrl-bottom-right) {
+		opacity: 0;
+		pointer-events: none;
 	}
 
 	.map :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
@@ -1439,6 +1512,18 @@
 		color: var(--text-secondary);
 	}
 
+	/* maplibre ships 29px zoom buttons; a fingertip wants 44. */
+	@media (hover: none), (pointer: coarse) {
+		.map :global(.maplibregl-ctrl-group button) {
+			width: 44px;
+			height: 44px;
+		}
+
+		.map :global(.maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
+			background-size: 22px 22px;
+		}
+	}
+
 	.map :global(.deck-tooltip) {
 		background: var(--panel) !important;
 		border: 1px solid var(--line);
@@ -1453,10 +1538,23 @@
 
 	@media (max-width: 760px) {
 		.map :global(.maplibregl-ctrl-attrib) {
+			/* last in the column so it rests on the sheet's edge instead of
+			   floating over the network a zoom control's height above it */
+			order: 1;
 			width: auto;
 			min-width: 0;
 			right: 0;
 			white-space: normal;
+		}
+	}
+
+	/* One line on a small phone: wrapped attribution turns into a wide block
+	   sitting over the network. */
+	@media (max-width: 460px) {
+		.map :global(.maplibregl-ctrl-attrib) {
+			max-width: calc(100vw - 20px);
+			font-size: 9px;
+			white-space: nowrap;
 		}
 	}
 

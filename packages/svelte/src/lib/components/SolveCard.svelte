@@ -75,7 +75,8 @@
 
 	@media (max-width: 760px) {
 		.solvecard {
-			top: 184px;
+			/* just clear of the header's case tabs */
+			top: 108px;
 			left: auto;
 			right: 10px;
 			width: min(300px, calc(100% - 20px));
