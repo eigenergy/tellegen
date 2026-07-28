@@ -6,7 +6,10 @@ import { devices, expect, test } from '@playwright/test';
 //   - what the last tap produced has to land above the fold, so a selection
 //     leads the sheet body instead of sitting under the case stats.
 
-test.use({ ...devices['iPhone 13'] });
+// The device descriptor carries defaultBrowserType: 'webkit' and CI installs
+// chromium only, so pin the browser and keep the phone's viewport, pixel ratio
+// and touch input — which is what the coarse pointer rules key off.
+test.use({ ...devices['iPhone 13'], browserName: 'chromium' });
 
 const CASE3 = `function mpc = case3test
 mpc.version = '2';
@@ -43,6 +46,9 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 	});
 
 	await page.goto('/');
+	// Touch sizing keys off the pointer, so a run without one silently skips half
+	// of what this file covers.
+	expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
 	await expect(page.getByText('no default cases loaded')).toBeVisible();
 	await page.locator('input[type="file"]').setInputFiles([
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
