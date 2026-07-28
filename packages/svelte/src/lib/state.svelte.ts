@@ -307,6 +307,9 @@ export class AppState {
 	 * `AppHeader`. Wrapping the case tabs onto their own row roughly doubles it,
 	 * so callers that need to clear the header read this rather than a constant. */
 	headerInset = $state(64);
+	/** `window.innerHeight`, tracked by the shell. The sheet's snaps and the map's
+	 * chrome lift are both fractions of it; the fallback is a desktop window. */
+	viewportHeight = $state(800);
 
 	/** Map framing request: bump seq so repeat targets still fly. `requestFrame`
 	 * returns a promise the map resolves when the camera lands (or immediately

@@ -561,22 +561,9 @@
 	// climb into the header — at that point the sheet covers what they annotate.
 	const CHROME_MIN_BAND_PX = 132;
 
-	let viewportHeight = $state(800);
-
-	$effect(() => {
-		const sync = () => (viewportHeight = window.innerHeight);
-		sync();
-		window.addEventListener('resize', sync);
-		window.addEventListener('orientationchange', sync);
-		return () => {
-			window.removeEventListener('resize', sync);
-			window.removeEventListener('orientationchange', sync);
-		};
-	});
-
 	/** How far the sheet can push the chrome up before it would reach the header. */
 	const chromeLiftCap = $derived(
-		Math.max(0, viewportHeight - app.headerInset - CHROME_MIN_BAND_PX)
+		Math.max(0, app.viewportHeight - app.headerInset - CHROME_MIN_BAND_PX)
 	);
 	const chromeInset = $derived(
 		app.compactLayout ? Math.min(app.sheetInset, chromeLiftCap) : 0
@@ -1281,10 +1268,6 @@
 
 	.map {
 		background: var(--bg);
-		/* a long press on the canvas must not raise the iOS callout or magnifier */
-		-webkit-touch-callout: none;
-		-webkit-tap-highlight-color: transparent;
-		user-select: none;
 	}
 
 	.selected-bus-cue {
@@ -1512,8 +1495,16 @@
 		color: var(--text-secondary);
 	}
 
-	/* maplibre ships 29px zoom buttons; a fingertip wants 44. */
 	@media (hover: none), (pointer: coarse) {
+		/* A long press on the canvas must not raise the iOS callout or magnifier.
+		   Scoped to touch so a mouse can still select the attribution text. */
+		.map {
+			-webkit-touch-callout: none;
+			-webkit-tap-highlight-color: transparent;
+			user-select: none;
+		}
+
+		/* maplibre ships 29px zoom buttons; a fingertip wants 44. */
 		.map :global(.maplibregl-ctrl-group button) {
 			width: 44px;
 			height: 44px;

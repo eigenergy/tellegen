@@ -68,9 +68,7 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 				.locator('.maplibregl-ctrl-bottom-right')
 				.evaluate((el) => getComputedStyle(el).opacity);
 			return (
-				opacity === '1' &&
-				attribBox.y >= 0 &&
-				attribBox.y + attribBox.height <= sheetBox.y + 1
+				opacity === '1' && attribBox.y >= 0 && attribBox.y + attribBox.height <= sheetBox.y + 1
 			);
 		})
 		.toBe(true);
@@ -94,9 +92,7 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 
 	// The demand control is the next thing a reader wants, so it comes before the
 	// rule that separates the selection from the case stats below it.
-	const sliderBox = (await page
-		.getByLabel('demand delta at selected bus')
-		.boundingBox())!;
+	const sliderBox = (await page.getByLabel('demand delta at selected bus').boundingBox())!;
 	const ruleTop = await page
 		.locator('.panel-body hr')
 		.first()

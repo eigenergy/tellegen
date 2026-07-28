@@ -36,19 +36,18 @@
 	let headEl = $state.raw<HTMLElement | undefined>(undefined);
 	let bodyEl = $state.raw<HTMLElement | undefined>(undefined);
 	let headHeight = $state(52);
-	let viewportHeight = $state(800);
 	/** Height under an active drag; null when resting on a snap. */
 	let dragHeight = $state<number | null>(null);
 
 	const fractionFor = (s: Snap) =>
-		s === 'half' && viewportHeight < SHORT_VIEWPORT_PX ? 0.38 : SNAP_FRACTION[s];
+		s === 'half' && app.viewportHeight < SHORT_VIEWPORT_PX ? 0.38 : SNAP_FRACTION[s];
 
 	const snapHeight = (s: Snap) =>
 		s === 'peek'
 			? headHeight
 			: Math.min(
-					Math.round(viewportHeight * fractionFor(s)),
-					viewportHeight - app.headerInset - FULL_SNAP_MAP_BAND
+					Math.round(app.viewportHeight * fractionFor(s)),
+					app.viewportHeight - app.headerInset - FULL_SNAP_MAP_BAND
 				);
 	const sheetHeight = $derived(dragHeight ?? snapHeight(snap));
 
@@ -86,31 +85,7 @@
 	);
 
 	$effect(() => {
-		let hasDisplayMode = false;
-		for (const option of ctrl.displayOptions) {
-			if (option.mode === app.displayMode) {
-				hasDisplayMode = true;
-				break;
-			}
-		}
-		if (ctrl.displayOptions.length > 0 && !hasDisplayMode) {
-			app.displayMode = 'lmp';
-		}
-	});
-
-	$effect(() => {
 		app.sheetInset = app.compactLayout ? sheetHeight : 0;
-	});
-
-	$effect(() => {
-		const sync = () => (viewportHeight = window.innerHeight);
-		sync();
-		window.addEventListener('resize', sync);
-		window.addEventListener('orientationchange', sync);
-		return () => {
-			window.removeEventListener('resize', sync);
-			window.removeEventListener('orientationchange', sync);
-		};
 	});
 
 	// peek height tracks the grab bar, which resizes when the summary line changes.

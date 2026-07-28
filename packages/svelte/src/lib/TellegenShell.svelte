@@ -60,9 +60,18 @@
 		syncCompact();
 		compact.addEventListener('change', syncCompact);
 
+		// The sheet sizes its snaps against the viewport and the map caps how far
+		// it lifts the basemap chrome, so both read one measurement taken here.
+		const syncViewport = () => (app.viewportHeight = window.innerHeight);
+		syncViewport();
+		window.addEventListener('resize', syncViewport);
+		window.addEventListener('orientationchange', syncViewport);
+
 		return () => {
 			query.removeEventListener('change', syncFileDropUi);
 			compact.removeEventListener('change', syncCompact);
+			window.removeEventListener('resize', syncViewport);
+			window.removeEventListener('orientationchange', syncViewport);
 		};
 	});
 
@@ -107,8 +116,7 @@
 	ondrop={onDrop}
 />
 
-<!-- --sheet-inset: px covered by the bottom sheet; chrome anchors above it. -->
-<main style="--sheet-inset: {app.sheetInset}px">
+<main>
 	<TellegenMap
 		onbusclick={ctrl.selectBus}
 		onlocalbusclick={ctrl.selectLocalBus}
