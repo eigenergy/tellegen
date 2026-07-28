@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.2 — 2026-07-28
+
+`@tellegen/svelte` only. The compact layout renders the control panel as a
+bottom sheet over the map; this fixes what that layout got wrong on phones
+(#59). `@tellegen/engine` stays at 0.1.1 and the `tellegen` crate is unchanged.
+
+- A resolved selection leads the sheet body, above the case stats,
+  formulation, bus lookup, and binding lines that used to push it off screen.
+  The body scroll resets on selection, and `BusPicker` blurs its input on
+  coarse pointers so the on-screen keyboard stops covering the readout (#59).
+- Basemap attribution rides above the sheet, parks before it would reach the
+  header, and fades once the sheet covers what it annotates; attribution is a
+  licensing requirement for the CARTO and OSM tiles (#59).
+- The map zoom buttons are hidden under the compact breakpoint, where the
+  solve card covers wherever they land. Pinch and double tap still zoom. They
+  stay for coarse pointers above the breakpoint, at 44px (#59).
+- Under a short viewport the case tabs stay on the brand's row, halving the
+  header, and the `half` snap gives up room there, so a landscape phone keeps
+  a usable band of map. The hardcoded header offsets in the map and the sheet
+  are replaced by a measured `app.headerInset`, and both the sheet and the
+  map's chrome read one `app.viewportHeight` published by the shell (#59).
+- Touch targets are 44px on coarse pointers, keyed on the pointer rather than
+  the breakpoint. The grab bar rendered 25px, the `full` snap overlapped the
+  header, the solve card sat at an offset positioned for the old layout, the
+  formulation select ran off a 320px screen, attribution wrapped into a wide
+  block over the network, and "esc clear" named a key a phone does not have
+  (#59).
+
 ## 0.1.1 — 2026-07-21
 
 Multiconductor viewing polish from IEEE 123 feedback: edge selection, a tidy
