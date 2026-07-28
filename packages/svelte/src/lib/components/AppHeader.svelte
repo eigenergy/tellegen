@@ -7,9 +7,23 @@
 	const config = getUiConfig();
 
 	let fileInput = $state.raw<HTMLInputElement | undefined>(undefined);
+	let headerEl = $state.raw<HTMLElement | undefined>(undefined);
+
+	// The case tabs wrap onto their own row on a narrow viewport and unwrap on a
+	// short one, so the height moves with both the breakpoint and the case list.
+	// Publish it for the map chrome and the sheet, which both anchor below it.
+	$effect(() => {
+		const el = headerEl;
+		if (!el) return;
+		const measure = () => (app.headerInset = Math.round(el.getBoundingClientRect().height));
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(el);
+		return () => observer.disconnect();
+	});
 </script>
 
-<header>
+<header bind:this={headerEl}>
 	<div class="brand">
 		<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
 			<path d="M4 18 L12 6 L20 18" stroke="#b25e00" stroke-width="1.6" fill="none" />
@@ -394,6 +408,50 @@
 		.cases > button,
 		.case-chip {
 			max-width: 132px;
+		}
+	}
+
+	/* Landscape phone: height is the scarce axis. Keep the case tabs on the
+	   brand's row instead of giving them one of their own, which halves the
+	   header and leaves the map a band worth looking at. */
+	@media (max-width: 760px) and (max-height: 520px) {
+		header {
+			flex-wrap: nowrap;
+			align-items: center;
+			padding: 6px 10px;
+		}
+
+		h1 {
+			font-size: 17px;
+		}
+
+		.cases {
+			order: 0;
+			width: auto;
+			justify-content: flex-start;
+		}
+
+		.kicker {
+			display: none;
+		}
+	}
+
+	/* Touch sizing keys off the pointer, not the breakpoint: a tablet gets the
+	   wide layout and still needs a fingertip's worth of chip. */
+	@media (hover: none), (pointer: coarse) {
+		.cases > button,
+		.case-chip {
+			min-height: 44px;
+		}
+
+		.case-activate {
+			min-height: 44px;
+		}
+
+		.kicker a {
+			display: inline-flex;
+			align-items: center;
+			min-height: 44px;
 		}
 	}
 

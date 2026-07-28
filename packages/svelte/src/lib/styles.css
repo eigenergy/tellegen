@@ -372,11 +372,25 @@ a {
 /* Coarse pointers: comfortable hit targets for the toggle and reset controls. */
 @media (hover: none), (pointer: coarse) {
 	.segment button {
-		min-height: 36px;
+		min-height: 44px;
 	}
 
 	.reset {
-		min-height: 36px;
+		min-height: 44px;
+	}
+
+	/* Keep the chip visually small next to its short siblings; the ::before pads
+	   the tap target out to 44px, as .case-remove does in AppHeader. */
+	.mode > button {
+		position: relative;
+		min-height: 28px;
+		padding-inline: 10px;
+	}
+
+	.mode > button::before {
+		content: '';
+		position: absolute;
+		inset: -8px -4px;
 	}
 }
 

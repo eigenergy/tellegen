@@ -2,9 +2,12 @@
 	import { getController } from '../context.svelte.js';
 
 	const ctrl = getController();
+
+	/** Render in the parent's flow instead of pinned to the bottom of the map. */
+	let { inline = false }: { inline?: boolean } = $props();
 </script>
 
-<footer class="mono">
+<footer class="mono" class:inline>
 	<a href="/credits/">credits</a>
 	<i class="sep"></i>
 	<a href="/privacy/">privacy</a>
@@ -48,6 +51,28 @@
 
 	.drophint .arrow {
 		color: var(--text-accent);
+	}
+
+	footer.inline {
+		position: static;
+		margin-top: 14px;
+		padding: 0;
+		background: none;
+		animation: none;
+		pointer-events: auto;
+	}
+
+	@media (hover: none), (pointer: coarse) {
+		footer a {
+			display: inline-flex;
+			align-items: center;
+			min-height: 44px;
+		}
+
+		footer.inline {
+			margin-top: 4px;
+			font-size: 11px;
+		}
 	}
 
 	@media (max-width: 760px) {

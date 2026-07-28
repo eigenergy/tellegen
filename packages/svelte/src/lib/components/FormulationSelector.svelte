@@ -79,4 +79,21 @@
 		opacity: 0.55;
 		cursor: progress;
 	}
+
+	@media (hover: none), (pointer: coarse) {
+		/* The select is sized to its longest option, which runs off a 320px screen.
+		   Let it shrink around the current value rather than truncate the label.
+		   16px also keeps Safari from zooming the layout viewport on focus. */
+		.formulation-row select {
+			flex: 0 1 auto;
+			min-width: 0;
+			min-height: 44px;
+			font-size: 16px;
+			padding-block: 6px;
+		}
+
+		.formulation-row > span {
+			flex: 0 0 auto;
+		}
+	}
 </style>

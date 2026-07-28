@@ -98,4 +98,17 @@
 		box-shadow: inset 3px 0 0 var(--accent);
 		font-weight: 600;
 	}
+
+	/* Each row is a tap target that reframes the map, so give it a finger's worth
+	   of height and show a couple more rows before the list scrolls. */
+	@media (hover: none), (pointer: coarse) {
+		ul {
+			max-height: 176px;
+		}
+
+		li button {
+			min-height: 44px;
+			padding-block: 6px;
+		}
+	}
 </style>
