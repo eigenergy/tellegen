@@ -555,10 +555,10 @@
 		return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 	}
 
-	// Compact chrome anchoring. maplibre's bottom-right controls (attribution and
-	// zoom) sit over the map, so the sheet would bury them; they ride above it
-	// instead. Under CHROME_MIN_BAND_PX of map left they drop out rather than
-	// climb into the header — at that point the sheet covers what they annotate.
+	// Compact chrome anchoring. maplibre's bottom-right controls sit over the map,
+	// so the sheet would bury them; they ride above it instead. Under
+	// CHROME_MIN_BAND_PX of map left they drop out rather than climb into the
+	// header — at that point the sheet covers what they annotate.
 	const CHROME_MIN_BAND_PX = 132;
 
 	/** How far the sheet can push the chrome up before it would reach the header. */
@@ -1536,6 +1536,13 @@
 			min-width: 0;
 			right: 0;
 			white-space: normal;
+		}
+
+		/* The band of map a phone has left between the header and the sheet is
+		   about the height of the solve card, which covers the buttons wherever
+		   they land. Pinch and double tap zoom; the attribution stays. */
+		.map :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group) {
+			display: none;
 		}
 	}
 

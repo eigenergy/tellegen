@@ -73,6 +73,13 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 		})
 		.toBe(true);
 
+	// Clear of the solve card too: a credit under an opaque panel is not a credit.
+	const attribOnTop = await page.locator('.maplibregl-ctrl-attrib').evaluate((el) => {
+		const b = el.getBoundingClientRect();
+		return el.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2));
+	});
+	expect(attribOnTop).toBe(true);
+
 	// Select a bus through the lookup the sheet mounts inline.
 	const lookup = page.locator('.bus-lookup input');
 	await lookup.tap();
