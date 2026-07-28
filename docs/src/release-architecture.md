@@ -83,6 +83,21 @@ version matches its package metadata, then publishes with npm provenance.
 Publishing requires either npm trusted publishing for this repository or an
 `NPM_TOKEN` secret with publish access.
 
+## Crate Release
+
+`tellegen` is the only crate that publishes to crates.io; `tellegen-wasm`,
+`tellegen-server`, `tellegen-cli`, and `benchmarks` carry `publish = false`.
+
+The crate publish workflow is `.github/workflows/crates-publish.yml`, gated by
+tags named `tellegen-vX.Y.Z`. It runs the crate tests with and without `conic`,
+checks that the tag version matches the crate metadata, runs `cargo package`
+(which builds from the packaged sources, the same check crates.io runs on
+upload), and uploads the `.crate` for inspection. A manual run stops after
+packaging. Publishing requires a `CARGO_REGISTRY_TOKEN` secret.
+
+Package versions and the crate version move independently. A release that
+touches only one surface tags and publishes only that surface.
+
 ## CI Gates
 
 CI installs JavaScript dependencies once from the root lockfile, builds

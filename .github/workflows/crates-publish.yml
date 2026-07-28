@@ -1,0 +1,56 @@
+name: Publish Crate
+
+# `tellegen` is the only crate that publishes; the wasm, server, and cli adapters
+# carry `publish = false`. Mirrors npm-publish.yml: a manual run builds and packages
+# for inspection, a `tellegen-v*` tag publishes.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "tellegen-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  crate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - run: cargo test -p tellegen
+        env:
+          TELLEGEN_ALLOW_FALLBACK: "1"
+      # The conic SOCWR path is off by default, so the test above never exercises it.
+      - run: cargo test -p tellegen --features conic
+      - name: Verify tag version
+        if: startsWith(github.ref, 'refs/tags/tellegen-v')
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "tellegen") | .version')"
+          tag="${GITHUB_REF_NAME#tellegen-v}"
+          if [ "$version" != "$tag" ]; then
+            echo "tag tellegen-v$tag does not match tellegen crate version $version"
+            exit 1
+          fi
+      # Builds from the packaged sources, the same check crates.io runs on upload.
+      # `cargo package` over `cargo publish --dry-run` because only the former leaves
+      # the `.crate` behind for the artifact below.
+      - name: Package and verify
+        run: |
+          rm -rf target/package
+          cargo package -p tellegen
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tellegen-crate-package
+          path: target/package/tellegen-*.crate
+          if-no-files-found: error
+      - name: Publish to crates.io
+        if: startsWith(github.ref, 'refs/tags/tellegen-v')
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        # `--no-verify` because the package step above already built from the
+        # packaged sources.
+        run: cargo publish -p tellegen --no-verify
