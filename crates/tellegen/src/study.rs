@@ -848,8 +848,8 @@ pub fn export_study(
     commit: usize,
     format: &str,
 ) -> Result<ExportedCase, String> {
-    let package = NetworkPackage::from_json(package_json)
-        .map_err(|e| format!("invalid .pio.json package: {e}"))?;
+    let package =
+        NetworkPackage::from_json(package_json).map_err(|e| crate::package::read_error(&e))?;
     let target = powerio::target_format_from_name(format)
         .ok_or_else(|| format!("unknown export format \"{format}\""))?;
     let balanced = match package.study() {
@@ -2125,6 +2125,28 @@ mod tests {
             let err = export_study(bad, 0, "matpower").unwrap_err();
             assert!(!err.is_empty(), "expected an error for {bad:?}");
         }
+    }
+
+    /// A `.pio.json` from a format lineage this build does not read is a good
+    /// file, not a broken one, and the user's route back is to re-save rather
+    /// than to repair. powerio collapsed the envelope's four version
+    /// identifiers into one `schema_version` and narrowed the accepted lineage,
+    /// which invalidates every package written before that change — so this
+    /// wording is what a user with a saved study will meet, and it has to say
+    /// what to do about it.
+    #[test]
+    fn export_tells_the_user_to_re_save_a_package_from_another_format_version() {
+        let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();
+        let json = s.to_package().unwrap().to_json().unwrap();
+        let mut value: Value = serde_json::from_str(&json).unwrap();
+        value["schema_version"] = serde_json::json!("9.0.0");
+        let err = export_study(&value.to_string(), 0, "matpower").unwrap_err();
+
+        assert!(
+            crate::package::is_unsupported_schema_version(&err),
+            "expected the upstream version diagnostic to ride along, got: {err}"
+        );
+        assert!(err.contains("re-save the study"), "got: {err}");
     }
 
     #[test]

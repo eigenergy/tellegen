@@ -5,9 +5,9 @@
  * decides package-vs-case and balanced-vs-multiconductor.
  *
  * The rules mirror the readers they feed:
- *   - a `.pio.json` package is recognized by its `schema` envelope field, then
- *     split by the authoritative `model_kind` (balanced restores a study;
- *     multiconductor is viewed);
+ *   - a `.pio.json` package is recognized by either envelope spelling (see
+ *     {@link isPackageEnvelope}), then split by the authoritative `model_kind`
+ *     (balanced restores a study; multiconductor is viewed);
  *   - a non-package document is distribution JSON, PMD when it carries the
  *     `data_model` marker and BMOPF otherwise (the same split
  *     `powerio_dist` uses for `.json`), except a GeoJSON FeatureCollection,
@@ -16,7 +16,10 @@
  * Every function is total: malformed, truncated, or non-JSON input classifies
  * as `not-json` rather than throwing. */
 
-/** The schema URL prefix every `.pio.json` package envelope carries. */
+/** The schema URL prefix a `.pio.json` package envelope carried through powerio
+ * 0.7.x. Later producers drop the field in favour of `schema_version` alone;
+ * {@link isPackageEnvelope} accepts both, and this stays exported because it is
+ * public API. */
 export const PIO_PACKAGE_SCHEMA_PREFIX = 'https://powerio.dev/schema/pio-package';
 
 /** How a dropped JSON file should be ingested. */
@@ -63,9 +66,24 @@ function topLevelObject(text: string): Record<string, unknown> | null {
 		: null;
 }
 
-/** Whether `text` is a `.pio.json` package envelope, by its `schema` field. */
+/** Whether `obj` is a `.pio.json` package envelope.
+ *
+ * Two spellings are accepted, because powerio collapsed the envelope's four
+ * version identifiers into one:
+ *   - through 0.7.x, a `schema` URL under {@link PIO_PACKAGE_SCHEMA_PREFIX};
+ *   - after that, `schema_version` alone, with `schema` gone from the wire form.
+ *
+ * The second rule pairs `schema_version` with a resolvable model kind rather
+ * than trusting it alone: `schema_version` is a common enough key that a case
+ * document could carry one, while the combination is the package envelope's
+ * own shape. `model_kind` is authoritative and `model.kind` is the fallback,
+ * which is exactly what {@link packageModelKind} already resolves. */
 export function isPackageEnvelope(obj: Record<string, unknown> | null): boolean {
-	return typeof obj?.schema === 'string' && obj.schema.startsWith(PIO_PACKAGE_SCHEMA_PREFIX);
+	if (!obj) return false;
+	if (typeof obj.schema === 'string' && obj.schema.startsWith(PIO_PACKAGE_SCHEMA_PREFIX)) {
+		return true;
+	}
+	return typeof obj.schema_version === 'string' && packageModelKind(obj) !== null;
 }
 
 /** The package's model family. `model_kind` is authoritative and stored

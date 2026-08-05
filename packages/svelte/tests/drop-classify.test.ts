@@ -5,8 +5,17 @@ import {
 	distExtensionFormat,
 	isStudyPackageText, isGeoFileName } from '../src/lib/drop-classify.js';
 
-const pkg = (fields: Record<string, unknown>) =>
-	JSON.stringify({ schema: `${PIO_PACKAGE_SCHEMA_PREFIX}/0.1`, ...fields });
+/** The envelope spelling powerio 0.7.x wrote: a `schema` URL plus a version. */
+const legacyPkg = (fields: Record<string, unknown>) =>
+	JSON.stringify({
+		schema: `${PIO_PACKAGE_SCHEMA_PREFIX}/0.1`,
+		schema_version: '0.1.1',
+		...fields
+	});
+
+/** The envelope spelling that follows it: `schema_version` alone, no `schema`. */
+const versionedPkg = (fields: Record<string, unknown>) =>
+	JSON.stringify({ schema_version: '0.2.0', ...fields });
 
 describe('distExtensionFormat', () => {
 	it('routes .dss by extension, case-insensitively', () => {
@@ -22,7 +31,10 @@ describe('distExtensionFormat', () => {
 	});
 });
 
-describe('classifyJson package envelopes', () => {
+describe.each([
+	['legacy schema URL', legacyPkg],
+	['schema_version only', versionedPkg]
+])('classifyJson package envelopes (%s)', (_label, pkg) => {
 	it('splits a package by its authoritative model_kind', () => {
 		expect(classifyJson(pkg({ model_kind: 'balanced' }))).toBe('balanced-package');
 		expect(classifyJson(pkg({ model_kind: 'multiconductor' }))).toBe('multiconductor-package');
@@ -35,8 +47,29 @@ describe('classifyJson package envelopes', () => {
 		expect(classifyJson(pkg({ model: { kind: 'balanced' } }))).toBe('balanced-package');
 	});
 
-	it('treats a package with no readable kind as balanced (the historical payload)', () => {
-		expect(classifyJson(pkg({}))).toBe('balanced-package');
+	it('routes a saved study to the restore path', () => {
+		expect(isStudyPackageText(pkg({ model_kind: 'balanced' }))).toBe(true);
+		expect(isStudyPackageText(pkg({ model_kind: 'multiconductor' }))).toBe(false);
+	});
+});
+
+describe('classifyJson package envelope recognition', () => {
+	it('treats a legacy package with no readable kind as balanced (the historical payload)', () => {
+		expect(classifyJson(legacyPkg({}))).toBe('balanced-package');
+	});
+
+	it('does not take schema_version alone as a package envelope', () => {
+		// A case document could carry a `schema_version`; the envelope is the
+		// pairing with a model kind. Without one this stays a distribution
+		// document, which is where the precise parse error comes from.
+		expect(classifyJson(versionedPkg({}))).toBe('bmopf');
+		expect(classifyJson(versionedPkg({ data_model: 'ENGINEERING' }))).toBe('pmd');
+	});
+
+	it('ignores a non-string schema_version', () => {
+		expect(classifyJson(JSON.stringify({ schema_version: 2, model_kind: 'balanced' }))).toBe(
+			'bmopf'
+		);
 	});
 });
 
@@ -70,8 +103,9 @@ describe('classifyJson totality', () => {
 
 describe('isStudyPackageText', () => {
 	it('is true only for a balanced package envelope', () => {
-		expect(isStudyPackageText(pkg({ model_kind: 'balanced' }))).toBe(true);
-		expect(isStudyPackageText(pkg({ model_kind: 'multiconductor' }))).toBe(false);
+		// The per-spelling suites above cover the balanced/multiconductor split
+		// for both envelope forms; this pins what is *not* a study package.
+		expect(isStudyPackageText(legacyPkg({ model_kind: 'balanced' }))).toBe(true);
 		expect(isStudyPackageText(JSON.stringify({ buses: [], branches: [] }))).toBe(false);
 		expect(isStudyPackageText(JSON.stringify({ schema: 'https://example.com/other' }))).toBe(
 			false

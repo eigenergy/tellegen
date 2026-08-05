@@ -31,7 +31,10 @@ test('a saved study package downloads and restores when dropped back in', async 
 	expect(download.suggestedFilename()).toMatch(/\.pio\.json$/);
 	const text = readFileSync(await download.path(), 'utf8');
 	// Guards against an empty or aborted blob: a real powerio package envelope.
-	expect(text).toContain('powerio.dev/schema/pio-package');
+	// Keyed on the two fields that survive powerio's collapse of the envelope's
+	// version identifiers, rather than the `schema` URL that collapse removes.
+	expect(text).toContain('"schema_version"');
+	expect(text).toContain('"model_kind":"balanced"');
 
 	// The applied coordinates live on the network payload, so the layout also
 	// downloads as a canonical `.geo.json` layer.

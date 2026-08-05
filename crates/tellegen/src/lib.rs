@@ -29,6 +29,7 @@ mod api;
 pub mod formulation;
 pub mod geo;
 mod model;
+pub mod package;
 pub mod problem;
 #[cfg(feature = "sensitivity")]
 mod sens;
