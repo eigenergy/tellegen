@@ -16,6 +16,16 @@ changeset ships nothing, because nothing tells the release which version to
 cut. A pull request that touches only `apps/web`, `examples/`, or the crate
 does not need one.
 
+## Running the version step by hand
+
+`npm run version:packages` is what the release workflow runs, and it needs a
+`GITHUB_TOKEN` in the environment: the changelog generator resolves each
+changeset to the pull request that introduced it, which is a GitHub API call.
+Without one it fails with `Bad credentials` and touches nothing. The workflow
+supplies the token; locally, export a personal one with `public_repo` scope
+first. You rarely need to — the workflow keeps the pull request up to date on
+its own.
+
 ## What happens next
 
 On merge to `main`, `release-npm.yml` keeps a "Version Packages" pull request

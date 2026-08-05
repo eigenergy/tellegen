@@ -1,5 +1,35 @@
 # Changelog
 
+Three surfaces version independently — the `tellegen` crate, `@tellegen/engine`,
+and `@tellegen/svelte` — and each now keeps its own generated changelog, written
+by the tool that releases it:
+
+- [`crates/tellegen/CHANGELOG.md`](crates/tellegen/CHANGELOG.md) (release-plz)
+- [`packages/engine/CHANGELOG.md`](packages/engine/CHANGELOG.md) (changesets)
+- [`packages/svelte/CHANGELOG.md`](packages/svelte/CHANGELOG.md) (changesets)
+
+This file is the curated view across all three: what a release meant, rather
+than which versions moved. Entries below 0.1.3 predate the split and are the
+only record for those releases.
+
+## Unreleased
+
+- powerio moves to 0.7.3, which hardens the readers against untrusted case
+  files — the surface tellegen leans on hardest, since every call site here is
+  a string entry point handed user-supplied text by the browser or the server.
+  See powerio's [v0.7.3 release notes](https://github.com/eigenergy/powerio/releases/tag/v0.7.3).
+- A dropped `.pio.json` is recognized by either envelope spelling, so a package
+  written after powerio collapses its four version identifiers into one
+  `schema_version` still classifies. A package from a format lineage this build
+  cannot read now says to re-open the source case and save the study again,
+  rather than reporting it as a malformed file.
+- Releases are automated. The crate publishes through release-plz and the two
+  npm packages through changesets, both by OIDC trusted publishing behind an
+  approval-gated environment; no registry token is stored. The
+  `engine-v*`/`svelte-v*`/`tellegen-v*` tags are no longer cut by hand —
+  `tellegen-vX.Y.Z` is still the crate's tag name, and the packages take
+  changesets' `@tellegen/<name>@X.Y.Z` form.
+
 ## 0.1.2 — 2026-07-28
 
 `@tellegen/svelte` only. The compact layout renders the control panel as a
