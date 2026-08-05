@@ -1,0 +1,38 @@
+name: Install wasm-pack
+description: >
+  Install a pinned wasm-pack release from its GitHub release tarball, refusing
+  to proceed unless the download matches a known checksum. Every job that builds
+  the browser engine needs this, and a version bump has to be one edit: the
+  checksum is what makes the pin meaningful, so a copy of this block that drifts
+  is worse than no pin at all.
+
+inputs:
+  version:
+    description: wasm-pack release version, without the leading v.
+    required: false
+    default: "0.15.0"
+  sha256:
+    description: >
+      Expected sha256 of the x86_64-unknown-linux-musl tarball for `version`.
+      Must be updated in the same commit as `version`.
+    required: false
+    default: c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a
+
+runs:
+  using: composite
+  steps:
+    - name: Install wasm-pack ${{ inputs.version }}
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: |
+        set -euo pipefail
+        archive="wasm-pack-v${VERSION}-x86_64-unknown-linux-musl.tar.gz"
+        url="https://github.com/wasm-bindgen/wasm-pack/releases/download/v${VERSION}/${archive}"
+        curl -fsSL "$url" -o /tmp/wasm-pack.tar.gz
+        echo "${SHA256}  /tmp/wasm-pack.tar.gz" | sha256sum -c -
+        tar -xzf /tmp/wasm-pack.tar.gz -C "$HOME/.cargo/bin" \
+          --strip-components=1 --wildcards '*/wasm-pack'
+        rm -f /tmp/wasm-pack.tar.gz
+        wasm-pack --version

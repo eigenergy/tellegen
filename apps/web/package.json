@@ -18,7 +18,7 @@
 		"lint": "prettier --check ."
 	},
 	"dependencies": {
-		"@tellegen/svelte": "file:../../packages/svelte"
+		"@tellegen/svelte": "*"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.56.1",

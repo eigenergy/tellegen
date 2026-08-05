@@ -6,10 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# Only the deploy job writes anything; the build job reads. Declared per job
+# below rather than granting `pages: write` and `id-token: write` to the build
+# too, which is where the untrusted input (a pull request's docs source) is
+# processed.
+permissions: {}
 
 concurrency:
   group: tellegen-docs-pages-${{ github.ref }}
@@ -17,26 +18,36 @@ concurrency:
 
 env:
   MDBOOK_VERSION: v0.5.3
+  # sha256 of the x86_64-unknown-linux-gnu tarball for MDBOOK_VERSION. Bump both
+  # together: an unverified download into $GITHUB_PATH runs as this job.
+  MDBOOK_SHA256: e2fd508a4fac06cbaa9f88b97d27bdc3b55a08946304ca845879fe26a3699e11
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Install mdBook
         run: |
+          set -euo pipefail
           url="https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VERSION}/mdbook-${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
           mkdir -p "$RUNNER_TEMP/mdbook"
-          curl -sSLf "$url" | tar -xz --directory "$RUNNER_TEMP/mdbook"
+          curl -sSLf "$url" -o "$RUNNER_TEMP/mdbook.tar.gz"
+          echo "${MDBOOK_SHA256}  $RUNNER_TEMP/mdbook.tar.gz" | sha256sum -c -
+          tar -xz --directory "$RUNNER_TEMP/mdbook" -f "$RUNNER_TEMP/mdbook.tar.gz"
           echo "$RUNNER_TEMP/mdbook" >> "$GITHUB_PATH"
       - name: Build docs
         run: scripts/build-docs.sh
       - name: Configure Pages
         if: github.ref == 'refs/heads/main'
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: docs/book
 
@@ -56,7 +67,7 @@ jobs:
       # Retry with backoff so a service hiccup does not fail the run.
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
         continue-on-error: true
       - name: Wait before retrying the Pages deployment
         if: steps.deployment.outcome == 'failure'
@@ -64,11 +75,11 @@ jobs:
       - name: Deploy to GitHub Pages (second attempt)
         id: deployment-retry
         if: steps.deployment.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
         continue-on-error: true
       - name: Wait before the final Pages deployment attempt
         if: steps.deployment.outcome == 'failure' && steps.deployment-retry.outcome == 'failure'
         run: sleep 300
       - name: Deploy to GitHub Pages (final attempt)
         if: steps.deployment.outcome == 'failure' && steps.deployment-retry.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

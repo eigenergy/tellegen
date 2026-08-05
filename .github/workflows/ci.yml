@@ -5,67 +5,23 @@ on:
     branches: [main]
   pull_request:
 
-jobs:
-  # Test the tellegen backend, then build the wasm module before the tellegen
-  # frontend imports it.
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: rustup target add wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: .
-      - run: cargo test --workspace
-        env:
-          TELLEGEN_ALLOW_FALLBACK: "1"
-      # The conic SOCWR path is off by default (it ships only in the sensitivity wasm), so
-      # the workspace test above never exercises it. Run it explicitly so a SOCWR regression
-      # (e.g. the zero-impedance-jumper infeasibility) fails the PR instead of the browser.
-      - run: cargo test -p tellegen --features conic
-      - name: Install wasm-pack
-        run: |
-          curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz -o /tmp/wasm-pack.tar.gz
-          echo 'c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a  /tmp/wasm-pack.tar.gz' | sha256sum -c -
-          tar -xzf /tmp/wasm-pack.tar.gz -C "$HOME/.cargo/bin" --strip-components=1 --wildcards '*/wasm-pack'
-          rm -f /tmp/wasm-pack.tar.gz
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci
-      # `npm run wasm` builds the wasm package from crates/tellegen-wasm with the
-      # correct out-name (single source of truth in the engine package).
-      - run: npm run wasm
-      - run: npm run check:engine
-      - run: npm run build:engine
-      - run: npm run test:import
-      - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
-      - run: npm run lint:web
-      - run: npm run check:svelte
-      - run: npm run test:svelte
-      - run: npm run check:web
-      - run: npm run test:svelte-packed
-      # build:web rebuilds @tellegen/svelte, which check:web (just above) already
-      # built; call the frontend build directly to skip that redundant rebuild.
-      - run: npm --workspace tellegen-frontend run build
-      - run: npm run smoke:web
-      - run: npm run test:browser
+# Nothing here needs to write anything; the release workflows own the surfaces
+# that do. Declared explicitly because the repository default would otherwise
+# apply, and a default that widens later would widen this silently.
+permissions:
+  contents: read
 
-  # Format, lint, and supply chain. Keeps the shipping crates warning-clean and the
-  # whole dependency graph on permissive licenses (Apache-2.0/MIT).
-  governance:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: rustup target add wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: .
-      - run: cargo fmt --all --check
-      - run: cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli --all-targets -- -D warnings
-      - uses: EmbarkStudios/cargo-deny-action@v2
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The same gates the release workflows run. See gates.yml for why they are
+  # shared rather than restated.
+  gates:
+    uses: ./.github/workflows/gates.yml
+    with:
+      suite: all
 
   # Build the shipped Docker image and smoke test it on PRs. deploy.yml only builds
   # the image on push to main, so without this a Dockerfile or workspace-config break
@@ -75,12 +31,16 @@ jobs:
   image:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build image (load locally for the smoke test)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           load: true

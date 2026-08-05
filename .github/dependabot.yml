@@ -1,0 +1,40 @@
+version: 2
+
+# powerio releases often, and its 0.7.3 was a security release that reached this
+# repository only because someone went looking. These make the next one arrive
+# as a pull request with the gates already attached.
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # The four powerio crates share a version and must move together — a
+      # split bump does not resolve.
+      powerio:
+        patterns:
+          - powerio
+          - powerio-*
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-tooling:
+        dependency-type: development
+
+  # SHA-pinned actions do not float, so this is the only thing that moves them.
+  # Dependabot rewrites both the SHA and the trailing version comment.
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/wasm-pack
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"

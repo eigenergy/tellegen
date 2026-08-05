@@ -1,0 +1,108 @@
+name: Release (packages)
+
+# The npm half of the release pipeline, driven by changesets
+# (`.changeset/config.json`).
+#
+#   1. a push to main collects the changeset files under `.changeset/` into a
+#      "Version Packages" pull request: version bumps, changelog entries, the
+#      regenerated engine `CONTRACT_VERSION`, and a refreshed lockfile;
+#   2. merging that pull request runs the gates and publishes whatever versions
+#      are not yet on the registry.
+#
+# Publishing goes through changesets rather than two tag triggers because
+# `@tellegen/svelte` depends on `@tellegen/engine` by registry range: changesets
+# publishes them in dependency order, so the engine is on the registry before
+# the package that resolves it. The previous tag-per-package workflow had no
+# such ordering, and a `svelte-v*` tag could publish against an engine version
+# that did not exist yet.
+#
+# There is no npm token. npm trusted publishing exchanges this run's OIDC
+# identity for a short-lived credential, which also means npm attaches
+# provenance without `--provenance` being passed. Setting that up is a one-time
+# step per package on npmjs.com, bound to this repository and to this file's
+# name — so renaming this file breaks publishing until the trusted publisher is
+# updated to match.
+
+on:
+  push:
+    branches: [main]
+  # Recovery path for a push whose publish failed partway. `changeset publish`
+  # skips versions already on the registry, so a re-run finishes the job.
+  workflow_dispatch:
+
+permissions: {}
+
+# Serial, and never cancelled: `@tellegen/engine` and `@tellegen/svelte` publish
+# in sequence, and a cancellation between them would leave the registry holding
+# a svelte release whose engine never shipped.
+concurrency:
+  group: release-npm
+  cancel-in-progress: false
+
+jobs:
+  gates:
+    uses: ./.github/workflows/gates.yml
+    with:
+      suite: all
+
+  changesets:
+    name: version pull request or publish
+    needs: gates
+    runs-on: ubuntu-latest
+    # Deployment protection — required reviewers, and the branch rule limiting
+    # this to main — lives on the `npm` environment in the repository settings.
+    # The environment also scopes who can reach the OIDC exchange, so a run from
+    # anywhere else cannot mint a publish credential.
+    environment: npm
+    permissions:
+      # Version pull request, and the git tags changesets writes on publish.
+      contents: write
+      pull-requests: write
+      # npm trusted publishing. No stored registry token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          workspaces: .
+      - uses: ./.github/actions/wasm-pack
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # Trusted publishing needs npm 11.5.1 or newer to perform the OIDC
+      # exchange; Node 22 still bundles npm 10, which would silently fall back
+      # to looking for a token that is deliberately not here.
+      - name: Use an npm that can do trusted publishing
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          npm --version
+
+      - run: npm ci
+
+      - name: Version pull request or publish
+        uses: changesets/action@3841a0683d3cfa6dae0f9bb335290003010fe3f0 # v1.9.0
+        with:
+          # Bumps versions, writes the changelogs, regenerates the engine's
+          # CONTRACT_VERSION (which is derived from its package.json version and
+          # gated by `contracts:check`, so a bump that skipped it would fail the
+          # next run of the gates), and refreshes the lockfile.
+          version: npm run version:packages
+          # Builds wasm, then the engine, then the Svelte package, then
+          # publishes in dependency order.
+          publish: npm run release:npm
+          commit: "Release packages"
+          title: "Release packages"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # npm reads this to decide whether to attach provenance; under trusted
+          # publishing the attestation is signed with the same OIDC identity.
+          NPM_CONFIG_PROVENANCE: "true"

@@ -1,0 +1,125 @@
+name: Gates
+
+# The single definition of what "green" means for this repository, called by CI
+# on every pull request and by both release workflows before they publish.
+#
+# It lives in one file on purpose. The publish workflows used to carry their own
+# shorter gate lists — the crate publish ran neither clippy, cargo-deny, nor the
+# EPL guard, and the npm publish ran no Rust tests at all — so a release could
+# ship something a pull request would have rejected. Calling this means the
+# release path cannot drift away from the pull request path without the drift
+# being visible here.
+
+on:
+  workflow_call:
+    inputs:
+      suite:
+        description: >
+          Which gates to run: `rust`, `js`, or `all`. The npm packages embed a
+          Rust-compiled wasm module, so an npm release wants `all`; a crate
+          release wants `rust`.
+        type: string
+        required: false
+        default: all
+
+permissions: {}
+
+jobs:
+  rust:
+    if: inputs.suite == 'all' || inputs.suite == 'rust'
+    name: rust
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # The engine falls back to a bundled solver path when an external one is
+      # absent; the tests need that fallback available on a bare runner.
+      TELLEGEN_ALLOW_FALLBACK: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          workspaces: .
+
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy (shipping crates, warnings denied)
+        run: |
+          cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli \
+            --all-targets -- -D warnings
+      - name: Licenses, advisories, bans, sources
+        uses: EmbarkStudios/cargo-deny-action@c3bbe7e4e3f7baeee1a3dd9aec0a3b2aded580fb # v2.1.1
+
+      # `just epl-guard`. The EPL-2.0 `pounce` backend must never enter a shipped
+      # build; this ran only in the justfile before, so nothing enforced it on the
+      # artifacts that actually leave the repository.
+      - name: EPL guard
+        run: |
+          set -euo pipefail
+          for p in "tellegen-wasm --target wasm32-unknown-unknown" tellegen-server tellegen-cli; do
+            if cargo tree -p $p 2>/dev/null | grep -qi pounce; then
+              echo "EPL pounce backend leaked into: $p" >&2
+              exit 1
+            fi
+          done
+          echo "ok: no EPL pounce in wasm / server / cli"
+
+      - name: Test the workspace
+        run: cargo test --workspace
+      # The conic SOCWR path is off by default (it ships only in the sensitivity
+      # wasm), so the workspace run above never reaches it.
+      - name: Test the engine's conic path
+        run: cargo test -p tellegen --features conic
+      # `tellegen-wasm` declares `default = []`, so the workspace run above skips
+      # every `sensitivity`-gated test in it — including the ones asserting that
+      # an untrusted package or case rejects rather than panicking, which is the
+      # browser's entire threat model. The shipped module is built with `conic`,
+      # so test the configuration that ships.
+      - name: Test the wasm adapter as it ships
+        run: cargo test -p tellegen-wasm --features conic
+
+  js:
+    if: inputs.suite == 'all' || inputs.suite == 'js'
+    name: js
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          workspaces: .
+      - uses: ./.github/actions/wasm-pack
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+
+      # `npm run wasm` builds the wasm package from crates/tellegen-wasm with the
+      # correct out-name (single source of truth in the engine package).
+      - run: npm run wasm
+      - run: npm run check:engine
+      - run: npm run build:engine
+      - run: npm run test:import
+
+      - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
+      - run: npm run lint:web
+      - run: npm run check:svelte
+      - run: npm run test:svelte
+      - run: npm run check:web
+      # Packs both tarballs into a temporary consumer and builds it: the closest
+      # thing to a real downstream install, and the last gate before publish.
+      - run: npm run test:svelte-packed
+      # build:web rebuilds @tellegen/svelte, which check:web (just above) already
+      # built; call the frontend build directly to skip that redundant rebuild.
+      - run: npm --workspace tellegen-frontend run build
+      - run: npm run smoke:web
+      - run: npm run test:browser
