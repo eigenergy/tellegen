@@ -30,7 +30,7 @@ pub fn ingest_dist(text: &str, format: &str) -> Result<String, String> {
 /// payload, return the same drop-panel payload [`ingest_dist`] does. A balanced
 /// package is rejected: the frontend routes those to the study-restore path.
 pub fn ingest_dist_package(text: &str) -> Result<String, String> {
-    let package = NetworkPackage::from_json(text).map_err(|e| tellegen::package::read_error(&e))?;
+    let package = NetworkPackage::from_json(text).map_err(tellegen::package::read_error)?;
     if package.model_kind() != ModelKind::Multiconductor {
         return Err("package is not a multiconductor case".to_owned());
     }
@@ -86,9 +86,6 @@ fn ingest_dist_value(net: &MulticonductorNetwork) -> Result<serde_json::Value, S
         "n_generator": net.generators.len(),
         "n_ibr": net.ibrs.len(),
         "n_source": net.sources.len(),
-        // Raw admittance shunts. powerio is adding a typed capacitor element in
-        // a separate table, at which point a BMOPF case's rated capacitor banks
-        // stop being counted here and need their own tally.
         "n_shunt": net.shunts.len(),
         "load_kw": load_kw,
         "gen_kw": gen_kw,

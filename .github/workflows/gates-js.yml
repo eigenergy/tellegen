@@ -1,0 +1,38 @@
+name: Gates (js)
+
+# CI and the npm release call this. Add a JavaScript gate here, not in a caller.
+# Concurrency comes from the caller: do not add a group here, or a release will
+# queue behind a CI run.
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  js:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/js-setup
+
+      # Cheapest gate first, so a formatting error does not wait for a browser.
+      - run: npm run lint:web
+      - run: npm run wasm
+      - run: npm run check:engine
+      - run: npm run build:engine
+      - run: npm run test:import
+      - run: npm run check:svelte
+      - run: npm run test:svelte
+      - run: npm run check:web
+      - run: npm run test:svelte-packed
+      # Call the frontend build directly. `build:web` rebuilds @tellegen/svelte,
+      # which `check:web` above already built.
+      - run: npm --workspace tellegen-frontend run build
+      - run: npm run smoke:web
+      - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
+      - run: npm run test:browser

@@ -848,8 +848,7 @@ pub fn export_study(
     commit: usize,
     format: &str,
 ) -> Result<ExportedCase, String> {
-    let package =
-        NetworkPackage::from_json(package_json).map_err(|e| crate::package::read_error(&e))?;
+    let package = NetworkPackage::from_json(package_json).map_err(crate::package::read_error)?;
     let target = powerio::target_format_from_name(format)
         .ok_or_else(|| format!("unknown export format \"{format}\""))?;
     let balanced = match package.study() {
@@ -2127,13 +2126,8 @@ mod tests {
         }
     }
 
-    /// A `.pio.json` from a format lineage this build does not read is a good
-    /// file, not a broken one, and the user's route back is to re-save rather
-    /// than to repair. powerio collapsed the envelope's four version
-    /// identifiers into one `schema_version` and narrowed the accepted lineage,
-    /// which invalidates every package written before that change — so this
-    /// wording is what a user with a saved study will meet, and it has to say
-    /// what to do about it.
+    /// Runs against the powerio build in the lockfile, so it shows that the
+    /// wording fires on a real version rejection.
     #[test]
     fn export_tells_the_user_to_re_save_a_package_from_another_format_version() {
         let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();
@@ -2143,8 +2137,8 @@ mod tests {
         let err = export_study(&value.to_string(), 0, "matpower").unwrap_err();
 
         assert!(
-            crate::package::is_unsupported_schema_version(&err),
-            "expected the upstream version diagnostic to ride along, got: {err}"
+            err.contains(crate::package::UNSUPPORTED_SCHEMA_VERSION),
+            "upstream detail dropped: {err}"
         );
         assert!(err.contains("re-save the study"), "got: {err}");
     }

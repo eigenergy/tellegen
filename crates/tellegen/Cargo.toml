@@ -36,10 +36,9 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-# A multiconductor payload for the fail-closed load test that a study package must be
-# balanced. Already in the tree via powerio-pkg; takes the workspace pin so a version
-# bump cannot leave the dev build resolving a different powerio line than the crates
-# that ship.
+# A multiconductor payload for the fail-closed test that a study package must be
+# balanced. Workspace-pinned, so the dev build cannot resolve a different
+# powerio line than the crates that ship.
 powerio-dist = { workspace = true }
 
 [features]

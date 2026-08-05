@@ -1,17 +1,7 @@
 name: Package Inspect
 
-# Builds the exact artifacts a release would upload and attaches them as
-# workflow artifacts, without publishing anything.
-#
-# This is what `crates-publish.yml` and `npm-publish.yml` did on a manual run
-# before releases moved to release-plz and changesets. Their tag triggers and
-# publish steps are gone: publishing now happens in `release-crate.yml` and
-# `release-npm.yml` through trusted publishing behind an approval-gated
-# environment, and a second route to the registries — one holding a long-lived
-# token — would have been the weakest link rather than a safety net.
-#
-# Reach for this when you want to see what is in the tarball: `npm pack` and
-# `cargo package` contents, file lists, sizes.
+# Build the release artifacts and upload them. This workflow does not publish.
+# Use it to examine the contents of a tarball.
 
 on:
   workflow_dispatch:
@@ -31,9 +21,8 @@ jobs:
       - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
         with:
           workspaces: .
-      # Builds from the packaged sources, the same check crates.io runs on
-      # upload. `cargo package` over `cargo publish --dry-run` because only the
-      # former leaves the `.crate` behind for the artifact below.
+      # `cargo package`, not `cargo publish --dry-run`: only `package` keeps the
+      # `.crate` file for the upload step below.
       - name: Package and verify
         run: |
           rm -rf target/package
@@ -55,24 +44,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - run: rustup target add wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
-        with:
-          workspaces: .
-      - uses: ./.github/actions/wasm-pack
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci
+      - uses: ./.github/actions/js-setup
       - run: npm run wasm
       - run: npm run build:engine
       - run: npm run build:svelte
-      - name: Pack dry runs
-        run: |
-          npm run pack:engine
-          npm run pack:svelte
       - name: Pack artifacts
         run: |
           set -euo pipefail

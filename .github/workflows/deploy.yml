@@ -5,8 +5,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Granted per job: only `image` pushes to GHCR, and the deploy job needs
-# nothing beyond a checkout.
 permissions: {}
 
 concurrency:
@@ -23,20 +21,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - run: rustup target add wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
-        with:
-          workspaces: .
+      - uses: ./.github/actions/js-setup
       - run: cargo test --workspace
         env:
           TELLEGEN_ALLOW_FALLBACK: "1"
-      - uses: ./.github/actions/wasm-pack
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci
       - run: npm run wasm
       - run: npm run build:engine
       - run: npm run check:svelte

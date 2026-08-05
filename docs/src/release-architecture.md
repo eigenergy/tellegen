@@ -71,95 +71,85 @@ Patch versions are for bug fixes and docs that do not change public APIs.
 
 ### Saved studies and the `.pio.json` format version
 
-A saved study is a powerio `.pio.json` document, and its format version is
-powerio's, not tellegen's. powerio's reader accepts its own lineage and rejects
-anything else, so a saved study can outlive the build that reads it: when
-powerio narrows that lineage, every previously saved study stops loading.
+A saved study is a powerio `.pio.json` document. Its format version is
+powerio's, not tellegen's. When powerio narrows the range of versions it reads,
+every study saved before that change stops loading.
 
-tellegen cannot migrate such a file — the document is a snapshot of a case plus
-an edit log, and the way back is to regenerate it, not to repair it. What
-tellegen does is say so: a package from an unreadable lineage reports that the
-source case should be opened and the study saved again, rather than being
-reported as malformed. `crates/tellegen/src/package.rs` owns that wording for
-all three surfaces that load a package.
+tellegen cannot migrate such a file. The document is a snapshot of a case and an
+edit log, so the user must save it again from the source case. tellegen says so
+in the error: `crates/tellegen/src/package.rs` holds that wording for all three
+surfaces that load a package.
 
-The tellegen block inside the document (`study.app["tellegen"]`, carrying the
-formulation and solve options) has its own `schema_version`, independent of the
-envelope's, and is validated separately.
+The tellegen block in the document (`study.app["tellegen"]`) has its own
+`schema_version` and is checked separately.
 
 ## Releasing
 
-Package versions and the crate version move independently. A release that
-touches only one surface publishes only that surface, which is why two release
-bots drive the pipeline rather than one.
+Package versions and the crate version move independently, so two release bots
+drive the pipeline. A release that touches one surface publishes that surface
+only.
 
-Nobody cuts a tag by hand, and no registry token is stored in this repository.
-Both registries authenticate with OIDC: the workflow's own identity is exchanged
-for a credential that lives for the length of the job. Each exchange sits inside
-a GitHub deployment environment (`crates-io`, `npm`) whose protection rules —
-required reviewers, and the rule limiting it to `main` — live in the repository
-settings. Naming the environment in the workflow is only half of it; the
-protection rule is what makes the approval real.
+Nobody cuts a tag by hand. This repository stores no registry token. Both
+registries authenticate with OIDC, and each exchange runs in a deployment
+environment (`crates-io`, `npm`). The reviewer rule and the main-only rule live
+on those environments, in the repository settings. The `environment:` line in a
+workflow does not gate the publish on its own.
 
 ### Enabling the pipeline
 
-Both release workflows are held behind the `TELLEGEN_RELEASE_ENABLED`
-repository variable, the way `deploy.yml` holds the demo, because what they need
-lives outside the repository. Set it to `true` after all of:
+The release workflows do nothing until the `TELLEGEN_RELEASE_ENABLED` repository
+variable is `true`. What they need lives outside the repository. Set the
+variable after you make all of these:
 
-1. a `crates-io` deployment environment with required reviewers and a rule
-   limiting it to `main`, and the same for an `npm` environment;
-2. a crates.io trusted publisher for `tellegen`, pointing at this repository and
+1. a `crates-io` environment and an `npm` environment, each with required
+   reviewers and a rule that limits it to `main`;
+2. a crates.io trusted publisher for `tellegen`, set to this repository and
    `release-crate.yml`;
-3. an npm trusted publisher for each of `@tellegen/engine` and
-   `@tellegen/svelte`, pointing at this repository and `release-npm.yml` — this
-   is per package, and it binds to the workflow *filename*, so renaming either
-   workflow breaks publishing until the publisher is updated;
-4. a GitHub App installed on this repository with `contents: write` and
-   `pull-requests: write`, its id in the `RELEASE_PLZ_APP_ID` variable and its
-   private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. This exists only so
-   the crate's version pull request runs CI — pull requests opened with
-   `GITHUB_TOKEN` do not trigger workflows.
+3. an npm trusted publisher for `@tellegen/engine` and one for
+   `@tellegen/svelte`, each set to this repository and `release-npm.yml`. The
+   publisher binds to the workflow filename. If you rename the workflow,
+   publishing stops until you change the publisher;
+4. a GitHub App on this repository with `contents: write` and
+   `pull-requests: write`. Put its id in the `RELEASE_PLZ_APP_ID` variable and
+   its private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. The app exists
+   only so the crate's version pull request starts a CI run. A pull request
+   that `GITHUB_TOKEN` opens does not start one.
 
-Once trusted publishing works, delete the `NPM_TOKEN` and
-`CARGO_REGISTRY_TOKEN` secrets. Nothing reads them any more, and a stored
-registry credential that nothing uses is purely a liability.
+When trusted publishing works, delete the `NPM_TOKEN` and
+`CARGO_REGISTRY_TOKEN` secrets. Nothing reads them.
 
 ### Packages
 
 `@tellegen/engine` and `@tellegen/svelte` release through changesets.
 
-A change to either package ships with a changeset: run `npm run changeset`, say
-what changed and how big the bump is, and commit the generated file alongside
-the change. `.changeset/README.md` has the details.
+A change to either package needs a changeset. Run `npm run changeset` and commit
+the file it writes. See `.changeset/README.md`.
 
 On a push to `main`, `.github/workflows/release-npm.yml` keeps a "Release
-packages" pull request open that consumes every pending changeset — version
-bumps, changelog entries, the regenerated engine `CONTRACT_VERSION`, and a
-refreshed lockfile. Merging that pull request runs the gates and publishes.
-Tags are changesets' `@tellegen/<name>@X.Y.Z`.
+packages" pull request open. That pull request applies every pending changeset:
+version bumps, changelog entries, the engine `CONTRACT_VERSION`, and the
+lockfile. Merge it to run the gates and publish. Tags take the form
+`@tellegen/<name>@X.Y.Z`.
 
-`@tellegen/svelte` depends on `@tellegen/engine` by registry range, so a release
-that moves both publishes the engine first. Nothing enforced that ordering when
-each package had its own tag trigger.
+`@tellegen/svelte` resolves `@tellegen/engine` from the registry, so a release
+that moves both publishes the engine first.
 
 ### Crate
 
-`tellegen` is the only crate that publishes to crates.io; `tellegen-wasm`,
+`tellegen` is the only crate that publishes to crates.io. `tellegen-wasm`,
 `tellegen-server`, `tellegen-cli`, and `benchmarks` carry `publish = false`, and
-`release-plz.toml` restates that so adding a publishable crate is a deliberate
-edit.
+`release-plz.toml` lists them again, so a new publishable crate needs a
+deliberate edit there.
 
 On a push to `main`, `.github/workflows/release-crate.yml` keeps a version-bump
-pull request open with the changelog entry written from the commits since the
-last tag. Merging it runs the gates, tags `tellegen-vX.Y.Z`, cuts the GitHub
-release, and publishes.
+pull request open. Merge it to run the gates, tag `tellegen-vX.Y.Z`, make the
+GitHub release, and publish.
 
 ### Inspecting an artifact
 
-`.github/workflows/package-inspect.yml` is a manual run that builds exactly what
-a release would upload — `cargo package` and both `npm pack` tarballs — and
-attaches them as workflow artifacts without publishing anything.
+`.github/workflows/package-inspect.yml` is a manual run. It builds the artifacts
+a release would upload, `cargo package` and both `npm pack` tarballs, and
+attaches them to the run. It publishes nothing.
 
 ### Changelogs
 
@@ -170,21 +160,18 @@ across all three, and the only record for releases before the split.
 
 ## CI Gates
 
-`.github/workflows/gates.yml` is the single definition of what green means. CI
-calls it on every pull request, and both release workflows call it before they
-publish — so the release path cannot quietly run a shorter list than the pull
-request path did.
+`.github/workflows/gates-rust.yml` and `.github/workflows/gates-js.yml` define
+what green means. CI calls both on every pull request. The crate release calls
+the Rust gates, and the npm release calls both. Add a gate to those files, not
+to a caller.
 
 The Rust gates are `cargo fmt --check`, clippy with warnings denied on the
-shipping crates, `cargo-deny`, the EPL guard (the EPL-2.0 `pounce` backend must
-never enter a shipped wasm, server, or CLI build), the workspace tests, the
-engine's `conic` path, and `tellegen-wasm` built with `conic` — the
-configuration that actually ships, and the one that carries the untrusted-input
-rejection tests, which `cargo test --workspace` skips because the adapter
-declares `default = []`.
+shipping crates, `cargo-deny`, the EPL guard, the workspace tests, the engine's
+`conic` path, and `tellegen-wasm` built with `conic`. The last one matters
+because `tellegen-wasm` declares `default = []`, so the workspace run skips its
+untrusted-input rejection tests.
 
 The JavaScript gates install once from the root lockfile, build
 `packages/engine` before `packages/svelte`, build the hosted demo, install the
-packed Svelte tarball into a temporary downstream consumer, and run a browser
-test against the demo shell. The root `ci:js` script is the local equivalent;
-`just ci` runs everything.
+packed Svelte tarball into a temporary consumer, and run a browser test against
+the demo shell. `just ci` runs everything locally.

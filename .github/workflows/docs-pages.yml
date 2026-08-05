@@ -6,10 +6,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Only the deploy job writes anything; the build job reads. Declared per job
-# below rather than granting `pages: write` and `id-token: write` to the build
-# too, which is where the untrusted input (a pull request's docs source) is
-# processed.
 permissions: {}
 
 concurrency:
@@ -18,8 +14,7 @@ concurrency:
 
 env:
   MDBOOK_VERSION: v0.5.3
-  # sha256 of the x86_64-unknown-linux-gnu tarball for MDBOOK_VERSION. Bump both
-  # together: an unverified download into $GITHUB_PATH runs as this job.
+  # sha256 of the tarball for MDBOOK_VERSION. Change both together.
   MDBOOK_SHA256: e2fd508a4fac06cbaa9f88b97d27bdc3b55a08946304ca845879fe26a3699e11
 
 jobs:

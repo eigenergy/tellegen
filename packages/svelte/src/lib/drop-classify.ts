@@ -6,8 +6,8 @@
  *
  * The rules mirror the readers they feed:
  *   - a `.pio.json` package is recognized by either envelope spelling (see
- *     {@link isPackageEnvelope}), then split by the authoritative `model_kind`
- *     (balanced restores a study; multiconductor is viewed);
+ *     {@link packageKind}), then split by kind (balanced restores a study;
+ *     multiconductor is viewed);
  *   - a non-package document is distribution JSON, PMD when it carries the
  *     `data_model` marker and BMOPF otherwise (the same split
  *     `powerio_dist` uses for `.json`), except a GeoJSON FeatureCollection,
@@ -16,10 +16,8 @@
  * Every function is total: malformed, truncated, or non-JSON input classifies
  * as `not-json` rather than throwing. */
 
-/** The schema URL prefix a `.pio.json` package envelope carried through powerio
- * 0.7.x. Later producers drop the field in favour of `schema_version` alone;
- * {@link isPackageEnvelope} accepts both, and this stays exported because it is
- * public API. */
+/** The schema URL that a `.pio.json` envelope carried through powerio 0.7.x.
+ * Later versions removed the field and kept `schema_version` alone. */
 export const PIO_PACKAGE_SCHEMA_PREFIX = 'https://powerio.dev/schema/pio-package';
 
 /** How a dropped JSON file should be ingested. */
@@ -66,26 +64,6 @@ function topLevelObject(text: string): Record<string, unknown> | null {
 		: null;
 }
 
-/** Whether `obj` is a `.pio.json` package envelope.
- *
- * Two spellings are accepted, because powerio collapsed the envelope's four
- * version identifiers into one:
- *   - through 0.7.x, a `schema` URL under {@link PIO_PACKAGE_SCHEMA_PREFIX};
- *   - after that, `schema_version` alone, with `schema` gone from the wire form.
- *
- * The second rule pairs `schema_version` with a resolvable model kind rather
- * than trusting it alone: `schema_version` is a common enough key that a case
- * document could carry one, while the combination is the package envelope's
- * own shape. `model_kind` is authoritative and `model.kind` is the fallback,
- * which is exactly what {@link packageModelKind} already resolves. */
-export function isPackageEnvelope(obj: Record<string, unknown> | null): boolean {
-	if (!obj) return false;
-	if (typeof obj.schema === 'string' && obj.schema.startsWith(PIO_PACKAGE_SCHEMA_PREFIX)) {
-		return true;
-	}
-	return typeof obj.schema_version === 'string' && packageModelKind(obj) !== null;
-}
-
 /** The package's model family. `model_kind` is authoritative and stored
  * explicitly; fall back to the payload's own `model.kind` tag for a package
  * written before the field existed. */
@@ -97,17 +75,34 @@ function packageModelKind(obj: Record<string, unknown>): 'balanced' | 'multicond
 	return null;
 }
 
+/** The model family of a `.pio.json` envelope, or null when `obj` is not one.
+ *
+ * powerio replaced the envelope's four version identifiers with one
+ * `schema_version`, so two spellings exist and both must classify:
+ *   - through 0.7.x, a `schema` URL under {@link PIO_PACKAGE_SCHEMA_PREFIX};
+ *   - after that, `schema_version` alone.
+ *
+ * The second rule needs a model kind beside the version. A case document can
+ * carry a `schema_version`, but only an envelope carries both. */
+export function packageKind(
+	obj: Record<string, unknown> | null
+): 'balanced' | 'multiconductor' | null {
+	if (!obj) return null;
+	const kind = packageModelKind(obj);
+	if (typeof obj.schema === 'string' && obj.schema.startsWith(PIO_PACKAGE_SCHEMA_PREFIX)) {
+		// A 0.7.x package with no readable kind is balanced. That is the
+		// historical payload, and the study-restore path fails closed anyway.
+		return kind ?? 'balanced';
+	}
+	return typeof obj.schema_version === 'string' ? kind : null;
+}
+
 /** Classify a dropped JSON document into its ingest path. */
 export function classifyJson(text: string): JsonDropKind {
 	const obj = topLevelObject(text);
 	if (!obj) return 'not-json';
-	if (isPackageEnvelope(obj)) {
-		const kind = packageModelKind(obj);
-		// A package with no readable kind is treated as balanced: that is the
-		// historical payload and the study-restore path fails closed on a
-		// non-balanced document anyway.
-		return kind === 'multiconductor' ? 'multiconductor-package' : 'balanced-package';
-	}
+	const kind = packageKind(obj);
+	if (kind) return `${kind}-package`;
 	// A GeoJSON FeatureCollection saved as `.json` is coordinate data for the
 	// geo sidecar path, which accepted it before this classifier existed; leave
 	// it unrouted so it falls through.

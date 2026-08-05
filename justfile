@@ -31,9 +31,7 @@ clippy:
 deny:
     cargo deny check
 
-# `test` above runs the workspace with default features, and tellegen-wasm's default
-# is empty, so the browser path's untrusted-input rejection tests never run there.
-# CI gate: test the wasm adapter in the configuration that ships.
+# CI gate: test the wasm adapter as it ships (`default = []`, so `test` skips it).
 wasm-adapter-test:
     cargo test -p tellegen-wasm --features conic
 
@@ -109,9 +107,7 @@ web-browser:
 
 # ---- release ----
 
-# Commit the file it writes alongside the change; without one, the change ships in
-# no release. The crate needs nothing here — release-plz reads the commits.
-# Record what changed in @tellegen/engine or @tellegen/svelte.
+# Record an npm package change; commit the file it writes. The crate needs none.
 changeset:
     npm run changeset
 
@@ -121,7 +117,5 @@ changeset-status:
 
 # ---- aggregate ----
 
-# `wasm-adapter-test` covers what `test` cannot: tellegen-wasm declares
-# `default = []`, so a workspace run skips every sensitivity-gated test in it.
 # Everything CI enforces locally, in order.
 ci: fmt-check clippy deny epl-guard test wasm-adapter-test wasm engine-check engine-build js-import web-lint svelte-check svelte-test web-check svelte-packed web-build web-smoke web-browser

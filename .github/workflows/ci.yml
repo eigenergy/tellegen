@@ -5,29 +5,22 @@ on:
     branches: [main]
   pull_request:
 
-# Nothing here needs to write anything; the release workflows own the surfaces
-# that do. Declared explicitly because the repository default would otherwise
-# apply, and a default that widens later would widen this silently.
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # The same gates the release workflows run. See gates.yml for why they are
-  # shared rather than restated.
-  gates:
-    uses: ./.github/workflows/gates.yml
-    with:
-      suite: all
+  rust:
+    uses: ./.github/workflows/gates-rust.yml
 
-  # Build the shipped Docker image and smoke test it on PRs. deploy.yml only builds
-  # the image on push to main, so without this a Dockerfile or workspace-config break
-  # (e.g. a default-members change that desyncs the Dockerfile's `--bin` selection)
-  # passes PR CI and only fails post-merge on the deploy. No GHCR push; PR-only so it
-  # does not duplicate the image build deploy.yml already runs on main.
+  js:
+    uses: ./.github/workflows/gates-js.yml
+
+  # deploy.yml builds the image only on a push to main. Without this job, a
+  # Dockerfile break passes PR CI and fails after the merge.
   image:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

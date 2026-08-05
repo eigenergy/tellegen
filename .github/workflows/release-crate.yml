@@ -1,48 +1,25 @@
 name: Release (crate)
 
-# The crate half of the release pipeline, driven by release-plz (config in
-# `release-plz.toml`).
-#
-#   1. a push to main updates a version-bump pull request describing what would
-#      ship, with the changelog entry written from the commits since the last tag;
-#   2. merging that pull request runs the gates, then tags `tellegen-vX.Y.Z`,
-#      cuts the GitHub release, and publishes to crates.io.
-#
-# There is no registry token. crates.io trusted publishing exchanges this run's
-# OIDC identity for a token that lives for the length of the job, which is the
-# same mechanism powerio's `crates.yml` uses. The `crates-io` environment gates
-# the exchange behind a reviewer.
+# Setup for this workflow is in docs/src/release-architecture.md.
 
 on:
   push:
     branches: [main]
-  # Recovery path for a push whose run failed after the version landed. The
-  # publish is idempotent: release-plz skips a version already in the index.
   workflow_dispatch:
 
 permissions: {}
 
-# Serial, and never cancelled: interrupting a run between `cargo publish` and
-# the tag push would leave the registry ahead of the repository.
+# Do not cancel a run. A stop between the publish and the tag leaves crates.io
+# ahead of the repository.
 concurrency:
   group: release-crate
   cancel-in-progress: false
 
-# Every job is held behind the same repository variable, the way deploy.yml holds
-# the demo. The pieces this pipeline needs live outside the repository — the
-# `crates-io` environment and its reviewers, the crates.io trusted publisher, and
-# the release-plz GitHub App — so until they exist these jobs would fail on every
-# push to main. Set TELLEGEN_RELEASE_ENABLED to `true` once they do.
 jobs:
   gates:
     if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
-    uses: ./.github/workflows/gates.yml
-    with:
-      suite: rust
+    uses: ./.github/workflows/gates-rust.yml
 
-  # Opens or refreshes the version-bump pull request. Deliberately does not wait
-  # on the gates: the pull request is a proposal, and its own CI run is what says
-  # whether the proposal is sound.
   release-pr:
     if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
     name: version pull request
@@ -50,11 +27,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      # A GitHub App token rather than GITHUB_TOKEN: pull requests opened with
-      # GITHUB_TOKEN do not start workflow runs, so the release pull request
-      # would sit there with no CI on it — exactly the pull request that most
-      # needs some. The app needs contents:write and pull-requests:write on this
-      # repository and nothing else.
+      # Use an app token, not GITHUB_TOKEN. A pull request that GITHUB_TOKEN
+      # opens does not start a CI run.
       - name: Mint an app token
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -76,28 +50,20 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
   publish:
-    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
     name: publish to crates.io
     needs: gates
     runs-on: ubuntu-latest
-    # Deployment protection — required reviewers, and the branch rule limiting
-    # this to main — lives on the `crates-io` environment in the repository
-    # settings, not in this file. Naming the environment here is only half of
-    # it; the protection rule is what makes the approval real.
+    # The reviewer rule is on the environment, in the repository settings. This
+    # line alone does not gate the publish.
     environment: crates-io
     permissions:
-      # Tag and GitHub release.
       contents: write
-      # crates.io trusted publishing. No stored registry token.
       id-token: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
-        with:
-          workspaces: .
       - name: Exchange the OIDC token for a crates.io token
         id: auth
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5

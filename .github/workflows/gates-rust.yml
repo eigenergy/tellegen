@@ -1,0 +1,59 @@
+name: Gates (rust)
+
+# CI and both release workflows call this. Add a Rust gate here, not in a caller.
+# Concurrency comes from the caller: do not add a group here, or a release will
+# queue behind a CI run.
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # A bare runner has no external solver. Let the tests use the bundled one.
+      TELLEGEN_ALLOW_FALLBACK: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          workspaces: .
+
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy (shipping crates, warnings denied)
+        run: |
+          cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli \
+            --all-targets -- -D warnings
+      - name: Licenses, advisories, bans, sources
+        uses: EmbarkStudios/cargo-deny-action@c3bbe7e4e3f7baeee1a3dd9aec0a3b2aded580fb # v2.1.1
+
+      # Mirrors `just epl-guard`. The EPL-2.0 `pounce` backend must not enter a
+      # shipped build.
+      - name: EPL guard
+        run: |
+          set -euo pipefail
+          for p in "tellegen-wasm --target wasm32-unknown-unknown" tellegen-server tellegen-cli; do
+            if cargo tree -p $p 2>/dev/null | grep -qi pounce; then
+              echo "EPL pounce backend leaked into: $p" >&2
+              exit 1
+            fi
+          done
+          echo "ok: no EPL pounce in wasm / server / cli"
+
+      - name: Test the workspace
+        run: cargo test --workspace
+      # The two runs below use non-default features, which the workspace run
+      # above does not reach. Keep them separate: `tellegen-wasm` takes
+      # `tellegen` with `default-features = false`, so this is the only run that
+      # tests the feature set the browser ships.
+      - name: Test the engine's conic path
+        run: cargo test -p tellegen --features conic
+      - name: Test the wasm adapter as it ships
+        run: cargo test -p tellegen-wasm --features conic

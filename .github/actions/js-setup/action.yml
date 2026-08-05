@@ -1,0 +1,52 @@
+name: Set up the JavaScript workspace
+description: Install wasm-pack and Node, then install the workspace.
+
+inputs:
+  registry-url:
+    description: npm registry. Set this only in a job that publishes.
+    required: false
+    default: ""
+  wasm-pack-version:
+    description: wasm-pack release version, without the leading v.
+    required: false
+    default: "0.15.0"
+  wasm-pack-sha256:
+    description: >
+      Expected sha256 of the wasm-pack tarball. Change it in the same commit as
+      the version.
+    required: false
+    default: c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a
+
+runs:
+  using: composite
+  steps:
+    - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      with:
+        workspaces: .
+
+    # The Dockerfile installs wasm-pack too, and it has no rust-toolchain.toml
+    # in its build context. Change both together.
+    - name: Install wasm-pack ${{ inputs.wasm-pack-version }}
+      shell: bash
+      env:
+        VERSION: ${{ inputs.wasm-pack-version }}
+        SHA256: ${{ inputs.wasm-pack-sha256 }}
+      run: |
+        set -euo pipefail
+        archive="wasm-pack-v${VERSION}-x86_64-unknown-linux-musl.tar.gz"
+        url="https://github.com/wasm-bindgen/wasm-pack/releases/download/v${VERSION}/${archive}"
+        curl -fsSL "$url" -o /tmp/wasm-pack.tar.gz
+        echo "${SHA256}  /tmp/wasm-pack.tar.gz" | sha256sum -c -
+        tar -xzf /tmp/wasm-pack.tar.gz -C "$HOME/.cargo/bin" \
+          --strip-components=1 --wildcards '*/wasm-pack'
+        rm -f /tmp/wasm-pack.tar.gz
+        wasm-pack --version
+
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: 22
+        registry-url: ${{ inputs.registry-url }}
+        cache: npm
+        cache-dependency-path: package-lock.json
+    - run: npm ci
+      shell: bash

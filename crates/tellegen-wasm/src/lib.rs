@@ -258,7 +258,7 @@ fn commit_output(resp: &SolveResponse) -> serde_json::Value {
 #[cfg(feature = "sensitivity")]
 fn load_package_bundle(package_json: &str) -> Result<String, String> {
     let package = powerio_pkg::NetworkPackage::from_json(package_json)
-        .map_err(|e| tellegen::package::read_error(&e))?;
+        .map_err(tellegen::package::read_error)?;
     let study = tellegen::Study::from_package(&package)?;
     // The engine already validated the payload as balanced; clone it (uids stamped) for
     // the ingest view.
@@ -848,8 +848,7 @@ mpc.gencost = [
             "null",
             "[]",
             "42",
-            // A bare envelope header in either spelling — the version identifiers
-            // with no payload behind them — is not a loadable package.
+            // An envelope header with no payload is not a loadable package.
             r#"{"schema":"https://powerio.dev/schema/pio-package/0.1"}"#,
             r#"{"schema_version":"0.2.0"}"#,
             r#"{"schema_version":"0.2.0","model_kind":"balanced"}"#,
