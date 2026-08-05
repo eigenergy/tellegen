@@ -39,13 +39,19 @@ concurrency:
   group: release-npm
   cancel-in-progress: false
 
+# Held behind the same repository variable as the crate release: the `npm`
+# environment, its reviewers, and the per-package trusted publishers on npmjs.com
+# all live outside the repository, and until they exist the publish step would
+# fail on every push to main.
 jobs:
   gates:
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
     uses: ./.github/workflows/gates.yml
     with:
       suite: all
 
   changesets:
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
     name: version pull request or publish
     needs: gates
     runs-on: ubuntu-latest

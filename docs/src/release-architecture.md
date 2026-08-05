@@ -101,6 +101,30 @@ required reviewers, and the rule limiting it to `main` — live in the repositor
 settings. Naming the environment in the workflow is only half of it; the
 protection rule is what makes the approval real.
 
+### Enabling the pipeline
+
+Both release workflows are held behind the `TELLEGEN_RELEASE_ENABLED`
+repository variable, the way `deploy.yml` holds the demo, because what they need
+lives outside the repository. Set it to `true` after all of:
+
+1. a `crates-io` deployment environment with required reviewers and a rule
+   limiting it to `main`, and the same for an `npm` environment;
+2. a crates.io trusted publisher for `tellegen`, pointing at this repository and
+   `release-crate.yml`;
+3. an npm trusted publisher for each of `@tellegen/engine` and
+   `@tellegen/svelte`, pointing at this repository and `release-npm.yml` — this
+   is per package, and it binds to the workflow *filename*, so renaming either
+   workflow breaks publishing until the publisher is updated;
+4. a GitHub App installed on this repository with `contents: write` and
+   `pull-requests: write`, its id in the `RELEASE_PLZ_APP_ID` variable and its
+   private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. This exists only so
+   the crate's version pull request runs CI — pull requests opened with
+   `GITHUB_TOKEN` do not trigger workflows.
+
+Once trusted publishing works, delete the `NPM_TOKEN` and
+`CARGO_REGISTRY_TOKEN` secrets. Nothing reads them any more, and a stored
+registry credential that nothing uses is purely a liability.
+
 ### Packages
 
 `@tellegen/engine` and `@tellegen/svelte` release through changesets.

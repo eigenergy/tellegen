@@ -28,8 +28,14 @@ concurrency:
   group: release-crate
   cancel-in-progress: false
 
+# Every job is held behind the same repository variable, the way deploy.yml holds
+# the demo. The pieces this pipeline needs live outside the repository — the
+# `crates-io` environment and its reviewers, the crates.io trusted publisher, and
+# the release-plz GitHub App — so until they exist these jobs would fail on every
+# push to main. Set TELLEGEN_RELEASE_ENABLED to `true` once they do.
 jobs:
   gates:
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
     uses: ./.github/workflows/gates.yml
     with:
       suite: rust
@@ -38,6 +44,7 @@ jobs:
   # on the gates: the pull request is a proposal, and its own CI run is what says
   # whether the proposal is sound.
   release-pr:
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
     name: version pull request
     runs-on: ubuntu-latest
     permissions:
@@ -69,6 +76,7 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
   publish:
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
     name: publish to crates.io
     needs: gates
     runs-on: ubuntu-latest
