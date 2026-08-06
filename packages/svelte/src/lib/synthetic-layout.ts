@@ -177,7 +177,13 @@ function treeLayout(
 	let slotCursor = 0;
 	for (const comp of components) {
 		const hinted = comp.filter((node) => roots.has(node));
-		const root = hinted.length > 0 ? Math.min(...hinted) : diameterEndpoint(comp[0], adjacency);
+		// Not `Math.min(...hinted)`: a case with tens of thousands of source buses
+		// exceeds the engine's argument limit and throws. Same trap as `extent()`
+		// in format.ts.
+		const root =
+			hinted.length > 0
+				? hinted.reduce((a, b) => (a < b ? a : b))
+				: diameterEndpoint(comp[0], adjacency);
 
 		// BFS spanning tree from the root; chords of a near-tree are simply not
 		// tree edges and draw between wherever their endpoints land.

@@ -13,7 +13,7 @@ use std::{
 
 use axum::{
     extract::{ConnectInfo, Path as AxumPath, Query, Request, State},
-    http::{header::CONTENT_TYPE, HeaderMap, HeaderValue, StatusCode},
+    http::{self, header::CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{
         sse::{Event, Sse},
@@ -28,6 +28,7 @@ use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::{
     services::{ServeDir, ServeFile},
+    set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
 
@@ -585,6 +586,28 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         .route("/api/{*path}", any(api_not_found))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
+
+    // Response headers the built page cannot set for itself. SvelteKit puts the
+    // Content-Security-Policy in a `<meta>` tag, and a browser ignores
+    // `frame-ancestors` there, so X-Frame-Options carries the clickjacking
+    // defence. HSTS belongs to whatever terminates TLS, not here.
+    let app = app
+        .layer(SetResponseHeaderLayer::overriding(
+            http::header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            http::header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            http::header::REFERRER_POLICY,
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static("geolocation=(), camera=(), microphone=(), payment=()"),
+        ));
 
     if let Some(dir) = frontend_build.filter(|dir| dir.is_dir()) {
         let index = dir.join("index.html");
@@ -1705,6 +1728,28 @@ mod tests {
         let status = res.status();
         let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         (status, String::from_utf8(body.to_vec()).unwrap())
+    }
+
+    /// The built page carries its Content-Security-Policy in a `<meta>` tag,
+    /// where a browser ignores `frame-ancestors`. These headers are the part
+    /// only a response can carry, so the container is safe on its own and does
+    /// not depend on a proxy config this repository does not deploy.
+    #[tokio::test]
+    async fn responses_carry_the_security_headers() {
+        let response = router(fallback_state(), None)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let headers = response.headers();
+        assert_eq!(headers["x-frame-options"], "DENY");
+        assert_eq!(headers["x-content-type-options"], "nosniff");
+        assert_eq!(headers["referrer-policy"], "strict-origin-when-cross-origin");
+        assert!(headers.contains_key("permissions-policy"));
     }
 
     #[tokio::test]
