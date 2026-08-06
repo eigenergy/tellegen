@@ -20,8 +20,12 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/js-setup
 
-      # Cheapest gate first, so a formatting error does not wait for a browser.
+      # Cheapest gates first, so a formatting error does not wait for a browser.
       - run: npm run lint:web
+      # The npm counterpart of cargo-deny. `high` is the line, not `moderate`:
+      # two SvelteKit advisories have no fixed release, and they reach only the
+      # dev server, because apps/web builds static through adapter-static.
+      - run: npm audit --audit-level=high
       - run: npm run wasm
       - run: npm run check:engine
       - run: npm run build:engine

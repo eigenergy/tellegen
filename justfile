@@ -97,6 +97,10 @@ web-check:
 web-lint:
     npm run lint:web
 
+# CI gate: npm advisories, at the same severity CI fails on.
+audit:
+    npm audit --audit-level=high
+
 # CI gate: smoke-check the static build output.
 web-smoke:
     npm run smoke:web
@@ -118,4 +122,4 @@ changeset-status:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order.
-ci: fmt-check clippy deny epl-guard test wasm-adapter-test wasm engine-check engine-build js-import web-lint svelte-check svelte-test web-check svelte-packed web-build web-smoke web-browser
+ci: fmt-check clippy deny epl-guard test wasm-adapter-test wasm engine-check engine-build js-import web-lint audit svelte-check svelte-test web-check svelte-packed web-build web-smoke web-browser
