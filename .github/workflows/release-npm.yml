@@ -21,13 +21,18 @@ concurrency:
 jobs:
   gates-rust:
     if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
+    permissions:
+      contents: read
     uses: ./.github/workflows/gates-rust.yml
 
   gates-js:
     if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
+    permissions:
+      contents: read
     uses: ./.github/workflows/gates-js.yml
 
   changesets:
+    if: github.ref == 'refs/heads/main'
     name: version pull request or publish
     needs: [gates-rust, gates-js]
     runs-on: ubuntu-latest

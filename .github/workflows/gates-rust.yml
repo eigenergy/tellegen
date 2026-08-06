@@ -33,6 +33,8 @@ jobs:
             --all-targets -- -D warnings
       - name: Licenses, advisories, bans, sources
         uses: EmbarkStudios/cargo-deny-action@c3bbe7e4e3f7baeee1a3dd9aec0a3b2aded580fb # v2.1.1
+        with:
+          command: check advisories bans licenses sources
 
       # Mirrors `just epl-guard`. The EPL-2.0 `pounce` backend must not enter a
       # shipped build.

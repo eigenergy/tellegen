@@ -16,7 +16,10 @@ concurrency:
 # source-tree gate.
 jobs:
   image:
-    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
+    # The ref check is not redundant with the branch trigger: workflow_dispatch
+    # runs the chosen ref's own copy of this file, so without it any branch
+    # deploys itself to production.
+    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,6 +27,7 @@ jobs:
     outputs:
       sha_tag: ${{ steps.meta.outputs.sha_tag }}
       main_tag: ${{ steps.meta.outputs.main_tag }}
+      digest_ref: ${{ steps.digest.outputs.ref }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -74,10 +78,15 @@ jobs:
         if: always()
         run: docker rm -f tellegen-smoke >/dev/null 2>&1 || true
       - name: Log in to GHCR
-        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Push image
         # Reuses the layers cached by the build above, so this is a cache hit that
         # only tags and pushes rather than rebuilding.
+        id: push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
@@ -86,9 +95,23 @@ jobs:
             ${{ steps.meta.outputs.sha_tag }}
             ${{ steps.meta.outputs.main_tag }}
           cache-from: type=gha
+      # The deploy pulls this, not the tag. A tag can be repointed at another
+      # manifest after the push; a digest cannot.
+      - name: Resolve the pushed digest
+        id: digest
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          case "$DIGEST" in
+            sha256:*) ;;
+            *) echo "push produced no digest: $DIGEST" >&2; exit 1 ;;
+          esac
+          echo "ref=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
   deploy:
-    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true'
+    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: image
     environment: demo
@@ -101,7 +124,7 @@ jobs:
       DEPLOY_PATH: ${{ secrets.TELLEGEN_DEPLOY_PATH }}
       DEMO_URL: ${{ secrets.TELLEGEN_DEMO_URL }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.TELLEGEN_DEPLOY_KNOWN_HOSTS }}
-      TELLEGEN_IMAGE: ${{ needs.image.outputs.sha_tag }}
+      TELLEGEN_IMAGE: ${{ needs.image.outputs.digest_ref }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -122,6 +145,12 @@ jobs:
           chmod 600 ~/.ssh/tellegen_deploy
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+          printf '%s\n' \
+            'Host *' \
+            '  StrictHostKeyChecking yes' \
+            '  BatchMode yes' \
+            '  IdentitiesOnly yes' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
       - name: Copy deploy files
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
@@ -160,3 +189,6 @@ jobs:
           done
           echo "public health check failed: $health_url"
           exit 1
+      - name: Remove the deploy key
+        if: always()
+        run: shred -u ~/.ssh/tellegen_deploy 2>/dev/null || rm -f ~/.ssh/tellegen_deploy

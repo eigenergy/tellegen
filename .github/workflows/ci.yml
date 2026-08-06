@@ -14,9 +14,13 @@ concurrency:
 
 jobs:
   rust:
+    permissions:
+      contents: read
     uses: ./.github/workflows/gates-rust.yml
 
   js:
+    permissions:
+      contents: read
     uses: ./.github/workflows/gates-js.yml
 
   # deploy.yml builds the image only on a push to main. Without this job, a

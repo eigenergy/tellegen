@@ -95,6 +95,13 @@ environment (`crates-io`, `npm`). The reviewer rule and the main-only rule live
 on those environments, in the repository settings. The `environment:` line in a
 workflow does not gate the publish on its own.
 
+Set the environment on each trusted publisher as well, not only the repository
+and the workflow filename. Without it, the reviewer is not enforced. A
+`workflow_dispatch` run uses the chosen branch's own copy of the workflow file,
+so a branch can delete the `environment:` line and reach the registry. The
+publish jobs also refuse any ref except `main`, but the publisher setting is
+what makes the registry itself reject such a token.
+
 ### Enabling the pipeline
 
 The release workflows do nothing until the `TELLEGEN_RELEASE_ENABLED` repository
@@ -103,12 +110,12 @@ variable after you make all of these:
 
 1. a `crates-io` environment and an `npm` environment, each with required
    reviewers and a rule that limits it to `main`;
-2. a crates.io trusted publisher for `tellegen`, set to this repository and
-   `release-crate.yml`;
+2. a crates.io trusted publisher for `tellegen`, set to this repository,
+   `release-crate.yml`, **and the `crates-io` environment**;
 3. an npm trusted publisher for `@tellegen/engine` and one for
-   `@tellegen/svelte`, each set to this repository and `release-npm.yml`. The
-   publisher binds to the workflow filename. If you rename the workflow,
-   publishing stops until you change the publisher;
+   `@tellegen/svelte`, each set to this repository, `release-npm.yml`, **and
+   the `npm` environment**. The publisher binds to the workflow filename. If
+   you rename the workflow, publishing stops until you change the publisher;
 4. a GitHub App on this repository with `contents: write` and
    `pull-requests: write`. Put its id in the `RELEASE_PLZ_APP_ID` variable and
    its private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. The app exists

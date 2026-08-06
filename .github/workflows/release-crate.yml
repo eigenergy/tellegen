@@ -18,6 +18,8 @@ concurrency:
 jobs:
   gates:
     if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
+    permissions:
+      contents: read
     uses: ./.github/workflows/gates-rust.yml
 
   release-pr:
@@ -35,10 +37,15 @@ jobs:
         with:
           app-id: ${{ vars.RELEASE_PLZ_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      # release-plz takes the token through GITHUB_TOKEN and pushes with it.
+      # Leaving it in .git/config would expose it to every build.rs that
+      # release-plz compiles to work out the next version.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
       - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
         with:
           workspaces: .
@@ -50,6 +57,7 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
   publish:
+    if: github.ref == 'refs/heads/main'
     name: publish to crates.io
     needs: gates
     runs-on: ubuntu-latest
