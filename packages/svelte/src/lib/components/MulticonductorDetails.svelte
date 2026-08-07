@@ -54,10 +54,10 @@
 				<dt>sources / loads / gens</dt>
 				<dd>{s.n_source} / {s.n_load} / {s.n_generator}</dd>
 			</div>
-			{#if s.n_ibr > 0 || s.n_shunt > 0}
+			{#if s.n_ibr > 0 || s.n_shunt > 0 || (s.n_capacitor ?? 0) > 0}
 				<div>
-					<dt>IBRs / shunts</dt>
-					<dd>{s.n_ibr} / {s.n_shunt}</dd>
+					<dt>IBRs / shunts / caps</dt>
+					<dd>{s.n_ibr} / {s.n_shunt} / {s.n_capacitor ?? 0}</dd>
 				</div>
 			{/if}
 		</dl>

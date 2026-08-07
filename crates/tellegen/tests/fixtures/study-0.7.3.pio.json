@@ -1,0 +1,1203 @@
+{
+ "model": {
+  "balanced_network": {
+   "areas": [],
+   "base_frequency": 60.0,
+   "base_mva": 100.0,
+   "branches": [
+    {
+     "angmax": 360.0,
+     "angmin": -360.0,
+     "b": 0.0,
+     "charging": null,
+     "control": null,
+     "current_ratings": null,
+     "extras": {},
+     "from": 1,
+     "in_service": true,
+     "r": 0.01,
+     "rate_a": 250.0,
+     "rate_b": 250.0,
+     "rate_c": 250.0,
+     "rating_sets": [],
+     "shift": 0.0,
+     "solution": null,
+     "tap": 0.0,
+     "to": 2,
+     "uid": "branches:0",
+     "x": 0.1
+    },
+    {
+     "angmax": 360.0,
+     "angmin": -360.0,
+     "b": 0.0,
+     "charging": null,
+     "control": null,
+     "current_ratings": null,
+     "extras": {},
+     "from": 1,
+     "in_service": true,
+     "r": 0.01,
+     "rate_a": 250.0,
+     "rate_b": 250.0,
+     "rate_c": 250.0,
+     "rating_sets": [],
+     "shift": 0.0,
+     "solution": null,
+     "tap": 0.0,
+     "to": 3,
+     "uid": "branches:1",
+     "x": 0.1
+    },
+    {
+     "angmax": 360.0,
+     "angmin": -360.0,
+     "b": 0.0,
+     "charging": null,
+     "control": null,
+     "current_ratings": null,
+     "extras": {},
+     "from": 2,
+     "in_service": true,
+     "r": 0.01,
+     "rate_a": 250.0,
+     "rate_b": 250.0,
+     "rate_c": 250.0,
+     "rating_sets": [],
+     "shift": 0.0,
+     "solution": null,
+     "tap": 0.0,
+     "to": 3,
+     "uid": "branches:2",
+     "x": 0.1
+    }
+   ],
+   "buses": [
+    {
+     "area": 1,
+     "base_kv": 230.0,
+     "evhi": null,
+     "evlo": null,
+     "extras": {},
+     "id": 1,
+     "kind": "REF",
+     "name": null,
+     "uid": "buses:0",
+     "va": 0.0,
+     "vm": 1.0,
+     "vmax": 1.1,
+     "vmin": 0.9,
+     "zone": 1
+    },
+    {
+     "area": 1,
+     "base_kv": 230.0,
+     "evhi": null,
+     "evlo": null,
+     "extras": {},
+     "id": 2,
+     "kind": "PQ",
+     "name": null,
+     "uid": "buses:1",
+     "va": 0.0,
+     "vm": 1.0,
+     "vmax": 1.1,
+     "vmin": 0.9,
+     "zone": 1
+    },
+    {
+     "area": 1,
+     "base_kv": 230.0,
+     "evhi": null,
+     "evlo": null,
+     "extras": {},
+     "id": 3,
+     "kind": "PV",
+     "name": null,
+     "uid": "buses:2",
+     "va": 0.0,
+     "vm": 1.0,
+     "vmax": 1.1,
+     "vmin": 0.9,
+     "zone": 1
+    }
+   ],
+   "generators": [
+    {
+     "bus": 1,
+     "caps": {
+      "apf": 0.0,
+      "pc1": 0.0,
+      "pc2": 0.0,
+      "qc1max": 0.0,
+      "qc1min": 0.0,
+      "qc2max": 0.0,
+      "qc2min": 0.0,
+      "ramp_10": 0.0,
+      "ramp_30": 0.0,
+      "ramp_agc": 0.0,
+      "ramp_q": 0.0
+     },
+     "cost": {
+      "coeffs": [
+       0.11,
+       5.0,
+       0.0
+      ],
+      "model": 2,
+      "ncost": 3,
+      "shutdown": 0.0,
+      "startup": 0.0
+     },
+     "in_service": true,
+     "mbase": 100.0,
+     "pg": 0.0,
+     "pmax": 250.0,
+     "pmin": 10.0,
+     "qg": 0.0,
+     "qmax": 300.0,
+     "qmin": -300.0,
+     "regulated_bus": null,
+     "uid": "generators:0",
+     "vg": 1.0
+    },
+    {
+     "bus": 3,
+     "caps": {
+      "apf": 0.0,
+      "pc1": 0.0,
+      "pc2": 0.0,
+      "qc1max": 0.0,
+      "qc1min": 0.0,
+      "qc2max": 0.0,
+      "qc2min": 0.0,
+      "ramp_10": 0.0,
+      "ramp_30": 0.0,
+      "ramp_agc": 0.0,
+      "ramp_q": 0.0
+     },
+     "cost": {
+      "coeffs": [
+       0.085,
+       1.2,
+       0.0
+      ],
+      "model": 2,
+      "ncost": 3,
+      "shutdown": 0.0,
+      "startup": 0.0
+     },
+     "in_service": true,
+     "mbase": 100.0,
+     "pg": 60.0,
+     "pmax": 270.0,
+     "pmin": 10.0,
+     "qg": 0.0,
+     "qmax": 300.0,
+     "qmin": -300.0,
+     "regulated_bus": null,
+     "uid": "generators:1",
+     "vg": 1.0
+    }
+   ],
+   "hvdc": [],
+   "loads": [
+    {
+     "bus": 2,
+     "extras": {},
+     "in_service": true,
+     "p": 90.0,
+     "q": 30.0,
+     "uid": "loads:0",
+     "voltage_model": null
+    }
+   ],
+   "name": "case3test",
+   "shunts": [],
+   "solver": null,
+   "source_format": "Matpower",
+   "storage": [],
+   "switches": [],
+   "transformers_3w": []
+  },
+  "kind": "balanced"
+ },
+ "model_kind": "balanced",
+ "origin": {
+  "format": "matpower",
+  "kind": "file",
+  "path": "",
+  "retained_source": false
+ },
+ "payload_schema": "https://powerio.dev/schema/pio-payload-balanced/1",
+ "payload_schema_version": "1.2.0",
+ "producer": {
+  "tool": "powerio",
+  "version": "0.7.3"
+ },
+ "schema": "https://powerio.dev/schema/pio-package/0.1",
+ "schema_version": "0.1.1",
+ "source_maps": [
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/base_mva",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "base_mva",
+    "record": "case",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/0/id",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "id",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/0/kind",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "kind",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/0/vm",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vm",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/0/va",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "va",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/0/base_kv",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "base_kv",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/0/vmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vmax",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/0/vmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vmin",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/0/area",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "area",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/0/zone",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "zone",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/1/id",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "id",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/1/kind",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "kind",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/1/vm",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vm",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/1/va",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "va",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/1/base_kv",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "base_kv",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/1/vmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vmax",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/1/vmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vmin",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/1/area",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "area",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/1/zone",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "zone",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/2/id",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "id",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/2/kind",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "kind",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/2/vm",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vm",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/2/va",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "va",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/2/base_kv",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "base_kv",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/2/vmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vmax",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/2/vmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vmin",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/2/area",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "area",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/buses/2/zone",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "zone",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/loads/0/bus",
+   "mapping_kind": "split",
+   "source_ref": {
+    "field": "bus",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/loads/0/p",
+   "mapping_kind": "split",
+   "source_ref": {
+    "field": "p",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/loads/0/q",
+   "mapping_kind": "split",
+   "source_ref": {
+    "field": "q",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/loads/0/in_service",
+   "mapping_kind": "split",
+   "source_ref": {
+    "field": "in_service",
+    "record": "bus",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/from",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "from",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/to",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "to",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/r",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "r",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/x",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "x",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/b",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "b",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/rate_a",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "rate_a",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/rate_b",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "rate_b",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/rate_c",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "rate_c",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/tap",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "tap",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/shift",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "shift",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/in_service",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "in_service",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/angmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "angmin",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/0/angmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "angmax",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/from",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "from",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/to",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "to",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/r",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "r",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/x",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "x",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/b",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "b",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/rate_a",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "rate_a",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/rate_b",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "rate_b",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/rate_c",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "rate_c",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/tap",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "tap",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/shift",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "shift",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/in_service",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "in_service",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/angmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "angmin",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/1/angmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "angmax",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/from",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "from",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/to",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "to",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/r",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "r",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/x",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "x",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/b",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "b",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/rate_a",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "rate_a",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/rate_b",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "rate_b",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/rate_c",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "rate_c",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/tap",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "tap",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/shift",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "shift",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/in_service",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "in_service",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/angmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "angmin",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/branches/2/angmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "angmax",
+    "record": "branch",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/bus",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "bus",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/pg",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "pg",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/qg",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "qg",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/pmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "pmax",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/pmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "pmin",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/qmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "qmax",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/qmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "qmin",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/vg",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vg",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/mbase",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "mbase",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/0/in_service",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "in_service",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/bus",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "bus",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/pg",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "pg",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/qg",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "qg",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/pmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "pmax",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/pmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "pmin",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/qmax",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "qmax",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/qmin",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "qmin",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/vg",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "vg",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/mbase",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "mbase",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  },
+  {
+   "confidence": "high",
+   "element_path": "/model/balanced_network/generators/1/in_service",
+   "mapping_kind": "exact",
+   "source_ref": {
+    "field": "in_service",
+    "record": "generator",
+    "source_id": "src0"
+   }
+  }
+ ],
+ "sources": [
+  {
+   "format": "matpower",
+   "id": "src0",
+   "kind": "file"
+  }
+ ],
+ "study": {
+  "app": {
+   "tellegen": {
+    "formulation": "dcopf",
+    "options": {
+     "shed": false,
+     "warm_start": true
+    },
+    "schema_version": 1
+   }
+  }
+ },
+ "summary": {
+  "elements": {
+   "branches": 3,
+   "buses": 3,
+   "generators": 2,
+   "hvdc": 0,
+   "loads": 1,
+   "shunts": 0,
+   "storage": 0,
+   "transformers_3w": 0
+  },
+  "topology": {
+   "reference_buses": [
+    "1"
+   ]
+  },
+  "units": {
+   "angle": "degrees",
+   "base_mva": 100.0,
+   "power": "MW/MVAr"
+  }
+ },
+ "validation": {
+  "counts": {
+   "debug": 0,
+   "error": 0,
+   "fatal": 0,
+   "info": 0,
+   "warning": 0
+  },
+  "status": "ok"
+ }
+}

@@ -41,7 +41,7 @@ labels these positions as approximate.
 
 ## The canonical geographic document
 
-powerio 0.7.1 ships the standalone geographic document (`GeoLayer`): element
+powerio ships a standalone geographic document (`GeoLayer`): element
 points and branch routes in one coordinate space, keyed by uid, external id,
 name, or the branch endpoint pair, written as a GeoJSON `FeatureCollection`
 with the `powerio_geo` foreign member (`.geo.json`). tellegen consumes it

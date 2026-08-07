@@ -2143,6 +2143,40 @@ mod tests {
         assert!(err.contains("re-save the study"), "got: {err}");
     }
 
+    /// A study that a user saved with tellegen on powerio 0.7.3, written by
+    /// that build and kept byte for byte. powerio 0.8.0 does not read it: the
+    /// envelope changed. This is what a user has on disk, so the wording must
+    /// fire on the file itself and not only on a synthetic version number.
+    #[test]
+    fn export_tells_the_user_to_re_save_a_real_0_7_3_study() {
+        let saved = include_str!("../tests/fixtures/study-0.7.3.pio.json");
+        let err = export_study(saved, 0, "matpower").unwrap_err();
+
+        assert!(
+            err.contains(crate::package::UNSUPPORTED_SCHEMA_VERSION),
+            "upstream detail dropped: {err}"
+        );
+        assert!(err.contains("re-save the study"), "got: {err}");
+    }
+
+    /// The browser classifies a dropped file before any reader sees it, in
+    /// `packages/svelte/src/lib/drop-classify.ts`. It calls a document a
+    /// package when the document has a `schema_version` string and a model
+    /// kind. Nothing else holds the writer to that shape, so this does.
+    #[test]
+    fn a_saved_package_carries_what_the_drop_classifier_reads() {
+        let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();
+        let json = s.to_package().unwrap().to_json().unwrap();
+        let value: Value = serde_json::from_str(&json).unwrap();
+
+        assert!(
+            value["schema_version"].is_string(),
+            "schema_version must be a string: {}",
+            value["schema_version"]
+        );
+        assert_eq!(value["model_kind"], "balanced");
+    }
+
     #[test]
     fn export_rejects_unknown_format() {
         let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();

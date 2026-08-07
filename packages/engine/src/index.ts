@@ -160,6 +160,10 @@ export interface IngestedDistCase {
   n_ibr: number;
   n_source: number;
   n_shunt: number;
+  /** Capacitor banks read as their own type, which only the BMOPF reader does.
+   * A `.dss` or PMD capacitor counts in `n_shunt` instead. Optional because an
+   * engine build before this field satisfies the same `^0.1.0` range. */
+  n_capacitor?: number;
   load_kw: number;
   gen_kw: number;
   base_frequency: number;

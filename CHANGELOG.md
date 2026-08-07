@@ -11,11 +11,21 @@ record for the releases before the split.
 
 ## Unreleased
 
-- powerio moves to 0.7.3. It hardens the readers against untrusted case files.
-  See its [v0.7.3 release notes](https://github.com/eigenergy/powerio/releases/tag/v0.7.3).
+- powerio moves to 0.8.0, through 0.7.3. 0.7.3 hardens the readers against
+  untrusted case files; 0.8.0 changes the `.pio.json` format. See the
+  [v0.7.3](https://github.com/eigenergy/powerio/releases/tag/v0.7.3) and
+  [v0.8.0](https://github.com/eigenergy/powerio/releases/tag/v0.8.0) release
+  notes.
+- **A study saved before this release does not load.** The `.pio.json`
+  envelope now carries one `schema_version`, and the reader rejects the older
+  spelling. tellegen cannot convert such a file: the document holds a case and
+  an edit log, not the source. Open the source case again and save the study.
+  The error says so.
 - A dropped `.pio.json` is recognized by either envelope spelling, so a package
-  from a newer powerio still classifies. A package from a format version this
-  build cannot read now says to open the source case and save the study again.
+  from a newer powerio still classifies.
+- The multiconductor panel counts capacitors. powerio 0.8.0 reads a BMOPF
+  capacitor as its own type; before, it went to the untyped table and showed
+  nowhere.
 - Releases are automated. The crate publishes through release-plz and the two
   npm packages through changesets, both by OIDC trusted publishing behind an
   approval-gated environment. No registry token is stored. The crate keeps the

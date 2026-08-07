@@ -1748,7 +1748,10 @@ mod tests {
         let headers = response.headers();
         assert_eq!(headers["x-frame-options"], "DENY");
         assert_eq!(headers["x-content-type-options"], "nosniff");
-        assert_eq!(headers["referrer-policy"], "strict-origin-when-cross-origin");
+        assert_eq!(
+            headers["referrer-policy"],
+            "strict-origin-when-cross-origin"
+        );
         assert!(headers.contains_key("permissions-policy"));
     }
 

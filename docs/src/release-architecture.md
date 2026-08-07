@@ -73,7 +73,9 @@ Patch versions are for bug fixes and docs that do not change public APIs.
 
 A saved study is a powerio `.pio.json` document. Its format version is
 powerio's, not tellegen's. When powerio narrows the range of versions it reads,
-every study saved before that change stops loading.
+every study saved before that change stops loading. This happened at powerio
+0.8.0, which collapsed the envelope's four version identifiers into one
+`schema_version` and stopped reading the older spelling.
 
 tellegen cannot migrate such a file. The document is a snapshot of a case and an
 edit log, so the user must save it again from the source case. tellegen says so
