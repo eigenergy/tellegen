@@ -11,11 +11,21 @@ record for the releases before the split.
 
 ## Unreleased
 
-- powerio moves to 0.8.0, through 0.7.3. 0.7.3 hardens the readers against
-  untrusted case files; 0.8.0 changes the `.pio.json` format. See the
-  [v0.7.3](https://github.com/eigenergy/powerio/releases/tag/v0.7.3) and
-  [v0.8.0](https://github.com/eigenergy/powerio/releases/tag/v0.8.0) release
+- powerio moves to 0.8.1, through 0.7.3 and 0.8.0. 0.7.3 hardens the readers
+  against untrusted case files; 0.8.0 changes the `.pio.json` format; 0.8.1
+  hardens the text writers. See the
+  [v0.7.3](https://github.com/eigenergy/powerio/releases/tag/v0.7.3),
+  [v0.8.0](https://github.com/eigenergy/powerio/releases/tag/v0.8.0), and
+  [v0.8.1](https://github.com/eigenergy/powerio/releases/tag/v0.8.1) release
   notes.
+- **Export is safe against a crafted name.** A dropped case names its own
+  buses, and tellegen writes those names into the file a user downloads. In
+  powerio 0.8.0 and earlier, a name that held a `\n` or `\r` ended the record
+  and made the rest of the text parse as new records. powerio 0.8.1 replaces
+  the terminator in the psse, pslf, powerworld, and OpenDSS writers. The
+  PSS/E export in the case panel is one of those paths. A test now writes
+  each target tellegen can reach and shows that a bus name cannot add a
+  record.
 - **A study saved before this release does not load.** The `.pio.json`
   envelope now carries one `schema_version`, and the reader rejects the older
   spelling. tellegen cannot convert such a file: the document holds a case and

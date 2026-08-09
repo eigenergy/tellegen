@@ -1070,9 +1070,9 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "powerio"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "307d9ea9b607641fb46260654b80e543b5db4c8fea8a2964578fbeb9b949d0c2"
+checksum = "db6c8eea9041a7d5097272f338a0e062d61f8131529792eb0f770dd5dc50fe52"
 dependencies = [
  "lexical-core",
  "num-complex",
@@ -1084,9 +1084,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-dist"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8b679b9b69642454acc0b757980cf05ee1a10597bd80027e0969ec9909f1fdf"
+checksum = "b9b6cc74b4cbd20ed21ef35e6cfaf40b07789c2ed57d9b60abc7bc763b713a41"
 dependencies = [
  "serde",
  "serde_json",
@@ -1095,9 +1095,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-pkg"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c347e37f10b2464032ac50fb342318a8d8d6bf4cf642a1435ea4efe6225dd65"
+checksum = "631b9e3a96ca4c1eeb6b5057f9697f66bcc9fd7b318ae92be37f73e393e4cdde"
 dependencies = [
  "num-complex",
  "powerio",
@@ -1108,9 +1108,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-prob"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1569d959ff507481bc31fe90815197ab4e34b5bd4d43cd379edf4d15f396ea22"
+checksum = "5c1e6d4fbf1823134659f043898fdcf36c3eae1df71b238adc557946c456771e"
 dependencies = [
  "powerio",
  "serde",
