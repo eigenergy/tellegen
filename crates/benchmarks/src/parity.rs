@@ -13,7 +13,7 @@
 //! perturbing the public network fields. DC goes through `sensitivity_json` (the only
 //! external route to DC sensitivities) with the demand FD driven through `solve_network`.
 
-use powerio::network::Network;
+use powerio::BalancedNetwork;
 use serde_json::Value;
 use tellegen::{
     ac_pf, sensitivity, socwr_opf, solve_json, AcNetwork, AcNewton, AcPfSolution, AcPolar, Bound,
@@ -395,7 +395,7 @@ pub fn ac_parity(net: &AcNetwork) -> ParitySummary {
 /// route to DC sensitivities). The analytic `d(price)/d(demand)` column is compared to a
 /// central finite difference taken through `solve_network`'s demand deltas, both in the
 /// served `($/MWh)/MW`.
-pub fn dc_parity(net: &Network) -> ParitySummary {
+pub fn dc_parity(net: &BalancedNetwork) -> ParitySummary {
     let mut sum = ParitySummary::new("dc");
     sum.cells_probed = 1;
     let Ok(network_json) = net.to_json() else {

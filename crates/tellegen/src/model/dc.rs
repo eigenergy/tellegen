@@ -1,11 +1,11 @@
 //! DC OPF model: the B-theta data — incidence, susceptances, generator bounds,
-//! quadratic costs, and line flow limits — built from a powerio `Network`. The
+//! quadratic costs, and line flow limits — built from a powerio `BalancedNetwork`. The
 //! gen-cost rescale to per unit happens in `to_normalized`; the angle-bound defaults
 //! and the `rate_a == 0` thermal-limit fallback are applied here.
 
 use std::collections::BTreeMap;
 
-use powerio::network::Network;
+use powerio::BalancedNetwork;
 use powerio::{DcConvention, IndexedNetwork};
 use powerio_prob::{build_dc_opf_instance, DcOpfOptions, Units};
 
@@ -92,9 +92,9 @@ pub struct DcNetwork {
 }
 
 impl DcNetwork {
-    /// Build the DC OPF model from a parsed powerio `Network`.
+    /// Build the DC OPF model from a parsed powerio `BalancedNetwork`.
     ///
-    /// Normalizes through `Network::to_normalized` (per unit, radians, filtered,
+    /// Normalizes through `BalancedNetwork::to_normalized` (per unit, radians, filtered,
     /// densely reindexed, reference inferred), builds a `powerio-prob`
     /// [`DcOpfInstance`](powerio_prob::DcOpfInstance) as the owner of the nodal and
     /// generator interpretation (per-unit demand, generator PQ bounds, reference
@@ -102,9 +102,9 @@ impl DcNetwork {
     /// policy ([`flatten_gen_costs`], run before the instance so its `GenCost`
     /// accessors accept every row), the B-theta susceptance, default
     /// angle-difference bounds, and the `rate_a == 0` thermal-limit fallback.
-    pub fn from_network(raw: &Network) -> Result<DcNetwork, String> {
+    pub fn from_network(raw: &BalancedNetwork) -> Result<DcNetwork, String> {
         let mut norm = raw.to_normalized().map_err(|e| e.to_string())?;
-        // Cost policy as a `Network` pre-pass: fit piecewise / strip artifacts / treat
+        // Cost policy as a `BalancedNetwork` pre-pass: fit piecewise / strip artifacts / treat
         // a missing cost as free, writing plain quadratics the instance builder reads.
         // The `DcOpfInstance` drops the constant (no-load) term, so `cc` comes from here.
         let (cq, cl, cc) = flatten_gen_costs(&mut norm)?;
@@ -120,34 +120,41 @@ impl DcNetwork {
             branch_uids,
         } = reconstruct_ids(raw, &view)?;
 
-        // `PaperPure` and `PerUnit` are inert here: tellegen computes its own
-        // susceptance below (neither `DcConvention` gives `-x/(r^2+x^2)`), and the
-        // normalized network is already per unit (`per_unit_base() == 1`). The instance
-        // is the owner of the generator PQ bounds, nodal demand, and reference coverage.
+        // `SeriesImpedance` is the same `x/(r^2+x^2)` tellegen negates below, so the
+        // instance and the B-theta model now weight a branch alike. `PerUnit` is inert:
+        // the normalized network is already per unit (`per_unit_base() == 1`). The
+        // instance owns the generator PQ bounds, nodal demand, and reference coverage.
         let instance = build_dc_opf_instance(
             &view,
             &DcOpfOptions {
-                convention: DcConvention::PaperPure,
+                convention: DcConvention::SeriesImpedance,
                 units: Units::PerUnit,
                 skip_zero_impedance: true,
+                ..DcOpfOptions::default()
             },
         )
         .map_err(|e| e.to_string())?;
 
         // Per-bus demand and reference, moved straight out of the freshly built,
         // locally owned instance: from_network runs per Study commit and preview, so
-        // this stays clone free.
-        let ref_bus = *instance
+        // this stays clone free. `single()` rather than a first element: `DcNetwork`
+        // grounds one bus, so several references means several islands and every island
+        // past the first would stay singular.
+        let ref_bus = instance
             .reference_buses
-            .first()
-            .ok_or("normalized network has no reference bus")?;
+            .single()
+            .map_err(|e| e.to_string())?;
         let demand = instance.p_d;
 
         // Branches. The B-theta susceptance `b = -x/(r^2+x^2)` (the PowerModels-consistent
-        // DC weight) and the `rate_a == 0` fallback are tellegen's, computed from the
-        // `IndexedNetwork` so every source branch keeps a dense column — including a literal
-        // zero-impedance record, which the instance would skip but `problem/`/`sens/` index
-        // through. A tiny-but-nonzero impedance still gets its true (large) susceptance: it
+        // DC weight) is computed from the `IndexedNetwork` so every source branch keeps a
+        // dense column — including a literal zero-impedance record, which the instance
+        // would skip but `problem/`/`sens/` index through. The `rate_a == 0` fallback is
+        // powerio's `Branch::synthesize_rate_a`, which reads both ends of each voltage
+        // band: below roughly 10 degrees of angle window the widest phasor difference sits
+        // at one terminal high and the other low, and reading only the ceilings hands the
+        // QP a bound several times tighter than the branch physically has. A
+        // tiny-but-nonzero impedance still gets its true (large) susceptance: it
         // is a real, near-ideal tie (e.g. a substation bus-splitting jumper), not an open
         // circuit, and severing it can wrongly strand generation or reroute flow onto a
         // costlier path. See `tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`.
@@ -172,13 +179,11 @@ impl DcNetwork {
             let rate = if br.rate_a > 0.0 {
                 br.rate_a
             } else {
-                fallback_rate_a(
-                    br.r,
-                    br.x,
-                    amin,
-                    amax,
-                    norm.buses[f].vmax,
-                    norm.buses[t].vmax,
+                let (fr, to) = (&norm.buses[f], &norm.buses[t]);
+                br.synthesize_rate_a(
+                    amin.abs().max(amax.abs()),
+                    (fr.vmin, fr.vmax),
+                    (to.vmin, to.vmax),
                 )
             };
             br_from.push(f);
@@ -269,18 +274,6 @@ impl DcNetwork {
     }
 }
 
-/// Synthesize a thermal limit for a branch the source left unlimited
-/// (`rate_a == 0`), from the bus voltage ceilings and the branch admittance and
-/// angle window.
-fn fallback_rate_a(r: f64, x: f64, amin: f64, amax: f64, fr_vmax: f64, to_vmax: f64) -> f64 {
-    let theta_max = amin.abs().max(amax.abs());
-    let zmag = r.hypot(x);
-    let ymag = if zmag == 0.0 { 0.0 } else { 1.0 / zmag };
-    let cmax =
-        (fr_vmax * fr_vmax + to_vmax * to_vmax - 2.0 * fr_vmax * to_vmax * theta_max.cos()).sqrt();
-    ymag * fr_vmax.max(to_vmax) * cmax
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +281,44 @@ mod tests {
 
     fn approx(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-6, "expected {b}, got {a}");
+    }
+
+    /// A branch the source left unrated gets its bound from `Branch::synthesize_rate_a`,
+    /// which reads both ends of each terminal's voltage band. Under a narrow angle window
+    /// the widest phasor difference is one terminal at its ceiling and the other at its
+    /// floor, so reading only the two ceilings (what tellegen did before powerio 0.9)
+    /// returns a bound several times tighter than the branch physically has.
+    #[test]
+    fn an_unrated_branch_is_bounded_at_the_mixed_voltage_corner() {
+        // CASE3 with one unrated branch (rate_a = 0) held to a 3 degree window.
+        let case = CASE3.replace(
+            " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
+            " 1 2 0.01 0.1 0 0 0 0 0 0 1 -3 3;",
+        );
+        let net = powerio::parse_str(&case, "matpower")
+            .expect("parse")
+            .network;
+        let dc = DcNetwork::from_network(&net).expect("build");
+
+        // |Z| = hypot(0.01, 0.1); widest separation over the (0.9, 1.1) band box at a
+        // 3 degree window; times the larger ceiling.
+        let window = 3.0_f64.to_radians();
+        let zmag = 0.01_f64.hypot(0.1);
+        let sep = |vf: f64, vt: f64| (vf * vf + vt * vt - 2.0 * vf * vt * window.cos()).sqrt();
+        approx(dc.fmax[0], 1.1 * sep(1.1, 0.9) / zmag);
+
+        // The ceilings-only bound the old formula produced is more than three times
+        // tighter, and an OPF enforces it.
+        let ceilings_only = 1.1 * sep(1.1, 1.1) / zmag;
+        assert!(
+            dc.fmax[0] > 3.0 * ceilings_only,
+            "expected the band bound {} to dwarf the ceilings-only bound {ceilings_only}",
+            dc.fmax[0]
+        );
+
+        // The rated branches keep their stated limit.
+        approx(dc.fmax[1], 2.5);
+        approx(dc.fmax[2], 2.5);
     }
 
     #[test]

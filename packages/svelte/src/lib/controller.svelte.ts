@@ -1646,8 +1646,8 @@ export class Controller {
 			}
 			this.app.parsingFile = true;
 			try {
-				const text = await file.text();
-				const { network_json, topology, view, ...summary } = await ingestCase(text, format);
+				const bytes = new Uint8Array(await file.arrayBuffer());
+				const { network_json, topology, view, ...summary } = await ingestCase(bytes, format);
 				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
 					this.app.error = `${file.name}: aux parsed, but no complete network; drop the matching .m or .raw case file`;
 					continue;

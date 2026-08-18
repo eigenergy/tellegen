@@ -6,13 +6,15 @@
 	const app = getAppState();
 	const ctrl = getController();
 
-	// Powerio writer tokens the committed state exports to; label carries the extension.
+	// Export tokens the committed state writes to; label carries the extension. The first
+	// four are powerio case format writers; `model-json` is powerio's own model document,
+	// which is not a case format.
 	const EXPORT_FORMATS = [
 		{ token: 'matpower', label: 'MATPOWER (.m)' },
 		{ token: 'psse', label: 'PSS/E (.raw)' },
 		{ token: 'powermodels-json', label: 'PowerModels (.json)' },
 		{ token: 'pandapower-json', label: 'pandapower (.json)' },
-		{ token: 'powerio-json', label: 'PowerIO (.json)' }
+		{ token: 'model-json', label: 'PowerIO model (.json)' }
 	];
 
 	let busy = $state(false);

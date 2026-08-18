@@ -5,7 +5,7 @@ use powerio::geo::{
     geo_layer_from_pwd, pwd_mercator_to_lonlat, CoordinateSpace, CoordsKind, GeoGeometry, GeoLayer,
     GeoMeta, Location,
 };
-use powerio::network::{Bus, Network};
+use powerio::{BalancedNetwork, Bus};
 
 pub type Coords = BTreeMap<usize, (f64, f64)>;
 
@@ -15,7 +15,7 @@ pub type Coords = BTreeMap<usize, (f64, f64)>;
 /// deliberately leaves them in extras: older complete cases write bare
 /// `Latitude`/`Longitude` on every bus row, and later exports point each bus at
 /// the aux `Substation` table through `SubNum`.
-pub fn network_coords(net: &Network) -> Coords {
+pub fn network_coords(net: &BalancedNetwork) -> Coords {
     let subs = match aux_sections(net) {
         Some(Ok(aux)) => substation_coords(&aux),
         _ => BTreeMap::new(),
@@ -51,7 +51,7 @@ pub fn network_coords(net: &Network) -> Coords {
 /// network's geo meta becomes geographic with the same default. Buses absent
 /// from `coords` keep whatever location they had. Returns how many buses were
 /// placed; zero leaves the geo meta untouched.
-pub fn stamp_layout(net: &mut Network, coords: &Coords, kind: CoordsKind) -> usize {
+pub fn stamp_layout(net: &mut BalancedNetwork, coords: &Coords, kind: CoordsKind) -> usize {
     let mut placed = 0;
     for b in &mut net.buses {
         if let Some(&(lon, lat)) = coords.get(&b.id.0) {
@@ -93,7 +93,11 @@ pub fn pwd_lonlat_layer(display: &PwdDisplay) -> GeoLayer {
     layer
 }
 
-pub fn complete_coords_for(case: &Network, aux: &Network, source: &str) -> Result<Coords, String> {
+pub fn complete_coords_for(
+    case: &BalancedNetwork,
+    aux: &BalancedNetwork,
+    source: &str,
+) -> Result<Coords, String> {
     let mut coords = network_coords(aux);
     spread_stacks(&mut coords);
     let missing: Vec<_> = case
@@ -143,7 +147,7 @@ pub fn spread_stacks(coords: &mut Coords) {
     }
 }
 
-pub fn synthetic_layout(net: &Network, bbox: (f64, f64, f64, f64)) -> Coords {
+pub fn synthetic_layout(net: &BalancedNetwork, bbox: (f64, f64, f64, f64)) -> Coords {
     let ids: Vec<_> = net.buses.iter().map(|b| b.id.0).collect();
     let index: BTreeMap<usize, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
     let mut seen = BTreeSet::new();
@@ -299,7 +303,7 @@ mod tests {
 
     /// An n-bus chain network built through the parser: powerio's data structs
     /// are `#[non_exhaustive]`, so tests construct networks from case text.
-    fn chain_network(n: usize) -> Network {
+    fn chain_network(n: usize) -> BalancedNetwork {
         let mut m = String::from(
             "function mpc = chain\nmpc.version = '2';\nmpc.baseMVA = 100;\nmpc.bus = [\n",
         );
@@ -365,7 +369,7 @@ mod tests {
         // Locations survive the network JSON round trip, so a package built from
         // this payload carries the layout.
         let json = net.to_json().expect("to_json");
-        let back = Network::from_json(&json).expect("from_json");
+        let back = BalancedNetwork::from_json(&json).expect("from_json");
         assert_eq!(back.buses[0].location, net.buses[0].location);
 
         // An empty layout stamps nothing and leaves the meta untouched.

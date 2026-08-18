@@ -207,12 +207,15 @@ export function formatOf(name: string): string | null {
   return ext === "m" || ext === "raw" || ext === "aux" ? ext : null;
 }
 
+/** Parse a balanced case file for viewing. Takes the upload's bytes rather than
+ * decoded text: powerio refuses a text format whose bytes are not UTF-8, where
+ * `File.text()` would have replaced each offending byte with U+FFFD. */
 export async function ingestCase(
-  text: string,
+  bytes: Uint8Array,
   format: string,
 ): Promise<IngestedCase> {
   return JSON.parse(
-    expectText(await engineHost().call({ op: "ingest_case", text, format })),
+    expectText(await engineHost().call({ op: "ingest_case", bytes, format })),
   );
 }
 
@@ -812,7 +815,7 @@ export async function loadPackage(text: string): Promise<LoadedPackage> {
 }
 
 /** Export a saved study package at commit `commit` to a powerio `format` (`matpower`,
- * `psse`, `powerio-json`, ...). Returns the serialized case text, the writer's fidelity
+ * `psse`, `model-json`, ...). Returns the serialized case text, the writer's fidelity
  * warnings, and the format token and file extension. */
 export async function exportStudy(
   packageJson: string,
@@ -833,7 +836,7 @@ export async function exportStudy(
 
 export interface EngineTransport {
   preloadEngine(): Promise<void>;
-  ingestCase(text: string, format: string): Promise<IngestedCase>;
+  ingestCase(bytes: Uint8Array, format: string): Promise<IngestedCase>;
   ingestDistCase(text: string, format: string): Promise<IngestedDistCase>;
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   parseGeo(bytes: Uint8Array, hint: string): Promise<ParsedGeoLayer>;

@@ -18,22 +18,27 @@ license = "MIT"
 repository = "https://github.com/eigenergy/tellegen"
 
 [workspace.dependencies]
-# Caret range over the 0.6.x line (transmission `Network`, PSS/E v34/v35). The
-# shared lockfile unifies the version across the engine and every adapter.
-powerio = "0.7.1"
+# The 0.9.0 line (`BalancedNetwork`, per crate error types, `parse_bytes`), pinned
+# to the commit it was cut from until 0.9.0 reaches crates.io; the pin becomes
+# `"0.9"` then. The shared lockfile unifies the version across the engine and
+# every adapter.
+powerio = { git = "https://github.com/eigenergy/powerio", rev = "31d2a1ed93a83e6db810c3a44177967ccf42e9fe" }
 # The `.pio.json` document model. The wasm ingest path uses its public
 # `ensure_payload_uids` so tellegen stamps the exact row-uid scheme powerio
 # packages carry, instead of duplicating the format here.
-powerio-pkg = "0.7.1"
+powerio-pkg = { git = "https://github.com/eigenergy/powerio", rev = "31d2a1ed93a83e6db810c3a44177967ccf42e9fe" }
 # The multiconductor distribution model and its lossless readers for OpenDSS,
-# PMD JSON, and BMOPF JSON. The wasm ingest path uses its string readers and
-# `DistNetwork::graph()` projection to view distribution cases (no solve). Wasm
-# checked upstream: `parse_str` and `graph()` touch no filesystem.
-powerio-dist = "0.7.1"
+# PMD JSON, and BMOPF JSON. The wasm ingest path uses `parse_str` and
+# `MulticonductorNetwork::graph()` to view distribution cases (no solve). Both are
+# filesystem free: `parse_dss_str` refuses every Redirect/Compile/Buscoords
+# include, because string input has no base directory to confine them to. A
+# dropped `.dss` still crosses as text rather than bytes, since this crate has no
+# `parse_bytes`; the balanced path opposite does.
+powerio-dist = { git = "https://github.com/eigenergy/powerio", rev = "31d2a1ed93a83e6db810c3a44177967ccf42e9fe" }
 # Matrix-free DC/AC OPF problem instances (`DcOpfInstance`/`AcOpfInstance`), the
 # shared owner of case interpretation. Default features only: the `matrix` feature
 # pulls a filesystem bundle writer that has no place in the wasm dependency chain.
-powerio-prob = "0.7.1"
+powerio-prob = { git = "https://github.com/eigenergy/powerio", rev = "31d2a1ed93a83e6db810c3a44177967ccf42e9fe" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

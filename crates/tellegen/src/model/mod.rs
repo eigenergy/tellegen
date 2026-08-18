@@ -1,6 +1,6 @@
-//! Network models built from a powerio `Network`: the [`DcNetwork`] B-theta model
+//! Network models built from a powerio `BalancedNetwork`: the [`DcNetwork`] B-theta model
 //! and the [`AcNetwork`] pi-model admittance form. Both normalize through
-//! `Network::to_normalized` + `IndexedNetwork` (per unit, radians, filtered, densely
+//! `BalancedNetwork::to_normalized` + `IndexedNetwork` (per unit, radians, filtered, densely
 //! reindexed, reference inferred), build a `powerio-prob` problem instance
 //! (`DcOpfInstance` / `AcOpfInstance`) as the shared owner of case interpretation —
 //! per-unit generator PQ bounds, nodal demand, reference coverage — then layer on the
@@ -21,8 +21,8 @@
 
 use std::collections::HashSet;
 
-use powerio::network::{BusType, GenCost, Network};
 use powerio::IndexedNetwork;
+use powerio::{BalancedNetwork, BusType, GenCost};
 
 #[cfg(feature = "sensitivity")]
 mod ac;
@@ -76,7 +76,7 @@ pub(super) type GenCostColumns = (Vec<f64>, Vec<f64>, Vec<f64>);
 /// model 2, three coefficients) via [`quadratic_cost_coeffs`], returning the three
 /// coefficient columns `(cq, cl, cc)` in generator order — the layout both
 /// `DcNetwork` and `AcNetwork` store. This is tellegen's cost policy applied as a
-/// `Network` pre-pass: the piecewise least squares fit, the leading rounding
+/// `BalancedNetwork` pre-pass: the piecewise least squares fit, the leading rounding
 /// artifact strip, and the rule treating a missing cost as free all run here, so the
 /// powerio-prob builders — whose `GenCost::quadratic()` /
 /// `quadratic_with_constant()` return `None` for piecewise, cubic-and-higher, or
@@ -84,7 +84,7 @@ pub(super) type GenCostColumns = (Vec<f64>, Vec<f64>, Vec<f64>);
 /// The [`DcOpfInstance`](powerio_prob::DcOpfInstance) carries no constant term, so
 /// the DC caller takes `cc` from here. Run on the normalized network (per unit) so
 /// the fit sees the same points tellegen fit before this migration.
-pub(super) fn flatten_gen_costs(net: &mut Network) -> Result<GenCostColumns, String> {
+pub(super) fn flatten_gen_costs(net: &mut BalancedNetwork) -> Result<GenCostColumns, String> {
     let g = net.generators.len();
     let (mut cq, mut cl, mut cc) = (
         Vec::with_capacity(g),
@@ -265,9 +265,9 @@ pub(super) struct Ids {
 /// of both [`DcNetwork::from_network`] and [`AcNetwork::from_network`]. Errors if a
 /// reconstructed id list does not match the normalized count (the dense-reindex
 /// assumption broke) or the network has no in-service generators.
-pub(super) fn reconstruct_ids(raw: &Network, view: &IndexedNetwork) -> Result<Ids, String> {
+pub(super) fn reconstruct_ids(raw: &BalancedNetwork, view: &IndexedNetwork) -> Result<Ids, String> {
     let n = view.n();
-    let surviving_buses: Vec<&powerio::network::Bus> = raw
+    let surviving_buses: Vec<&powerio::Bus> = raw
         .buses
         .iter()
         .filter(|b| b.kind != BusType::Isolated)
@@ -284,7 +284,7 @@ pub(super) fn reconstruct_ids(raw: &Network, view: &IndexedNetwork) -> Result<Id
     let active: HashSet<usize> = bus_ids.iter().copied().collect();
 
     let m = view.branches().len();
-    let surviving_branches: Vec<(usize, &powerio::network::Branch)> = raw
+    let surviving_branches: Vec<(usize, &powerio::Branch)> = raw
         .branches
         .iter()
         .enumerate()

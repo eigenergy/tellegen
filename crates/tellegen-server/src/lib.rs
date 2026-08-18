@@ -22,7 +22,7 @@ use axum::{
     routing::{any, get},
     Json, Router,
 };
-use powerio::network::Network;
+use powerio::BalancedNetwork;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
@@ -217,7 +217,7 @@ impl ExpensiveEndpoint {
 struct CaseEntry {
     id: String,
     name: String,
-    network: Network,
+    network: BalancedNetwork,
     network_json: String,
     /// The DC model built once at load. Solves clone this and perturb only the
     /// demand vector, so a demand drag never re-runs normalize-and-reindex.
@@ -967,7 +967,7 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
     build_entry(spec.id, spec.name, case, coords, branch_paths, false)
 }
 
-fn load_bus_csv_coords(path: &Path, case: &Network) -> Result<Coords, String> {
+fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut lines = text.lines();
     let header = lines
@@ -1182,7 +1182,7 @@ fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
 fn build_entry(
     id: &str,
     name: &str,
-    network: Network,
+    network: BalancedNetwork,
     coords: Coords,
     branch_paths: Option<BranchPaths>,
     synthetic_coords: bool,
@@ -1212,7 +1212,7 @@ fn build_entry(
 fn network_payload(
     id: &str,
     name: &str,
-    net: &Network,
+    net: &BalancedNetwork,
     coords: &Coords,
     branch_paths: Option<&BranchPaths>,
     synthetic_coords: bool,

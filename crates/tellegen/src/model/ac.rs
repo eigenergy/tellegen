@@ -3,13 +3,13 @@
 //! shunt, the real and reactive demand, and the generator injection aggregated to
 //! buses — everything the polar AC power flow and its voltage sensitivities read,
 //! plus the per-generator bounds and costs the conic OPF optimizes. Built from a
-//! powerio `Network` exactly as [`DcNetwork`](super::DcNetwork) is. Gated with the
+//! powerio `BalancedNetwork` exactly as [`DcNetwork`](super::DcNetwork) is. Gated with the
 //! faer paths behind `sensitivity`.
 
 use std::collections::BTreeMap;
 
 use num_complex::Complex;
-use powerio::network::Network;
+use powerio::BalancedNetwork;
 use powerio::IndexedNetwork;
 use powerio_prob::{build_ac_opf_instance, AcOpfOptions, Units};
 
@@ -106,8 +106,8 @@ pub struct AcNetwork {
 }
 
 impl AcNetwork {
-    /// Build the AC model from a parsed powerio `Network`, normalizing through
-    /// `Network::to_normalized` (per unit, radians, filtered, densely reindexed,
+    /// Build the AC model from a parsed powerio `BalancedNetwork`, normalizing through
+    /// `BalancedNetwork::to_normalized` (per unit, radians, filtered, densely reindexed,
     /// reference inferred) and reading its nodal and generator data from a
     /// `powerio-prob` [`AcOpfInstance`](powerio_prob::AcOpfInstance): per-unit demand,
     /// generator PQ bounds and scheduled output, voltage bands and setpoints. The
@@ -115,7 +115,7 @@ impl AcNetwork {
     /// accessors accept every row); the complex pi-model admittance, the line-charging
     /// drop, the `rate_a == 0` cone sentinel, and the angle-bound normalization are
     /// layered on from the `IndexedNetwork` afterward.
-    pub fn from_network(raw: &Network) -> Result<AcNetwork, String> {
+    pub fn from_network(raw: &BalancedNetwork) -> Result<AcNetwork, String> {
         let mut norm = raw.to_normalized().map_err(|e| e.to_string())?;
         let (cq, cl, cc) = flatten_gen_costs(&mut norm)?;
         let view = IndexedNetwork::new(&norm);
@@ -135,6 +135,7 @@ impl AcNetwork {
             &AcOpfOptions {
                 units: Units::PerUnit,
                 skip_zero_impedance: true,
+                ..AcOpfOptions::default()
             },
         )
         .map_err(|e| e.to_string())?;
@@ -257,10 +258,13 @@ impl AcNetwork {
             }
         }
 
-        let slack = *instance
+        // `single()` rather than a first element: `AcNetwork` grounds one angle, so
+        // several references means several islands and every island past the first
+        // would stay singular.
+        let slack = instance
             .reference_buses
-            .first()
-            .ok_or("normalized network has no reference bus")?;
+            .single()
+            .map_err(|e| e.to_string())?;
 
         Ok(AcNetwork {
             n,

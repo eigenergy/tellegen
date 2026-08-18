@@ -36,9 +36,14 @@ fn install_panic_hook() {
 
 /// Parse a case file (MATPOWER, PSS/E RAW, PowerWorld aux, PowerModels or
 /// egret JSON) and return `{"network": ..., "warnings": [...]}` as JSON.
+///
+/// Takes the upload's bytes, not decoded text: `powerio::parse_bytes` refuses a
+/// text format whose bytes are not UTF-8, where a browser side `File.text()`
+/// would have replaced each offending byte with U+FFFD and parsed on. It also
+/// reaches PowerWorld `.pwb`, which has no text form at all.
 #[wasm_bindgen]
-pub fn parse_case(text: &str, format: &str) -> Result<String, JsError> {
-    let parsed = powerio::parse_str(text, format).map_err(jserr)?;
+pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
+    let parsed = powerio::parse_bytes(bytes, format).map_err(jserr)?;
     serde_json::to_string(&serde_json::json!({
         "network": parsed.network,
         "warnings": parsed.warnings,
@@ -257,8 +262,9 @@ fn commit_output(resp: &SolveResponse) -> serde_json::Value {
 /// separate from the `#[wasm_bindgen]` wrapper so it runs in native unit tests.
 #[cfg(feature = "sensitivity")]
 fn load_package_bundle(package_json: &str) -> Result<String, String> {
-    let package = powerio_pkg::NetworkPackage::from_json(package_json)
-        .map_err(|e| format!("invalid .pio.json package: {e}"))?;
+    // powerio-pkg names the format in its own message, so no prefix here.
+    let package =
+        powerio_pkg::NetworkPackage::from_json(package_json).map_err(|e| e.to_string())?;
     let study = tellegen::Study::from_package(&package)?;
     // The engine already validated the payload as balanced; clone it (uids stamped) for
     // the ingest view.
@@ -303,7 +309,7 @@ pub fn load_package(package_json: &str) -> Result<String, JsError> {
 }
 
 /// Export the balanced study state at commit `commit` to a powerio `format`
-/// (`matpower`, `psse`, `powerio-json`, ...). Returns `{ text, warnings, format,
+/// (`matpower`, `psse`, `model-json`, ...). Returns `{ text, warnings, format,
 /// extension }` as JSON: the serialized case, the writer's fidelity warnings so the
 /// frontend can surface them, and the format token and file extension. The package
 /// JSON is untrusted; malformed input returns a `JsError`, never a panic.
@@ -391,9 +397,12 @@ struct Topology {
 /// the tellegen API serves, placed at the coordinates the file carries
 /// (PowerWorld complete case aux exports). `view` is null when the file has no
 /// coordinates.
+///
+/// Takes the dropped file's bytes, as [`parse_case`] does and for the same
+/// reason.
 #[wasm_bindgen]
-pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
-    let mut parsed = powerio::parse_str(text, format).map_err(jserr)?;
+pub fn ingest_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
+    let mut parsed = powerio::parse_bytes(bytes, format).map_err(jserr)?;
     // Stamp row uids (`buses:0`, `branches:1`, ...) on every element that the
     // source format did not already give one (GOC3 carries its own). The stamped
     // network is what `network_json` serializes, so a Study built from this
@@ -428,7 +437,7 @@ pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
 /// the restored study state. Errors are strings (mapped to `JsError` at the wasm
 /// edge) so the same body runs in native unit tests.
 pub(crate) fn ingest_value(
-    net: &powerio::network::Network,
+    net: &powerio::BalancedNetwork,
     mut warnings: Vec<String>,
 ) -> Result<serde_json::Value, String> {
     let mut demand: BTreeMap<usize, f64> = BTreeMap::new();
@@ -552,7 +561,7 @@ pub(crate) fn ingest_value(
 /// `synthetic`/`manual` echo a stamped layout's provenance (a restored package
 /// carries it, so the case comes back placed with an honest badge), `file` is
 /// any other located case, and `synthetic_pending` awaits placement.
-fn coords_kind_token(net: &powerio::network::Network, has_view: bool) -> &'static str {
+fn coords_kind_token(net: &powerio::BalancedNetwork, has_view: bool) -> &'static str {
     if !has_view {
         return "synthetic_pending";
     }
@@ -729,7 +738,7 @@ mpc.gencost = [
 
     #[test]
     fn matpower_without_coordinates_returns_topology_for_placement() {
-        let out = ingest_case(CASE14_NO_COORDS, "m").expect("ingest case14");
+        let out = ingest_case(CASE14_NO_COORDS.as_bytes(), "m").expect("ingest case14");
         let v: Value = serde_json::from_str(&out).unwrap();
 
         assert_eq!(v["n_bus"].as_u64().unwrap(), 14);
@@ -877,7 +886,53 @@ mpc.gencost = [
         for bad in cases {
             assert!(tellegen::export_study(bad, 0, "matpower").is_err());
             // An out-of-range commit index must also reject rather than panic.
-            assert!(tellegen::export_study(bad, 9_999_999, "powerio-json").is_err());
+            assert!(tellegen::export_study(bad, 9_999_999, "model-json").is_err());
         }
     }
+
+    /// A PowerModels generator that omits `qmax` reads as an unbounded reactive
+    /// limit, which powerio carries as `+Inf`. JSON has no `Inf`, so the
+    /// `network_json` this payload hands the Study carries `null` there and
+    /// `BalancedNetwork::from_json` refuses it: the case ingests for viewing but
+    /// cannot be studied. Pinned so the day powerio gives the transport a
+    /// representation, this test fails and the branch below comes out.
+    #[test]
+    fn a_case_with_an_unbounded_reactive_limit_ingests_but_does_not_reach_a_study() {
+        let out = ingest_case(PM_NO_QMAX.as_bytes(), "powermodels-json").expect("ingest");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["n_bus"].as_u64().unwrap(), 2);
+
+        let network_json = v["network_json"].as_str().unwrap();
+        assert!(
+            network_json.contains("\"qmax\":null"),
+            "expected a null qmax in the payload, got: {network_json}"
+        );
+        let err = powerio::BalancedNetwork::from_json(network_json).unwrap_err();
+        assert!(
+            err.to_string().contains("null"),
+            "expected the null to be what from_json refuses, got: {err}"
+        );
+    }
+
+    /// Two buses, one generator with no `qmax`/`qmin`.
+    const PM_NO_QMAX: &str = r#"{
+      "name": "nq",
+      "baseMVA": 100.0,
+      "per_unit": true,
+      "bus": {
+        "1": {"index": 1, "bus_i": 1, "bus_type": 3, "vm": 1.0, "va": 0.0, "base_kv": 230.0, "vmax": 1.1, "vmin": 0.9},
+        "2": {"index": 2, "bus_i": 2, "bus_type": 1, "vm": 1.0, "va": 0.0, "base_kv": 230.0, "vmax": 1.1, "vmin": 0.9}
+      },
+      "gen": {
+        "1": {"index": 1, "gen_bus": 1, "pg": 0.5, "qg": 0.0, "pmax": 2.0, "pmin": 0.0, "vg": 1.0, "mbase": 100.0,
+              "gen_status": 1, "model": 2, "ncost": 3, "cost": [0.0, 10.0, 0.0]}
+      },
+      "load": {"1": {"index": 1, "load_bus": 2, "pd": 0.5, "qd": 0.1, "status": 1}},
+      "branch": {
+        "1": {"index": 1, "f_bus": 1, "t_bus": 2, "br_r": 0.01, "br_x": 0.1, "b_fr": 0.0, "b_to": 0.0,
+              "g_fr": 0.0, "g_to": 0.0, "tap": 1.0, "shift": 0.0, "br_status": 1, "rate_a": 2.0,
+              "angmin": -0.5, "angmax": 0.5, "transformer": false}
+      },
+      "shunt": {}, "storage": {}, "switch": {}, "dcline": {}
+    }"#;
 }

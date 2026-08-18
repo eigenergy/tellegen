@@ -1,6 +1,6 @@
 //! The browser- and server-facing entry point: one driver over every formulation.
 //!
-//! Parse a powerio [`Network`], apply operating-point edits, solve the requested
+//! Parse a powerio [`BalancedNetwork`], apply operating-point edits, solve the requested
 //! formulation, attach any requested sensitivity cells, and serve a
 //! formulation-agnostic response. The frontend picks three things in one request:
 //! the **problem** it solves (`dcpf`/`dcopf`/`acpf`/`socwr`), the **operand** it
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use powerio::network::Network;
+use powerio::BalancedNetwork;
 use serde::{Deserialize, Serialize};
 
 use super::model::DcNetwork;
@@ -360,7 +360,7 @@ pub struct SolveResponse {
 /// front door. Errors — a failed solve, an unsupported `(operand, parameter)` cell,
 /// a formulation this build does not include — surface as the `Err` string.
 pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, String> {
-    let net = Network::from_json(network_json).map_err(|e| e.to_string())?;
+    let net = BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
     let req: SolveRequest = if request_json.trim().is_empty() {
         SolveRequest::default()
     } else {
@@ -370,11 +370,11 @@ pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, Stri
     serde_json::to_string(&resp).map_err(|e| e.to_string())
 }
 
-/// Solve an already-parsed [`Network`] under `req`. Dispatches on the formulation to
+/// Solve an already-parsed [`BalancedNetwork`] under `req`. Dispatches on the formulation to
 /// the matching solver, then runs each requested sensitivity against the matching
 /// differentiable system. Problems this build does not include return a clean
 /// `Err` rather than degrading silently.
-pub fn solve_network(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+pub fn solve_network(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     match req.formulation {
         Problem::DcOpf => solve_dc_opf(net, req),
         #[cfg(feature = "sensitivity")]
@@ -395,7 +395,7 @@ pub fn solve_network(net: &Network, req: &SolveRequest) -> Result<SolveResponse,
     }
 }
 
-fn solve_dc_opf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_dc_opf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     let dc = DcNetwork::from_network(net)?;
     dc_opf_response(dc, req, None)
 }
@@ -466,7 +466,7 @@ fn dc_opf_response(
 }
 
 #[cfg(feature = "sensitivity")]
-fn solve_dc_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     // Flow limits do not constrain a power flow, so a rating edit cannot enter
     // the model.
     reject_rating_deltas(&req.edits.rates, "dcpf")?;
@@ -506,7 +506,7 @@ fn solve_dc_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
 }
 
 #[cfg(feature = "sensitivity")]
-fn solve_ac_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_ac_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     let (acnet, sol) = ac_pf_solved(super::model::AcNetwork::from_network(net)?, req)?;
     ac_pf_assemble(&acnet, &sol, req)
 }
@@ -562,7 +562,7 @@ pub(crate) fn ac_pf_assemble(
 }
 
 #[cfg(feature = "conic")]
-fn solve_socwr(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_socwr(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     let (acnet, sol) = socwr_solved(super::model::AcNetwork::from_network(net)?, req)?;
     socwr_assemble(&acnet, &sol, req)
 }

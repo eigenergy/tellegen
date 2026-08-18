@@ -9,7 +9,7 @@ import type { WasmModule, WasmStudy } from "./module.js";
 
 export type EngineRequest =
   | { op: "preload" }
-  | { op: "ingest_case"; text: string; format: string }
+  | { op: "ingest_case"; bytes: Uint8Array; format: string }
   | { op: "ingest_dist_case"; text: string; format: string }
   | { op: "parse_display"; bytes: Uint8Array; format: string }
   | { op: "parse_geo"; bytes: Uint8Array; hint: string }
@@ -52,7 +52,7 @@ export function runRequest(
     case "preload":
       return null; // loading the module was the work
     case "ingest_case":
-      return mod.ingest_case(req.text, req.format);
+      return mod.ingest_case(req.bytes, req.format);
     case "ingest_dist_case":
       return mod.ingest_dist_case(req.text, req.format);
     case "parse_display":
