@@ -42,3 +42,7 @@ multiple-versions = "warn"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# powerio 0.9.0 is pinned to the commit it was cut from until the crates publish; the
+# workspace pin becomes a version then and this entry comes back out. Named here rather
+# than relaxing `unknown-git`, so every other git source stays denied.
+allow-git = ["https://github.com/eigenergy/powerio"]
