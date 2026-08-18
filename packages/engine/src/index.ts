@@ -219,6 +219,19 @@ export async function ingestCase(
   );
 }
 
+/** Parse powerio's own model JSON (the `model-json` export, or the payload a
+ * package carries) for viewing. It is not a case format, so it does not go
+ * through `ingestCase`. */
+export async function ingestModelJson(
+  networkJson: string,
+): Promise<IngestedCase> {
+  return JSON.parse(
+    expectText(
+      await engineHost().call({ op: "ingest_model_json", network_json: networkJson }),
+    ),
+  );
+}
+
 /** Parse a multiconductor distribution case for viewing. `format` is a
  * distribution reader token (`dss`, `bmopf`, `pmd`) or `pio` for a `.pio.json`
  * package carrying a multiconductor payload. Rejects on malformed input or a
@@ -837,6 +850,7 @@ export async function exportStudy(
 export interface EngineTransport {
   preloadEngine(): Promise<void>;
   ingestCase(bytes: Uint8Array, format: string): Promise<IngestedCase>;
+  ingestModelJson(networkJson: string): Promise<IngestedCase>;
   ingestDistCase(text: string, format: string): Promise<IngestedDistCase>;
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   parseGeo(bytes: Uint8Array, hint: string): Promise<ParsedGeoLayer>;
@@ -868,6 +882,7 @@ export interface EngineTransport {
 export const browserWasmTransport: EngineTransport = {
   preloadEngine,
   ingestCase,
+  ingestModelJson,
   ingestDistCase,
   parseDisplay,
   parseGeo,

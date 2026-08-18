@@ -412,6 +412,19 @@ pub fn ingest_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
     serde_json::to_string(&value).map_err(jserr)
 }
 
+/// [`ingest_case`] for powerio's own model JSON, the document `export_study`
+/// writes under the `model-json` token and powerio classifies as
+/// `JsonClass::ModelJson`. It is not a case format, so it reaches
+/// `BalancedNetwork::from_json` rather than a case reader, and there are no
+/// reader warnings to carry: nothing was converted.
+#[wasm_bindgen]
+pub fn ingest_model_json(network_json: &str) -> Result<String, JsError> {
+    let mut net = powerio::BalancedNetwork::from_json(network_json).map_err(jserr)?;
+    powerio_pkg::ensure_payload_uids(&mut net);
+    let value = ingest_value(&net, Vec::new()).map_err(jserr)?;
+    serde_json::to_string(&value).map_err(jserr)
+}
+
 /// The distribution counterpart of [`ingest_case`]: view a multiconductor case
 /// with no solve. `format` is a distribution reader token (`dss`, `bmopf`,
 /// `pmd`) parsed by [`powerio_dist`], or `pio` for a `.pio.json` package
@@ -857,7 +870,10 @@ mpc.gencost = [
             "null",
             "[]",
             "42",
-            r#"{"schema":"https://powerio.dev/schema/pio-package/0.1"}"#,
+            // A package shaped envelope with nothing under it, and one that
+            // states no `powerio_version` so the lineage gate refuses it.
+            r#"{"model_kind":"balanced","model":{}}"#,
+            r#"{"model_kind":"balanced","model":{"kind":"balanced","balanced_network":{"base_mva":100.0,"buses":[]}}}"#,
             big_open.as_str(),
             big_quote.as_str(),
         ];

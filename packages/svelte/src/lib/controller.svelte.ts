@@ -33,6 +33,7 @@ import {
 	formatOf,
 	ingestCase,
 	ingestDistCase,
+	ingestModelJson,
 	isDisplayFile,
 	isPermanentEngineFailure,
 	loadPackage,
@@ -42,6 +43,7 @@ import {
 	type BrowserStudy,
 	type DisplayPreview,
 	type Formulation,
+	type IngestedCase,
 	type IngestedDistCase,
 	type LoadedPackage,
 	type SensTarget
@@ -1775,6 +1777,13 @@ export class Controller {
 				this.app.error = null;
 				return 'restored';
 			}
+			if (kind === 'model-json') {
+				// powerio's own model document, the `model-json` export dropped back in.
+				// It is not a case format, so it reaches `from_json`, not a case reader.
+				this.addBalancedCase(file.name, await ingestModelJson(text));
+				this.app.error = null;
+				return 'viewed';
+			}
 			const format = kind === 'multiconductor-package' ? 'pio' : kind;
 			const payload = await ingestDistCase(text, format);
 			// BMOPF is the classifier's catch-all and its reader is liberal: an
@@ -1909,6 +1918,26 @@ export class Controller {
 
 	/** Build a local case from a restored study package: the same shape a dropped case
 	 * takes, with the saved demand/rating deltas and formulation pre-applied. */
+	/** Make a balanced ingest payload the active local case. The package restore
+	 * path opposite it carries an edit log too; this one is a bare network. */
+	private addBalancedCase = (fileName: string, payload: IngestedCase) => {
+		const { network_json, topology, view, ...summary } = payload;
+		const label =
+			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
+		this.addAndActivateLocal(
+			new LocalCase({
+				id: `local-${++this.localSeq}`,
+				label,
+				fileName,
+				summary,
+				networkJson: network_json,
+				topology,
+				coordsKind: summary.coords_kind,
+				view
+			})
+		);
+	};
+
 	private restoreLocalFromPackage = (fileName: string, pkg: LoadedPackage) => {
 		const { network_json, topology, view, formulation, deltas, rates, ...summary } = pkg;
 		const id = `local-${++this.localSeq}`;

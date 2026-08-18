@@ -4,10 +4,15 @@
  * everything under `.json` is content-sniffed here so there is one place that
  * decides package-vs-case and balanced-vs-multiconductor.
  *
- * The rules mirror the readers they feed:
- *   - a `.pio.json` package is recognized by its `schema` envelope field, then
- *     split by the authoritative `model_kind` (balanced restores a study;
- *     multiconductor is viewed);
+ * The rules mirror the readers they feed, and the package and model JSON rules
+ * are powerio's own `classify_json_text` written out in TypeScript:
+ *   - a `.pio.json` package is recognized by a `model_kind` of `balanced` or
+ *     `multiconductor` beside a `model` key, which then splits it (balanced
+ *     restores a study; multiconductor is viewed). The value check keeps a case
+ *     document that happens to carry those key names from being misrouted;
+ *   - bare model JSON, the object powerio's `to_json` writes, is recognized by
+ *     `buses` beside another network key, which the case formats spell
+ *     differently (PowerModels writes `bus`, not `buses`);
  *   - a non-package document is distribution JSON, PMD when it carries the
  *     `data_model` marker and BMOPF otherwise (the same split
  *     `powerio_dist` uses for `.json`), except a GeoJSON FeatureCollection,
@@ -16,15 +21,14 @@
  * Every function is total: malformed, truncated, or non-JSON input classifies
  * as `not-json` rather than throwing. */
 
-/** The schema URL prefix every `.pio.json` package envelope carries. */
-export const PIO_PACKAGE_SCHEMA_PREFIX = 'https://powerio.dev/schema/pio-package';
-
 /** How a dropped JSON file should be ingested. */
 export type JsonDropKind =
 	/** A saved balanced study package: restore the case, edits, and formulation. */
 	| 'balanced-package'
 	/** A package carrying a multiconductor payload: view it (no solve). */
 	| 'multiconductor-package'
+	/** Bare powerio model JSON: a balanced network with no package envelope. */
+	| 'model-json'
 	/** A BMOPF JSON distribution case. */
 	| 'bmopf'
 	/** A PowerModelsDistribution ENGINEERING JSON case. */
@@ -63,37 +67,39 @@ function topLevelObject(text: string): Record<string, unknown> | null {
 		: null;
 }
 
-/** Whether `text` is a `.pio.json` package envelope, by its `schema` field. */
+/** Whether `obj` is a `.pio.json` package envelope. The marker is powerio's:
+ * a `model_kind` naming a model family beside the `model` key that carries it.
+ * powerio stopped writing the `schema` URL field in 0.8.0, so a package is
+ * identified by what it declares about its payload, not by a schema id. */
 export function isPackageEnvelope(obj: Record<string, unknown> | null): boolean {
-	return typeof obj?.schema === 'string' && obj.schema.startsWith(PIO_PACKAGE_SCHEMA_PREFIX);
+	const kind = obj?.model_kind;
+	return (kind === 'balanced' || kind === 'multiconductor') && 'model' in (obj ?? {});
 }
 
-/** The package's model family. `model_kind` is authoritative and stored
- * explicitly; fall back to the payload's own `model.kind` tag for a package
- * written before the field existed. */
-function packageModelKind(obj: Record<string, unknown>): 'balanced' | 'multiconductor' | null {
-	const explicit = obj.model_kind;
-	if (explicit === 'balanced' || explicit === 'multiconductor') return explicit;
-	const payloadKind = (obj.model as { kind?: unknown } | undefined)?.kind;
-	if (payloadKind === 'balanced' || payloadKind === 'multiconductor') return payloadKind;
-	return null;
+/** Whether `obj` is bare powerio model JSON: `buses` beside another network
+ * key. The case formats spell that table differently (PowerModels writes
+ * `bus`), so the plural is what separates powerio's own document from a case. */
+function isModelJson(obj: Record<string, unknown>): boolean {
+	if (!Array.isArray(obj.buses)) return false;
+	return ['branches', 'generators', 'loads', 'shunts', 'base_mva'].some((key) => key in obj);
 }
 
 /** Classify a dropped JSON document into its ingest path. */
 export function classifyJson(text: string): JsonDropKind {
 	const obj = topLevelObject(text);
 	if (!obj) return 'not-json';
+	// `isPackageEnvelope` already checked that `model_kind` names one of the two
+	// families, so it splits the package on its own.
 	if (isPackageEnvelope(obj)) {
-		const kind = packageModelKind(obj);
-		// A package with no readable kind is treated as balanced: that is the
-		// historical payload and the study-restore path fails closed on a
-		// non-balanced document anyway.
-		return kind === 'multiconductor' ? 'multiconductor-package' : 'balanced-package';
+		return obj.model_kind === 'multiconductor' ? 'multiconductor-package' : 'balanced-package';
 	}
 	// A GeoJSON FeatureCollection saved as `.json` is coordinate data for the
 	// geo sidecar path, which accepted it before this classifier existed; leave
 	// it unrouted so it falls through.
 	if (Array.isArray((obj as { features?: unknown }).features)) return 'not-json';
+	// powerio's own model document, which is not a case format: it goes to the
+	// balanced path rather than to a distribution reader.
+	if (isModelJson(obj)) return 'model-json';
 	// Non-package JSON is a distribution document: PMD declares `data_model`,
 	// everything else is routed to BMOPF (which gives the precise parse error
 	// when it is neither).
