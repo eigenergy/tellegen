@@ -707,7 +707,7 @@ fn study_edit_from_network_edit(
             let uid = branch_uid_for_key(net, branch)?;
             Ok(StudyEdit::RatingDelta {
                 branch: ElementRef::by_source_uid("branches", uid),
-                delta_mw: *delta_mw,
+                delta_mva: *delta_mw,
             })
         }
     }
@@ -734,9 +734,9 @@ fn network_edit_from_study_edit(
                 p_mw: *p_mw,
             })
         }
-        StudyEdit::RatingDelta { branch, delta_mw } => Ok(NetworkEdit::AdjustBranchRating {
+        StudyEdit::RatingDelta { branch, delta_mva } => Ok(NetworkEdit::AdjustBranchRating {
             branch: key_from_ref(net, branch, "branches")?,
-            delta_mw: *delta_mw,
+            delta_mw: *delta_mva,
         }),
         StudyEdit::SetFields { .. } => {
             Err("study contains a set_fields edit, which tellegen does not model".into())

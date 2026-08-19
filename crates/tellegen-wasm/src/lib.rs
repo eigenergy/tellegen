@@ -907,27 +907,30 @@ mpc.gencost = [
     }
 
     /// A PowerModels generator that omits `qmax` reads as an unbounded reactive
-    /// limit, which powerio carries as `+Inf`. JSON has no `Inf`, so the
-    /// `network_json` this payload hands the Study carries `null` there and
-    /// `BalancedNetwork::from_json` refuses it: the case ingests for viewing but
-    /// cannot be studied. Pinned so the day powerio gives the transport a
-    /// representation, this test fails and the branch below comes out.
+    /// limit, which powerio carries as `+Inf`. JSON has no `Inf` literal, so
+    /// powerio spells it as the string `"Infinity"` and reads it back the same
+    /// way: the `network_json` this payload hands the Study round-trips the
+    /// unbounded limit, and the case both views and studies.
     #[test]
-    fn a_case_with_an_unbounded_reactive_limit_ingests_but_does_not_reach_a_study() {
+    fn a_case_with_an_unbounded_reactive_limit_reaches_a_study() {
         let out = ingest_case(PM_NO_QMAX.as_bytes(), "powermodels-json").expect("ingest");
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["n_bus"].as_u64().unwrap(), 2);
 
         let network_json = v["network_json"].as_str().unwrap();
         assert!(
-            network_json.contains("\"qmax\":null"),
-            "expected a null qmax in the payload, got: {network_json}"
+            network_json.contains("\"qmax\":\"Infinity\""),
+            "expected a string-spelled qmax in the payload, got: {network_json}"
         );
-        let err = powerio::BalancedNetwork::from_json(network_json).unwrap_err();
+        let net = powerio::BalancedNetwork::from_json(network_json).expect("from_json");
+        let qmax = net.generators[0].qmax;
         assert!(
-            err.to_string().contains("null"),
-            "expected the null to be what from_json refuses, got: {err}"
+            qmax.is_infinite() && qmax.is_sign_positive(),
+            "expected qmax to read back as +Inf, got: {qmax}"
         );
+
+        #[cfg(feature = "sensitivity")]
+        tellegen::Study::new(network_json, tellegen::Problem::DcOpf).expect("study");
     }
 
     /// Two buses, one generator with no `qmax`/`qmin`.

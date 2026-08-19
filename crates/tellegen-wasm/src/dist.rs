@@ -14,7 +14,9 @@
 //! `JsError` at the boundary. Input is untrusted: a malformed, truncated, or
 //! oversized payload rejects as an `Err`, never a panic.
 
-use powerio_dist::{parse_str, CoordinateSpace, DistGraphEdgeKind, GeoMeta, MulticonductorNetwork};
+use powerio_dist::{
+    parse_str, CoordinateSpace, DistGeoMeta, DistGraphEdgeKind, MulticonductorNetwork,
+};
 use powerio_pkg::{ModelKind, NetworkPackage};
 
 /// Parse `text` in a distribution `format` (`dss`, `bmopf`, or `pmd`) and
@@ -103,7 +105,7 @@ fn ingest_dist_value(net: &MulticonductorNetwork) -> Result<serde_json::Value, S
 
 /// The network's declared coordinate space as a stable snake-case token. `none`
 /// when the network declared no space at all.
-fn coords_space(geo: Option<&GeoMeta>) -> &'static str {
+fn coords_space(geo: Option<&DistGeoMeta>) -> &'static str {
     match geo.map(|g| &g.space) {
         Some(CoordinateSpace::Geographic { .. }) => "geographic",
         Some(CoordinateSpace::Projected { .. }) => "projected",
