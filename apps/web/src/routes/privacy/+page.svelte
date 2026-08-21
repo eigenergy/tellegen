@@ -20,12 +20,18 @@
 		<h2>Current Demo</h2>
 		<ul>
 			<li>
-				Dropped `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, and `.geojson` files stay on your
-				device.
+				Dropped `.m`, `.raw`, `.aux`, `.epc`, `.pwb`, `.dss`, `.pwd`, `.csv`, `.json`, and
+				`.geojson` files stay on your device.
 			</li>
 			<li>The browser uses local file contents to draw the map and run DC solves.</li>
 			<li>The server receives ordinary page and API requests for the built in demo cases.</li>
 			<li>There is no analytics product wired to uploaded case contents.</li>
+			<li>
+				The map basemap comes from CARTO (<code>basemaps.cartocdn.com</code>). Your browser requests
+				those tiles directly, so CARTO receives your IP address, your user agent, and the map area
+				you view. Your case file is never sent, but the map area shows where a locally parsed case
+				sits. Nothing else on the page loads from a third party.
+			</li>
 		</ul>
 	</section>
 

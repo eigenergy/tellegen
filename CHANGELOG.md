@@ -1,5 +1,26 @@
 # Changelog
 
+Each surface keeps its own generated changelog:
+
+- [`crates/tellegen/CHANGELOG.md`](crates/tellegen/CHANGELOG.md) (release-plz)
+- [`packages/engine/CHANGELOG.md`](packages/engine/CHANGELOG.md) (changesets)
+- [`packages/svelte/CHANGELOG.md`](packages/svelte/CHANGELOG.md) (changesets)
+
+This file is the curated view across all three. The entries below are the only
+record for the releases before the split.
+
+## Unreleased
+
+- powerio moves to 0.9. A saved study states the powerio release that wrote it,
+  and a study saved by an earlier build no longer loads: open the source case
+  and save the study again. Case uploads parse as bytes, so a `.raw` or `.aux`
+  exported in CP1252 is refused rather than mangled.
+- Releases are automated. The crate publishes through release-plz and the two
+  npm packages through changesets, both by OIDC trusted publishing behind an
+  environment that requires a reviewer. No registry token is stored. The crate
+  keeps the `tellegen-vX.Y.Z` tag name; the packages take
+  `@tellegen/<name>@X.Y.Z`.
+
 ## 0.1.2 — 2026-07-28
 
 `@tellegen/svelte` only. The compact layout renders the control panel as a

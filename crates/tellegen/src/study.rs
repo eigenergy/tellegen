@@ -2171,6 +2171,59 @@ mod tests {
         }
     }
 
+    /// The browser classifies a dropped file before any reader sees it, in
+    /// `packages/svelte/src/lib/drop-classify.ts`. It calls a document a package
+    /// when `model_kind` names a model family beside the `model` key. Nothing
+    /// else holds the writer to that shape, so this does.
+    #[test]
+    fn a_saved_package_carries_what_the_drop_classifier_reads() {
+        let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();
+        let json = s.to_package().unwrap().to_json().unwrap();
+        let value: Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value["model_kind"], "balanced");
+        assert!(
+            value["model"].is_object(),
+            "model payload: {}",
+            value["model"]
+        );
+        assert!(
+            value["powerio_version"].is_string(),
+            "powerio_version must be a string: {}",
+            value["powerio_version"]
+        );
+    }
+
+    /// A dropped case names its own buses, and tellegen writes those names into
+    /// the export a user downloads. A name holding a line terminator used to end
+    /// the record early, so the rest of it parsed as further records. powerio
+    /// replaces the terminator in the writer; every text target tellegen can
+    /// reach must hold.
+    #[test]
+    fn an_export_cannot_gain_records_from_a_bus_name() {
+        let mut net: Value = serde_json::from_str(&case3_json()).unwrap();
+        net["buses"].as_array_mut().unwrap()[1]["name"] =
+            serde_json::json!("A\n 999,'B',1,1,1,1,1,1.0,0.0,1.0,1.0,1.1,0.9");
+        let package = Study::new(&net.to_string(), Problem::DcOpf)
+            .unwrap()
+            .to_package()
+            .unwrap()
+            .to_json()
+            .unwrap();
+
+        for format in ["matpower", "psse", "pslf", "powerworld"] {
+            let exported = export_study(&package, 0, format).expect(format);
+            assert!(
+                !exported.text.contains("\n 999,"),
+                "{format}: a bus name ended its record"
+            );
+            assert!(
+                !exported.text.contains("\r 999,"),
+                "{format}: a bus name ended its record"
+            );
+        }
+    }
+
     #[test]
     fn export_rejects_unknown_format() {
         let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();

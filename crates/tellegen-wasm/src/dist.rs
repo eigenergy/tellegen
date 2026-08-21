@@ -107,6 +107,9 @@ fn ingest_dist_value(net: &MulticonductorNetwork) -> Result<serde_json::Value, S
         "n_ibr": net.ibrs.len(),
         "n_source": net.sources.len(),
         "n_shunt": net.shunts.len(),
+        // Only the BMOPF reader gives a capacitor its own type. A `.dss` or PMD
+        // capacitor reads as a shunt, so the two counts do not overlap.
+        "n_capacitor": net.capacitors.len(),
         "load_kw": load_kw,
         "gen_kw": gen_kw,
         "base_frequency": net.base_frequency,

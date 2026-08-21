@@ -13,9 +13,20 @@ IMAGE="${1:-}"
 DATA_DIR="${2:-${TELLEGEN_DATA_DIR:-}}"
 
 if [ -z "$IMAGE" ]; then
-	echo "usage: remote-deploy.sh <image-ref> [data-dir]" >&2
+	echo "usage: remote-deploy.sh <image-ref@sha256:...> [data-dir]" >&2
 	exit 2
 fi
+
+# Accept a digest only. A tag can be repointed at another manifest after the
+# push, so a tag deploy trusts whoever can write to the registry. The pattern
+# also stops a newline or a shell metacharacter reaching the .env file below.
+case "$IMAGE" in
+	ghcr.io/[a-z0-9._/-]*@sha256:????????????????????????????????????????????????????????????????) ;;
+	*)
+		echo "refusing to deploy $IMAGE: expected ghcr.io/<name>@sha256:<64 hex>" >&2
+		exit 2
+		;;
+esac
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_ROOT="${DEPLOY_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -29,6 +40,15 @@ die() {
 	echo "==> $*" >&2
 	exit 1
 }
+
+# Checked after the default above fills it in. A newline injects further Compose
+# variables into .env, and `/` bind-mounts the whole host into the container.
+case "$DATA_DIR" in
+	/) die "refusing data dir /" ;;
+	/*[!a-zA-Z0-9._/-]*) die "data dir has an unexpected character: $DATA_DIR" ;;
+	/*) ;;
+	*) die "data dir must be an absolute path: $DATA_DIR" ;;
+esac
 
 logs() {
 	if [ -f .env ]; then

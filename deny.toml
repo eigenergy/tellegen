@@ -26,6 +26,7 @@ confidence-threshold = 0.9
 [advisories]
 # RustSec advisory DB. Security advisories fail the check; add IDs to `ignore` only
 # with a documented rationale.
+yanked = "deny"
 ignore = [
     # `paste` (proc-macro helper) was archived by its author — an unmaintained notice,
     # not a vulnerability. Pulled in transitively by faer -> gemm -> pulp for SIMD

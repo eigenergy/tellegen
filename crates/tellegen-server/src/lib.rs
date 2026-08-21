@@ -13,7 +13,7 @@ use std::{
 
 use axum::{
     extract::{ConnectInfo, Path as AxumPath, Query, Request, State},
-    http::{header::CONTENT_TYPE, HeaderMap, HeaderValue, StatusCode},
+    http::{self, header::CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{
         sse::{Event, Sse},
@@ -28,6 +28,7 @@ use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::{
     services::{ServeDir, ServeFile},
+    set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
 
@@ -586,7 +587,7 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    if let Some(dir) = frontend_build.filter(|dir| dir.is_dir()) {
+    let app = if let Some(dir) = frontend_build.filter(|dir| dir.is_dir()) {
         let index = dir.join("index.html");
         let fallback = if dir.join("200.html").is_file() {
             dir.join("200.html")
@@ -606,7 +607,31 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         )
     } else {
         app
-    }
+    };
+
+    // Response headers the built page cannot set for itself. SvelteKit puts the
+    // Content-Security-Policy in a `<meta>` tag, and a browser ignores
+    // `frame-ancestors` there, so X-Frame-Options carries the clickjacking
+    // defence. HSTS belongs to whatever terminates TLS, not here.
+    //
+    // These come last: `Router::layer` wraps only what is registered before it,
+    // so a fallback attached afterwards would answer without them.
+    app.layer(SetResponseHeaderLayer::overriding(
+        http::header::X_FRAME_OPTIONS,
+        HeaderValue::from_static("DENY"),
+    ))
+    .layer(SetResponseHeaderLayer::overriding(
+        http::header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    ))
+    .layer(SetResponseHeaderLayer::overriding(
+        http::header::REFERRER_POLICY,
+        HeaderValue::from_static("strict-origin-when-cross-origin"),
+    ))
+    .layer(SetResponseHeaderLayer::overriding(
+        HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static("geolocation=(), camera=(), microphone=(), payment=()"),
+    ))
 }
 
 /// The compute gate for every route on the compute sub-router: 403 unless
@@ -1692,7 +1717,7 @@ mod tests {
         (status, serde_json::from_str(&body).unwrap())
     }
 
-    async fn static_get(path: &str, dir: PathBuf) -> (StatusCode, String) {
+    async fn static_get(path: &str, dir: PathBuf) -> (StatusCode, HeaderMap, String) {
         let res = router(fallback_state(), Some(dir))
             .oneshot(
                 axum::http::Request::builder()
@@ -1703,8 +1728,34 @@ mod tests {
             .await
             .unwrap();
         let status = res.status();
+        let headers = res.headers().clone();
         let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        (status, String::from_utf8(body.to_vec()).unwrap())
+        (status, headers, String::from_utf8(body.to_vec()).unwrap())
+    }
+
+    /// The built page carries its Content-Security-Policy in a `<meta>` tag,
+    /// where a browser ignores `frame-ancestors`. These headers are the part
+    /// only a response can carry, so the container is safe on its own and does
+    /// not depend on a proxy config this repository does not deploy.
+    #[tokio::test]
+    async fn responses_carry_the_security_headers() {
+        let response = router(fallback_state(), None)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let headers = response.headers();
+        assert_eq!(headers["x-frame-options"], "DENY");
+        assert_eq!(headers["x-content-type-options"], "nosniff");
+        assert_eq!(
+            headers["referrer-policy"],
+            "strict-origin-when-cross-origin"
+        );
+        assert!(headers.contains_key("permissions-policy"));
     }
 
     #[tokio::test]
@@ -1771,13 +1822,15 @@ mod tests {
         )
         .unwrap();
 
-        let (status, body) = static_get("/", dir.clone()).await;
-        assert_eq!(status, StatusCode::OK);
-        assert!(body.contains("tellegen"));
-
-        let (status, body) = static_get("/map/path", dir.clone()).await;
-        assert_eq!(status, StatusCode::OK);
-        assert!(body.contains("tellegen"));
+        for path in ["/", "/map/path"] {
+            let (status, headers, body) = static_get(path, dir.clone()).await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(body.contains("tellegen"));
+            // The static tree is the demo page itself. It is served by the
+            // fallback, which the header layers only reach when they wrap the
+            // assembled router rather than the api routes alone.
+            assert_eq!(headers["x-frame-options"], "DENY", "{path}");
+        }
 
         fs::remove_dir_all(dir).unwrap();
     }

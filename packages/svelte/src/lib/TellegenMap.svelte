@@ -514,6 +514,10 @@
 		let maxLon = -Infinity;
 		let maxLat = -Infinity;
 		for (const [lon, lat] of points) {
+			// A case file can carry any number as a coordinate. maplibre throws on a
+			// latitude outside the Web Mercator range, and that throw lands in the
+			// framing effect, which leaves the map unframed.
+			if (lon < -180 || lon > 180 || lat < -85.05 || lat > 85.05) continue;
 			minLon = Math.min(minLon, lon);
 			minLat = Math.min(minLat, lat);
 			maxLon = Math.max(maxLon, lon);

@@ -1,0 +1,72 @@
+name: Release (packages)
+
+# Setup for this workflow is in docs/src/release-architecture.md.
+#
+# The npm trusted publisher binds to this filename. If you rename this file,
+# update the publisher on npmjs.com for both packages first.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+# Do not cancel a run. The two packages publish in sequence, and a stop between
+# them leaves a svelte release on npm whose engine did not ship.
+concurrency:
+  group: release-npm
+  cancel-in-progress: false
+
+jobs:
+  gates-rust:
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gates-rust.yml
+
+  gates-js:
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gates-js.yml
+
+  changesets:
+    if: github.ref == 'refs/heads/main'
+    name: version pull request or publish
+    needs: [gates-rust, gates-js]
+    runs-on: ubuntu-latest
+    # The reviewer rule is on the environment, in the repository settings. This
+    # line alone does not gate the publish.
+    environment: npm
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/js-setup
+        with:
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later. Node 22 supplies npm 10,
+      # which looks for a token instead.
+      - name: Use an npm that can do trusted publishing
+        run: |
+          set -euo pipefail
+          npm install -g npm@11.5.1
+          npm --version
+
+      - name: Version pull request or publish
+        uses: changesets/action@3841a0683d3cfa6dae0f9bb335290003010fe3f0 # v1.9.0
+        with:
+          version: npm run version:packages
+          publish: npm run release:npm
+          commit: "Release packages"
+          title: "Release packages"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NPM_CONFIG_PROVENANCE: "true"

@@ -52,6 +52,9 @@ import {
 } from '@tellegen/engine';
 import { errorText, extent, formulationLabel, rgbaCss } from './format.js';
 
+/** Largest file the drop path reads. See `ingestFiles`. */
+const MAX_DROP_BYTES = 128 * 1024 * 1024;
+
 const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
 const DEFAULT_CASE_ID = 'case500';
@@ -1580,6 +1583,14 @@ export class Controller {
 	 * preview. Files run serially; nothing uploads. */
 	ingestFiles = async (files: FileList | File[]) => {
 		const list = Array.from(files);
+		// Every read below loads the whole file, then copies it to the worker and
+		// again into wasm memory, which is 32-bit. Without this the tab dies with
+		// no message. The largest bundled case is far under the cap.
+		const tooBig = list.find((f) => f.size > MAX_DROP_BYTES);
+		if (tooBig) {
+			this.app.error = `${tooBig.name} is ${Math.round(tooBig.size / 1e6)} MB; the drop limit is ${Math.round(MAX_DROP_BYTES / 1e6)} MB`;
+			return;
+		}
 		let parsedCaseCount = 0;
 		// True once a dropped case file took the geographic sidecars; a restored
 		// package or an existing case only takes them when no case file did.

@@ -1,0 +1,33 @@
+[workspace]
+git_tag_name = "tellegen-v{{ version }}"
+git_release_name = "tellegen v{{ version }}"
+git_release_enable = true
+git_release_draft = false
+# Dependabot owns dependency updates. Keep this off, or a bump can reach
+# crates.io without a run of the gates.
+dependencies_update = false
+
+[changelog]
+protect_breaking_commits = true
+
+[[package]]
+name = "tellegen"
+changelog_path = "crates/tellegen/CHANGELOG.md"
+publish = true
+
+# A new publishable crate must get an entry here, or release-plz ignores it.
+[[package]]
+name = "tellegen-wasm"
+release = false
+
+[[package]]
+name = "tellegen-server"
+release = false
+
+[[package]]
+name = "tellegen-cli"
+release = false
+
+[[package]]
+name = "benchmarks"
+release = false

@@ -37,6 +37,13 @@
     "check": "npm run check:engine && npm run check:svelte && npm run check:web",
     "build": "npm run build:engine && npm run build:svelte && npm run build:example && npm --workspace tellegen-frontend run build",
     "test:downstream": "npm run test:import && npm run test:svelte-packed",
-    "ci:js": "npm run check && npm run build && npm run pack:svelte && npm run smoke:web && npm run test:downstream"
+    "ci:js": "npm run check && npm run build && npm run pack:svelte && npm run smoke:web && npm run test:downstream",
+    "changeset": "changeset",
+    "version:packages": "changeset version && npm run contracts && npm install --package-lock-only",
+    "release:npm": "npm run wasm && npm run build:engine && npm run build:svelte && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "0.5.1",
+    "@changesets/cli": "2.29.8"
   }
 }

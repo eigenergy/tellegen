@@ -1,0 +1,61 @@
+name: Package Inspect
+
+# Build the release artifacts and upload them. This workflow does not publish.
+# Use it to examine the contents of a tarball.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  crate:
+    name: cargo package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          workspaces: .
+      # `cargo package`, not `cargo publish --dry-run`: only `package` keeps the
+      # `.crate` file for the upload step below.
+      - name: Package and verify
+        run: |
+          rm -rf target/package
+          cargo package -p tellegen
+      - name: List the packaged contents
+        run: cargo package -p tellegen --list
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tellegen-crate-package
+          path: target/package/tellegen-*.crate
+          if-no-files-found: error
+
+  packages:
+    name: npm pack
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/js-setup
+      - run: npm run wasm
+      - run: npm run build:engine
+      - run: npm run build:svelte
+      - name: Pack artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tellegen-package"
+          npm --workspace @tellegen/engine pack --pack-destination "$RUNNER_TEMP/tellegen-package"
+          npm --workspace @tellegen/svelte pack --pack-destination "$RUNNER_TEMP/tellegen-package"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tellegen-npm-packages
+          path: ${{ runner.temp }}/tellegen-package/tellegen-*.tgz
+          if-no-files-found: error
