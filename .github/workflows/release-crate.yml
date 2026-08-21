@@ -17,13 +17,13 @@ concurrency:
 
 jobs:
   gates:
-    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
     uses: ./.github/workflows/gates-rust.yml
 
   release-pr:
-    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
     name: version pull request
     runs-on: ubuntu-latest
     permissions:

@@ -119,9 +119,9 @@ variable after you make all of these:
    you rename the workflow, publishing stops until you change the publisher;
 4. a GitHub App on this repository with `contents: write` and
    `pull-requests: write`. Put its id in the `RELEASE_PLZ_APP_ID` variable and
-   its private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. The app exists
-   only so the crate's version pull request starts a CI run. A pull request
-   that `GITHUB_TOKEN` opens does not start one.
+   its private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. Both release
+   bots use it so their version pull requests start CI. Pull requests opened by
+   `GITHUB_TOKEN` do not start workflows.
 
 When trusted publishing works, delete the `NPM_TOKEN` and
 `CARGO_REGISTRY_TOKEN` secrets. Nothing reads them.
@@ -139,6 +139,11 @@ version bumps, changelog entries, the engine `CONTRACT_VERSION`, and the
 lockfile. Merge it to run the gates and publish. Tags take the form
 `@tellegen/<name>@X.Y.Z`.
 
+The workflow selects version or publish mode before it requests privileged
+permissions. Versioning uses the GitHub App. Publishing builds immutable
+tarballs in an unprivileged job, then gives only the final npm job the `npm`
+environment and OIDC permission.
+
 `@tellegen/svelte` resolves `@tellegen/engine` from the registry, so a release
 that moves both publishes the engine first.
 
@@ -150,8 +155,8 @@ that moves both publishes the engine first.
 deliberate edit there.
 
 On a push to `main`, `.github/workflows/release-crate.yml` keeps a pull request
-open that bumps the version. Merge it to run the gates, tag `tellegen-vX.Y.Z`,
-make the GitHub release, and publish.
+open that bumps the version. Merge it to run the gates, continue the existing
+`vX.Y.Z` tag series, make the GitHub release, and publish.
 
 ### Inspecting an artifact
 

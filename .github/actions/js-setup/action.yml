@@ -6,6 +6,14 @@ inputs:
     description: npm registry. Set this only in a job that publishes.
     required: false
     default: ""
+  node-version:
+    description: Node.js major version.
+    required: false
+    default: "22"
+  npm-cache:
+    description: Whether setup-node should restore the npm cache.
+    required: false
+    default: "true"
   wasm-pack-version:
     description: wasm-pack release version, without the leading v.
     required: false
@@ -42,11 +50,17 @@ runs:
         rm -f /tmp/wasm-pack.tar.gz
         wasm-pack --version
 
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+    - if: inputs.npm-cache == 'true'
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
-        node-version: 22
+        node-version: ${{ inputs.node-version }}
         registry-url: ${{ inputs.registry-url }}
         cache: npm
         cache-dependency-path: package-lock.json
+    - if: inputs.npm-cache != 'true'
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        registry-url: ${{ inputs.registry-url }}
     - run: npm ci
       shell: bash

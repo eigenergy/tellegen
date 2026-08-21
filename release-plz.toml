@@ -1,5 +1,5 @@
 [workspace]
-git_tag_name = "tellegen-v{{ version }}"
+git_tag_name = "v{{ version }}"
 git_release_name = "tellegen v{{ version }}"
 git_release_enable = true
 git_release_draft = false

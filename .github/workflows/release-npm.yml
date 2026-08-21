@@ -12,61 +12,123 @@ on:
 
 permissions: {}
 
-# Do not cancel a run. The two packages publish in sequence, and a stop between
-# them leaves a svelte release on npm whose engine did not ship.
+# Do not cancel a run that may already be publishing.
 concurrency:
   group: release-npm
   cancel-in-progress: false
 
 jobs:
   gates-rust:
-    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
     uses: ./.github/workflows/gates-rust.yml
 
   gates-js:
-    if: vars.TELLEGEN_RELEASE_ENABLED == 'true'
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
     uses: ./.github/workflows/gates-js.yml
 
-  changesets:
+  select-mode:
     if: github.ref == 'refs/heads/main'
-    name: version pull request or publish
+    name: choose version or publish
     needs: [gates-rust, gates-js]
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.select-mode.outputs.mode }}
+      publish-plan-artifact-id: ${{ steps.select-mode.outputs.publish-plan-artifact-id }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Select Changesets mode
+        id: select-mode
+        uses: changesets/action/select-mode@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
+
+  version:
+    if: needs.select-mode.outputs.mode == 'version'
+    name: version pull request
+    needs: select-mode
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Mint an app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Version packages
+        uses: changesets/action/version@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: npm run version:packages
+          commit-message: Release packages
+          pr-title: Release packages
+
+  pack:
+    if: needs.select-mode.outputs.mode == 'publish'
+    name: build and pack packages
+    needs: select-mode
+    runs-on: ubuntu-latest
+    outputs:
+      pack-dir-artifact-id: ${{ steps.pack.outputs.pack-dir-artifact-id }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/js-setup
+        with:
+          node-version: 24
+          npm-cache: "false"
+      - name: Build packages
+        run: npm run wasm && npm run build:engine && npm run build:svelte
+      - name: Pack packages
+        id: pack
+        uses: changesets/action/pack@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
+        with:
+          publish-plan-artifact-id: ${{ needs.select-mode.outputs.publish-plan-artifact-id }}
+
+  publish:
+    name: publish to npm
+    needs: pack
     runs-on: ubuntu-latest
     # The reviewer rule is on the environment, in the repository settings. This
     # line alone does not gate the publish.
     environment: npm
     permissions:
       contents: write
-      pull-requests: write
       id-token: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/js-setup
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
+          node-version: 24
           registry-url: https://registry.npmjs.org
+      - run: npm ci --ignore-scripts
 
-      # Trusted publishing needs npm 11.5.1 or later. Node 22 supplies npm 10,
-      # which looks for a token instead.
-      - name: Use an npm that can do trusted publishing
-        run: |
-          set -euo pipefail
-          npm install -g npm@11.5.1
-          npm --version
-
-      - name: Version pull request or publish
-        uses: changesets/action@3841a0683d3cfa6dae0f9bb335290003010fe3f0 # v1.9.0
+      - name: Publish packages
+        uses: changesets/action/publish@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
         with:
-          version: npm run version:packages
-          publish: npm run release:npm
-          commit: "Release packages"
-          title: "Release packages"
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          NPM_CONFIG_PROVENANCE: "true"
+          pack-dir-artifact-id: ${{ needs.pack.outputs.pack-dir-artifact-id }}
