@@ -8,7 +8,8 @@
 
 use std::collections::BTreeMap;
 
-use powerio::{parse_display_bytes, DisplayData};
+use powerio::format::routing::SourceFormat as JsonSourceFormat;
+use powerio::{parse_display_bytes, Detection, DisplayData, JsonClass};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -21,6 +22,68 @@ mod geo;
 
 fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
+}
+
+#[derive(Debug, Serialize)]
+struct JsonDropClassification {
+    kind: &'static str,
+    format: Option<&'static str>,
+}
+
+/// Classify a dropped JSON byte buffer through powerio's one routing table.
+/// Package markers are followed by the strict package reader so the caller can
+/// distinguish balanced and multiconductor payloads without decoding in JS.
+fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, String> {
+    let classification = match powerio::classify_json_bytes(bytes) {
+        JsonClass::Package => {
+            let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes)
+                .map_err(|error| error.to_string())?;
+            let kind = match package.model_kind() {
+                powerio_pkg::ModelKind::Balanced => "balanced-package",
+                powerio_pkg::ModelKind::Multiconductor => "multiconductor-package",
+                _ => return Err("package has an unsupported model kind".to_owned()),
+            };
+            JsonDropClassification { kind, format: None }
+        }
+        JsonClass::ModelJson => JsonDropClassification {
+            kind: "model-json",
+            format: None,
+        },
+        JsonClass::Case(Detection::Known(JsonSourceFormat::Transmission(format))) => {
+            JsonDropClassification {
+                kind: "transmission",
+                format: Some(format.name()),
+            }
+        }
+        JsonClass::Case(Detection::Known(JsonSourceFormat::Distribution(format))) => {
+            JsonDropClassification {
+                kind: "distribution",
+                format: Some(format.name()),
+            }
+        }
+        JsonClass::Case(Detection::Ambiguous) => JsonDropClassification {
+            kind: "ambiguous",
+            format: None,
+        },
+        JsonClass::Case(Detection::Unknown) => JsonDropClassification {
+            kind: "not-json",
+            format: None,
+        },
+        JsonClass::Case(Detection::Known(format)) => {
+            return Err(format!(
+                "powerio classified an unsupported JSON source format `{}`",
+                format.name()
+            ));
+        }
+    };
+    Ok(classification)
+}
+
+/// Classify JSON bytes for the browser drop router. Invalid UTF-8 is never
+/// replaced; it follows powerio's unknown classification.
+#[wasm_bindgen]
+pub fn classify_json(bytes: &[u8]) -> Result<String, JsError> {
+    serde_json::to_string(&classify_json_drop_value(bytes).map_err(jserr)?).map_err(jserr)
 }
 
 /// Route Rust panics to `console.error` (with a JS stack) once. Without this a wasm panic
@@ -265,7 +328,18 @@ fn load_package_bundle(package_json: &str) -> Result<String, String> {
     // powerio-pkg names the format in its own message, so no prefix here.
     let package =
         powerio_pkg::NetworkPackage::from_json(package_json).map_err(|e| e.to_string())?;
-    let study = tellegen::Study::from_package(&package)?;
+    load_package_bundle_value(&package)
+}
+
+#[cfg(feature = "sensitivity")]
+fn load_package_bundle_bytes(bytes: &[u8]) -> Result<String, String> {
+    let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes).map_err(|e| e.to_string())?;
+    load_package_bundle_value(&package)
+}
+
+#[cfg(feature = "sensitivity")]
+fn load_package_bundle_value(package: &powerio_pkg::NetworkPackage) -> Result<String, String> {
+    let study = tellegen::Study::from_package(package)?;
     // The engine already validated the payload as balanced; clone it (uids stamped) for
     // the ingest view.
     let mut net = package
@@ -306,6 +380,14 @@ fn load_package_bundle(package_json: &str) -> Result<String, String> {
 pub fn load_package(package_json: &str) -> Result<String, JsError> {
     install_panic_hook();
     load_package_bundle(package_json).map_err(jserr)
+}
+
+/// Byte counterpart of [`load_package`] for a dropped package.
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+pub fn load_package_bytes(bytes: &[u8]) -> Result<String, JsError> {
+    install_panic_hook();
+    load_package_bundle_bytes(bytes).map_err(jserr)
 }
 
 /// Export the balanced study state at commit `commit` to a powerio `format`
@@ -425,6 +507,16 @@ pub fn ingest_model_json(network_json: &str) -> Result<String, JsError> {
     serde_json::to_string(&value).map_err(jserr)
 }
 
+/// Byte counterpart of [`ingest_model_json`] for dropped files. UTF-8 decoding
+/// and model validation both stay in powerio.
+#[wasm_bindgen]
+pub fn ingest_model_json_bytes(bytes: &[u8]) -> Result<String, JsError> {
+    let mut net = powerio::BalancedNetwork::from_json_bytes(bytes).map_err(jserr)?;
+    powerio_pkg::ensure_payload_uids(&mut net);
+    let value = ingest_value(&net, Vec::new()).map_err(jserr)?;
+    serde_json::to_string(&value).map_err(jserr)
+}
+
 /// The distribution counterpart of [`ingest_case`]: view a multiconductor case
 /// with no solve. `format` is a distribution reader token (`dss`, `bmopf`,
 /// `pmd`) parsed by [`powerio_dist`], or `pio` for a `.pio.json` package
@@ -441,6 +533,16 @@ pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
     let out = match format {
         "pio" | "pio-json" | "package" => dist::ingest_dist_package(text),
         _ => dist::ingest_dist(text, format),
+    };
+    out.map_err(jserr)
+}
+
+/// Byte counterpart of [`ingest_dist_case`] for dropped files.
+#[wasm_bindgen]
+pub fn ingest_dist_case_bytes(bytes: &[u8], format: &str) -> Result<String, JsError> {
+    let out = match format {
+        "pio" | "pio-json" | "package" => dist::ingest_dist_package_bytes(bytes),
+        _ => dist::ingest_dist_bytes(bytes, format),
     };
     out.map_err(jserr)
 }
@@ -774,6 +876,51 @@ mpc.gencost = [
         assert_eq!(v["topology"]["buses"][0]["uid"], "buses:0");
         assert_eq!(v["topology"]["branches"][1]["uid"], "branches:1");
         assert!(v["network_json"].as_str().unwrap().contains("buses:0"));
+    }
+
+    #[test]
+    fn json_drop_classification_comes_from_powerio_bytes() {
+        let transmission = classify_json_drop_value(PM_NO_QMAX.as_bytes()).expect("classify PM");
+        assert_eq!(transmission.kind, "transmission");
+        assert_eq!(transmission.format, Some("powermodels-json"));
+
+        let distribution = classify_json_drop_value(br#"{"data_model":"ENGINEERING","bus":{}}"#)
+            .expect("classify PMD");
+        assert_eq!(distribution.kind, "distribution");
+        assert_eq!(distribution.format, Some("pmd-json"));
+
+        let net = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse model")
+            .network;
+        let model = net.to_json().expect("model JSON");
+        let mut bom_model = b"\xef\xbb\xbf".to_vec();
+        bom_model.extend_from_slice(model.as_bytes());
+        let model_class = classify_json_drop_value(&bom_model).expect("classify model");
+        assert_eq!(model_class.kind, "model-json");
+        powerio::BalancedNetwork::from_json_bytes(&bom_model).expect("strict model byte reader");
+
+        let package = powerio_pkg::NetworkPackage::from_balanced(net)
+            .to_json()
+            .expect("package JSON");
+        let package_class = classify_json_drop_value(package.as_bytes()).expect("classify package");
+        assert_eq!(package_class.kind, "balanced-package");
+
+        let invalid = b"{\"base_mva\":100,\"buses\":[]\xff}";
+        let unknown = classify_json_drop_value(invalid).expect("invalid UTF-8 classifies unknown");
+        assert_eq!(unknown.kind, "not-json");
+        assert!(powerio::BalancedNetwork::from_json_bytes(invalid).is_err());
+        assert!(dist::ingest_dist_bytes(invalid, "bmopf-json").is_err());
+    }
+
+    #[test]
+    fn package_reader_error_is_not_prefixed_twice() {
+        let error = dist::ingest_dist_package(r#"{"model_kind":"multiconductor","model":{}}"#)
+            .expect_err("malformed package");
+        assert_eq!(
+            error.matches("invalid .pio.json package").count(),
+            1,
+            "{error}"
+        );
     }
 
     #[cfg(feature = "sensitivity")]

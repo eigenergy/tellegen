@@ -9,9 +9,12 @@ import type { WasmModule, WasmStudy } from "./module.js";
 
 export type EngineRequest =
   | { op: "preload" }
+  | { op: "classify_json"; bytes: Uint8Array }
   | { op: "ingest_case"; bytes: Uint8Array; format: string }
   | { op: "ingest_model_json"; network_json: string }
+  | { op: "ingest_model_json_bytes"; bytes: Uint8Array }
   | { op: "ingest_dist_case"; text: string; format: string }
+  | { op: "ingest_dist_case_bytes"; bytes: Uint8Array; format: string }
   | { op: "parse_display"; bytes: Uint8Array; format: string }
   | { op: "parse_geo"; bytes: Uint8Array; hint: string }
   | { op: "apply_geo"; network_json: string; layer: string }
@@ -27,6 +30,7 @@ export type EngineRequest =
   | { op: "study_save_package"; study: number }
   | { op: "study_apply_geo"; study: number; layer: string }
   | { op: "load_package"; text: string }
+  | { op: "load_package_bytes"; bytes: Uint8Array }
   | { op: "export_study"; package_json: string; commit: number; format: string }
   | { op: "study_free"; study: number };
 
@@ -52,12 +56,18 @@ export function runRequest(
   switch (req.op) {
     case "preload":
       return null; // loading the module was the work
+    case "classify_json":
+      return mod.classify_json(req.bytes);
     case "ingest_case":
       return mod.ingest_case(req.bytes, req.format);
     case "ingest_model_json":
       return mod.ingest_model_json(req.network_json);
+    case "ingest_model_json_bytes":
+      return mod.ingest_model_json_bytes(req.bytes);
     case "ingest_dist_case":
       return mod.ingest_dist_case(req.text, req.format);
+    case "ingest_dist_case_bytes":
+      return mod.ingest_dist_case_bytes(req.bytes, req.format);
     case "parse_display":
       return mod.parse_display(req.bytes, req.format);
     case "parse_geo":
@@ -89,6 +99,8 @@ export function runRequest(
       return study(req.study).apply_geo(req.layer);
     case "load_package":
       return mod.load_package(req.text);
+    case "load_package_bytes":
+      return mod.load_package_bytes(req.bytes);
     case "export_study":
       return mod.export_study(req.package_json, req.commit, req.format);
     case "study_free":

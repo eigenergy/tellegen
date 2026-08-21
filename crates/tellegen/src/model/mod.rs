@@ -3,26 +3,27 @@
 //! `BalancedNetwork::to_normalized` + `IndexedNetwork` (per unit, radians, filtered, densely
 //! reindexed, reference inferred), build a `powerio-prob` problem instance
 //! (`DcOpfInstance` / `AcOpfInstance`) as the shared owner of case interpretation —
-//! per-unit generator PQ bounds, nodal demand, reference coverage — then layer on the
-//! solver-prep each formulation needs.
+//! per unit generator PQ bounds, nodal withdrawal, branch phase terms, reference coverage —
+//! then layer on the solver preparation each formulation needs.
 //!
-//! Two pieces of solver policy the instance builders don't own stay here as passes:
+//! Two pieces of solver policy stay here as passes:
 //! [`flatten_gen_costs`] rewrites every generator's cost to a plain quadratic before
 //! the instance is built (the piecewise fit, the missing cost rule, and the leading
-//! artifact strip),
-//! and [`normalize_angle_bounds`] runs per branch afterward. Branch susceptance
-//! (DC) and pi-model admittance (AC) are computed from the `IndexedNetwork` directly:
-//! neither `DcConvention` reproduces tellegen's `-x/(r^2+x^2)`, and the dense branch
-//! arrays keep every source branch — including a literal zero-impedance record the
-//! instance would skip — so `problem/` and `sens/` stay index-aligned.
+//! artifact strip), and [`normalize_angle_bounds`] applies Tellegen's tighter defaults.
+//! The DC model consumes the complete `DcOpfInstance`, including affine phase terms,
+//! source rows, and synthesized limits. The AC model computes its pi model admittance
+//! from the indexed network.
 //!
-//! The two formulations split into [`mod@dc`] and [`mod@ac`]; the dense-reindex /
-//! id-reconstruction step they share lives here in [`reconstruct_ids`].
+//! The two formulations split into [`mod@dc`] and [`mod@ac`].
 
+#[cfg(feature = "sensitivity")]
 use std::collections::HashSet;
 
+#[cfg(feature = "sensitivity")]
+use powerio::BusType;
+#[cfg(feature = "sensitivity")]
 use powerio::IndexedNetwork;
-use powerio::{BalancedNetwork, BusType, GenCost};
+use powerio::{BalancedNetwork, GenCost};
 
 #[cfg(feature = "sensitivity")]
 mod ac;
@@ -41,8 +42,8 @@ pub(crate) use cases::parse_case9_ac;
 #[cfg(test)]
 pub(crate) use cases::{parse_case3, CASE3};
 
-/// Below this squared impedance a branch is treated as open (zero admittance) — the
-/// near-zero-impedance guard, shared by the DC and AC models.
+/// Below this squared impedance AC line charging is treated as zero.
+#[cfg(feature = "sensitivity")]
 pub(super) const MIN_Z_SQUARED: f64 = 1e-10;
 
 /// A leading gen-cost polynomial coefficient at or below this magnitude is treated as a
@@ -81,9 +82,8 @@ pub(super) type GenCostColumns = (Vec<f64>, Vec<f64>, Vec<f64>);
 /// powerio-prob builders — whose `GenCost::quadratic()` /
 /// `quadratic_with_constant()` return `None` for piecewise, cubic-and-higher, or
 /// absent rows — accept every generator and read back exactly these coefficients.
-/// The [`DcOpfInstance`](powerio_prob::DcOpfInstance) carries no constant term, so
-/// the DC caller takes `cc` from here. Run on the normalized network (per unit) so
-/// the fit sees the same points tellegen fit before this migration.
+/// Run on the normalized network (per unit) so the fit sees the same points Tellegen
+/// fit before this migration.
 pub(super) fn flatten_gen_costs(net: &mut BalancedNetwork) -> Result<GenCostColumns, String> {
     let g = net.generators.len();
     let (mut cq, mut cl, mut cc) = (
@@ -244,12 +244,13 @@ pub(super) fn normalize_angle_bounds(mut amin: f64, mut amax: f64) -> (f64, f64)
     (amin, amax)
 }
 
-/// Dense sizes and the dense-index -> source-id maps recovered from a normalized
-/// network. `to_normalized` keeps non-isolated buses (and in-service, attached
-/// branches/generators) in source order and reassigns dense ids in that order, so
-/// the k-th surviving raw element is dense index k. `bus_uids`/`branch_uids` carry
-/// each surviving element's powerio row uid (`None` when the source network was
-/// never stamped), aligned with `bus_ids`/`branch_ids`.
+/// Dense sizes and the dense index to source id maps recovered for the AC model
+/// from a normalized network. `to_normalized` keeps nonisolated buses and attached,
+/// in-service branches and generators in source order. The k-th surviving raw
+/// element is dense index k. `bus_uids` and `branch_uids` carry each surviving
+/// element's powerio row uid (`None` when the source network was never stamped),
+/// aligned with `bus_ids` and `branch_ids`.
+#[cfg(feature = "sensitivity")]
 pub(super) struct Ids {
     n: usize,
     m: usize,
@@ -261,10 +262,10 @@ pub(super) struct Ids {
     branch_uids: Vec<Option<String>>,
 }
 
-/// Reconstruct the dense sizes and source-id maps for `view`, the shared first step
-/// of both [`DcNetwork::from_network`] and [`AcNetwork::from_network`]. Errors if a
-/// reconstructed id list does not match the normalized count (the dense-reindex
-/// assumption broke) or the network has no in-service generators.
+/// Reconstruct the dense sizes and source id maps for the AC `view`. Errors if a
+/// reconstructed id list does not match the normalized count or the network has
+/// no in-service generators.
+#[cfg(feature = "sensitivity")]
 pub(super) fn reconstruct_ids(raw: &BalancedNetwork, view: &IndexedNetwork) -> Result<Ids, String> {
     let n = view.n();
     let surviving_buses: Vec<&powerio::Bus> = raw

@@ -20,23 +20,24 @@ import {
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
 import { studyCommitIndex } from './study-package.js';
-import { classifyJson, distExtensionFormat, isGeoFileName } from './drop-classify.js';
+import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { buildGeographicView, placeMultiView } from './multiconductor.js';
 import {
 	applyDisplayGeo,
 	applyGeo,
 	applyLayout,
+	classifyJson,
 	createStudy,
 	exportStudy,
 	extractGeo,
 	FORMULATIONS,
 	formatOf,
 	ingestCase,
-	ingestDistCase,
-	ingestModelJson,
+	ingestDistCaseBytes,
+	ingestModelJsonBytes,
 	isDisplayFile,
 	isPermanentEngineFailure,
-	loadPackage,
+	loadPackageBytes,
 	parseDisplay,
 	parseGeo,
 	type AppliedGeoCase,
@@ -45,6 +46,7 @@ import {
 	type Formulation,
 	type IngestedCase,
 	type IngestedDistCase,
+	type JsonDropClassification,
 	type LoadedPackage,
 	type SensTarget
 } from '@tellegen/engine';
@@ -1757,42 +1759,51 @@ export class Controller {
 	 * (`restored`), a multiconductor package or a BMOPF/PMD distribution
 	 * document views (`viewed`), `failed` means the content looked routable but
 	 * the engine rejected it (a fail-closed message is set), and `not-package`
-	 * falls through to the caller's geo/case handling. `drop-classify` is the
-	 * single owner of the classification. */
+	 * falls through to the caller's geographic/case handling. powerio's Rust
+	 * byte classifier is the single owner of the classification. */
 	private ingestJsonDrop = async (
 		file: File
 	): Promise<'restored' | 'viewed' | 'failed' | 'not-package'> => {
-		let text: string;
+		let bytes: Uint8Array;
 		try {
-			text = await file.text();
+			bytes = new Uint8Array(await file.arrayBuffer());
 		} catch {
 			return 'not-package';
 		}
-		const kind = classifyJson(text);
+		let classification: JsonDropClassification;
+		try {
+			classification = await classifyJson(bytes);
+		} catch (e) {
+			this.app.error = `${file.name}: ${errorText(e)}`;
+			return 'failed';
+		}
+		const { kind, format } = classification;
 		if (kind === 'not-json') return 'not-package';
+		if (kind === 'ambiguous') {
+			this.app.error = `${file.name}: JSON markers name both transmission and distribution formats`;
+			return 'failed';
+		}
 		this.app.parsingFile = true;
 		try {
 			if (kind === 'balanced-package') {
-				this.restoreLocalFromPackage(file.name, await loadPackage(text));
+				this.restoreLocalFromPackage(file.name, await loadPackageBytes(bytes));
 				this.app.error = null;
 				return 'restored';
 			}
 			if (kind === 'model-json') {
-				// powerio's own model document, the `model-json` export dropped back in.
-				// It is not a case format, so it reaches `from_json`, not a case reader.
-				this.addBalancedCase(file.name, await ingestModelJson(text));
+				this.addBalancedCase(file.name, await ingestModelJsonBytes(bytes));
 				this.app.error = null;
 				return 'viewed';
 			}
-			const format = kind === 'multiconductor-package' ? 'pio' : kind;
-			const payload = await ingestDistCase(text, format);
-			// BMOPF is the classifier's catch-all and its reader is liberal: an
-			// arbitrary JSON object parses as an empty case (unknown fields land
-			// in extras). Zero buses means this was not a distribution document;
-			// leave the file to the geo sidecar path (which places coordinates
-			// or reports its own precise error) instead of adding a phantom
-			// empty multiconductor case.
-			if (kind === 'bmopf' && payload.n_bus === 0) return 'not-package';
+			if (kind === 'transmission') {
+				if (!format) throw new Error('powerio classified transmission JSON without a format');
+				this.addBalancedCase(file.name, await ingestCase(bytes, format));
+				this.app.error = null;
+				return 'viewed';
+			}
+			const distFormat = kind === 'multiconductor-package' ? 'pio' : format;
+			if (!distFormat) throw new Error('powerio classified distribution JSON without a format');
+			const payload = await ingestDistCaseBytes(bytes, distFormat);
 			this.addMultiCase(file.name, payload);
 			this.app.error = null;
 			return 'viewed';
@@ -1809,7 +1820,8 @@ export class Controller {
 	private ingestDistFile = async (file: File, format: string): Promise<boolean> => {
 		this.app.parsingFile = true;
 		try {
-			this.addMultiCase(file.name, await ingestDistCase(await file.text(), format));
+			const bytes = new Uint8Array(await file.arrayBuffer());
+			this.addMultiCase(file.name, await ingestDistCaseBytes(bytes, format));
 			this.app.error = null;
 			return true;
 		} catch (e) {

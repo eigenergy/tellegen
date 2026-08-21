@@ -129,6 +129,7 @@ impl OpfFormulation for Dc {
     fn assemble_opf(&self, dc: &DcNetwork) -> OpfProgram {
         let lay = OpfLayout::dc(dc.n, dc.m, dc.k);
         let mut prog = ProgramBuilder::new(lay.nvar(), lay.ncon());
+        let fixed_withdrawal = dc.current_fixed_withdrawal();
 
         // Objective Hessian P (diagonal): 2 cq on pg, tau^2 on f.
         for j in 0..dc.k {
@@ -147,10 +148,10 @@ impl OpfFormulation for Dc {
             prog.lin(lay.col_psh(i), dc.c_shed[i]);
         }
 
-        // Power balance: G_inc g + psh - B theta = d.
-        for i in 0..dc.n {
+        // Power balance: G_inc g + psh - B theta = fixed_withdrawal(sw).
+        for (i, &withdrawal) in fixed_withdrawal.iter().enumerate() {
             prog.a(lay.r_pb(i), lay.col_psh(i), 1.0);
-            prog.rhs(lay.r_pb(i), dc.demand[i]);
+            prog.rhs(lay.r_pb(i), withdrawal);
         }
         for j in 0..dc.k {
             prog.a(lay.r_pb(dc.gen_bus[j]), lay.col_pg(j), 1.0);
@@ -165,10 +166,12 @@ impl OpfFormulation for Dc {
             prog.a(lay.r_pb(tb), lay.col_va(tb), -w);
             prog.a(lay.r_pb(fb), lay.col_va(tb), w);
             prog.a(lay.r_pb(tb), lay.col_va(fb), w);
-            // Flow definition: f - w (theta_from - theta_to) = 0
+            // Flow definition:
+            // f - w (theta_from - theta_to) = sw * (-b_powerio * shift).
             prog.a(lay.r_fd(e), lay.col_f(e), 1.0);
             prog.a(lay.r_fd(e), lay.col_va(fb), -w);
             prog.a(lay.r_fd(e), lay.col_va(tb), w);
+            prog.rhs(lay.r_fd(e), dc.current_flow_offset(e));
             // Line limits: f <= fmax and -f <= fmax
             prog.a(lay.r_lineub(e), lay.col_f(e), 1.0);
             prog.rhs(lay.r_lineub(e), dc.fmax[e]);
@@ -294,10 +297,11 @@ mod tests {
         );
         assert!((lo - 11.49).abs() < 0.5, "LMP {lo} not near analytic 11.49");
 
-        // Flows obey f = W A theta exactly (the flow-definition equality).
+        // Flows obey the complete affine definition.
         for e in 0..dc.m {
             let w = -dc.b[e] * dc.sw[e];
-            let expected = w * (sol.va[dc.br_from[e]] - sol.va[dc.br_to[e]]);
+            let expected =
+                w * (sol.va[dc.br_from[e]] - sol.va[dc.br_to[e]]) + dc.current_flow_offset(e);
             assert!(
                 (sol.f[e] - expected).abs() < 1e-6,
                 "flow def mismatch at {e}"

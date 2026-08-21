@@ -195,6 +195,30 @@ export async function preloadEngine(): Promise<void> {
   await engineHost().call({ op: "preload" });
 }
 
+export type JsonDropKind =
+  | "balanced-package"
+  | "multiconductor-package"
+  | "model-json"
+  | "transmission"
+  | "distribution"
+  | "ambiguous"
+  | "not-json";
+
+export interface JsonDropClassification {
+  kind: JsonDropKind;
+  format: string | null;
+}
+
+/** Classify JSON bytes through powerio's Rust routing table. Package markers
+ * also pass the strict package reader so the payload family is authoritative. */
+export async function classifyJson(
+  bytes: Uint8Array,
+): Promise<JsonDropClassification> {
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "classify_json", bytes })),
+  );
+}
+
 /** Asserts a request that must carry a payload actually did. */
 function expectText(value: string | null): string {
   if (value === null) throw new Error("engine returned no payload");
@@ -232,6 +256,15 @@ export async function ingestModelJson(
   );
 }
 
+/** Byte entry point for a dropped model JSON document. */
+export async function ingestModelJsonBytes(
+  bytes: Uint8Array,
+): Promise<IngestedCase> {
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "ingest_model_json_bytes", bytes })),
+  );
+}
+
 /** Parse a multiconductor distribution case for viewing. `format` is a
  * distribution reader token (`dss`, `bmopf`, `pmd`) or `pio` for a `.pio.json`
  * package carrying a multiconductor payload. Rejects on malformed input or a
@@ -243,6 +276,18 @@ export async function ingestDistCase(
   return JSON.parse(
     expectText(
       await engineHost().call({ op: "ingest_dist_case", text, format }),
+    ),
+  );
+}
+
+/** Byte entry point for a dropped distribution case or package. */
+export async function ingestDistCaseBytes(
+  bytes: Uint8Array,
+  format: string,
+): Promise<IngestedDistCase> {
+  return JSON.parse(
+    expectText(
+      await engineHost().call({ op: "ingest_dist_case_bytes", bytes, format }),
     ),
   );
 }
@@ -827,6 +872,13 @@ export async function loadPackage(text: string): Promise<LoadedPackage> {
   );
 }
 
+/** Restore a dropped package without decoding it in JavaScript. */
+export async function loadPackageBytes(bytes: Uint8Array): Promise<LoadedPackage> {
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "load_package_bytes", bytes })),
+  );
+}
+
 /** Export a saved study package at commit `commit` to a powerio `format` (`matpower`,
  * `psse`, `model-json`, ...). Returns the serialized case text, the writer's fidelity
  * warnings, and the format token and file extension. */
@@ -849,9 +901,15 @@ export async function exportStudy(
 
 export interface EngineTransport {
   preloadEngine(): Promise<void>;
+  classifyJson(bytes: Uint8Array): Promise<JsonDropClassification>;
   ingestCase(bytes: Uint8Array, format: string): Promise<IngestedCase>;
   ingestModelJson(networkJson: string): Promise<IngestedCase>;
+  ingestModelJsonBytes(bytes: Uint8Array): Promise<IngestedCase>;
   ingestDistCase(text: string, format: string): Promise<IngestedDistCase>;
+  ingestDistCaseBytes(
+    bytes: Uint8Array,
+    format: string,
+  ): Promise<IngestedDistCase>;
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   parseGeo(bytes: Uint8Array, hint: string): Promise<ParsedGeoLayer>;
   applyGeo(networkJson: string, layer: string): Promise<AppliedGeoCase>;
@@ -872,6 +930,7 @@ export interface EngineTransport {
     formulation?: Formulation,
   ): Promise<BrowserStudy>;
   loadPackage(text: string): Promise<LoadedPackage>;
+  loadPackageBytes(bytes: Uint8Array): Promise<LoadedPackage>;
   exportStudy(
     packageJson: string,
     commit: number,
@@ -881,9 +940,12 @@ export interface EngineTransport {
 
 export const browserWasmTransport: EngineTransport = {
   preloadEngine,
+  classifyJson,
   ingestCase,
   ingestModelJson,
+  ingestModelJsonBytes,
   ingestDistCase,
+  ingestDistCaseBytes,
   parseDisplay,
   parseGeo,
   applyGeo,
@@ -894,6 +956,7 @@ export const browserWasmTransport: EngineTransport = {
   solveJson,
   createStudy,
   loadPackage,
+  loadPackageBytes,
   exportStudy,
 };
 

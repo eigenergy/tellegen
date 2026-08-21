@@ -1,7 +1,8 @@
 //! DC power flow: the second problem on the [`Dc`] formulation. Where the OPF
 //! optimizes the injections, a power flow takes them as given and solves the network
-//! physics for the angles — for DC the grounded linear system `B theta = injection`,
-//! one sparse faer LU. Gated behind the faer-pulling `sensitivity` feature.
+//! physics for the angles — for DC the grounded linear system
+//! `B theta = injection - shunt - phase_shift(sw)`, one sparse faer LU. Gated
+//! behind the faer-pulling `sensitivity` feature.
 
 use crate::formulation::{Dc, Formulation};
 use crate::model::DcNetwork;
@@ -33,12 +34,13 @@ impl DcPfSystem {
 pub struct DcPfSolution {
     /// Bus voltage angles (radians); `va[ref] = 0` by the grounding.
     pub va: Vec<f64>,
-    /// Branch active-power flows (per unit), `f[e] = -b[e] sw[e] (va_from - va_to)`,
-    /// the same flow definition the OPF uses.
+    /// Branch active-power flows (per unit),
+    /// `f[e] = -b[e] sw[e] (va_from - va_to) + sw[e] flow_offset[e]`, the same
+    /// affine flow definition the OPF uses.
     pub f: Vec<f64>,
     /// Recovered reference-bus net injection (per unit): the slack power that
-    /// closes the balance, `(B va)[ref]`. The injection passed for the reference
-    /// bus is ignored, so this is computed, not echoed.
+    /// closes the balance, `(B va + shunt + phase_shift)[ref]`. The injection
+    /// passed for the reference bus is ignored, so this is computed, not echoed.
     pub ref_injection: f64,
 }
 
@@ -89,21 +91,25 @@ impl DcPfFormulation for Dc {
             triplets.push((row, col, v));
         }
         triplets.push((r, r, 1.0));
-        // rhs = injection, with the reference entry zeroed to match its identity row.
-        let mut rhs = injection.to_vec();
+        // The caller's injection is generation minus load. Constant shunt and
+        // phase shift withdrawals sit on the other side of the Laplacian.
+        let phase = dc.phase_withdrawal();
+        let mut rhs: Vec<f64> = (0..n)
+            .map(|i| injection[i] - dc.shunt_conductance[i] - phase[i])
+            .collect();
         rhs[r] = 0.0;
         DcPfSystem::new(n, triplets, rhs)
     }
 }
 
 /// Read the solved angles back into branch flows and the recovered slack
-/// injection. Flows use the same `f = -b sw (theta_from - theta_to)` definition
-/// as the OPF; the slack injection is `(B theta)[ref]`.
+/// injection. Flows use the same affine definition as the OPF; the slack
+/// injection is `(B theta + shunt + phase_shift)[ref]`.
 fn read_dc_pf(dc: &DcNetwork, theta: &[f64]) -> DcPfSolution {
     let f: Vec<f64> = (0..dc.m)
         .map(|e| {
             let w = -dc.b[e] * dc.sw[e];
-            w * (theta[dc.br_from[e]] - theta[dc.br_to[e]])
+            w * (theta[dc.br_from[e]] - theta[dc.br_to[e]]) + dc.current_flow_offset(e)
         })
         .collect();
     let r = dc.ref_bus;
@@ -113,6 +119,7 @@ fn read_dc_pf(dc: &DcNetwork, theta: &[f64]) -> DcPfSolution {
             ref_injection += v * theta[col];
         }
     }
+    ref_injection += dc.shunt_conductance[r] + dc.phase_withdrawal()[r];
     DcPfSolution::new(theta.to_vec(), f, ref_injection)
 }
 

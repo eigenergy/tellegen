@@ -439,12 +439,14 @@ impl Differentiable for DcKkt<'_> {
                     let dth = s.va[fb] - s.va[tb];
                     let dnu = s.nu_bal[fb] - s.nu_bal[tb];
                     let sw = dc.sw[col];
+                    let shift = dc.shift[col];
                     let nf = nu_flow[col];
-                    // Power balance (-B theta): d/db = sw (L_e theta).
-                    j[(idx.nu_bal + fb, c)] += sw * dth;
-                    j[(idx.nu_bal + tb, c)] -= sw * dth;
-                    // Flow definition (f - w dtheta): d/db = sw dtheta.
-                    j[(idx.nu_flow + col, c)] += sw * dth;
+                    // `dc.b` is the negative inductive susceptance and
+                    // `flow_offset = dc.b * shift`. Vary both the Laplacian and
+                    // its affine phase term, as the source branch does.
+                    j[(idx.nu_bal + fb, c)] += sw * (dth - shift);
+                    j[(idx.nu_bal + tb, c)] -= sw * (dth - shift);
+                    j[(idx.nu_flow + col, c)] += sw * (dth - shift);
                     // Angle stationarity (B nu_bal + w A' nu_flow): d/db.
                     j[(idx.va + fb, c)] += -sw * dnu - sw * nf;
                     j[(idx.va + tb, c)] += sw * dnu + sw * nf;
@@ -454,12 +456,14 @@ impl Differentiable for DcKkt<'_> {
                     let dth = s.va[fb] - s.va[tb];
                     let dnu = s.nu_bal[fb] - s.nu_bal[tb];
                     let b = dc.b[col];
+                    let offset = dc.flow_offset[col];
                     let nf = nu_flow[col];
                     let g = s.gamma_ub[col] - s.gamma_lb[col];
-                    // Power balance and flow definition: w = -b sw, so d/dsw scales by b.
-                    j[(idx.nu_bal + fb, c)] += b * dth;
-                    j[(idx.nu_bal + tb, c)] -= b * dth;
-                    j[(idx.nu_flow + col, c)] += b * dth;
+                    // Opening a phase shifter removes both its angle dependent
+                    // weight and its affine flow/nodal withdrawal.
+                    j[(idx.nu_bal + fb, c)] += b * dth - offset;
+                    j[(idx.nu_bal + tb, c)] -= b * dth - offset;
+                    j[(idx.nu_flow + col, c)] += b * dth - offset;
                     // Angle stationarity: the w terms (scaled by b) plus the explicit
                     // sw multiplier in the phase-limit gradient.
                     j[(idx.va + fb, c)] += -b * dnu - b * nf + g;
@@ -744,7 +748,10 @@ mod tests {
             Parameter::Cost(CostTerm::Quadratic) => d.cq[p] += delta,
             Parameter::Cost(CostTerm::Linear) => d.cl[p] += delta,
             Parameter::LineLimit => d.fmax[p] += delta,
-            Parameter::SeriesAdmittance(GB::Susceptance) => d.b[p] += delta,
+            Parameter::SeriesAdmittance(GB::Susceptance) => {
+                d.b[p] += delta;
+                d.flow_offset[p] += delta * d.shift[p];
+            }
             Parameter::Switching => d.sw[p] += delta,
             other => unreachable!("unsupported DC test parameter {other:?}"),
         }
@@ -838,6 +845,25 @@ mod tests {
         dc
     }
 
+    /// A nonzero affine branch term makes switching and susceptance derivatives
+    /// exercise the phase contribution, rather than only the angle dependent
+    /// Laplacian term.
+    fn phase_shifter_case3() -> DcNetwork {
+        let text = crate::model::CASE3
+            .replace(
+                " 2 1 90 30 0 0 1 1 0 230 1 1.1 0.9;",
+                " 2 1 90 30 5 0 1 1 0 230 1 1.1 0.9;",
+            )
+            .replace(
+                " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
+                " 1 2 0.01 0.1 0 250 250 250 1 1 1 -60 60;",
+            );
+        let net = powerio::parse_str(&text, "matpower")
+            .expect("parse phase shifter case")
+            .network;
+        DcNetwork::from_network(&net).expect("build phase shifter case")
+    }
+
     /// case3 with generation capacity cut below the 0.9 pu load, so the optimum
     /// must shed: both generators pin at `gmax` and the bus-2 shedding variable
     /// goes interior. This is the only fixture that drives `psh > 0`, exercising
@@ -885,6 +911,11 @@ mod tests {
     #[test]
     fn sensitivity_parity_uncongested() {
         check_parity(&parse_case3(), "uncongested");
+    }
+
+    #[test]
+    fn sensitivity_parity_with_a_phase_shifter_and_shunt() {
+        check_parity(&phase_shifter_case3(), "phase shifter");
     }
 
     #[test]

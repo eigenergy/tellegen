@@ -1,15 +1,15 @@
 //! DC OPF model: the B-theta data — incidence, susceptances, generator bounds,
 //! quadratic costs, and line flow limits — built from a powerio `BalancedNetwork`. The
-//! gen-cost rescale to per unit happens in `to_normalized`; the angle-bound defaults
-//! and the `rate_a == 0` thermal-limit fallback are applied here.
+//! generation cost rescale to per unit happens in `to_normalized`; Tellegen applies
+//! its angle bound defaults after building the root problem instance.
 
 use std::collections::BTreeMap;
 
 use powerio::BalancedNetwork;
-use powerio::{DcConvention, IndexedNetwork};
+use powerio::{DcConvention, IndexedNetwork, NormalizeOptions};
 use powerio_prob::{build_dc_opf_instance, DcOpfOptions, Units};
 
-use super::{flatten_gen_costs, normalize_angle_bounds, reconstruct_ids, Ids};
+use super::{flatten_gen_costs, normalize_angle_bounds};
 
 /// Strong-convexity regularization on the flows.
 const DEFAULT_TAU: f64 = 1e-2;
@@ -24,7 +24,8 @@ const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 /// indices back to source ids for output payloads.
 ///
 /// Susceptance-weighted Laplacian `B = A' diag(-b .* sw) A`; DC power balance
-/// `G_inc pg + psh - d = B theta`; branch flows `f = diag(-b .* sw) A theta`.
+/// `G_inc pg + psh - fixed_withdrawal(sw) = B theta`; branch flows
+/// `f = diag(-b .* sw) A theta + sw .* flow_offset`.
 #[derive(Clone)]
 pub struct DcNetwork {
     /// Buses, branches, generators after filtering (in-service, non-isolated).
@@ -38,15 +39,20 @@ pub struct DcNetwork {
     /// Bus each generator injects at, dense index.
     pub gen_bus: Vec<usize>,
     /// Branch susceptance `b = -x / (r^2 + x^2)` (negative for inductive
-    /// branches; `0` only for a literal zero-impedance record, which cannot be
-    /// divided through). A branch with tiny but nonzero impedance — a
+    /// branches). A branch with tiny but nonzero impedance — a
     /// substation bus-splitting jumper, common in detailed synthetic cases —
     /// gets a correspondingly large `|b|` rather than being dropped; it is a
     /// real, near-ideal tie, not an open circuit.
     pub b: Vec<f64>,
     /// Branch switching state (1 closed, 0 open). All branches start closed.
     pub sw: Vec<f64>,
-    /// Per-unit thermal limit per branch (`rate_a`, with a fallback synthesized
+    /// Branch phase shifts in radians, in the active branch order from the
+    /// powerio problem instance.
+    pub shift: Vec<f64>,
+    /// Fixed affine branch flow term `-b_powerio .* shift`. The term is
+    /// multiplied by [`Self::sw`] when a branch status varies.
+    pub flow_offset: Vec<f64>,
+    /// Per unit thermal limit per branch (`rate_a`, with a fallback synthesized
     /// when the source leaves it at 0).
     pub fmax: Vec<f64>,
     /// Per-unit generator output bounds.
@@ -67,6 +73,13 @@ pub struct DcNetwork {
     pub c_shed: Vec<f64>,
     /// Per-unit active demand per bus.
     pub demand: Vec<f64>,
+    /// Per-unit shunt conductance withdrawal per bus.
+    pub shunt_conductance: Vec<f64>,
+    /// Nodal phase shift withdrawal with every active source branch closed.
+    pub p_shift: Vec<f64>,
+    /// The complete all-closed withdrawal reported by
+    /// `DcOpfInstance::fixed_nodal_withdrawal`.
+    pub fixed_withdrawal: Vec<f64>,
     /// Reference (slack) bus, dense index.
     pub ref_bus: usize,
     /// Whether load shedding is permitted. When `false`, the shedding variables are
@@ -82,6 +95,11 @@ pub struct DcNetwork {
     pub branch_ids: Vec<usize>,
     /// Dense generator index -> original source generator id.
     pub gen_ids: Vec<usize>,
+    /// Dense branch index -> original source branch row. `None` marks a branch
+    /// synthesized while lowering a source element.
+    pub branch_source_rows: Vec<Option<usize>>,
+    /// Dense generator index -> original source generator row.
+    pub gen_source_rows: Vec<Option<usize>>,
     /// Dense bus index -> powerio row uid (`None` when the source network carried
     /// no uids). Lets edits address a bus as `"buses:0"` and responses echo the uid.
     pub bus_uids: Vec<Option<String>>,
@@ -97,28 +115,19 @@ impl DcNetwork {
     /// Normalizes through `BalancedNetwork::to_normalized` (per unit, radians, filtered,
     /// densely reindexed, reference inferred), builds a `powerio-prob`
     /// [`DcOpfInstance`](powerio_prob::DcOpfInstance) as the owner of the nodal and
-    /// generator interpretation (per-unit demand, generator PQ bounds, reference
-    /// coverage), then layers on the solver-prep the instance doesn't carry: the cost
-    /// policy ([`flatten_gen_costs`], run before the instance so its `GenCost`
-    /// accessors accept every row), the B-theta susceptance, default
-    /// angle-difference bounds, and the `rate_a == 0` thermal-limit fallback.
+    /// generator interpretation (per unit withdrawal, branch phase terms, generator
+    /// PQ bounds, source rows, synthesized thermal limits, and reference coverage),
+    /// then applies the cost policy ([`flatten_gen_costs`], run before the instance so
+    /// its `GenCost` accessors accept every row) and Tellegen's angle difference bounds.
     pub fn from_network(raw: &BalancedNetwork) -> Result<DcNetwork, String> {
-        let mut norm = raw.to_normalized().map_err(|e| e.to_string())?;
+        let (normalized, source_rows) = raw
+            .to_normalized_with_source_rows(&NormalizeOptions::default())
+            .map_err(|e| e.to_string())?;
+        let mut norm = normalized.network;
         // Cost policy as a `BalancedNetwork` pre-pass: fit piecewise / strip artifacts / treat
         // a missing cost as free, writing plain quadratics the instance builder reads.
-        // The `DcOpfInstance` drops the constant (no-load) term, so `cc` comes from here.
-        let (cq, cl, cc) = flatten_gen_costs(&mut norm)?;
+        flatten_gen_costs(&mut norm)?;
         let view = IndexedNetwork::new(&norm);
-        let Ids {
-            n,
-            m,
-            k,
-            bus_ids,
-            branch_ids,
-            gen_ids,
-            bus_uids,
-            branch_uids,
-        } = reconstruct_ids(raw, &view)?;
 
         // `SeriesImpedance` is the same `x/(r^2+x^2)` tellegen negates below, so the
         // instance and the B-theta model now weight a branch alike. `PerUnit` is inert:
@@ -129,11 +138,65 @@ impl DcNetwork {
             &DcOpfOptions {
                 convention: DcConvention::SeriesImpedance,
                 units: Units::PerUnit,
-                skip_zero_impedance: true,
-                ..DcOpfOptions::default()
+                skip_zero_impedance: false,
+                synthesize_unrated_limits: true,
             },
         )
         .map_err(|e| e.to_string())?;
+
+        let n = instance.n_buses;
+        let m = instance.n_branches();
+        let k = instance.n_generators();
+
+        let bus_ids: Vec<usize> = instance.bus_ids.iter().map(|id| id.0).collect();
+        let bus_uids: Vec<Option<String>> = source_rows
+            .buses
+            .iter()
+            .take(n)
+            .map(|row| {
+                row.and_then(|row| raw.buses.get(row))
+                    .and_then(|bus| bus.uid.clone())
+            })
+            .collect();
+
+        let branch_source_rows: Vec<Option<usize>> = instance
+            .branches
+            .source_rows
+            .iter()
+            .map(|&row| source_rows.branches.get(row).copied().flatten())
+            .collect();
+        let gen_source_rows: Vec<Option<usize>> = instance
+            .generators
+            .source_rows
+            .iter()
+            .map(|&row| source_rows.generators.get(row).copied().flatten())
+            .collect();
+
+        // Existing API payloads identify source rows as one-based ids. A lowered
+        // synthetic row has no source id; allocate it after the source table so it
+        // cannot collide with one that does.
+        let ids_from_rows = |rows: &[Option<usize>], source_len: usize| {
+            let mut synthetic = source_len + 1;
+            rows.iter()
+                .map(|row| match row {
+                    Some(row) => row + 1,
+                    None => {
+                        let id = synthetic;
+                        synthetic += 1;
+                        id
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        let branch_ids = ids_from_rows(&branch_source_rows, raw.branches.len());
+        let gen_ids = ids_from_rows(&gen_source_rows, raw.generators.len());
+        let branch_uids = branch_source_rows
+            .iter()
+            .map(|row| {
+                row.and_then(|row| raw.branches.get(row))
+                    .and_then(|branch| branch.uid.clone())
+            })
+            .collect();
 
         // Per-bus demand and reference, moved straight out of the freshly built,
         // locally owned instance: from_network runs per Study commit and preview, so
@@ -144,63 +207,44 @@ impl DcNetwork {
             .reference_buses
             .single()
             .map_err(|e| e.to_string())?;
-        let demand = instance.p_d;
+        let fixed_withdrawal = instance.fixed_nodal_withdrawal();
+        let flow_offset = instance.branch_flow_offset();
+        let demand = instance.p_d.clone();
+        let shunt_conductance = instance.g_s.clone();
+        let p_shift = instance.p_shift.clone();
 
-        // Branches. The B-theta susceptance `b = -x/(r^2+x^2)` (the PowerModels-consistent
-        // DC weight) is computed from the `IndexedNetwork` so every source branch keeps a
-        // dense column — including a literal zero-impedance record, which the instance
-        // would skip but `problem/`/`sens/` index through. The `rate_a == 0` fallback is
-        // powerio's `Branch::synthesize_rate_a`, which reads both ends of each voltage
-        // band: below roughly 10 degrees of angle window the widest phasor difference sits
-        // at one terminal high and the other low, and reading only the ceilings hands the
-        // QP a bound several times tighter than the branch physically has. A
-        // tiny-but-nonzero impedance still gets its true (large) susceptance: it
-        // is a real, near-ideal tie (e.g. a substation bus-splitting jumper), not an open
-        // circuit, and severing it can wrongly strand generation or reroute flow onto a
-        // costlier path. See `tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`.
-        let branches = view.branches();
-        let mut br_from = Vec::with_capacity(m);
-        let mut br_to = Vec::with_capacity(m);
-        let mut b = Vec::with_capacity(m);
-        let mut fmax = Vec::with_capacity(m);
-        let mut angmin = Vec::with_capacity(m);
-        let mut angmax = Vec::with_capacity(m);
-        for br in branches {
-            let f = view
-                .bus_index(br.from)
-                .ok_or_else(|| format!("branch from-bus {} not in index", br.from))?;
-            let t = view
-                .bus_index(br.to)
-                .ok_or_else(|| format!("branch to-bus {} not in index", br.to))?;
-            let z2 = br.r * br.r + br.x * br.x;
-            // Only a literal zero-impedance record (z2 == 0, undivideable) falls back to 0.
-            let bb = if z2 > 0.0 { -br.x / z2 } else { 0.0 };
-            let (amin, amax) = normalize_angle_bounds(br.angmin, br.angmax);
-            let rate = if br.rate_a > 0.0 {
-                br.rate_a
-            } else {
-                let (fr, to) = (&norm.buses[f], &norm.buses[t]);
-                br.synthesize_rate_a(
-                    amin.abs().max(amax.abs()),
-                    (fr.vmin, fr.vmax),
-                    (to.vmin, to.vmax),
-                )
-            };
-            br_from.push(f);
-            br_to.push(t);
-            b.push(bb);
-            fmax.push(rate);
-            angmin.push(amin);
-            angmax.push(amax);
-        }
+        // Tellegen historically stores the negative of powerio's positive
+        // inductive susceptance. Keep that internal sign while taking every
+        // branch column and affine term from the same instance.
+        let br_from = instance.branches.from_bus.clone();
+        let br_to = instance.branches.to_bus.clone();
+        let b = instance.branches.b.iter().map(|value| -value).collect();
+        let shift = instance.branches.shift.clone();
+        let fmax = instance.branches.f_max.clone();
+        let (angmin, angmax): (Vec<_>, Vec<_>) = instance
+            .branches
+            .angle_min
+            .iter()
+            .copied()
+            .zip(instance.branches.angle_max.iter().copied())
+            .map(|(min, max)| normalize_angle_bounds(min, max))
+            .unzip();
         let sw = vec![1.0; m];
 
-        // Generators: bus and PQ bounds from the instance, cost from the pre-pass.
-        // The instance's generator columns follow the normalized generator order, the
-        // same order `flatten_gen_costs` walks, so `cq`/`cl`/`cc` line up with column `i`.
-        let gen_bus = instance.generators.bus_of_gen;
-        let gmax = instance.generators.pmax;
-        let gmin = instance.generators.pmin;
+        // powerio states the objective as `0.5*q*p^2 + c*p + c0`; Tellegen's
+        // stored `cq` is the coefficient of `p^2` before its solver writes `2*cq`
+        // on the Hessian.
+        let gen_bus = instance.generators.bus_of_gen.clone();
+        let cq: Vec<f64> = instance
+            .generators
+            .q
+            .iter()
+            .map(|value| value / 2.0)
+            .collect();
+        let cl = instance.generators.c.clone();
+        let cc = instance.generators.c0.clone();
+        let gmax = instance.generators.pmax.clone();
+        let gmin = instance.generators.pmin.clone();
 
         // Shedding cost references the steepest marginal generation cost.
         let marginal_cost_ub = (0..k)
@@ -218,6 +262,8 @@ impl DcNetwork {
             gen_bus,
             b,
             sw,
+            shift,
+            flow_offset,
             fmax,
             gmax,
             gmin,
@@ -228,16 +274,47 @@ impl DcNetwork {
             cc,
             c_shed,
             demand,
+            shunt_conductance,
+            p_shift,
+            fixed_withdrawal,
             ref_bus,
             allow_shed: true,
             tau: DEFAULT_TAU,
             bus_ids,
             branch_ids,
             gen_ids,
+            branch_source_rows,
+            gen_source_rows,
             bus_uids,
             branch_uids,
             base_mva: raw.base_mva,
         })
+    }
+
+    /// Phase shift withdrawal for the current branch statuses. A phase shifter
+    /// on an open branch contributes neither a branch flow offset nor a nodal
+    /// withdrawal.
+    pub fn phase_withdrawal(&self) -> Vec<f64> {
+        let mut withdrawal = vec![0.0; self.n];
+        for e in 0..self.m {
+            let offset = self.sw[e] * self.flow_offset[e];
+            withdrawal[self.br_from[e]] += offset;
+            withdrawal[self.br_to[e]] -= offset;
+        }
+        withdrawal
+    }
+
+    /// Fixed nodal withdrawal for the current demand and branch statuses.
+    pub fn current_fixed_withdrawal(&self) -> Vec<f64> {
+        let phase = self.phase_withdrawal();
+        (0..self.n)
+            .map(|i| self.demand[i] + self.shunt_conductance[i] + phase[i])
+            .collect()
+    }
+
+    /// Complete affine branch flow offset at the current status.
+    pub fn current_flow_offset(&self, branch: usize) -> f64 {
+        self.sw[branch] * self.flow_offset[branch]
     }
 
     /// The shedding upper bound at bus `i`: the curtailable load `max(d, 0)` when
@@ -255,7 +332,7 @@ impl DcNetwork {
     /// Susceptance-weighted Laplacian `B = A' diag(-b .* sw) A` as summed,
     /// deduplicated `(row, col, value)` triplets in `(row, col)` order. Parallel
     /// branches between the same pair of buses are accumulated. Zero-weight
-    /// (open / zero-admittance) branches contribute nothing.
+    /// (open) branches contribute nothing.
     #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
     pub fn susceptance_coo(&self) -> Vec<(usize, usize, f64)> {
         let mut acc: BTreeMap<(usize, usize), f64> = BTreeMap::new();
@@ -330,6 +407,8 @@ mod tests {
         assert_eq!(dc.bus_ids, vec![1, 2, 3]);
         assert_eq!(dc.branch_ids, vec![1, 2, 3]);
         assert_eq!(dc.gen_ids, vec![1, 2]);
+        assert_eq!(dc.branch_source_rows, vec![Some(0), Some(1), Some(2)]);
+        assert_eq!(dc.gen_source_rows, vec![Some(0), Some(1)]);
         approx(dc.base_mva, 100.0);
         // Bus 1 is the MATPOWER slack (type 3) -> dense index 0.
         assert_eq!(dc.ref_bus, 0);
@@ -347,6 +426,43 @@ mod tests {
 
         assert_eq!(dc.branch_ids, vec![2, 3]);
         assert_eq!(dc.gen_ids, vec![2]);
+        assert_eq!(dc.branch_source_rows, vec![Some(1), Some(2)]);
+        assert_eq!(dc.gen_source_rows, vec![Some(1)]);
+    }
+
+    #[test]
+    fn phase_shifter_and_shunt_use_the_complete_affine_instance() {
+        let text = CASE3
+            .replace(
+                " 2 1 90 30 0 0 1 1 0 230 1 1.1 0.9;",
+                " 2 1 90 30 10 0 1 1 0 230 1 1.1 0.9;",
+            )
+            .replace(
+                " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
+                " 1 2 0.01 0.1 0 0 0 0 1 15 1 -30 30;",
+            );
+        let net = powerio::parse_str(&text, "matpower")
+            .expect("parse affine case")
+            .network;
+        let mut dc = DcNetwork::from_network(&net).expect("build affine case");
+
+        approx(dc.demand[1], 0.9);
+        approx(dc.shunt_conductance[1], 0.1);
+        approx(dc.flow_offset[0], dc.b[0] * dc.shift[0]);
+        approx(dc.p_shift.iter().sum(), 0.0);
+        for i in 0..dc.n {
+            approx(dc.current_fixed_withdrawal()[i], dc.fixed_withdrawal[i]);
+        }
+        assert!(dc.fmax[0].is_finite() && dc.fmax[0] > 0.0);
+
+        // Opening the phase-shifting branch removes both affine terms. Demand
+        // and shunt withdrawal remain at bus 2.
+        dc.sw[0] = 0.0;
+        approx(dc.current_flow_offset(0), 0.0);
+        let fixed = dc.current_fixed_withdrawal();
+        approx(fixed[0], 0.0);
+        approx(fixed[1], 1.0);
+        approx(fixed[2], 0.0);
     }
 
     #[test]
@@ -439,7 +555,7 @@ mod tests {
     #[test]
     fn builds_on_a_real_case() {
         // Real-case smoke check: ACTIVSg200 exercises to_normalized, reference
-        // inference, the rate_a fallback, and cost shaping on a full network —
+        // inference, synthesized unrated limits, and cost shaping on a full network —
         // the parity target for step 5. Skips when the data directory is absent.
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),

@@ -478,7 +478,9 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     // The slack absorbs the imbalance; its injection entry is recomputed, not echoed.
     let mut injection: Vec<f64> = dc.demand.iter().map(|d| -d).collect();
     for j in 0..dc.k {
-        injection[dc.gen_bus[j]] += net.generators[dc.gen_ids[j] - 1].pg / base;
+        let source_row = dc.gen_source_rows[j]
+            .ok_or_else(|| format!("generator column {j} has no source row"))?;
+        injection[dc.gen_bus[j]] += net.generators[source_row].pg / base;
     }
     let sol = super::problem::dc_pf(&dc, &injection)?;
 
