@@ -39,8 +39,7 @@
     "test:downstream": "npm run test:import && npm run test:svelte-packed",
     "ci:js": "npm run check && npm run build && npm run pack:svelte && npm run smoke:web && npm run test:downstream",
     "changeset": "changeset",
-    "version:packages": "changeset version && npm run contracts && npm install --package-lock-only",
-    "release:npm": "npm run wasm && npm run build:engine && npm run build:svelte && changeset publish"
+    "version:packages": "changeset version && npm run contracts && npm install --package-lock-only"
   },
   "devDependencies": {
     "@changesets/changelog-github": "1.0.0",
