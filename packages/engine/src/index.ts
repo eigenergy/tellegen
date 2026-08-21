@@ -202,7 +202,7 @@ export type JsonDropKind =
   | "transmission"
   | "distribution"
   | "ambiguous"
-  | "not-json";
+  | "unknown";
 
 export interface JsonDropClassification {
   kind: JsonDropKind;
@@ -228,7 +228,17 @@ function expectText(value: string | null): string {
 /** powerio format token from a file name; null for non-case files. */
 export function formatOf(name: string): string | null {
   const ext = name.split(".").pop()?.toLowerCase();
-  return ext === "m" || ext === "raw" || ext === "aux" ? ext : null;
+  switch (ext) {
+    case "m":
+    case "raw":
+    case "aux":
+    case "pwb":
+      return ext;
+    case "epc":
+      return "pslf";
+    default:
+      return null;
+  }
 }
 
 /** Parse a balanced case file for viewing. Takes the upload's bytes rather than

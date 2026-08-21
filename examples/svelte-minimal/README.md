@@ -5,8 +5,9 @@ full `TellegenViewer` (map, panels, local file flow, solve card) in a plain
 Vite + Svelte 5 app, not SvelteKit.
 
 With `loadDefaultCases` off and no backend, the viewer starts empty: drop a
-MATPOWER `.m`, PSS/E `.raw`, or `.aux` case file onto the page and it parses
-and solves in browser WebAssembly. Nothing is uploaded.
+MATPOWER `.m`, PSS/E `.raw`, PowerWorld `.aux`/`.pwb`, or PSLF `.epc` case
+file onto the page and it parses and solves in browser WebAssembly. Nothing is
+uploaded.
 
 Run it from the repository root:
 

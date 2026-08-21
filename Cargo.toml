@@ -26,12 +26,10 @@ powerio = "0.9"
 # packages carry, instead of duplicating the format here.
 powerio-pkg = "0.9"
 # The multiconductor distribution model and its lossless readers for OpenDSS,
-# PMD JSON, and BMOPF JSON. The wasm ingest path uses `parse_str` and
-# `MulticonductorNetwork::graph()` to view distribution cases (no solve). Both are
-# filesystem free: `parse_dss_str` refuses every Redirect/Compile/Buscoords
-# include, because string input has no base directory to confine them to. A
-# dropped `.dss` still crosses as text rather than bytes, since this crate has no
-# `parse_bytes`; the balanced path opposite does.
+# PMD JSON, and BMOPF JSON. The wasm ingest path uses `parse_bytes` and
+# `MulticonductorNetwork::graph()` to view distribution cases (no solve).
+# Browser ingestion remains filesystem free, so OpenDSS include commands are
+# refused because there is no base directory to confine them to.
 powerio-dist = "0.9"
 # Matrix-free DC/AC OPF problem instances (`DcOpfInstance`/`AcOpfInstance`), the
 # shared owner of case interpretation. Default features only: the `matrix` feature

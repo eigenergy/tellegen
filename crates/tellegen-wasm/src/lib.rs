@@ -8,7 +8,6 @@
 
 use std::collections::BTreeMap;
 
-use powerio::format::routing::SourceFormat as JsonSourceFormat;
 use powerio::{parse_display_bytes, Detection, DisplayData, JsonClass};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -34,49 +33,26 @@ struct JsonDropClassification {
 /// Package markers are followed by the strict package reader so the caller can
 /// distinguish balanced and multiconductor payloads without decoding in JS.
 fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, String> {
-    let classification = match powerio::classify_json_bytes(bytes) {
-        JsonClass::Package => {
-            let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes)
-                .map_err(|error| error.to_string())?;
-            let kind = match package.model_kind() {
-                powerio_pkg::ModelKind::Balanced => "balanced-package",
-                powerio_pkg::ModelKind::Multiconductor => "multiconductor-package",
-                _ => return Err("package has an unsupported model kind".to_owned()),
-            };
-            JsonDropClassification { kind, format: None }
-        }
-        JsonClass::ModelJson => JsonDropClassification {
-            kind: "model-json",
-            format: None,
-        },
-        JsonClass::Case(Detection::Known(JsonSourceFormat::Transmission(format))) => {
-            JsonDropClassification {
-                kind: "transmission",
-                format: Some(format.name()),
-            }
-        }
-        JsonClass::Case(Detection::Known(JsonSourceFormat::Distribution(format))) => {
-            JsonDropClassification {
-                kind: "distribution",
-                format: Some(format.name()),
-            }
-        }
-        JsonClass::Case(Detection::Ambiguous) => JsonDropClassification {
-            kind: "ambiguous",
-            format: None,
-        },
-        JsonClass::Case(Detection::Unknown) => JsonDropClassification {
-            kind: "not-json",
-            format: None,
-        },
-        JsonClass::Case(Detection::Known(format)) => {
-            return Err(format!(
-                "powerio classified an unsupported JSON source format `{}`",
-                format.name()
-            ));
-        }
+    let classification = powerio::classify_json_bytes(bytes);
+    if classification == JsonClass::Package {
+        let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes)
+            .map_err(|error| error.to_string())?;
+        let kind = match package.model_kind() {
+            powerio_pkg::ModelKind::Balanced => "balanced-package",
+            powerio_pkg::ModelKind::Multiconductor => "multiconductor-package",
+            _ => return Err("package has an unsupported model kind".to_owned()),
+        };
+        return Ok(JsonDropClassification { kind, format: None });
+    }
+
+    let format = match classification {
+        JsonClass::Case(Detection::Known(format)) => Some(format.name()),
+        _ => None,
     };
-    Ok(classification)
+    Ok(JsonDropClassification {
+        kind: classification.family(),
+        format,
+    })
 }
 
 /// Classify JSON bytes for the browser drop router. Invalid UTF-8 is never
@@ -907,7 +883,7 @@ mpc.gencost = [
 
         let invalid = b"{\"base_mva\":100,\"buses\":[]\xff}";
         let unknown = classify_json_drop_value(invalid).expect("invalid UTF-8 classifies unknown");
-        assert_eq!(unknown.kind, "not-json");
+        assert_eq!(unknown.kind, "unknown");
         assert!(powerio::BalancedNetwork::from_json_bytes(invalid).is_err());
         assert!(dist::ingest_dist_bytes(invalid, "bmopf-json").is_err());
     }

@@ -1575,7 +1575,7 @@ export class Controller {
 	};
 
 	/** Parse dropped files in the browser via the powerio wasm module. Case
-	 * files (.m, .raw, .aux) become local networks; geographic files can
+	 * files (.m, .raw, .aux, .epc, .pwb) become local networks; geographic files can
 	 * place those networks; a PowerWorld .pwd becomes a substation point
 	 * preview. Files run serially; nothing uploads. */
 	ingestFiles = async (files: FileList | File[]) => {
@@ -1645,7 +1645,7 @@ export class Controller {
 			}
 			const format = formatOf(file.name);
 			if (!format) {
-				this.app.error = `${file.name}: not a case or geographic file (.m, .raw, .aux, .dss, .pwd, .csv, .json, .geojson)`;
+				this.app.error = `${file.name}: not a case or geographic file (.m, .raw, .aux, .epc, .pwb, .dss, .pwd, .csv, .json, .geojson)`;
 				continue;
 			}
 			this.app.parsingFile = true;
@@ -1778,7 +1778,7 @@ export class Controller {
 			return 'failed';
 		}
 		const { kind, format } = classification;
-		if (kind === 'not-json') return 'not-package';
+		if (kind === 'unknown') return 'not-package';
 		if (kind === 'ambiguous') {
 			this.app.error = `${file.name}: JSON markers name both transmission and distribution formats`;
 			return 'failed';

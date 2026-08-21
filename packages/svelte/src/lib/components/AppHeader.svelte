@@ -97,7 +97,7 @@
 	</span>
 	<input
 		type="file"
-		accept=".m,.raw,.aux,.dss,.pwd,.csv,.json,.geojson"
+		accept=".m,.raw,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson"
 		multiple
 		hidden
 		bind:this={fileInput}
