@@ -1071,7 +1071,8 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 [[package]]
 name = "powerio"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c6cef3a7d1d1f026e0854e737cfbb114c7070d032741cac038f63fd6fbe399b"
 dependencies = [
  "lexical-core",
  "num-complex",
@@ -1085,7 +1086,8 @@ dependencies = [
 [[package]]
 name = "powerio-diag"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed9092a09c9f9e365c637558fa029f30716335687999adcf1ae380df92dd0a49"
 dependencies = [
  "serde",
  "serde_json",
@@ -1094,7 +1096,8 @@ dependencies = [
 [[package]]
 name = "powerio-dist"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d823bb9381ea2e3949dbfee9fe9d2f5bf2a043e2d40af18807a987e471f73345"
 dependencies = [
  "powerio-diag",
  "serde",
@@ -1105,7 +1108,8 @@ dependencies = [
 [[package]]
 name = "powerio-pkg"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2c33287f4120c212f36af118c97f678c5c76f86bb66bf751f070eda3278aa3c"
 dependencies = [
  "num-complex",
  "powerio",
@@ -1119,7 +1123,8 @@ dependencies = [
 [[package]]
 name = "powerio-prob"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5258aa218db01a9b5b77290267d8756d63d51d7140567cd9efe116b66615bc9"
 dependencies = [
  "powerio",
  "powerio-diag",

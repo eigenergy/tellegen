@@ -18,16 +18,13 @@ license = "MIT"
 repository = "https://github.com/eigenergy/tellegen"
 
 [workspace.dependencies]
-# The 0.9.0 line (`BalancedNetwork`, per crate error types, `parse_bytes`), pinned
-# to the latest audited powerio main while its release candidate remains open.
-# Refresh this exact SHA after the powerio source tree freezes, then replace it
-# with `"0.9"` once crates.io serves the release. The shared lockfile unifies the
-# version across the engine and every adapter.
-powerio = { git = "https://github.com/eigenergy/powerio", rev = "aa69f0a77c4260d26978575bce76bbaba5b9a0e8" }
+# The 0.9 line (`BalancedNetwork`, per crate error types, `parse_bytes`). The
+# shared lockfile unifies the version across the engine and every adapter.
+powerio = "0.9"
 # The `.pio.json` document model. The wasm ingest path uses its public
 # `ensure_payload_uids` so tellegen stamps the exact row-uid scheme powerio
 # packages carry, instead of duplicating the format here.
-powerio-pkg = { git = "https://github.com/eigenergy/powerio", rev = "aa69f0a77c4260d26978575bce76bbaba5b9a0e8" }
+powerio-pkg = "0.9"
 # The multiconductor distribution model and its lossless readers for OpenDSS,
 # PMD JSON, and BMOPF JSON. The wasm ingest path uses `parse_str` and
 # `MulticonductorNetwork::graph()` to view distribution cases (no solve). Both are
@@ -35,11 +32,11 @@ powerio-pkg = { git = "https://github.com/eigenergy/powerio", rev = "aa69f0a77c4
 # include, because string input has no base directory to confine them to. A
 # dropped `.dss` still crosses as text rather than bytes, since this crate has no
 # `parse_bytes`; the balanced path opposite does.
-powerio-dist = { git = "https://github.com/eigenergy/powerio", rev = "aa69f0a77c4260d26978575bce76bbaba5b9a0e8" }
+powerio-dist = "0.9"
 # Matrix-free DC/AC OPF problem instances (`DcOpfInstance`/`AcOpfInstance`), the
 # shared owner of case interpretation. Default features only: the `matrix` feature
 # pulls a filesystem bundle writer that has no place in the wasm dependency chain.
-powerio-prob = { git = "https://github.com/eigenergy/powerio", rev = "aa69f0a77c4260d26978575bce76bbaba5b9a0e8" }
+powerio-prob = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
