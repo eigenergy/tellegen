@@ -18,7 +18,7 @@ record for the releases before the split.
 - Releases are automated. The crate publishes through release-plz and the two
   npm packages through changesets, both by OIDC trusted publishing behind an
   environment that requires a reviewer. No registry token is stored. The crate
-  keeps the `tellegen-vX.Y.Z` tag name; the packages take
+  keeps the `vX.Y.Z` tag name; the packages take
   `@tellegen/<name>@X.Y.Z`.
 
 ## 0.1.2 — 2026-07-28

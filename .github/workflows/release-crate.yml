@@ -25,6 +25,7 @@ jobs:
   release-pr:
     if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
     name: version pull request
+    needs: gates
     runs-on: ubuntu-latest
     permissions:
       contents: read

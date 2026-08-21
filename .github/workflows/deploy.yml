@@ -1,44 +1,48 @@
 name: Deploy Demo
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
 permissions: {}
 
 concurrency:
-  group: tellegen-deploy-${{ github.ref_name }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  group: tellegen-deploy-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
 
-# ci.yml runs the gates on this same commit. The image job below builds and smoke
-# tests the artifact that deploys, which is a stronger check than a repeat of a
-# source-tree gate.
+# A push deploy starts only after CI succeeds for that exact main commit. A
+# manual run is allowed only from main.
 jobs:
   image:
-    # The ref check is not redundant with the branch trigger: workflow_dispatch
-    # runs the chosen ref's own copy of this file, so without it any branch
-    # deploys itself to production.
-    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    if: >-
+      vars.TELLEGEN_DEPLOY_ENABLED == 'true' &&
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.conclusion == 'success') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     outputs:
-      sha_tag: ${{ steps.meta.outputs.sha_tag }}
-      main_tag: ${{ steps.meta.outputs.main_tag }}
       digest_ref: ${{ steps.digest.outputs.ref }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
       - name: Set image tags
         id: meta
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           {
             echo "image=$image"
-            echo "sha_tag=$image:${GITHUB_SHA}"
+            echo "sha_tag=$image:${DEPLOY_SHA}"
             echo "main_tag=$image:main"
           } >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
@@ -111,7 +115,6 @@ jobs:
           echo "ref=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
   deploy:
-    if: vars.TELLEGEN_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: image
     environment: demo

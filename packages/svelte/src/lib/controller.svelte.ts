@@ -1939,8 +1939,6 @@ export class Controller {
 		else this.placeLocalCase(lon, lat);
 	};
 
-	/** Build a local case from a restored study package: the same shape a dropped case
-	 * takes, with the saved demand/rating deltas and formulation pre-applied. */
 	/** Make a balanced ingest payload the active local case. The package restore
 	 * path opposite it carries an edit log too; this one is a bare network. */
 	private addBalancedCase = (fileName: string, payload: IngestedCase) => {
@@ -1961,6 +1959,7 @@ export class Controller {
 		);
 	};
 
+	/** Restore a saved package with its edit state and formulation. */
 	private restoreLocalFromPackage = (fileName: string, pkg: LoadedPackage) => {
 		const { network_json, topology, view, formulation, deltas, rates, ...summary } = pkg;
 		const id = `local-${++this.localSeq}`;

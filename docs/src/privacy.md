@@ -5,8 +5,8 @@ does not upload those files to the tellegen backend.
 
 ## Current Demo
 
-- Dropped `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, and `.geojson` files
-  stay on your device.
+- Dropped `.m`, `.raw`, `.aux`, `.epc`, `.pwb`, `.dss`, `.pwd`, `.csv`,
+  `.json`, and `.geojson` files stay on your device.
 - The browser uses local file contents to draw the map and run DC solves.
 - The tellegen backend receives ordinary page and API requests for the bundled
   demo cases.

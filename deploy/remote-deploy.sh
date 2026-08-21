@@ -2,7 +2,7 @@
 # Deploy the tellegen app stack on the host. CI copies this script and the
 # compose files to the deploy path, then calls:
 #
-#   bash deploy/remote-deploy.sh ghcr.io/eigenergy/tellegen:<sha> /opt/tellegen/data
+#   bash deploy/remote-deploy.sh ghcr.io/eigenergy/tellegen@sha256:<digest> /opt/tellegen/data
 #
 # Shared proxy deployments route to tellegen over the `edge` Docker network.
 # Keep the Compose project fixed so this deploy cannot prune the shared proxy
@@ -20,13 +20,10 @@ fi
 # Accept a digest only. A tag can be repointed at another manifest after the
 # push, so a tag deploy trusts whoever can write to the registry. The pattern
 # also stops a newline or a shell metacharacter reaching the .env file below.
-case "$IMAGE" in
-	ghcr.io/[a-z0-9._/-]*@sha256:????????????????????????????????????????????????????????????????) ;;
-	*)
-		echo "refusing to deploy $IMAGE: expected ghcr.io/<name>@sha256:<64 hex>" >&2
-		exit 2
-		;;
-esac
+if [[ ! "$IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
+	echo "refusing to deploy $IMAGE: expected ghcr.io/<name>@sha256:<64 hex>" >&2
+	exit 2
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_ROOT="${DEPLOY_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
