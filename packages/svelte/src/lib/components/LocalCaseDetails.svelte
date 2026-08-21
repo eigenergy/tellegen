@@ -6,12 +6,13 @@
 	const app = getAppState();
 	const ctrl = getController();
 
-	// Export tokens the committed state writes to; label carries the extension. The first
-	// four are powerio case format writers; `model-json` is powerio's own model document,
-	// which is not a case format.
+	// Export tokens the committed state writes to; labels carry their extensions.
+	// `model-json` is powerio's own model document, not a case format.
 	const EXPORT_FORMATS = [
 		{ token: 'matpower', label: 'MATPOWER (.m)' },
 		{ token: 'psse', label: 'PSS/E (.raw)' },
+		{ token: 'powerworld', label: 'PowerWorld (.aux)' },
+		{ token: 'pslf', label: 'PSLF (.epc)' },
 		{ token: 'powermodels-json', label: 'PowerModels (.json)' },
 		{ token: 'pandapower-json', label: 'pandapower (.json)' },
 		{ token: 'model-json', label: 'PowerIO model (.json)' }
