@@ -1071,7 +1071,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 [[package]]
 name = "powerio"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=0e1ec85716be2fade3232095f87018cac1f40b0a#0e1ec85716be2fade3232095f87018cac1f40b0a"
+source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
 dependencies = [
  "lexical-core",
  "num-complex",
@@ -1085,7 +1085,7 @@ dependencies = [
 [[package]]
 name = "powerio-diag"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=0e1ec85716be2fade3232095f87018cac1f40b0a#0e1ec85716be2fade3232095f87018cac1f40b0a"
+source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
 dependencies = [
  "serde",
  "serde_json",
@@ -1094,7 +1094,7 @@ dependencies = [
 [[package]]
 name = "powerio-dist"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=0e1ec85716be2fade3232095f87018cac1f40b0a#0e1ec85716be2fade3232095f87018cac1f40b0a"
+source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
 dependencies = [
  "powerio-diag",
  "serde",
@@ -1105,7 +1105,7 @@ dependencies = [
 [[package]]
 name = "powerio-pkg"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=0e1ec85716be2fade3232095f87018cac1f40b0a#0e1ec85716be2fade3232095f87018cac1f40b0a"
+source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
 dependencies = [
  "num-complex",
  "powerio",
@@ -1119,7 +1119,7 @@ dependencies = [
 [[package]]
 name = "powerio-prob"
 version = "0.9.0"
-source = "git+https://github.com/eigenergy/powerio?rev=0e1ec85716be2fade3232095f87018cac1f40b0a#0e1ec85716be2fade3232095f87018cac1f40b0a"
+source = "git+https://github.com/eigenergy/powerio?rev=aa69f0a77c4260d26978575bce76bbaba5b9a0e8#aa69f0a77c4260d26978575bce76bbaba5b9a0e8"
 dependencies = [
  "powerio",
  "powerio-diag",
