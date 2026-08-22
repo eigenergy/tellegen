@@ -349,7 +349,11 @@ pub(super) fn validate_unique_uids<'a>(
 /// model construction instead of returning a feasible-looking solve that omitted
 /// their topology or injections. Inactive/open records remain lossless metadata.
 fn reject_unsupported_active_elements(network: &BalancedNetwork) -> Result<(), String> {
-    let closed_switches = network.switches.iter().filter(|switch| switch.closed).count();
+    let closed_switches = network
+        .switches
+        .iter()
+        .filter(|switch| switch.closed)
+        .count();
     let active_storage = network
         .storage
         .iter()
@@ -477,9 +481,7 @@ fn source_transformer_ordinal(
         .copied()
         .flatten()
         .ok_or_else(|| {
-            format!(
-                "{family} synthetic row references inactive source transformer {source_row}"
-            )
+            format!("{family} synthetic row references inactive source transformer {source_row}")
         })
 }
 
@@ -505,16 +507,12 @@ pub(super) fn bus_ids_for_source_rows(
     source_rows
         .iter()
         .map(|row| match row {
-            Some(row) => source
-                .buses
-                .get(*row)
-                .map(|bus| bus.id.0)
-                .ok_or_else(|| {
-                    format!(
-                        "bus source row {row} outside source length {}",
-                        source.buses.len()
-                    )
-                }),
+            Some(row) => source.buses.get(*row).map(|bus| bus.id.0).ok_or_else(|| {
+                format!(
+                    "bus source row {row} outside source length {}",
+                    source.buses.len()
+                )
+            }),
             None => {
                 let ordinal = source_transformer_ordinal(
                     normalized_transformer,
@@ -606,7 +604,10 @@ pub(super) fn uids_for_source_rows<T>(
                 .get(*row)
                 .map(|element| uid(element).clone())
                 .ok_or_else(|| {
-                    format!("{family} source row {row} outside source length {}", source.len())
+                    format!(
+                        "{family} source row {row} outside source length {}",
+                        source.len()
+                    )
                 }),
             None => Ok(None),
         })
@@ -648,17 +649,10 @@ pub(super) fn reconstruct_ids(
     if k == 0 {
         return Err("network has no in-service generators".into());
     }
-    let bus_ids = bus_ids_for_source_rows(
-        &source_rows.buses,
-        &source_rows.transformers_3w,
-        raw,
-    )?;
+    let bus_ids = bus_ids_for_source_rows(&source_rows.buses, &source_rows.transformers_3w, raw)?;
     let bus_uids = uids_for_source_rows(&source_rows.buses, &raw.buses, |bus| &bus.uid, "bus")?;
-    let branch_source_rows = project_source_rows(
-        branch_view_rows,
-        &source_rows.branches,
-        "branch",
-    )?;
+    let branch_source_rows =
+        project_source_rows(branch_view_rows, &source_rows.branches, "branch")?;
     let branch_ids = branch_ids_for_view_rows(
         branch_view_rows,
         &source_rows.branches,
@@ -772,10 +766,8 @@ mod compatibility_tests {
         assert_rejected_by_every_model(&storage, "in-service storage");
 
         let mut hvdc = case3();
-        hvdc.hvdc.push(powerio::Hvdc::new(
-            powerio::BusId(1),
-            powerio::BusId(2),
-        ));
+        hvdc.hvdc
+            .push(powerio::Hvdc::new(powerio::BusId(1), powerio::BusId(2)));
         assert_rejected_by_every_model(&hvdc, "in-service HVDC");
     }
 

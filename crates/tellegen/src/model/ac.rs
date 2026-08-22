@@ -12,9 +12,7 @@ use num_complex::Complex;
 use powerio::{BalancedNetwork, IndexedNetwork, LoadVoltageModel};
 use powerio_prob::{build_ac_opf_instance, AcOpfOptions, Units};
 
-use super::{
-    flatten_gen_costs, normalize_angle_bounds, normalize_for_model, reconstruct_ids, Ids,
-};
+use super::{flatten_gen_costs, normalize_angle_bounds, normalize_for_model, reconstruct_ids, Ids};
 
 const NEAR_ZERO_IMPEDANCE_SQUARED: f64 = 1.0e-10;
 
@@ -252,8 +250,7 @@ impl AcNetwork {
         let mut pg = vec![0.0; n];
         let mut qg = vec![0.0; n];
         let gen_bus = generators.bus_of_gen;
-        for i in 0..k {
-            let bus = gen_bus[i];
+        for (i, bus) in gen_bus.iter().copied().enumerate() {
             pg[bus] += generators.pg[i];
             qg[bus] += generators.qg[i];
             // Regulate this bus's magnitude to the generator's voltage setpoint, clamped
@@ -431,8 +428,7 @@ mod tests {
         let mut net = powerio::parse_str(&text, "matpower")
             .expect("parse jumper case3")
             .network;
-        net.branches[1].charging =
-            Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        net.branches[1].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
         let ac = AcNetwork::from_network(&net).expect("build charged jumper");
         assert!(ac.g[1].abs() > 1.0e4);
         assert!(ac.b[1].abs() > 1.0e5);
@@ -517,8 +513,7 @@ mod tests {
         raw.branches[0].shift = 15.0;
         raw.branches[0].angmin = -30.0;
         raw.branches[0].angmax = 30.0;
-        raw.branches[0].charging =
-            Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        raw.branches[0].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
         let normalized = raw.to_normalized().expect("normalize case3");
         let a = AcNetwork::from_network(&raw).expect("build raw");
         let b = AcNetwork::from_network(&normalized).expect("build normalized");

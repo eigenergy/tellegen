@@ -491,11 +491,7 @@ mod tests {
         assert_eq!(synthetic.len(), 4);
         assert!(synthetic.contains_key(&4));
 
-        let source = BTreeMap::from([
-            (1, (-82.0, 33.0)),
-            (2, (-80.0, 33.0)),
-            (3, (-81.0, 36.0)),
-        ]);
+        let source = BTreeMap::from([(1, (-82.0, 33.0)), (2, (-80.0, 33.0)), (3, (-81.0, 36.0))]);
         let geographic = lowered_coords(&net, &source);
         assert_eq!(geographic.len(), 4);
         assert_eq!(geographic[&4], (-81.0, 34.0));

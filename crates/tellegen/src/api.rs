@@ -233,10 +233,7 @@ pub struct SolveRequest {
 /// branches synthesized for a three-winding transformer; those rows are valid
 /// model axes, but they are not source elements and therefore are never edit
 /// targets on a public API.
-pub(crate) fn validate_canonical_edits(
-    net: &BalancedNetwork,
-    edits: &Edits,
-) -> Result<(), String> {
+pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> Result<(), String> {
     validate_canonical_identity(net)?;
     for (bus, mw) in sorted_deltas(&edits.deltas) {
         if !mw.is_finite() {
@@ -249,10 +246,7 @@ pub(crate) fn validate_canonical_edits(
             ElementKey::Id(id) => usize::try_from(*id)
                 .ok()
                 .and_then(|id| net.buses.iter().find(|bus| bus.id.0 == id)),
-            ElementKey::Uid(uid) => net
-                .buses
-                .iter()
-                .find(|bus| bus.uid.as_deref() == Some(uid)),
+            ElementKey::Uid(uid) => net.buses.iter().find(|bus| bus.uid.as_deref() == Some(uid)),
         };
         let Some(target) = target else {
             return Err(format!("unknown demand delta bus {bus}"));
@@ -603,9 +597,7 @@ pub(crate) fn ac_pf_solved(
     req: &SolveRequest,
 ) -> Result<(super::model::AcNetwork, super::problem::AcPfSolution), String> {
     if acnet.has_remote_voltage_control {
-        return Err(
-            "acpf does not yet support a generator regulating a remote bus".into(),
-        );
+        return Err("acpf does not yet support a generator regulating a remote bus".into());
     }
     reject_rating_deltas(&req.edits.rates, "acpf")?;
     apply_demand_deltas_ac(&mut acnet, &req.edits.deltas)?;
@@ -1101,10 +1093,14 @@ fn aggregate_demand_deltas(
         let dense = idx
             .get(bus)
             .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
-        let entry = aggregated.entry(dense).or_insert_with(|| (bus.clone(), 0.0));
+        let entry = aggregated
+            .entry(dense)
+            .or_insert_with(|| (bus.clone(), 0.0));
         entry.1 += mw;
         if !entry.1.is_finite() {
-            return Err(format!("aggregate demand delta for bus {bus} must be finite"));
+            return Err(format!(
+                "aggregate demand delta for bus {bus} must be finite"
+            ));
         }
     }
     Ok(aggregated)
@@ -1588,7 +1584,10 @@ mod tests {
                 .network;
             net.buses[0].uid = Some(uid.into());
             let error = solve_network(&net, &SolveRequest::default()).unwrap_err();
-            assert!(error.contains("ambiguous with a numeric element id"), "{error}");
+            assert!(
+                error.contains("ambiguous with a numeric element id"),
+                "{error}"
+            );
         }
     }
 
@@ -1610,10 +1609,9 @@ mod tests {
     #[test]
     fn id_and_uid_aliases_are_aggregated_before_bounds() {
         let network = case3_with_uids_json();
-        let base: Value = serde_json::from_str(
-            &solve_json(&network, r#"{"formulation":"dcopf"}"#).unwrap(),
-        )
-        .unwrap();
+        let base: Value =
+            serde_json::from_str(&solve_json(&network, r#"{"formulation":"dcopf"}"#).unwrap())
+                .unwrap();
         let cancelled: Value = serde_json::from_str(
             &solve_json(
                 &network,

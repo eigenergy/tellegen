@@ -165,13 +165,9 @@ impl DcNetwork {
                 source_rows.buses.len()
             ));
         }
-        let bus_ids = bus_ids_for_source_rows(
-            &source_rows.buses,
-            &source_rows.transformers_3w,
-            raw,
-        )?;
-        let bus_uids =
-            uids_for_source_rows(&source_rows.buses, &raw.buses, |bus| &bus.uid, "bus")?;
+        let bus_ids =
+            bus_ids_for_source_rows(&source_rows.buses, &source_rows.transformers_3w, raw)?;
+        let bus_uids = uids_for_source_rows(&source_rows.buses, &raw.buses, |bus| &bus.uid, "bus")?;
         let branch_source_rows = project_source_rows(
             &instance.branches.source_rows,
             &source_rows.branches,

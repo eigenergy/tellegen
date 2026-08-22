@@ -1116,16 +1116,10 @@ mpc.gencost = [
         assert_eq!(value["n_bus"], 14);
         assert_eq!(value["n_branch"], 20);
         assert_eq!(value["topology"]["buses"].as_array().unwrap().len(), 15);
-        assert_eq!(
-            value["topology"]["branches"].as_array().unwrap().len(),
-            23
-        );
+        assert_eq!(value["topology"]["branches"].as_array().unwrap().len(), 23);
         let star = &value["topology"]["buses"][14];
         assert_eq!(star["editable"], false);
-        assert!(star["uid"]
-            .as_str()
-            .unwrap()
-            .starts_with("analysis:buses:"));
+        assert!(star["uid"].as_str().unwrap().starts_with("analysis:buses:"));
         for branch in &value["topology"]["branches"].as_array().unwrap()[20..] {
             assert_eq!(branch["to"], 15);
             assert_eq!(branch["editable"], false);

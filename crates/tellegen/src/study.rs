@@ -24,8 +24,9 @@ use powerio_pkg::{ElementRef, NetworkPackage, StudyBlock, StudyCommit, StudyEdit
 use serde::{Deserialize, Serialize};
 
 use crate::api::{
-    ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells, Edits, ElementKey,
-    validate_canonical_edits, Problem, SensRequest, SolveOptions, SolveRequest, SolveResponse,
+    ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells,
+    validate_canonical_edits, Edits, ElementKey, Problem, SensRequest, SolveOptions, SolveRequest,
+    SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
@@ -1339,9 +1340,10 @@ mod tests {
             .network;
         net.buses[0].uid = Some("duplicate".into());
         net.buses[1].uid = Some("duplicate".into());
-        let error = Study::from_network(&net, Problem::DcOpf)
-            .err()
-            .expect("duplicate base identity must reject");
+        let error = match Study::from_network(&net, Problem::DcOpf) {
+            Ok(_) => panic!("duplicate base identity must reject"),
+            Err(error) => error,
+        };
         assert!(error.contains("duplicate bus uid"), "{error}");
     }
 
@@ -1386,7 +1388,10 @@ mod tests {
                 SolveOptions::default(),
             )
             .unwrap_err();
-        assert!(bus_error.contains("unknown demand delta bus"), "{bus_error}");
+        assert!(
+            bus_error.contains("unknown demand delta bus"),
+            "{bus_error}"
+        );
 
         let branch_error = study
             .commit(
@@ -1412,8 +1417,7 @@ mod tests {
             .network;
         isolated.buses[2].kind = powerio::BusType::Isolated;
         let isolated_id = isolated.buses[2].id.0 as i64;
-        let mut study =
-            Study::from_network(&isolated, Problem::DcOpf).expect("isolated study");
+        let mut study = Study::from_network(&isolated, Problem::DcOpf).expect("isolated study");
         let bus_edit = NetworkEdit::AddLoad {
             bus: isolated_id.into(),
             p_mw: 1.0,
@@ -1434,8 +1438,7 @@ mod tests {
             .expect("parse")
             .network;
         inactive.branches[0].in_service = false;
-        let mut study =
-            Study::from_network(&inactive, Problem::DcOpf).expect("inactive study");
+        let mut study = Study::from_network(&inactive, Problem::DcOpf).expect("inactive study");
         let branch_edit = NetworkEdit::AdjustBranchRating {
             branch: 1.into(),
             delta_mw: 1.0,

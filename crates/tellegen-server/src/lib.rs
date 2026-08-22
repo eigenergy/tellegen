@@ -32,9 +32,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use tellegen::geo::{
-    complete_coords_for, lowered_coords, spread_stacks, synthetic_layout, Coords,
-};
+use tellegen::geo::{complete_coords_for, lowered_coords, spread_stacks, synthetic_layout, Coords};
 use tellegen::{
     solve_prebuilt, solve_prebuilt_cancellable, DcNetwork, Iterations, SolveRequest, SolveResponse,
 };
@@ -1859,8 +1857,8 @@ mod tests {
             .network;
         let coords = synthetic_layout(&raw, FALLBACK_SPECS[0].bbox);
         let normalized = raw.to_normalized().expect("normalize fallback");
-        let source = network_payload("raw", "raw", &raw, &coords, None, true)
-            .expect("raw network payload");
+        let source =
+            network_payload("raw", "raw", &raw, &coords, None, true).expect("raw network payload");
         let derived = network_payload("normalized", "normalized", &normalized, &coords, None, true)
             .expect("normalized network payload");
 
@@ -1892,8 +1890,8 @@ mod tests {
             .map(|(i, bus)| (bus.id.0, (-90.0 + i as f64 * 0.001, 40.0)))
             .collect();
 
-        let payload = network_payload("3w", "3w", &net, &coords, None, false)
-            .expect("3W network payload");
+        let payload =
+            network_payload("3w", "3w", &net, &coords, None, false).expect("3W network payload");
         assert_eq!(payload.buses.len(), net.buses.len() + 1);
         assert_eq!(payload.branches.len(), net.branches.len() + 3);
         assert!(!payload.buses.last().unwrap().editable);
