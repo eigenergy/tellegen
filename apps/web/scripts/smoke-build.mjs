@@ -76,9 +76,7 @@ for (const [index, text] of html.entries()) {
 		/<meta\s+http-equiv="content-security-policy"\s+content="([^"]*)"/i
 	)?.[1];
 	if (!policy) fail(`${name} has no content-security-policy meta tag`);
-	for (const [, attributes, body] of text.matchAll(
-		/<script([^>]*)>([\s\S]*?)<\/script>/gi
-	)) {
+	for (const [, attributes, body] of text.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)) {
 		if (/\bsrc=/.test(attributes) || !body.trim()) continue;
 		const digest = createHash('sha256').update(body, 'utf8').digest('base64');
 		if (!policy.includes(`sha256-${digest}`))
