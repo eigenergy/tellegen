@@ -18,10 +18,10 @@ jobs:
       # A bare runner has no external solver. Let the tests use the bundled one.
       TELLEGEN_ALLOW_FALLBACK: "1"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: .
 
@@ -32,7 +32,7 @@ jobs:
           cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli \
             --all-targets -- -D warnings
       - name: Licenses, advisories, bans, sources
-        uses: EmbarkStudios/cargo-deny-action@c3bbe7e4e3f7baeee1a3dd9aec0a3b2aded580fb # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check advisories bans licenses sources
 
@@ -60,7 +60,7 @@ jobs:
           github.event_name == 'pull_request' &&
           startsWith(github.head_ref, 'release-plz-') &&
           github.event.pull_request.head.repo.full_name == github.repository
-        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
+        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
         with:
           tool: cargo-semver-checks@0.48
           fallback: none
