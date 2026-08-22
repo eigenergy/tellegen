@@ -1,26 +1,17 @@
 # Changelog
 
-Each surface keeps its own generated changelog:
+Nothing is written here by hand any more. Each surface keeps its own changelog,
+written by the bot that publishes it:
 
-- [`crates/tellegen/CHANGELOG.md`](crates/tellegen/CHANGELOG.md) (release-plz)
-- [`packages/engine/CHANGELOG.md`](packages/engine/CHANGELOG.md) (changesets)
-- [`packages/svelte/CHANGELOG.md`](packages/svelte/CHANGELOG.md) (changesets)
+- [`crates/tellegen/CHANGELOG.md`](crates/tellegen/CHANGELOG.md) — the `tellegen`
+  crate, by release-plz
+- [`packages/engine/CHANGELOG.md`](packages/engine/CHANGELOG.md) —
+  `@tellegen/engine`, by changesets
+- [`packages/svelte/CHANGELOG.md`](packages/svelte/CHANGELOG.md) —
+  `@tellegen/svelte`, by changesets
 
-This file is the curated view across all three. The entries below are the only
-record for the releases before the split.
-
-## Unreleased
-
-- powerio moves to 0.9. A saved study states the powerio release that wrote it,
-  and a study saved by an earlier build no longer loads: open the source case
-  and save the study again. Case uploads parse as bytes, so a `.raw` or `.aux`
-  exported in CP1252 is refused rather than mangled.
-- Releases are automated. The crate publishes through release-plz and the two
-  npm packages through changesets, both by OIDC trusted publishing behind an
-  environment restricted to `main`. The merged generated version PR is the
-  final human gate; no registry token is stored. The crate keeps the `vX.Y.Z`
-  tag name; the packages take
-  `@tellegen/<name>@X.Y.Z`.
+What follows is the archive of the releases that predate that split, when all
+three surfaces moved together. It is the only record of them.
 
 ## 0.1.2 — 2026-07-28
 
