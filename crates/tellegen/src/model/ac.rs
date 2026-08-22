@@ -259,7 +259,16 @@ impl AcNetwork {
             // the bus at an infeasible magnitude and the sensitivity would linearize there.
             let vg = generators.vg[i];
             if vg > 0.0 {
-                vm_set[bus] = vg.clamp(vm_min[bus], vm_max[bus]);
+                // `f64::clamp` panics on an inverted or non-finite band, and nothing
+                // between the case file and here establishes that the bus carries one:
+                // the readers copy VMIN/VMAX verbatim and normalization leaves them
+                // alone. An unusable band means no bound to apply, not a panic.
+                let (lo, hi) = (vm_min[bus], vm_max[bus]);
+                vm_set[bus] = if lo.is_finite() && hi.is_finite() && lo <= hi {
+                    vg.clamp(lo, hi)
+                } else {
+                    vg
+                };
             }
         }
         let cq = generators.q.into_iter().map(|value| value / 2.0).collect();

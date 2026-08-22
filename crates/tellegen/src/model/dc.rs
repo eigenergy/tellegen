@@ -267,9 +267,14 @@ impl DcNetwork {
         let gmax = instance.generators.pmax.clone();
         let gmin = instance.generators.pmin.clone();
 
-        // Shedding cost references the steepest marginal generation cost.
+        // Shedding cost references the steepest marginal generation cost. Generator
+        // bounds and cost columns are not checked for finiteness anywhere upstream,
+        // and a single non-finite term would either hand the solver a non-finite
+        // objective or (through `0.0 * inf` = NaN, which `f64::max` ignores) collapse
+        // the shed price to the floor and quietly shed load that should be served.
         let marginal_cost_ub = (0..k)
             .map(|i| 2.0 * cq[i] * gmax[i] + cl[i])
+            .filter(|value| value.is_finite())
             .fold(f64::NEG_INFINITY, f64::max)
             .max(1.0);
         let c_shed = vec![DEFAULT_SHED_COST_MULTIPLIER * marginal_cost_ub; n];

@@ -18,7 +18,7 @@
 
 use std::collections::HashSet;
 
-use powerio::{BalancedNetwork, GenCost, IndexedNetwork, NormalizeOptions};
+use powerio::{BalancedNetwork, BusType, GenCost, IndexedNetwork, NormalizeOptions};
 
 #[cfg(feature = "sensitivity")]
 mod ac;
@@ -107,10 +107,13 @@ fn polynomial_quadratic_coeffs(cost: &GenCost) -> Result<(f64, f64, f64), String
 }
 
 fn piecewise_quadratic_fit(cost: &GenCost) -> Result<(f64, f64, f64), String> {
-    if cost.coeffs.len() != cost.ncost * 2 {
+    // `ncost` is deserialized straight from model JSON and never clamped upstream,
+    // so `ncost * 2` must not be allowed to wrap past the coefficient length and
+    // then size an allocation. Take the capacity from the data, not the count.
+    if cost.ncost.checked_mul(2) != Some(cost.coeffs.len()) {
         return Err("piecewise gen costs must have paired breakpoints".into());
     }
-    let mut points = Vec::with_capacity(cost.ncost);
+    let mut points = Vec::with_capacity(cost.coeffs.len() / 2);
     for pair in cost.coeffs.chunks_exact(2) {
         let x = pair[0];
         let y = pair[1];
@@ -234,6 +237,13 @@ pub(super) fn normalize_angle_bounds(mut amin: f64, mut amax: f64) -> (f64, f64)
     if amin == 0.0 && amax == 0.0 {
         return (-DEFAULT_ANGLE_BOUND_PAD, DEFAULT_ANGLE_BOUND_PAD);
     }
+    // The two clamps above move each end independently, so a window lying wholly
+    // on one side of zero and reaching past pi/2 comes back inverted: (-180, -70)
+    // degrees collapses to (-60, -70), an empty interval that makes a solvable
+    // case infeasible. powerio's `clamp_angle_bounds` repairs this the same way.
+    if amin > amax {
+        return (-DEFAULT_ANGLE_BOUND_PAD, DEFAULT_ANGLE_BOUND_PAD);
+    }
     (amin, amax)
 }
 
@@ -267,6 +277,7 @@ pub(super) fn normalize_for_model(source: &BalancedNetwork) -> Result<ModelInput
     reject_unsupported_active_elements(source)?;
     let (network, source_rows) = if source.is_normalized() {
         source.check_base_mva().map_err(|error| error.to_string())?;
+        reject_unfiltered_normalized_elements(source)?;
         let network = source.clone();
         let (n_buses, n_branches) = {
             let view = IndexedNetwork::new(&network);
@@ -348,6 +359,44 @@ pub(super) fn validate_unique_uids<'a>(
 /// Tellegen does not yet model these active element families. Refuse them at
 /// model construction instead of returning a feasible-looking solve that omitted
 /// their topology or injections. Inactive/open records remain lossless metadata.
+/// Guard the already-normalized fast path. `is_normalized()` reads a self-declared
+/// `source_format` marker that any hand-written model JSON can set, but the element
+/// filtering the marker claims lives in the normalization pass this path skips, and
+/// `IndexedNetwork` sums every load and shunt with no in-service filter. Taking the
+/// marker at face value would serve an out-of-service load and price it into every
+/// LMP while reporting `optimal`. Fail closed instead: a network that really is
+/// normalized carries none of these.
+fn reject_unfiltered_normalized_elements(network: &BalancedNetwork) -> Result<(), String> {
+    let idle_loads = network.loads.iter().filter(|load| !load.in_service).count();
+    let idle_shunts = network
+        .shunts
+        .iter()
+        .filter(|shunt| !shunt.in_service)
+        .count();
+    let isolated_buses = network
+        .buses
+        .iter()
+        .filter(|bus| bus.kind == BusType::Isolated)
+        .count();
+    let mut carried = Vec::new();
+    if idle_loads > 0 {
+        carried.push(format!("{idle_loads} out-of-service load(s)"));
+    }
+    if idle_shunts > 0 {
+        carried.push(format!("{idle_shunts} out-of-service shunt(s)"));
+    }
+    if isolated_buses > 0 {
+        carried.push(format!("{isolated_buses} isolated bus(es)"));
+    }
+    if carried.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "network declares itself normalized but still carries {}",
+        carried.join(", ")
+    ))
+}
+
 fn reject_unsupported_active_elements(network: &BalancedNetwork) -> Result<(), String> {
     let closed_switches = network
         .switches
@@ -808,6 +857,86 @@ mod compatibility_tests {
         assert!(
             error.contains("999999") || error.to_lowercase().contains("unknown"),
             "{error}"
+        );
+    }
+    /// `ncost` arrives unvalidated from model JSON. A count large enough to wrap
+    /// `ncost * 2` used to pass the pairing check against an empty coefficient
+    /// list and then size the allocation, which traps the wasm module.
+    #[test]
+    fn oversized_piecewise_ncost_rejects_instead_of_allocating() {
+        let cost = GenCost::with_ncost(1, 0.0, 0.0, (usize::MAX / 2) + 1, Vec::new());
+        let error = super::piecewise_quadratic_fit(&cost)
+            .expect_err("an overflowing breakpoint count must reject");
+        assert!(error.contains("paired breakpoints"), "{error}");
+    }
+
+    /// Each clamp moves one end, so a window wholly on one side of zero and
+    /// reaching past pi/2 used to come back inverted and make a solvable case
+    /// infeasible.
+    #[test]
+    fn angle_bounds_never_invert() {
+        for (amin, amax) in [
+            (-std::f64::consts::PI, (-70f64).to_radians()),
+            (100f64.to_radians(), 360f64.to_radians()),
+        ] {
+            let (lo, hi) = super::normalize_angle_bounds(amin, amax);
+            assert!(
+                lo <= hi,
+                "inverted window from ({amin}, {amax}): ({lo}, {hi})"
+            );
+            assert!(lo.is_finite() && hi.is_finite());
+        }
+    }
+
+    /// `is_normalized()` is a self-declared marker, and the element filtering it
+    /// implies lives in the pass the fast path skips. An out-of-service load that
+    /// survives it is summed into the nodal demand and priced into every LMP.
+    #[test]
+    fn falsely_normalized_network_rejects() {
+        let mut net = case3();
+        net.source_format = powerio::SourceFormat::Normalized;
+        assert!(!net.loads.is_empty(), "case3 must carry a load to disable");
+        net.loads[0].in_service = false;
+        let error = crate::model::DcNetwork::from_network(&net)
+            .err()
+            .expect("a normalized claim with unfiltered elements must reject");
+        assert!(
+            error.contains("normalized") && error.contains("out-of-service load"),
+            "{error}"
+        );
+    }
+
+    /// The readers copy VMIN/VMAX verbatim and normalization leaves them alone,
+    /// so an inverted or non-finite band reaches the model. `f64::clamp` panics
+    /// on both.
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn inverted_voltage_band_does_not_panic() {
+        for (vmin, vmax) in [(1.1, 0.9), (f64::NAN, 1.1)] {
+            let mut net = case3();
+            for bus in &mut net.buses {
+                bus.vmin = vmin;
+                bus.vmax = vmax;
+            }
+            // The assertion is that this returns at all: `f64::clamp` panicking
+            // here would abort the test rather than produce an `Err`.
+            let _ = crate::model::AcNetwork::from_network(&net);
+        }
+    }
+
+    /// A non-finite generator bound used to make `0.0 * inf` = NaN, which
+    /// `f64::max` ignores, collapsing the shed price to its floor and quietly
+    /// shedding load that should have been served.
+    #[test]
+    fn non_finite_generator_bounds_keep_the_shed_price_finite() {
+        let mut net = case3();
+        assert!(!net.generators.is_empty());
+        net.generators[0].pmax = f64::INFINITY;
+        let dc = crate::model::DcNetwork::from_network(&net)
+            .expect("a non-finite bound must not break construction");
+        assert!(
+            dc.c_shed.iter().all(|value| value.is_finite()),
+            "shed price must stay finite"
         );
     }
 }
