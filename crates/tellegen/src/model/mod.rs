@@ -323,7 +323,7 @@ pub(crate) fn validate_canonical_identity(network: &BalancedNetwork) -> Result<(
     )
 }
 
-fn validate_unique_uids<'a>(
+pub(super) fn validate_unique_uids<'a>(
     family: &str,
     uids: impl IntoIterator<Item = Option<&'a str>>,
 ) -> Result<(), String> {

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use powerio::BalancedNetwork;
 use serde::{Deserialize, Serialize};
 
-use super::model::DcNetwork;
+use super::model::{validate_unique_uids, DcNetwork};
 use super::problem::dc_opf_cancellable;
 use super::solve::SolveIteration;
 
@@ -242,54 +242,57 @@ pub(crate) fn validate_canonical_edits(
         if !mw.is_finite() {
             return Err(format!("demand delta for bus {bus} must be finite"));
         }
-        let found = match bus {
+        let target = match bus {
             ElementKey::Id(id) if *id <= 0 => {
                 return Err("demand delta bus must be positive".into());
             }
             ElementKey::Id(id) => usize::try_from(*id)
                 .ok()
-                .is_some_and(|id| net.buses.iter().any(|bus| bus.id.0 == id)),
-            ElementKey::Uid(uid) => {
-                let matches = net
-                    .buses
-                    .iter()
-                    .filter(|bus| bus.uid.as_deref() == Some(uid))
-                    .count();
-                if matches > 1 {
-                    return Err(format!("ambiguous demand delta bus uid \"{uid}\""));
-                }
-                matches == 1
-            }
+                .and_then(|id| net.buses.iter().find(|bus| bus.id.0 == id)),
+            ElementKey::Uid(uid) => net
+                .buses
+                .iter()
+                .find(|bus| bus.uid.as_deref() == Some(uid)),
         };
-        if !found {
+        let Some(target) = target else {
             return Err(format!("unknown demand delta bus {bus}"));
+        };
+        if target.kind == powerio::BusType::Isolated {
+            return Err(format!("demand delta bus {bus} is not editable"));
         }
     }
     for (branch, mw) in sorted_deltas(&edits.rates) {
         if !mw.is_finite() {
             return Err(format!("rating delta for branch {branch} must be finite"));
         }
-        let found = match branch {
+        let target = match branch {
             ElementKey::Id(id) if *id <= 0 => {
                 return Err("rating delta branch must be positive".into());
             }
             ElementKey::Id(id) => usize::try_from(*id)
                 .ok()
-                .is_some_and(|id| (1..=net.branches.len()).contains(&id)),
-            ElementKey::Uid(uid) => {
-                let matches = net
-                    .branches
-                    .iter()
-                    .filter(|branch| branch.uid.as_deref() == Some(uid))
-                    .count();
-                if matches > 1 {
-                    return Err(format!("ambiguous rating delta branch uid \"{uid}\""));
-                }
-                matches == 1
-            }
+                .and_then(|id| id.checked_sub(1))
+                .and_then(|row| net.branches.get(row)),
+            ElementKey::Uid(uid) => net
+                .branches
+                .iter()
+                .find(|branch| branch.uid.as_deref() == Some(uid)),
         };
-        if !found {
+        let Some(target) = target else {
             return Err(format!("unknown rating delta branch {branch}"));
+        };
+        let endpoint_is_editable = |id| {
+            net.buses
+                .iter()
+                .any(|bus| bus.id == id && bus.kind != powerio::BusType::Isolated)
+        };
+        if !target.in_service
+            || target.from == target.to
+            || target.r * target.r + target.x * target.x == 0.0
+            || !endpoint_is_editable(target.from)
+            || !endpoint_is_editable(target.to)
+        {
+            return Err(format!("rating delta branch {branch} is not editable"));
         }
     }
     Ok(())

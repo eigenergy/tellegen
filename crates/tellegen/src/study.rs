@@ -604,6 +604,7 @@ impl Study {
         // payload will carry; source-format uids (e.g. GOC3) are left untouched.
         let mut net = self.base.clone();
         powerio_pkg::ensure_payload_uids(&mut net);
+        crate::validate_canonical_identity(&net)?;
 
         let mut commits: Vec<StudyCommit> = Vec::with_capacity(self.commit_bounds.len());
         let mut start = 0usize;
@@ -1345,6 +1346,21 @@ mod tests {
     }
 
     #[test]
+    fn package_export_rejects_an_explicit_uid_that_collides_with_a_stamped_uid() {
+        let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        net.buses[0].uid = Some("buses:1".into());
+        net.buses[1].uid = None;
+
+        let study = Study::from_network(&net, Problem::DcOpf).expect("study");
+        let error = study
+            .to_package()
+            .expect_err("stamped package identity must reject");
+        assert!(error.contains("duplicate bus uid"), "{error}");
+    }
+
+    #[test]
     fn study_rejects_display_only_three_winding_rows_before_they_enter_the_log() {
         let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
             .expect("parse")
@@ -1387,6 +1403,54 @@ mod tests {
         );
         assert!(study.edits().is_empty());
         assert_eq!(before, serde_json::to_string(study.solution()).unwrap());
+    }
+
+    #[test]
+    fn preview_and_commit_reject_rows_omitted_from_analysis() {
+        let mut isolated = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        isolated.buses[2].kind = powerio::BusType::Isolated;
+        let isolated_id = isolated.buses[2].id.0 as i64;
+        let mut study =
+            Study::from_network(&isolated, Problem::DcOpf).expect("isolated study");
+        let bus_edit = NetworkEdit::AddLoad {
+            bus: isolated_id.into(),
+            p_mw: 1.0,
+        };
+        let preview_error = study
+            .preview(
+                std::slice::from_ref(&bus_edit),
+                &[Operand::Price(Power::Active)],
+            )
+            .expect_err("isolated preview must reject");
+        assert!(preview_error.contains("not editable"), "{preview_error}");
+        let commit_error = study
+            .commit(&[bus_edit], SolveOptions::default())
+            .expect_err("isolated commit must reject");
+        assert!(commit_error.contains("not editable"), "{commit_error}");
+
+        let mut inactive = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        inactive.branches[0].in_service = false;
+        let mut study =
+            Study::from_network(&inactive, Problem::DcOpf).expect("inactive study");
+        let branch_edit = NetworkEdit::AdjustBranchRating {
+            branch: 1.into(),
+            delta_mw: 1.0,
+        };
+        let preview_error = study
+            .preview(
+                std::slice::from_ref(&branch_edit),
+                &[Operand::Price(Power::Active)],
+            )
+            .expect_err("inactive preview must reject");
+        assert!(preview_error.contains("not editable"), "{preview_error}");
+        let commit_error = study
+            .commit(&[branch_edit], SolveOptions::default())
+            .expect_err("inactive commit must reject");
+        assert!(commit_error.contains("not editable"), "{commit_error}");
     }
 
     #[test]
