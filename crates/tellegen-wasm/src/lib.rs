@@ -568,8 +568,7 @@ pub fn ingest_model_json(network_json: &str) -> Result<String, JsError> {
 }
 
 fn ingest_model_json_value(network_json: &str) -> Result<serde_json::Value, String> {
-    let mut net =
-        powerio::BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
+    let mut net = powerio::BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
     powerio_pkg::ensure_payload_uids(&mut net);
     ingest_value(&net, Vec::new())
 }
@@ -583,8 +582,7 @@ pub fn ingest_model_json_bytes(bytes: &[u8]) -> Result<String, JsError> {
 }
 
 fn ingest_model_json_bytes_value(bytes: &[u8]) -> Result<serde_json::Value, String> {
-    let mut net =
-        powerio::BalancedNetwork::from_json_bytes(bytes).map_err(|e| e.to_string())?;
+    let mut net = powerio::BalancedNetwork::from_json_bytes(bytes).map_err(|e| e.to_string())?;
     powerio_pkg::ensure_payload_uids(&mut net);
     ingest_value(&net, Vec::new())
 }
@@ -1003,10 +1001,9 @@ mpc.gencost = [
         assert_eq!(transmission.format, Some("powermodels-json"));
         assert_eq!(transmission.payload["n_bus"], 2);
 
-        let distribution = ingest_json_drop_value(include_bytes!(
-            "../tests/fixtures/dist/micro_pmd.json"
-        ))
-        .expect("ingest PMD JSON");
+        let distribution =
+            ingest_json_drop_value(include_bytes!("../tests/fixtures/dist/micro_pmd.json"))
+                .expect("ingest PMD JSON");
         assert_eq!(distribution.kind, "distribution");
         assert_eq!(distribution.format, Some("pmd-json"));
         assert_eq!(distribution.payload["model"], "multiconductor");
@@ -1023,10 +1020,9 @@ mpc.gencost = [
         assert_eq!(model_drop.format, None);
         assert_eq!(model_drop.payload["n_bus"], 14);
 
-        let ambiguous = ingest_json_drop_value(
-            br#"{"baseMVA":100.0,"bus":{},"data_model":"ENGINEERING"}"#,
-        )
-        .expect("ambiguous JSON remains unresolved");
+        let ambiguous =
+            ingest_json_drop_value(br#"{"baseMVA":100.0,"bus":{},"data_model":"ENGINEERING"}"#)
+                .expect("ambiguous JSON remains unresolved");
         assert_eq!(ambiguous.kind, "ambiguous");
         assert_eq!(ambiguous.format, None);
         assert!(ambiguous.payload.is_null());
@@ -1167,16 +1163,14 @@ mpc.gencost = [
         assert_eq!(balanced.payload["deltas"]["2"], 7.5);
         assert_eq!(balanced.payload["n_bus"], 14);
 
-        let dist_net = powerio_dist::parse_str(
-            include_str!("../tests/fixtures/dist/micro_pmd.json"),
-            "pmd",
-        )
-        .expect("parse distribution model");
+        let dist_net =
+            powerio_dist::parse_str(include_str!("../tests/fixtures/dist/micro_pmd.json"), "pmd")
+                .expect("parse distribution model");
         let dist_json = powerio_pkg::NetworkPackage::from_multiconductor(dist_net)
             .to_json()
             .expect("multiconductor package JSON");
-        let multiconductor = ingest_json_drop_value(dist_json.as_bytes())
-            .expect("restore multiconductor package");
+        let multiconductor =
+            ingest_json_drop_value(dist_json.as_bytes()).expect("restore multiconductor package");
         assert_eq!(multiconductor.kind, "multiconductor-package");
         assert_eq!(multiconductor.format, None);
         assert_eq!(multiconductor.payload["model"], "multiconductor");
