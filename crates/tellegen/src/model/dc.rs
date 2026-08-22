@@ -131,8 +131,7 @@ impl DcNetwork {
         // directly avoids allocating normalization diagnostics for every ordinary
         // MATPOWER branch whose source uses the typical +-360 spelling.
         for branch in &mut norm.branches {
-            (branch.angmin, branch.angmax) =
-                normalize_angle_bounds(branch.angmin, branch.angmax);
+            (branch.angmin, branch.angmax) = normalize_angle_bounds(branch.angmin, branch.angmax);
         }
         // Cost policy as a `BalancedNetwork` pre-pass: fit piecewise / strip artifacts / treat
         // a missing cost as free, writing plain quadratics the instance builder reads.
@@ -255,11 +254,7 @@ impl DcNetwork {
                     let from = &view.network().buses[instance.branches.from_bus[index]];
                     let to = &view.network().buses[instance.branches.to_bus[index]];
                     let window = angmin[index].abs().max(angmax[index].abs());
-                    branch.synthesize_rate_a(
-                        window,
-                        (from.vmin, from.vmax),
-                        (to.vmin, to.vmax),
-                    )
+                    branch.synthesize_rate_a(window, (from.vmin, from.vmax), (to.vmin, to.vmax))
                 } else {
                     limit
                 }
@@ -462,10 +457,8 @@ mod tests {
         let mut windings = [1, 2, 3].map(|bus| powerio::Winding::new(powerio::BusId(bus)));
         windings[0].rate_a = net.base_mva;
         let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
-        net.transformers_3w.push(powerio::Transformer3W::new(
-            windings,
-            [impedance; 3],
-        ));
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
 
         let dc = DcNetwork::from_network(&net).expect("build");
         assert_eq!(dc.m, 6);
