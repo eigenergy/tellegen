@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+# Every check below is a bare `[ ... ]` under `set -e`, so a break otherwise exits
+# 1 with no output and CI shows only the exit code. Name the line that failed.
+trap 'echo "assertion failed at ${BASH_SOURCE[0]}:$LINENO" >&2' ERR
 
 REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TEST_ROOT="$(mktemp -d /tmp/tellegen-deploy-test.XXXXXX)"

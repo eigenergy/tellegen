@@ -20,7 +20,7 @@ validate_image() {
 }
 
 validate_portable_absolute_path() {
-	local value="$1" label="$2" part
+	local value="$1" label="$2" part parts
 	case "$value" in
 		/|*//*|/*[!a-zA-Z0-9._/-]*|[!/]*)
 			echo "$label must be a non-root absolute path without empty or unsafe components" >&2
@@ -238,25 +238,31 @@ current_container_is_healthy() {
 	health_payload_ok "$payload"
 }
 
+# Budget note: the caller wraps this script in `timeout` over SSH (see
+# .github/workflows/deploy.yml). Worst case here is flock 900 + pull 900 +
+# up 300 + the two loops below (450 + 600) = 3150s, so that timeout must stay
+# above it. If these counts grow, raise the workflow timeouts with them —
+# otherwise SSH dies first, this script keeps running, and it holds the deploy
+# lock while the rollback step blocks on it.
 wait_for_local_health() {
 	local expected="$1" attempt state health edge payload actual
 	edge="$(timeout 20 docker inspect tellegen --format '{{if index .NetworkSettings.Networks "edge"}}edge{{end}}' 2>/dev/null || true)"
 	[ "$edge" = edge ] || { echo "tellegen is not attached to edge" >&2; return 1; }
-	for attempt in $(seq 1 150); do
+	for attempt in $(seq 1 90); do
 		state="$(timeout 20 docker inspect tellegen --format '{{.State.Status}}' 2>/dev/null || echo missing)"
 		case "$state" in missing|exited|dead) return 1 ;; esac
 		health="$(timeout 20 docker inspect tellegen --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' 2>/dev/null || echo none)"
 		if [ "$health" = healthy ] || { [ "$health" = none ] && [ "$state" = running ]; }; then break; fi
-		[ "$attempt" -lt 150 ] || return 1
+		[ "$attempt" -lt 90 ] || return 1
 		sleep 5
 	done
 	actual="$(timeout 20 docker inspect tellegen --format '{{.Config.Image}}' 2>/dev/null || true)"
 	[ "$actual" = "$expected" ] || return 1
-	for attempt in $(seq 1 90); do
+	for attempt in $(seq 1 30); do
 		payload="$(curl --proto '=http' --connect-timeout 3 --max-time 10 -fsS \
 			http://127.0.0.1:8000/api/health 2>/dev/null || true)"
 		if health_payload_ok "$payload"; then echo "==> tellegen host health ok"; return 0; fi
-		[ "$attempt" -lt 90 ] || break
+		[ "$attempt" -lt 30 ] || break
 		sleep 10
 	done
 	return 1
@@ -296,7 +302,7 @@ create_snapshot() {
 }
 
 discover_legacy_bundle() {
-	local label path canonical directory saw_prod=0 saw_edge=0
+	local label path canonical directory files saw_prod=0 saw_edge=0
 	label="$(timeout 20 docker inspect tellegen \
 		--format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' \
 		2>/dev/null || true)"

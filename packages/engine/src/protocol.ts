@@ -49,7 +49,10 @@ export type WorkerRequest = EngineRequest & { id: number };
 
 export type WorkerResponse =
   | { id: number; ok: true; value: string | null }
-  | { id: number; ok: false; error: string };
+  /** `fatal` marks an error the wasm instance cannot be trusted after — a trap
+   * leaves linear memory, the allocator, and every live Study undefined. The
+   * host tears the worker down rather than serving the next request from it. */
+  | { id: number; ok: false; error: string; fatal?: boolean };
 
 /** Run one request against a loaded wasm module. `studies` maps caller
  * allocated handles to live wasm Study instances on this side of the

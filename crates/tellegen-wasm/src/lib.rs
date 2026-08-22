@@ -34,8 +34,21 @@ fn ensure_input_len(byte_len: usize) -> Result<(), &'static str> {
     }
 }
 
+/// Reject an oversized payload. Note where this runs: wasm-bindgen has already
+/// malloc'd and copied the argument into linear memory by the time the export
+/// body is entered, so on the browser path the caller-side check in
+/// `packages/engine/src/input-limit.ts` is what actually bounds the allocation.
+/// This one bounds native and non-JS callers, and keeps the limit in one place
+/// if the JS check is ever bypassed.
 fn ensure_input_bytes(bytes: &[u8]) -> Result<(), JsError> {
     ensure_input_len(bytes.len()).map_err(jserr)
+}
+
+/// Text counterpart of [`ensure_input_bytes`]. The string entry points sit
+/// beside byte ones that were already bounded; an embedder handing us a huge
+/// document as text should hit the same wall.
+fn ensure_input_text(text: &str) -> Result<(), JsError> {
+    ensure_input_len(text.len()).map_err(jserr)
 }
 
 #[derive(Debug, Serialize)]
@@ -83,6 +96,7 @@ fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, Stri
 #[wasm_bindgen]
 pub fn classify_json(bytes: &[u8]) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
+    install_panic_hook();
     serde_json::to_string(&classify_json_drop_value(bytes).map_err(jserr)?).map_err(jserr)
 }
 
@@ -143,9 +157,10 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
 
 /// Route Rust panics to `console.error` (with a JS stack) once. Without this a wasm panic
 /// surfaces only as the opaque `unreachable` trap; with it the engine's panic message — the
-/// real failure — is visible in the browser console and in the `JsError` chain. Used by the
-/// Study entry points, which are gated on `sensitivity`.
-#[cfg(feature = "sensitivity")]
+/// real failure — is visible in the browser console and in the `JsError` chain. Every
+/// `#[wasm_bindgen]` entry point installs it, including the ones outside `sensitivity`:
+/// dropping a case file is often the first thing a session does, so that is exactly where
+/// an unexplained trap costs the most.
 fn install_panic_hook() {
     use std::sync::Once;
     static HOOK: Once = Once::new();
@@ -162,6 +177,7 @@ fn install_panic_hook() {
 #[wasm_bindgen]
 pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
+    install_panic_hook();
     let parsed = powerio::parse_bytes(bytes, format).map_err(jserr)?;
     serde_json::to_string(&serde_json::json!({
         "network": parsed.network,
@@ -175,6 +191,7 @@ pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
 /// the reactive hot path is the [`Study`].
 #[wasm_bindgen]
 pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, JsError> {
+    install_panic_hook();
     tellegen::solve_json(network_json, request_json).map_err(jserr)
 }
 
@@ -436,6 +453,7 @@ fn load_package_bundle_value(
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
 pub fn load_package(package_json: &str) -> Result<String, JsError> {
+    ensure_input_text(package_json)?;
     install_panic_hook();
     load_package_bundle(package_json).map_err(jserr)
 }
@@ -457,6 +475,7 @@ pub fn load_package_bytes(bytes: &[u8]) -> Result<String, JsError> {
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
 pub fn export_study(package_json: &str, commit: usize, format: &str) -> Result<String, JsError> {
+    ensure_input_text(package_json)?;
     install_panic_hook();
     let exported = tellegen::export_study(package_json, commit, format).map_err(jserr)?;
     serde_json::to_string(&exported).map_err(jserr)
@@ -606,6 +625,7 @@ struct Topology {
 #[wasm_bindgen]
 pub fn ingest_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
+    install_panic_hook();
     serde_json::to_string(&ingest_case_value(bytes, format).map_err(jserr)?).map_err(jserr)
 }
 
@@ -626,6 +646,8 @@ fn ingest_case_value(bytes: &[u8], format: &str) -> Result<serde_json::Value, St
 /// reader warnings to carry: nothing was converted.
 #[wasm_bindgen]
 pub fn ingest_model_json(network_json: &str) -> Result<String, JsError> {
+    ensure_input_text(network_json)?;
+    install_panic_hook();
     serde_json::to_string(&ingest_model_json_value(network_json).map_err(jserr)?).map_err(jserr)
 }
 
@@ -640,6 +662,7 @@ fn ingest_model_json_value(network_json: &str) -> Result<serde_json::Value, Stri
 #[wasm_bindgen]
 pub fn ingest_model_json_bytes(bytes: &[u8]) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
+    install_panic_hook();
     serde_json::to_string(&ingest_model_json_bytes_value(bytes).map_err(jserr)?).map_err(jserr)
 }
 
@@ -662,6 +685,8 @@ fn ingest_model_json_bytes_value(bytes: &[u8]) -> Result<serde_json::Value, Stri
 /// rejects cleanly and never panics the wasm instance.
 #[wasm_bindgen]
 pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
+    ensure_input_text(text)?;
+    install_panic_hook();
     let out = match format {
         "pio" | "pio-json" | "package" => dist::ingest_dist_package(text),
         _ => dist::ingest_dist(text, format),
@@ -673,6 +698,7 @@ pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
 #[wasm_bindgen]
 pub fn ingest_dist_case_bytes(bytes: &[u8], format: &str) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
+    install_panic_hook();
     let out = match format {
         "pio" | "pio-json" | "package" => dist::ingest_dist_package_bytes(bytes),
         _ => dist::ingest_dist_bytes(bytes, format),
@@ -891,6 +917,7 @@ struct DisplayView {
 #[wasm_bindgen]
 pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
+    install_panic_hook();
     match parse_display_bytes(bytes, format).map_err(jserr)? {
         DisplayData::PowerWorld(d) => serde_json::to_string(&DisplayView {
             substations: d
@@ -930,6 +957,7 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
 #[wasm_bindgen]
 pub fn parse_geo(bytes: &[u8], hint: &str) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
+    install_panic_hook();
     geo::parse_geo_impl(bytes, hint).map_err(jserr)
 }
 
@@ -940,6 +968,7 @@ pub fn parse_geo(bytes: &[u8], hint: &str) -> Result<String, JsError> {
 /// counts; errors when nothing matched.
 #[wasm_bindgen]
 pub fn apply_geo(network_json: &str, layer_geojson: &str) -> Result<String, JsError> {
+    install_panic_hook();
     geo::apply_geo_impl(network_json, layer_geojson).map_err(jserr)
 }
 
@@ -949,6 +978,7 @@ pub fn apply_geo(network_json: &str, layer_geojson: &str) -> Result<String, JsEr
 /// `.geo.json` document.
 #[wasm_bindgen]
 pub fn apply_layout(network_json: &str, coords_json: &str, kind: &str) -> Result<String, JsError> {
+    install_panic_hook();
     geo::apply_layout_impl(network_json, coords_json, kind).map_err(jserr)
 }
 
@@ -957,6 +987,7 @@ pub fn apply_layout(network_json: &str, coords_json: &str, kind: &str) -> Result
 /// when the case carries none.
 #[wasm_bindgen]
 pub fn extract_geo(network_json: &str) -> Result<String, JsError> {
+    install_panic_hook();
     geo::extract_geo_impl(network_json).map_err(jserr)
 }
 
@@ -967,6 +998,7 @@ pub fn extract_geo(network_json: &str) -> Result<String, JsError> {
 #[wasm_bindgen]
 pub fn apply_display_geo(network_json: &str, bytes: &[u8]) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
+    install_panic_hook();
     geo::apply_display_geo_impl(network_json, bytes).map_err(jserr)
 }
 

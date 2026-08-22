@@ -57,29 +57,41 @@ pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
     let lowered = view.network();
     let mut out = source.clone();
 
-    // Lowering only appends star buses. Every winding branch joins one of those
-    // buses to a source terminal, so a single pass is sufficient.
+    // Lowering only appends star buses, and every winding branch joins one of
+    // them to a source terminal, so no star bus is another's neighbor. Collect
+    // the located terminals in one pass over the branches: rescanning them per
+    // star bus is quadratic in the number of three-winding transformers, and a
+    // model-JSON document can declare those by the tens of thousands.
+    let stars: BTreeSet<usize> = lowered
+        .buses
+        .iter()
+        .skip(net.buses.len())
+        .map(|bus| bus.id.0)
+        .collect();
+    let mut terminals: BTreeMap<usize, Vec<(f64, f64)>> = BTreeMap::new();
+    for branch in lowered.branches.iter().filter(|branch| branch.in_service) {
+        let (star, terminal) = if stars.contains(&branch.from.0) {
+            (branch.from.0, branch.to.0)
+        } else if stars.contains(&branch.to.0) {
+            (branch.to.0, branch.from.0)
+        } else {
+            continue;
+        };
+        if let Some(&point) = source.get(&terminal) {
+            terminals.entry(star).or_default().push(point);
+        }
+    }
+
     for bus in lowered.buses.iter().skip(net.buses.len()) {
-        let neighbors = lowered
-            .branches
-            .iter()
-            .filter(|branch| branch.in_service)
-            .filter_map(|branch| {
-                if branch.from == bus.id {
-                    out.get(&branch.to.0).copied()
-                } else if branch.to == bus.id {
-                    out.get(&branch.from.0).copied()
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+        let Some(neighbors) = terminals.get(&bus.id.0) else {
+            continue;
+        };
         if neighbors.len() != 3 {
             continue;
         }
         let count = neighbors.len() as f64;
         let (lon, lat) = neighbors
-            .into_iter()
+            .iter()
             .fold((0.0, 0.0), |(x, y), (lon, lat)| (x + lon, y + lat));
         out.entry(bus.id.0).or_insert((lon / count, lat / count));
     }

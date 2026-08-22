@@ -27,4 +27,28 @@ describe('foldMapBounds', () => {
 			])
 		).toBeNull();
 	});
+	it('pads a single surviving point into a box fitBounds can frame', () => {
+		const bounds = foldMapBounds([
+			[Number.NaN, 0],
+			[-81.2, 34.1]
+		]);
+		expect(bounds).not.toBeNull();
+		const [[minLon, minLat], [maxLon, maxLat]] = bounds!;
+		expect(maxLon - minLon).toBeCloseTo(0.01, 9);
+		expect(maxLat - minLat).toBeCloseTo(0.01, 9);
+		expect((minLon + maxLon) / 2).toBeCloseTo(-81.2, 9);
+		expect((minLat + maxLat) / 2).toBeCloseTo(34.1, 9);
+	});
+
+	it('pads only the axis that collapsed', () => {
+		const bounds = foldMapBounds([
+			[-81.2, 34.1],
+			[-81.2, 34.4]
+		]);
+		expect(bounds).not.toBeNull();
+		const [[minLon, minLat], [maxLon, maxLat]] = bounds!;
+		expect(maxLon - minLon).toBeCloseTo(0.01, 9);
+		expect(minLat).toBe(34.1);
+		expect(maxLat).toBe(34.4);
+	});
 });

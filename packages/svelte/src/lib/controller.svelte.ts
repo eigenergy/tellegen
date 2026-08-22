@@ -1740,20 +1740,28 @@ export class Controller {
 
 		// Materialize routed JSON cases only after sidecars are ready. This keeps
 		// placement ahead of the first solve and preserves the original JSON order.
-		for (const { file, route } of routedJson) {
-			if (route.outcome === 'multiconductor') {
-				this.addMultiCase(file.name, route.payload);
-				continue;
+		// `prepareDroppedLocal` is a wasm call that takes seconds on a large case,
+		// and the drop gate refuses a second batch throughout, so the UI has to
+		// keep saying so.
+		if (routedJson.length > 0) this.app.parsingFile = true;
+		try {
+			for (const { file, route } of routedJson) {
+				if (route.outcome === 'multiconductor') {
+					this.addMultiCase(file.name, route.payload);
+					continue;
+				}
+				if (route.outcome !== 'balanced' && route.outcome !== 'restored') continue;
+				const local =
+					route.outcome === 'restored'
+						? this.localFromPackage(file.name, route.payload)
+						: this.localFromBalancedPayload(file.name, route.payload);
+				const placement = await this.prepareDroppedLocal(local, geoLayers, displays);
+				geoLayersConsumed ||= placement.geoLayersConsumed;
+				this.addAndActivateLocal(local);
+				this.app.error = placement.error;
 			}
-			if (route.outcome !== 'balanced' && route.outcome !== 'restored') continue;
-			const local =
-				route.outcome === 'restored'
-					? this.localFromPackage(file.name, route.payload)
-					: this.localFromBalancedPayload(file.name, route.payload);
-			const placement = await this.prepareDroppedLocal(local, geoLayers, displays);
-			geoLayersConsumed ||= placement.geoLayersConsumed;
-			this.addAndActivateLocal(local);
-			this.app.error = placement.error;
+		} finally {
+			this.app.parsingFile = false;
 		}
 
 		for (const file of rest.filter((f) => !isGeoFileName(f.name) && !isDisplayFile(f.name))) {

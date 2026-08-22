@@ -507,21 +507,7 @@
 	}
 
 	function branchBounds(path: [number, number][]): LngLatBoundsLike | null {
-		const bounds = foldMapBounds(path);
-		if (!bounds) return null;
-		let [[minLon, minLat], [maxLon, maxLat]] = bounds;
-		if (minLon === maxLon) {
-			minLon -= 0.005;
-			maxLon += 0.005;
-		}
-		if (minLat === maxLat) {
-			minLat -= 0.005;
-			maxLat += 0.005;
-		}
-		return [
-			[minLon, minLat],
-			[maxLon, maxLat]
-		];
+		return foldMapBounds(path);
 	}
 
 	function prefersReducedMotion(): boolean {

@@ -4,7 +4,10 @@
  * call; dropped files are parsed locally and never leave the machine. */
 import { engineHost, type EngineHost } from "./host.js";
 import { isPermanentWasmLoadFailure } from "./errors.js";
-import { assertEngineInputBytes } from "./input-limit.js";
+import {
+  assertEngineInputBytes,
+  assertEngineInputLength,
+} from "./input-limit.js";
 import type {
   BranchRatingDeltas,
   BrowserFormulation,
@@ -304,6 +307,7 @@ export async function ingestCase(
 export async function ingestModelJson(
   networkJson: string,
 ): Promise<IngestedCase> {
+  assertEngineInputLength(networkJson.length);
   return JSON.parse(
     expectText(
       await engineHost().call({
@@ -334,6 +338,7 @@ export async function ingestDistCase(
   text: string,
   format: string,
 ): Promise<IngestedDistCase> {
+  assertEngineInputLength(text.length);
   return JSON.parse(
     expectText(
       await engineHost().call({ op: "ingest_dist_case", text, format }),
@@ -937,6 +942,7 @@ export async function createStudy(
  * formulation, and solve options in one step. Rejects on a malformed package or one
  * that is not a tellegen study (the engine fails the load closed). */
 export async function loadPackage(text: string): Promise<LoadedPackage> {
+  assertEngineInputLength(text.length);
   return JSON.parse(
     expectText(await engineHost().call({ op: "load_package", text })),
   );
@@ -960,6 +966,7 @@ export async function exportStudy(
   commit: number,
   format: string,
 ): Promise<ExportedCase> {
+  assertEngineInputLength(packageJson.length);
   return JSON.parse(
     expectText(
       await engineHost().call({

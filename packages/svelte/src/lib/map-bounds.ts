@@ -1,7 +1,13 @@
 export type MapBounds = [[number, number], [number, number]];
 
+/** Half-width given to an axis whose extent collapsed to a single value. A
+ * zero-span box makes `fitBounds` divide by zero, clamp to the map's maximum
+ * zoom, and slam the camera onto one point instead of framing it. */
+const DEGENERATE_PAD_DEGREES = 0.005;
+
 /** Fold finite Web Mercator coordinates into map bounds. Invalid points are
- * ignored so one malformed row cannot hide an otherwise usable network. */
+ * ignored so one malformed row cannot hide an otherwise usable network, and a
+ * single surviving point still yields a box `fitBounds` can frame. */
 export function foldMapBounds(points: Iterable<readonly [number, number]>): MapBounds | null {
 	let minLon = Infinity;
 	let minLat = Infinity;
@@ -24,6 +30,14 @@ export function foldMapBounds(points: Iterable<readonly [number, number]>): MapB
 		maxLat = Math.max(maxLat, lat);
 	}
 	if (!Number.isFinite(minLon) || !Number.isFinite(minLat)) return null;
+	if (minLon === maxLon) {
+		minLon -= DEGENERATE_PAD_DEGREES;
+		maxLon += DEGENERATE_PAD_DEGREES;
+	}
+	if (minLat === maxLat) {
+		minLat -= DEGENERATE_PAD_DEGREES;
+		maxLat += DEGENERATE_PAD_DEGREES;
+	}
 	return [
 		[minLon, minLat],
 		[maxLon, maxLat]

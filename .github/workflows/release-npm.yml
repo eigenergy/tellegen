@@ -62,6 +62,10 @@ jobs:
       patch-sha256: ${{ steps.patch.outputs.sha256 }}
     permissions:
       contents: read
+      # @changesets/changelog-github resolves the pull request behind each
+      # changeset through the API. Without this the generator fails with
+      # `Bad credentials`, writes nothing, and the version PR never opens.
+      pull-requests: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

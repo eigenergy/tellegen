@@ -233,6 +233,17 @@ jobs:
             echo "DEPLOY_USER contains an unsupported character"
             exit 1
           }
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || {
+            echo "DEPLOY_HOST contains an unsupported character"
+            exit 1
+          }
+          # DEMO_URL is interpolated into a curl argument. A value starting with
+          # '-' would be read as an option, and a stray path would health-check
+          # the wrong endpoint and promote on someone else's ok.
+          [[ "$DEMO_URL" =~ ^https://[a-zA-Z0-9.-]+(:[0-9]+)?(/[a-zA-Z0-9._~/-]*)?$ ]] || {
+            echo "DEMO_URL must be an https URL with a portable path"
+            exit 1
+          }
           case "$DEPLOY_PATH" in
             /|*//*|/*[!a-zA-Z0-9._/-]*)
               echo "DEPLOY_PATH must be a non-root absolute path using portable path characters"
@@ -258,10 +269,11 @@ jobs:
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
+          # umask, not a later chmod: the key must never exist world-readable,
+          # even for the instant between the write and the chmod.
+          umask 077
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/tellegen_deploy
-          chmod 600 ~/.ssh/tellegen_deploy
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
           printf '%s\n' \
             'Host *' \
             '  StrictHostKeyChecking yes' \
@@ -270,7 +282,6 @@ jobs:
             '  ConnectTimeout 15' \
             '  ServerAliveInterval 15' \
             '  ServerAliveCountMax 3' > ~/.ssh/config
-          chmod 600 ~/.ssh/config
       - name: Copy deploy files
         if: steps.fresh.outputs.current == 'true'
         run: |
@@ -292,7 +303,11 @@ jobs:
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
-          timeout 1800 ssh -i ~/.ssh/tellegen_deploy "$remote" "
+          # Must exceed remote-deploy.sh's worst case (lock wait + pull + up +
+          # both health loops). If SSH gives up first the remote script keeps
+          # running and keeps the deploy lock, and the rollback step below then
+          # blocks on that lock and fails.
+          timeout 3600 ssh -i ~/.ssh/tellegen_deploy "$remote" "
             cd '$DEPLOY_PATH' &&
             DEPLOY_ROOT='$DEPLOY_PATH' \
             TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
@@ -369,7 +384,9 @@ jobs:
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
-          timeout 1200 ssh -i ~/.ssh/tellegen_deploy "$remote" "
+          # Rolling back restarts the previous image and waits on the same
+          # health budget as a deploy, so it needs the same headroom.
+          timeout 3600 ssh -i ~/.ssh/tellegen_deploy "$remote" "
             cd '$DEPLOY_PATH' &&
             DEPLOY_ROOT='$DEPLOY_PATH' \
             TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
