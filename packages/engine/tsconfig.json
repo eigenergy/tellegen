@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "allowArbitraryExtensions": true,
     "declaration": true,
     "declarationMap": true,
     "emitDeclarationOnly": false,

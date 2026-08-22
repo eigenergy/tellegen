@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
@@ -60,6 +61,29 @@ for (const ref of assetRefs) {
 	if (!ref.startsWith('_app/')) continue;
 	const [path] = ref.split(/[?#]/);
 	if (!existsSync(join(buildDir, path))) fail(`referenced asset is missing: ${path}`);
+}
+
+// The Content-Security-Policy is hash mode (see svelte.config.js): script-src
+// carries no 'unsafe-inline', so every inline script must appear in the policy
+// as its own sha256. SvelteKit hashes the bootstrap it emits, but a bundler is
+// free to inject an inline script of its own that kit never saw — and that
+// failure is invisible to every other check here. The page builds, the assets
+// all exist, and the browser silently refuses to run the app. Recompute the
+// digests and require each one to be listed.
+for (const [index, text] of html.entries()) {
+	const name = relative(buildDir, htmlFiles[index]);
+	const policy = text.match(
+		/<meta\s+http-equiv="content-security-policy"\s+content="([^"]*)"/i
+	)?.[1];
+	if (!policy) fail(`${name} has no content-security-policy meta tag`);
+	for (const [, attributes, body] of text.matchAll(
+		/<script([^>]*)>([\s\S]*?)<\/script>/gi
+	)) {
+		if (/\bsrc=/.test(attributes) || !body.trim()) continue;
+		const digest = createHash('sha256').update(body, 'utf8').digest('base64');
+		if (!policy.includes(`sha256-${digest}`))
+			fail(`${name} has an inline script missing from the CSP hash list`);
+	}
 }
 
 console.log(`build smoke passed: ${bootstrapId}`);
