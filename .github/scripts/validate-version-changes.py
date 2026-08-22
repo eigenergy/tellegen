@@ -45,6 +45,10 @@ def require_regular_nonexecutable(path: str) -> None:
 
 
 def validate_npm(entries: list[tuple[str, str]]) -> None:
+    # `changeset version` rewrites the dependency range of every workspace
+    # consumer, including the three in the `ignore` list whose own versions it
+    # leaves alone. Their manifests are therefore expected output, not an
+    # escape: the release surfaces below still gate what may change.
     allowed_modified = {
         "package-lock.json",
         "packages/engine/CHANGELOG.md",
@@ -52,6 +56,9 @@ def validate_npm(entries: list[tuple[str, str]]) -> None:
         "packages/engine/src/generated/contracts.ts",
         "packages/svelte/CHANGELOG.md",
         "packages/svelte/package.json",
+        "apps/web/package.json",
+        "examples/browser-minimal/package.json",
+        "examples/svelte-minimal/package.json",
     }
     package_manifests = {
         "packages/engine/package.json",
