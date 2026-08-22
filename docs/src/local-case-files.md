@@ -1,19 +1,22 @@
 # Local Case Files
 
 Dropped case files stay in the browser. The current public demo does not upload
-local `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, or `.geojson` files.
+local `.m`, `.raw`, `.aux`, `.epc`, `.pwb`, `.dss`, `.pwd`, `.csv`, `.json`,
+or `.geojson` files.
 
-MATPOWER `.m`, PSS/E `.raw`, and PowerWorld `.aux` files describe network
-topology. If a case file includes complete coordinates, tellegen draws it
-directly. If coordinates are missing, tellegen creates a local synthetic layout
-and asks the user to place it on the map. Dropped JSON is content sniffed: a
-`.pio.json` study package restores, a BMOPF or PowerModelsDistribution document
-opens the multiconductor viewer, and anything else is read as a geographic
-file.
+MATPOWER `.m`, PSS/E `.raw`, PowerWorld `.aux`/`.pwb`, and PSLF `.epc` files
+describe balanced network topology; OpenDSS `.dss` opens the multiconductor
+viewer. If a balanced case includes complete coordinates, tellegen draws it
+directly. Otherwise it creates a local synthetic layout and asks the user to
+place it on the map. Dropped JSON is content routed: a balanced `.pio.json`
+study restores, model and transmission JSON open as balanced cases, and
+multiconductor packages plus BMOPF or PowerModelsDistribution documents open
+the multiconductor viewer. Unrecognized JSON falls through to the geographic
+reader.
 
-After a parsed local case has coordinates, either from the file, a geographic file, or
-manual placement, tellegen solves the DC OPF in browser WebAssembly. Local case
-files do not call the tellegen backend solve endpoints.
+After a parsed local case has coordinates, either from the file, a geographic
+file, or manual placement, tellegen solves the selected formulation in browser
+WebAssembly. Local case files do not call the tellegen backend solve endpoints.
 
 ## Manual Placement
 

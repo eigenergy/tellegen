@@ -5,11 +5,50 @@ Browser package for tellegen case ingestion, wasm solves, Study lifecycle calls,
 The package has no SvelteKit dependency. Host apps import the top level package and use either the direct functions or the `browserWasmTransport` facade:
 
 ```ts
-import { browserWasmTransport, createStudy, solveJson } from "@tellegen/engine";
+import {
+  browserWasmTransport,
+  createStudy,
+  ingestJsonDrop,
+  solveJson,
+} from "@tellegen/engine";
 ```
 
 The wasm files are resolved relative to the package module. Host apps must serve
 package asset files from `node_modules`.
+
+## Browser Ingestion
+
+Case and JSON entry points accept the original bytes:
+
+```ts
+import { ingestCase, ingestJsonDrop } from "@tellegen/engine";
+
+const bytes = new Uint8Array(await file.arrayBuffer());
+const casePayload = await ingestCase(bytes, "raw");
+const jsonPayload = await ingestJsonDrop(bytes);
+```
+
+`ingestJsonDrop(bytes)` classifies and parses JSON in one call. Its
+`IngestedJsonDrop` result is discriminated by `kind`: balanced packages,
+multiconductor packages, and model JSON have a `null` format; transmission and
+distribution results carry the selected format; `ambiguous` and `unknown`
+results have a `null` payload.
+
+Every byte-buffer API rejects inputs larger than `MAX_ENGINE_INPUT_BYTES`
+(128 MiB) before worker dispatch.
+
+## Migrating To 0.2
+
+- Pass `Uint8Array` to `ingestCase`. For an existing string, use
+  `new TextEncoder().encode(text)`.
+- Replace `classifyJson(text)` with `await classifyJson(bytes)`. It now returns
+  `{ kind, format }` instead of a kind string.
+- If migrating code that imported `isStudyPackageText` from `@tellegen/svelte`,
+  replace it with `(await classifyJson(bytes)).kind === "balanced-package"`,
+  or use `await ingestJsonDrop(bytes)` when the document should also be parsed.
+- Update `JsonDropKind` handling: `bmopf` and `pmd` are now
+  `kind: "distribution"` with a `format`; `not-json` is `unknown`; and
+  `transmission` and `ambiguous` are additional outcomes.
 
 ## Contracts
 

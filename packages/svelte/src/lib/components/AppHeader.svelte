@@ -103,7 +103,9 @@
 		bind:this={fileInput}
 		onchange={(e) => {
 			const input = e.currentTarget;
-			if (input.files) ctrl.ingestFiles(Array.from(input.files));
+			// Pass the FileList through unchanged: the controller checks its declared
+			// count before materializing any entries.
+			if (input.files) ctrl.ingestFiles(input.files);
 			input.value = '';
 		}}
 	/>

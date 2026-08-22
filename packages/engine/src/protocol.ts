@@ -10,6 +10,7 @@ import type { WasmModule, WasmStudy } from "./module.js";
 export type EngineRequest =
   | { op: "preload" }
   | { op: "classify_json"; bytes: Uint8Array }
+  | { op: "ingest_json_drop"; bytes: Uint8Array }
   | { op: "ingest_case"; bytes: Uint8Array; format: string }
   | { op: "ingest_model_json"; network_json: string }
   | { op: "ingest_model_json_bytes"; bytes: Uint8Array }
@@ -23,8 +24,18 @@ export type EngineRequest =
   | { op: "apply_display_geo"; network_json: string; bytes: Uint8Array }
   | { op: "capabilities" }
   | { op: "solve_json"; network_json: string; request: string }
-  | { op: "study_new"; study: number; network_json: string; formulation: string }
-  | { op: "study_replace_edits"; study: number; edits: string; sensitivities: string }
+  | {
+      op: "study_new";
+      study: number;
+      network_json: string;
+      formulation: string;
+    }
+  | {
+      op: "study_replace_edits";
+      study: number;
+      edits: string;
+      sensitivities: string;
+    }
   | { op: "study_preview"; study: number; edits: string; operands: string }
   | { op: "study_solution"; study: number }
   | { op: "study_save_package"; study: number }
@@ -58,6 +69,8 @@ export function runRequest(
       return null; // loading the module was the work
     case "classify_json":
       return mod.classify_json(req.bytes);
+    case "ingest_json_drop":
+      return mod.ingest_json_drop(req.bytes);
     case "ingest_case":
       return mod.ingest_case(req.bytes, req.format);
     case "ingest_model_json":

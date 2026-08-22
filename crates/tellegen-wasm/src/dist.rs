@@ -24,15 +24,26 @@ use powerio_pkg::{ModelKind, NetworkPackage};
 /// token is the one [`powerio_dist::dist_target_from_name`] accepts; anything
 /// else — including the balanced transmission formats — is an error.
 pub fn ingest_dist(text: &str, format: &str) -> Result<String, String> {
-    let net = parse_str(text, format).map_err(|e| e.to_string())?;
-    serde_json::to_string(&ingest_dist_value(&net)?).map_err(|e| e.to_string())
+    serde_json::to_string(&ingest_dist_text_value(text, format)?).map_err(|e| e.to_string())
 }
 
 /// Byte counterpart of [`ingest_dist`]. Dropped files stay byte exact until
 /// powerio-dist performs its strict UTF-8 decode.
 pub fn ingest_dist_bytes(bytes: &[u8], format: &str) -> Result<String, String> {
+    serde_json::to_string(&ingest_dist_bytes_value(bytes, format)?).map_err(|e| e.to_string())
+}
+
+fn ingest_dist_text_value(text: &str, format: &str) -> Result<serde_json::Value, String> {
+    let net = parse_str(text, format).map_err(|e| e.to_string())?;
+    ingest_dist_value(&net)
+}
+
+pub(crate) fn ingest_dist_bytes_value(
+    bytes: &[u8],
+    format: &str,
+) -> Result<serde_json::Value, String> {
     let net = parse_bytes(bytes, format).map_err(|e| e.to_string())?;
-    serde_json::to_string(&ingest_dist_value(&net)?).map_err(|e| e.to_string())
+    ingest_dist_value(&net)
 }
 
 /// Parse `text` as a `.pio.json` package and, when it carries a multiconductor
@@ -40,24 +51,26 @@ pub fn ingest_dist_bytes(bytes: &[u8], format: &str) -> Result<String, String> {
 /// package is rejected: the frontend routes those to the study-restore path.
 pub fn ingest_dist_package(text: &str) -> Result<String, String> {
     let package = NetworkPackage::from_json(text).map_err(|e| e.to_string())?;
-    ingest_dist_package_value(&package)
+    serde_json::to_string(&ingest_dist_package_value(&package)?).map_err(|e| e.to_string())
 }
 
 /// Byte counterpart of [`ingest_dist_package`], including the package reader's
 /// strict UTF-8 and lineage checks.
 pub fn ingest_dist_package_bytes(bytes: &[u8]) -> Result<String, String> {
     let package = NetworkPackage::from_json_bytes(bytes).map_err(|e| e.to_string())?;
-    ingest_dist_package_value(&package)
+    serde_json::to_string(&ingest_dist_package_value(&package)?).map_err(|e| e.to_string())
 }
 
-fn ingest_dist_package_value(package: &NetworkPackage) -> Result<String, String> {
+pub(crate) fn ingest_dist_package_value(
+    package: &NetworkPackage,
+) -> Result<serde_json::Value, String> {
     if package.model_kind() != ModelKind::Multiconductor {
         return Err("package is not a multiconductor case".to_owned());
     }
     let net = package
         .as_multiconductor()
         .ok_or("package payload is not multiconductor")?;
-    serde_json::to_string(&ingest_dist_value(net)?).map_err(|e| e.to_string())
+    ingest_dist_value(net)
 }
 
 /// Everything the drop panel needs from one multiconductor parse: the case

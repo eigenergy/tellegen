@@ -44,6 +44,7 @@ export {
 	errorText,
 	formatOf,
 	classifyJson,
+	ingestJsonDrop,
 	ingestCase,
 	isDisplayFile,
 	isPermanentEngineFailure,
@@ -79,11 +80,7 @@ export type {
 	SolvableCase,
 	SolveBackend
 } from './state.svelte.js';
-export type {
-	MultiView,
-	PlacedMultiBus,
-	PlacedMultiEdge
-} from './multiconductor.js';
+export type { MultiView, PlacedMultiBus, PlacedMultiEdge } from './multiconductor.js';
 export type {
 	CaseFileSummary,
 	DistAttachmentKind,
@@ -96,6 +93,7 @@ export type {
 	Formulation,
 	IngestedCase,
 	IngestedDistCase,
+	IngestedJsonDrop,
 	JsonDropClassification,
 	JsonDropKind,
 	SensTarget,

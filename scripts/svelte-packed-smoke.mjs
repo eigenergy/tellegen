@@ -195,12 +195,29 @@ export default defineConfig({
   await writeFile(
     join(consumerDir, "src/App.svelte"),
     `<script lang="ts">
-  import { TellegenViewer, formatOf } from "@tellegen/svelte";
+  import {
+    TellegenViewer,
+    classifyJson,
+    formatOf,
+    ingestCase,
+    ingestJsonDrop
+  } from "@tellegen/svelte";
+  import type {
+    IngestedCase,
+    IngestedJsonDrop,
+    JsonDropClassification
+  } from "@tellegen/svelte";
   import type { TellegenMapProps } from "@tellegen/svelte/map";
 
   const mapProps: Partial<TellegenMapProps> = {};
   const matpowerFormat = formatOf("case14.m");
   if (matpowerFormat !== "m") throw new Error("format export failed");
+  const classify: (bytes: Uint8Array) => Promise<JsonDropClassification> = classifyJson;
+  const ingest: (bytes: Uint8Array, format: string) => Promise<IngestedCase> = ingestCase;
+  const route: (bytes: Uint8Array) => Promise<IngestedJsonDrop> = ingestJsonDrop;
+  void classify;
+  void ingest;
+  void route;
 </script>
 
 <TellegenViewer

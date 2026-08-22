@@ -17,7 +17,9 @@
 
 The facade has the same methods as the direct exports:
 
-- `ingestCase(text, format)`
+- `classifyJson(bytes)`
+- `ingestJsonDrop(bytes)`
+- `ingestCase(bytes, format)`
 - `parseDisplay(bytes)`
 - `capabilities()`
 - `solveJson(networkJson, request)`
@@ -25,10 +27,28 @@ The facade has the same methods as the direct exports:
 
 ## Case And Display Helpers
 
-- `formatOf(name)`: returns `m`, `raw`, or `aux` for supported case names.
+- `formatOf(name)`: returns the powerio format token for a supported case name.
 - `isDisplayFile(name)`: returns true for PowerWorld `.pwd` display files.
-- `ingestCase(text, format)`: parses a case and returns a network JSON payload plus summary and topology.
+- `classifyJson(bytes)`: asynchronously classifies JSON bytes and returns
+  `{ kind, format }`.
+- `ingestJsonDrop(bytes)`: classifies and parses a JSON drop in one call.
+- `ingestCase(bytes, format)`: parses case bytes and returns a network JSON
+  payload plus summary and topology.
 - `parseDisplay(bytes)`: parses PowerWorld display data for diagram overlays.
+
+`ingestJsonDrop` returns a discriminated `IngestedJsonDrop` union:
+
+| `kind`                   | `format` | `payload`          |
+| ------------------------ | -------- | ------------------ |
+| `balanced-package`       | `null`   | `LoadedPackage`    |
+| `multiconductor-package` | `null`   | `IngestedDistCase` |
+| `model-json`             | `null`   | `IngestedCase`     |
+| `transmission`           | `string` | `IngestedCase`     |
+| `distribution`           | `string` | `IngestedDistCase` |
+| `ambiguous` or `unknown` | `null`   | `null`             |
+
+Use the `kind` discriminant before reading `payload`. `format` carries the
+reader selected for transmission and distribution documents.
 
 ## Solves And Studies
 
@@ -53,14 +73,30 @@ view element, and solve responses echo it on bus and branch scalars.
 
 Call `free()` when a host app discards a study.
 
+## Migrating To 0.2
+
+- `ingestCase` now takes `Uint8Array`, not a string. Encode an in-memory string
+  with `new TextEncoder().encode(text)`; use `new Uint8Array(await
+file.arrayBuffer())` for a browser `File`.
+- `classifyJson` now takes bytes, is asynchronous, and returns
+  `{ kind, format }`: `const { kind, format } = await classifyJson(bytes)`.
+- `@tellegen/svelte` no longer exports `isStudyPackageText`. For classification
+  only, check
+  `(await classifyJson(bytes)).kind === "balanced-package"`. To classify and
+  parse a drop, use `await ingestJsonDrop(bytes)`.
+- `JsonDropKind` now uses `transmission` and `distribution` with a separate
+  `format`, plus `ambiguous` and `unknown`. The former `bmopf` and `pmd` kinds
+  are distribution formats; `not-json` is now `unknown`.
+
 ## Types
 
-Generated public types include:
+Public types include:
 
 - `SolveRequest`, `SolveResponse`, `ProblemCaps`
 - `SensRequest`, `SensitivityMatrix`, `SensitivityColumn`
 - `Network`, `NetworkBus`, `NetworkBranch`
 - `Solution`, `SolveIteration`, `DemandDeltas`
+- `IngestedJsonDrop`, `JsonDropClassification`, `JsonDropKind`
 - `BrowserFormulation`, `FormulationId`, `SolveStatus`
 
 The generated file is committed at `packages/engine/src/generated/contracts.ts` and checked in CI.

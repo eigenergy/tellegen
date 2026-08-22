@@ -4,6 +4,7 @@
  * call; dropped files are parsed locally and never leave the machine. */
 import { engineHost, type EngineHost } from "./host.js";
 import { isPermanentWasmLoadFailure } from "./errors.js";
+import { assertEngineInputBytes } from "./input-limit.js";
 import type {
   BranchRatingDeltas,
   BrowserFormulation,
@@ -23,6 +24,7 @@ export {
   FORMULATION_IDS,
   SOLVE_STATUSES,
 } from "./generated/contracts.js";
+export { MAX_ENGINE_INPUT_BYTES } from "./input-limit.js";
 
 export type {
   BranchRatingDeltas,
@@ -213,13 +215,41 @@ export interface JsonDropClassification {
   format: string | null;
 }
 
+/** A JSON drop classified and ingested in one engine request. Unknown and
+ * ambiguous documents carry no payload; every recognized family carries the
+ * same typed payload returned by its dedicated ingest API. */
+export type IngestedJsonDrop =
+  | { kind: "balanced-package"; format: null; payload: LoadedPackage }
+  | {
+      kind: "multiconductor-package";
+      format: null;
+      payload: IngestedDistCase;
+    }
+  | { kind: "model-json"; format: null; payload: IngestedCase }
+  | { kind: "transmission"; format: string; payload: IngestedCase }
+  | { kind: "distribution"; format: string; payload: IngestedDistCase }
+  | { kind: "ambiguous" | "unknown"; format: null; payload: null };
+
 /** Classify JSON bytes through powerio's Rust routing table. Package markers
  * also pass the strict package reader so the payload family is authoritative. */
 export async function classifyJson(
   bytes: Uint8Array,
 ): Promise<JsonDropClassification> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(await engineHost().call({ op: "classify_json", bytes })),
+  );
+}
+
+/** Classify and ingest one dropped JSON document in the same engine request.
+ * This avoids parsing a recognized package once to classify it and again to
+ * consume it. */
+export async function ingestJsonDrop(
+  bytes: Uint8Array,
+): Promise<IngestedJsonDrop> {
+  assertEngineInputBytes(bytes);
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "ingest_json_drop", bytes })),
   );
 }
 
@@ -252,6 +282,7 @@ export async function ingestCase(
   bytes: Uint8Array,
   format: string,
 ): Promise<IngestedCase> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(await engineHost().call({ op: "ingest_case", bytes, format })),
   );
@@ -265,7 +296,10 @@ export async function ingestModelJson(
 ): Promise<IngestedCase> {
   return JSON.parse(
     expectText(
-      await engineHost().call({ op: "ingest_model_json", network_json: networkJson }),
+      await engineHost().call({
+        op: "ingest_model_json",
+        network_json: networkJson,
+      }),
     ),
   );
 }
@@ -274,8 +308,11 @@ export async function ingestModelJson(
 export async function ingestModelJsonBytes(
   bytes: Uint8Array,
 ): Promise<IngestedCase> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
-    expectText(await engineHost().call({ op: "ingest_model_json_bytes", bytes })),
+    expectText(
+      await engineHost().call({ op: "ingest_model_json_bytes", bytes }),
+    ),
   );
 }
 
@@ -299,6 +336,7 @@ export async function ingestDistCaseBytes(
   bytes: Uint8Array,
   format: string,
 ): Promise<IngestedDistCase> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(
       await engineHost().call({ op: "ingest_dist_case_bytes", bytes, format }),
@@ -330,6 +368,7 @@ export function isDisplayFile(name: string): boolean {
 }
 
 export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(
       await engineHost().call({ op: "parse_display", bytes, format: "pwd" }),
@@ -378,6 +417,7 @@ export async function parseGeo(
   bytes: Uint8Array,
   hint: string,
 ): Promise<ParsedGeoLayer> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(await engineHost().call({ op: "parse_geo", bytes, hint })),
   );
@@ -435,6 +475,7 @@ export async function applyDisplayGeo(
   networkJson: string,
   bytes: Uint8Array,
 ): Promise<AppliedGeoCase> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(
       await engineHost().call({
@@ -491,7 +532,10 @@ function toElementKey(key: string): number | string {
 
 /** A `NetworkEdit[]` for the wasm Study, dropping zero deltas so an unchanged
  * element is never sent. */
-function toEdits(deltas: DemandDeltas, rates: BranchRatingDeltas): NetworkEdit[] {
+function toEdits(
+  deltas: DemandDeltas,
+  rates: BranchRatingDeltas,
+): NetworkEdit[] {
   const edits: NetworkEdit[] = Object.entries(deltas)
     .filter(([, mw]) => mw !== 0)
     .map(([bus, p_mw]) => ({ kind: "add_load", bus: toElementKey(bus), p_mw }));
@@ -887,7 +931,10 @@ export async function loadPackage(text: string): Promise<LoadedPackage> {
 }
 
 /** Restore a dropped package without decoding it in JavaScript. */
-export async function loadPackageBytes(bytes: Uint8Array): Promise<LoadedPackage> {
+export async function loadPackageBytes(
+  bytes: Uint8Array,
+): Promise<LoadedPackage> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(await engineHost().call({ op: "load_package_bytes", bytes })),
   );
@@ -916,6 +963,7 @@ export async function exportStudy(
 export interface EngineTransport {
   preloadEngine(): Promise<void>;
   classifyJson(bytes: Uint8Array): Promise<JsonDropClassification>;
+  ingestJsonDrop(bytes: Uint8Array): Promise<IngestedJsonDrop>;
   ingestCase(bytes: Uint8Array, format: string): Promise<IngestedCase>;
   ingestModelJson(networkJson: string): Promise<IngestedCase>;
   ingestModelJsonBytes(bytes: Uint8Array): Promise<IngestedCase>;
@@ -938,7 +986,10 @@ export interface EngineTransport {
     bytes: Uint8Array,
   ): Promise<AppliedGeoCase>;
   capabilities(): Promise<ProblemCaps[]>;
-  solveJson(networkJson: string, request?: SolveRequest): Promise<SolveResponse>;
+  solveJson(
+    networkJson: string,
+    request?: SolveRequest,
+  ): Promise<SolveResponse>;
   createStudy(
     networkJson: string,
     formulation?: Formulation,
@@ -955,6 +1006,7 @@ export interface EngineTransport {
 export const browserWasmTransport: EngineTransport = {
   preloadEngine,
   classifyJson,
+  ingestJsonDrop,
   ingestCase,
   ingestModelJson,
   ingestModelJsonBytes,
