@@ -115,6 +115,13 @@ script pulls the selected digest before recreating the container, then waits
 for Docker health and `/api/health`. It does not use `--remove-orphans`; the
 shared edge proxy is owned by a separate stack.
 
+Before changing the container, the script records a pending snapshot containing
+the digest, data path, and exact two Compose files. Promotion atomically makes
+that snapshot the last known good state. Rollback therefore restores the prior
+Compose configuration as well as its image, and a later invocation recovers an
+unpromoted candidate left by runner cancellation or SSH loss. The first run
+migrates a healthy existing deployment from Docker's Compose file labels.
+
 ## GitHub Actions Deploy
 
 `.github/workflows/deploy.yml` runs after a successful `CI` workflow for a push
@@ -135,13 +142,15 @@ digest, and repeats the latest-green check after any environment wait. It then
 copies the three deploy files into a unique per-run bundle, invokes the locked
 host deploy with that bundle and digest, and checks
 `${TELLEGEN_DEMO_URL}/api/health`. A manual run redeploys the latest green
-commit.
+commit. It checks latest-green state again immediately before promotion; a
+candidate superseded during health checks is rolled back.
 
-All demo runs share one non-canceling workflow mutex. GitHub may replace a
-pending run, so the two latest-green checks are the source of truth for which
-commit may publish or reach the host. Per-run bundles keep a canceled remote
-process from observing files uploaded by its successor; the host lock serializes
-their use. After a healthy deploy, bundles older than seven days are removed.
+All demo runs share one non-canceling workflow mutex with the maximum pending
+queue. Dispatch and start order are not a publication guarantee, so the
+repeated latest-green checks remain the source of truth for which commit may
+publish or reach the host. Per-run bundles keep an interrupted remote process
+from observing files uploaded by its successor; the host lock serializes their
+use. After a healthy deploy, bundles older than seven days are removed.
 
 Required repository secrets:
 

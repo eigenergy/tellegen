@@ -12,6 +12,7 @@ permissions: {}
 concurrency:
   group: tellegen-deploy-demo-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
+  queue: max
 
 # A push deploy starts only after CI succeeds for that exact main commit. A
 # manual run is allowed only from main.
@@ -233,7 +234,7 @@ jobs:
             exit 1
           }
           case "$DEPLOY_PATH" in
-            /|/*[!a-zA-Z0-9._/-]*)
+            /|*//*|/*[!a-zA-Z0-9._/-]*)
               echo "DEPLOY_PATH must be a non-root absolute path using portable path characters"
               exit 1
               ;;
@@ -243,6 +244,15 @@ jobs:
               exit 1
               ;;
           esac
+          IFS=/ read -r -a deploy_parts <<< "${DEPLOY_PATH#/}"
+          for part in "${deploy_parts[@]}"; do
+            case "$part" in
+              ""|.|..)
+                echo "DEPLOY_PATH contains a forbidden path component: $part"
+                exit 1
+                ;;
+            esac
+          done
       - name: Configure SSH
         if: steps.fresh.outputs.current == 'true'
         run: |
@@ -256,26 +266,33 @@ jobs:
             'Host *' \
             '  StrictHostKeyChecking yes' \
             '  BatchMode yes' \
-            '  IdentitiesOnly yes' > ~/.ssh/config
+            '  IdentitiesOnly yes' \
+            '  ConnectTimeout 15' \
+            '  ServerAliveInterval 15' \
+            '  ServerAliveCountMax 3' > ~/.ssh/config
           chmod 600 ~/.ssh/config
       - name: Copy deploy files
         if: steps.fresh.outputs.current == 'true'
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
-          ssh -i ~/.ssh/tellegen_deploy "$remote" "mkdir -p '$bundle'"
-          scp -i ~/.ssh/tellegen_deploy \
+          timeout 60 ssh -i ~/.ssh/tellegen_deploy "$remote" "mkdir -p '$bundle'"
+          timeout 120 scp -i ~/.ssh/tellegen_deploy \
             deploy/docker-compose.prod.yml \
             deploy/docker-compose.edge.yml \
             deploy/remote-deploy.sh \
             "$remote:$bundle/"
+      - name: Mark host mutation attempt
+        id: attempted
+        if: steps.fresh.outputs.current == 'true'
+        run: echo "started=true" >> "$GITHUB_OUTPUT"
       - name: Deploy image
         id: deploy
         if: steps.fresh.outputs.current == 'true'
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
-          ssh -i ~/.ssh/tellegen_deploy "$remote" "
+          timeout 1800 ssh -i ~/.ssh/tellegen_deploy "$remote" "
             cd '$DEPLOY_PATH' &&
             DEPLOY_ROOT='$DEPLOY_PATH' \
             TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
@@ -287,14 +304,15 @@ jobs:
         run: |
           health_url="${DEMO_URL%/}/api/health"
           for attempt in $(seq 1 30); do
-            health=$(curl -fsS "$health_url") || {
+            health=$(curl --proto '=https' --connect-timeout 5 --max-time 15 -fsS "$health_url") || {
               echo "waiting for public health ($attempt/30)"
               sleep 10
               continue
             }
             # Gate on liveness (status ok with at least one case), not a hardcoded
             # case set, so adding/removing a case never breaks the deploy.
-            if [[ "$health" == *'"status":"ok"'* && "$health" != *'"cases":[]'* ]]; then
+            if jq -e '.status == "ok" and (.cases | type == "array" and length > 0)' \
+              <<< "$health" >/dev/null; then
               exit 0
             fi
             echo "unexpected public health payload: $health"
@@ -305,28 +323,53 @@ jobs:
           done
           echo "public health check failed: $health_url"
           exit 1
-      - name: Promote the healthy deployment
+      # Public checks can take minutes. Do not promote a now-superseded image.
+      - name: Recheck before promotion
+        id: promote-fresh
         if: steps.fresh.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.image.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f branch=main -f event=push -f status=success -f per_page=1 \
+            --jq '.workflow_runs[0].head_sha')"
+          [[ "$latest" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$SOURCE_SHA" = "$latest" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Rolling back superseded deployment $SOURCE_SHA; latest green CI is $latest"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Promote the healthy deployment
+        id: promote
+        if: >-
+          steps.fresh.outputs.current == 'true' &&
+          steps.promote-fresh.outputs.current == 'true'
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
-          ssh -i ~/.ssh/tellegen_deploy "$remote" "
+          timeout 1200 ssh -i ~/.ssh/tellegen_deploy "$remote" "
             cd '$DEPLOY_PATH' &&
             DEPLOY_ROOT='$DEPLOY_PATH' \
             TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
             bash '$bundle/remote-deploy.sh' --promote '$TELLEGEN_IMAGE'
           "
-      # A failed public check (or promotion) leaves the job failed, but restores
-      # the durable last-known-good digest before the deploy key is removed.
-      - name: Roll back a failed deployment
+      # Best-effort cleanup covers failures, supersession, and cancellation.
+      # The host pending marker completes recovery on the next invocation if
+      # the runner or SSH connection disappears before this step finishes.
+      - name: Roll back an unpromoted deployment
         if: >-
-          failure() &&
+          always() &&
           steps.fresh.outputs.current == 'true' &&
-          steps.deploy.outcome == 'success'
+          steps.attempted.outputs.started == 'true' &&
+          steps.promote.outcome != 'success'
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
-          ssh -i ~/.ssh/tellegen_deploy "$remote" "
+          timeout 1200 ssh -i ~/.ssh/tellegen_deploy "$remote" "
             cd '$DEPLOY_PATH' &&
             DEPLOY_ROOT='$DEPLOY_PATH' \
             TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
@@ -335,12 +378,13 @@ jobs:
 
           health_url="${DEMO_URL%/}/api/health"
           for attempt in $(seq 1 30); do
-            health=$(curl -fsS "$health_url") || {
+            health=$(curl --proto '=https' --connect-timeout 5 --max-time 15 -fsS "$health_url") || {
               echo "waiting for rollback health ($attempt/30)"
               sleep 10
               continue
             }
-            if [[ "$health" == *'"status":"ok"'* && "$health" != *'"cases":[]'* ]]; then
+            if jq -e '.status == "ok" and (.cases | type == "array" and length > 0)' \
+              <<< "$health" >/dev/null; then
               echo "rollback public health is ok"
               exit 0
             fi

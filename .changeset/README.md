@@ -17,4 +17,11 @@ Run `npm run changeset` and commit the file it writes.
 `npm run version:packages` needs a `GITHUB_TOKEN` in the environment. The
 changelog generator calls the GitHub API to find the pull request for each
 changeset. Without a token it fails with `Bad credentials` and changes no
-files. Export a personal token with `public_repo` scope first.
+files. Prefer an existing GitHub CLI login:
+
+```sh
+export GITHUB_TOKEN="$(gh auth token)"
+```
+
+Otherwise use a short-lived fine-grained token limited to this repository with
+read-only pull-request access; repository metadata read access is implicit.

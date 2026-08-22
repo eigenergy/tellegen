@@ -53,22 +53,16 @@ jobs:
         id: select-mode
         uses: changesets/action/select-mode@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
 
-  version:
+  version-patch:
     if: needs.select-mode.outputs.mode == 'version'
-    name: version pull request
+    name: generate version patch
     needs: select-mode
     runs-on: ubuntu-latest
+    outputs:
+      patch-sha256: ${{ steps.patch.outputs.sha256 }}
     permissions:
       contents: read
     steps:
-      - name: Mint an app token
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ vars.RELEASE_PLZ_APP_ID }}
-          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -77,12 +71,119 @@ jobs:
           node-version: 24
       - run: npm ci
       - name: Version packages
-        uses: changesets/action/version@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
+        run: npm run version:packages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Validate and seal version patch
+        id: patch
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-version-changes.py npm
+          git diff --check
+          patch="$RUNNER_TEMP/npm-version.patch"
+          git diff --binary --full-index --no-ext-diff --output="$patch"
+          sha256="$(sha256sum "$patch" | cut -d ' ' -f 1)"
+          [[ "$sha256" =~ ^[0-9a-f]{64}$ ]]
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+      - name: Upload sealed version patch
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
-          script: npm run version:packages
-          commit-message: Release packages
-          pr-title: Release packages
+          name: npm-version-patch-${{ github.run_id }}
+          path: ${{ runner.temp }}/npm-version.patch
+          if-no-files-found: error
+          retention-days: 1
+
+  version-pr:
+    if: needs.version-patch.result == 'success'
+    name: update version pull request
+    needs: version-patch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Download sealed version patch
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: npm-version-patch-${{ github.run_id }}
+          path: ${{ runner.temp }}/npm-version-patch
+      - name: Verify, apply, and commit version patch
+        env:
+          EXPECTED_SHA256: ${{ needs.version-patch.outputs.patch-sha256 }}
+        run: |
+          set -euo pipefail
+          patch="$RUNNER_TEMP/npm-version-patch/npm-version.patch"
+          [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          printf '%s  %s\n' "$EXPECTED_SHA256" "$patch" | sha256sum --check --strict
+          git apply --index --binary "$patch"
+          python3 .github/scripts/validate-version-changes.py npm
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -c core.hooksPath=/dev/null commit -m "Release packages"
+      # Mint only after all dependency and repository code has finished. The
+      # remaining step executes only Git and GitHub CLI operations.
+      - name: Mint an app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Push and update version pull request
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION_BRANCH: changeset-release/main
+        run: |
+          set -euo pipefail
+          main_sha="$(GH_TOKEN="$APP_TOKEN" gh api \
+            "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$main_sha" != "$GITHUB_SHA" ]; then
+            echo "::notice::Skipping stale version update for $GITHUB_SHA; main is $main_sha"
+            exit 0
+          fi
+
+          ref="refs/heads/$VERSION_BRANCH"
+          if expected_sha="$(GH_TOKEN="$APP_TOKEN" gh api \
+            "repos/$GITHUB_REPOSITORY/git/ref/heads/$VERSION_BRANCH" \
+            --jq '.object.sha' 2>/dev/null)"; then
+            [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]]
+            lease="--force-with-lease=$ref:$expected_sha"
+          else
+            lease="--force-with-lease=$ref:"
+          fi
+          auth="$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w 0)"
+          git -c core.hooksPath=/dev/null \
+            -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push origin "HEAD:$ref" "$lease"
+
+          prs_output="$(GH_TOKEN="$APP_TOKEN" gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$VERSION_BRANCH" \
+            -f base=main --jq '.[].number')"
+          prs=()
+          if [ -n "$prs_output" ]; then
+            mapfile -t prs <<< "$prs_output"
+          fi
+          [ "${#prs[@]}" -le 1 ] || {
+            echo "multiple open pull requests use $VERSION_BRANCH" >&2
+            exit 1
+          }
+          body="This automated pull request applies the pending package changesets. Merge it to publish the resulting versions."
+          if [ "${#prs[@]}" -eq 0 ]; then
+            GH_TOKEN="$APP_TOKEN" gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/pulls" \
+              -f title="Release packages" -f head="$VERSION_BRANCH" \
+              -f base=main -f body="$body" >/dev/null
+          else
+            GH_TOKEN="$APP_TOKEN" gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/pulls/${prs[0]}" \
+              -f title="Release packages" -f body="$body" >/dev/null
+          fi
 
   pack:
     if: needs.select-mode.outputs.mode == 'publish'

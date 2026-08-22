@@ -122,9 +122,11 @@ variable after you make all of these:
    `GITHUB_TOKEN` do not start workflows.
 
 Protect `main` with a repository ruleset that requires pull requests, at least
-one approval, and the CI checks before merge, and blocks force pushes and
-deletion. Do not give the Release App a ruleset bypass. Those protections make
-the version pull-request merge the publication gate.
+one approval, approval of the most recent reviewable push (or dismissal of
+stale approvals), an up-to-date branch, and the CI checks before merge. Block
+force pushes and deletion. Do not give the Release App a ruleset bypass. Those
+protections ensure an approval cannot survive a bot refresh with different
+release contents and make the version pull-request merge the publication gate.
 
 If a package or crate does not yet exist at its registry, publish its first
 version manually before configuring the trusted publisher. Later releases use
@@ -147,10 +149,13 @@ lockfile. Merge it to run the gates and publish. Tags take the form
 `@tellegen/<name>@X.Y.Z`.
 
 The workflow selects version or publish mode before it requests privileged
-permissions. Versioning uses the GitHub App. Publishing builds immutable
-tarballs in an unprivileged job, then gives only the final npm job the `npm`
-environment and OIDC permission. Merging the version pull request is therefore
-the only manual release action.
+permissions. Versioning runs without the GitHub App, validates an exact output
+allowlist, and passes a SHA-256-verified patch to a fresh runner. That runner
+revalidates and commits the patch before minting the App token; only `git` and
+`gh` run afterward. Publishing builds immutable tarballs in an unprivileged
+job, then gives only the final npm job the `npm` environment and OIDC
+permission. Merging the version pull request is therefore the only manual
+release action.
 
 `@tellegen/svelte` resolves `@tellegen/engine` from the registry, so a release
 that moves both publishes the engine first.
@@ -170,6 +175,13 @@ request. The unprivileged gate runs `cargo package --locked`; the OIDC-enabled
 release then uses Cargo's `--no-verify` path so package build scripts never run
 with registry authority. release-plz obtains its short-lived crates.io
 credential directly from OIDC.
+
+The crate update uses the same sealed-patch privilege boundary as package
+versioning. Its fixed `release-plz-main` branch is intentional: with
+`release_always = false`, release-plz recognizes a release commit by the
+`release-plz-` head prefix. Merge this generated pull request with a normal
+merge commit, not squash, so its release commit remains unambiguous if another
+change reaches `main` nearby.
 
 An emergency repair to a generated crate release must retain its
 `release-plz-*` branch name; that is how `release_always = false` recognizes the
