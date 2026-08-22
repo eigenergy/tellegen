@@ -5,12 +5,17 @@ does not upload those files to the tellegen backend.
 
 ## Current Demo
 
-- Dropped `.m`, `.raw`, `.aux`, `.pwd`, `.csv`, `.json`, and `.geojson` files
-  stay on your device.
+- Dropped `.m`, `.raw`, `.aux`, `.epc`, `.pwb`, `.dss`, `.pwd`, `.csv`,
+  `.json`, and `.geojson` files stay on your device.
 - The browser uses local file contents to draw the map and run DC solves.
 - The tellegen backend receives ordinary page and API requests for the bundled
   demo cases.
 - There is no analytics product wired to uploaded case contents.
+- The map basemap comes from CARTO (`*.basemaps.cartocdn.com`). Your browser
+  requests those tiles directly, so CARTO receives your IP address, your user
+  agent, and the map area you view. Your case file is never sent, but the map
+  area shows where a locally parsed case sits. Nothing else on the page loads
+  from a third party.
 
 ## Future Opt In Sharing
 

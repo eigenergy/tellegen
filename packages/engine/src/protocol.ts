@@ -9,8 +9,13 @@ import type { WasmModule, WasmStudy } from "./module.js";
 
 export type EngineRequest =
   | { op: "preload" }
-  | { op: "ingest_case"; text: string; format: string }
+  | { op: "classify_json"; bytes: Uint8Array }
+  | { op: "ingest_json_drop"; bytes: Uint8Array }
+  | { op: "ingest_case"; bytes: Uint8Array; format: string }
+  | { op: "ingest_model_json"; network_json: string }
+  | { op: "ingest_model_json_bytes"; bytes: Uint8Array }
   | { op: "ingest_dist_case"; text: string; format: string }
+  | { op: "ingest_dist_case_bytes"; bytes: Uint8Array; format: string }
   | { op: "parse_display"; bytes: Uint8Array; format: string }
   | { op: "parse_geo"; bytes: Uint8Array; hint: string }
   | { op: "apply_geo"; network_json: string; layer: string }
@@ -19,13 +24,24 @@ export type EngineRequest =
   | { op: "apply_display_geo"; network_json: string; bytes: Uint8Array }
   | { op: "capabilities" }
   | { op: "solve_json"; network_json: string; request: string }
-  | { op: "study_new"; study: number; network_json: string; formulation: string }
-  | { op: "study_replace_edits"; study: number; edits: string; sensitivities: string }
+  | {
+      op: "study_new";
+      study: number;
+      network_json: string;
+      formulation: string;
+    }
+  | {
+      op: "study_replace_edits";
+      study: number;
+      edits: string;
+      sensitivities: string;
+    }
   | { op: "study_preview"; study: number; edits: string; operands: string }
   | { op: "study_solution"; study: number }
   | { op: "study_save_package"; study: number }
   | { op: "study_apply_geo"; study: number; layer: string }
   | { op: "load_package"; text: string }
+  | { op: "load_package_bytes"; bytes: Uint8Array }
   | { op: "export_study"; package_json: string; commit: number; format: string }
   | { op: "study_free"; study: number };
 
@@ -33,7 +49,10 @@ export type WorkerRequest = EngineRequest & { id: number };
 
 export type WorkerResponse =
   | { id: number; ok: true; value: string | null }
-  | { id: number; ok: false; error: string };
+  /** `fatal` marks an error the wasm instance cannot be trusted after — a trap
+   * leaves linear memory, the allocator, and every live Study undefined. The
+   * host tears the worker down rather than serving the next request from it. */
+  | { id: number; ok: false; error: string; fatal?: boolean };
 
 /** Run one request against a loaded wasm module. `studies` maps caller
  * allocated handles to live wasm Study instances on this side of the
@@ -51,10 +70,20 @@ export function runRequest(
   switch (req.op) {
     case "preload":
       return null; // loading the module was the work
+    case "classify_json":
+      return mod.classify_json(req.bytes);
+    case "ingest_json_drop":
+      return mod.ingest_json_drop(req.bytes);
     case "ingest_case":
-      return mod.ingest_case(req.text, req.format);
+      return mod.ingest_case(req.bytes, req.format);
+    case "ingest_model_json":
+      return mod.ingest_model_json(req.network_json);
+    case "ingest_model_json_bytes":
+      return mod.ingest_model_json_bytes(req.bytes);
     case "ingest_dist_case":
       return mod.ingest_dist_case(req.text, req.format);
+    case "ingest_dist_case_bytes":
+      return mod.ingest_dist_case_bytes(req.bytes, req.format);
     case "parse_display":
       return mod.parse_display(req.bytes, req.format);
     case "parse_geo":
@@ -86,6 +115,8 @@ export function runRequest(
       return study(req.study).apply_geo(req.layer);
     case "load_package":
       return mod.load_package(req.text);
+    case "load_package_bytes":
+      return mod.load_package_bytes(req.bytes);
     case "export_study":
       return mod.export_study(req.package_json, req.commit, req.format);
     case "study_free":

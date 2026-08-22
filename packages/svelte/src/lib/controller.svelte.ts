@@ -1,5 +1,11 @@
 import { ApiError, createApiClient, type TellegenApiClient } from './api.js';
-import type { BranchRatingDeltas, Network, NetworkBus, SensitivityColumn, Solution } from './api.js';
+import type {
+	BranchRatingDeltas,
+	Network,
+	NetworkBus,
+	SensitivityColumn,
+	Solution
+} from './api.js';
 import { previewScaleFor, scalarDomain, sensFlatColor, sensitivityDomain } from './colors.js';
 import {
 	caseDeltas as sharedCaseDeltas,
@@ -20,7 +26,8 @@ import {
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
 import { studyCommitIndex } from './study-package.js';
-import { classifyJson, distExtensionFormat, isGeoFileName } from './drop-classify.js';
+import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
+import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
 import { buildGeographicView, placeMultiView } from './multiconductor.js';
 import {
 	applyDisplayGeo,
@@ -32,16 +39,17 @@ import {
 	FORMULATIONS,
 	formatOf,
 	ingestCase,
-	ingestDistCase,
+	ingestDistCaseBytes,
+	ingestJsonDrop,
 	isDisplayFile,
 	isPermanentEngineFailure,
-	loadPackage,
 	parseDisplay,
 	parseGeo,
 	type AppliedGeoCase,
 	type BrowserStudy,
 	type DisplayPreview,
 	type Formulation,
+	type IngestedCase,
 	type IngestedDistCase,
 	type LoadedPackage,
 	type SensTarget
@@ -60,7 +68,23 @@ type GeoLayerFile = { name: string; layer: string; warnings: string[] };
 /** A parsed PowerWorld `.pwd` display awaiting routing: a coordinate-less case
  * in the same drop may consume its substation points (the SubNum join);
  * otherwise it becomes its own substation preview entry. */
-type DisplayFile = { file: File; bytes: Uint8Array; preview: DisplayPreview; consumed: boolean };
+type DisplayFile = {
+	file: File;
+	bytes: Uint8Array;
+	preview: DisplayPreview;
+	consumed: boolean;
+};
+
+/** Result of the one engine request used to classify a JSON drop. Recognized
+ * payloads are staged until geographic/display sidecars have parsed, so every
+ * balanced input follows the same placement-before-solve ordering as `.m` and
+ * `.raw`. An unrouted result retains the bytes for the geographic fallback. */
+type JsonDropRoute =
+	| { outcome: 'balanced'; payload: IngestedCase }
+	| { outcome: 'restored'; payload: LoadedPackage }
+	| { outcome: 'multiconductor'; payload: IngestedDistCase }
+	| { outcome: 'failed' }
+	| { outcome: 'unrouted'; bytes: Uint8Array | null };
 
 /** Terminal copy when nothing can solve. Two facts decide the wording: whether
  * this browser's engine failure is known permanent, and that the server
@@ -75,6 +99,14 @@ const COMPUTE_OFF_NOTICE =
  * starts anyway: a missing map or a cue that never appears must not stall the
  * selection. */
 const FOCUS_SETTLE_CAP_MS = 1200;
+
+/** A lowered analysis row is view-only only when a current producer says so;
+ * absence keeps payloads from older compatible engine/server versions editable. */
+export function isDisplayOnlyElement(
+	element: { editable?: boolean } | null | undefined
+): boolean {
+	return element?.editable === false;
+}
 
 function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> {
 	if (ms <= 0 || signal.aborted) return Promise.resolve();
@@ -139,7 +171,12 @@ export class Controller {
 	// handle is neither serialized nor part of any $state.
 	caseStudies = new WeakMap<
 		SolvableCase,
-		{ study: BrowserStudy; networkJson: string; formulation: Formulation; baseSolution: Solution }
+		{
+			study: BrowserStudy;
+			networkJson: string;
+			formulation: Formulation;
+			baseSolution: Solution;
+		}
 	>();
 	// Latch a permanent sensitivity-module failure per case so we don't retry
 	// createStudy — and the same permanent error — on every drag. Transient
@@ -163,6 +200,9 @@ export class Controller {
 	// In-flight initial case-list load, so a remount during the first fetch dedupes
 	// instead of firing a second concurrent load().
 	loading: Promise<void> | null = null;
+	// File reads and worker messages retain whole buffers. Admit one validated
+	// batch at a time so repeated drops cannot multiply the aggregate byte cap.
+	private readonly dropBatchGate = new DropBatchGate();
 
 	nearbyRangeAnchor = $state<DemandRangeAnchor | null>(null);
 	// Default cases the user has closed; drives the restore affordance. Seeded in load().
@@ -373,7 +413,12 @@ export class Controller {
 					study.free();
 					return null;
 				}
-				this.caseStudies.set(c, { study, networkJson, formulation, baseSolution });
+				this.caseStudies.set(c, {
+					study,
+					networkJson,
+					formulation,
+					baseSolution
+				});
 				return study;
 			} catch (e) {
 				const message = errorText(e);
@@ -388,7 +433,12 @@ export class Controller {
 				if (this.studyBuilds.get(c)?.token === token) this.studyBuilds.delete(c);
 			}
 		})();
-		this.studyBuilds.set(c, { networkJson, formulation, token, promise: build });
+		this.studyBuilds.set(c, {
+			networkJson,
+			formulation,
+			token,
+			promise: build
+		});
 		return build;
 	}
 
@@ -404,9 +454,7 @@ export class Controller {
 		target: SensTarget
 	): Promise<SensitivityColumn | null> {
 		const study = await this.getStudy(c, networkJson);
-		return study
-			? study.sensitivity(c.id, this.caseDeltas(c), this.caseRatings(c), target)
-			: null;
+		return study ? study.sensitivity(c.id, this.caseDeltas(c), this.caseRatings(c), target) : null;
 	}
 
 	// Release a case's Study (if any) when the case is removed.
@@ -488,14 +536,18 @@ export class Controller {
 		bus: NetworkBus | null,
 		center: number
 	): { min: number; max: number; span: number } {
-		if (!bus) return { min: 0, max: 0, span: 0 };
+		if (!bus || isDisplayOnlyElement(bus)) return { min: 0, max: 0, span: 0 };
 		// Floor, not ceil: -ceil(demand) can push base + delta below zero for
 		// non-integer demand, which the server rejects (400) and which is
 		// physically meaningless (demand cannot go negative).
 		const physicalMin = -Math.floor(bus.demand_mw);
 		const physicalMax = Math.max(Math.ceil(bus.demand_mw), 50);
 		if (mode === 'full')
-			return { min: physicalMin, max: physicalMax, span: physicalMax - physicalMin };
+			return {
+				min: physicalMin,
+				max: physicalMax,
+				span: physicalMax - physicalMin
+			};
 		const span = Math.max(5, Math.min(25, 0.1 * Math.max(bus.demand_mw, 50)));
 		return {
 			min: Math.max(physicalMin, center - span),
@@ -535,7 +587,10 @@ export class Controller {
 		// Drive the values off the resolved mode, not app.displayMode, so the
 		// displayOptions[0] fallback holds while displayMode is stale relative to the
 		// formulation (e.g. leaving SOCWR before +page resets it to 'lmp').
-		return { ...activeMeta, values: displaySeriesFor(this.activeSolvable, activeMeta.mode) };
+		return {
+			...activeMeta,
+			values: displaySeriesFor(this.activeSolvable, activeMeta.mode)
+		};
 	});
 	displayStats = $derived.by(() => {
 		if (!this.activeDisplay) return null;
@@ -595,6 +650,9 @@ export class Controller {
 	);
 	sliderMin = $derived(this.sliderBounds.min);
 	sliderMax = $derived(this.sliderBounds.max);
+	sliderDisabled = $derived(
+		!this.selectedBusData || isDisplayOnlyElement(this.selectedBusData)
+	);
 
 	committedRating = $derived.by(() =>
 		this.activeSolvable && this.app.selectedBranch !== null
@@ -610,9 +668,14 @@ export class Controller {
 	// to perturb.
 	ratingBounds = $derived.by(() => {
 		const b = this.selectedBranchData;
-		if (!b || b.rate_mw <= 0) return { min: 0, max: 0, disabled: true };
+		if (!b || isDisplayOnlyElement(b) || b.rate_mw <= 0)
+			return { min: 0, max: 0, disabled: true };
 		const span = Math.min(50, Math.max(5, 0.2 * b.rate_mw));
-		return { min: Math.max(-(b.rate_mw - 1), -span), max: span, disabled: false };
+		return {
+			min: Math.max(-(b.rate_mw - 1), -span),
+			max: span,
+			disabled: false
+		};
 	});
 
 	selectedSensitivity = $derived.by(() => {
@@ -996,8 +1059,10 @@ export class Controller {
 		c.coordsKind = 'geofile';
 		c.syntheticCenter = undefined;
 		c.geoSource = sourceLabel;
+		const placedCanonicalBuses =
+			payload.view?.buses.filter((bus) => bus.editable !== false).length ?? 0;
 		c.geoWarnings = [
-			`${payload.view?.buses.length ?? 0} of ${payload.n_bus} buses placed from ${placedFrom}`,
+			`${placedCanonicalBuses} of ${payload.n_bus} buses placed from ${placedFrom}`,
 			...extraWarnings,
 			...payload.warnings
 		];
@@ -1216,8 +1281,11 @@ export class Controller {
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
-			const sensitivity = await this.browserSensitivity(c, c.networkJson, { bus: busId });
-			if (!ac.signal.aborted) this.acceptSensitivity(c, sensitivity, { bus: busId }, sensitivitySeq);
+			const sensitivity = await this.browserSensitivity(c, c.networkJson, {
+				bus: busId
+			});
+			if (!ac.signal.aborted)
+				this.acceptSensitivity(c, sensitivity, { bus: busId }, sensitivitySeq);
 			if (!ac.signal.aborted && !sensitivity) {
 				// A null column means the solve ran but produced no dLMP/dd for this bus (or the
 				// Study could not be built); local cases have no server fallback, so say so
@@ -1264,11 +1332,7 @@ export class Controller {
 	selectBranch = (caseId: string, branchId: number, opts: { focus?: boolean } = {}) =>
 		this.selectTarget(caseId, { branch: branchId }, opts.focus ?? false);
 
-	selectLocalBranch = async (
-		localId: string,
-		branchId: number,
-		opts: { focus?: boolean } = {}
-	) => {
+	selectLocalBranch = async (localId: string, branchId: number, opts: { focus?: boolean } = {}) => {
 		const c = this.app.localCases.find((lc) => lc.id === localId);
 		if (!c?.networkJson || !c.network) return;
 		this.app.activeCaseId = null;
@@ -1282,7 +1346,9 @@ export class Controller {
 				await this.awaitFocus(localId, branchId, ac);
 				if (ac.signal.aborted) return;
 			}
-			const sensitivity = await this.browserSensitivity(c, c.networkJson, { branch: branchId });
+			const sensitivity = await this.browserSensitivity(c, c.networkJson, {
+				branch: branchId
+			});
 			if (ac.signal.aborted) return;
 			if (sensitivity) {
 				this.acceptSensitivity(c, sensitivity, { branch: branchId }, sensitivitySeq);
@@ -1502,7 +1568,7 @@ export class Controller {
 	commitDelta = (value: number) => {
 		const c = this.activeSolvable;
 		const bus = this.app.selectedBus;
-		if (!c || bus === null) return;
+		if (!c || bus === null || this.sliderDisabled) return;
 		// Refresh the engine preview at the commit value (a typed value may not have
 		// driven a drag), then score the commit with the engine's predicted Δobjective.
 		this.runPreview(c, bus, value);
@@ -1514,6 +1580,7 @@ export class Controller {
 	};
 
 	finishDemandInput = (value: number) => {
+		if (this.sliderDisabled) return;
 		if (Math.abs(value - this.committedDelta) < 0.25) {
 			if (!this.activeSolvable?.solving) {
 				this.app.previewActive = false;
@@ -1571,32 +1638,60 @@ export class Controller {
 	};
 
 	/** Parse dropped files in the browser via the powerio wasm module. Case
-	 * files (.m, .raw, .aux) become local networks; geographic files can
+	 * files (.m, .raw, .aux, .epc, .pwb) become local networks; geographic files can
 	 * place those networks; a PowerWorld .pwd becomes a substation point
 	 * preview. Files run serially; nothing uploads. */
 	ingestFiles = async (files: FileList | File[]) => {
-		const list = Array.from(files);
+		const release = this.dropBatchGate.enter();
+		if (!release) {
+			this.app.error = 'another file batch is still being parsed';
+			return;
+		}
+		try {
+			let list: File[];
+			try {
+				list = validateDropBatch(files);
+			} catch (e) {
+				this.app.error = errorText(e);
+				return;
+			}
+			await this.ingestFileBatch(list);
+		} catch (e) {
+			this.app.error = errorText(e);
+		} finally {
+			this.app.parsingFile = false;
+			release();
+		}
+	};
+
+	private ingestFileBatch = async (list: File[]) => {
 		let parsedCaseCount = 0;
-		// True once a dropped case file took the geographic sidecars; a restored
-		// package or an existing case only takes them when no case file did.
+		// True once a dropped balanced case took the geographic sidecars. When no
+		// case parses, the selected existing case may take them at the end.
 		let geoLayersConsumed = false;
 
-		// Routable `.json` content (a saved study package, a multiconductor package,
-		// a BMOPF/PMD document) shares the `.json` extension with a geographic file,
-		// so classify and consume it up front: the geo/case split below sends every
-		// `.json` to the coordinate parser, which would misread these as coordinate
-		// data. Unroutable `.json` files fall through unchanged.
+		// Routable `.json` content (saved packages, model JSON, and transmission or
+		// distribution documents) shares the extension with geographic files. Route
+		// it up front, but stage recognized payloads until the geographic/display
+		// sidecars below have parsed. Unrouted JSON retains its first byte buffer so
+		// the geographic fallback does not read a potentially large file twice.
 		const rest: File[] = [];
-		let restoredAnyPackage = false;
+		const routedJson: { file: File; route: JsonDropRoute }[] = [];
+		const jsonBytes = new Map<File, Uint8Array>();
 		for (const file of list) {
 			if (file.name.toLowerCase().endsWith('.json')) {
-				const outcome = await this.ingestJsonDrop(file);
-				if (outcome === 'restored' || outcome === 'viewed') {
+				const route = await this.routeJsonDrop(file);
+				if (
+					route.outcome === 'balanced' ||
+					route.outcome === 'restored' ||
+					route.outcome === 'multiconductor'
+				) {
 					parsedCaseCount++;
-					restoredAnyPackage ||= outcome === 'restored';
+					routedJson.push({ file, route });
 					continue;
 				}
-				if (outcome === 'failed') continue;
+				if (route.outcome === 'failed') continue;
+				if (route.bytes) jsonBytes.set(file, route.bytes);
 			}
 			rest.push(file);
 		}
@@ -1605,8 +1700,14 @@ export class Controller {
 		for (const file of rest.filter((f) => isGeoFileName(f.name))) {
 			this.app.parsingFile = true;
 			try {
-				const parsed = await parseGeo(new Uint8Array(await file.arrayBuffer()), file.name);
-				geoLayers.push({ name: file.name, layer: parsed.layer, warnings: parsed.warnings });
+				const bytes = await readDropFileBytes(file, jsonBytes.get(file));
+				jsonBytes.delete(file);
+				const parsed = await parseGeo(bytes, file.name);
+				geoLayers.push({
+					name: file.name,
+					layer: parsed.layer,
+					warnings: parsed.warnings
+				});
 				this.app.error = null;
 			} catch (e) {
 				this.app.error = `${file.name}: ${errorText(e)}`;
@@ -1623,13 +1724,44 @@ export class Controller {
 			this.app.parsingFile = true;
 			try {
 				const bytes = new Uint8Array(await file.arrayBuffer());
-				displays.push({ file, bytes, preview: await parseDisplay(bytes), consumed: false });
+				displays.push({
+					file,
+					bytes,
+					preview: await parseDisplay(bytes),
+					consumed: false
+				});
 				this.app.error = null;
 			} catch (e) {
 				this.app.error = `${file.name}: ${errorText(e)}`;
 			} finally {
 				this.app.parsingFile = false;
 			}
+		}
+
+		// Materialize routed JSON cases only after sidecars are ready. This keeps
+		// placement ahead of the first solve and preserves the original JSON order.
+		// `prepareDroppedLocal` is a wasm call that takes seconds on a large case,
+		// and the drop gate refuses a second batch throughout, so the UI has to
+		// keep saying so.
+		if (routedJson.length > 0) this.app.parsingFile = true;
+		try {
+			for (const { file, route } of routedJson) {
+				if (route.outcome === 'multiconductor') {
+					this.addMultiCase(file.name, route.payload);
+					continue;
+				}
+				if (route.outcome !== 'balanced' && route.outcome !== 'restored') continue;
+				const local =
+					route.outcome === 'restored'
+						? this.localFromPackage(file.name, route.payload)
+						: this.localFromBalancedPayload(file.name, route.payload);
+				const placement = await this.prepareDroppedLocal(local, geoLayers, displays);
+				geoLayersConsumed ||= placement.geoLayersConsumed;
+				this.addAndActivateLocal(local);
+				this.app.error = placement.error;
+			}
+		} finally {
+			this.app.parsingFile = false;
 		}
 
 		for (const file of rest.filter((f) => !isGeoFileName(f.name) && !isDisplayFile(f.name))) {
@@ -1641,13 +1773,13 @@ export class Controller {
 			}
 			const format = formatOf(file.name);
 			if (!format) {
-				this.app.error = `${file.name}: not a case or geographic file (.m, .raw, .aux, .dss, .pwd, .csv, .json, .geojson)`;
+				this.app.error = `${file.name}: not a case or geographic file (.m, .raw, .aux, .epc, .pwb, .dss, .pwd, .csv, .json, .geojson)`;
 				continue;
 			}
 			this.app.parsingFile = true;
 			try {
-				const text = await file.text();
-				const { network_json, topology, view, ...summary } = await ingestCase(text, format);
+				const bytes = new Uint8Array(await file.arrayBuffer());
+				const { network_json, topology, view, ...summary } = await ingestCase(bytes, format);
 				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
 					this.app.error = `${file.name}: aux parsed, but no complete network; drop the matching .m or .raw case file`;
 					continue;
@@ -1667,29 +1799,11 @@ export class Controller {
 					coordsKind: summary.coords_kind,
 					view
 				});
-				// A co-dropped geographic file places (or repositions) the network. Apply
-				// it for any parsed case, not just synthetic ones, so a geo overlay
-				// dropped alongside a case that already has coordinates takes effect
-				// instead of being silently discarded. A failed apply keeps the parsed
-				// case (placement still works) and surfaces the reason.
-				let geoError: string | null = null;
-				if (geoLayers.length > 0 && local.networkJson) {
-					try {
-						await this.applyGeoLayers(local, geoLayers);
-						geoLayersConsumed = true;
-					} catch (e) {
-						geoError = `${geoLayers.map((l) => l.name).join(' + ')}: ${errorText(
-							e
-						)}; use place on map for manual placement`;
-					}
-				} else if (local.coordsKind === 'synthetic_pending' && local.networkJson) {
-					// No sidecar: a coordinate-less case may still borrow a co-dropped
-					// .pwd's substation points through the SubNum join.
-					await this.fillFromDisplaySibling(local, displays);
-				}
+				const placement = await this.prepareDroppedLocal(local, geoLayers, displays);
+				geoLayersConsumed ||= placement.geoLayersConsumed;
 				this.addAndActivateLocal(local);
 				parsedCaseCount++;
-				this.app.error = geoError; // a successful parse clears a prior file's error
+				this.app.error = placement.error; // a successful parse clears a prior file's error
 			} catch (e) {
 				this.app.error = `${file.name}: ${e instanceof Error ? e.message : e}`;
 			} finally {
@@ -1718,12 +1832,39 @@ export class Controller {
 			);
 		}
 
-		// Unconsumed sidecars apply to the restored package (now the active local
-		// case) so a saved study co-dropped with its coordinates places, or to an
-		// existing case when nothing in the drop parsed at all.
-		if (geoLayers.length > 0 && !geoLayersConsumed && (restoredAnyPackage || parsedCaseCount === 0)) {
+		// When the drop carried only sidecars, apply them to the selected existing
+		// case. Every balanced case parsed in this batch already took them above.
+		if (geoLayers.length > 0 && !geoLayersConsumed && parsedCaseCount === 0) {
 			await this.applyGeoLayersToExisting(geoLayers);
 		}
+	};
+
+	/** Apply co-dropped geographic data before a local case becomes active and
+	 * starts solving. Without geographic data, let a coordinate-less case borrow
+	 * the first matching PowerWorld display. A failed geographic join keeps the
+	 * parsed case and returns the user-facing placement error. */
+	private prepareDroppedLocal = async (
+		local: LocalCase,
+		geoLayers: GeoLayerFile[],
+		displays: DisplayFile[]
+	): Promise<{ geoLayersConsumed: boolean; error: string | null }> => {
+		if (geoLayers.length > 0 && local.networkJson) {
+			try {
+				await this.applyGeoLayers(local, geoLayers);
+				return { geoLayersConsumed: true, error: null };
+			} catch (e) {
+				return {
+					geoLayersConsumed: false,
+					error: `${geoLayers.map((l) => l.name).join(' + ')}: ${errorText(
+						e
+					)}; use place on map for manual placement`
+				};
+			}
+		}
+		if (local.coordsKind === 'synthetic_pending' && local.networkJson) {
+			await this.fillFromDisplaySibling(local, displays);
+		}
+		return { geoLayersConsumed: false, error: null };
 	};
 
 	/** Fill a coordinate-less case's positions from a co-dropped PowerWorld
@@ -1751,45 +1892,40 @@ export class Controller {
 		}
 	};
 
-	/** Route a dropped `.json` by its content: a saved study package restores
-	 * (`restored`), a multiconductor package or a BMOPF/PMD distribution
-	 * document views (`viewed`), `failed` means the content looked routable but
-	 * the engine rejected it (a fail-closed message is set), and `not-package`
-	 * falls through to the caller's geo/case handling. `drop-classify` is the
-	 * single owner of the classification. */
-	private ingestJsonDrop = async (
-		file: File
-	): Promise<'restored' | 'viewed' | 'failed' | 'not-package'> => {
-		let text: string;
+	/** Route a dropped `.json` by its content. Recognized payloads return without
+	 * mutating case state so co-dropped sidecars can be applied first; unrouted
+	 * content returns the bytes already read for the geographic fallback. */
+	private routeJsonDrop = async (file: File): Promise<JsonDropRoute> => {
+		let bytes: Uint8Array;
 		try {
-			text = await file.text();
+			bytes = await readDropFileBytes(file);
 		} catch {
-			return 'not-package';
+			return { outcome: 'unrouted', bytes: null };
 		}
-		const kind = classifyJson(text);
-		if (kind === 'not-json') return 'not-package';
 		this.app.parsingFile = true;
 		try {
-			if (kind === 'balanced-package') {
-				this.restoreLocalFromPackage(file.name, await loadPackage(text));
-				this.app.error = null;
-				return 'restored';
+			const result = await ingestJsonDrop(bytes);
+			if (result.kind === 'unknown') return { outcome: 'unrouted', bytes };
+			if (result.kind === 'ambiguous') {
+				this.app.error = `${file.name}: JSON markers name both transmission and distribution formats`;
+				return { outcome: 'failed' };
 			}
-			const format = kind === 'multiconductor-package' ? 'pio' : kind;
-			const payload = await ingestDistCase(text, format);
-			// BMOPF is the classifier's catch-all and its reader is liberal: an
-			// arbitrary JSON object parses as an empty case (unknown fields land
-			// in extras). Zero buses means this was not a distribution document;
-			// leave the file to the geo sidecar path (which places coordinates
-			// or reports its own precise error) instead of adding a phantom
-			// empty multiconductor case.
-			if (kind === 'bmopf' && payload.n_bus === 0) return 'not-package';
-			this.addMultiCase(file.name, payload);
-			this.app.error = null;
-			return 'viewed';
+			if (result.kind === 'balanced-package') {
+				this.app.error = null;
+				return { outcome: 'restored', payload: result.payload };
+			}
+			if (result.kind === 'model-json' || result.kind === 'transmission') {
+				this.app.error = null;
+				return { outcome: 'balanced', payload: result.payload };
+			}
+			if (result.kind === 'multiconductor-package' || result.kind === 'distribution') {
+				this.app.error = null;
+				return { outcome: 'multiconductor', payload: result.payload };
+			}
+			throw new Error('engine returned an unsupported JSON drop result');
 		} catch (e) {
 			this.app.error = `${file.name}: ${errorText(e)}`;
-			return 'failed';
+			return { outcome: 'failed' };
 		} finally {
 			this.app.parsingFile = false;
 		}
@@ -1800,7 +1936,8 @@ export class Controller {
 	private ingestDistFile = async (file: File, format: string): Promise<boolean> => {
 		this.app.parsingFile = true;
 		try {
-			this.addMultiCase(file.name, await ingestDistCase(await file.text(), format));
+			const bytes = new Uint8Array(await file.arrayBuffer());
+			this.addMultiCase(file.name, await ingestDistCaseBytes(bytes, format));
 			this.app.error = null;
 			return true;
 		} catch (e) {
@@ -1907,9 +2044,27 @@ export class Controller {
 		else this.placeLocalCase(lon, lat);
 	};
 
-	/** Build a local case from a restored study package: the same shape a dropped case
-	 * takes, with the saved demand/rating deltas and formulation pre-applied. */
-	private restoreLocalFromPackage = (fileName: string, pkg: LoadedPackage) => {
+	/** Build a local case from a bare balanced ingest payload without activating
+	 * it yet; co-dropped placement data is applied before the first solve. */
+	private localFromBalancedPayload = (fileName: string, payload: IngestedCase): LocalCase => {
+		const { network_json, topology, view, ...summary } = payload;
+		const label =
+			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
+		return new LocalCase({
+			id: `local-${++this.localSeq}`,
+			label,
+			fileName,
+			summary,
+			networkJson: network_json,
+			topology,
+			coordsKind: summary.coords_kind,
+			view
+		});
+	};
+
+	/** Build a local case from a saved package, including its edit state and
+	 * formulation, without activating it until sidecars have been applied. */
+	private localFromPackage = (fileName: string, pkg: LoadedPackage): LocalCase => {
 		const { network_json, topology, view, formulation, deltas, rates, ...summary } = pkg;
 		const id = `local-${++this.localSeq}`;
 		const label =
@@ -1927,7 +2082,7 @@ export class Controller {
 		local.deltas = deltas;
 		local.ratings = rates;
 		local.formulation = formulation;
-		this.addAndActivateLocal(local);
+		return local;
 	};
 
 	/** Build (or reuse) the case's Study and commit it at the current edit state, so a
@@ -1953,7 +2108,11 @@ export class Controller {
 		const study = await this.syncedStudy(c);
 		if (!study) return;
 		try {
-			downloadText(await study.savePackage(), `${this.caseFileStem(c)}.pio.json`, 'application/json');
+			downloadText(
+				await study.savePackage(),
+				`${this.caseFileStem(c)}.pio.json`,
+				'application/json'
+			);
 			this.app.error = null;
 		} catch (e) {
 			this.app.error = `${this.caseName(c)}: could not save study: ${errorText(e)}`;
@@ -2037,7 +2196,11 @@ export class Controller {
 	// The newest demand drag point waiting on an engine preview, and whether a
 	// preview call is in flight. Written by runPreview per input event; drained
 	// one call at a time so previews never stack up behind a slow solve.
-	private enginePreviewNext: { c: SolvableCase; bus: number; value: number } | null = null;
+	private enginePreviewNext: {
+		c: SolvableCase;
+		bus: number;
+		value: number;
+	} | null = null;
 	private enginePreviewBusy = false;
 
 	private async pumpEnginePreview() {
@@ -2056,11 +2219,7 @@ export class Controller {
 					);
 					// Apply only while this point is still the live drag target: a
 					// preview that resolves after a re-selection or a commit is stale.
-					if (
-						!this.app.previewActive ||
-						this.activeSolvable !== c ||
-						this.app.selectedBus !== bus
-					)
+					if (!this.app.previewActive || this.activeSolvable !== c || this.app.selectedBus !== bus)
 						continue;
 					const delta = new Map<number, number>();
 					for (const e of lmp) delta.set(e.bus, e.usd_per_mwh);
@@ -2080,7 +2239,7 @@ export class Controller {
 	}
 
 	setSliderPreview = (value: number | undefined) => {
-		if (value === undefined) return;
+		if (value === undefined || this.sliderDisabled) return;
 		this.app.previewActive = true;
 		this.app.previewDeltaMw = value;
 		const c = this.activeSolvable;
@@ -2181,7 +2340,7 @@ export class Controller {
 	commitRating = async (value: number) => {
 		const c = this.activeSolvable;
 		const branch = this.app.selectedBranch;
-		if (!c || branch === null) return;
+		if (!c || branch === null || isDisplayOnlyElement(this.selectedBranchData)) return;
 		// Refresh the engine preview at the commit value (a typed value may not have
 		// driven a drag), then score the commit with the engine's predicted Δobjective.
 		this.runRatingPreview(c, branch, value);

@@ -46,10 +46,17 @@ class WorkerHost implements EngineHost {
     worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
       this.#answered = true;
       const pending = this.#pending.get(ev.data.id);
-      if (!pending) return;
-      this.#pending.delete(ev.data.id);
-      if (ev.data.ok) pending.resolve(ev.data.value);
-      else pending.reject(new Error(ev.data.error));
+      if (pending) {
+        this.#pending.delete(ev.data.id);
+        if (ev.data.ok) pending.resolve(ev.data.value);
+        else pending.reject(new Error(ev.data.error));
+      }
+      // The worker closes itself after a trap, so no error event follows.
+      // Fail here instead, which rejects the rest of the queue and drops the
+      // host so the next call builds a fresh worker.
+      if (!ev.data.ok && ev.data.fatal) {
+        this.#fail(new Error(ev.data.error));
+      }
     };
     worker.onerror = () => this.#fail(new Error("engine worker failed"));
     worker.onmessageerror = () =>

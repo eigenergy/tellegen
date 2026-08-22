@@ -34,7 +34,7 @@ async function main() {
   if (!format) throw new Error("case format was not detected");
 
   const [parsed, capabilities] = await Promise.all([
-    browserWasmTransport.ingestCase(CASE14, format),
+    browserWasmTransport.ingestCase(new TextEncoder().encode(CASE14), format),
     browserWasmTransport.capabilities(),
   ]);
   const study = await browserWasmTransport.createStudy(parsed.network_json, "dcopf");

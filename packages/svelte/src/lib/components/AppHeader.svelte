@@ -97,13 +97,15 @@
 	</span>
 	<input
 		type="file"
-		accept=".m,.raw,.aux,.dss,.pwd,.csv,.json,.geojson"
+		accept=".m,.raw,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson"
 		multiple
 		hidden
 		bind:this={fileInput}
 		onchange={(e) => {
 			const input = e.currentTarget;
-			if (input.files) ctrl.ingestFiles(Array.from(input.files));
+			// Pass the FileList through unchanged: the controller checks its declared
+			// count before materializing any entries.
+			if (input.files) ctrl.ingestFiles(input.files);
 			input.value = '';
 		}}
 	/>

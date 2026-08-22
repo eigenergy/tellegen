@@ -6,28 +6,161 @@
 //! and the case-file-drop payload shapes the frontend reads. Case files never leave
 //! the machine: parsing and solving happen here, in the browser.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
-use powerio::{parse_display_bytes, DisplayData};
+use powerio::{parse_display_bytes, Detection, DisplayData, JsonClass};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use tellegen::geo::{network_coords, spread_stacks};
+use tellegen::geo::{lowered_coords, network_coords, spread_stacks};
 #[cfg(feature = "sensitivity")]
 use tellegen::SolveResponse;
 
 mod dist;
 mod geo;
 
+const MAX_INPUT_BYTES: usize = 128 * 1024 * 1024;
+const INPUT_TOO_LARGE: &str = "input exceeds 128 MiB limit";
+
 fn jserr(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
 }
 
+fn ensure_input_len(byte_len: usize) -> Result<(), &'static str> {
+    if byte_len > MAX_INPUT_BYTES {
+        Err(INPUT_TOO_LARGE)
+    } else {
+        Ok(())
+    }
+}
+
+/// Reject an oversized payload. Note where this runs: wasm-bindgen has already
+/// malloc'd and copied the argument into linear memory by the time the export
+/// body is entered, so on the browser path the caller-side check in
+/// `packages/engine/src/input-limit.ts` is what actually bounds the allocation.
+/// This one bounds native and non-JS callers, and keeps the limit in one place
+/// if the JS check is ever bypassed.
+fn ensure_input_bytes(bytes: &[u8]) -> Result<(), JsError> {
+    ensure_input_len(bytes.len()).map_err(jserr)
+}
+
+/// Text counterpart of [`ensure_input_bytes`]. The string entry points sit
+/// beside byte ones that were already bounded; an embedder handing us a huge
+/// document as text should hit the same wall.
+fn ensure_input_text(text: &str) -> Result<(), JsError> {
+    ensure_input_len(text.len()).map_err(jserr)
+}
+
+#[derive(Debug, Serialize)]
+struct JsonDropClassification {
+    kind: &'static str,
+    format: Option<&'static str>,
+}
+
+#[cfg(feature = "sensitivity")]
+#[derive(Debug, Serialize)]
+struct IngestedJsonDrop {
+    kind: &'static str,
+    format: Option<&'static str>,
+    payload: serde_json::Value,
+}
+
+/// Classify a dropped JSON byte buffer through powerio's one routing table.
+/// Package markers are followed by the strict package reader so the caller can
+/// distinguish balanced and multiconductor payloads without decoding in JS.
+fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, String> {
+    let classification = powerio::classify_json_bytes(bytes);
+    if classification == JsonClass::Package {
+        let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes)
+            .map_err(|error| error.to_string())?;
+        let kind = match package.model_kind() {
+            powerio_pkg::ModelKind::Balanced => "balanced-package",
+            powerio_pkg::ModelKind::Multiconductor => "multiconductor-package",
+            _ => return Err("package has an unsupported model kind".to_owned()),
+        };
+        return Ok(JsonDropClassification { kind, format: None });
+    }
+
+    let format = match classification {
+        JsonClass::Case(Detection::Known(format)) => Some(format.name()),
+        _ => None,
+    };
+    Ok(JsonDropClassification {
+        kind: classification.family(),
+        format,
+    })
+}
+
+/// Classify JSON bytes for the browser drop router. Invalid UTF-8 is never
+/// replaced; it follows powerio's unknown classification.
+#[wasm_bindgen]
+pub fn classify_json(bytes: &[u8]) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    serde_json::to_string(&classify_json_drop_value(bytes).map_err(jserr)?).map_err(jserr)
+}
+
+/// Classify and ingest one dropped JSON byte buffer. Known inputs return their
+/// render-ready payload; ambiguous and unknown documents return a null payload
+/// so the caller can request an explicit format without decoding the bytes a
+/// second time. Package envelopes are decoded once and the parsed package is
+/// passed directly to the appropriate restore path.
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+pub fn ingest_json_drop(bytes: &[u8]) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    serde_json::to_string(&ingest_json_drop_value(bytes).map_err(jserr)?).map_err(jserr)
+}
+
+#[cfg(feature = "sensitivity")]
+fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
+    let classification = powerio::classify_json_bytes(bytes);
+    let (kind, format, payload) = match classification {
+        JsonClass::Package => {
+            let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes)
+                .map_err(|error| error.to_string())?;
+            match package.model_kind() {
+                powerio_pkg::ModelKind::Balanced => (
+                    "balanced-package",
+                    None,
+                    load_package_bundle_value(&package)?,
+                ),
+                powerio_pkg::ModelKind::Multiconductor => (
+                    "multiconductor-package",
+                    None,
+                    dist::ingest_dist_package_value(&package)?,
+                ),
+                _ => return Err("package has an unsupported model kind".to_owned()),
+            }
+        }
+        JsonClass::ModelJson => ("model-json", None, ingest_model_json_bytes_value(bytes)?),
+        JsonClass::Case(Detection::Known(format)) => {
+            let kind = classification.family();
+            let payload = match kind {
+                "transmission" => ingest_case_value(bytes, format.name())?,
+                "distribution" => dist::ingest_dist_bytes_value(bytes, format.name())?,
+                _ => return Err(format!("unsupported JSON family '{kind}'")),
+            };
+            (kind, Some(format.name()), payload)
+        }
+        JsonClass::Case(Detection::Ambiguous) => ("ambiguous", None, serde_json::Value::Null),
+        JsonClass::Case(Detection::Unknown) => ("unknown", None, serde_json::Value::Null),
+    };
+
+    Ok(IngestedJsonDrop {
+        kind,
+        format,
+        payload,
+    })
+}
+
 /// Route Rust panics to `console.error` (with a JS stack) once. Without this a wasm panic
 /// surfaces only as the opaque `unreachable` trap; with it the engine's panic message — the
-/// real failure — is visible in the browser console and in the `JsError` chain. Used by the
-/// Study entry points, which are gated on `sensitivity`.
-#[cfg(feature = "sensitivity")]
+/// real failure — is visible in the browser console and in the `JsError` chain. Every
+/// `#[wasm_bindgen]` entry point installs it, including the ones outside `sensitivity`:
+/// dropping a case file is often the first thing a session does, so that is exactly where
+/// an unexplained trap costs the most.
 fn install_panic_hook() {
     use std::sync::Once;
     static HOOK: Once = Once::new();
@@ -36,9 +169,16 @@ fn install_panic_hook() {
 
 /// Parse a case file (MATPOWER, PSS/E RAW, PowerWorld aux, PowerModels or
 /// egret JSON) and return `{"network": ..., "warnings": [...]}` as JSON.
+///
+/// Takes the upload's bytes, not decoded text: `powerio::parse_bytes` refuses a
+/// text format whose bytes are not UTF-8, where a browser side `File.text()`
+/// would have replaced each offending byte with U+FFFD and parsed on. It also
+/// reaches PowerWorld `.pwb`, which has no text form at all.
 #[wasm_bindgen]
-pub fn parse_case(text: &str, format: &str) -> Result<String, JsError> {
-    let parsed = powerio::parse_str(text, format).map_err(jserr)?;
+pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    let parsed = powerio::parse_bytes(bytes, format).map_err(jserr)?;
     serde_json::to_string(&serde_json::json!({
         "network": parsed.network,
         "warnings": parsed.warnings,
@@ -51,6 +191,7 @@ pub fn parse_case(text: &str, format: &str) -> Result<String, JsError> {
 /// the reactive hot path is the [`Study`].
 #[wasm_bindgen]
 pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, JsError> {
+    install_panic_hook();
     tellegen::solve_json(network_json, request_json).map_err(jserr)
 }
 
@@ -257,9 +398,23 @@ fn commit_output(resp: &SolveResponse) -> serde_json::Value {
 /// separate from the `#[wasm_bindgen]` wrapper so it runs in native unit tests.
 #[cfg(feature = "sensitivity")]
 fn load_package_bundle(package_json: &str) -> Result<String, String> {
-    let package = powerio_pkg::NetworkPackage::from_json(package_json)
-        .map_err(|e| format!("invalid .pio.json package: {e}"))?;
-    let study = tellegen::Study::from_package(&package)?;
+    // powerio-pkg names the format in its own message, so no prefix here.
+    let package =
+        powerio_pkg::NetworkPackage::from_json(package_json).map_err(|e| e.to_string())?;
+    serde_json::to_string(&load_package_bundle_value(&package)?).map_err(|e| e.to_string())
+}
+
+#[cfg(feature = "sensitivity")]
+fn load_package_bundle_bytes(bytes: &[u8]) -> Result<String, String> {
+    let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes).map_err(|e| e.to_string())?;
+    serde_json::to_string(&load_package_bundle_value(&package)?).map_err(|e| e.to_string())
+}
+
+#[cfg(feature = "sensitivity")]
+fn load_package_bundle_value(
+    package: &powerio_pkg::NetworkPackage,
+) -> Result<serde_json::Value, String> {
+    let study = tellegen::Study::from_package(package)?;
     // The engine already validated the payload as balanced; clone it (uids stamped) for
     // the ingest view.
     let mut net = package
@@ -289,7 +444,7 @@ fn load_package_bundle(package_json: &str) -> Result<String, String> {
         "rates".to_owned(),
         serde_json::to_value(&rates).map_err(|e| e.to_string())?,
     );
-    serde_json::to_string(&bundle).map_err(|e| e.to_string())
+    Ok(bundle)
 }
 
 /// Restore a study saved by [`Study::save_package`]. Returns a JSON bundle the frontend
@@ -298,18 +453,29 @@ fn load_package_bundle(package_json: &str) -> Result<String, String> {
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
 pub fn load_package(package_json: &str) -> Result<String, JsError> {
+    ensure_input_text(package_json)?;
     install_panic_hook();
     load_package_bundle(package_json).map_err(jserr)
 }
 
+/// Byte counterpart of [`load_package`] for a dropped package.
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+pub fn load_package_bytes(bytes: &[u8]) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    load_package_bundle_bytes(bytes).map_err(jserr)
+}
+
 /// Export the balanced study state at commit `commit` to a powerio `format`
-/// (`matpower`, `psse`, `powerio-json`, ...). Returns `{ text, warnings, format,
+/// (`matpower`, `psse`, `model-json`, ...). Returns `{ text, warnings, format,
 /// extension }` as JSON: the serialized case, the writer's fidelity warnings so the
 /// frontend can surface them, and the format token and file extension. The package
 /// JSON is untrusted; malformed input returns a `JsError`, never a panic.
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
 pub fn export_study(package_json: &str, commit: usize, format: &str) -> Result<String, JsError> {
+    ensure_input_text(package_json)?;
     install_panic_hook();
     let exported = tellegen::export_study(package_json, commit, format).map_err(jserr)?;
     serde_json::to_string(&exported).map_err(jserr)
@@ -329,6 +495,8 @@ struct ViewBus {
     lat: f64,
     demand_mw: f64,
     gen_mw: f64,
+    /// False for a display-only bus synthesized by analysis lowering.
+    editable: bool,
 }
 
 #[derive(Serialize)]
@@ -340,6 +508,8 @@ struct ViewBranch {
     to: usize,
     rate_mw: f64,
     status: u8,
+    /// False for a display-only branch synthesized by analysis lowering.
+    editable: bool,
     /// The rendered polyline: the branch's `route` when a geographic file
     /// carried one (already endpoint-to-endpoint in file order), else the
     /// straight segment between the bus points.
@@ -359,6 +529,7 @@ struct TopologyBus {
     uid: String,
     demand_mw: f64,
     gen_mw: f64,
+    editable: bool,
 }
 
 #[derive(Serialize)]
@@ -370,6 +541,7 @@ struct TopologyBranch {
     to: usize,
     rate_mw: f64,
     status: u8,
+    editable: bool,
 }
 
 /// The uid `ensure_payload_uids` stamped on this element. It fills every row of
@@ -378,6 +550,62 @@ struct TopologyBranch {
 fn stamped_uid(uid: &Option<String>) -> Result<String, String> {
     uid.clone()
         .ok_or_else(|| "ensure_payload_uids left an element without a uid".to_owned())
+}
+
+/// Deterministic identities for rendered analysis rows. Source rows keep their
+/// canonical uid. Lowered rows receive display-only ids chosen outside every
+/// canonical bus and branch uid, so forwarding one to an edit API always fails
+/// closed instead of aliasing a source element with an unfortunate custom uid.
+fn analysis_uids(
+    source: &powerio::BalancedNetwork,
+    analysis: &powerio::BalancedNetwork,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    let mut reserved: HashSet<String> = source
+        .buses
+        .iter()
+        .filter_map(|bus| bus.uid.clone())
+        .chain(
+            source
+                .branches
+                .iter()
+                .filter_map(|branch| branch.uid.clone()),
+        )
+        .collect();
+
+    let mut unique_synthetic = |family: &str, index: usize| -> Result<String, String> {
+        let stem = format!("analysis:{family}:{index}");
+        if reserved.insert(stem.clone()) {
+            return Ok(stem);
+        }
+        let mut suffix = 1usize;
+        loop {
+            let candidate = format!("{stem}:{suffix}");
+            if reserved.insert(candidate.clone()) {
+                return Ok(candidate);
+            }
+            suffix = suffix
+                .checked_add(1)
+                .ok_or_else(|| format!("{family} analysis uid space exhausted"))?;
+        }
+    };
+
+    let mut buses = Vec::with_capacity(analysis.buses.len());
+    for (index, bus) in analysis.buses.iter().enumerate() {
+        buses.push(if index < source.buses.len() {
+            stamped_uid(&bus.uid)?
+        } else {
+            unique_synthetic("buses", index)?
+        });
+    }
+    let mut branches = Vec::with_capacity(analysis.branches.len());
+    for (index, branch) in analysis.branches.iter().enumerate() {
+        branches.push(if index < source.branches.len() {
+            stamped_uid(&branch.uid)?
+        } else {
+            unique_synthetic("branches", index)?
+        });
+    }
+    Ok((buses, branches))
 }
 
 #[derive(Serialize)]
@@ -391,16 +619,57 @@ struct Topology {
 /// the tellegen API serves, placed at the coordinates the file carries
 /// (PowerWorld complete case aux exports). `view` is null when the file has no
 /// coordinates.
+///
+/// Takes the dropped file's bytes, as [`parse_case`] does and for the same
+/// reason.
 #[wasm_bindgen]
-pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
-    let mut parsed = powerio::parse_str(text, format).map_err(jserr)?;
+pub fn ingest_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    serde_json::to_string(&ingest_case_value(bytes, format).map_err(jserr)?).map_err(jserr)
+}
+
+fn ingest_case_value(bytes: &[u8], format: &str) -> Result<serde_json::Value, String> {
+    let mut parsed = powerio::parse_bytes(bytes, format).map_err(|e| e.to_string())?;
     // Stamp row uids (`buses:0`, `branches:1`, ...) on every element that the
     // source format did not already give one (GOC3 carries its own). The stamped
     // network is what `network_json` serializes, so a Study built from this
     // payload resolves uid-keyed edits and echoes uids on its response scalars.
     powerio_pkg::ensure_payload_uids(&mut parsed.network);
-    let value = ingest_value(&parsed.network, parsed.warnings).map_err(jserr)?;
-    serde_json::to_string(&value).map_err(jserr)
+    ingest_value(&parsed.network, parsed.warnings)
+}
+
+/// [`ingest_case`] for powerio's own model JSON, the document `export_study`
+/// writes under the `model-json` token and powerio classifies as
+/// `JsonClass::ModelJson`. It is not a case format, so it reaches
+/// `BalancedNetwork::from_json` rather than a case reader, and there are no
+/// reader warnings to carry: nothing was converted.
+#[wasm_bindgen]
+pub fn ingest_model_json(network_json: &str) -> Result<String, JsError> {
+    ensure_input_text(network_json)?;
+    install_panic_hook();
+    serde_json::to_string(&ingest_model_json_value(network_json).map_err(jserr)?).map_err(jserr)
+}
+
+fn ingest_model_json_value(network_json: &str) -> Result<serde_json::Value, String> {
+    let mut net = powerio::BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
+    powerio_pkg::ensure_payload_uids(&mut net);
+    ingest_value(&net, Vec::new())
+}
+
+/// Byte counterpart of [`ingest_model_json`] for dropped files. UTF-8 decoding
+/// and model validation both stay in powerio.
+#[wasm_bindgen]
+pub fn ingest_model_json_bytes(bytes: &[u8]) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    serde_json::to_string(&ingest_model_json_bytes_value(bytes).map_err(jserr)?).map_err(jserr)
+}
+
+fn ingest_model_json_bytes_value(bytes: &[u8]) -> Result<serde_json::Value, String> {
+    let mut net = powerio::BalancedNetwork::from_json_bytes(bytes).map_err(|e| e.to_string())?;
+    powerio_pkg::ensure_payload_uids(&mut net);
+    ingest_value(&net, Vec::new())
 }
 
 /// The distribution counterpart of [`ingest_case`]: view a multiconductor case
@@ -416,9 +685,23 @@ pub fn ingest_case(text: &str, format: &str) -> Result<String, JsError> {
 /// rejects cleanly and never panics the wasm instance.
 #[wasm_bindgen]
 pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
+    ensure_input_text(text)?;
+    install_panic_hook();
     let out = match format {
         "pio" | "pio-json" | "package" => dist::ingest_dist_package(text),
         _ => dist::ingest_dist(text, format),
+    };
+    out.map_err(jserr)
+}
+
+/// Byte counterpart of [`ingest_dist_case`] for dropped files.
+#[wasm_bindgen]
+pub fn ingest_dist_case_bytes(bytes: &[u8], format: &str) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    let out = match format {
+        "pio" | "pio-json" | "package" => dist::ingest_dist_package_bytes(bytes),
+        _ => dist::ingest_dist_bytes(bytes, format),
     };
     out.map_err(jserr)
 }
@@ -428,76 +711,115 @@ pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
 /// the restored study state. Errors are strings (mapped to `JsError` at the wasm
 /// edge) so the same body runs in native unit tests.
 pub(crate) fn ingest_value(
-    net: &powerio::network::Network,
+    net: &powerio::BalancedNetwork,
     mut warnings: Vec<String>,
 ) -> Result<serde_json::Value, String> {
+    net.validate().map_err(|error| error.to_string())?;
+    // `ensure_payload_uids` preserves source uids while filling missing rows.
+    // Reject a source uid that collides with a generated row uid before the
+    // browser receives an ambiguous edit/persistence key.
+    tellegen::validate_canonical_identity(net)?;
+    let power_scale = if net.is_normalized() {
+        net.check_base_mva().map_err(|error| error.to_string())?;
+        net.base_mva
+    } else {
+        1.0
+    };
+    let indexed = powerio::IndexedNetwork::new(net);
+    let analysis = indexed.network();
+    let (analysis_bus_uids, analysis_branch_uids) = analysis_uids(net, analysis)?;
+    let editable_bus_ids: HashSet<usize> = net
+        .buses
+        .iter()
+        .filter(|bus| bus.kind != powerio::BusType::Isolated)
+        .map(|bus| bus.id.0)
+        .collect();
+    let editable_branch_rows: HashSet<usize> = net
+        .branches
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| {
+            branch.in_service
+                && branch.from != branch.to
+                && branch.r * branch.r + branch.x * branch.x > 0.0
+                && editable_bus_ids.contains(&branch.from.0)
+                && editable_bus_ids.contains(&branch.to.0)
+        })
+        .map(|(row, _)| row)
+        .collect();
     let mut demand: BTreeMap<usize, f64> = BTreeMap::new();
-    for l in net.loads.iter().filter(|l| l.in_service) {
-        *demand.entry(l.bus.0).or_default() += l.p;
+    for l in analysis.loads.iter().filter(|l| l.in_service) {
+        *demand.entry(l.bus.0).or_default() += l.p * power_scale;
     }
     let mut gen: BTreeMap<usize, f64> = BTreeMap::new();
-    for g in net.generators.iter().filter(|g| g.in_service) {
-        *gen.entry(g.bus.0).or_default() += g.pmax;
+    for g in analysis.generators.iter().filter(|g| g.in_service) {
+        *gen.entry(g.bus.0).or_default() += g.pmax * power_scale;
     }
 
     let topology = Topology {
-        buses: net
+        buses: analysis
             .buses
             .iter()
-            .map(|b| {
+            .enumerate()
+            .map(|(i, b)| {
                 Ok(TopologyBus {
                     id: b.id.0,
-                    uid: stamped_uid(&b.uid)?,
+                    uid: analysis_bus_uids[i].clone(),
                     demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                     gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
+                    editable: i < net.buses.len() && editable_bus_ids.contains(&b.id.0),
                 })
             })
             .collect::<Result<_, String>>()?,
-        branches: net
+        branches: analysis
             .branches
             .iter()
             .enumerate()
             .map(|(i, br)| {
                 Ok(TopologyBranch {
                     id: i + 1,
-                    uid: stamped_uid(&br.uid)?,
+                    uid: analysis_branch_uids[i].clone(),
                     from: br.from.0,
                     to: br.to.0,
-                    rate_mw: br.rate_a,
+                    rate_mw: br.rate_a * power_scale,
                     status: br.in_service as u8,
+                    editable: editable_branch_rows.contains(&i),
                 })
             })
             .collect::<Result<_, String>>()?,
     };
 
     let view = {
-        let mut cs = network_coords(net);
+        let source_coords = network_coords(net);
+        let mut cs = lowered_coords(net, &source_coords);
         if cs.is_empty() {
             None
         } else {
-            let missing_buses = net.buses.len().saturating_sub(cs.len());
+            let missing_buses = analysis.buses.len().saturating_sub(cs.len());
             if missing_buses > 0 {
                 warnings.push(format!(
                     "{missing_buses} bus(es) lacked coordinates and are omitted from the map"
                 ));
             }
             spread_stacks(&mut cs);
-            let buses: Vec<ViewBus> = net
+            let buses: Vec<ViewBus> = analysis
                 .buses
                 .iter()
-                .filter_map(|b| {
+                .enumerate()
+                .filter_map(|(i, b)| {
                     let &(lon, lat) = cs.get(&b.id.0)?;
-                    Some(stamped_uid(&b.uid).map(|uid| ViewBus {
+                    Some(Ok(ViewBus {
                         id: b.id.0,
-                        uid,
+                        uid: analysis_bus_uids[i].clone(),
                         lon,
                         lat,
                         demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                         gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
+                        editable: i < net.buses.len() && editable_bus_ids.contains(&b.id.0),
                     }))
                 })
                 .collect::<Result<_, String>>()?;
-            let branches: Vec<ViewBranch> = net
+            let branches: Vec<ViewBranch> = analysis
                 .branches
                 .iter()
                 .enumerate()
@@ -510,18 +832,19 @@ pub(crate) fn ingest_value(
                         }
                         _ => vec![[f.0, f.1], [t.0, t.1]],
                     };
-                    Some(stamped_uid(&br.uid).map(|uid| ViewBranch {
+                    Some(Ok(ViewBranch {
                         id: i + 1,
-                        uid,
+                        uid: analysis_branch_uids[i].clone(),
                         from: br.from.0,
                         to: br.to.0,
-                        rate_mw: br.rate_a,
+                        rate_mw: br.rate_a * power_scale,
                         status: br.in_service as u8,
+                        editable: editable_branch_rows.contains(&i),
                         path,
                     }))
                 })
                 .collect::<Result<_, String>>()?;
-            let missing_branches = net.branches.len().saturating_sub(branches.len());
+            let missing_branches = analysis.branches.len().saturating_sub(branches.len());
             if missing_branches > 0 {
                 warnings.push(format!(
                     "{missing_branches} branch(es) lacked endpoint coordinates and are omitted from the map"
@@ -536,6 +859,8 @@ pub(crate) fn ingest_value(
         "base_mva": net.base_mva,
         "n_bus": net.buses.len(),
         "n_branch": net.branches.len(),
+        "n_analysis_bus": analysis.buses.len(),
+        "n_analysis_branch": analysis.branches.len(),
         "n_gen": net.generators.iter().filter(|g| g.in_service).count(),
         "load_mw": demand.values().sum::<f64>(),
         "gen_mw": gen.values().sum::<f64>(),
@@ -552,7 +877,7 @@ pub(crate) fn ingest_value(
 /// `synthetic`/`manual` echo a stamped layout's provenance (a restored package
 /// carries it, so the case comes back placed with an honest badge), `file` is
 /// any other located case, and `synthetic_pending` awaits placement.
-fn coords_kind_token(net: &powerio::network::Network, has_view: bool) -> &'static str {
+fn coords_kind_token(net: &powerio::BalancedNetwork, has_view: bool) -> &'static str {
     if !has_view {
         return "synthetic_pending";
     }
@@ -591,6 +916,8 @@ struct DisplayView {
 /// no filesystem, so it runs in the browser.
 #[wasm_bindgen]
 pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
     match parse_display_bytes(bytes, format).map_err(jserr)? {
         DisplayData::PowerWorld(d) => serde_json::to_string(&DisplayView {
             substations: d
@@ -629,6 +956,8 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
 /// rejects as a `JsError`, never a panic.
 #[wasm_bindgen]
 pub fn parse_geo(bytes: &[u8], hint: &str) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
     geo::parse_geo_impl(bytes, hint).map_err(jserr)
 }
 
@@ -639,6 +968,7 @@ pub fn parse_geo(bytes: &[u8], hint: &str) -> Result<String, JsError> {
 /// counts; errors when nothing matched.
 #[wasm_bindgen]
 pub fn apply_geo(network_json: &str, layer_geojson: &str) -> Result<String, JsError> {
+    install_panic_hook();
     geo::apply_geo_impl(network_json, layer_geojson).map_err(jserr)
 }
 
@@ -648,6 +978,7 @@ pub fn apply_geo(network_json: &str, layer_geojson: &str) -> Result<String, JsEr
 /// `.geo.json` document.
 #[wasm_bindgen]
 pub fn apply_layout(network_json: &str, coords_json: &str, kind: &str) -> Result<String, JsError> {
+    install_panic_hook();
     geo::apply_layout_impl(network_json, coords_json, kind).map_err(jserr)
 }
 
@@ -656,6 +987,7 @@ pub fn apply_layout(network_json: &str, coords_json: &str, kind: &str) -> Result
 /// when the case carries none.
 #[wasm_bindgen]
 pub fn extract_geo(network_json: &str) -> Result<String, JsError> {
+    install_panic_hook();
     geo::extract_geo_impl(network_json).map_err(jserr)
 }
 
@@ -665,6 +997,8 @@ pub fn extract_geo(network_json: &str) -> Result<String, JsError> {
 /// `report`; errors when no bus joined.
 #[wasm_bindgen]
 pub fn apply_display_geo(network_json: &str, bytes: &[u8]) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
     geo::apply_display_geo_impl(network_json, bytes).map_err(jserr)
 }
 
@@ -672,6 +1006,12 @@ pub fn apply_display_geo(network_json: &str, bytes: &[u8]) -> Result<String, JsE
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn byte_input_limit_is_inclusive_without_allocating_the_boundary() {
+        assert_eq!(ensure_input_len(MAX_INPUT_BYTES), Ok(()));
+        assert_eq!(ensure_input_len(MAX_INPUT_BYTES + 1), Err(INPUT_TOO_LARGE));
+    }
 
     const CASE14_NO_COORDS: &str = "\
 function mpc = case14synthetic
@@ -729,7 +1069,7 @@ mpc.gencost = [
 
     #[test]
     fn matpower_without_coordinates_returns_topology_for_placement() {
-        let out = ingest_case(CASE14_NO_COORDS, "m").expect("ingest case14");
+        let out = ingest_case(CASE14_NO_COORDS.as_bytes(), "m").expect("ingest case14");
         let v: Value = serde_json::from_str(&out).unwrap();
 
         assert_eq!(v["n_bus"].as_u64().unwrap(), 14);
@@ -752,6 +1092,194 @@ mpc.gencost = [
         assert_eq!(v["topology"]["buses"][0]["uid"], "buses:0");
         assert_eq!(v["topology"]["branches"][1]["uid"], "branches:1");
         assert!(v["network_json"].as_str().unwrap().contains("buses:0"));
+    }
+
+    #[test]
+    fn normalized_ingest_still_reports_native_mw() {
+        let mut raw = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse case14")
+            .network;
+        powerio_pkg::ensure_payload_uids(&mut raw);
+        let normalized = raw.to_normalized().expect("normalize case14");
+
+        let source = ingest_value(&raw, Vec::new()).expect("ingest raw");
+        let derived = ingest_value(&normalized, Vec::new()).expect("ingest normalized");
+        let close = |left: &Value, right: &Value| {
+            let delta = left.as_f64().unwrap() - right.as_f64().unwrap();
+            assert!(delta.abs() < 1e-9, "{left} != {right}");
+        };
+        close(&source["load_mw"], &derived["load_mw"]);
+        close(&source["gen_mw"], &derived["gen_mw"]);
+        close(
+            &source["topology"]["buses"][1]["demand_mw"],
+            &derived["topology"]["buses"][1]["demand_mw"],
+        );
+        close(
+            &source["topology"]["branches"][0]["rate_mw"],
+            &derived["topology"]["branches"][0]["rate_mw"],
+        );
+    }
+
+    #[test]
+    fn ingest_rejects_a_source_uid_that_collides_with_a_stamped_uid() {
+        let mut net = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse case14")
+            .network;
+        // Row 0 preserves this source uid; row 1 is missing and receives the
+        // same value from `ensure_payload_uids`.
+        net.buses[0].uid = Some("buses:1".into());
+        powerio_pkg::ensure_payload_uids(&mut net);
+        let error = ingest_value(&net, Vec::new()).unwrap_err();
+        assert!(error.contains("duplicate bus uid"), "{error}");
+    }
+
+    #[test]
+    fn three_winding_transformer_topology_is_closed_but_canonical_payload_stays_typed() {
+        let mut net = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse case14")
+            .network;
+        let windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
+        powerio_pkg::ensure_payload_uids(&mut net);
+
+        let value = ingest_value(&net, Vec::new()).expect("ingest 3W case");
+        assert_eq!(value["n_bus"], 14);
+        assert_eq!(value["n_branch"], 20);
+        assert_eq!(value["topology"]["buses"].as_array().unwrap().len(), 15);
+        assert_eq!(value["topology"]["branches"].as_array().unwrap().len(), 23);
+        let star = &value["topology"]["buses"][14];
+        assert_eq!(star["editable"], false);
+        assert!(star["uid"].as_str().unwrap().starts_with("analysis:buses:"));
+        for branch in &value["topology"]["branches"].as_array().unwrap()[20..] {
+            assert_eq!(branch["to"], 15);
+            assert_eq!(branch["editable"], false);
+            assert!(branch["uid"]
+                .as_str()
+                .unwrap()
+                .starts_with("analysis:branches:"));
+        }
+        let canonical: Value = serde_json::from_str(value["network_json"].as_str().unwrap())
+            .expect("canonical network JSON");
+        assert_eq!(canonical["buses"].as_array().unwrap().len(), 14);
+        assert_eq!(canonical["branches"].as_array().unwrap().len(), 20);
+        assert_eq!(canonical["transformers_3w"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn topology_marks_only_solver_rows_editable() {
+        let mut net = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse case14")
+            .network;
+        net.buses[0].kind = powerio::BusType::Isolated;
+        net.branches[0].in_service = false;
+        net.branches[1].to = net.branches[1].from;
+        powerio_pkg::ensure_payload_uids(&mut net);
+
+        let value = ingest_value(&net, Vec::new()).expect("ingest filtered rows");
+        assert_eq!(value["topology"]["buses"][0]["editable"], false);
+        assert_eq!(value["topology"]["branches"][0]["editable"], false);
+        assert_eq!(value["topology"]["branches"][1]["editable"], false);
+    }
+
+    #[test]
+    fn json_drop_classification_comes_from_powerio_bytes() {
+        let transmission = classify_json_drop_value(PM_NO_QMAX.as_bytes()).expect("classify PM");
+        assert_eq!(transmission.kind, "transmission");
+        assert_eq!(transmission.format, Some("powermodels-json"));
+
+        let distribution = classify_json_drop_value(br#"{"data_model":"ENGINEERING","bus":{}}"#)
+            .expect("classify PMD");
+        assert_eq!(distribution.kind, "distribution");
+        assert_eq!(distribution.format, Some("pmd-json"));
+
+        let net = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse model")
+            .network;
+        let model = net.to_json().expect("model JSON");
+        let mut bom_model = b"\xef\xbb\xbf".to_vec();
+        bom_model.extend_from_slice(model.as_bytes());
+        let model_class = classify_json_drop_value(&bom_model).expect("classify model");
+        assert_eq!(model_class.kind, "model-json");
+        powerio::BalancedNetwork::from_json_bytes(&bom_model).expect("strict model byte reader");
+
+        let package = powerio_pkg::NetworkPackage::from_balanced(net)
+            .to_json()
+            .expect("package JSON");
+        let package_class = classify_json_drop_value(package.as_bytes()).expect("classify package");
+        assert_eq!(package_class.kind, "balanced-package");
+
+        let invalid = b"{\"base_mva\":100,\"buses\":[]\xff}";
+        let unknown = classify_json_drop_value(invalid).expect("invalid UTF-8 classifies unknown");
+        assert_eq!(unknown.kind, "unknown");
+        assert!(powerio::BalancedNetwork::from_json_bytes(invalid).is_err());
+        assert!(dist::ingest_dist_bytes(invalid, "bmopf-json").is_err());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn unified_json_drop_ingests_bare_families_and_preserves_unresolved_bytes() {
+        let transmission =
+            ingest_json_drop_value(PM_NO_QMAX.as_bytes()).expect("ingest PowerModels JSON");
+        assert_eq!(transmission.kind, "transmission");
+        assert_eq!(transmission.format, Some("powermodels-json"));
+        assert_eq!(transmission.payload["n_bus"], 2);
+
+        let distribution =
+            ingest_json_drop_value(include_bytes!("../tests/fixtures/dist/micro_pmd.json"))
+                .expect("ingest PMD JSON");
+        assert_eq!(distribution.kind, "distribution");
+        assert_eq!(distribution.format, Some("pmd-json"));
+        assert_eq!(distribution.payload["model"], "multiconductor");
+        assert_eq!(distribution.payload["n_bus"], 1);
+
+        let model = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse balanced model")
+            .network
+            .to_json()
+            .expect("serialize model JSON");
+        let model_drop =
+            ingest_json_drop_value(model.as_bytes()).expect("ingest balanced model JSON");
+        assert_eq!(model_drop.kind, "model-json");
+        assert_eq!(model_drop.format, None);
+        assert_eq!(model_drop.payload["n_bus"], 14);
+
+        let ambiguous =
+            ingest_json_drop_value(br#"{"baseMVA":100.0,"bus":{},"data_model":"ENGINEERING"}"#)
+                .expect("ambiguous JSON remains unresolved");
+        assert_eq!(ambiguous.kind, "ambiguous");
+        assert_eq!(ambiguous.format, None);
+        assert!(ambiguous.payload.is_null());
+
+        let unknown = ingest_json_drop_value(b"{\"unrecognized\":true}")
+            .expect("unknown JSON remains unresolved");
+        assert_eq!(unknown.kind, "unknown");
+        assert_eq!(unknown.format, None);
+        assert!(unknown.payload.is_null());
+
+        let invalid_utf8 = ingest_json_drop_value(b"{\"base_mva\":100,\"buses\":[]\xff}")
+            .expect("invalid UTF-8 remains unresolved");
+        assert_eq!(invalid_utf8.kind, "unknown");
+        assert!(invalid_utf8.payload.is_null());
+
+        let serialized = serde_json::to_value(transmission).expect("serialize drop result");
+        let keys = serialized.as_object().expect("drop result object");
+        assert_eq!(keys.len(), 3);
+        assert!(keys.contains_key("kind"));
+        assert!(keys.contains_key("format"));
+        assert!(keys.contains_key("payload"));
+    }
+
+    #[test]
+    fn package_reader_error_is_not_prefixed_twice() {
+        let error = dist::ingest_dist_package(r#"{"model_kind":"multiconductor","model":{}}"#)
+            .expect_err("malformed package");
+        assert_eq!(
+            error.matches("invalid .pio.json package").count(),
+            1,
+            "{error}"
+        );
     }
 
     #[cfg(feature = "sensitivity")]
@@ -834,6 +1362,56 @@ mpc.gencost = [
 
     #[cfg(feature = "sensitivity")]
     #[test]
+    fn unified_json_drop_restores_each_package_kind_from_one_parsed_envelope() {
+        let net = case14_network_json();
+        let mut study = tellegen::Study::new(&net, tellegen::Problem::DcOpf).expect("study");
+        study
+            .commit(
+                &[tellegen::NetworkEdit::AddLoad {
+                    bus: tellegen::ElementKey::Id(2),
+                    p_mw: 7.5,
+                }],
+                tellegen::SolveOptions::default(),
+            )
+            .expect("commit");
+        let balanced_json = study
+            .to_package()
+            .expect("balanced package")
+            .to_json()
+            .expect("balanced package JSON");
+
+        let balanced =
+            ingest_json_drop_value(balanced_json.as_bytes()).expect("restore balanced package");
+        assert_eq!(balanced.kind, "balanced-package");
+        assert_eq!(balanced.format, None);
+        assert_eq!(balanced.payload["formulation"], "dcopf");
+        assert_eq!(balanced.payload["deltas"]["2"], 7.5);
+        assert_eq!(balanced.payload["n_bus"], 14);
+
+        let dist_net =
+            powerio_dist::parse_str(include_str!("../tests/fixtures/dist/micro_pmd.json"), "pmd")
+                .expect("parse distribution model");
+        let dist_json = powerio_pkg::NetworkPackage::from_multiconductor(dist_net)
+            .to_json()
+            .expect("multiconductor package JSON");
+        let multiconductor =
+            ingest_json_drop_value(dist_json.as_bytes()).expect("restore multiconductor package");
+        assert_eq!(multiconductor.kind, "multiconductor-package");
+        assert_eq!(multiconductor.format, None);
+        assert_eq!(multiconductor.payload["model"], "multiconductor");
+        assert_eq!(multiconductor.payload["n_bus"], 1);
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn unified_json_drop_rejects_a_malformed_package_after_classification() {
+        let malformed = br#"{"model_kind":"balanced","model":{}}"#;
+        assert_eq!(powerio::classify_json_bytes(malformed), JsonClass::Package);
+        assert!(ingest_json_drop_value(malformed).is_err());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
     fn load_package_bundle_rejects_untrusted_input_without_panicking() {
         // Malformed, truncated, and oversized inputs must all reject as an `Err` (a wasm
         // panic would abort the instance), never a panic.
@@ -848,7 +1426,10 @@ mpc.gencost = [
             "null",
             "[]",
             "42",
-            r#"{"schema":"https://powerio.dev/schema/pio-package/0.1"}"#,
+            // A package shaped envelope with nothing under it, and one that
+            // states no `powerio_version` so the lineage gate refuses it.
+            r#"{"model_kind":"balanced","model":{}}"#,
+            r#"{"model_kind":"balanced","model":{"kind":"balanced","balanced_network":{"base_mva":100.0,"buses":[]}}}"#,
             big_open.as_str(),
             big_quote.as_str(),
         ];
@@ -877,7 +1458,56 @@ mpc.gencost = [
         for bad in cases {
             assert!(tellegen::export_study(bad, 0, "matpower").is_err());
             // An out-of-range commit index must also reject rather than panic.
-            assert!(tellegen::export_study(bad, 9_999_999, "powerio-json").is_err());
+            assert!(tellegen::export_study(bad, 9_999_999, "model-json").is_err());
         }
     }
+
+    /// A PowerModels generator that omits `qmax` reads as an unbounded reactive
+    /// limit, which powerio carries as `+Inf`. JSON has no `Inf` literal, so
+    /// powerio spells it as the string `"Infinity"` and reads it back the same
+    /// way: the `network_json` this payload hands the Study round-trips the
+    /// unbounded limit, and the case both views and studies.
+    #[test]
+    fn a_case_with_an_unbounded_reactive_limit_reaches_a_study() {
+        let out = ingest_case(PM_NO_QMAX.as_bytes(), "powermodels-json").expect("ingest");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["n_bus"].as_u64().unwrap(), 2);
+
+        let network_json = v["network_json"].as_str().unwrap();
+        assert!(
+            network_json.contains("\"qmax\":\"Infinity\""),
+            "expected a string-spelled qmax in the payload, got: {network_json}"
+        );
+        let net = powerio::BalancedNetwork::from_json(network_json).expect("from_json");
+        let qmax = net.generators[0].qmax;
+        assert!(
+            qmax.is_infinite() && qmax.is_sign_positive(),
+            "expected qmax to read back as +Inf, got: {qmax}"
+        );
+
+        #[cfg(feature = "sensitivity")]
+        tellegen::Study::new(network_json, tellegen::Problem::DcOpf).expect("study");
+    }
+
+    /// Two buses, one generator with no `qmax`/`qmin`.
+    const PM_NO_QMAX: &str = r#"{
+      "name": "nq",
+      "baseMVA": 100.0,
+      "per_unit": true,
+      "bus": {
+        "1": {"index": 1, "bus_i": 1, "bus_type": 3, "vm": 1.0, "va": 0.0, "base_kv": 230.0, "vmax": 1.1, "vmin": 0.9},
+        "2": {"index": 2, "bus_i": 2, "bus_type": 1, "vm": 1.0, "va": 0.0, "base_kv": 230.0, "vmax": 1.1, "vmin": 0.9}
+      },
+      "gen": {
+        "1": {"index": 1, "gen_bus": 1, "pg": 0.5, "qg": 0.0, "pmax": 2.0, "pmin": 0.0, "vg": 1.0, "mbase": 100.0,
+              "gen_status": 1, "model": 2, "ncost": 3, "cost": [0.0, 10.0, 0.0]}
+      },
+      "load": {"1": {"index": 1, "load_bus": 2, "pd": 0.5, "qd": 0.1, "status": 1}},
+      "branch": {
+        "1": {"index": 1, "f_bus": 1, "t_bus": 2, "br_r": 0.01, "br_x": 0.1, "b_fr": 0.0, "b_to": 0.0,
+              "g_fr": 0.0, "g_to": 0.0, "tap": 1.0, "shift": 0.0, "br_status": 1, "rate_a": 2.0,
+              "angmin": -0.5, "angmax": 0.5, "transformer": false}
+      },
+      "shunt": {}, "storage": {}, "switch": {}, "dcline": {}
+    }"#;
 }

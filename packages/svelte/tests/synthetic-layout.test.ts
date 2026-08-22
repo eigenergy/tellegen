@@ -36,8 +36,41 @@ function lonsById(placed: ReturnType<typeof placeSyntheticTopology>): Map<number
 }
 
 describe('placeSyntheticTopology tree layout', () => {
+	it('lays out 130,000 connected buses when every bus is a root', () => {
+		const n = 130_000;
+		const buses: Topology['buses'] = new Array(n);
+		const branches: Topology['branches'] = new Array(n - 1);
+		const roots: number[] = new Array(n);
+		for (let i = 0; i < n; i++) {
+			buses[i] = { id: i, uid: `b${i}`, demand_mw: 0, gen_mw: 0 };
+			roots[i] = i;
+			if (i + 1 < n) {
+				branches[i] = {
+					id: i,
+					uid: `e${i}`,
+					from: i,
+					to: i + 1,
+					rate_mw: 0,
+					status: 1
+				};
+			}
+		}
+
+		const placed = placeSyntheticTopology({ buses, branches }, CENTER, {
+			roots
+		});
+		expect(placed.buses).toHaveLength(n);
+		expect(placed.branches).toHaveLength(n - 1);
+		for (const bus of placed.buses) {
+			expect(Number.isFinite(bus.lon)).toBe(true);
+			expect(Number.isFinite(bus.lat)).toBe(true);
+		}
+	}, 30_000);
+
 	it('lays a path graph on a straight line with monotone depth', () => {
-		const placed = placeSyntheticTopology(topology(6, path(6)), CENTER, { roots: [0] });
+		const placed = placeSyntheticTopology(topology(6, path(6)), CENTER, {
+			roots: [0]
+		});
 		const lats = placed.buses.map((b) => b.lat);
 		for (const lat of lats) expect(lat).toBeCloseTo(lats[0], 9);
 		const lon = lonsById(placed);
@@ -56,7 +89,9 @@ describe('placeSyntheticTopology tree layout', () => {
 			[2, 5],
 			[2, 6]
 		];
-		const placed = placeSyntheticTopology(topology(7, edges), CENTER, { roots: [0] });
+		const placed = placeSyntheticTopology(topology(7, edges), CENTER, {
+			roots: [0]
+		});
 		const lon = lonsById(placed);
 		expect(Math.min(...lon.values())).toBeCloseTo(lon.get(0)!, 9);
 		for (const [parent, child] of edges) {
@@ -69,16 +104,31 @@ describe('placeSyntheticTopology tree layout', () => {
 
 	it('is deterministic', () => {
 		const edges: [number, number][] = [...path(8), [3, 8], [3, 9], [8, 10]];
-		const a = placeSyntheticTopology(topology(11, edges), CENTER, { roots: [0] });
-		const b = placeSyntheticTopology(topology(11, edges), CENTER, { roots: [0] });
+		const a = placeSyntheticTopology(topology(11, edges), CENTER, {
+			roots: [0]
+		});
+		const b = placeSyntheticTopology(topology(11, edges), CENTER, {
+			roots: [0]
+		});
 		expect(a).toEqual(b);
+	});
+
+	it('preserves display-only edit guards from lowered topology rows', () => {
+		const input = topology(2, [[0, 1]]);
+		input.buses[1].editable = false;
+		input.branches[0].editable = false;
+		const placed = placeSyntheticTopology(input, CENTER);
+		expect(placed.buses.find((bus) => bus.id === 1)?.editable).toBe(false);
+		expect(placed.branches[0].editable).toBe(false);
 	});
 
 	it('keeps a long feeder long: aspect ratio survives normalization', () => {
 		// A 10-bus trunk with one lateral off the middle: depth range 9, slot
 		// range 1. A square-stretched normalize would render this 1:1.
 		const edges: [number, number][] = [...path(10), [5, 10]];
-		const placed = placeSyntheticTopology(topology(11, edges), CENTER, { roots: [0] });
+		const placed = placeSyntheticTopology(topology(11, edges), CENTER, {
+			roots: [0]
+		});
 		const lons = placed.buses.map((b) => b.lon);
 		const lats = placed.buses.map((b) => b.lat);
 		const lonRange = Math.max(...lons) - Math.min(...lons);
@@ -89,7 +139,9 @@ describe('placeSyntheticTopology tree layout', () => {
 	it('still tree-lays a near-tree with a closed loop, placing every bus', () => {
 		// A radial feeder with one closed tie (4-9) forming a single loop.
 		const edges: [number, number][] = [...path(8), [2, 8], [8, 9], [4, 9]];
-		const placed = placeSyntheticTopology(topology(10, edges), CENTER, { roots: [0] });
+		const placed = placeSyntheticTopology(topology(10, edges), CENTER, {
+			roots: [0]
+		});
 		expect(placed.buses).toHaveLength(10);
 		const lon = lonsById(placed);
 		expect(Math.min(...lon.values())).toBeCloseTo(lon.get(0)!, 9);

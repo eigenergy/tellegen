@@ -1,0 +1,40 @@
+[workspace]
+release = false
+release_always = false
+git_tag_name = "v{{ version }}"
+git_release_name = "tellegen v{{ version }}"
+git_release_enable = true
+git_release_draft = false
+# Dependabot owns dependency updates. Keep this off, or a bump can reach
+# crates.io without a run of the gates.
+dependencies_update = false
+
+[changelog]
+protect_breaking_commits = true
+
+[[package]]
+name = "tellegen"
+changelog_path = "crates/tellegen/CHANGELOG.md"
+release = true
+publish = true
+publish_no_verify = true
+# API comparison runs in read-only pull-request CI, without the Release App
+# token that release-plz needs to update its version branch.
+semver_check = false
+
+# Future crates inherit the workspace deny and require an explicit `release = true`.
+[[package]]
+name = "tellegen-wasm"
+release = false
+
+[[package]]
+name = "tellegen-server"
+release = false
+
+[[package]]
+name = "tellegen-cli"
+release = false
+
+[[package]]
+name = "benchmarks"
+release = false

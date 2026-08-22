@@ -14,7 +14,9 @@
 //! `JsError` at the boundary. Input is untrusted: a malformed, truncated, or
 //! oversized payload rejects as an `Err`, never a panic.
 
-use powerio_dist::{parse_str, CoordinateSpace, DistGraphEdgeKind, GeoMeta, MulticonductorNetwork};
+use powerio_dist::{
+    parse_bytes, parse_str, CoordinateSpace, DistGeoMeta, DistGraphEdgeKind, MulticonductorNetwork,
+};
 use powerio_pkg::{ModelKind, NetworkPackage};
 
 /// Parse `text` in a distribution `format` (`dss`, `bmopf`, or `pmd`) and
@@ -22,23 +24,53 @@ use powerio_pkg::{ModelKind, NetworkPackage};
 /// token is the one [`powerio_dist::dist_target_from_name`] accepts; anything
 /// else — including the balanced transmission formats — is an error.
 pub fn ingest_dist(text: &str, format: &str) -> Result<String, String> {
+    serde_json::to_string(&ingest_dist_text_value(text, format)?).map_err(|e| e.to_string())
+}
+
+/// Byte counterpart of [`ingest_dist`]. Dropped files stay byte exact until
+/// powerio-dist performs its strict UTF-8 decode.
+pub fn ingest_dist_bytes(bytes: &[u8], format: &str) -> Result<String, String> {
+    serde_json::to_string(&ingest_dist_bytes_value(bytes, format)?).map_err(|e| e.to_string())
+}
+
+fn ingest_dist_text_value(text: &str, format: &str) -> Result<serde_json::Value, String> {
     let net = parse_str(text, format).map_err(|e| e.to_string())?;
-    serde_json::to_string(&ingest_dist_value(&net)?).map_err(|e| e.to_string())
+    ingest_dist_value(&net)
+}
+
+pub(crate) fn ingest_dist_bytes_value(
+    bytes: &[u8],
+    format: &str,
+) -> Result<serde_json::Value, String> {
+    let net = parse_bytes(bytes, format).map_err(|e| e.to_string())?;
+    ingest_dist_value(&net)
 }
 
 /// Parse `text` as a `.pio.json` package and, when it carries a multiconductor
 /// payload, return the same drop-panel payload [`ingest_dist`] does. A balanced
 /// package is rejected: the frontend routes those to the study-restore path.
 pub fn ingest_dist_package(text: &str) -> Result<String, String> {
-    let package =
-        NetworkPackage::from_json(text).map_err(|e| format!("invalid .pio.json package: {e}"))?;
+    let package = NetworkPackage::from_json(text).map_err(|e| e.to_string())?;
+    serde_json::to_string(&ingest_dist_package_value(&package)?).map_err(|e| e.to_string())
+}
+
+/// Byte counterpart of [`ingest_dist_package`], including the package reader's
+/// strict UTF-8 and lineage checks.
+pub fn ingest_dist_package_bytes(bytes: &[u8]) -> Result<String, String> {
+    let package = NetworkPackage::from_json_bytes(bytes).map_err(|e| e.to_string())?;
+    serde_json::to_string(&ingest_dist_package_value(&package)?).map_err(|e| e.to_string())
+}
+
+pub(crate) fn ingest_dist_package_value(
+    package: &NetworkPackage,
+) -> Result<serde_json::Value, String> {
     if package.model_kind() != ModelKind::Multiconductor {
         return Err("package is not a multiconductor case".to_owned());
     }
     let net = package
         .as_multiconductor()
         .ok_or("package payload is not multiconductor")?;
-    serde_json::to_string(&ingest_dist_value(net)?).map_err(|e| e.to_string())
+    ingest_dist_value(net)
 }
 
 /// Everything the drop panel needs from one multiconductor parse: the case
@@ -88,6 +120,9 @@ fn ingest_dist_value(net: &MulticonductorNetwork) -> Result<serde_json::Value, S
         "n_ibr": net.ibrs.len(),
         "n_source": net.sources.len(),
         "n_shunt": net.shunts.len(),
+        // Only the BMOPF reader gives a capacitor its own type. A `.dss` or PMD
+        // capacitor reads as a shunt, so the two counts do not overlap.
+        "n_capacitor": net.capacitors.len(),
         "load_kw": load_kw,
         "gen_kw": gen_kw,
         "base_frequency": net.base_frequency,
@@ -103,7 +138,7 @@ fn ingest_dist_value(net: &MulticonductorNetwork) -> Result<serde_json::Value, S
 
 /// The network's declared coordinate space as a stable snake-case token. `none`
 /// when the network declared no space at all.
-fn coords_space(geo: Option<&GeoMeta>) -> &'static str {
+fn coords_space(geo: Option<&DistGeoMeta>) -> &'static str {
     match geo.map(|g| &g.space) {
         Some(CoordinateSpace::Geographic { .. }) => "geographic",
         Some(CoordinateSpace::Projected { .. }) => "projected",

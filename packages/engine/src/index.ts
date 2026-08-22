@@ -4,6 +4,10 @@
  * call; dropped files are parsed locally and never leave the machine. */
 import { engineHost, type EngineHost } from "./host.js";
 import { isPermanentWasmLoadFailure } from "./errors.js";
+import {
+  assertEngineInputBytes,
+  assertEngineInputLength,
+} from "./input-limit.js";
 import type {
   BranchRatingDeltas,
   BrowserFormulation,
@@ -23,6 +27,7 @@ export {
   FORMULATION_IDS,
   SOLVE_STATUSES,
 } from "./generated/contracts.js";
+export { MAX_ENGINE_INPUT_BYTES } from "./input-limit.js";
 
 export type {
   BranchRatingDeltas,
@@ -45,8 +50,14 @@ export type {
 export interface CaseFileSummary {
   name: string;
   base_mva: number;
+  /** Canonical typed PowerIO bus rows. */
   n_bus: number;
+  /** Canonical typed PowerIO branch rows. */
   n_branch: number;
+  /** Rendered buses after analysis lowering; absent on older engine builds. */
+  n_analysis_bus?: number;
+  /** Rendered branches after analysis lowering; absent on older engine builds. */
+  n_analysis_branch?: number;
   n_gen: number;
   load_mw: number;
   gen_mw: number;
@@ -63,6 +74,8 @@ export interface TopologyBus {
   id: number;
   /** powerio row uid, stamped at ingest (e.g. "buses:0"). */
   uid: string;
+  /** False for a display-only row synthesized by analysis lowering. */
+  editable?: boolean;
   demand_mw: number;
   gen_mw: number;
 }
@@ -71,6 +84,8 @@ export interface TopologyBranch {
   id: number;
   /** powerio row uid, stamped at ingest (e.g. "branches:0"). */
   uid: string;
+  /** False for a display-only row synthesized by analysis lowering. */
+  editable?: boolean;
   from: number;
   to: number;
   rate_mw: number;
@@ -160,6 +175,10 @@ export interface IngestedDistCase {
   n_ibr: number;
   n_source: number;
   n_shunt: number;
+  /** Capacitor banks read as their own type, which only the BMOPF reader does.
+   * A `.dss` or PMD capacitor counts in `n_shunt` instead. Optional because an
+   * engine build before this field satisfies the same `^0.1.0` range. */
+  n_capacitor?: number;
   load_kw: number;
   gen_kw: number;
   base_frequency: number;
@@ -195,6 +214,58 @@ export async function preloadEngine(): Promise<void> {
   await engineHost().call({ op: "preload" });
 }
 
+export type JsonDropKind =
+  | "balanced-package"
+  | "multiconductor-package"
+  | "model-json"
+  | "transmission"
+  | "distribution"
+  | "ambiguous"
+  | "unknown";
+
+export interface JsonDropClassification {
+  kind: JsonDropKind;
+  format: string | null;
+}
+
+/** A JSON drop classified and ingested in one engine request. Unknown and
+ * ambiguous documents carry no payload; every recognized family carries the
+ * same typed payload returned by its dedicated ingest API. */
+export type IngestedJsonDrop =
+  | { kind: "balanced-package"; format: null; payload: LoadedPackage }
+  | {
+      kind: "multiconductor-package";
+      format: null;
+      payload: IngestedDistCase;
+    }
+  | { kind: "model-json"; format: null; payload: IngestedCase }
+  | { kind: "transmission"; format: string; payload: IngestedCase }
+  | { kind: "distribution"; format: string; payload: IngestedDistCase }
+  | { kind: "ambiguous" | "unknown"; format: null; payload: null };
+
+/** Classify JSON bytes through powerio's Rust routing table. Package markers
+ * also pass the strict package reader so the payload family is authoritative. */
+export async function classifyJson(
+  bytes: Uint8Array,
+): Promise<JsonDropClassification> {
+  assertEngineInputBytes(bytes);
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "classify_json", bytes })),
+  );
+}
+
+/** Classify and ingest one dropped JSON document in the same engine request.
+ * This avoids parsing a recognized package once to classify it and again to
+ * consume it. */
+export async function ingestJsonDrop(
+  bytes: Uint8Array,
+): Promise<IngestedJsonDrop> {
+  assertEngineInputBytes(bytes);
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "ingest_json_drop", bytes })),
+  );
+}
+
 /** Asserts a request that must carry a payload actually did. */
 function expectText(value: string | null): string {
   if (value === null) throw new Error("engine returned no payload");
@@ -204,15 +275,58 @@ function expectText(value: string | null): string {
 /** powerio format token from a file name; null for non-case files. */
 export function formatOf(name: string): string | null {
   const ext = name.split(".").pop()?.toLowerCase();
-  return ext === "m" || ext === "raw" || ext === "aux" ? ext : null;
+  switch (ext) {
+    case "m":
+    case "raw":
+    case "aux":
+    case "pwb":
+      return ext;
+    case "epc":
+      return "pslf";
+    default:
+      return null;
+  }
 }
 
+/** Parse a balanced case file for viewing. Takes the upload's bytes rather than
+ * decoded text: powerio refuses a text format whose bytes are not UTF-8, where
+ * `File.text()` would have replaced each offending byte with U+FFFD. */
 export async function ingestCase(
-  text: string,
+  bytes: Uint8Array,
   format: string,
 ): Promise<IngestedCase> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
-    expectText(await engineHost().call({ op: "ingest_case", text, format })),
+    expectText(await engineHost().call({ op: "ingest_case", bytes, format })),
+  );
+}
+
+/** Parse powerio's own model JSON (the `model-json` export, or the payload a
+ * package carries) for viewing. It is not a case format, so it does not go
+ * through `ingestCase`. */
+export async function ingestModelJson(
+  networkJson: string,
+): Promise<IngestedCase> {
+  assertEngineInputLength(networkJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "ingest_model_json",
+        network_json: networkJson,
+      }),
+    ),
+  );
+}
+
+/** Byte entry point for a dropped model JSON document. */
+export async function ingestModelJsonBytes(
+  bytes: Uint8Array,
+): Promise<IngestedCase> {
+  assertEngineInputBytes(bytes);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({ op: "ingest_model_json_bytes", bytes }),
+    ),
   );
 }
 
@@ -224,9 +338,23 @@ export async function ingestDistCase(
   text: string,
   format: string,
 ): Promise<IngestedDistCase> {
+  assertEngineInputLength(text.length);
   return JSON.parse(
     expectText(
       await engineHost().call({ op: "ingest_dist_case", text, format }),
+    ),
+  );
+}
+
+/** Byte entry point for a dropped distribution case or package. */
+export async function ingestDistCaseBytes(
+  bytes: Uint8Array,
+  format: string,
+): Promise<IngestedDistCase> {
+  assertEngineInputBytes(bytes);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({ op: "ingest_dist_case_bytes", bytes, format }),
     ),
   );
 }
@@ -255,6 +383,7 @@ export function isDisplayFile(name: string): boolean {
 }
 
 export async function parseDisplay(bytes: Uint8Array): Promise<DisplayPreview> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(
       await engineHost().call({ op: "parse_display", bytes, format: "pwd" }),
@@ -303,6 +432,7 @@ export async function parseGeo(
   bytes: Uint8Array,
   hint: string,
 ): Promise<ParsedGeoLayer> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(await engineHost().call({ op: "parse_geo", bytes, hint })),
   );
@@ -360,6 +490,7 @@ export async function applyDisplayGeo(
   networkJson: string,
   bytes: Uint8Array,
 ): Promise<AppliedGeoCase> {
+  assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(
       await engineHost().call({
@@ -408,15 +539,20 @@ type NetworkEdit =
   | { kind: "add_load"; bus: number | string; p_mw: number }
   | { kind: "adjust_branch_rating"; branch: number | string; delta_mw: number };
 
-/** An all-digit record key is the numeric-id form (object keys are strings at
- * runtime); anything else is a powerio row uid, sent as a string. */
+/** A safely representable all-digit key uses the numeric wire form. Larger IDs
+ * remain strings so serde can parse the exact integer without JS rounding. */
 function toElementKey(key: string): number | string {
-  return /^\d+$/.test(key) ? Number(key) : key;
+  if (!/^\d+$/.test(key)) return key;
+  const numeric = Number(key);
+  return Number.isSafeInteger(numeric) ? numeric : key;
 }
 
 /** A `NetworkEdit[]` for the wasm Study, dropping zero deltas so an unchanged
  * element is never sent. */
-function toEdits(deltas: DemandDeltas, rates: BranchRatingDeltas): NetworkEdit[] {
+function toEdits(
+  deltas: DemandDeltas,
+  rates: BranchRatingDeltas,
+): NetworkEdit[] {
   const edits: NetworkEdit[] = Object.entries(deltas)
     .filter(([, mw]) => mw !== 0)
     .map(([bus, p_mw]) => ({ kind: "add_load", bus: toElementKey(bus), p_mw }));
@@ -806,19 +942,31 @@ export async function createStudy(
  * formulation, and solve options in one step. Rejects on a malformed package or one
  * that is not a tellegen study (the engine fails the load closed). */
 export async function loadPackage(text: string): Promise<LoadedPackage> {
+  assertEngineInputLength(text.length);
   return JSON.parse(
     expectText(await engineHost().call({ op: "load_package", text })),
   );
 }
 
+/** Restore a dropped package without decoding it in JavaScript. */
+export async function loadPackageBytes(
+  bytes: Uint8Array,
+): Promise<LoadedPackage> {
+  assertEngineInputBytes(bytes);
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "load_package_bytes", bytes })),
+  );
+}
+
 /** Export a saved study package at commit `commit` to a powerio `format` (`matpower`,
- * `psse`, `powerio-json`, ...). Returns the serialized case text, the writer's fidelity
+ * `psse`, `model-json`, ...). Returns the serialized case text, the writer's fidelity
  * warnings, and the format token and file extension. */
 export async function exportStudy(
   packageJson: string,
   commit: number,
   format: string,
 ): Promise<ExportedCase> {
+  assertEngineInputLength(packageJson.length);
   return JSON.parse(
     expectText(
       await engineHost().call({
@@ -833,8 +981,16 @@ export async function exportStudy(
 
 export interface EngineTransport {
   preloadEngine(): Promise<void>;
-  ingestCase(text: string, format: string): Promise<IngestedCase>;
+  classifyJson(bytes: Uint8Array): Promise<JsonDropClassification>;
+  ingestJsonDrop(bytes: Uint8Array): Promise<IngestedJsonDrop>;
+  ingestCase(bytes: Uint8Array, format: string): Promise<IngestedCase>;
+  ingestModelJson(networkJson: string): Promise<IngestedCase>;
+  ingestModelJsonBytes(bytes: Uint8Array): Promise<IngestedCase>;
   ingestDistCase(text: string, format: string): Promise<IngestedDistCase>;
+  ingestDistCaseBytes(
+    bytes: Uint8Array,
+    format: string,
+  ): Promise<IngestedDistCase>;
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   parseGeo(bytes: Uint8Array, hint: string): Promise<ParsedGeoLayer>;
   applyGeo(networkJson: string, layer: string): Promise<AppliedGeoCase>;
@@ -849,12 +1005,16 @@ export interface EngineTransport {
     bytes: Uint8Array,
   ): Promise<AppliedGeoCase>;
   capabilities(): Promise<ProblemCaps[]>;
-  solveJson(networkJson: string, request?: SolveRequest): Promise<SolveResponse>;
+  solveJson(
+    networkJson: string,
+    request?: SolveRequest,
+  ): Promise<SolveResponse>;
   createStudy(
     networkJson: string,
     formulation?: Formulation,
   ): Promise<BrowserStudy>;
   loadPackage(text: string): Promise<LoadedPackage>;
+  loadPackageBytes(bytes: Uint8Array): Promise<LoadedPackage>;
   exportStudy(
     packageJson: string,
     commit: number,
@@ -864,8 +1024,13 @@ export interface EngineTransport {
 
 export const browserWasmTransport: EngineTransport = {
   preloadEngine,
+  classifyJson,
+  ingestJsonDrop,
   ingestCase,
+  ingestModelJson,
+  ingestModelJsonBytes,
   ingestDistCase,
+  ingestDistCaseBytes,
   parseDisplay,
   parseGeo,
   applyGeo,
@@ -876,6 +1041,7 @@ export const browserWasmTransport: EngineTransport = {
   solveJson,
   createStudy,
   loadPackage,
+  loadPackageBytes,
   exportStudy,
 };
 

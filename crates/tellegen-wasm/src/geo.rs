@@ -3,7 +3,7 @@
 //!
 //! Parsing is powerio's [`GeoLayer`] tolerant reader (the alias table and the
 //! positional branch id fallback live upstream); applying goes through
-//! `Network::apply_geo_layer`, so matched bus points land in `Bus.location`
+//! `BalancedNetwork::apply_geo_layer`, so matched bus points land in `Bus.location`
 //! and matched routes in `Branch.route`, and the frontend re-reads the map
 //! view from the network itself. Layers travel across the boundary as the
 //! canonical `.geo.json` document (`GeoLayer::to_geojson`), which the same
@@ -15,7 +15,7 @@
 //! truncated, or oversized payload rejects as an `Err`, never a panic.
 
 use powerio::geo::{apply_substation_points, CoordsKind, GeoApplyReport, GeoGeometry, GeoLayer};
-use powerio::network::Network;
+use powerio::BalancedNetwork;
 use powerio::{parse_display_bytes, DisplayData};
 use tellegen::geo::{pwd_lonlat_layer, stamp_layout, Coords};
 
@@ -138,8 +138,8 @@ pub fn apply_display_geo_impl(network_json: &str, bytes: &[u8]) -> Result<String
     payload_with_report(&net, report)
 }
 
-fn parse_network(network_json: &str) -> Result<Network, String> {
-    let mut net = Network::from_json(network_json).map_err(|e| e.to_string())?;
+fn parse_network(network_json: &str) -> Result<BalancedNetwork, String> {
+    let mut net = BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
     // Ingested cases arrive stamped; stamping here keeps the apply surfaces
     // total for a caller holding an older payload (fills only missing uids).
     powerio_pkg::ensure_payload_uids(&mut net);
@@ -164,7 +164,7 @@ pub(crate) fn report_value(report: &GeoApplyReport) -> serde_json::Value {
 
 /// The refreshed drop-panel payload for an updated network, with the apply
 /// report attached under `report`.
-fn payload_with_report(net: &Network, report: GeoApplyReport) -> Result<String, String> {
+fn payload_with_report(net: &BalancedNetwork, report: GeoApplyReport) -> Result<String, String> {
     let mut value = ingest_value(net, Vec::new())?;
     let object = value
         .as_object_mut()
@@ -202,7 +202,7 @@ mpc.gencost = [
     /// The uid-stamped `network_json` a real drop produces (the input every
     /// geo surface receives from the frontend).
     fn case3_network_json() -> String {
-        let out = crate::ingest_case(CASE3, "m").expect("ingest case3");
+        let out = crate::ingest_case(CASE3.as_bytes(), "m").expect("ingest case3");
         let v: Value = serde_json::from_str(&out).unwrap();
         v["network_json"].as_str().unwrap().to_owned()
     }

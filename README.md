@@ -48,13 +48,14 @@ that bus; selecting a binding line shows ∂LMP/∂rating. Dragging a slider
 applies the sensitivity column live; releasing it re-solves exactly in
 WebAssembly. A selector switches the formulation between DC OPF and SOCWR.
 
-Dropped `.m`, `.raw`, and `.aux` case files parse in the browser and never
-upload. Files with coordinates render in place; files without can be placed by
-clicking the map or paired with `.csv`, `.json`, or `.geojson` geography
-(powerio's GeoLayer reader; branch routes render as polylines). A PowerWorld
-`.pwd` file renders as approximate substation positions, or fills a
-coordinate-less sibling case through its substation numbers. Saved studies and
-exports carry the placement, and the layout downloads as a `.geo.json` layer.
+Dropped `.m`, `.raw`, `.aux`, `.epc`, `.pwb`, `.dss`, and recognized JSON cases
+parse in the browser and never upload. Files with coordinates render in place;
+files without can be placed by clicking the map or paired with `.csv`, `.json`,
+or `.geojson` geography (powerio's GeoLayer reader; branch routes render as
+polylines). A PowerWorld `.pwd` file renders as approximate substation
+positions, or fills a coordinate-less sibling case through its substation
+numbers. Saved studies and exports carry the placement, and the layout
+downloads as a `.geo.json` layer.
 
 ## Development
 

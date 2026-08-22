@@ -19,13 +19,14 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use powerio::network::Network;
+use powerio::BalancedNetwork;
 use powerio_pkg::{ElementRef, NetworkPackage, StudyBlock, StudyCommit, StudyEdit};
 use serde::{Deserialize, Serialize};
 
 use crate::api::{
-    ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells, Edits, ElementKey,
-    Problem, SensRequest, SolveOptions, SolveRequest, SolveResponse,
+    ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells,
+    validate_canonical_edits, Edits, ElementKey, Problem, SensRequest, SolveOptions, SolveRequest,
+    SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
@@ -238,11 +239,11 @@ impl SolvedState for ConicState {
     }
 }
 
-/// Solve `req`'s formulation at `base + edits` from an owned [`Network`] and box the
+/// Solve `req`'s formulation at `base + edits` from an owned [`BalancedNetwork`] and box the
 /// committed state. Dispatches **once**, mirroring [`solve_network`](crate::solve_network):
 /// the boxed [`SolvedState`] is the only formulation `match` the study performs, and a
 /// formulation this build omits returns a clean `Err` naming `solve_json`.
-fn solve_state(net: &Network, req: &SolveRequest) -> Result<Box<dyn SolvedState>, String> {
+fn solve_state(net: &BalancedNetwork, req: &SolveRequest) -> Result<Box<dyn SolvedState>, String> {
     match req.formulation {
         Problem::DcOpf => {
             let (net, sol) = dc_opf_solved(DcNetwork::from_network(net)?, req, None)?;
@@ -271,7 +272,7 @@ fn solve_state(net: &Network, req: &SolveRequest) -> Result<Box<dyn SolvedState>
 pub struct Study {
     formulation: Problem,
     /// The parsed base network: the source of truth re-solved (cloned) at every commit.
-    base: Network,
+    base: BalancedNetwork,
     options: SolveOptions,
     log: Vec<NetworkEdit>,
     /// Commit boundaries partitioning `log` into the batches each [`commit`](Study::commit)
@@ -286,16 +287,20 @@ pub struct Study {
 }
 
 impl Study {
-    /// Parse `network_json` (powerio `Network` JSON), build the model for `formulation`,
+    /// Parse `network_json` (powerio `BalancedNetwork` JSON), build the model for `formulation`,
     /// and solve the base case. The parse/normalize/index cost is paid once here, not on
     /// every solve.
     pub fn new(network_json: &str, formulation: Problem) -> Result<Self, String> {
-        let net = Network::from_json(network_json).map_err(|e| e.to_string())?;
+        let net = BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
         Self::from_network(&net, formulation)
     }
 
-    /// As [`new`](Study::new) from an already-parsed [`Network`].
-    pub fn from_network(net: &Network, formulation: Problem) -> Result<Self, String> {
+    /// As [`new`](Study::new) from an already-parsed [`BalancedNetwork`].
+    pub fn from_network(net: &BalancedNetwork, formulation: Problem) -> Result<Self, String> {
+        // A base study must be safe before the first edit. Otherwise an empty
+        // study could solve successfully and only discover ambiguous uid lookup
+        // when its first preview, commit, or package export is attempted.
+        validate_canonical_edits(net, &Edits::default())?;
         let options = SolveOptions::default();
         let req = SolveRequest {
             formulation,
@@ -402,6 +407,7 @@ impl Study {
         sensitivities: &[SensRequest],
         options: SolveOptions,
     ) -> Result<SolveResponse, String> {
+        validate_network_edits(&self.base, &log)?;
         let (solved, resp) = self.solve_log(&log, sensitivities, &options)?;
         self.options = options;
         self.log = log;
@@ -436,6 +442,7 @@ impl Study {
     /// the edit step. The result is a local linearization (`local_only = true`); `commit`
     /// to confirm. Linearizes at the *last committed* state, not the base.
     pub fn preview(&self, edits: &[NetworkEdit], watched: &[Operand]) -> Result<Preview, String> {
+        validate_network_edits(&self.base, edits)?;
         // Group step magnitudes by the parameter each edit perturbs, keyed by the edited
         // element's key. A mixed edit set previews as the sum of the groups'
         // first-order terms (the linearization is additive across parameters). Groups
@@ -537,6 +544,7 @@ impl Study {
         target: &[NetworkEdit],
         watched: &[Operand],
     ) -> Result<Preview, String> {
+        validate_network_edits(&self.base, target)?;
         let step = replacement_step(&self.log, target);
         self.preview(&step, watched)
     }
@@ -597,6 +605,7 @@ impl Study {
         // payload will carry; source-format uids (e.g. GOC3) are left untouched.
         let mut net = self.base.clone();
         powerio_pkg::ensure_payload_uids(&mut net);
+        crate::validate_canonical_identity(&net)?;
 
         let mut commits: Vec<StudyCommit> = Vec::with_capacity(self.commit_bounds.len());
         let mut start = 0usize;
@@ -674,6 +683,13 @@ impl Study {
     }
 }
 
+/// Validate every stateful edit against the canonical PowerIO payload before
+/// commit or preview. Folding preserves zero-magnitude keys, so even a no-op
+/// edit cannot use a display-only lowered row as a public target.
+fn validate_network_edits(net: &BalancedNetwork, edits: &[NetworkEdit]) -> Result<(), String> {
+    validate_canonical_edits(net, &fold(edits))
+}
+
 /// The `app["tellegen"]` blob: the formulation and solve options a package carries so
 /// [`Study::from_package`] restores the same study, versioned so an older reader
 /// rejects a payload it does not understand rather than guessing.
@@ -690,7 +706,10 @@ const TELLEGEN_APP_SCHEMA_VERSION: u32 = 1;
 /// Map one tellegen [`NetworkEdit`] to a powerio [`StudyEdit`], keyed by the resolved
 /// row's actual uid. Errors if the edit names an element the base network does not
 /// carry — a study must not persist a dangling edit.
-fn study_edit_from_network_edit(net: &Network, edit: &NetworkEdit) -> Result<StudyEdit, String> {
+fn study_edit_from_network_edit(
+    net: &BalancedNetwork,
+    edit: &NetworkEdit,
+) -> Result<StudyEdit, String> {
     match edit {
         NetworkEdit::AddLoad { bus, p_mw } => {
             let uid = bus_uid_for_key(net, bus)?;
@@ -704,7 +723,7 @@ fn study_edit_from_network_edit(net: &Network, edit: &NetworkEdit) -> Result<Stu
             let uid = branch_uid_for_key(net, branch)?;
             Ok(StudyEdit::RatingDelta {
                 branch: ElementRef::by_source_uid("branches", uid),
-                delta_mw: *delta_mw,
+                delta_mva: *delta_mw,
             })
         }
     }
@@ -714,7 +733,10 @@ fn study_edit_from_network_edit(net: &Network, edit: &NetworkEdit) -> Result<Stu
 /// a typed error so [`Study::from_package`] fails closed: an unknown or unsupported
 /// edit kind, a reactive demand delta tellegen cannot model, or a reference that names
 /// no element all reject the package.
-fn network_edit_from_study_edit(net: &Network, edit: &StudyEdit) -> Result<NetworkEdit, String> {
+fn network_edit_from_study_edit(
+    net: &BalancedNetwork,
+    edit: &StudyEdit,
+) -> Result<NetworkEdit, String> {
     match edit {
         StudyEdit::DemandDelta { bus, p_mw, q_mvar } => {
             if q_mvar.is_some() {
@@ -728,9 +750,9 @@ fn network_edit_from_study_edit(net: &Network, edit: &StudyEdit) -> Result<Netwo
                 p_mw: *p_mw,
             })
         }
-        StudyEdit::RatingDelta { branch, delta_mw } => Ok(NetworkEdit::AdjustBranchRating {
+        StudyEdit::RatingDelta { branch, delta_mva } => Ok(NetworkEdit::AdjustBranchRating {
             branch: key_from_ref(net, branch, "branches")?,
-            delta_mw: *delta_mw,
+            delta_mw: *delta_mva,
         }),
         StudyEdit::SetFields { .. } => {
             Err("study contains a set_fields edit, which tellegen does not model".into())
@@ -746,7 +768,7 @@ fn network_edit_from_study_edit(net: &Network, edit: &StudyEdit) -> Result<Netwo
 
 /// The row uid for a bus edit key on the stamped base network. A numeric id names the
 /// bus's `id` field; a uid names the row directly. Both must resolve.
-fn bus_uid_for_key(net: &Network, key: &ElementKey) -> Result<String, String> {
+fn bus_uid_for_key(net: &BalancedNetwork, key: &ElementKey) -> Result<String, String> {
     let bus = match key {
         ElementKey::Id(id) => {
             let id = usize::try_from(*id)
@@ -761,7 +783,7 @@ fn bus_uid_for_key(net: &Network, key: &ElementKey) -> Result<String, String> {
 
 /// The numeric bus id for a bus edit key. A numeric key is the id itself; a uid
 /// resolves to its row's `id` field. Errors on an unresolved uid.
-fn bus_id_for_key(net: &Network, key: &ElementKey) -> Result<i64, String> {
+fn bus_id_for_key(net: &BalancedNetwork, key: &ElementKey) -> Result<i64, String> {
     match key {
         ElementKey::Id(id) => Ok(*id),
         ElementKey::Uid(uid) => net
@@ -777,7 +799,7 @@ fn bus_id_for_key(net: &Network, key: &ElementKey) -> Result<i64, String> {
 
 /// The 1-based branch position for a branch edit key. A numeric key is the position
 /// itself; a uid resolves to its row index + 1. Errors on an unresolved uid.
-fn branch_id_for_key(net: &Network, key: &ElementKey) -> Result<i64, String> {
+fn branch_id_for_key(net: &BalancedNetwork, key: &ElementKey) -> Result<i64, String> {
     match key {
         ElementKey::Id(id) => Ok(*id),
         ElementKey::Uid(uid) => net
@@ -793,7 +815,7 @@ fn branch_id_for_key(net: &Network, key: &ElementKey) -> Result<i64, String> {
 
 /// The row uid for a branch edit key on the stamped base network. A numeric id is the
 /// 1-based branch position; a uid names the row directly.
-fn branch_uid_for_key(net: &Network, key: &ElementKey) -> Result<String, String> {
+fn branch_uid_for_key(net: &BalancedNetwork, key: &ElementKey) -> Result<String, String> {
     let branch = match key {
         ElementKey::Id(id) => usize::try_from(*id)
             .ok()
@@ -813,7 +835,7 @@ fn branch_uid_for_key(net: &Network, key: &ElementKey) -> Result<String, String>
 /// the row's payload identity (`source_uid`); falls back to the row's stamped uid when
 /// only a wire row is given. Rejects a ref on the wrong table or one that resolves to
 /// no uid.
-fn key_from_ref(net: &Network, r: &ElementRef, table: &str) -> Result<ElementKey, String> {
+fn key_from_ref(net: &BalancedNetwork, r: &ElementRef, table: &str) -> Result<ElementKey, String> {
     if r.table != table {
         return Err(format!(
             "study edit reference names table `{}`, expected `{table}`",
@@ -835,22 +857,45 @@ fn key_from_ref(net: &Network, r: &ElementRef, table: &str) -> Result<ElementKey
         .ok_or_else(|| format!("study edit reference row {row} on `{table}` has no uid"))
 }
 
-/// Export the balanced study state at commit `commit` through a powerio format writer.
+/// Where a study export lands: a case format writer, or powerio's own model JSON.
+///
+/// Model JSON is the object powerio's `to_json` writes and `from_json` reads, and
+/// powerio classifies it as [`JsonClass::ModelJson`](powerio::format::routing::JsonClass),
+/// a family of its own beside the case formats. It has no [`powerio::TargetFormat`],
+/// so it cannot ride the writer arm.
+#[derive(Clone, Copy)]
+enum ExportTarget {
+    Case(powerio::TargetFormat),
+    ModelJson,
+}
+
+/// Resolve an export token. `model-json` is powerio's family token for model JSON
+/// (`JsonClass::family`), whose spellings powerio holds permanent; everything else is a
+/// case format name.
+fn export_target_from_name(format: &str) -> Option<ExportTarget> {
+    if format.eq_ignore_ascii_case("model-json") {
+        return Some(ExportTarget::ModelJson);
+    }
+    powerio::target_format_from_name(format).map(ExportTarget::Case)
+}
+
+/// Export the balanced study state at commit `commit`.
 ///
 /// Parses a `.pio.json` package, materializes commits `0..=commit` onto the payload via
 /// powerio-pkg (or writes the base payload when the package carries no study commits),
-/// and serializes the result to `format` (`matpower`, `psse`, `powerio-json`, ...). Any
-/// fidelity the target format cannot carry rides back in `warnings` so the caller can
-/// surface it. Untrusted input: malformed, truncated, or wrong-shaped JSON returns a
-/// typed error, never a panic.
+/// and serializes the result to `format` (`matpower`, `psse`, `model-json`, ...). Any
+/// fidelity the target cannot carry rides back in `warnings` as `CODE: message` lines so
+/// the caller can surface it — for `model-json` those are the fields JSON wrote as
+/// `null`, which is what stops the document reading back. Untrusted input: malformed,
+/// truncated, or wrong-shaped JSON returns a typed error, never a panic.
 pub fn export_study(
     package_json: &str,
     commit: usize,
     format: &str,
 ) -> Result<ExportedCase, String> {
-    let package = NetworkPackage::from_json(package_json)
-        .map_err(|e| format!("invalid .pio.json package: {e}"))?;
-    let target = powerio::target_format_from_name(format)
+    // powerio-pkg names the format in its own message, so no prefix here.
+    let package = NetworkPackage::from_json(package_json).map_err(|e| e.to_string())?;
+    let target = export_target_from_name(format)
         .ok_or_else(|| format!("unknown export format \"{format}\""))?;
     let balanced = match package.study() {
         Some(study) if !study.commits.is_empty() => package
@@ -862,13 +907,28 @@ pub fn export_study(
             .cloned()
             .ok_or("package payload is not balanced")?,
     };
-    let conversion = powerio::write_as(&balanced, target).map_err(|e| e.to_string())?;
-    Ok(ExportedCase {
-        text: conversion.text,
-        warnings: conversion.warnings,
-        format: target.token().to_owned(),
-        extension: target.extension().to_owned(),
-    })
+    match target {
+        ExportTarget::Case(format) => {
+            let conversion = powerio::write_as(&balanced, format).map_err(|e| e.to_string())?;
+            Ok(ExportedCase {
+                text: conversion.text,
+                warnings: conversion.warnings,
+                format: format.token().to_owned(),
+                extension: format.extension().to_owned(),
+            })
+        }
+        ExportTarget::ModelJson => {
+            let (text, diagnostics) = balanced
+                .to_json_with_diagnostics()
+                .map_err(|e| e.to_string())?;
+            Ok(ExportedCase {
+                text,
+                warnings: diagnostics.lines(),
+                format: "model-json".to_owned(),
+                extension: "json".to_owned(),
+            })
+        }
+    }
 }
 
 /// A study state written to a target format: the serialized case text, the writer's
@@ -1011,8 +1071,7 @@ fn dense_cols(axis: &ResponseAxis, mag: &HashMap<ElementKey, f64>) -> (Vec<usize
                 .filter_map(|(i, uid)| uid.as_deref().map(|u| (u, i)))
                 .collect()
         });
-    let mut cols = Vec::new();
-    let mut col_mag = Vec::new();
+    let mut dense_magnitudes = BTreeMap::<usize, f64>::new();
     for (key, &m) in mag {
         let dense = match key {
             ElementKey::Id(id) => usize::try_from(*id)
@@ -1023,11 +1082,10 @@ fn dense_cols(axis: &ResponseAxis, mag: &HashMap<ElementKey, f64>) -> (Vec<usize
                 .and_then(|ix| ix.get(uid.as_str()).copied()),
         };
         if let Some(i) = dense {
-            cols.push(i);
-            col_mag.push(m);
+            *dense_magnitudes.entry(i).or_default() += m;
         }
     }
-    (cols, col_mag)
+    dense_magnitudes.into_iter().unzip()
 }
 
 /// Sum two per-operand prediction sets elementwise. The row axis is the operand's own
@@ -1273,6 +1331,129 @@ mod tests {
         );
         assert_eq!(before, serde_json::to_string(s.solution()).unwrap());
         assert!(s.edits().is_empty());
+    }
+
+    #[test]
+    fn duplicate_uids_reject_before_a_study_is_constructed() {
+        let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        net.buses[0].uid = Some("duplicate".into());
+        net.buses[1].uid = Some("duplicate".into());
+        let error = match Study::from_network(&net, Problem::DcOpf) {
+            Ok(_) => panic!("duplicate base identity must reject"),
+            Err(error) => error,
+        };
+        assert!(error.contains("duplicate bus uid"), "{error}");
+    }
+
+    #[test]
+    fn package_export_rejects_an_explicit_uid_that_collides_with_a_stamped_uid() {
+        let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        net.buses[0].uid = Some("buses:1".into());
+        net.buses[1].uid = None;
+
+        let study = Study::from_network(&net, Problem::DcOpf).expect("study");
+        let error = study
+            .to_package()
+            .expect_err("stamped package identity must reject");
+        assert!(error.contains("duplicate bus uid"), "{error}");
+    }
+
+    #[test]
+    fn study_rejects_display_only_three_winding_rows_before_they_enter_the_log() {
+        let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        let mut windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
+        for winding in &mut windings {
+            winding.rate_a = net.base_mva;
+        }
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
+        let synthetic_bus = net.buses.iter().map(|bus| bus.id.0).max().unwrap() + 1;
+        let synthetic_branch = net.branches.len() + 1;
+        let mut study = Study::from_network(&net, Problem::DcOpf).expect("3W study");
+        let before = serde_json::to_string(study.solution()).unwrap();
+
+        let bus_error = study
+            .commit(
+                &[NetworkEdit::AddLoad {
+                    bus: (synthetic_bus as i64).into(),
+                    p_mw: 1.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap_err();
+        assert!(
+            bus_error.contains("unknown demand delta bus"),
+            "{bus_error}"
+        );
+
+        let branch_error = study
+            .commit(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: (synthetic_branch as i64).into(),
+                    delta_mw: 1.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap_err();
+        assert!(
+            branch_error.contains("unknown rating delta branch"),
+            "{branch_error}"
+        );
+        assert!(study.edits().is_empty());
+        assert_eq!(before, serde_json::to_string(study.solution()).unwrap());
+    }
+
+    #[test]
+    fn preview_and_commit_reject_rows_omitted_from_analysis() {
+        let mut isolated = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        isolated.buses[2].kind = powerio::BusType::Isolated;
+        let isolated_id = isolated.buses[2].id.0 as i64;
+        let mut study = Study::from_network(&isolated, Problem::DcOpf).expect("isolated study");
+        let bus_edit = NetworkEdit::AddLoad {
+            bus: isolated_id.into(),
+            p_mw: 1.0,
+        };
+        let preview_error = study
+            .preview(
+                std::slice::from_ref(&bus_edit),
+                &[Operand::Price(Power::Active)],
+            )
+            .expect_err("isolated preview must reject");
+        assert!(preview_error.contains("not editable"), "{preview_error}");
+        let commit_error = study
+            .commit(&[bus_edit], SolveOptions::default())
+            .expect_err("isolated commit must reject");
+        assert!(commit_error.contains("not editable"), "{commit_error}");
+
+        let mut inactive = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        inactive.branches[0].in_service = false;
+        let mut study = Study::from_network(&inactive, Problem::DcOpf).expect("inactive study");
+        let branch_edit = NetworkEdit::AdjustBranchRating {
+            branch: 1.into(),
+            delta_mw: 1.0,
+        };
+        let preview_error = study
+            .preview(
+                std::slice::from_ref(&branch_edit),
+                &[Operand::Price(Power::Active)],
+            )
+            .expect_err("inactive preview must reject");
+        assert!(preview_error.contains("not editable"), "{preview_error}");
+        let commit_error = study
+            .commit(&[branch_edit], SolveOptions::default())
+            .expect_err("inactive commit must reject");
+        assert!(commit_error.contains("not editable"), "{commit_error}");
     }
 
     #[test]
@@ -1966,8 +2147,8 @@ mod tests {
         assert_eq!(package.study().unwrap().commits.len(), 2);
 
         let json = package.to_json().unwrap();
-        let at0 = export_study(&json, 0, "powerio-json").unwrap();
-        let at1 = export_study(&json, 1, "powerio-json").unwrap();
+        let at0 = export_study(&json, 0, "model-json").unwrap();
+        let at1 = export_study(&json, 1, "model-json").unwrap();
         // Commit 0 is base + 30 MW; commit 1 is base + 50 MW: strictly higher cost.
         let obj0 = dcopf_objective(&at0.text);
         let obj1 = dcopf_objective(&at1.text);
@@ -1996,7 +2177,7 @@ mod tests {
         let commit = s.commits() - 1;
 
         // The exact snapshot format re-solves to the identical objective.
-        let pio = export_study(&json, commit, "powerio-json").unwrap();
+        let pio = export_study(&json, commit, "model-json").unwrap();
         assert!((dcopf_objective(&pio.text) - committed).abs() < 1e-9);
 
         // MATPOWER round-trips the folded model too (to solver tolerance).
@@ -2015,7 +2196,7 @@ mod tests {
         let net = case3_json();
         let s = Study::new(&net, Problem::DcOpf).unwrap();
         let json = s.to_package().unwrap().to_json().unwrap();
-        let base = export_study(&json, 0, "powerio-json").unwrap();
+        let base = export_study(&json, 0, "model-json").unwrap();
         assert!((dcopf_objective(&base.text) - s.solution().objective.unwrap()).abs() < 1e-9);
     }
 
@@ -2124,6 +2305,59 @@ mod tests {
         for bad in ["", "{", "not json", "[]", "null", "{\"schema\":\"x\"}"] {
             let err = export_study(bad, 0, "matpower").unwrap_err();
             assert!(!err.is_empty(), "expected an error for {bad:?}");
+        }
+    }
+
+    /// The browser classifies a dropped file before any reader sees it, in
+    /// `packages/svelte/src/lib/drop-classify.ts`. It calls a document a package
+    /// when `model_kind` names a model family beside the `model` key. Nothing
+    /// else holds the writer to that shape, so this does.
+    #[test]
+    fn a_saved_package_carries_what_the_drop_classifier_reads() {
+        let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();
+        let json = s.to_package().unwrap().to_json().unwrap();
+        let value: Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value["model_kind"], "balanced");
+        assert!(
+            value["model"].is_object(),
+            "model payload: {}",
+            value["model"]
+        );
+        assert!(
+            value["powerio_version"].is_string(),
+            "powerio_version must be a string: {}",
+            value["powerio_version"]
+        );
+    }
+
+    /// A dropped case names its own buses, and tellegen writes those names into
+    /// the export a user downloads. A name holding a line terminator used to end
+    /// the record early, so the rest of it parsed as further records. powerio
+    /// replaces the terminator in the writer; every text target tellegen can
+    /// reach must hold.
+    #[test]
+    fn an_export_cannot_gain_records_from_a_bus_name() {
+        let mut net: Value = serde_json::from_str(&case3_json()).unwrap();
+        net["buses"].as_array_mut().unwrap()[1]["name"] =
+            serde_json::json!("A\n 999,'B',1,1,1,1,1,1.0,0.0,1.0,1.0,1.1,0.9");
+        let package = Study::new(&net.to_string(), Problem::DcOpf)
+            .unwrap()
+            .to_package()
+            .unwrap()
+            .to_json()
+            .unwrap();
+
+        for format in ["matpower", "psse", "pslf", "powerworld"] {
+            let exported = export_study(&package, 0, format).expect(format);
+            assert!(
+                !exported.text.contains("\n 999,"),
+                "{format}: a bus name ended its record"
+            );
+            assert!(
+                !exported.text.contains("\r 999,"),
+                "{format}: a bus name ended its record"
+            );
         }
     }
 

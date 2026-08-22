@@ -3,17 +3,18 @@
 //! shunt, the real and reactive demand, and the generator injection aggregated to
 //! buses — everything the polar AC power flow and its voltage sensitivities read,
 //! plus the per-generator bounds and costs the conic OPF optimizes. Built from a
-//! powerio `Network` exactly as [`DcNetwork`](super::DcNetwork) is. Gated with the
+//! powerio `BalancedNetwork` exactly as [`DcNetwork`](super::DcNetwork) is. Gated with the
 //! faer paths behind `sensitivity`.
 
 use std::collections::BTreeMap;
 
 use num_complex::Complex;
-use powerio::network::Network;
-use powerio::IndexedNetwork;
+use powerio::{BalancedNetwork, IndexedNetwork, LoadVoltageModel};
 use powerio_prob::{build_ac_opf_instance, AcOpfOptions, Units};
 
-use super::{flatten_gen_costs, normalize_angle_bounds, reconstruct_ids, Ids, MIN_Z_SQUARED};
+use super::{flatten_gen_costs, normalize_angle_bounds, normalize_for_model, reconstruct_ids, Ids};
+
+const NEAR_ZERO_IMPEDANCE_SQUARED: f64 = 1.0e-10;
 
 /// AC network data in the vectorized pi-model admittance form.
 ///
@@ -32,13 +33,14 @@ pub struct AcNetwork {
     pub br_from: Vec<usize>,
     pub br_to: Vec<usize>,
     /// Series conductance `g = r/(r²+x²)` and susceptance `b = −x/(r²+x²)` per
-    /// branch (`0` only for a literal zero-impedance record; a tiny but nonzero
-    /// impedance still gets its true, correspondingly large admittance).
+    /// retained branch. A literal zero-impedance row has undefined admittance
+    /// and is rejected at model construction; a tiny but nonzero impedance keeps
+    /// its true, correspondingly large admittance.
     pub g: Vec<f64>,
     pub b: Vec<f64>,
-    /// From/to-side shunt admittance (line charging). A MATPOWER source splits the
-    /// single branch charging `br_b` evenly (`b_fr = b_to = br_b/2`) with no
-    /// charging conductance (`g_fr = g_to = 0`).
+    /// From/to-side shunt admittance (line charging). Carries PowerIO's canonical
+    /// per-terminal values; a legacy MATPOWER `br_b` is derived as the symmetric
+    /// special case.
     pub g_fr: Vec<f64>,
     pub b_fr: Vec<f64>,
     pub g_to: Vec<f64>,
@@ -103,22 +105,63 @@ pub struct AcNetwork {
     pub branch_uids: Vec<Option<String>>,
     /// System base power (MVA).
     pub base_mva: f64,
+    /// An active generator names a different regulated bus. The SOCWR model
+    /// ignores voltage-control actions; ACPF rejects this explicitly.
+    pub has_remote_voltage_control: bool,
 }
 
 impl AcNetwork {
-    /// Build the AC model from a parsed powerio `Network`, normalizing through
-    /// `Network::to_normalized` (per unit, radians, filtered, densely reindexed,
+    /// Build the AC model from a parsed powerio `BalancedNetwork`, normalizing through
+    /// `BalancedNetwork::to_normalized` (per unit, radians, filtered, densely reindexed,
     /// reference inferred) and reading its nodal and generator data from a
     /// `powerio-prob` [`AcOpfInstance`](powerio_prob::AcOpfInstance): per-unit demand,
     /// generator PQ bounds and scheduled output, voltage bands and setpoints. The
     /// cost policy runs first ([`flatten_gen_costs`], so the instance's `GenCost`
-    /// accessors accept every row); the complex pi-model admittance, the line-charging
-    /// drop, the `rate_a == 0` cone sentinel, and the angle-bound normalization are
-    /// layered on from the `IndexedNetwork` afterward.
-    pub fn from_network(raw: &Network) -> Result<AcNetwork, String> {
-        let mut norm = raw.to_normalized().map_err(|e| e.to_string())?;
-        let (cq, cl, cc) = flatten_gen_costs(&mut norm)?;
+    /// accessors accept every row). The instance owns the complete complex pi model,
+    /// including per-terminal charging and 3-winding star lowering; Tellegen layers
+    /// only its `rate_a == 0` cone sentinel and angle-bound policy on top.
+    pub fn from_network(raw: &BalancedNetwork) -> Result<AcNetwork, String> {
+        let voltage_dependent_loads = raw
+            .loads
+            .iter()
+            .filter(|load| {
+                load.in_service
+                    && !matches!(
+                        load.voltage_model.as_ref(),
+                        None | Some(LoadVoltageModel::ConstantPower)
+                    )
+            })
+            .count();
+        if voltage_dependent_loads > 0 {
+            return Err(format!(
+                "network contains {voltage_dependent_loads} active voltage-dependent load(s); ACPF/SOCWR support constant-power loads only"
+            ));
+        }
+        let has_remote_voltage_control = raw.generators.iter().any(|generator| {
+            generator.in_service
+                && generator
+                    .regulated_bus
+                    .is_some_and(|regulated| regulated != generator.bus)
+        });
+        let input = normalize_for_model(raw)?;
+        let mut norm = input.network;
+        let source_rows = input.source_rows;
+        flatten_gen_costs(&mut norm)?;
         let view = IndexedNetwork::new(&norm);
+
+        let instance = build_ac_opf_instance(
+            &view,
+            &AcOpfOptions {
+                units: Units::PerUnit,
+                // Omitting this row would also omit its topology and terminal
+                // charging. Fail closed instead of returning a plausible solve
+                // for a different network.
+                skip_zero_impedance: false,
+                ..AcOpfOptions::default()
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
         let Ids {
             n,
             m,
@@ -128,139 +171,113 @@ impl AcNetwork {
             gen_ids,
             bus_uids,
             branch_uids,
-        } = reconstruct_ids(raw, &view)?;
+        } = reconstruct_ids(
+            raw,
+            &instance.bus_ids,
+            &instance.branches.source_rows,
+            &instance.generators.source_rows,
+            &source_rows,
+        )?;
 
-        let instance = build_ac_opf_instance(
-            &view,
-            &AcOpfOptions {
-                units: Units::PerUnit,
-                skip_zero_impedance: true,
-            },
-        )
-        .map_err(|e| e.to_string())?;
+        let mut vm_set = instance.vm_setpoints();
+        let slack = instance
+            .reference_buses
+            .single()
+            .map_err(|e| e.to_string())?;
 
-        // Nodal demand moved out of the instance (from_network runs per Study commit and
-        // preview, and the instance is freshly built and owned here).
-        let pd = instance.buses.p_d;
-        let qd = instance.buses.q_d;
-        // Bus shunts stay on the `IndexedNetwork` aggregates: the instance folds a
-        // self-loop branch's pi-model stamp into `g_s`/`b_s`, but tellegen keeps every
-        // source branch as a dense column (its `ybus` stamps the self-loop onto the
-        // diagonal), so the folded form would double-count it here.
-        let gs = view.gs().to_vec();
-        let bs = view.bs().to_vec();
+        // Move the complete PowerIO problem columns out of the one-shot instance.
+        // Its bus shunts already include folded self-loop pi stamps, and its active
+        // branch columns carry canonical per-terminal charging.
+        let buses = instance.buses;
+        let generators = instance.generators;
+        let branches = instance.branches;
+        debug_assert_eq!(n, buses.p_d.len());
+        debug_assert_eq!(m, branches.g.len());
+        debug_assert_eq!(k, generators.q.len());
 
-        let branches = view.branches();
-        let mut br_from = Vec::with_capacity(m);
-        let mut br_to = Vec::with_capacity(m);
-        let mut g = Vec::with_capacity(m);
-        let mut b = Vec::with_capacity(m);
-        let mut g_fr = Vec::with_capacity(m);
-        let mut b_fr = Vec::with_capacity(m);
-        let mut g_to = Vec::with_capacity(m);
-        let mut b_to = Vec::with_capacity(m);
-        let mut tap = Vec::with_capacity(m);
-        let mut shift = Vec::with_capacity(m);
-        let mut rate_a = Vec::with_capacity(m);
-        let mut angmin = Vec::with_capacity(m);
-        let mut angmax = Vec::with_capacity(m);
-        for br in branches {
-            let f = view
-                .bus_index(br.from)
-                .ok_or_else(|| format!("branch from-bus {} not in index", br.from))?;
-            let t = view
-                .bus_index(br.to)
-                .ok_or_else(|| format!("branch to-bus {} not in index", br.to))?;
-            let z2 = br.r * br.r + br.x * br.x;
-            // Only a literal zero-impedance record (z2 == 0, undivideable) falls back to 0.
-            // A tiny-but-nonzero impedance still gets its true (large) series admittance: it
-            // is a real, near-ideal tie (e.g. a substation bus-splitting jumper), not an open
-            // circuit, and severing it can wrongly strand generation or reactive support (the
-            // same bug fixed for DC in `DcNetwork::from_network`; see
-            // `tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`). The line
-            // charging on such a jumper is still dropped below, unrelated to this guard.
-            let (gg, bb) = if z2 > 0.0 {
-                (br.r / z2, -br.x / z2)
-            } else {
-                (0.0, 0.0)
-            };
-            br_from.push(f);
-            br_to.push(t);
-            g.push(gg);
-            b.push(bb);
-            // MATPOWER charging: split evenly, no charging conductance. This guard is
-            // independent of the series-admittance one above: a near-ideal tie (z2 below
-            // MIN_Z_SQUARED but not literally zero) now carries its true, large series g/b,
-            // so it is no longer a dangling bus in the series terms; but its charging, which
-            // scales with a real line's length, is still dropped, since it is negligibly
-            // small next to that series admittance and keeping it on a literal zero-impedance
-            // jumper (z2 == 0, g = b = 0, no series coupling at all) over-determines the
-            // reactive balance at an isolated zero-injection bus (its only reactive terms
-            // would be the two charging shunts), forcing w → 0 against the voltage floor — a
-            // spurious SOCWR/AC-OPF infeasibility fixed by PR #13. (powerio 0.3.3 still emits
-            // the charging here.)
-            let charging = if z2 > MIN_Z_SQUARED { br.b / 2.0 } else { 0.0 };
-            g_fr.push(0.0);
-            b_fr.push(charging);
-            g_to.push(0.0);
-            b_to.push(charging);
-            // to_normalized already maps 0 -> 1 via effective_tap; guard anyway.
-            tap.push(if br.tap == 0.0 { 1.0 } else { br.tap });
-            shift.push(br.shift);
-            // rate_a == 0 means unlimited; a large sentinel keeps the cone uniform.
-            rate_a.push(if br.rate_a > 0.0 { br.rate_a } else { 1.0e3 });
-            let (amin, amax) = normalize_angle_bounds(br.angmin, br.angmax);
-            angmin.push(amin);
-            angmax.push(amax);
-        }
+        let pd = buses.p_d;
+        let qd = buses.q_d;
+        let gs = buses.g_s;
+        let bs = buses.b_s;
+        let vm_min = buses.vm_min;
+        let vm_max = buses.vm_max;
+
+        let br_from = branches.from_bus;
+        let br_to = branches.to_bus;
+        let suppress_terminal_charging: Vec<bool> = branches
+            .g
+            .iter()
+            .zip(&branches.b)
+            .map(|(&g, &b)| {
+                let admittance_squared = g * g + b * b;
+                admittance_squared > 0.0
+                    && admittance_squared.recip() <= NEAR_ZERO_IMPEDANCE_SQUARED
+            })
+            .collect();
+        let g = branches.g;
+        let b = branches.b;
+        let suppress = |values: Vec<f64>| {
+            values
+                .into_iter()
+                .zip(&suppress_terminal_charging)
+                .map(|(value, &suppressed)| if suppressed { 0.0 } else { value })
+                .collect()
+        };
+        // Detailed substation cases use near-ideal jumper rows. Retain their
+        // physical series admittance but suppress terminal charging, matching
+        // Tellegen's established CATS stability policy.
+        let g_fr = suppress(branches.g_fr);
+        let b_fr = suppress(branches.b_fr);
+        let g_to = suppress(branches.g_to);
+        let b_to = suppress(branches.b_to);
+        let tap = branches.tap;
+        let shift = branches.shift;
+        let rate_a = branches
+            .s_max
+            .into_iter()
+            .map(|rate| if rate > 0.0 { rate } else { 1.0e3 })
+            .collect();
+        let (angmin, angmax): (Vec<_>, Vec<_>) = branches
+            .angle_min
+            .into_iter()
+            .zip(branches.angle_max)
+            .map(|(min, max)| normalize_angle_bounds(min, max))
+            .unzip();
         let sw = vec![1.0; m];
 
-        // Voltage-magnitude bounds and the per-bus magnitude setpoint, from the instance.
-        // The setpoint starts from the case voltage (bus.vm, or 1.0 when unset) and is
-        // overwritten below by each in-service generator's voltage setpoint (vg) at its
-        // bus, so PV and slack buses regulate to the generator setpoint (last-wins per bus,
-        // as MATPOWER does), not the bus.vm guess.
-        let mut vm_set: Vec<f64> = instance
-            .buses
-            .vm
-            .iter()
-            .map(|&v| if v > 0.0 { v } else { 1.0 })
-            .collect();
-        let vm_min = instance.buses.vm_min;
-        let vm_max = instance.buses.vm_max;
-
-        // Per-bus aggregates (power flow operating point) and per-generator data (the
-        // conic OPF decision variables) from the instance; cost (`cq`/`cl`/`cc`) from the
-        // pre-pass. The instance's generator columns follow the normalized generator
-        // order, the same order `flatten_gen_costs` walks, so they line up with column `i`.
+        // Per-bus scheduled generation for power flow, plus generator-space bounds
+        // and costs for SOCWR. PowerIO states the quadratic as `0.5*q*p^2`.
         let mut pg = vec![0.0; n];
         let mut qg = vec![0.0; n];
-        let gen_bus = instance.generators.bus_of_gen;
-        let pmin = instance.generators.pmin;
-        let pmax = instance.generators.pmax;
-        let qmin = instance.generators.qmin;
-        let qmax = instance.generators.qmax;
-        let gen_pg = instance.generators.pg;
-        let gen_qg = instance.generators.qg;
-        let gen_vg = instance.generators.vg;
-        for i in 0..k {
-            let bus = gen_bus[i];
-            pg[bus] += gen_pg[i];
-            qg[bus] += gen_qg[i];
+        let gen_bus = generators.bus_of_gen;
+        for (i, bus) in gen_bus.iter().copied().enumerate() {
+            pg[bus] += generators.pg[i];
+            qg[bus] += generators.qg[i];
             // Regulate this bus's magnitude to the generator's voltage setpoint, clamped
             // into the bus magnitude band: the power flow holds PV/slack magnitudes at
             // `vm_set` with no `vm` column to bound them, so an out-of-band `vg` would pin
             // the bus at an infeasible magnitude and the sensitivity would linearize there.
-            let vg = gen_vg[i];
+            let vg = generators.vg[i];
             if vg > 0.0 {
-                vm_set[bus] = vg.clamp(vm_min[bus], vm_max[bus]);
+                // `f64::clamp` panics on an inverted or non-finite band, and nothing
+                // between the case file and here establishes that the bus carries one:
+                // the readers copy VMIN/VMAX verbatim and normalization leaves them
+                // alone. An unusable band means no bound to apply, not a panic.
+                let (lo, hi) = (vm_min[bus], vm_max[bus]);
+                vm_set[bus] = if lo.is_finite() && hi.is_finite() && lo <= hi {
+                    vg.clamp(lo, hi)
+                } else {
+                    vg
+                };
             }
         }
-
-        let slack = *instance
-            .reference_buses
-            .first()
-            .ok_or("normalized network has no reference bus")?;
+        let cq = generators.q.into_iter().map(|value| value / 2.0).collect();
+        let cl = generators.c;
+        let cc = generators.c0;
+        let pmin = generators.pmin;
+        let pmax = generators.pmax;
+        let qmin = generators.qmin;
+        let qmax = generators.qmax;
 
         Ok(AcNetwork {
             n,
@@ -304,6 +321,7 @@ impl AcNetwork {
             bus_uids,
             branch_uids,
             base_mva: raw.base_mva,
+            has_remote_voltage_control,
         })
     }
 
@@ -408,9 +426,167 @@ mod tests {
             "jumper susceptance {} should be large, not the near-zero open-circuit value",
             ac.b[1]
         );
-        // CASE3's branches all carry zero charging (`br.b == 0`), so this fixture can't
-        // pin the separate charging guard (still keyed to MIN_Z_SQUARED, unaffected by
-        // this fix, and covered by
-        // `problem::conic::tests::zero_impedance_jumper_to_dangling_bus_stays_feasible`).
+    }
+
+    #[test]
+    fn near_zero_jumper_retains_series_admittance_but_suppresses_charging() {
+        let text = CASE3.replace(
+            "1 3 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
+            "1 3 1e-7 1e-6 0 250 250 250 0 0 1 -360 360;",
+        );
+        let mut net = powerio::parse_str(&text, "matpower")
+            .expect("parse jumper case3")
+            .network;
+        net.branches[1].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        let ac = AcNetwork::from_network(&net).expect("build charged jumper");
+        assert!(ac.g[1].abs() > 1.0e4);
+        assert!(ac.b[1].abs() > 1.0e5);
+        assert_eq!(
+            (ac.g_fr[1], ac.b_fr[1], ac.g_to[1], ac.b_to[1]),
+            (0.0, 0.0, 0.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn canonical_asymmetric_terminal_charging_reaches_the_pi_model() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        net.branches[0].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+
+        let ac = AcNetwork::from_network(&net).expect("build charged AC network");
+        approx(ac.g_fr[0], 0.01);
+        approx(ac.b_fr[0], 0.02);
+        approx(ac.g_to[0], 0.03);
+        approx(ac.b_to[0], 0.04);
+
+        let (yff, _, _, ytt) = ac.branch_admittance(0);
+        approx(yff.re, ac.g[0] + 0.01);
+        approx(yff.im, ac.b[0] + 0.02);
+        approx(ytt.re, ac.g[0] + 0.03);
+        approx(ytt.im, ac.b[0] + 0.04);
+    }
+
+    #[test]
+    fn voltage_dependent_loads_fail_closed_but_constant_power_is_explicitly_safe() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        net.loads[0].voltage_model = Some(LoadVoltageModel::ConstantPower);
+        AcNetwork::from_network(&net).expect("explicit constant power");
+
+        net.loads[0].voltage_model = Some(LoadVoltageModel::Zip {
+            p_constant_power: net.loads[0].p,
+            q_constant_power: net.loads[0].q,
+            p_constant_current: 0.0,
+            q_constant_current: 0.0,
+            p_constant_impedance: 0.0,
+            q_constant_impedance: 0.0,
+            v_nom: Some(1.0),
+            load_type: None,
+            scaling: None,
+        });
+        let error = AcNetwork::from_network(&net).unwrap_err();
+        assert!(error.contains("voltage-dependent load"), "{error}");
+
+        net.loads[0].voltage_model = Some(LoadVoltageModel::Exponential {
+            p: net.loads[0].p,
+            q: net.loads[0].q,
+            v_nom: Some(1.0),
+            gamma_p: 1.0,
+            gamma_q: 2.0,
+        });
+        let error = AcNetwork::from_network(&net).unwrap_err();
+        assert!(error.contains("voltage-dependent load"), "{error}");
+    }
+
+    #[test]
+    fn remote_generator_voltage_control_is_preserved_as_an_acpf_guard() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        net.generators[0].regulated_bus = Some(powerio::BusId(2));
+        let ac = AcNetwork::from_network(&net).expect("SOCWR model remains constructible");
+        assert!(ac.has_remote_voltage_control);
+
+        net.generators[0].regulated_bus = None;
+        let ac = AcNetwork::from_network(&net).expect("terminal regulation");
+        assert!(!ac.has_remote_voltage_control);
+    }
+
+    #[test]
+    fn raw_and_normalized_inputs_build_the_same_ac_model() {
+        let mut raw = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        raw.branches[0].shift = 15.0;
+        raw.branches[0].angmin = -30.0;
+        raw.branches[0].angmax = 30.0;
+        raw.branches[0].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        let normalized = raw.to_normalized().expect("normalize case3");
+        let a = AcNetwork::from_network(&raw).expect("build raw");
+        let b = AcNetwork::from_network(&normalized).expect("build normalized");
+
+        assert_eq!(a.bus_ids, b.bus_ids);
+        assert_eq!(a.branch_ids, b.branch_ids);
+        assert_eq!(a.gen_ids, b.gen_ids);
+        for (left, right) in [
+            (&a.g, &b.g),
+            (&a.b, &b.b),
+            (&a.g_fr, &b.g_fr),
+            (&a.b_fr, &b.b_fr),
+            (&a.g_to, &b.g_to),
+            (&a.b_to, &b.b_to),
+            (&a.tap, &b.tap),
+            (&a.shift, &b.shift),
+            (&a.rate_a, &b.rate_a),
+            (&a.angmin, &b.angmin),
+            (&a.angmax, &b.angmax),
+            (&a.gs, &b.gs),
+            (&a.bs, &b.bs),
+            (&a.pd, &b.pd),
+            (&a.qd, &b.qd),
+            (&a.pg, &b.pg),
+            (&a.qg, &b.qg),
+            (&a.cq, &b.cq),
+            (&a.cl, &b.cl),
+            (&a.cc, &b.cc),
+        ] {
+            assert_eq!(left.len(), right.len());
+            for (&actual, &expected) in left.iter().zip(right.iter()) {
+                approx(actual, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn active_three_winding_transformer_is_lowered_with_stable_ids() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        let mut windings = [1, 2, 3].map(|bus| powerio::Winding::new(powerio::BusId(bus)));
+        for winding in &mut windings {
+            winding.rate_a = net.base_mva;
+        }
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
+
+        let ac = AcNetwork::from_network(&net).expect("build 3W AC network");
+        assert_eq!(ac.n, 4);
+        assert_eq!(ac.m, 6);
+        assert_eq!(ac.bus_ids, vec![1, 2, 3, 4]);
+        assert_eq!(ac.branch_ids, vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(&ac.branch_uids[3..], &[None, None, None]);
+        for branch in 3..6 {
+            assert_eq!(ac.br_to[branch], 3, "winding must terminate at star bus");
+            approx(ac.angmin[branch], -std::f64::consts::PI / 3.0);
+            approx(ac.angmax[branch], std::f64::consts::PI / 3.0);
+        }
+
+        let normalized = net.to_normalized().expect("normalize 3W case");
+        let from_normalized = AcNetwork::from_network(&normalized).expect("build normalized 3W");
+        assert_eq!(from_normalized.bus_ids, ac.bus_ids);
+        assert_eq!(from_normalized.branch_ids, ac.branch_ids);
     }
 }

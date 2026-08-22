@@ -13,6 +13,11 @@ endpoints ship disabled and answer 403 unless `TELLEGEN_SERVER_COMPUTE=1`
 - `GET /api/cases/{id}/network` — the map view (buses, branches, coordinates).
 - `GET /api/cases/{id}/solution` — the cached base DC OPF solution, computed once at startup.
 
+Case summaries report canonical PowerIO row counts as `n_bus`/`n_branch` and
+rendered, three-winding-lowered counts as
+`n_analysis_bus`/`n_analysis_branch`. Older servers may omit the analysis
+counts.
+
 ## Compute
 
 - `GET /api/cases/{id}/sensitivity/lmp/d/{bus}` — the ∂LMP/∂demand column at a bus.

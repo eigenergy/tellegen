@@ -5,7 +5,7 @@ use powerio::geo::{
     geo_layer_from_pwd, pwd_mercator_to_lonlat, CoordinateSpace, CoordsKind, GeoGeometry, GeoLayer,
     GeoMeta, Location,
 };
-use powerio::network::{Bus, Network};
+use powerio::{BalancedNetwork, Bus, IndexedNetwork};
 
 pub type Coords = BTreeMap<usize, (f64, f64)>;
 
@@ -15,7 +15,7 @@ pub type Coords = BTreeMap<usize, (f64, f64)>;
 /// deliberately leaves them in extras: older complete cases write bare
 /// `Latitude`/`Longitude` on every bus row, and later exports point each bus at
 /// the aux `Substation` table through `SubNum`.
-pub fn network_coords(net: &Network) -> Coords {
+pub fn network_coords(net: &BalancedNetwork) -> Coords {
     let subs = match aux_sections(net) {
         Some(Ok(aux)) => substation_coords(&aux),
         _ => BTreeMap::new(),
@@ -46,12 +46,64 @@ pub fn network_coords(net: &Network) -> Coords {
     out
 }
 
+/// Extend source coordinates over the bus-branch analysis view. PowerIO keeps
+/// three-winding transformers as typed source records, while
+/// [`IndexedNetwork`] lowers each active record to a synthetic star bus and
+/// three branches. When all located winding terminals are available, place the
+/// synthetic bus at their centroid so a rendered geographic graph has the same
+/// connectivity as the solver model. Source coordinates are never overwritten.
+pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
+    let view = IndexedNetwork::new(net);
+    let lowered = view.network();
+    let mut out = source.clone();
+
+    // Lowering only appends star buses, and every winding branch joins one of
+    // them to a source terminal, so no star bus is another's neighbor. Collect
+    // the located terminals in one pass over the branches: rescanning them per
+    // star bus is quadratic in the number of three-winding transformers, and a
+    // model-JSON document can declare those by the tens of thousands.
+    let stars: BTreeSet<usize> = lowered
+        .buses
+        .iter()
+        .skip(net.buses.len())
+        .map(|bus| bus.id.0)
+        .collect();
+    let mut terminals: BTreeMap<usize, Vec<(f64, f64)>> = BTreeMap::new();
+    for branch in lowered.branches.iter().filter(|branch| branch.in_service) {
+        let (star, terminal) = if stars.contains(&branch.from.0) {
+            (branch.from.0, branch.to.0)
+        } else if stars.contains(&branch.to.0) {
+            (branch.to.0, branch.from.0)
+        } else {
+            continue;
+        };
+        if let Some(&point) = source.get(&terminal) {
+            terminals.entry(star).or_default().push(point);
+        }
+    }
+
+    for bus in lowered.buses.iter().skip(net.buses.len()) {
+        let Some(neighbors) = terminals.get(&bus.id.0) else {
+            continue;
+        };
+        if neighbors.len() != 3 {
+            continue;
+        }
+        let count = neighbors.len() as f64;
+        let (lon, lat) = neighbors
+            .iter()
+            .fold((0.0, 0.0), |(x, y), (lon, lat)| (x + lon, y + lat));
+        out.entry(bus.id.0).or_insert((lon / count, lat / count));
+    }
+    out
+}
+
 /// Stamp a computed layout onto the network: each `coords` entry (bus id =>
 /// lon/lat) becomes that bus's `Bus.location` with `kind` provenance, and the
 /// network's geo meta becomes geographic with the same default. Buses absent
 /// from `coords` keep whatever location they had. Returns how many buses were
 /// placed; zero leaves the geo meta untouched.
-pub fn stamp_layout(net: &mut Network, coords: &Coords, kind: CoordsKind) -> usize {
+pub fn stamp_layout(net: &mut BalancedNetwork, coords: &Coords, kind: CoordsKind) -> usize {
     let mut placed = 0;
     for b in &mut net.buses {
         if let Some(&(lon, lat)) = coords.get(&b.id.0) {
@@ -93,7 +145,11 @@ pub fn pwd_lonlat_layer(display: &PwdDisplay) -> GeoLayer {
     layer
 }
 
-pub fn complete_coords_for(case: &Network, aux: &Network, source: &str) -> Result<Coords, String> {
+pub fn complete_coords_for(
+    case: &BalancedNetwork,
+    aux: &BalancedNetwork,
+    source: &str,
+) -> Result<Coords, String> {
     let mut coords = network_coords(aux);
     spread_stacks(&mut coords);
     let missing: Vec<_> = case
@@ -143,7 +199,9 @@ pub fn spread_stacks(coords: &mut Coords) {
     }
 }
 
-pub fn synthetic_layout(net: &Network, bbox: (f64, f64, f64, f64)) -> Coords {
+pub fn synthetic_layout(net: &BalancedNetwork, bbox: (f64, f64, f64, f64)) -> Coords {
+    let view = IndexedNetwork::new(net);
+    let net = view.network();
     let ids: Vec<_> = net.buses.iter().map(|b| b.id.0).collect();
     let index: BTreeMap<usize, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
     let mut seen = BTreeSet::new();
@@ -299,7 +357,7 @@ mod tests {
 
     /// An n-bus chain network built through the parser: powerio's data structs
     /// are `#[non_exhaustive]`, so tests construct networks from case text.
-    fn chain_network(n: usize) -> Network {
+    fn chain_network(n: usize) -> BalancedNetwork {
         let mut m = String::from(
             "function mpc = chain\nmpc.version = '2';\nmpc.baseMVA = 100;\nmpc.bus = [\n",
         );
@@ -365,7 +423,7 @@ mod tests {
         // Locations survive the network JSON round trip, so a package built from
         // this payload carries the layout.
         let json = net.to_json().expect("to_json");
-        let back = Network::from_json(&json).expect("from_json");
+        let back = BalancedNetwork::from_json(&json).expect("from_json");
         assert_eq!(back.buses[0].location, net.buses[0].location);
 
         // An empty layout stamps nothing and leaves the meta untouched.
@@ -430,5 +488,24 @@ mod tests {
             .map(|p| (p.0.to_bits(), p.1.to_bits()))
             .collect();
         assert_eq!(unique.len(), 20);
+    }
+
+    #[test]
+    fn three_winding_star_is_present_in_layouts_and_geographic_coords() {
+        let mut net = chain_network(3);
+        let windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
+
+        let bbox = (-82.0, 33.0, -80.0, 35.0);
+        let synthetic = synthetic_layout(&net, bbox);
+        assert_eq!(synthetic.len(), 4);
+        assert!(synthetic.contains_key(&4));
+
+        let source = BTreeMap::from([(1, (-82.0, 33.0)), (2, (-80.0, 33.0)), (3, (-81.0, 36.0))]);
+        let geographic = lowered_coords(&net, &source);
+        assert_eq!(geographic.len(), 4);
+        assert_eq!(geographic[&4], (-81.0, 34.0));
     }
 }

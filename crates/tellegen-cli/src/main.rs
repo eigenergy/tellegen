@@ -1,6 +1,6 @@
 //! `tellegen` — a thin CLI over the engine's stateless JSON contract, for
 //! reproducible solves, parity checks, and scripting. The network is read as
-//! powerio `Network` JSON on stdin; the solve request (see [`tellegen::solve_json`])
+//! powerio `BalancedNetwork` JSON on stdin; the solve request (see [`tellegen::solve_json`])
 //! is the first argument, or the word `capabilities` to print the support matrix.
 //!
 //! ```text

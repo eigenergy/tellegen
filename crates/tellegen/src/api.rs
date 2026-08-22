@@ -1,6 +1,6 @@
 //! The browser- and server-facing entry point: one driver over every formulation.
 //!
-//! Parse a powerio [`Network`], apply operating-point edits, solve the requested
+//! Parse a powerio [`BalancedNetwork`], apply operating-point edits, solve the requested
 //! formulation, attach any requested sensitivity cells, and serve a
 //! formulation-agnostic response. The frontend picks three things in one request:
 //! the **problem** it solves (`dcpf`/`dcopf`/`acpf`/`socwr`), the **operand** it
@@ -11,14 +11,14 @@
 //! Keeping the JSON layer here (not behind `#[wasm_bindgen]`) makes it testable
 //! natively; the wasm crate wraps [`solve_json`] and [`capabilities_json`].
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use powerio::network::Network;
+use powerio::BalancedNetwork;
 use serde::{Deserialize, Serialize};
 
-use super::model::DcNetwork;
+use super::model::{validate_unique_uids, DcNetwork};
 use super::problem::dc_opf_cancellable;
 use super::solve::SolveIteration;
 
@@ -228,6 +228,80 @@ pub struct SolveRequest {
     pub options: SolveOptions,
 }
 
+/// Validate edit keys against the caller's canonical PowerIO tables before any
+/// analysis lowering occurs. The solver view may contain star buses and winding
+/// branches synthesized for a three-winding transformer; those rows are valid
+/// model axes, but they are not source elements and therefore are never edit
+/// targets on a public API.
+pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> Result<(), String> {
+    validate_canonical_identity(net)?;
+    for (bus, mw) in sorted_deltas(&edits.deltas) {
+        if !mw.is_finite() {
+            return Err(format!("demand delta for bus {bus} must be finite"));
+        }
+        let target = match bus {
+            ElementKey::Id(id) if *id <= 0 => {
+                return Err("demand delta bus must be positive".into());
+            }
+            ElementKey::Id(id) => usize::try_from(*id)
+                .ok()
+                .and_then(|id| net.buses.iter().find(|bus| bus.id.0 == id)),
+            ElementKey::Uid(uid) => net.buses.iter().find(|bus| bus.uid.as_deref() == Some(uid)),
+        };
+        let Some(target) = target else {
+            return Err(format!("unknown demand delta bus {bus}"));
+        };
+        if target.kind == powerio::BusType::Isolated {
+            return Err(format!("demand delta bus {bus} is not editable"));
+        }
+    }
+    for (branch, mw) in sorted_deltas(&edits.rates) {
+        if !mw.is_finite() {
+            return Err(format!("rating delta for branch {branch} must be finite"));
+        }
+        let target = match branch {
+            ElementKey::Id(id) if *id <= 0 => {
+                return Err("rating delta branch must be positive".into());
+            }
+            ElementKey::Id(id) => usize::try_from(*id)
+                .ok()
+                .and_then(|id| id.checked_sub(1))
+                .and_then(|row| net.branches.get(row)),
+            ElementKey::Uid(uid) => net
+                .branches
+                .iter()
+                .find(|branch| branch.uid.as_deref() == Some(uid)),
+        };
+        let Some(target) = target else {
+            return Err(format!("unknown rating delta branch {branch}"));
+        };
+        let endpoint_is_editable = |id| {
+            net.buses
+                .iter()
+                .any(|bus| bus.id == id && bus.kind != powerio::BusType::Isolated)
+        };
+        if !target.in_service
+            || target.from == target.to
+            || target.r * target.r + target.x * target.x == 0.0
+            || !endpoint_is_editable(target.from)
+            || !endpoint_is_editable(target.to)
+        {
+            return Err(format!("rating delta branch {branch} is not editable"));
+        }
+    }
+    Ok(())
+}
+
+/// Require canonical row identity to be unambiguous on each editable axis.
+///
+/// A bus and a branch may intentionally share a uid because their edit axes are
+/// distinct. Two buses (or two branches) may not: key lookup and study package
+/// persistence would otherwise disagree about which source row the uid names.
+/// Missing uids remain valid for callers that use numeric keys.
+pub fn validate_canonical_identity(net: &BalancedNetwork) -> Result<(), String> {
+    super::model::validate_canonical_identity(net)
+}
+
 // ---------------------------------------------------------------------------
 // Response
 // ---------------------------------------------------------------------------
@@ -360,7 +434,7 @@ pub struct SolveResponse {
 /// front door. Errors — a failed solve, an unsupported `(operand, parameter)` cell,
 /// a formulation this build does not include — surface as the `Err` string.
 pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, String> {
-    let net = Network::from_json(network_json).map_err(|e| e.to_string())?;
+    let net = BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
     let req: SolveRequest = if request_json.trim().is_empty() {
         SolveRequest::default()
     } else {
@@ -370,11 +444,12 @@ pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, Stri
     serde_json::to_string(&resp).map_err(|e| e.to_string())
 }
 
-/// Solve an already-parsed [`Network`] under `req`. Dispatches on the formulation to
+/// Solve an already-parsed [`BalancedNetwork`] under `req`. Dispatches on the formulation to
 /// the matching solver, then runs each requested sensitivity against the matching
 /// differentiable system. Problems this build does not include return a clean
 /// `Err` rather than degrading silently.
-pub fn solve_network(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+pub fn solve_network(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
+    validate_canonical_edits(net, &req.edits)?;
     match req.formulation {
         Problem::DcOpf => solve_dc_opf(net, req),
         #[cfg(feature = "sensitivity")]
@@ -395,7 +470,7 @@ pub fn solve_network(net: &Network, req: &SolveRequest) -> Result<SolveResponse,
     }
 }
 
-fn solve_dc_opf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_dc_opf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     let dc = DcNetwork::from_network(net)?;
     dc_opf_response(dc, req, None)
 }
@@ -466,7 +541,7 @@ fn dc_opf_response(
 }
 
 #[cfg(feature = "sensitivity")]
-fn solve_dc_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     // Flow limits do not constrain a power flow, so a rating edit cannot enter
     // the model.
     reject_rating_deltas(&req.edits.rates, "dcpf")?;
@@ -477,8 +552,11 @@ fn solve_dc_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
     // Net per-unit injection per dense bus: generator setpoints minus (edited) load.
     // The slack absorbs the imbalance; its injection entry is recomputed, not echoed.
     let mut injection: Vec<f64> = dc.demand.iter().map(|d| -d).collect();
+    let input_power_base = if net.is_normalized() { 1.0 } else { base };
     for j in 0..dc.k {
-        injection[dc.gen_bus[j]] += net.generators[dc.gen_ids[j] - 1].pg / base;
+        let source_row = dc.gen_source_rows[j]
+            .ok_or_else(|| format!("generator column {j} has no source row"))?;
+        injection[dc.gen_bus[j]] += net.generators[source_row].pg / input_power_base;
     }
     let sol = super::problem::dc_pf(&dc, &injection)?;
 
@@ -506,7 +584,7 @@ fn solve_dc_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, Strin
 }
 
 #[cfg(feature = "sensitivity")]
-fn solve_ac_pf(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_ac_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     let (acnet, sol) = ac_pf_solved(super::model::AcNetwork::from_network(net)?, req)?;
     ac_pf_assemble(&acnet, &sol, req)
 }
@@ -518,6 +596,9 @@ pub(crate) fn ac_pf_solved(
     mut acnet: super::model::AcNetwork,
     req: &SolveRequest,
 ) -> Result<(super::model::AcNetwork, super::problem::AcPfSolution), String> {
+    if acnet.has_remote_voltage_control {
+        return Err("acpf does not yet support a generator regulating a remote bus".into());
+    }
     reject_rating_deltas(&req.edits.rates, "acpf")?;
     apply_demand_deltas_ac(&mut acnet, &req.edits.deltas)?;
     let sol = super::problem::ac_pf(&super::formulation::AcPolar::new(), &acnet)?;
@@ -562,7 +643,7 @@ pub(crate) fn ac_pf_assemble(
 }
 
 #[cfg(feature = "conic")]
-fn solve_socwr(net: &Network, req: &SolveRequest) -> Result<SolveResponse, String> {
+fn solve_socwr(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     let (acnet, sol) = socwr_solved(super::model::AcNetwork::from_network(net)?, req)?;
     socwr_assemble(&acnet, &sol, req)
 }
@@ -649,9 +730,71 @@ pub fn solve_prebuilt_cancellable(
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<SolveResponse, String> {
+    validate_prebuilt_canonical_edits(base_dc, &req.edits)?;
     // Clone the cached model so the perturbation never touches it; every field but
     // demand is constant for the case, so this is a flat Vec copy.
     dc_opf_response(base_dc.clone(), req, cancel)
+}
+
+/// The prebuilt fast path no longer has the canonical `BalancedNetwork`, so use
+/// the provenance retained on its lowered branches. A synthetic winding has no
+/// source row, and its `to` endpoint is the synthetic star bus. This rejects the
+/// same display-only rows as [`validate_canonical_edits`] without changing the
+/// public `solve_prebuilt` signature.
+fn validate_prebuilt_canonical_edits(dc: &DcNetwork, edits: &Edits) -> Result<(), String> {
+    validate_unique_uids("bus", dc.bus_uids.iter().map(Option::as_deref))?;
+    validate_unique_uids("branch", dc.branch_uids.iter().map(Option::as_deref))?;
+    let bus_index = KeyIndex::new(&dc.bus_ids, &dc.bus_uids, &edits.deltas);
+    for (bus, mw) in sorted_deltas(&edits.deltas) {
+        if !mw.is_finite() {
+            return Err(format!("demand delta for bus {bus} must be finite"));
+        }
+        if let ElementKey::Uid(uid) = bus {
+            if dc
+                .bus_uids
+                .iter()
+                .filter(|candidate| candidate.as_deref() == Some(uid.as_str()))
+                .count()
+                > 1
+            {
+                return Err(format!("ambiguous demand delta bus uid \"{uid}\""));
+            }
+        }
+        if let Some(i) = bus_index.get(bus) {
+            let synthetic = dc
+                .branch_source_rows
+                .iter()
+                .zip(&dc.br_to)
+                .any(|(source, &to)| source.is_none() && to == i);
+            if synthetic {
+                return Err(format!("unknown demand delta bus {bus}"));
+            }
+        }
+    }
+
+    let branch_index = KeyIndex::new(&dc.branch_ids, &dc.branch_uids, &edits.rates);
+    for (branch, mw) in sorted_deltas(&edits.rates) {
+        if !mw.is_finite() {
+            return Err(format!("rating delta for branch {branch} must be finite"));
+        }
+        if let ElementKey::Uid(uid) = branch {
+            if dc
+                .branch_uids
+                .iter()
+                .filter(|candidate| candidate.as_deref() == Some(uid.as_str()))
+                .count()
+                > 1
+            {
+                return Err(format!("ambiguous rating delta branch uid \"{uid}\""));
+            }
+        }
+        if let Some(i) = branch_index.get(branch) {
+            if !matches!(dc.branch_source_rows.get(i), Some(Some(_))) {
+                return Err(format!("unknown rating delta branch {branch}"));
+            }
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -935,31 +1078,32 @@ fn sorted_deltas(deltas: &HashMap<ElementKey, f64>) -> Vec<(&ElementKey, f64)> {
     entries
 }
 
-/// Validate one demand delta and resolve its bus to a dense index. Shared by the DC
-/// and AC/SOCWR appliers so a positive bus key, a finite delta, a known bus, and a
-/// delta that doesn't drive demand negative are enforced identically for both.
-fn resolve_demand_delta(
-    bus: &ElementKey,
-    mw: f64,
+fn aggregate_demand_deltas(
+    deltas: &HashMap<ElementKey, f64>,
     idx: &KeyIndex<'_>,
-    base_mva: f64,
-    current_demand_pu: impl Fn(usize) -> f64,
-) -> Result<usize, String> {
-    if matches!(bus, ElementKey::Id(id) if *id <= 0) {
-        return Err("demand delta bus must be positive".into());
+) -> Result<BTreeMap<usize, (ElementKey, f64)>, String> {
+    let mut aggregated = BTreeMap::<usize, (ElementKey, f64)>::new();
+    for (bus, mw) in sorted_deltas(deltas) {
+        if matches!(bus, ElementKey::Id(id) if *id <= 0) {
+            return Err("demand delta bus must be positive".into());
+        }
+        if !mw.is_finite() {
+            return Err(format!("demand delta for bus {bus} must be finite"));
+        }
+        let dense = idx
+            .get(bus)
+            .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
+        let entry = aggregated
+            .entry(dense)
+            .or_insert_with(|| (bus.clone(), 0.0));
+        entry.1 += mw;
+        if !entry.1.is_finite() {
+            return Err(format!(
+                "aggregate demand delta for bus {bus} must be finite"
+            ));
+        }
     }
-    if !mw.is_finite() {
-        return Err(format!("demand delta for bus {bus} must be finite"));
-    }
-    let i = idx
-        .get(bus)
-        .ok_or_else(|| format!("unknown demand delta bus {bus}"))?;
-    if current_demand_pu(i) * base_mva + mw < -1e-9 {
-        return Err(format!(
-            "demand delta for bus {bus} would make demand negative"
-        ));
-    }
-    Ok(i)
+    Ok(aggregated)
 }
 
 /// Establish the operating point: `demand += delta` (per unit) at each named bus.
@@ -969,8 +1113,12 @@ fn apply_demand_deltas(
 ) -> Result<(), String> {
     let base = dc.base_mva;
     let idx = KeyIndex::new(&dc.bus_ids, &dc.bus_uids, deltas);
-    for (bus, mw) in sorted_deltas(deltas) {
-        let i = resolve_demand_delta(bus, mw, &idx, base, |i| dc.demand[i])?;
+    for (i, (bus, mw)) in aggregate_demand_deltas(deltas, &idx)? {
+        if dc.demand[i] * base + mw < -1e-9 {
+            return Err(format!(
+                "demand delta for bus {bus} would make demand negative"
+            ));
+        }
         dc.demand[i] += mw / base;
     }
     Ok(())
@@ -984,47 +1132,58 @@ fn apply_demand_deltas_ac(
 ) -> Result<(), String> {
     let base = acnet.base_mva;
     let idx = KeyIndex::new(&acnet.bus_ids, &acnet.bus_uids, deltas);
-    for (bus, mw) in sorted_deltas(deltas) {
-        let i = resolve_demand_delta(bus, mw, &idx, base, |i| acnet.pd[i])?;
+    for (i, (bus, mw)) in aggregate_demand_deltas(deltas, &idx)? {
+        if acnet.pd[i] * base + mw < -1e-9 {
+            return Err(format!(
+                "demand delta for bus {bus} would make demand negative"
+            ));
+        }
         acnet.pd[i] += mw / base;
     }
     Ok(())
 }
 
 /// Validate one branch rating delta and resolve its branch to a dense index. Mirrors
-/// [`resolve_demand_delta`]: a positive branch key, a finite delta, a known in-model
-/// branch, and a delta that keeps the limit positive are enforced identically for
-/// the DC and SOCWR appliers.
-fn resolve_rating_delta(
-    branch: &ElementKey,
-    mw: f64,
+/// Resolve and combine rating aliases before checking the final limit, so an ID
+/// and UID naming the same row cannot make validation order-dependent.
+fn aggregate_rating_deltas(
+    rates: &HashMap<ElementKey, f64>,
     idx: &KeyIndex<'_>,
-    base_mva: f64,
-    current_limit_pu: impl Fn(usize) -> f64,
-) -> Result<usize, String> {
-    if matches!(branch, ElementKey::Id(id) if *id <= 0) {
-        return Err("rating delta branch must be positive".into());
+) -> Result<BTreeMap<usize, (ElementKey, f64)>, String> {
+    let mut aggregated = BTreeMap::<usize, (ElementKey, f64)>::new();
+    for (branch, mw) in sorted_deltas(rates) {
+        if matches!(branch, ElementKey::Id(id) if *id <= 0) {
+            return Err("rating delta branch must be positive".into());
+        }
+        if !mw.is_finite() {
+            return Err(format!("rating delta for branch {branch} must be finite"));
+        }
+        let dense = idx
+            .get(branch)
+            .ok_or_else(|| format!("unknown rating delta branch {branch}"))?;
+        let entry = aggregated
+            .entry(dense)
+            .or_insert_with(|| (branch.clone(), 0.0));
+        entry.1 += mw;
+        if !entry.1.is_finite() {
+            return Err(format!(
+                "aggregate rating delta for branch {branch} must be finite"
+            ));
+        }
     }
-    if !mw.is_finite() {
-        return Err(format!("rating delta for branch {branch} must be finite"));
-    }
-    let i = idx
-        .get(branch)
-        .ok_or_else(|| format!("unknown rating delta branch {branch}"))?;
-    if current_limit_pu(i) * base_mva + mw <= 1e-9 {
-        return Err(format!(
-            "rating delta for branch {branch} would make the line limit non-positive"
-        ));
-    }
-    Ok(i)
+    Ok(aggregated)
 }
 
 /// Perturb the thermal limits: `fmax += delta` (per unit) at each named branch.
 fn apply_rating_deltas(dc: &mut DcNetwork, rates: &HashMap<ElementKey, f64>) -> Result<(), String> {
     let base = dc.base_mva;
     let idx = KeyIndex::new(&dc.branch_ids, &dc.branch_uids, rates);
-    for (branch, mw) in sorted_deltas(rates) {
-        let i = resolve_rating_delta(branch, mw, &idx, base, |i| dc.fmax[i])?;
+    for (i, (branch, mw)) in aggregate_rating_deltas(rates, &idx)? {
+        if dc.fmax[i] * base + mw <= 1e-9 {
+            return Err(format!(
+                "rating delta for branch {branch} would make the line limit non-positive"
+            ));
+        }
         dc.fmax[i] += mw / base;
     }
     Ok(())
@@ -1039,8 +1198,12 @@ fn apply_rating_deltas_ac(
 ) -> Result<(), String> {
     let base = acnet.base_mva;
     let idx = KeyIndex::new(&acnet.branch_ids, &acnet.branch_uids, rates);
-    for (branch, mw) in sorted_deltas(rates) {
-        let i = resolve_rating_delta(branch, mw, &idx, base, |i| acnet.rate_a[i])?;
+    for (i, (branch, mw)) in aggregate_rating_deltas(rates, &idx)? {
+        if acnet.rate_a[i] * base + mw <= 1e-9 {
+            return Err(format!(
+                "rating delta for branch {branch} would make the line limit non-positive"
+            ));
+        }
         acnet.rate_a[i] += mw / base;
     }
     Ok(())
@@ -1397,6 +1560,88 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_canonical_uids_reject_even_an_unedited_solve() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse")
+            .network;
+        net.buses[0].uid = Some("same-bus".into());
+        net.buses[1].uid = Some("same-bus".into());
+        let error = solve_network(&net, &SolveRequest::default()).unwrap_err();
+        assert!(error.contains("duplicate bus uid"), "{error}");
+
+        net.buses[1].uid = Some("different-bus".into());
+        net.branches[0].uid = Some("same-branch".into());
+        net.branches[1].uid = Some("same-branch".into());
+        let error = solve_network(&net, &SolveRequest::default()).unwrap_err();
+        assert!(error.contains("duplicate branch uid"), "{error}");
+    }
+
+    #[test]
+    fn numeric_looking_uids_reject_before_key_resolution() {
+        for uid in ["2", "02", "+2", "-2", "9007199254740993"] {
+            let mut net = powerio::parse_str(CASE3, "matpower")
+                .expect("parse")
+                .network;
+            net.buses[0].uid = Some(uid.into());
+            let error = solve_network(&net, &SolveRequest::default()).unwrap_err();
+            assert!(
+                error.contains("ambiguous with a numeric element id"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "sensitivity")]
+    fn acpf_rejects_remote_generator_voltage_control() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse")
+            .network;
+        net.generators[0].regulated_bus = Some(powerio::BusId(2));
+        let request = SolveRequest {
+            formulation: Problem::AcPf,
+            ..SolveRequest::default()
+        };
+        let error = solve_network(&net, &request).unwrap_err();
+        assert!(error.contains("regulating a remote bus"), "{error}");
+    }
+
+    #[test]
+    fn id_and_uid_aliases_are_aggregated_before_bounds() {
+        let network = case3_with_uids_json();
+        let base: Value =
+            serde_json::from_str(&solve_json(&network, r#"{"formulation":"dcopf"}"#).unwrap())
+                .unwrap();
+        let cancelled: Value = serde_json::from_str(
+            &solve_json(
+                &network,
+                r#"{"formulation":"dcopf","edits":{"deltas":{"2":-1000.0,"buses:1":1000.0},"rates":{"1":-1000.0,"branches:0":1000.0}}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(base["objective"], cancelled["objective"]);
+        assert_eq!(base["flows"], cancelled["flows"]);
+
+        for edits in [
+            r#"{"deltas":{"2":-1000.0,"buses:1":1.0}}"#,
+            r#"{"deltas":{"2":1.0,"buses:1":-1000.0}}"#,
+        ] {
+            let request = format!(r#"{{"formulation":"dcopf","edits":{edits}}}"#);
+            let error = solve_json(&network, &request).unwrap_err();
+            assert!(error.contains("would make demand negative"), "{error}");
+        }
+        for edits in [
+            r#"{"rates":{"1":-100000.0,"branches:0":1.0}}"#,
+            r#"{"rates":{"1":1.0,"branches:0":-100000.0}}"#,
+        ] {
+            let request = format!(r#"{{"formulation":"dcopf","edits":{edits}}}"#);
+            let error = solve_json(&network, &request).unwrap_err();
+            assert!(error.contains("line limit non-positive"), "{error}");
+        }
+    }
+
+    #[test]
     fn response_scalars_echo_uids() {
         let out = solve_json(&case3_with_uids_json(), r#"{"formulation":"dcopf"}"#).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
@@ -1531,6 +1776,36 @@ mod tests {
         assert_eq!(v["flows"].as_array().unwrap().len(), 3);
         assert!(v["lmp"].is_null());
         assert!(v["dispatch"].is_null());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn dc_pf_served_results_match_for_raw_and_normalized_inputs() {
+        let raw = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        let normalized = raw.to_normalized().expect("normalize case3");
+        let request = SolveRequest {
+            formulation: Problem::DcPf,
+            ..Default::default()
+        };
+        let a = solve_network(&raw, &request).expect("solve raw DCPF");
+        let b = solve_network(&normalized, &request).expect("solve normalized DCPF");
+
+        let a_va = a.va.as_ref().expect("raw angles");
+        let b_va = b.va.as_ref().expect("normalized angles");
+        assert_eq!(a_va.len(), b_va.len());
+        for (left, right) in a_va.iter().zip(b_va) {
+            assert_eq!(left.bus, right.bus);
+            assert!((left.value - right.value).abs() < 1e-8);
+        }
+        let a_flows = a.flows.as_ref().expect("raw flows");
+        let b_flows = b.flows.as_ref().expect("normalized flows");
+        assert_eq!(a_flows.len(), b_flows.len());
+        for (left, right) in a_flows.iter().zip(b_flows) {
+            assert_eq!(left.branch, right.branch);
+            assert!((left.pf - right.pf).abs() < 1e-8);
+        }
     }
 
     #[cfg(feature = "conic")]

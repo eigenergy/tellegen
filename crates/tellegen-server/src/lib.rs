@@ -13,7 +13,7 @@ use std::{
 
 use axum::{
     extract::{ConnectInfo, Path as AxumPath, Query, Request, State},
-    http::{header::CONTENT_TYPE, HeaderMap, HeaderValue, StatusCode},
+    http::{self, header::CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{
         sse::{Event, Sse},
@@ -22,16 +22,17 @@ use axum::{
     routing::{any, get},
     Json, Router,
 };
-use powerio::network::Network;
+use powerio::{BalancedNetwork, IndexedNetwork};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::{
     services::{ServeDir, ServeFile},
+    set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
 
-use tellegen::geo::{complete_coords_for, spread_stacks, synthetic_layout, Coords};
+use tellegen::geo::{complete_coords_for, lowered_coords, spread_stacks, synthetic_layout, Coords};
 use tellegen::{
     solve_prebuilt, solve_prebuilt_cancellable, DcNetwork, Iterations, SolveRequest, SolveResponse,
 };
@@ -217,7 +218,7 @@ impl ExpensiveEndpoint {
 struct CaseEntry {
     id: String,
     name: String,
-    network: Network,
+    network: BalancedNetwork,
     network_json: String,
     /// The DC model built once at load. Solves clone this and perturb only the
     /// demand vector, so a demand drag never re-runs normalize-and-reindex.
@@ -230,8 +231,12 @@ struct CaseEntry {
 pub struct CaseSummary {
     pub id: String,
     pub name: String,
+    /// Canonical typed PowerIO row counts.
     pub n_bus: usize,
     pub n_branch: usize,
+    /// Rendered analysis counts after three-winding star lowering.
+    pub n_analysis_bus: usize,
+    pub n_analysis_branch: usize,
     pub n_gen: usize,
 }
 
@@ -258,6 +263,8 @@ pub struct NetworkBus {
     pub lat: f64,
     pub demand_mw: f64,
     pub gen_mw: f64,
+    /// False for a display-only bus synthesized by analysis lowering.
+    pub editable: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -267,6 +274,8 @@ pub struct NetworkBranch {
     pub to: usize,
     pub rate_mw: f64,
     pub status: u8,
+    /// False for a display-only branch synthesized by analysis lowering.
+    pub editable: bool,
     pub path: Vec<[f64; 2]>,
 }
 
@@ -586,7 +595,7 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    if let Some(dir) = frontend_build.filter(|dir| dir.is_dir()) {
+    let app = if let Some(dir) = frontend_build.filter(|dir| dir.is_dir()) {
         let index = dir.join("index.html");
         let fallback = if dir.join("200.html").is_file() {
             dir.join("200.html")
@@ -606,7 +615,31 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         )
     } else {
         app
-    }
+    };
+
+    // Response headers the built page cannot set for itself. SvelteKit puts the
+    // Content-Security-Policy in a `<meta>` tag, and a browser ignores
+    // `frame-ancestors` there, so X-Frame-Options carries the clickjacking
+    // defence. HSTS belongs to whatever terminates TLS, not here.
+    //
+    // These come last: `Router::layer` wraps only what is registered before it,
+    // so a fallback attached afterwards would answer without them.
+    app.layer(SetResponseHeaderLayer::overriding(
+        http::header::X_FRAME_OPTIONS,
+        HeaderValue::from_static("DENY"),
+    ))
+    .layer(SetResponseHeaderLayer::overriding(
+        http::header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    ))
+    .layer(SetResponseHeaderLayer::overriding(
+        http::header::REFERRER_POLICY,
+        HeaderValue::from_static("strict-origin-when-cross-origin"),
+    ))
+    .layer(SetResponseHeaderLayer::overriding(
+        HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static("geolocation=(), camera=(), microphone=(), payment=()"),
+    ))
 }
 
 /// The compute gate for every route on the compute sub-router: 403 unless
@@ -651,6 +684,8 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
                 name: entry.name.clone(),
                 n_bus: entry.network.buses.len(),
                 n_branch: entry.network.branches.len(),
+                n_analysis_bus: entry.view.buses.len(),
+                n_analysis_branch: entry.view.branches.len(),
                 n_gen: entry
                     .network
                     .generators
@@ -967,7 +1002,7 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
     build_entry(spec.id, spec.name, case, coords, branch_paths, false)
 }
 
-fn load_bus_csv_coords(path: &Path, case: &Network) -> Result<Coords, String> {
+fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut lines = text.lines();
     let header = lines
@@ -1182,7 +1217,7 @@ fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
 fn build_entry(
     id: &str,
     name: &str,
-    network: Network,
+    network: BalancedNetwork,
     coords: Coords,
     branch_paths: Option<BranchPaths>,
     synthetic_coords: bool,
@@ -1212,23 +1247,52 @@ fn build_entry(
 fn network_payload(
     id: &str,
     name: &str,
-    net: &Network,
+    net: &BalancedNetwork,
     coords: &Coords,
     branch_paths: Option<&BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<NetworkPayload, String> {
-    let mut demand = BTreeMap::<usize, f64>::new();
-    for load in net.loads.iter().filter(|load| load.in_service) {
-        *demand.entry(load.bus.0).or_default() += load.p;
-    }
-    let mut generation = BTreeMap::<usize, f64>::new();
-    for gen in net.generators.iter().filter(|gen| gen.in_service) {
-        *generation.entry(gen.bus.0).or_default() += gen.pmax;
-    }
-    let buses = net
+    let power_scale = if net.is_normalized() {
+        net.check_base_mva().map_err(|error| error.to_string())?;
+        net.base_mva
+    } else {
+        1.0
+    };
+    let indexed = IndexedNetwork::new(net);
+    let analysis = indexed.network();
+    let editable_bus_ids: HashSet<usize> = net
         .buses
         .iter()
-        .map(|bus| {
+        .filter(|bus| bus.kind != powerio::BusType::Isolated)
+        .map(|bus| bus.id.0)
+        .collect();
+    let editable_branch_rows: HashSet<usize> = net
+        .branches
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| {
+            branch.in_service
+                && branch.from != branch.to
+                && branch.r * branch.r + branch.x * branch.x > 0.0
+                && editable_bus_ids.contains(&branch.from.0)
+                && editable_bus_ids.contains(&branch.to.0)
+        })
+        .map(|(row, _)| row)
+        .collect();
+    let coords = lowered_coords(net, coords);
+    let mut demand = BTreeMap::<usize, f64>::new();
+    for load in analysis.loads.iter().filter(|load| load.in_service) {
+        *demand.entry(load.bus.0).or_default() += load.p * power_scale;
+    }
+    let mut generation = BTreeMap::<usize, f64>::new();
+    for gen in analysis.generators.iter().filter(|gen| gen.in_service) {
+        *generation.entry(gen.bus.0).or_default() += gen.pmax * power_scale;
+    }
+    let buses = analysis
+        .buses
+        .iter()
+        .enumerate()
+        .map(|(i, bus)| {
             let &(lon, lat) = coords
                 .get(&bus.id.0)
                 .ok_or_else(|| format!("{}: missing coordinates for bus {}", id, bus.id.0))?;
@@ -1238,14 +1302,16 @@ fn network_payload(
                 lat,
                 demand_mw: demand.get(&bus.id.0).copied().unwrap_or(0.0),
                 gen_mw: generation.get(&bus.id.0).copied().unwrap_or(0.0),
+                editable: i < net.buses.len() && editable_bus_ids.contains(&bus.id.0),
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let branches = net
+    let branches = analysis
         .branches
         .iter()
         .enumerate()
         .map(|(i, br)| {
+            let source_paths = branch_paths.filter(|_| i < net.branches.len());
             let &(from_lon, from_lat) = coords.get(&br.from.0).ok_or_else(|| {
                 format!(
                     "{}: missing coordinates for branch from bus {}",
@@ -1259,9 +1325,10 @@ fn network_payload(
                 id: i + 1,
                 from: br.from.0,
                 to: br.to.0,
-                rate_mw: br.rate_a,
+                rate_mw: br.rate_a * power_scale,
                 status: br.in_service as u8,
-                path: branch_paths
+                editable: editable_branch_rows.contains(&i),
+                path: source_paths
                     .and_then(|paths| {
                         paths
                             .get(&BranchPathKey::Id(i + 1))
@@ -1692,7 +1759,7 @@ mod tests {
         (status, serde_json::from_str(&body).unwrap())
     }
 
-    async fn static_get(path: &str, dir: PathBuf) -> (StatusCode, String) {
+    async fn static_get(path: &str, dir: PathBuf) -> (StatusCode, HeaderMap, String) {
         let res = router(fallback_state(), Some(dir))
             .oneshot(
                 axum::http::Request::builder()
@@ -1703,8 +1770,34 @@ mod tests {
             .await
             .unwrap();
         let status = res.status();
+        let headers = res.headers().clone();
         let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        (status, String::from_utf8(body.to_vec()).unwrap())
+        (status, headers, String::from_utf8(body.to_vec()).unwrap())
+    }
+
+    /// The built page carries its Content-Security-Policy in a `<meta>` tag,
+    /// where a browser ignores `frame-ancestors`. These headers are the part
+    /// only a response can carry, so the container is safe on its own and does
+    /// not depend on a proxy config this repository does not deploy.
+    #[tokio::test]
+    async fn responses_carry_the_security_headers() {
+        let response = router(fallback_state(), None)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let headers = response.headers();
+        assert_eq!(headers["x-frame-options"], "DENY");
+        assert_eq!(headers["x-content-type-options"], "nosniff");
+        assert_eq!(
+            headers["referrer-policy"],
+            "strict-origin-when-cross-origin"
+        );
+        assert!(headers.contains_key("permissions-policy"));
     }
 
     #[tokio::test]
@@ -1757,6 +1850,72 @@ mod tests {
         assert_eq!(paths.get(&BranchPathKey::Edge(101, 202)), Some(&expected));
     }
 
+    #[test]
+    fn network_payload_keeps_native_units_for_normalized_models() {
+        let raw = powerio::parse_str(FALLBACK_SPECS[0].text, "m")
+            .expect("parse fallback")
+            .network;
+        let coords = synthetic_layout(&raw, FALLBACK_SPECS[0].bbox);
+        let normalized = raw.to_normalized().expect("normalize fallback");
+        let source =
+            network_payload("raw", "raw", &raw, &coords, None, true).expect("raw network payload");
+        let derived = network_payload("normalized", "normalized", &normalized, &coords, None, true)
+            .expect("normalized network payload");
+
+        assert_eq!(source.buses.len(), derived.buses.len());
+        for (left, right) in source.buses.iter().zip(&derived.buses) {
+            assert!((left.demand_mw - right.demand_mw).abs() < 1e-9);
+            assert!((left.gen_mw - right.gen_mw).abs() < 1e-9);
+        }
+        assert_eq!(source.branches.len(), derived.branches.len());
+        for (left, right) in source.branches.iter().zip(&derived.branches) {
+            assert!((left.rate_mw - right.rate_mw).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn network_payload_includes_noneditable_three_winding_star_rows() {
+        let mut net = powerio::parse_str(FALLBACK_SPECS[0].text, "m")
+            .expect("parse fallback")
+            .network;
+        let terminals = [net.buses[0].id, net.buses[1].id, net.buses[2].id];
+        let windings = terminals.map(powerio::Winding::new);
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
+        let coords = net
+            .buses
+            .iter()
+            .enumerate()
+            .map(|(i, bus)| (bus.id.0, (-90.0 + i as f64 * 0.001, 40.0)))
+            .collect();
+
+        let payload =
+            network_payload("3w", "3w", &net, &coords, None, false).expect("3W network payload");
+        assert_eq!(payload.buses.len(), net.buses.len() + 1);
+        assert_eq!(payload.branches.len(), net.branches.len() + 3);
+        assert!(!payload.buses.last().unwrap().editable);
+        assert!(payload.branches[net.branches.len()..]
+            .iter()
+            .all(|branch| !branch.editable));
+    }
+
+    #[test]
+    fn network_payload_marks_filtered_canonical_rows_noneditable() {
+        let mut net = powerio::parse_str(FALLBACK_SPECS[0].text, "m")
+            .expect("parse fallback")
+            .network;
+        net.buses[0].kind = powerio::BusType::Isolated;
+        net.branches[0].in_service = false;
+        net.branches[1].to = net.branches[1].from;
+        let coords = synthetic_layout(&net, FALLBACK_SPECS[0].bbox);
+        let payload = network_payload("filtered", "filtered", &net, &coords, None, true)
+            .expect("filtered payload");
+        assert!(!payload.buses[0].editable);
+        assert!(!payload.branches[0].editable);
+        assert!(!payload.branches[1].editable);
+    }
+
     #[tokio::test]
     async fn static_fallback_serves_200_html_without_index() {
         let suffix = SystemTime::now()
@@ -1771,13 +1930,15 @@ mod tests {
         )
         .unwrap();
 
-        let (status, body) = static_get("/", dir.clone()).await;
-        assert_eq!(status, StatusCode::OK);
-        assert!(body.contains("tellegen"));
-
-        let (status, body) = static_get("/map/path", dir.clone()).await;
-        assert_eq!(status, StatusCode::OK);
-        assert!(body.contains("tellegen"));
+        for path in ["/", "/map/path"] {
+            let (status, headers, body) = static_get(path, dir.clone()).await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(body.contains("tellegen"));
+            // The static tree is the demo page itself. It is served by the
+            // fallback, which the header layers only reach when they wrap the
+            // assembled router rather than the api routes alone.
+            assert_eq!(headers["x-frame-options"], "DENY", "{path}");
+        }
 
         fs::remove_dir_all(dir).unwrap();
     }

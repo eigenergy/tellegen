@@ -31,7 +31,7 @@ export {
 	placeMultiView,
 	buildGeographicView
 } from './multiconductor.js';
-export { classifyJson, distExtensionFormat, isStudyPackageText } from './drop-classify.js';
+export { distExtensionFormat } from './drop-classify.js';
 
 export { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
 export {
@@ -43,6 +43,8 @@ export {
 	createStudy,
 	errorText,
 	formatOf,
+	classifyJson,
+	ingestJsonDrop,
 	ingestCase,
 	isDisplayFile,
 	isPermanentEngineFailure,
@@ -78,12 +80,7 @@ export type {
 	SolvableCase,
 	SolveBackend
 } from './state.svelte.js';
-export type { JsonDropKind } from './drop-classify.js';
-export type {
-	MultiView,
-	PlacedMultiBus,
-	PlacedMultiEdge
-} from './multiconductor.js';
+export type { MultiView, PlacedMultiBus, PlacedMultiEdge } from './multiconductor.js';
 export type {
 	CaseFileSummary,
 	DistAttachmentKind,
@@ -96,6 +93,9 @@ export type {
 	Formulation,
 	IngestedCase,
 	IngestedDistCase,
+	IngestedJsonDrop,
+	JsonDropClassification,
+	JsonDropKind,
 	SensTarget,
 	Topology,
 	TopologyBranch,

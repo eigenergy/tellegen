@@ -1,0 +1,79 @@
+name: Gates (rust)
+
+# CI and both release workflows call this. Add a Rust gate here, not in a caller.
+# Concurrency comes from the caller: do not add a group here, or a release will
+# queue behind a CI run.
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # A bare runner has no external solver. Let the tests use the bundled one.
+      TELLEGEN_ALLOW_FALLBACK: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          workspaces: .
+
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy (shipping crates, warnings denied)
+        run: |
+          cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli \
+            --all-targets -- -D warnings
+      - name: Licenses, advisories, bans, sources
+        uses: EmbarkStudios/cargo-deny-action@c3bbe7e4e3f7baeee1a3dd9aec0a3b2aded580fb # v2.1.1
+        with:
+          command: check advisories bans licenses sources
+
+      # Mirrors `just epl-guard`. The EPL-2.0 `pounce` backend must not enter a
+      # shipped build.
+      - name: EPL guard
+        run: scripts/epl-guard.sh
+
+      - name: Test the workspace
+        run: cargo test --workspace
+      # The two runs below use non-default features, which the workspace run
+      # above does not reach. Keep them separate: `tellegen-wasm` takes
+      # `tellegen` with `default-features = false`, so this is the only run that
+      # tests the feature set the browser ships.
+      - name: Test the engine's conic path
+        run: cargo test -p tellegen --features conic
+      - name: Test the wasm adapter as it ships
+        run: cargo test -p tellegen-wasm --features conic
+
+      # release-plz's GitHub App token is deliberately absent from pull-request
+      # CI. Check generated, same-repository release PRs here so API comparison
+      # and crate builds run with read-only repository permissions.
+      - name: Install cargo-semver-checks for a release PR
+        if: >-
+          github.event_name == 'pull_request' &&
+          startsWith(github.head_ref, 'release-plz-') &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
+        with:
+          tool: cargo-semver-checks@0.48
+          fallback: none
+      - name: Check the release PR's public Rust API
+        if: >-
+          github.event_name == 'pull_request' &&
+          startsWith(github.head_ref, 'release-plz-') &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        run: cargo semver-checks check-release --manifest-path crates/tellegen/Cargo.toml
+
+      # This is the build-executing half of crate publication. The privileged
+      # release job uploads with --no-verify after this exact commit passes.
+      - name: Package and verify the published crate
+        run: |
+          rm -rf target/package
+          cargo package -p tellegen --locked

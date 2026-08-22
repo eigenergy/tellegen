@@ -55,6 +55,9 @@ For local files only:
 <TellegenViewer loadDefaultCases={false} showFooter={false} />
 ```
 
+The viewer accepts at most 32 files in one ingestion batch. No individual file
+and no batch total may exceed 128 MiB.
+
 Run the local example:
 
 ```sh
@@ -75,12 +78,13 @@ import { createStudy, formatOf, ingestCase } from "@tellegen/engine";
 const format = formatOf("case14.m");
 if (!format) throw new Error("unsupported case format");
 
-const parsed = await ingestCase(caseText, format);
+const bytes = new TextEncoder().encode(caseText);
+const parsed = await ingestCase(bytes, format);
 const study = await createStudy(parsed.network_json, "dcopf");
 
 try {
-  const preview = study.preview({ 3: 25 });
-  const committed = study.commit(parsed.name, { 3: 25 }, {}, { bus: 3 });
+  const preview = await study.preview({ 3: 25 });
+  const committed = await study.commit(parsed.name, { 3: 25 }, {}, { bus: 3 });
   console.log(preview.objectiveDelta, committed.sensitivity);
 } finally {
   study.free();
@@ -95,6 +99,27 @@ The call sequence is:
 4. preview a demand edit without a solve;
 5. commit the edit with a sensitivity request; and
 6. free the `Study`.
+
+## JSON Drops
+
+Use `ingestJsonDrop` when a `.json` file may be a saved study, model JSON, or a
+transmission or distribution document:
+
+```ts
+import { ingestJsonDrop } from "@tellegen/engine";
+
+const bytes = new Uint8Array(await file.arrayBuffer());
+const result = await ingestJsonDrop(bytes);
+
+if (result.kind === "unknown" || result.kind === "ambiguous") {
+  console.log("JSON was not ingested", result.kind);
+} else {
+  console.log(result.kind, result.format, result.payload);
+}
+```
+
+The result is discriminated by `kind`; `payload` is `null` only for `unknown`
+and `ambiguous` input.
 
 ## Privacy Boundary
 

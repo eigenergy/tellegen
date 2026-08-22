@@ -31,17 +31,13 @@ clippy:
 deny:
     cargo deny check
 
+# CI gate: test the wasm adapter as it ships (`default = []`, so `test` skips it).
+wasm-adapter-test:
+    cargo test -p tellegen-wasm --features conic
+
 # CI gate: the EPL-2.0 pounce backend must never enter a shipped (wasm/server/cli) build.
 epl-guard:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for p in "tellegen-wasm --target wasm32-unknown-unknown" tellegen-server tellegen-cli; do
-        if cargo tree -p $p 2>/dev/null | grep -qi pounce; then
-            echo "EPL pounce backend leaked into: $p" >&2
-            exit 1
-        fi
-    done
-    echo "ok: no EPL pounce in wasm / server / cli"
+    scripts/epl-guard.sh
 
 # ---- JavaScript workspace ----
 
@@ -93,6 +89,10 @@ web-check:
 web-lint:
     npm run lint:web
 
+# CI gate: npm advisories, at the same severity CI fails on.
+audit:
+    npm audit --audit-level=high
+
 # CI gate: smoke-check the static build output.
 web-smoke:
     npm run smoke:web
@@ -101,7 +101,17 @@ web-smoke:
 web-browser:
     npm run test:browser
 
+# ---- release ----
+
+# Record an npm package change; commit the file it writes. The crate needs none.
+changeset:
+    npm run changeset
+
+# What the next npm release would publish, and at which bump.
+changeset-status:
+    npx changeset status
+
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order.
-ci: fmt-check clippy deny epl-guard test wasm engine-check engine-build js-import web-lint svelte-check svelte-test web-check svelte-packed web-build web-smoke web-browser
+ci: fmt-check clippy deny epl-guard test wasm-adapter-test wasm engine-check engine-build js-import web-lint audit svelte-check svelte-test web-check svelte-packed web-build web-smoke web-browser

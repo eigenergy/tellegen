@@ -44,6 +44,7 @@ const studies = new Map<number, WasmStudy>();
 const scope = globalThis as unknown as {
   onmessage: ((ev: MessageEvent<WorkerRequest>) => void) | null;
   postMessage(msg: WorkerResponse): void;
+  close(): void;
 };
 
 scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
@@ -52,6 +53,18 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const value = runRequest(await wasmModule(), studies, req);
     scope.postMessage({ id: req.id, ok: true, value });
   } catch (e) {
-    scope.postMessage({ id: req.id, ok: false, error: errorText(e) });
+    // A Rust panic or a failed allocation is a wasm trap, and a trapped
+    // instance is not recoverable: linear memory, the allocator, and every
+    // live Study are undefined afterwards. Reporting it as an ordinary error
+    // would leave the next solve running against that state and returning
+    // numbers that look fine. Answer this request, then take the worker down
+    // so the host spawns a clean one.
+    const fatal = e instanceof WebAssembly.RuntimeError;
+    scope.postMessage({ id: req.id, ok: false, error: errorText(e), fatal });
+    if (fatal) {
+      studies.clear();
+      wasmReady = null;
+      scope.close();
+    }
   }
 };
