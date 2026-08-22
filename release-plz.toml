@@ -1,4 +1,6 @@
 [workspace]
+release = false
+release_always = false
 git_tag_name = "v{{ version }}"
 git_release_name = "tellegen v{{ version }}"
 git_release_enable = true
@@ -13,9 +15,11 @@ protect_breaking_commits = true
 [[package]]
 name = "tellegen"
 changelog_path = "crates/tellegen/CHANGELOG.md"
+release = true
 publish = true
+publish_no_verify = true
 
-# A new publishable crate must get an entry here, or release-plz ignores it.
+# Future crates inherit the workspace deny and require an explicit `release = true`.
 [[package]]
 name = "tellegen-wasm"
 release = false

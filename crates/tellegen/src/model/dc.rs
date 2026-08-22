@@ -1,7 +1,8 @@
 //! DC OPF model: the B-theta data — incidence, susceptances, generator bounds,
 //! quadratic costs, and line flow limits — built from a powerio `BalancedNetwork`. The
 //! generation cost rescale to per unit happens in `to_normalized`; Tellegen applies
-//! its angle bound defaults after building the root problem instance.
+//! its angle defaults before ordinary limits are synthesized and before lowered
+//! three-winding limits are resynthesized.
 
 use std::collections::BTreeMap;
 
@@ -53,7 +54,7 @@ pub struct DcNetwork {
     /// multiplied by [`Self::sw`] when a branch status varies.
     pub flow_offset: Vec<f64>,
     /// Per unit thermal limit per branch (`rate_a`, with a fallback synthesized
-    /// when the source leaves it at 0).
+    /// against the normalized angle window when the source leaves it at 0).
     pub fmax: Vec<f64>,
     /// Per-unit generator output bounds.
     pub gmax: Vec<f64>,
@@ -118,12 +119,21 @@ impl DcNetwork {
     /// generator interpretation (per unit withdrawal, branch phase terms, generator
     /// PQ bounds, source rows, synthesized thermal limits, and reference coverage),
     /// then applies the cost policy ([`flatten_gen_costs`], run before the instance so
-    /// its `GenCost` accessors accept every row) and Tellegen's angle difference bounds.
+    /// its `GenCost` accessors accept every row). Tellegen's documented +-60 degree
+    /// default is applied to source branches before the instance synthesizes an
+    /// unrated limit, and again to rows created by three-winding lowering.
     pub fn from_network(raw: &BalancedNetwork) -> Result<DcNetwork, String> {
         let (normalized, source_rows) = raw
             .to_normalized_with_source_rows(&NormalizeOptions::default())
             .map_err(|e| e.to_string())?;
         let mut norm = normalized.network;
+        // Apply the policy before PowerIO synthesizes thermal limits. Doing this
+        // directly avoids allocating normalization diagnostics for every ordinary
+        // MATPOWER branch whose source uses the typical +-360 spelling.
+        for branch in &mut norm.branches {
+            (branch.angmin, branch.angmax) =
+                normalize_angle_bounds(branch.angmin, branch.angmax);
+        }
         // Cost policy as a `BalancedNetwork` pre-pass: fit piecewise / strip artifacts / treat
         // a missing cost as free, writing plain quadratics the instance builder reads.
         flatten_gen_costs(&mut norm)?;
@@ -220,7 +230,6 @@ impl DcNetwork {
         let br_to = instance.branches.to_bus.clone();
         let b = instance.branches.b.iter().map(|value| -value).collect();
         let shift = instance.branches.shift.clone();
-        let fmax = instance.branches.f_max.clone();
         let (angmin, angmax): (Vec<_>, Vec<_>) = instance
             .branches
             .angle_min
@@ -229,6 +238,33 @@ impl DcNetwork {
             .zip(instance.branches.angle_max.iter().copied())
             .map(|(min, max)| normalize_angle_bounds(min, max))
             .unzip();
+        // Source branches were clamped above. Three-winding transformers are lowered
+        // afterwards, so their synthetic branches still arrive with the unconstrained
+        // spelling. Recompute every unrated limit from the final stored window. This is
+        // idempotent for source branches and keeps the same policy for lowered rows
+        // without reaching into PowerIO's private lowering.
+        let fmax = instance
+            .branches
+            .f_max
+            .iter()
+            .enumerate()
+            .map(|(index, &limit)| {
+                let row = instance.branches.source_rows[index];
+                let branch = &view.network().branches[row];
+                if branch.rate_a <= 0.0 {
+                    let from = &view.network().buses[instance.branches.from_bus[index]];
+                    let to = &view.network().buses[instance.branches.to_bus[index]];
+                    let window = angmin[index].abs().max(angmax[index].abs());
+                    branch.synthesize_rate_a(
+                        window,
+                        (from.vmin, from.vmax),
+                        (to.vmin, to.vmax),
+                    )
+                } else {
+                    limit
+                }
+            })
+            .collect();
         let sw = vec![1.0; m];
 
         // powerio states the objective as `0.5*q*p^2 + c*p + c0`; Tellegen's
@@ -354,7 +390,7 @@ impl DcNetwork {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{parse_case3, CASE3};
+    use crate::model::{parse_case3, CASE3, DEFAULT_ANGLE_BOUND_PAD};
 
     fn approx(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-6, "expected {b}, got {a}");
@@ -396,6 +432,53 @@ mod tests {
         // The rated branches keep their stated limit.
         approx(dc.fmax[1], 2.5);
         approx(dc.fmax[2], 2.5);
+    }
+
+    #[test]
+    fn unconstrained_unrated_branches_use_the_sixty_degree_window() {
+        for (amin, amax) in [(-360, 360), (0, 0)] {
+            let case = CASE3.replace(
+                " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
+                &format!(" 1 2 0.01 0.1 0 0 0 0 0 0 1 {amin} {amax};"),
+            );
+            let net = powerio::parse_str(&case, "matpower")
+                .expect("parse")
+                .network;
+            let dc = DcNetwork::from_network(&net).expect("build");
+
+            approx(dc.angmin[0], -DEFAULT_ANGLE_BOUND_PAD);
+            approx(dc.angmax[0], DEFAULT_ANGLE_BOUND_PAD);
+            approx(dc.fmax[0], 1.1 * 1.1 / 0.01_f64.hypot(0.1));
+            approx(dc.fmax[1], 2.5);
+            approx(dc.fmax[2], 2.5);
+        }
+    }
+
+    #[test]
+    fn lowered_three_winding_branches_use_the_sixty_degree_window() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse")
+            .network;
+        let mut windings = [1, 2, 3].map(|bus| powerio::Winding::new(powerio::BusId(bus)));
+        windings[0].rate_a = net.base_mva;
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w.push(powerio::Transformer3W::new(
+            windings,
+            [impedance; 3],
+        ));
+
+        let dc = DcNetwork::from_network(&net).expect("build");
+        assert_eq!(dc.m, 6);
+        approx(dc.fmax[3], 1.0);
+        for branch in 3..6 {
+            assert_eq!(dc.branch_source_rows[branch], None);
+            approx(dc.angmin[branch], -DEFAULT_ANGLE_BOUND_PAD);
+            approx(dc.angmax[branch], DEFAULT_ANGLE_BOUND_PAD);
+            if branch > 3 {
+                // Equal pairwise impedances lower to r=0.01, x=0.1 on each winding.
+                approx(dc.fmax[branch], 1.1 * 1.1 / 0.01_f64.hypot(0.1));
+            }
+        }
     }
 
     #[test]

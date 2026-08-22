@@ -112,8 +112,8 @@ jobs:
     name: publish to npm
     needs: pack
     runs-on: ubuntu-latest
-    # The reviewer rule is on the environment, in the repository settings. This
-    # line alone does not gate the publish.
+    # The merged version PR is the human gate. This environment binds the OIDC
+    # publisher to main; it should not add a second reviewer pause.
     environment: npm
     permissions:
       contents: write

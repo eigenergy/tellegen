@@ -39,15 +39,7 @@ jobs:
       # Mirrors `just epl-guard`. The EPL-2.0 `pounce` backend must not enter a
       # shipped build.
       - name: EPL guard
-        run: |
-          set -euo pipefail
-          for p in "tellegen-wasm --target wasm32-unknown-unknown" tellegen-server tellegen-cli; do
-            if cargo tree -p $p 2>/dev/null | grep -qi pounce; then
-              echo "EPL pounce backend leaked into: $p" >&2
-              exit 1
-            fi
-          done
-          echo "ok: no EPL pounce in wasm / server / cli"
+        run: scripts/epl-guard.sh
 
       - name: Test the workspace
         run: cargo test --workspace
@@ -59,3 +51,9 @@ jobs:
         run: cargo test -p tellegen --features conic
       - name: Test the wasm adapter as it ships
         run: cargo test -p tellegen-wasm --features conic
+      # This is the build-executing half of crate publication. The privileged
+      # release job uploads with --no-verify after this exact commit passes.
+      - name: Package and verify the published crate
+        run: |
+          rm -rf target/package
+          cargo package -p tellegen --locked

@@ -37,15 +37,7 @@ wasm-adapter-test:
 
 # CI gate: the EPL-2.0 pounce backend must never enter a shipped (wasm/server/cli) build.
 epl-guard:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for p in "tellegen-wasm --target wasm32-unknown-unknown" tellegen-server tellegen-cli; do
-        if cargo tree -p $p 2>/dev/null | grep -qi pounce; then
-            echo "EPL pounce backend leaked into: $p" >&2
-            exit 1
-        fi
-    done
-    echo "ok: no EPL pounce in wasm / server / cli"
+    scripts/epl-guard.sh
 
 # ---- JavaScript workspace ----
 

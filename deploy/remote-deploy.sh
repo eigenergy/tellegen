@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy the tellegen app stack on the host. CI copies this script and the
-# compose files to the deploy path, then calls:
+# compose files to a per-run bundle below the deploy path, then calls:
 #
 #   bash deploy/remote-deploy.sh ghcr.io/eigenergy/tellegen@sha256:<digest> /opt/tellegen/data
 #
@@ -11,6 +11,11 @@ set -euo pipefail
 
 IMAGE="${1:-}"
 DATA_DIR="${2:-${TELLEGEN_DATA_DIR:-}}"
+
+die() {
+	echo "==> $*" >&2
+	exit 1
+}
 
 if [ -z "$IMAGE" ]; then
 	echo "usage: remote-deploy.sh <image-ref@sha256:...> [data-dir]" >&2
@@ -26,17 +31,21 @@ if [[ ! "$IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-DEPLOY_ROOT="${DEPLOY_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+DEPLOY_ROOT_INPUT="${DEPLOY_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+DEPLOY_ROOT="$(cd -- "$DEPLOY_ROOT_INPUT" && pwd -P)" \
+	|| die "deploy root not found: $DEPLOY_ROOT_INPUT"
+DEPLOY_BUNDLE_INPUT="${TELLEGEN_DEPLOY_BUNDLE_DIR:-$DEPLOY_ROOT/deploy}"
+DEPLOY_BUNDLE_DIR="$(cd -- "$DEPLOY_BUNDLE_INPUT" && pwd -P)" \
+	|| die "deploy bundle not found: $DEPLOY_BUNDLE_INPUT"
+case "$DEPLOY_BUNDLE_DIR" in
+	"$DEPLOY_ROOT"/*) ;;
+	*) die "deploy bundle must resolve below $DEPLOY_ROOT: $DEPLOY_BUNDLE_DIR" ;;
+esac
 if [ -z "$DATA_DIR" ]; then
 	DATA_DIR="$DEPLOY_ROOT/data"
 fi
 
 cd "$DEPLOY_ROOT"
-
-die() {
-	echo "==> $*" >&2
-	exit 1
-}
 
 # Checked after the default above fills it in. A newline injects further Compose
 # variables into .env, and `/` bind-mounts the whole host into the container.
@@ -45,6 +54,15 @@ case "$DATA_DIR" in
 	/*[!a-zA-Z0-9._/-]*) die "data dir has an unexpected character: $DATA_DIR" ;;
 	/*) ;;
 	*) die "data dir must be an absolute path: $DATA_DIR" ;;
+esac
+
+[ -d "$DATA_DIR" ] || die "data directory not found: $DATA_DIR"
+DATA_DIR_INPUT="$DATA_DIR"
+DATA_DIR="$(cd -- "$DATA_DIR_INPUT" && pwd -P)" \
+	|| die "cannot canonicalize data directory: $DATA_DIR_INPUT"
+case "$DATA_DIR" in
+	"$DEPLOY_ROOT"/*) ;;
+	*) die "data directory must resolve below $DEPLOY_ROOT: $DATA_DIR" ;;
 esac
 
 logs() {
@@ -64,27 +82,55 @@ need_file() {
 	[ -f "$1" ] || die "missing required file: $1"
 }
 
+cleanup_old_bundles() {
+	local staging_root="$DEPLOY_ROOT/.deploy-staging"
+	case "$DEPLOY_BUNDLE_DIR" in
+		"$staging_root"/*/deploy) ;;
+		*) return ;;
+	esac
+	local current="${DEPLOY_BUNDLE_DIR%/deploy}"
+	while IFS= read -r -d '' candidate; do
+		[ "$candidate" = "$current" ] && continue
+		if ! rm -f -- \
+			"$candidate/deploy/docker-compose.prod.yml" \
+			"$candidate/deploy/docker-compose.edge.yml" \
+			"$candidate/deploy/remote-deploy.sh" \
+			|| ! rmdir -- "$candidate/deploy" "$candidate"; then
+			echo "warning: could not remove old deploy bundle $candidate" >&2
+		fi
+	done < <(find "$staging_root" -mindepth 1 -maxdepth 1 -type d -mtime +7 -print0)
+}
+
 command -v docker >/dev/null 2>&1 || die "docker is not installed"
 command -v curl >/dev/null 2>&1 || die "curl is not installed"
+command -v flock >/dev/null 2>&1 || die "flock is not installed"
 docker compose version >/dev/null || die "docker compose plugin is not available"
 docker network inspect edge >/dev/null || die "external Docker network 'edge' is missing"
 
-need_file deploy/docker-compose.prod.yml
-need_file deploy/docker-compose.edge.yml
+# The Actions mutex covers normal runs. This host lock also covers a canceled
+# SSH session whose remote shell continues, plus direct operator invocations.
+exec 9>"$DEPLOY_ROOT/.deploy.lock"
+flock -w 900 9 || die "timed out waiting for another deployment"
+
+need_file "$DEPLOY_BUNDLE_DIR/docker-compose.prod.yml"
+need_file "$DEPLOY_BUNDLE_DIR/docker-compose.edge.yml"
 
 # The server serves whatever cases are staged under DATA_DIR and tolerates a missing
 # one, so check that the mount exists and holds at least one case dir rather than
 # enumerating a specific set. Enumerating here coupled this script to the server's
 # case list and aborted the deploy whenever a case was added (e.g. CATS) without its
 # data being staged first.
-[ -d "$DATA_DIR" ] || die "data directory not found: $DATA_DIR"
 [ -n "$(find "$DATA_DIR" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null)" ] \
 	|| die "no case data staged under $DATA_DIR"
 
 umask 077
 printf 'TELLEGEN_IMAGE=%s\nTELLEGEN_DATA_DIR=%s\n' "$IMAGE" "$DATA_DIR" > .env
 
-compose=(docker compose -p tellegen --env-file .env -f deploy/docker-compose.prod.yml -f deploy/docker-compose.edge.yml)
+compose=(
+	docker compose -p tellegen --env-file .env
+	-f "$DEPLOY_BUNDLE_DIR/docker-compose.prod.yml"
+	-f "$DEPLOY_BUNDLE_DIR/docker-compose.edge.yml"
+)
 
 echo "==> Validating compose config"
 "${compose[@]}" config >/dev/null
@@ -126,6 +172,7 @@ for attempt in $(seq 1 90); do
 	# Gate on liveness (status ok with at least one case), not a hardcoded case set.
 	if [[ "$payload" == *'"status":"ok"'* && "$payload" != *'"cases":[]'* ]]; then
 		echo "==> tellegen host health ok: $payload"
+		cleanup_old_bundles
 		exit 0
 	fi
 	if [ -n "$payload" ]; then

@@ -7,6 +7,7 @@ proxy that owns ports 80 and 443.
 ## Requirements
 
 - Docker Engine with the Compose plugin
+- `flock` (normally provided by util-linux)
 - 4 GB RAM minimum; 8 GB recommended for the bundled cases
 - external Docker network `edge`, owned by the Caddy edge stack
 - staged demo data under the deploy path's `data/` directory
@@ -85,7 +86,7 @@ coordinates.
 The production compose file consumes an image built by GitHub Actions:
 
 ```sh
-TELLEGEN_IMAGE=ghcr.io/eigenergy/tellegen:<sha>
+TELLEGEN_IMAGE=ghcr.io/eigenergy/tellegen@sha256:<digest>
 TELLEGEN_DATA_DIR=/opt/tellegen/data
 docker compose -p tellegen --env-file .env \
   -f deploy/docker-compose.prod.yml \
@@ -102,35 +103,45 @@ edge stack is a separate project.
 Use the host deploy script for normal deploys and rollbacks:
 
 ```sh
-bash deploy/remote-deploy.sh ghcr.io/eigenergy/tellegen:<sha> "$TELLEGEN_DEPLOY_PATH/data"
+bash deploy/remote-deploy.sh \
+  ghcr.io/eigenergy/tellegen@sha256:<digest> \
+  "$TELLEGEN_DEPLOY_PATH/data"
 ```
 
 The script validates Docker, Compose, the external `edge` network, that at
-least one case directory exists, and the compose config. It pulls the selected
-image before recreating the container, then waits for Docker health and
-`/api/health`. It does not use `--remove-orphans`; the shared edge proxy is
-owned by a separate stack.
+least one case directory exists below the canonical deploy root, and the
+compose config. A host `flock` serializes workflow and operator invocations. The
+script pulls the selected digest before recreating the container, then waits
+for Docker health and `/api/health`. It does not use `--remove-orphans`; the
+shared edge proxy is owned by a separate stack.
 
 ## GitHub Actions Deploy
 
-`.github/workflows/deploy.yml` runs on `push` to `main` and
-`workflow_dispatch`, but every job is gated by repository variable:
+`.github/workflows/deploy.yml` runs after a successful `CI` workflow for a push
+to `main`, or by `workflow_dispatch` from `main`. Every job is gated by the
+repository variable:
 
 ```text
 TELLEGEN_DEPLOY_ENABLED=true
 ```
 
 Leave that variable unset until the host has staged data, an `edge` network,
-and GHCR pull access. Once enabled, the workflow:
+and GHCR pull access. Once enabled, the workflow builds and smoke-tests the
+exact commit whose CI passed, then checks that it is still the latest successful
+CI push for `main`. Superseded runs stop without publishing; a newer failing or
+in-progress commit does not suppress the last green deployment. The current run
+pushes the already smoke-tested local image, resolves its immutable registry
+digest, and repeats the latest-green check after any environment wait. It then
+copies the three deploy files into a unique per-run bundle, invokes the locked
+host deploy with that bundle and digest, and checks
+`${TELLEGEN_DEMO_URL}/api/health`. A manual run redeploys the latest green
+commit.
 
-1. runs the tellegen backend and tellegen frontend checks;
-2. builds the Docker image;
-3. starts the image in Actions and checks `/api/health` with fallback data;
-4. pushes `ghcr.io/eigenergy/tellegen:<sha>` and `ghcr.io/eigenergy/tellegen:main`;
-5. copies `docker-compose.prod.yml`, `docker-compose.edge.yml`, and
-   `remote-deploy.sh` to the host;
-6. runs the host deploy script with the immutable SHA image;
-7. checks `${TELLEGEN_DEMO_URL}/api/health` from Actions.
+All demo runs share one non-canceling workflow mutex. GitHub may replace a
+pending run, so the two latest-green checks are the source of truth for which
+commit may publish or reach the host. Per-run bundles keep a canceled remote
+process from observing files uploaded by its successor; the host lock serializes
+their use. After a healthy deploy, bundles older than seven days are removed.
 
 Required repository secrets:
 

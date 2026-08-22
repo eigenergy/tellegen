@@ -25,6 +25,12 @@ quadratic (a least squares line when the quadratic fit is rejected), so
 objectives and prices for such cases are for the fitted curve, not the
 piecewise original.
 
+Branch angle-difference bounds are enforced in radians after normalization.
+MATPOWER's unconstrained `-360`/`360` spelling and an unset `0`/`0` pair become
+exactly -60/+60 degrees. When a branch has no thermal rating, Tellegen
+synthesizes its fallback rating from that same 60 degree window and the terminal
+voltage bands. Explicit tighter source bounds are preserved.
+
 ## AC power flow (polar)
 
 The nodal power balance in polar coordinates,

@@ -92,16 +92,14 @@ only.
 
 Nobody cuts a tag by hand. This repository stores no registry token. Both
 registries authenticate with OIDC, and each exchange runs in a deployment
-environment (`crates-io`, `npm`). The reviewer rule and the rule that limits a
-publish to `main` live on those environments, in the repository settings. The
-`environment:` line in a workflow does not gate the publish on its own.
+environment (`crates-io`, `npm`). Reviewing and merging the generated version
+pull request is the final human publication gate. Publication after that merge
+is unattended.
 
-Set the environment on each trusted publisher as well, not only the repository
-and the workflow filename. Without it, the reviewer is not enforced. A
-`workflow_dispatch` run uses the chosen branch's own copy of the workflow file,
-so a branch can delete the `environment:` line and reach the registry. The
-publish jobs also refuse any ref except `main`, but the publisher setting is
-what makes the registry itself reject such a token.
+Each environment allows deployments from `main` only and has no required
+reviewer. Set the same environment on the registry's trusted publisher, along
+with the repository and workflow filename. The workflow also rejects non-main
+refs; the publisher binding makes the registry enforce that identity.
 
 ### Enabling the pipeline
 
@@ -109,8 +107,8 @@ The release workflows do nothing until the `TELLEGEN_RELEASE_ENABLED` repository
 variable is `true`. What they need lives outside the repository. Set the
 variable after you make all of these:
 
-1. a `crates-io` environment and an `npm` environment, each with required
-   reviewers and a rule that limits it to `main`;
+1. a `crates-io` environment and an `npm` environment, each with a deployment
+   branch rule limited to `main` and no required reviewers;
 2. a crates.io trusted publisher for `tellegen`, set to this repository,
    `release-crate.yml`, **and the `crates-io` environment**;
 3. an npm trusted publisher for `@tellegen/engine` and one for
@@ -123,8 +121,17 @@ variable after you make all of these:
    bots use it so their version pull requests start CI. Pull requests opened by
    `GITHUB_TOKEN` do not start workflows.
 
-When trusted publishing works, delete the `NPM_TOKEN` and
-`CARGO_REGISTRY_TOKEN` secrets. Nothing reads them.
+Protect `main` with a repository ruleset that requires pull requests, at least
+one approval, and the CI checks before merge, and blocks force pushes and
+deletion. Do not give the Release App a ruleset bypass. Those protections make
+the version pull-request merge the publication gate.
+
+If a package or crate does not yet exist at its registry, publish its first
+version manually before configuring the trusted publisher. Later releases use
+this pipeline end to end.
+
+Delete any `NPM_TOKEN` or `CARGO_REGISTRY_TOKEN` repository secrets. The
+workflows do not read long-lived registry credentials.
 
 ### Packages
 
@@ -142,7 +149,8 @@ lockfile. Merge it to run the gates and publish. Tags take the form
 The workflow selects version or publish mode before it requests privileged
 permissions. Versioning uses the GitHub App. Publishing builds immutable
 tarballs in an unprivileged job, then gives only the final npm job the `npm`
-environment and OIDC permission.
+environment and OIDC permission. Merging the version pull request is therefore
+the only manual release action.
 
 `@tellegen/svelte` resolves `@tellegen/engine` from the registry, so a release
 that moves both publishes the engine first.
@@ -151,12 +159,21 @@ that moves both publishes the engine first.
 
 `tellegen` is the only crate that publishes to crates.io. `tellegen-wasm`,
 `tellegen-server`, `tellegen-cli`, and `benchmarks` carry `publish = false`, and
-`release-plz.toml` lists them again, so a new publishable crate needs a
-deliberate edit there.
+the release-plz workspace defaults to `release = false`. A new crate needs an
+explicit package opt-in.
 
 On a push to `main`, `.github/workflows/release-crate.yml` keeps a pull request
 open that bumps the version. Merge it to run the gates, continue the existing
-`vX.Y.Z` tag series, make the GitHub release, and publish.
+`vX.Y.Z` tag series, make the GitHub release, and publish. The configuration
+sets `release_always = false`, limiting publication to a merged release-plz pull
+request. The unprivileged gate runs `cargo package --locked`; the OIDC-enabled
+release then uses Cargo's `--no-verify` path so package build scripts never run
+with registry authority. release-plz obtains its short-lived crates.io
+credential directly from OIDC.
+
+An emergency repair to a generated crate release must retain its
+`release-plz-*` branch name; that is how `release_always = false` recognizes the
+merged release commit.
 
 ### Inspecting an artifact
 
@@ -180,7 +197,8 @@ to a caller.
 
 The Rust gates are `cargo fmt --check`, clippy with warnings denied on the
 shipping crates, `cargo-deny`, the EPL guard, the workspace tests, the engine's
-`conic` path, and `tellegen-wasm` built with `conic`. The last one matters
+`conic` path, `tellegen-wasm` built with `conic`, and `cargo package --locked`
+for the published crate. The wasm test matters
 because `tellegen-wasm` declares `default = []`, so the workspace run skips the
 tests that assert an untrusted package or case rejects rather than panicking.
 

@@ -10,8 +10,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: tellegen-deploy-${{ github.event.workflow_run.head_sha || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
+  group: tellegen-deploy-demo
+  cancel-in-progress: false
 
 # A push deploy starts only after CI succeeds for that exact main commit. A
 # manual run is allowed only from main.
@@ -25,25 +25,48 @@ jobs:
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       packages: write
     outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
       digest_ref: ${{ steps.digest.outputs.ref }}
+      published: ${{ steps.fresh.outputs.current }}
     steps:
+      - name: Select the tested source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            source_sha="$WORKFLOW_RUN_SHA"
+          else
+            source_sha="$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f branch=main -f event=push -f status=success -f per_page=1 \
+              --jq '.workflow_runs[0].head_sha')"
+          fi
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "invalid tested source sha: $source_sha" >&2
+            exit 1
+          fi
+          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ steps.source.outputs.sha }}
           persist-credentials: false
-      - name: Set image tags
+      - name: Set image metadata
         id: meta
         env:
-          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          DEPLOY_SHA: ${{ steps.source.outputs.sha }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           {
             echo "image=$image"
             echo "sha_tag=$image:${DEPLOY_SHA}"
-            echo "main_tag=$image:main"
           } >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -81,27 +104,64 @@ jobs:
       - name: Stop smoke container
         if: always()
         run: docker rm -f tellegen-smoke >/dev/null 2>&1 || true
+      # A newer successful main run may have arrived while this image built.
+      # The shared deployment mutex does not guarantee pending-run order, so
+      # only the latest green CI commit may publish or deploy.
+      - name: Check that the image is current
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f branch=main -f event=push -f status=success -f per_page=1 \
+            --jq '.workflow_runs[0].head_sha')"
+          [[ "$latest" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "could not resolve latest green CI commit: $latest" >&2
+            exit 1
+          }
+          if [ "$SOURCE_SHA" = "$latest" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping superseded image $SOURCE_SHA; latest green CI is $latest"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Log in to GHCR
+        if: steps.fresh.outputs.current == 'true'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Push image
-        # Reuses the layers cached by the build above, so this is a cache hit that
-        # only tags and pushes rather than rebuilding.
+        if: steps.fresh.outputs.current == 'true'
         id: push
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ steps.meta.outputs.sha_tag }}
-            ${{ steps.meta.outputs.main_tag }}
-          cache-from: type=gha
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.sha_tag }}
+        run: |
+          set -euo pipefail
+          # Push the local image that passed the smoke test. Rebuilding here
+          # could resolve mutable base packages to different bytes.
+          docker push "$IMAGE_TAG"
+          digest=""
+          for attempt in $(seq 1 10); do
+            digest="$(docker buildx imagetools inspect "$IMAGE_TAG" \
+              --format '{{json .Manifest}}' 2>/dev/null \
+              | jq -r '.digest // empty' || true)"
+            if [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              break
+            fi
+            digest=""
+            sleep 2
+          done
+          [ -n "$digest" ] || { echo "could not resolve pushed digest" >&2; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       # The deploy pulls this, not the tag. A tag can be repointed at another
       # manifest after the push; a digest cannot.
       - name: Resolve the pushed digest
+        if: steps.fresh.outputs.current == 'true'
         id: digest
         env:
           IMAGE: ${{ steps.meta.outputs.image }}
@@ -115,10 +175,12 @@ jobs:
           echo "ref=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
   deploy:
+    if: needs.image.outputs.published == 'true'
     runs-on: ubuntu-latest
     needs: image
     environment: demo
     permissions:
+      actions: read
       contents: read
     env:
       DEPLOY_HOST: ${{ secrets.TELLEGEN_DEPLOY_HOST }}
@@ -128,11 +190,37 @@ jobs:
       DEMO_URL: ${{ secrets.TELLEGEN_DEMO_URL }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.TELLEGEN_DEPLOY_KNOWN_HOSTS }}
       TELLEGEN_IMAGE: ${{ needs.image.outputs.digest_ref }}
+      DEPLOY_BUNDLE_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ needs.image.outputs.source_sha }}
           persist-credentials: false
+      # Environment approval can delay this job after the image was pushed.
+      # Recheck immediately before any host mutation.
+      - name: Check that the deployment is current
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.image.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f branch=main -f event=push -f status=success -f per_page=1 \
+            --jq '.workflow_runs[0].head_sha')"
+          [[ "$latest" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "could not resolve latest green CI commit: $latest" >&2
+            exit 1
+          }
+          if [ "$SOURCE_SHA" = "$latest" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping superseded deployment $SOURCE_SHA; latest green CI is $latest"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Validate deploy secrets
+        if: steps.fresh.outputs.current == 'true'
         run: |
           for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_PATH DEMO_URL DEPLOY_KNOWN_HOSTS; do
             if [ -z "${!name}" ]; then
@@ -141,6 +229,7 @@ jobs:
             fi
           done
       - name: Configure SSH
+        if: steps.fresh.outputs.current == 'true'
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
@@ -155,22 +244,29 @@ jobs:
             '  IdentitiesOnly yes' > ~/.ssh/config
           chmod 600 ~/.ssh/config
       - name: Copy deploy files
+        if: steps.fresh.outputs.current == 'true'
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
-          ssh -i ~/.ssh/tellegen_deploy "$remote" "mkdir -p '$DEPLOY_PATH/deploy'"
+          bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
+          ssh -i ~/.ssh/tellegen_deploy "$remote" "mkdir -p '$bundle'"
           scp -i ~/.ssh/tellegen_deploy \
             deploy/docker-compose.prod.yml \
             deploy/docker-compose.edge.yml \
             deploy/remote-deploy.sh \
-            "$remote:$DEPLOY_PATH/deploy/"
+            "$remote:$bundle/"
       - name: Deploy image
+        if: steps.fresh.outputs.current == 'true'
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
+          bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
           ssh -i ~/.ssh/tellegen_deploy "$remote" "
             cd '$DEPLOY_PATH' &&
-            bash deploy/remote-deploy.sh '$TELLEGEN_IMAGE' '$DEPLOY_PATH/data'
+            DEPLOY_ROOT='$DEPLOY_PATH' \
+            TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
+            bash '$bundle/remote-deploy.sh' '$TELLEGEN_IMAGE' '$DEPLOY_PATH/data'
           "
       - name: Check public health
+        if: steps.fresh.outputs.current == 'true'
         run: |
           health_url="${DEMO_URL%/}/api/health"
           for attempt in $(seq 1 30); do
@@ -193,5 +289,5 @@ jobs:
           echo "public health check failed: $health_url"
           exit 1
       - name: Remove the deploy key
-        if: always()
+        if: always() && steps.fresh.outputs.current == 'true'
         run: shred -u ~/.ssh/tellegen_deploy 2>/dev/null || rm -f ~/.ssh/tellegen_deploy

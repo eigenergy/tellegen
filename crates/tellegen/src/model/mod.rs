@@ -225,21 +225,23 @@ fn solve_3x3(mut a: [[f64; 3]; 3], mut b: [f64; 3]) -> Option<[f64; 3]> {
     Some(x)
 }
 
+/// Exact 60 degree angle-difference pad used by every Tellegen formulation.
+pub(super) const DEFAULT_ANGLE_BOUND_PAD: f64 = std::f64::consts::PI / 3.0;
+
 /// Default angle-difference bounds (radians in, radians out). A `>= pi/2` half-window
-/// (the MATPOWER "unconstrained"
-/// +-360 degree default, or the zero/zero "unset" case) collapses to the +-60 degree
-/// MATPOWER/PowerModels convention. Shared by the DC OPF (which carries these) and the
-/// AC model (the AC OPF angle-difference limits and the conic angle constraints).
+/// (the MATPOWER "unconstrained" +-360 degree default, or the zero/zero "unset" case)
+/// collapses to the documented +-60 degree MATPOWER/PowerModels convention. Shared by
+/// the DC OPF (which carries these) and the AC model (the AC OPF angle-difference limits
+/// and the conic angle constraints).
 pub(super) fn normalize_angle_bounds(mut amin: f64, mut amax: f64) -> (f64, f64) {
-    let pad = 60.0_f64.to_radians();
     if amin <= -std::f64::consts::FRAC_PI_2 {
-        amin = -pad;
+        amin = -DEFAULT_ANGLE_BOUND_PAD;
     }
     if amax >= std::f64::consts::FRAC_PI_2 {
-        amax = pad;
+        amax = DEFAULT_ANGLE_BOUND_PAD;
     }
     if amin == 0.0 && amax == 0.0 {
-        return (-pad, pad);
+        return (-DEFAULT_ANGLE_BOUND_PAD, DEFAULT_ANGLE_BOUND_PAD);
     }
     (amin, amax)
 }
