@@ -32,6 +32,7 @@
 		type TransformerMark
 	} from './multiconductor.js';
 	import { transformerIcon } from './transformer-icon.js';
+	import { foldMapBounds } from './map-bounds.js';
 	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt, rgbaCss } from './format.js';
 	import type { RGBA } from './colors.js';
@@ -505,33 +506,8 @@
 			: { top: 96, left: 380, right: 60, bottom: 64 };
 	}
 
-	/** Fold lon/lat pairs into LngLat bounds; null when no point is finite. */
-	function foldBounds(
-		points: Iterable<[number, number]>
-	): [[number, number], [number, number]] | null {
-		let minLon = Infinity;
-		let minLat = Infinity;
-		let maxLon = -Infinity;
-		let maxLat = -Infinity;
-		for (const [lon, lat] of points) {
-			// A case file can carry any number as a coordinate. maplibre throws on a
-			// latitude outside the Web Mercator range, and that throw lands in the
-			// framing effect, which leaves the map unframed.
-			if (lon < -180 || lon > 180 || lat < -85.05 || lat > 85.05) continue;
-			minLon = Math.min(minLon, lon);
-			minLat = Math.min(minLat, lat);
-			maxLon = Math.max(maxLon, lon);
-			maxLat = Math.max(maxLat, lat);
-		}
-		if (!Number.isFinite(minLon) || !Number.isFinite(minLat)) return null;
-		return [
-			[minLon, minLat],
-			[maxLon, maxLat]
-		];
-	}
-
 	function branchBounds(path: [number, number][]): LngLatBoundsLike | null {
-		const bounds = foldBounds(path);
+		const bounds = foldMapBounds(path);
 		if (!bounds) return null;
 		let [[minLon, minLat], [maxLon, maxLat]] = bounds;
 		if (minLon === maxLon) {
@@ -1184,7 +1160,7 @@
 			if (target !== 'all' && c.id !== target) continue;
 			if (c.view) fold(c.view.buses);
 		}
-		return foldBounds(points);
+		return foldMapBounds(points);
 	}
 
 	// Fly to whatever the header, the initial load, or a branch selection asked
