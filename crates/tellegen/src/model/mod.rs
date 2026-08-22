@@ -1,7 +1,7 @@
 //! Network models built from a powerio `BalancedNetwork`: the [`DcNetwork`] B-theta model
-//! and the [`AcNetwork`] pi-model admittance form. Both normalize through
+//! and the [`AcNetwork`] pi-model admittance form. Both normalize exactly once through
 //! `BalancedNetwork::to_normalized` + `IndexedNetwork` (per unit, radians, filtered, densely
-//! reindexed, reference inferred), build a `powerio-prob` problem instance
+//! reindexed, reference inferred), then build a `powerio-prob` problem instance
 //! (`DcOpfInstance` / `AcOpfInstance`) as the shared owner of case interpretation —
 //! per unit generator PQ bounds, nodal withdrawal, branch phase terms, reference coverage —
 //! then layer on the solver preparation each formulation needs.
@@ -11,19 +11,12 @@
 //! the instance is built (the piecewise fit, the missing cost rule, and the leading
 //! artifact strip), and [`normalize_angle_bounds`] applies Tellegen's tighter defaults.
 //! The DC model consumes the complete `DcOpfInstance`, including affine phase terms,
-//! source rows, and synthesized limits. The AC model computes its pi model admittance
-//! from the indexed network.
+//! source rows, and synthesized limits. The AC model consumes the instance's complete
+//! pi model, including terminal charging and lowered three-winding transformers.
 //!
 //! The two formulations split into [`mod@dc`] and [`mod@ac`].
 
-#[cfg(feature = "sensitivity")]
-use std::collections::HashSet;
-
-#[cfg(feature = "sensitivity")]
-use powerio::BusType;
-#[cfg(feature = "sensitivity")]
-use powerio::IndexedNetwork;
-use powerio::{BalancedNetwork, GenCost};
+use powerio::{BalancedNetwork, GenCost, IndexedNetwork, NormalizeOptions};
 
 #[cfg(feature = "sensitivity")]
 mod ac;
@@ -41,10 +34,6 @@ pub(crate) use cases::parse_case3_ac;
 pub(crate) use cases::parse_case9_ac;
 #[cfg(test)]
 pub(crate) use cases::{parse_case3, CASE3};
-
-/// Below this squared impedance AC line charging is treated as zero.
-#[cfg(feature = "sensitivity")]
-pub(super) const MIN_Z_SQUARED: f64 = 1e-10;
 
 /// A leading gen-cost polynomial coefficient at or below this magnitude is treated as a
 /// rounding artifact and stripped, so a curve meant to be linear is not read as quadratic
@@ -246,12 +235,350 @@ pub(super) fn normalize_angle_bounds(mut amin: f64, mut amax: f64) -> (f64, f64)
     (amin, amax)
 }
 
-/// Dense sizes and the dense index to source id maps recovered for the AC model
-/// from a normalized network. `to_normalized` keeps nonisolated buses and attached,
-/// in-service branches and generators in source order. The k-th surviving raw
-/// element is dense index k. `bus_uids` and `branch_uids` carry each surviving
-/// element's powerio row uid (`None` when the source network was never stamped),
-/// aligned with `bus_ids` and `branch_ids`.
+/// Row provenance needed by Tellegen's solver models. Positions are in the
+/// star-lowered [`IndexedNetwork`] view; a `None` row is a synthetic 3-winding
+/// star element with no row in the source network.
+#[derive(Clone, Debug)]
+pub(super) struct ModelSourceRows {
+    pub(super) buses: Vec<Option<usize>>,
+    pub(super) branches: Vec<Option<usize>>,
+    pub(super) generators: Vec<Option<usize>>,
+    /// Normalized active transformer position -> caller transformer row. Used
+    /// to preserve raw lowering ordinals when normalization drops an earlier
+    /// transformer whose winding referenced an isolated bus.
+    pub(super) transformers_3w: Vec<Option<usize>>,
+}
+
+/// A computation-ready network and the map back to the network supplied by the
+/// caller. PowerIO's normalized marker is authoritative: a normalized network
+/// is already per unit/radians and must not be scaled a second time.
+pub(super) struct ModelInput {
+    pub(super) network: BalancedNetwork,
+    pub(super) source_rows: ModelSourceRows,
+}
+
+/// Normalize a raw network exactly once, or clone an already-normalized network,
+/// while preserving source-row identity across PowerIO's 3-winding star lowering.
+pub(super) fn normalize_for_model(source: &BalancedNetwork) -> Result<ModelInput, String> {
+    reject_unsupported_active_elements(source)?;
+    let (network, source_rows) = if source.is_normalized() {
+        source.check_base_mva().map_err(|error| error.to_string())?;
+        let network = source.clone();
+        let (n_buses, n_branches) = {
+            let view = IndexedNetwork::new(&network);
+            (view.n(), view.branches().len())
+        };
+        let mut buses = (0..network.buses.len()).map(Some).collect::<Vec<_>>();
+        let mut branches = (0..network.branches.len()).map(Some).collect::<Vec<_>>();
+        buses.resize(n_buses, None);
+        branches.resize(n_branches, None);
+        let generators = (0..network.generators.len()).map(Some).collect();
+        let transformers_3w = network
+            .transformers_3w
+            .iter()
+            .enumerate()
+            .filter(|(_, transformer)| transformer.in_service)
+            .map(|(row, _)| Some(row))
+            .collect();
+        (
+            network,
+            ModelSourceRows {
+                buses,
+                branches,
+                generators,
+                transformers_3w,
+            },
+        )
+    } else {
+        let (normalized, rows) = source
+            .to_normalized_with_source_rows(&NormalizeOptions::default())
+            .map_err(|error| error.to_string())?;
+        (
+            normalized.network,
+            ModelSourceRows {
+                buses: rows.buses,
+                branches: rows.branches,
+                generators: rows.generators,
+                transformers_3w: rows.transformers_3w,
+            },
+        )
+    };
+
+    Ok(ModelInput {
+        network,
+        source_rows,
+    })
+}
+
+/// Tellegen does not yet model these active element families. Refuse them at
+/// model construction instead of returning a feasible-looking solve that omitted
+/// their topology or injections. Inactive/open records remain lossless metadata.
+fn reject_unsupported_active_elements(network: &BalancedNetwork) -> Result<(), String> {
+    let closed_switches = network.switches.iter().filter(|switch| switch.closed).count();
+    let active_storage = network
+        .storage
+        .iter()
+        .filter(|storage| storage.in_service)
+        .count();
+    let active_hvdc = network.hvdc.iter().filter(|link| link.in_service).count();
+    let mut unsupported = Vec::new();
+    if closed_switches > 0 {
+        unsupported.push(format!("{closed_switches} closed switch(es)"));
+    }
+    if active_storage > 0 {
+        unsupported.push(format!("{active_storage} in-service storage unit(s)"));
+    }
+    if active_hvdc > 0 {
+        unsupported.push(format!("{active_hvdc} in-service HVDC link(s)"));
+    }
+    if unsupported.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "network contains active elements this solver does not support: {}",
+            unsupported.join(", ")
+        ))
+    }
+}
+
+/// Compose a problem instance's source rows (indices into the lowered normalized
+/// view) with normalization provenance (indices into the caller's source tables).
+pub(super) fn project_source_rows(
+    view_rows: &[usize],
+    provenance: &[Option<usize>],
+    family: &str,
+) -> Result<Vec<Option<usize>>, String> {
+    view_rows
+        .iter()
+        .map(|&row| {
+            provenance.get(row).copied().ok_or_else(|| {
+                format!(
+                    "{family} source-row projection {row} outside provenance length {}",
+                    provenance.len()
+                )
+            })
+        })
+        .collect()
+}
+
+/// Stable one-based element ids for selected lowered-view positions. Real rows
+/// retain their source position. Synthetic rows are allocated after the complete
+/// source table, and their ordinal is computed before instance filtering so a
+/// skipped zero-impedance winding cannot renumber the following winding.
+pub(super) fn ids_for_view_rows(
+    view_rows: &[usize],
+    provenance: &[Option<usize>],
+    source_len: usize,
+    family: &str,
+) -> Result<Vec<usize>, String> {
+    let mut synthetic = source_len
+        .checked_add(1)
+        .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
+    let all_ids = provenance
+        .iter()
+        .map(|row| match row {
+            Some(row) => {
+                if *row >= source_len {
+                    return Err(format!(
+                        "{family} source row {row} outside source length {source_len}"
+                    ));
+                }
+                Ok(row + 1)
+            }
+            None => {
+                let id = synthetic;
+                synthetic = synthetic
+                    .checked_add(1)
+                    .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
+                Ok(id)
+            }
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    view_rows
+        .iter()
+        .map(|&row| {
+            all_ids.get(row).copied().ok_or_else(|| {
+                format!(
+                    "{family} view row {row} outside provenance length {}",
+                    provenance.len()
+                )
+            })
+        })
+        .collect()
+}
+
+fn active_transformer_ordinals(source: &BalancedNetwork) -> Vec<Option<usize>> {
+    let mut next = 0usize;
+    source
+        .transformers_3w
+        .iter()
+        .map(|transformer| {
+            transformer.in_service.then(|| {
+                let ordinal = next;
+                next += 1;
+                ordinal
+            })
+        })
+        .collect()
+}
+
+fn source_transformer_ordinal(
+    normalized_transformer: usize,
+    transformer_source_rows: &[Option<usize>],
+    source_ordinals: &[Option<usize>],
+    family: &str,
+) -> Result<usize, String> {
+    let source_row = transformer_source_rows
+        .get(normalized_transformer)
+        .copied()
+        .flatten()
+        .ok_or_else(|| {
+            format!(
+                "{family} synthetic row references unknown normalized transformer {normalized_transformer}"
+            )
+        })?;
+    source_ordinals
+        .get(source_row)
+        .copied()
+        .flatten()
+        .ok_or_else(|| {
+            format!(
+                "{family} synthetic row references inactive source transformer {source_row}"
+            )
+        })
+}
+
+/// Stable bus ids for a lowered normalized view. Source rows recover the exact
+/// id carried by the caller. Each synthetic star uses its transformer's ordinal
+/// among all active source transformers, matching PowerIO's lowering of the
+/// canonical network even when normalization dropped an earlier transformer.
+pub(super) fn bus_ids_for_source_rows(
+    source_rows: &[Option<usize>],
+    transformer_source_rows: &[Option<usize>],
+    source: &BalancedNetwork,
+) -> Result<Vec<usize>, String> {
+    let synthetic_base = source
+        .buses
+        .iter()
+        .map(|bus| bus.id.0)
+        .max()
+        .unwrap_or(0)
+        .checked_add(1)
+        .ok_or_else(|| "bus synthetic id space exhausted".to_owned())?;
+    let source_ordinals = active_transformer_ordinals(source);
+    let mut normalized_transformer = 0usize;
+    source_rows
+        .iter()
+        .map(|row| match row {
+            Some(row) => source
+                .buses
+                .get(*row)
+                .map(|bus| bus.id.0)
+                .ok_or_else(|| {
+                    format!(
+                        "bus source row {row} outside source length {}",
+                        source.buses.len()
+                    )
+                }),
+            None => {
+                let ordinal = source_transformer_ordinal(
+                    normalized_transformer,
+                    transformer_source_rows,
+                    &source_ordinals,
+                    "bus",
+                )?;
+                normalized_transformer += 1;
+                synthetic_base
+                    .checked_add(ordinal)
+                    .ok_or_else(|| "bus synthetic id space exhausted".to_owned())
+            }
+        })
+        .collect()
+}
+
+/// Stable one-based branch ids for a lowered normalized view. Synthetic winding
+/// ids retain the source transformer's raw active ordinal and winding ordinal,
+/// so filtering an earlier transformer or a zero-impedance winding cannot
+/// renumber later display/solution rows.
+pub(super) fn branch_ids_for_view_rows(
+    view_rows: &[usize],
+    provenance: &[Option<usize>],
+    transformer_source_rows: &[Option<usize>],
+    source: &BalancedNetwork,
+) -> Result<Vec<usize>, String> {
+    let synthetic_base = source
+        .branches
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| "branch synthetic id space exhausted".to_owned())?;
+    let source_ordinals = active_transformer_ordinals(source);
+    let mut synthetic_branch = 0usize;
+    let all_ids = provenance
+        .iter()
+        .map(|row| match row {
+            Some(row) => {
+                if *row >= source.branches.len() {
+                    return Err(format!(
+                        "branch source row {row} outside source length {}",
+                        source.branches.len()
+                    ));
+                }
+                Ok(row + 1)
+            }
+            None => {
+                let normalized_transformer = synthetic_branch / 3;
+                let winding = synthetic_branch % 3;
+                synthetic_branch += 1;
+                let source_ordinal = source_transformer_ordinal(
+                    normalized_transformer,
+                    transformer_source_rows,
+                    &source_ordinals,
+                    "branch",
+                )?;
+                let offset = source_ordinal
+                    .checked_mul(3)
+                    .and_then(|offset| offset.checked_add(winding))
+                    .ok_or_else(|| "branch synthetic id space exhausted".to_owned())?;
+                synthetic_base
+                    .checked_add(offset)
+                    .ok_or_else(|| "branch synthetic id space exhausted".to_owned())
+            }
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    view_rows
+        .iter()
+        .map(|&row| {
+            all_ids.get(row).copied().ok_or_else(|| {
+                format!(
+                    "branch view row {row} outside provenance length {}",
+                    provenance.len()
+                )
+            })
+        })
+        .collect()
+}
+
+pub(super) fn uids_for_source_rows<T>(
+    source_rows: &[Option<usize>],
+    source: &[T],
+    uid: impl Fn(&T) -> &Option<String>,
+    family: &str,
+) -> Result<Vec<Option<String>>, String> {
+    source_rows
+        .iter()
+        .map(|row| match row {
+            Some(row) => source
+                .get(*row)
+                .map(|element| uid(element).clone())
+                .ok_or_else(|| {
+                    format!("{family} source row {row} outside source length {}", source.len())
+                }),
+            None => Ok(None),
+        })
+        .collect()
+}
+
+/// Dense sizes and source metadata recovered for the AC problem instance.
 #[cfg(feature = "sensitivity")]
 pub(super) struct Ids {
     n: usize,
@@ -264,66 +591,57 @@ pub(super) struct Ids {
     branch_uids: Vec<Option<String>>,
 }
 
-/// Reconstruct the dense sizes and source id maps for the AC `view`. Errors if a
-/// reconstructed id list does not match the normalized count or the network has
-/// no in-service generators.
+/// Resolve the AC instance's dense columns back through normalization and
+/// 3-winding lowering to the caller's source tables.
 #[cfg(feature = "sensitivity")]
-pub(super) fn reconstruct_ids(raw: &BalancedNetwork, view: &IndexedNetwork) -> Result<Ids, String> {
-    let n = view.n();
-    let surviving_buses: Vec<&powerio::Bus> = raw
-        .buses
-        .iter()
-        .filter(|b| b.kind != BusType::Isolated)
-        .collect();
-    let bus_ids: Vec<usize> = surviving_buses.iter().map(|b| b.id.0).collect();
-    let bus_uids: Vec<Option<String>> = surviving_buses.iter().map(|b| b.uid.clone()).collect();
-    if bus_ids.len() != n {
+pub(super) fn reconstruct_ids(
+    raw: &BalancedNetwork,
+    bus_ids: &[powerio::BusId],
+    branch_view_rows: &[usize],
+    generator_view_rows: &[usize],
+    source_rows: &ModelSourceRows,
+) -> Result<Ids, String> {
+    let n = bus_ids.len();
+    if source_rows.buses.len() != n {
         return Err(format!(
-            "bus id reconstruction mismatch: {} non-isolated raw buses vs {} normalized",
-            bus_ids.len(),
-            n
+            "bus provenance length {} != problem bus count {n}",
+            source_rows.buses.len()
         ));
     }
-    let active: HashSet<usize> = bus_ids.iter().copied().collect();
-
-    let m = view.branches().len();
-    let surviving_branches: Vec<(usize, &powerio::Branch)> = raw
-        .branches
-        .iter()
-        .enumerate()
-        .filter(|(_, br)| br.in_service && active.contains(&br.from.0) && active.contains(&br.to.0))
-        .collect();
-    let branch_ids: Vec<usize> = surviving_branches.iter().map(|(i, _)| i + 1).collect();
-    let branch_uids: Vec<Option<String>> = surviving_branches
-        .iter()
-        .map(|(_, br)| br.uid.clone())
-        .collect();
-    if branch_ids.len() != m {
-        return Err(format!(
-            "branch id reconstruction mismatch: {} active raw branches vs {} normalized",
-            branch_ids.len(),
-            m
-        ));
-    }
-
-    let k = view.generators().len();
+    let m = branch_view_rows.len();
+    let k = generator_view_rows.len();
     if k == 0 {
         return Err("network has no in-service generators".into());
     }
-    let gen_ids: Vec<usize> = raw
-        .generators
-        .iter()
-        .enumerate()
-        .filter(|(_, g)| g.in_service && active.contains(&g.bus.0))
-        .map(|(i, _)| i + 1)
-        .collect();
-    if gen_ids.len() != k {
-        return Err(format!(
-            "generator id reconstruction mismatch: {} active raw generators vs {} normalized",
-            gen_ids.len(),
-            k
-        ));
-    }
+    let bus_ids = bus_ids_for_source_rows(
+        &source_rows.buses,
+        &source_rows.transformers_3w,
+        raw,
+    )?;
+    let bus_uids = uids_for_source_rows(&source_rows.buses, &raw.buses, |bus| &bus.uid, "bus")?;
+    let branch_source_rows = project_source_rows(
+        branch_view_rows,
+        &source_rows.branches,
+        "branch",
+    )?;
+    let branch_ids = branch_ids_for_view_rows(
+        branch_view_rows,
+        &source_rows.branches,
+        &source_rows.transformers_3w,
+        raw,
+    )?;
+    let branch_uids = uids_for_source_rows(
+        &branch_source_rows,
+        &raw.branches,
+        |branch| &branch.uid,
+        "branch",
+    )?;
+    let gen_ids = ids_for_view_rows(
+        generator_view_rows,
+        &source_rows.generators,
+        raw.generators.len(),
+        "generator",
+    )?;
 
     Ok(Ids {
         n,
@@ -375,5 +693,74 @@ mod cost_fit_tests {
         assert!((q - 2.0).abs() < 1e-9, "q {q}");
         assert!((l - 3.0).abs() < 1e-9, "l {l}");
         assert!((c - 1.0).abs() < 1e-9, "c {c}");
+    }
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+
+    fn case3() -> BalancedNetwork {
+        powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse case3")
+            .network
+    }
+
+    fn assert_rejected_by_every_model(net: &BalancedNetwork, family: &str) {
+        let dc = crate::model::DcNetwork::from_network(net)
+            .err()
+            .expect("active unsupported element must reject DC construction");
+        assert!(dc.contains(family), "unexpected DC error: {dc}");
+
+        #[cfg(feature = "sensitivity")]
+        {
+            let ac = crate::model::AcNetwork::from_network(net)
+                .expect_err("active unsupported element must reject AC construction");
+            assert!(ac.contains(family), "unexpected AC error: {ac}");
+        }
+    }
+
+    #[test]
+    fn active_unmodeled_element_families_fail_closed() {
+        let mut switched = case3();
+        switched.switches.push(powerio::Switch::new(
+            powerio::BusId(1),
+            powerio::BusId(2),
+            true,
+        ));
+        assert_rejected_by_every_model(&switched, "closed switch");
+
+        let mut storage = case3();
+        storage
+            .storage
+            .push(powerio::Storage::new(powerio::BusId(2)));
+        assert_rejected_by_every_model(&storage, "in-service storage");
+
+        let mut hvdc = case3();
+        hvdc.hvdc.push(powerio::Hvdc::new(
+            powerio::BusId(1),
+            powerio::BusId(2),
+        ));
+        assert_rejected_by_every_model(&hvdc, "in-service HVDC");
+    }
+
+    #[test]
+    fn inactive_unmodeled_elements_do_not_reject() {
+        let mut net = case3();
+        net.switches.push(powerio::Switch::new(
+            powerio::BusId(1),
+            powerio::BusId(2),
+            false,
+        ));
+        let mut storage = powerio::Storage::new(powerio::BusId(2));
+        storage.in_service = false;
+        net.storage.push(storage);
+        let mut hvdc = powerio::Hvdc::new(powerio::BusId(1), powerio::BusId(2));
+        hvdc.in_service = false;
+        net.hvdc.push(hvdc);
+
+        crate::model::DcNetwork::from_network(&net).expect("inactive metadata is safe for DC");
+        #[cfg(feature = "sensitivity")]
+        crate::model::AcNetwork::from_network(&net).expect("inactive metadata is safe for AC");
     }
 }

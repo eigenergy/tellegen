@@ -18,6 +18,13 @@ Early (v0.1.0). DC OPF (locational marginal prices, branch flows, generator disp
 AC power flow voltage sensitivities, and the SOCWR conic relaxation with sensitivities —
 all under the one object-safe `Differentiable` sensitivity contract.
 
+Active three-winding transformers are lowered to an equivalent star network for
+solving and display. Tellegen currently rejects closed transmission switches,
+in-service storage, and in-service HVDC links instead of silently omitting them;
+open or out-of-service records remain valid metadata. Branch angle limits written
+as `0/0` or with an unconstrained half-window of at least 90 degrees use Tellegen's
+documented default of ±60 degrees.
+
 ## Use
 
 `solve_json` is the one front door: a `SolveRequest` in, a `SolveResponse` out.

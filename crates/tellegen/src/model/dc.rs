@@ -7,10 +7,13 @@
 use std::collections::BTreeMap;
 
 use powerio::BalancedNetwork;
-use powerio::{DcConvention, IndexedNetwork, NormalizeOptions};
+use powerio::{DcConvention, IndexedNetwork};
 use powerio_prob::{build_dc_opf_instance, DcOpfOptions, Units};
 
-use super::{flatten_gen_costs, normalize_angle_bounds};
+use super::{
+    branch_ids_for_view_rows, bus_ids_for_source_rows, flatten_gen_costs, ids_for_view_rows,
+    normalize_angle_bounds, normalize_for_model, project_source_rows, uids_for_source_rows,
+};
 
 /// Strong-convexity regularization on the flows.
 const DEFAULT_TAU: f64 = 1e-2;
@@ -123,10 +126,9 @@ impl DcNetwork {
     /// default is applied to source branches before the instance synthesizes an
     /// unrated limit, and again to rows created by three-winding lowering.
     pub fn from_network(raw: &BalancedNetwork) -> Result<DcNetwork, String> {
-        let (normalized, source_rows) = raw
-            .to_normalized_with_source_rows(&NormalizeOptions::default())
-            .map_err(|e| e.to_string())?;
-        let mut norm = normalized.network;
+        let input = normalize_for_model(raw)?;
+        let mut norm = input.network;
+        let source_rows = input.source_rows;
         // Apply the policy before PowerIO synthesizes thermal limits. Doing this
         // directly avoids allocating normalization diagnostics for every ordinary
         // MATPOWER branch whose source uses the typical +-360 spelling.
@@ -157,55 +159,47 @@ impl DcNetwork {
         let m = instance.n_branches();
         let k = instance.n_generators();
 
-        let bus_ids: Vec<usize> = instance.bus_ids.iter().map(|id| id.0).collect();
-        let bus_uids: Vec<Option<String>> = source_rows
-            .buses
-            .iter()
-            .take(n)
-            .map(|row| {
-                row.and_then(|row| raw.buses.get(row))
-                    .and_then(|bus| bus.uid.clone())
-            })
-            .collect();
-
-        let branch_source_rows: Vec<Option<usize>> = instance
-            .branches
-            .source_rows
-            .iter()
-            .map(|&row| source_rows.branches.get(row).copied().flatten())
-            .collect();
-        let gen_source_rows: Vec<Option<usize>> = instance
-            .generators
-            .source_rows
-            .iter()
-            .map(|&row| source_rows.generators.get(row).copied().flatten())
-            .collect();
-
-        // Existing API payloads identify source rows as one-based ids. A lowered
-        // synthetic row has no source id; allocate it after the source table so it
-        // cannot collide with one that does.
-        let ids_from_rows = |rows: &[Option<usize>], source_len: usize| {
-            let mut synthetic = source_len + 1;
-            rows.iter()
-                .map(|row| match row {
-                    Some(row) => row + 1,
-                    None => {
-                        let id = synthetic;
-                        synthetic += 1;
-                        id
-                    }
-                })
-                .collect::<Vec<_>>()
-        };
-        let branch_ids = ids_from_rows(&branch_source_rows, raw.branches.len());
-        let gen_ids = ids_from_rows(&gen_source_rows, raw.generators.len());
-        let branch_uids = branch_source_rows
-            .iter()
-            .map(|row| {
-                row.and_then(|row| raw.branches.get(row))
-                    .and_then(|branch| branch.uid.clone())
-            })
-            .collect();
+        if source_rows.buses.len() != n {
+            return Err(format!(
+                "bus provenance length {} != problem bus count {n}",
+                source_rows.buses.len()
+            ));
+        }
+        let bus_ids = bus_ids_for_source_rows(
+            &source_rows.buses,
+            &source_rows.transformers_3w,
+            raw,
+        )?;
+        let bus_uids =
+            uids_for_source_rows(&source_rows.buses, &raw.buses, |bus| &bus.uid, "bus")?;
+        let branch_source_rows = project_source_rows(
+            &instance.branches.source_rows,
+            &source_rows.branches,
+            "branch",
+        )?;
+        let gen_source_rows = project_source_rows(
+            &instance.generators.source_rows,
+            &source_rows.generators,
+            "generator",
+        )?;
+        let branch_ids = branch_ids_for_view_rows(
+            &instance.branches.source_rows,
+            &source_rows.branches,
+            &source_rows.transformers_3w,
+            raw,
+        )?;
+        let gen_ids = ids_for_view_rows(
+            &instance.generators.source_rows,
+            &source_rows.generators,
+            raw.generators.len(),
+            "generator",
+        )?;
+        let branch_uids = uids_for_source_rows(
+            &branch_source_rows,
+            &raw.branches,
+            |branch| &branch.uid,
+            "branch",
+        )?;
 
         // Per-bus demand and reference, moved straight out of the freshly built,
         // locally owned instance: from_network runs per Study commit and preview, so
@@ -470,6 +464,60 @@ mod tests {
             if branch > 3 {
                 // Equal pairwise impedances lower to r=0.01, x=0.1 on each winding.
                 approx(dc.fmax[branch], 1.1 * 1.1 / 0.01_f64.hypot(0.1));
+            }
+        }
+
+        let normalized = net.to_normalized().expect("normalize 3W case");
+        let from_normalized = DcNetwork::from_network(&normalized).expect("build normalized 3W");
+        assert_eq!(from_normalized.bus_ids, dc.bus_ids);
+        assert_eq!(from_normalized.branch_ids, dc.branch_ids);
+        assert_eq!(from_normalized.branch_source_rows, dc.branch_source_rows);
+        for (actual, expected) in from_normalized.fmax.iter().zip(&dc.fmax) {
+            approx(*actual, *expected);
+        }
+    }
+
+    #[test]
+    fn raw_and_normalized_inputs_build_the_same_dc_model() {
+        let text = CASE3
+            .replace(
+                " 2 1 90 30 0 0 1 1 0 230 1 1.1 0.9;",
+                " 2 1 90 30 10 0 1 1 0 230 1 1.1 0.9;",
+            )
+            .replace(
+                " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
+                " 1 2 0.01 0.1 0 175 175 175 1 15 1 -30 30;",
+            );
+        let raw = powerio::parse_str(&text, "matpower")
+            .expect("parse affine case")
+            .network;
+        let normalized = raw.to_normalized().expect("normalize affine case");
+        let a = DcNetwork::from_network(&raw).expect("build raw");
+        let b = DcNetwork::from_network(&normalized).expect("build normalized");
+
+        assert_eq!(a.bus_ids, b.bus_ids);
+        assert_eq!(a.branch_ids, b.branch_ids);
+        assert_eq!(a.gen_ids, b.gen_ids);
+        assert_eq!(a.branch_source_rows, b.branch_source_rows);
+        assert_eq!(a.gen_source_rows, b.gen_source_rows);
+        for (left, right) in [
+            (&a.demand, &b.demand),
+            (&a.shunt_conductance, &b.shunt_conductance),
+            (&a.p_shift, &b.p_shift),
+            (&a.b, &b.b),
+            (&a.shift, &b.shift),
+            (&a.fmax, &b.fmax),
+            (&a.angmin, &b.angmin),
+            (&a.angmax, &b.angmax),
+            (&a.gmin, &b.gmin),
+            (&a.gmax, &b.gmax),
+            (&a.cq, &b.cq),
+            (&a.cl, &b.cl),
+            (&a.cc, &b.cc),
+        ] {
+            assert_eq!(left.len(), right.len());
+            for (&actual, &expected) in left.iter().zip(right.iter()) {
+                approx(actual, expected);
             }
         }
     }

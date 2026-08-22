@@ -22,7 +22,7 @@ use axum::{
     routing::{any, get},
     Json, Router,
 };
-use powerio::BalancedNetwork;
+use powerio::{BalancedNetwork, IndexedNetwork};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
@@ -32,7 +32,9 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use tellegen::geo::{complete_coords_for, spread_stacks, synthetic_layout, Coords};
+use tellegen::geo::{
+    complete_coords_for, lowered_coords, spread_stacks, synthetic_layout, Coords,
+};
 use tellegen::{
     solve_prebuilt, solve_prebuilt_cancellable, DcNetwork, Iterations, SolveRequest, SolveResponse,
 };
@@ -231,8 +233,12 @@ struct CaseEntry {
 pub struct CaseSummary {
     pub id: String,
     pub name: String,
+    /// Canonical typed PowerIO row counts.
     pub n_bus: usize,
     pub n_branch: usize,
+    /// Rendered analysis counts after three-winding star lowering.
+    pub n_analysis_bus: usize,
+    pub n_analysis_branch: usize,
     pub n_gen: usize,
 }
 
@@ -259,6 +265,8 @@ pub struct NetworkBus {
     pub lat: f64,
     pub demand_mw: f64,
     pub gen_mw: f64,
+    /// False for a display-only bus synthesized by analysis lowering.
+    pub editable: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -268,6 +276,8 @@ pub struct NetworkBranch {
     pub to: usize,
     pub rate_mw: f64,
     pub status: u8,
+    /// False for a display-only branch synthesized by analysis lowering.
+    pub editable: bool,
     pub path: Vec<[f64; 2]>,
 }
 
@@ -676,6 +686,8 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
                 name: entry.name.clone(),
                 n_bus: entry.network.buses.len(),
                 n_branch: entry.network.branches.len(),
+                n_analysis_bus: entry.view.buses.len(),
+                n_analysis_branch: entry.view.branches.len(),
                 n_gen: entry
                     .network
                     .generators
@@ -1242,18 +1254,28 @@ fn network_payload(
     branch_paths: Option<&BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<NetworkPayload, String> {
+    let power_scale = if net.is_normalized() {
+        net.check_base_mva().map_err(|error| error.to_string())?;
+        net.base_mva
+    } else {
+        1.0
+    };
+    let indexed = IndexedNetwork::new(net);
+    let analysis = indexed.network();
+    let coords = lowered_coords(net, coords);
     let mut demand = BTreeMap::<usize, f64>::new();
-    for load in net.loads.iter().filter(|load| load.in_service) {
-        *demand.entry(load.bus.0).or_default() += load.p;
+    for load in analysis.loads.iter().filter(|load| load.in_service) {
+        *demand.entry(load.bus.0).or_default() += load.p * power_scale;
     }
     let mut generation = BTreeMap::<usize, f64>::new();
-    for gen in net.generators.iter().filter(|gen| gen.in_service) {
-        *generation.entry(gen.bus.0).or_default() += gen.pmax;
+    for gen in analysis.generators.iter().filter(|gen| gen.in_service) {
+        *generation.entry(gen.bus.0).or_default() += gen.pmax * power_scale;
     }
-    let buses = net
+    let buses = analysis
         .buses
         .iter()
-        .map(|bus| {
+        .enumerate()
+        .map(|(i, bus)| {
             let &(lon, lat) = coords
                 .get(&bus.id.0)
                 .ok_or_else(|| format!("{}: missing coordinates for bus {}", id, bus.id.0))?;
@@ -1263,14 +1285,16 @@ fn network_payload(
                 lat,
                 demand_mw: demand.get(&bus.id.0).copied().unwrap_or(0.0),
                 gen_mw: generation.get(&bus.id.0).copied().unwrap_or(0.0),
+                editable: i < net.buses.len(),
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let branches = net
+    let branches = analysis
         .branches
         .iter()
         .enumerate()
         .map(|(i, br)| {
+            let source_paths = branch_paths.filter(|_| i < net.branches.len());
             let &(from_lon, from_lat) = coords.get(&br.from.0).ok_or_else(|| {
                 format!(
                     "{}: missing coordinates for branch from bus {}",
@@ -1284,9 +1308,10 @@ fn network_payload(
                 id: i + 1,
                 from: br.from.0,
                 to: br.to.0,
-                rate_mw: br.rate_a,
+                rate_mw: br.rate_a * power_scale,
                 status: br.in_service as u8,
-                path: branch_paths
+                editable: i < net.branches.len(),
+                path: source_paths
                     .and_then(|paths| {
                         paths
                             .get(&BranchPathKey::Id(i + 1))
@@ -1806,6 +1831,56 @@ mod tests {
         let expected = vec![[-122.0, 37.0], [-121.5, 37.2], [-121.0, 37.4]];
         assert_eq!(paths.get(&BranchPathKey::Id(7)), Some(&expected));
         assert_eq!(paths.get(&BranchPathKey::Edge(101, 202)), Some(&expected));
+    }
+
+    #[test]
+    fn network_payload_keeps_native_units_for_normalized_models() {
+        let raw = powerio::parse_str(FALLBACK_SPECS[0].text, "m")
+            .expect("parse fallback")
+            .network;
+        let coords = synthetic_layout(&raw, FALLBACK_SPECS[0].bbox);
+        let normalized = raw.to_normalized().expect("normalize fallback");
+        let source = network_payload("raw", "raw", &raw, &coords, None, true)
+            .expect("raw network payload");
+        let derived = network_payload("normalized", "normalized", &normalized, &coords, None, true)
+            .expect("normalized network payload");
+
+        assert_eq!(source.buses.len(), derived.buses.len());
+        for (left, right) in source.buses.iter().zip(&derived.buses) {
+            assert!((left.demand_mw - right.demand_mw).abs() < 1e-9);
+            assert!((left.gen_mw - right.gen_mw).abs() < 1e-9);
+        }
+        assert_eq!(source.branches.len(), derived.branches.len());
+        for (left, right) in source.branches.iter().zip(&derived.branches) {
+            assert!((left.rate_mw - right.rate_mw).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn network_payload_includes_noneditable_three_winding_star_rows() {
+        let mut net = powerio::parse_str(FALLBACK_SPECS[0].text, "m")
+            .expect("parse fallback")
+            .network;
+        let terminals = [net.buses[0].id, net.buses[1].id, net.buses[2].id];
+        let windings = terminals.map(powerio::Winding::new);
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
+        let coords = net
+            .buses
+            .iter()
+            .enumerate()
+            .map(|(i, bus)| (bus.id.0, (-90.0 + i as f64 * 0.001, 40.0)))
+            .collect();
+
+        let payload = network_payload("3w", "3w", &net, &coords, None, false)
+            .expect("3W network payload");
+        assert_eq!(payload.buses.len(), net.buses.len() + 1);
+        assert_eq!(payload.branches.len(), net.branches.len() + 3);
+        assert!(!payload.buses.last().unwrap().editable);
+        assert!(payload.branches[net.branches.len()..]
+            .iter()
+            .all(|branch| !branch.editable));
     }
 
     #[tokio::test]

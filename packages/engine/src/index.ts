@@ -47,8 +47,14 @@ export type {
 export interface CaseFileSummary {
   name: string;
   base_mva: number;
+  /** Canonical typed PowerIO bus rows. */
   n_bus: number;
+  /** Canonical typed PowerIO branch rows. */
   n_branch: number;
+  /** Rendered buses after analysis lowering; absent on older engine builds. */
+  n_analysis_bus?: number;
+  /** Rendered branches after analysis lowering; absent on older engine builds. */
+  n_analysis_branch?: number;
   n_gen: number;
   load_mw: number;
   gen_mw: number;
@@ -65,6 +71,8 @@ export interface TopologyBus {
   id: number;
   /** powerio row uid, stamped at ingest (e.g. "buses:0"). */
   uid: string;
+  /** False for a display-only row synthesized by analysis lowering. */
+  editable?: boolean;
   demand_mw: number;
   gen_mw: number;
 }
@@ -73,6 +81,8 @@ export interface TopologyBranch {
   id: number;
   /** powerio row uid, stamped at ingest (e.g. "branches:0"). */
   uid: string;
+  /** False for a display-only row synthesized by analysis lowering. */
+  editable?: boolean;
   from: number;
   to: number;
   rate_mw: number;

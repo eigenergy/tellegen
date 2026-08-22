@@ -100,6 +100,14 @@ const COMPUTE_OFF_NOTICE =
  * selection. */
 const FOCUS_SETTLE_CAP_MS = 1200;
 
+/** A lowered analysis row is view-only only when a current producer says so;
+ * absence keeps payloads from older compatible engine/server versions editable. */
+export function isDisplayOnlyElement(
+	element: { editable?: boolean } | null | undefined
+): boolean {
+	return element?.editable === false;
+}
+
 function delayUntilFocusSettles(ms: number, signal: AbortSignal): Promise<void> {
 	if (ms <= 0 || signal.aborted) return Promise.resolve();
 	return new Promise((resolve) => {
@@ -528,7 +536,7 @@ export class Controller {
 		bus: NetworkBus | null,
 		center: number
 	): { min: number; max: number; span: number } {
-		if (!bus) return { min: 0, max: 0, span: 0 };
+		if (!bus || isDisplayOnlyElement(bus)) return { min: 0, max: 0, span: 0 };
 		// Floor, not ceil: -ceil(demand) can push base + delta below zero for
 		// non-integer demand, which the server rejects (400) and which is
 		// physically meaningless (demand cannot go negative).
@@ -642,6 +650,9 @@ export class Controller {
 	);
 	sliderMin = $derived(this.sliderBounds.min);
 	sliderMax = $derived(this.sliderBounds.max);
+	sliderDisabled = $derived(
+		!this.selectedBusData || isDisplayOnlyElement(this.selectedBusData)
+	);
 
 	committedRating = $derived.by(() =>
 		this.activeSolvable && this.app.selectedBranch !== null
@@ -657,7 +668,8 @@ export class Controller {
 	// to perturb.
 	ratingBounds = $derived.by(() => {
 		const b = this.selectedBranchData;
-		if (!b || b.rate_mw <= 0) return { min: 0, max: 0, disabled: true };
+		if (!b || isDisplayOnlyElement(b) || b.rate_mw <= 0)
+			return { min: 0, max: 0, disabled: true };
 		const span = Math.min(50, Math.max(5, 0.2 * b.rate_mw));
 		return {
 			min: Math.max(-(b.rate_mw - 1), -span),
@@ -1047,8 +1059,10 @@ export class Controller {
 		c.coordsKind = 'geofile';
 		c.syntheticCenter = undefined;
 		c.geoSource = sourceLabel;
+		const placedCanonicalBuses =
+			payload.view?.buses.filter((bus) => bus.editable !== false).length ?? 0;
 		c.geoWarnings = [
-			`${payload.view?.buses.length ?? 0} of ${payload.n_bus} buses placed from ${placedFrom}`,
+			`${placedCanonicalBuses} of ${payload.n_bus} buses placed from ${placedFrom}`,
 			...extraWarnings,
 			...payload.warnings
 		];
@@ -1554,7 +1568,7 @@ export class Controller {
 	commitDelta = (value: number) => {
 		const c = this.activeSolvable;
 		const bus = this.app.selectedBus;
-		if (!c || bus === null) return;
+		if (!c || bus === null || this.sliderDisabled) return;
 		// Refresh the engine preview at the commit value (a typed value may not have
 		// driven a drag), then score the commit with the engine's predicted Δobjective.
 		this.runPreview(c, bus, value);
@@ -1566,6 +1580,7 @@ export class Controller {
 	};
 
 	finishDemandInput = (value: number) => {
+		if (this.sliderDisabled) return;
 		if (Math.abs(value - this.committedDelta) < 0.25) {
 			if (!this.activeSolvable?.solving) {
 				this.app.previewActive = false;
@@ -2216,7 +2231,7 @@ export class Controller {
 	}
 
 	setSliderPreview = (value: number | undefined) => {
-		if (value === undefined) return;
+		if (value === undefined || this.sliderDisabled) return;
 		this.app.previewActive = true;
 		this.app.previewDeltaMw = value;
 		const c = this.activeSolvable;
@@ -2317,7 +2332,7 @@ export class Controller {
 	commitRating = async (value: number) => {
 		const c = this.activeSolvable;
 		const branch = this.app.selectedBranch;
-		if (!c || branch === null) return;
+		if (!c || branch === null || isDisplayOnlyElement(this.selectedBranchData)) return;
 		// Refresh the engine preview at the commit value (a typed value may not have
 		// driven a drag), then score the commit with the engine's predicted Δobjective.
 		this.runRatingPreview(c, branch, value);

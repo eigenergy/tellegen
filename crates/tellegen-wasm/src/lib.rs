@@ -6,13 +6,13 @@
 //! and the case-file-drop payload shapes the frontend reads. Case files never leave
 //! the machine: parsing and solving happen here, in the browser.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use powerio::{parse_display_bytes, Detection, DisplayData, JsonClass};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use tellegen::geo::{network_coords, spread_stacks};
+use tellegen::geo::{lowered_coords, network_coords, spread_stacks};
 #[cfg(feature = "sensitivity")]
 use tellegen::SolveResponse;
 
@@ -476,6 +476,8 @@ struct ViewBus {
     lat: f64,
     demand_mw: f64,
     gen_mw: f64,
+    /// False for a display-only bus synthesized by analysis lowering.
+    editable: bool,
 }
 
 #[derive(Serialize)]
@@ -487,6 +489,8 @@ struct ViewBranch {
     to: usize,
     rate_mw: f64,
     status: u8,
+    /// False for a display-only branch synthesized by analysis lowering.
+    editable: bool,
     /// The rendered polyline: the branch's `route` when a geographic file
     /// carried one (already endpoint-to-endpoint in file order), else the
     /// straight segment between the bus points.
@@ -506,6 +510,7 @@ struct TopologyBus {
     uid: String,
     demand_mw: f64,
     gen_mw: f64,
+    editable: bool,
 }
 
 #[derive(Serialize)]
@@ -517,6 +522,7 @@ struct TopologyBranch {
     to: usize,
     rate_mw: f64,
     status: u8,
+    editable: bool,
 }
 
 /// The uid `ensure_payload_uids` stamped on this element. It fills every row of
@@ -525,6 +531,62 @@ struct TopologyBranch {
 fn stamped_uid(uid: &Option<String>) -> Result<String, String> {
     uid.clone()
         .ok_or_else(|| "ensure_payload_uids left an element without a uid".to_owned())
+}
+
+/// Deterministic identities for rendered analysis rows. Source rows keep their
+/// canonical uid. Lowered rows receive display-only ids chosen outside every
+/// canonical bus and branch uid, so forwarding one to an edit API always fails
+/// closed instead of aliasing a source element with an unfortunate custom uid.
+fn analysis_uids(
+    source: &powerio::BalancedNetwork,
+    analysis: &powerio::BalancedNetwork,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    let mut reserved: HashSet<String> = source
+        .buses
+        .iter()
+        .filter_map(|bus| bus.uid.clone())
+        .chain(
+            source
+                .branches
+                .iter()
+                .filter_map(|branch| branch.uid.clone()),
+        )
+        .collect();
+
+    let mut unique_synthetic = |family: &str, index: usize| -> Result<String, String> {
+        let stem = format!("analysis:{family}:{index}");
+        if reserved.insert(stem.clone()) {
+            return Ok(stem);
+        }
+        let mut suffix = 1usize;
+        loop {
+            let candidate = format!("{stem}:{suffix}");
+            if reserved.insert(candidate.clone()) {
+                return Ok(candidate);
+            }
+            suffix = suffix
+                .checked_add(1)
+                .ok_or_else(|| format!("{family} analysis uid space exhausted"))?;
+        }
+    };
+
+    let mut buses = Vec::with_capacity(analysis.buses.len());
+    for (index, bus) in analysis.buses.iter().enumerate() {
+        buses.push(if index < source.buses.len() {
+            stamped_uid(&bus.uid)?
+        } else {
+            unique_synthetic("buses", index)?
+        });
+    }
+    let mut branches = Vec::with_capacity(analysis.branches.len());
+    for (index, branch) in analysis.branches.iter().enumerate() {
+        branches.push(if index < source.branches.len() {
+            stamped_uid(&branch.uid)?
+        } else {
+            unique_synthetic("branches", index)?
+        });
+    }
+    Ok((buses, branches))
 }
 
 #[derive(Serialize)]
@@ -626,73 +688,88 @@ pub(crate) fn ingest_value(
     net: &powerio::BalancedNetwork,
     mut warnings: Vec<String>,
 ) -> Result<serde_json::Value, String> {
+    let power_scale = if net.is_normalized() {
+        net.check_base_mva().map_err(|error| error.to_string())?;
+        net.base_mva
+    } else {
+        1.0
+    };
+    let indexed = powerio::IndexedNetwork::new(net);
+    let analysis = indexed.network();
+    let (analysis_bus_uids, analysis_branch_uids) = analysis_uids(net, analysis)?;
     let mut demand: BTreeMap<usize, f64> = BTreeMap::new();
-    for l in net.loads.iter().filter(|l| l.in_service) {
-        *demand.entry(l.bus.0).or_default() += l.p;
+    for l in analysis.loads.iter().filter(|l| l.in_service) {
+        *demand.entry(l.bus.0).or_default() += l.p * power_scale;
     }
     let mut gen: BTreeMap<usize, f64> = BTreeMap::new();
-    for g in net.generators.iter().filter(|g| g.in_service) {
-        *gen.entry(g.bus.0).or_default() += g.pmax;
+    for g in analysis.generators.iter().filter(|g| g.in_service) {
+        *gen.entry(g.bus.0).or_default() += g.pmax * power_scale;
     }
 
     let topology = Topology {
-        buses: net
+        buses: analysis
             .buses
             .iter()
-            .map(|b| {
+            .enumerate()
+            .map(|(i, b)| {
                 Ok(TopologyBus {
                     id: b.id.0,
-                    uid: stamped_uid(&b.uid)?,
+                    uid: analysis_bus_uids[i].clone(),
                     demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                     gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
+                    editable: i < net.buses.len(),
                 })
             })
             .collect::<Result<_, String>>()?,
-        branches: net
+        branches: analysis
             .branches
             .iter()
             .enumerate()
             .map(|(i, br)| {
                 Ok(TopologyBranch {
                     id: i + 1,
-                    uid: stamped_uid(&br.uid)?,
+                    uid: analysis_branch_uids[i].clone(),
                     from: br.from.0,
                     to: br.to.0,
-                    rate_mw: br.rate_a,
+                    rate_mw: br.rate_a * power_scale,
                     status: br.in_service as u8,
+                    editable: i < net.branches.len(),
                 })
             })
             .collect::<Result<_, String>>()?,
     };
 
     let view = {
-        let mut cs = network_coords(net);
+        let source_coords = network_coords(net);
+        let mut cs = lowered_coords(net, &source_coords);
         if cs.is_empty() {
             None
         } else {
-            let missing_buses = net.buses.len().saturating_sub(cs.len());
+            let missing_buses = analysis.buses.len().saturating_sub(cs.len());
             if missing_buses > 0 {
                 warnings.push(format!(
                     "{missing_buses} bus(es) lacked coordinates and are omitted from the map"
                 ));
             }
             spread_stacks(&mut cs);
-            let buses: Vec<ViewBus> = net
+            let buses: Vec<ViewBus> = analysis
                 .buses
                 .iter()
-                .filter_map(|b| {
+                .enumerate()
+                .filter_map(|(i, b)| {
                     let &(lon, lat) = cs.get(&b.id.0)?;
-                    Some(stamped_uid(&b.uid).map(|uid| ViewBus {
+                    Some(Ok(ViewBus {
                         id: b.id.0,
-                        uid,
+                        uid: analysis_bus_uids[i].clone(),
                         lon,
                         lat,
                         demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                         gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
+                        editable: i < net.buses.len(),
                     }))
                 })
                 .collect::<Result<_, String>>()?;
-            let branches: Vec<ViewBranch> = net
+            let branches: Vec<ViewBranch> = analysis
                 .branches
                 .iter()
                 .enumerate()
@@ -705,18 +782,19 @@ pub(crate) fn ingest_value(
                         }
                         _ => vec![[f.0, f.1], [t.0, t.1]],
                     };
-                    Some(stamped_uid(&br.uid).map(|uid| ViewBranch {
+                    Some(Ok(ViewBranch {
                         id: i + 1,
-                        uid,
+                        uid: analysis_branch_uids[i].clone(),
                         from: br.from.0,
                         to: br.to.0,
-                        rate_mw: br.rate_a,
+                        rate_mw: br.rate_a * power_scale,
                         status: br.in_service as u8,
+                        editable: i < net.branches.len(),
                         path,
                     }))
                 })
                 .collect::<Result<_, String>>()?;
-            let missing_branches = net.branches.len().saturating_sub(branches.len());
+            let missing_branches = analysis.branches.len().saturating_sub(branches.len());
             if missing_branches > 0 {
                 warnings.push(format!(
                     "{missing_branches} branch(es) lacked endpoint coordinates and are omitted from the map"
@@ -731,6 +809,8 @@ pub(crate) fn ingest_value(
         "base_mva": net.base_mva,
         "n_bus": net.buses.len(),
         "n_branch": net.branches.len(),
+        "n_analysis_bus": analysis.buses.len(),
+        "n_analysis_branch": analysis.branches.len(),
         "n_gen": net.generators.iter().filter(|g| g.in_service).count(),
         "load_mw": demand.values().sum::<f64>(),
         "gen_mw": gen.values().sum::<f64>(),
@@ -956,6 +1036,72 @@ mpc.gencost = [
         assert_eq!(v["topology"]["buses"][0]["uid"], "buses:0");
         assert_eq!(v["topology"]["branches"][1]["uid"], "branches:1");
         assert!(v["network_json"].as_str().unwrap().contains("buses:0"));
+    }
+
+    #[test]
+    fn normalized_ingest_still_reports_native_mw() {
+        let mut raw = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse case14")
+            .network;
+        powerio_pkg::ensure_payload_uids(&mut raw);
+        let normalized = raw.to_normalized().expect("normalize case14");
+
+        let source = ingest_value(&raw, Vec::new()).expect("ingest raw");
+        let derived = ingest_value(&normalized, Vec::new()).expect("ingest normalized");
+        let close = |left: &Value, right: &Value| {
+            let delta = left.as_f64().unwrap() - right.as_f64().unwrap();
+            assert!(delta.abs() < 1e-9, "{left} != {right}");
+        };
+        close(&source["load_mw"], &derived["load_mw"]);
+        close(&source["gen_mw"], &derived["gen_mw"]);
+        close(
+            &source["topology"]["buses"][1]["demand_mw"],
+            &derived["topology"]["buses"][1]["demand_mw"],
+        );
+        close(
+            &source["topology"]["branches"][0]["rate_mw"],
+            &derived["topology"]["branches"][0]["rate_mw"],
+        );
+    }
+
+    #[test]
+    fn three_winding_transformer_topology_is_closed_but_canonical_payload_stays_typed() {
+        let mut net = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse case14")
+            .network;
+        let windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
+        powerio_pkg::ensure_payload_uids(&mut net);
+
+        let value = ingest_value(&net, Vec::new()).expect("ingest 3W case");
+        assert_eq!(value["n_bus"], 14);
+        assert_eq!(value["n_branch"], 20);
+        assert_eq!(value["topology"]["buses"].as_array().unwrap().len(), 15);
+        assert_eq!(
+            value["topology"]["branches"].as_array().unwrap().len(),
+            23
+        );
+        let star = &value["topology"]["buses"][14];
+        assert_eq!(star["editable"], false);
+        assert!(star["uid"]
+            .as_str()
+            .unwrap()
+            .starts_with("analysis:buses:"));
+        for branch in &value["topology"]["branches"].as_array().unwrap()[20..] {
+            assert_eq!(branch["to"], 15);
+            assert_eq!(branch["editable"], false);
+            assert!(branch["uid"]
+                .as_str()
+                .unwrap()
+                .starts_with("analysis:branches:"));
+        }
+        let canonical: Value = serde_json::from_str(value["network_json"].as_str().unwrap())
+            .expect("canonical network JSON");
+        assert_eq!(canonical["buses"].as_array().unwrap().len(), 14);
+        assert_eq!(canonical["branches"].as_array().unwrap().len(), 20);
+        assert_eq!(canonical["transformers_3w"].as_array().unwrap().len(), 1);
     }
 
     #[test]

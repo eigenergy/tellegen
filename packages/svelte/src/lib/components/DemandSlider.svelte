@@ -4,6 +4,7 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	const disabled = $derived(ctrl.sliderDisabled);
 
 	// Fill from the committed demand to the live thumb. The local number line stays
 	// stable after release; only the committed tick moves.
@@ -23,6 +24,7 @@
 	const fillHi = $derived(valFrac < neutralFrac ? neutralPos : valPos);
 	const sliderTip =
 		'The black tick marks the last committed demand. Drag the knob to preview a new demand; release to solve and move the tick to that point.';
+	const disabledTip = 'this analysis bus is display-only; demand is not adjustable';
 	const scoreTip =
 		'Gradient is the estimate of total cost change versus base before the solve finishes. It uses the selected bus LMP times the demand step, plus local curvature when the preview engine is unavailable. Exact is the resolved OPF objective change.';
 </script>
@@ -39,32 +41,41 @@
 				<button
 					type="button"
 					class:active={app.demandRangeMode === 'local'}
-					aria-pressed={app.demandRangeMode === 'local'}
-					aria-label="nearby demand range"
+						aria-pressed={app.demandRangeMode === 'local'}
+						aria-label="nearby demand range"
+						disabled={disabled}
 					title="range near the selected demand setting"
 					onclick={() => ctrl.setDemandRangeMode('local')}>nearby</button
 				>
 				<button
 					type="button"
 					class:active={app.demandRangeMode === 'full'}
-					aria-pressed={app.demandRangeMode === 'full'}
-					aria-label="full demand range"
+						aria-pressed={app.demandRangeMode === 'full'}
+						aria-label="full demand range"
+						disabled={disabled}
 					title="range from zero load to the local physical limit"
 					onclick={() => ctrl.setDemandRangeMode('full')}>full range</button
 				>
 			</div>
-			<span class="mono dim">{fmt.format(ctrl.sliderMin)} to {fmt.format(ctrl.sliderMax)} MW</span>
+				<span class="mono dim">
+					{#if disabled}
+						not adjustable
+					{:else}
+						{fmt.format(ctrl.sliderMin)} to {fmt.format(ctrl.sliderMax)} MW
+					{/if}
+				</span>
 		</div>
 		<div
 			class="slider-track"
 			style="--fill-lo:{fillLo}; --fill-hi:{fillHi}; --neutral-pos:{neutralPos}"
-			title={sliderTip}
+				title={disabled ? disabledTip : sliderTip}
 		>
 			<input
 				type="range"
 				min={ctrl.sliderMin}
-				max={ctrl.sliderMax}
-				step="any"
+					max={ctrl.sliderMax}
+					step="any"
+					disabled={disabled}
 				bind:value={ctrl.sliderCurrent, ctrl.setSliderPreview}
 				aria-label="demand delta at selected bus"
 				onpointerdown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
@@ -171,6 +182,15 @@
 		border-radius: var(--radius-xs);
 		outline-offset: 4px;
 		margin: 0;
+	}
+
+	input[type='range']:disabled {
+		opacity: 0.45;
+	}
+
+	.range-mode button:disabled {
+		cursor: default;
+		opacity: 0.45;
 	}
 
 	input[type='range']::-webkit-slider-thumb {

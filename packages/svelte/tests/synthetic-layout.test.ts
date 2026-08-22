@@ -113,6 +113,15 @@ describe('placeSyntheticTopology tree layout', () => {
 		expect(a).toEqual(b);
 	});
 
+	it('preserves display-only edit guards from lowered topology rows', () => {
+		const input = topology(2, [[0, 1]]);
+		input.buses[1].editable = false;
+		input.branches[0].editable = false;
+		const placed = placeSyntheticTopology(input, CENTER);
+		expect(placed.buses.find((bus) => bus.id === 1)?.editable).toBe(false);
+		expect(placed.branches[0].editable).toBe(false);
+	});
+
 	it('keeps a long feeder long: aspect ratio survives normalization', () => {
 		// A 10-bus trunk with one lateral off the middle: depth range 9, slot
 		// range 1. A square-stretched normalize would render this 1:1.

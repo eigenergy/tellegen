@@ -5,7 +5,7 @@ use powerio::geo::{
     geo_layer_from_pwd, pwd_mercator_to_lonlat, CoordinateSpace, CoordsKind, GeoGeometry, GeoLayer,
     GeoMeta, Location,
 };
-use powerio::{BalancedNetwork, Bus};
+use powerio::{BalancedNetwork, Bus, IndexedNetwork};
 
 pub type Coords = BTreeMap<usize, (f64, f64)>;
 
@@ -42,6 +42,46 @@ pub fn network_coords(net: &BalancedNetwork) -> Coords {
             continue;
         };
         out.insert(b.id.0, p);
+    }
+    out
+}
+
+/// Extend source coordinates over the bus-branch analysis view. PowerIO keeps
+/// three-winding transformers as typed source records, while
+/// [`IndexedNetwork`] lowers each active record to a synthetic star bus and
+/// three branches. When all located winding terminals are available, place the
+/// synthetic bus at their centroid so a rendered geographic graph has the same
+/// connectivity as the solver model. Source coordinates are never overwritten.
+pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
+    let view = IndexedNetwork::new(net);
+    let lowered = view.network();
+    let mut out = source.clone();
+
+    // Lowering only appends star buses. Every winding branch joins one of those
+    // buses to a source terminal, so a single pass is sufficient.
+    for bus in lowered.buses.iter().skip(net.buses.len()) {
+        let neighbors = lowered
+            .branches
+            .iter()
+            .filter(|branch| branch.in_service)
+            .filter_map(|branch| {
+                if branch.from == bus.id {
+                    out.get(&branch.to.0).copied()
+                } else if branch.to == bus.id {
+                    out.get(&branch.from.0).copied()
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if neighbors.len() != 3 {
+            continue;
+        }
+        let count = neighbors.len() as f64;
+        let (lon, lat) = neighbors
+            .into_iter()
+            .fold((0.0, 0.0), |(x, y), (lon, lat)| (x + lon, y + lat));
+        out.entry(bus.id.0).or_insert((lon / count, lat / count));
     }
     out
 }
@@ -148,6 +188,8 @@ pub fn spread_stacks(coords: &mut Coords) {
 }
 
 pub fn synthetic_layout(net: &BalancedNetwork, bbox: (f64, f64, f64, f64)) -> Coords {
+    let view = IndexedNetwork::new(net);
+    let net = view.network();
     let ids: Vec<_> = net.buses.iter().map(|b| b.id.0).collect();
     let index: BTreeMap<usize, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
     let mut seen = BTreeSet::new();
@@ -434,5 +476,28 @@ mod tests {
             .map(|p| (p.0.to_bits(), p.1.to_bits()))
             .collect();
         assert_eq!(unique.len(), 20);
+    }
+
+    #[test]
+    fn three_winding_star_is_present_in_layouts_and_geographic_coords() {
+        let mut net = chain_network(3);
+        let windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
+
+        let bbox = (-82.0, 33.0, -80.0, 35.0);
+        let synthetic = synthetic_layout(&net, bbox);
+        assert_eq!(synthetic.len(), 4);
+        assert!(synthetic.contains_key(&4));
+
+        let source = BTreeMap::from([
+            (1, (-82.0, 33.0)),
+            (2, (-80.0, 33.0)),
+            (3, (-81.0, 36.0)),
+        ]);
+        let geographic = lowered_coords(&net, &source);
+        assert_eq!(geographic.len(), 4);
+        assert_eq!(geographic[&4], (-81.0, 34.0));
     }
 }

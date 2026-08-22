@@ -11,7 +11,7 @@
 //! Keeping the JSON layer here (not behind `#[wasm_bindgen]`) makes it testable
 //! natively; the wasm crate wraps [`solve_json`] and [`capabilities_json`].
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -228,6 +228,100 @@ pub struct SolveRequest {
     pub options: SolveOptions,
 }
 
+/// Validate edit keys against the caller's canonical PowerIO tables before any
+/// analysis lowering occurs. The solver view may contain star buses and winding
+/// branches synthesized for a three-winding transformer; those rows are valid
+/// model axes, but they are not source elements and therefore are never edit
+/// targets on a public API.
+pub(crate) fn validate_canonical_edits(
+    net: &BalancedNetwork,
+    edits: &Edits,
+) -> Result<(), String> {
+    validate_canonical_identity(net)?;
+    for (bus, mw) in sorted_deltas(&edits.deltas) {
+        if !mw.is_finite() {
+            return Err(format!("demand delta for bus {bus} must be finite"));
+        }
+        let found = match bus {
+            ElementKey::Id(id) if *id <= 0 => {
+                return Err("demand delta bus must be positive".into());
+            }
+            ElementKey::Id(id) => usize::try_from(*id)
+                .ok()
+                .is_some_and(|id| net.buses.iter().any(|bus| bus.id.0 == id)),
+            ElementKey::Uid(uid) => {
+                let matches = net
+                    .buses
+                    .iter()
+                    .filter(|bus| bus.uid.as_deref() == Some(uid))
+                    .count();
+                if matches > 1 {
+                    return Err(format!("ambiguous demand delta bus uid \"{uid}\""));
+                }
+                matches == 1
+            }
+        };
+        if !found {
+            return Err(format!("unknown demand delta bus {bus}"));
+        }
+    }
+    for (branch, mw) in sorted_deltas(&edits.rates) {
+        if !mw.is_finite() {
+            return Err(format!("rating delta for branch {branch} must be finite"));
+        }
+        let found = match branch {
+            ElementKey::Id(id) if *id <= 0 => {
+                return Err("rating delta branch must be positive".into());
+            }
+            ElementKey::Id(id) => usize::try_from(*id)
+                .ok()
+                .is_some_and(|id| (1..=net.branches.len()).contains(&id)),
+            ElementKey::Uid(uid) => {
+                let matches = net
+                    .branches
+                    .iter()
+                    .filter(|branch| branch.uid.as_deref() == Some(uid))
+                    .count();
+                if matches > 1 {
+                    return Err(format!("ambiguous rating delta branch uid \"{uid}\""));
+                }
+                matches == 1
+            }
+        };
+        if !found {
+            return Err(format!("unknown rating delta branch {branch}"));
+        }
+    }
+    Ok(())
+}
+
+/// Require canonical row identity to be unambiguous on each editable axis.
+///
+/// A bus and a branch may intentionally share a uid because their edit axes are
+/// distinct. Two buses (or two branches) may not: key lookup and study package
+/// persistence would otherwise disagree about which source row the uid names.
+/// Missing uids remain valid for callers that use numeric keys.
+pub fn validate_canonical_identity(net: &BalancedNetwork) -> Result<(), String> {
+    validate_unique_uids("bus", net.buses.iter().map(|bus| bus.uid.as_deref()))?;
+    validate_unique_uids(
+        "branch",
+        net.branches.iter().map(|branch| branch.uid.as_deref()),
+    )
+}
+
+fn validate_unique_uids<'a>(
+    family: &str,
+    uids: impl IntoIterator<Item = Option<&'a str>>,
+) -> Result<(), String> {
+    let mut seen = HashSet::new();
+    for uid in uids.into_iter().flatten() {
+        if !seen.insert(uid) {
+            return Err(format!("duplicate {family} uid \"{uid}\""));
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Response
 // ---------------------------------------------------------------------------
@@ -375,6 +469,7 @@ pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, Stri
 /// differentiable system. Problems this build does not include return a clean
 /// `Err` rather than degrading silently.
 pub fn solve_network(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
+    validate_canonical_edits(net, &req.edits)?;
     match req.formulation {
         Problem::DcOpf => solve_dc_opf(net, req),
         #[cfg(feature = "sensitivity")]
@@ -477,10 +572,11 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     // Net per-unit injection per dense bus: generator setpoints minus (edited) load.
     // The slack absorbs the imbalance; its injection entry is recomputed, not echoed.
     let mut injection: Vec<f64> = dc.demand.iter().map(|d| -d).collect();
+    let input_power_base = if net.is_normalized() { 1.0 } else { base };
     for j in 0..dc.k {
         let source_row = dc.gen_source_rows[j]
             .ok_or_else(|| format!("generator column {j} has no source row"))?;
-        injection[dc.gen_bus[j]] += net.generators[source_row].pg / base;
+        injection[dc.gen_bus[j]] += net.generators[source_row].pg / input_power_base;
     }
     let sol = super::problem::dc_pf(&dc, &injection)?;
 
@@ -651,9 +747,71 @@ pub fn solve_prebuilt_cancellable(
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<SolveResponse, String> {
+    validate_prebuilt_canonical_edits(base_dc, &req.edits)?;
     // Clone the cached model so the perturbation never touches it; every field but
     // demand is constant for the case, so this is a flat Vec copy.
     dc_opf_response(base_dc.clone(), req, cancel)
+}
+
+/// The prebuilt fast path no longer has the canonical `BalancedNetwork`, so use
+/// the provenance retained on its lowered branches. A synthetic winding has no
+/// source row, and its `to` endpoint is the synthetic star bus. This rejects the
+/// same display-only rows as [`validate_canonical_edits`] without changing the
+/// public `solve_prebuilt` signature.
+fn validate_prebuilt_canonical_edits(dc: &DcNetwork, edits: &Edits) -> Result<(), String> {
+    validate_unique_uids("bus", dc.bus_uids.iter().map(Option::as_deref))?;
+    validate_unique_uids("branch", dc.branch_uids.iter().map(Option::as_deref))?;
+    let bus_index = KeyIndex::new(&dc.bus_ids, &dc.bus_uids, &edits.deltas);
+    for (bus, mw) in sorted_deltas(&edits.deltas) {
+        if !mw.is_finite() {
+            return Err(format!("demand delta for bus {bus} must be finite"));
+        }
+        if let ElementKey::Uid(uid) = bus {
+            if dc
+                .bus_uids
+                .iter()
+                .filter(|candidate| candidate.as_deref() == Some(uid.as_str()))
+                .count()
+                > 1
+            {
+                return Err(format!("ambiguous demand delta bus uid \"{uid}\""));
+            }
+        }
+        if let Some(i) = bus_index.get(bus) {
+            let synthetic = dc
+                .branch_source_rows
+                .iter()
+                .zip(&dc.br_to)
+                .any(|(source, &to)| source.is_none() && to == i);
+            if synthetic {
+                return Err(format!("unknown demand delta bus {bus}"));
+            }
+        }
+    }
+
+    let branch_index = KeyIndex::new(&dc.branch_ids, &dc.branch_uids, &edits.rates);
+    for (branch, mw) in sorted_deltas(&edits.rates) {
+        if !mw.is_finite() {
+            return Err(format!("rating delta for branch {branch} must be finite"));
+        }
+        if let ElementKey::Uid(uid) = branch {
+            if dc
+                .branch_uids
+                .iter()
+                .filter(|candidate| candidate.as_deref() == Some(uid.as_str()))
+                .count()
+                > 1
+            {
+                return Err(format!("ambiguous rating delta branch uid \"{uid}\""));
+            }
+        }
+        if let Some(i) = branch_index.get(branch) {
+            if !matches!(dc.branch_source_rows.get(i), Some(Some(_))) {
+                return Err(format!("unknown rating delta branch {branch}"));
+            }
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1533,6 +1691,36 @@ mod tests {
         assert_eq!(v["flows"].as_array().unwrap().len(), 3);
         assert!(v["lmp"].is_null());
         assert!(v["dispatch"].is_null());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn dc_pf_served_results_match_for_raw_and_normalized_inputs() {
+        let raw = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        let normalized = raw.to_normalized().expect("normalize case3");
+        let request = SolveRequest {
+            formulation: Problem::DcPf,
+            ..Default::default()
+        };
+        let a = solve_network(&raw, &request).expect("solve raw DCPF");
+        let b = solve_network(&normalized, &request).expect("solve normalized DCPF");
+
+        let a_va = a.va.as_ref().expect("raw angles");
+        let b_va = b.va.as_ref().expect("normalized angles");
+        assert_eq!(a_va.len(), b_va.len());
+        for (left, right) in a_va.iter().zip(b_va) {
+            assert_eq!(left.bus, right.bus);
+            assert!((left.value - right.value).abs() < 1e-8);
+        }
+        let a_flows = a.flows.as_ref().expect("raw flows");
+        let b_flows = b.flows.as_ref().expect("normalized flows");
+        assert_eq!(a_flows.len(), b_flows.len());
+        for (left, right) in a_flows.iter().zip(b_flows) {
+            assert_eq!(left.branch, right.branch);
+            assert!((left.pf - right.pf).abs() < 1e-8);
+        }
     }
 
     #[cfg(feature = "conic")]

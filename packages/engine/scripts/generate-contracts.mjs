@@ -184,6 +184,8 @@ export interface NetworkBus {
 \tid: number;
 \t/** powerio row uid; always present on an ingested case, absent on older payloads. */
 \tuid?: string;
+\t/** False for a display-only row synthesized by analysis lowering. */
+\teditable?: boolean;
 \tlon: number;
 \tlat: number;
 \tdemand_mw: number;
@@ -194,6 +196,8 @@ export interface NetworkBranch {
 \tid: number;
 \t/** powerio row uid; always present on an ingested case, absent on older payloads. */
 \tuid?: string;
+\t/** False for a display-only row synthesized by analysis lowering. */
+\teditable?: boolean;
 \tfrom: number;
 \tto: number;
 \trate_mw: number;
@@ -234,8 +238,14 @@ export interface SensitivityColumn {
 export interface CaseSummary {
 \tid: string;
 \tname: string;
+\t/** Canonical typed PowerIO bus rows. */
 \tn_bus: number;
+\t/** Canonical typed PowerIO branch rows. */
 \tn_branch: number;
+\t/** Rendered buses after analysis lowering; absent on older servers. */
+\tn_analysis_bus?: number;
+\t/** Rendered branches after analysis lowering; absent on older servers. */
+\tn_analysis_branch?: number;
 \tn_gen: number;
 }
 

@@ -67,6 +67,15 @@ deltas in MW keyed by branch. A key is the original numeric id (bus id, 1-based
 branch position) or the powerio row uid string (`"buses:1"`, `"branches:2"`)
 stamped at ingest — `ingestCase` payloads carry the uid on every topology and
 view element, and solve responses echo it on bus and branch scalars.
+Three-winding transformers remain typed in `network_json`, while topology and
+view payloads include their lowered star rows so the rendered graph matches the
+solver. Those display-only rows have `editable: false`; persist edits only on
+canonical rows. Closed transmission switches, in-service storage, and
+in-service HVDC links are rejected until their solver models are implemented.
+`n_bus` and `n_branch` count canonical typed rows;
+`n_analysis_bus` and `n_analysis_branch` count the lowered topology rows. The
+analysis counts are optional in TypeScript so clients remain compatible with
+older engine builds.
 `target` is `{ bus }` for the ∂LMP/∂d column,
 `{ branch }` for the ∂LMP/∂rating column (nonzero only on binding lines), or
 `null` for no column.

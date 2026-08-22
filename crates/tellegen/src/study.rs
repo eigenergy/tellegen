@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::{
     ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells, Edits, ElementKey,
-    Problem, SensRequest, SolveOptions, SolveRequest, SolveResponse,
+    validate_canonical_edits, Problem, SensRequest, SolveOptions, SolveRequest, SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
@@ -402,6 +402,7 @@ impl Study {
         sensitivities: &[SensRequest],
         options: SolveOptions,
     ) -> Result<SolveResponse, String> {
+        validate_network_edits(&self.base, &log)?;
         let (solved, resp) = self.solve_log(&log, sensitivities, &options)?;
         self.options = options;
         self.log = log;
@@ -436,6 +437,7 @@ impl Study {
     /// the edit step. The result is a local linearization (`local_only = true`); `commit`
     /// to confirm. Linearizes at the *last committed* state, not the base.
     pub fn preview(&self, edits: &[NetworkEdit], watched: &[Operand]) -> Result<Preview, String> {
+        validate_network_edits(&self.base, edits)?;
         // Group step magnitudes by the parameter each edit perturbs, keyed by the edited
         // element's key. A mixed edit set previews as the sum of the groups'
         // first-order terms (the linearization is additive across parameters). Groups
@@ -537,6 +539,7 @@ impl Study {
         target: &[NetworkEdit],
         watched: &[Operand],
     ) -> Result<Preview, String> {
+        validate_network_edits(&self.base, target)?;
         let step = replacement_step(&self.log, target);
         self.preview(&step, watched)
     }
@@ -672,6 +675,13 @@ impl Study {
         restored.commit_log(log, commit_bounds, &[], app.options)?;
         Ok(restored)
     }
+}
+
+/// Validate every stateful edit against the canonical PowerIO payload before
+/// commit or preview. Folding preserves zero-magnitude keys, so even a no-op
+/// edit cannot use a display-only lowered row as a public target.
+fn validate_network_edits(net: &BalancedNetwork, edits: &[NetworkEdit]) -> Result<(), String> {
+    validate_canonical_edits(net, &fold(edits))
 }
 
 /// The `app["tellegen"]` blob: the formulation and solve options a package carries so
@@ -1317,6 +1327,51 @@ mod tests {
         );
         assert_eq!(before, serde_json::to_string(s.solution()).unwrap());
         assert!(s.edits().is_empty());
+    }
+
+    #[test]
+    fn study_rejects_display_only_three_winding_rows_before_they_enter_the_log() {
+        let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        let mut windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
+        for winding in &mut windings {
+            winding.rate_a = net.base_mva;
+        }
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
+        net.transformers_3w
+            .push(powerio::Transformer3W::new(windings, [impedance; 3]));
+        let synthetic_bus = net.buses.iter().map(|bus| bus.id.0).max().unwrap() + 1;
+        let synthetic_branch = net.branches.len() + 1;
+        let mut study = Study::from_network(&net, Problem::DcOpf).expect("3W study");
+        let before = serde_json::to_string(study.solution()).unwrap();
+
+        let bus_error = study
+            .commit(
+                &[NetworkEdit::AddLoad {
+                    bus: (synthetic_bus as i64).into(),
+                    p_mw: 1.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap_err();
+        assert!(bus_error.contains("unknown demand delta bus"), "{bus_error}");
+
+        let branch_error = study
+            .commit(
+                &[NetworkEdit::AdjustBranchRating {
+                    branch: (synthetic_branch as i64).into(),
+                    delta_mw: 1.0,
+                }],
+                SolveOptions::default(),
+            )
+            .unwrap_err();
+        assert!(
+            branch_error.contains("unknown rating delta branch"),
+            "{branch_error}"
+        );
+        assert!(study.edits().is_empty());
+        assert_eq!(before, serde_json::to_string(study.solution()).unwrap());
     }
 
     #[test]
