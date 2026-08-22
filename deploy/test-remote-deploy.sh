@@ -181,6 +181,10 @@ printf 'TELLEGEN_IMAGE=%s\nCOMPOSE_PROJECT_NAME=tellegen\n' "$image_a" > "$unado
 printf '%s\n' "$image_a" > "$unadoptable/mock/current-image"
 run_script "$unadoptable" "$image_b" "$unadoptable/data"
 assert_image "$unadoptable" "$image_b"
+# Nothing was adopted, so this first deploy has no rollback target; promotion is
+# what establishes one, and every later deploy recovers normally from there.
+[ -f "$unadoptable/.deploy-state/pending" ] && [ ! -e "$unadoptable/.deploy-state/last-known-good" ]
+run_script "$unadoptable" --promote "$image_b"
 [ ! -e "$unadoptable/.deploy-state/pending" ]
 [ -f "$unadoptable/.deploy-state/last-known-good" ]
 
