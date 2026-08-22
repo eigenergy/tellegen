@@ -95,6 +95,35 @@ async function assertSveltePeer() {
   }
 }
 
+async function assertTypeScriptSupported() {
+  const [typescript, svelteCheck] = await Promise.all(
+    ["typescript", "svelte-check"].map(async (name) =>
+      JSON.parse(
+        await readFile(
+          join(consumerDir, "node_modules", name, "package.json"),
+          "utf8",
+        ),
+      ),
+    ),
+  );
+  // svelte-check loads the TypeScript *JavaScript* compiler API through
+  // `require("typescript")`. TypeScript 7 is the native port: its only root
+  // export is a version stub, so a consumer that resolves it dies with an
+  // opaque TypeError instead of a type error. The install below passes
+  // `--legacy-peer-deps`, which means npm will not quietly add a supported
+  // copy to rescue it, so assert on the version this repository propagated out
+  // of packages/svelte.
+  const supported = String(svelteCheck.peerDependencies?.typescript ?? "");
+  const major = String(typescript.version).split(".")[0];
+  if (!supported.includes(`^${major}.`)) {
+    throw new Error(
+      `consumer resolved typescript ${typescript.version}, which svelte-check ` +
+        `${svelteCheck.version} does not support (peer range "${supported}"). ` +
+        `Change the typescript devDependency in packages/svelte.`,
+    );
+  }
+}
+
 async function writeConsumer(engineTarball, svelteTarball) {
   const sveltePackage = JSON.parse(
     await readFile(join(repoRoot, "packages/svelte/package.json"), "utf8"),
@@ -244,6 +273,14 @@ mount(App, {
 });
 `,
   );
+  // The consumer imports a stylesheet for its side effect, exactly as the demo
+  // does. Without the ambient declaration that is TS2882 under a TypeScript
+  // that defaults `noUncheckedSideEffectImports` on, so ship it here too and
+  // keep this smoke test an honest model of a downstream project.
+  await writeFile(
+    join(consumerDir, "src/vite-env.d.ts"),
+    '/// <reference types="vite/client" />\n',
+  );
 }
 
 async function assertTarballInstall() {
@@ -295,6 +332,7 @@ try {
     { cwd: consumerDir },
   );
   await assertSveltePeer();
+  await assertTypeScriptSupported();
   await assertTarballInstall();
   run("npm", ["run", "build"], { cwd: consumerDir });
   await assertBuildOutput();
