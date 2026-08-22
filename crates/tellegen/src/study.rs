@@ -1069,8 +1069,7 @@ fn dense_cols(axis: &ResponseAxis, mag: &HashMap<ElementKey, f64>) -> (Vec<usize
                 .filter_map(|(i, uid)| uid.as_deref().map(|u| (u, i)))
                 .collect()
         });
-    let mut cols = Vec::new();
-    let mut col_mag = Vec::new();
+    let mut dense_magnitudes = BTreeMap::<usize, f64>::new();
     for (key, &m) in mag {
         let dense = match key {
             ElementKey::Id(id) => usize::try_from(*id)
@@ -1081,11 +1080,10 @@ fn dense_cols(axis: &ResponseAxis, mag: &HashMap<ElementKey, f64>) -> (Vec<usize
                 .and_then(|ix| ix.get(uid.as_str()).copied()),
         };
         if let Some(i) = dense {
-            cols.push(i);
-            col_mag.push(m);
+            *dense_magnitudes.entry(i).or_default() += m;
         }
     }
-    (cols, col_mag)
+    dense_magnitudes.into_iter().unzip()
 }
 
 /// Sum two per-operand prediction sets elementwise. The row axis is the operand's own

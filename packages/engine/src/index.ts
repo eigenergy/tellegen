@@ -534,10 +534,12 @@ type NetworkEdit =
   | { kind: "add_load"; bus: number | string; p_mw: number }
   | { kind: "adjust_branch_rating"; branch: number | string; delta_mw: number };
 
-/** An all-digit record key is the numeric-id form (object keys are strings at
- * runtime); anything else is a powerio row uid, sent as a string. */
+/** A safely representable all-digit key uses the numeric wire form. Larger IDs
+ * remain strings so serde can parse the exact integer without JS rounding. */
 function toElementKey(key: string): number | string {
-  return /^\d+$/.test(key) ? Number(key) : key;
+  if (!/^\d+$/.test(key)) return key;
+  const numeric = Number(key);
+  return Number.isSafeInteger(numeric) ? numeric : key;
 }
 
 /** A `NetworkEdit[]` for the wasm Study, dropping zero deltas so an unchanged

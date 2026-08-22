@@ -1262,6 +1262,25 @@ fn network_payload(
     };
     let indexed = IndexedNetwork::new(net);
     let analysis = indexed.network();
+    let editable_bus_ids: HashSet<usize> = net
+        .buses
+        .iter()
+        .filter(|bus| bus.kind != powerio::BusType::Isolated)
+        .map(|bus| bus.id.0)
+        .collect();
+    let editable_branch_rows: HashSet<usize> = net
+        .branches
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| {
+            branch.in_service
+                && branch.from != branch.to
+                && branch.r * branch.r + branch.x * branch.x > 0.0
+                && editable_bus_ids.contains(&branch.from.0)
+                && editable_bus_ids.contains(&branch.to.0)
+        })
+        .map(|(row, _)| row)
+        .collect();
     let coords = lowered_coords(net, coords);
     let mut demand = BTreeMap::<usize, f64>::new();
     for load in analysis.loads.iter().filter(|load| load.in_service) {
@@ -1285,7 +1304,7 @@ fn network_payload(
                 lat,
                 demand_mw: demand.get(&bus.id.0).copied().unwrap_or(0.0),
                 gen_mw: generation.get(&bus.id.0).copied().unwrap_or(0.0),
-                editable: i < net.buses.len(),
+                editable: i < net.buses.len() && editable_bus_ids.contains(&bus.id.0),
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -1310,7 +1329,7 @@ fn network_payload(
                 to: br.to.0,
                 rate_mw: br.rate_a * power_scale,
                 status: br.in_service as u8,
-                editable: i < net.branches.len(),
+                editable: editable_branch_rows.contains(&i),
                 path: source_paths
                     .and_then(|paths| {
                         paths
@@ -1881,6 +1900,22 @@ mod tests {
         assert!(payload.branches[net.branches.len()..]
             .iter()
             .all(|branch| !branch.editable));
+    }
+
+    #[test]
+    fn network_payload_marks_filtered_canonical_rows_noneditable() {
+        let mut net = powerio::parse_str(FALLBACK_SPECS[0].text, "m")
+            .expect("parse fallback")
+            .network;
+        net.buses[0].kind = powerio::BusType::Isolated;
+        net.branches[0].in_service = false;
+        net.branches[1].to = net.branches[1].from;
+        let coords = synthetic_layout(&net, FALLBACK_SPECS[0].bbox);
+        let payload = network_payload("filtered", "filtered", &net, &coords, None, true)
+            .expect("filtered payload");
+        assert!(!payload.buses[0].editable);
+        assert!(!payload.branches[0].editable);
+        assert!(!payload.branches[1].editable);
     }
 
     #[tokio::test]

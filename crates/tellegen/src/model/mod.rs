@@ -16,6 +16,8 @@
 //!
 //! The two formulations split into [`mod@dc`] and [`mod@ac`].
 
+use std::collections::HashSet;
+
 use powerio::{BalancedNetwork, GenCost, IndexedNetwork, NormalizeOptions};
 
 #[cfg(feature = "sensitivity")]
@@ -260,6 +262,8 @@ pub(super) struct ModelInput {
 /// Normalize a raw network exactly once, or clone an already-normalized network,
 /// while preserving source-row identity across PowerIO's 3-winding star lowering.
 pub(super) fn normalize_for_model(source: &BalancedNetwork) -> Result<ModelInput, String> {
+    source.validate().map_err(|error| error.to_string())?;
+    validate_canonical_identity(source)?;
     reject_unsupported_active_elements(source)?;
     let (network, source_rows) = if source.is_normalized() {
         source.check_base_mva().map_err(|error| error.to_string())?;
@@ -308,6 +312,37 @@ pub(super) fn normalize_for_model(source: &BalancedNetwork) -> Result<ModelInput
         network,
         source_rows,
     })
+}
+
+/// Require edit-axis UIDs to be unique and distinguishable from numeric IDs.
+pub(crate) fn validate_canonical_identity(network: &BalancedNetwork) -> Result<(), String> {
+    validate_unique_uids("bus", network.buses.iter().map(|bus| bus.uid.as_deref()))?;
+    validate_unique_uids(
+        "branch",
+        network.branches.iter().map(|branch| branch.uid.as_deref()),
+    )
+}
+
+fn validate_unique_uids<'a>(
+    family: &str,
+    uids: impl IntoIterator<Item = Option<&'a str>>,
+) -> Result<(), String> {
+    let mut seen = HashSet::new();
+    for uid in uids.into_iter().flatten() {
+        let digits = uid
+            .strip_prefix('+')
+            .or_else(|| uid.strip_prefix('-'))
+            .unwrap_or(uid);
+        if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(format!(
+                "{family} uid \"{uid}\" is ambiguous with a numeric element id"
+            ));
+        }
+        if !seen.insert(uid) {
+            return Err(format!("duplicate {family} uid \"{uid}\""));
+        }
+    }
+    Ok(())
 }
 
 /// Tellegen does not yet model these active element families. Refuse them at
@@ -762,5 +797,25 @@ mod compatibility_tests {
         crate::model::DcNetwork::from_network(&net).expect("inactive metadata is safe for DC");
         #[cfg(feature = "sensitivity")]
         crate::model::AcNetwork::from_network(&net).expect("inactive metadata is safe for AC");
+    }
+
+    #[test]
+    fn programmatic_structural_errors_reject_before_indexing() {
+        let mut duplicate = case3();
+        duplicate.buses[1].id = duplicate.buses[0].id;
+        let error = crate::model::DcNetwork::from_network(&duplicate)
+            .err()
+            .expect("duplicate ids must reject");
+        assert!(error.to_lowercase().contains("duplicate"), "{error}");
+
+        let mut dangling = case3();
+        dangling.branches[0].to = powerio::BusId(999_999);
+        let error = crate::model::DcNetwork::from_network(&dangling)
+            .err()
+            .expect("dangling branch must reject");
+        assert!(
+            error.contains("999999") || error.to_lowercase().contains("unknown"),
+            "{error}"
+        );
     }
 }

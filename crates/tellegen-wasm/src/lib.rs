@@ -688,6 +688,7 @@ pub(crate) fn ingest_value(
     net: &powerio::BalancedNetwork,
     mut warnings: Vec<String>,
 ) -> Result<serde_json::Value, String> {
+    net.validate().map_err(|error| error.to_string())?;
     // `ensure_payload_uids` preserves source uids while filling missing rows.
     // Reject a source uid that collides with a generated row uid before the
     // browser receives an ambiguous edit/persistence key.
@@ -701,6 +702,25 @@ pub(crate) fn ingest_value(
     let indexed = powerio::IndexedNetwork::new(net);
     let analysis = indexed.network();
     let (analysis_bus_uids, analysis_branch_uids) = analysis_uids(net, analysis)?;
+    let editable_bus_ids: HashSet<usize> = net
+        .buses
+        .iter()
+        .filter(|bus| bus.kind != powerio::BusType::Isolated)
+        .map(|bus| bus.id.0)
+        .collect();
+    let editable_branch_rows: HashSet<usize> = net
+        .branches
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| {
+            branch.in_service
+                && branch.from != branch.to
+                && branch.r * branch.r + branch.x * branch.x > 0.0
+                && editable_bus_ids.contains(&branch.from.0)
+                && editable_bus_ids.contains(&branch.to.0)
+        })
+        .map(|(row, _)| row)
+        .collect();
     let mut demand: BTreeMap<usize, f64> = BTreeMap::new();
     for l in analysis.loads.iter().filter(|l| l.in_service) {
         *demand.entry(l.bus.0).or_default() += l.p * power_scale;
@@ -721,7 +741,7 @@ pub(crate) fn ingest_value(
                     uid: analysis_bus_uids[i].clone(),
                     demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                     gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
-                    editable: i < net.buses.len(),
+                    editable: i < net.buses.len() && editable_bus_ids.contains(&b.id.0),
                 })
             })
             .collect::<Result<_, String>>()?,
@@ -737,7 +757,7 @@ pub(crate) fn ingest_value(
                     to: br.to.0,
                     rate_mw: br.rate_a * power_scale,
                     status: br.in_service as u8,
-                    editable: i < net.branches.len(),
+                    editable: editable_branch_rows.contains(&i),
                 })
             })
             .collect::<Result<_, String>>()?,
@@ -769,7 +789,7 @@ pub(crate) fn ingest_value(
                         lat,
                         demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                         gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
-                        editable: i < net.buses.len(),
+                        editable: i < net.buses.len() && editable_bus_ids.contains(&b.id.0),
                     }))
                 })
                 .collect::<Result<_, String>>()?;
@@ -793,7 +813,7 @@ pub(crate) fn ingest_value(
                         to: br.to.0,
                         rate_mw: br.rate_a * power_scale,
                         status: br.in_service as u8,
-                        editable: i < net.branches.len(),
+                        editable: editable_branch_rows.contains(&i),
                         path,
                     }))
                 })
@@ -1119,6 +1139,22 @@ mpc.gencost = [
         assert_eq!(canonical["buses"].as_array().unwrap().len(), 14);
         assert_eq!(canonical["branches"].as_array().unwrap().len(), 20);
         assert_eq!(canonical["transformers_3w"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn topology_marks_only_solver_rows_editable() {
+        let mut net = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse case14")
+            .network;
+        net.buses[0].kind = powerio::BusType::Isolated;
+        net.branches[0].in_service = false;
+        net.branches[1].to = net.branches[1].from;
+        powerio_pkg::ensure_payload_uids(&mut net);
+
+        let value = ingest_value(&net, Vec::new()).expect("ingest filtered rows");
+        assert_eq!(value["topology"]["buses"][0]["editable"], false);
+        assert_eq!(value["topology"]["branches"][0]["editable"], false);
+        assert_eq!(value["topology"]["branches"][1]["editable"], false);
     }
 
     #[test]

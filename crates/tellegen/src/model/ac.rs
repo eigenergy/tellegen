@@ -9,13 +9,14 @@
 use std::collections::BTreeMap;
 
 use num_complex::Complex;
-use powerio::BalancedNetwork;
-use powerio::IndexedNetwork;
+use powerio::{BalancedNetwork, IndexedNetwork, LoadVoltageModel};
 use powerio_prob::{build_ac_opf_instance, AcOpfOptions, Units};
 
 use super::{
     flatten_gen_costs, normalize_angle_bounds, normalize_for_model, reconstruct_ids, Ids,
 };
+
+const NEAR_ZERO_IMPEDANCE_SQUARED: f64 = 1.0e-10;
 
 /// AC network data in the vectorized pi-model admittance form.
 ///
@@ -106,6 +107,9 @@ pub struct AcNetwork {
     pub branch_uids: Vec<Option<String>>,
     /// System base power (MVA).
     pub base_mva: f64,
+    /// An active generator names a different regulated bus. The SOCWR model
+    /// ignores voltage-control actions; ACPF rejects this explicitly.
+    pub has_remote_voltage_control: bool,
 }
 
 impl AcNetwork {
@@ -119,6 +123,28 @@ impl AcNetwork {
     /// including per-terminal charging and 3-winding star lowering; Tellegen layers
     /// only its `rate_a == 0` cone sentinel and angle-bound policy on top.
     pub fn from_network(raw: &BalancedNetwork) -> Result<AcNetwork, String> {
+        let voltage_dependent_loads = raw
+            .loads
+            .iter()
+            .filter(|load| {
+                load.in_service
+                    && !matches!(
+                        load.voltage_model.as_ref(),
+                        None | Some(LoadVoltageModel::ConstantPower)
+                    )
+            })
+            .count();
+        if voltage_dependent_loads > 0 {
+            return Err(format!(
+                "network contains {voltage_dependent_loads} active voltage-dependent load(s); ACPF/SOCWR support constant-power loads only"
+            ));
+        }
+        let has_remote_voltage_control = raw.generators.iter().any(|generator| {
+            generator.in_service
+                && generator
+                    .regulated_bus
+                    .is_some_and(|regulated| regulated != generator.bus)
+        });
         let input = normalize_for_model(raw)?;
         let mut norm = input.network;
         let source_rows = input.source_rows;
@@ -180,12 +206,32 @@ impl AcNetwork {
 
         let br_from = branches.from_bus;
         let br_to = branches.to_bus;
+        let suppress_terminal_charging: Vec<bool> = branches
+            .g
+            .iter()
+            .zip(&branches.b)
+            .map(|(&g, &b)| {
+                let admittance_squared = g * g + b * b;
+                admittance_squared > 0.0
+                    && admittance_squared.recip() <= NEAR_ZERO_IMPEDANCE_SQUARED
+            })
+            .collect();
         let g = branches.g;
         let b = branches.b;
-        let g_fr = branches.g_fr;
-        let b_fr = branches.b_fr;
-        let g_to = branches.g_to;
-        let b_to = branches.b_to;
+        let suppress = |values: Vec<f64>| {
+            values
+                .into_iter()
+                .zip(&suppress_terminal_charging)
+                .map(|(value, &suppressed)| if suppressed { 0.0 } else { value })
+                .collect()
+        };
+        // Detailed substation cases use near-ideal jumper rows. Retain their
+        // physical series admittance but suppress terminal charging, matching
+        // Tellegen's established CATS stability policy.
+        let g_fr = suppress(branches.g_fr);
+        let b_fr = suppress(branches.b_fr);
+        let g_to = suppress(branches.g_to);
+        let b_to = suppress(branches.b_to);
         let tap = branches.tap;
         let shift = branches.shift;
         let rate_a = branches
@@ -269,6 +315,7 @@ impl AcNetwork {
             bus_uids,
             branch_uids,
             base_mva: raw.base_mva,
+            has_remote_voltage_control,
         })
     }
 
@@ -373,8 +420,26 @@ mod tests {
             "jumper susceptance {} should be large, not the near-zero open-circuit value",
             ac.b[1]
         );
-        // CASE3's branches all carry zero charging (`br.b == 0`), so charging is
-        // pinned separately below against PowerIO's per-terminal branch model.
+    }
+
+    #[test]
+    fn near_zero_jumper_retains_series_admittance_but_suppresses_charging() {
+        let text = CASE3.replace(
+            "1 3 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
+            "1 3 1e-7 1e-6 0 250 250 250 0 0 1 -360 360;",
+        );
+        let mut net = powerio::parse_str(&text, "matpower")
+            .expect("parse jumper case3")
+            .network;
+        net.branches[1].charging =
+            Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        let ac = AcNetwork::from_network(&net).expect("build charged jumper");
+        assert!(ac.g[1].abs() > 1.0e4);
+        assert!(ac.b[1].abs() > 1.0e5);
+        assert_eq!(
+            (ac.g_fr[1], ac.b_fr[1], ac.g_to[1], ac.b_to[1]),
+            (0.0, 0.0, 0.0, 0.0)
+        );
     }
 
     #[test]
@@ -395,6 +460,53 @@ mod tests {
         approx(yff.im, ac.b[0] + 0.02);
         approx(ytt.re, ac.g[0] + 0.03);
         approx(ytt.im, ac.b[0] + 0.04);
+    }
+
+    #[test]
+    fn voltage_dependent_loads_fail_closed_but_constant_power_is_explicitly_safe() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        net.loads[0].voltage_model = Some(LoadVoltageModel::ConstantPower);
+        AcNetwork::from_network(&net).expect("explicit constant power");
+
+        net.loads[0].voltage_model = Some(LoadVoltageModel::Zip {
+            p_constant_power: net.loads[0].p,
+            q_constant_power: net.loads[0].q,
+            p_constant_current: 0.0,
+            q_constant_current: 0.0,
+            p_constant_impedance: 0.0,
+            q_constant_impedance: 0.0,
+            v_nom: Some(1.0),
+            load_type: None,
+            scaling: None,
+        });
+        let error = AcNetwork::from_network(&net).unwrap_err();
+        assert!(error.contains("voltage-dependent load"), "{error}");
+
+        net.loads[0].voltage_model = Some(LoadVoltageModel::Exponential {
+            p: net.loads[0].p,
+            q: net.loads[0].q,
+            v_nom: Some(1.0),
+            gamma_p: 1.0,
+            gamma_q: 2.0,
+        });
+        let error = AcNetwork::from_network(&net).unwrap_err();
+        assert!(error.contains("voltage-dependent load"), "{error}");
+    }
+
+    #[test]
+    fn remote_generator_voltage_control_is_preserved_as_an_acpf_guard() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse case3")
+            .network;
+        net.generators[0].regulated_bus = Some(powerio::BusId(2));
+        let ac = AcNetwork::from_network(&net).expect("SOCWR model remains constructible");
+        assert!(ac.has_remote_voltage_control);
+
+        net.generators[0].regulated_bus = None;
+        let ac = AcNetwork::from_network(&net).expect("terminal regulation");
+        assert!(!ac.has_remote_voltage_control);
     }
 
     #[test]
