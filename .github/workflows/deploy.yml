@@ -10,7 +10,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: tellegen-deploy-demo
+  group: tellegen-deploy-demo-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 # A push deploy starts only after CI succeeds for that exact main commit. A
@@ -228,6 +228,21 @@ jobs:
               exit 1
             fi
           done
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || {
+            echo "DEPLOY_USER contains an unsupported character"
+            exit 1
+          }
+          case "$DEPLOY_PATH" in
+            /|/*[!a-zA-Z0-9._/-]*)
+              echo "DEPLOY_PATH must be a non-root absolute path using portable path characters"
+              exit 1
+              ;;
+            /*) ;;
+            *)
+              echo "DEPLOY_PATH must be absolute"
+              exit 1
+              ;;
+          esac
       - name: Configure SSH
         if: steps.fresh.outputs.current == 'true'
         run: |
@@ -255,6 +270,7 @@ jobs:
             deploy/remote-deploy.sh \
             "$remote:$bundle/"
       - name: Deploy image
+        id: deploy
         if: steps.fresh.outputs.current == 'true'
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
@@ -266,6 +282,7 @@ jobs:
             bash '$bundle/remote-deploy.sh' '$TELLEGEN_IMAGE' '$DEPLOY_PATH/data'
           "
       - name: Check public health
+        id: public-health
         if: steps.fresh.outputs.current == 'true'
         run: |
           health_url="${DEMO_URL%/}/api/health"
@@ -287,6 +304,50 @@ jobs:
             fi
           done
           echo "public health check failed: $health_url"
+          exit 1
+      - name: Promote the healthy deployment
+        if: steps.fresh.outputs.current == 'true'
+        run: |
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
+          ssh -i ~/.ssh/tellegen_deploy "$remote" "
+            cd '$DEPLOY_PATH' &&
+            DEPLOY_ROOT='$DEPLOY_PATH' \
+            TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
+            bash '$bundle/remote-deploy.sh' --promote '$TELLEGEN_IMAGE'
+          "
+      # A failed public check (or promotion) leaves the job failed, but restores
+      # the durable last-known-good digest before the deploy key is removed.
+      - name: Roll back a failed deployment
+        if: >-
+          failure() &&
+          steps.fresh.outputs.current == 'true' &&
+          steps.deploy.outcome == 'success'
+        run: |
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
+          ssh -i ~/.ssh/tellegen_deploy "$remote" "
+            cd '$DEPLOY_PATH' &&
+            DEPLOY_ROOT='$DEPLOY_PATH' \
+            TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
+            bash '$bundle/remote-deploy.sh' --rollback '$TELLEGEN_IMAGE'
+          "
+
+          health_url="${DEMO_URL%/}/api/health"
+          for attempt in $(seq 1 30); do
+            health=$(curl -fsS "$health_url") || {
+              echo "waiting for rollback health ($attempt/30)"
+              sleep 10
+              continue
+            }
+            if [[ "$health" == *'"status":"ok"'* && "$health" != *'"cases":[]'* ]]; then
+              echo "rollback public health is ok"
+              exit 0
+            fi
+            echo "unexpected rollback health payload: $health"
+            [ "$attempt" -eq 30 ] || sleep 10
+          done
+          echo "rollback public health check failed: $health_url"
           exit 1
       - name: Remove the deploy key
         if: always() && steps.fresh.outputs.current == 'true'

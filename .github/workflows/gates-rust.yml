@@ -51,6 +51,26 @@ jobs:
         run: cargo test -p tellegen --features conic
       - name: Test the wasm adapter as it ships
         run: cargo test -p tellegen-wasm --features conic
+
+      # release-plz's GitHub App token is deliberately absent from pull-request
+      # CI. Check generated, same-repository release PRs here so API comparison
+      # and crate builds run with read-only repository permissions.
+      - name: Install cargo-semver-checks for a release PR
+        if: >-
+          github.event_name == 'pull_request' &&
+          startsWith(github.head_ref, 'release-plz-') &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
+        with:
+          tool: cargo-semver-checks@0.48
+          fallback: none
+      - name: Check the release PR's public Rust API
+        if: >-
+          github.event_name == 'pull_request' &&
+          startsWith(github.head_ref, 'release-plz-') &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        run: cargo semver-checks check-release --manifest-path crates/tellegen/Cargo.toml
+
       # This is the build-executing half of crate publication. The privileged
       # release job uploads with --no-verify after this exact commit passes.
       - name: Package and verify the published crate

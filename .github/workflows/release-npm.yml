@@ -14,8 +14,9 @@ permissions: {}
 
 # Do not cancel a run that may already be publishing.
 concurrency:
-  group: release-npm
+  group: release-npm-${{ github.ref }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   gates-rust:

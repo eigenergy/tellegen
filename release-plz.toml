@@ -18,6 +18,9 @@ changelog_path = "crates/tellegen/CHANGELOG.md"
 release = true
 publish = true
 publish_no_verify = true
+# API comparison runs in read-only pull-request CI, without the Release App
+# token that release-plz needs to update its version branch.
+semver_check = false
 
 # Future crates inherit the workspace deny and require an explicit `release = true`.
 [[package]]
