@@ -171,4 +171,21 @@ run_script "$legacy" "$image_b" "$legacy/data"
 run_script "$legacy" --rollback "$image_b"
 assert_image "$legacy" "$image_a"
 
+# A host whose `.env` this script did not write must still deploy. The strict
+# two-key parse rejects any other shape, and adoption is best effort, so an
+# unreadable current state degrades to "no rollback target" rather than aborting
+# the deployment outright.
+unadoptable="$TEST_ROOT/unadoptable"
+make_root "$unadoptable" unadoptable
+printf 'TELLEGEN_IMAGE=%s\nCOMPOSE_PROJECT_NAME=tellegen\n' "$image_a" > "$unadoptable/.env"
+printf '%s\n' "$image_a" > "$unadoptable/mock/current-image"
+run_script "$unadoptable" "$image_b" "$unadoptable/data"
+assert_image "$unadoptable" "$image_b"
+# Nothing was adopted, so this first deploy has no rollback target; promotion is
+# what establishes one, and every later deploy recovers normally from there.
+[ -f "$unadoptable/.deploy-state/pending" ] && [ ! -e "$unadoptable/.deploy-state/last-known-good" ]
+run_script "$unadoptable" --promote "$image_b"
+[ ! -e "$unadoptable/.deploy-state/pending" ]
+[ -f "$unadoptable/.deploy-state/last-known-good" ]
+
 echo "remote deploy state-machine tests passed"

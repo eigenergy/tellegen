@@ -338,7 +338,16 @@ bootstrap_last_known_good() {
 		return
 	fi
 	[ -e "$CURRENT_ENV" ] || return 0
-	load_env_file "$CURRENT_ENV" || die "invalid current deployment state"
+	# Adopting a deployment this script did not write is best effort, so it must
+	# not be fatal. A host on the pre-snapshot layout can carry a `.env` in any
+	# shape, and the strict two-key parse above rejects all of them; dying there
+	# means the first deploy after this change can never run. Continuing costs
+	# nothing that was not already lost: there is no snapshot to roll back to
+	# either way, and a successful promotion records a real last known good.
+	if ! load_env_file "$CURRENT_ENV"; then
+		echo "==> Current deployment state is not adoptable; continuing without a rollback target" >&2
+		return 0
+	fi
 	local image="$STATE_IMAGE" data_dir="$STATE_DATA_DIR"
 	if current_container_is_healthy "$image"; then
 		discover_legacy_bundle || die "cannot locate the running deployment's Compose files"
