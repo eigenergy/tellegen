@@ -296,6 +296,10 @@ impl Study {
 
     /// As [`new`](Study::new) from an already-parsed [`BalancedNetwork`].
     pub fn from_network(net: &BalancedNetwork, formulation: Problem) -> Result<Self, String> {
+        // A base study must be safe before the first edit. Otherwise an empty
+        // study could solve successfully and only discover ambiguous uid lookup
+        // when its first preview, commit, or package export is attempted.
+        validate_canonical_edits(net, &Edits::default())?;
         let options = SolveOptions::default();
         let req = SolveRequest {
             formulation,
@@ -1327,6 +1331,19 @@ mod tests {
         );
         assert_eq!(before, serde_json::to_string(s.solution()).unwrap());
         assert!(s.edits().is_empty());
+    }
+
+    #[test]
+    fn duplicate_uids_reject_before_a_study_is_constructed() {
+        let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
+            .expect("parse")
+            .network;
+        net.buses[0].uid = Some("duplicate".into());
+        net.buses[1].uid = Some("duplicate".into());
+        let error = Study::from_network(&net, Problem::DcOpf)
+            .err()
+            .expect("duplicate base identity must reject");
+        assert!(error.contains("duplicate bus uid"), "{error}");
     }
 
     #[test]

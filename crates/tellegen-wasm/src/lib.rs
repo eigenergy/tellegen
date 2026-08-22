@@ -688,6 +688,10 @@ pub(crate) fn ingest_value(
     net: &powerio::BalancedNetwork,
     mut warnings: Vec<String>,
 ) -> Result<serde_json::Value, String> {
+    // `ensure_payload_uids` preserves source uids while filling missing rows.
+    // Reject a source uid that collides with a generated row uid before the
+    // browser receives an ambiguous edit/persistence key.
+    tellegen::validate_canonical_identity(net)?;
     let power_scale = if net.is_normalized() {
         net.check_base_mva().map_err(|error| error.to_string())?;
         net.base_mva
@@ -1062,6 +1066,19 @@ mpc.gencost = [
             &source["topology"]["branches"][0]["rate_mw"],
             &derived["topology"]["branches"][0]["rate_mw"],
         );
+    }
+
+    #[test]
+    fn ingest_rejects_a_source_uid_that_collides_with_a_stamped_uid() {
+        let mut net = powerio::parse_str(CASE14_NO_COORDS, "m")
+            .expect("parse case14")
+            .network;
+        // Row 0 preserves this source uid; row 1 is missing and receives the
+        // same value from `ensure_payload_uids`.
+        net.buses[0].uid = Some("buses:1".into());
+        powerio_pkg::ensure_payload_uids(&mut net);
+        let error = ingest_value(&net, Vec::new()).unwrap_err();
+        assert!(error.contains("duplicate bus uid"), "{error}");
     }
 
     #[test]

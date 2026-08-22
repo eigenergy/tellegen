@@ -1557,6 +1557,23 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_canonical_uids_reject_even_an_unedited_solve() {
+        let mut net = powerio::parse_str(CASE3, "matpower")
+            .expect("parse")
+            .network;
+        net.buses[0].uid = Some("same-bus".into());
+        net.buses[1].uid = Some("same-bus".into());
+        let error = solve_network(&net, &SolveRequest::default()).unwrap_err();
+        assert!(error.contains("duplicate bus uid"), "{error}");
+
+        net.buses[1].uid = Some("different-bus".into());
+        net.branches[0].uid = Some("same-branch".into());
+        net.branches[1].uid = Some("same-branch".into());
+        let error = solve_network(&net, &SolveRequest::default()).unwrap_err();
+        assert!(error.contains("duplicate branch uid"), "{error}");
+    }
+
+    #[test]
     fn response_scalars_echo_uids() {
         let out = solve_json(&case3_with_uids_json(), r#"{"formulation":"dcopf"}"#).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
