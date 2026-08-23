@@ -19,8 +19,15 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
+      # Minor and patch only. A group that also swallows majors produces one
+      # pull request carrying a dozen updates and two breaking upgrades, which
+      # cannot be reviewed or reverted independently; majors left out of a
+      # group arrive as their own pull request.
       dev-tooling:
         dependency-type: development
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directories:
@@ -29,6 +36,11 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # Same reasoning as the npm group above: pin the group to the updates
+      # that are safe to read in bulk and let majors stand alone.
       actions:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
