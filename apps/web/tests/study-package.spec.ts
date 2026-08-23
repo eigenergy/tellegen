@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/page-errors.js';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
 import { CASE14_COORDS } from './fixtures/local-case';
 

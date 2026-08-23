@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/page-errors.js';
 
 // End-to-end branch rating flow on a congested local case: select the binding
 // line from the panel list, see a non-flat ∂LMP/∂rating column, relax the

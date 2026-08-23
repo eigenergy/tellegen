@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/page-errors.js';
 
 const POWER_MODELS_TWO_BUS = JSON.stringify({
 	name: 'json-sidecar',
