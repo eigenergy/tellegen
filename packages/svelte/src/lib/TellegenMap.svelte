@@ -666,9 +666,7 @@
 			import('@deck.gl/layers')
 		]);
 		return {
-			// maplibre-gl 6 dropped its default export; the module namespace
-			// carries the same constructors the default object used to.
-			maplibregl: maplibre,
+			maplibregl: maplibre.default,
 			MapboxOverlay: mapbox.MapboxOverlay,
 			PathLayer: layers.PathLayer,
 			ScatterplotLayer: layers.ScatterplotLayer,
