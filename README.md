@@ -27,8 +27,48 @@ and commit calls, sensitivities, and generated TypeScript types.
 Start with the
 [framework quickstart](https://eigenergy.github.io/tellegen/framework-quickstart.html);
 `examples/browser-minimal/` and `examples/svelte-minimal/` are working
-integrations of each package. The Rust engine is the
-[tellegen](https://crates.io/crates/tellegen) crate.
+integrations of each package.
+
+### Rust
+
+The solver itself is the [tellegen](https://crates.io/crates/tellegen) crate.
+The packages above are WebAssembly bindings over it, so a Rust consumer skips
+them and calls it directly. Case parsing stays in
+[powerio](https://crates.io/crates/powerio).
+
+```sh
+cargo add tellegen powerio serde_json
+```
+
+```rust
+use tellegen::{solve_network, SolveRequest};
+
+let case = std::fs::read_to_string("case30.m")?;
+let network = powerio::parse_str(&case, "matpower")?.network;
+
+// A DC OPF with bus 2 shifted 50 MW, and the LMP column against demand.
+let request: SolveRequest = serde_json::from_str(
+    r#"{
+        "formulation": "dcopf",
+        "edits": { "deltas": { "2": 50.0 } },
+        "sensitivities": [
+            { "operand": {"Price":"Active"}, "parameter": {"Demand":"Active"} }
+        ]
+    }"#,
+)?;
+
+let solved = solve_network(&network, &request).map_err(|e| e.to_string())?;
+println!("{:?} objective {:?}", solved.status, solved.objective);
+```
+
+`solve_json` takes and returns JSON strings instead, for a caller that already
+holds a serialized network. Default features carry the differentiable engine:
+DC OPF, AC power flow, and the KKT sensitivities. `conic` adds the SOCWR
+relaxation and its sensitivities. `--no-default-features` drops faer and
+num-complex and leaves the DC OPF solve on its own.
+
+`tellegen-cli` wraps the same call for scripting: it reads a powerio
+`BalancedNetwork` as JSON on stdin and writes the solve to stdout.
 
 ## Demo
 
