@@ -31,6 +31,13 @@ const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 /// `G_inc pg + psh - fixed_withdrawal(sw) = B theta`; branch flows
 /// `f = diag(-b .* sw) A theta + sw .* flow_offset`.
 #[derive(Clone)]
+// Every field is derived together by `from_network` from one normalized
+// `BalancedNetwork`: dense reindexing, per unit conversion, and the source row
+// maps only agree with each other as a set. A hand-built literal that got one
+// of them wrong would solve to a wrong answer rather than fail, so the
+// constructor is the only supported way in and new fields can arrive without a
+// major bump.
+#[non_exhaustive]
 pub struct DcNetwork {
     /// Buses, branches, generators after filtering (in-service, non-isolated).
     pub n: usize,
