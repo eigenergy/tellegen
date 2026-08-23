@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/page-errors.js';
 import { lookupBus, mockDataRoutes, sensitivityColumn } from './fixtures/backend-case';
 
 // A rate-limited (429) server sensitivity fallback must read as a rate limit,

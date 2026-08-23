@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/page-errors.js';
 import { lookupBus, mockDataRoutes } from './fixtures/backend-case';
 
 // With server compute disabled, a selection that cannot solve in the browser

@@ -18,6 +18,14 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # maplibre-gl 6 made `Map.transform` a private field. deck.gl reads
+      # `map.transform.height` out of its interleaved render path, on 9.3.10
+      # and on 9.4.0-alpha.2 alike, so the overlay throws once per frame and
+      # the canvas stays blank. Drop this once deck.gl stops reaching for it.
+      - dependency-name: maplibre-gl
+        update-types:
+          - version-update:semver-major
     groups:
       # Minor and patch only. A group that also swallows majors produces one
       # pull request carrying a dozen updates and two breaking upgrades, which

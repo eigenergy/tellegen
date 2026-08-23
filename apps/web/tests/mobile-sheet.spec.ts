@@ -1,4 +1,4 @@
-import { devices, expect, test } from '@playwright/test';
+import { devices, expect, test } from './fixtures/page-errors.js';
 
 // The compact layout puts the control panel in a bottom sheet over the map.
 // Two things that regress silently when the sheet's geometry changes:
