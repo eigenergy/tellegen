@@ -1,5 +1,10 @@
 <script lang="ts">
 	import type { JsonValue, TellegenToolActivityEvent, ToolResponse } from '@tellegen/webmcp';
+	import {
+		capacityPlanExactPhiDelta,
+		capacityPlanFirstOrderError,
+		capacityPlanPredictedPhiDelta
+	} from './capacity-plan-metrics.js';
 	import type { CapacityPlanActivity, PlanningActivityStore } from './planning-activity.svelte.js';
 
 	let {
@@ -32,18 +37,15 @@
 	});
 
 	function exactPhiDelta(entry: CapacityPlanActivity): number {
-		return entry.outcome.final_phi - entry.outcome.baseline_phi;
+		return capacityPlanExactPhiDelta(entry.outcome);
 	}
 
 	function predictedPhiDelta(entry: CapacityPlanActivity): number {
-		return entry.outcome.iterations
-			.filter((it) => it.accepted)
-			.reduce((sum, it) => sum + it.predicted_phi_delta, 0);
+		return capacityPlanPredictedPhiDelta(entry.outcome);
 	}
 
 	function firstOrderError(entry: CapacityPlanActivity): number | null {
-		const accepted = entry.outcome.iterations.filter((it) => it.accepted);
-		return accepted[accepted.length - 1]?.first_order_error ?? null;
+		return capacityPlanFirstOrderError(entry.outcome);
 	}
 
 	function isStaged(entry: CapacityPlanActivity): boolean {

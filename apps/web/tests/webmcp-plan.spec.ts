@@ -1,9 +1,29 @@
 import type { Page } from '@playwright/test';
+import {
+	capacityPlanFirstOrderError,
+	capacityPlanPredictedPhiDelta
+} from '../src/lib/webmcp/capacity-plan-metrics.js';
 import { expect, test } from './fixtures/page-errors.js';
+import type { CapacityPlanOutcomeJson } from '@tellegen/svelte';
 
 type ToolResponse =
 	| { ok: true; data: Record<string, unknown> }
 	| { ok: false; error: { code: string; message: string } };
+
+test('capacity plan metrics compare aggregate predicted and exact deltas', () => {
+	const outcome = {
+		baseline_phi: 20,
+		final_phi: 15,
+		iterations: [
+			{ accepted: true, predicted_phi_delta: -2, first_order_error: 0.25 },
+			{ accepted: false, predicted_phi_delta: -10, first_order_error: 9 },
+			{ accepted: true, predicted_phi_delta: -4, first_order_error: 0.5 }
+		]
+	} as CapacityPlanOutcomeJson;
+
+	expect(capacityPlanPredictedPhiDelta(outcome)).toBe(-6);
+	expect(capacityPlanFirstOrderError(outcome)).toBe(1);
+});
 
 // The engine crate's 3-bus fixture with the bus2-bus3 line rated 60 MW. The
 // unconstrained dispatch pushes ~50 MW across that line, so an update_case
@@ -232,7 +252,13 @@ test('capacity planning stages a proposal that applies only after a human approv
 	const proposal = planned.data.proposal as Array<{ branch_id: string; delta_mw: number }>;
 	expect(proposal.length).toBeGreaterThan(0);
 	expect(proposal.map((row) => row.branch_id)).toContain(bindingBranchId);
-	expect(Number(planned.data.exact_phi_delta)).toBeLessThan(0);
+	const exactPhiDelta = Number(planned.data.exact_phi_delta);
+	const predictedPhiDelta = Number(planned.data.predicted_phi_delta);
+	expect(exactPhiDelta).toBeLessThan(0);
+	expect(Number(planned.data.first_order_error)).toBeCloseTo(
+		Math.abs(exactPhiDelta - predictedPhiDelta),
+		3
+	);
 
 	// The staged proposal registers apply and renders a reviewable card.
 	await expect.poll(() => listTools(page)).toEqual(PROPOSAL_TOOLS);

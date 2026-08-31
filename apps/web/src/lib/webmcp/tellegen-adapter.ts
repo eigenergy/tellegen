@@ -29,6 +29,10 @@ import {
 	type ToolPayload,
 	type UpdateCaseInput
 } from '@tellegen/webmcp';
+import {
+	capacityPlanFirstOrderError,
+	capacityPlanPredictedPhiDelta
+} from './capacity-plan-metrics.js';
 import type { PlanningActivityStore, StagedCapacityProposal } from './planning-activity.svelte.js';
 
 const OUTPUT_ID_LENGTH = 64;
@@ -1010,9 +1014,8 @@ async function proposeCapacityPlan(
 	const activityId = randomId('plan');
 	const proposalId = randomId('proposal');
 	const accepted = outcome.iterations.filter((it) => it.accepted);
-	const lastAccepted = accepted[accepted.length - 1] ?? null;
 	const last = outcome.iterations[outcome.iterations.length - 1] ?? null;
-	const predictedPhiDelta = accepted.reduce((sum, it) => sum + it.predicted_phi_delta, 0);
+	const predictedPhiDelta = capacityPlanPredictedPhiDelta(outcome);
 	// The search ran unqueued beside the interface; a concurrent edit during it
 	// makes the outcome an audit record, never a stageable proposal.
 	const moved = ctrl.activeSolvable !== c || caseRevision(c) !== revision;
@@ -1074,7 +1077,7 @@ async function proposeCapacityPlan(
 			},
 			exact_phi_delta: round4(outcome.final_phi - outcome.baseline_phi),
 			predicted_phi_delta: round4(predictedPhiDelta),
-			first_order_error: round4(lastAccepted?.first_order_error),
+			first_order_error: round4(capacityPlanFirstOrderError(outcome)),
 			spent_budget_mw: round4(outcome.spent_budget_mw),
 			exact_solves: outcome.exact_solves,
 			iterations: { total: outcome.iterations.length, accepted: accepted.length },
