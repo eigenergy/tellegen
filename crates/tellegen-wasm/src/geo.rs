@@ -16,19 +16,21 @@
 
 use powerio::geo::{apply_substation_points, CoordsKind, GeoApplyReport, GeoGeometry, GeoLayer};
 use powerio::BalancedNetwork;
-use powerio::{parse_display_bytes, DisplayData};
+use powerio::DisplayData;
 use tellegen::geo::{pwd_lonlat_layer, stamp_layout, Coords};
 
 use crate::ingest_value;
 
 /// Parse a geographic sidecar (buscoords CSV, aliased CSV/JSON records,
 /// GeoJSON) from raw bytes. `hint` is the dropped file's name (picks CSV
-/// against JSON; pass "" to sniff). Returns `{ layer, warnings, n_points,
+/// against JSON; pass "" to sniff). Returns `{ layer, diagnostics, n_points,
 /// n_routes }`: the layer as its canonical `.geo.json` document plus the
 /// reader's notes on records it could not use.
 pub fn parse_geo_impl(bytes: &[u8], hint: &str) -> Result<String, String> {
     let hint = (!hint.trim().is_empty()).then_some(hint);
-    let parsed = GeoLayer::parse_bytes(bytes, hint).map_err(|e| e.to_string())?;
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| "geographic sidecar is not valid UTF-8".to_owned())?;
+    let parsed = GeoLayer::parse_text(text, hint).map_err(|e| e.to_string())?;
     let (mut n_points, mut n_routes) = (0usize, 0usize);
     for f in &parsed.layer.features {
         match f.geometry {
@@ -38,7 +40,7 @@ pub fn parse_geo_impl(bytes: &[u8], hint: &str) -> Result<String, String> {
     }
     serde_json::to_string(&serde_json::json!({
         "layer": parsed.layer.to_geojson(),
-        "warnings": parsed.warnings,
+        "diagnostics": parsed.diagnostics,
         "n_points": n_points,
         "n_routes": n_routes,
     }))
@@ -90,10 +92,10 @@ pub fn apply_layout_impl(
         return Err("no layout bus ids matched the case".to_owned());
     }
     let layer = net
-        .geo_layer()
-        .extracted_geojson()
+        .to_geo_layer()
+        .to_geojson_checked()
         .map_err(|e| e.to_string())?;
-    let mut value = ingest_value(&net, Vec::new())?;
+    let mut value = ingest_value(&net, &[], Vec::new(), None)?;
     let object = value
         .as_object_mut()
         .ok_or("ingest payload is not an object")?;
@@ -106,8 +108,8 @@ pub fn apply_layout_impl(
 /// when the case carries no coordinates.
 pub fn extract_geo_impl(network_json: &str) -> Result<String, String> {
     parse_network(network_json)?
-        .geo_layer()
-        .extracted_geojson()
+        .to_geo_layer()
+        .to_geojson_checked()
         .map_err(|e| e.to_string())
 }
 
@@ -117,7 +119,7 @@ pub fn extract_geo_impl(network_json: &str) -> Result<String, String> {
 /// carries no substation identity, or the numbers do not line up); otherwise
 /// returns the refreshed drop-panel payload with a `report`.
 pub fn apply_display_geo_impl(network_json: &str, bytes: &[u8]) -> Result<String, String> {
-    let display = match parse_display_bytes(bytes, "pwd").map_err(|e| e.to_string())? {
+    let display = match powerio::parse_display(bytes, "pwd").map_err(|e| e.to_string())? {
         DisplayData::PowerWorld(d) => d,
         // DisplayData is #[non_exhaustive]; PowerWorld is the only arm today.
         #[allow(unreachable_patterns)]
@@ -139,15 +141,11 @@ pub fn apply_display_geo_impl(network_json: &str, bytes: &[u8]) -> Result<String
 }
 
 fn parse_network(network_json: &str) -> Result<BalancedNetwork, String> {
-    let mut net = BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
-    // Ingested cases arrive stamped; stamping here keeps the apply surfaces
-    // total for a caller holding an older payload (fills only missing uids).
-    powerio_pkg::ensure_payload_uids(&mut net);
-    Ok(net)
+    BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())
 }
 
 pub(crate) fn parse_layer(layer_geojson: &str) -> Result<GeoLayer, String> {
-    GeoLayer::parse_bytes(layer_geojson.as_bytes(), Some("layer.geo.json"))
+    GeoLayer::parse_text(layer_geojson, Some("layer.geo.json"))
         .map(|parsed| parsed.layer)
         .map_err(|e| e.to_string())
 }
@@ -165,7 +163,7 @@ pub(crate) fn report_value(report: &GeoApplyReport) -> serde_json::Value {
 /// The refreshed drop-panel payload for an updated network, with the apply
 /// report attached under `report`.
 fn payload_with_report(net: &BalancedNetwork, report: GeoApplyReport) -> Result<String, String> {
-    let mut value = ingest_value(net, Vec::new())?;
+    let mut value = ingest_value(net, &[], Vec::new(), None)?;
     let object = value
         .as_object_mut()
         .ok_or("ingest payload is not an object")?;
@@ -199,12 +197,19 @@ mpc.gencost = [
 ];
 ";
 
-    /// The uid-stamped `network_json` a real drop produces (the input every
+    /// The `network_json` a real drop produces (the input every
     /// geo surface receives from the frontend).
     fn case3_network_json() -> String {
         let out = crate::ingest_case(CASE3.as_bytes(), "m").expect("ingest case3");
         let v: Value = serde_json::from_str(&out).unwrap();
         v["network_json"].as_str().unwrap().to_owned()
+    }
+
+    #[cfg(feature = "sensitivity")]
+    fn module_json(network_json: &str) -> String {
+        let network = powerio::BalancedNetwork::from_json(network_json).expect("network JSON");
+        let module = powerio::PioModule::new(powerio::PioValue::BalancedNetwork(network));
+        powerio::stored::emit_module(&module).expect("module JSON")
     }
 
     #[test]
@@ -229,7 +234,7 @@ mpc.gencost = [
         assert_eq!(extract_geo_impl(stamped_json).expect("extract"), layer);
 
         // The layer parses back through the tolerant reader and applies onto
-        // the original coordless payload, matching every bus by uid.
+        // the original coordless payload, matching every bus.
         let parsed: Value =
             serde_json::from_str(&parse_geo_impl(layer.as_bytes(), "case3.geo.json").unwrap())
                 .unwrap();
@@ -356,9 +361,9 @@ mpc.gencost = [
 
     #[cfg(feature = "sensitivity")]
     #[test]
-    fn saved_study_package_carries_the_stamped_layout() {
-        // The point of stamping: a study saved after a layout lands carries the
-        // coordinates, so a restore places the case without re-dropping files.
+    fn a_saved_module_carries_the_stamped_layout() {
+        // The point of stamping: a case saved after a layout lands carries the
+        // coordinates, so reloading it places the case without re-dropping files.
         let network_json = case3_network_json();
         let stamped: Value = serde_json::from_str(
             &apply_layout_impl(
@@ -370,33 +375,28 @@ mpc.gencost = [
         )
         .unwrap();
         let mut study = tellegen::Study::new(
-            stamped["network_json"].as_str().unwrap(),
+            &module_json(stamped["network_json"].as_str().unwrap()),
             tellegen::Problem::DcOpf,
         )
         .expect("study");
         study
-            .commit(
-                &[tellegen::NetworkEdit::AddLoad {
-                    bus: tellegen::ElementKey::Id(2),
-                    p_mw: 5.0,
-                }],
-                tellegen::SolveOptions::default(),
-            )
+            .commit(&[tellegen::NetworkEdit::AddLoad {
+                bus: tellegen::ElementKey::Id(2),
+                p_mw: 5.0,
+            }])
             .expect("commit");
-        let package_json = study
-            .to_package()
-            .expect("to_package")
-            .to_json()
-            .expect("json");
-        assert!(package_json.contains("\"location\""));
+        let module_json = study.save_module().expect("save_module");
+        assert!(module_json.contains("\"location\""));
 
-        // And the restore path reads them back: the bundle view is placed with
-        // manual provenance.
-        let bundle: Value =
-            serde_json::from_str(&crate::load_package_bundle(&package_json).unwrap()).unwrap();
-        assert_eq!(bundle["has_coords"], true);
-        assert_eq!(bundle["coords_kind"], "manual");
-        assert_eq!(bundle["view"]["buses"].as_array().unwrap().len(), 3);
+        // And ingesting the saved module reads them back: the drop payload is
+        // placed with the manual coordinate kind.
+        let ingested = crate::ingest_json_drop_value(module_json.as_bytes()).expect("ingest");
+        assert_eq!(ingested.payload["has_coords"], true);
+        assert_eq!(ingested.payload["coords_kind"], "manual");
+        assert_eq!(
+            ingested.payload["view"]["buses"].as_array().unwrap().len(),
+            3
+        );
     }
 
     #[cfg(feature = "sensitivity")]
@@ -405,14 +405,9 @@ mpc.gencost = [
         // The frontend keeps a built Study alive across a geo apply; syncing the
         // layer through Study::apply_geo_layer makes the next save carry it.
         let network_json = case3_network_json();
-        let mut study =
-            tellegen::Study::new(&network_json, tellegen::Problem::DcOpf).expect("study");
-        assert!(!study
-            .to_package()
-            .unwrap()
-            .to_json()
-            .unwrap()
-            .contains("\"location\""));
+        let mut study = tellegen::Study::new(&module_json(&network_json), tellegen::Problem::DcOpf)
+            .expect("study");
+        assert!(!study.save_module().unwrap().contains("\"location\""));
         let layer = {
             let parsed: Value = serde_json::from_str(
                 &parse_geo_impl(
@@ -426,11 +421,6 @@ mpc.gencost = [
         };
         let report = study.apply_geo_layer(&parse_layer(&layer).unwrap());
         assert_eq!(report.matched_buses, 3);
-        assert!(study
-            .to_package()
-            .unwrap()
-            .to_json()
-            .unwrap()
-            .contains("\"location\""));
+        assert!(study.save_module().unwrap().contains("\"location\""));
     }
 }

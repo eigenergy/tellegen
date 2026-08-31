@@ -7,16 +7,49 @@
 use std::collections::BTreeMap;
 
 use powerio::BalancedNetwork;
-use powerio::{DcConvention, IndexedNetwork};
-use powerio_prob::{build_dc_opf_instance, DcOpfOptions, Units};
+use powerio::BranchSusceptanceFormula;
+use powerio_matrix::{build_dc_opf_preparation, DcOpfAssemblyOptions, PreparedObjective, Units};
+use powerio_prob::DcOpfInstance;
 
 use super::{
-    branch_ids_for_view_rows, bus_ids_for_source_rows, flatten_gen_costs, ids_for_view_rows,
-    normalize_angle_bounds, normalize_for_model, project_source_rows, uids_for_source_rows,
+    branch_ids_for_view_rows, bus_ids_for_source_rows, ids_for_view_rows, normalize_angle_bounds,
+    normalize_for_model, project_source_rows, reject_unsupported_active_elements,
+    uids_for_source_rows, validate_canonical_identity, PiecewiseCost,
 };
 
-/// Strong-convexity regularization on the flows.
-const DEFAULT_TAU: f64 = 1e-2;
+/// Legacy numeric IDs exposed by Tellegen's generic solve response. These are
+/// separate from PowerIO's canonical identities and follow source table
+/// positions so filtered rows do not renumber the remaining elements.
+fn source_position_ids(
+    source_rows: &[Option<usize>],
+    source_len: usize,
+    family: &str,
+) -> Result<Vec<usize>, String> {
+    let mut next_synthetic = source_len
+        .checked_add(1)
+        .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
+    source_rows
+        .iter()
+        .map(|source_row| match source_row {
+            Some(row) => {
+                if *row >= source_len {
+                    return Err(format!(
+                        "{family} source row {row} outside source length {source_len}"
+                    ));
+                }
+                row.checked_add(1)
+                    .ok_or_else(|| format!("{family} id space exhausted"))
+            }
+            None => {
+                let id = next_synthetic;
+                next_synthetic = next_synthetic
+                    .checked_add(1)
+                    .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
+                Ok(id)
+            }
+        })
+        .collect()
+}
 
 /// Load-shedding cost = multiplier x peak marginal generation cost, so the
 /// solver only sheds when capacity or the network physically cannot serve the
@@ -38,7 +71,7 @@ const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 // constructor is the only supported way in and new fields can arrive without a
 // major bump.
 #[non_exhaustive]
-pub struct DcNetwork {
+pub(crate) struct DcNetwork {
     /// Buses, branches, generators after filtering (in-service, non-isolated).
     pub n: usize,
     pub m: usize,
@@ -59,6 +92,7 @@ pub struct DcNetwork {
     pub sw: Vec<f64>,
     /// Branch phase shifts in radians, in the active branch order from the
     /// powerio problem instance.
+    #[cfg(feature = "sensitivity")]
     pub shift: Vec<f64>,
     /// Fixed affine branch flow term `-b_powerio .* shift`. The term is
     /// multiplied by [`Self::sw`] when a branch status varies.
@@ -80,31 +114,44 @@ pub struct DcNetwork {
     pub cq: Vec<f64>,
     pub cl: Vec<f64>,
     pub cc: Vec<f64>,
+    /// Exact convex piecewise linear costs aligned with the generator columns.
+    /// A present curve replaces the zero entries in `cq`, `cl`, and `cc` for
+    /// that generator and is formulated with an epigraph variable.
+    pub(crate) piecewise_costs: Vec<Option<PiecewiseCost>>,
     /// Load-shedding penalty per bus.
     pub c_shed: Vec<f64>,
     /// Per-unit active demand per bus.
     pub demand: Vec<f64>,
     /// Per-unit shunt conductance withdrawal per bus.
     pub shunt_conductance: Vec<f64>,
-    /// Nodal phase shift withdrawal with every active source branch closed.
-    pub p_shift: Vec<f64>,
-    /// The complete all-closed withdrawal reported by
-    /// `DcOpfInstance::fixed_nodal_withdrawal`.
-    pub fixed_withdrawal: Vec<f64>,
     /// Reference (slack) bus, dense index.
     pub ref_bus: usize,
-    /// Whether load shedding is permitted. When `false`, the shedding variables are
-    /// pinned to zero, so a case that cannot serve its load reports infeasible (matching
-    /// the published PGLib behavior) instead of shedding. The solve edge sets this from
-    /// the request; built models default to `true` so a direct solve degrades gracefully.
+    /// Whether load shedding is permitted. Portable PowerIO instances do not state this
+    /// relaxation, so constructed workspaces keep the shedding variables pinned to zero.
+    /// Internal numerical tests opt in explicitly when exercising the shedding KKT.
     pub allow_shed: bool,
-    /// Flow regularization parameter.
-    pub tau: f64,
+    /// The objective declared by the PowerIO problem instance.
+    pub(crate) objective: PreparedObjective,
+    /// Active constraint masks, aligned with the generator and branch columns.
+    pub(crate) generator_capability_active: Vec<bool>,
+    pub(crate) thermal_limit_active: Vec<bool>,
+    pub(crate) angle_bound_active: Vec<bool>,
     /// Dense bus index -> original source bus id.
     pub bus_ids: Vec<usize>,
-    /// Dense branch index -> original source branch id.
+    /// Dense bus column to the star-lowered analysis row and source bus row.
+    /// Synthetic star buses have no source row.
+    pub(crate) bus_analysis_rows: Vec<usize>,
+    pub(crate) bus_source_rows: Vec<Option<usize>>,
+    /// Dense branch index -> one based source branch position for Tellegen's
+    /// legacy generic solve response.
     pub branch_ids: Vec<usize>,
-    /// Dense generator index -> original source generator id.
+    /// Dense branch index -> PowerIO's canonical branch identity (`uid` when
+    /// present, otherwise `branches:{source_row}`). Synthetic lowering rows
+    /// retain the identity emitted by the PowerIO preparation.
+    #[cfg(feature = "sensitivity")]
+    pub(crate) branch_identities: Vec<String>,
+    /// Dense generator index -> one based source generator position for
+    /// Tellegen's legacy generic solve response.
     pub gen_ids: Vec<usize>,
     /// Dense branch index -> original source branch row. `None` marks a branch
     /// synthesized while lowering a source element.
@@ -116,7 +163,7 @@ pub struct DcNetwork {
     pub bus_uids: Vec<Option<String>>,
     /// Dense branch index -> powerio row uid; the branch counterpart of `bus_uids`.
     pub branch_uids: Vec<Option<String>>,
-    /// System base power (MVA), for recovering MW / $/MWh from per-unit results.
+    /// System base power (MVA), for recovering served units from per unit results.
     pub base_mva: f64,
 }
 
@@ -128,151 +175,219 @@ impl DcNetwork {
     /// [`DcOpfInstance`](powerio_prob::DcOpfInstance) as the owner of the nodal and
     /// generator interpretation (per unit withdrawal, branch phase terms, generator
     /// PQ bounds, source rows, synthesized thermal limits, and reference coverage),
-    /// then applies the cost policy ([`flatten_gen_costs`], run before the instance so
-    /// its `GenCost` accessors accept every row). Tellegen's documented +-60 degree
-    /// default is applied to source branches before the instance synthesizes an
-    /// unrated limit, and again to rows created by three-winding lowering.
+    /// Tellegen's documented +-60 degree default is applied to source branches
+    /// before the instance synthesizes an unrated limit, and again to rows
+    /// created by three-winding lowering. PowerIO preserves quadratic and
+    /// piecewise linear costs as distinct preparation columns.
     pub fn from_network(raw: &BalancedNetwork) -> Result<DcNetwork, String> {
+        Self::build(raw, BranchSusceptanceFormula::SeriesSusceptance)
+    }
+
+    /// Build the private solver workspace from a typed PowerIO
+    /// [`DcOpfInstance`]. PowerIO compiles the instance's objective and active
+    /// constraint selections. Unsupported terms and unknown selected identities
+    /// return its typed preparation error instead of becoming a default problem.
+    pub fn from_instance(instance: &DcOpfInstance) -> Result<DcNetwork, String> {
+        validate_canonical_identity(instance.network())?;
+        reject_unsupported_active_elements(instance.network())?;
+        Self::build_prepared(instance, instance.network(), None)
+    }
+
+    fn build(
+        raw: &BalancedNetwork,
+        formula: BranchSusceptanceFormula,
+    ) -> Result<DcNetwork, String> {
         let input = normalize_for_model(raw)?;
         let mut norm = input.network;
         let source_rows = input.source_rows;
         // Apply the policy before PowerIO synthesizes thermal limits. Doing this
         // directly avoids allocating normalization diagnostics for every ordinary
         // MATPOWER branch whose source uses the typical +-360 spelling.
-        for branch in &mut norm.branches {
+        for branch in norm.branches_mut() {
             (branch.angmin, branch.angmax) = normalize_angle_bounds(branch.angmin, branch.angmax);
         }
-        // Cost policy as a `BalancedNetwork` pre-pass: fit piecewise / strip artifacts / treat
-        // a missing cost as free, writing plain quadratics the instance builder reads.
-        flatten_gen_costs(&mut norm)?;
-        let view = IndexedNetwork::new(&norm);
+        // The typed instance owns the case interpretation; the preparation is
+        // PowerIO's one numerical assembly (per unit generator PQ bounds and
+        // costs, nodal demand, reference coverage, synthesized thermal
+        // limits, source rows). `SeriesSusceptance` is the `x/(r^2+x^2)`
+        // formula whose PowerModels-signed value tellegen stores below.
+        // `PerUnit` is inert: the normalized network is already per unit
+        // (`per_unit_base() == 1`).
+        let instance = DcOpfInstance::from_network(norm)
+            .map_err(|e| e.to_string())?
+            .with_branch_susceptance_formula(formula);
+        Self::build_prepared(&instance, raw, Some(&source_rows))
+    }
 
-        // `SeriesImpedance` is the same `x/(r^2+x^2)` tellegen negates below, so the
-        // instance and the B-theta model now weight a branch alike. `PerUnit` is inert:
-        // the normalized network is already per unit (`per_unit_base() == 1`). The
-        // instance owns the generator PQ bounds, nodal demand, and reference coverage.
-        let instance = build_dc_opf_instance(
-            &view,
-            &DcOpfOptions {
-                convention: DcConvention::SeriesImpedance,
-                units: Units::PerUnit,
-                skip_zero_impedance: false,
-                synthesize_unrated_limits: true,
-            },
-        )
-        .map_err(|e| e.to_string())?;
+    fn build_prepared(
+        instance: &DcOpfInstance,
+        raw: &BalancedNetwork,
+        normalized_source_rows: Option<&super::ModelSourceRows>,
+    ) -> Result<DcNetwork, String> {
+        let mut assembly = DcOpfAssemblyOptions::default();
+        assembly.units = Units::PerUnit;
+        assembly.skip_zero_impedance = false;
+        assembly.synthesize_unrated_limits = true;
+        let prep = build_dc_opf_preparation(instance, &assembly)
+            .map_err(|e| format!("{}: {e}", e.code().code))?;
 
-        let n = instance.n_buses;
-        let m = instance.n_branches();
-        let k = instance.n_generators();
+        let n = prep.n_buses;
+        let m = prep.n_branches();
+        let k = prep.n_generators();
 
-        if source_rows.buses.len() != n {
-            return Err(format!(
-                "bus provenance length {} != problem bus count {n}",
-                source_rows.buses.len()
-            ));
-        }
-        let bus_ids =
-            bus_ids_for_source_rows(&source_rows.buses, &source_rows.transformers_3w, raw)?;
-        let bus_uids = uids_for_source_rows(&source_rows.buses, &raw.buses, |bus| &bus.uid, "bus")?;
-        let branch_source_rows = project_source_rows(
-            &instance.branches.source_rows,
-            &source_rows.branches,
-            "branch",
-        )?;
-        let gen_source_rows = project_source_rows(
-            &instance.generators.source_rows,
-            &source_rows.generators,
-            "generator",
-        )?;
-        let branch_ids = branch_ids_for_view_rows(
-            &instance.branches.source_rows,
-            &source_rows.branches,
-            &source_rows.transformers_3w,
-            raw,
-        )?;
-        let gen_ids = ids_for_view_rows(
-            &instance.generators.source_rows,
-            &source_rows.generators,
-            raw.generators.len(),
-            "generator",
-        )?;
+        let (
+            bus_ids,
+            bus_uids,
+            bus_source_rows,
+            branch_source_rows,
+            gen_source_rows,
+            branch_ids,
+            gen_ids,
+        ) = if let Some(source_rows) = normalized_source_rows {
+            if source_rows.buses.len() != n {
+                return Err(format!(
+                    "bus provenance length {} != problem bus count {n}",
+                    source_rows.buses.len()
+                ));
+            }
+            (
+                bus_ids_for_source_rows(&source_rows.buses, &source_rows.transformers_3w, raw)?,
+                uids_for_source_rows(&source_rows.buses, raw.buses(), |bus| &bus.uid, "bus")?,
+                source_rows.buses.clone(),
+                project_source_rows(
+                    &prep.branches.analysis_rows,
+                    &source_rows.branches,
+                    "branch",
+                )?,
+                project_source_rows(
+                    &prep.generators.analysis_rows,
+                    &source_rows.generators,
+                    "generator",
+                )?,
+                branch_ids_for_view_rows(
+                    &prep.branches.analysis_rows,
+                    &source_rows.branches,
+                    &source_rows.transformers_3w,
+                    raw,
+                )?,
+                ids_for_view_rows(
+                    &prep.generators.analysis_rows,
+                    &source_rows.generators,
+                    raw.generators().len(),
+                    "generator",
+                )?,
+            )
+        } else {
+            let bus_ids: Vec<usize> = prep.bus_ids.iter().map(|id| id.0).collect();
+            // PowerIO already aligned every source row with the dense
+            // preparation. Follow that map instead of rebuilding a bus index
+            // or scanning raw IDs to interpret the prepared columns.
+            let bus_uids =
+                uids_for_source_rows(&prep.bus_source_rows, raw.buses(), |bus| &bus.uid, "bus")?;
+            let branch_source_rows = prep.branches.source_rows.clone();
+            let gen_source_rows = prep.generators.source_rows.clone();
+            let branch_ids =
+                source_position_ids(&branch_source_rows, prep.n_source_branches, "branch")?;
+            let gen_ids =
+                source_position_ids(&gen_source_rows, prep.n_source_generators, "generator")?;
+            (
+                bus_ids,
+                bus_uids,
+                prep.bus_source_rows.clone(),
+                branch_source_rows,
+                gen_source_rows,
+                branch_ids,
+                gen_ids,
+            )
+        };
         let branch_uids = uids_for_source_rows(
             &branch_source_rows,
-            &raw.branches,
+            raw.branches(),
             |branch| &branch.uid,
             "branch",
         )?;
+        #[cfg(feature = "sensitivity")]
+        let branch_identities = if normalized_source_rows.is_none() {
+            // A typed PowerIO instance already carries the canonical identity
+            // aligned with every prepared branch column.
+            prep.branches.identities.clone()
+        } else {
+            // The legacy raw-network path prepares a filtered normalized copy.
+            // Recover source identities there so filtering cannot renumber a
+            // caller's fallback `branches:{row}` keys.
+            branch_source_rows
+                .iter()
+                .enumerate()
+                .map(|(dense, source_row)| match source_row {
+                    Some(row) => raw.branches()[*row]
+                        .uid
+                        .clone()
+                        .unwrap_or_else(|| format!("branches:{row}")),
+                    None => prep.branches.identities[dense].clone(),
+                })
+                .collect()
+        };
 
         // Per-bus demand and reference, moved straight out of the freshly built,
         // locally owned instance: from_network runs per Study commit and preview, so
         // this stays clone free. `single()` rather than a first element: `DcNetwork`
         // grounds one bus, so several references means several islands and every island
         // past the first would stay singular.
-        let ref_bus = instance
-            .reference_buses
-            .single()
-            .map_err(|e| e.to_string())?;
-        let fixed_withdrawal = instance.fixed_nodal_withdrawal();
-        let flow_offset = instance.branch_flow_offset();
-        let demand = instance.p_d.clone();
-        let shunt_conductance = instance.g_s.clone();
-        let p_shift = instance.p_shift.clone();
+        let ref_bus = prep.reference_buses.single().map_err(|e| e.to_string())?;
+        let flow_offset = prep.calc_branch_flow_offset();
+        let demand = prep.p_d.clone();
+        let shunt_conductance = prep.g_s.clone();
 
-        // Tellegen historically stores the negative of powerio's positive
-        // inductive susceptance. Keep that internal sign while taking every
-        // branch column and affine term from the same instance.
-        let br_from = instance.branches.from_bus.clone();
-        let br_to = instance.branches.to_bus.clone();
-        let b = instance.branches.b.iter().map(|value| -value).collect();
-        let shift = instance.branches.shift.clone();
-        let (angmin, angmax): (Vec<_>, Vec<_>) = instance
+        // The preparation carries positive solver edge weights; tellegen
+        // stores the PowerModels-signed susceptance (negative for an
+        // inductive branch), so every branch column and affine term negates
+        // out of the same assembly. The relation is pinned upstream by
+        // powerio-matrix's cross assembly conformance test.
+        let br_from = prep.branches.from_bus.clone();
+        let br_to = prep.branches.to_bus.clone();
+        let b = prep
+            .branches
+            .susceptance_magnitude
+            .iter()
+            .map(|value| -value)
+            .collect();
+        #[cfg(feature = "sensitivity")]
+        let shift = prep.branches.shift.clone();
+        let (angmin, angmax): (Vec<_>, Vec<_>) = prep
             .branches
             .angle_min
             .iter()
             .copied()
-            .zip(instance.branches.angle_max.iter().copied())
-            .map(|(min, max)| normalize_angle_bounds(min, max))
-            .unzip();
-        // Source branches were clamped above. Three-winding transformers are lowered
-        // afterwards, so their synthetic branches still arrive with the unconstrained
-        // spelling. Recompute every unrated limit from the final stored window. This is
-        // idempotent for source branches and keeps the same policy for lowered rows
-        // without reaching into PowerIO's private lowering.
-        let fmax = instance
-            .branches
-            .f_max
-            .iter()
-            .enumerate()
-            .map(|(index, &limit)| {
-                let row = instance.branches.source_rows[index];
-                let branch = &view.network().branches[row];
-                if branch.rate_a <= 0.0 {
-                    let from = &view.network().buses[instance.branches.from_bus[index]];
-                    let to = &view.network().buses[instance.branches.to_bus[index]];
-                    let window = angmin[index].abs().max(angmax[index].abs());
-                    branch.synthesize_rate_a(window, (from.vmin, from.vmax), (to.vmin, to.vmax))
+            .zip(prep.branches.angle_max.iter().copied())
+            .map(|bounds| {
+                if normalized_source_rows.is_some() {
+                    normalize_angle_bounds(bounds.0, bounds.1)
                 } else {
-                    limit
+                    bounds
                 }
             })
-            .collect();
+            .unzip();
+        // PowerIO synthesizes missing limits for both source and star-lowered
+        // branches before returning the aligned preparation.
+        let fmax = prep.branches.f_max.clone();
         let sw = vec![1.0; m];
 
         // powerio states the objective as `0.5*q*p^2 + c*p + c0`; Tellegen's
         // stored `cq` is the coefficient of `p^2` before its solver writes `2*cq`
         // on the Hessian.
-        let gen_bus = instance.generators.bus_of_gen.clone();
-        let cq: Vec<f64> = instance
+        let gen_bus = prep.generators.bus_of_gen.clone();
+        let cq: Vec<f64> = prep.generators.q.iter().map(|value| value / 2.0).collect();
+        let cl = prep.generators.c.clone();
+        let cc = prep.generators.c0.clone();
+        let piecewise_costs = prep
             .generators
-            .q
-            .iter()
-            .map(|value| value / 2.0)
-            .collect();
-        let cl = instance.generators.c.clone();
-        let cc = instance.generators.c0.clone();
-        let gmax = instance.generators.pmax.clone();
-        let gmin = instance.generators.pmin.clone();
+            .piecewise_linear
+            .clone()
+            .into_iter()
+            .map(|cost| cost.map(PiecewiseCost::from_prepared))
+            .collect::<Vec<_>>();
+        let gmax = prep.generators.pmax.clone();
+        let gmin = prep.generators.pmin.clone();
 
         // Shedding cost references the steepest marginal generation cost. Generator
         // bounds and cost columns are not checked for finiteness anywhere upstream,
@@ -280,7 +395,11 @@ impl DcNetwork {
         // objective or (through `0.0 * inf` = NaN, which `f64::max` ignores) collapse
         // the shed price to the floor and quietly shed load that should be served.
         let marginal_cost_ub = (0..k)
-            .map(|i| 2.0 * cq[i] * gmax[i] + cl[i])
+            .map(|i| {
+                piecewise_costs[i]
+                    .as_ref()
+                    .map_or(2.0 * cq[i] * gmax[i] + cl[i], PiecewiseCost::maximum_slope)
+            })
             .filter(|value| value.is_finite())
             .fold(f64::NEG_INFINITY, f64::max)
             .max(1.0);
@@ -295,6 +414,7 @@ impl DcNetwork {
             gen_bus,
             b,
             sw,
+            #[cfg(feature = "sensitivity")]
             shift,
             flow_offset,
             fmax,
@@ -305,22 +425,28 @@ impl DcNetwork {
             cq,
             cl,
             cc,
+            piecewise_costs,
             c_shed,
             demand,
             shunt_conductance,
-            p_shift,
-            fixed_withdrawal,
             ref_bus,
-            allow_shed: true,
-            tau: DEFAULT_TAU,
+            allow_shed: false,
+            objective: prep.objective,
+            generator_capability_active: prep.generators.capability_active,
+            thermal_limit_active: prep.branches.thermal_limit_active,
+            angle_bound_active: prep.branches.angle_bound_active,
             bus_ids,
+            bus_analysis_rows: prep.bus_analysis_rows,
+            bus_source_rows,
             branch_ids,
+            #[cfg(feature = "sensitivity")]
+            branch_identities,
             gen_ids,
             branch_source_rows,
             gen_source_rows,
             bus_uids,
             branch_uids,
-            base_mva: raw.base_mva,
+            base_mva: prep.base_mva,
         })
     }
 
@@ -360,6 +486,14 @@ impl DcNetwork {
         } else {
             0.0
         }
+    }
+
+    /// Evaluate one declared generator cost at `power` in per unit.
+    pub(crate) fn generator_cost(&self, generator: usize, power: f64) -> f64 {
+        self.piecewise_costs[generator].as_ref().map_or_else(
+            || self.cq[generator] * power * power + self.cl[generator] * power + self.cc[generator],
+            |cost| cost.evaluate(power),
+        )
     }
 
     /// Susceptance-weighted Laplacian `B = A' diag(-b .* sw) A` as summed,
@@ -405,9 +539,7 @@ mod tests {
             " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
             " 1 2 0.01 0.1 0 0 0 0 0 0 1 -3 3;",
         );
-        let net = powerio::parse_str(&case, "matpower")
-            .expect("parse")
-            .network;
+        let net = crate::model::parse_matpower(&case).expect("parse");
         let dc = DcNetwork::from_network(&net).expect("build");
 
         // |Z| = hypot(0.01, 0.1); widest separation over the (0.9, 1.1) band box at a
@@ -438,9 +570,7 @@ mod tests {
                 " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
                 &format!(" 1 2 0.01 0.1 0 0 0 0 0 0 1 {amin} {amax};"),
             );
-            let net = powerio::parse_str(&case, "matpower")
-                .expect("parse")
-                .network;
+            let net = crate::model::parse_matpower(&case).expect("parse");
             let dc = DcNetwork::from_network(&net).expect("build");
 
             approx(dc.angmin[0], -DEFAULT_ANGLE_BOUND_PAD);
@@ -453,13 +583,11 @@ mod tests {
 
     #[test]
     fn lowered_three_winding_branches_use_the_sixty_degree_window() {
-        let mut net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse")
-            .network;
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse");
         let mut windings = [1, 2, 3].map(|bus| powerio::Winding::new(powerio::BusId(bus)));
-        windings[0].rate_a = net.base_mva;
-        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
-        net.transformers_3w
+        windings[0].rate_a = net.base_mva();
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva());
+        net.transformers_3w_mut()
             .push(powerio::Transformer3W::new(windings, [impedance; 3]));
 
         let dc = DcNetwork::from_network(&net).expect("build");
@@ -470,8 +598,10 @@ mod tests {
             approx(dc.angmin[branch], -DEFAULT_ANGLE_BOUND_PAD);
             approx(dc.angmax[branch], DEFAULT_ANGLE_BOUND_PAD);
             if branch > 3 {
-                // Equal pairwise impedances lower to r=0.01, x=0.1 on each winding.
-                approx(dc.fmax[branch], 1.1 * 1.1 / 0.01_f64.hypot(0.1));
+                // PowerIO owns star lowering and synthesized limits. Tellegen
+                // checks that every lowered unrated winding receives a finite
+                // positive bound and that raw/normalized construction agrees below.
+                assert!(dc.fmax[branch].is_finite() && dc.fmax[branch] > 0.0);
             }
         }
 
@@ -496,9 +626,7 @@ mod tests {
                 " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
                 " 1 2 0.01 0.1 0 175 175 175 1 15 1 -30 30;",
             );
-        let raw = powerio::parse_str(&text, "matpower")
-            .expect("parse affine case")
-            .network;
+        let raw = crate::model::parse_matpower(&text).expect("parse affine case");
         let normalized = raw.to_normalized().expect("normalize affine case");
         let a = DcNetwork::from_network(&raw).expect("build raw");
         let b = DcNetwork::from_network(&normalized).expect("build normalized");
@@ -511,7 +639,7 @@ mod tests {
         for (left, right) in [
             (&a.demand, &b.demand),
             (&a.shunt_conductance, &b.shunt_conductance),
-            (&a.p_shift, &b.p_shift),
+            (&a.phase_withdrawal(), &b.phase_withdrawal()),
             (&a.b, &b.b),
             (&a.shift, &b.shift),
             (&a.fmax, &b.fmax),
@@ -538,6 +666,10 @@ mod tests {
         assert_eq!(dc.k, 2);
         assert_eq!(dc.bus_ids, vec![1, 2, 3]);
         assert_eq!(dc.branch_ids, vec![1, 2, 3]);
+        assert_eq!(
+            dc.branch_identities,
+            vec!["branches:0", "branches:1", "branches:2"]
+        );
         assert_eq!(dc.gen_ids, vec![1, 2]);
         assert_eq!(dc.branch_source_rows, vec![Some(0), Some(1), Some(2)]);
         assert_eq!(dc.gen_source_rows, vec![Some(0), Some(1)]);
@@ -547,12 +679,39 @@ mod tests {
     }
 
     #[test]
+    fn typed_instance_objective_and_constraint_masks_reach_the_workspace() {
+        use powerio_prob::{ActiveConstraints, ConstraintSelection, Objective};
+
+        let mut network = crate::model::parse_matpower(CASE3).expect("parse case3");
+        network.buses_mut()[1].uid = Some("load-bus".into());
+        network.generators_mut()[0].uid = Some("generator-a".into());
+        network.branches_mut()[0].uid = Some("line-a".into());
+        let mut constraints = ActiveConstraints::default();
+        constraints.generator_capability = ConstraintSelection::None;
+        constraints.thermal_limits = ConstraintSelection::Only(vec!["line-a".into()]);
+        constraints.angle_bounds = ConstraintSelection::None;
+        let instance = DcOpfInstance::from_network(network)
+            .expect("instance")
+            .with_objective(Objective::none())
+            .with_constraints(constraints);
+
+        let model = DcNetwork::from_instance(&instance).expect("workspace");
+        assert_eq!(model.objective, PreparedObjective::Feasibility);
+        assert_eq!(model.generator_capability_active, vec![false, false]);
+        assert_eq!(model.thermal_limit_active, vec![true, false, false]);
+        assert_eq!(model.angle_bound_active, vec![false, false, false]);
+        assert_eq!(model.bus_uids[1].as_deref(), Some("load-bus"));
+        assert_eq!(model.branch_identities[0], "line-a");
+        assert!(model.cq.iter().all(|value| *value == 0.0));
+        assert!(model.cl.iter().all(|value| *value == 0.0));
+        assert!(model.cc.iter().all(|value| *value == 0.0));
+    }
+
+    #[test]
     fn ids_remain_source_order_after_filtering() {
-        let mut net = powerio::parse_str(crate::model::CASE3, "matpower")
-            .expect("parse case3")
-            .network;
-        net.branches[0].in_service = false;
-        net.generators[0].in_service = false;
+        let mut net = crate::model::parse_matpower(crate::model::CASE3).expect("parse case3");
+        net.branches_mut()[0].in_service = false;
+        net.generators_mut()[0].in_service = false;
 
         let dc = DcNetwork::from_network(&net).expect("build filtered DcNetwork");
 
@@ -573,17 +732,17 @@ mod tests {
                 " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
                 " 1 2 0.01 0.1 0 0 0 0 1 15 1 -30 30;",
             );
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse affine case")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse affine case");
         let mut dc = DcNetwork::from_network(&net).expect("build affine case");
 
         approx(dc.demand[1], 0.9);
         approx(dc.shunt_conductance[1], 0.1);
         approx(dc.flow_offset[0], dc.b[0] * dc.shift[0]);
-        approx(dc.p_shift.iter().sum(), 0.0);
+        let phase = dc.phase_withdrawal();
+        approx(phase.iter().sum(), 0.0);
+        let fixed = dc.current_fixed_withdrawal();
         for i in 0..dc.n {
-            approx(dc.current_fixed_withdrawal()[i], dc.fixed_withdrawal[i]);
+            approx(fixed[i], dc.demand[i] + dc.shunt_conductance[i] + phase[i]);
         }
         assert!(dc.fmax[0].is_finite() && dc.fmax[0] > 0.0);
 
@@ -659,18 +818,49 @@ mod tests {
     }
 
     #[test]
-    fn piecewise_costs_project_to_quadratic() {
+    fn piecewise_costs_remain_exact_segment_lines() {
         let text = CASE3
             .replace(" 2 0 0 3 0.11  5   0;", " 1 0 0 3 0 1 100 3 200 7;")
             .replace(" 2 0 0 3 0.085 1.2 0;", " 1 0 0 2 0 0 100 50;");
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse piecewise case3")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse piecewise case3");
         let dc = DcNetwork::from_network(&net).expect("build piecewise DcNetwork");
-        approx(dc.cq[0], 1.0);
-        approx(dc.cl[0], 1.0);
+        approx(dc.cq[0], 0.0);
+        approx(dc.cl[0], 0.0);
         approx(dc.cq[1], 0.0);
-        approx(dc.cl[1], 50.0);
+        approx(dc.cl[1], 0.0);
+
+        let first = dc.piecewise_costs[0].as_ref().expect("first cost");
+        assert_eq!(first.slopes, vec![2.0, 4.0]);
+        assert_eq!(first.intercepts, vec![1.0, -1.0]);
+        approx(dc.generator_cost(0, 0.5), 2.0);
+        approx(dc.generator_cost(0, 1.5), 5.0);
+
+        let second = dc.piecewise_costs[1].as_ref().expect("second cost");
+        assert_eq!(second.slopes, vec![50.0]);
+        assert_eq!(second.intercepts, vec![0.0]);
+        approx(dc.generator_cost(1, 0.75), 37.5);
+    }
+
+    #[test]
+    fn texas_literal_nonconvex_piecewise_rows_are_rejected() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../data/ACTIVSg7000/Texas7k_20210804.m"
+        );
+        let Ok(text) = std::fs::read_to_string(path) else {
+            eprintln!("skipping Texas piecewise validation: {path} not found");
+            return;
+        };
+        let network = crate::model::parse_matpower(&text).expect("parse Texas7k");
+        let error = match DcNetwork::from_network(&network) {
+            Ok(_) => panic!("Texas7k contains literal decreasing segment slopes"),
+            Err(error) => error,
+        };
+        assert!(
+            error.contains("BUILD.INSTANCE.PIECEWISE_COST_NONCONVEX")
+                && error.contains("nonconvex piecewise linear cost"),
+            "unexpected Texas7k preparation failure: {error}"
+        );
     }
 
     #[test]
@@ -697,9 +887,7 @@ mod tests {
             eprintln!("skipping builds_on_a_real_case: {path} not found");
             return;
         };
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse ACTIVSg200")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse ACTIVSg200");
         let dc = DcNetwork::from_network(&net).expect("build DcNetwork from ACTIVSg200");
 
         assert!(dc.n > 0 && dc.m > 0 && dc.k > 0);
@@ -745,9 +933,7 @@ mod tests {
             "1 3 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
             "1 3 1e-7 1e-6 0 250 250 250 0 0 1 -360 360;",
         );
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse jumper case3")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse jumper case3");
         let dc = DcNetwork::from_network(&net).expect("build DcNetwork with jumper branch");
 
         let z2 = 1e-7_f64.powi(2) + 1e-6_f64.powi(2);

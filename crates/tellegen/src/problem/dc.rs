@@ -13,8 +13,9 @@ use crate::solve::{run, RawSolution, SolveIteration};
 
 use super::{build_opf, OpfFormulation, OpfProgram, ProgramBuilder};
 
-/// Primal and dual solution of the DC OPF, in per unit. `nu_bal` is the LMP
-/// (per-unit $/per-unit-MW); divide by `base_mva` for $/MWh. `objective` includes
+/// Primal and dual solution of the DC OPF, in per unit. `nu_bal` is the
+/// marginal objective change for added demand; divide by `base_mva` to express
+/// it per MW. `objective` includes
 /// each generator's constant (no-load) cost term, so it is comparable to a
 /// reference OPF objective that includes it — the constant does not enter the QP
 /// (it cannot move the argmin), so it is added back on at readout, as the SOCWR
@@ -37,43 +38,73 @@ pub struct DcOpfSolution {
     pub gamma_lb: Vec<f64>,
     pub objective: f64,
     pub iterations: Vec<SolveIteration>,
+    /// Epigraph primal and segment duals aligned with generator columns. These
+    /// private solver records let the implicit KKT mirror the exact piecewise
+    /// linear objective.
+    pub(crate) cost_epigraph: Vec<Option<f64>>,
+    pub(crate) cost_segment_duals: Vec<Option<Vec<f64>>>,
 }
 
 impl DcOpfSolution {
-    /// LMP per bus in $/MWh (`nu_bal / base_mva`), in dense bus-index order.
-    pub fn lmp_usd_per_mwh(&self, base_mva: f64) -> Vec<f64> {
+    /// Marginal objective change per added MW at each bus
+    /// (`nu_bal / base_mva`), in dense bus index order.
+    pub fn nodal_marginal_values(&self, base_mva: f64) -> Vec<f64> {
         self.nu_bal.iter().map(|v| v / base_mva).collect()
     }
 }
 
 /// Row and column offsets of the DC OPF program, derived from the network sizes.
-/// Variables are `x = [va(n), pg(k), f(m), psh(n)]`; constraint rows are the
-/// equalities first (zero cone: power balance, flow definition, reference), then the
-/// inequalities (non-negative cone: line limits, gen limits, shed bounds, phase
-/// limits), each block contiguous. The assembly scatters by these offsets and the
-/// readout reads the duals back by the same offsets, so the two stay in lockstep.
+/// Variables are `x = [va(n), pg(k), f(m), psh(n), t(k_pwl)]`, where `t` holds
+/// one cost epigraph variable for each piecewise generator. Constraint rows are
+/// the equalities first (zero cone: power balance, flow definition, reference),
+/// then the inequalities (nonnegative cone: line limits, generator limits,
+/// shedding bounds, phase limits, piecewise cost segments), each block
+/// contiguous. The assembly scatters by these offsets and the readout uses the
+/// same layout.
 struct OpfLayout {
     n: usize,
     m: usize,
     k: usize,
     n_eq: usize,
     n_ineq: usize,
+    cost_columns: Vec<Option<usize>>,
+    cost_row_starts: Vec<Option<usize>>,
 }
 
 impl OpfLayout {
-    fn dc(n: usize, m: usize, k: usize) -> Self {
+    fn dc(dc: &DcNetwork) -> Self {
+        let (n, m, k) = (dc.n, dc.m, dc.k);
         let n_eq = n + m + 1;
-        let n_ineq = 4 * m + 2 * k + 2 * n;
+        let base_nvar = 2 * n + k + m;
+        let base_n_ineq = 4 * m + 2 * k + 2 * n;
+        let mut next_column = base_nvar;
+        let mut next_cost_row = n_eq + base_n_ineq;
+        let mut cost_columns = Vec::with_capacity(k);
+        let mut cost_row_starts = Vec::with_capacity(k);
+        for cost in &dc.piecewise_costs {
+            if let Some(cost) = cost {
+                cost_columns.push(Some(next_column));
+                cost_row_starts.push(Some(next_cost_row));
+                next_column += 1;
+                next_cost_row += cost.segment_count();
+            } else {
+                cost_columns.push(None);
+                cost_row_starts.push(None);
+            }
+        }
+        let n_ineq = next_cost_row - n_eq;
         OpfLayout {
             n,
             m,
             k,
             n_eq,
             n_ineq,
+            cost_columns,
+            cost_row_starts,
         }
     }
     fn nvar(&self) -> usize {
-        2 * self.n + self.k + self.m
+        2 * self.n + self.k + self.m + self.cost_columns.iter().flatten().count()
     }
     fn ncon(&self) -> usize {
         self.n_eq + self.n_ineq
@@ -123,26 +154,31 @@ impl OpfLayout {
     fn r_phaselb(&self, e: usize) -> usize {
         self.n_eq + 2 * self.m + 2 * self.k + 2 * self.n + self.m + e
     }
+    fn col_cost(&self, generator: usize) -> Option<usize> {
+        self.cost_columns[generator]
+    }
+    fn r_cost_segment(&self, generator: usize, segment: usize) -> Option<usize> {
+        self.cost_row_starts[generator].map(|start| start + segment)
+    }
 }
 
 impl OpfFormulation for Dc {
     fn assemble_opf(&self, dc: &DcNetwork) -> OpfProgram {
-        let lay = OpfLayout::dc(dc.n, dc.m, dc.k);
+        let lay = OpfLayout::dc(dc);
         let mut prog = ProgramBuilder::new(lay.nvar(), lay.ncon());
         let fixed_withdrawal = dc.current_fixed_withdrawal();
 
-        // Objective Hessian P (diagonal): 2 cq on pg, tau^2 on f.
+        // Objective Hessian P (diagonal): 2 cq on pg.
         for j in 0..dc.k {
             prog.quad(lay.col_pg(j), 2.0 * dc.cq[j]);
-        }
-        let tau2 = dc.tau * dc.tau;
-        for e in 0..dc.m {
-            prog.quad(lay.col_f(e), tau2);
         }
 
         // Linear objective q: cl on pg, c_shed on psh.
         for j in 0..dc.k {
             prog.lin(lay.col_pg(j), dc.cl[j]);
+            if let Some(column) = lay.col_cost(j) {
+                prog.lin(column, 1.0);
+            }
         }
         for i in 0..dc.n {
             prog.lin(lay.col_psh(i), dc.c_shed[i]);
@@ -172,28 +208,44 @@ impl OpfFormulation for Dc {
             prog.a(lay.r_fd(e), lay.col_va(fb), -w);
             prog.a(lay.r_fd(e), lay.col_va(tb), w);
             prog.rhs(lay.r_fd(e), dc.current_flow_offset(e));
-            // Line limits: f <= fmax and -f <= fmax
-            prog.a(lay.r_lineub(e), lay.col_f(e), 1.0);
-            prog.rhs(lay.r_lineub(e), dc.fmax[e]);
-            prog.a(lay.r_linelb(e), lay.col_f(e), -1.0);
-            prog.rhs(lay.r_linelb(e), dc.fmax[e]);
-            // Phase-angle-difference limits: sw (A theta) within sw [angmin, angmax]
+            // Inactive inequality rows remain strictly slack (`0 <= 1`) so the
+            // fixed KKT layout stays aligned without introducing a multiplier.
+            if dc.thermal_limit_active[e] {
+                prog.a(lay.r_lineub(e), lay.col_f(e), 1.0);
+                prog.rhs(lay.r_lineub(e), dc.fmax[e]);
+                prog.a(lay.r_linelb(e), lay.col_f(e), -1.0);
+                prog.rhs(lay.r_linelb(e), dc.fmax[e]);
+            } else {
+                prog.rhs(lay.r_lineub(e), 1.0);
+                prog.rhs(lay.r_linelb(e), 1.0);
+            }
+            // Phase angle difference limits: sw (A theta) within sw [angmin, angmax].
             let sw = dc.sw[e];
-            prog.a(lay.r_phaseub(e), lay.col_va(fb), sw);
-            prog.a(lay.r_phaseub(e), lay.col_va(tb), -sw);
-            prog.rhs(lay.r_phaseub(e), sw * dc.angmax[e]);
-            prog.a(lay.r_phaselb(e), lay.col_va(fb), -sw);
-            prog.a(lay.r_phaselb(e), lay.col_va(tb), sw);
-            prog.rhs(lay.r_phaselb(e), -sw * dc.angmin[e]);
+            if dc.angle_bound_active[e] {
+                prog.a(lay.r_phaseub(e), lay.col_va(fb), sw);
+                prog.a(lay.r_phaseub(e), lay.col_va(tb), -sw);
+                prog.rhs(lay.r_phaseub(e), sw * dc.angmax[e]);
+                prog.a(lay.r_phaselb(e), lay.col_va(fb), -sw);
+                prog.a(lay.r_phaselb(e), lay.col_va(tb), sw);
+                prog.rhs(lay.r_phaselb(e), -sw * dc.angmin[e]);
+            } else {
+                prog.rhs(lay.r_phaseub(e), 1.0);
+                prog.rhs(lay.r_phaselb(e), 1.0);
+            }
         }
         // Reference bus: theta[ref] = 0
         prog.a(lay.r_ref(), lay.col_va(dc.ref_bus), 1.0);
         // Generation limits: g <= gmax and -g <= -gmin
         for j in 0..dc.k {
-            prog.a(lay.r_genub(j), lay.col_pg(j), 1.0);
-            prog.rhs(lay.r_genub(j), dc.gmax[j]);
-            prog.a(lay.r_genlb(j), lay.col_pg(j), -1.0);
-            prog.rhs(lay.r_genlb(j), -dc.gmin[j]);
+            if dc.generator_capability_active[j] {
+                prog.a(lay.r_genub(j), lay.col_pg(j), 1.0);
+                prog.rhs(lay.r_genub(j), dc.gmax[j]);
+                prog.a(lay.r_genlb(j), lay.col_pg(j), -1.0);
+                prog.rhs(lay.r_genlb(j), -dc.gmin[j]);
+            } else {
+                prog.rhs(lay.r_genub(j), 1.0);
+                prog.rhs(lay.r_genlb(j), 1.0);
+            }
         }
         // Shedding bounds: 0 <= psh <= max(d, 0) when shedding is allowed, else psh = 0
         // (pinned), so an unservable case reports infeasible instead of shedding.
@@ -202,6 +254,23 @@ impl OpfFormulation for Dc {
             prog.rhs(lay.r_shedub(i), dc.shed_cap(i));
             prog.a(lay.r_shedlb(i), lay.col_psh(i), -1.0);
             prog.rhs(lay.r_shedlb(i), 0.0);
+        }
+
+        // Convex piecewise linear generator costs. One epigraph variable per
+        // such generator is bounded below by every declared segment line.
+        for (generator, cost) in dc.piecewise_costs.iter().enumerate() {
+            let Some(cost) = cost else {
+                continue;
+            };
+            let column = lay.col_cost(generator).expect("piecewise cost column");
+            for segment in 0..cost.segment_count() {
+                let row = lay
+                    .r_cost_segment(generator, segment)
+                    .expect("piecewise cost row");
+                prog.a(row, lay.col_pg(generator), cost.slopes[segment]);
+                prog.a(row, column, -1.0);
+                prog.rhs(row, -cost.intercepts[segment]);
+            }
         }
 
         prog.finish(vec![ZeroConeT(lay.n_eq), NonnegativeConeT(lay.n_ineq)])
@@ -215,11 +284,17 @@ impl OpfFormulation for Dc {
 /// `2 cq g + cl = G_inc' nu_bal` then makes `nu_bal` the (positive) marginal cost,
 /// i.e. the LMP.
 fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
-    let lay = OpfLayout::dc(dc.n, dc.m, dc.k);
+    let lay = OpfLayout::dc(dc);
     let (n, m, k) = (dc.n, dc.m, dc.k);
     let x = &raw.x;
     let z = &raw.z;
-    let cc: f64 = dc.cc.iter().sum();
+    let declared_objective = match dc.objective {
+        powerio_matrix::PreparedObjective::Feasibility => 0.0,
+        powerio_matrix::PreparedObjective::NetworkGeneratorCost => {
+            (0..k).map(|j| dc.generator_cost(j, x[lay.col_pg(j)])).sum()
+        }
+        _ => raw.objective,
+    };
     DcOpfSolution {
         va: (0..n).map(|i| x[lay.col_va(i)]).collect(),
         pg: (0..k).map(|j| x[lay.col_pg(j)]).collect(),
@@ -234,16 +309,32 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
         mu_lb: (0..n).map(|i| z[lay.r_shedlb(i)]).collect(),
         gamma_ub: (0..m).map(|e| z[lay.r_phaseub(e)]).collect(),
         gamma_lb: (0..m).map(|e| z[lay.r_phaselb(e)]).collect(),
-        objective: raw.objective + cc,
+        objective: declared_objective,
         iterations: raw.iterations.clone(),
+        cost_epigraph: (0..k)
+            .map(|generator| lay.col_cost(generator).map(|column| x[column]))
+            .collect(),
+        cost_segment_duals: (0..k)
+            .map(|generator| {
+                dc.piecewise_costs[generator].as_ref().map(|cost| {
+                    (0..cost.segment_count())
+                        .map(|segment| {
+                            z[lay
+                                .r_cost_segment(generator, segment)
+                                .expect("piecewise cost row")]
+                        })
+                        .collect()
+                })
+            })
+            .collect(),
     }
 }
 
 /// Solve the DC OPF for `model`: build the program over [`Dc`], solve it, and read
 /// back the dispatch, flows, shedding, and the full dual set (including the nodal
-/// price `nu_bal`). The uncancellable convenience entry point the tests and the
-/// sensitivity finite-difference checks use. The public solve entry is `api`.
-#[cfg_attr(not(test), allow(dead_code))]
+/// price `nu_bal`). This uncancellable convenience entry exists for numerical
+/// tests; product paths use [`dc_opf_cancellable`].
+#[cfg(test)]
 pub(crate) fn dc_opf(model: &DcNetwork) -> Result<DcOpfSolution, String> {
     dc_opf_cancellable(model, None)
 }
@@ -264,7 +355,15 @@ pub(crate) fn dc_opf_cancellable(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{parse_case3, DcNetwork};
+    use crate::model::{parse_case3, DcNetwork, CASE3};
+
+    fn piecewise_case3() -> DcNetwork {
+        let text = CASE3
+            .replace(" 2 0 0 3 0.11  5   0;", " 1 0 0 3 0 0 50 5 250 405;")
+            .replace(" 2 0 0 3 0.085 1.2 0;", " 1 0 0 2 0 0 270 135;");
+        let network = crate::model::parse_matpower(&text).expect("parse piecewise case3");
+        DcNetwork::from_network(&network).expect("prepare piecewise case3")
+    }
 
     #[test]
     fn uncongested_three_bus_economic_dispatch() {
@@ -285,9 +384,8 @@ mod tests {
         }
 
         // Uncongested: LMPs are positive, near-equal, and at the analytic
-        // marginal price (~11.49 $/MWh; the small flow regularization shifts it
-        // slightly).
-        let lmp = sol.lmp_usd_per_mwh(dc.base_mva);
+        // marginal value (~11.49).
+        let lmp = sol.nodal_marginal_values(dc.base_mva);
         let lo = lmp.iter().cloned().fold(f64::INFINITY, f64::min);
         let hi = lmp.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         assert!(lo > 0.0, "LMP must be positive, got {lo}");
@@ -338,12 +436,48 @@ mod tests {
     }
 
     #[test]
+    fn convex_piecewise_cost_uses_the_declared_epigraph() {
+        let dc = piecewise_case3();
+        let sol = dc_opf(&dc).expect("solve piecewise case3");
+
+        // Generator 0 costs $0.10/MW through 50 MW and $2/MW after it;
+        // generator 1 costs $0.50/MW. The exact optimum is therefore the
+        // declared kink followed by 40 MW from generator 1.
+        assert!((sol.pg[0] - 0.5).abs() < 1e-6, "pg0 = {}", sol.pg[0]);
+        assert!((sol.pg[1] - 0.4).abs() < 1e-6, "pg1 = {}", sol.pg[1]);
+        assert!(
+            (sol.objective - 25.0).abs() < 1e-5,
+            "objective = {}",
+            sol.objective
+        );
+
+        for generator in 0..dc.k {
+            let epigraph = sol.cost_epigraph[generator].expect("epigraph primal");
+            let declared = dc.generator_cost(generator, sol.pg[generator]);
+            assert!(
+                (epigraph - declared).abs() < 1e-6,
+                "generator {generator}: epigraph {epigraph}, declared {declared}"
+            );
+            let dual_sum: f64 = sol.cost_segment_duals[generator]
+                .as_ref()
+                .expect("segment duals")
+                .iter()
+                .sum();
+            assert!(
+                (dual_sum - 1.0).abs() < 1e-6,
+                "generator {generator}: segment dual sum {dual_sum}"
+            );
+        }
+    }
+
+    #[test]
     fn load_shedding_when_capacity_is_short() {
         // Generation capacity (0.8 pu) below the 0.9 pu load forces the optimum to
         // shed: both generators pin at gmax and the 0.1 pu deficit is shed at the
         // load bus, the regime the served cases never reach.
         let mut dc = parse_case3();
         dc.gmax = vec![0.4, 0.4];
+        dc.allow_shed = true;
         let sol = dc_opf(&dc).expect("solve");
 
         let total_pg: f64 = sol.pg.iter().sum();
@@ -377,9 +511,7 @@ mod tests {
             eprintln!("skipping solves_a_real_case: {path} not found");
             return;
         };
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse ACTIVSg200")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse ACTIVSg200");
         let dc = DcNetwork::from_network(&net).expect("build DcNetwork");
         let sol = dc_opf(&dc).expect("solve ACTIVSg200");
 
@@ -392,7 +524,7 @@ mod tests {
             "balance off: pg {total_pg} + psh {total_psh} vs d {total_d}"
         );
         // Every LMP is finite.
-        let lmp = sol.lmp_usd_per_mwh(dc.base_mva);
+        let lmp = sol.nodal_marginal_values(dc.base_mva);
         assert_eq!(lmp.len(), dc.n);
         for v in &lmp {
             assert!(v.is_finite(), "non-finite LMP {v}");
@@ -417,9 +549,7 @@ mod tests {
             );
             return;
         };
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse ACTIVSg500")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse ACTIVSg500");
         let dc = DcNetwork::from_network(&net).expect("build DcNetwork");
         let sol = dc_opf(&dc).expect("solve ACTIVSg500");
 
@@ -455,9 +585,7 @@ mod tests {
             );
             return;
         };
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse CATS")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse CATS");
         let dc = DcNetwork::from_network(&net).expect("build DcNetwork");
         let sol = dc_opf(&dc).expect("solve CATS DC OPF");
 

@@ -18,25 +18,41 @@ license = "MIT"
 repository = "https://github.com/eigenergy/tellegen"
 
 [workspace.dependencies]
-# The 0.9 line (`BalancedNetwork`, per crate error types, `parse_bytes`). The
-# shared lockfile unifies the version across the engine and every adapter.
-powerio = "0.9"
-# The `.pio.json` document model. The wasm ingest path uses its public
-# `ensure_payload_uids` so tellegen stamps the exact row-uid scheme powerio
-# packages carry, instead of duplicating the format here.
-powerio-pkg = "0.9"
+# PowerIO modules, values, problem instances, solutions, and numerical
+# preparation are Tellegen's public data boundary. The shared lockfile keeps
+# one exact PowerIO revision across the engine and every adapter.
+powerio = "1.0"
 # The multiconductor distribution model and its lossless readers for OpenDSS,
-# PMD JSON, and BMOPF JSON. The wasm ingest path uses `parse_bytes` and
-# `MulticonductorNetwork::graph()` to view distribution cases (no solve).
-# Browser ingestion remains filesystem free, so OpenDSS include commands are
-# refused because there is no base directory to confine them to.
-powerio-dist = "0.9"
-# Matrix-free DC/AC OPF problem instances (`DcOpfInstance`/`AcOpfInstance`), the
-# shared owner of case interpretation. Default features only: the `matrix` feature
-# pulls a filesystem bundle writer that has no place in the wasm dependency chain.
-powerio-prob = "0.9"
+# PMD JSON, and BMOPF JSON. The wasm ingest path views distribution cases
+# through `MulticonductorNetwork::to_graph()` (no solve). Browser ingestion
+# remains filesystem free, so OpenDSS include commands are refused because
+# there is no base directory to confine them to.
+powerio-dist = "1.0"
+# Lower level analysis views used only inside Tellegen's private solver and
+# display workspaces. Portable inputs and outputs still cross the `powerio`
+# module facade.
+powerio-tx = "1.0"
+# Typed problem instances and solutions (`DcOpfInstance`, `DcOpfSolution`, ...),
+# the shared owner of case interpretation.
+powerio-prob = "1.0"
+# The shared numerical assembly: `build_dc_opf_preparation` derives the matrix
+# free DC OPF arrays (demand, costs, bounds, limits, mappings) from a
+# `DcOpfInstance`, so the solver formulates over PowerIO's one assembly
+# instead of re-deriving it from the network.
+powerio-matrix = "1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+schemars = { version = "1", features = ["derive"] }
+
+# Reviewed PowerIO 1.0 candidate from eigenergy/powerio#454. Keep the exact
+# revision and the lockfile in the same commit until the 1.0 crates publish.
+[patch.crates-io]
+powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "e4794115202256da442f43ffed01fbb79d043ea9" }
+powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "e4794115202256da442f43ffed01fbb79d043ea9" }
+powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "e4794115202256da442f43ffed01fbb79d043ea9" }
+powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "e4794115202256da442f43ffed01fbb79d043ea9" }
+powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "e4794115202256da442f43ffed01fbb79d043ea9" }
+powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "e4794115202256da442f43ffed01fbb79d043ea9" }
 
 # Shared lints, opted into per crate with `[lints] workspace = true`. Kept modest so a
 # `cargo clippy -- -D warnings` CI gate stays green: clippy's default `all`, plus guards

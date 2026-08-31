@@ -41,15 +41,19 @@ pub struct DcPfSolution {
     /// Recovered reference-bus net injection (per unit): the slack power that
     /// closes the balance, `(B va + shunt + phase_shift)[ref]`. The injection
     /// passed for the reference bus is ignored, so this is computed, not echoed.
+    #[cfg(test)]
     pub ref_injection: f64,
 }
 
 impl DcPfSolution {
     /// Bundle the angles, flows, and recovered slack injection.
-    pub fn new(va: Vec<f64>, f: Vec<f64>, ref_injection: f64) -> Self {
+    pub(crate) fn new(va: Vec<f64>, f: Vec<f64>, ref_injection: f64) -> Self {
+        #[cfg(not(test))]
+        let _ = ref_injection;
         DcPfSolution {
             va,
             f,
+            #[cfg(test)]
             ref_injection,
         }
     }

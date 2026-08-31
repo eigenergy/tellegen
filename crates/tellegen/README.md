@@ -1,24 +1,21 @@
 # tellegen
 
-Differentiable optimal power flow and sensitivities, in Rust.
+`tellegen` solves PowerIO problem instances and computes their implicit
+sensitivities. It supports DC OPF, AC power flow, and the SOCWR relaxation of AC
+OPF. Clarabel solves the convex problems. The same crate builds for native
+targets and WebAssembly.
 
-`tellegen` solves the DC optimal power flow, the AC power flow, and the SOCWR (Jabr) conic
-relaxation of AC OPF, and computes analytical KKT sensitivities for each through one
-unified `sensitivity(operand, parameter)` function.
-Case files are parsed through [`powerio`](https://github.com/eigenergy/powerio).
-Convex problems are solved with the Clarabel solver.
-
-`tellegen` compiles to both native targets and WebAssembly, so it runs on a server and in
-the browser. The full nonlinear AC OPF is on the roadmap; it runs natively, where it can
-use threads.
+PowerIO modules are the portable input and persistence boundary. Tellegen
+converts their networks and problem instances into private dense solver
+workspaces.
 
 ## Status
 
-Early (v0.1.0). DC OPF (locational marginal prices, branch flows, generator dispatch),
-AC power flow voltage sensitivities, and the SOCWR conic relaxation with sensitivities —
-all under the one object-safe `Differentiable` sensitivity contract.
+Version 0.2.0 is under development. DC OPF and AC power flow are included by
+default. The `conic` feature adds SOCWR. The `sensitivity` feature supplies the
+implicit derivative API and the retained `Study` runtime.
 
-Active three-winding transformers are lowered to an equivalent star network for
+Active three winding transformers are lowered to an equivalent star network for
 solving and display. Tellegen currently rejects closed transmission switches,
 in-service storage, and in-service HVDC links instead of silently omitting them;
 open or out-of-service records remain valid metadata. Branch angle limits written
@@ -27,12 +24,19 @@ documented default of ±60 degrees.
 
 ## Use
 
-`solve_json` is the one front door: a `SolveRequest` in, a `SolveResponse` out.
-`capabilities_json` reports which `(formulation, operand, parameter)` combinations a
-build supports.
+`solve_module_json` accepts a stored `powerio.module/1` document and a
+`SolveRequest`. A module holding a balanced network is promoted to the default
+problem instance for the requested formulation. A module holding a declared
+problem instance keeps its objective and active constraint selections.
 
-```rust
-let network_json = powerio::parse_str(case_text, "matpower")?.network.to_json()?;
+```rust,ignore
+use powerio::IntoTypedModule;
+
+let parsed = powerio::parse_text("case.m", case_text, Some("matpower"))?;
+let module: powerio::PioModule<powerio::BalancedNetwork> =
+    parsed.into_typed()?;
+let module = module.map_value(powerio::PioValue::from);
+let module_json = powerio::stored::emit_module(&module)?;
 let request = r#"{
     "formulation": "dcopf",
     "edits": { "deltas": { "2": 50.0 } },
@@ -40,16 +44,26 @@ let request = r#"{
         { "operand": {"Price":"Active"}, "parameter": {"Demand":"Active"} }
     ]
 }"#;
-let out = tellegen::solve_json(&network_json, request)?; // { lmp, flows, dispatch, sensitivities, ... }
+let response_json = tellegen::solve_module_json(&module_json, request)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-For a server that solves the same case repeatedly, build the model once and reuse it:
+`Study` retains one module for repeated preview and commit calls. Each commit
+solves from the retained base module plus the complete current edit set.
 
-```rust
-let net = powerio::parse_str(case_text, "matpower")?.network;
-let dc = tellegen::DcNetwork::from_network(&net)?;       // build once
-let out = tellegen::solve_prebuilt(&dc, &tellegen::SolveRequest::default())?;
+```rust,ignore
+use tellegen::{ElementKey, NetworkEdit, Problem, Study};
+
+let mut study = Study::new(&module_json, Problem::DcOpf)?;
+let response = study.commit(&[NetworkEdit::AddLoad {
+    bus: ElementKey::Id(2),
+    p_mw: 50.0,
+}])?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
+
+`capabilities_json` reports the formulations and sensitivity cells compiled
+into the current build.
 
 ## Build
 

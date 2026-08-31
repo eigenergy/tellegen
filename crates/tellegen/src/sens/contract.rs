@@ -24,6 +24,7 @@ use super::{forward_adjoint, solve_refined, Mode};
 /// Active or reactive power. The orthogonal P/Q sub-axis shared by prices,
 /// dispatch, flows, and demand.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum Power {
     Active,
@@ -32,6 +33,7 @@ pub enum Power {
 
 /// Which end of a branch a flow is measured at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum End {
     From,
@@ -42,6 +44,7 @@ pub enum End {
 /// power flow, or the W-space lift (`Squared` = `|V|²`, `ProductReal` = `Re(Vi Vj*)`,
 /// `ProductImag` = `Im(Vi Vj*)`) for the conic relaxation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum VoltageKind {
     Magnitude,
@@ -53,6 +56,7 @@ pub enum VoltageKind {
 
 /// Which generation-cost coefficient: the quadratic `cq` or the linear `cl`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum CostTerm {
     Quadratic,
@@ -61,6 +65,7 @@ pub enum CostTerm {
 
 /// Conductance `g` or susceptance `b`, the real/imaginary parts of an admittance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum GB {
     Conductance,
@@ -69,6 +74,7 @@ pub enum GB {
 
 /// A min or max bound, e.g. the lower/upper voltage-magnitude limit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum Bound {
     Min,
@@ -77,6 +83,7 @@ pub enum Bound {
 
 /// A transformer control: the tap ratio or the phase-shift angle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum TapKind {
     Ratio,
@@ -91,6 +98,7 @@ pub enum TapKind {
 /// The dialects fold into one vocabulary: DC `Angle` is `Voltage(Angle)`, the conic
 /// squared magnitude `w` is `Voltage(Squared)`, the nodal price is `Price(Active)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum Operand {
     /// Nodal-balance dual (the LMP for active power, the reactive price for
@@ -108,6 +116,7 @@ pub enum Operand {
 /// What a sensitivity is taken *with respect to* — the parameter whose hand-derived
 /// `dK/dp` column drives the solve.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum Parameter {
     /// Bus active/reactive demand `pd` / `qd`, per bus.
@@ -227,8 +236,9 @@ impl Selector {
     }
 }
 
-/// The per-formulation regularization the one [`solve_refined`] needs: a Tikhonov
-/// term `eps`, a refinement sweep count, and the residual tolerance factor. DC is
+/// The per formulation derivative regularization `solve_refined` needs: a
+/// Tikhonov term `eps`, a refinement sweep count, and the residual tolerance
+/// factor. These settings do not alter a formulation's primal objective. DC is
 /// `{1e-10, 8, 1e-12}`, the converged AC Newton system `{0, 0, 0}` (nonsingular,
 /// no regularization), the conic KKT `{1e-9, 12, 1e-13}`.
 #[derive(Clone, Copy, Debug)]
@@ -390,8 +400,8 @@ pub(crate) fn auto_mode(nparam: usize, noperand: usize) -> Mode {
 }
 
 /// Per-unit → served-unit scale for an operand: the factor that converts the engine's
-/// per-unit operand to its engineering unit. Prices divide by the base (`$/MWh =
-/// per-unit/base`), power quantities multiply (`MW/MVAr = per-unit·base`), voltages are
+/// per unit operand to its engineering unit. Nodal objective values divide by
+/// the base, power quantities multiply (`MW/MVAr = per-unit·base`), voltages are
 /// already per-unit.
 fn operand_served_scale(o: Operand, base: f64) -> f64 {
     match o {
@@ -418,16 +428,17 @@ fn parameter_served_scale(p: Parameter, base: f64) -> f64 {
 /// The served-unit rescale for a `(operand, parameter)` cell: `op_scale / par_scale`,
 /// in factors of the system base power. The engine implements `unit_scale` with this;
 /// the api edge multiplies by it. (e.g. `(Price, Demand) = (1/base)/base = 1/base²`,
-/// the `($/MWh)/MW` LMP-vs-demand cell; `(Dispatch, Demand) = base/base = 1`.)
+/// the `(objective_unit/MW)/MW` nodal-value-vs-demand cell;
+/// `(Dispatch, Demand) = base/base = 1`.)
 pub(crate) fn served_unit_scale(o: Operand, p: Parameter, base: f64) -> f64 {
     operand_served_scale(o, base) / parameter_served_scale(p, base)
 }
 
-/// Served-unit symbol for an operand (P-quantities in MW / $/MWh, Q in MVAr / $/MVArh).
+/// Served unit symbol for an operand.
 fn operand_unit(o: Operand) -> &'static str {
     match o {
-        Operand::Price(Power::Active) => "$/MWh",
-        Operand::Price(Power::Reactive) => "$/MVArh",
+        Operand::Price(Power::Active) => "objective_unit/MW",
+        Operand::Price(Power::Reactive) => "objective_unit/MVAr",
         Operand::Dispatch(Power::Active)
         | Operand::Flow {
             power: Power::Active,
@@ -459,8 +470,8 @@ fn parameter_unit(p: Parameter) -> &'static str {
         } => "MVAr",
         Parameter::LineLimit => "MVA",
         Parameter::VoltageBound(_) => "pu^2",
-        Parameter::Cost(CostTerm::Quadratic) => "$/MWh^2",
-        Parameter::Cost(CostTerm::Linear) => "$/MWh",
+        Parameter::Cost(CostTerm::Quadratic) => "objective_unit/MW^2",
+        Parameter::Cost(CostTerm::Linear) => "objective_unit/MW",
         Parameter::SeriesAdmittance(_) | Parameter::ShuntAdmittance(_) => "pu",
         Parameter::Transformer(TapKind::Ratio) => "ratio",
         Parameter::Transformer(TapKind::PhaseShift) => "rad",
@@ -469,7 +480,7 @@ fn parameter_unit(p: Parameter) -> &'static str {
 }
 
 /// The served-unit label `"(operand-unit)/parameter-unit"` for a cell, e.g.
-/// `"($/MWh)/MW"`. The api stamps this when it rescales a result to served units.
+/// `"(objective_unit/MW)/MW"`. The api stamps this when it rescales a result.
 pub(crate) fn served_units_label(o: Operand, p: Parameter) -> String {
     format!("({})/{}", operand_unit(o), parameter_unit(p))
 }
@@ -574,6 +585,91 @@ pub fn sensitivity(
         // label when it rescales (see `served_units_label`).
         units: "per unit".to_string(),
     })
+}
+
+/// `dΦ/d(parameter)` for the scalar `Φ = Σ_i w_i · operand_i`: the implicit
+/// objective pullback. One weighted functional collapses the operand block,
+/// so the whole gradient costs a single adjoint solve `Kᵀ y = sᵀ` contracted
+/// with the requested `dK/dp` columns — never the dense
+/// operands-by-parameters matrix [`sensitivity`] would build.
+///
+/// `weights` addresses operand elements by dense index; an index outside the
+/// operand's range is rejected. The result is per unit like [`sensitivity`];
+/// the caller applies [`Differentiable::unit_scale`] at the served edge.
+pub fn weighted_sensitivity(
+    sys: &dyn Differentiable,
+    operand: Operand,
+    weights: &[(usize, f64)],
+    parameter: Parameter,
+    indices: Option<&[usize]>,
+) -> Result<Vec<f64>, SensError> {
+    let unsupported = || SensError::Unsupported {
+        formulation: sys.formulation(),
+        operand,
+        parameter,
+    };
+    let op_len = sys.operand_len(operand).ok_or_else(unsupported)?;
+    let par_len = sys.parameter_len(parameter).ok_or_else(unsupported)?;
+
+    let cols: Vec<usize> = match indices {
+        Some(ix) => {
+            for &i in ix {
+                if i >= par_len {
+                    return Err(SensError::IndexOutOfRange {
+                        axis: parameter.axis(),
+                        index: i,
+                        len: par_len,
+                    });
+                }
+            }
+            ix.to_vec()
+        }
+        None => (0..par_len).collect(),
+    };
+
+    let selector = sys.operand_selector(operand)?;
+    if selector.map.len() != op_len || selector.elements.len() != op_len {
+        return Err(SensError::Assembly(format!(
+            "operand {operand:?}: operand_len {op_len} disagrees with selector (map {}, elements {})",
+            selector.map.len(),
+            selector.elements.len(),
+        )));
+    }
+    // Element index -> selector position; an operand over a subset (the AC
+    // free buses) makes the two differ, so a weight on an element the
+    // operand does not report is an error rather than a silent zero.
+    let mut position = std::collections::HashMap::with_capacity(op_len);
+    for (pos, &element) in selector.elements.iter().enumerate() {
+        position.insert(element, pos);
+    }
+    let mut functional: Vec<(usize, f64)> = Vec::new();
+    for &(element, weight) in weights {
+        let &pos = position.get(&element).ok_or(SensError::IndexOutOfRange {
+            axis: operand.axis(),
+            index: element,
+            len: op_len,
+        })?;
+        for &(row, row_weight) in &selector.map[pos] {
+            functional.push((row, weight * row_weight));
+        }
+    }
+
+    let dim = sys.dim();
+    let kkt = sys.jacobian();
+    let dkdp = sys.parameter_jacobian(parameter, &cols)?;
+    let spec = sys.solve_spec();
+    let sign = -selector.sign;
+    let values = forward_adjoint(
+        dim,
+        &kkt,
+        dkdp,
+        &[functional],
+        sign,
+        Mode::Adjoint,
+        |t, rhs| solve_refined(dim, t, rhs, spec.eps, spec.refine_iters, spec.tol_factor),
+    )
+    .map_err(SensError::Solve)?;
+    Ok(values.into_iter().next().unwrap_or_default())
 }
 
 #[cfg(test)]

@@ -1,47 +1,47 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use powerio::format::powerworld::{aux_sections, AuxFile, PwdDisplay};
-use powerio::geo::{
-    geo_layer_from_pwd, pwd_mercator_to_lonlat, CoordinateSpace, CoordsKind, GeoGeometry, GeoLayer,
-    GeoMeta, Location,
+use powerio::{
+    apply_substation_points, to_geo_layer_from_aux_text, to_geo_layer_from_pwd,
+    to_lonlat_from_pwd_mercator, BalancedNetwork, CoordinateSpace, CoordsKind, GeoApplyReport,
+    GeoGeometry, GeoLayer, GeoMeta, Location, PwdDisplay,
 };
-use powerio::{BalancedNetwork, Bus, IndexedNetwork};
+use powerio_tx::IndexedNetwork;
 
 pub type Coords = BTreeMap<usize, (f64, f64)>;
 
-/// Bus id => (lon, lat). powerio promotes the substation `Latitude:1`/
-/// `Longitude:1` pair into the typed `Bus.location` at parse, so that is the
-/// primary source. Two PowerWorld shapes stay tellegen-side because upstream
-/// deliberately leaves them in extras: older complete cases write bare
-/// `Latitude`/`Longitude` on every bus row, and later exports point each bus at
-/// the aux `Substation` table through `SubNum`.
-pub fn network_coords(net: &BalancedNetwork) -> Coords {
-    let subs = match aux_sections(net) {
-        Some(Ok(aux)) => substation_coords(&aux),
-        _ => BTreeMap::new(),
-    };
+/// Materialize the substation locations declared by a PowerWorld aux source
+/// onto its parsed network. PowerIO owns the aux table interpretation and the
+/// `SubNum` join; Tellegen only asks it to apply that data before retaining the
+/// module value.
+pub fn apply_aux_substation_locations(
+    net: &mut BalancedNetwork,
+    source_text: &str,
+) -> Result<GeoApplyReport, String> {
+    let layer = to_geo_layer_from_aux_text(source_text).map_err(|error| error.to_string())?;
+    Ok(apply_substation_points(net, &layer))
+}
+
+/// Bus id => (lon, lat). PowerIO promotes both PowerWorld bus coordinate pairs
+/// into `Bus.location`. A complete aux file can instead point each bus at its
+/// `Substation` table through `SubNum`; PowerIO interprets that retained source
+/// and performs the join before Tellegen reads the resulting locations.
+pub fn network_coords(net: &BalancedNetwork, source_text: Option<&str>) -> Coords {
+    let joined = source_text.and_then(|text| {
+        let mut joined = net.clone();
+        apply_aux_substation_locations(&mut joined, text).ok()?;
+        Some(joined)
+    });
     let mut out = BTreeMap::new();
-    for b in &net.buses {
-        let Some(p) = b
-            .location
-            .map(|l| (l.x, l.y))
-            .or_else(|| {
-                match (
-                    extra_f64(b, &["Longitude:1", "Longitude"]),
-                    extra_f64(b, &["Latitude:1", "Latitude"]),
-                ) {
-                    (Some(lon), Some(lat)) => Some((lon, lat)),
-                    _ => None,
-                }
-            })
-            .or_else(|| {
-                extra_f64(b, &["SubNum", "SubNumber"])
-                    .and_then(|n| subs.get(&(n as usize)).copied())
-            })
-        else {
+    for (row, bus) in net.buses().iter().enumerate() {
+        let Some(location) = bus.location.or_else(|| {
+            joined
+                .as_ref()
+                .and_then(|network| network.buses().get(row))
+                .and_then(|joined_bus| joined_bus.location)
+        }) else {
             continue;
         };
-        out.insert(b.id.0, p);
+        out.insert(bus.id.0, (location.x, location.y));
     }
     out
 }
@@ -63,13 +63,13 @@ pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
     // star bus is quadratic in the number of three-winding transformers, and a
     // model-JSON document can declare those by the tens of thousands.
     let stars: BTreeSet<usize> = lowered
-        .buses
+        .buses()
         .iter()
-        .skip(net.buses.len())
+        .skip(net.buses().len())
         .map(|bus| bus.id.0)
         .collect();
     let mut terminals: BTreeMap<usize, Vec<(f64, f64)>> = BTreeMap::new();
-    for branch in lowered.branches.iter().filter(|branch| branch.in_service) {
+    for branch in lowered.branches().iter().filter(|branch| branch.in_service) {
         let (star, terminal) = if stars.contains(&branch.from.0) {
             (branch.from.0, branch.to.0)
         } else if stars.contains(&branch.to.0) {
@@ -82,7 +82,7 @@ pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
         }
     }
 
-    for bus in lowered.buses.iter().skip(net.buses.len()) {
+    for bus in lowered.buses().iter().skip(net.buses().len()) {
         let Some(neighbors) = terminals.get(&bus.id.0) else {
             continue;
         };
@@ -105,7 +105,7 @@ pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
 /// placed; zero leaves the geo meta untouched.
 pub fn stamp_layout(net: &mut BalancedNetwork, coords: &Coords, kind: CoordsKind) -> usize {
     let mut placed = 0;
-    for b in &mut net.buses {
+    for b in net.buses_mut() {
         if let Some(&(lon, lat)) = coords.get(&b.id.0) {
             b.location = Some(Location {
                 x: lon,
@@ -116,7 +116,7 @@ pub fn stamp_layout(net: &mut BalancedNetwork, coords: &Coords, kind: CoordsKind
         }
     }
     if placed > 0 {
-        net.geo = Some(GeoMeta {
+        *net.geo_mut() = Some(GeoMeta {
             space: CoordinateSpace::Geographic { crs: None },
             kind: Some(kind),
         });
@@ -125,17 +125,17 @@ pub fn stamp_layout(net: &mut BalancedNetwork, coords: &Coords, kind: CoordsKind
 }
 
 /// The `.pwd` substation layer projected to approximate longitude/latitude:
-/// [`geo_layer_from_pwd`] lifts the diagram symbols, and each point runs
-/// through powerio's [`pwd_mercator_to_lonlat`] inverse so
+/// [`to_geo_layer_from_pwd`] lifts the diagram symbols, and each point runs
+/// through powerio's [`to_lonlat_from_pwd_mercator`] inverse so
 /// `apply_substation_points` lands geographic coordinates on the case.
 /// Provenance is [`CoordsKind::Derived`]: the positions come from diagram
 /// geometry, not surveyed geography, and hand edited diagrams drift from the
 /// projection.
 pub fn pwd_lonlat_layer(display: &PwdDisplay) -> GeoLayer {
-    let mut layer = geo_layer_from_pwd(display);
+    let mut layer = to_geo_layer_from_pwd(display);
     for f in &mut layer.features {
         if let GeoGeometry::Point([x, y]) = f.geometry {
-            let (lon, lat) = pwd_mercator_to_lonlat(x, y);
+            let (lon, lat) = to_lonlat_from_pwd_mercator(x, y);
             f.geometry = GeoGeometry::Point([lon, lat]);
         }
         f.kind = Some(CoordsKind::Derived);
@@ -148,12 +148,13 @@ pub fn pwd_lonlat_layer(display: &PwdDisplay) -> GeoLayer {
 pub fn complete_coords_for(
     case: &BalancedNetwork,
     aux: &BalancedNetwork,
+    aux_text: Option<&str>,
     source: &str,
 ) -> Result<Coords, String> {
-    let mut coords = network_coords(aux);
+    let mut coords = network_coords(aux, aux_text);
     spread_stacks(&mut coords);
     let missing: Vec<_> = case
-        .buses
+        .buses()
         .iter()
         .map(|b| b.id.0)
         .filter(|id| !coords.contains_key(id))
@@ -202,11 +203,11 @@ pub fn spread_stacks(coords: &mut Coords) {
 pub fn synthetic_layout(net: &BalancedNetwork, bbox: (f64, f64, f64, f64)) -> Coords {
     let view = IndexedNetwork::new(net);
     let net = view.network();
-    let ids: Vec<_> = net.buses.iter().map(|b| b.id.0).collect();
+    let ids: Vec<_> = net.buses().iter().map(|b| b.id.0).collect();
     let index: BTreeMap<usize, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
     let mut seen = BTreeSet::new();
     let mut edges = Vec::new();
-    for br in net.branches.iter().filter(|br| br.in_service) {
+    for br in net.branches().iter().filter(|br| br.in_service) {
         let (Some(&i), Some(&j)) = (index.get(&br.from.0), index.get(&br.to.0)) else {
             continue;
         };
@@ -230,36 +231,6 @@ pub fn synthetic_layout(net: &BalancedNetwork, bbox: (f64, f64, f64, f64)) -> Co
             (id, (x, y))
         })
         .collect()
-}
-
-fn substation_coords(aux: &AuxFile) -> Coords {
-    let mut out = BTreeMap::new();
-    for obj in aux.data_of("Substation") {
-        let (Some(num), Some(lat), Some(lon)) = (
-            obj.field_index("SubNum")
-                .or_else(|| obj.field_index("Number")),
-            obj.field_index("Latitude"),
-            obj.field_index("Longitude"),
-        ) else {
-            continue;
-        };
-        for row in &obj.rows {
-            let field = |i: usize| row.values.get(i).and_then(|v| v.trim().parse::<f64>().ok());
-            let (Some(n), Some(la), Some(lo)) = (field(num), field(lat), field(lon)) else {
-                continue;
-            };
-            out.insert(n as usize, (lo, la));
-        }
-    }
-    out
-}
-
-fn extra_f64(b: &Bus, keys: &[&str]) -> Option<f64> {
-    keys.iter().find_map(|k| match b.extras.get(*k) {
-        Some(serde_json::Value::Number(n)) => n.as_f64(),
-        Some(serde_json::Value::String(s)) => s.trim().parse().ok(),
-        _ => None,
-    })
 }
 
 fn force_layout(n: usize, edges: &[(usize, usize)]) -> Vec<(f64, f64)> {
@@ -370,38 +341,75 @@ mod tests {
             m += &format!(" {i} {} 0.01 0.1 0 100 100 100 0 0 1 -360 360;\n", i + 1);
         }
         m += "];\nmpc.gencost = [\n 2 0 0 3 0.1 5 0;\n];\n";
-        powerio::parse_str(&m, "matpower")
-            .expect("parse chain")
-            .network
+        crate::model::parse_matpower(&m).expect("parse chain")
     }
 
     #[test]
-    fn typed_location_wins_over_extras_fallbacks() {
+    fn network_coords_reads_typed_locations_without_reinterpreting_extras() {
         let mut net = chain_network(3);
-        // A typed location (what powerio promotes from `Latitude:1`/`Longitude:1`)
-        // and a conflicting bare-extras pair on the same bus: the typed one wins.
-        net.buses[0].location = Some(Location {
+        // PowerIO owns coordinate promotion. A typed location is public data;
+        // hand inserted extras are not another coordinate vocabulary.
+        net.buses_mut()[0].location = Some(Location {
             x: -84.4,
             y: 33.7,
             kind: None,
         });
-        net.buses[0]
+        net.buses_mut()[0]
             .extras
             .insert("Latitude".to_owned(), serde_json::json!(1.0));
-        net.buses[0]
+        net.buses_mut()[0]
             .extras
             .insert("Longitude".to_owned(), serde_json::json!(2.0));
-        // Bus 2 has only the bare pair, the shape upstream leaves in extras.
-        net.buses[1]
+        // Bus 2 has only an unmodeled pair in extras.
+        net.buses_mut()[1]
             .extras
             .insert("Latitude".to_owned(), serde_json::json!(35.5));
-        net.buses[1]
+        net.buses_mut()[1]
             .extras
             .insert("Longitude".to_owned(), serde_json::json!(-80.1));
-        let coords = network_coords(&net);
+        let coords = network_coords(&net, None);
         assert_eq!(coords[&1], (-84.4, 33.7));
-        assert_eq!(coords[&2], (-80.1, 35.5));
+        assert!(!coords.contains_key(&2));
         assert!(!coords.contains_key(&3));
+    }
+
+    #[test]
+    fn network_coords_uses_powerio_substation_interpretation() {
+        let mut net = chain_network(3);
+        net.buses_mut()[0]
+            .extras
+            .insert("SubNum".to_owned(), serde_json::json!(12.0));
+        net.buses_mut()[1]
+            .extras
+            .insert("SubNum".to_owned(), serde_json::json!(13));
+        let aux = "DATA (Substation, [SubNum, Latitude, Longitude])\n{\n\
+                   12.0 34.2 -80.05\n\
+                   13 nan -80.10\n\
+                   12 35.0 -81.00\n}\n";
+
+        let coords = network_coords(&net, Some(aux));
+        assert_eq!(coords[&1], (-81.0, 35.0));
+        assert!(!coords.contains_key(&2));
+        assert!(!coords.contains_key(&3));
+    }
+
+    #[test]
+    fn aux_substation_locations_materialize_on_the_network() {
+        let mut net = chain_network(2);
+        net.buses_mut()[0]
+            .extras
+            .insert("SubNum".to_owned(), serde_json::json!(12.0));
+        let aux = "DATA (Substation, [SubNum, Latitude, Longitude])\n{\n\
+                   12 35.0 -81.0\n}\n";
+
+        let report = apply_aux_substation_locations(&mut net, aux).expect("apply substation data");
+        assert_eq!(report.matched_buses, 1);
+        let location = net.buses()[0].location.expect("location materialized");
+        assert_eq!((location.x, location.y), (-81.0, 35.0));
+
+        let json = net.to_json().expect("serialize enriched network");
+        let restored = BalancedNetwork::from_json(&json).expect("restore enriched network");
+        assert_eq!(restored.buses()[0].location, Some(location));
     }
 
     #[test]
@@ -410,11 +418,11 @@ mod tests {
         let coords = BTreeMap::from([(1, (-84.0, 33.0)), (2, (-84.1, 33.1))]);
         let placed = stamp_layout(&mut net, &coords, CoordsKind::Synthetic);
         assert_eq!(placed, 2);
-        let loc = net.buses[0].location.expect("bus 1 placed");
+        let loc = net.buses()[0].location.expect("bus 1 placed");
         assert_eq!((loc.x, loc.y), (-84.0, 33.0));
         assert_eq!(loc.kind, Some(CoordsKind::Synthetic));
-        assert!(net.buses[2].location.is_none());
-        let geo = net.geo.as_ref().expect("geo meta stamped");
+        assert!(net.buses()[2].location.is_none());
+        let geo = net.geo().as_ref().expect("geo meta stamped");
         assert_eq!(geo.kind, Some(CoordsKind::Synthetic));
         assert!(matches!(
             geo.space,
@@ -424,7 +432,7 @@ mod tests {
         // this payload carries the layout.
         let json = net.to_json().expect("to_json");
         let back = BalancedNetwork::from_json(&json).expect("from_json");
-        assert_eq!(back.buses[0].location, net.buses[0].location);
+        assert_eq!(back.buses()[0].location, net.buses()[0].location);
 
         // An empty layout stamps nothing and leaves the meta untouched.
         let mut untouched = chain_network(2);
@@ -432,12 +440,12 @@ mod tests {
             stamp_layout(&mut untouched, &BTreeMap::new(), CoordsKind::Manual),
             0
         );
-        assert!(untouched.geo.is_none());
+        assert!(untouched.geo().is_none());
     }
 
     #[test]
     fn pwd_layer_projects_to_lonlat_with_derived_provenance() {
-        use powerio::format::powerworld::PwdSubstation;
+        use powerio::PwdSubstation;
         let display = PwdDisplay {
             canvas_width: 100,
             canvas_height: 100,
@@ -461,7 +469,7 @@ mod tests {
         let GeoGeometry::Point([lon, lat]) = f.geometry else {
             panic!("expected a point");
         };
-        let (want_lon, want_lat) = pwd_mercator_to_lonlat(-45_000.0, 21_000.0);
+        let (want_lon, want_lat) = to_lonlat_from_pwd_mercator(-45_000.0, 21_000.0);
         assert_eq!((lon, lat), (want_lon, want_lat));
         assert!(lon.abs() <= 180.0 && lat.abs() <= 90.0);
     }
@@ -494,8 +502,8 @@ mod tests {
     fn three_winding_star_is_present_in_layouts_and_geographic_coords() {
         let mut net = chain_network(3);
         let windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
-        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
-        net.transformers_3w
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva());
+        net.transformers_3w_mut()
             .push(powerio::Transformer3W::new(windings, [impedance; 3]));
 
         let bbox = (-82.0, 33.0, -80.0, 35.0);

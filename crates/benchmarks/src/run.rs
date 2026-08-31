@@ -1,21 +1,24 @@
-//! Per-case runner: drive tellegen's public API over one corpus file, time each stage,
-//! compare against the BASELINE reference, and finite-difference the sensitivities.
-//! A `--max-bus` filename cap (reproducible) and a per-case timeout (a safety net)
-//! bound the giant cases; every skip is recorded with its reason.
+//! Per case runner: drive Tellegen's public API over one corpus file, time each
+//! stage, compare against the BASELINE reference, and check sensitivities with
+//! finite differences. The bus limit and per case timeout bound each run; every
+//! skip is recorded with its reason.
 
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use tellegen::{ac_pf, socwr_opf, AcNetwork, AcPolar, DcNetwork, Iterations, SolveRequest};
+use powerio::{
+    AcOpfInstance, AcPfInstance, BalancedNetwork, DcOpfInstance, IntoTypedModule, PioModule,
+};
+use tellegen::{
+    solve_ac_instance, solve_ac_pf_instance, solve_instance, Iterations, Problem, SolveRequest,
+};
 
 use crate::baseline::BaselineRow;
 use crate::corpus::CaseFile;
 use crate::parity;
 use crate::record::{Record, Repro, Status};
 
-/// A DC objective within this relative tolerance of the published value reproduces it. DC
-/// is looser because tellegen's DC carries a small flow regularization the PowerModels DC
-/// baseline does not.
+/// A DC objective within this relative tolerance of the published value reproduces it.
 const DC_MATCH_TOL: f64 = 1e-2;
 /// The SOCWR reproduces the published SOC relaxation when its gap is within this many
 /// percentage points of the published SOC gap (the same Jabr relaxation family).
@@ -29,10 +32,20 @@ pub struct Config {
     /// Skip sensitivity sampling above this bus count (the dense solve is the memory
     /// bottleneck), while still solving the OPF/PF.
     pub max_sens_bus: usize,
-    /// Per-case wall-clock guard.
+    /// Per case wall time limit.
     pub timeout: Duration,
-    /// Whether to finite-difference the sensitivities at all.
+    /// Whether to check the sensitivities with finite differences.
     pub sample_sensitivity: bool,
+}
+
+/// Parse MATPOWER text in memory through the PowerIO module route. The
+/// benchmark retains the typed value as the source for every declared problem.
+fn parse_matpower(text: &str, name: &str) -> Result<PioModule<BalancedNetwork>, String> {
+    let module = powerio::parse_text(name, text, Some("matpower")).map_err(|e| e.to_string())?;
+    let module: powerio::PioModule<powerio::BalancedNetwork> = module
+        .into_typed()
+        .map_err(|mismatch| format!("parsed a {} value", mismatch.actual().as_str()))?;
+    Ok(module)
 }
 
 fn ms(t: Instant) -> f64 {
@@ -40,7 +53,7 @@ fn ms(t: Instant) -> f64 {
 }
 
 /// Run one case under a timeout. The work runs on a detached thread so a hung solve can be
-/// abandoned, but the thread is not cancelled: a timed-out solve keeps running and holding
+/// abandoned, but the thread is not cancelled: a timed out solve keeps running and holding
 /// its working set until it finishes on its own. Cases run in increasing size order, so an
 /// abandoned solve does not perturb the small-case timings, yet its memory is not reclaimed
 /// until it returns — size `--max-*-bus` to skip the giants that would actually leak rather
@@ -78,10 +91,11 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
         }
     };
 
-    // Parse.
+    // Parse through the module route; the timing covers source construction,
+    // parsing, and typed narrowing.
     let t = Instant::now();
-    let net = match powerio::parse_str(&text, "matpower") {
-        Ok(p) => p.network,
+    let module = match parse_matpower(&text, &cf.path.to_string_lossy()) {
+        Ok(module) => module,
         Err(e) => {
             rec.status = Status::Failed;
             rec.note(format!("parse failed: {e}"));
@@ -89,29 +103,32 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
         }
     };
     rec.timings.parse_ms = ms(t);
+    let net = module.value().clone();
+    rec.buses = net.buses().len();
+    rec.branches = net.branches().len();
+    rec.gens = net.generators().len();
 
-    // Build the DC and AC models.
+    // Declare each calculation through PowerIO.
     let t = Instant::now();
-    let dc = DcNetwork::from_network(&net);
+    let dc = DcOpfInstance::from_network(net.clone()).map_err(|e| e.to_string());
     rec.timings.build_dc_ms = ms(t);
     let t = Instant::now();
-    let ac = AcNetwork::from_network(&net);
+    let ac = AcOpfInstance::from_network(net.clone()).map_err(|e| e.to_string());
+    let acpf = AcPfInstance::from_network(net).map_err(|e| e.to_string());
     rec.timings.build_ac_ms = ms(t);
 
-    if dc.is_err() && ac.is_err() {
+    if dc.is_err() && ac.is_err() && acpf.is_err() {
         rec.status = Status::Failed;
         rec.note(format!(
-            "model build failed: dc={:?} ac={:?}",
+            "problem declaration failed: dc={:?} ac={:?} acpf={:?}",
             dc.err(),
-            ac.err()
+            ac.err(),
+            acpf.err()
         ));
         return rec;
     }
 
     if let Ok(dc) = dc.as_ref() {
-        rec.buses = dc.n;
-        rec.branches = dc.m;
-        rec.gens = dc.k;
         run_dc(&mut rec, dc, &baseline);
     } else if let Some(e) = dc.as_ref().err() {
         rec.dc.error = Some(e.to_string());
@@ -119,22 +136,28 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
     }
 
     if let Ok(ac) = ac.as_ref() {
-        rec.buses = ac.n;
-        rec.branches = ac.m;
-        rec.gens = ac.k;
         run_soc(&mut rec, ac, &baseline);
-        run_acpf(&mut rec, ac);
     } else if let Some(e) = ac.as_ref().err() {
         rec.soc.error = Some(e.to_string());
         rec.raise(Status::Caveat);
+    }
+    if let Ok(acpf) = acpf.as_ref() {
+        run_acpf(&mut rec, acpf);
+    } else if let Some(error) = acpf.as_ref().err() {
+        rec.acpf.error = Some(error.to_string());
+        rec.note(format!("AC power flow declaration failed: {error}"));
     }
 
     // Sensitivity parity, gated by size (the dense solve dominates at scale).
     if cfg.sample_sensitivity && cf.buses <= cfg.max_sens_bus {
         let t = Instant::now();
-        rec.parity.push(parity::dc_parity(&net));
+        if let Ok(dc) = dc.as_ref() {
+            rec.parity.push(parity::dc_parity(dc));
+        }
+        if let Ok(acpf) = acpf.as_ref() {
+            rec.parity.push(parity::ac_parity(acpf));
+        }
         if let Ok(ac) = ac.as_ref() {
-            rec.parity.push(parity::ac_parity(ac));
             rec.parity.push(parity::conic_parity(ac));
         }
         for p in &mut rec.parity {
@@ -152,9 +175,9 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
     rec
 }
 
-fn run_dc(rec: &mut Record, dc: &DcNetwork, baseline: &Option<BaselineRow>) {
+fn run_dc(rec: &mut Record, dc: &DcOpfInstance, baseline: &Option<BaselineRow>) {
     let t = Instant::now();
-    let out = match tellegen::solve_prebuilt(dc, &SolveRequest::default()) {
+    let out = match solve_instance(dc, &SolveRequest::default()) {
         Ok(o) => o,
         Err(e) => {
             rec.timings.dc_ms = ms(t);
@@ -179,9 +202,8 @@ fn run_dc(rec: &mut Record, dc: &DcNetwork, baseline: &Option<BaselineRow>) {
     };
     rec.timings.dc_ms = ms(t);
 
-    // `out.objective` already includes each generator's constant cost term
-    // (added back on at readout in `DcOpfSolution`), so it is directly comparable
-    // to the published BASELINE value.
+    // The public response includes each generator's constant cost term, so it
+    // is directly comparable to the published BASELINE value.
     let objective = out.objective.unwrap_or(0.0);
     rec.dc.objective = Some(objective);
     rec.dc.iterations = Some(match &out.iterations {
@@ -208,9 +230,13 @@ fn run_dc(rec: &mut Record, dc: &DcNetwork, baseline: &Option<BaselineRow>) {
 }
 
 /// Solve the SOCWR relaxation and record the gap/bound verdict.
-fn run_soc(rec: &mut Record, ac: &AcNetwork, baseline: &Option<BaselineRow>) {
+fn run_soc(rec: &mut Record, instance: &AcOpfInstance, baseline: &Option<BaselineRow>) {
     let t = Instant::now();
-    let sol = match socwr_opf(ac) {
+    let request = SolveRequest {
+        formulation: Problem::Socwr,
+        ..Default::default()
+    };
+    let sol = match solve_ac_instance(instance, &request) {
         Ok(s) => s,
         Err(e) => {
             rec.timings.soc_ms = ms(t);
@@ -221,34 +247,38 @@ fn run_soc(rec: &mut Record, ac: &AcNetwork, baseline: &Option<BaselineRow>) {
         }
     };
     rec.timings.soc_ms = ms(t);
-    rec.soc.objective = Some(sol.objective);
-    rec.soc.iterations = Some(sol.iterations.len());
+    let objective = sol.objective.unwrap_or(0.0);
+    rec.soc.objective = Some(objective);
+    rec.soc.iterations = Some(match &sol.iterations {
+        Some(Iterations::Ipm(trace)) => trace.len(),
+        _ => 0,
+    });
 
     if let Some(b) = baseline.as_ref() {
         rec.soc.baseline_qc_gap = b.qc_gap;
-        // Bus-count cross-check against PGLib's published node count. (The branch count
-        // legitimately differs — tellegen counts in-service branches, the baseline counts
-        // every edge in the file — so only the bus dimension is cross-checked here.)
-        if b.nodes != 0 && b.nodes != ac.n {
+        // Bus-count cross-check against PGLib's published node count. The branch count
+        // differs because the result lists only branches in the solved analysis view.
+        let solved_buses = sol.w.as_deref().map_or(0, <[_]>::len);
+        if b.nodes != 0 && b.nodes != solved_buses {
             rec.note(format!(
                 "bus count {} differs from BASELINE nodes {}",
-                ac.n, b.nodes
+                solved_buses, b.nodes
             ));
         }
         if let Some(ac_ref) = b.ac {
             rec.soc.baseline_ac = Some(ac_ref);
             // Relaxation lower bound: socwr ≤ AC (up to solver tolerance).
-            let ok = sol.objective <= ac_ref * (1.0 + 1e-4) + 1e-6 * ac_ref.abs().max(1.0);
+            let ok = objective <= ac_ref * (1.0 + 1e-4) + 1e-6 * ac_ref.abs().max(1.0);
             rec.soc.bound_ok = Some(ok);
             if !ok {
                 rec.note(format!(
                     "SOCWR bound violation: socwr {:.4e} > AC {:.4e}",
-                    sol.objective, ac_ref
+                    objective, ac_ref
                 ));
                 rec.raise(Status::Caveat);
             }
             if ac_ref.abs() > 1e-9 {
-                let gap = (ac_ref - sol.objective) / ac_ref * 100.0;
+                let gap = (ac_ref - objective) / ac_ref * 100.0;
                 rec.soc.gap_pct = Some(gap);
                 if let Some(bg) = b.soc_gap {
                     rec.soc.baseline_soc_gap = Some(bg);
@@ -268,21 +298,27 @@ fn run_soc(rec: &mut Record, ac: &AcNetwork, baseline: &Option<BaselineRow>) {
     };
 }
 
-fn run_acpf(rec: &mut Record, ac: &AcNetwork) {
+fn run_acpf(rec: &mut Record, instance: &AcPfInstance) {
     let t = Instant::now();
-    match ac_pf(&AcPolar::new(), ac) {
+    let request = SolveRequest {
+        formulation: Problem::AcPf,
+        ..Default::default()
+    };
+    match solve_ac_pf_instance(instance, &request) {
         Ok(sol) => {
             rec.timings.acpf_ms = ms(t);
             rec.acpf.converged = Some(true);
-            rec.acpf.iterations = Some(sol.iterations);
-            rec.acpf.residual = Some(sol.residual);
+            if let Some(Iterations::Newton { count, residual }) = sol.iterations {
+                rec.acpf.iterations = Some(count);
+                rec.acpf.residual = Some(residual);
+            }
         }
         Err(e) => {
             rec.timings.acpf_ms = ms(t);
             rec.acpf.converged = Some(false);
             rec.acpf.error = Some(e.to_string());
-            // A PGLib OPF setpoint need not be a power flow point under an all-PQ
-            // flat-start Newton solve; record it as a diagnostic, do not downgrade the
+            // A PGLib OPF setpoint need not be a power flow point under an all PQ
+            // flat start Newton solve; record it as a diagnostic, do not downgrade the
             // case (the OPF/sensitivity results stand on their own). `ac_pf` already names
             // the stage in its error, so report it verbatim rather than re-prefixing it.
             rec.note(e.to_string());
@@ -290,9 +326,9 @@ fn run_acpf(rec: &mut Record, ac: &AcNetwork) {
     }
 }
 
-/// Raise a caveat only when adjoint and forward disagree beyond the solve-consistency
+/// Raise a caveat only when adjoint and forward disagree beyond the solve consistency
 /// bound — a genuine sign the differentiated system is off. Finite-difference outliers
-/// are *expected* (a central difference straddling an active-set kink, or the Jabr cone's
+/// are *expected* (a central difference straddling an active set kink, or the Jabr cone's
 /// soft directions), are recorded per class in the parity table, and do not downgrade the
 /// case: the analytic columns are validated by adjoint == forward, not by the FD.
 fn flag_parity(rec: &mut Record) {
