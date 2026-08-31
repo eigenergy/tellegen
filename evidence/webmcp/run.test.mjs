@@ -301,7 +301,10 @@ test("solution evidence is compact and independent of object key order", () => {
     version: 1,
     schema: "powerio.module",
   };
-  assert.deepEqual(summarizeSolutionModule(first), summarizeSolutionModule(second));
+  assert.deepEqual(
+    summarizeSolutionModule(first),
+    summarizeSolutionModule(second),
+  );
 });
 
 const powerioNames = [
@@ -376,9 +379,18 @@ test("native browser evidence matches its checked in media", async () => {
   );
   assert.equal(native.checks.stale_mutation.error.code, "STALE_REVISION");
   assert.equal(native.checks.invalid_mutation.error.code, "EDIT_OUT_OF_RANGE");
-  assert.equal(native.checks.failed_mutation_rollback.passed, true);
-  assert.equal(native.checks.navigation_cancellation.new_session, true);
-  assert.equal(native.checks.navigation_cancellation.proposal_cleared, true);
+  assert.equal(native.checks.rejected_mutation_rollback.passed, true);
+  assert.equal(
+    native.checks.rejected_mutation_rollback.error.code,
+    "EDIT_OUT_OF_RANGE",
+  );
+  assert.equal(
+    native.checks.rejected_mutation_rollback.before.data.revision,
+    native.checks.rejected_mutation_rollback.after.data.revision,
+  );
+  assert.equal(native.checks.navigation_invalidation.in_flight, true);
+  assert.equal(native.checks.navigation_invalidation.new_session, true);
+  assert.equal(native.checks.navigation_invalidation.proposal_cleared, true);
 
   for (const artifact of [...native.screenshots, native.video]) {
     const bytes = await readFile(new URL(artifact.path, repoRoot));
@@ -396,7 +408,10 @@ test("native browser evidence matches its checked in media", async () => {
 
   assert.equal(videoRun.schema, "tellegen.native-webmcp-video-run/1");
   assert.equal(videoRun.video.sha256, native.video.sha256);
-  assert.equal(videoRun.application_before_approval.error.code, "APPROVAL_REQUIRED");
+  assert.equal(
+    videoRun.application_before_approval.error.code,
+    "APPROVAL_REQUIRED",
+  );
   assert.equal(videoRun.application.ok, true);
   assert.equal(videoRun.final_proposal_status, "expired");
   assert.ok(videoRun.frames > 0);

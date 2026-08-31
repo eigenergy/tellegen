@@ -60,8 +60,8 @@ The submission video uses this sequence in the live browser:
    case remains unchanged.
 5. Attempt application before approval and show `APPROVAL_REQUIRED`.
 6. Approve the proposal in the interface and call `apply_capacity_plan`.
-7. Show the committed revision and exact before and after results.
-8. Stage another proposal, edit the case manually, and show that the stale
+7. Show the exact before and after results.
+8. Stage another proposal, commit an edit with `update_case`, and show that the stale
    proposal expires.
 
 Screenshots and video for the submission must come from native WebMCP calls.

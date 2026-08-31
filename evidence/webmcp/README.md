@@ -41,8 +41,8 @@ writes nothing.
 ## Native browser evidence
 
 `native/in-app-browser.json` records the inspect, solve, query, proposal,
-approval, apply, rollback, stale revision, and navigation cancellation checks
-run through native WebMCP in the Codex in-app browser. It includes hashes for
+approval, apply, rejected mutation rollback, stale revision, and navigation
+invalidation checks run through native WebMCP in the Codex in-app browser. It includes hashes for
 the two screenshots and the demo video under `docs/assets/challenge/`.
 `native/video-run.json` records the calls shown in that video, including the
 second proposal that expires after a committed edit.
