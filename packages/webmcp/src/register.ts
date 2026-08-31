@@ -80,7 +80,7 @@ class DynamicGroup {
  * Register the tellegen tools with one lifecycle signal. The general
  * inspection and edit tools register unconditionally. When the adapter carries
  * the planning capability, `propose_capacity_plan` registers while planning is
- * available and `apply_capacity_plan` only while a proposal awaits review.
+ * available and `apply_capacity_plan` only while a current proposal is staged.
  */
 export async function registerTellegenWebMcp(
   modelContext: ModelContextLike,

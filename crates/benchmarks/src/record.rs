@@ -59,8 +59,7 @@ pub struct SocResult {
     pub baseline_soc_gap: Option<f64>,
     /// The published QC relaxation gap, recorded for context (tellegen has no QC path).
     pub baseline_qc_gap: Option<f64>,
-    /// `gap_pct − baseline_soc_gap`: near zero is the expected steelman result (same
-    /// Jabr relaxation family).
+    /// `gap_pct − baseline_soc_gap`: near zero means the two Jabr-family gaps agree.
     pub delta_gap: Option<f64>,
     pub baseline_ac: Option<f64>,
     /// `socwr ≤ AC · (1 + tol)`: the relaxation lower bound property. `false` is a

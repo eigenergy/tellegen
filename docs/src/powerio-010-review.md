@@ -4,8 +4,7 @@ PowerIO 0.10.0 is the baseline for this review. The corrections found while
 integrating Tellegen are being developed in
 [powerio#453](https://github.com/eigenergy/powerio/pull/453) and
 [powerio#454](https://github.com/eigenergy/powerio/pull/454) for PowerIO 1.0.0.
-There is no intermediate 0.11 release. The 0.10.0 tag and its stored files
-remain unchanged.
+The 0.10.0 tag and its stored files remain unchanged.
 
 Tellegen consumes PowerIO modules at its public boundaries. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem instance.

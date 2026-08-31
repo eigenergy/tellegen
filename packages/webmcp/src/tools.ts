@@ -632,7 +632,7 @@ export function createTellegenTools(
 
 /** Build the two capacity planning tools. They are registered dynamically so
  * proposal is available only when the active case supports it, and apply is
- * available only while a matching proposal awaits human approval. */
+ * available only while a matching proposal is staged. Approval gates execution. */
 export function createTellegenPlanningTools(
   planning: TellegenPlanningAdapter,
   options: CreateTellegenToolsOptions = {},

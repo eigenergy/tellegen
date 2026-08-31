@@ -12,8 +12,8 @@
 //!
 //! The objective and decision specifications are plain serde data: stable
 //! PowerIO identities, weights, and bounds. No executable code crosses this
-//! boundary, which is what makes the surface safe to expose to a browser
-//! agent or an MCP tool.
+//! boundary. Browser and MCP adapters validate the same bounded fields before
+//! calling the planner.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -25,7 +25,7 @@ use crate::problem::{dc_opf_cancellable, DcOpfSolution};
 use crate::sens::{weighted_sensitivity, DcKkt, Differentiable, Operand, Parameter, Power};
 use powerio::{BusId, DcOpfInstance};
 
-/// A safe, serializable outer objective over the optimal solve. Every
+/// A serializable outer objective over the optimal solve. Every
 /// variant is a scalar with a well defined gradient through the KKT system;
 /// new observables (generation, line loading, operating cost) add variants
 /// rather than accepting code.

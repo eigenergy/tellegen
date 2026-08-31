@@ -53,10 +53,10 @@ increment, a global line count, and an exact solve budget. The solve budget
 counts the baseline and every accepted or rejected trial.
 
 The planner computes a vector product through the solved DC OPF KKT system,
-orders capacity increases by that local direction, and checks each trial with a
-exact solve. It recomputes the direction after every accepted trial. The result
-is a bounded gradient guided heuristic proposal with the first order prediction
-and exact result for each trial.
+orders capacity increases by that local direction, and checks each trial with an
+exact solve. It recomputes the direction after every accepted trial. Each solved
+trial records its first order prediction and exact result; a failed trial records
+the failure reason without an exact delta.
 
 The proposal changes no electrical state. A visible control grants one use
 approval for its proposal ID and base revision. Applying it repeats every

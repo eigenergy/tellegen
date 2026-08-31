@@ -52,11 +52,11 @@ Correctness is checked against two independent baselines:
 
 ## Reproducibility
 
-The solves are deterministic, so the figures reproduce on a fixed toolchain. The
-harness writes `results.json` (one record per `(case, variant)`) and
-`results.csv`. With its book flag it also writes the markdown snapshot to
-`docs/src/benchmark-results.md`. The repository keeps that generated snapshot,
-and the published figures come from its recorded run. To regenerate it:
+The harness records the source revision, toolchain, dependency versions, host,
+and invocation used for each run. It writes `results.json` (one record per
+`(case, variant)`) and `results.csv`. With its book flag it also writes the
+markdown snapshot to `docs/src/benchmark-results.md`. The repository keeps that
+generated snapshot, and a rerun can be compared with its recorded provenance:
 
 ```sh
 cargo run -p benchmarks --release -- [flags]
