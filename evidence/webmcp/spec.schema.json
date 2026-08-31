@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tellegen.dev/schema/webmcp-challenge-spec-1.json",
+  "title": "Tellegen WebMCP challenge invocation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "case_id", "source", "request"],
+  "properties": {
+    "schema": { "const": "tellegen.webmcp-challenge-spec/1" },
+    "case_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "source": { "type": "string", "minLength": 1 },
+    "expected_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "code"],
+      "properties": {
+        "kind": { "const": "failure" },
+        "code": { "const": "nonconvex_piecewise_generator_cost" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objective",
+        "candidates",
+        "max_increase_per_branch_mw",
+        "budget_mw",
+        "increment_mw",
+        "max_changed_lines",
+        "exact_solve_budget"
+      ],
+      "properties": {
+        "objective": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "weights"],
+          "properties": {
+            "kind": { "const": "weighted_lmp" },
+            "weights": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["bus", "weight"],
+                "properties": {
+                  "bus": { "type": "integer" },
+                  "weight": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "max_increase_per_branch_mw": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "budget_mw": { "type": "number", "exclusiveMinimum": 0 },
+        "increment_mw": { "type": "number", "exclusiveMinimum": 0 },
+        "max_changed_lines": { "type": "integer", "minimum": 1 },
+        "exact_solve_budget": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

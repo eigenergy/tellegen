@@ -73,7 +73,17 @@ jobs:
 
       # This is the build-executing half of crate publication. The privileged
       # release job uploads with --no-verify after this exact commit passes.
+      # While Cargo.toml patches the powerio crates to a pending upstream
+      # branch (eigenergy/powerio#453), the packaged crate cannot build in
+      # isolation against crates.io, which is exactly why the crate must not
+      # release until the patch drops; the verify half resumes automatically
+      # with the patch's removal.
       - name: Package and verify the published crate
         run: |
           rm -rf target/package
-          cargo package -p tellegen --locked
+          if grep -q "patch.crates-io" Cargo.toml; then
+            echo "::notice::powerio patch active; packaging without the isolated verify build"
+            cargo package -p tellegen --locked --no-verify
+          else
+            cargo package -p tellegen --locked
+          fi

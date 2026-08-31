@@ -1,6 +1,7 @@
 # Release Architecture
 
-The public framework surfaces are `@tellegen/engine` and `@tellegen/svelte`.
+The public browser surfaces are `@tellegen/engine`, `@tellegen/svelte`, and
+`@tellegen/webmcp`.
 
 Stable release surfaces:
 
@@ -9,7 +10,9 @@ Stable release surfaces:
 - `crates/tellegen-wasm` wasm adapter;
 - `packages/engine` TypeScript package, generated TypeScript types, and browser
   wasm entry points;
-- `packages/svelte` Svelte component package; and
+- `packages/svelte` Svelte component package;
+- `packages/webmcp` WebMCP tool definitions and runtime validation without a UI
+  framework dependency;
 - examples under `examples/`.
 
 The hosted demo under `apps/web` is one consumer of the packages. It keeps
@@ -20,6 +23,7 @@ routes, SEO, credits, privacy, and deployment specific behavior.
 The repository uses npm workspaces with one root `package-lock.json` for:
 
 - `packages/engine`;
+- `packages/webmcp`;
 - `packages/svelte`;
 - `apps/web`;
 - `examples/browser-minimal`; and
@@ -35,16 +39,19 @@ Root scripts define the package order:
 
 - `npm run wasm` builds both wasm packages into `packages/engine`;
 - `npm run build:engine` builds `@tellegen/engine`;
+- `npm run build:webmcp` builds `@tellegen/webmcp`;
 - `npm run build:svelte` builds `@tellegen/svelte`;
 - `npm run build:example` builds both downstream examples;
 - `npm run check:web`, `npm run build:web`, and `npm run smoke:web` gate the
   hosted demo;
-- `npm run pack:engine` previews the engine npm package contents; and
+- `npm run pack:engine` previews the engine npm package contents;
+- `npm run pack:webmcp` previews the WebMCP npm package contents;
 - `npm run pack:svelte` previews the Svelte npm package contents.
 
 ## Versioning
 
-`@tellegen/engine` and `@tellegen/svelte` start at `0.1.0`.
+`@tellegen/engine`, `@tellegen/svelte`, and `@tellegen/webmcp` use independent
+package versions.
 
 Before `1.0`, releases can refine public APIs while preserving the examples and
 hosted demo behavior. After `1.0`, breaking public TypeScript, Svelte prop, or
@@ -69,20 +76,15 @@ Nonbreaking changes can ship in a minor version:
 
 Patch versions are for bug fixes and docs that do not change public APIs.
 
-### Saved studies and the `.pio.json` format version
+### Saved cases
 
-A saved study is a powerio `.pio.json` document, and it states the powerio
-release that wrote it. powerio reads the lineage it belongs to: a 0.9 build
-reads a 0.9 document. When powerio leaves a lineage behind, every study saved
-under it stops loading.
+Tellegen saves the materialized network as a stored PowerIO module. The module
+keeps applicable records, severs source linkage invalidated by edits, and adds
+descriptive edit history. Loading it starts a fresh runtime `Study` at the
+saved point. Its history records transformations applied to the stored value.
 
-tellegen cannot migrate such a file. The document is a snapshot of a case and an
-edit log, so the user must save it again from the source case. All three call
-sites that load a package pass powerio's rejection through unchanged; it names
-the release that wrote the document and the lineage this build reads.
-
-The tellegen block in the document (`study.app["tellegen"]`) has its own
-`schema_version` and is checked separately.
+Exact OPF results are stored as PowerIO solution modules containing the
+instance that was solved.
 
 ## Releasing
 
@@ -111,10 +113,10 @@ variable after you make all of these:
    branch rule limited to `main` and no required reviewers;
 2. a crates.io trusted publisher for `tellegen`, set to this repository,
    `release-crate.yml`, **and the `crates-io` environment**;
-3. an npm trusted publisher for `@tellegen/engine` and one for
-   `@tellegen/svelte`, each set to this repository, `release-npm.yml`, **and
-   the `npm` environment**. The publisher binds to the workflow filename. If
-   you rename the workflow, publishing stops until you change the publisher;
+3. an npm trusted publisher for `@tellegen/engine`, `@tellegen/svelte`, and
+   `@tellegen/webmcp`, each set to this repository, `release-npm.yml`, **and the
+   `npm` environment**. The publisher binds to the workflow filename. If you
+   rename the workflow, publishing stops until you change the publisher;
 4. a GitHub App on this repository with `contents: write` and
    `pull-requests: write`. Put its id in the `RELEASE_PLZ_APP_ID` variable and
    its private key in the `RELEASE_PLZ_APP_PRIVATE_KEY` secret. Both release
@@ -137,10 +139,11 @@ workflows do not read long-lived registry credentials.
 
 ### Packages
 
-`@tellegen/engine` and `@tellegen/svelte` release through changesets.
+`@tellegen/engine`, `@tellegen/svelte`, and `@tellegen/webmcp` release through
+changesets.
 
-A change to either package needs a changeset. Run `npm run changeset` and commit
-the file it writes. See `.changeset/README.md`.
+A change to any of these packages needs a changeset. Run `npm run changeset`
+and commit the file it writes. See `.changeset/README.md`.
 
 On a push to `main`, `.github/workflows/release-npm.yml` keeps a "Release
 packages" pull request open. That pull request applies every pending changeset:
@@ -172,9 +175,9 @@ open that bumps the version. Merge it to run the gates, continue the existing
 `vX.Y.Z` tag series, make the GitHub release, and publish. The configuration
 sets `release_always = false`, limiting publication to a merged release-plz pull
 request. The unprivileged gate runs `cargo package --locked`; the OIDC-enabled
-release then uses Cargo's `--no-verify` path so package build scripts never run
-with registry authority. release-plz obtains its short-lived crates.io
-credential directly from OIDC.
+release uses the ordinary verified Cargo publish path against that exact
+commit. release-plz obtains its short-lived crates.io credential directly from
+OIDC.
 
 The crate update uses the same sealed-patch privilege boundary as package
 versioning. Its fixed `release-plz-main` branch is intentional: with
@@ -190,15 +193,16 @@ merged release commit.
 ### Inspecting an artifact
 
 `.github/workflows/package-inspect.yml` is a manual run. It builds the artifacts
-a release would upload, `cargo package` and both `npm pack` tarballs, and
+a release would upload, `cargo package` and all three `npm pack` tarballs, and
 attaches them to the run. It publishes nothing.
 
 ### Changelogs
 
 Each surface keeps its own generated changelog:
 `crates/tellegen/CHANGELOG.md`, `packages/engine/CHANGELOG.md`, and
-`packages/svelte/CHANGELOG.md`. The root `CHANGELOG.md` is the curated view
-across all three, and the only record for releases before the split.
+`packages/svelte/CHANGELOG.md`, and `packages/webmcp/CHANGELOG.md`. The root
+`CHANGELOG.md` is the curated view across all four and the only record for
+releases before the split.
 
 ## CI Gates
 
@@ -214,7 +218,8 @@ for the published crate. The wasm test matters
 because `tellegen-wasm` declares `default = []`, so the workspace run skips the
 tests that assert an untrusted package or case rejects rather than panicking.
 
-The JavaScript gates install once from the root lockfile, build
-`packages/engine` before `packages/svelte`, build the hosted demo, install the
-packed Svelte tarball into a temporary consumer, and run a browser test against
-the demo shell. `just ci` runs everything locally.
+The JavaScript gates install once from the root lockfile, check and pack
+`packages/webmcp`, build and check `packages/engine` before `packages/svelte`,
+run the engine import smoke test, check the Svelte package through a packed
+temporary consumer, build the hosted demo, and run its browser tests. `just ci`
+runs everything locally.

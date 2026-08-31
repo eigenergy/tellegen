@@ -6,15 +6,15 @@ geographic files in this release. PowerWorld `.pwd` files describe a one-line
 diagram. tellegen reads coordinates from case files when they exist and reads
 diagram positions from display files when they are dropped.
 
-powerio 0.2.2 added a display API separate from network parsing.
-`parse_display_bytes` and `parse_display_file` return
+PowerIO keeps display data separate from network parsing.
+`powerio::parse_display` and `powerio::parse_display_file` return
 `DisplayData::PowerWorld(PwdDisplay)` for `.pwd` inputs. `parse_file` does not
 accept `.pwd`.
 
 ## Reading `.pwd`
 
 `crates/tellegen-wasm/src/lib.rs` exports `parse_display(bytes, format)` over
-`powerio::parse_display_bytes`. The frontend reads `.pwd` files with
+`powerio::parse_display`. The frontend reads `.pwd` files with
 `arrayBuffer()` and passes a `Uint8Array` to the WebAssembly module.
 
 A dropped `.pwd` creates a local display entry with substation points only. It
@@ -32,7 +32,7 @@ y = K * mercdeg(lat)
 mercdeg(lat) = (180 / pi) * ln(tan(pi / 4 + lat * pi / 360))
 ```
 
-The inverse transform is powerio's `pwd_mercator_to_lonlat`; the wasm
+The inverse transform is PowerIO's `to_lonlat_from_pwd_mercator`; the wasm
 `parse_display` export returns each substation with its projected `lon`/`lat`
 alongside the raw diagram coordinates, so the frontend never reimplements the
 constant. This places checked ACTIVSg diagrams within about 0.02 degrees of
@@ -41,7 +41,7 @@ labels these positions as approximate.
 
 ## The canonical geographic document
 
-powerio 0.7.1 ships the standalone geographic document (`GeoLayer`): element
+PowerIO's standalone geographic document (`GeoLayer`) carries element
 points and branch routes in one coordinate space, keyed by uid, external id,
 name, or the branch endpoint pair, written as a GeoJSON `FeatureCollection`
 with the `powerio_geo` foreign member (`.geo.json`). tellegen consumes it
@@ -51,6 +51,6 @@ through its tolerant reader, applied coordinates land on the network
 layout as a `.geo.json` layer with provenance stamped.
 
 On top of it, a dropped `.pwd` sibling fills missing case coordinates through
-the `SubNum` join (`geo_layer_from_pwd` + `apply_substation_points`, projected
-by `pwd_mercator_to_lonlat`), and layouts computed by tellegen export with
+the `SubNum` join (`to_geo_layer_from_pwd` + `apply_substation_points`, projected
+by `to_lonlat_from_pwd_mercator`), and layouts computed by tellegen export with
 `synthetic`/`manual` provenance.

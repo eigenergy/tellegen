@@ -1,10 +1,10 @@
 # Formulations
 
-tellegen solves the DC power flow and DC OPF, the AC power flow, and the Jabr SOCWR
-relaxation through one interface, each driven from the engine's public API. Every
-formulation returns the same result shape (locational marginal prices,
-voltages, branch flows, and generator dispatch) and exposes
-analytical sensitivities through the contract described in
+Tellegen solves DC power flow, DC OPF, AC power flow, and the Jabr SOCWR
+relaxation through the PowerIO module boundary. The shared response has
+optional fields for the quantities each formulation produces. Economic fields
+are present only when the declared objective gives them that interpretation.
+Supported implicit derivatives use the contract described in
 [the sensitivity contract](sensitivity-contract.md).
 
 ## DC power flow and DC OPF (B–θ)
@@ -12,18 +12,23 @@ analytical sensitivities through the contract described in
 The linearized power flow couples bus angles $\theta$ to injections through the
 susceptance-weighted graph Laplacian
 
-$$ B = A\operatorname{diag}(b)A^\top, \qquad B\theta = p, $$
+$$ B = A^\top\operatorname{diag}(b)A, \qquad B\theta = p, $$
 
-where $A$ is the branch–bus incidence and $b$ the branch susceptances. The OPF
+where $A$ is the branch by bus incidence and $b$ contains positive solver
+weights derived from the public branch susceptances. The OPF
 minimizes generation cost subject to the network balance and the thermal and
-generation limits; it is a convex quadratic program solved with Clarabel. Entry
-point: `solve_network` (or `solve_prebuilt` over a prebuilt `DcNetwork`).
+generation limits; it is a convex quadratic program solved with Clarabel.
+`solve_module_json` is the portable entry. Rust callers that already own a
+`DcOpfInstance` can use `solve_instance`.
 
-Generator costs are quadratic. MATPOWER model 2 polynomial rows are read
-directly; model 1 piecewise linear rows are projected onto a least squares
-quadratic (a least squares line when the quadratic fit is rejected), so
-objectives and prices for such cases are for the fitted curve, not the
-piecewise original.
+MATPOWER model 2 quadratic generator costs are read directly. Convex model 1
+piecewise linear costs use one epigraph variable and one inequality per segment,
+so dispatch, objective values, prices, and supported implicit derivatives refer
+to the declared curve. Malformed and nonconvex model 1 rows are rejected before
+the program is assembled. At a breakpoint or an active set change, the marginal
+value or its derivative need not be unique; the sensitivity API reports the
+local KKT linearization and numerical checks identify stencils that cross a
+different active set.
 
 Branch angle-difference bounds are enforced in radians after normalization.
 MATPOWER's unconstrained `-360`/`360` spelling and an unset `0`/`0` pair become
@@ -42,7 +47,7 @@ $\partial(P, Q)/\partial(\theta, V_m)$. Buses are typed slack / PV / PQ (PV and
 slack buses hold the generator voltage setpoint; PQ buses solve for both angle and
 magnitude), and the solve takes damped steps with a backtracking line search from
 the setpoint start plus a few perturbations, keeping the lowest-residual result.
-Entry point: `ac_pf`.
+Select `acpf` in `solve_module_json`.
 
 ## Conic SOCWR (Jabr)
 
@@ -53,8 +58,8 @@ $w^i_{ij} = \Im(V_i \overline{V_j})$, with the rotated cone coupling
 $$ (w^r_{ij})^2 + (w^i_{ij})^2 \le w_i w_j. $$
 
 The relaxation is a convex lower bound on AC OPF, solved with Clarabel's
-second-order cone support. Entry point: `socwr_opf`.
+second-order cone support. It uses the same exact quadratic and convex piecewise
+linear generator cost representation as DC OPF. Select `socwr` in
+`solve_module_json`.
 
-Every formulation is pure Rust and compiles to WebAssembly, so the same code runs on a
-server and in the browser. The full nonlinear AC OPF (an interior-point program) is on the
-roadmap; it runs natively, where it can use threads.
+These formulations compile to native Rust and WebAssembly.

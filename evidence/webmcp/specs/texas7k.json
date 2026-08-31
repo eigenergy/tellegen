@@ -1,0 +1,32 @@
+{
+  "schema": "tellegen.webmcp-challenge-spec/1",
+  "case_id": "texas7k",
+  "source": "data/ACTIVSg7000/Texas7k_20210804.m",
+  "expected_outcome": {
+    "kind": "failure",
+    "code": "nonconvex_piecewise_generator_cost"
+  },
+  "request": {
+    "objective": {
+      "kind": "weighted_lmp",
+      "weights": [
+        { "bus": 111078, "weight": 1.0 },
+        { "bus": 110449, "weight": 1.0 },
+        { "bus": 110127, "weight": 1.0 }
+      ]
+    },
+    "candidates": [
+      "branches:711",
+      "branches:132",
+      "branches:716",
+      "branches:157",
+      "branches:712",
+      "branches:1589"
+    ],
+    "max_increase_per_branch_mw": 100.0,
+    "budget_mw": 100.0,
+    "increment_mw": 25.0,
+    "max_changed_lines": 2,
+    "exact_solve_budget": 8
+  }
+}

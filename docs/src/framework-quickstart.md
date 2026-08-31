@@ -80,7 +80,7 @@ if (!format) throw new Error("unsupported case format");
 
 const bytes = new TextEncoder().encode(caseText);
 const parsed = await ingestCase(bytes, format);
-const study = await createStudy(parsed.network_json, "dcopf");
+const study = await createStudy(parsed.module_json, "dcopf");
 
 try {
   const preview = await study.preview({ 3: 25 });
@@ -102,7 +102,7 @@ The call sequence is:
 
 ## JSON Drops
 
-Use `ingestJsonDrop` when a `.json` file may be a saved study, model JSON, or a
+Use `ingestJsonDrop` when a `.json` file may be a PowerIO module, model JSON, or a
 transmission or distribution document:
 
 ```ts

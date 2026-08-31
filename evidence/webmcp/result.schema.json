@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tellegen.dev/schema/webmcp-challenge-result-1.json",
+  "title": "Tellegen WebMCP challenge result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "case_id",
+    "reproducible",
+    "invocation",
+    "software",
+    "source",
+    "spec_sha256",
+    "request",
+    "expected_outcome",
+    "status"
+  ],
+  "oneOf": [
+    {
+      "properties": { "status": { "const": "success" } },
+      "required": ["plan", "solution"],
+      "not": { "required": ["failure"] }
+    },
+    {
+      "properties": { "status": { "const": "failure" } },
+      "required": ["failure"],
+      "allOf": [
+        { "not": { "required": ["plan"] } },
+        { "not": { "required": ["solution"] } }
+      ]
+    }
+  ],
+  "properties": {
+    "schema": { "const": "tellegen.webmcp-challenge-result/1" },
+    "case_id": { "type": "string" },
+    "reproducible": { "type": "boolean" },
+    "invocation": { "type": "string" },
+    "software": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tellegen_revision",
+        "tellegen_tree",
+        "powerio_revision",
+        "powerio_version",
+        "powerio_source",
+        "powerio_release_tag",
+        "powerio_lock_checksums",
+        "cargo_lock_sha256"
+      ],
+      "properties": {
+        "tellegen_revision": { "$ref": "#/$defs/sha1" },
+        "tellegen_tree": { "$ref": "#/$defs/sha1" },
+        "powerio_revision": { "$ref": "#/$defs/sha1" },
+        "powerio_version": { "type": "string" },
+        "powerio_source": { "type": "string" },
+        "powerio_release_tag": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$" }
+          ]
+        },
+        "powerio_lock_checksums": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/sha256" }
+        },
+        "cargo_lock_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "byte_length", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "byte_length": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "spec_sha256": { "$ref": "#/$defs/sha256" },
+    "request": { "$ref": "spec.schema.json#/properties/request" },
+    "expected_outcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "success" } }
+        },
+        { "$ref": "spec.schema.json#/properties/expected_outcome" }
+      ]
+    },
+    "status": { "enum": ["success", "failure"] },
+    "plan": {
+      "type": "object",
+      "required": [
+        "baseline",
+        "exact_verified_result",
+        "baseline_phi",
+        "final_phi",
+        "proposal",
+        "spent_budget_mw",
+        "iterations",
+        "exact_solves"
+      ]
+    },
+    "solution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "version",
+        "kind",
+        "termination",
+        "declared_objective",
+        "canonical_json_sha256"
+      ],
+      "properties": {
+        "schema": { "const": "powerio.module" },
+        "version": { "const": 1 },
+        "kind": { "const": "dc_opf_solution" },
+        "termination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "converged" } }
+        },
+        "declared_objective": { "type": "number" },
+        "canonical_json_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "stage", "message", "exact_solves_completed"],
+      "properties": {
+        "code": { "const": "nonconvex_piecewise_generator_cost" },
+        "stage": { "const": "instance_preparation" },
+        "message": { "type": "string", "minLength": 1 },
+        "exact_solves_completed": { "const": 0 }
+      }
+    }
+  },
+  "$defs": {
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

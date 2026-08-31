@@ -41,9 +41,9 @@ iteration count, then scale into a small footprint around the user's chosen map
 point. The fit into that footprint uses one uniform scale for both axes, so a
 long feeder keeps its aspect ratio instead of stretching to a square. Once
 placed, the local network solves in browser WebAssembly, and the layout is
-stamped into the network payload (`Bus.location`, provenance `synthetic`), so
-saved study packages and exports carry the placement and the panel can download
-it as a `.geo.json` layer.
+stamped into the retained PowerIO module (`Bus.location`, provenance
+`synthetic`), so saved modules and case exports carry the placement and the
+panel can download it as a `.geo.json` layer.
 
 ## Determinism
 

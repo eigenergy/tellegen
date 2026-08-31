@@ -34,6 +34,8 @@ with tempfile.TemporaryDirectory() as directory:
         (" M", "package-lock.json"),
         (" M", "packages/engine/package.json"),
         (" M", "packages/engine/CHANGELOG.md"),
+        (" M", "packages/webmcp/package.json"),
+        (" M", "packages/webmcp/CHANGELOG.md"),
         (" D", ".changeset/safe-change.md"),
     ]
     for status, path in npm_entries:
@@ -45,6 +47,14 @@ with tempfile.TemporaryDirectory() as directory:
         lambda: validator.validate_npm(
             [entry for entry in npm_entries if not entry[1].endswith("package.json")]
         )
+    )
+    validator.validate_npm(
+        [
+            (" M", "package-lock.json"),
+            (" M", "packages/webmcp/package.json"),
+            (" M", "packages/webmcp/CHANGELOG.md"),
+            (" D", ".changeset/webmcp-change.md"),
+        ]
     )
 
     crate_entries = [
