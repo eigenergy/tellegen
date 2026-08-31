@@ -9,7 +9,7 @@ result.
 Each result records:
 
 - the SHA256 digests of the MATPOWER source, invocation spec, and lockfile;
-- the exact Tellegen commit and tree and the PowerIO release commit;
+- the exact Tellegen commit and tree and the reviewed PowerIO commit;
 - the complete `CapacityPlanSpec` request;
 - for success, the exact baseline and proposed summaries, every accepted and
   rejected trial, plus the kind, termination, objective, and canonical JSON
@@ -39,3 +39,11 @@ commit mapping. Both paths retain `powerio_revision` in the result.
 
 Publish a numerical case claim only when its result file comes from a clean run
 and validates against `evidence/webmcp/result.schema.json`.
+
+## Native browser record
+
+`evidence/webmcp/native/in-app-browser.json` records the native WebMCP calls,
+transaction checks, browser session change, and artifact hashes. Its screenshots
+show the pending and applied proposal states. `video-run.json` records the calls
+shown in the native browser video, ending with a second proposal expired by a
+committed edit. The manifests name the exact Tellegen tree and PowerIO commit.

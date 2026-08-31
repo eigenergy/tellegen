@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -17,6 +18,10 @@ const cats = JSON.parse(
 const texas = JSON.parse(
   await readFile(new URL("./specs/texas7k.json", import.meta.url), "utf8"),
 );
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
 
 function validPlanResponse() {
   const [first, second, rejected] = cats.request.candidates;
@@ -343,4 +348,56 @@ test("PowerIO provenance ties a checksummed registry release to its commit", () 
     Object.keys(resolved.powerio_lock_checksums).length,
     powerioNames.length,
   );
+});
+
+test("native browser evidence matches its checked in media", async () => {
+  const native = JSON.parse(
+    await readFile(
+      new URL("./native/in-app-browser.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const videoRun = JSON.parse(
+    await readFile(new URL("./native/video-run.json", import.meta.url), "utf8"),
+  );
+  const repoRoot = new URL("../../", import.meta.url);
+
+  assert.equal(native.schema, "tellegen.native-webmcp-evidence/1");
+  assert.equal(native.software.powerio_version, "1.0.0");
+  assert.equal(native.checks.missing_callback_options.passed, true);
+  assert.equal(
+    native.checks.application_before_approval.error.code,
+    "APPROVAL_REQUIRED",
+  );
+  assert.equal(native.checks.application.ok, true);
+  assert.ok(
+    native.checks.application.data.after.objective <
+      native.checks.application.data.before.objective,
+  );
+  assert.equal(native.checks.stale_mutation.error.code, "STALE_REVISION");
+  assert.equal(native.checks.invalid_mutation.error.code, "EDIT_OUT_OF_RANGE");
+  assert.equal(native.checks.failed_mutation_rollback.passed, true);
+  assert.equal(native.checks.navigation_cancellation.new_session, true);
+  assert.equal(native.checks.navigation_cancellation.proposal_cleared, true);
+
+  for (const artifact of [...native.screenshots, native.video]) {
+    const bytes = await readFile(new URL(artifact.path, repoRoot));
+    assert.equal(sha256(bytes), artifact.sha256, artifact.path);
+    if (artifact.path.endsWith(".png")) {
+      assert.deepEqual(
+        [...bytes.subarray(0, 8)],
+        [137, 80, 78, 71, 13, 10, 26, 10],
+        artifact.path,
+      );
+    } else if (artifact.path.endsWith(".mp4")) {
+      assert.equal(bytes.subarray(4, 8).toString("ascii"), "ftyp");
+    }
+  }
+
+  assert.equal(videoRun.schema, "tellegen.native-webmcp-video-run/1");
+  assert.equal(videoRun.video.sha256, native.video.sha256);
+  assert.equal(videoRun.application_before_approval.error.code, "APPROVAL_REQUIRED");
+  assert.equal(videoRun.application.ok, true);
+  assert.equal(videoRun.final_proposal_status, "expired");
+  assert.ok(videoRun.frames > 0);
 });
