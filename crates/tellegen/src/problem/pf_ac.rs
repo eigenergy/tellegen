@@ -66,8 +66,10 @@ pub struct AcPfLayout {
 /// loop, which converts PV buses to PQ as their generators hit their reactive limits.
 pub(crate) fn default_kinds(net: &AcNetwork) -> Vec<BusKind> {
     let mut kind = vec![BusKind::Pq; net.n];
-    for &b in &net.gen_bus {
-        kind[b] = BusKind::Pv;
+    for (bus, &is_pv) in net.pf_pv.iter().enumerate() {
+        if is_pv {
+            kind[bus] = BusKind::Pv;
+        }
     }
     kind[net.slack] = BusKind::Slack;
     kind
@@ -76,7 +78,8 @@ pub(crate) fn default_kinds(net: &AcNetwork) -> Vec<BusKind> {
 impl AcPfLayout {
     /// Build the layout for `net` under the default typing (slack / PV at generator buses /
     /// PQ elsewhere).
-    pub fn new(net: &AcNetwork) -> Self {
+    #[cfg(test)]
+    pub(crate) fn new(net: &AcNetwork) -> Self {
         Self::with_kinds(net, &default_kinds(net))
     }
 
@@ -717,9 +720,7 @@ mpc.gencost = [
 ";
 
     fn parse_case2() -> AcNetwork {
-        let net = powerio::parse_str(CASE2, "matpower")
-            .expect("parse case2")
-            .network;
+        let net = crate::model::parse_matpower(CASE2).expect("parse case2");
         AcNetwork::from_network(&net).expect("build AcNetwork")
     }
 
@@ -863,9 +864,7 @@ mpc.gencost = [
 ";
 
     fn parse_case3qlim() -> AcNetwork {
-        let net = powerio::parse_str(CASE3QLIM, "matpower")
-            .expect("parse case3qlim")
-            .network;
+        let net = crate::model::parse_matpower(CASE3QLIM).expect("parse case3qlim");
         AcNetwork::from_network(&net).expect("build AcNetwork")
     }
 

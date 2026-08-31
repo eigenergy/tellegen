@@ -29,8 +29,8 @@ use super::{
 /// Strict-complementarity / structural-zero-shed threshold.
 const SNAP_TOL: f64 = 1e-6;
 
-/// Tikhonov perturbation applied to make the (singular) KKT factorization well
-/// posed.
+/// Tikhonov perturbation for the derivative factorization only. It does not
+/// alter the primal program or its declared objective.
 const TIKHONOV_EPS: f64 = 1e-10;
 
 /// `DcNetwork::shed_cap(i) < SNAP_TOL`: the bus has no curtailable load (or shedding
@@ -43,14 +43,15 @@ fn is_fixed_zero_shed(dc: &DcNetwork, i: usize) -> bool {
 }
 
 /// Offsets of each block in the flattened KKT variable vector, in the order:
-/// `[va, pg, f, psh, lam_lb, lam_ub, gamma_lb, gamma_ub, rho_lb, rho_ub,
-/// mu_lb, mu_ub, nu_bal, nu_flow, eta]`. Total `5n + 6m + 3k + 1`.
+/// `[va, pg, f, psh, cost_epigraph, lam_lb, lam_ub, gamma_lb, gamma_ub,
+/// rho_lb, rho_ub, mu_lb, mu_ub, cost_segment_dual, nu_bal, nu_flow, eta]`.
 struct KktIdx {
     dim: usize,
     va: usize,
     pg: usize,
     f: usize,
     psh: usize,
+    cost: Vec<Option<usize>>,
     lam_lb: usize,
     lam_ub: usize,
     gamma_lb: usize,
@@ -59,13 +60,15 @@ struct KktIdx {
     rho_ub: usize,
     mu_lb: usize,
     mu_ub: usize,
+    cost_segment_dual: Vec<Option<usize>>,
     nu_bal: usize,
     nu_flow: usize,
     eta: usize,
 }
 
 impl KktIdx {
-    fn new(n: usize, m: usize, k: usize) -> Self {
+    fn new(dc: &DcNetwork) -> Self {
+        let (n, m, k) = (dc.n, dc.m, dc.k);
         let mut o = 0usize;
         let mut take = |len: usize| {
             let start = o;
@@ -76,6 +79,11 @@ impl KktIdx {
         let pg = take(k);
         let f = take(m);
         let psh = take(n);
+        let cost = dc
+            .piecewise_costs
+            .iter()
+            .map(|cost| cost.as_ref().map(|_| take(1)))
+            .collect();
         let lam_lb = take(m);
         let lam_ub = take(m);
         let gamma_lb = take(m);
@@ -84,6 +92,11 @@ impl KktIdx {
         let rho_ub = take(k);
         let mu_lb = take(n);
         let mu_ub = take(n);
+        let cost_segment_dual = dc
+            .piecewise_costs
+            .iter()
+            .map(|cost| cost.as_ref().map(|cost| take(cost.segment_count())))
+            .collect();
         let nu_bal = take(n);
         let nu_flow = take(m);
         let eta = take(1);
@@ -93,6 +106,7 @@ impl KktIdx {
             pg,
             f,
             psh,
+            cost,
             lam_lb,
             lam_ub,
             gamma_lb,
@@ -101,6 +115,7 @@ impl KktIdx {
             rho_ub,
             mu_lb,
             mu_ub,
+            cost_segment_dual,
             nu_bal,
             nu_flow,
             eta,
@@ -145,6 +160,24 @@ fn snap(dc: &DcNetwork, sol: &DcOpfSolution) -> DcOpfSolution {
             s.mu_ub[i] = 0.0;
         }
     }
+    for (generator, cost) in dc.piecewise_costs.iter().enumerate() {
+        let Some(cost) = cost else {
+            continue;
+        };
+        let epigraph = s.cost_epigraph[generator].expect("piecewise epigraph primal");
+        let duals = s.cost_segment_duals[generator]
+            .as_mut()
+            .expect("piecewise segment duals");
+        for (segment, dual) in duals.iter_mut().enumerate() {
+            let slack =
+                epigraph - cost.slopes[segment] * s.pg[generator] - cost.intercepts[segment];
+            if slack > SNAP_TOL {
+                *dual = 0.0;
+            } else {
+                *dual = dual.max(0.0);
+            }
+        }
+    }
     s
 }
 
@@ -182,7 +215,6 @@ fn susceptance_cols(dc: &DcNetwork) -> Vec<Vec<(usize, f64)>> {
 /// column by column. `s` must already be snapped to strict complementarity.
 fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, usize, f64)> {
     let (n, m, k) = (dc.n, dc.m, dc.k);
-    let tau2 = dc.tau * dc.tau;
     let inc = incidence_by_bus(dc);
     let gens = gens_by_bus(dc);
     let bcols = susceptance_cols(dc);
@@ -221,12 +253,20 @@ fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, 
         e!(idx.rho_lb + j, col, s.rho_lb[j]);
         e!(idx.rho_ub + j, col, -s.rho_ub[j]);
         e!(idx.nu_bal + dc.gen_bus[j], col, 1.0);
+        if let Some(cost) = &dc.piecewise_costs[j] {
+            let duals = s.cost_segment_duals[j]
+                .as_ref()
+                .expect("piecewise segment duals");
+            let row_start = idx.cost_segment_dual[j].expect("piecewise dual rows");
+            for (segment, &dual) in duals.iter().enumerate() {
+                e!(row_start + segment, col, -dual * cost.slopes[segment]);
+            }
+        }
     }
 
-    // f columns: flow regularization, line-bound stationarity, flow def.
+    // f columns: line-bound stationarity and flow definition.
     for e in 0..m {
         let col = idx.f + e;
-        e!(idx.f + e, col, tau2);
         e!(idx.lam_lb + e, col, s.lam_lb[e]);
         e!(idx.lam_ub + e, col, -s.lam_ub[e]);
         e!(idx.nu_flow + e, col, 1.0);
@@ -243,6 +283,21 @@ fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, 
             e!(idx.mu_ub + i, col, -s.mu_ub[i]);
         }
         e!(idx.nu_bal + i, col, 1.0);
+    }
+
+    // Piecewise cost epigraph primal columns.
+    for (generator, cost) in dc.piecewise_costs.iter().enumerate() {
+        let Some(_) = cost else {
+            continue;
+        };
+        let col = idx.cost[generator].expect("piecewise cost primal");
+        let row_start = idx.cost_segment_dual[generator].expect("piecewise dual rows");
+        let duals = s.cost_segment_duals[generator]
+            .as_ref()
+            .expect("piecewise segment duals");
+        for (segment, &dual) in duals.iter().enumerate() {
+            e!(row_start + segment, col, dual);
+        }
     }
 
     // lambda (line-bound) columns.
@@ -295,6 +350,25 @@ fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, 
             e!(idx.mu_lb + i, col, s.psh[i]);
         }
     }
+
+    // Piecewise segment dual columns: segment-line contributions to pg and
+    // epigraph stationarity, plus segment complementarity.
+    for (generator, cost) in dc.piecewise_costs.iter().enumerate() {
+        let Some(cost) = cost else {
+            continue;
+        };
+        let epigraph = s.cost_epigraph[generator].expect("piecewise epigraph primal");
+        let cost_row = idx.cost[generator].expect("piecewise cost primal");
+        let dual_start = idx.cost_segment_dual[generator].expect("piecewise dual rows");
+        for segment in 0..cost.segment_count() {
+            let col = dual_start + segment;
+            e!(idx.pg + generator, col, cost.slopes[segment]);
+            e!(cost_row, col, -1.0);
+            let slack =
+                epigraph - cost.slopes[segment] * s.pg[generator] - cost.intercepts[segment];
+            e!(dual_start + segment, col, slack);
+        }
+    }
     for i in 0..n {
         let col = idx.mu_ub + i;
         e!(idx.psh + i, col, 1.0);
@@ -333,14 +407,11 @@ fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, 
 }
 
 /// The flow-definition equality dual `nu_flow`, recovered from the `f`
-/// stationarity row `tau^2 f + lam_ub - lam_lb - nu_flow = 0`. The solve carries
+/// stationarity row `lam_ub - lam_lb - nu_flow = 0`. The solve carries
 /// the inequality duals and the primals but not this equality dual, which the
 /// susceptance and switching Jacobians need.
 fn nu_flow_values(dc: &DcNetwork, s: &DcOpfSolution) -> Vec<f64> {
-    let tau2 = dc.tau * dc.tau;
-    (0..dc.m)
-        .map(|e| tau2 * s.f[e] + s.lam_ub[e] - s.lam_lb[e])
-        .collect()
+    (0..dc.m).map(|e| s.lam_ub[e] - s.lam_lb[e]).collect()
 }
 
 /// A solved DC OPF as a differentiable KKT system. Snaps to strict complementarity
@@ -359,7 +430,7 @@ impl<'a> DcKkt<'a> {
     /// Wrap a solved DC OPF, doing the one-time snap and `nu_flow` recovery.
     pub fn new(dc: &'a DcNetwork, sol: &DcOpfSolution) -> Self {
         let snapped = snap(dc, sol);
-        let idx = KktIdx::new(dc.n, dc.m, dc.k);
+        let idx = KktIdx::new(dc);
         let nu_flow = nu_flow_values(dc, &snapped);
         DcKkt {
             dc,
@@ -406,6 +477,17 @@ impl Differentiable for DcKkt<'_> {
     /// angle stationarity (and, for switching, the phase-limit rows).
     fn parameter_jacobian(&self, p: Parameter, idx_cols: &[usize]) -> Result<Mat<f64>, SensError> {
         let dc = self.dc;
+        if matches!(p, Parameter::Cost(_)) {
+            if let Some(&generator) = idx_cols
+                .iter()
+                .find(|&&generator| dc.piecewise_costs[generator].is_some())
+            {
+                return Err(SensError::InvalidInput(format!(
+                    "generator {} has a piecewise linear cost, not a quadratic or linear coefficient",
+                    dc.gen_ids[generator]
+                )));
+            }
+        }
         let s = &self.snapped;
         let idx = &self.idx;
         let nu_flow = &self.nu_flow;
@@ -544,7 +626,7 @@ mod tests {
     use super::*;
     use crate::model::{parse_case3, DcNetwork};
     use crate::problem::dc_opf;
-    use crate::sens::{sensitivity, Mode};
+    use crate::sens::{sensitivity, weighted_sensitivity, Mode};
     use faer::linalg::solvers::Solve;
     use faer::sparse::{SparseColMat, Triplet};
     use faer::Mat;
@@ -635,9 +717,7 @@ mod tests {
     /// absent.
     fn parity_vs_finite_differences(casefile: &str) -> Option<f64> {
         let text = std::fs::read_to_string(casefile).ok()?;
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse");
         let dc = DcNetwork::from_network(&net).expect("model");
         let sol = dc_opf(&dc).expect("solve");
 
@@ -845,6 +925,16 @@ mod tests {
         dc
     }
 
+    fn piecewise_congested_case3() -> DcNetwork {
+        let text = crate::model::CASE3
+            .replace(" 2 0 0 3 0.11  5   0;", " 1 0 0 3 0 0 50 5 250 405;")
+            .replace(" 2 0 0 3 0.085 1.2 0;", " 1 0 0 2 0 0 270 135;");
+        let network = crate::model::parse_matpower(&text).expect("parse piecewise case3");
+        let mut dc = DcNetwork::from_network(&network).expect("prepare piecewise case3");
+        dc.fmax[2] = 0.4;
+        dc
+    }
+
     /// A nonzero affine branch term makes switching and susceptance derivatives
     /// exercise the phase contribution, rather than only the angle dependent
     /// Laplacian term.
@@ -858,9 +948,7 @@ mod tests {
                 " 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
                 " 1 2 0.01 0.1 0 250 250 250 1 1 1 -60 60;",
             );
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse phase shifter case")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse phase shifter case");
         DcNetwork::from_network(&net).expect("build phase shifter case")
     }
 
@@ -872,6 +960,7 @@ mod tests {
     fn shedding_case3() -> DcNetwork {
         let mut dc = parse_case3();
         dc.gmax = vec![0.4, 0.4]; // 0.8 pu capacity < 0.9 pu load
+        dc.allow_shed = true;
         dc
     }
 
@@ -973,6 +1062,78 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn piecewise_price_adjoint_matches_a_rating_finite_difference() {
+        let dc = piecewise_congested_case3();
+        let sol = dc_opf(&dc).expect("solve piecewise congested case3");
+        let branch = (0..dc.m)
+            .max_by(|&a, &b| {
+                (sol.lam_lb[a] + sol.lam_ub[a]).total_cmp(&(sol.lam_lb[b] + sol.lam_ub[b]))
+            })
+            .expect("a branch");
+        assert!(
+            sol.lam_lb[branch] + sol.lam_ub[branch] > 1e-3,
+            "piecewise fixture did not bind a branch"
+        );
+
+        let sys = DcKkt::new(&dc, &sol);
+        let weights = [(0, 0.75), (1, -0.25), (2, 0.5)];
+        let analytic =
+            weighted_sensitivity(&sys, PRICE, &weights, Parameter::LineLimit, Some(&[branch]))
+                .expect("piecewise weighted price adjoint")[0];
+
+        let h = 1e-4;
+        let objective = |model: &DcNetwork| {
+            let solved = dc_opf(model).expect("rating perturbation solve");
+            weights
+                .iter()
+                .map(|&(bus, weight)| weight * solved.nu_bal[bus])
+                .sum::<f64>()
+        };
+        let mut plus = dc.clone();
+        plus.fmax[branch] += h;
+        let mut minus = dc.clone();
+        minus.fmax[branch] -= h;
+        let finite_difference = (objective(&plus) - objective(&minus)) / (2.0 * h);
+        let tolerance = 1e-5_f64.max(1e-3 * finite_difference.abs());
+        assert!(
+            (analytic - finite_difference).abs() < tolerance,
+            "analytic {analytic}, finite difference {finite_difference}, tolerance {tolerance}"
+        );
+
+        let forward = sensitivity(
+            &sys,
+            PRICE,
+            Parameter::LineLimit,
+            Some(&[branch]),
+            Mode::Forward,
+        )
+        .expect("piecewise forward price sensitivity");
+        let from_forward: f64 = weights
+            .iter()
+            .map(|&(bus, weight)| weight * forward.values[bus][0])
+            .sum();
+        assert!((analytic - from_forward).abs() < 1e-10);
+    }
+
+    #[test]
+    fn piecewise_generators_reject_coefficient_sensitivity() {
+        let dc = piecewise_congested_case3();
+        let sol = dc_opf(&dc).expect("solve piecewise congested case3");
+        let sys = DcKkt::new(&dc, &sol);
+        let error = sensitivity(
+            &sys,
+            PRICE,
+            Parameter::Cost(CostTerm::Linear),
+            Some(&[0]),
+            Mode::Forward,
+        )
+        .expect_err("a piecewise cost has no linear coefficient parameter");
+        assert!(
+            matches!(error, SensError::InvalidInput(message) if message.contains("piecewise linear cost"))
+        );
     }
 
     #[test]

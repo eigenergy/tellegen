@@ -30,9 +30,9 @@ pub use ac::AcNewton;
 #[cfg(feature = "conic")]
 pub use conic::ConicKkt;
 pub use contract::{
-    sensitivity, Axis, Bound, ColMeta, CostTerm, Differentiable, ElementId, End, Operand,
-    Parameter, Power, RowMeta, Selector, SensError, SensitivityMatrix, SolveSpec, TapKind,
-    VoltageKind, GB,
+    sensitivity, weighted_sensitivity, Axis, Bound, ColMeta, CostTerm, Differentiable, ElementId,
+    End, Operand, Parameter, Power, RowMeta, Selector, SensError, SensitivityMatrix, SolveSpec,
+    TapKind, VoltageKind, GB,
 };
 pub use dc::DcKkt;
 

@@ -10,7 +10,9 @@
 //! program and [`SocWrLayout`] directly, so the variable/constraint/cone layout here
 //! is its contract.
 //!
-//! Variables `x = [pg(k), qg(k), w(n), wr(m), wi(m), pf(m), pt(m), qf(m), qt(m)]`.
+//! Variables begin with
+//! `x = [pg(k), qg(k), w(n), wr(m), wi(m), pf(m), pt(m), qf(m), qt(m)]`.
+//! A generator with a piecewise linear cost adds one epigraph column.
 
 use clarabel::solver::SupportedConeT::{self, NonnegativeConeT, SecondOrderConeT, ZeroConeT};
 
@@ -20,10 +22,10 @@ use crate::solve::{run, RawSolution, SolveIteration};
 
 use super::{OpfProgram, ProgramBuilder};
 
-/// Variable and constraint-row layout of the SOCWR program. Rows are equalities
-/// (power balance, then the four Ohm blocks), inequalities (voltage then generator
-/// bounds), then the per-branch second-order cones (Jabr, then from/to apparent
-/// power). Construct with [`SocWrLayout::new`].
+/// Variable and constraint row layout of the SOCWR program. Rows are equalities
+/// (power balance, then the four Ohm blocks), inequalities (voltage, generator,
+/// angle, and piecewise cost rows), then the per branch second order cones
+/// (Jabr, then from/to apparent power). Construct with [`SocWrLayout::new`].
 pub(crate) struct SocWrLayout {
     pub(crate) n: usize,
     pub(crate) m: usize,
@@ -32,16 +34,51 @@ pub(crate) struct SocWrLayout {
     pub(crate) n_ineq: usize,
     pub(crate) nvar: usize,
     pub(crate) ncon: usize,
+    thermal_rows: Vec<Option<(usize, usize)>>,
+    cost_columns: Vec<Option<usize>>,
+    cost_row_starts: Vec<Option<usize>>,
 }
 
 impl SocWrLayout {
     pub(crate) fn new(net: &AcNetwork) -> Self {
         let (n, m, k) = (net.n, net.m, net.k);
         let n_eq = 2 * n + 4 * m;
-        // 2n voltage + 4k generator + 2m angle-difference (upper/lower per branch) bounds.
-        let n_ineq = 2 * n + 4 * k + 2 * m;
-        let nvar = 2 * k + n + 6 * m;
-        let ncon = n_eq + n_ineq + 10 * m;
+        // 2n voltage + 4k generator + 2m angle-difference bounds, followed by
+        // one epigraph inequality for each piecewise cost segment.
+        let base_n_ineq = 2 * n + 4 * k + 2 * m;
+        let base_nvar = 2 * k + n + 6 * m;
+        let mut next_column = base_nvar;
+        let mut next_cost_row = n_eq + base_n_ineq;
+        let mut cost_columns = Vec::with_capacity(k);
+        let mut cost_row_starts = Vec::with_capacity(k);
+        for cost in &net.piecewise_costs {
+            if let Some(cost) = cost {
+                cost_columns.push(Some(next_column));
+                cost_row_starts.push(Some(next_cost_row));
+                next_column += 1;
+                next_cost_row += cost.segment_count();
+            } else {
+                cost_columns.push(None);
+                cost_row_starts.push(None);
+            }
+        }
+        let nvar = next_column;
+        let n_ineq = next_cost_row - n_eq;
+        let soc_base = n_eq + n_ineq;
+        let thermal_base = soc_base + 4 * m;
+        let mut next_thermal = thermal_base;
+        let thermal_rows = net
+            .thermal_limit_active
+            .iter()
+            .map(|&active| {
+                active.then(|| {
+                    let rows = (next_thermal, next_thermal + 3);
+                    next_thermal += 6;
+                    rows
+                })
+            })
+            .collect();
+        let ncon = next_thermal;
         SocWrLayout {
             n,
             m,
@@ -50,6 +87,9 @@ impl SocWrLayout {
             n_ineq,
             nvar,
             ncon,
+            thermal_rows,
+            cost_columns,
+            cost_row_starts,
         }
     }
     // Variable columns.
@@ -79,6 +119,9 @@ impl SocWrLayout {
     }
     pub(crate) fn col_qt(&self, e: usize) -> usize {
         2 * self.k + self.n + 5 * self.m + e
+    }
+    pub(crate) fn col_cost(&self, generator: usize) -> Option<usize> {
+        self.cost_columns[generator]
     }
     // Equality rows.
     pub(crate) fn r_pbal(&self, i: usize) -> usize {
@@ -129,6 +172,9 @@ impl SocWrLayout {
     pub(crate) fn r_anglb(&self, e: usize) -> usize {
         self.n_eq + 2 * self.n + 4 * self.k + self.m + e
     }
+    pub(crate) fn r_cost_segment(&self, generator: usize, segment: usize) -> Option<usize> {
+        self.cost_row_starts[generator].map(|start| start + segment)
+    }
     // Second-order cone rows. soc_base is the first cone row.
     pub(crate) fn soc_base(&self) -> usize {
         self.n_eq + self.n_ineq
@@ -138,18 +184,23 @@ impl SocWrLayout {
         self.soc_base() + 4 * e
     }
     /// First row of the from-side apparent-power cone for branch `e` (3-dim).
-    pub(crate) fn r_sf(&self, e: usize) -> usize {
-        self.soc_base() + 4 * self.m + 3 * e
+    pub(crate) fn r_sf(&self, e: usize) -> Option<usize> {
+        self.thermal_rows[e].map(|rows| rows.0)
     }
     /// First row of the to-side apparent-power cone for branch `e` (3-dim).
-    pub(crate) fn r_st(&self, e: usize) -> usize {
-        self.soc_base() + 4 * self.m + 3 * self.m + 3 * e
+    pub(crate) fn r_st(&self, e: usize) -> Option<usize> {
+        self.thermal_rows[e].map(|rows| rows.1)
     }
     /// The cone partition in Clarabel row order.
     pub(crate) fn cones(&self) -> Vec<SupportedConeT<f64>> {
         let mut cones = vec![ZeroConeT(self.n_eq), NonnegativeConeT(self.n_ineq)];
         cones.extend((0..self.m).map(|_| SecondOrderConeT(4)));
-        cones.extend((0..2 * self.m).map(|_| SecondOrderConeT(3)));
+        cones.extend(
+            self.thermal_rows
+                .iter()
+                .filter(|rows| rows.is_some())
+                .flat_map(|_| [SecondOrderConeT(3), SecondOrderConeT(3)]),
+        );
         cones
     }
 }
@@ -179,6 +230,9 @@ impl ConicOpfFormulation for SocWr {
         for g in 0..k {
             prog.quad(lay.col_pg(g), 2.0 * net.cq[g]);
             prog.lin(lay.col_pg(g), net.cl[g]);
+            if let Some(column) = lay.col_cost(g) {
+                prog.lin(column, 1.0);
+            }
         }
 
         // Power balance: sum pg - sum(branch p leaving) - gs w = pd  (real)
@@ -230,23 +284,52 @@ impl ConicOpfFormulation for SocWr {
             prog.a(lay.r_ohm_qt(e), lay.col_wi(e), (-g * tr - bb * ti) / tm2);
         }
 
+        // Convex piecewise linear generator costs, represented by one
+        // epigraph variable and one linear inequality for every segment.
+        for (generator, cost) in net.piecewise_costs.iter().enumerate() {
+            let Some(cost) = cost else {
+                continue;
+            };
+            let column = lay.col_cost(generator).expect("piecewise cost column");
+            for segment in 0..cost.segment_count() {
+                let row = lay
+                    .r_cost_segment(generator, segment)
+                    .expect("piecewise cost row");
+                prog.a(row, lay.col_pg(generator), cost.slopes[segment]);
+                prog.a(row, column, -1.0);
+                prog.rhs(row, -cost.intercepts[segment]);
+            }
+        }
+
         // Voltage magnitude bounds vmin^2 <= w <= vmax^2.
         for i in 0..n {
-            prog.a(lay.r_wub(i), lay.col_w(i), 1.0);
-            prog.rhs(lay.r_wub(i), net.vm_max[i] * net.vm_max[i]);
-            prog.a(lay.r_wlb(i), lay.col_w(i), -1.0);
-            prog.rhs(lay.r_wlb(i), -net.vm_min[i] * net.vm_min[i]);
+            if net.voltage_bound_active[i] {
+                prog.a(lay.r_wub(i), lay.col_w(i), 1.0);
+                prog.rhs(lay.r_wub(i), net.vm_max[i] * net.vm_max[i]);
+                prog.a(lay.r_wlb(i), lay.col_w(i), -1.0);
+                prog.rhs(lay.r_wlb(i), -net.vm_min[i] * net.vm_min[i]);
+            } else {
+                prog.rhs(lay.r_wub(i), 1.0);
+                prog.rhs(lay.r_wlb(i), 1.0);
+            }
         }
         // Generator bounds.
         for g in 0..k {
-            prog.a(lay.r_pgub(g), lay.col_pg(g), 1.0);
-            prog.rhs(lay.r_pgub(g), net.pmax[g]);
-            prog.a(lay.r_pglb(g), lay.col_pg(g), -1.0);
-            prog.rhs(lay.r_pglb(g), -net.pmin[g]);
-            prog.a(lay.r_qgub(g), lay.col_qg(g), 1.0);
-            prog.rhs(lay.r_qgub(g), net.qmax[g]);
-            prog.a(lay.r_qglb(g), lay.col_qg(g), -1.0);
-            prog.rhs(lay.r_qglb(g), -net.qmin[g]);
+            if net.generator_capability_active[g] {
+                prog.a(lay.r_pgub(g), lay.col_pg(g), 1.0);
+                prog.rhs(lay.r_pgub(g), net.pmax[g]);
+                prog.a(lay.r_pglb(g), lay.col_pg(g), -1.0);
+                prog.rhs(lay.r_pglb(g), -net.pmin[g]);
+                prog.a(lay.r_qgub(g), lay.col_qg(g), 1.0);
+                prog.rhs(lay.r_qgub(g), net.qmax[g]);
+                prog.a(lay.r_qglb(g), lay.col_qg(g), -1.0);
+                prog.rhs(lay.r_qglb(g), -net.qmin[g]);
+            } else {
+                prog.rhs(lay.r_pgub(g), 1.0);
+                prog.rhs(lay.r_pglb(g), 1.0);
+                prog.rhs(lay.r_qgub(g), 1.0);
+                prog.rhs(lay.r_qglb(g), 1.0);
+            }
         }
 
         // Branch angle-difference limits, linear in the W-space products. With
@@ -256,14 +339,19 @@ impl ConicOpfFormulation for SocWr {
         // enforces these in its SOC; they bind on the small-angle (SAD) variant and are
         // slack on the typical case (where ±30° never binds).
         for e in 0..m {
-            // wi − tan(angmax)·wr ≤ 0
-            prog.a(lay.r_angub(e), lay.col_wi(e), 1.0);
-            prog.a(lay.r_angub(e), lay.col_wr(e), -net.angmax[e].tan());
-            prog.rhs(lay.r_angub(e), 0.0);
-            // tan(angmin)·wr − wi ≤ 0
-            prog.a(lay.r_anglb(e), lay.col_wi(e), -1.0);
-            prog.a(lay.r_anglb(e), lay.col_wr(e), net.angmin[e].tan());
-            prog.rhs(lay.r_anglb(e), 0.0);
+            if net.conic_angle_bound_active(e) {
+                // wi − tan(angmax)·wr ≤ 0
+                prog.a(lay.r_angub(e), lay.col_wi(e), 1.0);
+                prog.a(lay.r_angub(e), lay.col_wr(e), -net.angmax[e].tan());
+                prog.rhs(lay.r_angub(e), 0.0);
+                // tan(angmin)·wr − wi ≤ 0
+                prog.a(lay.r_anglb(e), lay.col_wi(e), -1.0);
+                prog.a(lay.r_anglb(e), lay.col_wr(e), net.angmin[e].tan());
+                prog.rhs(lay.r_anglb(e), 0.0);
+            } else {
+                prog.rhs(lay.r_angub(e), 1.0);
+                prog.rhs(lay.r_anglb(e), 1.0);
+            }
         }
 
         // Jabr cone per branch: ((w_f+w_t)/2, wr, wi, (w_f-w_t)/2) in SOC(4), i.e.
@@ -280,11 +368,13 @@ impl ConicOpfFormulation for SocWr {
         }
         // Apparent-power limits: (rate_a, pf, qf) and (rate_a, pt, qt) in SOC(3).
         for e in 0..m {
-            let rf = lay.r_sf(e);
+            let Some(rf) = lay.r_sf(e) else {
+                continue;
+            };
             prog.rhs(rf, net.rate_a[e]);
             prog.a(rf + 1, lay.col_pf(e), -1.0);
             prog.a(rf + 2, lay.col_qf(e), -1.0);
-            let rt = lay.r_st(e);
+            let rt = lay.r_st(e).expect("thermal rows are paired");
             prog.rhs(rt, net.rate_a[e]);
             prog.a(rt + 1, lay.col_pt(e), -1.0);
             prog.a(rt + 2, lay.col_qt(e), -1.0);
@@ -306,8 +396,10 @@ pub struct SocWrSolution {
     pub qg: Vec<f64>,
     /// Squared bus voltage magnitude `w_i = |V_i|^2`.
     pub w: Vec<f64>,
-    /// Branch voltage products `wr_ij`, `wi_ij`.
+    /// Branch voltage products retained for central difference tests.
+    #[cfg(test)]
     pub wr: Vec<f64>,
+    #[cfg(test)]
     pub wi: Vec<f64>,
     /// Branch from/to active and reactive flows.
     pub pf: Vec<f64>,
@@ -328,12 +420,20 @@ pub struct SocWrSolution {
 fn read_socwr(net: &AcNetwork, lay: &SocWrLayout, raw: &RawSolution) -> SocWrSolution {
     let (n, m, k) = (net.n, net.m, net.k);
     let x = &raw.x;
-    let cc: f64 = net.cc.iter().sum();
+    let objective = match net.objective {
+        powerio_matrix::PreparedObjective::Feasibility => 0.0,
+        powerio_matrix::PreparedObjective::NetworkGeneratorCost => (0..k)
+            .map(|g| net.generator_cost(g, x[lay.col_pg(g)]))
+            .sum(),
+        _ => raw.objective,
+    };
     SocWrSolution {
         pg: (0..k).map(|g| x[lay.col_pg(g)]).collect(),
         qg: (0..k).map(|g| x[lay.col_qg(g)]).collect(),
         w: (0..n).map(|i| x[lay.col_w(i)]).collect(),
+        #[cfg(test)]
         wr: (0..m).map(|e| x[lay.col_wr(e)]).collect(),
+        #[cfg(test)]
         wi: (0..m).map(|e| x[lay.col_wi(e)]).collect(),
         pf: (0..m).map(|e| x[lay.col_pf(e)]).collect(),
         pt: (0..m).map(|e| x[lay.col_pt(e)]).collect(),
@@ -342,7 +442,7 @@ fn read_socwr(net: &AcNetwork, lay: &SocWrLayout, raw: &RawSolution) -> SocWrSol
         // Equality dual sign flip (nu = -z), as in the DC OPF readout, so the price
         // is the positive marginal cost of demand.
         lmp: (0..n).map(|i| -raw.z[lay.r_pbal(i)]).collect(),
-        objective: raw.objective + cc,
+        objective,
         iterations: raw.iterations.clone(),
         x: raw.x.clone(),
         z: raw.z.clone(),
@@ -364,6 +464,76 @@ pub fn socwr_opf(net: &AcNetwork) -> Result<SocWrSolution, String> {
 mod tests {
     use super::*;
     use crate::model::parse_case9_ac;
+
+    #[test]
+    fn convex_piecewise_cost_uses_the_declared_socwr_epigraph() {
+        let text = crate::model::CASE3
+            .replace(" 2 0 0 3 0.11  5   0;", " 1 0 0 3 0 0 50 5 250 405;")
+            .replace(" 2 0 0 3 0.085 1.2 0;", " 1 0 0 2 0 0 270 135;");
+        let network = crate::model::parse_matpower(&text).expect("parse piecewise case3");
+        let model =
+            crate::model::AcNetwork::from_network(&network).expect("prepare piecewise case3");
+        let layout = SocWrLayout::new(&model);
+        let solution = socwr_opf(&model).expect("solve piecewise case3");
+
+        let declared_objective: f64 = (0..model.k)
+            .map(|generator| model.generator_cost(generator, solution.pg[generator]))
+            .sum();
+        assert!(
+            (solution.objective - declared_objective).abs() < 1e-6,
+            "objective {}, declared {declared_objective}",
+            solution.objective
+        );
+        for generator in 0..model.k {
+            let epigraph = solution.x[layout.col_cost(generator).expect("cost column")];
+            let declared = model.generator_cost(generator, solution.pg[generator]);
+            assert!(
+                (epigraph - declared).abs() < 1e-5,
+                "generator {generator}: epigraph {epigraph}, declared {declared}"
+            );
+            let cost = model.piecewise_costs[generator]
+                .as_ref()
+                .expect("piecewise cost");
+            let dual_sum: f64 = (0..cost.segment_count())
+                .map(|segment| {
+                    solution.z[layout
+                        .r_cost_segment(generator, segment)
+                        .expect("segment row")]
+                })
+                .sum();
+            assert!(
+                (dual_sum - 1.0).abs() < 1e-6,
+                "generator {generator}: segment dual sum {dual_sum}"
+            );
+        }
+    }
+
+    #[test]
+    fn inactive_ac_constraint_families_are_absent_from_the_conic_program() {
+        let mut model = crate::model::parse_case3_ac();
+        model.voltage_bound_active.fill(false);
+        model.generator_capability_active.fill(false);
+        model.thermal_limit_active.fill(false);
+        model.angle_bound_active.fill(false);
+
+        // These values would make the case infeasible if their families were
+        // still active. The masks, not sentinel bounds, remove the constraints.
+        model.vm_min.fill(2.0);
+        model.vm_max.fill(0.5);
+        model.pmin.fill(0.0);
+        model.pmax.fill(0.0);
+        model.qmin.fill(0.0);
+        model.qmax.fill(0.0);
+        model.rate_a.fill(1e-6);
+        model.angmin.fill(0.0);
+        model.angmax.fill(0.0);
+
+        let layout = SocWrLayout::new(&model);
+        assert!((0..model.m).all(|branch| layout.r_sf(branch).is_none()));
+        assert!((0..model.m).all(|branch| layout.r_st(branch).is_none()));
+        let solution = socwr_opf(&model).expect("unconstrained family solve");
+        assert!(solution.objective.is_finite());
+    }
 
     /// Branch angle-difference limits tighten the SOCWR relaxation (the small-angle /
     /// SAD case): clamping every branch below its natural angle spread raises the
@@ -442,9 +612,7 @@ mod tests {
             );
             return;
         };
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse CATS")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse CATS");
         let ac = crate::model::AcNetwork::from_network(&net).expect("build AcNetwork");
         let sol = socwr_opf(&ac).expect("solve CATS SOCWR");
 
@@ -487,7 +655,7 @@ mpc.gencost = [
  2 0 0 3 0.085 1.2 0;
 ];
 ";
-        let net = powerio::parse_str(CASE, "matpower").expect("parse").network;
+        let net = crate::model::parse_matpower(CASE).expect("parse");
         let error = crate::model::AcNetwork::from_network(&net).unwrap_err();
         assert!(error.contains("zero matrix denominator"), "{error}");
     }
