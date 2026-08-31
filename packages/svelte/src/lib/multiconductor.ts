@@ -48,13 +48,7 @@ export interface MultiView {
 	edges: PlacedMultiEdge[];
 }
 
-const ATTACHMENT_ORDER: DistAttachmentKind[] = [
-	'source',
-	'generator',
-	'ibr',
-	'load',
-	'shunt'
-];
+const ATTACHMENT_ORDER: DistAttachmentKind[] = ['source', 'generator', 'ibr', 'load', 'shunt'];
 
 /** Flatten a bus's per-terminal attachments to the distinct kinds present, in a
  * stable render order. */
@@ -84,7 +78,9 @@ function placedBus(bus: DistGraphBus, lon: number, lat: number): PlacedMultiBus 
 /** Case-insensitive lookup from a bus id to its position; the graph stores ids
  * in their source case while edges reference the canonical id, which can differ
  * only in case. */
-function positionIndex(coords: Map<string, [number, number]>): (id: string) => [number, number] | undefined {
+function positionIndex(
+	coords: Map<string, [number, number]>
+): (id: string) => [number, number] | undefined {
 	const lower = new Map<string, [number, number]>();
 	for (const [id, xy] of coords) lower.set(id.toLowerCase(), xy);
 	return (id: string) => coords.get(id) ?? lower.get(id.toLowerCase());
@@ -160,10 +156,7 @@ function projectPlanar(graph: DistGraph, center: PlacementCenter): Map<string, [
 		// reads as further north.
 		const nx = 0.5 + (bus.xy![0] - cx) * s;
 		const ny = 0.5 + (bus.xy![1] - cy) * s;
-		coords.set(bus.id, [
-			center.lon + (nx - 0.5) * lonSpan,
-			center.lat + (ny - 0.5) * latSpan
-		]);
+		coords.set(bus.id, [center.lon + (nx - 0.5) * lonSpan, center.lat + (ny - 0.5) * latSpan]);
 	}
 	return coords;
 }
@@ -171,7 +164,10 @@ function projectPlanar(graph: DistGraph, center: PlacementCenter): Map<string, [
 /** Build a numeric-id `Topology` from the graph so the shared synthetic force
  * layout can lay it out. Bus ids become array indices; the string id rides in
  * `uid`, and edges map their endpoints to those indices. */
-function toTopology(graph: DistGraph): { topology: Topology; idByIndex: string[] } {
+function toTopology(graph: DistGraph): {
+	topology: Topology;
+	idByIndex: string[];
+} {
 	const idByIndex = graph.buses.map((b) => b.id);
 	const indexById = new Map<string, number>();
 	graph.buses.forEach((b, i) => indexById.set(b.id.toLowerCase(), i));
@@ -235,7 +231,7 @@ export function placeMultiView(graph: DistGraph, center: PlacementCenter): Multi
 
 /** Rust, green, and steel-blue for the three phases; a warm gray for the
  * neutral/ground return. Distinct in hue and lightness so they survive color
- * vision deficiency and never read as the LMP ramp. */
+ * vision deficiency and never read as the nodal value ramp. */
 const PHASE_A: RGBA = [194, 86, 75, 255];
 const PHASE_B: RGBA = [74, 143, 95, 255];
 const PHASE_C: RGBA = [63, 111, 187, 255];
@@ -314,8 +310,7 @@ function computeTransformerMarks(edges: PlacedMultiEdge[]): TransformerMark[] {
 			return {
 				id: e.id,
 				position: [(x0 + x1) / 2, latMid] as [number, number],
-				angle:
-					(Math.atan2(y1 - y0, (x1 - x0) * Math.cos((latMid * Math.PI) / 180)) * 180) / Math.PI
+				angle: (Math.atan2(y1 - y0, (x1 - x0) * Math.cos((latMid * Math.PI) / 180)) * 180) / Math.PI
 			};
 		});
 }

@@ -24,15 +24,13 @@ export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' 
 /** A map framing request: a case id, 'all', or one branch to center. */
 export type FrameTarget = string | 'all' | { caseId: string; branchId: number };
 export type DemandRangeMode = 'local' | 'full';
-export type DisplayMode = 'lmp' | 'angle' | 'voltage';
+export type DisplayMode = 'price' | 'angle' | 'voltage';
 
 /** The case a removal promoted to active, so the caller can hydrate it: a backend
  * case needs its network/solution loaded, a local needs a browser solve, and
  * `none` means nothing remains (or the removal left the active case untouched). */
 export type FallbackTarget =
-	| { kind: 'backend'; id: string }
-	| { kind: 'local'; id: string }
-	| { kind: 'none' };
+	{ kind: 'backend'; id: string } | { kind: 'local'; id: string } | { kind: 'none' };
 
 /** Substations from a PowerWorld .pwd display file. Positions are inferred
  * from diagram coordinates, not surveyed latitude and longitude. */
@@ -56,6 +54,8 @@ export interface LocalCaseInit {
 	fileName: string;
 	summary?: CaseFileSummary | null;
 	networkJson?: string;
+	/** Retained PowerIO module used to construct solver studies. */
+	studyInputJson?: string;
 	topology?: Topology;
 	coordsKind?: CoordsKind;
 	view?: LocalView | null;
@@ -74,8 +74,9 @@ export class LocalCase {
 	readonly fileName: string;
 	/** Case stats; null for a .pwd display only entry. */
 	summary = $state.raw<CaseFileSummary | null>(null);
-	/** Raw powerio Network JSON for the browser solver branch. */
+	/** Materialized balanced network JSON used only for display and geographic edits. */
 	networkJson = $state.raw<string | undefined>(undefined);
+	studyInputJson = $state.raw<string | undefined>(undefined);
 	/** Topology for synthetic placement when the file has no coordinates. */
 	topology = $state.raw<Topology | undefined>(undefined);
 	coordsKind = $state.raw<CoordsKind | undefined>(undefined);
@@ -101,6 +102,8 @@ export class LocalCase {
 	solveFallbackReason = $state<string | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;
+	/** Monotone generation for external optimistic concurrency. */
+	revisionGeneration = $state(0);
 	/** Monotone token: only the latest sensitivity request may write this case. */
 	sensitivitySeq = 0;
 	predictedObjective = $state<number | null>(null);
@@ -113,6 +116,7 @@ export class LocalCase {
 		this.fileName = init.fileName;
 		this.summary = init.summary ?? null;
 		this.networkJson = init.networkJson;
+		this.studyInputJson = init.studyInputJson;
 		this.topology = init.topology;
 		this.coordsKind = init.coordsKind;
 		this.view = init.view ?? null;
@@ -130,8 +134,8 @@ export class CaseState {
 	readonly id: string;
 	readonly name: string;
 	network = $state.raw<Network | null>(null);
-	/** Raw powerio Network JSON for the browser solver; fetched lazily. */
-	networkJson = $state.raw<string | null>(null);
+	/** Retained PowerIO module for the browser solver; fetched lazily. */
+	studyInputJson = $state.raw<string | null>(null);
 	/** Boot solution at base demand; never changes. */
 	baseSolution = $state.raw<Solution | null>(null);
 	/** Exact solution at the current committed perturbation. */
@@ -151,6 +155,8 @@ export class CaseState {
 	solveFallbackReason = $state<string | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;
+	/** Monotone generation for external optimistic concurrency. */
+	revisionGeneration = $state(0);
 	/** Monotone token: only the latest sensitivity request may write this case. */
 	sensitivitySeq = 0;
 	/** Closer for this case's in-flight server solve stream, if any. Owned per
@@ -174,7 +180,7 @@ export class CaseState {
 export type SolvableCase = CaseState | LocalCase;
 
 /** The multiconductor ingest payload without the graph: the summary counts,
- * connected load/generation, coordinate provenance, and warnings. */
+ * connected load/generation, coordinate provenance, and diagnostics. */
 export type MultiCaseSummary = Omit<IngestedDistCase, 'graph'>;
 
 /** How a multiconductor case is placed on the map. `geographic` positions drop
@@ -253,20 +259,20 @@ export class AppState {
 	previewDeltaMw = $state<number | null>(null);
 	/** Live rating slider value (MW from base) before commit; null when idle. */
 	previewRatingMw = $state<number | null>(null);
-	/** True while the demand control should keep the map in LMP preview mode. */
+	/** True while the demand control should keep the map in nodal value preview mode. */
 	previewActive = $state(false);
-	/** Engine first-order LMP preview for the live drag: predicted change in LMP
-	 * ($/MWh) per bus at the previewed edit, scoped to the case and selection
+	/** Engine first order nodal value preview for the live drag, scoped to the case and selection
 	 * target (bus or branch) it was computed for. Set by the Study path; null when
 	 * no Study preview applies (the map then falls back to the JS
 	 * sensitivity-times-step preview). Reassigned wholesale, so $state.raw. */
-	previewLmp = $state.raw<{
+	previewPrices = $state.raw<{
 		caseId: string;
 		target: SensTarget;
 		delta: Map<number, number>;
+		units: string;
 	} | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
-	displayMode = $state<DisplayMode>('lmp');
+	displayMode = $state<DisplayMode>('price');
 	sensitivityLoading = $state(false);
 	#error = $state<string | null>(null);
 	/** Re-runs the operation behind the current `error`, when one applies. Every
@@ -377,7 +383,7 @@ export class AppState {
 		this.previewDeltaMw = null;
 		this.previewRatingMw = null;
 		this.previewActive = false;
-		this.previewLmp = null;
+		this.previewPrices = null;
 		this.demandRangeMode = 'local';
 		this.sensitivityLoading = false;
 

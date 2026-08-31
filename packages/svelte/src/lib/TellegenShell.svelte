@@ -29,7 +29,7 @@
 			}
 		}
 		if (ctrl.displayOptions.length > 0 && !hasDisplayMode) {
-			app.displayMode = 'lmp';
+			app.displayMode = 'price';
 		}
 	});
 

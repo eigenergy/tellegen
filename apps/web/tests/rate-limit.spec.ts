@@ -45,7 +45,7 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 	await page.getByRole('button', { name: 'retry', exact: true }).click();
 	// Wait for the settled readout (the chip also renders while loading) before
 	// counting requests, so the assertion doesn't race the in-flight fetch.
-	await expect(page.getByText('LMP response per MW of demand at bus 2')).toBeVisible();
+	await expect(page.getByText('Nodal value response to demand at bus 2')).toBeVisible();
 	await expect(error).toHaveCount(0);
 	await expect.poll(() => sensitivityFetches).toBe(2);
 	expect(casesFetches).toBe(1);

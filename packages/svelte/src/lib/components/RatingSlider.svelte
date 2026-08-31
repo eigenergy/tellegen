@@ -25,7 +25,7 @@
 		'The black tick marks the last committed rating change. Drag the knob to preview a new thermal rating; release to solve and move the tick to that point.';
 	const disabledTip = "this line's rating is synthesized; not adjustable";
 	const scoreTip =
-		'Gradient is the estimate of total cost change versus base before the solve finishes, from the engine preview at the committed point. Exact is the resolved OPF objective change.';
+		'Gradient estimates the declared objective change versus base before the solve finishes, from the engine preview at the committed point. Exact is the resolved OPF objective change.';
 </script>
 
 {#if ctrl.activeSolvable}
@@ -39,9 +39,7 @@
 		<div class="line-row mono">
 			{#if branch}
 				<span class="dim"
-					>line {branch.from}&#8201;&ndash;&#8201;{branch.to} &middot; {fmt.format(
-						branch.rate_mw
-					)} MW</span
+					>line {branch.from}&#8201;&ndash;&#8201;{branch.to} &middot; {fmt.format(branch.rate_mw)} MW</span
 				>
 			{/if}
 			<span class="dim">
@@ -75,7 +73,7 @@
 		<div class="rating-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
 			<p class="pred mono dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
 				{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
-					predicted &Delta;cost {signed(ctrl.predictedDeltaObj)} $/h
+					predicted &Delta;objective {signed(ctrl.predictedDeltaObj)}
 				{:else}
 					&nbsp;
 				{/if}
@@ -85,8 +83,7 @@
 					<span title={scoreTip}>
 						gradient {signed(ctrl.gradientScore.pred)} &middot; exact {signed(
 							ctrl.gradientScore.exact
-						)}
-						$/h
+						)} objective units
 					</span>
 				{:else}
 					&nbsp;
