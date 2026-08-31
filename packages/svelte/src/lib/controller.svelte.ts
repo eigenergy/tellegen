@@ -25,7 +25,6 @@ import {
 	type SolvableCase
 } from './state.svelte.js';
 import { placeSyntheticTopology } from './synthetic-layout.js';
-import { studyCommitIndex } from './study-package.js';
 import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
 import { buildGeographicView, placeMultiView } from './multiconductor.js';
@@ -34,7 +33,6 @@ import {
 	applyGeo,
 	applyLayout,
 	createStudy,
-	exportStudy,
 	extractGeo,
 	FORMULATIONS,
 	formatOf,
@@ -51,7 +49,6 @@ import {
 	type Formulation,
 	type IngestedCase,
 	type IngestedDistCase,
-	type LoadedPackage,
 	type SensTarget
 } from '@tellegen/engine';
 import { errorText, extent, formulationLabel, rgbaCss } from './format.js';
@@ -81,7 +78,6 @@ type DisplayFile = {
  * `.raw`. An unrouted result retains the bytes for the geographic fallback. */
 type JsonDropRoute =
 	| { outcome: 'balanced'; payload: IngestedCase }
-	| { outcome: 'restored'; payload: LoadedPackage }
 	| { outcome: 'multiconductor'; payload: IngestedDistCase }
 	| { outcome: 'failed' }
 	| { outcome: 'unrouted'; bytes: Uint8Array | null };
@@ -100,11 +96,16 @@ const COMPUTE_OFF_NOTICE =
  * selection. */
 const FOCUS_SETTLE_CAP_MS = 1200;
 
+function previewUnits(sensitivityUnits: string): string {
+	const numerator = sensitivityUnits.replace(/\/(?:MW|MVA)$/, '').trim();
+	const unwrapped =
+		numerator.startsWith('(') && numerator.endsWith(')') ? numerator.slice(1, -1) : numerator;
+	return unwrapped.replaceAll('objective_unit', 'objective units');
+}
+
 /** A lowered analysis row is view-only only when a current producer says so;
  * absence keeps payloads from older compatible engine/server versions editable. */
-export function isDisplayOnlyElement(
-	element: { editable?: boolean } | null | undefined
-): boolean {
+export function isDisplayOnlyElement(element: { editable?: boolean } | null | undefined): boolean {
 	return element?.editable === false;
 }
 
@@ -165,7 +166,7 @@ export class Controller {
 	// deploy, so later fallbacks show the notice instead of firing doomed requests.
 	serverComputeOff = false;
 
-	// Build-once browser Study per case: the network is parsed and the model built
+	// Build-once browser Study per case: the retained PowerIO module is parsed and the model built
 	// when the Study is created, so a drag re-solves (commit) and previews without
 	// re-parsing. Kept in a WeakMap off the reactive/raw case payloads — the wasm
 	// handle is neither serialized nor part of any $state.
@@ -173,7 +174,7 @@ export class Controller {
 		SolvableCase,
 		{
 			study: BrowserStudy;
-			networkJson: string;
+			studyInputJson: string;
 			formulation: Formulation;
 			baseSolution: Solution;
 		}
@@ -188,7 +189,7 @@ export class Controller {
 	studyBuilds = new WeakMap<
 		SolvableCase,
 		{
-			networkJson: string;
+			studyInputJson: string;
 			formulation: Formulation;
 			token: object;
 			promise: Promise<BrowserStudy | null>;
@@ -266,6 +267,10 @@ export class Controller {
 		return c?.perturbed ?? false;
 	}
 
+	bumpRevision(c: SolvableCase): void {
+		c.revisionGeneration += 1;
+	}
+
 	setNearbyRangeAnchor(c: SolvableCase, bus: number, delta = this.caseDeltas(c)[bus] ?? 0) {
 		this.nearbyRangeAnchor = { caseId: c.id, bus, delta };
 	}
@@ -279,6 +284,7 @@ export class Controller {
 		busId: number
 	): { ac: AbortController; sensitivitySeq: number } {
 		this.abort?.abort();
+		this.bumpRevision(c);
 		const ac = new AbortController();
 		this.abort = ac;
 		const sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
@@ -304,6 +310,7 @@ export class Controller {
 		branchId: number
 	): { ac: AbortController; sensitivitySeq: number } {
 		this.abort?.abort();
+		this.bumpRevision(c);
 		const ac = new AbortController();
 		this.abort = ac;
 		const sensitivitySeq = (c.sensitivitySeq ?? 0) + 1;
@@ -367,31 +374,35 @@ export class Controller {
 
 	maybeStartLocalSolve(id: string) {
 		const c = this.app.localCases.find((lc) => lc.id === id);
-		if (!c?.networkJson || !c.view || !c.summary) return;
+		if (!c?.networkJson || !c.studyInputJson || !c.view || !c.summary) return;
 		c.network = this.localNetwork(c) ?? c.network ?? null;
 		if (c.networkJson && c.network && !c.solution) this.runSolve(c, null);
 	}
 
-	// The case's Study, building it once for `(networkJson, formulation)` and rebuilding
+	// The case's Study, building it once for `(studyInputJson, formulation)` and rebuilding
 	// (after free) if either changed — so picking a new formulation re-parses and re-solves
 	// under that formulation. Returns null when the sens module can't load; the caller then
 	// falls back to the server, surfacing solveFallbackReason.
-	async getStudy(c: SolvableCase, networkJson: string): Promise<BrowserStudy | null> {
+	async getStudy(c: SolvableCase, studyInputJson: string): Promise<BrowserStudy | null> {
 		const latched = this.studyUnavailable.get(c);
 		if (latched) {
 			c.solveFallbackReason ??= latched;
 			return null;
 		}
 		const cached = this.caseStudies.get(c);
-		if (cached && cached.networkJson === networkJson && cached.formulation === c.formulation)
+		if (cached && cached.studyInputJson === studyInputJson && cached.formulation === c.formulation)
 			return cached.study;
-		// Coalesce concurrent builds for the same (case, networkJson, formulation): a
+		// Coalesce concurrent builds for the same (case, module, formulation): a
 		// bus-select sensitivity fetch and a solve can both reach here before either
 		// createStudy resolves. Without this each builds its own wasm Study and the
 		// later set() orphans the earlier one (a leaked handle), and the cache can end
 		// up holding an instance the live solve never committed on.
 		const inflight = this.studyBuilds.get(c);
-		if (inflight && inflight.networkJson === networkJson && inflight.formulation === c.formulation)
+		if (
+			inflight &&
+			inflight.studyInputJson === studyInputJson &&
+			inflight.formulation === c.formulation
+		)
 			return inflight.promise;
 		// Different params, or no build pending: drop any stale Study before rebuilding.
 		if (cached) {
@@ -404,7 +415,7 @@ export class Controller {
 		const token = {};
 		const build = (async (): Promise<BrowserStudy | null> => {
 			try {
-				const study = await createStudy(networkJson, formulation);
+				const study = await createStudy(studyInputJson, formulation);
 				const baseSolution = await study.currentSolution();
 				// The case may have switched formulation or been disposed (removed, or its
 				// list reloaded) while building; don't cache a now-unwanted Study, and free
@@ -415,7 +426,7 @@ export class Controller {
 				}
 				this.caseStudies.set(c, {
 					study,
-					networkJson,
+					studyInputJson,
 					formulation,
 					baseSolution
 				});
@@ -434,7 +445,7 @@ export class Controller {
 			}
 		})();
 		this.studyBuilds.set(c, {
-			networkJson,
+			studyInputJson,
 			formulation,
 			token,
 			promise: build
@@ -442,7 +453,7 @@ export class Controller {
 		return build;
 	}
 
-	// The ∂LMP/∂parameter column at `target` for the case's active formulation, solved in
+	// The nodal-value/parameter column at `target` for the case's active formulation, solved in
 	// the browser. Every column, bus or branch, any formulation, comes from the Study's
 	// exact re-solve at the case's operating point. The column is null (with the reason on
 	// `solveFallbackReason`) when the Study can't be built; the selection paths then
@@ -450,10 +461,10 @@ export class Controller {
 	// error.
 	async browserSensitivity(
 		c: SolvableCase,
-		networkJson: string,
+		studyInputJson: string,
 		target: SensTarget
 	): Promise<SensitivityColumn | null> {
-		const study = await this.getStudy(c, networkJson);
+		const study = await this.getStudy(c, studyInputJson);
 		return study ? study.sensitivity(c.id, this.caseDeltas(c), this.caseRatings(c), target) : null;
 	}
 
@@ -501,20 +512,20 @@ export class Controller {
 			this.app.previewDeltaMw = null;
 			this.app.previewRatingMw = null;
 			// The committed solution supersedes the live engine preview.
-			this.app.previewLmp = null;
+			this.app.previewPrices = null;
 			this.previewObjective = null;
 		}
 	}
 
-	// Fetch and cache the raw powerio Network JSON for the browser solver.
-	// Returns null when it can't be loaded, so callers fall back to the server.
-	async ensureNetworkJson(c: SolvableCase): Promise<string | null> {
-		if (!this.isBackendCase(c)) return c.networkJson ?? null;
-		if (c.networkJson) return c.networkJson;
+	// Fetch and cache the retained PowerIO module used by every browser Study.
+	// Returns null when it cannot be loaded, so callers can report or fall back.
+	async ensureStudyInputJson(c: SolvableCase): Promise<string | null> {
+		if (c.studyInputJson) return c.studyInputJson;
+		if (!this.isBackendCase(c)) return null;
 		try {
-			const json = await this.api.getCaseNetworkJson(c.id);
-			c.networkJson = json;
-			return json;
+			const moduleJson = await this.api.getCaseModuleJson(c.id);
+			c.studyInputJson = moduleJson;
+			return moduleJson;
 		} catch (e) {
 			c.solveFallbackReason = `case fetch failed: ${errorText(e)}`;
 			return null;
@@ -586,7 +597,7 @@ export class Controller {
 		if (!activeMeta) return null;
 		// Drive the values off the resolved mode, not app.displayMode, so the
 		// displayOptions[0] fallback holds while displayMode is stale relative to the
-		// formulation (e.g. leaving SOCWR before +page resets it to 'lmp').
+		// formulation (e.g. leaving SOCWR before +page resets it to price).
 		return {
 			...activeMeta,
 			values: displaySeriesFor(this.activeSolvable, activeMeta.mode)
@@ -598,7 +609,7 @@ export class Controller {
 		if (values.length === 0) return null;
 		const domain = scalarDomain(this.activeDisplay.mode, values);
 		const { min, max } = extent(values);
-		const flatThreshold = this.activeDisplay.mode === 'lmp' ? 1 : 1e-5;
+		const flatThreshold = this.activeDisplay.mode === 'price' ? 1 : 1e-5;
 		return {
 			lo: { value: domain.lo, clamped: min < domain.lo - flatThreshold / 20 },
 			hi: { value: domain.hi, clamped: max > domain.hi + flatThreshold / 20 },
@@ -618,8 +629,8 @@ export class Controller {
 		return c.network.branches.find((b) => b.id === this.app.selectedBranch) ?? null;
 	});
 
-	// The sensitivity target of the current selection: the selected bus (∂LMP/∂d),
-	// else the selected branch (∂LMP/∂rating), else null. Selections are mutually
+	// The sensitivity target of the current selection: the selected bus (price/demand),
+	// else the selected branch (price/rating), else null. Selections are mutually
 	// exclusive, so bus-first ordering is only a tiebreak for impossible states.
 	selectionTarget = $derived.by((): SensTarget | null =>
 		this.app.selectedBus !== null
@@ -650,9 +661,7 @@ export class Controller {
 	);
 	sliderMin = $derived(this.sliderBounds.min);
 	sliderMax = $derived(this.sliderBounds.max);
-	sliderDisabled = $derived(
-		!this.selectedBusData || isDisplayOnlyElement(this.selectedBusData)
-	);
+	sliderDisabled = $derived(!this.selectedBusData || isDisplayOnlyElement(this.selectedBusData));
 
 	committedRating = $derived.by(() =>
 		this.activeSolvable && this.app.selectedBranch !== null
@@ -668,8 +677,7 @@ export class Controller {
 	// to perturb.
 	ratingBounds = $derived.by(() => {
 		const b = this.selectedBranchData;
-		if (!b || isDisplayOnlyElement(b) || b.rate_mw <= 0)
-			return { min: 0, max: 0, disabled: true };
+		if (!b || isDisplayOnlyElement(b) || b.rate_mw <= 0) return { min: 0, max: 0, disabled: true };
 		const span = Math.min(50, Math.max(5, 0.2 * b.rate_mw));
 		return {
 			min: Math.max(-(b.rate_mw - 1), -span),
@@ -720,10 +728,10 @@ export class Controller {
 	selectedLmp = $derived.by(() => {
 		const c = this.activeSolvable;
 		if (!c?.solution || this.app.selectedBus === null) return null;
-		return c.solution.lmp.find((e) => e.bus === this.app.selectedBus)?.usd_per_mwh ?? null;
+		return c.solution.prices.find((e) => e.bus === this.app.selectedBus)?.value ?? null;
 	});
 
-	// Self-sensitivity ∂LMP_bb/∂d at the selected bus: the curvature term the
+	// Self-sensitivity of the selected bus value to demand: the curvature term the
 	// first-order fallback uses for a second-order objective estimate. Zero when no
 	// sensitivity column is loaded for the bus.
 	selfSens = $derived.by(() => {
@@ -735,8 +743,8 @@ export class Controller {
 	// engine preview (Study.preview at the committed point, plus the committed part);
 	// fall back to a second-order gradient estimate when no Study preview is available
 	// (server-only cases, or a browser that can't load the sensitivity module): the
-	// exact committed part plus lmp·step + S_bb·step²/2 along the gradient. The
-	// gradient fallback is demand-only — a rating step has no LMP-at-bus analogue —
+	// exact committed part plus price·step + S_bb·step²/2 along the gradient. The
+	// gradient fallback is demand-only — a rating step has no corresponding bus term —
 	// so a branch selection without an engine slope shows no prediction.
 	predictedDeltaObj = $derived.by(() => {
 		const c = this.activeSolvable;
@@ -843,7 +851,7 @@ export class Controller {
 			const [network, dcBaseSolution] = await Promise.all([
 				c.network ? Promise.resolve(c.network) : this.api.getNetwork(c.id),
 				// The server caches only the DC OPF base solution. Other formulations
-				// must hydrate from the browser Study so their cost, prices, flows, and
+				// must hydrate from the browser Study so their objective, nodal values, flows, and
 				// voltage fields all come from the selected formulation.
 				requestedFormulation === 'dcopf' ? this.api.getSolution(c.id) : Promise.resolve(null)
 			]);
@@ -965,7 +973,7 @@ export class Controller {
 
 	/** Write the case's on-screen layout into its network payload
 	 * (`Bus.location` with `synthetic` provenance — the engine also accepts
-	 * `manual`, which round trips through restored packages), so saves,
+	 * `manual`, which round trips through saved PowerIO modules), so saves,
 	 * exports, and the `.geo.json` download carry it. Best effort: on an
 	 * engine failure the view still renders, only the layout's persistence is
 	 * lost. */
@@ -977,7 +985,7 @@ export class Controller {
 			);
 			const stamped = await applyLayout(c.networkJson, coords, 'synthetic');
 			c.networkJson = stamped.network_json;
-			await this.syncCachedStudy(c, stamped.network_json, [stamped.layer]);
+			await this.syncStudyGeo(c, [stamped.layer]);
 		} catch {
 			// The on-screen view is unaffected; only persistence was lost.
 		}
@@ -1037,9 +1045,8 @@ export class Controller {
 			...(unmatched > 0 ? [`${unmatched} feature(s) matched no case element`] : []),
 			...warnings
 		]);
-		await this.syncCachedStudy(
+		await this.syncStudyGeo(
 			c,
-			networkJson,
 			layers.map((l) => l.layer)
 		);
 	};
@@ -1068,14 +1075,46 @@ export class Controller {
 		];
 	}
 
-	/** Keep a live Study's base network in step with a geo change (locations
-	 * are metadata the model never reads, so nothing re-solves), and re-key its
-	 * cache entry so the next solve reuses it instead of rebuilding. */
-	private syncCachedStudy = async (c: SolvableCase, networkJson: string, layers: string[]) => {
-		const cached = this.caseStudies.get(c);
-		if (!cached) return;
-		cached.networkJson = networkJson;
-		for (const layer of layers) await cached.study.applyGeoLayer(layer);
+	/** Apply geographic metadata to the retained base module and any live Study.
+	 * The display network stays derived data; solver construction never falls
+	 * back to it. */
+	private syncStudyGeo = async (c: LocalCase, layers: string[]) => {
+		const input = c.studyInputJson;
+		if (!input) throw new Error('the case has no retained PowerIO module');
+		let cached = this.caseStudies.get(c);
+		if (cached && cached.formulation !== c.formulation) {
+			this.disposeStudy(c);
+			cached = undefined;
+		}
+		const moduleStudy = cached
+			? await createStudy(input, c.formulation, { isolated: true })
+			: await createStudy(input, c.formulation);
+		let keepModuleStudy = false;
+		try {
+			for (const layer of layers) await moduleStudy.applyGeoLayer(layer);
+			const nextInput = await moduleStudy.saveModule();
+			c.studyInputJson = nextInput;
+			if (cached) {
+				try {
+					for (const layer of layers) await cached.study.applyGeoLayer(layer);
+					cached.studyInputJson = nextInput;
+				} catch (error) {
+					this.disposeStudy(c);
+					throw error;
+				}
+			} else {
+				const baseSolution = await moduleStudy.currentSolution();
+				this.caseStudies.set(c, {
+					study: moduleStudy,
+					studyInputJson: nextInput,
+					formulation: c.formulation,
+					baseSolution
+				});
+				keepModuleStudy = true;
+			}
+		} finally {
+			if (!keepModuleStudy) moduleStudy.free();
+		}
 	};
 
 	applyGeoLayersToExisting = async (layers: GeoLayerFile[]) => {
@@ -1147,9 +1186,9 @@ export class Controller {
 				// The column from the browser Study (under the case's formulation). DC OPF
 				// may reconcile a null column via the server; AC OPF / SOCWR are browser
 				// only, so a null column there is terminal.
-				const networkJson = await this.ensureNetworkJson(c);
-				if (networkJson) {
-					const sensitivity = await this.browserSensitivity(c, networkJson, target);
+				const studyInputJson = await this.ensureStudyInputJson(c);
+				if (studyInputJson) {
+					const sensitivity = await this.browserSensitivity(c, studyInputJson, target);
 					if (!ac.signal.aborted && sensitivity) {
 						this.acceptSensitivity(c, sensitivity, target, sensitivitySeq);
 						handled = true;
@@ -1198,7 +1237,7 @@ export class Controller {
 		return this.studyUnavailable.has(c) ? WASM_REQUIRED_NOTICE : COMPUTE_OFF_NOTICE;
 	}
 
-	/** The one server ∂LMP/∂parameter request a selection may make: the
+	/** The one server nodal-value/parameter request a selection may make: the
 	 * reconciliation path when the browser Study produced no column for a DC OPF
 	 * case. Never retries on its own: a second request inside the same rate limit
 	 * window is a guaranteed rejection, and the retry button covers the user
@@ -1274,24 +1313,26 @@ export class Controller {
 
 	selectLocalBus = async (localId: string, busId: number) => {
 		const c = this.app.localCases.find((lc) => lc.id === localId);
-		if (!c?.networkJson || !c.network) return;
+		if (!c?.studyInputJson || !c.network) return;
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.activeLocalId = localId;
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
-			const sensitivity = await this.browserSensitivity(c, c.networkJson, {
+			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
 				bus: busId
 			});
 			if (!ac.signal.aborted)
 				this.acceptSensitivity(c, sensitivity, { bus: busId }, sensitivitySeq);
 			if (!ac.signal.aborted && !sensitivity) {
-				// A null column means the solve ran but produced no dLMP/dd for this bus (or the
+				// A null column means the solve ran but produced no price/demand column for this bus (or the
 				// Study could not be built); local cases have no server fallback, so say so
-				// instead of leaving the panel in LMP view with no explanation.
+				// instead of leaving the panel in nodal value view with no explanation.
 				this.app.error = `${c.label}: ${formulationLabel(c.formulation)} sensitivity unavailable in the browser${
-					c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ' (no dLMP/dd column for this bus)'
+					c.solveFallbackReason
+						? `: ${c.solveFallbackReason}`
+						: ' (no price sensitivity column for this bus)'
 				}`;
 			}
 		} catch (e) {
@@ -1318,7 +1359,7 @@ export class Controller {
 		const what =
 			'bus' in target
 				? `${formulationLabel(c.formulation)} sensitivity`
-				: '∂LMP/∂rating sensitivity';
+				: 'price/rating sensitivity';
 		this.fail(
 			`${this.caseName(c)}: ${what} unavailable${
 				c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''
@@ -1334,7 +1375,7 @@ export class Controller {
 
 	selectLocalBranch = async (localId: string, branchId: number, opts: { focus?: boolean } = {}) => {
 		const c = this.app.localCases.find((lc) => lc.id === localId);
-		if (!c?.networkJson || !c.network) return;
+		if (!c?.studyInputJson || !c.network) return;
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.activeLocalId = localId;
@@ -1346,7 +1387,7 @@ export class Controller {
 				await this.awaitFocus(localId, branchId, ac);
 				if (ac.signal.aborted) return;
 			}
-			const sensitivity = await this.browserSensitivity(c, c.networkJson, {
+			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
 				branch: branchId
 			});
 			if (ac.signal.aborted) return;
@@ -1368,11 +1409,13 @@ export class Controller {
 		this.abort?.abort();
 		const c = this.app.active;
 		if (c) {
+			this.bumpRevision(c);
 			c.sensitivitySeq++;
 			c.sensitivity = null;
 		}
 		const lc = this.app.activeLocal;
 		if (lc) {
+			this.bumpRevision(lc);
 			lc.sensitivitySeq = (lc.sensitivitySeq ?? 0) + 1;
 			lc.sensitivity = null;
 		}
@@ -1388,7 +1431,7 @@ export class Controller {
 		this.app.previewDeltaMw = null;
 		this.app.previewRatingMw = null;
 		this.app.previewActive = false;
-		this.app.previewLmp = null;
+		this.app.previewPrices = null;
 		this.previewObjective = null;
 		this.ratingSlope = null;
 		this.app.demandRangeMode = 'local';
@@ -1397,9 +1440,9 @@ export class Controller {
 	};
 
 	// Exact solve in the browser (wasm). The build-once Study commits the new
-	// operating point without re-parsing, returning the ∂LMP/∂parameter column for
-	// the selection target in the same solve; on a Study failure or missing network
-	// JSON it reconciles via the server stream (backend cases). Rating edits never
+	// operating point without re-parsing, returning the nodal-value/parameter column for
+	// the selection target in the same solve; on a Study failure or missing PowerIO
+	// module it reconciles via the server stream (backend cases). Rating edits never
 	// fall back: the server solves at base ratings, so a Study failure there is
 	// terminal.
 	runSolve = (c: SolvableCase, target: SensTarget | null) => {
@@ -1416,10 +1459,10 @@ export class Controller {
 		c.solveFallbackReason = null;
 		c.iterations = [];
 		c.solveMs = null;
-		this.ensureNetworkJson(c).then(async (networkJson) => {
+		this.ensureStudyInputJson(c).then(async (studyInputJson) => {
 			if (seq !== (c.solveSeq ?? 0)) return;
-			if (!networkJson) {
-				c.solveFallbackReason ??= 'browser network JSON unavailable';
+			if (!studyInputJson) {
+				c.solveFallbackReason ??= 'PowerIO module unavailable';
 				if (this.hasRatingEdits(c)) {
 					c.solving = false;
 					this.app.error = this.ratingEditsFallbackError(c);
@@ -1427,16 +1470,16 @@ export class Controller {
 				}
 				if (this.isBackendCase(c)) return this.serverSolve(c, target, seq);
 				c.solving = false;
-				this.app.error = `${c.label}: local case has no browser network JSON`;
+				this.app.error = `${c.label}: local case has no retained PowerIO module`;
 				return;
 			}
 			const t0 = performance.now();
 			c.solveBackend = 'clarabel-wasm';
 
 			// Build-once Study path: commit the new operating point (no re-parse). The
-			// ∂LMP/∂parameter column for the selection target is computed in the same
+			// selected nodal value sensitivity column is computed in the same
 			// solve and comes back with it, so there is no second solve to reconcile it.
-			const study = await this.getStudy(c, networkJson);
+			const study = await this.getStudy(c, studyInputJson);
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (study) {
 				try {
@@ -1574,6 +1617,7 @@ export class Controller {
 		this.runPreview(c, bus, value);
 		c.predictedObjective = this.predictedDeltaObj;
 		c.deltas = this.previewDeltas(c, bus, value);
+		this.bumpRevision(c);
 		this.app.previewDeltaMw = value;
 		this.app.previewActive = true;
 		this.runSolve(c, { bus });
@@ -1594,8 +1638,9 @@ export class Controller {
 	resetCase = (c: SolvableCase) => {
 		c.deltas = {};
 		c.ratings = {};
+		this.bumpRevision(c);
 		c.predictedObjective = null;
-		this.app.previewLmp = null;
+		this.app.previewPrices = null;
 		this.previewObjective = null;
 		this.ratingSlope = null;
 		this.app.previewDeltaMw = this.app.selectedBus === null ? null : 0;
@@ -1618,6 +1663,7 @@ export class Controller {
 		// Disabled menu items (e.g. AC OPF, coming soon) are not selectable in the engine yet.
 		if (FORMULATIONS.find((f) => f.id === next)?.disabled) return;
 		c.formulation = next;
+		this.bumpRevision(c);
 		// The committed point carries over (same demand), but the model and its solution do
 		// not; drop the Study and the cached solutions so they rebuild under `next`.
 		this.disposeStudy(c);
@@ -1626,7 +1672,7 @@ export class Controller {
 		c.iterations = [];
 		c.solveMs = null;
 		c.predictedObjective = null;
-		this.app.previewLmp = null;
+		this.app.previewPrices = null;
 		this.previewObjective = null;
 		this.ratingSlope = null;
 		this.app.error = null;
@@ -1681,11 +1727,7 @@ export class Controller {
 		for (const file of list) {
 			if (file.name.toLowerCase().endsWith('.json')) {
 				const route = await this.routeJsonDrop(file);
-				if (
-					route.outcome === 'balanced' ||
-					route.outcome === 'restored' ||
-					route.outcome === 'multiconductor'
-				) {
+				if (route.outcome === 'balanced' || route.outcome === 'multiconductor') {
 					parsedCaseCount++;
 					routedJson.push({ file, route });
 					continue;
@@ -1750,11 +1792,8 @@ export class Controller {
 					this.addMultiCase(file.name, route.payload);
 					continue;
 				}
-				if (route.outcome !== 'balanced' && route.outcome !== 'restored') continue;
-				const local =
-					route.outcome === 'restored'
-						? this.localFromPackage(file.name, route.payload)
-						: this.localFromBalancedPayload(file.name, route.payload);
+				if (route.outcome !== 'balanced') continue;
+				const local = this.localFromBalancedPayload(file.name, route.payload);
 				const placement = await this.prepareDroppedLocal(local, geoLayers, displays);
 				geoLayersConsumed ||= placement.geoLayersConsumed;
 				this.addAndActivateLocal(local);
@@ -1779,7 +1818,10 @@ export class Controller {
 			this.app.parsingFile = true;
 			try {
 				const bytes = new Uint8Array(await file.arrayBuffer());
-				const { network_json, topology, view, ...summary } = await ingestCase(bytes, format);
+				const { network_json, module_json, topology, view, ...summary } = await ingestCase(
+					bytes,
+					format
+				);
 				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
 					this.app.error = `${file.name}: aux parsed, but no complete network; drop the matching .m or .raw case file`;
 					continue;
@@ -1795,6 +1837,7 @@ export class Controller {
 					fileName: file.name,
 					summary,
 					networkJson: network_json,
+					studyInputJson: module_json,
 					topology,
 					coordsKind: summary.coords_kind,
 					view
@@ -1884,6 +1927,7 @@ export class Controller {
 					`${d.file.name} substations`,
 					payload.report.notes
 				);
+				await this.syncStudyGeo(c, [await extractGeo(payload.network_json)]);
 				d.consumed = true;
 				return;
 			} catch {
@@ -1910,15 +1954,19 @@ export class Controller {
 				this.app.error = `${file.name}: JSON markers name both transmission and distribution formats`;
 				return { outcome: 'failed' };
 			}
-			if (result.kind === 'balanced-package') {
-				this.app.error = null;
-				return { outcome: 'restored', payload: result.payload };
-			}
 			if (result.kind === 'model-json' || result.kind === 'transmission') {
 				this.app.error = null;
 				return { outcome: 'balanced', payload: result.payload };
 			}
-			if (result.kind === 'multiconductor-package' || result.kind === 'distribution') {
+			if (result.kind === 'module') {
+				// A stored module carries either network family; the payload's own
+				// marker decides the route, mirroring the engine's value kind.
+				this.app.error = null;
+				const payload = result.payload;
+				if ('model' in payload) return { outcome: 'multiconductor', payload };
+				return { outcome: 'balanced', payload };
+			}
+			if (result.kind === 'distribution') {
 				this.app.error = null;
 				return { outcome: 'multiconductor', payload: result.payload };
 			}
@@ -2044,10 +2092,10 @@ export class Controller {
 		else this.placeLocalCase(lon, lat);
 	};
 
-	/** Build a local case from a bare balanced ingest payload without activating
+	/** Build a local case from a balanced PowerIO ingest payload without activating
 	 * it yet; co-dropped placement data is applied before the first solve. */
 	private localFromBalancedPayload = (fileName: string, payload: IngestedCase): LocalCase => {
-		const { network_json, topology, view, ...summary } = payload;
+		const { network_json, module_json, topology, view, ...summary } = payload;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
 		return new LocalCase({
@@ -2056,45 +2104,23 @@ export class Controller {
 			fileName,
 			summary,
 			networkJson: network_json,
+			studyInputJson: module_json,
 			topology,
 			coordsKind: summary.coords_kind,
 			view
 		});
-	};
-
-	/** Build a local case from a saved package, including its edit state and
-	 * formulation, without activating it until sidecars have been applied. */
-	private localFromPackage = (fileName: string, pkg: LoadedPackage): LocalCase => {
-		const { network_json, topology, view, formulation, deltas, rates, ...summary } = pkg;
-		const id = `local-${++this.localSeq}`;
-		const label =
-			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
-		const local = new LocalCase({
-			id,
-			label,
-			fileName,
-			summary,
-			networkJson: network_json,
-			topology,
-			coordsKind: summary.coords_kind,
-			view
-		});
-		local.deltas = deltas;
-		local.ratings = rates;
-		local.formulation = formulation;
-		return local;
 	};
 
 	/** Build (or reuse) the case's Study and commit it at the current edit state, so a
 	 * save or export captures exactly what is on screen. Null (with an error set) when no
-	 * network or Study is available. */
+	 * PowerIO module or Study is available. */
 	private syncedStudy = async (c: SolvableCase): Promise<BrowserStudy | null> => {
-		const networkJson = await this.ensureNetworkJson(c);
-		if (!networkJson) {
-			this.app.error = `${this.caseName(c)}: no network available to save`;
+		const studyInputJson = await this.ensureStudyInputJson(c);
+		if (!studyInputJson) {
+			this.app.error = `${this.caseName(c)}: no PowerIO module available to save`;
 			return null;
 		}
-		const study = await this.getStudy(c, networkJson);
+		const study = await this.getStudy(c, studyInputJson);
 		if (!study) {
 			this.app.error = `${this.caseName(c)}: the browser study is unavailable`;
 			return null;
@@ -2103,30 +2129,49 @@ export class Controller {
 		return study;
 	};
 
-	/** Save the active study as a `.pio.json` package and download it. */
-	saveStudyPackage = async (c: SolvableCase): Promise<void> => {
+	/** Save the materialized case as a retained PowerIO module. */
+	saveCaseModule = async (c: SolvableCase): Promise<void> => {
 		const study = await this.syncedStudy(c);
 		if (!study) return;
 		try {
 			downloadText(
-				await study.savePackage(),
-				`${this.caseFileStem(c)}.pio.json`,
+				await study.saveModule(),
+				`${this.caseFileStem(c)}.powerio.json`,
 				'application/json'
 			);
 			this.app.error = null;
 		} catch (e) {
-			this.app.error = `${this.caseName(c)}: could not save study: ${errorText(e)}`;
+			this.app.error = `${this.caseName(c)}: could not save PowerIO module: ${errorText(e)}`;
+		}
+	};
+
+	/** Save the exact DC OPF result with the materialized problem instance it solved. */
+	saveSolutionModule = async (c: SolvableCase): Promise<void> => {
+		if (c.formulation !== 'dcopf') {
+			this.app.error = `${this.caseName(c)}: exact solution modules require the DC OPF formulation`;
+			return;
+		}
+		const study = await this.syncedStudy(c);
+		if (!study) return;
+		try {
+			downloadText(
+				await study.saveSolutionModule(),
+				`${this.caseFileStem(c)}.solution.powerio.json`,
+				'application/json'
+			);
+			this.app.error = null;
+		} catch (e) {
+			this.app.error = `${this.caseName(c)}: could not save exact solution: ${errorText(e)}`;
 		}
 	};
 
 	/** Export the active study's committed state to `format` and download it. Returns the
 	 * writer's fidelity warnings so the caller can surface them. */
-	exportStudyAs = async (c: SolvableCase, format: string): Promise<string[]> => {
+	exportCaseAs = async (c: SolvableCase, format: string): Promise<string[]> => {
 		const study = await this.syncedStudy(c);
 		if (!study) return [];
 		try {
-			const packageJson = await study.savePackage();
-			const exported = await exportStudy(packageJson, studyCommitIndex(packageJson), format);
+			const exported = await study.export(format);
 			downloadText(exported.text, `${this.caseFileStem(c)}.${exported.extension}`, 'text/plain');
 			this.app.error = null;
 			return exported.warnings;
@@ -2139,7 +2184,7 @@ export class Controller {
 	/** A filesystem-safe base name for a downloaded case file. */
 	private caseFileStem(c: SolvableCase): string {
 		const base = this.isBackendCase(c) ? c.name : c.label || c.fileName.replace(/\.[^.]+$/, '');
-		return base.replace(/[^\w.-]+/g, '_') || 'study';
+		return base.replace(/[^\w.-]+/g, '_') || 'case';
 	}
 
 	setDemandRangeMode = (mode: DemandRangeMode) => {
@@ -2159,11 +2204,11 @@ export class Controller {
 
 	// First-order engine preview for the live drag. Uses the case's already-built
 	// Study (no re-parse, no re-solve) to paint predicted per-bus
-	// ΔLMP and the predicted Δobjective. A no-op when the Study isn't built yet or
+	// nodal value changes and the predicted objective change. A no-op when the Study isn't built yet or
 	// can't preview (browser fallback path, server-only cases): the map then
 	// falls back to the JS sensitivity-times-step preview.
 	runPreview = (c: SolvableCase, bus: number, value: number) => {
-		// Fast path: the committed ∂LMP/∂d column (already solved at the committed point),
+		// Fast path: the committed price/demand column (already solved at the committed point),
 		// scaled by the demand step, is the same first-order linearization the engine preview
 		// returns — without rebuilding the differentiable KKT every drag frame. That engine
 		// preview is ~80 ms/frame on the largest case (CATS, ~8870 buses), which blocked the
@@ -2174,12 +2219,21 @@ export class Controller {
 			const step = (Math.abs(value) < 0.25 ? 0 : value) - committedAtBus;
 			const delta = new Map<number, number>();
 			for (const v of col.values) delta.set(v.bus, v.value * step);
-			this.app.previewLmp = { caseId: c.id, target: { bus }, delta };
-			const lmpAtBus = c.solution?.lmp.find((l) => l.bus === bus)?.usd_per_mwh ?? null;
+			this.app.previewPrices = {
+				caseId: c.id,
+				target: { bus },
+				delta,
+				units: previewUnits(col.units)
+			};
+			const priceAtBus = c.solution?.prices.find((price) => price.bus === bus)?.value ?? null;
 			this.previewObjective =
-				lmpAtBus === null
+				priceAtBus === null
 					? null
-					: { caseId: c.id, target: { bus }, objectiveDelta: lmpAtBus * step };
+					: {
+							caseId: c.id,
+							target: { bus },
+							objectiveDelta: priceAtBus * step
+						};
 			return;
 		}
 		// Fallback (no committed column yet): the engine's first-order preview, which
@@ -2213,7 +2267,7 @@ export class Controller {
 				const study = this.caseStudies.get(c)?.study;
 				if (!study) continue;
 				try {
-					const { lmp, objectiveDelta } = await study.preview(
+					const { prices, objectiveDelta, units } = await study.preview(
 						this.previewDeltas(c, bus, value),
 						this.caseRatings(c)
 					);
@@ -2222,13 +2276,18 @@ export class Controller {
 					if (!this.app.previewActive || this.activeSolvable !== c || this.app.selectedBus !== bus)
 						continue;
 					const delta = new Map<number, number>();
-					for (const e of lmp) delta.set(e.bus, e.usd_per_mwh);
-					this.app.previewLmp = { caseId: c.id, target: { bus }, delta };
+					for (const e of prices) delta.set(e.bus, e.value);
+					this.app.previewPrices = {
+						caseId: c.id,
+						target: { bus },
+						delta,
+						units: units?.replaceAll('objective_unit', 'objective units') ?? 'objective units/MW'
+					};
 					this.previewObjective =
 						objectiveDelta === null ? null : { caseId: c.id, target: { bus }, objectiveDelta };
 				} catch {
 					if (this.activeSolvable === c && this.app.selectedBus === bus) {
-						this.app.previewLmp = null;
+						this.app.previewPrices = null;
 						this.previewObjective = null;
 					}
 				}
@@ -2257,8 +2316,8 @@ export class Controller {
 	}
 
 	// First-order engine preview for the live rating drag, mirroring runPreview: the
-	// committed ∂LMP/∂rating column scaled by the rating step paints predicted per-bus
-	// ΔLMP without touching the engine per frame. The predicted Δobjective comes from
+	// committed price/rating column scaled by the rating step paints predicted per-bus
+	// nodal value changes without touching the engine per frame. The predicted objective change comes from
 	// a per-MW slope taken once from Study.preview at a +1 MW step off the committed
 	// point (preview is replacement-absolute, so the absolute ratings map is built),
 	// then scaled by the live step; null when no Study slope is available.
@@ -2269,7 +2328,12 @@ export class Controller {
 		if (col && col.branch === branch) {
 			const delta = new Map<number, number>();
 			for (const v of col.values) delta.set(v.bus, v.value * step);
-			this.app.previewLmp = { caseId: c.id, target: { branch }, delta };
+			this.app.previewPrices = {
+				caseId: c.id,
+				target: { branch },
+				delta,
+				units: previewUnits(col.units)
+			};
 		}
 		let cached = this.ratingSlope;
 		if (cached?.caseId !== c.id || cached.branch !== branch) {
@@ -2351,6 +2415,7 @@ export class Controller {
 		}
 		c.predictedObjective = this.predictedDeltaObj;
 		c.ratings = this.previewRatings(c, branch, value);
+		this.bumpRevision(c);
 		// The slope was taken at the old committed point; the next drag re-derives it.
 		this.ratingSlope = null;
 		this.app.previewRatingMw = value;

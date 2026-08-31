@@ -36,10 +36,10 @@ function cssGradient(stops: RGBA[]): string {
 	return `linear-gradient(90deg, ${parts.join(', ')})`;
 }
 
-/** Sequential LMP ramp, cheap to expensive: pale straw darkening through
+/** Sequential nodal value ramp: pale straw darkening through
  * amber and rust to near-black maroon. Lightness falls monotonically, so the
  * ordering survives every kind of color vision deficiency. */
-const LMP_STOPS: RGBA[] = [
+const PRICE_STOPS: RGBA[] = [
 	[246, 227, 180, 235],
 	[236, 178, 66, 235],
 	[212, 116, 34, 240],
@@ -47,16 +47,16 @@ const LMP_STOPS: RGBA[] = [
 	[84, 18, 7, 250]
 ];
 
-export const lmpColor = (t: number): RGBA => ramp(LMP_STOPS, t);
-export const lmpGradient = cssGradient(LMP_STOPS);
+export const priceColor = (t: number): RGBA => ramp(PRICE_STOPS, t);
+export const priceGradient = cssGradient(PRICE_STOPS);
 
-/** Trimmed LMP color domain: 5th to 95th percentile, with a $1/MWh
- * minimum span. LMP distributions are heavy tailed (one binding line pins a
+/** Trimmed nodal value color domain: 5th to 95th percentile, with a one-unit
+ * minimum span. Nodal values are heavy tailed when one binding line pins a
  * handful of buses far from the pack) so min-max scaling compresses the pack
  * into a single hue, and a congestion-free case is one price plus solver
  * noise that an exact scale would stretch into fake structure. Values beyond
  * the domain clamp to the ramp ends. */
-export function lmpDomain(values: number[]): { lo: number; hi: number } {
+export function priceDomain(values: number[]): { lo: number; hi: number } {
 	if (values.length === 0) return { lo: 0, hi: 1 };
 	const sorted = [...values].sort((a, b) => a - b);
 	const q = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
@@ -68,10 +68,10 @@ export function lmpDomain(values: number[]): { lo: number; hi: number } {
 }
 
 /** Center a scalar display variable (bus voltage angle, |V|) on a symmetric domain
- * with a per-mode minimum span; LMP keeps its own robust quantile domain. Shared by
+ * with a per-mode minimum span; nodal values keep their own robust quantile domain. Shared by
  * the control panel readout and the map color scale. */
 export function scalarDomain(mode: DisplayMode, values: number[]): { lo: number; hi: number } {
-	if (mode === 'lmp') return lmpDomain(values);
+	if (mode === 'price') return priceDomain(values);
 	if (values.length === 0) return { lo: 0, hi: 1 };
 	const { min: rawLo, max: rawHi } = extent(values);
 	const minSpan = mode === 'voltage' ? 0.02 : 0.04;
@@ -80,9 +80,9 @@ export function scalarDomain(mode: DisplayMode, values: number[]): { lo: number;
 	return { lo: mid - span / 2, hi: mid + span / 2 };
 }
 
-/** Diverging sensitivity ramp: green (price falls per MW of demand) through
+/** Diverging sensitivity ramp: green (nodal value falls per MW of demand) through
  * a paper-toned neutral to purple (price rises). The green/purple pair stays
- * legible under CVD and shares no hue with the warm LMP ramp, so the two
+ * legible under CVD and shares no hue with the warm nodal value ramp, so the two
  * modes cannot be confused. */
 const SENS_STOPS: RGBA[] = [
 	[27, 120, 55, 240],
@@ -105,7 +105,7 @@ export function sensFlatColor(domain: Pick<SensitivityDomain, 'mean'>): RGBA {
 	return sensColor(domain.mean > 0 ? FLAT_SENSITIVITY_TINT : -FLAT_SENSITIVITY_TINT);
 }
 
-/** The fixed normalization for a slider drag: predicted ΔLMP divides by
+/** The fixed normalization for a slider drag: predicted nodal value change divides by
  * scale × maxAbsStep, so color intensity is linear in the step and saturates at
  * full deflection for the column's robust-max buses. A per-frame domain over
  * column × step would cancel the step exactly (sensitivityDomain is degree-1

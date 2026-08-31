@@ -92,7 +92,7 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 	await lookup.fill('2');
 	await page.locator('.bus-lookup li').first().tap();
 
-	const chip = page.locator('.chip', { hasText: '∂LMP/∂d' });
+	const chip = page.locator('.chip', { hasText: '∂value/∂d' });
 	await expect(chip).toBeVisible({ timeout: 30_000 });
 
 	// Above the fold: the readout sits inside the sheet's visible box with the

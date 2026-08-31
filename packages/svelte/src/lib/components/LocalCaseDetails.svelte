@@ -22,20 +22,30 @@
 	let exportOpen = $state(false);
 	let exportWarnings = $state<string[]>([]);
 
-	async function saveStudy(lc: LocalCase) {
+	async function saveCase(lc: LocalCase) {
 		busy = true;
 		exportWarnings = [];
 		try {
-			await ctrl.saveStudyPackage(lc);
+			await ctrl.saveCaseModule(lc);
 		} finally {
 			busy = false;
 		}
 	}
 
-	async function exportStudy(lc: LocalCase, token: string) {
+	async function saveSolution(lc: LocalCase) {
+		busy = true;
+		exportWarnings = [];
+		try {
+			await ctrl.saveSolutionModule(lc);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function exportCase(lc: LocalCase, token: string) {
 		busy = true;
 		try {
-			exportWarnings = await ctrl.exportStudyAs(lc, token);
+			exportWarnings = await ctrl.exportCaseAs(lc, token);
 			exportOpen = false;
 		} finally {
 			busy = false;
@@ -129,10 +139,15 @@
 		{/if}
 		<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 		{#if lc.networkJson}
-			<div class="study">
-				<button class="reset mono" disabled={busy} onclick={() => saveStudy(lc)}>
-					save study (.pio.json)
+			<div class="case-actions">
+				<button class="reset mono" disabled={busy} onclick={() => saveCase(lc)}>
+					save PowerIO module (.json)
 				</button>
+				{#if lc.formulation === 'dcopf' && lc.solution}
+					<button class="reset mono" disabled={busy} onclick={() => saveSolution(lc)}>
+						save exact solution (.json)
+					</button>
+				{/if}
 				<div class="export">
 					<button
 						class="reset mono"
@@ -146,7 +161,11 @@
 						<ul class="export-menu mono">
 							{#each EXPORT_FORMATS as f (f.token)}
 								<li>
-									<button class="reset mono" disabled={busy} onclick={() => exportStudy(lc, f.token)}>
+									<button
+										class="reset mono"
+										disabled={busy}
+										onclick={() => exportCase(lc, f.token)}
+									>
 										{f.label}
 									</button>
 								</li>
@@ -226,7 +245,7 @@
 		color: var(--text-accent);
 	}
 
-	.study {
+	.case-actions {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;

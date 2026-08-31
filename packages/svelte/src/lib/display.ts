@@ -1,5 +1,5 @@
 import type { BranchRatingDeltas, DemandDeltas } from './api.js';
-import { lmpGradient } from './colors.js';
+import { priceGradient } from './colors.js';
 import { priceCopy } from './format.js';
 import { CaseState, type DisplayMode, type SolvableCase } from './state.svelte.js';
 
@@ -15,17 +15,17 @@ export type DisplayOption = {
 };
 
 /** The display variables available for a case's current solution and formulation:
- * LMP always, the DC phase angle under DC OPF, the relaxed |V| under SOCWR. Metadata
+ * nodal marginal value always, the DC phase angle under DC OPF, the relaxed |V| under SOCWR. Metadata
  * only; call `displaySeriesFor` for one mode's per-bus values. Empty when unsolved. */
 export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 	if (!c?.solution) return [];
 	const options: DisplayOption[] = [
 		{
-			mode: 'lmp',
-			label: 'LMP',
-			unit: '$/MWh',
+			mode: 'price',
+			label: 'nodal value',
+			unit: 'objective units/MW',
 			copy: priceCopy(c.formulation),
-			gradient: lmpGradient
+			gradient: priceGradient
 		}
 	];
 	if (c.formulation === 'dcopf' && c.solution.va.length > 0) {
@@ -34,7 +34,7 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 			label: 'angle',
 			unit: 'rad',
 			copy: 'DC bus voltage phase angle from the current OPF solution.',
-			gradient: lmpGradient
+			gradient: priceGradient
 		});
 	}
 	if (c.formulation === 'socwr' && c.solution.w.length > 0) {
@@ -43,13 +43,13 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 			label: '|V|',
 			unit: 'pu',
 			copy: 'SOCWR voltage magnitude from the current relaxed solution.',
-			gradient: lmpGradient
+			gradient: priceGradient
 		});
 	}
 	return options;
 }
 
-/** Per-bus values for one display mode: LMP in $/MWh, the DC phase angle in rad, or
+/** Per-bus values for one display mode: nodal objective derivative, DC phase angle in rad, or
  * the SOCWR voltage magnitude (sqrt of the squared-voltage variable w, clamped at 0).
  * Empty when the case is unsolved. Single source for both the panel legend stats and
  * the map node coloring, so the |V| transform stays in one place. */
@@ -61,9 +61,12 @@ export function displaySeriesFor(
 	if (!sol) return [];
 	if (mode === 'angle') return sol.va;
 	if (mode === 'voltage') {
-		return sol.w.map((s) => ({ bus: s.bus, value: Math.sqrt(Math.max(0, s.value)) }));
+		return sol.w.map((s) => ({
+			bus: s.bus,
+			value: Math.sqrt(Math.max(0, s.value))
+		}));
 	}
-	return sol.lmp.map((s) => ({ bus: s.bus, value: s.usd_per_mwh }));
+	return sol.prices.map((s) => ({ bus: s.bus, value: s.value }));
 }
 
 /** The committed demand deltas for a case (MW from base, keyed by bus). A backend

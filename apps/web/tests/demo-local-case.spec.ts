@@ -42,7 +42,7 @@ test('selected local case reaches the browser solve path', async ({ page }) => {
 	await expect(solveCard.locator('.fallback-reason')).toHaveCount(0);
 });
 
-test('slider drag shows the step-scaled ΔLMP preview legend', async ({ page }) => {
+test('slider drag shows the scaled nodal value preview legend', async ({ page }) => {
 	await page.route('**/api/cases', (route) => {
 		void route.fulfill({ json: [] });
 	});
@@ -70,7 +70,7 @@ test('slider drag shows the step-scaled ΔLMP preview legend', async ({ page }) 
 	const lookup = page.locator('#bus-lookup-input');
 	await lookup.fill('3');
 	await lookup.press('Enter');
-	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible({ timeout: 30_000 });
+	await expect(page.locator('.chip', { hasText: '∂value/∂d' })).toBeVisible({ timeout: 30_000 });
 
 	// Drive a preview without committing: set the slider value and fire only an
 	// input event (pointerup/change would trigger the exact re-solve).
@@ -81,12 +81,12 @@ test('slider drag shows the step-scaled ΔLMP preview legend', async ({ page }) 
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 	});
 
-	await expect(page.getByText('First order LMP preview')).toBeVisible();
-	// case14 is uncongested, so the ∂LMP/∂d column is flat and the preview legend
+	await expect(page.getByText('First order nodal value preview')).toBeVisible();
+	// case14 is uncongested, so the nodal value/demand column is flat and the preview legend
 	// shows the uniform predicted shift. The value must scale with the step — the
 	// regression this guards is the step cancelling out of the preview display.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).toContainText(/uniform [+−-][\d.]+e[+-]\d+ \$\/MWh/);
+	await expect(labels).toContainText(/uniform [+−-][\d.]+e[+-]\d+\s+objective units\/MW/);
 	const atFull = parseShift(await labels.innerText());
 
 	await slider.evaluate((el) => {

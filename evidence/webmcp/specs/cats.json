@@ -1,0 +1,28 @@
+{
+  "schema": "tellegen.webmcp-challenge-spec/1",
+  "case_id": "cats",
+  "source": "data/CATS/CaliforniaTestSystem.m",
+  "request": {
+    "objective": {
+      "kind": "weighted_lmp",
+      "weights": [
+        { "bus": 6354, "weight": 1.0 },
+        { "bus": 2101, "weight": 1.0 },
+        { "bus": 541, "weight": 1.0 }
+      ]
+    },
+    "candidates": [
+      "branches:5310",
+      "branches:8657",
+      "branches:10215",
+      "branches:7895",
+      "branches:3821",
+      "branches:8655"
+    ],
+    "max_increase_per_branch_mw": 100.0,
+    "budget_mw": 100.0,
+    "increment_mw": 50.0,
+    "max_changed_lines": 2,
+    "exact_solve_budget": 8
+  }
+}

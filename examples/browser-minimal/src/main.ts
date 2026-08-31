@@ -13,7 +13,9 @@ if (!app) throw new Error("missing #app");
 const appRoot = app;
 
 function fmt(value: number | null | undefined, digits = 2): string {
-  return value == null || !Number.isFinite(value) ? "n/a" : value.toFixed(digits);
+  return value == null || !Number.isFinite(value)
+    ? "n/a"
+    : value.toFixed(digits);
 }
 
 function sensitivityRows(column: SensitivityColumn | null): string {
@@ -21,9 +23,7 @@ function sensitivityRows(column: SensitivityColumn | null): string {
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
     .slice(0, 5);
   return rows
-    .map(
-      (row) => `<tr><td>${row.bus}</td><td>${fmt(row.value, 5)}</td></tr>`,
-    )
+    .map((row) => `<tr><td>${row.bus}</td><td>${fmt(row.value, 5)}</td></tr>`)
     .join("");
 }
 
@@ -37,16 +37,25 @@ async function main() {
     browserWasmTransport.ingestCase(new TextEncoder().encode(CASE14), format),
     browserWasmTransport.capabilities(),
   ]);
-  const study = await browserWasmTransport.createStudy(parsed.network_json, "dcopf");
+  const study = await browserWasmTransport.createStudy(
+    parsed.module_json,
+    "dcopf",
+  );
 
   try {
     const editBus = 3;
     const edit: DemandDeltas = { [editBus]: 25 };
     const base = await study.currentSolution();
     const preview = await study.preview(edit);
-    const committed = await study.commit(parsed.name, edit, {}, { bus: editBus });
+    const committed = await study.commit(
+      parsed.name,
+      edit,
+      {},
+      { bus: editBus },
+    );
     const selfSensitivity =
-      committed.sensitivity?.values.find((row) => row.bus === editBus)?.value ?? null;
+      committed.sensitivity?.values.find((row) => row.bus === editBus)?.value ??
+      null;
 
     appRoot.innerHTML = `
       <section class="shell">
@@ -95,7 +104,7 @@ async function main() {
             <h2>sensitivity</h2>
             <p class="metric">bus ${editBus}: ${fmt(selfSensitivity, 5)} ${committed.sensitivity?.units ?? ""}</p>
             <table>
-              <thead><tr><th>bus</th><th>dLMP/dd</th></tr></thead>
+              <thead><tr><th>bus</th><th>d(nodal value)/dd</th></tr></thead>
               <tbody>${sensitivityRows(committed.sensitivity)}</tbody>
             </table>
           </article>

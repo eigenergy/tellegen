@@ -25,19 +25,19 @@
 			<dd>{stats.binding ?? '…'}</dd>
 		</div>
 		<div>
-			<dt>cost</dt>
+			<dt>declared objective</dt>
 			<dd>
 				{#if stats.objective === null}
 					<span class="blink">solving&hellip;</span>
 				{:else}
-					{fmt.format(stats.objective)} $/h
+					{fmt.format(stats.objective)}
 				{/if}
 			</dd>
 		</div>
 		{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null}
 			<div class="delta">
 				<dt>vs base</dt>
-				<dd>{signed(deltaObjective)} $/h</dd>
+				<dd>{signed(deltaObjective)}</dd>
 			</div>
 		{/if}
 	</dl>

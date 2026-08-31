@@ -24,7 +24,11 @@
 	// bar; half and full are fractions of the viewport.
 	type Snap = 'peek' | 'half' | 'full';
 	const SNAPS: Snap[] = ['peek', 'half', 'full'];
-	const SNAP_FRACTION: Record<Snap, number> = { peek: 0, half: 0.46, full: 0.92 };
+	const SNAP_FRACTION: Record<Snap, number> = {
+		peek: 0,
+		half: 0.46,
+		full: 0.92
+	};
 	/** Below this the viewport is a landscape phone and half has to give up room. */
 	const SHORT_VIEWPORT_PX = 560;
 	/** px/ms above which a release snaps in the drag direction instead of to the nearest. */
@@ -60,8 +64,8 @@
 	/** Single line shown on the grab bar while collapsed. */
 	const summary = $derived.by(() => {
 		if (app.error) return 'error — open for details';
-		if (app.selectedBus !== null) return `bus ${app.selectedBus} · ∂LMP/∂d`;
-		if (app.selectedBranch !== null) return `line ${app.selectedBranch} · ∂LMP/∂rating`;
+		if (app.selectedBus !== null) return `bus ${app.selectedBus} · ∂value/∂d`;
+		if (app.selectedBranch !== null) return `line ${app.selectedBranch} · ∂value/∂rating`;
 		const stats = ctrl.networkStats;
 		if (!stats) return app.parsingFile ? 'parsing…' : 'loading…';
 		return `${caseLabel} · ${stats.buses} buses · ${stats.branches} lines`;
@@ -150,10 +154,7 @@
 		if (dt > 0) speed = (lastY - e.clientY) / dt;
 		lastY = e.clientY;
 		lastT = e.timeStamp;
-		dragHeight = Math.max(
-			snapHeight('peek'),
-			Math.min(snapHeight('full'), dragStartHeight + dy)
-		);
+		dragHeight = Math.max(snapHeight('peek'), Math.min(snapHeight('full'), dragStartHeight + dy));
 	}
 
 	function onPointerUp() {

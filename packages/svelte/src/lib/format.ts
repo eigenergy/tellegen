@@ -28,11 +28,14 @@ export function splitName(name: string): [string, string] {
 }
 
 /** Structural shape `solveMetaLabel` needs, satisfied by `CaseState` and `LocalCase`. */
-type SolveMeta = { iterations?: SolveIteration[]; solveBackend: SolveBackend | null };
+type SolveMeta = {
+	iterations?: SolveIteration[];
+	solveBackend: SolveBackend | null;
+};
 
 export function solveMetaLabel(c: SolveMeta): string {
 	if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
-	if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'server dLMP/dd';
+	if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'server price sensitivity';
 	return c.solveBackend === 'rust-server' ? 'server solve' : 'browser solve';
 }
 
@@ -58,4 +61,4 @@ export const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 export const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.abs(v))}`;
 export const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
 export const displayFmt = (mode: DisplayMode, value: number) =>
-	mode === 'lmp' ? fmt.format(value) : value.toFixed(3);
+	mode === 'price' ? fmt.format(value) : value.toFixed(3);

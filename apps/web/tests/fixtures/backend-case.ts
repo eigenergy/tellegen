@@ -32,9 +32,9 @@ export const NETWORK = {
 
 export const SOLUTION = {
 	objective: 1234.5,
-	lmp: [
-		{ bus: 1, usd_per_mwh: 25.2 },
-		{ bus: 2, usd_per_mwh: 17.6 }
+	prices: [
+		{ bus: 1, value: 25.2 },
+		{ bus: 2, value: 17.6 }
 	],
 	va: [
 		{ bus: 1, value: 0 },
@@ -48,10 +48,10 @@ export const SOLUTION = {
 export function sensitivityColumn(bus: number) {
 	return {
 		case: 'case1',
-		operand: 'lmp',
+		operand: 'price',
 		parameter: 'd',
 		bus,
-		units: '($/MWh)/MW',
+		units: '(objective units/MW)/MW',
 		values: [
 			{ bus: 1, value: 1.7e-3 },
 			{ bus: 2, value: -0.9e-3 }

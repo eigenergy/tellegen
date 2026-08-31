@@ -3,15 +3,20 @@
 	import { signedExp } from '../format.js';
 
 	const ctrl = getController();
-	const unitTitle =
-		'LMP is measured in $/MWh and demand is perturbed in MW, so dLMP/dd has units ($/MWh)/MW.';
+	const units = $derived(
+		(ctrl.selectedSensitivity?.units ?? '(objective units/MW)/MW').replaceAll(
+			'objective_unit',
+			'objective units'
+		)
+	);
+	const unitTitle = $derived(`Nodal value response per MW of demand, in ${units}.`);
 </script>
 
 <div class="movers-block">
 	{#if !ctrl.previewing && ctrl.topMovers.length > 0}
 		<table class="mono">
 			<caption class="mono dim" title={unitTitle}>
-				largest &Delta;LMP per MW demand <span class="unit">($/MWh)/MW</span>
+				largest nodal value response <span class="unit">{units}</span>
 			</caption>
 			<tbody>
 				{#each ctrl.topMovers as mover (mover.bus)}

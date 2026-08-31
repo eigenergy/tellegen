@@ -18,8 +18,9 @@ async function caught(fetchImpl: FetchLike): Promise<unknown> {
 
 describe('checkedFetch error mapping', () => {
 	it('maps a 429 with a JSON body to the rate limit copy and keeps the server message', async () => {
-		const e = await caught(async () =>
-			new Response(JSON.stringify({ error: 'sensitivity rate limit exceeded' }), { status: 429 })
+		const e = await caught(
+			async () =>
+				new Response(JSON.stringify({ error: 'sensitivity rate limit exceeded' }), { status: 429 })
 		);
 		expect(e).toBeInstanceOf(ApiError);
 		const err = e as ApiError;
@@ -44,10 +45,14 @@ describe('checkedFetch error mapping', () => {
 	});
 
 	it('surfaces the backend message for other 4xx', async () => {
-		const e = (await caught(async () =>
-			new Response(JSON.stringify({ error: 'demand delta for bus 3 would make demand negative' }), {
-				status: 400
-			})
+		const e = (await caught(
+			async () =>
+				new Response(
+					JSON.stringify({ error: 'demand delta for bus 3 would make demand negative' }),
+					{
+						status: 400
+					}
+				)
 		)) as ApiError;
 		expect(e.status).toBe(400);
 		expect(e.message).toBe('demand delta for bus 3 would make demand negative');
@@ -75,5 +80,26 @@ describe('checkedFetch error mapping', () => {
 			async () => new Response(JSON.stringify([{ id: 'c1' }]), { status: 200 })
 		).getCases();
 		expect(cases).toEqual([{ id: 'c1' }]);
+	});
+});
+
+describe('solution wire', () => {
+	it('reads convention-neutral prices from the server contract', async () => {
+		const client = clientWith(
+			async () =>
+				new Response(
+					JSON.stringify({
+						objective: 12,
+						prices: [{ bus: 4, value: 3.5 }],
+						va: [],
+						w: [],
+						flows: [],
+						dispatch: []
+					})
+				)
+		);
+
+		const solution = await client.getSolution('case-1');
+		expect(solution.prices).toEqual([{ bus: 4, value: 3.5 }]);
 	});
 });
