@@ -9,7 +9,7 @@ import {
   browserWasmTransport,
   createStudy,
   ingestJsonDrop,
-  solveJson,
+  solveModule,
 } from "@tellegen/engine";
 ```
 
@@ -28,11 +28,15 @@ const casePayload = await ingestCase(bytes, "raw");
 const jsonPayload = await ingestJsonDrop(bytes);
 ```
 
+Every solvable ingest payload includes `module_json`, a retained PowerIO
+module. Pass that value to `createStudy` or `solveModule`. `network_json` is a
+derived view used by display and geographic transforms; it is not a solver
+input or persistence format.
+
 `ingestJsonDrop(bytes)` classifies and parses JSON in one call. Its
-`IngestedJsonDrop` result is discriminated by `kind`: balanced packages,
-multiconductor packages, and model JSON have a `null` format; transmission and
-distribution results carry the selected format; `ambiguous` and `unknown`
-results have a `null` payload.
+`IngestedJsonDrop` result is discriminated by `kind`: PowerIO modules and model
+JSON have a `null` format; transmission and distribution results carry the
+selected format; `ambiguous` and `unknown` results have a `null` payload.
 
 Every byte-buffer API rejects inputs larger than `MAX_ENGINE_INPUT_BYTES`
 (128 MiB) before worker dispatch.
@@ -44,8 +48,9 @@ Every byte-buffer API rejects inputs larger than `MAX_ENGINE_INPUT_BYTES`
 - Replace `classifyJson(text)` with `await classifyJson(bytes)`. It now returns
   `{ kind, format }` instead of a kind string.
 - If migrating code that imported `isStudyPackageText` from `@tellegen/svelte`,
-  replace it with `(await classifyJson(bytes)).kind === "balanced-package"`,
-  or use `await ingestJsonDrop(bytes)` when the document should also be parsed.
+  use `await ingestJsonDrop(bytes)`. A stored document reports `kind: "module"`;
+  its payload determines whether it contains a balanced or multiconductor
+  network.
 - Update `JsonDropKind` handling: `bmopf` and `pmd` are now
   `kind: "distribution"` with a `format`; `not-json` is `unknown`; and
   `transmission` and `ambiguous` are additional outcomes.

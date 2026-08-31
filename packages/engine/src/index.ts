@@ -2,7 +2,7 @@
  * browser allows one — a solve never blocks the page — and on the calling
  * thread otherwise (see host.ts). Nothing downloads until the first engine
  * call; dropped files are parsed locally and never leave the machine. */
-import { engineHost, type EngineHost } from "./host.js";
+import { engineHost, isolatedEngineHost, type EngineHost } from "./host.js";
 import { isPermanentWasmLoadFailure } from "./errors.js";
 import {
   assertEngineInputBytes,
@@ -72,8 +72,8 @@ export interface CaseFileSummary {
 
 export interface TopologyBus {
   id: number;
-  /** powerio row uid, stamped at ingest (e.g. "buses:0"). */
-  uid: string;
+  /** PowerIO row uid when the source carries one. */
+  uid: string | null;
   /** False for a display-only row synthesized by analysis lowering. */
   editable?: boolean;
   demand_mw: number;
@@ -82,8 +82,8 @@ export interface TopologyBus {
 
 export interface TopologyBranch {
   id: number;
-  /** powerio row uid, stamped at ingest (e.g. "branches:0"). */
-  uid: string;
+  /** PowerIO row uid when the source carries one. */
+  uid: string | null;
   /** False for a display-only row synthesized by analysis lowering. */
   editable?: boolean;
   from: number;
@@ -101,6 +101,8 @@ export interface Topology {
  * file carries coordinates and topology for synthetic placement otherwise. */
 export interface IngestedCase extends CaseFileSummary {
   network_json: string;
+  /** Retained PowerIO module used for every solver Study construction. */
+  module_json: string;
   topology: Topology;
   view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 }
@@ -110,11 +112,7 @@ export type DistEdgeKind = "line" | "switch" | "transformer";
 
 /** Terminal attachment family. */
 export type DistAttachmentKind =
-  | "load"
-  | "generator"
-  | "ibr"
-  | "shunt"
-  | "source";
+  "load" | "generator" | "ibr" | "shunt" | "source";
 
 /** One element connected to a bus terminal. */
 export interface DistGraphAttachment {
@@ -177,7 +175,7 @@ export interface IngestedDistCase {
   n_shunt: number;
   /** Capacitor banks read as their own type, which only the BMOPF reader does.
    * A `.dss` or PMD capacitor counts in `n_shunt` instead. Optional because an
-   * engine build before this field satisfies the same `^0.1.0` range. */
+   * older compatible engine payload can omit it. */
   n_capacitor?: number;
   load_kw: number;
   gen_kw: number;
@@ -190,17 +188,7 @@ export interface IngestedDistCase {
   graph: DistGraph;
 }
 
-/** A study restored from a saved `.pio.json` package: the ingest payload plus the
- * restored formulation, solve options, and folded edit state. `deltas` are keyed by
- * bus id and `rates` by branch id — the numeric keys the sliders use. */
-export interface LoadedPackage extends IngestedCase {
-  formulation: Formulation;
-  options: { shed: boolean; warm_start: boolean };
-  deltas: DemandDeltas;
-  rates: BranchRatingDeltas;
-}
-
-/** A study state written to a target format: the serialized case text, the writer's
+/** A materialized case written to a target format: the serialized case text, the writer's
  * fidelity warnings (empty when the conversion is faithful), and the format token and
  * file extension so a caller can name the download. */
 export interface ExportedCase {
@@ -210,13 +198,72 @@ export interface ExportedCase {
   extension: string;
 }
 
+/** One weighted LMP objective term, addressed by its PowerIO bus id. */
+export interface CapacityPlanBusWeightJson {
+  bus: number;
+  weight: number;
+}
+
+export type ImplicitObjectiveJson = {
+  kind: "weighted_lmp";
+  weights: CapacityPlanBusWeightJson[];
+};
+
+/** Capacity increases considered by the bounded planning search. */
+export interface CapacityPlanSpecJson {
+  objective: ImplicitObjectiveJson;
+  candidates: string[];
+  max_increase_per_branch_mw: number;
+  budget_mw: number;
+  increment_mw: number;
+  max_changed_lines: number;
+  exact_solve_budget: number;
+}
+
+export interface CapacityPlanRatingChangeJson {
+  branch: string;
+  delta_mw: number;
+}
+
+/** One recorded search step: the gradient direction, the trial, the first
+ * order prediction, the exact outcome, and whether the step was kept. */
+export interface CapacityPlanIterationJson {
+  gradient: Array<{ branch: string; value: number }>;
+  delta_mw: CapacityPlanRatingChangeJson[];
+  predicted_phi_delta: number;
+  exact_phi_delta: number | null;
+  first_order_error: number | null;
+  first_order_error_rel: number | null;
+  accepted: boolean;
+  reason: string;
+}
+
+export interface CapacityPlanResultSummaryJson {
+  phi: number;
+  declared_objective: number;
+  /** One-based position in this planning operation's exact solve budget. */
+  exact_solve: number;
+}
+
+/** The outcome of one bounded planning search and its unapplied
+ * proposal. */
+export interface CapacityPlanOutcomeJson {
+  baseline: CapacityPlanResultSummaryJson;
+  exact_verified_result: CapacityPlanResultSummaryJson;
+  baseline_phi: number;
+  final_phi: number;
+  proposal: CapacityPlanRatingChangeJson[];
+  spent_budget_mw: number;
+  exact_solves: number;
+  iterations: CapacityPlanIterationJson[];
+}
+
 export async function preloadEngine(): Promise<void> {
   await engineHost().call({ op: "preload" });
 }
 
 export type JsonDropKind =
-  | "balanced-package"
-  | "multiconductor-package"
+  | "module"
   | "model-json"
   | "transmission"
   | "distribution"
@@ -232,19 +279,20 @@ export interface JsonDropClassification {
  * ambiguous documents carry no payload; every recognized family carries the
  * same typed payload returned by its dedicated ingest API. */
 export type IngestedJsonDrop =
-  | { kind: "balanced-package"; format: null; payload: LoadedPackage }
   | {
-      kind: "multiconductor-package";
+      /** A stored `powerio.module/1` document; the payload family follows the
+       * value kind the module holds (balanced or multiconductor network). */
+      kind: "module";
       format: null;
-      payload: IngestedDistCase;
+      payload: IngestedCase | IngestedDistCase;
     }
   | { kind: "model-json"; format: null; payload: IngestedCase }
   | { kind: "transmission"; format: string; payload: IngestedCase }
   | { kind: "distribution"; format: string; payload: IngestedDistCase }
   | { kind: "ambiguous" | "unknown"; format: null; payload: null };
 
-/** Classify JSON bytes through powerio's Rust routing table. Package markers
- * also pass the strict package reader so the payload family is authoritative. */
+/** Classify JSON bytes through powerio's Rust routing table. A stored module
+ * passes the strict module reader so the payload family is authoritative. */
 export async function classifyJson(
   bytes: Uint8Array,
 ): Promise<JsonDropClassification> {
@@ -508,15 +556,15 @@ export async function capabilities(): Promise<ProblemCaps[]> {
   );
 }
 
-export async function solveJson(
-  networkJson: string,
+export async function solveModule(
+  moduleJson: string,
   request: SolveRequest = {},
 ): Promise<SolveResponse> {
   return JSON.parse(
     expectText(
       await engineHost().call({
-        op: "solve_json",
-        network_json: networkJson,
+        op: "solve_module",
+        module_json: moduleJson,
         request: JSON.stringify(request),
       }),
     ),
@@ -568,8 +616,8 @@ function toEdits(
   return edits;
 }
 
-/** The sensitivity selection target: a bus (the ∂LMP/∂d column at that bus) or a
- * branch (the ∂LMP/∂rating column at that branch). Ids are the external element
+/** The sensitivity selection target: a bus (the nodal-value/demand column at that bus) or a
+ * branch (the nodal-value/rating column at that branch). Ids are the external element
  * ids; `BrowserStudy` translates them to the engine's dense indices. */
 export type SensTarget = { bus: number } | { branch: number };
 
@@ -577,7 +625,7 @@ export type SensTarget = { bus: number } | { branch: number };
  * ∂(price, active) / ∂(demand, active) for a bus target, or ∂(price, active) /
  * ∂(line limit) for a branch target. The *formulation* is no longer fixed here — it is
  * a parameter threaded from the UI's selector through `createStudy` (every formulation the
- * full wasm build carries returns LMP, so these columns apply to all of them). The
+ * full wasm build carries returns nodal marginal values, so these columns apply to all of them). The
  * operand/parameters stay centralized so `createStudy` and the Study's `commit`/`preview`
  * requests read one source. */
 const STUDY_CAPABILITY = {
@@ -589,8 +637,8 @@ const STUDY_CAPABILITY = {
   ratingParameter: "LineLimit",
 } as const;
 
-/** The formulations the full wasm build solves entirely in the browser. Each returns LMP,
- * so the price map, legend, and the ∂LMP/∂d overlay apply unchanged to all of them. Tags
+/** The formulations the full wasm build solves entirely in the browser. Each returns nodal marginal values,
+ * so the price map, legend, and price sensitivity overlay apply unchanged to all of them. Tags
  * are the engine's serde-lowercase `Problem` variants accepted by `new Study(json, tag)`.
  * `dcopf` is the default (zero regression from the prior fixed behavior). */
 export type Formulation = BrowserFormulation;
@@ -620,11 +668,11 @@ export const FORMULATIONS: ReadonlyArray<{
 /** The default formulation: DC OPF, preserving the prior fixed behavior byte-for-byte. */
 export const DEFAULT_FORMULATION: Formulation = "dcopf";
 
-/** The `Operand[]` JSON `Study.preview` watches (the LMP column). */
+/** The `Operand[]` JSON `Study.preview` watches (the active nodal value column). */
 const PREVIEW_OPERANDS_JSON = JSON.stringify([STUDY_CAPABILITY.operand]);
 
-/** The `SensRequest[]` JSON for `Study.commit`: the ∂LMP/∂demand column at a dense bus
- * index, or the ∂LMP/∂rating column at a dense branch index, or `[]` when there is no
+/** The `SensRequest[]` JSON for `Study.commit`: the nodal-value/demand column at a dense bus
+ * index, or the nodal-value/rating column at a dense branch index, or `[]` when there is no
  * target. NOTE: `SensRequest.indices` are **dense positional** indices into the target's
  * axis (0-based), *not* external ids — `BrowserStudy` translates the selected external id
  * to its dense index before calling this. */
@@ -682,14 +730,14 @@ interface SensitivityMatrixJson {
 
 /** The `{ solution, iterations, sensitivities }` JSON the Study's `commit` returns:
  * the committed `SolveResponse`, its convergence trace, and the watched ∂operand/∂param
- * columns — so the ∂LMP/∂d column comes back in the same solve, no second round-trip. */
+ * columns — so the selected nodal value column comes back in the same solve. */
 interface StudyCommitOutput {
   solution: StudySolveResponse;
   iterations: SolveIteration[] | null;
   sensitivities: SensitivityMatrixJson[];
 }
 
-/** Extract the ∂LMP/∂parameter column from the first requested `SensitivityMatrix` into
+/** Extract the nodal-value/parameter column from the first requested `SensitivityMatrix` into
  * the `SensitivityColumn` the map and legend consume, the same shape the server serves.
  * Rows are Price operands per bus; the single column is the selected parameter, so the
  * column is `values[r][0]` keyed by each row's source bus id, and the source element is
@@ -706,7 +754,7 @@ function sensitivityColumn(
   const values = m.rows
     .map((row, r) => ({ bus: row.element.Bus, value: m.values[r]?.[0] ?? 0 }))
     .filter((v): v is { bus: number; value: number } => v.bus !== undefined);
-  const shared = { case: caseId, operand: "lmp", units: m.units, values };
+  const shared = { case: caseId, operand: "price", units: m.units, values };
   if (el.Bus !== undefined) {
     return { ...shared, parameter: "d", bus: el.Bus };
   }
@@ -719,7 +767,7 @@ function sensitivityColumn(
 function solveResponseToSolution(out: StudySolveResponse): Solution {
   return {
     objective: out.objective ?? 0,
-    lmp: (out.lmp ?? []).map((e) => ({ bus: e.bus, usd_per_mwh: e.value })),
+    prices: (out.lmp ?? []).map((e) => ({ bus: e.bus, value: e.value })),
     va: out.va ?? [],
     w: out.w ?? [],
     flows: (out.flows ?? []).map((f) => ({
@@ -731,8 +779,8 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
   };
 }
 
-/** Build-once browser transport for the reactive demand drag. The network is
- * parsed and the model built when the Study is created; `commit` solves exactly
+/** Browser transport for the reactive demand drag. The retained PowerIO module
+ * is parsed and the model built when the Study is created; `commit` solves exactly
  * at the UI's absolute demand delta state and `preview` returns a first-order
  * linearization toward an absolute demand delta state, neither re-parsing the
  * network. The wasm Study lives behind the engine host (a dedicated worker
@@ -741,8 +789,10 @@ export class BrowserStudy {
   #host: EngineHost;
   /** The caller-allocated handle naming the wasm Study on the host. */
   #handle: number;
+  #formulation: Formulation;
+  #planningHost: () => EngineHost;
   /** External bus id -> dense positional bus index, built once from the committed solution's
-   * LMP ordering (each `lmp[i].bus` sits at dense index `i`). The engine keys `SensRequest`
+   * nodal value ordering (each wire `lmp[i].bus` sits at dense index `i`). The engine keys `SensRequest`
    * by this dense index, not the external bus id, so the selected bus must be translated
    * before a sensitivity request. Null until first needed; the bus set is solve-invariant. */
   #busToIndex: Map<number, number> | null = null;
@@ -750,9 +800,16 @@ export class BrowserStudy {
    * flows ordering — the branch-axis counterpart of `#busToIndex`. */
   #branchToIndex: Map<number, number> | null = null;
 
-  constructor(host: EngineHost, handle: number) {
+  constructor(
+    host: EngineHost,
+    handle: number,
+    formulation: Formulation = DEFAULT_FORMULATION,
+    planningHost: () => EngineHost = isolatedEngineHost,
+  ) {
     this.#host = host;
     this.#handle = handle;
+    this.#formulation = formulation;
+    this.#planningHost = planningHost;
   }
 
   async #solution(): Promise<StudySolveResponse> {
@@ -767,23 +824,34 @@ export class BrowserStudy {
     deltas: DemandDeltas,
     rates: BranchRatingDeltas,
     target: SensTarget | null,
+    signal?: AbortSignal,
   ): Promise<StudyCommitOutput> {
     const sensitivities = sensitivitiesJson(await this.#senseTarget(target));
-    return JSON.parse(
-      expectText(
-        await this.#host.call({
-          op: "study_replace_edits",
-          study: this.#handle,
-          edits: JSON.stringify(toEdits(deltas, rates)),
-          sensitivities,
-        }),
-      ),
-    );
+    signal?.throwIfAborted();
+    const cancel = () => {
+      this.#host.cancel?.(new DOMException("solve cancelled", "AbortError"));
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      const result = await this.#host.call({
+        op: "study_replace_edits",
+        study: this.#handle,
+        edits: JSON.stringify(toEdits(deltas, rates)),
+        sensitivities,
+      });
+      signal?.throwIfAborted();
+      return JSON.parse(expectText(result));
+    } catch (error) {
+      signal?.throwIfAborted();
+      throw error;
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+    }
   }
 
   /** The dense-axis sensitivity target the engine expects for a selection (external
    * ids), or null when nothing is selected or the id is unknown. Memoizes the
-   * id->index maps from the committed solution's LMP / flows order — the same axis
+   * id->index maps from the committed solution's nodal value and flow order — the same axis
    * orders the engine's dense sensitivity columns use. */
   async #senseTarget(
     target: SensTarget | null,
@@ -808,7 +876,7 @@ export class BrowserStudy {
   }
 
   /** Exact solve at demand = base + `deltas` and ratings = base + `rates`, replacing
-   * the committed point. When `target` names a bus or branch, its ∂LMP/∂parameter
+   * the committed point. When `target` names a bus or branch, its nodal-value/parameter
    * column is computed in the *same* solve and returned (no second round-trip);
    * otherwise `sensitivity` is null. `caseId` labels the returned column. Returns the
    * UI Solution, the solver iterates, and the column. */
@@ -817,12 +885,13 @@ export class BrowserStudy {
     deltas: DemandDeltas,
     rates: BranchRatingDeltas,
     target: SensTarget | null,
+    signal?: AbortSignal,
   ): Promise<{
     solution: Solution;
     iterations: SolveIteration[];
     sensitivity: SensitivityColumn | null;
   }> {
-    const out = await this.#replaceEdits(deltas, rates, target);
+    const out = await this.#replaceEdits(deltas, rates, target, signal);
     return {
       solution: solveResponseToSolution(out.solution),
       iterations: out.iterations ?? [],
@@ -831,7 +900,7 @@ export class BrowserStudy {
     };
   }
 
-  /** The ∂LMP/∂parameter column at `target` for this study's formulation, computed by
+  /** The nodal-value/parameter column at `target` for this study's formulation, computed by
    * an exact re-solve at the edited point (the same one-call path `commit` uses, but
    * returning only the column). Used when a bus or branch is selected so the overlay
    * matches the active formulation rather than always the DC sensitivity. `caseId`
@@ -846,15 +915,16 @@ export class BrowserStudy {
     return sensitivityColumn(caseId, out.sensitivities);
   }
 
-  /** First-order LMP preview for replacing the committed point with
+  /** First order nodal value preview for replacing the committed point with
    * demand = base + `deltas` and ratings = base + `rates`, with no re-solve:
-   * predicted per-bus ΔLMP and the predicted Δobjective. */
+   * predicted per-bus nodal value changes and the predicted objective change. */
   async preview(
     deltas: DemandDeltas,
     rates: BranchRatingDeltas = {},
   ): Promise<{
-    lmp: { bus: number; usd_per_mwh: number }[];
+    prices: { bus: number; value: number }[];
     objectiveDelta: number | null;
+    units: string | null;
   }> {
     const out: StudyPreview = JSON.parse(
       expectText(
@@ -866,10 +936,14 @@ export class BrowserStudy {
         }),
       ),
     );
-    const lmp = (out.operands[0]?.values ?? [])
+    const prices = (out.operands[0]?.values ?? [])
       .filter((v) => v.element.Bus !== undefined)
-      .map((v) => ({ bus: v.element.Bus as number, usd_per_mwh: v.value }));
-    return { lmp, objectiveDelta: out.objective_delta };
+      .map((v) => ({ bus: v.element.Bus as number, value: v.value }));
+    return {
+      prices,
+      objectiveDelta: out.objective_delta,
+      units: out.operands[0]?.units ?? null,
+    };
   }
 
   /** The Study's current exact solution. Called immediately after Study creation
@@ -878,19 +952,96 @@ export class BrowserStudy {
     return solveResponseToSolution(await this.#solution());
   }
 
-  /** Serialize this study as a `.pio.json` package: the base network payload, the
-   * edit log as the study block, and the formulation and solve options under
-   * `study.app["tellegen"]`. The returned text is ready to download or hand to
-   * `exportStudy`. */
-  async savePackage(): Promise<string> {
+  /** Materialize the current case as a retained `powerio.module/1` document. */
+  async saveModule(): Promise<string> {
     return expectText(
-      await this.#host.call({ op: "study_save_package", study: this.#handle }),
+      await this.#host.call({ op: "study_save_module", study: this.#handle }),
     );
+  }
+
+  /** Serialize the current exact DC OPF result as a PowerIO solution module.
+   * Its embedded problem instance contains the materialized case that was
+   * solved. */
+  async saveSolutionModule(): Promise<string> {
+    return expectText(
+      await this.#host.call({
+        op: "study_save_solution_module",
+        study: this.#handle,
+      }),
+    );
+  }
+
+  /** Write the current materialized case to one PowerIO target format. */
+  async export(format: string): Promise<ExportedCase> {
+    return JSON.parse(
+      expectText(
+        await this.#host.call({
+          op: "study_export",
+          study: this.#handle,
+          format,
+        }),
+      ),
+    );
+  }
+
+  /** Run a bounded differentiable planning search over the committed
+   * operating point. Read only: the committed case, edits, and revision are
+   * untouched; the returned outcome carries the unapplied proposal and the
+   * search trace (gradient, per step prediction, exact result, first
+   * order error, accept or reject reason). Rejects on a non-DC formulation
+   * or an unknown element key. Worker hosts stop the solve on cancellation;
+   * the synchronous fallback finishes the wasm call but rejects its result. */
+  async plan(
+    spec: CapacityPlanSpecJson,
+    signal?: AbortSignal,
+  ): Promise<CapacityPlanOutcomeJson> {
+    signal?.throwIfAborted();
+    const moduleJson = await this.saveModule();
+    signal?.throwIfAborted();
+    const planningStudy = await createStudyOnHost(
+      moduleJson,
+      this.#formulation,
+      this.#planningHost(),
+      signal,
+    );
+    try {
+      return await planningStudy.#planInPlace(spec, signal);
+    } finally {
+      planningStudy.free();
+    }
+  }
+
+  /** Run planning on this disposable Study. Public callers go through
+   * `plan`, which first clones the committed PowerIO module onto an isolated
+   * host so cancellation cannot invalidate the interactive Study. */
+  async #planInPlace(
+    spec: CapacityPlanSpecJson,
+    signal?: AbortSignal,
+  ): Promise<CapacityPlanOutcomeJson> {
+    signal?.throwIfAborted();
+    const cancel = () => {
+      this.#host.cancel?.(new DOMException("planning cancelled", "AbortError"));
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      const result = await this.#host.call({
+        op: "study_plan",
+        study: this.#handle,
+        spec: JSON.stringify(spec),
+      });
+      signal?.throwIfAborted();
+      return JSON.parse(expectText(result));
+    } catch (error) {
+      signal?.throwIfAborted();
+      throw error;
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+    }
   }
 
   /** Apply a parsed geographic layer (the canonical `.geo.json` from
    * `parseGeo` or `applyLayout`) onto this study's base network, so the next
-   * `savePackage` or export carries the coordinates on screen. Locations are
+   * `saveModule` or export carries the coordinates on screen. Locations are
    * metadata the model never reads; nothing re-solves. */
   async applyGeoLayer(layer: string): Promise<GeoApplyReport> {
     return JSON.parse(
@@ -905,7 +1056,7 @@ export class BrowserStudy {
   }
 
   /** Release the wasm Study; call when discarding it (e.g. the case's
-   * networkJson changed, or the case was removed). Fire and forget: the
+   * module input changed, or the case was removed). Fire and forget: the
    * handle is invalid from this call on. */
   free() {
     void this.#host
@@ -914,69 +1065,51 @@ export class BrowserStudy {
   }
 }
 
-/** Construct a build-once Study over `networkJson` for `formulation`, parsing the network
- * and solving the base case once. `formulation` is a `Problem` tag (`dcopf`/`acopf`/`socwr`,
+/** Construct a Study from a retained PowerIO module for `formulation`, parsing its
+ * problem instance and solving the base case once. `formulation` is a `Problem` tag (`dcopf`/`acopf`/`socwr`,
  * defaulting to DC OPF); the full wasm build solves every one entirely in the browser.
  * Throws if the engine module can't load (or the formulation is unknown/not built); the
  * caller must catch and fall back (see `isPermanentEngineFailure`). */
 let studySeq = 0;
 
 export async function createStudy(
-  networkJson: string,
+  moduleJson: string,
   formulation: Formulation = DEFAULT_FORMULATION,
+  options: { isolated?: boolean; signal?: AbortSignal } = {},
 ): Promise<BrowserStudy> {
-  const host = engineHost();
+  const host = options.isolated ? isolatedEngineHost() : engineHost();
+  return createStudyOnHost(moduleJson, formulation, host, options.signal);
+}
+
+async function createStudyOnHost(
+  moduleJson: string,
+  formulation: Formulation,
+  host: EngineHost,
+  signal?: AbortSignal,
+): Promise<BrowserStudy> {
   // Handles are allocated here, not by the host, so a pending build replayed
   // onto the fallback host keeps naming the same study.
   const handle = ++studySeq;
-  await host.call({
-    op: "study_new",
-    study: handle,
-    network_json: networkJson,
-    formulation,
-  });
-  return new BrowserStudy(host, handle);
-}
-
-/** Restore a study saved by `BrowserStudy.savePackage`: the case, edit sliders,
- * formulation, and solve options in one step. Rejects on a malformed package or one
- * that is not a tellegen study (the engine fails the load closed). */
-export async function loadPackage(text: string): Promise<LoadedPackage> {
-  assertEngineInputLength(text.length);
-  return JSON.parse(
-    expectText(await engineHost().call({ op: "load_package", text })),
-  );
-}
-
-/** Restore a dropped package without decoding it in JavaScript. */
-export async function loadPackageBytes(
-  bytes: Uint8Array,
-): Promise<LoadedPackage> {
-  assertEngineInputBytes(bytes);
-  return JSON.parse(
-    expectText(await engineHost().call({ op: "load_package_bytes", bytes })),
-  );
-}
-
-/** Export a saved study package at commit `commit` to a powerio `format` (`matpower`,
- * `psse`, `model-json`, ...). Returns the serialized case text, the writer's fidelity
- * warnings, and the format token and file extension. */
-export async function exportStudy(
-  packageJson: string,
-  commit: number,
-  format: string,
-): Promise<ExportedCase> {
-  assertEngineInputLength(packageJson.length);
-  return JSON.parse(
-    expectText(
-      await engineHost().call({
-        op: "export_study",
-        package_json: packageJson,
-        commit,
-        format,
-      }),
-    ),
-  );
+  signal?.throwIfAborted();
+  const cancel = () => {
+    host.cancel?.(new DOMException("study creation cancelled", "AbortError"));
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    await host.call({
+      op: "study_new",
+      study: handle,
+      module_json: moduleJson,
+      formulation,
+    });
+    signal?.throwIfAborted();
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+  }
+  return new BrowserStudy(host, handle, formulation);
 }
 
 export interface EngineTransport {
@@ -1005,21 +1138,15 @@ export interface EngineTransport {
     bytes: Uint8Array,
   ): Promise<AppliedGeoCase>;
   capabilities(): Promise<ProblemCaps[]>;
-  solveJson(
-    networkJson: string,
+  solveModule(
+    moduleJson: string,
     request?: SolveRequest,
   ): Promise<SolveResponse>;
   createStudy(
-    networkJson: string,
+    moduleJson: string,
     formulation?: Formulation,
+    options?: { isolated?: boolean; signal?: AbortSignal },
   ): Promise<BrowserStudy>;
-  loadPackage(text: string): Promise<LoadedPackage>;
-  loadPackageBytes(bytes: Uint8Array): Promise<LoadedPackage>;
-  exportStudy(
-    packageJson: string,
-    commit: number,
-    format: string,
-  ): Promise<ExportedCase>;
 }
 
 export const browserWasmTransport: EngineTransport = {
@@ -1038,11 +1165,8 @@ export const browserWasmTransport: EngineTransport = {
   extractGeo,
   applyDisplayGeo,
   capabilities,
-  solveJson,
+  solveModule,
   createStudy,
-  loadPackage,
-  loadPackageBytes,
-  exportStudy,
 };
 
 export function createBrowserWasmTransport(): EngineTransport {

@@ -1,0 +1,60 @@
+{
+  "name": "@tellegen/webmcp",
+  "version": "0.1.0",
+  "description": "WebMCP tools for interactive tellegen browser hosts.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eigenergy/tellegen.git",
+    "directory": "packages/webmcp"
+  },
+  "bugs": {
+    "url": "https://github.com/eigenergy/tellegen/issues"
+  },
+  "homepage": "https://eigenergy.github.io/tellegen/",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
+    "dist/index.js.map",
+    "dist/register.d.ts",
+    "dist/register.d.ts.map",
+    "dist/register.js",
+    "dist/register.js.map",
+    "dist/tools.d.ts",
+    "dist/tools.d.ts.map",
+    "dist/tools.js",
+    "dist/tools.js.map",
+    "dist/types.d.ts",
+    "dist/types.d.ts.map",
+    "dist/types.js",
+    "dist/types.js.map",
+    "dist/validation.d.ts",
+    "dist/validation.d.ts.map",
+    "dist/validation.js",
+    "dist/validation.js.map"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm test",
+    "test": "vitest run",
+    "pack:dry-run": "npm pack --dry-run"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "webmcp-types": "0.1.5"
+  }
+}
