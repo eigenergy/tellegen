@@ -312,7 +312,7 @@ test("PowerIO provenance accepts one exact Git revision", () => {
   const revision = "a".repeat(40);
   const packages = powerioNames.map((name) => ({
     name,
-    version: "0.11.0",
+    version: "1.0.0",
     source: `git+https://github.com/eigenergy/powerio.git?rev=${revision}#${revision}`,
     checksum: null,
   }));
@@ -329,16 +329,16 @@ test("PowerIO provenance ties a checksummed registry release to its commit", () 
   const revision = "b".repeat(40);
   const packages = powerioNames.map((name, index) => ({
     name,
-    version: "0.11.0",
+    version: "1.0.0",
     source: "registry+https://github.com/rust-lang/crates.io-index",
     checksum: index.toString(16).repeat(64),
   }));
   const resolved = resolvePowerioProvenance(packages, {
     schema: "tellegen.powerio-release-revisions/1",
-    releases: [{ version: "0.11.0", tag: "v0.11.0", revision }],
+    releases: [{ version: "1.0.0", tag: "v1.0.0", revision }],
   });
   assert.equal(resolved.powerio_revision, revision);
-  assert.equal(resolved.powerio_release_tag, "v0.11.0");
+  assert.equal(resolved.powerio_release_tag, "v1.0.0");
   assert.equal(
     Object.keys(resolved.powerio_lock_checksums).length,
     powerioNames.length,

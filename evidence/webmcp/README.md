@@ -19,11 +19,12 @@ node evidence/webmcp/run.mjs evidence/webmcp/specs/texas7k.json evidence/webmcp/
 The runner refuses tracked or untracked changes other than earlier generated
 JSON files in `results/`. It records the Tellegen commit and tree, the PowerIO
 commit, the lockfile digest, the invocation spec digest, and the source digest.
-Before PowerIO 0.11 is published, the common Git dependency supplies its exact
-commit. After publication, every component crate must resolve to one registry
-version with a Cargo.lock checksum, and `powerio-releases.json` must map that
-release tag to its commit. The runner creates outputs with exclusive writes,
-so a second run cannot replace evidence silently.
+Before PowerIO 1.0.0 is published, the common Git dependency supplies the exact
+reviewed candidate commit. After publication, every component crate must
+resolve to one registry version with a Cargo.lock checksum, and
+`powerio-releases.json` must map that release tag to its commit. The runner
+creates outputs with exclusive writes, so a second run cannot replace evidence
+silently.
 
 `--allow-dirty` exists for local harness debugging and always marks the
 artifact `reproducible: false`; do not check in such an artifact. Without that

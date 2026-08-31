@@ -2,8 +2,10 @@
 
 PowerIO 0.10.0 is the baseline for this review. The corrections found while
 integrating Tellegen are being developed in
-[powerio#453](https://github.com/eigenergy/powerio/pull/453) for PowerIO 0.11.0.
-The 0.10.0 tag and its stored files remain unchanged.
+[powerio#453](https://github.com/eigenergy/powerio/pull/453) and
+[powerio#454](https://github.com/eigenergy/powerio/pull/454) for PowerIO 1.0.0.
+There is no intermediate 0.11 release. The 0.10.0 tag and its stored files
+remain unchanged.
 
 Tellegen consumes PowerIO modules at its public boundaries. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem instance.
@@ -16,7 +18,7 @@ The 0.10.0 preparation entry points exposed numerical arrays, but they did not
 compile every part of the supplied OPF instance. A consumer could therefore ask
 PowerIO to prepare one problem and silently solve another.
 
-PowerIO 0.11.0 preparation data addresses the complete instance:
+The PowerIO 1.0.0 candidate preparation data addresses the complete instance:
 
 - `Empty` and `NetworkGeneratorCost` objectives compile explicitly. Unsupported
   terms return a typed error.
@@ -56,11 +58,12 @@ value vector product used by capacity planning.
 
 ## Stored values and upgrades
 
-The new solution columns change the stored value API and are released as
-PowerIO 0.11.0. They fit in `powerio.module/1`, so the module envelope version
-does not change. The migration guide covers reading 0.10 modules and the new
-result fields. A stored 0.10 objective containing the retired regularization
-token loads with a diagnostic rather than becoming a current public objective.
+The new solution columns change the stored value API and are part of the
+PowerIO 1.0.0 candidate. They fit in `powerio.module/1`, so the module envelope
+version does not change. The migration guide covers reading 0.10 modules and
+the new result fields. A stored 0.10 objective containing the retired
+regularization token loads with a diagnostic rather than becoming a current
+public objective.
 
 When Tellegen commits edits, it retains valid module diagnostics, history,
 extensions, and producer data; replaces the module value with the committed
