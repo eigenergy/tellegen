@@ -8,8 +8,8 @@ The transport boundary is the line between a host app and the tellegen engine.
 
 Use this transport when cases should stay local to the browser. Dropped case
 files are parsed in WebAssembly, and solves, `Study.preview`, `Study.commit`,
-and sensitivity requests run there as well. No case text or network JSON leaves
-the browser unless the host app sends it.
+and sensitivity requests run there as well. No case text or PowerIO module
+leaves the browser unless the host app sends it.
 
 The wasm instance lives in a dedicated Web Worker, so a multi-second solve
 never blocks the page. When the browser cannot run a module worker the same
@@ -26,8 +26,8 @@ The loader is lazy. Host apps can call `preloadEngine()` to control when the bro
 The hosted demo also uses HTTP for bundled case metadata and native server fallback paths. That server is a demo consumer, not a requirement for using `@tellegen/engine`.
 
 An HTTP transport can implement the same shape as `EngineTransport`: parse or
-fetch a network, call a native `solve_json` endpoint, keep a server side study
-handle, and return the same generated TypeScript contract shapes.
+fetch a PowerIO module, call a native module solve endpoint, keep a server side
+study handle, and return the same generated TypeScript contract shapes.
 
 That transport is optional for apps that need server sized cases, audit logs, or native deployment.
 

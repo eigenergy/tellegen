@@ -1,0 +1,65 @@
+{
+  "schema": "tellegen.webmcp-challenge-result/1",
+  "case_id": "texas7k",
+  "reproducible": true,
+  "invocation": "node evidence/webmcp/run.mjs evidence/webmcp/specs/texas7k.json evidence/webmcp/results/texas7k.json",
+  "software": {
+    "tellegen_revision": "5f7aa829f5bfbfb75b4866da1d14e7dec0d50090",
+    "tellegen_tree": "f8eeb419c13c4e1d07aa60ad150dfc35a90376e2",
+    "powerio_revision": "7a17cafdf31b3094aaeda318152fc518d5574ab9",
+    "powerio_version": "0.11.0",
+    "powerio_source": "git+https://github.com/eigenergy/powerio.git?rev=7a17cafdf31b3094aaeda318152fc518d5574ab9#7a17cafdf31b3094aaeda318152fc518d5574ab9",
+    "powerio_release_tag": null,
+    "powerio_lock_checksums": {},
+    "cargo_lock_sha256": "e4707a44a768314000cd61c16f23cde58689bc8d2060b659025a191ffbd2d9c1"
+  },
+  "source": {
+    "path": "data/ACTIVSg7000/Texas7k_20210804.m",
+    "byte_length": 1953603,
+    "sha256": "56dbe2b9f79fe2a02d4830cb6049e55b2481d61e562cd86b7eb14d0f4bd2ae05"
+  },
+  "spec_sha256": "381b8e420920ef9cbb6165afb3fd335cc660abb28df8ef9afc09fba05e43a042",
+  "request": {
+    "objective": {
+      "kind": "weighted_lmp",
+      "weights": [
+        {
+          "bus": 111078,
+          "weight": 1
+        },
+        {
+          "bus": 110449,
+          "weight": 1
+        },
+        {
+          "bus": 110127,
+          "weight": 1
+        }
+      ]
+    },
+    "candidates": [
+      "branches:711",
+      "branches:132",
+      "branches:716",
+      "branches:157",
+      "branches:712",
+      "branches:1589"
+    ],
+    "max_increase_per_branch_mw": 100,
+    "budget_mw": 100,
+    "increment_mw": 25,
+    "max_changed_lines": 2,
+    "exact_solve_budget": 8
+  },
+  "expected_outcome": {
+    "kind": "failure",
+    "code": "nonconvex_piecewise_generator_cost"
+  },
+  "status": "failure",
+  "failure": {
+    "code": "nonconvex_piecewise_generator_cost",
+    "stage": "instance_preparation",
+    "message": "tellegen: BUILD.INSTANCE.PIECEWISE_COST_NONCONVEX: generator 2 has a nonconvex piecewise linear cost: segment 1 has a lower slope than the preceding segment",
+    "exact_solves_completed": 0
+  }
+}

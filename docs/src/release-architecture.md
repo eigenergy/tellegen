@@ -1,6 +1,7 @@
 # Release Architecture
 
-The public framework surfaces are `@tellegen/engine` and `@tellegen/svelte`.
+The public browser surfaces are `@tellegen/engine`, `@tellegen/svelte`, and
+`@tellegen/webmcp`.
 
 Stable release surfaces:
 
@@ -10,6 +11,8 @@ Stable release surfaces:
 - `packages/engine` TypeScript package, generated TypeScript types, and browser
   wasm entry points;
 - `packages/svelte` Svelte component package; and
+- `packages/webmcp` framework independent WebMCP tool definitions and runtime
+  validation; and
 - examples under `examples/`.
 
 The hosted demo under `apps/web` is one consumer of the packages. It keeps
@@ -20,6 +23,7 @@ routes, SEO, credits, privacy, and deployment specific behavior.
 The repository uses npm workspaces with one root `package-lock.json` for:
 
 - `packages/engine`;
+- `packages/webmcp`;
 - `packages/svelte`;
 - `apps/web`;
 - `examples/browser-minimal`; and
@@ -35,11 +39,13 @@ Root scripts define the package order:
 
 - `npm run wasm` builds both wasm packages into `packages/engine`;
 - `npm run build:engine` builds `@tellegen/engine`;
+- `npm run build:webmcp` builds `@tellegen/webmcp`;
 - `npm run build:svelte` builds `@tellegen/svelte`;
 - `npm run build:example` builds both downstream examples;
 - `npm run check:web`, `npm run build:web`, and `npm run smoke:web` gate the
   hosted demo;
 - `npm run pack:engine` previews the engine npm package contents; and
+- `npm run pack:webmcp` previews the WebMCP npm package contents;
 - `npm run pack:svelte` previews the Svelte npm package contents.
 
 ## Versioning
@@ -69,20 +75,15 @@ Nonbreaking changes can ship in a minor version:
 
 Patch versions are for bug fixes and docs that do not change public APIs.
 
-### Saved studies and the `.pio.json` format version
+### Saved cases
 
-A saved study is a powerio `.pio.json` document, and it states the powerio
-release that wrote it. powerio reads the lineage it belongs to: a 0.9 build
-reads a 0.9 document. When powerio leaves a lineage behind, every study saved
-under it stops loading.
+Tellegen saves the materialized network as a stored PowerIO module. The module
+keeps applicable records, severs source linkage invalidated by edits, and adds
+descriptive edit history. Loading it starts a fresh runtime `Study` at the
+saved point. Tellegen defines no document schema or replay format.
 
-tellegen cannot migrate such a file. The document is a snapshot of a case and an
-edit log, so the user must save it again from the source case. All three call
-sites that load a package pass powerio's rejection through unchanged; it names
-the release that wrote the document and the lineage this build reads.
-
-The tellegen block in the document (`study.app["tellegen"]`) has its own
-`schema_version` and is checked separately.
+Exact OPF results are stored as PowerIO solution modules containing the
+instance that was solved.
 
 ## Releasing
 
@@ -172,9 +173,9 @@ open that bumps the version. Merge it to run the gates, continue the existing
 `vX.Y.Z` tag series, make the GitHub release, and publish. The configuration
 sets `release_always = false`, limiting publication to a merged release-plz pull
 request. The unprivileged gate runs `cargo package --locked`; the OIDC-enabled
-release then uses Cargo's `--no-verify` path so package build scripts never run
-with registry authority. release-plz obtains its short-lived crates.io
-credential directly from OIDC.
+release uses the ordinary verified Cargo publish path against that exact
+commit. release-plz obtains its short-lived crates.io credential directly from
+OIDC.
 
 The crate update uses the same sealed-patch privilege boundary as package
 versioning. Its fixed `release-plz-main` branch is intentional: with

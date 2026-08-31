@@ -207,7 +207,7 @@ jobs:
           node-version: 24
           npm-cache: "false"
       - name: Build packages
-        run: npm run wasm && npm run build:engine && npm run build:svelte
+        run: npm run wasm && npm run build:engine && npm run build:webmcp && npm run build:svelte
       - name: Pack packages
         id: pack
         uses: changesets/action/pack@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1

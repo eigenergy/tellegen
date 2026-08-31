@@ -8,11 +8,13 @@ MATPOWER `.m`, PSS/E `.raw`, PowerWorld `.aux`/`.pwb`, and PSLF `.epc` files
 describe balanced network topology; OpenDSS `.dss` opens the multiconductor
 viewer. If a balanced case includes complete coordinates, tellegen draws it
 directly. Otherwise it creates a local synthetic layout and asks the user to
-place it on the map. Dropped JSON is content routed: a balanced `.pio.json`
-study restores, model and transmission JSON open as balanced cases, and
-multiconductor packages plus BMOPF or PowerModelsDistribution documents open
-the multiconductor viewer. Unrecognized JSON falls through to the geographic
-reader.
+place it on the map. Dropped JSON is content routed. A stored
+`powerio.module` document opens by its value kind: a balanced network becomes
+a case, while a multiconductor network opens in the viewer. Model and
+transmission JSON open as balanced cases, and BMOPF or
+PowerModelsDistribution documents open the multiconductor viewer. Tellegen
+does not define a separate saved case format. Unrecognized JSON falls through
+to the geographic reader.
 
 After a parsed local case has coordinates, either from the file, a geographic
 file, or manual placement, tellegen solves the selected formulation in browser
@@ -45,11 +47,11 @@ Parsing is powerio's `GeoLayer` tolerant reader, running in WebAssembly: it
 accepts headerless OpenDSS buscoords CSV, CSV and JSON records with the aliased
 field names below, and GeoJSON `Point`/`LineString` features, and it rejects
 input carrying no usable coordinates. Applied coordinates land on the network
-itself (`Bus.location`, `Branch.route`), so a saved study package or an
-exported case carries exactly the placement on screen. The case panel can also
-download the current layout as a `.geo.json` layer — canonical GeoJSON with
-provenance stamped (`synthetic` or `manual` for layouts) that powerio and
-tellegen read back.
+itself (`Bus.location`, `Branch.route`), so a saved PowerIO case module or an
+exported case carries the placement on screen. Loading that module starts a
+fresh runtime study at the saved point; descriptive edit history is not
+replayed. The case panel can also download the current layout as a `.geo.json`
+layer that PowerIO and Tellegen read back.
 
 ## Bus Coordinates
 
@@ -99,9 +101,8 @@ polylines instead of straight segments.
 ## Piecewise Costs
 
 A dropped case with MATPOWER model 1 piecewise linear generator costs solves
-against a least squares quadratic fit of its breakpoints
-([formulations](formulations.md)), so its objective and prices differ from a
-solver that carries the piecewise curve exactly.
+the declared convex curve exactly ([formulations](formulations.md)). Malformed
+rows and rows with decreasing segment slopes are rejected before a solve.
 
 ## Display Files
 

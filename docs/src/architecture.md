@@ -35,13 +35,19 @@ The whole engine is pure Rust and compiles to WebAssembly, so the same code runs
 
 One numerical core, two faces that share a driver and a result type:
 
-- **Stateless**: `solve_json(network, request)` and `capabilities_json()`. Each call parses, solves, and returns. This is the face for one-shot callers: the HTTP server, the CLI, fixtures, and the initial case load.
-- **Stateful**: the `Study`. It builds the model once. `commit` applies a set of `NetworkEdit`s and re-solves exactly, optionally returning the requested sensitivity columns in the same solve; `preview` returns a first-order update at the committed point with no re-solve. This is the reactive hot path: a demand drag previews and commits without re-parsing the network every frame.
+- **Stateless**: `solve_module(module, request)` and `capabilities_json()`. Each
+  call reads a PowerIO module, solves its declared problem instance, and
+  returns.
+- **Stateful**: the `Study`. It starts from a PowerIO module and builds the
+  private solver workspace once. `commit` applies a set of `NetworkEdit`s and
+  re-solves exactly, optionally returning the requested sensitivity columns in
+  the same solve; `preview` returns a first order update at the committed point
+  with no re-solve.
 
 ## Browser framework packages
 
 `packages/engine` is the reusable package surface. It exports generated
-contracts, case and display parsing helpers, stateless solve calls, capabilities,
+contracts, case and display parsing helpers, module based solves, capabilities,
 the browser `Study`, and the browser wasm transport. It has no SvelteKit
 dependency.
 

@@ -187,7 +187,7 @@
 										<ul class="changes mono">
 											{#each entry.displayProposal as change (change.branchId)}
 												<li>
-													<span>branch {change.branchId}</span>
+													<span>{change.branchId}</span>
 													<span>{formatDelta(change.deltaMw)} MW rating</span>
 												</li>
 											{/each}

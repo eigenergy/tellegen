@@ -27,6 +27,8 @@ jobs:
       # neither of which the shipped artifact runs: apps/web builds static
       # through adapter-static, and tellegen-server serves the files.
       - run: npm audit --audit-level=high
+      - run: npm run check:webmcp
+      - run: npm run pack:webmcp
       - run: npm run wasm
       - run: npm run check:engine
       - run: npm run build:engine

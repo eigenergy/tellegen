@@ -12,14 +12,14 @@ baseMVA 100. PGLib data is CC BY 4.0 (see [References](references.md)).
 
 ## What is driven
 
-Per `(case, variant)`: parse (through powerio), build `DcNetwork` / `AcNetwork`,
-then
+Per `(case, variant)`, the harness parses a PowerIO module and declares the
+calculation as `DcOpfInstance`, `AcOpfInstance`, or `AcPfInstance`. It then
+drives the same typed facade available to downstream consumers:
 
-- DC OPF: `solve_prebuilt` (objective, dispatch, LMPs);
-- conic SOCWR: `socwr_opf` (objective, gap, W-space primals);
-- AC power flow: `ac_pf` (convergence, residual);
-- sensitivities: the typed engines (`AcNewton` / `ConicKkt` with `sensitivity`)
-  and the `solve_json` front door, which carries the DC sensitivities.
+- DC OPF: `solve_instance` (objective, dispatch, nodal values);
+- conic SOCWR: `solve_ac_instance` (objective, gap, W-space primals);
+- AC power flow: `solve_ac_pf_instance` (convergence, residual);
+- sensitivities: the same typed solve entries in forward and adjoint modes.
 
 ## Timing
 
