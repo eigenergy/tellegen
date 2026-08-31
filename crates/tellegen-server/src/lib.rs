@@ -22,7 +22,7 @@ use axum::{
     routing::{any, get},
     Json, Router,
 };
-use powerio::{BalancedNetwork, IndexedNetwork};
+use powerio::{BalancedNetwork, DcOpfInstance, IndexedNetwork, PioModule};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
@@ -34,7 +34,7 @@ use tower_http::{
 
 use tellegen::geo::{complete_coords_for, lowered_coords, spread_stacks, synthetic_layout, Coords};
 use tellegen::{
-    solve_prebuilt, solve_prebuilt_cancellable, DcNetwork, Iterations, SolveRequest, SolveResponse,
+    solve_instance, solve_instance_cancellable, Iterations, SolveRequest, SolveResponse,
 };
 #[cfg(feature = "sensitivity")]
 use tellegen::{ElementId, Mode, Operand, Parameter, Power, SensRequest, SensitivityMatrix};
@@ -219,10 +219,15 @@ struct CaseEntry {
     id: String,
     name: String,
     network: BalancedNetwork,
-    network_json: String,
-    /// The DC model built once at load. Solves clone this and perturb only the
-    /// demand vector, so a demand drag never re-runs normalize-and-reindex.
-    dc: Arc<DcNetwork>,
+    module_json: String,
+    /// The declared problem supplied to Tellegen. Dense solver workspaces stay
+    /// behind the engine boundary.
+    dc_instance: Arc<DcOpfInstance>,
+    /// Tellegen's exact base result maps the public identities used by the HTTP
+    /// API to its dense sensitivity axes. The server does not interpret the
+    /// network a second time.
+    dc_bus_ids: Vec<usize>,
+    dc_branch_ids: Vec<usize>,
     view: NetworkPayload,
     base_solution: SolutionPayload,
 }
@@ -280,12 +285,12 @@ pub struct NetworkBranch {
 }
 
 /// The served DC value shapes (the HTTP/JSON contract). The engine returns the
-/// formulation-agnostic `BusScalar` / `BranchFlow` / `GenDispatch`; the server maps
+/// common `BusScalar` / `BranchFlow` / `GenDispatch`; the server maps
 /// those to the DC-specific field names the frontend reads.
 #[derive(Clone, Copy, Debug, Serialize)]
-pub struct LmpValue {
+pub struct PriceValue {
     pub bus: usize,
-    pub usd_per_mwh: f64,
+    pub value: f64,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -316,7 +321,7 @@ pub struct SensitivityValue {
 #[derive(Clone, Debug, Serialize)]
 pub struct SolutionPayload {
     pub objective: f64,
-    pub lmp: Vec<LmpValue>,
+    pub prices: Vec<PriceValue>,
     pub va: Vec<ScalarValue>,
     pub w: Vec<ScalarValue>,
     pub flows: Vec<FlowValue>,
@@ -587,7 +592,7 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         .route("/api/health", get(health))
         .route("/api/compute", get(compute_status))
         .route("/api/cases", get(cases))
-        .route("/api/cases/{id}/case", get(case_network_json))
+        .route("/api/cases/{id}/case", get(case_module_json))
         .route("/api/cases/{id}/network", get(network))
         .route("/api/cases/{id}/solution", get(solution))
         .merge(compute_routes)
@@ -682,13 +687,13 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
             .map(|entry| CaseSummary {
                 id: entry.id.clone(),
                 name: entry.name.clone(),
-                n_bus: entry.network.buses.len(),
-                n_branch: entry.network.branches.len(),
+                n_bus: entry.network.buses().len(),
+                n_branch: entry.network.branches().len(),
                 n_analysis_bus: entry.view.buses.len(),
                 n_analysis_branch: entry.view.branches.len(),
                 n_gen: entry
                     .network
-                    .generators
+                    .generators()
                     .iter()
                     .filter(|gen| gen.in_service)
                     .count(),
@@ -697,14 +702,14 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
     )
 }
 
-async fn case_network_json(
+async fn case_module_json(
     State(state): State<Arc<AppState>>,
     AxumPath(id): AxumPath<String>,
 ) -> ApiResult<impl IntoResponse> {
     let entry = state.case(&id)?;
     Ok((
         [(CONTENT_TYPE, HeaderValue::from_static("application/json"))],
-        entry.network_json.clone(),
+        entry.module_json.clone(),
     ))
 }
 
@@ -781,12 +786,12 @@ async fn sensitivity(
     let entry = state.case(&id)?;
     match target {
         SensitivityTarget::Demand { bus } => {
-            if !entry.network.buses.iter().any(|b| b.id.0 == bus) {
+            if !entry.network.buses().iter().any(|b| b.id.0 == bus) {
                 return Err(ApiError::not_found(format!("unknown bus {bus}")));
             }
         }
         SensitivityTarget::LineLimit { branch } => {
-            if !entry.dc.branch_ids.contains(&branch) {
+            if !entry.dc_branch_ids.contains(&branch) {
                 return Err(ApiError::not_found(format!("unknown branch {branch}")));
             }
         }
@@ -822,7 +827,7 @@ async fn solve_stream(
     state.check_expensive_rate_limit(ExpensiveEndpoint::Solve, &client)?;
     let entry = state.case(&id)?;
     if let Some(bus) = query.sens {
-        if !entry.network.buses.iter().any(|b| b.id.0 == bus) {
+        if !entry.network.buses().iter().any(|b| b.id.0 == bus) {
             return Err(ApiError::not_found(format!("unknown bus {bus}")));
         }
     }
@@ -874,7 +879,7 @@ async fn solve_stream(
                         "case": id_for_task.as_str(),
                         "solve_ms": (solve_ms * 10.0).round() / 10.0,
                         "objective": solution.objective,
-                        "lmp": solution.lmp,
+                        "prices": solution.prices,
                         "va": solution.va,
                         "w": solution.w,
                         "flows": solution.flows,
@@ -912,16 +917,14 @@ fn build_request(
     #[cfg(feature = "sensitivity")]
     if let Some((parameter, idx)) = target.and_then(|target| match target {
         SensitivityTarget::Demand { bus } => entry
-            .dc
-            .bus_ids
+            .dc_bus_ids
             .iter()
             .position(|&id| id == bus)
             .map(|idx| (Parameter::Demand(Power::Active), idx)),
         SensitivityTarget::LineLimit { branch } => entry
-            .dc
-            .branch_ids
+            .dc_branch_ids
             .iter()
-            .position(|&id| id == branch)
+            .position(|id| *id == branch)
             .map(|idx| (Parameter::LineLimit, idx)),
     }) {
         request.sensitivities = vec![SensRequest {
@@ -958,10 +961,10 @@ async fn run_solve_limited(
             .acquire_owned()
             .await
             .map_err(|_| ApiError::service_unavailable("solver unavailable"))?;
-        let dc = entry.dc.clone();
+        let instance = entry.dc_instance.clone();
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            solve_prebuilt_cancellable(&dc, &request, Some(task_cancel))
+            solve_instance_cancellable(&instance, &request, Some(task_cancel))
         })
         .await
         .map_err(|e| ApiError::internal(format!("solve task failed: {e}")))?
@@ -977,20 +980,49 @@ async fn run_solve_limited(
     }
 }
 
+/// Parse case text in memory as a typed PowerIO module, forcing `format`.
+/// Module records remain attached so `/case` can serve the same portable
+/// source unit that supplied the runtime case.
+fn parse_balanced(
+    text: &str,
+    name: &str,
+    format: &str,
+) -> Result<PioModule<BalancedNetwork>, String> {
+    let format = powerio::format::format_id_for(format).map_err(|e| e.to_string())?;
+    let source = powerio::Source::from_bytes(name, text.as_bytes().to_vec())
+        .map_err(|e| e.to_string())?
+        .with_format(format);
+    let module = powerio::parse(source).map_err(|e| e.to_string())?;
+    powerio::try_into_typed(module)
+        .map_err(|mismatch| format!("parsed a {} value", mismatch.actual().as_str()))
+}
+
+/// Read and parse one staged case file. Returns the network and the file's
+/// text, which callers keep when the format retains data in source text
+/// (PowerWorld aux substation coordinates).
+fn parse_balanced_file(
+    path: &Path,
+    format: &str,
+) -> Result<(PioModule<BalancedNetwork>, String), String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let net = parse_balanced(&text, &path.to_string_lossy(), format)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok((net, text))
+}
+
 fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, String> {
     let case_path = data_dir.join(spec.casefile);
-    let case = powerio::format::parse_file(&case_path, Some("m"))
-        .map_err(|e| format!("{}: {e}", case_path.display()))?
-        .network;
+    let (case_module, _) = parse_balanced_file(&case_path, "m")?;
+    let case = case_module.value();
     let coords = match spec.coords {
         CoordSpec::Aux(auxfile) => {
             let aux_path = data_dir.join(auxfile);
-            let aux = powerio::format::parse_file(&aux_path, Some("aux"))
-                .map_err(|e| format!("{}: {e}", aux_path.display()))?
-                .network;
-            complete_coords_for(&case, &aux, auxfile)?
+            let (aux_module, aux_text) = parse_balanced_file(&aux_path, "aux")?;
+            // The substation table rides in the aux text itself. PowerIO retains
+            // the source on the module rather than the network value.
+            complete_coords_for(case, aux_module.value(), Some(&aux_text), auxfile)?
         }
-        CoordSpec::BusCsv(csvfile) => load_bus_csv_coords(&data_dir.join(csvfile), &case)?,
+        CoordSpec::BusCsv(csvfile) => load_bus_csv_coords(&data_dir.join(csvfile), case)?,
     };
     let branch_paths = spec
         .branch_geo
@@ -999,7 +1031,7 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
             path.is_file().then(|| load_branch_paths(&path))
         })
         .transpose()?;
-    build_entry(spec.id, spec.name, case, coords, branch_paths, false)
+    build_entry(spec.id, spec.name, case_module, coords, branch_paths, false)
 }
 
 fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, String> {
@@ -1053,7 +1085,7 @@ fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, St
         }
     }
     spread_stacks(&mut coords);
-    for bus in &case.buses {
+    for bus in case.buses() {
         if !coords.contains_key(&bus.id.0) {
             return Err(format!(
                 "{}: missing coordinates for bus {}",
@@ -1207,24 +1239,41 @@ fn valid_coord(lon: f64, lat: f64) -> bool {
 }
 
 fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
-    let case = powerio::parse_str(spec.text, "m")
-        .map_err(|e| format!("{} fallback parse failed: {e}", spec.id))?
-        .network;
-    let coords = synthetic_layout(&case, spec.bbox);
-    build_entry(spec.id, spec.name, case, coords, None, true)
+    let case_module = parse_balanced(spec.text, "<fallback>", "m")
+        .map_err(|e| format!("{} fallback parse failed: {e}", spec.id))?;
+    let coords = synthetic_layout(case_module.value(), spec.bbox);
+    build_entry(spec.id, spec.name, case_module, coords, None, true)
 }
 
 fn build_entry(
     id: &str,
     name: &str,
-    network: BalancedNetwork,
+    module: PioModule<BalancedNetwork>,
     coords: Coords,
     branch_paths: Option<BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<CaseEntry, String> {
-    let network_json = network.to_json().map_err(|e| e.to_string())?;
-    let dc = Arc::new(DcNetwork::from_network(&network)?);
-    let base = solve_prebuilt(&dc, &SolveRequest::default())?;
+    let network = module.value().clone();
+    let module_json =
+        powerio::stored::write_module(&module.map_value(powerio::PioValue::BalancedNetwork))
+            .map_err(|e| e.to_string())?;
+    let dc_instance =
+        Arc::new(DcOpfInstance::from_network(network.clone()).map_err(|e| e.to_string())?);
+    let base = solve_instance(&dc_instance, &SolveRequest::default())?;
+    let dc_bus_ids = base
+        .va
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(|value| value.bus)
+        .collect();
+    let dc_branch_ids = base
+        .flows
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(|value| value.branch)
+        .collect();
     let view = network_payload(
         id,
         name,
@@ -1237,8 +1286,10 @@ fn build_entry(
         id: id.into(),
         name: name.into(),
         network,
-        network_json,
-        dc,
+        module_json,
+        dc_instance,
+        dc_bus_ids,
+        dc_branch_ids,
         view,
         base_solution: solution_payload(&base),
     })
@@ -1254,20 +1305,20 @@ fn network_payload(
 ) -> Result<NetworkPayload, String> {
     let power_scale = if net.is_normalized() {
         net.check_base_mva().map_err(|error| error.to_string())?;
-        net.base_mva
+        net.base_mva()
     } else {
         1.0
     };
     let indexed = IndexedNetwork::new(net);
     let analysis = indexed.network();
     let editable_bus_ids: HashSet<usize> = net
-        .buses
+        .buses()
         .iter()
         .filter(|bus| bus.kind != powerio::BusType::Isolated)
         .map(|bus| bus.id.0)
         .collect();
     let editable_branch_rows: HashSet<usize> = net
-        .branches
+        .branches()
         .iter()
         .enumerate()
         .filter(|(_, branch)| {
@@ -1281,15 +1332,15 @@ fn network_payload(
         .collect();
     let coords = lowered_coords(net, coords);
     let mut demand = BTreeMap::<usize, f64>::new();
-    for load in analysis.loads.iter().filter(|load| load.in_service) {
+    for load in analysis.loads().iter().filter(|load| load.in_service) {
         *demand.entry(load.bus.0).or_default() += load.p * power_scale;
     }
     let mut generation = BTreeMap::<usize, f64>::new();
-    for gen in analysis.generators.iter().filter(|gen| gen.in_service) {
+    for gen in analysis.generators().iter().filter(|gen| gen.in_service) {
         *generation.entry(gen.bus.0).or_default() += gen.pmax * power_scale;
     }
     let buses = analysis
-        .buses
+        .buses()
         .iter()
         .enumerate()
         .map(|(i, bus)| {
@@ -1302,16 +1353,16 @@ fn network_payload(
                 lat,
                 demand_mw: demand.get(&bus.id.0).copied().unwrap_or(0.0),
                 gen_mw: generation.get(&bus.id.0).copied().unwrap_or(0.0),
-                editable: i < net.buses.len() && editable_bus_ids.contains(&bus.id.0),
+                editable: i < net.buses().len() && editable_bus_ids.contains(&bus.id.0),
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
     let branches = analysis
-        .branches
+        .branches()
         .iter()
         .enumerate()
         .map(|(i, br)| {
-            let source_paths = branch_paths.filter(|_| i < net.branches.len());
+            let source_paths = branch_paths.filter(|_| i < net.branches().len());
             let &(from_lon, from_lat) = coords.get(&br.from.0).ok_or_else(|| {
                 format!(
                     "{}: missing coordinates for branch from bus {}",
@@ -1343,7 +1394,7 @@ fn network_payload(
     Ok(NetworkPayload {
         id: id.into(),
         name: name.into(),
-        base_mva: net.base_mva,
+        base_mva: net.base_mva(),
         synthetic_coords,
         buses,
         branches,
@@ -1353,14 +1404,14 @@ fn network_payload(
 fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
     SolutionPayload {
         objective: resp.objective.unwrap_or(0.0),
-        lmp: resp
+        prices: resp
             .lmp
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .map(|s| LmpValue {
+            .map(|s| PriceValue {
                 bus: s.bus,
-                usd_per_mwh: s.value,
+                value: s.value,
             })
             .collect(),
         va: scalar_values(resp.va.as_deref()),
@@ -1484,7 +1535,7 @@ fn validate_deltas(entry: &CaseEntry, deltas: &HashMap<usize, f64>) -> ApiResult
         // A bus in the full network but excluded from the DC model (an isolated
         // MATPOWER type 4 bus) would fail deep inside the engine as "unknown" and
         // surface as a 500; reject it here with an accurate message instead.
-        if !entry.dc.bus_ids.contains(&bus) {
+        if !entry.dc_bus_ids.contains(&bus) {
             return Err(ApiError::bad_request(format!(
                 "demand delta bus {bus} is isolated and excluded from the model"
             )));
@@ -1821,10 +1872,19 @@ mod tests {
         assert!(network["synthetic_coords"].as_bool().unwrap());
         assert!(network["buses"].as_array().unwrap().len() >= 200);
 
+        let (status, case) = get("/api/cases/case200/case").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(case["schema"], "powerio.module");
+        assert_eq!(case["version"], 1);
+        assert_eq!(case["value"]["kind"], "balanced_network");
+
         let (status, solution) = get("/api/cases/case200/solution").await;
         assert_eq!(status, StatusCode::OK);
         assert!(solution["objective"].as_f64().unwrap().is_finite());
-        assert!(solution["lmp"].as_array().unwrap().len() >= 200);
+        assert!(solution["prices"].as_array().unwrap().len() >= 200);
+        assert!(solution["prices"][0]["value"].as_f64().unwrap().is_finite());
+        assert!(solution["prices"][0].get("usd_per_mwh").is_none());
+        assert!(solution.get("lmp").is_none());
     }
 
     #[test]
@@ -1852,9 +1912,9 @@ mod tests {
 
     #[test]
     fn network_payload_keeps_native_units_for_normalized_models() {
-        let raw = powerio::parse_str(FALLBACK_SPECS[0].text, "m")
+        let raw = parse_balanced(FALLBACK_SPECS[0].text, "<fallback>", "m")
             .expect("parse fallback")
-            .network;
+            .into_value();
         let coords = synthetic_layout(&raw, FALLBACK_SPECS[0].bbox);
         let normalized = raw.to_normalized().expect("normalize fallback");
         let source =
@@ -1875,16 +1935,16 @@ mod tests {
 
     #[test]
     fn network_payload_includes_noneditable_three_winding_star_rows() {
-        let mut net = powerio::parse_str(FALLBACK_SPECS[0].text, "m")
+        let mut net = parse_balanced(FALLBACK_SPECS[0].text, "<fallback>", "m")
             .expect("parse fallback")
-            .network;
-        let terminals = [net.buses[0].id, net.buses[1].id, net.buses[2].id];
+            .into_value();
+        let terminals = [net.buses()[0].id, net.buses()[1].id, net.buses()[2].id];
         let windings = terminals.map(powerio::Winding::new);
-        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
-        net.transformers_3w
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva());
+        net.transformers_3w_mut()
             .push(powerio::Transformer3W::new(windings, [impedance; 3]));
         let coords = net
-            .buses
+            .buses()
             .iter()
             .enumerate()
             .map(|(i, bus)| (bus.id.0, (-90.0 + i as f64 * 0.001, 40.0)))
@@ -1892,22 +1952,23 @@ mod tests {
 
         let payload =
             network_payload("3w", "3w", &net, &coords, None, false).expect("3W network payload");
-        assert_eq!(payload.buses.len(), net.buses.len() + 1);
-        assert_eq!(payload.branches.len(), net.branches.len() + 3);
+        assert_eq!(payload.buses.len(), net.buses().len() + 1);
+        assert_eq!(payload.branches.len(), net.branches().len() + 3);
         assert!(!payload.buses.last().unwrap().editable);
-        assert!(payload.branches[net.branches.len()..]
+        assert!(payload.branches[net.branches().len()..]
             .iter()
             .all(|branch| !branch.editable));
     }
 
     #[test]
     fn network_payload_marks_filtered_canonical_rows_noneditable() {
-        let mut net = powerio::parse_str(FALLBACK_SPECS[0].text, "m")
+        let mut net = parse_balanced(FALLBACK_SPECS[0].text, "<fallback>", "m")
             .expect("parse fallback")
-            .network;
-        net.buses[0].kind = powerio::BusType::Isolated;
-        net.branches[0].in_service = false;
-        net.branches[1].to = net.branches[1].from;
+            .into_value();
+        net.buses_mut()[0].kind = powerio::BusType::Isolated;
+        net.branches_mut()[0].in_service = false;
+        let self_loop_from = net.branches()[1].from;
+        net.branches_mut()[1].to = self_loop_from;
         let coords = synthetic_layout(&net, FALLBACK_SPECS[0].bbox);
         let payload = network_payload("filtered", "filtered", &net, &coords, None, true)
             .expect("filtered payload");
@@ -2073,9 +2134,9 @@ mod tests {
     #[test]
     fn validate_deltas_rejects_isolated_bus_delta() {
         // Patch an isolated (type 4) bus onto the case200 fixture: it exists in
-        // the full network view but DcNetwork::from_network excludes it from the
-        // model, so a delta there must 400 with an accurate message instead of
-        // failing deep in the engine as a 500.
+        // the full network view but PowerIO's DC preparation excludes it from
+        // the analysis axis, so a delta there must return 400 instead of failing
+        // in the engine as a 500.
         let spec = &FALLBACK_SPECS[0];
         let start = spec.text.find("mpc.bus = [").unwrap();
         let end = start + spec.text[start..].find("\n];").unwrap();
@@ -2086,9 +2147,10 @@ mod tests {
         );
         patched.push_str(&spec.text[end..]);
 
-        let case = powerio::parse_str(&patched, "m").unwrap().network;
+        let case = parse_balanced(&patched, "<fallback>", "m").unwrap();
         let coords: Coords = case
-            .buses
+            .value()
+            .buses()
             .iter()
             .enumerate()
             .map(|(i, b)| (b.id.0, (i as f64, 0.0)))
@@ -2118,6 +2180,8 @@ mod tests {
         assert_eq!(events, ["status", "solution", "done"]);
         assert!(body.contains(r#""case":"case200""#));
         assert!(body.contains(r#""solve_ms":"#));
+        assert!(body.contains(r#""prices":["#));
+        assert!(!body.contains(r#""lmp":["#));
     }
 
     #[cfg(feature = "sensitivity")]

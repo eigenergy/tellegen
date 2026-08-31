@@ -1,6 +1,6 @@
 //! The browser- and server-facing entry point: one driver over every formulation.
 //!
-//! Parse a powerio [`BalancedNetwork`], apply operating-point edits, solve the requested
+//! Read a PowerIO module or typed problem instance, apply operating point edits, solve the requested
 //! formulation, attach any requested sensitivity cells, and serve a
 //! formulation-agnostic response. The frontend picks three things in one request:
 //! the **problem** it solves (`dcpf`/`dcopf`/`acpf`/`socwr`), the **operand** it
@@ -9,16 +9,21 @@
 //! crosses the JSON edge unchanged.
 //!
 //! Keeping the JSON layer here (not behind `#[wasm_bindgen]`) makes it testable
-//! natively; the wasm crate wraps [`solve_json`] and [`capabilities_json`].
+//! natively; the wasm crate wraps [`solve_module_json`] and [`capabilities_json`].
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use powerio::BalancedNetwork;
+#[cfg(feature = "conic")]
+use powerio_prob::AcOpfInstance;
+#[cfg(feature = "sensitivity")]
+use powerio_prob::AcPfInstance;
+use powerio_prob::DcOpfInstance;
 use serde::{Deserialize, Serialize};
 
-use super::model::{validate_unique_uids, DcNetwork};
+use super::model::DcNetwork;
 use super::problem::dc_opf_cancellable;
 use super::solve::SolveIteration;
 
@@ -65,9 +70,7 @@ pub enum Problem {
 /// (or all-digit string, since JSON object keys are strings) reads as [`Id`](Self::Id),
 /// any other string as [`Uid`](Self::Uid) — so existing numeric clients keep working
 /// unchanged. Uid keys resolve against the uids the network carried when the model
-/// was built (the wasm `ingest_case` stamps them via powerio's
-/// `ensure_payload_uids`); a uid the network does not carry is an unknown-element
-/// error.
+/// was built; a uid the network does not carry is an unknown-element error.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ElementKey {
     /// Original numeric id: bus id or 1-based branch position.
@@ -151,32 +154,6 @@ pub struct Edits {
     pub rates: HashMap<ElementKey, f64>,
 }
 
-/// Solve options orthogonal to the formulation choice.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SolveOptions {
-    /// Permit load shedding on the DC paths. Default `false`: an unservable case
-    /// reports infeasible (the published PGLib behavior). Ignored by AC/conic.
-    #[serde(default)]
-    pub shed: bool,
-    /// Retained for wire-format stability; inert in this build (it gated the AC OPF
-    /// warm start). Default `true`, ignored by every formulation this build solves.
-    #[serde(default = "default_true")]
-    pub warm_start: bool,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-impl Default for SolveOptions {
-    fn default() -> Self {
-        SolveOptions {
-            shed: false,
-            warm_start: true,
-        }
-    }
-}
-
 /// One requested sensitivity cell: an [`Operand`] differentiated with respect to a
 /// [`Parameter`], over an optional parameter-index subset, in an optional direction.
 /// The operand/parameter are the contract's serde-tagged enums verbatim
@@ -199,8 +176,8 @@ fn default_mode() -> Mode {
     Mode::Auto
 }
 
-/// The one solve request: a formulation, an operating-point edit set, zero or more
-/// sensitivity cells, and options. A bare `{"formulation":"acpf"}` (or even `{}`,
+/// The one solve request: a formulation, an operating-point edit set, and zero or more
+/// sensitivity cells. A bare `{"formulation":"acpf"}` (or even `{}`,
 /// which defaults to DC OPF) is valid.
 ///
 /// ```json
@@ -209,11 +186,11 @@ fn default_mode() -> Mode {
 ///   "edits": { "deltas": { "2": 50.0 }, "rates": { "3": -25.0 } },
 ///   "sensitivities": [
 ///     { "operand": {"Price":"Active"}, "parameter": {"Demand":"Active"}, "indices": [1] }
-///   ],
-///   "options": { "shed": false }
+///   ]
 /// }
 /// ```
 #[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SolveRequest {
     #[serde(default)]
     pub formulation: Problem,
@@ -224,8 +201,6 @@ pub struct SolveRequest {
     #[cfg(feature = "sensitivity")]
     #[serde(default)]
     pub sensitivities: Vec<SensRequest>,
-    #[serde(default)]
-    pub options: SolveOptions,
 }
 
 /// Validate edit keys against the caller's canonical PowerIO tables before any
@@ -245,8 +220,11 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             }
             ElementKey::Id(id) => usize::try_from(*id)
                 .ok()
-                .and_then(|id| net.buses.iter().find(|bus| bus.id.0 == id)),
-            ElementKey::Uid(uid) => net.buses.iter().find(|bus| bus.uid.as_deref() == Some(uid)),
+                .and_then(|id| net.buses().iter().find(|bus| bus.id.0 == id)),
+            ElementKey::Uid(uid) => net
+                .buses()
+                .iter()
+                .find(|bus| bus.uid.as_deref() == Some(uid)),
         };
         let Some(target) = target else {
             return Err(format!("unknown demand delta bus {bus}"));
@@ -266,9 +244,9 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             ElementKey::Id(id) => usize::try_from(*id)
                 .ok()
                 .and_then(|id| id.checked_sub(1))
-                .and_then(|row| net.branches.get(row)),
+                .and_then(|row| net.branches().get(row)),
             ElementKey::Uid(uid) => net
-                .branches
+                .branches()
                 .iter()
                 .find(|branch| branch.uid.as_deref() == Some(uid)),
         };
@@ -276,7 +254,7 @@ pub(crate) fn validate_canonical_edits(net: &BalancedNetwork, edits: &Edits) -> 
             return Err(format!("unknown rating delta branch {branch}"));
         };
         let endpoint_is_editable = |id| {
-            net.buses
+            net.buses()
                 .iter()
                 .any(|bus| bus.id == id && bus.kind != powerio::BusType::Isolated)
         };
@@ -306,7 +284,7 @@ pub fn validate_canonical_identity(net: &BalancedNetwork) -> Result<(), String> 
 // Response
 // ---------------------------------------------------------------------------
 
-/// A solve outcome that succeeded. A failed solve is the `Err` arm of [`solve_json`].
+/// A solve outcome that succeeded. A failed solve is the `Err` arm of a solve entry.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SolveStatus {
@@ -381,8 +359,9 @@ pub struct GenDispatch {
 }
 
 /// The formulation-agnostic solve result. A superset: every block is optional, and
-/// each formulation fills what it produces. Powers are MW/MVAr, prices $/MWh and
-/// $/MVArh, angles radians, `vm` per unit, `w = |V|^2` per unit squared. Element ids
+/// each formulation fills what it produces. Powers are MW/MVAr, nodal values are
+/// in objective units per selected power unit, angles radians, `vm` per unit, and
+/// `w = |V|^2` per unit squared. Element ids
 /// are the original bus/branch/generator ids, so the frontend joins straight onto
 /// its case.
 #[derive(Clone, Debug, Serialize)]
@@ -394,7 +373,8 @@ pub struct SolveResponse {
     pub objective: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iterations: Option<Iterations>,
-    /// Active nodal price (dcopf / socwr).
+    /// Active nodal price when the solved OPF declares a network generator
+    /// cost objective. Feasibility solves leave this absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lmp: Option<Vec<BusScalar>>,
     /// Reactive nodal price. Always `None` in this build; the field is retained for
@@ -429,11 +409,13 @@ pub struct SolveResponse {
 // The driver
 // ---------------------------------------------------------------------------
 
-/// Parse a network, solve the requested formulation at `base + edits`, attach every
-/// requested sensitivity cell, and return the [`SolveResponse`] as JSON. The single
-/// front door. Errors — a failed solve, an unsupported `(operand, parameter)` cell,
-/// a formulation this build does not include — surface as the `Err` string.
-pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, String> {
+/// Parse a network for crate tests, solve the requested formulation at `base + edits`,
+/// attach every requested sensitivity cell, and return the [`SolveResponse`] as JSON.
+#[cfg(test)]
+pub(crate) fn solve_test_network_json(
+    network_json: &str,
+    request_json: &str,
+) -> Result<String, String> {
     let net = BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
     let req: SolveRequest = if request_json.trim().is_empty() {
         SolveRequest::default()
@@ -444,11 +426,57 @@ pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, Stri
     serde_json::to_string(&resp).map_err(|e| e.to_string())
 }
 
+/// Solve a PowerIO stored module. A balanced network is promoted to the
+/// default problem instance for the requested formulation; a stored DC or AC
+/// OPF instance keeps its declared objective and constraint selections.
+pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String, String> {
+    let module = powerio::stored::read_module(module_json).map_err(|error| error.to_string())?;
+    let req: SolveRequest = if request_json.trim().is_empty() {
+        SolveRequest::default()
+    } else {
+        serde_json::from_str(request_json).map_err(|error| format!("bad request JSON: {error}"))?
+    };
+    let response = match module.into_value() {
+        powerio::PioValue::BalancedNetwork(network) => match req.formulation {
+            Problem::DcOpf => {
+                let instance = DcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
+                solve_instance(&instance, &req)?
+            }
+            #[cfg(feature = "sensitivity")]
+            Problem::AcPf => {
+                let instance = AcPfInstance::from_network(network).map_err(|e| e.to_string())?;
+                solve_ac_pf_instance(&instance, &req)?
+            }
+            #[cfg(feature = "conic")]
+            Problem::Socwr => {
+                let instance = AcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
+                solve_ac_instance(&instance, &req)?
+            }
+            _ => solve_network(&network, &req)?,
+        },
+        powerio::PioValue::DcOpfInstance(instance) => solve_instance(&instance, &req)?,
+        #[cfg(feature = "sensitivity")]
+        powerio::PioValue::AcPfInstance(instance) => solve_ac_pf_instance(&instance, &req)?,
+        #[cfg(feature = "conic")]
+        powerio::PioValue::AcOpfInstance(instance) => solve_ac_instance(&instance, &req)?,
+        other => {
+            return Err(format!(
+                "PowerIO module holds {}, which this solve entry does not support",
+                other.kind().as_str()
+            ));
+        }
+    };
+    serde_json::to_string(&response).map_err(|error| error.to_string())
+}
+
 /// Solve an already-parsed [`BalancedNetwork`] under `req`. Dispatches on the formulation to
 /// the matching solver, then runs each requested sensitivity against the matching
 /// differentiable system. Problems this build does not include return a clean
 /// `Err` rather than degrading silently.
-pub fn solve_network(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
+pub(crate) fn solve_network(
+    net: &BalancedNetwork,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
     validate_canonical_edits(net, &req.edits)?;
     match req.formulation {
         Problem::DcOpf => solve_dc_opf(net, req),
@@ -470,6 +498,71 @@ pub fn solve_network(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveR
     }
 }
 
+/// Solve a typed PowerIO DC OPF instance. This is the public numerical entry
+/// for callers that already own the problem declaration; the solver workspace
+/// and its dense arrays remain private to Tellegen.
+pub fn solve_instance(
+    instance: &DcOpfInstance,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
+    solve_instance_cancellable(instance, req, None)
+}
+
+/// As [`solve_instance`], with cancellation polled by the interior point solve.
+pub fn solve_instance_cancellable(
+    instance: &DcOpfInstance,
+    req: &SolveRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<SolveResponse, String> {
+    if req.formulation != Problem::DcOpf {
+        return Err(format!(
+            "a dc_opf_instance cannot be solved as {:?}",
+            req.formulation
+        ));
+    }
+    validate_canonical_edits(instance.network(), &req.edits)?;
+    dc_opf_response(DcNetwork::from_instance(instance)?, req, cancel)
+}
+
+/// Solve a typed PowerIO AC power flow instance. The instance's PQ, PV, and
+/// reference specifications define the Newton system; they are not inferred
+/// again from the network tables.
+#[cfg(feature = "sensitivity")]
+pub fn solve_ac_pf_instance(
+    instance: &AcPfInstance,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
+    if req.formulation != Problem::AcPf {
+        return Err(format!(
+            "an ac_pf_instance cannot be solved as {:?}",
+            req.formulation
+        ));
+    }
+    validate_canonical_edits(instance.network(), &req.edits)?;
+    let (model, solution) =
+        ac_pf_solved(super::model::AcNetwork::from_pf_instance(instance)?, req)?;
+    ac_pf_assemble(&model, &solution, req)
+}
+
+/// Solve a typed PowerIO AC OPF instance with the SOCWR relaxation. The
+/// private conic workspace retains the instance's objective and active
+/// constraint selections.
+#[cfg(feature = "conic")]
+pub fn solve_ac_instance(
+    instance: &AcOpfInstance,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
+    if req.formulation != Problem::Socwr {
+        return Err(format!(
+            "an ac_opf_instance cannot be solved as {:?}",
+            req.formulation
+        ));
+    }
+    validate_canonical_edits(instance.network(), &req.edits)?;
+    let (model, solution) = socwr_solved(super::model::AcNetwork::from_instance(instance)?, req)?;
+    socwr_assemble(&model, &solution, req)
+}
+
 fn solve_dc_opf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     let dc = DcNetwork::from_network(net)?;
     dc_opf_response(dc, req, None)
@@ -484,7 +577,7 @@ pub(crate) fn dc_opf_solved(
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<(DcNetwork, super::problem::DcOpfSolution), String> {
-    dc.allow_shed = req.options.shed;
+    dc.allow_shed = false;
     apply_demand_deltas(&mut dc, &req.edits.deltas)?;
     apply_rating_deltas(&mut dc, &req.edits.rates)?;
     let sol = dc_opf_cancellable(&dc, cancel)?;
@@ -500,17 +593,32 @@ pub(crate) fn dc_opf_assemble(
     req: &SolveRequest,
 ) -> Result<SolveResponse, String> {
     let base = dc.base_mva;
-    let lmp = sol.lmp_usd_per_mwh(base);
+
+    #[cfg(feature = "sensitivity")]
+    if dc.objective != powerio_matrix::PreparedObjective::NetworkGeneratorCost
+        && req
+            .sensitivities
+            .iter()
+            .any(|cell| matches!(cell.operand, Operand::Price(_)))
+    {
+        return Err("price sensitivity requires a network_generator_cost objective".to_string());
+    }
 
     #[cfg(feature = "sensitivity")]
     let sensitivities = run_cells(&super::sens::DcKkt::new(dc, sol), &req.sensitivities)?;
+
+    let lmp =
+        (dc.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost).then(|| {
+            let values = sol.nodal_marginal_values(base);
+            zip_bus(&dc.bus_ids, &dc.bus_uids, &values)
+        });
 
     Ok(SolveResponse {
         formulation: Problem::DcOpf,
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
         iterations: Some(Iterations::Ipm(sol.iterations.clone())),
-        lmp: Some(zip_bus(&dc.bus_ids, &dc.bus_uids, &lmp)),
+        lmp,
         lmp_q: None,
         vm: None,
         va: Some(zip_bus(&dc.bus_ids, &dc.bus_uids, &sol.va)),
@@ -529,8 +637,7 @@ pub(crate) fn dc_opf_assemble(
     })
 }
 
-/// Solve the DC OPF for an owned [`DcNetwork`] and assemble the response. Shared by
-/// [`solve_dc_opf`] (build-then-solve) and [`solve_prebuilt`] (cached model).
+/// Solve the DC OPF for an owned private workspace and assemble the response.
 fn dc_opf_response(
     dc: DcNetwork,
     req: &SolveRequest,
@@ -556,7 +663,7 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
     for j in 0..dc.k {
         let source_row = dc.gen_source_rows[j]
             .ok_or_else(|| format!("generator column {j} has no source row"))?;
-        injection[dc.gen_bus[j]] += net.generators[source_row].pg / input_power_base;
+        injection[dc.gen_bus[j]] += net.generators()[source_row].pg / input_power_base;
     }
     let sol = super::problem::dc_pf(&dc, &injection)?;
 
@@ -674,6 +781,15 @@ pub(crate) fn socwr_assemble(
     use super::sens::ConicKkt;
     let base = acnet.base_mva;
 
+    if acnet.objective != powerio_matrix::PreparedObjective::NetworkGeneratorCost
+        && req
+            .sensitivities
+            .iter()
+            .any(|cell| matches!(cell.operand, Operand::Price(_)))
+    {
+        return Err("price sensitivity requires a network_generator_cost objective".to_string());
+    }
+
     let sensitivities = {
         let sys = ConicKkt::new(acnet, sol).map_err(|e| e.to_string())?;
         run_cells(&sys, &req.sensitivities)?
@@ -684,12 +800,8 @@ pub(crate) fn socwr_assemble(
         status: SolveStatus::Optimal,
         objective: Some(sol.objective),
         iterations: Some(Iterations::Ipm(sol.iterations.clone())),
-        lmp: Some(zip_scaled(
-            &acnet.bus_ids,
-            &acnet.bus_uids,
-            &sol.lmp,
-            1.0 / base,
-        )),
+        lmp: (acnet.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost)
+            .then(|| zip_scaled(&acnet.bus_ids, &acnet.bus_uids, &sol.lmp, 1.0 / base)),
         lmp_q: None,
         vm: None,
         va: None,
@@ -708,93 +820,6 @@ pub(crate) fn socwr_assemble(
         dispatch: Some(zip_gen_pq(&acnet.gen_ids, &sol.pg, &sol.qg, base)),
         sensitivities,
     })
-}
-
-// ---------------------------------------------------------------------------
-// Cached DC fast path (build the model once, solve per request)
-// ---------------------------------------------------------------------------
-
-/// Solve the DC OPF at `base + edits` from an already-built [`DcNetwork`]. The
-/// constant topology (susceptance, limits, id maps, reference bus) is reused; only
-/// the demand vector is perturbed. A server builds the model once per case and calls
-/// this on every solve, so a demand drag never re-runs the normalize-and-reindex
-/// that [`DcNetwork::from_network`] performs.
-pub fn solve_prebuilt(dc: &DcNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
-    solve_prebuilt_cancellable(dc, req, None)
-}
-
-/// As [`solve_prebuilt`], threading an optional cancel flag into the solve so a
-/// timed-out or abandoned solve can be stopped at the next interior-point iteration.
-pub fn solve_prebuilt_cancellable(
-    base_dc: &DcNetwork,
-    req: &SolveRequest,
-    cancel: Option<Arc<AtomicBool>>,
-) -> Result<SolveResponse, String> {
-    validate_prebuilt_canonical_edits(base_dc, &req.edits)?;
-    // Clone the cached model so the perturbation never touches it; every field but
-    // demand is constant for the case, so this is a flat Vec copy.
-    dc_opf_response(base_dc.clone(), req, cancel)
-}
-
-/// The prebuilt fast path no longer has the canonical `BalancedNetwork`, so use
-/// the provenance retained on its lowered branches. A synthetic winding has no
-/// source row, and its `to` endpoint is the synthetic star bus. This rejects the
-/// same display-only rows as [`validate_canonical_edits`] without changing the
-/// public `solve_prebuilt` signature.
-fn validate_prebuilt_canonical_edits(dc: &DcNetwork, edits: &Edits) -> Result<(), String> {
-    validate_unique_uids("bus", dc.bus_uids.iter().map(Option::as_deref))?;
-    validate_unique_uids("branch", dc.branch_uids.iter().map(Option::as_deref))?;
-    let bus_index = KeyIndex::new(&dc.bus_ids, &dc.bus_uids, &edits.deltas);
-    for (bus, mw) in sorted_deltas(&edits.deltas) {
-        if !mw.is_finite() {
-            return Err(format!("demand delta for bus {bus} must be finite"));
-        }
-        if let ElementKey::Uid(uid) = bus {
-            if dc
-                .bus_uids
-                .iter()
-                .filter(|candidate| candidate.as_deref() == Some(uid.as_str()))
-                .count()
-                > 1
-            {
-                return Err(format!("ambiguous demand delta bus uid \"{uid}\""));
-            }
-        }
-        if let Some(i) = bus_index.get(bus) {
-            let synthetic = dc
-                .branch_source_rows
-                .iter()
-                .zip(&dc.br_to)
-                .any(|(source, &to)| source.is_none() && to == i);
-            if synthetic {
-                return Err(format!("unknown demand delta bus {bus}"));
-            }
-        }
-    }
-
-    let branch_index = KeyIndex::new(&dc.branch_ids, &dc.branch_uids, &edits.rates);
-    for (branch, mw) in sorted_deltas(&edits.rates) {
-        if !mw.is_finite() {
-            return Err(format!("rating delta for branch {branch} must be finite"));
-        }
-        if let ElementKey::Uid(uid) = branch {
-            if dc
-                .branch_uids
-                .iter()
-                .filter(|candidate| candidate.as_deref() == Some(uid.as_str()))
-                .count()
-                > 1
-            {
-                return Err(format!("ambiguous rating delta branch uid \"{uid}\""));
-            }
-        }
-        if let Some(i) = branch_index.get(branch) {
-            if !matches!(dc.branch_source_rows.get(i), Some(Some(_))) {
-                return Err(format!("unknown rating delta branch {branch}"));
-            }
-        }
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1372,19 +1397,34 @@ mod tests {
     use serde_json::Value;
 
     fn case3_json() -> String {
-        powerio::parse_str(CASE3, "matpower")
+        crate::model::parse_matpower(CASE3)
             .expect("parse")
-            .network
             .to_json()
             .expect("to_json")
     }
 
+    fn case3_module_json() -> String {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let module = powerio::PioModule::new(powerio::PioValue::BalancedNetwork(network));
+        powerio::stored::write_module(&module).expect("module JSON")
+    }
+
+    #[test]
+    fn module_entry_solves_a_balanced_network_and_rejects_bare_model_json() {
+        let response = solve_module_json(&case3_module_json(), "{}").expect("module solve");
+        let response: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["formulation"], "dcopf");
+        assert_eq!(response["status"], "optimal");
+
+        let error = solve_module_json(&case3_json(), "{}")
+            .expect_err("bare model JSON is not a portable solve input");
+        assert!(!error.is_empty());
+    }
+
     fn case3_with_outages_json() -> String {
-        let mut net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse")
-            .network;
-        net.branches[0].in_service = false;
-        net.generators[0].in_service = false;
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse");
+        net.branches_mut()[0].in_service = false;
+        net.generators_mut()[0].in_service = false;
         net.to_json().expect("to_json")
     }
 
@@ -1392,7 +1432,7 @@ mod tests {
     fn empty_request_defaults_to_dc_opf() {
         // `{}` and `""` both deserialize to a base-case DC OPF.
         for body in ["", "{}"] {
-            let out = solve_json(&case3_json(), body).expect("solve");
+            let out = solve_test_network_json(&case3_json(), body).expect("solve");
             let v: Value = serde_json::from_str(&out).unwrap();
             assert_eq!(v["formulation"], "dcopf");
             assert_eq!(v["status"], "optimal");
@@ -1400,8 +1440,59 @@ mod tests {
     }
 
     #[test]
+    fn retired_solver_options_are_rejected() {
+        let error = solve_test_network_json(
+            &case3_json(),
+            r#"{"formulation":"dcopf","options":{"shed":true}}"#,
+        )
+        .expect_err("retired solver options must not be ignored");
+        assert!(error.contains("unknown field `options`"), "{error}");
+    }
+
+    #[test]
+    fn feasibility_instance_omits_prices() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = DcOpfInstance::from_network(network)
+            .expect("instance")
+            .with_objective(powerio_prob::Objective::none());
+        let response = solve_instance(&instance, &SolveRequest::default()).expect("solve");
+        assert_eq!(response.objective, Some(0.0));
+        assert!(response.lmp.is_none());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn feasibility_instance_rejects_price_sensitivity() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = DcOpfInstance::from_network(network)
+            .expect("instance")
+            .with_objective(powerio_prob::Objective::none());
+        let request: SolveRequest = serde_json::from_str(
+            r#"{"sensitivities":[{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"}}]}"#,
+        )
+        .expect("request");
+        let error = solve_instance(&instance, &request).unwrap_err();
+        assert!(error.contains("network_generator_cost"), "{error}");
+    }
+
+    #[cfg(feature = "conic")]
+    #[test]
+    fn typed_ac_instance_uses_the_socwr_entry() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = AcOpfInstance::from_network(network).expect("instance");
+        let request = SolveRequest {
+            formulation: Problem::Socwr,
+            ..SolveRequest::default()
+        };
+        let response = solve_ac_instance(&instance, &request).expect("solve");
+        assert!(response.objective.is_some_and(|value| value > 0.0));
+        assert_eq!(response.lmp.as_ref().map(Vec::len), Some(3));
+    }
+
+    #[test]
     fn dc_opf_payload_shapes() {
-        let out = solve_json(&case3_json(), r#"{"formulation":"dcopf"}"#).expect("solve");
+        let out =
+            solve_test_network_json(&case3_json(), r#"{"formulation":"dcopf"}"#).expect("solve");
         let v: Value = serde_json::from_str(&out).unwrap();
         assert!(v["objective"].as_f64().unwrap() > 0.0);
 
@@ -1432,11 +1523,12 @@ mod tests {
 
     #[test]
     fn deltas_shift_the_operating_point() {
-        let base: Value =
-            serde_json::from_str(&solve_json(&case3_json(), r#"{"formulation":"dcopf"}"#).unwrap())
-                .unwrap();
+        let base: Value = serde_json::from_str(
+            &solve_test_network_json(&case3_json(), r#"{"formulation":"dcopf"}"#).unwrap(),
+        )
+        .unwrap();
         let bumped: Value = serde_json::from_str(
-            &solve_json(
+            &solve_test_network_json(
                 &case3_json(),
                 r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0}}}"#,
             )
@@ -1450,7 +1542,7 @@ mod tests {
 
     #[test]
     fn unknown_demand_delta_bus_errors() {
-        let err = solve_json(
+        let err = solve_test_network_json(
             &case3_json(),
             r#"{"formulation":"dcopf","edits":{"deltas":{"999":1.0}}}"#,
         )
@@ -1460,7 +1552,7 @@ mod tests {
 
     #[test]
     fn demand_delta_cannot_make_demand_negative() {
-        let err = solve_json(
+        let err = solve_test_network_json(
             &case3_json(),
             r#"{"formulation":"dcopf","edits":{"deltas":{"2":-1000.0}}}"#,
         )
@@ -1471,17 +1563,13 @@ mod tests {
         );
     }
 
-    /// CASE3 with powerio row uids stamped by hand, in the `ensure_payload_uids`
-    /// scheme (`buses:{row}` / `branches:{row}`). The engine crate does not depend
-    /// on powerio-pkg; the wasm ingest path is what stamps real payloads.
+    /// CASE3 with explicit PowerIO row UIDs for keyed edit coverage.
     fn case3_with_uids_json() -> String {
-        let mut net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse")
-            .network;
-        for (i, b) in net.buses.iter_mut().enumerate() {
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse");
+        for (i, b) in net.buses_mut().iter_mut().enumerate() {
             b.uid = Some(format!("buses:{i}"));
         }
-        for (i, br) in net.branches.iter_mut().enumerate() {
+        for (i, br) in net.branches_mut().iter_mut().enumerate() {
             br.uid = Some(format!("branches:{i}"));
         }
         net.to_json().expect("to_json")
@@ -1519,7 +1607,7 @@ mod tests {
         // identical.
         let net = case3_with_uids_json();
         let by_id: Value = serde_json::from_str(
-            &solve_json(
+            &solve_test_network_json(
                 &net,
                 r#"{"formulation":"dcopf","edits":{"deltas":{"2":50.0},"rates":{"3":-25.0}}}"#,
             )
@@ -1527,7 +1615,7 @@ mod tests {
         )
         .unwrap();
         let by_uid: Value = serde_json::from_str(
-            &solve_json(
+            &solve_test_network_json(
                 &net,
                 r#"{"formulation":"dcopf","edits":{"deltas":{"buses:1":50.0},"rates":{"branches:2":-25.0}}}"#,
             )
@@ -1541,7 +1629,7 @@ mod tests {
 
     #[test]
     fn unknown_uid_key_errors() {
-        let err = solve_json(
+        let err = solve_test_network_json(
             &case3_with_uids_json(),
             r#"{"formulation":"dcopf","edits":{"deltas":{"buses:99":1.0}}}"#,
         )
@@ -1551,7 +1639,7 @@ mod tests {
             "got: {err}"
         );
         // A network that was never stamped resolves no uid key at all.
-        let err = solve_json(
+        let err = solve_test_network_json(
             &case3_json(),
             r#"{"formulation":"dcopf","edits":{"deltas":{"buses:1":1.0}}}"#,
         )
@@ -1561,17 +1649,15 @@ mod tests {
 
     #[test]
     fn duplicate_canonical_uids_reject_even_an_unedited_solve() {
-        let mut net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse")
-            .network;
-        net.buses[0].uid = Some("same-bus".into());
-        net.buses[1].uid = Some("same-bus".into());
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse");
+        net.buses_mut()[0].uid = Some("same-bus".into());
+        net.buses_mut()[1].uid = Some("same-bus".into());
         let error = solve_network(&net, &SolveRequest::default()).unwrap_err();
         assert!(error.contains("duplicate bus uid"), "{error}");
 
-        net.buses[1].uid = Some("different-bus".into());
-        net.branches[0].uid = Some("same-branch".into());
-        net.branches[1].uid = Some("same-branch".into());
+        net.buses_mut()[1].uid = Some("different-bus".into());
+        net.branches_mut()[0].uid = Some("same-branch".into());
+        net.branches_mut()[1].uid = Some("same-branch".into());
         let error = solve_network(&net, &SolveRequest::default()).unwrap_err();
         assert!(error.contains("duplicate branch uid"), "{error}");
     }
@@ -1579,10 +1665,8 @@ mod tests {
     #[test]
     fn numeric_looking_uids_reject_before_key_resolution() {
         for uid in ["2", "02", "+2", "-2", "9007199254740993"] {
-            let mut net = powerio::parse_str(CASE3, "matpower")
-                .expect("parse")
-                .network;
-            net.buses[0].uid = Some(uid.into());
+            let mut net = crate::model::parse_matpower(CASE3).expect("parse");
+            net.buses_mut()[0].uid = Some(uid.into());
             let error = solve_network(&net, &SolveRequest::default()).unwrap_err();
             assert!(
                 error.contains("ambiguous with a numeric element id"),
@@ -1594,10 +1678,8 @@ mod tests {
     #[test]
     #[cfg(feature = "sensitivity")]
     fn acpf_rejects_remote_generator_voltage_control() {
-        let mut net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse")
-            .network;
-        net.generators[0].regulated_bus = Some(powerio::BusId(2));
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse");
+        net.generators_mut()[0].regulated_bus = Some(powerio::BusId(2));
         let request = SolveRequest {
             formulation: Problem::AcPf,
             ..SolveRequest::default()
@@ -1609,11 +1691,12 @@ mod tests {
     #[test]
     fn id_and_uid_aliases_are_aggregated_before_bounds() {
         let network = case3_with_uids_json();
-        let base: Value =
-            serde_json::from_str(&solve_json(&network, r#"{"formulation":"dcopf"}"#).unwrap())
-                .unwrap();
+        let base: Value = serde_json::from_str(
+            &solve_test_network_json(&network, r#"{"formulation":"dcopf"}"#).unwrap(),
+        )
+        .unwrap();
         let cancelled: Value = serde_json::from_str(
-            &solve_json(
+            &solve_test_network_json(
                 &network,
                 r#"{"formulation":"dcopf","edits":{"deltas":{"2":-1000.0,"buses:1":1000.0},"rates":{"1":-1000.0,"branches:0":1000.0}}}"#,
             )
@@ -1628,7 +1711,7 @@ mod tests {
             r#"{"deltas":{"2":1.0,"buses:1":-1000.0}}"#,
         ] {
             let request = format!(r#"{{"formulation":"dcopf","edits":{edits}}}"#);
-            let error = solve_json(&network, &request).unwrap_err();
+            let error = solve_test_network_json(&network, &request).unwrap_err();
             assert!(error.contains("would make demand negative"), "{error}");
         }
         for edits in [
@@ -1636,20 +1719,21 @@ mod tests {
             r#"{"rates":{"1":1.0,"branches:0":-100000.0}}"#,
         ] {
             let request = format!(r#"{{"formulation":"dcopf","edits":{edits}}}"#);
-            let error = solve_json(&network, &request).unwrap_err();
+            let error = solve_test_network_json(&network, &request).unwrap_err();
             assert!(error.contains("line limit non-positive"), "{error}");
         }
     }
 
     #[test]
     fn response_scalars_echo_uids() {
-        let out = solve_json(&case3_with_uids_json(), r#"{"formulation":"dcopf"}"#).unwrap();
+        let out =
+            solve_test_network_json(&case3_with_uids_json(), r#"{"formulation":"dcopf"}"#).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["lmp"][1]["uid"], "buses:1");
         assert_eq!(v["va"][0]["uid"], "buses:0");
         assert_eq!(v["flows"][0]["uid"], "branches:0");
         // A network without uids omits the field entirely.
-        let out = solve_json(&case3_json(), r#"{"formulation":"dcopf"}"#).unwrap();
+        let out = solve_test_network_json(&case3_json(), r#"{"formulation":"dcopf"}"#).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         assert!(v["lmp"][1].get("uid").is_none());
         assert!(v["flows"][0].get("uid").is_none());
@@ -1657,8 +1741,8 @@ mod tests {
 
     #[test]
     fn payload_ids_survive_out_of_service_elements() {
-        let out =
-            solve_json(&case3_with_outages_json(), r#"{"formulation":"dcopf"}"#).expect("solve");
+        let out = solve_test_network_json(&case3_with_outages_json(), r#"{"formulation":"dcopf"}"#)
+            .expect("solve");
         let v: Value = serde_json::from_str(&out).unwrap();
         let branches: Vec<i64> = v["flows"]
             .as_array()
@@ -1677,35 +1761,19 @@ mod tests {
     }
 
     #[test]
-    fn shed_option_controls_infeasibility() {
-        // case3 with generation cut below the 0.9 pu load: unservable without shedding.
-        let net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse")
-            .network;
-        let mut dc = DcNetwork::from_network(&net).expect("model");
-        dc.gmax = vec![0.4, 0.4]; // 0.8 pu capacity < 0.9 pu load
+    fn portable_solve_disables_undeclared_load_shedding() {
+        // Generation capacity (0.8 pu) below the 0.9 pu load is infeasible under the
+        // declared PowerIO instance. The public response cannot hide a private shed.
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse");
+        for generator in net.generators_mut() {
+            generator.pmax = 40.0;
+        }
+        let instance = DcOpfInstance::from_network(net).expect("instance");
 
-        let off = solve_prebuilt(&dc, &SolveRequest::default());
+        let result = solve_instance(&instance, &SolveRequest::default());
         assert!(
-            off.is_err(),
-            "expected infeasible without shedding, got {off:?}"
-        );
-
-        let on = solve_prebuilt(
-            &dc,
-            &SolveRequest {
-                options: SolveOptions {
-                    shed: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        )
-        .expect("shed-on solve");
-        let gen_mw: f64 = on.dispatch.unwrap().iter().map(|d| d.pg).sum();
-        assert!(
-            gen_mw < 90.0 - 1.0,
-            "shed-on should shed (dispatched {gen_mw})"
+            result.is_err(),
+            "expected infeasible without shedding, got {result:?}"
         );
     }
 
@@ -1731,12 +1799,12 @@ mod tests {
     fn dc_opf_sensitivity_cell() {
         // sens_bus 2 is dense index 1 in case3 (bus ids 1, 2, 3).
         let req = r#"{"formulation":"dcopf","sensitivities":[{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"},"indices":[1]}]}"#;
-        let out = solve_json(&case3_json(), req).expect("solve");
+        let out = solve_test_network_json(&case3_json(), req).expect("solve");
         let v: Value = serde_json::from_str(&out).unwrap();
         let sens = v["sensitivities"].as_array().unwrap();
         assert_eq!(sens.len(), 1);
         let m = &sens[0];
-        assert_eq!(m["units"], "($/MWh)/MW");
+        assert_eq!(m["units"], "(objective_unit/MW)/MW");
         assert_eq!(m["cols"].as_array().unwrap()[0]["element"]["Bus"], 2);
         let rows = m["values"].as_array().unwrap();
         assert_eq!(rows.len(), 3);
@@ -1750,14 +1818,15 @@ mod tests {
     fn unsupported_cell_errors() {
         // DC has no W-space squared voltage.
         let req = r#"{"formulation":"dcopf","sensitivities":[{"operand":{"Voltage":"Squared"},"parameter":{"Demand":"Active"}}]}"#;
-        let err = solve_json(&case3_json(), req).unwrap_err();
+        let err = solve_test_network_json(&case3_json(), req).unwrap_err();
         assert!(err.contains("does not support"), "got: {err}");
     }
 
     #[cfg(feature = "sensitivity")]
     #[test]
     fn ac_pf_reports_voltages_and_injections() {
-        let out = solve_json(&case3_json(), r#"{"formulation":"acpf"}"#).expect("solve");
+        let out =
+            solve_test_network_json(&case3_json(), r#"{"formulation":"acpf"}"#).expect("solve");
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["formulation"], "acpf");
         assert_eq!(v["vm"].as_array().unwrap().len(), 3);
@@ -1768,8 +1837,25 @@ mod tests {
 
     #[cfg(feature = "sensitivity")]
     #[test]
+    fn typed_ac_pf_instance_uses_its_declared_bus_specifications() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = AcPfInstance::from_network(network).expect("instance");
+        let request = SolveRequest {
+            formulation: Problem::AcPf,
+            ..Default::default()
+        };
+        let response = solve_ac_pf_instance(&instance, &request).expect("typed AC PF");
+        assert_eq!(response.formulation, Problem::AcPf);
+        assert_eq!(response.vm.as_ref().unwrap().len(), 3);
+        assert_eq!(response.injections.as_ref().unwrap().len(), 3);
+        assert!(response.lmp.is_none());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
     fn dc_pf_reports_angles_and_flows() {
-        let out = solve_json(&case3_json(), r#"{"formulation":"dcpf"}"#).expect("solve");
+        let out =
+            solve_test_network_json(&case3_json(), r#"{"formulation":"dcpf"}"#).expect("solve");
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["formulation"], "dcpf");
         assert_eq!(v["va"].as_array().unwrap().len(), 3);
@@ -1781,9 +1867,7 @@ mod tests {
     #[cfg(feature = "sensitivity")]
     #[test]
     fn dc_pf_served_results_match_for_raw_and_normalized_inputs() {
-        let raw = powerio::parse_str(CASE3, "matpower")
-            .expect("parse case3")
-            .network;
+        let raw = crate::model::parse_matpower(CASE3).expect("parse case3");
         let normalized = raw.to_normalized().expect("normalize case3");
         let request = SolveRequest {
             formulation: Problem::DcPf,
@@ -1812,12 +1896,12 @@ mod tests {
     #[test]
     fn socwr_reports_w_and_reactive_capable_sensitivity() {
         let req = r#"{"formulation":"socwr","sensitivities":[{"operand":{"Price":"Reactive"},"parameter":{"Demand":"Active"}}]}"#;
-        let out = solve_json(&case3_json(), req).expect("solve");
+        let out = solve_test_network_json(&case3_json(), req).expect("solve");
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["formulation"], "socwr");
         assert_eq!(v["w"].as_array().unwrap().len(), 3);
         let m = &v["sensitivities"].as_array().unwrap()[0];
-        assert_eq!(m["units"], "($/MVArh)/MW");
+        assert_eq!(m["units"], "(objective_unit/MVAr)/MW");
         for row in m["values"].as_array().unwrap() {
             for x in row.as_array().unwrap() {
                 assert!(x.as_f64().unwrap().is_finite());
@@ -1829,7 +1913,7 @@ mod tests {
     fn acopf_is_not_available_in_this_build() {
         // The full nonlinear AC OPF is not built on this branch; requesting it errors
         // cleanly rather than degrading silently.
-        let err = solve_json(&case3_json(), r#"{"formulation":"acopf"}"#).unwrap_err();
+        let err = solve_test_network_json(&case3_json(), r#"{"formulation":"acopf"}"#).unwrap_err();
         assert!(err.contains("not available in this build"), "got: {err}");
     }
 
@@ -1847,7 +1931,7 @@ mod tests {
         use super::super::problem::{ac_pf, dc_opf};
         use super::super::sens::{AcNewton, DcKkt, Differentiable};
 
-        let net = powerio::parse_str(CASE3, "matpower").unwrap().network;
+        let net = crate::model::parse_matpower(CASE3).unwrap();
         let caps = formulation_caps();
 
         // Every operand/parameter the matrix lists for `f` must be engine-supported.

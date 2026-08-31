@@ -14,14 +14,16 @@ pub type Coords = BTreeMap<usize, (f64, f64)>;
 /// primary source. Two PowerWorld shapes stay tellegen-side because upstream
 /// deliberately leaves them in extras: older complete cases write bare
 /// `Latitude`/`Longitude` on every bus row, and later exports point each bus at
-/// the aux `Substation` table through `SubNum`.
-pub fn network_coords(net: &BalancedNetwork) -> Coords {
-    let subs = match aux_sections(net) {
-        Some(Ok(aux)) => substation_coords(&aux),
-        _ => BTreeMap::new(),
-    };
+/// the aux `Substation` table through `SubNum`. The substation table lives in
+/// the retained source text, which PowerIO keeps on the module rather than the
+/// network; a caller holding the module passes it as `source_text`.
+pub fn network_coords(net: &BalancedNetwork, source_text: Option<&str>) -> Coords {
+    let subs = source_text
+        .and_then(|text| aux_sections(text).ok())
+        .map(|aux| substation_coords(&aux))
+        .unwrap_or_default();
     let mut out = BTreeMap::new();
-    for b in &net.buses {
+    for b in net.buses() {
         let Some(p) = b
             .location
             .map(|l| (l.x, l.y))
@@ -63,13 +65,13 @@ pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
     // star bus is quadratic in the number of three-winding transformers, and a
     // model-JSON document can declare those by the tens of thousands.
     let stars: BTreeSet<usize> = lowered
-        .buses
+        .buses()
         .iter()
-        .skip(net.buses.len())
+        .skip(net.buses().len())
         .map(|bus| bus.id.0)
         .collect();
     let mut terminals: BTreeMap<usize, Vec<(f64, f64)>> = BTreeMap::new();
-    for branch in lowered.branches.iter().filter(|branch| branch.in_service) {
+    for branch in lowered.branches().iter().filter(|branch| branch.in_service) {
         let (star, terminal) = if stars.contains(&branch.from.0) {
             (branch.from.0, branch.to.0)
         } else if stars.contains(&branch.to.0) {
@@ -82,7 +84,7 @@ pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
         }
     }
 
-    for bus in lowered.buses.iter().skip(net.buses.len()) {
+    for bus in lowered.buses().iter().skip(net.buses().len()) {
         let Some(neighbors) = terminals.get(&bus.id.0) else {
             continue;
         };
@@ -105,7 +107,7 @@ pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
 /// placed; zero leaves the geo meta untouched.
 pub fn stamp_layout(net: &mut BalancedNetwork, coords: &Coords, kind: CoordsKind) -> usize {
     let mut placed = 0;
-    for b in &mut net.buses {
+    for b in net.buses_mut() {
         if let Some(&(lon, lat)) = coords.get(&b.id.0) {
             b.location = Some(Location {
                 x: lon,
@@ -116,7 +118,7 @@ pub fn stamp_layout(net: &mut BalancedNetwork, coords: &Coords, kind: CoordsKind
         }
     }
     if placed > 0 {
-        net.geo = Some(GeoMeta {
+        *net.geo_mut() = Some(GeoMeta {
             space: CoordinateSpace::Geographic { crs: None },
             kind: Some(kind),
         });
@@ -148,12 +150,13 @@ pub fn pwd_lonlat_layer(display: &PwdDisplay) -> GeoLayer {
 pub fn complete_coords_for(
     case: &BalancedNetwork,
     aux: &BalancedNetwork,
+    aux_text: Option<&str>,
     source: &str,
 ) -> Result<Coords, String> {
-    let mut coords = network_coords(aux);
+    let mut coords = network_coords(aux, aux_text);
     spread_stacks(&mut coords);
     let missing: Vec<_> = case
-        .buses
+        .buses()
         .iter()
         .map(|b| b.id.0)
         .filter(|id| !coords.contains_key(id))
@@ -202,11 +205,11 @@ pub fn spread_stacks(coords: &mut Coords) {
 pub fn synthetic_layout(net: &BalancedNetwork, bbox: (f64, f64, f64, f64)) -> Coords {
     let view = IndexedNetwork::new(net);
     let net = view.network();
-    let ids: Vec<_> = net.buses.iter().map(|b| b.id.0).collect();
+    let ids: Vec<_> = net.buses().iter().map(|b| b.id.0).collect();
     let index: BTreeMap<usize, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
     let mut seen = BTreeSet::new();
     let mut edges = Vec::new();
-    for br in net.branches.iter().filter(|br| br.in_service) {
+    for br in net.branches().iter().filter(|br| br.in_service) {
         let (Some(&i), Some(&j)) = (index.get(&br.from.0), index.get(&br.to.0)) else {
             continue;
         };
@@ -370,9 +373,7 @@ mod tests {
             m += &format!(" {i} {} 0.01 0.1 0 100 100 100 0 0 1 -360 360;\n", i + 1);
         }
         m += "];\nmpc.gencost = [\n 2 0 0 3 0.1 5 0;\n];\n";
-        powerio::parse_str(&m, "matpower")
-            .expect("parse chain")
-            .network
+        crate::model::parse_matpower(&m).expect("parse chain")
     }
 
     #[test]
@@ -380,25 +381,25 @@ mod tests {
         let mut net = chain_network(3);
         // A typed location (what powerio promotes from `Latitude:1`/`Longitude:1`)
         // and a conflicting bare-extras pair on the same bus: the typed one wins.
-        net.buses[0].location = Some(Location {
+        net.buses_mut()[0].location = Some(Location {
             x: -84.4,
             y: 33.7,
             kind: None,
         });
-        net.buses[0]
+        net.buses_mut()[0]
             .extras
             .insert("Latitude".to_owned(), serde_json::json!(1.0));
-        net.buses[0]
+        net.buses_mut()[0]
             .extras
             .insert("Longitude".to_owned(), serde_json::json!(2.0));
         // Bus 2 has only the bare pair, the shape upstream leaves in extras.
-        net.buses[1]
+        net.buses_mut()[1]
             .extras
             .insert("Latitude".to_owned(), serde_json::json!(35.5));
-        net.buses[1]
+        net.buses_mut()[1]
             .extras
             .insert("Longitude".to_owned(), serde_json::json!(-80.1));
-        let coords = network_coords(&net);
+        let coords = network_coords(&net, None);
         assert_eq!(coords[&1], (-84.4, 33.7));
         assert_eq!(coords[&2], (-80.1, 35.5));
         assert!(!coords.contains_key(&3));
@@ -410,11 +411,11 @@ mod tests {
         let coords = BTreeMap::from([(1, (-84.0, 33.0)), (2, (-84.1, 33.1))]);
         let placed = stamp_layout(&mut net, &coords, CoordsKind::Synthetic);
         assert_eq!(placed, 2);
-        let loc = net.buses[0].location.expect("bus 1 placed");
+        let loc = net.buses()[0].location.expect("bus 1 placed");
         assert_eq!((loc.x, loc.y), (-84.0, 33.0));
         assert_eq!(loc.kind, Some(CoordsKind::Synthetic));
-        assert!(net.buses[2].location.is_none());
-        let geo = net.geo.as_ref().expect("geo meta stamped");
+        assert!(net.buses()[2].location.is_none());
+        let geo = net.geo().as_ref().expect("geo meta stamped");
         assert_eq!(geo.kind, Some(CoordsKind::Synthetic));
         assert!(matches!(
             geo.space,
@@ -424,7 +425,7 @@ mod tests {
         // this payload carries the layout.
         let json = net.to_json().expect("to_json");
         let back = BalancedNetwork::from_json(&json).expect("from_json");
-        assert_eq!(back.buses[0].location, net.buses[0].location);
+        assert_eq!(back.buses()[0].location, net.buses()[0].location);
 
         // An empty layout stamps nothing and leaves the meta untouched.
         let mut untouched = chain_network(2);
@@ -432,7 +433,7 @@ mod tests {
             stamp_layout(&mut untouched, &BTreeMap::new(), CoordsKind::Manual),
             0
         );
-        assert!(untouched.geo.is_none());
+        assert!(untouched.geo().is_none());
     }
 
     #[test]
@@ -494,8 +495,8 @@ mod tests {
     fn three_winding_star_is_present_in_layouts_and_geographic_coords() {
         let mut net = chain_network(3);
         let windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
-        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
-        net.transformers_3w
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva());
+        net.transformers_3w_mut()
             .push(powerio::Transformer3W::new(windings, [impedance; 3]));
 
         let bbox = (-82.0, 33.0, -80.0, 35.0);

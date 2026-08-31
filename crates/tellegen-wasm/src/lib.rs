@@ -3,12 +3,18 @@
 //! Every export here is a thin wrapper. The OPF math, sensitivities, edit semantics,
 //! and display-coordinate helpers live in the [`tellegen`] engine crate; this crate
 //! only crosses the wasm boundary — `JsValue`/string conversion, `JsError` mapping,
-//! and the case-file-drop payload shapes the frontend reads. Case files never leave
+//! and the case file drop payload shapes the frontend reads. Case files never leave
 //! the machine: parsing and solving happen here, in the browser.
 
 use std::collections::{BTreeMap, HashSet};
 
-use powerio::{parse_display_bytes, Detection, DisplayData, JsonClass};
+use powerio::diagnostics::render_diagnostics;
+use powerio::format::format_id_for;
+use powerio::stored::{read_module, write_module};
+use powerio::{
+    parse_display_bytes, try_into_typed, Detection, DisplayData, JsonClass, PioValue, PioValueKind,
+    Source,
+};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -65,20 +71,51 @@ struct IngestedJsonDrop {
     payload: serde_json::Value,
 }
 
-/// Classify a dropped JSON byte buffer through powerio's one routing table.
-/// Package markers are followed by the strict package reader so the caller can
-/// distinguish balanced and multiconductor payloads without decoding in JS.
+/// Read a `.pio.json` stored module from dropped bytes. powerio names the
+/// document in its own errors, so no prefix here.
+fn read_module_bytes(bytes: &[u8]) -> Result<powerio::PioModule<powerio::PioValue>, String> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| "stored module document is not valid UTF-8".to_owned())?;
+    read_module(text).map_err(|e| e.to_string())
+}
+
+fn with_module_json(
+    mut payload: serde_json::Value,
+    module: powerio::PioModule<powerio::BalancedNetwork>,
+) -> Result<serde_json::Value, String> {
+    let dynamic = module.map_value(PioValue::BalancedNetwork);
+    let module_json = write_module(&dynamic).map_err(|error| error.to_string())?;
+    payload
+        .as_object_mut()
+        .ok_or("balanced ingest payload is not an object")?
+        .insert(
+            "module_json".to_owned(),
+            serde_json::Value::String(module_json),
+        );
+    Ok(payload)
+}
+
+/// Classify a dropped JSON byte buffer through powerio's one routing table —
+/// classification copies powerio's rule and invents nothing. A stored module
+/// is followed by the strict module reader so the caller learns whether the
+/// payload is viewable without decoding in JS. The TS drop-classify layer must
+/// mirror these kinds: `module` beside powerio's families.
 fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, String> {
     let classification = powerio::classify_json_bytes(bytes);
-    if classification == JsonClass::Package {
-        let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes)
-            .map_err(|error| error.to_string())?;
-        let kind = match package.model_kind() {
-            powerio_pkg::ModelKind::Balanced => "balanced-package",
-            powerio_pkg::ModelKind::Multiconductor => "multiconductor-package",
-            _ => return Err("package has an unsupported model kind".to_owned()),
+    if classification == JsonClass::Module {
+        let module = read_module_bytes(bytes)?;
+        return match module.value().kind() {
+            PioValueKind::BalancedNetwork | PioValueKind::MulticonductorNetwork => {
+                Ok(JsonDropClassification {
+                    kind: "module",
+                    format: None,
+                })
+            }
+            other => Err(format!(
+                "stored module holds {}, which tellegen cannot view",
+                other.as_str()
+            )),
         };
-        return Ok(JsonDropClassification { kind, format: None });
     }
 
     let format = match classification {
@@ -103,8 +140,9 @@ pub fn classify_json(bytes: &[u8]) -> Result<String, JsError> {
 /// Classify and ingest one dropped JSON byte buffer. Known inputs return their
 /// render-ready payload; ambiguous and unknown documents return a null payload
 /// so the caller can request an explicit format without decoding the bytes a
-/// second time. Package envelopes are decoded once and the parsed package is
-/// passed directly to the appropriate restore path.
+/// second time. A stored module is read once and its value routed to the
+/// balanced or multiconductor view. The TS drop-classify layer must mirror
+/// the kinds (`module` and powerio's families).
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
 pub fn ingest_json_drop(bytes: &[u8]) -> Result<String, JsError> {
@@ -117,22 +155,34 @@ pub fn ingest_json_drop(bytes: &[u8]) -> Result<String, JsError> {
 fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
     let classification = powerio::classify_json_bytes(bytes);
     let (kind, format, payload) = match classification {
-        JsonClass::Package => {
-            let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes)
-                .map_err(|error| error.to_string())?;
-            match package.model_kind() {
-                powerio_pkg::ModelKind::Balanced => (
-                    "balanced-package",
-                    None,
-                    load_package_bundle_value(&package)?,
-                ),
-                powerio_pkg::ModelKind::Multiconductor => (
-                    "multiconductor-package",
-                    None,
-                    dist::ingest_dist_package_value(&package)?,
-                ),
-                _ => return Err("package has an unsupported model kind".to_owned()),
-            }
+        JsonClass::Module => {
+            let module = read_module_bytes(bytes)?;
+            let warnings = render_diagnostics(module.diagnostics());
+            let payload = match module.value().kind() {
+                PioValueKind::BalancedNetwork => {
+                    let module: powerio::PioModule<powerio::BalancedNetwork> =
+                        try_into_typed(module).map_err(|mismatch| mismatch.to_string())?;
+                    let mut payload = ingest_value(module.value(), warnings, None)?;
+                    let module_json = std::str::from_utf8(bytes)
+                        .map_err(|_| "stored module document is not valid UTF-8".to_owned())?;
+                    payload
+                        .as_object_mut()
+                        .ok_or("balanced module ingest payload is not an object")?
+                        .insert(
+                            "module_json".to_owned(),
+                            serde_json::Value::String(module_json.to_owned()),
+                        );
+                    payload
+                }
+                PioValueKind::MulticonductorNetwork => dist::ingest_dist_module_value(module)?,
+                other => {
+                    return Err(format!(
+                        "stored module holds {}, which tellegen cannot view",
+                        other.as_str()
+                    ))
+                }
+            };
+            ("module", None, payload)
         }
         JsonClass::ModelJson => ("model-json", None, ingest_model_json_bytes_value(bytes)?),
         JsonClass::Case(Detection::Known(format)) => {
@@ -167,32 +217,59 @@ fn install_panic_hook() {
     HOOK.call_once(console_error_panic_hook::set_once);
 }
 
+/// Parse dropped case bytes through the PowerIO module route, forcing `format`: an
+/// in-memory [`Source`] with the declared format, the automatic parse, and
+/// typed narrowing to the balanced network. The module rides back whole so
+/// callers read the diagnostics and, for formats that keep data in retained
+/// source text, still hold the original bytes beside it.
+fn parse_case_module(
+    bytes: &[u8],
+    format: &str,
+) -> Result<powerio::PioModule<powerio::BalancedNetwork>, String> {
+    let format = format_id_for(format).map_err(|e| e.to_string())?;
+    // The angle bracketed name marks an anonymous in-memory source, so the
+    // reader takes the case's own name (e.g. the MATPOWER function name)
+    // instead of a file stem hint.
+    let source = Source::from_bytes("<case>", bytes.to_vec())
+        .map_err(|e| e.to_string())?
+        .with_format(format);
+    let module = powerio::parse(source).map_err(|e| e.to_string())?;
+    try_into_typed(module).map_err(|mismatch| {
+        format!(
+            "parsed a {} value, expected a balanced network",
+            mismatch.actual().as_str()
+        )
+    })
+}
+
 /// Parse a case file (MATPOWER, PSS/E RAW, PowerWorld aux, PowerModels or
 /// egret JSON) and return `{"network": ..., "warnings": [...]}` as JSON.
 ///
-/// Takes the upload's bytes, not decoded text: `powerio::parse_bytes` refuses a
-/// text format whose bytes are not UTF-8, where a browser side `File.text()`
-/// would have replaced each offending byte with U+FFFD and parsed on. It also
-/// reaches PowerWorld `.pwb`, which has no text form at all.
+/// Takes the upload's bytes, not decoded text: powerio refuses a text format
+/// whose bytes are not UTF-8, where a browser side `File.text()` would have
+/// replaced each offending byte with U+FFFD and parsed on. It also reaches
+/// PowerWorld `.pwb`, which has no text form at all.
 #[wasm_bindgen]
 pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
-    let parsed = powerio::parse_bytes(bytes, format).map_err(jserr)?;
+    let module = parse_case_module(bytes, format).map_err(jserr)?;
+    let network: serde_json::Value =
+        serde_json::from_str(&module.value().to_json().map_err(jserr)?).map_err(jserr)?;
     serde_json::to_string(&serde_json::json!({
-        "network": parsed.network,
-        "warnings": parsed.warnings,
+        "network": network,
+        "warnings": render_diagnostics(module.diagnostics()),
     }))
     .map_err(jserr)
 }
 
-/// The stateless solve front door: a [`SolveRequest`](tellegen::SolveRequest) JSON
-/// in, a [`SolveResponse`](tellegen::SolveResponse) JSON out. One-shot callers only;
+/// The stateless solve front door: a retained PowerIO module and a
+/// [`tellegen::SolveRequest`] JSON in, a [`tellegen::SolveResponse`] JSON out. One-shot callers only;
 /// the reactive hot path is the [`Study`].
 #[wasm_bindgen]
-pub fn solve_json(network_json: &str, request_json: &str) -> Result<String, JsError> {
+pub fn solve_module(module_json: &str, request_json: &str) -> Result<String, JsError> {
     install_panic_hook();
-    tellegen::solve_json(network_json, request_json).map_err(jserr)
+    tellegen::solve_module_json(module_json, request_json).map_err(jserr)
 }
 
 /// The capability matrix as JSON: which `(formulation, operand, parameter)` cells this
@@ -206,17 +283,15 @@ pub fn capabilities_json() -> String {
 // Stateful study (build once, solve many) — the reactive hot path
 // ---------------------------------------------------------------------------
 
-/// A build-once handle over the engine, exported to JS. Construct once per case (the
-/// network is parsed and the model built here); then [`replace_edits`](Study::replace_edits)
+/// A retained handle over the engine, exported to JS. Construct once per PowerIO module;
+/// then [`replace_edits`](Study::replace_edits)
 /// solves exactly at an absolute edit state and [`preview_replacement`](Study::preview_replacement)
-/// returns a first-order linearization toward an absolute edit state — neither re-parses
-/// the network, unlike `solve_json` which rebuilds it on every call. This is
-/// the path a reactive drag should use.
+/// returns a first order linearization toward an absolute edit state.
 ///
 /// Arguments and results are JSON in the engine's `Study` shapes: edits are a
 /// `NetworkEdit[]` (e.g. `[{"kind":"add_load","bus":2,"p_mw":50}]`; the element key
-/// also accepts the powerio row uid string `ingest_case` stamps, e.g.
-/// `"bus":"buses:1"`), `preview` watches an
+/// also accepts a powerio row uid string when the source format carries uids,
+/// e.g. `"bus":"buses:1"`), `preview` watches an
 /// `Operand[]` (e.g. `[{"Price":"Active"}]`) and returns a `Preview`. `commit` takes the
 /// edits plus a `SensRequest[]` of watched cells and returns `{ solution, iterations,
 /// sensitivities }` — the committed [`SolveResponse`] plus the requested ∂operand/∂param
@@ -229,14 +304,14 @@ pub struct Study(tellegen::Study);
 #[cfg(feature = "sensitivity")]
 #[wasm_bindgen]
 impl Study {
-    /// Build a study over `network_json` for `formulation` (`"dcopf"` / `"acpf"`, and —
+    /// Build a study over `module_json` for `formulation` (`"dcopf"` / `"acpf"`, and —
     /// in a build that includes them — `"socwr"` / `"acopf"`), solving the base case.
-    /// Errors on an unknown or not-built formulation.
+    /// Bare model JSON and unknown or unavailable formulations are rejected.
     #[wasm_bindgen(constructor)]
-    pub fn new(network_json: &str, formulation: &str) -> Result<Study, JsError> {
+    pub fn new(module_json: &str, formulation: &str) -> Result<Study, JsError> {
         install_panic_hook();
         let problem = parse_problem(formulation)?;
-        tellegen::Study::new(network_json, problem)
+        tellegen::Study::new(module_json, problem)
             .map(Study)
             .map_err(jserr)
     }
@@ -256,10 +331,7 @@ impl Study {
         install_panic_hook();
         let edits = parse_edits(edits_json)?;
         let sensitivities = parse_sensitivities(sensitivities_json)?;
-        let resp = self
-            .0
-            .commit_with(&edits, &sensitivities, tellegen::SolveOptions::default())
-            .map_err(jserr)?;
+        let resp = self.0.commit_with(&edits, &sensitivities).map_err(jserr)?;
         serde_json::to_string(&commit_output(&resp)).map_err(jserr)
     }
 
@@ -276,7 +348,7 @@ impl Study {
         let sensitivities = parse_sensitivities(sensitivities_json)?;
         let resp = self
             .0
-            .replace_edits_with(&edits, &sensitivities, tellegen::SolveOptions::default())
+            .replace_edits_with(&edits, &sensitivities)
             .map_err(jserr)?;
         serde_json::to_string(&commit_output(&resp)).map_err(jserr)
     }
@@ -323,19 +395,54 @@ impl Study {
             .unwrap_or_default()
     }
 
-    /// Serialize this study as a `.pio.json` package: the base network is the payload,
-    /// the edit log is the study block (one commit per `commit` call, keyed by row uid),
-    /// and the formulation and solve options ride under `study.app["tellegen"]`. Returns
-    /// the package JSON, ready to download or hand to [`export_study`].
-    pub fn save_package(&self) -> Result<String, JsError> {
+    /// Serialize the committed operating point as a stored PowerIO module:
+    /// the materialized network with one descriptive `Edit` history entry per
+    /// committed edit, ready to download as `.pio.json`. Any PowerIO reader
+    /// understands the file; reloading it starts a fresh session.
+    pub fn save_module(&self) -> Result<String, JsError> {
         install_panic_hook();
-        let package = self.0.to_package().map_err(jserr)?;
-        package.to_json().map_err(jserr)
+        self.0.save_module().map_err(jserr)
+    }
+
+    /// Save the committed exact DC OPF result as a PowerIO solution module.
+    /// The embedded instance contains the materialized case that was solved.
+    pub fn save_solution_module(&self) -> Result<String, JsError> {
+        install_panic_hook();
+        self.0.save_solution_module().map_err(jserr)
+    }
+
+    /// Export the committed operating point to a powerio `format` (`matpower`,
+    /// `psse`, `model-json`, ...). Returns `{ text, warnings, format,
+    /// extension }` as JSON: the serialized case, the writer's fidelity
+    /// warnings so the frontend can surface them, and the format token and
+    /// file extension.
+    pub fn export(&self, format: &str) -> Result<String, JsError> {
+        ensure_input_text(format)?;
+        install_panic_hook();
+        let exported = self.0.export(format).map_err(jserr)?;
+        serde_json::to_string(&exported).map_err(jserr)
+    }
+
+    /// Run a bounded differentiable planning search over the committed
+    /// operating point: the implicit gradient of the serializable outer
+    /// objective through the exact DC OPF KKT orders capacity trials
+    /// whose every step is verified by an exact re-solve. Read only — the
+    /// committed case, edits, and revision are untouched. `spec_json` is a
+    /// [`tellegen::plan::CapacityPlanSpec`]; the returned JSON is the complete
+    /// [`tellegen::plan::CapacityPlanOutcome`] trace with the unapplied
+    /// proposal. A non-DC formulation returns a typed error.
+    pub fn plan(&self, spec_json: &str) -> Result<String, JsError> {
+        ensure_input_text(spec_json)?;
+        install_panic_hook();
+        let spec: tellegen::plan::CapacityPlanSpec = serde_json::from_str(spec_json)
+            .map_err(|e| jserr(format!("unreadable planning specification: {e}")))?;
+        let outcome = self.0.plan(&spec).map_err(jserr)?;
+        serde_json::to_string(&outcome).map_err(jserr)
     }
 
     /// Apply a geographic layer (a canonical `.geo.json` from [`parse_geo`] or
     /// [`apply_layout`]) onto this study's base network, so a later
-    /// [`save_package`](Study::save_package) or export carries the coordinates
+    /// [`save_module`](Study::save_module) or export carries the coordinates
     /// on screen. Locations are metadata the model never reads; nothing
     /// re-solves. Returns the apply report JSON.
     pub fn apply_geo(&mut self, layer_geojson: &str) -> Result<String, JsError> {
@@ -385,102 +492,6 @@ fn commit_output(resp: &SolveResponse) -> serde_json::Value {
     })
 }
 
-/// Restore a study from a `.pio.json` package and return everything the frontend needs
-/// to rehydrate its case in one step: the drop-panel payload (summary, topology, map
-/// view, base `network_json`) plus the restored `formulation`, solve `options`, and the
-/// folded `deltas`/`rates` keyed by numeric element id (bus id / branch position). The
-/// package is validated by the engine's [`tellegen::Study::from_package`], which fails
-/// closed on a non-balanced payload, a missing or wrong-version `app["tellegen"]` blob,
-/// an unknown edit kind, or an unresolved edit key.
-///
-/// Untrusted input: the parse and the restore return error strings (never a panic), so
-/// a malformed, truncated, or oversized package rejects cleanly. Kept string-typed and
-/// separate from the `#[wasm_bindgen]` wrapper so it runs in native unit tests.
-#[cfg(feature = "sensitivity")]
-fn load_package_bundle(package_json: &str) -> Result<String, String> {
-    // powerio-pkg names the format in its own message, so no prefix here.
-    let package =
-        powerio_pkg::NetworkPackage::from_json(package_json).map_err(|e| e.to_string())?;
-    serde_json::to_string(&load_package_bundle_value(&package)?).map_err(|e| e.to_string())
-}
-
-#[cfg(feature = "sensitivity")]
-fn load_package_bundle_bytes(bytes: &[u8]) -> Result<String, String> {
-    let package = powerio_pkg::NetworkPackage::from_json_bytes(bytes).map_err(|e| e.to_string())?;
-    serde_json::to_string(&load_package_bundle_value(&package)?).map_err(|e| e.to_string())
-}
-
-#[cfg(feature = "sensitivity")]
-fn load_package_bundle_value(
-    package: &powerio_pkg::NetworkPackage,
-) -> Result<serde_json::Value, String> {
-    let study = tellegen::Study::from_package(package)?;
-    // The engine already validated the payload as balanced; clone it (uids stamped) for
-    // the ingest view.
-    let mut net = package
-        .as_balanced()
-        .ok_or("package payload is not balanced")?
-        .clone();
-    powerio_pkg::ensure_payload_uids(&mut net);
-
-    let mut bundle = ingest_value(&net, Vec::new())?;
-    let (deltas, rates) = study.folded_deltas_by_id()?;
-    let object = bundle
-        .as_object_mut()
-        .ok_or("ingest payload is not an object")?;
-    object.insert(
-        "formulation".to_owned(),
-        serde_json::to_value(study.formulation()).map_err(|e| e.to_string())?,
-    );
-    object.insert(
-        "options".to_owned(),
-        serde_json::to_value(study.solve_options()).map_err(|e| e.to_string())?,
-    );
-    object.insert(
-        "deltas".to_owned(),
-        serde_json::to_value(&deltas).map_err(|e| e.to_string())?,
-    );
-    object.insert(
-        "rates".to_owned(),
-        serde_json::to_value(&rates).map_err(|e| e.to_string())?,
-    );
-    Ok(bundle)
-}
-
-/// Restore a study saved by [`Study::save_package`]. Returns a JSON bundle the frontend
-/// reads to rebuild its case, edit sliders, formulation, and solve options in one step.
-/// See [`load_package_bundle`] for the shape and the fail-closed contract.
-#[cfg(feature = "sensitivity")]
-#[wasm_bindgen]
-pub fn load_package(package_json: &str) -> Result<String, JsError> {
-    ensure_input_text(package_json)?;
-    install_panic_hook();
-    load_package_bundle(package_json).map_err(jserr)
-}
-
-/// Byte counterpart of [`load_package`] for a dropped package.
-#[cfg(feature = "sensitivity")]
-#[wasm_bindgen]
-pub fn load_package_bytes(bytes: &[u8]) -> Result<String, JsError> {
-    ensure_input_bytes(bytes)?;
-    install_panic_hook();
-    load_package_bundle_bytes(bytes).map_err(jserr)
-}
-
-/// Export the balanced study state at commit `commit` to a powerio `format`
-/// (`matpower`, `psse`, `model-json`, ...). Returns `{ text, warnings, format,
-/// extension }` as JSON: the serialized case, the writer's fidelity warnings so the
-/// frontend can surface them, and the format token and file extension. The package
-/// JSON is untrusted; malformed input returns a `JsError`, never a panic.
-#[cfg(feature = "sensitivity")]
-#[wasm_bindgen]
-pub fn export_study(package_json: &str, commit: usize, format: &str) -> Result<String, JsError> {
-    ensure_input_text(package_json)?;
-    install_panic_hook();
-    let exported = tellegen::export_study(package_json, commit, format).map_err(jserr)?;
-    serde_json::to_string(&exported).map_err(jserr)
-}
-
 // ---------------------------------------------------------------------------
 // Case file ingest (the drop-panel payload)
 // ---------------------------------------------------------------------------
@@ -488,9 +499,10 @@ pub fn export_study(package_json: &str, commit: usize, format: &str) -> Result<S
 #[derive(Serialize)]
 struct ViewBus {
     id: usize,
-    /// powerio row uid — stamped by `ingest_case` before the view is built, so it
-    /// is always present and stable across re-parses of the same file.
-    uid: String,
+    /// powerio row uid when the source format carries one (GOC3 does), null
+    /// otherwise. The numeric `id` remains the edit key. The TS layer mirrors
+    /// this shape.
+    uid: Option<String>,
     lon: f64,
     lat: f64,
     demand_mw: f64,
@@ -503,7 +515,7 @@ struct ViewBus {
 struct ViewBranch {
     id: usize,
     /// powerio row uid, as on [`ViewBus`].
-    uid: String,
+    uid: Option<String>,
     from: usize,
     to: usize,
     rate_mw: f64,
@@ -526,7 +538,7 @@ struct View {
 struct TopologyBus {
     id: usize,
     /// powerio row uid, as on [`ViewBus`].
-    uid: String,
+    uid: Option<String>,
     demand_mw: f64,
     gen_mw: f64,
     editable: bool,
@@ -536,7 +548,7 @@ struct TopologyBus {
 struct TopologyBranch {
     id: usize,
     /// powerio row uid, as on [`ViewBus`].
-    uid: String,
+    uid: Option<String>,
     from: usize,
     to: usize,
     rate_mw: f64,
@@ -544,29 +556,25 @@ struct TopologyBranch {
     editable: bool,
 }
 
-/// The uid `ensure_payload_uids` stamped on this element. It fills every row of
-/// every table, so absence is a broken powerio contract, surfaced as an error string
-/// (mapped to `JsError` at the boundary) rather than a panic.
-fn stamped_uid(uid: &Option<String>) -> Result<String, String> {
-    uid.clone()
-        .ok_or_else(|| "ensure_payload_uids left an element without a uid".to_owned())
-}
+/// One optional uid per rendered analysis row, in row order.
+type AnalysisUids = Vec<Option<String>>;
 
 /// Deterministic identities for rendered analysis rows. Source rows keep their
-/// canonical uid. Lowered rows receive display-only ids chosen outside every
-/// canonical bus and branch uid, so forwarding one to an edit API always fails
-/// closed instead of aliasing a source element with an unfortunate custom uid.
+/// source uid when the format carries one. Lowered rows receive display-only
+/// ids chosen outside every canonical bus and branch uid, so forwarding one to
+/// an edit API always fails closed instead of aliasing a source element with
+/// an unfortunate custom uid.
 fn analysis_uids(
     source: &powerio::BalancedNetwork,
     analysis: &powerio::BalancedNetwork,
-) -> Result<(Vec<String>, Vec<String>), String> {
+) -> Result<(AnalysisUids, AnalysisUids), String> {
     let mut reserved: HashSet<String> = source
-        .buses
+        .buses()
         .iter()
         .filter_map(|bus| bus.uid.clone())
         .chain(
             source
-                .branches
+                .branches()
                 .iter()
                 .filter_map(|branch| branch.uid.clone()),
         )
@@ -589,20 +597,20 @@ fn analysis_uids(
         }
     };
 
-    let mut buses = Vec::with_capacity(analysis.buses.len());
-    for (index, bus) in analysis.buses.iter().enumerate() {
-        buses.push(if index < source.buses.len() {
-            stamped_uid(&bus.uid)?
+    let mut buses = Vec::with_capacity(analysis.buses().len());
+    for (index, bus) in analysis.buses().iter().enumerate() {
+        buses.push(if index < source.buses().len() {
+            bus.uid.clone()
         } else {
-            unique_synthetic("buses", index)?
+            Some(unique_synthetic("buses", index)?)
         });
     }
-    let mut branches = Vec::with_capacity(analysis.branches.len());
-    for (index, branch) in analysis.branches.iter().enumerate() {
-        branches.push(if index < source.branches.len() {
-            stamped_uid(&branch.uid)?
+    let mut branches = Vec::with_capacity(analysis.branches().len());
+    for (index, branch) in analysis.branches().iter().enumerate() {
+        branches.push(if index < source.branches().len() {
+            branch.uid.clone()
         } else {
-            unique_synthetic("branches", index)?
+            Some(unique_synthetic("branches", index)?)
         });
     }
     Ok((buses, branches))
@@ -630,17 +638,19 @@ pub fn ingest_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
 }
 
 fn ingest_case_value(bytes: &[u8], format: &str) -> Result<serde_json::Value, String> {
-    let mut parsed = powerio::parse_bytes(bytes, format).map_err(|e| e.to_string())?;
-    // Stamp row uids (`buses:0`, `branches:1`, ...) on every element that the
-    // source format did not already give one (GOC3 carries its own). The stamped
-    // network is what `network_json` serializes, so a Study built from this
-    // payload resolves uid-keyed edits and echoes uids on its response scalars.
-    powerio_pkg::ensure_payload_uids(&mut parsed.network);
-    ingest_value(&parsed.network, parsed.warnings)
+    let module = parse_case_module(bytes, format)?;
+    let warnings = render_diagnostics(module.diagnostics());
+    // PowerWorld complete case aux exports keep their substation table in the
+    // retained source text, which PowerIO stores on the module rather than the
+    // network; hand the dropped text through so those coordinates land. A
+    // binary format (`.pwb`) is not UTF-8 and passes None.
+    let source_text = std::str::from_utf8(bytes).ok();
+    let payload = ingest_value(module.value(), warnings, source_text)?;
+    with_module_json(payload, module)
 }
 
-/// [`ingest_case`] for powerio's own model JSON, the document `export_study`
-/// writes under the `model-json` token and powerio classifies as
+/// [`ingest_case`] for powerio's own model JSON, the document a `model-json`
+/// export writes and powerio classifies as
 /// `JsonClass::ModelJson`. It is not a case format, so it reaches
 /// `BalancedNetwork::from_json` rather than a case reader, and there are no
 /// reader warnings to carry: nothing was converted.
@@ -652,9 +662,10 @@ pub fn ingest_model_json(network_json: &str) -> Result<String, JsError> {
 }
 
 fn ingest_model_json_value(network_json: &str) -> Result<serde_json::Value, String> {
-    let mut net = powerio::BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
-    powerio_pkg::ensure_payload_uids(&mut net);
-    ingest_value(&net, Vec::new())
+    let net = powerio::BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
+    let module = powerio::PioModule::new(net);
+    let payload = ingest_value(module.value(), Vec::new(), None)?;
+    with_module_json(payload, module)
 }
 
 /// Byte counterpart of [`ingest_model_json`] for dropped files. UTF-8 decoding
@@ -667,20 +678,21 @@ pub fn ingest_model_json_bytes(bytes: &[u8]) -> Result<String, JsError> {
 }
 
 fn ingest_model_json_bytes_value(bytes: &[u8]) -> Result<serde_json::Value, String> {
-    let mut net = powerio::BalancedNetwork::from_json_bytes(bytes).map_err(|e| e.to_string())?;
-    powerio_pkg::ensure_payload_uids(&mut net);
-    ingest_value(&net, Vec::new())
+    let net = powerio::BalancedNetwork::from_json_bytes(bytes).map_err(|e| e.to_string())?;
+    let module = powerio::PioModule::new(net);
+    let payload = ingest_value(module.value(), Vec::new(), None)?;
+    with_module_json(payload, module)
 }
 
 /// The distribution counterpart of [`ingest_case`]: view a multiconductor case
 /// with no solve. `format` is a distribution reader token (`dss`, `bmopf`,
-/// `pmd`) parsed by [`powerio_dist`], or `pio` for a `.pio.json` package
-/// carrying a multiconductor payload. Returns the drop-panel payload JSON:
+/// `pmd`) parsed by [`powerio_dist`], or `pio` for a `.pio.json` stored module
+/// holding a multiconductor network. Returns the drop-panel payload JSON:
 /// name, element counts, connected load/generation (kW), parse warnings,
 /// coordinate provenance, and the bus/terminal graph the frontend renders (see
-/// [`dist`]).
+/// the private `dist` adapter).
 ///
-/// Untrusted input: the parse and package restore return error strings (mapped
+/// Untrusted input: the parse and module restore return error strings (mapped
 /// to `JsError` here), so a malformed, truncated, or oversized `.dss`/JSON
 /// rejects cleanly and never panics the wasm instance.
 #[wasm_bindgen]
@@ -688,7 +700,7 @@ pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
     ensure_input_text(text)?;
     install_panic_hook();
     let out = match format {
-        "pio" | "pio-json" | "package" => dist::ingest_dist_package(text),
+        "pio" | "pio-json" | "package" => dist::ingest_dist_module(text),
         _ => dist::ingest_dist(text, format),
     };
     out.map_err(jserr)
@@ -700,28 +712,30 @@ pub fn ingest_dist_case_bytes(bytes: &[u8], format: &str) -> Result<String, JsEr
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     let out = match format {
-        "pio" | "pio-json" | "package" => dist::ingest_dist_package_bytes(bytes),
+        "pio" | "pio-json" | "package" => dist::ingest_dist_module_bytes(bytes),
         _ => dist::ingest_dist_bytes(bytes, format),
     };
     out.map_err(jserr)
 }
 
-/// The drop-panel payload for an already-parsed, uid-stamped network. Returns the
-/// `ingest_case` object as a JSON value so [`load_package`] can reuse it and append
-/// the restored study state. Errors are strings (mapped to `JsError` at the wasm
-/// edge) so the same body runs in native unit tests.
+/// The drop-panel payload for an already-parsed network, as a JSON value.
+/// `source_text` is the original case text
+/// for formats that keep coordinate data in retained source (PowerWorld aux
+/// substation tables); callers without it pass None. Errors are strings
+/// (mapped to `JsError` at the wasm edge) so the same body runs in native
+/// unit tests.
 pub(crate) fn ingest_value(
     net: &powerio::BalancedNetwork,
     mut warnings: Vec<String>,
+    source_text: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     net.validate().map_err(|error| error.to_string())?;
-    // `ensure_payload_uids` preserves source uids while filling missing rows.
-    // Reject a source uid that collides with a generated row uid before the
-    // browser receives an ambiguous edit/persistence key.
+    // Reject a duplicate or numeric-looking source uid before the browser
+    // receives an ambiguous edit/persistence key.
     tellegen::validate_canonical_identity(net)?;
     let power_scale = if net.is_normalized() {
         net.check_base_mva().map_err(|error| error.to_string())?;
-        net.base_mva
+        net.base_mva()
     } else {
         1.0
     };
@@ -729,13 +743,13 @@ pub(crate) fn ingest_value(
     let analysis = indexed.network();
     let (analysis_bus_uids, analysis_branch_uids) = analysis_uids(net, analysis)?;
     let editable_bus_ids: HashSet<usize> = net
-        .buses
+        .buses()
         .iter()
         .filter(|bus| bus.kind != powerio::BusType::Isolated)
         .map(|bus| bus.id.0)
         .collect();
     let editable_branch_rows: HashSet<usize> = net
-        .branches
+        .branches()
         .iter()
         .enumerate()
         .filter(|(_, branch)| {
@@ -748,17 +762,17 @@ pub(crate) fn ingest_value(
         .map(|(row, _)| row)
         .collect();
     let mut demand: BTreeMap<usize, f64> = BTreeMap::new();
-    for l in analysis.loads.iter().filter(|l| l.in_service) {
+    for l in analysis.loads().iter().filter(|l| l.in_service) {
         *demand.entry(l.bus.0).or_default() += l.p * power_scale;
     }
     let mut gen: BTreeMap<usize, f64> = BTreeMap::new();
-    for g in analysis.generators.iter().filter(|g| g.in_service) {
+    for g in analysis.generators().iter().filter(|g| g.in_service) {
         *gen.entry(g.bus.0).or_default() += g.pmax * power_scale;
     }
 
     let topology = Topology {
         buses: analysis
-            .buses
+            .buses()
             .iter()
             .enumerate()
             .map(|(i, b)| {
@@ -767,12 +781,12 @@ pub(crate) fn ingest_value(
                     uid: analysis_bus_uids[i].clone(),
                     demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                     gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
-                    editable: i < net.buses.len() && editable_bus_ids.contains(&b.id.0),
+                    editable: i < net.buses().len() && editable_bus_ids.contains(&b.id.0),
                 })
             })
             .collect::<Result<_, String>>()?,
         branches: analysis
-            .branches
+            .branches()
             .iter()
             .enumerate()
             .map(|(i, br)| {
@@ -790,12 +804,12 @@ pub(crate) fn ingest_value(
     };
 
     let view = {
-        let source_coords = network_coords(net);
+        let source_coords = network_coords(net, source_text);
         let mut cs = lowered_coords(net, &source_coords);
         if cs.is_empty() {
             None
         } else {
-            let missing_buses = analysis.buses.len().saturating_sub(cs.len());
+            let missing_buses = analysis.buses().len().saturating_sub(cs.len());
             if missing_buses > 0 {
                 warnings.push(format!(
                     "{missing_buses} bus(es) lacked coordinates and are omitted from the map"
@@ -803,7 +817,7 @@ pub(crate) fn ingest_value(
             }
             spread_stacks(&mut cs);
             let buses: Vec<ViewBus> = analysis
-                .buses
+                .buses()
                 .iter()
                 .enumerate()
                 .filter_map(|(i, b)| {
@@ -815,12 +829,12 @@ pub(crate) fn ingest_value(
                         lat,
                         demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                         gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
-                        editable: i < net.buses.len() && editable_bus_ids.contains(&b.id.0),
+                        editable: i < net.buses().len() && editable_bus_ids.contains(&b.id.0),
                     }))
                 })
                 .collect::<Result<_, String>>()?;
             let branches: Vec<ViewBranch> = analysis
-                .branches
+                .branches()
                 .iter()
                 .enumerate()
                 .filter_map(|(i, br)| {
@@ -844,7 +858,7 @@ pub(crate) fn ingest_value(
                     }))
                 })
                 .collect::<Result<_, String>>()?;
-            let missing_branches = analysis.branches.len().saturating_sub(branches.len());
+            let missing_branches = analysis.branches().len().saturating_sub(branches.len());
             if missing_branches > 0 {
                 warnings.push(format!(
                     "{missing_branches} branch(es) lacked endpoint coordinates and are omitted from the map"
@@ -855,18 +869,18 @@ pub(crate) fn ingest_value(
     };
 
     Ok(serde_json::json!({
-        "name": net.name,
-        "base_mva": net.base_mva,
-        "n_bus": net.buses.len(),
-        "n_branch": net.branches.len(),
-        "n_analysis_bus": analysis.buses.len(),
-        "n_analysis_branch": analysis.branches.len(),
-        "n_gen": net.generators.iter().filter(|g| g.in_service).count(),
+        "name": net.name(),
+        "base_mva": net.base_mva(),
+        "n_bus": net.buses().len(),
+        "n_branch": net.branches().len(),
+        "n_analysis_bus": analysis.buses().len(),
+        "n_analysis_branch": analysis.branches().len(),
+        "n_gen": net.generators().iter().filter(|g| g.in_service).count(),
         "load_mw": demand.values().sum::<f64>(),
         "gen_mw": gen.values().sum::<f64>(),
         "has_coords": view.is_some(),
         "coords_kind": coords_kind_token(net, view.is_some()),
-        "network_json": serde_json::to_string(net).map_err(|e| e.to_string())?,
+        "network_json": net.to_json().map_err(|e| e.to_string())?,
         "topology": topology,
         "warnings": warnings,
         "view": view,
@@ -874,14 +888,14 @@ pub(crate) fn ingest_value(
 }
 
 /// The coordinate provenance token the frontend placement logic reads:
-/// `synthetic`/`manual` echo a stamped layout's provenance (a restored package
-/// carries it, so the case comes back placed with an honest badge), `file` is
-/// any other located case, and `synthetic_pending` awaits placement.
+/// `synthetic`/`manual` echo a saved PowerIO module's layout provenance, so a
+/// reloaded case comes back placed with the same badge,
+/// `file` is any other located case, and `synthetic_pending` awaits placement.
 fn coords_kind_token(net: &powerio::BalancedNetwork, has_view: bool) -> &'static str {
     if !has_view {
         return "synthetic_pending";
     }
-    match net.geo.as_ref().and_then(|g| g.kind) {
+    match net.geo().as_ref().and_then(|g| g.kind) {
         Some(powerio::geo::CoordsKind::Synthetic) => "synthetic",
         Some(powerio::geo::CoordsKind::Manual) => "manual",
         _ => "file",
@@ -1007,6 +1021,13 @@ mod tests {
     use super::*;
     use serde_json::Value;
 
+    /// Parse in-memory MATPOWER text over the module route (tests only).
+    fn parse_matpower(text: &str) -> powerio::BalancedNetwork {
+        parse_case_module(text.as_bytes(), "matpower")
+            .expect("parse matpower")
+            .into_value()
+    }
+
     #[test]
     fn byte_input_limit_is_inclusive_without_allocating_the_boundary() {
         assert_eq!(ensure_input_len(MAX_INPUT_BYTES), Ok(()));
@@ -1086,24 +1107,21 @@ mpc.gencost = [
             21.7
         );
 
-        // `ingest_case` stamps powerio row uids before serializing anything, so the
-        // topology and the network payload both carry them: uid-keyed edits resolve
-        // against a Study built from this `network_json`.
-        assert_eq!(v["topology"]["buses"][0]["uid"], "buses:0");
-        assert_eq!(v["topology"]["branches"][1]["uid"], "branches:1");
-        assert!(v["network_json"].as_str().unwrap().contains("buses:0"));
+        // A source without uids serves null uids and the numeric id is the
+        // edit key, so neither the
+        // topology nor the network payload invents one.
+        assert!(v["topology"]["buses"][0]["uid"].is_null());
+        assert!(v["topology"]["branches"][1]["uid"].is_null());
+        assert!(!v["network_json"].as_str().unwrap().contains("buses:0"));
     }
 
     #[test]
     fn normalized_ingest_still_reports_native_mw() {
-        let mut raw = powerio::parse_str(CASE14_NO_COORDS, "m")
-            .expect("parse case14")
-            .network;
-        powerio_pkg::ensure_payload_uids(&mut raw);
+        let raw = parse_matpower(CASE14_NO_COORDS);
         let normalized = raw.to_normalized().expect("normalize case14");
 
-        let source = ingest_value(&raw, Vec::new()).expect("ingest raw");
-        let derived = ingest_value(&normalized, Vec::new()).expect("ingest normalized");
+        let source = ingest_value(&raw, Vec::new(), None).expect("ingest raw");
+        let derived = ingest_value(&normalized, Vec::new(), None).expect("ingest normalized");
         let close = |left: &Value, right: &Value| {
             let delta = left.as_f64().unwrap() - right.as_f64().unwrap();
             assert!(delta.abs() < 1e-9, "{left} != {right}");
@@ -1121,30 +1139,25 @@ mpc.gencost = [
     }
 
     #[test]
-    fn ingest_rejects_a_source_uid_that_collides_with_a_stamped_uid() {
-        let mut net = powerio::parse_str(CASE14_NO_COORDS, "m")
-            .expect("parse case14")
-            .network;
-        // Row 0 preserves this source uid; row 1 is missing and receives the
-        // same value from `ensure_payload_uids`.
-        net.buses[0].uid = Some("buses:1".into());
-        powerio_pkg::ensure_payload_uids(&mut net);
-        let error = ingest_value(&net, Vec::new()).unwrap_err();
+    fn ingest_rejects_duplicate_source_uids() {
+        let mut net = parse_matpower(CASE14_NO_COORDS);
+        // Two rows carrying the same source uid would make an ambiguous
+        // edit/persistence key; the ingest refuses before the browser sees it.
+        net.buses_mut()[0].uid = Some("same-bus".into());
+        net.buses_mut()[1].uid = Some("same-bus".into());
+        let error = ingest_value(&net, Vec::new(), None).unwrap_err();
         assert!(error.contains("duplicate bus uid"), "{error}");
     }
 
     #[test]
     fn three_winding_transformer_topology_is_closed_but_canonical_payload_stays_typed() {
-        let mut net = powerio::parse_str(CASE14_NO_COORDS, "m")
-            .expect("parse case14")
-            .network;
+        let mut net = parse_matpower(CASE14_NO_COORDS);
         let windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
-        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
-        net.transformers_3w
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva());
+        net.transformers_3w_mut()
             .push(powerio::Transformer3W::new(windings, [impedance; 3]));
-        powerio_pkg::ensure_payload_uids(&mut net);
 
-        let value = ingest_value(&net, Vec::new()).expect("ingest 3W case");
+        let value = ingest_value(&net, Vec::new(), None).expect("ingest 3W case");
         assert_eq!(value["n_bus"], 14);
         assert_eq!(value["n_branch"], 20);
         assert_eq!(value["topology"]["buses"].as_array().unwrap().len(), 15);
@@ -1169,15 +1182,13 @@ mpc.gencost = [
 
     #[test]
     fn topology_marks_only_solver_rows_editable() {
-        let mut net = powerio::parse_str(CASE14_NO_COORDS, "m")
-            .expect("parse case14")
-            .network;
-        net.buses[0].kind = powerio::BusType::Isolated;
-        net.branches[0].in_service = false;
-        net.branches[1].to = net.branches[1].from;
-        powerio_pkg::ensure_payload_uids(&mut net);
+        let mut net = parse_matpower(CASE14_NO_COORDS);
+        net.buses_mut()[0].kind = powerio::BusType::Isolated;
+        net.branches_mut()[0].in_service = false;
+        let self_loop_from = net.branches()[1].from;
+        net.branches_mut()[1].to = self_loop_from;
 
-        let value = ingest_value(&net, Vec::new()).expect("ingest filtered rows");
+        let value = ingest_value(&net, Vec::new(), None).expect("ingest filtered rows");
         assert_eq!(value["topology"]["buses"][0]["editable"], false);
         assert_eq!(value["topology"]["branches"][0]["editable"], false);
         assert_eq!(value["topology"]["branches"][1]["editable"], false);
@@ -1194,9 +1205,7 @@ mpc.gencost = [
         assert_eq!(distribution.kind, "distribution");
         assert_eq!(distribution.format, Some("pmd-json"));
 
-        let net = powerio::parse_str(CASE14_NO_COORDS, "m")
-            .expect("parse model")
-            .network;
+        let net = parse_matpower(CASE14_NO_COORDS);
         let model = net.to_json().expect("model JSON");
         let mut bom_model = b"\xef\xbb\xbf".to_vec();
         bom_model.extend_from_slice(model.as_bytes());
@@ -1204,11 +1213,13 @@ mpc.gencost = [
         assert_eq!(model_class.kind, "model-json");
         powerio::BalancedNetwork::from_json_bytes(&bom_model).expect("strict model byte reader");
 
-        let package = powerio_pkg::NetworkPackage::from_balanced(net)
-            .to_json()
-            .expect("package JSON");
-        let package_class = classify_json_drop_value(package.as_bytes()).expect("classify package");
-        assert_eq!(package_class.kind, "balanced-package");
+        let module = powerio::stored::write_module(&powerio::PioModule::new(
+            powerio::PioValue::BalancedNetwork(net),
+        ))
+        .expect("module JSON");
+        let module_class = classify_json_drop_value(module.as_bytes()).expect("classify module");
+        assert_eq!(module_class.kind, "module");
+        assert_eq!(module_class.format, None);
 
         let invalid = b"{\"base_mva\":100,\"buses\":[]\xff}";
         let unknown = classify_json_drop_value(invalid).expect("invalid UTF-8 classifies unknown");
@@ -1234,9 +1245,7 @@ mpc.gencost = [
         assert_eq!(distribution.payload["model"], "multiconductor");
         assert_eq!(distribution.payload["n_bus"], 1);
 
-        let model = powerio::parse_str(CASE14_NO_COORDS, "m")
-            .expect("parse balanced model")
-            .network
+        let model = parse_matpower(CASE14_NO_COORDS)
             .to_json()
             .expect("serialize model JSON");
         let model_drop =
@@ -1272,11 +1281,14 @@ mpc.gencost = [
     }
 
     #[test]
-    fn package_reader_error_is_not_prefixed_twice() {
-        let error = dist::ingest_dist_package(r#"{"model_kind":"multiconductor","model":{}}"#)
-            .expect_err("malformed package");
+    fn module_reader_error_is_not_prefixed_twice() {
+        // A 0.9-shaped package with no `powerio_version` lineage is refused by
+        // the stored module reader; its message must reach the caller once,
+        // with no prefix stacked on by this crate.
+        let error = dist::ingest_dist_module(r#"{"model_kind":"multiconductor","model":{}}"#)
+            .expect_err("malformed module");
         assert_eq!(
-            error.matches("invalid .pio.json package").count(),
+            error.matches("not a stored powerio module").count(),
             1,
             "{error}"
         );
@@ -1322,81 +1334,71 @@ mpc.gencost = [
         assert!(parse_sensitivities("   ").unwrap().is_empty());
     }
 
-    /// CASE14 as uid-stamped powerio network JSON, ready for a `Study`.
     #[cfg(feature = "sensitivity")]
-    fn case14_network_json() -> String {
-        let mut parsed = powerio::parse_str(CASE14_NO_COORDS, "m").expect("parse");
-        powerio_pkg::ensure_payload_uids(&mut parsed.network);
-        serde_json::to_string(&parsed.network).expect("to_json")
+    fn case14_module_json() -> String {
+        let module = powerio::PioModule::new(powerio::PioValue::BalancedNetwork(parse_matpower(
+            CASE14_NO_COORDS,
+        )));
+        powerio::stored::write_module(&module).expect("module JSON")
     }
 
     #[cfg(feature = "sensitivity")]
     #[test]
-    fn load_package_bundle_round_trips_a_saved_study() {
-        // save_package -> load_package_bundle rebuilds the case, the restored formulation,
-        // solve options, and the folded deltas keyed by numeric element id.
-        let net = case14_network_json();
+    fn a_saved_module_ingests_as_a_fresh_case_at_the_committed_point() {
+        // Study::save_module -> the unified JSON drop: the saved file is a
+        // plain stored PowerIO module holding the materialized network, so it
+        // ingests under the `module` kind as a fresh base with no sliders to
+        // restore. The committed edit rides along as descriptive history.
+        let net = case14_module_json();
         let mut study = tellegen::Study::new(&net, tellegen::Problem::DcOpf).expect("study");
         study
-            .commit(
-                &[tellegen::NetworkEdit::AddLoad {
-                    bus: tellegen::ElementKey::Id(2),
-                    p_mw: 10.0,
-                }],
-                tellegen::SolveOptions::default(),
-            )
+            .commit(&[tellegen::NetworkEdit::AddLoad {
+                bus: tellegen::ElementKey::Id(2),
+                p_mw: 10.0,
+            }])
             .expect("commit");
-        let text = study
-            .to_package()
-            .expect("to_package")
-            .to_json()
-            .expect("json");
+        let text = study.save_module().expect("save_module");
 
-        let bundle: Value = serde_json::from_str(&load_package_bundle(&text).unwrap()).unwrap();
-        assert_eq!(bundle["formulation"], "dcopf");
-        assert_eq!(bundle["deltas"]["2"].as_f64().unwrap(), 10.0);
-        assert_eq!(bundle["options"]["shed"], false);
-        assert_eq!(bundle["n_bus"].as_u64().unwrap(), 14);
-        assert!(bundle["network_json"].as_str().unwrap().contains("buses:1"));
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["schema"], "powerio.module");
+        assert_eq!(value["history"][0]["name"], "tellegen.add_load");
+
+        let restored = ingest_json_drop_value(text.as_bytes()).expect("ingest saved module");
+        assert_eq!(restored.kind, "module");
+        assert_eq!(restored.format, None);
+        assert_eq!(restored.payload["n_bus"], 14);
+        assert_eq!(restored.payload["module_json"], text);
     }
 
     #[cfg(feature = "sensitivity")]
     #[test]
-    fn unified_json_drop_restores_each_package_kind_from_one_parsed_envelope() {
-        let net = case14_network_json();
-        let mut study = tellegen::Study::new(&net, tellegen::Problem::DcOpf).expect("study");
-        study
-            .commit(
-                &[tellegen::NetworkEdit::AddLoad {
-                    bus: tellegen::ElementKey::Id(2),
-                    p_mw: 7.5,
-                }],
-                tellegen::SolveOptions::default(),
-            )
-            .expect("commit");
-        let balanced_json = study
-            .to_package()
-            .expect("balanced package")
-            .to_json()
-            .expect("balanced package JSON");
-
+    fn unified_json_drop_routes_each_module_kind() {
+        // A stored module holding a balanced network ingests like a plain
+        // network drop under the one `module` kind.
+        let balanced_json = powerio::stored::write_module(&powerio::PioModule::new(
+            powerio::PioValue::BalancedNetwork(parse_matpower(CASE14_NO_COORDS)),
+        ))
+        .expect("balanced module JSON");
         let balanced =
-            ingest_json_drop_value(balanced_json.as_bytes()).expect("restore balanced package");
-        assert_eq!(balanced.kind, "balanced-package");
+            ingest_json_drop_value(balanced_json.as_bytes()).expect("ingest balanced module");
+        assert_eq!(balanced.kind, "module");
         assert_eq!(balanced.format, None);
-        assert_eq!(balanced.payload["formulation"], "dcopf");
-        assert_eq!(balanced.payload["deltas"]["2"], 7.5);
         assert_eq!(balanced.payload["n_bus"], 14);
 
-        let dist_net =
-            powerio_dist::parse_str(include_str!("../tests/fixtures/dist/micro_pmd.json"), "pmd")
-                .expect("parse distribution model");
-        let dist_json = powerio_pkg::NetworkPackage::from_multiconductor(dist_net)
-            .to_json()
-            .expect("multiconductor package JSON");
+        // One holding a multiconductor network routes to the dist view.
+        let dist_source = Source::from_bytes(
+            "micro.json",
+            include_bytes!("../tests/fixtures/dist/micro_pmd.json").to_vec(),
+        )
+        .expect("dist source")
+        .with_format(format_id_for("pmd").expect("pmd format id"));
+        let dist_module = powerio_dist::parse(dist_source).expect("parse distribution module");
+        let dist_json =
+            powerio::stored::write_module(&dist_module.map_value(powerio::PioValue::from))
+                .expect("multiconductor module JSON");
         let multiconductor =
-            ingest_json_drop_value(dist_json.as_bytes()).expect("restore multiconductor package");
-        assert_eq!(multiconductor.kind, "multiconductor-package");
+            ingest_json_drop_value(dist_json.as_bytes()).expect("ingest multiconductor module");
+        assert_eq!(multiconductor.kind, "module");
         assert_eq!(multiconductor.format, None);
         assert_eq!(multiconductor.payload["model"], "multiconductor");
         assert_eq!(multiconductor.payload["n_bus"], 1);
@@ -1404,62 +1406,33 @@ mpc.gencost = [
 
     #[cfg(feature = "sensitivity")]
     #[test]
-    fn unified_json_drop_rejects_a_malformed_package_after_classification() {
+    fn unified_json_drop_rejects_a_malformed_module_after_classification() {
         let malformed = br#"{"model_kind":"balanced","model":{}}"#;
-        assert_eq!(powerio::classify_json_bytes(malformed), JsonClass::Package);
+        assert_eq!(powerio::classify_json_bytes(malformed), JsonClass::Module);
         assert!(ingest_json_drop_value(malformed).is_err());
     }
 
     #[cfg(feature = "sensitivity")]
     #[test]
-    fn load_package_bundle_rejects_untrusted_input_without_panicking() {
-        // Malformed, truncated, and oversized inputs must all reject as an `Err` (a wasm
-        // panic would abort the instance), never a panic.
-        let big_open = "{".repeat(20_000);
-        let big_quote = "\"".repeat(100_000);
-        let cases = [
-            "",
-            "   ",
-            "{",
-            "]",
-            "not json at all",
-            "null",
-            "[]",
-            "42",
-            // A package shaped envelope with nothing under it, and one that
-            // states no `powerio_version` so the lineage gate refuses it.
-            r#"{"model_kind":"balanced","model":{}}"#,
-            r#"{"model_kind":"balanced","model":{"kind":"balanced","balanced_network":{"base_mva":100.0,"buses":[]}}}"#,
-            big_open.as_str(),
-            big_quote.as_str(),
-        ];
-        for bad in cases {
-            assert!(
-                load_package_bundle(bad).is_err(),
-                "expected Err for input starting {:?}",
-                &bad[..bad.len().min(16)]
-            );
-        }
+    fn a_retired_study_document_is_not_a_module() {
+        // The tellegen.study format is gone: classification is powerio's rule
+        // alone, so the retired header is ordinary unrecognized JSON — never
+        // a module, never a restored session.
+        let retired = br#"{"schema":"tellegen.study","version":1,"module":{},"formulation":"dcopf","options":{},"commits":[]}"#;
+        let classified = classify_json_drop_value(retired).expect("classification");
+        assert_ne!(classified.kind, "module");
+        let ingested = ingest_json_drop_value(retired).expect("ingest");
+        assert_ne!(ingested.kind, "module");
+        assert!(ingested.payload.is_null(), "payload: {}", ingested.payload);
     }
 
     #[cfg(feature = "sensitivity")]
     #[test]
-    fn export_study_rejects_untrusted_input_without_panicking() {
-        let oversized = "x".repeat(50_000);
-        let cases = [
-            "",
-            "{",
-            "truncat",
-            "null",
-            "[1,2,3]",
-            "{\"a\":",
-            oversized.as_str(),
-        ];
-        for bad in cases {
-            assert!(tellegen::export_study(bad, 0, "matpower").is_err());
-            // An out-of-range commit index must also reject rather than panic.
-            assert!(tellegen::export_study(bad, 9_999_999, "model-json").is_err());
-        }
+    fn export_rejects_an_unknown_format_without_panicking() {
+        let net = case14_module_json();
+        let study = tellegen::Study::new(&net, tellegen::Problem::DcOpf).expect("study");
+        assert!(study.export("nonesuch").is_err());
+        assert!(study.export("").is_err());
     }
 
     /// A PowerModels generator that omits `qmax` reads as an unbounded reactive
@@ -1479,14 +1452,15 @@ mpc.gencost = [
             "expected a string-spelled qmax in the payload, got: {network_json}"
         );
         let net = powerio::BalancedNetwork::from_json(network_json).expect("from_json");
-        let qmax = net.generators[0].qmax;
+        let qmax = net.generators()[0].qmax;
         assert!(
             qmax.is_infinite() && qmax.is_sign_positive(),
             "expected qmax to read back as +Inf, got: {qmax}"
         );
 
         #[cfg(feature = "sensitivity")]
-        tellegen::Study::new(network_json, tellegen::Problem::DcOpf).expect("study");
+        tellegen::Study::new(v["module_json"].as_str().unwrap(), tellegen::Problem::DcOpf)
+            .expect("study");
     }
 
     /// Two buses, one generator with no `qmax`/`qmin`.

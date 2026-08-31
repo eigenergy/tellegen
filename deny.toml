@@ -43,3 +43,6 @@ multiple-versions = "warn"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# The pre-1.0 consumer corrections this branch exercises (eigenergy/powerio#453),
+# applied through [patch.crates-io]. Remove with the patch when they release.
+allow-git = ["https://github.com/eigenergy/powerio"]

@@ -13,7 +13,14 @@ path = "src/main.rs"
 
 [dependencies]
 # Default features (sensitivity): the convex/relaxation engine.
-tellegen = { path = "../tellegen" }
+tellegen = { path = "../tellegen", features = ["schema"] }
+# The stored module boundary the headless MCP workflow speaks: read the
+# case module, narrow to the typed instance, write the solution module.
+powerio.workspace = true
+powerio-prob.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
