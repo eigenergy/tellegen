@@ -18,7 +18,8 @@
 		"lint": "prettier --check ."
 	},
 	"dependencies": {
-		"@tellegen/svelte": "^0.2.0"
+		"@tellegen/svelte": "^0.2.0",
+		"@tellegen/webmcp": "^0.1.0"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.62.1",

@@ -23,11 +23,11 @@ export type EngineRequest =
   | { op: "extract_geo"; network_json: string }
   | { op: "apply_display_geo"; network_json: string; bytes: Uint8Array }
   | { op: "capabilities" }
-  | { op: "solve_json"; network_json: string; request: string }
+  | { op: "solve_module"; module_json: string; request: string }
   | {
       op: "study_new";
       study: number;
-      network_json: string;
+      module_json: string;
       formulation: string;
     }
   | {
@@ -38,11 +38,11 @@ export type EngineRequest =
     }
   | { op: "study_preview"; study: number; edits: string; operands: string }
   | { op: "study_solution"; study: number }
-  | { op: "study_save_package"; study: number }
+  | { op: "study_plan"; study: number; spec: string }
+  | { op: "study_save_module"; study: number }
+  | { op: "study_save_solution_module"; study: number }
+  | { op: "study_export"; study: number; format: string }
   | { op: "study_apply_geo"; study: number; layer: string }
-  | { op: "load_package"; text: string }
-  | { op: "load_package_bytes"; bytes: Uint8Array }
-  | { op: "export_study"; package_json: string; commit: number; format: string }
   | { op: "study_free"; study: number };
 
 export type WorkerRequest = EngineRequest & { id: number };
@@ -98,10 +98,10 @@ export function runRequest(
       return mod.apply_display_geo(req.network_json, req.bytes);
     case "capabilities":
       return mod.capabilities_json();
-    case "solve_json":
-      return mod.solve_json(req.network_json, req.request);
+    case "solve_module":
+      return mod.solve_module(req.module_json, req.request);
     case "study_new":
-      studies.set(req.study, new mod.Study(req.network_json, req.formulation));
+      studies.set(req.study, new mod.Study(req.module_json, req.formulation));
       return null;
     case "study_replace_edits":
       return study(req.study).replace_edits(req.edits, req.sensitivities);
@@ -109,16 +109,16 @@ export function runRequest(
       return study(req.study).preview_replacement(req.edits, req.operands);
     case "study_solution":
       return study(req.study).solution();
-    case "study_save_package":
-      return study(req.study).save_package();
+    case "study_plan":
+      return study(req.study).plan(req.spec);
+    case "study_save_module":
+      return study(req.study).save_module();
+    case "study_save_solution_module":
+      return study(req.study).save_solution_module();
+    case "study_export":
+      return study(req.study).export(req.format);
     case "study_apply_geo":
       return study(req.study).apply_geo(req.layer);
-    case "load_package":
-      return mod.load_package(req.text);
-    case "load_package_bytes":
-      return mod.load_package_bytes(req.bytes);
-    case "export_study":
-      return mod.export_study(req.package_json, req.commit, req.format);
     case "study_free":
       studies.get(req.study)?.free();
       studies.delete(req.study);

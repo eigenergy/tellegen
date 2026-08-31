@@ -1,6 +1,7 @@
 # @tellegen/engine
 
-Browser package for tellegen case ingestion, wasm solves, Study lifecycle calls, previews, commits, and sensitivity queries.
+Parses cases, runs WebAssembly solves, and exposes `Study` preview, commit, and
+sensitivity calls in browsers.
 
 The package has no SvelteKit dependency. Host apps import the top level package and use either the direct functions or the `browserWasmTransport` facade:
 
@@ -9,7 +10,7 @@ import {
   browserWasmTransport,
   createStudy,
   ingestJsonDrop,
-  solveJson,
+  solveModule,
 } from "@tellegen/engine";
 ```
 
@@ -28,14 +29,18 @@ const casePayload = await ingestCase(bytes, "raw");
 const jsonPayload = await ingestJsonDrop(bytes);
 ```
 
-`ingestJsonDrop(bytes)` classifies and parses JSON in one call. Its
-`IngestedJsonDrop` result is discriminated by `kind`: balanced packages,
-multiconductor packages, and model JSON have a `null` format; transmission and
-distribution results carry the selected format; `ambiguous` and `unknown`
-results have a `null` payload.
+Every solvable ingest payload includes `module_json`, a retained PowerIO
+module. Pass that value to `createStudy` or `solveModule`. `network_json` is a
+derived view used by display and geographic transforms; it is not a solver
+input or persistence format.
 
-Every byte-buffer API rejects inputs larger than `MAX_ENGINE_INPUT_BYTES`
-(128 MiB) before worker dispatch.
+`ingestJsonDrop(bytes)` classifies and parses JSON in one call. Its
+`IngestedJsonDrop` result is discriminated by `kind`: PowerIO modules and model
+JSON have a `null` format; transmission and distribution results carry the
+selected format; `ambiguous` and `unknown` results have a `null` payload.
+
+Every API that accepts a byte buffer rejects inputs larger than
+`MAX_ENGINE_INPUT_BYTES` (128 MiB) before worker dispatch.
 
 ## Migrating To 0.2
 
@@ -44,8 +49,9 @@ Every byte-buffer API rejects inputs larger than `MAX_ENGINE_INPUT_BYTES`
 - Replace `classifyJson(text)` with `await classifyJson(bytes)`. It now returns
   `{ kind, format }` instead of a kind string.
 - If migrating code that imported `isStudyPackageText` from `@tellegen/svelte`,
-  replace it with `(await classifyJson(bytes)).kind === "balanced-package"`,
-  or use `await ingestJsonDrop(bytes)` when the document should also be parsed.
+  use `await ingestJsonDrop(bytes)`. A stored document reports `kind: "module"`;
+  its payload determines whether it contains a supported balanced or
+  multiconductor value.
 - Update `JsonDropKind` handling: `bmopf` and `pmd` are now
   `kind: "distribution"` with a `format`; `not-json` is `unknown`; and
   `transmission` and `ambiguous` are additional outcomes.
@@ -85,8 +91,7 @@ npm run build:engine
 npm run pack:engine
 ```
 
-The first framework release publishes this package and `@tellegen/svelte`.
 `@tellegen/engine` is the lower level browser package for custom UIs and for the
-Svelte package. The hosted demo under `apps/web` is private and consumes
-`@tellegen/svelte` through the same workspace file dependency used by the local
-examples.
+Svelte package. It releases through Changesets with the other npm packages. The
+hosted demo under `apps/web` is private and consumes `@tellegen/svelte` through
+the same workspace file dependency used by the local examples.

@@ -1,7 +1,7 @@
 {
   "name": "@tellegen/engine",
   "version": "0.2.0",
-  "description": "Browser engine package for tellegen case parsing, solving, studies, previews, and sensitivities.",
+  "description": "Browser engine for case parsing, solves, Study previews and commits, and sensitivities.",
   "license": "MIT",
   "type": "module",
   "repository": {

@@ -15,6 +15,11 @@ import {
 
 export interface EngineHost {
   call(req: EngineRequest): Promise<string | null>;
+  /** Stop this host's current work. Returns false for the direct host, whose
+   * synchronous wasm call cannot be interrupted. Callers still check the
+   * signal after that call and discard an aborted result before publishing
+   * state. */
+  cancel?(reason: Error): boolean;
 }
 
 const directStudies = new Map<number, WasmStudy>();
@@ -22,6 +27,9 @@ const directStudies = new Map<number, WasmStudy>();
 export const directHost: EngineHost = {
   async call(req) {
     return runRequest(await engineModule(), directStudies, req);
+  },
+  cancel() {
+    return false;
   },
 };
 
@@ -98,6 +106,17 @@ class WorkerHost implements EngineHost {
       this.#worker.postMessage(msg);
     });
   }
+
+  cancel(reason: Error): boolean {
+    if (this.#failed) return false;
+    const pending = [...this.#pending.values()];
+    this.#pending.clear();
+    this.#worker.terminate();
+    this.#failed = { forward: null, error: reason };
+    if (activeHost === this) activeHost = null;
+    for (const call of pending) call.reject(reason);
+    return true;
+  }
 }
 
 let activeHost: EngineHost | null = null;
@@ -105,6 +124,14 @@ let activeHost: EngineHost | null = null;
 export function engineHost(): EngineHost {
   activeHost ??= createHost();
   return activeHost;
+}
+
+/** A separate worker host for interruptible long running work. Terminating it
+ * does not invalidate the interactive studies held by the shared host. A
+ * runtime without Worker falls back to synchronous wasm: cancellation then
+ * takes effect after the call returns, before the caller publishes its result. */
+export function isolatedEngineHost(): EngineHost {
+  return createHost();
 }
 
 function createHost(): EngineHost {

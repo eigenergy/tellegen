@@ -1,4 +1,4 @@
-/** Maximum size accepted by one public byte-buffer API. A buffer crosses the
+/** Maximum size accepted by one public byte buffer API. A buffer crosses the
  * worker boundary and is then copied into WebAssembly memory, so reject it on
  * the calling thread before either copy begins. */
 export const MAX_ENGINE_INPUT_BYTES = 128 * 1024 * 1024;
