@@ -66,9 +66,9 @@ The submission video uses this sequence in the live browser:
 
 Screenshots and video for the submission must come from native WebMCP calls.
 Playwright remains the regression suite, not the source of submission evidence.
-The checked artifacts are the [pending proposal screenshot](../assets/challenge/proposal-staged.png),
-[applied result screenshot](../assets/challenge/plan-applied.png), and
-[native browser video](../assets/challenge/native-webmcp-demo.mp4). Their call
+The checked artifacts are the [pending proposal screenshot](assets/challenge/proposal-staged.png),
+[applied result screenshot](assets/challenge/plan-applied.png), and
+[native browser video](assets/challenge/native-webmcp-demo.mp4). Their call
 records and hashes are described in [Challenge Evidence](challenge-evidence.md).
 
 ## References
