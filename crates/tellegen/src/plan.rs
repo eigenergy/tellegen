@@ -442,6 +442,9 @@ fn plan_capacity_impl_with_solver(
     let mut exact_solves = 1usize;
     let mut current_exact_solve = exact_solves;
     exact_solve_completed(exact_solves);
+    if is_cancelled(cancel.as_ref()) {
+        return Err("capacity planning cancelled".into());
+    }
     let baseline_phi = phi(&current, &sol, &bus_weights);
     let baseline_declared_objective = sol.objective;
 
@@ -470,6 +473,9 @@ fn plan_capacity_impl_with_solver(
         )
         .map_err(|e| e.to_string())?;
         let gradient: Vec<f64> = per_unit.iter().map(|g| g * scale).collect();
+        if is_cancelled(cancel.as_ref()) {
+            return Err("capacity planning cancelled".into());
+        }
         let reported: Vec<GradientEntry> = spec
             .candidates
             .iter()
@@ -523,6 +529,9 @@ fn plan_capacity_impl_with_solver(
             exact_solves += 1;
             let outcome = solve_exact(&trial, cancel.clone());
             exact_solve_completed(exact_solves);
+            if is_cancelled(cancel.as_ref()) {
+                return Err("capacity planning cancelled".into());
+            }
 
             match outcome {
                 Ok(trial_sol) => {
@@ -1049,6 +1058,25 @@ mod tests {
         })
         .err()
         .expect("cancelled after baseline");
+        assert!(err.contains("cancelled"), "got: {err}");
+        assert_eq!(dc.fmax, original_limits);
+    }
+
+    #[test]
+    fn cancellation_after_the_last_exact_solve_does_not_return_a_proposal() {
+        let dc = congested_case3();
+        let original_limits = dc.fmax.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let observed = cancel.clone();
+        let mut spec = plan_spec();
+        spec.exact_solve_budget = 2;
+        let err = plan_capacity_impl(&dc, &spec, Some(cancel), None, move |solves| {
+            if solves == 2 {
+                observed.store(true, Ordering::Relaxed);
+            }
+        })
+        .err()
+        .expect("cancelled after the final exact solve");
         assert!(err.contains("cancelled"), "got: {err}");
         assert_eq!(dc.fmax, original_limits);
     }

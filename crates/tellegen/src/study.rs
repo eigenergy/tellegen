@@ -2,8 +2,8 @@
 //!
 //! Parse and build the model once, then [`commit`](Study::commit) exactly solves
 //! at the new operating point and [`preview`](Study::preview) returns a first-order
-//! linearization at the committed point with no re-solve. This is the reactive hot path
-//! the preview.
+//! linearization at the committed point with no re-solve. Interactive callers can use
+//! `preview` while an edit is in flight and `commit` when it is accepted.
 //!
 //! A `Study` is one live solver session: the base case plus an ordered edit log, re-solved
 //! from the base at every commit. Saving writes the current materialized network as a

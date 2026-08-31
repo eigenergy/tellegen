@@ -6,7 +6,7 @@ tellegen is a differentiable power flow and optimal power flow engine, written i
 
 A Cargo workspace and a web app, side by side.
 
-- `crates/tellegen`: the engine. It parses a case (through powerio) and solves any formulation, returning a formulation-agnostic result and analytical sensitivities.
+- `crates/tellegen`: the engine. It parses a case through powerio and solves the requested supported formulation. One result envelope carries the fields and sensitivities that formulation defines.
 - `crates/tellegen-wasm`: the `wasm-bindgen` adapter that exposes the engine to the browser, built with `wasm-pack`.
 - `crates/tellegen-server`: a native HTTP server that serves the bundled cases and the static app.
 - `crates/tellegen-cli`: a command-line front end over the engine's JSON API.
@@ -27,7 +27,15 @@ powerio owns parsing and the network and display formats; the engine and the app
 - **AC power flow**: a polar Newton solve; and
 - **SOCWR**: the Jabr second-order cone relaxation of AC OPF, in W-space.
 
-Every formulation returns the same result shape (locational marginal prices, voltages, branch flows, and dispatch) and exposes analytical **sensitivities** of any output (an `Operand`) with respect to any input (a `Parameter`) through one implicit differentiation contract, `Differentiable`. Each solved formulation builds its KKT or Newton system; the sensitivity driver solves that system, forward or adjoint, for the requested columns. Adding a formulation, operand, or parameter means implementing the contract, not special-casing the callers.
+The formulations share one result envelope, but they do not claim the same
+quantities. DC power flow returns angles and branch flows without prices,
+optimized dispatch, or sensitivities. DC OPF adds dispatch, objective value,
+LMPs, and KKT sensitivities. AC power flow returns voltages and nodal
+injections with Newton sensitivities. SOCWR exposes the quantities and conic
+KKT sensitivities defined by the relaxation. Formulations that implement the
+`Differentiable` contract accept an output `Operand` and input `Parameter`;
+the common driver solves the retained KKT or Newton system for the requested
+forward or adjoint columns.
 
 The whole engine is pure Rust and compiles to WebAssembly, so the same code runs natively and in the browser. The convex solves use Clarabel; the sensitivities use faer. The full nonlinear AC OPF (an interior-point program) is on the [desktop and mobile roadmap](tauri-roadmap.md): it parallelizes across threads, which the browser does not have.
 
@@ -65,7 +73,12 @@ credits, privacy, deployment, and bundled case pages.
 solve; the hosted demo shows a notice, and the server's compute endpoints
 exist as an opt-in fallback (`TELLEGEN_SERVER_COMPUTE`).
 
-The Svelte package and the hosted app use the same `Study` loop: a drag calls `preview` (a first-order LMP and objective update, in WebAssembly, no server round trip) and release calls `commit` (an exact re-solve that also returns the displayed sensitivity column). Every formulation solves in the browser; dropped-in case files solve there too and are never uploaded.
+The Svelte package and the hosted app use `Study` for DC OPF, AC power flow,
+and SOCWR. `preview` returns a first order update for the quantities the chosen
+formulation defines; `commit` performs an exact re-solve and can return the
+displayed sensitivity column. DC power flow uses the stateless solve path, and
+full nonlinear AC OPF is unavailable. Available formulations and supported
+dropped-in case files solve in the browser and are not uploaded.
 
 ## Sources
 

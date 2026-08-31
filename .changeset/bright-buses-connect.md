@@ -1,5 +1,7 @@
 ---
-"@tellegen/webmcp": patch
+"@tellegen/engine": minor
+"@tellegen/svelte": minor
+"@tellegen/webmcp": minor
 ---
 
-Add the reusable WebMCP tool contract, read only edit previews, explicit registration cleanup, bounded activity events and outputs, runtime validation, and a headless test surface.
+Use PowerIO modules as the case boundary, add weighted sensitivity and capacity planning, and expose the browser workflows through `@tellegen/webmcp`.

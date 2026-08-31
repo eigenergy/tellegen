@@ -330,7 +330,10 @@ async function inspect(
 					: null,
 		solution: solutionPayload(c),
 		staged_proposal:
-			staged && staged.caseId === c.id && staged.revision === caseRevision(c)
+			staged &&
+			staged.caseId === c.id &&
+			staged.sessionId === SESSION_ID &&
+			staged.revision === caseRevision(c)
 				? {
 						proposal_id: staged.proposalId,
 						change_count: staged.changes.length,
