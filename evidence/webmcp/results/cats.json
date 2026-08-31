@@ -1,0 +1,176 @@
+{
+  "schema": "tellegen.webmcp-challenge-result/1",
+  "case_id": "cats",
+  "reproducible": true,
+  "invocation": "node evidence/webmcp/run.mjs evidence/webmcp/specs/cats.json evidence/webmcp/results/cats.json",
+  "software": {
+    "tellegen_revision": "196be2f17c3302546131b567a414ef03c29a129c",
+    "tellegen_tree": "cf7e081df0cadb3f9211b76923b52de031e44775",
+    "powerio_revision": "e39afc9d669349df5133ff6140598010a498cdb1",
+    "powerio_version": "1.0.0",
+    "powerio_source": "git+https://github.com/eigenergy/powerio.git?rev=e39afc9d669349df5133ff6140598010a498cdb1#e39afc9d669349df5133ff6140598010a498cdb1",
+    "powerio_release_tag": null,
+    "powerio_lock_checksums": {},
+    "cargo_lock_sha256": "7b95e436262cc40f618e49412ef23a67105d1cd32efd80957550fc9101e5bb80"
+  },
+  "source": {
+    "path": "data/CATS/CaliforniaTestSystem.m",
+    "byte_length": 2322903,
+    "sha256": "1749ea6f3b0587a4c565ee7d794e4b67373249f34a2cff39abb29c05f4f9fa56"
+  },
+  "spec_sha256": "f8e3493056781fab1e54deff1d33a8a1f55c46d26299324c9d85118754a03179",
+  "request": {
+    "objective": {
+      "kind": "weighted_lmp",
+      "weights": [
+        {
+          "bus": 6354,
+          "weight": 1
+        },
+        {
+          "bus": 2101,
+          "weight": 1
+        },
+        {
+          "bus": 541,
+          "weight": 1
+        }
+      ]
+    },
+    "candidates": [
+      "branches:5310",
+      "branches:8657",
+      "branches:10215",
+      "branches:7895",
+      "branches:3821",
+      "branches:8655"
+    ],
+    "max_increase_per_branch_mw": 100,
+    "budget_mw": 100,
+    "increment_mw": 50,
+    "max_changed_lines": 2,
+    "exact_solve_budget": 8
+  },
+  "expected_outcome": {
+    "kind": "success"
+  },
+  "status": "success",
+  "plan": {
+    "baseline": {
+      "phi": 76.11900126846726,
+      "declared_objective": 752160.513959975,
+      "exact_solve": 1
+    },
+    "exact_verified_result": {
+      "phi": 54.06862017892492,
+      "declared_objective": 752094.0743844934,
+      "exact_solve": 3
+    },
+    "baseline_phi": 76.11900126846726,
+    "final_phi": 54.06862017892492,
+    "proposal": [
+      {
+        "branch": "branches:8657",
+        "delta_mw": 50
+      },
+      {
+        "branch": "branches:7895",
+        "delta_mw": 50
+      }
+    ],
+    "spent_budget_mw": 100,
+    "iterations": [
+      {
+        "gradient": [
+          {
+            "branch": "branches:5310",
+            "value": -0.13025118911807423
+          },
+          {
+            "branch": "branches:8657",
+            "value": -0.26622772942245787
+          },
+          {
+            "branch": "branches:10215",
+            "value": 0.0021167523718415714
+          },
+          {
+            "branch": "branches:7895",
+            "value": -2.417541574962375
+          },
+          {
+            "branch": "branches:3821",
+            "value": 9.708420708509854e-12
+          },
+          {
+            "branch": "branches:8655",
+            "value": 0.6866946982376986
+          }
+        ],
+        "delta_mw": [
+          {
+            "branch": "branches:7895",
+            "delta_mw": 50
+          }
+        ],
+        "predicted_phi_delta": -120.87707874811875,
+        "exact_phi_delta": -22.04683433293313,
+        "first_order_error": 98.83024441518562,
+        "first_order_error_rel": 4.4827408290338955,
+        "accepted": true,
+        "reason": "exact re-solve improves the objective"
+      },
+      {
+        "gradient": [
+          {
+            "branch": "branches:5310",
+            "value": -0.022658373170155396
+          },
+          {
+            "branch": "branches:8657",
+            "value": -0.06326708256705277
+          },
+          {
+            "branch": "branches:10215",
+            "value": 0.00011018394555627394
+          },
+          {
+            "branch": "branches:7895",
+            "value": -7.877799793325178e-13
+          },
+          {
+            "branch": "branches:3821",
+            "value": 5.6810025230759695e-14
+          },
+          {
+            "branch": "branches:8655",
+            "value": 0.16296547746058104
+          }
+        ],
+        "delta_mw": [
+          {
+            "branch": "branches:8657",
+            "delta_mw": 50
+          }
+        ],
+        "predicted_phi_delta": -3.1633541283526383,
+        "exact_phi_delta": -0.003546756609210888,
+        "first_order_error": 3.1598073717434274,
+        "first_order_error_rel": 890.9005381247313,
+        "accepted": true,
+        "reason": "exact re-solve improves the objective"
+      }
+    ],
+    "exact_solves": 3
+  },
+  "solution": {
+    "schema": "powerio.module",
+    "version": 1,
+    "kind": "dc_opf_solution",
+    "termination": {
+      "kind": "converged"
+    },
+    "declared_objective": 752094.0743844934,
+    "canonical_json_sha256": "86291089a6efe31b79e50b3730904cf2c7267456c0256ae153eb6046bea9e541"
+  }
+}
