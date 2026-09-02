@@ -47,12 +47,12 @@ schemars = { version = "1", features = ["derive"] }
 # Reviewed PowerIO 1.0 candidate from eigenergy/powerio#454. Keep the exact
 # revision and the lockfile in the same commit until the 1.0 crates publish.
 [patch.crates-io]
-powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "e39afc9d669349df5133ff6140598010a498cdb1" }
-powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "e39afc9d669349df5133ff6140598010a498cdb1" }
-powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "e39afc9d669349df5133ff6140598010a498cdb1" }
-powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "e39afc9d669349df5133ff6140598010a498cdb1" }
-powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "e39afc9d669349df5133ff6140598010a498cdb1" }
-powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "e39afc9d669349df5133ff6140598010a498cdb1" }
+powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
+powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
+powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
+powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
+powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
+powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
 
 # Shared lints, opted into per crate with `[lints] workspace = true`. Kept modest so a
 # `cargo clippy -- -D warnings` CI gate stays green: clippy's default `all`, plus guards
