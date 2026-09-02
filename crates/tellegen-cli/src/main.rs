@@ -24,11 +24,11 @@ use std::io::Read;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use powerio::stored::StoredModuleV1;
 use powerio::DcOpfInstance;
-use powerio::{stored, IntoTypedModule, PioModule, PioValue};
+use powerio::{PioModule, PioValue};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use tellegen::ir::{balanced_module, deserialize_module, serialize_module};
 
 use tellegen::plan::CapacityPlanSpec;
 
@@ -117,22 +117,19 @@ fn producer_string() -> String {
 }
 
 fn instance_from_module_json(text: &str) -> Result<PioModule<DcOpfInstance>, String> {
-    let module = stored::read_module(text).map_err(|e| e.to_string())?;
-    match module.value().kind().as_str() {
-        "dc_opf_instance" => module
-            .into_typed()
-            .map_err(|m| m.actual().as_str().to_owned()),
-        "balanced_network" => {
-            let module: PioModule<powerio::BalancedNetwork> = module
-                .into_typed()
-                .map_err(|m| m.actual().as_str().to_owned())?;
-            module
-                .try_map_value(DcOpfInstance::from_network)
-                .map_err(|e| e.to_string())
-        }
+    let module = deserialize_module(text)?;
+    match &module.value {
+        PioValue::DcOpfInstance(_) => module.try_map_value(|value| match value {
+            PioValue::DcOpfInstance(instance) => Ok(instance),
+            other => Err(other.type_name().to_owned()),
+        }),
+        PioValue::BalancedNetwork(_) => balanced_module(module)?
+            .try_map_value(DcOpfInstance::from_network)
+            .map_err(|e| e.to_string()),
         other => Err(format!(
-            "the module holds a {other} value; solve-module and plan accept \
-             dc_opf_instance or balanced_network"
+            "the module holds a {} value; solve-module and plan accept \
+             powerio.DcOpfInstance or powerio.BalancedNetwork",
+            other.type_name()
         )),
     }
 }
@@ -149,7 +146,7 @@ fn solution_module_json(
                 .map_err(|e| e.to_string())?,
         );
     module.sever_value_targets();
-    stored::emit_module(&module).map_err(|e| e.to_string())
+    serialize_module(&module)
 }
 
 fn solve_module() -> Result<String, String> {
@@ -160,18 +157,29 @@ fn solve_module() -> Result<String, String> {
 /// its DC OPF instance or materialize the default instance for a network.
 fn solve_module_text(text: &str) -> Result<String, String> {
     let source_module = instance_from_module_json(text)?;
-    let instance = Arc::new(source_module.value().clone());
+    let instance = Arc::new(source_module.value.clone());
     let solution = tellegen::solve_dc_opf_instance(instance, producer_string())?;
     solution_module_json(source_module, solution)
 }
 
-type PowerIoModule = StoredModuleV1;
-type SolveResponse = StoredModuleV1;
+/// A PowerIO IR document, carried as JSON and described by PowerIO's own
+/// schema in the contract.
+type PowerIoModule = serde_json::Value;
 type CapabilitiesResponse = Vec<tellegen::ProblemCaps>;
+
+/// The JSON Schema of a PowerIO IR document.
+fn ir_schema() -> Result<serde_json::Value, String> {
+    serde_json::to_value(powerio::generate_ir_schema()).map_err(|error| error.to_string())
+}
+
+fn ir_field_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    powerio::generate_ir_schema()
+}
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct PlanRequest {
+    #[schemars(schema_with = "ir_field_schema")]
     module: PowerIoModule,
     spec: CapacityPlanSpec,
 }
@@ -191,7 +199,7 @@ fn plan_from_stdin() -> Result<String, String> {
 fn plan_from_text(text: &str) -> Result<String, String> {
     let (module_json, spec) = parse_plan_request(text)?;
     let source_module = instance_from_module_json(&module_json)?;
-    let instance = Arc::new(source_module.value().clone());
+    let instance = Arc::new(source_module.value.clone());
     let execution = tellegen::plan::plan_capacity(instance, &spec)?;
     let (outcome, solution) = execution.into_solution(producer_string())?;
     let solution_module = solution_module_json(source_module, solution)?;
@@ -209,7 +217,8 @@ const CONTRACT_ID: &str = "tellegen.cli/1";
 #[serde(deny_unknown_fields)]
 struct PlanResponse {
     plan: tellegen::plan::CapacityPlanOutcome,
-    solution_module: StoredModuleV1,
+    #[schemars(schema_with = "ir_field_schema")]
+    solution_module: PowerIoModule,
 }
 
 fn contract_value() -> Result<serde_json::Value, String> {
@@ -218,16 +227,14 @@ fn contract_value() -> Result<serde_json::Value, String> {
         "tellegen_version": tellegen::VERSION,
         "powerio_version": env!("TELLEGEN_POWERIO_VERSION"),
         "schemas": {
-            "powerio_module": serde_json::to_value(schemars::schema_for!(PowerIoModule))
-                .map_err(|error| error.to_string())?,
+            "powerio_module": ir_schema()?,
             "capacity_plan_spec": serde_json::to_value(schemars::schema_for!(CapacityPlanSpec))
                 .map_err(|error| error.to_string())?,
             "plan_request": serde_json::to_value(schemars::schema_for!(PlanRequest))
                 .map_err(|error| error.to_string())?,
             "plan_response": serde_json::to_value(schemars::schema_for!(PlanResponse))
                 .map_err(|error| error.to_string())?,
-            "solve_response": serde_json::to_value(schemars::schema_for!(SolveResponse))
-                .map_err(|error| error.to_string())?,
+            "solve_response": ir_schema()?,
             "capabilities_response":
                 serde_json::to_value(schemars::schema_for!(CapabilitiesResponse))
                     .map_err(|error| error.to_string())?,
@@ -262,9 +269,10 @@ mpc.gencost = [
 "#;
 
     fn test_module_json() -> String {
-        let module =
-            powerio::parse_text("case2_cli.m", TEST_CASE, Some("matpower")).expect("parse case");
-        stored::emit_module(&module).expect("emit test module")
+        let source = powerio::Source::from_memory("case2_cli.m", TEST_CASE.as_bytes().to_vec())
+            .expect("case source");
+        let module = powerio::parse(source, Some("matpower")).expect("parse case");
+        serialize_module(&module).expect("emit test module")
     }
 
     fn test_plan_spec() -> CapacityPlanSpec {
@@ -273,7 +281,7 @@ mpc.gencost = [
                 "kind": "weighted_lmp",
                 "weights": [{"bus": 2, "weight": 1.0}]
             },
-            "candidates": ["branches:0"],
+            "candidates": ["1-2"],
             "max_increase_per_branch_mw": 5.0,
             "budget_mw": 5.0,
             "increment_mw": 5.0,
@@ -345,25 +353,23 @@ mpc.gencost = [
         let plan_module_json =
             serde_json::to_string(&plan.solution_module).expect("plan solution module");
         assert_eq!(
-            stored::read_module(&plan_module_json)
+            deserialize_module(&plan_module_json)
                 .expect("read plan solution")
-                .value()
-                .kind()
-                .as_str(),
-            "dc_opf_solution"
+                .value
+                .type_name(),
+            "powerio.DcOpfSolution"
         );
 
         let solve_json = solve_module_text(&module_json).expect("solve response");
-        let solve: SolveResponse =
+        let solve: PowerIoModule =
             serde_json::from_str(&solve_json).expect("solve_response runtime value");
         let solve_module_json = serde_json::to_string(&solve).expect("solve solution module");
         assert_eq!(
-            stored::read_module(&solve_module_json)
+            deserialize_module(&solve_module_json)
                 .expect("read solve solution")
-                .value()
-                .kind()
-                .as_str(),
-            "dc_opf_solution"
+                .value
+                .type_name(),
+            "powerio.DcOpfSolution"
         );
     }
 
@@ -396,7 +402,7 @@ mpc.gencost = [
 
         let module_properties = contract["schemas"]["powerio_module"]["properties"]
             .as_object()
-            .expect("StoredModuleV1 properties");
+            .expect("IR document properties");
         for field in ["schema", "version", "producer", "value"] {
             assert!(module_properties.contains_key(field), "missing {field}");
         }

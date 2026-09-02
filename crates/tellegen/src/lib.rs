@@ -27,6 +27,7 @@ mod formulation;
 pub mod geo;
 #[cfg(feature = "sensitivity")]
 mod history;
+pub mod ir;
 mod model;
 #[cfg(feature = "sensitivity")]
 pub mod plan;

@@ -431,7 +431,7 @@ pub(crate) fn solve_test_network_json(
 /// default problem instance for the requested formulation; a stored DC or AC
 /// OPF instance keeps its declared objective and constraint selections.
 pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String, String> {
-    let module = powerio::stored::read_module(module_json).map_err(|error| error.to_string())?;
+    let module = crate::ir::deserialize_module(module_json)?;
     let req: SolveRequest = if request_json.trim().is_empty() {
         SolveRequest::default()
     } else {
@@ -463,7 +463,7 @@ pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String
         other => {
             return Err(format!(
                 "PowerIO module holds {}, which this solve entry does not support",
-                other.kind().as_str()
+                other.type_name()
             ));
         }
     };
@@ -1414,7 +1414,7 @@ mod tests {
     fn case3_module_json() -> String {
         let network = crate::model::parse_matpower(CASE3).expect("parse");
         let module = powerio::PioModule::new(powerio::PioValue::BalancedNetwork(network));
-        powerio::stored::emit_module(&module).expect("module JSON")
+        crate::ir::serialize_module(&module).expect("module JSON")
     }
 
     #[test]
@@ -1740,11 +1740,12 @@ mod tests {
         assert_eq!(v["lmp"][1]["uid"], "buses:1");
         assert_eq!(v["va"][0]["uid"], "buses:0");
         assert_eq!(v["flows"][0]["uid"], "branches:0");
-        // A network without uids omits the field entirely.
+        // A network whose source supplied no uids carries the ones PowerIO
+        // assigned: the bus number and the branch terminals.
         let out = solve_test_network_json(&case3_json(), r#"{"formulation":"dcopf"}"#).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
-        assert!(v["lmp"][1].get("uid").is_none());
-        assert!(v["flows"][0].get("uid").is_none());
+        assert_eq!(v["lmp"][1]["uid"], "2");
+        assert_eq!(v["flows"][0]["uid"], "1-2");
     }
 
     #[test]

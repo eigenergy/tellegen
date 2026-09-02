@@ -5,8 +5,6 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use powerio::IntoTypedModule;
-
 fn main() {
     if let Err(error) = run() {
         eprintln!("challenge-module: {error}");
@@ -32,17 +30,11 @@ fn run() -> Result<(), String> {
 
     let bytes = std::fs::read(&source_path)
         .map_err(|error| format!("cannot read {}: {error}", source_path.display()))?;
-    let source = powerio::Source::from_bytes(public_name, bytes).map_err(|e| e.to_string())?;
-    let module = powerio::parse(source).map_err(|e| e.to_string())?;
-    let module: powerio::PioModule<powerio::BalancedNetwork> =
-        module.into_typed().map_err(|mismatch| {
-            format!(
-                "source produced {}, not balanced_network",
-                mismatch.actual()
-            )
-        })?;
+    let source = powerio::Source::from_memory(public_name, bytes).map_err(|e| e.to_string())?;
+    let module = powerio::parse(source, None).map_err(|e| e.to_string())?;
+    let module = tellegen::ir::balanced_module(module)?;
     let dynamic = module.map_value(powerio::PioValue::BalancedNetwork);
-    let encoded = powerio::stored::emit_module(&dynamic).map_err(|e| e.to_string())?;
+    let encoded = tellegen::ir::serialize_module(&dynamic)?;
     std::io::stdout()
         .write_all(encoded.as_bytes())
         .map_err(|error| format!("cannot write module: {error}"))?;

@@ -4,8 +4,8 @@
 //! A dropped OpenDSS `.dss`, PMD JSON, or BMOPF JSON parses through
 //! [`powerio::parse`] into a module holding a canonical
 //! [`MulticonductorNetwork`] or a multiconductor problem instance; a
-//! `.pio.json` stored module carrying a multiconductor value comes in through
-//! `powerio::stored::read_module`.
+//! `.pio.json` PowerIO IR document carrying a multiconductor value comes in
+//! through [`tellegen::ir::deserialize_module`].
 //! Either way the network is projected to a render-ready bus/terminal graph
 //! ([`MulticonductorNetwork::to_graph`]) and serialized as the drop-panel payload
 //! the frontend reads. No solve, no model build — this path only views
@@ -17,9 +17,9 @@
 //! `JsError` at the boundary. Input is untrusted: a malformed, truncated, or
 //! oversized payload rejects as an `Err`, never a panic.
 
-use powerio::stored::read_module;
-use powerio::{PioModule, PioValue, PioValueKind};
+use powerio::{PioModule, PioValue};
 use powerio_dist::{CoordinateSpace, DistGeoMeta, DistGraphEdgeKind, MulticonductorNetwork};
+use tellegen::ir::deserialize_module;
 
 /// Parse `text` in a distribution `format` (`dss`, `bmopf`, or `pmd`) and
 /// return the drop-panel payload JSON (see [`ingest_dist_value`]). The format
@@ -42,17 +42,17 @@ pub(crate) fn ingest_dist_bytes_value(
     let format = crate::source_format_id(format)?;
     // The angle bracketed name marks an anonymous in-memory source; the
     // readers take the case's own name (e.g. the OpenDSS circuit name).
-    let source = powerio::Source::from_bytes("<case>", bytes.to_vec())
+    let source = powerio::Source::from_memory("<case>", bytes.to_vec())
         .map_err(|e| e.to_string())?
         .with_format(format);
-    let module = powerio::parse(source).map_err(|e| e.to_string())?;
-    let Some(network) = multiconductor_network(module.value()) else {
+    let module = powerio::parse(source, None).map_err(|e| e.to_string())?;
+    let Some(network) = multiconductor_network(&module.value) else {
         return Err(format!(
             "parsed a {} value, expected a multiconductor network or calculation",
-            module.value().kind().as_str()
+            module.value.type_name()
         ));
     };
-    ingest_dist_value(network, module.diagnostics())
+    ingest_dist_value(network, &module.diagnostics)
 }
 
 /// Parse `text` as a `.pio.json` stored module and, when it holds a
@@ -60,7 +60,7 @@ pub(crate) fn ingest_dist_bytes_value(
 /// drop-panel payload [`ingest_dist`] does. A balanced value is rejected: the
 /// frontend routes those to the study and network ingest paths.
 pub fn ingest_dist_module(text: &str) -> Result<String, String> {
-    let module = read_module(text).map_err(|e| e.to_string())?;
+    let module = deserialize_module(text)?;
     serde_json::to_string(&ingest_dist_module_value(module)?).map_err(|e| e.to_string())
 }
 
@@ -75,24 +75,17 @@ pub fn ingest_dist_module_bytes(bytes: &[u8]) -> Result<String, String> {
 pub(crate) fn ingest_dist_module_value(
     module: PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
-    let Some(network) = multiconductor_network(module.value()) else {
+    let Some(network) = multiconductor_network(&module.value) else {
         return Err(format!(
             "stored module holds {}, expected a multiconductor network or calculation",
-            module.value().kind().as_str()
+            module.value.type_name()
         ));
     };
-    ingest_dist_value(network, module.diagnostics())
+    ingest_dist_value(network, &module.diagnostics)
 }
 
-pub(crate) fn is_viewable_module_kind(kind: PioValueKind) -> bool {
-    matches!(
-        kind,
-        PioValueKind::MulticonductorNetwork
-            | PioValueKind::McAcPfInstance
-            | PioValueKind::McAcOpfInstance
-            | PioValueKind::McAcPfSolution
-            | PioValueKind::McAcOpfSolution
-    )
+pub(crate) fn is_viewable_module_value(value: &PioValue) -> bool {
+    multiconductor_network(value).is_some()
 }
 
 fn multiconductor_network(value: &PioValue) -> Option<&MulticonductorNetwork> {
@@ -384,9 +377,9 @@ mod tests {
         // study-restore paths instead.
         let net = powerio::BalancedNetwork::in_memory("demo", 100.0, vec![], vec![]);
         let module = powerio::PioModule::new(powerio::PioValue::BalancedNetwork(net));
-        let json = powerio::stored::emit_module(&module).expect("module json");
+        let json = tellegen::ir::serialize_module(&module).expect("module json");
         let error = ingest_dist_module(&json).expect_err("balanced module rejected");
-        assert!(error.contains("balanced_network"), "{error}");
+        assert!(error.contains("powerio.BalancedNetwork"), "{error}");
     }
 
     #[test]

@@ -292,14 +292,14 @@ impl AcNetwork {
         let bus_ids: Vec<usize> = prep.bus_ids.iter().map(|id| id.0).collect();
         let bus_uids =
             uids_for_source_rows(&prep.bus_source_rows, raw.buses(), |bus| &bus.uid, "bus")?;
+        let branch_source_rows = super::branch_source_rows(&prep.branches.analysis_sources);
         let branch_uids = uids_for_source_rows(
-            &prep.branches.source_rows,
+            &branch_source_rows,
             raw.branches(),
             |branch| &branch.uid,
             "branch",
         )?;
-        let branch_ids =
-            stable_source_ids(&prep.branches.source_rows, raw.branches().len(), "branch")?;
+        let branch_ids = stable_source_ids(&branch_source_rows, raw.branches().len(), "branch")?;
         let gen_ids = stable_source_ids(
             &prep.generators.source_rows,
             raw.generators().len(),
@@ -943,8 +943,10 @@ mod tests {
         assert_eq!(&ac.branch_uids[3..], &[None, None, None]);
         for branch in 3..6 {
             assert_eq!(ac.br_to[branch], 3, "winding must terminate at star bus");
-            approx(ac.angmin[branch], -std::f64::consts::PI / 3.0);
-            approx(ac.angmax[branch], std::f64::consts::PI / 3.0);
+            // PowerIO owns the lowered winding rows and pads them with its
+            // PowerModels angle window.
+            approx(ac.angmin[branch], -powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD);
+            approx(ac.angmax[branch], powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD);
         }
 
         let normalized = net.to_normalized().expect("normalize 3W case");

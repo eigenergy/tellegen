@@ -10,8 +10,8 @@
 
 use std::sync::Arc;
 
-use powerio::{DcOpfInstance, DcOpfSolution};
-use powerio_matrix::PreparedObjective;
+use powerio::{DcOpfInstance, DcOpfSolution, ThreeWindingTransformerTerminalActivePower};
+use powerio_matrix::{AnalysisBranchSource, PreparedObjective};
 use powerio_prob::Termination;
 
 use crate::model::DcNetwork;
@@ -105,6 +105,22 @@ pub fn emit_dc_opf_solution(
         generator_active_power[row] = sol.pg[dense] * base;
     }
 
+    // A lowered winding row runs from its terminal bus to the star bus, so
+    // its from-side flow is the active power entering the transformer there.
+    let mut transformer_terminal_active_power = vec![
+        ThreeWindingTransformerTerminalActivePower::default();
+        network.transformers_3w().len()
+    ];
+    for dense in 0..dc.m {
+        if let AnalysisBranchSource::ThreeWindingTransformerWinding {
+            transformer_row,
+            winding,
+        } = dc.branch_sources[dense]
+        {
+            transformer_terminal_active_power[transformer_row].p_mw[winding] = sol.f[dense] * base;
+        }
+    }
+
     let mut emitted = DcOpfSolution::new(
         instance,
         Termination::Converged,
@@ -114,6 +130,7 @@ pub fn emit_dc_opf_solution(
         branch_to_active_flow,
         generator_active_power,
         sol.objective,
+        transformer_terminal_active_power,
     )
     .map_err(|e| e.to_string())?;
 
@@ -136,7 +153,7 @@ mod tests {
     use super::*;
     use crate::model::parse_matpower;
     use crate::problem::dc_opf_cancellable;
-    use powerio::{stored, PioModule, PioValue};
+    use powerio::{PioModule, PioValue};
 
     #[test]
     fn the_emitted_solution_round_trips_with_marginals_and_bound_multipliers() {
@@ -185,9 +202,9 @@ mod tests {
 
         // The whole solution rides the stored module boundary intact.
         let module = PioModule::new(PioValue::DcOpfSolution(emitted));
-        let text = stored::emit_module(&module).expect("write");
-        let back = stored::read_module(&text).expect("read");
-        let PioValue::DcOpfSolution(back) = back.value() else {
+        let text = crate::ir::serialize_module(&module).expect("write");
+        let back = crate::ir::deserialize_module(&text).expect("read");
+        let PioValue::DcOpfSolution(back) = &back.value else {
             panic!("expected dc_opf_solution");
         };
         assert!(back.bus_active_power_marginals().is_some());

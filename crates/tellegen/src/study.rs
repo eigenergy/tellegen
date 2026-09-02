@@ -18,7 +18,6 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use powerio::stored::{emit_module, read_module};
 use powerio::{BalancedNetwork, PioModule, PioValue};
 #[cfg(feature = "conic")]
 use powerio_prob::AcOpfInstance;
@@ -354,7 +353,7 @@ impl Study {
     /// Read a retained PowerIO module and solve its declared network or problem
     /// instance. Bare model JSON is not a Study input.
     pub fn new(module_json: &str, formulation: Problem) -> Result<Self, String> {
-        let module = read_module(module_json).map_err(|e| e.to_string())?;
+        let module = crate::ir::deserialize_module(module_json).map_err(|e| e.to_string())?;
         Self::from_dynamic_module(module, formulation)
     }
 
@@ -374,9 +373,9 @@ impl Study {
         module: PioModule<BalancedNetwork>,
         formulation: Problem,
     ) -> Result<Self, String> {
-        let net = module.value().clone();
+        let net = module.value.clone();
         let dynamic = module.map_value(PioValue::BalancedNetwork);
-        let module_json = emit_module(&dynamic).map_err(|e| e.to_string())?;
+        let module_json = crate::ir::serialize_module(&dynamic).map_err(|e| e.to_string())?;
         Self::from_network_and_module(&net, StudyInput::BalancedNetwork, formulation, module_json)
     }
 
@@ -384,7 +383,7 @@ impl Study {
         module: PioModule<PioValue>,
         formulation: Problem,
     ) -> Result<Self, String> {
-        let module_json = emit_module(&module).map_err(|e| e.to_string())?;
+        let module_json = crate::ir::serialize_module(&module).map_err(|e| e.to_string())?;
         match module.into_value() {
             PioValue::BalancedNetwork(net) => Self::from_network_and_module(
                 &net,
@@ -422,7 +421,7 @@ impl Study {
             }
             other => Err(format!(
                 "PowerIO module holds {}, which cannot start a Study",
-                other.kind().as_str()
+                other.type_name()
             )),
         }
     }
@@ -733,7 +732,7 @@ impl Study {
         crate::validate_canonical_identity(&self.base)?;
         let net = self.materialized_network()?;
         let module = self.retained_module(PioValue::BalancedNetwork(net))?;
-        emit_module(&module).map_err(|e| e.to_string())
+        crate::ir::serialize_module(&module).map_err(|e| e.to_string())
     }
 
     /// Serialize the committed exact DC OPF result as a PowerIO solution
@@ -767,11 +766,12 @@ impl Study {
             format!("tellegen {}", env!("CARGO_PKG_VERSION")),
         )?;
         let module = self.retained_module(PioValue::DcOpfSolution(exact))?;
-        emit_module(&module).map_err(|e| e.to_string())
+        crate::ir::serialize_module(&module).map_err(|e| e.to_string())
     }
 
     fn retained_module(&self, value: PioValue) -> Result<PioModule<PioValue>, String> {
-        let source_module = read_module(&self.base_module_json).map_err(|e| e.to_string())?;
+        let source_module =
+            crate::ir::deserialize_module(&self.base_module_json).map_err(|e| e.to_string())?;
         let mut module = source_module.map_value(|_| value).sever_source();
         module.sever_value_targets();
         let mut used_ids: std::collections::BTreeSet<String> = module
@@ -1233,7 +1233,7 @@ mod tests {
 
     fn module_json(network: BalancedNetwork) -> String {
         let module = PioModule::new(PioValue::BalancedNetwork(network));
-        emit_module(&module).expect("write module")
+        crate::ir::serialize_module(&module).expect("write module")
     }
 
     fn case3_network() -> BalancedNetwork {
@@ -2044,7 +2044,7 @@ mod tests {
         let text = s.save_module().unwrap();
         let value: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["schema"], "powerio.module");
-        assert_eq!(value["value"]["kind"], "balanced_network");
+        assert_eq!(value["value"]["type"], "powerio.BalancedNetwork");
         assert_eq!(value["producer"]["name"], "powerio");
         let history = value["history"].as_array().unwrap();
         assert_eq!(history.len(), 2);
@@ -2066,7 +2066,7 @@ mod tests {
             }])
             .unwrap();
 
-        let module = read_module(&study.save_solution_module().unwrap()).unwrap();
+        let module = crate::ir::deserialize_module(&study.save_solution_module().unwrap()).unwrap();
         let PioValue::DcOpfSolution(solution) = module.into_value() else {
             panic!("saved value is not a DC OPF solution");
         };
@@ -2126,17 +2126,18 @@ mod tests {
         // boundary. SourceMapEntry is intentionally not required from a
         // component crate merely to consume a module through the facade.
         let dynamic = module.map_value(PioValue::BalancedNetwork);
-        let mut stored: Value =
-            serde_json::from_str(&emit_module(&dynamic).expect("write source module"))
-                .expect("stored JSON");
+        let mut stored: Value = serde_json::from_str(
+            &crate::ir::serialize_module(&dynamic).expect("write source module"),
+        )
+        .expect("stored JSON");
         stored["source_map"] = serde_json::json!([{
             "target": "/loads/0/p",
             "relation": "synthetic"
         }]);
-        let module = read_module(&serde_json::to_string(&stored).expect("stored JSON"))
-            .expect("read source module");
-        use powerio::IntoTypedModule;
-        let module = module.into_typed().expect("typed source module");
+        let module =
+            crate::ir::deserialize_module(&serde_json::to_string(&stored).expect("stored JSON"))
+                .expect("read source module");
+        let module = crate::ir::balanced_module(module).expect("typed source module");
 
         let mut study = Study::from_module(module, Problem::DcOpf).unwrap();
         let exported = study.export("matpower").unwrap();
@@ -2154,18 +2155,18 @@ mod tests {
             }])
             .unwrap();
 
-        let saved = read_module(&study.save_module().unwrap()).unwrap();
+        let saved = crate::ir::deserialize_module(&study.save_module().unwrap()).unwrap();
         assert_eq!(saved.producer().name(), "source-tool");
         assert_eq!(saved.producer().version(), "1.2.3");
         assert_eq!(saved.extensions()["org.example.keep"]["answer"], 42);
         assert_eq!(saved.history().len(), 2);
         assert_eq!(saved.history()[0].id().as_str(), "tellegen-edit-1");
         assert_eq!(saved.history()[1].id().as_str(), "tellegen-edit-2");
-        assert!(saved.source().is_none());
+        assert!(saved.sources().is_empty(), "{:?}", saved.sources());
         assert!(saved.source_map().is_empty());
-        assert_eq!(saved.diagnostics().len(), 1);
-        assert_eq!(saved.diagnostics()[0].message(), "retained finding");
-        assert!(saved.diagnostics()[0].target().is_none());
+        assert_eq!(saved.diagnostics.len(), 1);
+        assert_eq!(saved.diagnostics[0].message(), "retained finding");
+        assert!(saved.diagnostics[0].target().is_none());
     }
 
     #[test]
@@ -2174,8 +2175,6 @@ mod tests {
         // powerio and starting a new session solves to the committed
         // objective with an empty edit log — history is descriptive, never
         // interpreted as state.
-        use powerio::stored::read_module;
-        use powerio::IntoTypedModule;
 
         let net = case3_with_uids_json();
         let mut s = Study::new(&net, Problem::DcOpf).unwrap();
@@ -2186,8 +2185,8 @@ mod tests {
         .unwrap();
         let committed = s.solution().objective.unwrap();
 
-        let module = read_module(&s.save_module().unwrap()).unwrap();
-        let module: PioModule<BalancedNetwork> = module.into_typed().unwrap();
+        let module = crate::ir::deserialize_module(&s.save_module().unwrap()).unwrap();
+        let module: PioModule<BalancedNetwork> = crate::ir::balanced_module(module).unwrap();
         let restored = Study::from_module(module, Problem::DcOpf).unwrap();
         assert!(restored.edits().is_empty());
         assert_eq!(restored.commits(), 0);
@@ -2198,13 +2197,13 @@ mod tests {
     fn save_module_with_no_edits_writes_the_base_and_no_history() {
         let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();
         let value: Value = serde_json::from_str(&s.save_module().unwrap()).unwrap();
-        assert_eq!(value["value"]["kind"], "balanced_network");
+        assert_eq!(value["value"]["type"], "powerio.BalancedNetwork");
         assert!(value["history"]
             .as_array()
             .unwrap_or(&Vec::new())
             .is_empty());
         assert!(
-            value["value"]["data"].is_object(),
+            value["value"].is_object(),
             "module value payload: {}",
             value["value"]
         );
@@ -2272,7 +2271,7 @@ mod tests {
     fn export_rejects_unknown_format() {
         let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();
         let err = s.export("nonesuch").unwrap_err();
-        assert!(err.contains("REQUEST.WRITE.UNKNOWN_FORMAT"), "got: {err}");
+        assert!(err.contains("REQUEST.EMIT.UNKNOWN_FORMAT"), "got: {err}");
     }
 
     #[cfg(feature = "conic")]
@@ -2286,7 +2285,7 @@ mod tests {
         }])
         .unwrap();
         let value: Value = serde_json::from_str(&s.save_module().unwrap()).unwrap();
-        assert_eq!(value["value"]["kind"], "balanced_network");
+        assert_eq!(value["value"]["type"], "powerio.BalancedNetwork");
         assert_eq!(value["history"].as_array().unwrap().len(), 1);
         let exported = s.export("model-json").unwrap();
         assert!(!exported.text.is_empty());

@@ -8,9 +8,9 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use powerio::stored::{emit_module, read_module};
-use powerio::{Detection, DisplayData, IntoTypedModule, JsonClass, PioValue, Source};
+use powerio::{Detection, DisplayData, JsonClass, PioValue, Source};
 use serde::Serialize;
+use tellegen::ir::{deserialize_module, serialize_module};
 use wasm_bindgen::prelude::*;
 
 use tellegen::geo::{
@@ -79,7 +79,7 @@ struct IngestedJsonDrop {
 fn read_module_bytes(bytes: &[u8]) -> Result<powerio::PioModule<powerio::PioValue>, String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| "stored module document is not valid UTF-8".to_owned())?;
-    read_module(text).map_err(|e| e.to_string())
+    deserialize_module(text)
 }
 
 fn with_module_json(
@@ -87,7 +87,7 @@ fn with_module_json(
     module: powerio::PioModule<powerio::BalancedNetwork>,
 ) -> Result<serde_json::Value, String> {
     let dynamic = module.map_value(PioValue::BalancedNetwork);
-    let module_json = emit_module(&dynamic).map_err(|error| error.to_string())?;
+    let module_json = serialize_module(&dynamic)?;
     payload
         .as_object_mut()
         .ok_or("balanced ingest payload is not an object")?
@@ -118,8 +118,8 @@ fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, Stri
     let classification = powerio::classify_json_bytes(bytes);
     if classification == JsonClass::Module {
         let module = read_module_bytes(bytes)?;
-        return if balanced_study_network(module.value()).is_some()
-            || dist::is_viewable_module_kind(module.value().kind())
+        return if balanced_study_network(&module.value).is_some()
+            || dist::is_viewable_module_value(&module.value)
         {
             Ok(JsonDropClassification {
                 kind: "module",
@@ -128,7 +128,7 @@ fn classify_json_drop_value(bytes: &[u8]) -> Result<JsonDropClassification, Stri
         } else {
             Err(format!(
                 "stored module holds {}, which tellegen cannot view",
-                module.value().kind().as_str()
+                module.value.type_name()
             ))
         };
     }
@@ -172,8 +172,8 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
     let (kind, format, payload) = match classification {
         JsonClass::Module => {
             let module = read_module_bytes(bytes)?;
-            let diagnostics = module.diagnostics().to_vec();
-            let payload = if let Some(network) = balanced_study_network(module.value()) {
+            let diagnostics = module.diagnostics.clone();
+            let payload = if let Some(network) = balanced_study_network(&module.value) {
                 let mut payload = ingest_value(network, &diagnostics, Vec::new(), None)?;
                 let module_json = std::str::from_utf8(bytes)
                     .map_err(|_| "stored module document is not valid UTF-8".to_owned())?;
@@ -185,12 +185,12 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
                         serde_json::Value::String(module_json.to_owned()),
                     );
                 payload
-            } else if dist::is_viewable_module_kind(module.value().kind()) {
+            } else if dist::is_viewable_module_value(&module.value) {
                 dist::ingest_dist_module_value(module)?
             } else {
                 return Err(format!(
                     "stored module holds {}, which tellegen cannot view",
-                    module.value().kind().as_str()
+                    module.value.type_name()
                 ));
             };
             ("module", None, payload)
@@ -241,16 +241,11 @@ fn parse_case_module(
     // The angle bracketed name marks an anonymous in-memory source, so the
     // reader takes the case's own name (e.g. the MATPOWER function name)
     // instead of a file stem hint.
-    let source = Source::from_bytes("<case>", bytes.to_vec())
+    let source = Source::from_memory("<case>", bytes.to_vec())
         .map_err(|e| e.to_string())?
         .with_format(format);
-    let module = powerio::parse(source).map_err(|e| e.to_string())?;
-    module.into_typed().map_err(|mismatch| {
-        format!(
-            "parsed a {} value, expected a balanced network",
-            mismatch.actual().as_str()
-        )
-    })
+    let module = powerio::parse(source, None).map_err(|e| e.to_string())?;
+    tellegen::ir::balanced_module(module)
 }
 
 /// Parse a case file (MATPOWER, PSS/E RAW, PowerWorld aux, PowerModels or
@@ -266,10 +261,10 @@ pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
     install_panic_hook();
     let module = parse_case_module(bytes, format).map_err(jserr)?;
     let network: serde_json::Value =
-        serde_json::from_str(&module.value().to_json().map_err(jserr)?).map_err(jserr)?;
+        serde_json::from_str(&module.value.to_json().map_err(jserr)?).map_err(jserr)?;
     serde_json::to_string(&serde_json::json!({
         "network": network,
-        "diagnostics": module.diagnostics(),
+        "diagnostics": module.diagnostics,
     }))
     .map_err(jserr)
 }
@@ -667,7 +662,7 @@ fn ingest_case_value(bytes: &[u8], format: &str) -> Result<serde_json::Value, St
     } else {
         module
     };
-    let payload = ingest_value(module.value(), module.diagnostics(), Vec::new(), None)?;
+    let payload = ingest_value(&module.value, &module.diagnostics, Vec::new(), None)?;
     with_module_json(payload, module)
 }
 
@@ -686,7 +681,7 @@ pub fn ingest_model_json(network_json: &str) -> Result<String, JsError> {
 fn ingest_model_json_value(network_json: &str) -> Result<serde_json::Value, String> {
     let net = powerio::BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
     let module = powerio::PioModule::new(net);
-    let payload = ingest_value(module.value(), module.diagnostics(), Vec::new(), None)?;
+    let payload = ingest_value(&module.value, &module.diagnostics, Vec::new(), None)?;
     with_module_json(payload, module)
 }
 
@@ -704,7 +699,7 @@ fn ingest_model_json_bytes_value(bytes: &[u8]) -> Result<serde_json::Value, Stri
         .map_err(|_| "PowerIO model JSON is not valid UTF-8".to_owned())?;
     let net = powerio::BalancedNetwork::from_json(text).map_err(|e| e.to_string())?;
     let module = powerio::PioModule::new(net);
-    let payload = ingest_value(module.value(), module.diagnostics(), Vec::new(), None)?;
+    let payload = ingest_value(&module.value, &module.diagnostics, Vec::new(), None)?;
     with_module_json(payload, module)
 }
 
@@ -959,7 +954,8 @@ struct DisplayView {
 pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
     install_panic_hook();
-    match powerio::parse_display(bytes, format).map_err(jserr)? {
+    let source = Source::from_memory("<display>", bytes.to_vec()).map_err(jserr)?;
+    match powerio::parse_display(source, Some(format)).map_err(jserr)? {
         DisplayData::PowerWorld(d) => serde_json::to_string(&DisplayView {
             substations: d
                 .substations
@@ -1134,11 +1130,11 @@ mpc.gencost = [
             21.7
         );
 
-        // A source without uids serves null uids and the numeric id is the
-        // edit key, so neither the
-        // topology nor the network payload invents one.
-        assert!(v["topology"]["buses"][0]["uid"].is_null());
-        assert!(v["topology"]["branches"][1]["uid"].is_null());
+        // A source without uids carries the ones PowerIO assigned, the bus
+        // number and the branch terminals; the numeric id stays an edit key
+        // and neither payload invents a row key.
+        assert_eq!(v["topology"]["buses"][0]["uid"], "1");
+        assert_eq!(v["topology"]["branches"][1]["uid"], "1-5");
         assert!(!v["network_json"].as_str().unwrap().contains("buses:0"));
     }
 
@@ -1241,7 +1237,7 @@ mpc.gencost = [
         powerio::BalancedNetwork::from_json(std::str::from_utf8(&bom_model).expect("UTF-8 model"))
             .expect("strict model byte reader");
 
-        let module = powerio::stored::emit_module(&powerio::PioModule::new(
+        let module = serialize_module(&powerio::PioModule::new(
             powerio::PioValue::BalancedNetwork(net),
         ))
         .expect("module JSON");
@@ -1319,16 +1315,12 @@ mpc.gencost = [
 
     #[test]
     fn module_reader_error_is_not_prefixed_twice() {
-        // A 0.9-shaped package with no `powerio_version` lineage is refused by
-        // the stored module reader; its message must reach the caller once,
-        // with no prefix stacked on by this crate.
+        // A document that is not PowerIO IR is refused by the reader; its
+        // message must reach the caller once, with no prefix stacked on by
+        // this crate.
         let error = dist::ingest_dist_module(r#"{"model_kind":"multiconductor","model":{}}"#)
             .expect_err("malformed module");
-        assert_eq!(
-            error.matches("not a stored powerio module").count(),
-            1,
-            "{error}"
-        );
+        assert_eq!(error.matches("not PowerIO 1.0 IR").count(), 1, "{error}");
     }
 
     #[cfg(feature = "sensitivity")]
@@ -1376,7 +1368,7 @@ mpc.gencost = [
         let module = powerio::PioModule::new(powerio::PioValue::BalancedNetwork(parse_matpower(
             CASE14_NO_COORDS,
         )));
-        powerio::stored::emit_module(&module).expect("module JSON")
+        serialize_module(&module).expect("module JSON")
     }
 
     #[cfg(feature = "sensitivity")]
@@ -1412,7 +1404,7 @@ mpc.gencost = [
     fn unified_json_drop_routes_each_module_kind() {
         // A stored module holding a balanced network ingests like a plain
         // network drop under the one `module` kind.
-        let balanced_json = powerio::stored::emit_module(&powerio::PioModule::new(
+        let balanced_json = serialize_module(&powerio::PioModule::new(
             powerio::PioValue::BalancedNetwork(parse_matpower(CASE14_NO_COORDS)),
         ))
         .expect("balanced module JSON");
@@ -1426,7 +1418,7 @@ mpc.gencost = [
         // network supplies the render payload without replacing the instance.
         let dc_instance = powerio::DcOpfInstance::from_network(parse_matpower(CASE14_NO_COORDS))
             .expect("DC OPF instance");
-        let dc_instance_json = powerio::stored::emit_module(&powerio::PioModule::new(
+        let dc_instance_json = serialize_module(&powerio::PioModule::new(
             powerio::PioValue::DcOpfInstance(dc_instance),
         ))
         .expect("DC OPF instance module JSON");
@@ -1448,27 +1440,26 @@ mpc.gencost = [
             powerio::PioValue::AcPfInstance(ac_pf),
             powerio::PioValue::AcOpfInstance(ac_opf),
         ] {
-            let kind = value.kind().as_str();
-            let module_json = powerio::stored::emit_module(&powerio::PioModule::new(value))
-                .expect("AC instance module JSON");
+            let kind = value.type_name().to_owned();
+            let module_json =
+                serialize_module(&powerio::PioModule::new(value)).expect("AC instance module JSON");
             let classify_error = classify_json_drop_value(module_json.as_bytes())
                 .expect_err("AC instance must not classify as viewable");
-            assert!(classify_error.contains(kind), "{classify_error}");
+            assert!(classify_error.contains(&kind), "{classify_error}");
             let ingest_error = ingest_json_drop_value(module_json.as_bytes())
                 .expect_err("AC instance must not ingest as a DC study");
-            assert!(ingest_error.contains(kind), "{ingest_error}");
+            assert!(ingest_error.contains(&kind), "{ingest_error}");
         }
 
         // One holding a multiconductor network routes to the dist view.
-        let dist_source = Source::from_bytes(
+        let dist_source = Source::from_memory(
             "micro.json",
             include_bytes!("../tests/fixtures/dist/micro_pmd.json").to_vec(),
         )
         .expect("dist source")
         .with_format(powerio::FormatId::new("pmd").expect("pmd format id"));
-        let dist_module = powerio::parse(dist_source).expect("parse distribution module");
-        let dist_json =
-            powerio::stored::emit_module(&dist_module).expect("multiconductor network module JSON");
+        let dist_module = powerio::parse(dist_source, None).expect("parse distribution module");
+        let dist_json = serialize_module(&dist_module).expect("multiconductor network module JSON");
         let multiconductor =
             ingest_json_drop_value(dist_json.as_bytes()).expect("ingest multiconductor module");
         assert_eq!(multiconductor.kind, "module");
@@ -1476,22 +1467,22 @@ mpc.gencost = [
         assert_eq!(multiconductor.payload["model"], "multiconductor");
         assert_eq!(multiconductor.payload["n_bus"], 1);
 
-        // BMOPF declares a calculation, so universal parsing produces an OPF
-        // instance. The view reads its owned network without discarding the
-        // module or interpreting the problem fields itself.
-        let bmopf_source = Source::from_bytes(
+        // A BMOPF document with no calculation section parses to the
+        // multiconductor network; the view reads it like any other
+        // distribution module.
+        let bmopf_source = Source::from_memory(
             "micro.json",
             include_bytes!("../tests/fixtures/dist/micro_bmopf.json").to_vec(),
         )
         .expect("BMOPF source")
         .with_format(powerio::FormatId::new("bmopf").expect("BMOPF format id"));
-        let bmopf_module = powerio::parse(bmopf_source).expect("parse BMOPF instance module");
-        assert_eq!(
-            bmopf_module.value().kind(),
-            powerio::PioValueKind::McAcOpfInstance
+        let bmopf_module = powerio::parse(bmopf_source, None).expect("parse BMOPF instance module");
+        assert!(
+            matches!(bmopf_module.value, PioValue::MulticonductorNetwork(_)),
+            "{}",
+            bmopf_module.value.type_name()
         );
-        let bmopf_json =
-            powerio::stored::emit_module(&bmopf_module).expect("BMOPF instance module JSON");
+        let bmopf_json = serialize_module(&bmopf_module).expect("BMOPF instance module JSON");
         let classification =
             classify_json_drop_value(bmopf_json.as_bytes()).expect("classify BMOPF module");
         assert_eq!(classification.kind, "module");
@@ -1516,10 +1507,10 @@ mpc.gencost = [
             let module_json = payload["module_json"]
                 .as_str()
                 .expect("retained module JSON");
-            let module = powerio::stored::read_module(module_json).expect("read retained module");
+            let module = deserialize_module(module_json).expect("read retained module");
             let module: powerio::PioModule<powerio::BalancedNetwork> =
-                module.into_typed().expect("retained balanced network");
-            let location = module.value().buses()[0]
+                tellegen::ir::balanced_module(module).expect("retained balanced network");
+            let location = module.value.buses()[0]
                 .location
                 .expect("materialized bus location");
             assert_eq!((location.x, location.y), (-81.0, 35.0));
@@ -1529,7 +1520,7 @@ mpc.gencost = [
     #[cfg(feature = "sensitivity")]
     #[test]
     fn unified_json_drop_rejects_a_malformed_module_after_classification() {
-        let malformed = br#"{"model_kind":"balanced","model":{}}"#;
+        let malformed = br#"{"schema":"powerio.module","version":1}"#;
         assert_eq!(powerio::classify_json_bytes(malformed), JsonClass::Module);
         assert!(ingest_json_drop_value(malformed).is_err());
     }

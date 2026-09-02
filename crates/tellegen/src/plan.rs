@@ -665,9 +665,7 @@ mod tests {
                     weight: 1.0,
                 }],
             },
-            candidates: ["branches:0", "branches:1", "branches:2"]
-                .map(str::to_owned)
-                .to_vec(),
+            candidates: ["1-2", "1-3", "2-3"].map(str::to_owned).to_vec(),
             max_increase_per_branch_mw: 15.0,
             budget_mw: 20.0,
             increment_mw: 5.0,
@@ -831,7 +829,7 @@ mod tests {
         network.branches_mut()[0].rate_a = 36.0;
         let instance = Arc::new(DcOpfInstance::from_network(network).expect("instance"));
         let mut spec = plan_spec();
-        spec.candidates = vec!["branches:0".into()];
+        spec.candidates = vec!["1-2".into()];
         spec.max_changed_lines = 1;
         let execution = plan_capacity(instance, &spec).expect("plan");
         let change = execution
@@ -839,7 +837,7 @@ mod tests {
             .proposal
             .first()
             .expect("accepted change");
-        assert_eq!(change.branch, "branches:0");
+        assert_eq!(change.branch, "1-2");
         let expected_rating = 36.0 + change.delta_mw;
 
         let (outcome, solution) = execution.into_solution("tellegen test").expect("emit");
@@ -867,13 +865,13 @@ mod tests {
         let dense_gradient = &dense.iterations[0].gradient;
 
         let mut spec = plan_spec();
-        spec.candidates = vec!["branches:2".into(), "branches:0".into()];
+        spec.candidates = vec!["2-3".into(), "1-2".into()];
         spec.max_changed_lines = 2;
         spec.exact_solve_budget = 2;
         let outcome = plan_capacity_model(&dc, &spec).expect("plan");
         let gradient = &outcome.iterations[0].gradient;
-        assert_eq!(gradient[0].branch, "branches:2");
-        assert_eq!(gradient[1].branch, "branches:0");
+        assert_eq!(gradient[0].branch, "2-3");
+        assert_eq!(gradient[1].branch, "1-2");
         assert!((gradient[0].value - dense_gradient[2].value).abs() < 1e-12);
         assert!((gradient[1].value - dense_gradient[0].value).abs() < 1e-12);
         assert!(outcome
@@ -906,7 +904,7 @@ mod tests {
             objective: ImplicitObjective::WeightedLmp {
                 weights: Vec::new(),
             },
-            candidates: vec!["branches:0".into()],
+            candidates: vec!["1-2".into()],
             max_increase_per_branch_mw: 10.0,
             budget_mw: 10.0,
             increment_mw: 5.0,
@@ -921,7 +919,7 @@ mod tests {
     fn planning_rejects_duplicate_candidates_and_objective_buses() {
         let dc = congested_case3();
         let mut spec = plan_spec();
-        spec.candidates = vec!["branches:0".into(), "branches:0".into()];
+        spec.candidates = vec!["1-2".into(), "1-2".into()];
         let err = plan_capacity_model(&dc, &spec).unwrap_err();
         assert!(err.contains("appears twice"), "got: {err}");
 

@@ -22,7 +22,7 @@ use axum::{
     routing::{any, get},
     Json, Router,
 };
-use powerio::{BalancedNetwork, DcOpfInstance, IntoTypedModule, PioModule};
+use powerio::{BalancedNetwork, DcOpfInstance, PioModule};
 use powerio_tx::IndexedNetwork;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Semaphore};
@@ -989,10 +989,10 @@ fn parse_balanced(
     name: &str,
     format: &str,
 ) -> Result<PioModule<BalancedNetwork>, String> {
-    let module = powerio::parse_text(name, text, Some(format)).map_err(|e| e.to_string())?;
-    module
-        .into_typed()
-        .map_err(|mismatch| format!("parsed a {} value", mismatch.actual().as_str()))
+    let source =
+        powerio::Source::from_memory(name, text.as_bytes().to_vec()).map_err(|e| e.to_string())?;
+    let module = powerio::parse(source, Some(format)).map_err(|e| e.to_string())?;
+    tellegen::ir::balanced_module(module)
 }
 
 /// Read and parse one staged case file. Returns the network and the file's
@@ -1011,14 +1011,14 @@ fn parse_balanced_file(
 fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, String> {
     let case_path = data_dir.join(spec.casefile);
     let (case_module, _) = parse_balanced_file(&case_path, "m")?;
-    let case = case_module.value();
+    let case = &case_module.value;
     let coords = match spec.coords {
         CoordSpec::Aux(auxfile) => {
             let aux_path = data_dir.join(auxfile);
             let (aux_module, aux_text) = parse_balanced_file(&aux_path, "aux")?;
             // The substation table rides in the aux text itself. PowerIO retains
             // the source on the module rather than the network value.
-            complete_coords_for(case, aux_module.value(), Some(&aux_text), auxfile)?
+            complete_coords_for(case, &aux_module.value, Some(&aux_text), auxfile)?
         }
         CoordSpec::BusCsv(csvfile) => load_bus_csv_coords(&data_dir.join(csvfile), case)?,
     };
@@ -1239,7 +1239,7 @@ fn valid_coord(lon: f64, lat: f64) -> bool {
 fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
     let case_module = parse_balanced(spec.text, "<fallback>", "m")
         .map_err(|e| format!("{} fallback parse failed: {e}", spec.id))?;
-    let coords = synthetic_layout(case_module.value(), spec.bbox);
+    let coords = synthetic_layout(&case_module.value, spec.bbox);
     build_entry(spec.id, spec.name, case_module, coords, None, true)
 }
 
@@ -1251,10 +1251,9 @@ fn build_entry(
     branch_paths: Option<BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<CaseEntry, String> {
-    let network = module.value().clone();
+    let network = module.value.clone();
     let module_json =
-        powerio::stored::emit_module(&module.map_value(powerio::PioValue::BalancedNetwork))
-            .map_err(|e| e.to_string())?;
+        tellegen::ir::serialize_module(&module.map_value(powerio::PioValue::BalancedNetwork))?;
     let dc_instance =
         Arc::new(DcOpfInstance::from_network(network.clone()).map_err(|e| e.to_string())?);
     let base = solve_instance(&dc_instance, &SolveRequest::default())?;
@@ -1874,7 +1873,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(case["schema"], "powerio.module");
         assert_eq!(case["version"], 1);
-        assert_eq!(case["value"]["kind"], "balanced_network");
+        assert_eq!(case["value"]["type"], "powerio.BalancedNetwork");
 
         let (status, solution) = get("/api/cases/case200/solution").await;
         assert_eq!(status, StatusCode::OK);
@@ -2147,7 +2146,7 @@ mod tests {
 
         let case = parse_balanced(&patched, "<fallback>", "m").unwrap();
         let coords: Coords = case
-            .value()
+            .value
             .buses()
             .iter()
             .enumerate()

@@ -46,13 +46,11 @@ cargo add tellegen powerio serde_json
 ```
 
 ```rust
-use powerio::IntoTypedModule;
 use tellegen::{solve_instance, SolveRequest};
 
-let parsed = powerio::parse_file("case30.m")?;
-let network_module: powerio::PioModule<powerio::BalancedNetwork> =
-    parsed.into_typed()?;
-let instance = powerio::DcOpfInstance::from_network(network_module.value().clone())?;
+let parsed = powerio::parse(powerio::Source::open("case30.m")?, None)?;
+let network_module = tellegen::ir::balanced_module(parsed)?;
+let instance = powerio::DcOpfInstance::from_network(network_module.value.clone())?;
 
 // A DC OPF with bus 2 shifted 50 MW, and the LMP column against demand.
 let request: SolveRequest = serde_json::from_str(

@@ -6,10 +6,35 @@ integrating Tellegen are being developed in
 [powerio#454](https://github.com/eigenergy/powerio/pull/454) for PowerIO 1.0.0.
 The 0.10.0 tag and its stored files remain unchanged.
 
-Tellegen consumes PowerIO modules at its public boundaries. `DcNetwork` and
+Tellegen consumes PowerIO modules at its public entry points. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem instance.
 The browser and CLI save PowerIO case and solution modules; Tellegen defines no
-second portable network, study, or experiment format.
+second portable network, study, or experiment format. PowerIO IR text is
+written and read through `tellegen::ir`, which calls `powerio::serialize` and
+`powerio::deserialize`; Tellegen has no reader or writer of its own.
+
+## The 1.0 module API
+
+The PowerIO 1.0.0 candidate replaced the 0.10 typed narrowing and stored
+module entry points. Tellegen now uses:
+
+- `powerio::parse(source, format)` over `Source::from_memory` or
+  `Source::open`, and `PioModule::try_map_value` to narrow a value
+  (`tellegen::ir::balanced_module`);
+- `powerio::serialize` and `powerio::deserialize` for `.pio.json` documents;
+- `PioValue::type_name()` (`powerio.BalancedNetwork`, `powerio.DcOpfInstance`)
+  where the retired `kind()` names were used;
+- the `analysis_sources` column of the DC and AC branch preparation data,
+  which names the branch row or the three winding transformer winding each
+  analysis column came from;
+- `DcOpfSolution::new` with the three winding transformer terminal active
+  power column, filled from the lowered winding rows.
+
+PowerIO 1.0 gives every bus, branch, and generator a persistent uid when the
+source supplied none (a bus number, `from-to` terminals, `bus-N`). Tellegen's
+identity rule accepts a numeric bus uid that is the bus's own number, since
+both key spellings then name the same bus, and still rejects any other numeric
+uid as ambiguous.
 
 ## Preparation semantics
 
@@ -58,7 +83,7 @@ value vector product used by capacity planning.
 ## Stored values and upgrades
 
 The new solution columns change the stored value API and are part of the
-PowerIO 1.0.0 candidate. They fit in `powerio.module/1`, so the module envelope
+PowerIO 1.0.0 candidate. They fit in `powerio.module/1`, so the module document
 version does not change. The migration guide covers reading 0.10 modules and
 the new result fields. A stored 0.10 objective containing the retired
 regularization token loads with a diagnostic rather than becoming a current
@@ -71,7 +96,7 @@ the amended OPF instance that was solved.
 
 ## Other corrections
 
-The same review found several smaller public contract gaps:
+The same review found several smaller public API gaps:
 
 - `HistoryId` and `HistoryKind` join the existing history types at the PowerIO
   facade.
@@ -82,6 +107,6 @@ The same review found several smaller public contract gaps:
 - DC and AC instance network replacement is checked and rebinds compatible
   initial state data.
 
-Tellegen pins the reviewed PowerIO commit while both pull requests are open.
-The pin is replaced by the published PowerIO release before Tellegen is
+Tellegen pins the PowerIO 1.0.0 candidate commit while both pull requests are
+open. The pin is replaced by the published PowerIO release before Tellegen is
 packaged.

@@ -1,10 +1,9 @@
-//! Borrowed typed state selection as a consumer solve path: PowerIO's
-//! `select` surface feeds tellegen without serializing or cloning a
-//! complete static module. A series of three demand states solves per
-//! selected entry over one shared element identity set, and a static value
-//! or a bad selector refuses with a coded error instead of a guess.
+//! Borrowed time series entries as a consumer solve path: a PowerIO time
+//! series feeds tellegen one entry at a time without serializing or cloning a
+//! complete static module. Three demand states solve per entry over one
+//! shared element identity set, an index past the end is `None`, and a static
+//! value is not a collection.
 
-use powerio::select::{list_states, select_state, SelectedState, StateInventory, StateSelector};
 use powerio::{PioValue, TimePoint, TimeSeries};
 
 /// CASE3-shaped in-memory network with the load scaled by `factor`.
@@ -38,7 +37,7 @@ fn scaled_network(factor: f64) -> powerio::BalancedNetwork {
 }
 
 #[test]
-fn a_selected_series_state_solves_without_an_exported_module() {
+fn a_series_entry_solves_without_an_exported_module() {
     let series = TimeSeries::new(
         vec![
             TimePoint::new("valley", None).unwrap(),
@@ -52,20 +51,23 @@ fn a_selected_series_state_solves_without_an_exported_module() {
         ],
     )
     .unwrap();
-    let value = PioValue::BalancedNetworkTimeSeries(series);
-
-    let StateInventory::TimePoints(points) = list_states(&value).expect("inventory") else {
-        panic!("a time series inventories time points");
+    let value = PioValue::from(series);
+    assert_eq!(
+        value.type_name(),
+        "powerio.TimeSeries<powerio.BalancedNetwork>"
+    );
+    let PioValue::TimeSeries(series) = &value else {
+        panic!("a time series value");
     };
-    assert_eq!(points.len(), 3);
+    assert_eq!(series.len(), 3);
+    assert_eq!(series.time_points()[2].label(), "peak");
 
-    // Solve each selected state through the borrow; costs must rise with
-    // the demand, which pins that each selection names its own entry.
+    // Solve each entry through the borrow; costs must rise with the demand,
+    // which pins that each index names its own entry.
     let mut objectives = Vec::new();
     for position in 0..3 {
-        let selected = select_state(&value, StateSelector::TimePosition(position)).expect("select");
-        let SelectedState::BalancedNetwork(network) = selected else {
-            panic!("a network series selects stored networks");
+        let PioValue::BalancedNetwork(network) = series.get(position).expect("entry") else {
+            panic!("a network series holds networks");
         };
         let instance =
             powerio::DcOpfInstance::from_network(network.clone()).expect("problem instance");
@@ -78,13 +80,10 @@ fn a_selected_series_state_solves_without_an_exported_module() {
         "objectives must rise with demand: {objectives:?}"
     );
 
-    // Selection refusals are coded, never a silent first entry.
-    let out_of_range = select_state(&value, StateSelector::TimePosition(3)).unwrap_err();
-    assert!(out_of_range.info().is_some(), "{out_of_range}");
-    let wrong_axis = select_state(&value, StateSelector::Scenario("peak")).unwrap_err();
-    assert!(wrong_axis.info().is_some(), "{wrong_axis}");
+    // An index past the end is absent, never a silent first entry.
+    assert!(series.get(3).is_none());
 
     let static_value = PioValue::BalancedNetwork(scaled_network(1.0));
-    let refused = list_states(&static_value).unwrap_err();
-    assert!(refused.info().is_some(), "{refused}");
+    assert!(!matches!(static_value, PioValue::TimeSeries(_)));
+    assert_eq!(static_value.type_name(), "powerio.BalancedNetwork");
 }

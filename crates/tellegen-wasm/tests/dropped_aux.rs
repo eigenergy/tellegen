@@ -29,20 +29,18 @@ fn dropped_aux_parses_solves_and_differentiates() {
 
     // 1. Parse. The `.aux` alone must yield a complete network: the drop guard in
     //    +page.svelte rejects an aux with no branches or generators.
-    let source = powerio::Source::from_bytes("ACTIVSg500.aux", text.clone().into_bytes())
+    let source = powerio::Source::from_memory("ACTIVSg500.aux", text.clone().into_bytes())
         .expect("aux source");
-    let module = powerio::parse(source).expect("parse ACTIVSg500.aux");
-    use powerio::IntoTypedModule;
-    let module: powerio::PioModule<powerio::BalancedNetwork> = module
-        .into_typed()
-        .expect("aux parses to a balanced network");
-    let mut net = module.value().clone();
+    let module = powerio::parse(source, None).expect("parse ACTIVSg500.aux");
+    let module: powerio::PioModule<powerio::BalancedNetwork> =
+        tellegen::ir::balanced_module(module).expect("aux parses to a balanced network");
+    let mut net = module.value.clone();
     let report = apply_aux_substation_locations(&mut net, &text)
         .expect("materialize aux substation locations");
     assert!(report.matched_buses > 0, "aux joined no bus locations");
     let module = module.map_value(|_| net.clone());
     let module = module.map_value(powerio::PioValue::BalancedNetwork);
-    let module_json = powerio::stored::emit_module(&module).expect("module JSON");
+    let module_json = tellegen::ir::serialize_module(&module).expect("module JSON");
     let n_bus = net.buses().len();
     assert!(n_bus >= 500, "buses {n_bus}");
     assert!(!net.branches().is_empty(), "aux carried no branches");
@@ -66,10 +64,10 @@ fn dropped_aux_parses_solves_and_differentiates() {
         "only {covered}/{n_bus} buses have coordinates"
     );
     spread_stacks(&mut coords);
-    let stored = powerio::stored::read_module(&module_json).expect("read materialized module");
+    let stored = tellegen::ir::deserialize_module(&module_json).expect("read materialized module");
     let stored: powerio::PioModule<powerio::BalancedNetwork> =
-        stored.into_typed().expect("stored balanced network");
-    assert_eq!(stored.value().buses()[0].location, net.buses()[0].location);
+        tellegen::ir::balanced_module(stored).expect("stored balanced network");
+    assert_eq!(stored.value.buses()[0].location, net.buses()[0].location);
 
     // 3. Base solve. This case states no generator costs, so PowerIO declares
     //    a feasibility objective and Tellegen does not label its balance duals

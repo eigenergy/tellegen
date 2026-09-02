@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 
 use powerio::BalancedNetwork;
 use powerio::BranchSusceptanceFormula;
-use powerio_matrix::{build_dc_opf_preparation, DcOpfAssemblyOptions, PreparedObjective, Units};
+use powerio_matrix::{
+    build_dc_opf_preparation, AnalysisBranchSource, DcOpfAssemblyOptions, PreparedObjective, Units,
+};
 use powerio_prob::DcOpfInstance;
 
 use super::{
@@ -156,6 +158,9 @@ pub(crate) struct DcNetwork {
     /// Dense branch index -> original source branch row. `None` marks a branch
     /// synthesized while lowering a source element.
     pub branch_source_rows: Vec<Option<usize>>,
+    /// Dense branch index -> the source component PowerIO lowered it from: a
+    /// branch row, or one winding of a three winding transformer.
+    pub(crate) branch_sources: Vec<AnalysisBranchSource>,
     /// Dense generator index -> original source generator row.
     pub gen_source_rows: Vec<Option<usize>>,
     /// Dense bus index -> powerio row uid (`None` when the source network carried
@@ -284,7 +289,7 @@ impl DcNetwork {
             // or scanning raw IDs to interpret the prepared columns.
             let bus_uids =
                 uids_for_source_rows(&prep.bus_source_rows, raw.buses(), |bus| &bus.uid, "bus")?;
-            let branch_source_rows = prep.branches.source_rows.clone();
+            let branch_source_rows = super::branch_source_rows(&prep.branches.analysis_sources);
             let gen_source_rows = prep.generators.source_rows.clone();
             let branch_ids =
                 source_position_ids(&branch_source_rows, prep.n_source_branches, "branch")?;
@@ -443,6 +448,7 @@ impl DcNetwork {
             branch_identities,
             gen_ids,
             branch_source_rows,
+            branch_sources: prep.branches.analysis_sources,
             gen_source_rows,
             bus_uids,
             branch_uids,
@@ -595,8 +601,10 @@ mod tests {
         approx(dc.fmax[3], 1.0);
         for branch in 3..6 {
             assert_eq!(dc.branch_source_rows[branch], None);
-            approx(dc.angmin[branch], -DEFAULT_ANGLE_BOUND_PAD);
-            approx(dc.angmax[branch], DEFAULT_ANGLE_BOUND_PAD);
+            // PowerIO owns the lowered winding rows and pads them with its
+            // PowerModels angle window.
+            approx(dc.angmin[branch], -powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD);
+            approx(dc.angmax[branch], powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD);
             if branch > 3 {
                 // PowerIO owns star lowering and synthesized limits. Tellegen
                 // checks that every lowered unrated winding receives a finite
@@ -666,10 +674,7 @@ mod tests {
         assert_eq!(dc.k, 2);
         assert_eq!(dc.bus_ids, vec![1, 2, 3]);
         assert_eq!(dc.branch_ids, vec![1, 2, 3]);
-        assert_eq!(
-            dc.branch_identities,
-            vec!["branches:0", "branches:1", "branches:2"]
-        );
+        assert_eq!(dc.branch_identities, vec!["1-2", "1-3", "2-3"]);
         assert_eq!(dc.gen_ids, vec![1, 2]);
         assert_eq!(dc.branch_source_rows, vec![Some(0), Some(1), Some(2)]);
         assert_eq!(dc.gen_source_rows, vec![Some(0), Some(1)]);

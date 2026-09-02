@@ -6,9 +6,7 @@
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use powerio::{
-    AcOpfInstance, AcPfInstance, BalancedNetwork, DcOpfInstance, IntoTypedModule, PioModule,
-};
+use powerio::{AcOpfInstance, AcPfInstance, BalancedNetwork, DcOpfInstance, PioModule};
 use tellegen::{
     solve_ac_instance, solve_ac_pf_instance, solve_instance, Iterations, Problem, SolveRequest,
 };
@@ -41,11 +39,10 @@ pub struct Config {
 /// Parse MATPOWER text in memory through the PowerIO module route. The
 /// benchmark retains the typed value as the source for every declared problem.
 fn parse_matpower(text: &str, name: &str) -> Result<PioModule<BalancedNetwork>, String> {
-    let module = powerio::parse_text(name, text, Some("matpower")).map_err(|e| e.to_string())?;
-    let module: powerio::PioModule<powerio::BalancedNetwork> = module
-        .into_typed()
-        .map_err(|mismatch| format!("parsed a {} value", mismatch.actual().as_str()))?;
-    Ok(module)
+    let source =
+        powerio::Source::from_memory(name, text.as_bytes().to_vec()).map_err(|e| e.to_string())?;
+    let module = powerio::parse(source, Some("matpower")).map_err(|e| e.to_string())?;
+    tellegen::ir::balanced_module(module)
 }
 
 fn ms(t: Instant) -> f64 {
@@ -103,7 +100,7 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
         }
     };
     rec.timings.parse_ms = ms(t);
-    let net = module.value().clone();
+    let net = module.value.clone();
     rec.buses = net.buses().len();
     rec.branches = net.branches().len();
     rec.gens = net.generators().len();

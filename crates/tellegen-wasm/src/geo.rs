@@ -30,7 +30,7 @@ pub fn parse_geo_impl(bytes: &[u8], hint: &str) -> Result<String, String> {
     let hint = (!hint.trim().is_empty()).then_some(hint);
     let text = std::str::from_utf8(bytes)
         .map_err(|_| "geographic sidecar is not valid UTF-8".to_owned())?;
-    let parsed = GeoLayer::parse_text(text, hint).map_err(|e| e.to_string())?;
+    let parsed = GeoLayer::parse(text, hint).map_err(|e| e.to_string())?;
     let (mut n_points, mut n_routes) = (0usize, 0usize);
     for f in &parsed.layer.features {
         match f.geometry {
@@ -119,7 +119,9 @@ pub fn extract_geo_impl(network_json: &str) -> Result<String, String> {
 /// carries no substation identity, or the numbers do not line up); otherwise
 /// returns the refreshed drop-panel payload with a `report`.
 pub fn apply_display_geo_impl(network_json: &str, bytes: &[u8]) -> Result<String, String> {
-    let display = match powerio::parse_display(bytes, "pwd").map_err(|e| e.to_string())? {
+    let source =
+        powerio::Source::from_memory("<display>", bytes.to_vec()).map_err(|e| e.to_string())?;
+    let display = match powerio::parse_display(source, Some("pwd")).map_err(|e| e.to_string())? {
         DisplayData::PowerWorld(d) => d,
         // DisplayData is #[non_exhaustive]; PowerWorld is the only arm today.
         #[allow(unreachable_patterns)]
@@ -145,7 +147,7 @@ fn parse_network(network_json: &str) -> Result<BalancedNetwork, String> {
 }
 
 pub(crate) fn parse_layer(layer_geojson: &str) -> Result<GeoLayer, String> {
-    GeoLayer::parse_text(layer_geojson, Some("layer.geo.json"))
+    GeoLayer::parse(layer_geojson, Some("layer.geo.json"))
         .map(|parsed| parsed.layer)
         .map_err(|e| e.to_string())
 }
@@ -209,7 +211,7 @@ mpc.gencost = [
     fn module_json(network_json: &str) -> String {
         let network = powerio::BalancedNetwork::from_json(network_json).expect("network JSON");
         let module = powerio::PioModule::new(powerio::PioValue::BalancedNetwork(network));
-        powerio::stored::emit_module(&module).expect("module JSON")
+        tellegen::ir::serialize_module(&module).expect("module JSON")
     }
 
     #[test]

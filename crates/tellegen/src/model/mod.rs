@@ -16,8 +16,8 @@
 
 use std::collections::HashSet;
 
-use powerio::{BalancedNetwork, BusType, IntoTypedModule};
-use powerio_matrix::PiecewiseLinearCost;
+use powerio::{BalancedNetwork, BusType};
+use powerio_matrix::{AnalysisBranchSource, PiecewiseLinearCost};
 use powerio_tx::{IndexedNetwork, NormalizeOptions};
 
 #[cfg(feature = "sensitivity")]
@@ -81,17 +81,26 @@ impl PiecewiseCost {
 /// Parse in-memory MATPOWER text into the balanced network through the PowerIO
 /// module route: an in-memory `Source`, the automatic parse to
 /// `PioModule<PioValue>`, and typed narrowing. The module records are
-/// dropped here because these callers want only the value; a path that
+/// dropped here because these callers want only the value; a caller that
 /// needs diagnostics, history, or same format writing keeps the module.
 #[cfg_attr(not(test), allow(dead_code))] // the engine's tests and fixtures parse in memory
 pub(crate) fn parse_matpower(text: &str) -> Result<powerio::BalancedNetwork, String> {
-    let source = powerio::Source::from_bytes("case.m", text.as_bytes().to_vec())
+    let source = powerio::Source::from_memory("case.m", text.as_bytes().to_vec())
         .map_err(|e| e.to_string())?;
-    let module = powerio::parse(source).map_err(|e| e.to_string())?;
-    let module: powerio::PioModule<powerio::BalancedNetwork> = module
-        .into_typed()
-        .map_err(|mismatch| format!("parsed a {} value", mismatch.actual().as_str()))?;
-    Ok(module.into_value())
+    let module = powerio::parse(source, None).map_err(|e| e.to_string())?;
+    Ok(crate::ir::balanced_module(module)?.into_value())
+}
+
+/// Source branch row for each analysis branch column: `None` for a lowered
+/// three winding transformer winding, which has no row in the branch table.
+pub(super) fn branch_source_rows(sources: &[AnalysisBranchSource]) -> Vec<Option<usize>> {
+    sources
+        .iter()
+        .map(|source| match source {
+            AnalysisBranchSource::Branch { row } => Some(*row),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Exact 60 degree angle-difference pad used by every Tellegen formulation.
@@ -202,28 +211,44 @@ pub(super) fn normalize_for_model(source: &BalancedNetwork) -> Result<ModelInput
 }
 
 /// Require edit-axis UIDs to be unique and distinguishable from numeric IDs.
+/// PowerIO gives a bus with no source identity its bus number as the uid, so
+/// a numeric bus uid is accepted when it is the bus's own number: both key
+/// spellings then name the same bus.
 pub(crate) fn validate_canonical_identity(network: &BalancedNetwork) -> Result<(), String> {
-    validate_unique_uids("bus", network.buses().iter().map(|bus| bus.uid.as_deref()))?;
+    validate_unique_uids(
+        "bus",
+        network
+            .buses()
+            .iter()
+            .map(|bus| (bus.uid.as_deref(), Some(bus.id.0))),
+    )?;
     validate_unique_uids(
         "branch",
         network
             .branches()
             .iter()
-            .map(|branch| branch.uid.as_deref()),
+            .map(|branch| (branch.uid.as_deref(), None)),
     )
 }
 
+/// Each item is a record's uid and, for a family addressed by number, the
+/// record's own numeric id.
 pub(super) fn validate_unique_uids<'a>(
     family: &str,
-    uids: impl IntoIterator<Item = Option<&'a str>>,
+    uids: impl IntoIterator<Item = (Option<&'a str>, Option<usize>)>,
 ) -> Result<(), String> {
     let mut seen = HashSet::new();
-    for uid in uids.into_iter().flatten() {
+    for (uid, own_id) in uids {
+        let Some(uid) = uid else {
+            continue;
+        };
         let digits = uid
             .strip_prefix('+')
             .or_else(|| uid.strip_prefix('-'))
             .unwrap_or(uid);
-        if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        let numeric = !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit());
+        let own_number = own_id.is_some_and(|id| uid == id.to_string());
+        if numeric && !own_number {
             return Err(format!(
                 "{family} uid \"{uid}\" is ambiguous with a numeric element id"
             ));
