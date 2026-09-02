@@ -20,7 +20,7 @@ repository = "https://github.com/eigenergy/tellegen"
 [workspace.dependencies]
 # The 0.9 line (`BalancedNetwork`, per crate error types, `parse_bytes`). The
 # shared lockfile unifies the version across the engine and every adapter.
-powerio = "0.9"
+powerio = "0.10"
 # The `.pio.json` document model. The wasm ingest path uses its public
 # `ensure_payload_uids` so tellegen stamps the exact row-uid scheme powerio
 # packages carry, instead of duplicating the format here.
@@ -30,11 +30,11 @@ powerio-pkg = "0.9"
 # `MulticonductorNetwork::graph()` to view distribution cases (no solve).
 # Browser ingestion remains filesystem free, so OpenDSS include commands are
 # refused because there is no base directory to confine them to.
-powerio-dist = "0.9"
+powerio-dist = "0.10"
 # Matrix-free DC/AC OPF problem instances (`DcOpfInstance`/`AcOpfInstance`), the
 # shared owner of case interpretation. Default features only: the `matrix` feature
 # pulls a filesystem bundle writer that has no place in the wasm dependency chain.
-powerio-prob = "0.9"
+powerio-prob = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

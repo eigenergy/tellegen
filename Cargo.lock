@@ -89,7 +89,7 @@ name = "benchmarks"
 version = "0.0.0"
 dependencies = [
  "csv",
- "powerio",
+ "powerio 0.10.0",
  "rayon",
  "serde",
  "serde_json",
@@ -1084,6 +1084,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "powerio"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73031ea5fff1eecdfba8aa8560e98569398f46a73921a6ebb7a58efd49617b80"
+dependencies = [
+ "num-complex",
+ "powerio-core",
+ "powerio-dist 0.10.0",
+ "powerio-prob",
+ "powerio-tx",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "powerio-core"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ee417ef5fb526fb66908cea049c6ff3865c7b724753c340532d8413be8b1cd4"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "powerio-diag"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1106,15 +1133,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "powerio-dist"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d61569a7b018746b417a5a6e749de50bd5ddaf877c2ec2987a65642bc791f6ed"
+dependencies = [
+ "powerio-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "powerio-pkg"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2c33287f4120c212f36af118c97f678c5c76f86bb66bf751f070eda3278aa3c"
 dependencies = [
  "num-complex",
- "powerio",
+ "powerio 0.9.0",
  "powerio-diag",
- "powerio-dist",
+ "powerio-dist 0.9.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1122,12 +1161,28 @@ dependencies = [
 
 [[package]]
 name = "powerio-prob"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5258aa218db01a9b5b77290267d8756d63d51d7140567cd9efe116b66615bc9"
+checksum = "bc3c917a4bfd74ce40913b570d07eb75b581dd34f23885dc187e186528fe0b42"
 dependencies = [
- "powerio",
- "powerio-diag",
+ "powerio-core",
+ "powerio-dist 0.10.0",
+ "powerio-tx",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "powerio-tx"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8270da34b10edc2df50176f4789f9cc3164305f12be73f67715dc4014a0c67bd"
+dependencies = [
+ "lexical-core",
+ "num-complex",
+ "petgraph",
+ "powerio-core",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1449,8 +1504,8 @@ dependencies = [
  "clarabel",
  "faer",
  "num-complex",
- "powerio",
- "powerio-dist",
+ "powerio 0.10.0",
+ "powerio-dist 0.10.0",
  "powerio-pkg",
  "powerio-prob",
  "serde",
@@ -1469,7 +1524,7 @@ name = "tellegen-server"
 version = "0.1.1"
 dependencies = [
  "axum",
- "powerio",
+ "powerio 0.10.0",
  "serde",
  "serde_json",
  "tellegen",
@@ -1486,8 +1541,8 @@ name = "tellegen-wasm"
 version = "0.1.1"
 dependencies = [
  "console_error_panic_hook",
- "powerio",
- "powerio-dist",
+ "powerio 0.10.0",
+ "powerio-dist 0.10.0",
  "powerio-pkg",
  "serde",
  "serde_json",
