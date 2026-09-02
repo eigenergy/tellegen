@@ -51,7 +51,7 @@
   "dependencies": {
     "@deck.gl/core": "^9.3.10",
     "@deck.gl/layers": "^9.3.10",
-    "@deck.gl/mapbox": "^9.3.10",
+    "@deck.gl/mapbox": "^9.3.11",
     "@tellegen/engine": "^0.2.0",
     "maplibre-gl": "^5.0.0"
   },
