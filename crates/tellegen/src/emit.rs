@@ -204,7 +204,7 @@ mod tests {
         let module = PioModule::new(PioValue::DcOpfSolution(emitted));
         let text = crate::ir::serialize_module(&module).expect("write");
         let back = crate::ir::deserialize_module(&text).expect("read");
-        let PioValue::DcOpfSolution(back) = &back.value else {
+        let PioValue::DcOpfSolution(back) = back.value() else {
             panic!("expected dc_opf_solution");
         };
         assert!(back.bus_active_power_marginals().is_some());

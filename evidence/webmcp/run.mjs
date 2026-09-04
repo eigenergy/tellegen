@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const RESULT_SCHEMA = "tellegen.webmcp-challenge-result/1";
+const RESULT_SCHEMA = "tellegen.webmcp-challenge-result/2";
 const SPEC_SCHEMA = "tellegen.webmcp-challenge-spec/1";
 const POWERIO_PACKAGES = new Set([
   "powerio",
@@ -77,7 +77,7 @@ export function summarizeSolutionModule(module) {
   return {
     schema: module.schema,
     version: module.version,
-    kind: module.value.kind,
+    type: module.value.type,
     termination: data.termination,
     declared_objective: data.objective,
     canonical_json_sha256: sha256(
@@ -381,13 +381,13 @@ export function validatePlanResponse(response, request) {
     }
   }
   if (
-    response.solution_module.schema !== "powerio.module" ||
-    response.solution_module.version !== 1
+    response.solution_module.schema !== "pio-ir" ||
+    response.solution_module.version !== 2
   ) {
-    fail("solution_module is not powerio.module/1");
+    fail("solution_module is not pio-ir generation 2");
   }
-  if (response.solution_module.value?.kind !== "dc_opf_solution") {
-    fail("solution_module does not hold dc_opf_solution");
+  if (response.solution_module.value?.type !== "powerio.DcOpfSolution") {
+    fail("solution_module does not hold powerio.DcOpfSolution");
   }
   return response;
 }

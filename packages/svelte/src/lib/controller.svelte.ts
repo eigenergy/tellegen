@@ -376,9 +376,9 @@ export class Controller {
 
 	maybeStartLocalSolve(id: string) {
 		const c = this.app.localCases.find((lc) => lc.id === id);
-		if (!c?.networkJson || !c.studyInputJson || !c.view || !c.summary) return;
+		if (!c?.studyInputJson || !c.view || !c.summary) return;
 		c.network = this.localNetwork(c) ?? c.network ?? null;
-		if (c.networkJson && c.network && !c.solution) this.runSolve(c, null);
+		if (c.network && !c.solution) this.runSolve(c, null);
 	}
 
 	// The case's Study, building it once for `(studyInputJson, formulation)` and rebuilding
@@ -980,13 +980,13 @@ export class Controller {
 	 * engine failure the view still renders, only the layout's persistence is
 	 * lost. */
 	private stampLayout = async (c: LocalCase) => {
-		if (!c.networkJson || !c.view) return;
+		if (!c.studyInputJson || !c.view) return;
 		try {
 			const coords = Object.fromEntries(
 				c.view.buses.map((b) => [b.id, [b.lon, b.lat] as [number, number]])
 			);
-			const stamped = await applyLayout(c.networkJson, coords, 'synthetic');
-			c.networkJson = stamped.network_json;
+			const stamped = await applyLayout(c.studyInputJson, coords, 'synthetic');
+			c.studyInputJson = stamped.module_json;
 			await this.syncStudyGeo(c, [stamped.layer]);
 		} catch {
 			// The on-screen view is unaffected; only persistence was lost.
@@ -997,10 +997,10 @@ export class Controller {
 	 * GeoJSON with provenance stamped (`synthetic`/`manual` for layouts), the
 	 * document powerio and tellegen both read back. */
 	downloadGeoLayer = async (c: LocalCase): Promise<void> => {
-		if (!c.networkJson) return;
+		if (!c.studyInputJson) return;
 		try {
 			downloadText(
-				await extractGeo(c.networkJson),
+				await extractGeo(c.studyInputJson),
 				`${this.caseFileStem(c)}.geo.json`,
 				'application/geo+json'
 			);
@@ -1020,19 +1020,19 @@ export class Controller {
 	 * wins on shared elements). The engine owns matching and the network becomes
 	 * the single owner of the coordinates: matched points land in
 	 * `Bus.location`, routes in `Branch.route`, and the refreshed
-	 * `network_json` replaces the case payload — so a saved package or export
+	 * `module_json` replaces the case IR — so a saved module or export
 	 * carries exactly what is on screen. A live Study is synced the same way.
 	 * Throws when a layer matches nothing. */
 	applyGeoLayers = async (c: LocalCase, layers: GeoLayerFile[]): Promise<void> => {
-		if (!c.networkJson || layers.length === 0) return;
+		if (!c.studyInputJson || layers.length === 0) return;
 		let payload: AppliedGeoCase | null = null;
-		let networkJson = c.networkJson;
+		let moduleJson = c.studyInputJson;
 		const warnings: string[] = [];
 		let routes = 0;
 		let unmatched = 0;
 		for (const l of layers) {
-			payload = await applyGeo(networkJson, l.layer);
-			networkJson = payload.network_json;
+			payload = await applyGeo(moduleJson, l.layer);
+			moduleJson = payload.module_json;
 			routes += payload.report.matched_branches;
 			unmatched += payload.report.unmatched_features;
 			warnings.push(
@@ -1063,7 +1063,7 @@ export class Controller {
 		placedFrom: string,
 		extraWarnings: string[]
 	) {
-		c.networkJson = payload.network_json;
+		c.studyInputJson = payload.module_json;
 		c.view = payload.view;
 		c.coordsKind = 'geofile';
 		c.syntheticCenter = undefined;
@@ -1121,10 +1121,10 @@ export class Controller {
 
 	applyGeoLayersToExisting = async (layers: GeoLayerFile[]) => {
 		const target =
-			(this.app.activeLocal?.networkJson ? this.app.activeLocal : null) ??
-			this.app.localCases.find((c) => c.coordsKind === 'synthetic_pending' && c.networkJson) ??
-			[...this.app.localCases].reverse().find((c) => c.networkJson);
-		if (!target?.networkJson) {
+			(this.app.activeLocal?.studyInputJson ? this.app.activeLocal : null) ??
+			this.app.localCases.find((c) => c.coordsKind === 'synthetic_pending' && c.studyInputJson) ??
+			[...this.app.localCases].reverse().find((c) => c.studyInputJson);
+		if (!target?.studyInputJson) {
 			this.app.error =
 				'drop a case file with the geographic file, or select a parsed local case first';
 			return;
@@ -1820,7 +1820,7 @@ export class Controller {
 			this.app.parsingFile = true;
 			try {
 				const bytes = new Uint8Array(await file.arrayBuffer());
-				const { network_json, module_json, topology, view, ...summary } = await ingestCase(
+				const { module_json, topology, view, ...summary } = await ingestCase(
 					bytes,
 					format
 				);
@@ -1838,7 +1838,6 @@ export class Controller {
 					label,
 					fileName: file.name,
 					summary,
-					networkJson: network_json,
 					studyInputJson: module_json,
 					topology,
 					coordsKind: summary.coords_kind,
@@ -1893,7 +1892,7 @@ export class Controller {
 		geoLayers: GeoLayerFile[],
 		displays: DisplayFile[]
 	): Promise<{ geoLayersConsumed: boolean; error: string | null }> => {
-		if (geoLayers.length > 0 && local.networkJson) {
+		if (geoLayers.length > 0 && local.studyInputJson) {
 			try {
 				await this.applyGeoLayers(local, geoLayers);
 				return { geoLayersConsumed: true, error: null };
@@ -1906,7 +1905,7 @@ export class Controller {
 				};
 			}
 		}
-		if (local.coordsKind === 'synthetic_pending' && local.networkJson) {
+		if (local.coordsKind === 'synthetic_pending' && local.studyInputJson) {
 			await this.fillFromDisplaySibling(local, displays);
 		}
 		return { geoLayersConsumed: false, error: null };
@@ -1918,10 +1917,10 @@ export class Controller {
 	 * The first display that joins wins; one that matches nothing stays
 	 * available as its own preview entry, and the case stays placeable. */
 	private fillFromDisplaySibling = async (c: LocalCase, displays: DisplayFile[]) => {
-		if (!c.networkJson) return;
+		if (!c.studyInputJson) return;
 		for (const d of displays.filter((entry) => !entry.consumed)) {
 			try {
-				const payload = await applyDisplayGeo(c.networkJson, d.bytes);
+				const payload = await applyDisplayGeo(c.studyInputJson, d.bytes);
 				this.adoptGeoPayload(
 					c,
 					payload,
@@ -1929,7 +1928,7 @@ export class Controller {
 					`${d.file.name} substations`,
 					payload.report.notes
 				);
-				await this.syncStudyGeo(c, [await extractGeo(payload.network_json)]);
+				await this.syncStudyGeo(c, [await extractGeo(payload.module_json)]);
 				d.consumed = true;
 				return;
 			} catch {
@@ -1956,7 +1955,7 @@ export class Controller {
 				this.app.error = `${file.name}: JSON markers name both transmission and distribution formats`;
 				return { outcome: 'failed' };
 			}
-			if (result.kind === 'model-json' || result.kind === 'transmission') {
+			if (result.kind === 'transmission') {
 				this.app.error = null;
 				return { outcome: 'balanced', payload: result.payload };
 			}
@@ -2097,7 +2096,7 @@ export class Controller {
 	/** Build a local case from a balanced PowerIO ingest payload without activating
 	 * it yet; co-dropped placement data is applied before the first solve. */
 	private localFromBalancedPayload = (fileName: string, payload: IngestedCase): LocalCase => {
-		const { network_json, module_json, topology, view, ...summary } = payload;
+		const { module_json, topology, view, ...summary } = payload;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
 		return new LocalCase({
@@ -2105,7 +2104,6 @@ export class Controller {
 			label,
 			fileName,
 			summary,
-			networkJson: network_json,
 			studyInputJson: module_json,
 			topology,
 			coordsKind: summary.coords_kind,
@@ -2138,7 +2136,7 @@ export class Controller {
 		try {
 			downloadText(
 				await study.saveModule(),
-				`${this.caseFileStem(c)}.powerio.json`,
+				`${this.caseFileStem(c)}.pio.json`,
 				'application/json'
 			);
 			this.app.error = null;
@@ -2158,7 +2156,7 @@ export class Controller {
 		try {
 			downloadText(
 				await study.saveSolutionModule(),
-				`${this.caseFileStem(c)}.solution.powerio.json`,
+				`${this.caseFileStem(c)}.solution.pio.json`,
 				'application/json'
 			);
 			this.app.error = null;

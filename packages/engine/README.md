@@ -29,15 +29,15 @@ const casePayload = await ingestCase(bytes, "raw");
 const jsonPayload = await ingestJsonDrop(bytes);
 ```
 
-Every solvable ingest payload includes `module_json`, a retained PowerIO
-module. Pass that value to `createStudy` or `solveModule`. `network_json` is a
-derived view used by display and geographic transforms; it is not a solver
-input or persistence format.
+Every solvable ingest payload includes `module_json`, a generation-2 PowerIO
+IR module. Pass that value to `createStudy`, `solveModule`, and geographic
+transforms. The engine does not expose a second network JSON boundary.
 
 `ingestJsonDrop(bytes)` classifies and parses JSON in one call. Its
-`IngestedJsonDrop` result is discriminated by `kind`: PowerIO modules and model
-JSON have a `null` format; transmission and distribution results carry the
-selected format; `ambiguous` and `unknown` results have a `null` payload.
+`IngestedJsonDrop` result is discriminated by `kind`: PowerIO modules have a
+`null` format; transmission and distribution results carry the selected
+format; `ambiguous` and `unknown` results have a `null` payload. Historical
+bare model JSON is now `unknown`; regenerate it as `pio-ir` from source data.
 
 Every API that accepts a byte buffer rejects inputs larger than
 `MAX_ENGINE_INPUT_BYTES` (128 MiB) before worker dispatch.

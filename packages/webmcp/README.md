@@ -36,8 +36,8 @@ while omitting raw input. A host can use them for visible agent activity and
 bounded result summaries without changing tool behavior.
 
 The adapter exposes case, network, sensitivity, and edit operations. Hosts keep
-PowerIO 1.0 `PioModule` values, typed state selection, and calculation
-instances behind that interface.
+PowerIO v0.11 generation-2 `pio-ir` modules, typed state selection, and
+calculation instances behind that interface.
 
 See the [WebMCP guide](https://eigenergy.github.io/tellegen/webmcp.html) for the
 tool contract, security model, and test workflow.

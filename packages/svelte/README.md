@@ -65,7 +65,8 @@ was removed; stored PowerIO documents report `kind === "module"`.
 `JsonDropKind` also includes `transmission`, `distribution`, `ambiguous`, and
 `unknown`; BMOPF and PMD are distribution `format` values rather than separate
 kinds. Every solvable ingest payload carries the retained module in
-`module_json`; the viewer never constructs a solver Study from `network_json`.
+`module_json`; the viewer uses that generation-2 IR for Study construction and
+geographic edits, with no second serialized network boundary.
 
 ## Release
 

@@ -1033,14 +1033,14 @@ mod tests {
         for generator in network.generators_mut() {
             generator.pmax = 40.0;
         }
-        let original = network.to_json().expect("network JSON");
+        let original = serde_json::to_string(&network).expect("network JSON");
         let instance = Arc::new(DcOpfInstance::from_network(network).expect("instance"));
         let error = plan_capacity(instance.clone(), &plan_spec())
             .err()
             .expect("an unservable baseline must not produce a proposal");
         assert!(error.to_ascii_lowercase().contains("infeasible"), "{error}");
         assert_eq!(
-            instance.network().to_json().expect("network JSON"),
+            serde_json::to_string(instance.network()).expect("network JSON"),
             original
         );
     }

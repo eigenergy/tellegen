@@ -12,16 +12,14 @@ export type EngineRequest =
   | { op: "classify_json"; bytes: Uint8Array }
   | { op: "ingest_json_drop"; bytes: Uint8Array }
   | { op: "ingest_case"; bytes: Uint8Array; format: string }
-  | { op: "ingest_model_json"; network_json: string }
-  | { op: "ingest_model_json_bytes"; bytes: Uint8Array }
   | { op: "ingest_dist_case"; text: string; format: string }
   | { op: "ingest_dist_case_bytes"; bytes: Uint8Array; format: string }
   | { op: "parse_display"; bytes: Uint8Array; format: string }
   | { op: "parse_geo"; bytes: Uint8Array; hint: string }
-  | { op: "apply_geo"; network_json: string; layer: string }
-  | { op: "apply_layout"; network_json: string; coords: string; kind: string }
-  | { op: "extract_geo"; network_json: string }
-  | { op: "apply_display_geo"; network_json: string; bytes: Uint8Array }
+  | { op: "apply_geo"; module_json: string; layer: string }
+  | { op: "apply_layout"; module_json: string; coords: string; kind: string }
+  | { op: "extract_geo"; module_json: string }
+  | { op: "apply_display_geo"; module_json: string; bytes: Uint8Array }
   | { op: "capabilities" }
   | { op: "solve_module"; module_json: string; request: string }
   | {
@@ -76,10 +74,6 @@ export function runRequest(
       return mod.ingest_json_drop(req.bytes);
     case "ingest_case":
       return mod.ingest_case(req.bytes, req.format);
-    case "ingest_model_json":
-      return mod.ingest_model_json(req.network_json);
-    case "ingest_model_json_bytes":
-      return mod.ingest_model_json_bytes(req.bytes);
     case "ingest_dist_case":
       return mod.ingest_dist_case(req.text, req.format);
     case "ingest_dist_case_bytes":
@@ -89,13 +83,13 @@ export function runRequest(
     case "parse_geo":
       return mod.parse_geo(req.bytes, req.hint);
     case "apply_geo":
-      return mod.apply_geo(req.network_json, req.layer);
+      return mod.apply_geo(req.module_json, req.layer);
     case "apply_layout":
-      return mod.apply_layout(req.network_json, req.coords, req.kind);
+      return mod.apply_layout(req.module_json, req.coords, req.kind);
     case "extract_geo":
-      return mod.extract_geo(req.network_json);
+      return mod.extract_geo(req.module_json);
     case "apply_display_geo":
-      return mod.apply_display_geo(req.network_json, req.bytes);
+      return mod.apply_display_geo(req.module_json, req.bytes);
     case "capabilities":
       return mod.capabilities_json();
     case "solve_module":

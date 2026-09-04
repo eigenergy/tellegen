@@ -24,19 +24,16 @@ documented default of ±60 degrees.
 
 ## Use
 
-`solve_module_json` accepts a stored `powerio.module/1` document and a
+`solve_module_json` accepts a generation-2 `pio-ir` document and a
 `SolveRequest`. A module holding a balanced network is promoted to the default
 problem instance for the requested formulation. A module holding a declared
 problem instance keeps its objective and active constraint selections.
 
 ```rust,ignore
-use powerio::IntoTypedModule;
-
-let parsed = powerio::parse_text("case.m", case_text, Some("matpower"))?;
-let module: powerio::PioModule<powerio::BalancedNetwork> =
-    parsed.into_typed()?;
-let module = module.map_value(powerio::PioValue::from);
-let module_json = powerio::stored::emit_module(&module)?;
+let source = powerio::Source::from_memory("case.m", case_text.as_bytes().to_vec())?;
+let parsed = powerio::parse(source)?;
+let module = tellegen::ir::balanced_module(parsed)?;
+let module_json = tellegen::ir::serialize_module(&module)?;
 let request = r#"{
     "formulation": "dcopf",
     "edits": { "deltas": { "2": 50.0 } },

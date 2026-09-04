@@ -43,6 +43,6 @@ multiple-versions = "warn"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# The reviewed PowerIO 1.0 candidate this branch exercises (eigenergy/powerio#454),
+# The reviewed PowerIO 0.11 preparation this branch exercises (eigenergy/powerio#482),
 # applied through [patch.crates-io]. Remove with the patch after the crates publish.
 allow-git = ["https://github.com/eigenergy/powerio"]

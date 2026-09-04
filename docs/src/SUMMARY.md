@@ -22,7 +22,7 @@
   - [Validation](validation.md)
   - [Benchmark Results](benchmark-results.md)
   - [References](references.md)
-- [PowerIO 0.10 Consumer Review](powerio-010-review.md)
+- [PowerIO 0.11 Consumer Review](powerio-011-review.md)
 - [HTTP API](http-api.md)
 - [Deployment](deployment.md)
 - [Privacy](privacy.md)

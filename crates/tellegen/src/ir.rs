@@ -58,8 +58,8 @@ mod tests {
         let text = serialize_module(&module).expect("serialize");
         let back = deserialize_module(&text).expect("deserialize");
         let back = balanced_module(back).expect("balanced");
-        assert_eq!(back.value.buses().len(), network.buses().len());
-        assert_eq!(back.value.branches().len(), network.branches().len());
+        assert_eq!(back.value().buses().len(), network.buses().len());
+        assert_eq!(back.value().branches().len(), network.branches().len());
     }
 
     #[test]

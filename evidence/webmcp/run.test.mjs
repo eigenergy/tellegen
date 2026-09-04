@@ -58,9 +58,9 @@ function validPlanResponse() {
       exact_solves: 4,
     },
     solution_module: {
-      schema: "powerio.module",
-      version: 1,
-      value: { kind: "dc_opf_solution" },
+      schema: "pio-ir",
+      version: 2,
+      value: { type: "powerio.DcOpfSolution" },
     },
   };
 }
@@ -262,11 +262,11 @@ test("the JSON Schemas parse and name the checked in contracts", async () => {
   assert.equal(specSchema.properties.schema.const, cats.schema);
   assert.equal(
     resultSchema.properties.schema.const,
-    "tellegen.webmcp-challenge-result/1",
+    "tellegen.webmcp-challenge-result/2",
   );
   assert.deepEqual(resultSchema.properties.status.enum, ["success", "failure"]);
   assert.deepEqual(resultSchema.properties.solution.properties.version, {
-    const: 1,
+    const: 2,
   });
 
   const releases = JSON.parse(
@@ -278,10 +278,10 @@ test("the JSON Schemas parse and name the checked in contracts", async () => {
 
 test("solution evidence is compact and independent of object key order", () => {
   const first = {
-    schema: "powerio.module",
-    version: 1,
+    schema: "pio-ir",
+    version: 2,
     value: {
-      kind: "dc_opf_solution",
+      type: "powerio.DcOpfSolution",
       data: {
         termination: { kind: "converged" },
         objective: 90,
@@ -296,10 +296,10 @@ test("solution evidence is compact and independent of object key order", () => {
         objective: 90,
         termination: { kind: "converged" },
       },
-      kind: "dc_opf_solution",
+      type: "powerio.DcOpfSolution",
     },
-    version: 1,
-    schema: "powerio.module",
+    version: 2,
+    schema: "pio-ir",
   };
   assert.deepEqual(
     summarizeSolutionModule(first),
@@ -320,7 +320,7 @@ test("PowerIO provenance accepts one exact Git revision", () => {
   const revision = "a".repeat(40);
   const packages = powerioNames.map((name) => ({
     name,
-    version: "1.0.0",
+    version: "0.11.0",
     source: `git+https://github.com/eigenergy/powerio.git?rev=${revision}#${revision}`,
     checksum: null,
   }));
@@ -337,16 +337,16 @@ test("PowerIO provenance ties a checksummed registry release to its commit", () 
   const revision = "b".repeat(40);
   const packages = powerioNames.map((name, index) => ({
     name,
-    version: "1.0.0",
+    version: "0.11.0",
     source: "registry+https://github.com/rust-lang/crates.io-index",
     checksum: index.toString(16).repeat(64),
   }));
   const resolved = resolvePowerioProvenance(packages, {
     schema: "tellegen.powerio-release-revisions/1",
-    releases: [{ version: "1.0.0", tag: "v1.0.0", revision }],
+    releases: [{ version: "0.11.0", tag: "v0.11.0", revision }],
   });
   assert.equal(resolved.powerio_revision, revision);
-  assert.equal(resolved.powerio_release_tag, "v1.0.0");
+  assert.equal(resolved.powerio_release_tag, "v0.11.0");
   assert.equal(
     Object.keys(resolved.powerio_lock_checksums).length,
     powerioNames.length,

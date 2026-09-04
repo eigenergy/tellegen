@@ -53,7 +53,6 @@ export interface LocalCaseInit {
 	label: string;
 	fileName: string;
 	summary?: CaseFileSummary | null;
-	networkJson?: string;
 	/** Retained PowerIO module used to construct solver studies. */
 	studyInputJson?: string;
 	topology?: Topology;
@@ -74,8 +73,7 @@ export class LocalCase {
 	readonly fileName: string;
 	/** Case stats; null for a .pwd display only entry. */
 	summary = $state.raw<CaseFileSummary | null>(null);
-	/** Materialized balanced network JSON used only for display and geographic edits. */
-	networkJson = $state.raw<string | undefined>(undefined);
+	/** Generation 2 PowerIO IR used for display edits and solver studies. */
 	studyInputJson = $state.raw<string | undefined>(undefined);
 	/** Topology for synthetic placement when the file has no coordinates. */
 	topology = $state.raw<Topology | undefined>(undefined);
@@ -115,7 +113,6 @@ export class LocalCase {
 		this.label = init.label;
 		this.fileName = init.fileName;
 		this.summary = init.summary ?? null;
-		this.networkJson = init.networkJson;
 		this.studyInputJson = init.studyInputJson;
 		this.topology = init.topology;
 		this.coordsKind = init.coordsKind;

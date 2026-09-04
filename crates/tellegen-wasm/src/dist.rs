@@ -45,11 +45,11 @@ pub(crate) fn ingest_dist_bytes_value(
     let source = powerio::Source::from_memory("<case>", bytes.to_vec())
         .map_err(|e| e.to_string())?
         .with_format(format);
-    let module = powerio::parse(source, None).map_err(|e| e.to_string())?;
-    let Some(network) = multiconductor_network(&module.value) else {
+    let module = powerio::parse(source).map_err(|e| e.to_string())?;
+    let Some(network) = multiconductor_network(module.value()) else {
         return Err(format!(
             "parsed a {} value, expected a multiconductor network or calculation",
-            module.value.type_name()
+            module.value().type_name()
         ));
     };
     ingest_dist_value(network, &module.diagnostics)
@@ -75,10 +75,10 @@ pub fn ingest_dist_module_bytes(bytes: &[u8]) -> Result<String, String> {
 pub(crate) fn ingest_dist_module_value(
     module: PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
-    let Some(network) = multiconductor_network(&module.value) else {
+    let Some(network) = multiconductor_network(module.value()) else {
         return Err(format!(
             "stored module holds {}, expected a multiconductor network or calculation",
-            module.value.type_name()
+            module.value().type_name()
         ));
     };
     ingest_dist_value(network, &module.diagnostics)

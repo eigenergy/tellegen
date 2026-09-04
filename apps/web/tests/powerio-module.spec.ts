@@ -19,33 +19,33 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 	const downloadPromise = page.waitForEvent('download');
 	await page.getByRole('button', { name: /save PowerIO module/i }).click();
 	const download = await downloadPromise;
-	expect(download.suggestedFilename()).toMatch(/\.powerio\.json$/);
+	expect(download.suggestedFilename()).toMatch(/\.pio\.json$/);
 	const text = readFileSync(await download.path(), 'utf8');
 	const saved = JSON.parse(text) as { schema?: unknown; version?: unknown; value?: unknown };
-	expect(saved.schema).toBe('powerio.module');
-	expect(saved.version).toBe(1);
+	expect(saved.schema).toBe('pio-ir');
+	expect(saved.version).toBe(2);
 	expect(saved.value).toBeTruthy();
 	expect(text).not.toContain('tellegen.study');
 
 	const solutionDownloadPromise = page.waitForEvent('download');
 	await page.getByRole('button', { name: /save exact solution/i }).click();
 	const solutionDownload = await solutionDownloadPromise;
-	expect(solutionDownload.suggestedFilename()).toMatch(/\.solution\.powerio\.json$/);
+	expect(solutionDownload.suggestedFilename()).toMatch(/\.solution\.pio\.json$/);
 	const solutionText = readFileSync(await solutionDownload.path(), 'utf8');
 	const exact = JSON.parse(solutionText) as {
 		schema?: unknown;
 		version?: unknown;
-		value?: { kind?: unknown; data?: { instance?: { network?: unknown } } };
+		value?: { type?: unknown; data?: { instance?: { network?: unknown } } };
 	};
-	expect(exact.schema).toBe('powerio.module');
-	expect(exact.version).toBe(1);
-	expect(exact.value?.kind).toBe('dc_opf_solution');
+	expect(exact.schema).toBe('pio-ir');
+	expect(exact.version).toBe(2);
+	expect(exact.value?.type).toBe('powerio.DcOpfSolution');
 	expect(exact.value?.data?.instance?.network).toBeTruthy();
 
 	await page
 		.locator('input[type="file"]')
 		.setInputFiles([
-			{ name: 'saved.powerio.json', mimeType: 'application/json', buffer: Buffer.from(text) }
+			{ name: 'saved.pio.json', mimeType: 'application/json', buffer: Buffer.from(text) }
 		]);
 	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
 	await expect(page.locator('p.error')).toHaveCount(0);

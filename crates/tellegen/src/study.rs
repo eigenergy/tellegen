@@ -373,7 +373,7 @@ impl Study {
         module: PioModule<BalancedNetwork>,
         formulation: Problem,
     ) -> Result<Self, String> {
-        let net = module.value.clone();
+        let net = module.value().clone();
         let dynamic = module.map_value(PioValue::BalancedNetwork);
         let module_json = crate::ir::serialize_module(&dynamic).map_err(|e| e.to_string())?;
         Self::from_network_and_module(&net, StudyInput::BalancedNetwork, formulation, module_json)
@@ -721,7 +721,7 @@ impl Study {
     }
 
     /// Serialize the current operating point as a stored PowerIO module — the
-    /// `powerio.module` document every PowerIO reader understands, with no
+    /// generation 2 `pio-ir` document every PowerIO 0.11 reader understands, with no
     /// tellegen format around it. The value is the materialized balanced
     /// network; each committed edit rides along as one descriptive `Edit`
     /// history entry created by the internal `history::edit_entry` helper.
@@ -792,23 +792,11 @@ impl Study {
         Ok(module)
     }
 
-    /// Export the committed operating point to `format` (`matpower`, `psse`,
-    /// `model-json`, ...). The returned diagnostics belong to this output
+    /// Export the committed operating point to a grid exchange `format`
+    /// (`matpower`, `psse`, ...). The returned diagnostics belong to this output
     /// operation. Parse diagnostics remain on the retained PowerIO module.
     pub fn export(&self, format: &str) -> Result<ExportedCase, String> {
         let balanced = self.materialized_network()?;
-        if format.eq_ignore_ascii_case("model-json") {
-            let (text, diagnostics) = balanced
-                .to_json_with_diagnostics()
-                .map_err(|e| e.to_string())?;
-            return Ok(ExportedCase {
-                text,
-                diagnostics,
-                format: "model-json".to_owned(),
-                extension: "json".to_owned(),
-            });
-        }
-
         let module = self.retained_module(PioValue::BalancedNetwork(balanced))?;
         let format_info = powerio::resolve_format(format);
         let destination_name = format_info.and_then(|info| info.extension).map_or_else(
@@ -1241,7 +1229,7 @@ mod tests {
     }
 
     fn case3_network_json() -> String {
-        case3_network().to_json().expect("to_json")
+        serde_json::to_string(&case3_network()).expect("network JSON")
     }
 
     fn case3_json() -> String {
@@ -2013,9 +2001,8 @@ mod tests {
         assert!(!error.is_empty());
     }
 
-    fn dcopf_objective(network_json: &str) -> f64 {
-        let network = BalancedNetwork::from_json(network_json).expect("network JSON");
-        let module = module_json(network);
+    fn dcopf_objective(network: &BalancedNetwork) -> f64 {
+        let module = module_json(network.clone());
         let out = crate::solve_module_json(&module, r#"{"formulation":"dcopf"}"#).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         v["objective"].as_f64().unwrap()
@@ -2043,7 +2030,8 @@ mod tests {
 
         let text = s.save_module().unwrap();
         let value: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(value["schema"], "powerio.module");
+        assert_eq!(value["schema"], "pio-ir");
+        assert_eq!(value["version"], 2);
         assert_eq!(value["value"]["type"], "powerio.BalancedNetwork");
         assert_eq!(value["producer"]["name"], "powerio");
         let history = value["history"].as_array().unwrap();
@@ -2220,25 +2208,28 @@ mod tests {
         .unwrap();
         let committed = s.solution().objective.unwrap();
 
-        // The exact snapshot format re-solves to the identical objective.
-        let pio = s.export("model-json").unwrap();
-        assert!((dcopf_objective(&pio.text) - committed).abs() < 1e-9);
+        // Generation-2 PowerIO IR is the exact snapshot and re-solves to the
+        // identical objective.
+        let pio = s.save_module().unwrap();
+        let restored = Study::new(&pio, Problem::DcOpf).unwrap();
+        assert!((restored.solution().objective.unwrap() - committed).abs() < 1e-9);
 
         // MATPOWER reparses to the same materialized model (to writer precision).
         let m = s.export("matpower").unwrap();
         assert_eq!(m.extension, "m");
-        let reparsed = crate::model::parse_matpower(&m.text)
-            .unwrap()
-            .to_json()
-            .unwrap();
+        let reparsed = crate::model::parse_matpower(&m.text).unwrap();
         assert!((dcopf_objective(&reparsed) - committed).abs() < 1e-3);
     }
 
     #[test]
     fn export_with_no_commits_writes_the_base_case() {
         let s = Study::new(&case3_json(), Problem::DcOpf).unwrap();
-        let base = s.export("model-json").unwrap();
-        assert!((dcopf_objective(&base.text) - s.solution().objective.unwrap()).abs() < 1e-9);
+        let base = s.save_module().unwrap();
+        let restored = Study::new(&base, Problem::DcOpf).unwrap();
+        assert!(
+            (restored.solution().objective.unwrap() - s.solution().objective.unwrap()).abs()
+                < 1e-9
+        );
     }
 
     /// A dropped case names its own buses, and tellegen writes those names into
@@ -2251,7 +2242,7 @@ mod tests {
         let mut net: Value = serde_json::from_str(&case3_network_json()).unwrap();
         net["buses"].as_array_mut().unwrap()[1]["name"] =
             serde_json::json!("A\n 999,'B',1,1,1,1,1,1.0,0.0,1.0,1.0,1.1,0.9");
-        let network = BalancedNetwork::from_json(&net.to_string()).unwrap();
+        let network: BalancedNetwork = serde_json::from_value(net).unwrap();
         let s = Study::new(&module_json(network), Problem::DcOpf).unwrap();
 
         for format in ["matpower", "psse", "pslf", "powerworld"] {
@@ -2287,7 +2278,6 @@ mod tests {
         let value: Value = serde_json::from_str(&s.save_module().unwrap()).unwrap();
         assert_eq!(value["value"]["type"], "powerio.BalancedNetwork");
         assert_eq!(value["history"].as_array().unwrap().len(), 1);
-        let exported = s.export("model-json").unwrap();
-        assert!(!exported.text.is_empty());
+        assert!(!s.save_module().unwrap().is_empty());
     }
 }

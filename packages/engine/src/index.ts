@@ -121,8 +121,7 @@ export interface Topology {
 /** One parse per dropped file: summary stats, plus map geometry when the
  * file carries coordinates and topology for synthetic placement otherwise. */
 export interface IngestedCase extends CaseFileSummary {
-  network_json: string;
-  /** Retained PowerIO module used for every solver Study construction. */
+  /** Generation 2 PowerIO IR used for display edits and every solver Study. */
   module_json: string;
   topology: Topology;
   view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
@@ -284,7 +283,6 @@ export async function preloadEngine(): Promise<void> {
 
 export type JsonDropKind =
   | "module"
-  | "model-json"
   | "transmission"
   | "distribution"
   | "ambiguous"
@@ -300,13 +298,12 @@ export interface JsonDropClassification {
  * same typed payload returned by its dedicated ingest API. */
 export type IngestedJsonDrop =
   | {
-      /** A stored `powerio.module/1` document; the payload family follows the
+      /** A generation 2 `pio-ir` document; the payload family follows the
        * network family carried by the module value. */
       kind: "module";
       format: null;
       payload: IngestedCase | IngestedDistCase;
     }
-  | { kind: "model-json"; format: null; payload: IngestedCase }
   | { kind: "transmission"; format: string; payload: IngestedCase }
   | { kind: "distribution"; format: string; payload: IngestedDistCase }
   | { kind: "ambiguous" | "unknown"; format: null; payload: null };
@@ -366,35 +363,6 @@ export async function ingestCase(
   assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(await engineHost().call({ op: "ingest_case", bytes, format })),
-  );
-}
-
-/** Parse powerio's own model JSON (the `model-json` export, or the payload a
- * package carries) for viewing. It is not a case format, so it does not go
- * through `ingestCase`. */
-export async function ingestModelJson(
-  networkJson: string,
-): Promise<IngestedCase> {
-  assertEngineInputLength(networkJson.length);
-  return JSON.parse(
-    expectText(
-      await engineHost().call({
-        op: "ingest_model_json",
-        network_json: networkJson,
-      }),
-    ),
-  );
-}
-
-/** Byte entry point for a dropped model JSON document. */
-export async function ingestModelJsonBytes(
-  bytes: Uint8Array,
-): Promise<IngestedCase> {
-  assertEngineInputBytes(bytes);
-  return JSON.parse(
-    expectText(
-      await engineHost().call({ op: "ingest_model_json_bytes", bytes }),
-    ),
   );
 }
 
@@ -477,7 +445,7 @@ export interface GeoApplyReport {
   notes: string[];
 }
 
-/** The refreshed ingest payload after a geo apply: `network_json`, the view,
+/** The refreshed ingest payload after a geo apply: `module_json`, the view,
  * and the summary all reflect the applied coordinates, and `report` carries
  * the matched/unmatched counts for the warnings panel. */
 export interface AppliedGeoCase extends IngestedCase {
@@ -509,14 +477,15 @@ export async function parseGeo(
  * name, and the unordered branch endpoint pair). Rejects when nothing
  * matched. */
 export async function applyGeo(
-  networkJson: string,
+  moduleJson: string,
   layer: string,
 ): Promise<AppliedGeoCase> {
+  assertEngineInputLength(moduleJson.length);
   return JSON.parse(
     expectText(
       await engineHost().call({
         op: "apply_geo",
-        network_json: networkJson,
+        module_json: moduleJson,
         layer,
       }),
     ),
@@ -526,15 +495,16 @@ export async function applyGeo(
 /** Stamp a computed layout (bus id => [lon, lat]) onto a case network with
  * its provenance, so saves and exports carry it. */
 export async function applyLayout(
-  networkJson: string,
+  moduleJson: string,
   coords: Record<number, [number, number]>,
   kind: "synthetic" | "manual",
 ): Promise<StampedLayoutCase> {
+  assertEngineInputLength(moduleJson.length);
   return JSON.parse(
     expectText(
       await engineHost().call({
         op: "apply_layout",
-        network_json: networkJson,
+        module_json: moduleJson,
         coords: JSON.stringify(coords),
         kind,
       }),
@@ -544,9 +514,10 @@ export async function applyLayout(
 
 /** A case's coordinates as a canonical `.geo.json` document. Rejects when the
  * case carries none. */
-export async function extractGeo(networkJson: string): Promise<string> {
+export async function extractGeo(moduleJson: string): Promise<string> {
+  assertEngineInputLength(moduleJson.length);
   return expectText(
-    await engineHost().call({ op: "extract_geo", network_json: networkJson }),
+    await engineHost().call({ op: "extract_geo", module_json: moduleJson }),
   );
 }
 
@@ -554,15 +525,16 @@ export async function extractGeo(networkJson: string): Promise<string> {
  * project to approximate longitude/latitude and join onto buses through the
  * `SubNum` extras key. Rejects when no bus joined. */
 export async function applyDisplayGeo(
-  networkJson: string,
+  moduleJson: string,
   bytes: Uint8Array,
 ): Promise<AppliedGeoCase> {
+  assertEngineInputLength(moduleJson.length);
   assertEngineInputBytes(bytes);
   return JSON.parse(
     expectText(
       await engineHost().call({
         op: "apply_display_geo",
-        network_json: networkJson,
+        module_json: moduleJson,
         bytes,
       }),
     ),
@@ -971,7 +943,7 @@ export class BrowserStudy {
     return solveResponseToSolution(await this.#solution());
   }
 
-  /** Materialize the current case as a retained `powerio.module/1` document. */
+  /** Materialize the current case as generation 2 PowerIO IR. */
   async saveModule(): Promise<string> {
     return expectText(
       await this.#host.call({ op: "study_save_module", study: this.#handle }),
@@ -1136,8 +1108,6 @@ export interface EngineTransport {
   classifyJson(bytes: Uint8Array): Promise<JsonDropClassification>;
   ingestJsonDrop(bytes: Uint8Array): Promise<IngestedJsonDrop>;
   ingestCase(bytes: Uint8Array, format: string): Promise<IngestedCase>;
-  ingestModelJson(networkJson: string): Promise<IngestedCase>;
-  ingestModelJsonBytes(bytes: Uint8Array): Promise<IngestedCase>;
   ingestDistCase(text: string, format: string): Promise<IngestedDistCase>;
   ingestDistCaseBytes(
     bytes: Uint8Array,
@@ -1145,15 +1115,15 @@ export interface EngineTransport {
   ): Promise<IngestedDistCase>;
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   parseGeo(bytes: Uint8Array, hint: string): Promise<ParsedGeoLayer>;
-  applyGeo(networkJson: string, layer: string): Promise<AppliedGeoCase>;
+  applyGeo(moduleJson: string, layer: string): Promise<AppliedGeoCase>;
   applyLayout(
-    networkJson: string,
+    moduleJson: string,
     coords: Record<number, [number, number]>,
     kind: "synthetic" | "manual",
   ): Promise<StampedLayoutCase>;
-  extractGeo(networkJson: string): Promise<string>;
+  extractGeo(moduleJson: string): Promise<string>;
   applyDisplayGeo(
-    networkJson: string,
+    moduleJson: string,
     bytes: Uint8Array,
   ): Promise<AppliedGeoCase>;
   capabilities(): Promise<ProblemCaps[]>;
@@ -1173,8 +1143,6 @@ export const browserWasmTransport: EngineTransport = {
   classifyJson,
   ingestJsonDrop,
   ingestCase,
-  ingestModelJson,
-  ingestModelJsonBytes,
   ingestDistCase,
   ingestDistCaseBytes,
   parseDisplay,

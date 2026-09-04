@@ -7,7 +7,6 @@ import {
   ingestCase,
   ingestDistCaseBytes,
   ingestJsonDrop,
-  ingestModelJsonBytes,
   parseDisplay,
   parseGeo,
 } from "../src/index.js";
@@ -29,7 +28,6 @@ describe("engine byte input limit", () => {
     ["classifyJson", () => classifyJson(oversized)],
     ["ingestJsonDrop", () => ingestJsonDrop(oversized)],
     ["ingestCase", () => ingestCase(oversized, "m")],
-    ["ingestModelJsonBytes", () => ingestModelJsonBytes(oversized)],
     ["ingestDistCaseBytes", () => ingestDistCaseBytes(oversized, "dss")],
     ["parseDisplay", () => parseDisplay(oversized)],
     ["parseGeo", () => parseGeo(oversized, "coords.csv")],

@@ -11,7 +11,7 @@
 //! ```
 //!
 //! `solve-module` and `plan` are the headless MCP boundary: a stored
-//! `powerio.module/1` document on stdin, and a stored
+//! generation 2 `pio-ir` document on stdin, and a stored
 //! DC OPF solution module — nodal values and thermal multipliers attached —
 //! or a capacity proposal and its exact proposed solution on stdout. A module holding a
 //! typed `dc_opf_instance` is consumed natively; a balanced network becomes
@@ -118,7 +118,7 @@ fn producer_string() -> String {
 
 fn instance_from_module_json(text: &str) -> Result<PioModule<DcOpfInstance>, String> {
     let module = deserialize_module(text)?;
-    match &module.value {
+    match module.value() {
         PioValue::DcOpfInstance(_) => module.try_map_value(|value| match value {
             PioValue::DcOpfInstance(instance) => Ok(instance),
             other => Err(other.type_name().to_owned()),
@@ -157,7 +157,7 @@ fn solve_module() -> Result<String, String> {
 /// its DC OPF instance or materialize the default instance for a network.
 fn solve_module_text(text: &str) -> Result<String, String> {
     let source_module = instance_from_module_json(text)?;
-    let instance = Arc::new(source_module.value.clone());
+    let instance = Arc::new(source_module.value().clone());
     let solution = tellegen::solve_dc_opf_instance(instance, producer_string())?;
     solution_module_json(source_module, solution)
 }
@@ -199,7 +199,7 @@ fn plan_from_stdin() -> Result<String, String> {
 fn plan_from_text(text: &str) -> Result<String, String> {
     let (module_json, spec) = parse_plan_request(text)?;
     let source_module = instance_from_module_json(&module_json)?;
-    let instance = Arc::new(source_module.value.clone());
+    let instance = Arc::new(source_module.value().clone());
     let execution = tellegen::plan::plan_capacity(instance, &spec)?;
     let (outcome, solution) = execution.into_solution(producer_string())?;
     let solution_module = solution_module_json(source_module, solution)?;
@@ -271,7 +271,10 @@ mpc.gencost = [
     fn test_module_json() -> String {
         let source = powerio::Source::from_memory("case2_cli.m", TEST_CASE.as_bytes().to_vec())
             .expect("case source");
-        let module = powerio::parse(source, Some("matpower")).expect("parse case");
+        let options = powerio::ParseOptions::default()
+            .format("matpower")
+            .expect("MATPOWER format");
+        let module = powerio::parse_with_options(source, &options).expect("parse case");
         serialize_module(&module).expect("emit test module")
     }
 
@@ -355,7 +358,7 @@ mpc.gencost = [
         assert_eq!(
             deserialize_module(&plan_module_json)
                 .expect("read plan solution")
-                .value
+                .value()
                 .type_name(),
             "powerio.DcOpfSolution"
         );
@@ -367,7 +370,7 @@ mpc.gencost = [
         assert_eq!(
             deserialize_module(&solve_module_json)
                 .expect("read solve solution")
-                .value
+                .value()
                 .type_name(),
             "powerio.DcOpfSolution"
         );

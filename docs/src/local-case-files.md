@@ -9,14 +9,15 @@ describe balanced network topology; OpenDSS `.dss` opens the multiconductor
 viewer. If a balanced case includes complete coordinates, tellegen draws it
 directly. Otherwise it creates a local synthetic layout and asks the user to
 place it on the map. PowerIO classifies dropped JSON by content. A stored
-`powerio.module` document opens by its value kind: a balanced network or DC
-OPF instance becomes a case, while supported multiconductor networks,
+generation-2 `pio-ir` document opens by its value type: a balanced network or
+DC OPF instance becomes a case, while supported multiconductor networks,
 instances, and solutions open in the viewer. AC PF and AC OPF instance modules
-remain unopened until the browser exposes those formulation choices. Model
-and transmission JSON open as balanced cases, and BMOPF or
-PowerModelsDistribution documents open the multiconductor viewer. Tellegen
-does not define a separate saved case format. Unrecognized JSON falls through
-to the geographic reader.
+remain unopened until the browser exposes those formulation choices.
+Transmission exchange JSON opens as a balanced case, and BMOPF or
+PowerModelsDistribution documents open the multiconductor viewer. The retired
+bare model-JSON shape is unrecognized; regenerate it from source data as
+`pio-ir`. Tellegen does not define a separate saved case format. Other
+unrecognized JSON falls through to the geographic reader.
 
 After a parsed local case has coordinates, either from the file, a geographic
 file, or manual placement, tellegen solves the selected formulation in browser

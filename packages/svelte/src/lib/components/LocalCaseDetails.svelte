@@ -7,16 +7,14 @@
 	const app = getAppState();
 	const ctrl = getController();
 
-	// Export tokens the committed state writes to; labels carry their extensions.
-	// `model-json` is powerio's own model document, not a case format.
+	// Grid exchange formats the committed state can export.
 	const EXPORT_FORMATS = [
 		{ token: 'matpower', label: 'MATPOWER (.m)' },
 		{ token: 'psse', label: 'PSS/E (.raw)' },
 		{ token: 'powerworld', label: 'PowerWorld (.aux)' },
 		{ token: 'pslf', label: 'PSLF (.epc)' },
 		{ token: 'powermodels-json', label: 'PowerModels (.json)' },
-		{ token: 'pandapower-json', label: 'pandapower (.json)' },
-		{ token: 'model-json', label: 'PowerIO model (.json)' }
+		{ token: 'pandapower-json', label: 'pandapower (.json)' }
 	];
 
 	let busy = $state(false);
@@ -149,7 +147,7 @@
 			</ul>
 		{/if}
 		<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
-		{#if lc.networkJson}
+		{#if lc.studyInputJson}
 			<div class="case-actions">
 				<button class="reset mono" disabled={busy} onclick={() => saveCase(lc)}>
 					save PowerIO module (.json)

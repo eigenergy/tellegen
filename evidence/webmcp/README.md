@@ -5,7 +5,7 @@ Texas7k. The runner parses each named MATPOWER file through PowerIO, adds its
 SHA256 digest to the retained source descriptor, runs `tellegen plan`, checks
 the solve accounting, and writes one JSON artifact. A successful artifact
 contains the request, exact baseline and proposed summaries, every trial, and
-the final PowerIO solution module's kind, termination, objective, and canonical
+the final PowerIO solution module's type, termination, objective, and canonical
 JSON digest. The runner validates the complete module before reducing it to
 this compact record.
 
@@ -19,12 +19,18 @@ node evidence/webmcp/run.mjs evidence/webmcp/specs/texas7k.json evidence/webmcp/
 The runner refuses tracked or untracked changes other than earlier generated
 JSON files in `results/`. It records the Tellegen commit and tree, the PowerIO
 commit, the lockfile digest, the invocation spec digest, and the source digest.
-Before PowerIO 1.0.0 is published, the common Git dependency supplies the exact
-reviewed candidate commit. After publication, every component crate must
+Before PowerIO v0.11.0 is published, the common Git dependency supplies the
+exact #482 merge commit. After publication, every component crate must
 resolve to one registry version with a Cargo.lock checksum, and
 `powerio-releases.json` must map that release tag to its commit. The runner
 creates outputs with exclusive writes, so a second run cannot replace evidence
 silently.
+
+The checked-in CATS, Texas7k, and native-browser result files use the historical
+generation-1 contract and identify their old PowerIO revision in `software`.
+They remain audit records, not evidence for the v0.11 pin. A clean rerun writes
+the generation-2 result contract and must replace them before they are cited as
+current.
 
 `--allow-dirty` exists for local harness debugging and always marks the
 artifact `reproducible: false`; do not check in such an artifact. Without that

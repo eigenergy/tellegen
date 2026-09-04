@@ -13,7 +13,7 @@ Each result records:
 - the complete `CapacityPlanSpec` request;
 - for success, the exact baseline and proposed summaries, every accepted and
   rejected trial, plus the kind, termination, objective, and canonical JSON
-  digest of the final `powerio.module/1` solution on the amended instance.
+  digest of the final generation-2 `pio-ir` solution on the amended instance.
 
 A spec can name one enumerated preparation failure. A matching clean run
 records a typed error, its preparation stage, and zero completed exact solves.

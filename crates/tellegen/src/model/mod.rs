@@ -87,7 +87,7 @@ impl PiecewiseCost {
 pub(crate) fn parse_matpower(text: &str) -> Result<powerio::BalancedNetwork, String> {
     let source = powerio::Source::from_memory("case.m", text.as_bytes().to_vec())
         .map_err(|e| e.to_string())?;
-    let module = powerio::parse(source, None).map_err(|e| e.to_string())?;
+    let module = powerio::parse(source).map_err(|e| e.to_string())?;
     Ok(crate::ir::balanced_module(module)?.into_value())
 }
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tellegen.dev/schema/webmcp-challenge-result-1.json",
+  "$id": "https://tellegen.dev/schema/webmcp-challenge-result-2.json",
   "title": "Tellegen WebMCP challenge result",
   "type": "object",
   "additionalProperties": false,
@@ -32,7 +32,7 @@
     }
   ],
   "properties": {
-    "schema": { "const": "tellegen.webmcp-challenge-result/1" },
+    "schema": { "const": "tellegen.webmcp-challenge-result/2" },
     "case_id": { "type": "string" },
     "reproducible": { "type": "boolean" },
     "invocation": { "type": "string" },
@@ -111,15 +111,15 @@
       "required": [
         "schema",
         "version",
-        "kind",
+        "type",
         "termination",
         "declared_objective",
         "canonical_json_sha256"
       ],
       "properties": {
-        "schema": { "const": "powerio.module" },
-        "version": { "const": 1 },
-        "kind": { "const": "dc_opf_solution" },
+        "schema": { "const": "pio-ir" },
+        "version": { "const": 2 },
+        "type": { "const": "powerio.DcOpfSolution" },
         "termination": {
           "type": "object",
           "additionalProperties": false,

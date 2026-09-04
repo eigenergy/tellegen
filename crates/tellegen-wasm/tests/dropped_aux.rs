@@ -31,10 +31,10 @@ fn dropped_aux_parses_solves_and_differentiates() {
     //    +page.svelte rejects an aux with no branches or generators.
     let source = powerio::Source::from_memory("ACTIVSg500.aux", text.clone().into_bytes())
         .expect("aux source");
-    let module = powerio::parse(source, None).expect("parse ACTIVSg500.aux");
+    let module = powerio::parse(source).expect("parse ACTIVSg500.aux");
     let module: powerio::PioModule<powerio::BalancedNetwork> =
         tellegen::ir::balanced_module(module).expect("aux parses to a balanced network");
-    let mut net = module.value.clone();
+    let mut net = module.value().clone();
     let report = apply_aux_substation_locations(&mut net, &text)
         .expect("materialize aux substation locations");
     assert!(report.matched_buses > 0, "aux joined no bus locations");
@@ -67,7 +67,7 @@ fn dropped_aux_parses_solves_and_differentiates() {
     let stored = tellegen::ir::deserialize_module(&module_json).expect("read materialized module");
     let stored: powerio::PioModule<powerio::BalancedNetwork> =
         tellegen::ir::balanced_module(stored).expect("stored balanced network");
-    assert_eq!(stored.value.buses()[0].location, net.buses()[0].location);
+    assert_eq!(stored.value().buses()[0].location, net.buses()[0].location);
 
     // 3. Base solve. This case states no generator costs, so PowerIO declares
     //    a feasibility objective and Tellegen does not label its balance duals

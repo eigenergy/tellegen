@@ -47,7 +47,7 @@ describe("isolated study cancellation", () => {
     const sharedCancel = vi.fn(() => true);
     const sharedCall = vi.fn<EngineHost["call"]>((request) => {
       if (request.op === "study_save_module") {
-        return Promise.resolve('{"contract":"powerio.module/1"}');
+        return Promise.resolve('{"schema":"pio-ir","version":2}');
       }
       if (request.op === "study_solution") {
         return Promise.resolve(

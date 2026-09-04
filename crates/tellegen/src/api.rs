@@ -417,7 +417,7 @@ pub(crate) fn solve_test_network_json(
     network_json: &str,
     request_json: &str,
 ) -> Result<String, String> {
-    let net = BalancedNetwork::from_json(network_json).map_err(|e| e.to_string())?;
+    let net: BalancedNetwork = serde_json::from_str(network_json).map_err(|e| e.to_string())?;
     let req: SolveRequest = if request_json.trim().is_empty() {
         SolveRequest::default()
     } else {
@@ -1405,10 +1405,8 @@ mod tests {
     use serde_json::Value;
 
     fn case3_json() -> String {
-        crate::model::parse_matpower(CASE3)
-            .expect("parse")
-            .to_json()
-            .expect("to_json")
+        serde_json::to_string(&crate::model::parse_matpower(CASE3).expect("parse"))
+            .expect("network JSON")
     }
 
     fn case3_module_json() -> String {
@@ -1433,7 +1431,7 @@ mod tests {
         let mut net = crate::model::parse_matpower(CASE3).expect("parse");
         net.branches_mut()[0].in_service = false;
         net.generators_mut()[0].in_service = false;
-        net.to_json().expect("to_json")
+        serde_json::to_string(&net).expect("network JSON")
     }
 
     #[test]
@@ -1580,7 +1578,7 @@ mod tests {
         for (i, br) in net.branches_mut().iter_mut().enumerate() {
             br.uid = Some(format!("branches:{i}"));
         }
-        net.to_json().expect("to_json")
+        serde_json::to_string(&net).expect("network JSON")
     }
 
     #[test]

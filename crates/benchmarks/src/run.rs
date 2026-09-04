@@ -41,7 +41,10 @@ pub struct Config {
 fn parse_matpower(text: &str, name: &str) -> Result<PioModule<BalancedNetwork>, String> {
     let source =
         powerio::Source::from_memory(name, text.as_bytes().to_vec()).map_err(|e| e.to_string())?;
-    let module = powerio::parse(source, Some("matpower")).map_err(|e| e.to_string())?;
+    let options = powerio::ParseOptions::default()
+        .format("matpower")
+        .map_err(|e| e.to_string())?;
+    let module = powerio::parse_with_options(source, &options).map_err(|e| e.to_string())?;
     tellegen::ir::balanced_module(module)
 }
 
@@ -100,7 +103,7 @@ fn run_case_inner(cf: &CaseFile, baseline: Option<BaselineRow>, cfg: Config) -> 
         }
     };
     rec.timings.parse_ms = ms(t);
-    let net = module.value.clone();
+    let net = module.value().clone();
     rec.buses = net.buses().len();
     rec.branches = net.branches().len();
     rec.gens = net.generators().len();

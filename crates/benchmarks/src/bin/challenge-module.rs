@@ -31,7 +31,7 @@ fn run() -> Result<(), String> {
     let bytes = std::fs::read(&source_path)
         .map_err(|error| format!("cannot read {}: {error}", source_path.display()))?;
     let source = powerio::Source::from_memory(public_name, bytes).map_err(|e| e.to_string())?;
-    let module = powerio::parse(source, None).map_err(|e| e.to_string())?;
+    let module = powerio::parse(source).map_err(|e| e.to_string())?;
     let module = tellegen::ir::balanced_module(module)?;
     let dynamic = module.map_value(powerio::PioValue::BalancedNetwork);
     let encoded = tellegen::ir::serialize_module(&dynamic)?;

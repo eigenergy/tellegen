@@ -21,38 +21,38 @@ repository = "https://github.com/eigenergy/tellegen"
 # PowerIO modules, values, problem instances, solutions, and numerical
 # preparation are Tellegen's public data boundary. The shared lockfile keeps
 # one exact PowerIO revision across the engine and every adapter.
-powerio = "1.0"
+powerio = "0.11"
 # The multiconductor distribution model and its lossless readers for OpenDSS,
 # PMD JSON, and BMOPF JSON. The wasm ingest path views distribution cases
 # through `MulticonductorNetwork::to_graph()` (no solve). Browser ingestion
 # remains filesystem free, so OpenDSS include commands are refused because
 # there is no base directory to confine them to.
-powerio-dist = "1.0"
+powerio-dist = "0.11"
 # Lower level analysis views used only inside Tellegen's private solver and
 # display workspaces. Portable inputs and outputs still cross the `powerio`
 # module facade.
-powerio-tx = "1.0"
+powerio-tx = "0.11"
 # Typed problem instances and solutions (`DcOpfInstance`, `DcOpfSolution`, ...),
 # the shared owner of case interpretation.
-powerio-prob = "1.0"
+powerio-prob = "0.11"
 # The shared numerical assembly: `build_dc_opf_preparation` derives the matrix
 # free DC OPF arrays (demand, costs, bounds, limits, mappings) from a
 # `DcOpfInstance`, so the solver formulates over PowerIO's one assembly
 # instead of re-deriving it from the network.
-powerio-matrix = "1.0"
+powerio-matrix = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = { version = "1", features = ["derive"] }
 
-# Reviewed PowerIO 1.0 candidate from eigenergy/powerio#454. Keep the exact
-# revision and the lockfile in the same commit until the 1.0 crates publish.
+# Reviewed PowerIO 0.11 preparation merged by eigenergy/powerio#482. Keep the
+# exact merge revision and lockfile together until the 0.11 crates publish.
 [patch.crates-io]
-powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
-powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
-powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
-powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
-powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
-powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "3dc36bfad4b45e9b4cda0ad8504c41b612924222" }
+powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
+powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
+powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
+powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
+powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
+powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
 
 # Shared lints, opted into per crate with `[lints] workspace = true`. Kept modest so a
 # `cargo clippy -- -D warnings` CI gate stays green: clippy's default `all`, plus guards

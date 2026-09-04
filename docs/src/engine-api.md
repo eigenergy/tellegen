@@ -41,7 +41,6 @@ The facade has the same methods as the direct exports:
 | `kind`                   | `format` | `payload`          |
 | ------------------------ | -------- | ------------------ |
 | `module`                 | `null`   | balanced or multiconductor payload |
-| `model-json`             | `null`   | `IngestedCase`     |
 | `transmission`           | `string` | `IngestedCase`     |
 | `distribution`           | `string` | `IngestedDistCase` |
 | `ambiguous` or `unknown` | `null`   | `null`             |

@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use powerio::{
-    apply_substation_points, to_geo_layer_from_aux_text, to_geo_layer_from_pwd,
-    to_lonlat_from_pwd_mercator, BalancedNetwork, CoordinateSpace, CoordsKind, GeoApplyReport,
-    GeoGeometry, GeoLayer, GeoMeta, Location, PwdDisplay,
+    apply_substation_points, to_geo_layer_from_aux_text, to_lonlat_from_pwd_mercator,
+    BalancedNetwork, CoordinateSpace, CoordsKind, GeoApplyReport, GeoGeometry, GeoLayer, GeoMeta,
+    Location,
 };
 use powerio_tx::IndexedNetwork;
 
@@ -125,14 +125,13 @@ pub fn stamp_layout(net: &mut BalancedNetwork, coords: &Coords, kind: CoordsKind
 }
 
 /// The `.pwd` substation layer projected to approximate longitude/latitude:
-/// [`to_geo_layer_from_pwd`] lifts the diagram symbols, and each point runs
-/// through powerio's [`to_lonlat_from_pwd_mercator`] inverse so
+/// PowerIO's universal parser lifts the diagram symbols into a [`GeoLayer`],
+/// and each point runs through [`to_lonlat_from_pwd_mercator`] so
 /// `apply_substation_points` lands geographic coordinates on the case.
 /// Provenance is [`CoordsKind::Derived`]: the positions come from diagram
 /// geometry, not surveyed geography, and hand edited diagrams drift from the
 /// projection.
-pub fn pwd_lonlat_layer(display: &PwdDisplay) -> GeoLayer {
-    let mut layer = to_geo_layer_from_pwd(display);
+pub fn pwd_lonlat_layer(mut layer: GeoLayer) -> GeoLayer {
     for f in &mut layer.features {
         if let GeoGeometry::Point([x, y]) = f.geometry {
             let (lon, lat) = to_lonlat_from_pwd_mercator(x, y);
@@ -407,8 +406,9 @@ mod tests {
         let location = net.buses()[0].location.expect("location materialized");
         assert_eq!((location.x, location.y), (-81.0, 35.0));
 
-        let json = net.to_json().expect("serialize enriched network");
-        let restored = BalancedNetwork::from_json(&json).expect("restore enriched network");
+        let json = serde_json::to_string(&net).expect("serialize enriched network");
+        let restored: BalancedNetwork =
+            serde_json::from_str(&json).expect("restore enriched network");
         assert_eq!(restored.buses()[0].location, Some(location));
     }
 
@@ -428,10 +428,9 @@ mod tests {
             geo.space,
             CoordinateSpace::Geographic { crs: None }
         ));
-        // Locations survive the network JSON round trip, so a package built from
-        // this payload carries the layout.
-        let json = net.to_json().expect("to_json");
-        let back = BalancedNetwork::from_json(&json).expect("from_json");
+        // Locations survive serialization before PowerIO IR wraps this value.
+        let json = serde_json::to_string(&net).expect("network JSON");
+        let back: BalancedNetwork = serde_json::from_str(&json).expect("network JSON");
         assert_eq!(back.buses()[0].location, net.buses()[0].location);
 
         // An empty layout stamps nothing and leaves the meta untouched.
@@ -445,7 +444,7 @@ mod tests {
 
     #[test]
     fn pwd_layer_projects_to_lonlat_with_derived_provenance() {
-        use powerio::PwdSubstation;
+        use powerio::{to_geo_layer_from_pwd, PwdDisplay, PwdSubstation};
         let display = PwdDisplay {
             canvas_width: 100,
             canvas_height: 100,
@@ -457,7 +456,7 @@ mod tests {
                 y: 21_000.0,
             }],
         };
-        let layer = pwd_lonlat_layer(&display);
+        let layer = pwd_lonlat_layer(to_geo_layer_from_pwd(&display));
         assert!(matches!(
             layer.space,
             CoordinateSpace::Geographic { crs: None }
