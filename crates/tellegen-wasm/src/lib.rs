@@ -676,7 +676,7 @@ pub fn ingest_dist_case(text: &str, format: &str) -> Result<String, JsError> {
     ensure_input_text(text)?;
     install_panic_hook();
     let out = match format {
-        "pio" | "pio-json" | "package" => dist::ingest_dist_module(text),
+        "pio" | "pio-json" => dist::ingest_dist_module(text),
         _ => dist::ingest_dist(text, format),
     };
     out.map_err(jserr)
@@ -688,7 +688,7 @@ pub fn ingest_dist_case_bytes(bytes: &[u8], format: &str) -> Result<String, JsEr
     ensure_input_bytes(bytes)?;
     install_panic_hook();
     let out = match format {
-        "pio" | "pio-json" | "package" => dist::ingest_dist_module_bytes(bytes),
+        "pio" | "pio-json" => dist::ingest_dist_module_bytes(bytes),
         _ => dist::ingest_dist_bytes(bytes, format),
     };
     out.map_err(jserr)
