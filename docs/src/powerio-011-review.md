@@ -1,11 +1,20 @@
 # PowerIO 0.11 consumer review
 
 PowerIO v0.11.0 is the baseline for this integration. The release preparation
-merged in [powerio#482](https://github.com/eigenergy/powerio/pull/482), and
-Tellegen pins merge revision `6df24b452d6e79814f2d040d159d640292a3cc07`
+merged in [powerio#482](https://github.com/eigenergy/powerio/pull/482), with
+dependency maintenance in
+[powerio#485](https://github.com/eigenergy/powerio/pull/485).
+Tellegen pins merge revision `e852f1902a582d5dbf20dedd169056aeb7cdceba`
 until the component crates are published. The earlier 1.0 candidate in
 [powerio#454](https://github.com/eigenergy/powerio/pull/454) is no longer the
 release target.
+
+Before the PowerIO release, run the `PowerIO Candidate` workflow on this branch
+with the proposed full PowerIO commit SHA. It rewrites the temporary manifest
+pin on an isolated runner, resolves all six PowerIO components together, and
+then exercises the Rust, WebAssembly, WebMCP package, and browser integration.
+Normal CI independently rejects a manifest and lockfile that name different
+PowerIO revisions.
 
 Tellegen consumes PowerIO modules at its public entry points. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem

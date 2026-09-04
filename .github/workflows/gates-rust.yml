@@ -25,6 +25,8 @@ jobs:
         with:
           workspaces: .
 
+      - name: Verify the PowerIO git pin
+        run: python3 .github/scripts/powerio-pin.py
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy (shipping crates, warnings denied)

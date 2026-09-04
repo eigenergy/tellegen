@@ -44,15 +44,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = { version = "1", features = ["derive"] }
 
-# Reviewed PowerIO 0.11 preparation merged by eigenergy/powerio#482. Keep the
-# exact merge revision and lockfile together until the 0.11 crates publish.
+# Reviewed PowerIO 0.11 preparation plus the dependency maintenance merged by
+# eigenergy/powerio#482 and #485. Keep the exact merge revision and lockfile
+# together until the 0.11 crates publish.
 [patch.crates-io]
-powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
-powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
-powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
-powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
-powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
-powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "6df24b452d6e79814f2d040d159d640292a3cc07" }
+powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "e852f1902a582d5dbf20dedd169056aeb7cdceba" }
+powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "e852f1902a582d5dbf20dedd169056aeb7cdceba" }
+powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "e852f1902a582d5dbf20dedd169056aeb7cdceba" }
+powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "e852f1902a582d5dbf20dedd169056aeb7cdceba" }
+powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "e852f1902a582d5dbf20dedd169056aeb7cdceba" }
+powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "e852f1902a582d5dbf20dedd169056aeb7cdceba" }
 
 # Shared lints, opted into per crate with `[lints] workspace = true`. Kept modest so a
 # `cargo clippy -- -D warnings` CI gate stays green: clippy's default `all`, plus guards
