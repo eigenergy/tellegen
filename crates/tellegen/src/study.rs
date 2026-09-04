@@ -2227,8 +2227,7 @@ mod tests {
         let base = s.save_module().unwrap();
         let restored = Study::new(&base, Problem::DcOpf).unwrap();
         assert!(
-            (restored.solution().objective.unwrap() - s.solution().objective.unwrap()).abs()
-                < 1e-9
+            (restored.solution().objective.unwrap() - s.solution().objective.unwrap()).abs() < 1e-9
         );
     }
 

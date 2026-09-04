@@ -915,7 +915,9 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
     let source = Source::from_memory("display.pwd", bytes.to_vec()).map_err(jserr)?;
     let module = powerio::parse(source).map_err(jserr)?;
     let PioValue::GeoLayer(layer) = module.into_value() else {
-        return Err(JsError::new("PowerWorld display did not parse as a geographic layer"));
+        return Err(JsError::new(
+            "PowerWorld display did not parse as a geographic layer",
+        ));
     };
     let (canvas_width, canvas_height) = match &layer.space {
         powerio::CoordinateSpace::Diagram {

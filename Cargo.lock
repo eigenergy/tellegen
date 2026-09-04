@@ -1277,7 +1277,6 @@ name = "powerio-prob"
 version = "0.11.0"
 source = "git+https://github.com/eigenergy/powerio.git?rev=6df24b452d6e79814f2d040d159d640292a3cc07#6df24b452d6e79814f2d040d159d640292a3cc07"
 dependencies = [
- "num-complex",
  "powerio-core",
  "powerio-dist",
  "powerio-tx",

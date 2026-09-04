@@ -122,8 +122,8 @@ pub fn extract_geo_impl(module_json: &str) -> Result<String, String> {
 /// carries no substation identity, or the numbers do not line up); otherwise
 /// returns the refreshed drop-panel payload with a `report`.
 pub fn apply_display_geo_impl(module_json: &str, bytes: &[u8]) -> Result<String, String> {
-    let source = powerio::Source::from_memory("display.pwd", bytes.to_vec())
-        .map_err(|e| e.to_string())?;
+    let source =
+        powerio::Source::from_memory("display.pwd", bytes.to_vec()).map_err(|e| e.to_string())?;
     let display_module = powerio::parse(source).map_err(|e| e.to_string())?;
     let layer = match display_module.into_value() {
         PioValue::GeoLayer(layer) => pwd_lonlat_layer(layer),
@@ -308,8 +308,8 @@ mpc.gencost = [
             tellegen::ir::deserialize_module(&case3_module_json()).expect("read case"),
         )
         .expect("balanced case");
-        let instance = powerio::DcOpfInstance::from_network(base.into_value())
-            .expect("DC OPF instance");
+        let instance =
+            powerio::DcOpfInstance::from_network(base.into_value()).expect("DC OPF instance");
         let module = PioModule::new(PioValue::DcOpfInstance(instance));
         let module_json = tellegen::ir::serialize_module(&module).expect("PowerIO IR");
 
@@ -486,8 +486,8 @@ mpc.gencost = [
         // The frontend keeps a built Study alive across a geo apply; syncing the
         // layer through Study::apply_geo_layer makes the next save carry it.
         let module_json = case3_module_json();
-        let mut study = tellegen::Study::new(&module_json, tellegen::Problem::DcOpf)
-            .expect("study");
+        let mut study =
+            tellegen::Study::new(&module_json, tellegen::Problem::DcOpf).expect("study");
         assert!(!study.save_module().unwrap().contains("\"location\""));
         let layer = {
             let parsed: Value = serde_json::from_str(
