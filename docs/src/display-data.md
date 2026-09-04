@@ -6,16 +6,18 @@ geographic files in this release. PowerWorld `.pwd` files describe a one-line
 diagram. tellegen reads coordinates from case files when they exist and reads
 diagram positions from display files when they are dropped.
 
-PowerIO keeps display data separate from network parsing.
-`powerio::parse_display` and `powerio::parse_display_file` return
-`DisplayData::PowerWorld(PwdDisplay)` for `.pwd` inputs. `parse_file` does not
-accept `.pwd`.
+PowerIO 0.11 routes display data through its universal parser. A `.pwd` source
+passed to `powerio::parse` returns a generation-2 `PioModule` whose value is a
+`PioValue::GeoLayer`; the older `parse_display`, `parse_display_file`, and
+`DisplayData::PowerWorld(PwdDisplay)` integration surface no longer exists.
 
 ## Reading `.pwd`
 
-`crates/tellegen-wasm/src/lib.rs` exports `parse_display(bytes, format)` over
-`powerio::parse_display`. The frontend reads `.pwd` files with
-`arrayBuffer()` and passes a `Uint8Array` to the WebAssembly module.
+`crates/tellegen-wasm/src/lib.rs` retains its browser-facing
+`parse_display(bytes, format)` wrapper, but implements it with the universal
+`powerio::parse` entry point and narrows the returned module to `GeoLayer`.
+The frontend reads `.pwd` files with `arrayBuffer()` and passes a `Uint8Array`
+to the WebAssembly module.
 
 A dropped `.pwd` creates a local display entry with substation points only. It
 does not create buses, branches, or a solvable case.
@@ -50,7 +52,7 @@ through its tolerant reader, applied coordinates land on the network
 (`Bus.location`, `Branch.route`), and the case panel exports the current
 layout as a `.geo.json` layer with provenance stamped.
 
-On top of it, a dropped `.pwd` sibling fills missing case coordinates through
-the `SubNum` join (`to_geo_layer_from_pwd` + `apply_substation_points`, projected
-by `to_lonlat_from_pwd_mercator`), and layouts computed by tellegen export with
-`synthetic`/`manual` provenance.
+On top of it, a dropped `.pwd` sibling already parses to `GeoLayer` and fills
+missing case coordinates through the `SubNum` join
+(`apply_substation_points`, projected by `to_lonlat_from_pwd_mercator`), and
+layouts computed by tellegen export with `synthetic`/`manual` provenance.

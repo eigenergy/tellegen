@@ -61,7 +61,7 @@ pub fn lowered_coords(net: &BalancedNetwork, source: &Coords) -> Coords {
     // them to a source terminal, so no star bus is another's neighbor. Collect
     // the located terminals in one pass over the branches: rescanning them per
     // star bus is quadratic in the number of three-winding transformers, and a
-    // model-JSON document can declare those by the tens of thousands.
+    // PowerIO IR document can declare those by the tens of thousands.
     let stars: BTreeSet<usize> = lowered
         .buses()
         .iter()
