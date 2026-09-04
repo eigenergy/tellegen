@@ -9,12 +9,12 @@ until the component crates are published. The earlier 1.0 candidate in
 [powerio#454](https://github.com/eigenergy/powerio/pull/454) is no longer the
 release target.
 
-Before the PowerIO release, run the `PowerIO Candidate` workflow on this branch
-with the proposed full PowerIO commit SHA. It rewrites the temporary manifest
-pin on an isolated runner, resolves all six PowerIO components together, and
-then exercises the Rust, WebAssembly, WebMCP package, and browser integration.
-Normal CI independently rejects a manifest and lockfile that name different
-PowerIO revisions.
+Every pull request that changes the temporary pin runs the `PowerIO Candidate`
+workflow at the checked-in revision. Once the workflow is on `main`, it can also
+be dispatched with a proposed full PowerIO commit SHA before a PowerIO release.
+The isolated runner resolves all six PowerIO components together, then exercises
+the Rust, WebAssembly, WebMCP package, and browser integration. Normal CI also
+rejects a manifest and lockfile that name different PowerIO revisions.
 
 Tellegen consumes PowerIO modules at its public entry points. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem

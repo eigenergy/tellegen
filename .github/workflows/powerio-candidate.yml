@@ -3,6 +3,13 @@ name: PowerIO Candidate
 # Run this before a PowerIO release to exercise Tellegen's Rust, WebAssembly,
 # WebMCP, and browser surfaces against the exact proposed commit.
 on:
+  pull_request:
+    paths:
+      - .github/scripts/powerio-pin.py
+      - .github/scripts/test-powerio-pin.py
+      - .github/workflows/powerio-candidate.yml
+      - Cargo.lock
+      - Cargo.toml
   workflow_dispatch:
     inputs:
       powerio_ref:
@@ -28,6 +35,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Select the PowerIO candidate
+        if: github.event_name == 'workflow_dispatch'
         env:
           POWERIO_REF: ${{ inputs.powerio_ref }}
         run: python3 .github/scripts/powerio-pin.py --set "$POWERIO_REF"
