@@ -2987,6 +2987,41 @@ mod tests {
 
     #[cfg(feature = "conic")]
     #[test]
+    fn zero_socwr_voltage_rejects_a_singular_outer_derivative() {
+        use crate::objective::{ObservableWeight, StudyObjective};
+        let (study, _) = outer_fixture(Problem::Socwr);
+        let mut response = study.solution().clone();
+        let bus = response
+            .vm
+            .as_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|b| b.bus == 2)
+            .unwrap();
+        bus.value = 0.0;
+        let squared = response
+            .w
+            .as_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|b| b.bus == 2)
+            .unwrap();
+        squared.value = 0.0;
+        let objective = StudyObjective::WeightedObservable {
+            operand: Operand::Voltage(crate::VoltageKind::Magnitude),
+            weights: vec![ObservableWeight {
+                element: 2.into(),
+                weight: 1.0,
+            }],
+        };
+        let error = objective
+            .evaluate(&response, &study.base, &Default::default())
+            .unwrap_err();
+        assert!(error.contains("derivative is singular"), "{error}");
+    }
+
+    #[cfg(feature = "conic")]
+    #[test]
     fn socwr_outer_observables_match_exact_transfer() {
         use crate::objective::{ObservableWeight, StudyObjective};
         for (operand, element) in [

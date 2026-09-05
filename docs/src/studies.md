@@ -18,8 +18,10 @@ all observable/decision pairs.
 Capacity decisions use MW for DC OPF and MVA for SOCWR. Active-demand decisions
 use MW. Each decision states a stable element identity, bounds and an increment.
 The shared feasible set adds a weighted absolute-change budget and a maximum
-number of changed elements. Placement allocates the declared total additional
-load; redistribution uses paired transfers that preserve total demand.
+number of changed elements. A goal retains its starting anchor: continuing from
+a candidate measures cumulative changes from that anchor and does not reset the
+budget. Placement allocates the declared total additional load; redistribution
+uses paired transfers that preserve total demand.
 
 **Find a proposal** ranks feasible moves with the current gradient, solves a
 bounded beam exactly, keeps a verified improvement and recomputes the direction.
