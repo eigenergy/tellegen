@@ -38,7 +38,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Test deployment recovery
-        run: deploy/test-remote-deploy.sh
+        run: |
+          deploy/test-remote-deploy.sh
+          bash deploy/test-registry-auth.sh
       - name: Test generated-version allowlists
         run: python3 .github/scripts/test-validate-version-changes.py
       - name: Test the PowerIO pin guard

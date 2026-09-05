@@ -183,6 +183,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      packages: read
     env:
       DEPLOY_HOST: ${{ secrets.TELLEGEN_DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.TELLEGEN_DEPLOY_USER }}
@@ -292,6 +293,7 @@ jobs:
             deploy/docker-compose.prod.yml \
             deploy/docker-compose.edge.yml \
             deploy/remote-deploy.sh \
+            deploy/with-registry-auth.sh \
             "$remote:$bundle/"
       - name: Mark host mutation attempt
         id: attempted
@@ -300,6 +302,9 @@ jobs:
       - name: Deploy image
         id: deploy
         if: steps.fresh.outputs.current == 'true'
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
         run: |
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
@@ -307,11 +312,12 @@ jobs:
           # both health loops). If SSH gives up first the remote script keeps
           # running and keeps the deploy lock, and the rollback step below then
           # blocks on that lock and fails.
-          timeout 3600 ssh -i ~/.ssh/tellegen_deploy "$remote" "
+          printf '%s' "$REGISTRY_TOKEN" | timeout 3600 ssh -i ~/.ssh/tellegen_deploy "$remote" "
             cd '$DEPLOY_PATH' &&
             DEPLOY_ROOT='$DEPLOY_PATH' \
             TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
-            bash '$bundle/remote-deploy.sh' '$TELLEGEN_IMAGE' '$DEPLOY_PATH/data'
+            bash '$bundle/with-registry-auth.sh' '$REGISTRY_USER' \
+              bash '$bundle/remote-deploy.sh' '$TELLEGEN_IMAGE' '$DEPLOY_PATH/data'
           "
       - name: Check public health
         id: public-health
@@ -376,6 +382,9 @@ jobs:
       # The host pending marker completes recovery on the next invocation if
       # the runner or SSH connection disappears before this step finishes.
       - name: Roll back an unpromoted deployment
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
         if: >-
           always() &&
           steps.fresh.outputs.current == 'true' &&
@@ -386,11 +395,12 @@ jobs:
           bundle="$DEPLOY_PATH/.deploy-staging/$DEPLOY_BUNDLE_ID/deploy"
           # Rolling back restarts the previous image and waits on the same
           # health budget as a deploy, so it needs the same headroom.
-          timeout 3600 ssh -i ~/.ssh/tellegen_deploy "$remote" "
+          printf '%s' "$REGISTRY_TOKEN" | timeout 3600 ssh -i ~/.ssh/tellegen_deploy "$remote" "
             cd '$DEPLOY_PATH' &&
             DEPLOY_ROOT='$DEPLOY_PATH' \
             TELLEGEN_DEPLOY_BUNDLE_DIR='$bundle' \
-            bash '$bundle/remote-deploy.sh' --rollback '$TELLEGEN_IMAGE'
+            bash '$bundle/with-registry-auth.sh' '$REGISTRY_USER' \
+              bash '$bundle/remote-deploy.sh' --rollback '$TELLEGEN_IMAGE'
           "
 
           health_url="${DEMO_URL%/}/api/health"
