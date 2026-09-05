@@ -1,6 +1,6 @@
 {
   "name": "@tellegen/svelte",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Svelte components for tellegen power system maps, local case files, and browser solves.",
   "license": "MIT",
   "type": "module",
@@ -52,7 +52,7 @@
     "@deck.gl/core": "^9.3.11",
     "@deck.gl/layers": "^9.3.11",
     "@deck.gl/mapbox": "^9.3.11",
-    "@tellegen/engine": "^0.2.0",
+    "@tellegen/engine": "^0.3.0",
     "maplibre-gl": "^5.0.0"
   },
   "peerDependencies": {
