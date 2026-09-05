@@ -10,7 +10,10 @@ const sources = ["document.rs", "objective.rs", "exploration.rs", "study_ops.rs"
 const hash = createHash("sha256");
 for (const source of sources) hash.update(readFileSync(join(root, "crates/tellegen/src", source)));
 if (hash.digest("hex") !== schema["x-rust-source-sha256"]) {
-  throw new Error("Study schema is stale. Run cargo run -p tellegen --example study_contract --features schema > packages/engine/src/generated/study.schema.json");
+  throw new Error("Study schema is stale. Run cargo run -p tellegen --example study_contract --features schema,conic > packages/engine/src/generated/study.schema.json");
+}
+if (!schema.$defs.CreateStudy.properties.formulation.enum.includes("socwr")) {
+  throw new Error("Browser Study contracts require the conic build. Regenerate study_contract with --features schema,conic.");
 }
 
 function type(node) {

@@ -1278,7 +1278,7 @@ dependencies = [
 [[package]]
 name = "powerio"
 version = "0.11.0"
-source = "git+https://github.com/eigenergy/powerio.git?rev=65dbc042372d340e9901443f503537bc14a94c01#65dbc042372d340e9901443f503537bc14a94c01"
+source = "git+https://github.com/eigenergy/powerio.git?rev=a84d97d97343b4175e9a846aa358997ff53b0e5f#a84d97d97343b4175e9a846aa358997ff53b0e5f"
 dependencies = [
  "num-complex",
  "powerio-core",
@@ -1293,7 +1293,7 @@ dependencies = [
 [[package]]
 name = "powerio-core"
 version = "0.11.0"
-source = "git+https://github.com/eigenergy/powerio.git?rev=65dbc042372d340e9901443f503537bc14a94c01#65dbc042372d340e9901443f503537bc14a94c01"
+source = "git+https://github.com/eigenergy/powerio.git?rev=a84d97d97343b4175e9a846aa358997ff53b0e5f#a84d97d97343b4175e9a846aa358997ff53b0e5f"
 dependencies = [
  "libc",
  "schemars",
@@ -1304,7 +1304,7 @@ dependencies = [
 [[package]]
 name = "powerio-dist"
 version = "0.11.0"
-source = "git+https://github.com/eigenergy/powerio.git?rev=65dbc042372d340e9901443f503537bc14a94c01#65dbc042372d340e9901443f503537bc14a94c01"
+source = "git+https://github.com/eigenergy/powerio.git?rev=a84d97d97343b4175e9a846aa358997ff53b0e5f#a84d97d97343b4175e9a846aa358997ff53b0e5f"
 dependencies = [
  "powerio-core",
  "schemars",
@@ -1316,7 +1316,7 @@ dependencies = [
 [[package]]
 name = "powerio-matrix"
 version = "0.11.0"
-source = "git+https://github.com/eigenergy/powerio.git?rev=65dbc042372d340e9901443f503537bc14a94c01#65dbc042372d340e9901443f503537bc14a94c01"
+source = "git+https://github.com/eigenergy/powerio.git?rev=a84d97d97343b4175e9a846aa358997ff53b0e5f#a84d97d97343b4175e9a846aa358997ff53b0e5f"
 dependencies = [
  "faer",
  "num-complex",
@@ -1337,7 +1337,7 @@ dependencies = [
 [[package]]
 name = "powerio-prob"
 version = "0.11.0"
-source = "git+https://github.com/eigenergy/powerio.git?rev=65dbc042372d340e9901443f503537bc14a94c01#65dbc042372d340e9901443f503537bc14a94c01"
+source = "git+https://github.com/eigenergy/powerio.git?rev=a84d97d97343b4175e9a846aa358997ff53b0e5f#a84d97d97343b4175e9a846aa358997ff53b0e5f"
 dependencies = [
  "powerio-core",
  "powerio-dist",
@@ -1351,7 +1351,7 @@ dependencies = [
 [[package]]
 name = "powerio-tx"
 version = "0.11.0"
-source = "git+https://github.com/eigenergy/powerio.git?rev=65dbc042372d340e9901443f503537bc14a94c01#65dbc042372d340e9901443f503537bc14a94c01"
+source = "git+https://github.com/eigenergy/powerio.git?rev=a84d97d97343b4175e9a846aa358997ff53b0e5f#a84d97d97343b4175e9a846aa358997ff53b0e5f"
 dependencies = [
  "lexical-core",
  "petgraph",

@@ -351,7 +351,7 @@
     },
     "DecisionVariable": {
       "additionalProperties": false,
-      "description": "Bounds and increments apply to the change from the operation's base state.",
+      "description": "Bounds and increments apply to changes from the goal's anchor state in a Study.",
       "properties": {
         "budget_weight": {
           "description": "Budget consumption per absolute unit of intervention.",
@@ -1973,5 +1973,5 @@
   ],
   "title": "StudyContract",
   "type": "object",
-  "x-rust-source-sha256": "89b3ed2e17208b4779e47a96b428293408e1fe5e01c49d655308e614f3288265"
+  "x-rust-source-sha256": "098d1f7b01cb10de053377613ce83a471b7260b81c212bf30ea55ec86e3263df"
 }

@@ -69,7 +69,7 @@ impl Intervention {
     }
 }
 
-/// Bounds and increments apply to the change from the operation's base state.
+/// Bounds and increments apply to changes from the goal's anchor state in a Study.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
