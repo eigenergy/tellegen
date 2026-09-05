@@ -38,6 +38,8 @@ const kinds: Partial<Record<StudyToolName, string>> = {
 	branch_study: 'branch',
 	compare_study_states: 'compare',
 	propose_study: 'propose',
+	edit_demand: 'edit_demand',
+	restore_base_case: 'restore_base',
 	record_study_evidence: 'record_evidence'
 };
 const operationVariants = (definitions.StudyOperation.oneOf ??
@@ -46,6 +48,7 @@ function inputSchema(name: StudyToolName): Schema {
 	if (name === 'create_study') {
 		const create = structuredClone(definitions.CreateStudy);
 		delete create.properties.input;
+		delete create.properties.base_input;
 		delete create.properties.id;
 		create.required = create.required.filter((key: string) => key !== 'input' && key !== 'id');
 		return withDefinitions(

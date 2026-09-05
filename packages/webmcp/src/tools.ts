@@ -474,7 +474,7 @@ export function createTellegenTools(
       name: "preview_case_update",
       title: "Preview case update",
       description:
-        "Predict objective and nodal value changes for bounded demand or branch rating edits at the current formulation. Leaves the case and visible interface unchanged and requires the current revision.",
+        "Predict objective and locational marginal price (LMP) changes for bounded demand or branch rating edits at the current formulation. Leaves the case and visible interface unchanged and requires the current revision.",
       inputSchema: objectSchema(
         {
           case_id: {
@@ -533,7 +533,7 @@ export function createTellegenTools(
             minimum: 1,
             maximum: 8,
             description:
-              "Maximum predicted nodal value changes. Defaults to 5.",
+              "Maximum predicted locational marginal price (LMP) changes. Defaults to 5.",
           },
         },
         ["case_id", "expected_revision"],
@@ -840,11 +840,24 @@ export function createTellegenStudyTools(adapter: TellegenStudyAdapter, options:
     branch_study: "Inspect a saved state and continue exploration from it. This changes the inspected pointer, not the applied state.",
     compare_study_states: "Compare two saved states under one goal revision. Results include the outer objective and consequences across the network.",
     propose_study: "Explore feasible capacity or demand interventions using implicit gradients and exact solves. Every trial counts against the solve budget. Save the best verified recommendation without applying it. The user applies it in the Study panel.",
+    edit_demand: "Add signed MW increments at permitted buses to the selected saved state. Edits accumulate across calls and persist after reload. Individual bounds and the total change budget apply to every step; incomplete demand totals stay unapplied. Read the resulting state's evidence for the cumulative demand vector.",
+    restore_base_case: "Exactly solve the retained original network data and save a reset candidate without applying it or deleting history. The user can apply the reset in the Study panel. Reports when the original input is unavailable.",
     record_study_evidence: "Attach a stated rationale and evidence to a state and goal without creating an electrical state. Do not record private agent reasoning."
   };
+  const titles: Record<StudyToolName, string> = {
+    create_study: "Start a saved investigation",
+    inspect_study: "Read saved goals, states and evidence",
+    revise_study_goal: "Revise the objective and permitted changes",
+    branch_study: "Continue from a saved network state",
+    compare_study_states: "Compare network operating points",
+    propose_study: "Find capacity or demand improvements",
+    edit_demand: "Adjust bus demand",
+    restore_base_case: "Restore the original network base case",
+    record_study_evidence: "Record an observation or sensitivity result",
+  };
   return (Object.entries(descriptions) as [StudyToolName, string][]).map(([name, description]) => ({
-    name, title: name.replaceAll("_", " "), description, inputSchema: adapter.inputSchema(name), annotations: annotations(name === "inspect_study"),
-    execute: execute(name, name.replaceAll("_", " "), input => {
+    name, title: titles[name], description, inputSchema: adapter.inputSchema(name), annotations: annotations(name === "inspect_study"),
+    execute: execute(name, titles[name], input => {
       if (!input || typeof input !== "object" || Array.isArray(input) || JSON.stringify(input).length > 1_048_576) throw new TellegenToolError("INVALID_INPUT", "Study input must be an object no larger than 1 MiB");
       return input as Record<string, unknown>;
     }, (input, signal) => adapter.execute(name, input, signal), outputBudget, Math.max(timeoutMs, 300_000), options.onActivity, () => `tellegen-study-${++sequence}`, "commit-aware", options.recordValidatedInput)

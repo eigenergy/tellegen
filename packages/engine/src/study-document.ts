@@ -163,7 +163,7 @@ export class StudyDocumentController {
   recordUserApproval(proposal: string): string {
     const d = this.#bundle.document;
     const experiment = d.experiments[proposal];
-    if (!experiment || experiment.kind !== "planning" || !experiment.start_state || experiment.goal !== d.active_goal || !d.active_goal || !d.recommended_state || !experiment.result_states.includes(d.recommended_state)) throw new Error("The proposal no longer matches the active goal and recommendation");
+    if (!experiment || !["planning", "counterfactual"].includes(experiment.kind) || !experiment.start_state || experiment.goal !== d.active_goal || !d.active_goal || !d.recommended_state || !experiment.result_states.includes(d.recommended_state)) throw new Error("The proposal no longer matches the active goal and recommendation");
     const token = crypto.randomUUID();
     this.#approvals.set(token, { proposal, state: d.recommended_state, goal: d.active_goal, base: experiment.start_state, revision: d.revision });
     return token;

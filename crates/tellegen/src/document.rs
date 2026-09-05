@@ -150,6 +150,9 @@ pub struct StudyDocument {
     pub inspected_state: Option<String>,
     pub recommended_state: Option<String>,
     pub applied_state: Option<String>,
+    /// Original network input, retained independently of the starting operating point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_input: Option<String>,
 }
 
 /// Approvals are intentionally absent from the portable document.
@@ -214,6 +217,7 @@ impl StudyBundle {
                 inspected_state: None,
                 recommended_state: None,
                 applied_state: None,
+                base_input: None,
             },
             artifacts: BTreeMap::new(),
         })
@@ -490,6 +494,10 @@ impl StudyBundle {
             if let Some(identity) = validate_artifact(a)? {
                 electrical.insert(id, identity);
             }
+        }
+        if let Some(base) = &d.base_input {
+            self.require_artifact(base, true)?;
+            crate::study_ops::input_network(&self.artifacts[base].text)?;
         }
         for (id, s) in &d.states {
             verify_record(id, s)?;

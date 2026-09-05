@@ -23,7 +23,7 @@ type CaseEvidenceContext = {
 	caseRevision: string;
 };
 
-export type GoalDraft = Omit<CreateStudy, 'input' | 'id'>;
+export type GoalDraft = Omit<CreateStudy, 'input' | 'base_input' | 'id'>;
 
 /** One workspace session shared by browser controls and WebMCP. */
 export class StudyWorkspace {
@@ -95,6 +95,7 @@ export class StudyWorkspace {
 			const c = this.grid.activeSolvable;
 			if (!c || c.id !== caseId || caseRevision(c) !== expectedCaseRevision || c.solving)
 				throw new Error('Case changed; inspect the current case before creating a Study');
+			const base_input = await this.grid.ensureStudyInputJson(c);
 			const study = await this.grid.syncedStudy(c);
 			if (!study) throw new Error(this.grid.app.error ?? 'Current case is unavailable');
 			const input =
@@ -105,7 +106,7 @@ export class StudyWorkspace {
 			if (this.grid.activeSolvable !== c || caseRevision(c) !== expectedCaseRevision)
 				throw new Error('Case changed while capturing the Study starting point; retry');
 			const controller = await StudyDocumentController.create(
-				{ ...draft, id: crypto.randomUUID(), input },
+				{ ...draft, id: crypto.randomUUID(), input, base_input },
 				this.store,
 				undefined,
 				abort

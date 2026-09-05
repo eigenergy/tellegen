@@ -217,6 +217,14 @@
     "CreateStudy": {
       "additionalProperties": false,
       "properties": {
+        "base_input": {
+          "default": null,
+          "description": "Original network data before interactive edits, when available.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "decisions": {
           "$ref": "#/$defs/DecisionSpace"
         },
@@ -390,6 +398,51 @@
         "upper",
         "increment",
         "budget_weight"
+      ],
+      "type": "object"
+    },
+    "DemandAdjustment": {
+      "additionalProperties": false,
+      "properties": {
+        "bus": {
+          "$ref": "#/$defs/ElementKey"
+        },
+        "delta_mw": {
+          "description": "Signed increment to the selected state's demand, in MW.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bus",
+        "delta_mw"
+      ],
+      "type": "object"
+    },
+    "DemandChange": {
+      "additionalProperties": false,
+      "properties": {
+        "base_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "bus": {
+          "$ref": "#/$defs/ElementKey"
+        },
+        "delta_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "demand_mw": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bus",
+        "base_mw",
+        "demand_mw",
+        "delta_mw"
       ],
       "type": "object"
     },
@@ -1360,6 +1413,13 @@
             "null"
           ]
         },
+        "base_input": {
+          "description": "Original network input, retained independently of the starting operating point.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "decisions": {
           "additionalProperties": {
             "$ref": "#/$defs/DecisionRecord"
@@ -1674,6 +1734,65 @@
         {
           "additionalProperties": false,
           "properties": {
+            "changes": {
+              "items": {
+                "$ref": "#/$defs/DemandAdjustment"
+              },
+              "maxItems": 4096,
+              "minItems": 1,
+              "type": "array"
+            },
+            "goal": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "edit_demand",
+              "type": "string"
+            },
+            "rationale": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "state",
+            "goal",
+            "changes",
+            "rationale"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "goal": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "restore_base",
+              "type": "string"
+            },
+            "rationale": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "state",
+            "goal",
+            "rationale"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
             "assessed_recommendation": {
               "type": [
                 "string",
@@ -1751,6 +1870,16 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "demand_changes": {
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/DemandChange"
+          },
+          "type": [
+            "array",
+            "null"
           ]
         },
         "experiment": {
@@ -1973,5 +2102,5 @@
   ],
   "title": "StudyContract",
   "type": "object",
-  "x-rust-source-sha256": "098d1f7b01cb10de053377613ce83a471b7260b81c212bf30ea55ec86e3263df"
+  "x-rust-source-sha256": "738e3a9cf5bc66121284cf7ea6d377e0871ad66639cde35d16743ff7b2eff8f0"
 }

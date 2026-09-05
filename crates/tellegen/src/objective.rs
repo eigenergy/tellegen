@@ -360,13 +360,12 @@ impl DecisionSpace {
         Ok(())
     }
 
-    pub fn feasible(&self, changes: &[f64], tolerance: f64) -> bool {
+    pub(crate) fn within_limits(&self, changes: &[f64], tolerance: f64) -> bool {
         if changes.len() != self.variables.len() || !tolerance.is_finite() || tolerance < 0.0 {
             return false;
         }
         let mut budget = 0.0;
         let mut count = 0;
-        let mut demand = 0.0;
         for (v, &x) in self.variables.iter().zip(changes) {
             if !x.is_finite()
                 || x < v.lower - tolerance
@@ -377,17 +376,23 @@ impl DecisionSpace {
             }
             budget += v.budget_weight * x.abs();
             count += usize::from(x.abs() > tolerance);
-            if v.intervention == Intervention::ActiveDemand {
-                demand += x;
-            }
         }
+        budget <= self.total_budget + tolerance && count <= self.max_changed_elements
+    }
+
+    pub fn feasible(&self, changes: &[f64], tolerance: f64) -> bool {
         let total = match self.demand {
             Some(DemandConstraint::Placement { increase_mw }) => increase_mw,
             _ => 0.0,
         };
-        budget <= self.total_budget + tolerance
-            && count <= self.max_changed_elements
-            && (demand - total).abs() <= tolerance
+        let demand: f64 = self
+            .variables
+            .iter()
+            .zip(changes)
+            .filter(|(v, _)| v.intervention == Intervention::ActiveDemand)
+            .map(|(_, x)| x)
+            .sum();
+        self.within_limits(changes, tolerance) && (demand - total).abs() <= tolerance
     }
 }
 

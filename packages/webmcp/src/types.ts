@@ -134,7 +134,7 @@ export interface TellegenPlanningAdapter {
  * It has no dependency on the engine `Study` class or on Svelte. Host adapters
  * keep PowerIO modules as their portable input and persistence boundary.
  */
-export type StudyToolName = "create_study" | "inspect_study" | "revise_study_goal" | "branch_study" | "compare_study_states" | "propose_study" | "record_study_evidence";
+export type StudyToolName = "create_study" | "inspect_study" | "revise_study_goal" | "branch_study" | "compare_study_states" | "propose_study" | "record_study_evidence" | "edit_demand" | "restore_base_case";
 
 export interface TellegenStudyAdapter {
   inputSchema(name: StudyToolName): Record<string, unknown>;

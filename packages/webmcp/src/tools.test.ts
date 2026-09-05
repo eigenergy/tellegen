@@ -550,7 +550,7 @@ describe("persistent Study tool completion", () => {
       inputSchema: () => schema,
       execute: async () => { cancel.abort(); return { id: "s", revision: 3, experiment: "e", termination: "cancelled" }; },
     });
-    expect(tools).toHaveLength(7);
+    expect(tools).toHaveLength(9);
     expect(tools.every(tool => tool.inputSchema === schema)).toBe(true);
     expect(tools.some(tool => tool.name.includes("apply"))).toBe(false);
     const proposal = tools.find(tool => tool.name === "propose_study")!;

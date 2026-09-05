@@ -1,5 +1,5 @@
 // Generated from Rust by study_contract and generate-study-contracts.mjs.
-// Source SHA256: 098d1f7b01cb10de053377613ce83a471b7260b81c212bf30ea55ec86e3263df
+// Source SHA256: 738e3a9cf5bc66121284cf7ea6d377e0871ad66639cde35d16743ff7b2eff8f0
 
 export type ArtifactKind = "powerio_ir" | "evidence";
 
@@ -19,7 +19,7 @@ export type Comparison = { "goal": string; "improvement": number; "left": string
 
 export type CostTerm = "Quadratic" | "Linear";
 
-export type CreateStudy = { "decisions": DecisionSpace; "formulation": "dcopf" | "acpf" | "socwr"; "id": string; "input": string; "interpretation": string; "objective": StudyObjective; "request": string; "success_value"?: number | null; "title": string; };
+export type CreateStudy = { "base_input"?: string | null; "decisions": DecisionSpace; "formulation": "dcopf" | "acpf" | "socwr"; "id": string; "input": string; "interpretation": string; "objective": StudyObjective; "request": string; "success_value"?: number | null; "title": string; };
 
 export type DecisionKind = "retain" | "reject" | "recommend" | "apply";
 
@@ -28,6 +28,10 @@ export type DecisionRecord = { "choice": DecisionKind; "evidence": Array<string>
 export type DecisionSpace = { "demand"?: (DemandConstraint) | (null); "max_changed_elements": number; "total_budget": number; "variables": Array<DecisionVariable>; };
 
 export type DecisionVariable = { "budget_weight": number; "element": ElementKey; "id": string; "increment": number; "intervention": Intervention; "lower": number; "upper": number; };
+
+export type DemandAdjustment = { "bus": ElementKey; "delta_mw": number; };
+
+export type DemandChange = { "base_mw": number; "bus": ElementKey; "delta_mw": number; "demand_mw": number; };
 
 export type DemandConstraint = ({ "increase_mw": number; "kind": "placement"; }) | ({ "kind": "redistribution"; });
 
@@ -81,13 +85,13 @@ export type StudyArtifact = { "kind": ArtifactKind; "text": string; };
 
 export type StudyBundle = { "artifacts": { [key: string]: StudyArtifact; }; "document": StudyDocument; };
 
-export type StudyDocument = { "active_goal"?: string | null; "applied_state"?: string | null; "decisions": { [key: string]: DecisionRecord; }; "experiment_order": Array<string>; "experiments": { [key: string]: ExperimentRecord; }; "goals": { [key: string]: GoalRevision; }; "id": string; "inspected_state"?: string | null; "recommended_state"?: string | null; "revision": number; "schema": string; "states": { [key: string]: StateNode; }; "title": string; "version": number; };
+export type StudyDocument = { "active_goal"?: string | null; "applied_state"?: string | null; "base_input"?: string | null; "decisions": { [key: string]: DecisionRecord; }; "experiment_order": Array<string>; "experiments": { [key: string]: ExperimentRecord; }; "goals": { [key: string]: GoalRevision; }; "id": string; "inspected_state"?: string | null; "recommended_state"?: string | null; "revision": number; "schema": string; "states": { [key: string]: StateNode; }; "title": string; "version": number; };
 
 export type StudyObjective = ({ "kind": "weighted_observable"; "operand": Operand; "weights": Array<ObservableWeight>; }) | ({ "kind": "sum"; "terms": Array<StudyObjective>; }) | ({ "expression": StudyObjective; "factor": number; "kind": "scale"; }) | ({ "expression": StudyObjective; "kind": "squared_target"; "target": number; }) | ({ "decision": string; "kind": "intervention_penalty"; "linear": number; "quadratic": number; });
 
-export type StudyOperation = ({ "kind": "inspect"; "state": string; }) | ({ "kind": "branch"; "rationale": string; "state": string; }) | ({ "goal": GoalRevision; "kind": "revise_goal"; }) | ({ "goal": string; "kind": "compare"; "left": string; "right": string; }) | ({ "goal": string; "kind": "propose"; "options": SearchOptions; "rationale": string; "state": string; }) | ({ "assessed_recommendation"?: string | null; "evidence": unknown; "goal": string; "kind": "record_evidence"; "rationale": string; "sensitivity": boolean; "state": string; }) | ({ "base_state": string; "goal": string; "kind": "apply"; "proposal": string; "state": string; });
+export type StudyOperation = ({ "kind": "inspect"; "state": string; }) | ({ "kind": "branch"; "rationale": string; "state": string; }) | ({ "goal": GoalRevision; "kind": "revise_goal"; }) | ({ "goal": string; "kind": "compare"; "left": string; "right": string; }) | ({ "goal": string; "kind": "propose"; "options": SearchOptions; "rationale": string; "state": string; }) | ({ "changes": Array<DemandAdjustment>; "goal": string; "kind": "edit_demand"; "rationale": string; "state": string; }) | ({ "goal": string; "kind": "restore_base"; "rationale": string; "state": string; }) | ({ "assessed_recommendation"?: string | null; "evidence": unknown; "goal": string; "kind": "record_evidence"; "rationale": string; "sensitivity": boolean; "state": string; }) | ({ "base_state": string; "goal": string; "kind": "apply"; "proposal": string; "state": string; });
 
-export type StudyOperationResult = { "comparison"?: (Comparison) | (null); "experiment"?: string | null; "inspected_view"?: (SolveResponse) | (null); "summary": StudySummary; };
+export type StudyOperationResult = { "comparison"?: (Comparison) | (null); "demand_changes"?: Array<DemandChange> | null; "experiment"?: string | null; "inspected_view"?: (SolveResponse) | (null); "summary": StudySummary; };
 
 export type StudyRequest = { "expected_revision": number; "operation": StudyOperation; };
 
