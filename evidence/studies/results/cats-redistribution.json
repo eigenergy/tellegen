@@ -1,0 +1,107 @@
+{
+  "schema": "tellegen.study-evidence/1",
+  "spec_sha256": "sha256:738b2a0bd0e634d20ba20f76df5d8111b83a0cb47cdfb171322593155293e395",
+  "source_sha256": "sha256:1749ea6f3b0587a4c565ee7d794e4b67373249f34a2cff39abb29c05f4f9fa56",
+  "source_name": "CaliforniaTestSystem.m",
+  "powerio_sha256": "sha256:a0528dff86e18894596aee270dcf54974ed7a4402db2d44ac7b178fd7f44f0c7",
+  "tellegen_sha256": "sha256:95f22d124360564a831e98f528d626c16066e9a4632070c0030b2ade57bb7f40",
+  "input_sha256": "sha256:96c0847eb63c5d5d434f753759efe4a96e17cde4e08e823e3743c906609d388a",
+  "apply_requested": false,
+  "tolerances": {
+    "objective_absolute": 1e-05,
+    "objective_relative": 1e-05,
+    "demand_total_mw": 1e-07
+  },
+  "initial_state": "sha256:57501888fd4f773562cc8f5f825753ca5ff31f825d85bdf8bf3fe5a29ebe9c73",
+  "recommended_state": "sha256:d77132870897cae431c543f3a7fc49ec18801dad7555e79b1c7cbd7217dc8cf3",
+  "applied_state": "sha256:57501888fd4f773562cc8f5f825753ca5ff31f825d85bdf8bf3fe5a29ebe9c73",
+  "comparison": {
+    "goal": "sha256:62b82b84cd00d9aa4e41590ccef2eda28d989896884e94f980a35cf1557f93bc",
+    "left_value": 76.11900126846726,
+    "right_value": 74.25936674847532,
+    "improvement": 1.8596345199919426
+  },
+  "improvement_tolerance": 0.0007611900126846727,
+  "outcome": "verified_candidate",
+  "experiment": {
+    "start_state": "sha256:57501888fd4f773562cc8f5f825753ca5ff31f825d85bdf8bf3fe5a29ebe9c73",
+    "goal": "sha256:62b82b84cd00d9aa4e41590ccef2eda28d989896884e94f980a35cf1557f93bc",
+    "kind": "planning",
+    "rationale": "Use the implicit objective gradient to rank feasible moves and retain the best exact result.",
+    "evidence": [
+      "sha256:d19e88ca29d1da7a1a18d4efa880a2b769e5de6e70d3f9ab9003ecdbc4c1b91d"
+    ],
+    "trials": [
+      {
+        "changes": [
+          -5.0,
+          0.0,
+          5.0
+        ],
+        "predicted_value": 74.88879601513965,
+        "exact_value": null,
+        "state": null,
+        "accepted": false,
+        "failure": "demand delta for bus 6354 would make demand negative",
+        "evidence": [
+          "sha256:3c10366b70cd58aa7c7d84c0f9af42402a26a60efbca07edd3760dd14cf1bc61"
+        ]
+      },
+      {
+        "changes": [
+          0.0,
+          -5.0,
+          5.0
+        ],
+        "predicted_value": 75.18920068551346,
+        "exact_value": 75.18918507257779,
+        "state": "sha256:b16be585fc79796b328d07faad623d026066f14902363971fb906ab5a74677fa",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:c4cdafcf2e2d38f562f25357e609136d15913d92f1864c595339728a6a2c4fb3"
+        ]
+      },
+      {
+        "changes": [
+          0.0,
+          -10.0,
+          10.0
+        ],
+        "predicted_value": 74.25938579496092,
+        "exact_value": 74.25936674847532,
+        "state": "sha256:d77132870897cae431c543f3a7fc49ec18801dad7555e79b1c7cbd7217dc8cf3",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:6477260d33e05b6585ca15fed8afe4ae83995919b699bc4f69a79c942d5f7012"
+        ]
+      },
+      {
+        "changes": [
+          5.0,
+          -5.0,
+          0.0
+        ],
+        "predicted_value": 76.41938859879346,
+        "exact_value": 76.41944070023823,
+        "state": "sha256:b79ae3c85f32d646b61e3542788b0cf7d532295073eaa2e336b3fd947f98868e",
+        "accepted": false,
+        "failure": null,
+        "evidence": [
+          "sha256:3a70cc3a5dc2f03d73dacd405d61a759e456e2057bac023d347ff56b156dfa73"
+        ]
+      }
+    ],
+    "result_states": [
+      "sha256:b16be585fc79796b328d07faad623d026066f14902363971fb906ab5a74677fa",
+      "sha256:d77132870897cae431c543f3a7fc49ec18801dad7555e79b1c7cbd7217dc8cf3",
+      "sha256:b79ae3c85f32d646b61e3542788b0cf7d532295073eaa2e336b3fd947f98868e"
+    ],
+    "assessed_recommendation": null,
+    "solve_count": 5,
+    "termination": "no_feasible_moves"
+  },
+  "study_sha256": "sha256:a989ff7ab0dab472206c5564f79c0ecb83faecffd819dea06a7a6338465196eb",
+  "elapsed_seconds": 54.5685007449938
+}

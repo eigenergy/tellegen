@@ -1,0 +1,25 @@
+{
+  "schema": "tellegen.native-webmcp-evidence/1",
+  "captured_at": "2026-09-05T11:49:57.968587+00:00",
+  "source_commit": "2a0028c41b5c971b6635b664ce75836898b420b6",
+  "engine_source_commit": "2009b3558b887365914fbcae5500f55c2b032703",
+  "powerio_commit": "65dbc042372d340e9901443f503537bc14a94c01",
+  "origin": "http://127.0.0.1:4186",
+  "browser": "Codex in-app Chromium, native WebMCP capability",
+  "fixture": "Synthetic three-bus corridor; existing planning-case.ts fixture; illustrative coordinates",
+  "backend": "Initial exact native CLI result; subsequent solves in Clarabel WASM; remote compute disabled",
+  "private_reasoning_recorded": false,
+  "files": {
+    "before-apply.png": "sha256:2858b8c294707b5589b770256a1d0c5bff0258dc9b5b2832f1b7f3f975bb00c8",
+    "calls.json": "sha256:499df4820ba0ecf624a911cb3122de6a24d379dbd4d87add8f6bf9415959e428",
+    "capacity-experiment.json": "sha256:acbb3eaf22a27313389b9507149e42409dda2fac16f8750bd6e382a3b9365f59",
+    "comparison.png": "sha256:50b627c4b5f193b965084b964bb449674fa2c2b298386f121e199e9a95f0347b",
+    "demand-experiment.json": "sha256:e3eb566eb2cb439c7d098ce8a7f146d64c35cd361372c8a95938e709dc4f07f2",
+    "initial-solution.json": "sha256:e99cab46d8143c90c34564ebde6fe8dfea0749f56f87a34080b67d90ab4a1718",
+    "input.pio.json": "sha256:1cd48af402bc98c803df5e2a08e4a8f1e7da22a830bcedbe50e7683092571ddc"
+  },
+  "wasm_assets": {
+    "packages/engine/dist/wasm-pkg/tellegen_bg.wasm": "sha256:1fda18d3f4cb03dcc645ab0240b046f72e5fb9654dd2607b13f0a789c0507af6",
+    "packages/engine/src/wasm-pkg/tellegen_bg.wasm": "sha256:1fda18d3f4cb03dcc645ab0240b046f72e5fb9654dd2607b13f0a789c0507af6"
+  }
+}

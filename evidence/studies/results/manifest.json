@@ -1,0 +1,72 @@
+{
+  "schema": "tellegen.study-results/1",
+  "engine_source_commit": "2009b3558b887365914fbcae5500f55c2b032703",
+  "powerio_library_commit": "65dbc042372d340e9901443f503537bc14a94c01",
+  "results": {
+    "case3-voltage.json": {
+      "sha256": "5ea5c15740612eae8a083ad84b2d6091caa105d99a20a80d4711c87c06ea11fb",
+      "outcome": "verified_candidate",
+      "comparison": {
+        "goal": "sha256:550345c9f975f6974fc17b89d0a06b207ad38f34a48c049cfe37ceef3f19c482",
+        "left_value": 0.00043750234605551133,
+        "right_value": 0.00040678296422363275,
+        "improvement": 3.0719381831878576e-05
+      },
+      "planning_solves": 6,
+      "creation_solves": 1,
+      "termination": "no_feasible_moves"
+    },
+    "cats-capacity.json": {
+      "sha256": "63e27a5bcbfd196c1dd935dffe6aec6107b67578bd4d2369b624eca6499fd97c",
+      "outcome": "verified_candidate",
+      "comparison": {
+        "goal": "sha256:9c071f4aada6ffe4a4472277b58e9eb23be3cf0b22696f448bf9d0cdac983689",
+        "left_value": 76.11900126846726,
+        "right_value": 53.61631934022424,
+        "improvement": 22.50268192824302
+      },
+      "planning_solves": 6,
+      "creation_solves": 1,
+      "termination": "no_verified_improvement"
+    },
+    "cats-redistribution.json": {
+      "sha256": "95697340fa6332119ad32d30662782c0295282a0ecec213b3c9bd46fc12f0475",
+      "outcome": "verified_candidate",
+      "comparison": {
+        "goal": "sha256:62b82b84cd00d9aa4e41590ccef2eda28d989896884e94f980a35cf1557f93bc",
+        "left_value": 76.11900126846726,
+        "right_value": 74.25936674847532,
+        "improvement": 1.8596345199919426
+      },
+      "planning_solves": 5,
+      "creation_solves": 1,
+      "termination": "no_feasible_moves"
+    },
+    "texas-capacity.json": {
+      "sha256": "83717b94057523c536c7a40e5f0fba3caefa66518927ce5399e7bad0516a48bb",
+      "outcome": "verified_candidate",
+      "comparison": {
+        "goal": "sha256:d816e7da5e393fc04afa206dd875ef95c30479869686f7ad82343741ef19b572",
+        "left_value": 87.08117942845188,
+        "right_value": 85.74773920380194,
+        "improvement": 1.3334402246499337
+      },
+      "planning_solves": 8,
+      "creation_solves": 1,
+      "termination": "solve_budget"
+    },
+    "texas-redistribution.json": {
+      "sha256": "45295bb276f327f6f17102cd23fdc6f7c646d0348c077ebe10d2457a44add6d1",
+      "outcome": "no_verified_improvement",
+      "comparison": {
+        "goal": "sha256:b9cf06b2d2d768bad3cf19493acf78ff77e3b5469451524f57d5a255ef38732b",
+        "left_value": 87.08117942845188,
+        "right_value": 87.08117942845188,
+        "improvement": 0.0
+      },
+      "planning_solves": 3,
+      "creation_solves": 1,
+      "termination": "no_verified_improvement"
+    }
+  }
+}

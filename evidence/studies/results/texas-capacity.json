@@ -1,0 +1,178 @@
+{
+  "schema": "tellegen.study-evidence/1",
+  "spec_sha256": "sha256:d42453e7c7532c4a0e57fbcac8d657e78734ac353b5a0eb4b2abd52b4c2ea6f6",
+  "source_sha256": "sha256:086db50d06a673dc3cb6cf86703e3df18d7ac2f50eda71ebaadbb48857f2dbaf",
+  "source_name": "texas-convex-cost-scenario.pio.json",
+  "powerio_sha256": "sha256:a0528dff86e18894596aee270dcf54974ed7a4402db2d44ac7b178fd7f44f0c7",
+  "tellegen_sha256": "sha256:95f22d124360564a831e98f528d626c16066e9a4632070c0030b2ade57bb7f40",
+  "input_sha256": "sha256:086db50d06a673dc3cb6cf86703e3df18d7ac2f50eda71ebaadbb48857f2dbaf",
+  "apply_requested": false,
+  "tolerances": {
+    "objective_absolute": 1e-05,
+    "objective_relative": 1e-05,
+    "demand_total_mw": 1e-07
+  },
+  "scenario_evidence_sha256": "sha256:cf2896dac166a04e75fa4951e1b9f489f33b55bba3727ff0c44e8fdd42734db8",
+  "initial_state": "sha256:5c26ae079e9b272760b4a1fff4f2415b65acab36dfe039664a42c6358e2b123f",
+  "recommended_state": "sha256:6c493b0cd7dd77e49b94b15d6a29ce9ff7de4fa40695a6c5811951f622361599",
+  "applied_state": "sha256:5c26ae079e9b272760b4a1fff4f2415b65acab36dfe039664a42c6358e2b123f",
+  "comparison": {
+    "goal": "sha256:d816e7da5e393fc04afa206dd875ef95c30479869686f7ad82343741ef19b572",
+    "left_value": 87.08117942845188,
+    "right_value": 85.74773920380194,
+    "improvement": 1.3334402246499337
+  },
+  "improvement_tolerance": 0.0008708117942845188,
+  "outcome": "verified_candidate",
+  "experiment": {
+    "start_state": "sha256:5c26ae079e9b272760b4a1fff4f2415b65acab36dfe039664a42c6358e2b123f",
+    "goal": "sha256:d816e7da5e393fc04afa206dd875ef95c30479869686f7ad82343741ef19b572",
+    "kind": "planning",
+    "rationale": "Investigate the high-price load region and the limiting 230273-230267 corridor identified in the exact starting solution. Rank feasible moves with the implicit gradient and require an exact improvement above the recorded numerical tolerance.",
+    "evidence": [
+      "sha256:13a862b34c53bd2f64a894b1c40c7712642db37b9904e0bd6181972636a2447c"
+    ],
+    "trials": [
+      {
+        "changes": [
+          0.0,
+          0.0,
+          25.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "predicted_value": 87.08117932451322,
+        "exact_value": 87.08117617497018,
+        "state": "sha256:6511a650fe62e08cb23e2bdf8c619c78ebdc36b8ce307ed12d5d9fab33b57b8f",
+        "accepted": false,
+        "failure": null,
+        "evidence": [
+          "sha256:aa1d655623a3b2930184c32278d20f8b8d66924009eb213bccc53a324de875bb"
+        ]
+      },
+      {
+        "changes": [
+          25.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "predicted_value": 87.08117935960564,
+        "exact_value": 86.60544499401925,
+        "state": "sha256:c5d51cb1dc5c3db6e40d36b5790fbde547d3eb7b041cb7a4c3b268686e258756",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:99ff2c5698df7d3632e7091b139ecce6dad2ca35c3d263aef1b727a2cdeb9c63"
+        ]
+      },
+      {
+        "changes": [
+          50.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "predicted_value": 86.60544496645757,
+        "exact_value": 85.95294343020926,
+        "state": "sha256:1a5991c27843dea96fa1e80de3cfe0fcd45d2ff067dfedd331817bbc3dad8673",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:c15bc3a2c1df7781f3f2a2752a06971e15f1f0362554a5be4440317e95498297"
+        ]
+      },
+      {
+        "changes": [
+          25.0,
+          0.0,
+          25.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "predicted_value": 86.60544498047521,
+        "exact_value": 86.60543447229263,
+        "state": "sha256:a019f583a6a1a4437b664704c60f1244ad05aa6bdac1261abdf3a3fb21bdde75",
+        "accepted": false,
+        "failure": null,
+        "evidence": [
+          "sha256:bd18414294e8df800a4f8a1aa36cd47b0c77c0d3f343dc0227b2ff9b64ef9a31"
+        ]
+      },
+      {
+        "changes": [
+          75.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "predicted_value": 85.95294335289191,
+        "exact_value": 85.74773920380194,
+        "state": "sha256:6c493b0cd7dd77e49b94b15d6a29ce9ff7de4fa40695a6c5811951f622361599",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:884bdcdd9f7eedfc90ecdec35291e78cd87f71d6ecefb0b92cca8aac5a8e5d32"
+        ]
+      },
+      {
+        "changes": [
+          50.0,
+          0.0,
+          25.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "predicted_value": 85.95294337682924,
+        "exact_value": 85.9529430760815,
+        "state": "sha256:4512acada321d1209e288395220091978278b54cd3ef0155b9af997411cc3c1a",
+        "accepted": false,
+        "failure": null,
+        "evidence": [
+          "sha256:2dad885df20215d5d923eb0a73ed683fc8a7d489190dbd3fca0e7cdf4e7c71e3"
+        ]
+      },
+      {
+        "changes": [
+          100.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "predicted_value": 85.74773920216401,
+        "exact_value": 85.7477411021869,
+        "state": "sha256:311fe9cb0cedab1bfa1a8b2131f3206345baa853da61b185d8a0f94e1ffaf53d",
+        "accepted": false,
+        "failure": null,
+        "evidence": [
+          "sha256:4431a21e0563d3967fabf6d3ec367c8592be27be3eb64e1d22e46a85f048afd2"
+        ]
+      }
+    ],
+    "result_states": [
+      "sha256:6511a650fe62e08cb23e2bdf8c619c78ebdc36b8ce307ed12d5d9fab33b57b8f",
+      "sha256:c5d51cb1dc5c3db6e40d36b5790fbde547d3eb7b041cb7a4c3b268686e258756",
+      "sha256:1a5991c27843dea96fa1e80de3cfe0fcd45d2ff067dfedd331817bbc3dad8673",
+      "sha256:a019f583a6a1a4437b664704c60f1244ad05aa6bdac1261abdf3a3fb21bdde75",
+      "sha256:6c493b0cd7dd77e49b94b15d6a29ce9ff7de4fa40695a6c5811951f622361599",
+      "sha256:4512acada321d1209e288395220091978278b54cd3ef0155b9af997411cc3c1a",
+      "sha256:311fe9cb0cedab1bfa1a8b2131f3206345baa853da61b185d8a0f94e1ffaf53d"
+    ],
+    "assessed_recommendation": null,
+    "solve_count": 8,
+    "termination": "solve_budget"
+  },
+  "study_sha256": "sha256:c892ed15d6dee0ae2118335078882b2039b6cfe5ec049f2e499c288810fcd3be",
+  "elapsed_seconds": 96.37600425898563
+}

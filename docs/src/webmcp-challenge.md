@@ -68,6 +68,35 @@ records, revisions and hashes. Fresh native WebMCP evidence accompanies the
 persistent Study release. The showcase can be reproduced independently of a
 contest submission.
 
+## Verified examples
+
+Fresh [result records](https://github.com/eigenergy/tellegen/tree/codex/webmcp-challenge-v1/evidence/studies/results)
+include the declared tolerances and all attempted trials. The values below are
+the outer objectives specified by each declaration; capacity and demand examples
+sum selected nodal prices, while the AC example measures squared voltage error.
+
+| Study | Starting objective | Recommended objective | Planning solves |
+|---|---:|---:|---:|
+| CATS capacity | 76.11900127 | 53.61631934 | 6 |
+| CATS demand redistribution | 76.11900127 | 74.25936675 | 5 |
+| Texas7k convex-cost scenario, capacity | 87.08117943 | 85.74773920 | 8 |
+| Texas7k convex-cost scenario, redistribution | 87.08117943 | 87.08117943 | 3 |
+| Three-bus AC voltage target | 0.00043750235 | 0.00040678296 | 6 |
+
+Each Study also has one creation solve. The Texas7k redistribution search
+retains its starting state: the tested changes are below its recorded improvement
+tolerance. The planner reports that limit instead of presenting numerical noise
+as a gain. None of these searches applies its recommendation automatically.
+
+The [native WebMCP demonstration](https://github.com/eigenergy/tellegen/tree/codex/webmcp-challenge-v1/evidence/studies/native-webmcp)
+records all seven Study tools, explicit application, reload, branching, goal
+revision and a rejected stale request. On its synthetic three-bus case, a 5 MW
+capacity increase lowers the target bus price but raises the price at another
+bus. A second goal explores demand transfers from the original starting state.
+The applied capacity choice and the new recommendation remain distinct.
+
+![Native Study comparison showing the target improvement and prices elsewhere](assets/challenge/study-comparison.png)
+
 ## References
 
 - [WebMCP tool contract](webmcp.md)
