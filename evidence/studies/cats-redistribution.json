@@ -1,0 +1,78 @@
+{
+  "create": {
+    "id": "cats-redistribution",
+    "title": "CATS redistribution",
+    "formulation": "dcopf",
+    "request": "Lower the weighted prices at buses [6354, 2101, 541] using redistribution. Show the consequences elsewhere.",
+    "interpretation": "Minimize the sum of selected active-power marginal prices. Changes are relative to the captured source state.",
+    "objective": {
+      "kind": "weighted_observable",
+      "operand": {
+        "Price": "Active"
+      },
+      "weights": [
+        {
+          "element": 6354,
+          "weight": 1.0
+        },
+        {
+          "element": 2101,
+          "weight": 1.0
+        },
+        {
+          "element": 541,
+          "weight": 1.0
+        }
+      ]
+    },
+    "decisions": {
+      "variables": [
+        {
+          "id": "6354",
+          "element": 6354,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 10,
+          "increment": 5,
+          "budget_weight": 1
+        },
+        {
+          "id": "2101",
+          "element": 2101,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 10,
+          "increment": 5,
+          "budget_weight": 1
+        },
+        {
+          "id": "541",
+          "element": 541,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 10,
+          "increment": 5,
+          "budget_weight": 1
+        }
+      ],
+      "total_budget": 20,
+      "max_changed_elements": 2,
+      "demand": {
+        "kind": "redistribution"
+      }
+    }
+  },
+  "search": {
+    "max_solves": 8,
+    "max_iterations": 8,
+    "beam_width": 2,
+    "min_improvement": 0.001
+  },
+  "rationale": "Use the implicit objective gradient to rank feasible moves and retain the best exact result.",
+  "tolerances": {
+    "objective_absolute": 1e-05,
+    "objective_relative": 1e-05,
+    "demand_total_mw": 1e-07
+  },
+  "source_sha256": "sha256:1749ea6f3b0587a4c565ee7d794e4b67373249f34a2cff39abb29c05f4f9fa56"
+}

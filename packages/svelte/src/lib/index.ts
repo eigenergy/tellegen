@@ -49,7 +49,7 @@ export {
 	isDisplayFile,
 	isPermanentEngineFailure,
 	parseDisplay,
-	solveJson
+	solveModule
 } from '@tellegen/engine';
 
 export type {
@@ -96,6 +96,13 @@ export type {
 	IngestedJsonDrop,
 	JsonDropClassification,
 	JsonDropKind,
+	CapacityPlanBusWeightJson,
+	CapacityPlanIterationJson,
+	CapacityPlanOutcomeJson,
+	CapacityPlanRatingChangeJson,
+	CapacityPlanResultSummaryJson,
+	CapacityPlanSpecJson,
+	ImplicitObjectiveJson,
 	SensTarget,
 	Topology,
 	TopologyBranch,

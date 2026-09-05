@@ -7,8 +7,6 @@ import {
   ingestCase,
   ingestDistCaseBytes,
   ingestJsonDrop,
-  ingestModelJsonBytes,
-  loadPackageBytes,
   parseDisplay,
   parseGeo,
 } from "../src/index.js";
@@ -30,12 +28,10 @@ describe("engine byte input limit", () => {
     ["classifyJson", () => classifyJson(oversized)],
     ["ingestJsonDrop", () => ingestJsonDrop(oversized)],
     ["ingestCase", () => ingestCase(oversized, "m")],
-    ["ingestModelJsonBytes", () => ingestModelJsonBytes(oversized)],
     ["ingestDistCaseBytes", () => ingestDistCaseBytes(oversized, "dss")],
     ["parseDisplay", () => parseDisplay(oversized)],
     ["parseGeo", () => parseGeo(oversized, "coords.csv")],
     ["applyDisplayGeo", () => applyDisplayGeo("{}", oversized)],
-    ["loadPackageBytes", () => loadPackageBytes(oversized)],
   ])("rejects %s before engine dispatch", async (_name, invoke) => {
     await expect(invoke()).rejects.toThrow("input exceeds 128 MiB limit");
   });

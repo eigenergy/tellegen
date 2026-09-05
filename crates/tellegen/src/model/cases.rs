@@ -34,9 +34,7 @@ mpc.gencost = [
 
 /// Parse and build the shared 3-bus fixture.
 pub(crate) fn parse_case3() -> DcNetwork {
-    let net = powerio::parse_str(CASE3, "matpower")
-        .expect("parse case3")
-        .network;
+    let net = crate::model::parse_matpower(CASE3).expect("parse case3");
     DcNetwork::from_network(&net).expect("build DcNetwork")
 }
 
@@ -86,17 +84,13 @@ mpc.gencost = [
 /// Parse and build the 9-bus fixture as an [`AcNetwork`].
 #[cfg(feature = "sensitivity")]
 pub(crate) fn parse_case9_ac() -> AcNetwork {
-    let net = powerio::parse_str(CASE9, "matpower")
-        .expect("parse case9")
-        .network;
+    let net = crate::model::parse_matpower(CASE9).expect("parse case9");
     AcNetwork::from_network(&net).expect("build AcNetwork")
 }
 
 /// Parse and build the shared 3-bus fixture as an [`AcNetwork`].
 #[cfg(feature = "conic")]
 pub(crate) fn parse_case3_ac() -> AcNetwork {
-    let net = powerio::parse_str(CASE3, "matpower")
-        .expect("parse case3")
-        .network;
+    let net = crate::model::parse_matpower(CASE3).expect("parse case3");
     AcNetwork::from_network(&net).expect("build AcNetwork")
 }

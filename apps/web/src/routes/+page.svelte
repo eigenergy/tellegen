@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { TellegenShell } from '@tellegen/svelte';
 	import SeoHead from '$lib/components/SeoHead.svelte';
+	import StudyWorkspace from '$lib/studies/StudyWorkspace.svelte';
 </script>
 
 <SeoHead
@@ -11,3 +12,4 @@
 />
 
 <TellegenShell />
+<StudyWorkspace />

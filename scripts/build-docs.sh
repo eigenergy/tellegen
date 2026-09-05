@@ -7,4 +7,6 @@ cd "$repo_root"
 mdbook build
 mkdir -p docs/book/assets
 cp docs/assets/hero.svg docs/book/assets/hero.svg
+mkdir -p docs/book/assets/challenge
+cp docs/assets/challenge/* docs/book/assets/challenge/
 touch docs/book/.nojekyll

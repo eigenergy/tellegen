@@ -4,7 +4,7 @@ version = "0.0.0"
 edition.workspace = true
 publish = false
 license = "MIT"
-description = "PGLib-OPF validation and benchmark harness for tellegen. Non-shipping, native only."
+description = "Private native PGLib-OPF validation and benchmark harness for tellegen."
 
 [[bin]]
 name = "pglib-bench"
@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 # The engine, with the conic (SOCWR) relaxation on for parity coverage alongside the
-# DC and AC-power-flow paths. The shared workspace lockfile unifies powerio across the
+# DC and AC power flow paths. The shared workspace lockfile unifies powerio across the
 # API boundary.
 tellegen = { path = "../tellegen", features = ["conic"] }
 powerio.workspace = true

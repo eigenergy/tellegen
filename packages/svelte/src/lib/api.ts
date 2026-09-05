@@ -30,7 +30,7 @@ export interface TellegenApiClientOptions {
 export interface TellegenApiClient {
 	getCases(): Promise<CaseSummary[]>;
 	getNetwork(caseId: string): Promise<Network>;
-	getCaseNetworkJson(caseId: string, signal?: AbortSignal): Promise<string>;
+	getCaseModuleJson(caseId: string, signal?: AbortSignal): Promise<string>;
 	getSolution(caseId: string): Promise<Solution>;
 	getSensitivity(
 		caseId: string,
@@ -128,18 +128,18 @@ async function checkedFetch(
 	return res;
 }
 
-async function getJson<T>(
-	fetchImpl: FetchLike,
-	url: string,
-	signal?: AbortSignal
-): Promise<T> {
+async function getJson<T>(fetchImpl: FetchLike, url: string, signal?: AbortSignal): Promise<T> {
 	const res = await checkedFetch(fetchImpl, url, signal);
 	return res.json() as Promise<T>;
 }
 
 export interface SolveStreamHandlers {
 	onsolution?: (
-		sol: Solution & { case: string; solve_ms: number; iterations: SolveIteration[] }
+		sol: Solution & {
+			case: string;
+			solve_ms: number;
+			iterations: SolveIteration[];
+		}
 	) => void;
 	onsensitivity?: (col: SensitivityColumn) => void;
 	onfail?: (message: string) => void;
@@ -152,8 +152,9 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 
 	return {
 		getCases: () => getJson<CaseSummary[]>(fetchImpl, apiPath(apiBase, '/cases')),
-		getNetwork: (caseId) => getJson<Network>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/network`)),
-		async getCaseNetworkJson(caseId, signal) {
+		getNetwork: (caseId) =>
+			getJson<Network>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/network`)),
+		async getCaseModuleJson(caseId, signal) {
 			const url = apiPath(apiBase, `/cases/${caseId}/case`);
 			const res = await checkedFetch(fetchImpl, url, signal);
 			return res.text();
@@ -188,13 +189,22 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 			if (d) params.set('d', d);
 			if (sensBus !== null) params.set('sens', String(sensBus));
 			const qs = params.toString();
-			const es = new EventSourceImpl(apiPath(apiBase, `/cases/${caseId}/solve${qs ? `?${qs}` : ''}`));
+			const es = new EventSourceImpl(
+				apiPath(apiBase, `/cases/${caseId}/solve${qs ? `?${qs}` : ''}`)
+			);
 			let finished = false;
 			const finish = () => {
 				finished = true;
 				es.close();
 			};
-			es.addEventListener('solution', (e) => handlers.onsolution?.(JSON.parse(e.data)));
+			es.addEventListener('solution', (e) => {
+				const solution = JSON.parse(e.data) as Solution & {
+					case: string;
+					solve_ms: number;
+					iterations: SolveIteration[];
+				};
+				handlers.onsolution?.(solution);
+			});
 			es.addEventListener('sensitivity', (e) => handlers.onsensitivity?.(JSON.parse(e.data)));
 			es.addEventListener('fail', (e) => {
 				finish();

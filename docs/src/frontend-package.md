@@ -103,8 +103,12 @@ npm install @tellegen/engine
 Use the engine package when you want to build your own UI:
 
 ```ts
-import { createStudy, formatOf, ingestCase, solveJson } from "@tellegen/engine";
+import { createStudy, formatOf, ingestCase, solveModule } from "@tellegen/engine";
 ```
+
+`ingestCase` and solvable JSON ingestion return a retained PowerIO module in
+`module_json`. Both `createStudy` and `solveModule` accept that generation-2
+PowerIO IR module. Geographic transforms update and return the same module.
 
 The engine package resolves its wasm files relative to the package module. Apps
 must serve package asset files from `node_modules`; Vite and SvelteKit handle

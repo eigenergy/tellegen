@@ -30,8 +30,9 @@ use super::{
     SensError, SolveSpec, VoltageKind, GB,
 };
 
-/// Tikhonov term for the conic KKT factorization, the conic analogue of the DC
-/// engine's Tikhonov perturbation.
+/// Tikhonov term for the derivative factorization only, the conic analogue of
+/// the DC perturbation. It does not alter the primal conic program or its
+/// declared objective.
 const CONIC_KKT_EPS: f64 = 1e-9;
 
 /// The arrow matrix entry `arrow(v)[j, l]` for a second-order cone block, where
@@ -250,6 +251,17 @@ impl Differentiable for ConicKkt<'_> {
     ///
     /// The driver supplies the leading minus of `dz/dp = −K⁻¹ dK/dp`.
     fn parameter_jacobian(&self, p: Parameter, idx: &[usize]) -> Result<Mat<f64>, SensError> {
+        if matches!(p, Parameter::Cost(_)) {
+            if let Some(&generator) = idx
+                .iter()
+                .find(|&&generator| self.net.piecewise_costs[generator].is_some())
+            {
+                return Err(SensError::InvalidInput(format!(
+                    "generator {} has a piecewise linear cost, not a quadratic or linear coefficient",
+                    self.net.gen_ids[generator]
+                )));
+            }
+        }
         let mut rhs = Mat::<f64>::zeros(self.dim, idx.len());
         let (nvar, lay, z, x) = (self.nvar, &self.lay, &self.z, &self.x);
         match p {
@@ -266,7 +278,7 @@ impl Differentiable for ConicKkt<'_> {
                 for (c, &e) in idx.iter().enumerate() {
                     // Both apparent-power cones (from, to) are SOC(3) with rate_a at
                     // the head; the column is the cone's z block on its rows.
-                    for base in [lay.r_sf(e), lay.r_st(e)] {
+                    for base in [lay.r_sf(e), lay.r_st(e)].into_iter().flatten() {
                         for j in 0..3 {
                             rhs[(nvar + base + j, c)] = z[base + j];
                         }
@@ -467,6 +479,14 @@ mod tests {
     const DISPATCH: Operand = Operand::Dispatch(Power::Active);
     const PRICE: Operand = Operand::Price(Power::Active);
     const VOLTAGE: Operand = Operand::Voltage(VoltageKind::Squared);
+
+    fn piecewise_case3_ac() -> AcNetwork {
+        let text = crate::model::CASE3
+            .replace(" 2 0 0 3 0.11  5   0;", " 1 0 0 3 0 0 50 5 250 405;")
+            .replace(" 2 0 0 3 0.085 1.2 0;", " 1 0 0 2 0 0 270 135;");
+        let network = crate::model::parse_matpower(&text).expect("parse piecewise case3");
+        AcNetwork::from_network(&network).expect("prepare piecewise case3")
+    }
 
     fn l2(v: &[f64]) -> f64 {
         v.iter().map(|x| x * x).sum::<f64>().sqrt()
@@ -1111,6 +1131,42 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn piecewise_conic_kkt_matches_demand_finite_differences() {
+        let net = piecewise_case3_ac();
+        check_conic_parity(&net, PRICE, DEMAND, 1e-4, 2e-2, 1e-1);
+
+        let sol = socwr_opf(&net).expect("piecewise socwr");
+        let sys = ConicKkt::new(&net, &sol).expect("piecewise conic kkt");
+        let forward = sensitivity(&sys, PRICE, DEMAND, None, Mode::Forward)
+            .expect("piecewise forward sensitivity");
+        let adjoint = sensitivity(&sys, PRICE, DEMAND, None, Mode::Adjoint)
+            .expect("piecewise adjoint sensitivity");
+        for (forward_row, adjoint_row) in forward.values.iter().zip(&adjoint.values) {
+            for (&forward_value, &adjoint_value) in forward_row.iter().zip(adjoint_row) {
+                assert!((forward_value - adjoint_value).abs() < 1e-8);
+            }
+        }
+    }
+
+    #[test]
+    fn piecewise_conic_generators_reject_coefficient_sensitivity() {
+        let net = piecewise_case3_ac();
+        let sol = socwr_opf(&net).expect("piecewise socwr");
+        let sys = ConicKkt::new(&net, &sol).expect("piecewise conic kkt");
+        let error = sensitivity(
+            &sys,
+            PRICE,
+            Parameter::Cost(CostTerm::Quadratic),
+            Some(&[0]),
+            Mode::Forward,
+        )
+        .expect_err("a piecewise cost has no quadratic coefficient parameter");
+        assert!(
+            matches!(error, SensError::InvalidInput(message) if message.contains("piecewise linear cost"))
+        );
     }
 
     #[test]

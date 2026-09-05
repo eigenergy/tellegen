@@ -23,7 +23,7 @@
 	{/if}
 </div>
 {#if ctrl.activeDisplay && ctrl.displayStats}
-	{#if ctrl.activeDisplay.mode === 'lmp'}
+	{#if ctrl.activeDisplay.mode === 'price'}
 		<div class="legend-heading">
 			<span class="legend-title">Locational marginal price</span>
 			<span
@@ -60,7 +60,9 @@
 		{/if}
 	</div>
 {:else}
-	<p class="dim small blink">Solving {formulationLabel(ctrl.activeFormulation)}&hellip;</p>
+	<p class="dim small blink">
+		Solving {formulationLabel(ctrl.activeFormulation)}&hellip;
+	</p>
 {/if}
 
 <style>

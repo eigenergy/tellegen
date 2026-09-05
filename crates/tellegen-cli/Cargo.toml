@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Command-line interface for the tellegen power flow engine (stateless JSON solves)."
+description = "Command line interface for PowerIO module solves and capacity planning."
 
 [[bin]]
 name = "tellegen"
@@ -13,7 +13,18 @@ path = "src/main.rs"
 
 [dependencies]
 # Default features (sensitivity): the convex/relaxation engine.
-tellegen = { path = "../tellegen" }
+tellegen = { path = "../tellegen", features = ["schema"] }
+# The stored module boundary the headless MCP workflow speaks: read the
+# case module, narrow to the typed instance, write the solution module.
+powerio.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ctrlc = { version = "3.4", features = ["termination"] }
+
+[features]
+default = []
+conic = ["tellegen/conic"]
 
 [lints]
 workspace = true

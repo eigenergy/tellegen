@@ -5,19 +5,24 @@
 
 	const app = getAppState();
 	const ctrl = getController();
-	const busUnitTitle =
-		'LMP is measured in $/MWh and demand is perturbed in MW, so dLMP/dd has units ($/MWh)/MW. ' +
-		'DC LMPs move only when a binding constraint changes, so most nudges in this slider range ' +
-		'shift prices very little unless the active set changes.';
-	const branchUnitTitle =
-		'LMP is measured in $/MWh and the rating is perturbed in MVA, so dLMP/dfmax has units ' +
-		"($/MWh)/MVA. The column is zero unless the line's limit is binding.";
+	const reportedUnits = $derived(
+		(ctrl.selectedSensitivity?.units ?? '(objective units/MW)/MW').replaceAll(
+			'objective_unit',
+			'objective units'
+		)
+	);
+	const busUnitTitle = $derived(
+		`LMP response to active demand, in ${reportedUnits}. The response is small while the active set stays unchanged.`
+	);
+	const branchUnitTitle = $derived(
+		`LMP response to the thermal rating, in ${reportedUnits}. The column is zero when the limit is inactive.`
+	);
 
-	// Branch mode: the selection is a line and the column is ∂LMP/∂rating; the
+	// Branch mode: the selection is a line and the column is price/rating; the
 	// legend and preview pipeline are identical (both columns are bus-keyed).
 	const branchMode = $derived(app.selectedBranch !== null);
 	const unitTitle = $derived(branchMode ? branchUnitTitle : busUnitTitle);
-	const units = $derived(branchMode ? '($/MWh)/MVA' : '($/MWh)/MW');
+	const previewUnits = $derived(app.previewPrices?.units ?? 'objective units/MW');
 
 	const previewStep = $derived(
 		branchMode
@@ -54,33 +59,36 @@
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels mono single">
-				<span>uniform {signedExp(ctrl.sensSummary.mean * previewStep)} $/MWh</span>
+				<span
+					>uniform {signedExp(ctrl.sensSummary.mean * previewStep)}
+					{previewUnits}</span
+				>
 			</div>
 		{:else if ctrl.previewScale}
 			<!-- The bounds are fixed for the whole drag (column scale × full slider
 			     deflection), so the ramp ends label the colors: full green/purple is
-			     the predicted ΔLMP at full deflection, and intensity grows with the
+			     the predicted LMP change at full deflection, and intensity grows with the
 			     step instead of renormalizing every frame. -->
 			<div class="legend" style:background={sensGradient}></div>
 			<div class="legend-labels mono">
 				<span>&minus;{ctrl.previewScale.toExponential(1)}</span>
-				<span>&Delta;LMP $/MWh</span>
+				<span>&Delta; LMP {previewUnits}</span>
 				<span>+{ctrl.previewScale.toExponential(1)}</span>
 			</div>
 		{/if}
 	{:else}
 		<p class="dim small sensitivity-copy" title={unitTitle}>
 			{#if branchMode}
-				LMP response per MVA of rating on line {branchLabel}.
+				LMP response to the rating on line {branchLabel}.
 			{:else}
-				LMP response per MW of demand at bus {app.selectedBus}.
+				LMP response to demand at bus {app.selectedBus}.
 			{/if}
 			<span class="hint-dot mono" title={unitTitle} aria-label={unitTitle}>i</span>
 		</p>
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels mono single">
-				<span>uniform {signedExp(ctrl.sensSummary.mean)} {units}</span>
+				<span>uniform {signedExp(ctrl.sensSummary.mean)} {reportedUnits}</span>
 			</div>
 		{:else if ctrl.sensSummary}
 			<div class="legend" style:background={sensGradient}></div>
@@ -93,7 +101,7 @@
 			<div class="legend" style:background="var(--line)" style:opacity="0.4"></div>
 			<div class="legend-labels mono single">
 				<span class="blink">
-					computing {#if branchMode}&part;LMP/&part;fmax{:else}&part;LMP/&part;d{/if}&hellip;
+					computing {#if branchMode}&part;value/&part;fmax{:else}&part;value/&part;d{/if}&hellip;
 				</span>
 			</div>
 		{/if}

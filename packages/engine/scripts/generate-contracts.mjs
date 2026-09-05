@@ -1,3 +1,4 @@
+import "./generate-study-contracts.mjs";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -84,16 +85,10 @@ export interface Edits {
 \trates?: BranchRatingDeltas;
 }
 
-export interface SolveOptions {
-\tshed?: boolean;
-\twarm_start?: boolean;
-}
-
 export interface SolveRequest {
 \tformulation?: FormulationId;
 \tedits?: Edits;
 \tsensitivities?: SensRequest[];
-\toptions?: SolveOptions;
 }
 
 export interface SolveIteration {
@@ -132,6 +127,7 @@ export interface BranchFlow {
 }
 
 export interface GenDispatch {
+\tbus?: number;
 \tgen: number;
 \tpg: number;
 \tqg?: number;
@@ -182,8 +178,8 @@ export interface ProblemCaps {
 
 export interface NetworkBus {
 \tid: number;
-\t/** powerio row uid; always present on an ingested case, absent on older payloads. */
-\tuid?: string;
+\t/** PowerIO row uid when the source carries one; older payloads omit the field. */
+\tuid?: string | null;
 \t/** False for a display-only row synthesized by analysis lowering. */
 \teditable?: boolean;
 \tlon: number;
@@ -194,8 +190,8 @@ export interface NetworkBus {
 
 export interface NetworkBranch {
 \tid: number;
-\t/** powerio row uid; always present on an ingested case, absent on older payloads. */
-\tuid?: string;
+\t/** PowerIO row uid when the source carries one; older payloads omit the field. */
+\tuid?: string | null;
 \t/** False for a display-only row synthesized by analysis lowering. */
 \teditable?: boolean;
 \tfrom: number;
@@ -216,20 +212,20 @@ export interface Network {
 
 export interface Solution {
 \tobjective: number;
-\tlmp: { bus: number; usd_per_mwh: number }[];
+\tprices: { bus: number; value: number }[];
 \tva: { bus: number; value: number }[];
 \tw: { bus: number; value: number }[];
 \tflows: { branch: number; mw: number; loading: number }[];
-\tdispatch: { gen: number; mw: number }[];
+\tdispatch: { gen: number; bus?: number; mw: number }[];
 }
 
 export interface SensitivityColumn {
 \tcase: string;
 \toperand: string;
 \tparameter: string;
-\t/** The selected source bus, for a bus-axis parameter column (∂LMP/∂d). */
+\t/** The selected source bus, for a bus-axis price parameter column. */
 \tbus?: number;
-\t/** The selected source branch, for a branch-axis parameter column (∂LMP/∂fmax). */
+\t/** The selected source branch, for a branch-axis price parameter column. */
 \tbranch?: number;
 \tunits: string;
 \tvalues: { bus: number; value: number }[];

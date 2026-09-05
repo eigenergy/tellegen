@@ -4,23 +4,24 @@ version = "0.2.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Differentiable power flow, optimal power flow, and sensitivities in Rust."
+description = "DC optimal power flow, AC power flow, SOCWR, and sensitivities in Rust."
 readme = "README.md"
 keywords = ["opf", "power-flow", "differentiable", "sensitivity"]
 categories = ["science", "mathematics"]
 
 [dependencies]
 powerio.workspace = true
-# Matrix-free DC/AC OPF problem instances: the single owner of case interpretation
-# (per-unit generator PQ bounds and costs, nodal demand, reference coverage) that
-# `DcNetwork`/`AcNetwork` build on. Default features only, so the `matrix` bundle
-# writer stays out of the wasm build.
+# Private normalization and star lowering views. Public data crosses the
+# `powerio` module facade above.
+powerio-tx.workspace = true
+# Typed problem instances and solutions: the single owner of case
+# interpretation that `DcNetwork`/`AcNetwork` build on, and the portable
+# solution types tellegen emits.
 powerio-prob.workspace = true
-# The `.pio.json` document model, used by the Study save/load/export surface to
-# stamp row uids and carry the edit log as a package study block. Optional and
-# tied to `sensitivity`: only the Study path (which needs the differentiable
-# engine) persists to a package, so the minimal core build never links it.
-powerio-pkg = { workspace = true, optional = true }
+# `build_dc_opf_preparation`: the shared numerical assembly (per-unit demand,
+# generator bounds and costs, thermal limits, reference coverage, source row
+# mappings) the solver formulates over.
+powerio-matrix.workspace = true
 # DC/conic OPF QP/SOCP solver. Default features only (QDLDL + amd), so it stays pure
 # Rust and compiles to wasm32 as-is.
 clarabel = "0.11.1"
@@ -34,19 +35,27 @@ faer = { version = "0.24.4", default-features = false, features = ["std", "linal
 num-complex = { version = "0.4", default-features = false, optional = true }
 serde.workspace = true
 serde_json.workspace = true
-
-[dev-dependencies]
-# A multiconductor payload for the fail-closed load test that a study package must be
-# balanced. Already in the tree via powerio-pkg; takes the workspace pin.
-powerio-dist.workspace = true
+sha2 = "0.10"
+schemars = { workspace = true, optional = true }
 
 [features]
 default = ["sensitivity"]
-sensitivity = ["dep:faer", "dep:num-complex", "dep:powerio-pkg"]
+sensitivity = ["dep:faer", "dep:num-complex"]
 # The SOCWR (Jabr) conic relaxation of AC OPF and its KKT sensitivities. Solved with
 # Clarabel's second-order cone support (already linked); the sensitivity reuses the faer
 # paths, so `conic` pulls `sensitivity`. Additive, no new dependency.
 conic = ["sensitivity"]
+# JSON Schema derives used by the headless CLI contract. Kept out of the
+# browser and numerical builds.
+schema = ["dep:schemars", "powerio/schema"]
 
 [lints]
 workspace = true
+
+[[example]]
+name = "study_contract"
+required-features = ["schema"]
+
+[[example]]
+name = "convex_cost_scenario"
+required-features = ["sensitivity"]

@@ -12,6 +12,7 @@ examples/svelte-minimal/.svelte-kit/
 packages/engine/dist/
 packages/svelte/.svelte-kit/
 packages/svelte/dist/
+packages/webmcp/dist/
 *.tgz
 
 # Rust

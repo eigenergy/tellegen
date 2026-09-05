@@ -21,6 +21,7 @@
 	let dragDepth = 0;
 
 	$effect(() => {
+		if (app.studyView) return;
 		let hasDisplayMode = false;
 		for (const option of ctrl.displayOptions) {
 			if (option.mode === app.displayMode) {
@@ -29,7 +30,7 @@
 			}
 		}
 		if (ctrl.displayOptions.length > 0 && !hasDisplayMode) {
-			app.displayMode = 'lmp';
+			app.displayMode = 'price';
 		}
 	});
 
@@ -129,6 +130,7 @@
 	/>
 
 	<AppHeader />
+	{#if !app.studyView}
 	<ControlPanel />
 	<SolveCard />
 	<!-- ControlPanel mounts the lookup and the footer inline when compact. -->
@@ -138,6 +140,7 @@
 	<DropZone />
 	<PlacementCue />
 	<RestoreDefaultsButton />
+	{/if}
 	{#if config.showFooter && !app.compactLayout}
 		<AppFooter />
 	{/if}

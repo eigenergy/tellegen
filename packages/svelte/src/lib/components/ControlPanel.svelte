@@ -24,7 +24,11 @@
 	// bar; half and full are fractions of the viewport.
 	type Snap = 'peek' | 'half' | 'full';
 	const SNAPS: Snap[] = ['peek', 'half', 'full'];
-	const SNAP_FRACTION: Record<Snap, number> = { peek: 0, half: 0.46, full: 0.92 };
+	const SNAP_FRACTION: Record<Snap, number> = {
+		peek: 0,
+		half: 0.46,
+		full: 0.92
+	};
 	/** Below this the viewport is a landscape phone and half has to give up room. */
 	const SHORT_VIEWPORT_PX = 560;
 	/** px/ms above which a release snaps in the drag direction instead of to the nearest. */
@@ -150,10 +154,7 @@
 		if (dt > 0) speed = (lastY - e.clientY) / dt;
 		lastY = e.clientY;
 		lastT = e.timeStamp;
-		dragHeight = Math.max(
-			snapHeight('peek'),
-			Math.min(snapHeight('full'), dragStartHeight + dy)
-		);
+		dragHeight = Math.max(snapHeight('peek'), Math.min(snapHeight('full'), dragStartHeight + dy));
 	}
 
 	function onPointerUp() {

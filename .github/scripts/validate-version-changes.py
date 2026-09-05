@@ -56,6 +56,8 @@ def validate_npm(entries: list[tuple[str, str]]) -> None:
         "packages/engine/src/generated/contracts.ts",
         "packages/svelte/CHANGELOG.md",
         "packages/svelte/package.json",
+        "packages/webmcp/CHANGELOG.md",
+        "packages/webmcp/package.json",
         "apps/web/package.json",
         "examples/browser-minimal/package.json",
         "examples/svelte-minimal/package.json",
@@ -63,6 +65,7 @@ def validate_npm(entries: list[tuple[str, str]]) -> None:
     package_manifests = {
         "packages/engine/package.json",
         "packages/svelte/package.json",
+        "packages/webmcp/package.json",
     }
     changed_manifests: set[str] = set()
     deleted_changesets = 0

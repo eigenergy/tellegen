@@ -41,6 +41,8 @@ jobs:
         run: deploy/test-remote-deploy.sh
       - name: Test generated-version allowlists
         run: python3 .github/scripts/test-validate-version-changes.py
+      - name: Test the PowerIO pin guard
+        run: python3 .github/scripts/test-powerio-pin.py
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - name: Build image (load locally for the smoke test)

@@ -1,0 +1,675 @@
+[
+  {
+    "name": "inspect_study",
+    "input": {
+      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+      "section": "summary"
+    },
+    "output": {
+      "data": {
+        "active_goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "experiment_count": 8,
+        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recent_experiments": [
+          {
+            "id": "sha256:abe5d4f73e78328ec3428b2db8b129a0d727de633f66c8934f99a46b465bcff3",
+            "kind": "inspection",
+            "solve_count": 0,
+            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+            "termination": "completed",
+            "trial_count": 0
+          },
+          {
+            "id": "sha256:b054bee94799bb71596c4af361978062bb4ebc579dc61ff743ad912c98a5f0ee",
+            "kind": "challenge",
+            "solve_count": 0,
+            "start_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+            "termination": "completed",
+            "trial_count": 0
+          }
+        ],
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 10,
+        "state_count": 5,
+        "title": "Lower corridor prices"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_case",
+    "input": {},
+    "output": {
+      "data": {
+        "active": true,
+        "available_formulations": [
+          "dcopf",
+          "socwr"
+        ],
+        "case_id": "study-demo",
+        "edits": {
+          "demand_count": 0,
+          "demand_sample": [],
+          "rating_count": 0,
+          "rating_sample": []
+        },
+        "formulation": "dcopf",
+        "label": "Synthetic corridor study",
+        "network": {
+          "base_mva": 100,
+          "branches": 3,
+          "buses": 3
+        },
+        "revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r1",
+        "selection": null,
+        "session_id": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72",
+        "solution": {
+          "base_objective": 626.9487179486758,
+          "binding_branches": 0,
+          "objective": 626.9487179486758,
+          "objective_delta": 0,
+          "solve_backend": "none",
+          "solve_ms": null
+        },
+        "solving": false,
+        "source_digest": "sha256:6b3d7b9eab554950668b85adc28346fae06b6ba5cbd6d55f55148792bf3285cf",
+        "staged_proposal": null
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "update_case",
+    "input": {
+      "case_id": "study-demo",
+      "expected_revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r1",
+      "mode": "set",
+      "ratings": [
+        {
+          "branch_id": "2-3",
+          "delta_mw": -12
+        }
+      ]
+    },
+    "output": {
+      "data": {
+        "after": {
+          "binding_branches": 1,
+          "demand_edit_count": 0,
+          "formulation": "dcopf",
+          "objective": 635.2200000167709,
+          "objective_delta": 8.271282068095047,
+          "rating_edit_count": 1,
+          "revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r2"
+        },
+        "before": {
+          "binding_branches": 0,
+          "demand_edit_count": 0,
+          "formulation": "dcopf",
+          "objective": 626.9487179486758,
+          "objective_delta": 0,
+          "rating_edit_count": 0,
+          "revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r1"
+        },
+        "case_id": "study-demo",
+        "demand_edit_count": 0,
+        "formulation": "dcopf",
+        "rating_edit_count": 1,
+        "revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r2",
+        "solution": {
+          "base_objective": 626.9487179486758,
+          "binding_branches": 1,
+          "objective": 635.2200000167709,
+          "objective_delta": 8.271282068095047,
+          "solve_backend": "clarabel-wasm",
+          "solve_ms": 99
+        }
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "create_study",
+    "input": {
+      "case_id": "study-demo",
+      "expected_case_revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r2",
+      "goal": {
+        "title": "Lower corridor prices",
+        "formulation": "dcopf",
+        "request": "Lower the price at bus 2 with at most 20 MW of additional capacity on line 2-3. Show effects elsewhere before applying.",
+        "interpretation": "Minimize the active-power nodal price at bus 2. Increase line 2-3 in 5 MW steps, with a 20 MW budget.",
+        "objective": {
+          "kind": "weighted_observable",
+          "operand": {
+            "Price": "Active"
+          },
+          "weights": [
+            {
+              "element": 2,
+              "weight": 1
+            }
+          ]
+        },
+        "decisions": {
+          "variables": [
+            {
+              "id": "corridor",
+              "element": "2-3",
+              "intervention": "branch_rating",
+              "lower": 0,
+              "upper": 20,
+              "increment": 5,
+              "budget_weight": 1
+            }
+          ],
+          "total_budget": 20,
+          "max_changed_elements": 1
+        }
+      }
+    },
+    "output": {
+      "data": {
+        "active_goal": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment_count": 1,
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recent_experiments": [
+          {
+            "id": "sha256:7a851488b167771ddc66907252acf0ef13dadc0b9a3e4c20230f14bcb23992fc",
+            "kind": "counterfactual",
+            "solve_count": 1,
+            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+            "termination": "completed",
+            "trial_count": 0
+          }
+        ],
+        "recommended_state": null,
+        "revision": 0,
+        "state_count": 1,
+        "title": "Lower corridor prices"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "propose_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 0,
+      "operation": {
+        "kind": "propose",
+        "state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "goal": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb",
+        "options": {
+          "max_solves": 6,
+          "beam_width": 2,
+          "max_iterations": 4,
+          "min_improvement": 0.000001
+        },
+        "rationale": "Test bounded capacity increases and retain an exact verified price improvement."
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:8bd71cdbb6ede3ad0a9acc6f8d9c64c0304cb53cc06990e0d7faf8875ca4f6e4",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "revision": 1
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "compare_study_states",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 1,
+      "operation": {
+        "kind": "compare",
+        "left": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "right": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "goal": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb"
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "comparison": {
+          "goal": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb",
+          "improvement": 3.972820513348091,
+          "left_value": 15.460000003642069,
+          "right_value": 11.487179490293975
+        },
+        "experiment": "sha256:2f216ffb29c220a8dcd7d3eb1136d54e7c319d517c7ee478e7e5c67267e8c672",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "revision": 2
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "summary"
+    },
+    "output": {
+      "data": {
+        "active_goal": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment_count": 3,
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recent_experiments": [
+          {
+            "id": "sha256:8bd71cdbb6ede3ad0a9acc6f8d9c64c0304cb53cc06990e0d7faf8875ca4f6e4",
+            "kind": "planning",
+            "solve_count": 3,
+            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+            "termination": "no_verified_improvement",
+            "trial_count": 2
+          },
+          {
+            "id": "sha256:2f216ffb29c220a8dcd7d3eb1136d54e7c319d517c7ee478e7e5c67267e8c672",
+            "kind": "inspection",
+            "solve_count": 0,
+            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+            "termination": "completed",
+            "trial_count": 0
+          }
+        ],
+        "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "revision": 2,
+        "state_count": 3,
+        "title": "Lower corridor prices"
+      },
+      "ok": true
+    },
+    "after_reload": true
+  },
+  {
+    "name": "branch_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 2,
+      "operation": {
+        "kind": "branch",
+        "state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "rationale": "Compare conserved demand redistribution from the original electrical state."
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:e13bd56dc651eee1b74388299963037f10f60c65f2e31d3f02ddffd2e28149f9",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "revision": 3
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "revise_study_goal",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 3,
+      "operation": {
+        "kind": "revise_goal",
+        "goal": {
+          "anchor_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+          "parent": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb",
+          "request": "Lower bus 2 prices by transferring up to 10 MW of demand from bus 2 to bus 3, preserving total demand.",
+          "interpretation": "Minimize the active nodal price at bus 2 with paired 5 MW demand transfers and a 20 MW absolute-change budget.",
+          "objective": {
+            "kind": "weighted_observable",
+            "operand": {
+              "Price": "Active"
+            },
+            "weights": [
+              {
+                "element": 2,
+                "weight": 1
+              }
+            ]
+          },
+          "decisions": {
+            "variables": [
+              {
+                "id": "from-demand",
+                "element": 2,
+                "intervention": "active_demand",
+                "lower": -10,
+                "upper": 0,
+                "increment": 5,
+                "budget_weight": 1
+              },
+              {
+                "id": "to-demand",
+                "element": 3,
+                "intervention": "active_demand",
+                "lower": 0,
+                "upper": 10,
+                "increment": 5,
+                "budget_weight": 1
+              }
+            ],
+            "total_budget": 20,
+            "max_changed_elements": 2,
+            "demand": {
+              "kind": "redistribution"
+            }
+          }
+        }
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": null,
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recommended_state": null,
+        "revision": 4
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "summary"
+    },
+    "output": {
+      "data": {
+        "active_goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment_count": 4,
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recent_experiments": [
+          {
+            "id": "sha256:2f216ffb29c220a8dcd7d3eb1136d54e7c319d517c7ee478e7e5c67267e8c672",
+            "kind": "inspection",
+            "solve_count": 0,
+            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+            "termination": "completed",
+            "trial_count": 0
+          },
+          {
+            "id": "sha256:e13bd56dc651eee1b74388299963037f10f60c65f2e31d3f02ddffd2e28149f9",
+            "kind": "inspection",
+            "solve_count": 0,
+            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+            "termination": "branch_selected",
+            "trial_count": 0
+          }
+        ],
+        "recommended_state": null,
+        "revision": 4,
+        "state_count": 3,
+        "title": "Lower corridor prices"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "propose_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 4,
+      "operation": {
+        "kind": "propose",
+        "state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+        "options": {
+          "max_solves": 6,
+          "beam_width": 2,
+          "max_iterations": 4,
+          "min_improvement": 0.000001
+        },
+        "rationale": "Test paired demand transfers, preserve total demand, and retain the best exact result."
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:cbd937d1fcca9e57a02cf288f9aecbcf76917354cfae87e2fbe40ccd041caba2",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 5
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "branch_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 4,
+      "operation": {
+        "kind": "branch",
+        "state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "rationale": "Verify that a stale revision cannot change the inspected state."
+      }
+    },
+    "output": {
+      "error": {
+        "code": "TOOL_FAILED",
+        "message": "Stale Study revision; inspect the current Study and retry"
+      },
+      "ok": false
+    }
+  },
+  {
+    "name": "compare_study_states",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 5,
+      "operation": {
+        "kind": "compare",
+        "left": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "right": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca"
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "comparison": {
+          "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+          "improvement": 3.972820514679419,
+          "left_value": 15.460000003642069,
+          "right_value": 11.487179488962648
+        },
+        "experiment": "sha256:d3e16b9ca7e2ca3f863cc218caf1c2de86c6b6d7913d60c04e2c1ee8b253d20d",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 6
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "record_study_evidence",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 6,
+      "operation": {
+        "kind": "record_evidence",
+        "state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+        "sensitivity": false,
+        "rationale": "The conserved-demand scenario provides an exact alternative to the capacity recommendation.",
+        "evidence": {
+          "kind": "scenario_comparison",
+          "scenario": "paired 5 MW transfers from bus 2 to bus 3",
+          "capacity_recommendation": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+          "demand_recommendation": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+          "total_demand_preserved": true,
+          "comparison": {
+            "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+            "improvement": 3.972820514679419,
+            "left_value": 15.460000003642069,
+            "right_value": 11.487179488962648
+          }
+        },
+        "assessed_recommendation": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da"
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:0ed4ce72b12c6c561df7eb733c1b043d70c6267f8e1262156edb351a108f01bb",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 7
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "experiment",
+      "record_id": "sha256:8bd71cdbb6ede3ad0a9acc6f8d9c64c0304cb53cc06990e0d7faf8875ca4f6e4"
+    },
+    "output": {
+      "data": {
+        "encoding": "json",
+        "fragment": "{\"assessed_recommendation\":null,\"evidence\":[\"sha256:f5ad5e73588571d34a87a94c0f1f85c434e4e9cfb5dd3090e3cebcfb4dddc17b\"],\"goal\":\"sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb\",\"kind\":\"planning\",\"rationale\":\"Test bounded capacity increases and retain an exact verified price improvement.\",\"result_states\":[\"sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af\",\"sha256:69a22114d1a44615c1bc3ee65dfe7ffd2560012969bc8cc7adb47db2d8ccb623\"],\"solve_count\":3,\"start_state\":\"sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029\",\"termination\":\"no_",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "next_offset": 600,
+        "offset": 0,
+        "revision": 7,
+        "section": "experiment"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "experiment",
+      "record_id": "sha256:cbd937d1fcca9e57a02cf288f9aecbcf76917354cfae87e2fbe40ccd041caba2"
+    },
+    "output": {
+      "data": {
+        "encoding": "json",
+        "fragment": "{\"assessed_recommendation\":null,\"evidence\":[\"sha256:67823bbf46151c1835f2f3c5fd7c87592cc2006a4adadab370d65a60641430aa\"],\"goal\":\"sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca\",\"kind\":\"planning\",\"rationale\":\"Test paired demand transfers, preserve total demand, and retain the best exact result.\",\"result_states\":[\"sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da\",\"sha256:1c51c9c2cb316f35d3f04921387de0a7741d3fa1184b39dd0fea2c1ae40ca7f8\"],\"solve_count\":3,\"start_state\":\"sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029\",\"terminatio",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "next_offset": 600,
+        "offset": 0,
+        "revision": 7,
+        "section": "experiment"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "summary"
+    },
+    "output": {
+      "data": {
+        "active_goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment_count": 7,
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recent_experiments": [
+          {
+            "id": "sha256:d3e16b9ca7e2ca3f863cc218caf1c2de86c6b6d7913d60c04e2c1ee8b253d20d",
+            "kind": "inspection",
+            "solve_count": 0,
+            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+            "termination": "completed",
+            "trial_count": 0
+          },
+          {
+            "id": "sha256:0ed4ce72b12c6c561df7eb733c1b043d70c6267f8e1262156edb351a108f01bb",
+            "kind": "challenge",
+            "solve_count": 0,
+            "start_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+            "termination": "completed",
+            "trial_count": 0
+          }
+        ],
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 7,
+        "state_count": 5,
+        "title": "Lower corridor prices"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "branch_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 7,
+      "operation": {
+        "kind": "branch",
+        "state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "rationale": "Inspect the capacity candidate while keeping the demand recommendation and original applied state separate."
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:7c7c786f541d33488080db129bed4d4d2c723f36e1e52d17fcc4da8865081de7",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 8
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "compare_study_states",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 8,
+      "operation": {
+        "kind": "compare",
+        "left": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "right": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca"
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "comparison": {
+          "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+          "improvement": 3.972820514679419,
+          "left_value": 15.460000003642069,
+          "right_value": 11.487179488962648
+        },
+        "experiment": "sha256:4db009188f24dfe4ff74c984d8bbf41e9fd0266b93a8d69c75ec1bd508700a67",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 9
+      },
+      "ok": true
+    }
+  }
+]

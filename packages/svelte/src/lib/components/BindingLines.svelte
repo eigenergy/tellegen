@@ -32,7 +32,7 @@
 	<div class="binding-lines">
 		<p
 			class="mono dim head"
-			title="lines loaded to their thermal rating; select one to see &part;LMP/&part;rating"
+			title="lines loaded to their thermal rating; select one to see LMP sensitivity to the rating"
 		>
 			binding lines
 		</p>
@@ -45,9 +45,7 @@
 						aria-pressed={app.selectedBranch === branch.id}
 						onclick={() => select(branch.id)}
 					>
-						line {branch.from}&#8201;&ndash;&#8201;{branch.to} &middot; {Math.round(
-							loading * 100
-						)}%
+						line {branch.from}&#8201;&ndash;&#8201;{branch.to} &middot; {Math.round(loading * 100)}%
 					</button>
 				</li>
 			{/each}
@@ -93,8 +91,7 @@
 	li button.selected {
 		color: var(--text-accent);
 		background:
-			linear-gradient(90deg, rgba(177, 104, 27, 0.16), rgba(177, 104, 27, 0.05)),
-			var(--accent-soft);
+			linear-gradient(90deg, rgba(177, 104, 27, 0.16), rgba(177, 104, 27, 0.05)), var(--accent-soft);
 		box-shadow: inset 3px 0 0 var(--accent);
 		font-weight: 600;
 	}

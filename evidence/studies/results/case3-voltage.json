@@ -1,0 +1,119 @@
+{
+  "schema": "tellegen.study-evidence/1",
+  "spec_sha256": "sha256:0b9f8198fd56edfda26f9ffa3bff55ed1c9ea90672e27278383a21f19837e130",
+  "source_sha256": "sha256:1b3df5591ce2294f2c9ecb90c9528cd7e21f2d8511d2eff2799fd91c6c4635ec",
+  "source_name": "case3.m",
+  "powerio_sha256": "sha256:41e83d58f8dc7b25502c114dce2aae717c26d422e0f93bea6f4b8b047df161e8",
+  "tellegen_sha256": "sha256:71efccb62d6abf8643d4043570c42907bbbaa492d19e33bb2d5d08bf06e2e27a",
+  "input_sha256": "sha256:30d655a0c40740f28eda24fd73a42718457f0b14cdfcb2d7ea40081005104a4f",
+  "apply_requested": false,
+  "tolerances": {
+    "objective_absolute": 1e-09,
+    "voltage_per_unit": 1e-07,
+    "demand_total_mw": 1e-07
+  },
+  "initial_state": "sha256:17d4819ce2e76cb600ca8ff0fcabaf349d5b45189a03ade073e5fd243fa75a41",
+  "recommended_state": "sha256:53a161a700712e4c61d28f7c2b97d1a208b1ec0ac7319933536a1062fe5f3903",
+  "applied_state": "sha256:17d4819ce2e76cb600ca8ff0fcabaf349d5b45189a03ade073e5fd243fa75a41",
+  "comparison": {
+    "goal": "sha256:550345c9f975f6974fc17b89d0a06b207ad38f34a48c049cfe37ceef3f19c482",
+    "left_value": 0.00043750234605551133,
+    "right_value": 0.00040678296422363275,
+    "improvement": 3.0719381831878576e-05
+  },
+  "improvement_tolerance": 1e-09,
+  "outcome": "verified_candidate",
+  "experiment": {
+    "start_state": "sha256:17d4819ce2e76cb600ca8ff0fcabaf349d5b45189a03ade073e5fd243fa75a41",
+    "goal": "sha256:550345c9f975f6974fc17b89d0a06b207ad38f34a48c049cfe37ceef3f19c482",
+    "kind": "planning",
+    "rationale": "Follow the implicit voltage-objective direction and verify paired demand transfers with exact AC power flow.",
+    "evidence": [
+      "sha256:7b7a031c21dff2c2546f84a7972daad3e03e033ad5c1538d49e4fa0fddd5ed9a"
+    ],
+    "trials": [
+      {
+        "changes": [
+          -2.0,
+          2.0
+        ],
+        "predicted_value": 0.0004311164863001524,
+        "exact_value": 0.0004311656859428021,
+        "state": "sha256:d7428d16ff3a9a4d9729f246f0da20878a7313fe9b01969efebb0dfc663cfdb3",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:af63f1b071c0e6d28146bbba9da5863027076c6e78efc89cb864111423d8d0e5"
+        ]
+      },
+      {
+        "changes": [
+          -4.0,
+          4.0
+        ],
+        "predicted_value": 0.0004248780225433249,
+        "exact_value": 0.0004249266157767613,
+        "state": "sha256:c2027713e69f646e57d3332f2603cb98dad33ce17f6c07884f77ffc73cbcf0cf",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:cf85c485c66f57613f4abf00a6332316ae836f252fc8af8d996064ac84f9877e"
+        ]
+      },
+      {
+        "changes": [
+          -6.0,
+          6.0
+        ],
+        "predicted_value": 0.00041873593804107905,
+        "exact_value": 0.0004187839311947435,
+        "state": "sha256:ab9c7530f47769934130871870b5cf9bb79106d7cfd679aad61f0571cc2a59ea",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:d7a6b07f41107be8936d235d006c50d4e1d027ee2f86c9448eb84cb5fbaec3e1"
+        ]
+      },
+      {
+        "changes": [
+          -8.0,
+          8.0
+        ],
+        "predicted_value": 0.0004126890410729366,
+        "exact_value": 0.0004127364404304752,
+        "state": "sha256:9b7a74bf6580bb9b5dfd02e6569612d1ccf8ce27fe5a8632d95d7e925e8a633a",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:fb832eaa4190fb13df67b599149fc7b1bd9bbb3493251555bd97611f0d09f249"
+        ]
+      },
+      {
+        "changes": [
+          -10.0,
+          10.0
+        ],
+        "predicted_value": 0.0004067361524236217,
+        "exact_value": 0.00040678296422363275,
+        "state": "sha256:53a161a700712e4c61d28f7c2b97d1a208b1ec0ac7319933536a1062fe5f3903",
+        "accepted": true,
+        "failure": null,
+        "evidence": [
+          "sha256:e2cbc0051c82151905820742f904a3609e2863c6594cefa44ec82156cd0f349a"
+        ]
+      }
+    ],
+    "result_states": [
+      "sha256:d7428d16ff3a9a4d9729f246f0da20878a7313fe9b01969efebb0dfc663cfdb3",
+      "sha256:c2027713e69f646e57d3332f2603cb98dad33ce17f6c07884f77ffc73cbcf0cf",
+      "sha256:ab9c7530f47769934130871870b5cf9bb79106d7cfd679aad61f0571cc2a59ea",
+      "sha256:9b7a74bf6580bb9b5dfd02e6569612d1ccf8ce27fe5a8632d95d7e925e8a633a",
+      "sha256:53a161a700712e4c61d28f7c2b97d1a208b1ec0ac7319933536a1062fe5f3903"
+    ],
+    "assessed_recommendation": null,
+    "solve_count": 6,
+    "termination": "no_feasible_moves"
+  },
+  "study_sha256": "sha256:5600d439f3534206a46b9f2698cb1fe718df116e651f8c0a5f3a7db73bf3e708",
+  "elapsed_seconds": 0.08871557100792415
+}

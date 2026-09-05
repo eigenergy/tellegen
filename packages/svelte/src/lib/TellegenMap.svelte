@@ -11,7 +11,7 @@
 		branchWidth,
 		busNeutral,
 		busRadius,
-		lmpColor,
+		priceColor,
 		scalarDomain,
 		sensColor,
 		sensFlatColor,
@@ -85,7 +85,7 @@
 	let layerCtors = $state.raw<LayerCtors | null>(null);
 
 	interface CaseDisplay {
-		lmp: Map<number, number>;
+		prices: Map<number, number>;
 		scalar: Map<number, number>;
 		scalarLo: number;
 		scalarHi: number;
@@ -93,7 +93,7 @@
 		scalarLabel: string;
 		scalarUnit: string;
 		loading: Map<number, number>;
-		mode: 'lmp' | 'sens' | 'preview';
+		mode: 'price' | 'sens' | 'preview';
 		sens: Map<number, number>;
 		sensDomain: SensitivityDomain | null;
 		preview: Map<number, number>;
@@ -106,7 +106,7 @@
 	type SolvableCase = CaseState | LocalCase;
 
 	// Everything the accessors need, rebuilt when any case's data moves. The
-	// LMP scale normalizes per network: each case is an islanded market, so
+	// The LMP scale normalizes per network: each case is an islanded network, so
 	// within network structure beats cross network color comparability (the
 	// panel legend and tooltips carry the actual numbers). Preview values
 	// shift individual buses without rescaling.
@@ -114,8 +114,8 @@
 		const active = app.active ?? app.activeLocal;
 		const selectedBus = app.selectedBus;
 		const selectedBranch = app.selectedBranch;
-		// The active case's column for the live selection: the ∂LMP/∂d column at the
-		// selected bus, or the ∂LMP/∂rating column at the selected branch. Both are
+		// The active case's column for the live selection: the price-demand column at the
+		// selected bus, or the price-rating column at the selected branch. Both are
 		// bus-keyed value maps, so the color pipeline below is target-agnostic.
 		const activeSensitivity =
 			active &&
@@ -125,18 +125,18 @@
 				: null;
 		const activeDeltas = active ? caseDeltas(active) : {};
 		const activeRatings = active ? caseRatings(active) : {};
-		// Engine first-order LMP preview (Study.preview): predicted per-bus ΔLMP for
+		// Engine first order preview (Study.preview): predicted per-bus LMP change for
 		// the live drag, scoped to this case + selection target. Preferred over the JS
 		// gradient shift when present; the gradient path stays for server and browser
 		// fallbacks.
 		const enginePreview =
 			active &&
-			app.previewLmp &&
-			app.previewLmp.caseId === active.id &&
-			('bus' in app.previewLmp.target
-				? app.previewLmp.target.bus === selectedBus
-				: app.previewLmp.target.branch === selectedBranch)
-				? app.previewLmp.delta
+			app.previewPrices &&
+			app.previewPrices.caseId === active.id &&
+			('bus' in app.previewPrices.target
+				? app.previewPrices.target.bus === selectedBus
+				: app.previewPrices.target.branch === selectedBranch)
+				? app.previewPrices.delta
 				: null;
 		const previewStep =
 			active && activeSensitivity
@@ -153,13 +153,13 @@
 		const perCase = new Map<string, CaseDisplay>();
 		const addCase = (c: CaseState | LocalCase) => {
 			if (!c.network || !c.solution) return;
-			const lmp = new Map<number, number>();
-			for (const e of c.solution.lmp) lmp.set(e.bus, e.usd_per_mwh);
+			const prices = new Map<number, number>();
+			for (const e of c.solution.prices) prices.set(e.bus, e.value);
 			// Resolve the active display mode against what this case can show, falling
-			// back to LMP when the chosen mode doesn't apply (e.g. |V| under DC OPF).
+			// back to LMPs when the chosen mode doesn't apply (e.g. |V| under DC OPF).
 			const meta = displayMetaFor(c);
 			const activeMeta = meta.find((o) => o.mode === app.displayMode) ?? meta[0] ?? null;
-			const scalarMode = activeMeta?.mode ?? 'lmp';
+			const scalarMode = activeMeta?.mode ?? 'price';
 			const seriesValues = displaySeriesFor(c, scalarMode);
 			const scalar = new Map<number, number>();
 			for (const e of seriesValues) scalar.set(e.bus, e.value);
@@ -175,10 +175,10 @@
 			let domain: SensitivityDomain | null = null;
 			const isActive = c === active;
 			if (isActive && enginePreview) {
-				// Engine preview owns the LMP shift: add the predicted ΔLMP per bus.
-				for (const [bus, dlmp] of enginePreview) {
-					preview.set(bus, dlmp);
-					lmp.set(bus, (lmp.get(bus) ?? 0) + dlmp);
+				// Engine preview owns the LMP shift.
+				for (const [bus, deltaPrice] of enginePreview) {
+					preview.set(bus, deltaPrice);
+					prices.set(bus, (prices.get(bus) ?? 0) + deltaPrice);
 				}
 			}
 			if (isActive && activeSensitivity) {
@@ -190,9 +190,9 @@
 				if (!enginePreview && previewStep !== 0) {
 					// Fallback first order preview: shift LMPs along the gradient.
 					for (const v of activeSensitivity.values) {
-						const dlmp = v.value * previewStep;
-						preview.set(v.bus, dlmp);
-						lmp.set(v.bus, (lmp.get(v.bus) ?? 0) + dlmp);
+						const deltaPrice = v.value * previewStep;
+						preview.set(v.bus, deltaPrice);
+						prices.set(v.bus, (prices.get(v.bus) ?? 0) + deltaPrice);
 					}
 				}
 			}
@@ -203,16 +203,15 @@
 				previewDomain &&
 				(app.previewActive || c.solving || enginePreview || Math.abs(previewStep) >= 0.25)
 			);
-			// The sensitivity and demand-preview overlays are price-space fields (∂LMP/∂d
-			// and the ΔLMP preview). They only paint the map under the LMP display mode;
+			// The sensitivity and demand preview overlays are LMP fields. They only paint the map under the price display mode;
 			// under angle or |V| the map stays on the chosen scalar and the sensitivity
 			// shows in the side panel, so selecting a bus never silently overrides the
 			// angle/|V| coloring with the price ramp.
-			const sensEligible = scalarMode === 'lmp';
+			const sensEligible = scalarMode === 'price';
 			// While a sensitivity is still loading for the selected bus, stay in sens
-			// mode (renders neutral, not the prior LMP palette) so the node colors
+			// mode (renders neutral, not the prior price palette) so the node colors
 			// don't flash orange->purple between the old and new selection.
-			const mode: 'lmp' | 'sens' | 'preview' =
+			const mode: 'price' | 'sens' | 'preview' =
 				sensEligible && showPreview
 					? 'preview'
 					: sensEligible &&
@@ -221,15 +220,15 @@
 						  (domain || app.sensitivityLoading) &&
 						  !previewing
 						? 'sens'
-						: 'lmp';
+						: 'price';
 			perCase.set(c.id, {
-				lmp,
+				prices,
 				scalar,
 				scalarLo,
 				scalarHi,
 				scalarMode,
 				scalarLabel: activeMeta?.label ?? 'LMP',
-				scalarUnit: activeMeta?.unit ?? '$/MWh',
+				scalarUnit: activeMeta?.unit ?? 'objective units/MW',
 				loading,
 				mode,
 				sens,
@@ -266,7 +265,7 @@
 				return sensColor((d.preview.get(bus.id) ?? 0) / d.previewDomain.scale);
 			}
 			const mid = (d.scalarLo + d.scalarHi) / 2;
-			return lmpColor(((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo));
+			return priceColor(((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo));
 		};
 	}
 
@@ -283,11 +282,11 @@
 	function isSelectableLayer(layerId: string | undefined): boolean {
 		return Boolean(
 			layerId?.startsWith('buses-') ||
-				layerId?.startsWith('local-buses-') ||
-				layerId?.startsWith('branches-') ||
-				layerId?.startsWith('local-branches-') ||
-				layerId?.startsWith('multi-buses-') ||
-				layerId?.startsWith('multi-edges-')
+			layerId?.startsWith('local-buses-') ||
+			layerId?.startsWith('branches-') ||
+			layerId?.startsWith('local-branches-') ||
+			layerId?.startsWith('multi-buses-') ||
+			layerId?.startsWith('multi-edges-')
 		);
 	}
 
@@ -296,7 +295,10 @@
 		const c = app.active ?? app.activeLocal;
 		if (!c || busId === null) return null;
 		const buses =
-			app.active?.network?.buses ?? app.activeLocal?.network?.buses ?? app.activeLocal?.view?.buses ?? [];
+			app.active?.network?.buses ??
+			app.activeLocal?.network?.buses ??
+			app.activeLocal?.view?.buses ??
+			[];
 		const bus = buses.find((b) => b.id === busId);
 		return bus ? { key: `${c.id}-${bus.id}`, id: bus.id, lon: bus.lon, lat: bus.lat } : null;
 	});
@@ -512,8 +514,7 @@
 
 	function prefersReducedMotion(): boolean {
 		return (
-			typeof window !== 'undefined' &&
-			window.matchMedia('(prefers-reduced-motion: reduce)').matches
+			typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 		);
 	}
 
@@ -531,9 +532,7 @@
 	const chromeLiftCap = $derived(
 		Math.max(0, app.viewportHeight - app.headerInset - CHROME_MIN_BAND_PX)
 	);
-	const chromeInset = $derived(
-		app.compactLayout ? Math.min(app.sheetInset, chromeLiftCap) : 0
-	);
+	const chromeInset = $derived(app.compactLayout ? Math.min(app.sheetInset, chromeLiftCap) : 0);
 	const chromeVisible = $derived(!app.compactLayout || app.sheetInset <= chromeLiftCap);
 
 	/** Fly to the selected branch; true when a camera move started. */
@@ -580,6 +579,21 @@
 	function tooltip(info: PickingInfo): { html: string } | null {
 		const { object } = info;
 		if (!object) return null;
+		if (app.studyView && info.layer?.id.startsWith('study-')) {
+			const view = app.studyView.solution;
+			const id = Number((object as { id: number }).id);
+			if (info.layer.id === 'study-branches') {
+				const flow = view.flows?.find((f) => f.branch === id);
+				return {
+					html: `<b>branch ${id}</b><br>saved state: ${esc(app.studyView.label)}${flow ? `<br>P from ${flow.pf.toFixed(3)} MW, loading ${(100 * flow.loading).toFixed(1)}%` : ''}`
+				};
+			}
+			const p = view.lmp?.find((v) => v.bus === id),
+				v = view.vm?.find((v) => v.bus === id);
+			return {
+				html: `<b>bus ${id}</b><br>saved state: ${esc(app.studyView.label)}${p ? `<br>LMP ${p.value.toFixed(4)}` : ''}${v ? `<br>voltage ${v.value.toFixed(5)} pu` : ''}`
+			};
+		}
 		if (info.layer?.id.startsWith('local-subs-')) {
 			// PowerWorld .pwd substation: display data only, position inferred from the diagram.
 			// The name is free text from a dropped file, so escape it; the number
@@ -627,7 +641,7 @@
 					<span style="opacity:0.6">local file</span></div>`
 			};
 		}
-		const lmp = d?.lmp.get(bus.id);
+		const price = d?.prices.get(bus.id);
 		const scalar = d?.scalar.get(bus.id);
 		const sens = d?.mode === 'sens' ? d.sens.get(bus.id) : undefined;
 		const preview = d?.mode === 'preview' ? d.preview.get(bus.id) : undefined;
@@ -639,19 +653,19 @@
 		const sensRow =
 			sens === undefined
 				? ''
-				: `<br>&part;LMP/&part;d ${sens >= 0 ? '+' : ''}${sens.toExponential(2)}`;
+				: `<br>&part;price/&part;d ${sens >= 0 ? '+' : ''}${sens.toExponential(2)}`;
 		const previewRow =
 			preview === undefined
 				? ''
-				: `<br>&Delta;LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} $/MWh`;
+				: `<br>&Delta; LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} objective units/MW`;
 		const localRow =
 			c instanceof CaseState ? '' : '<br><span style="opacity:0.6">local file</span>';
 		const scalarRow =
-			!d || d.scalarMode === 'lmp'
-				? `LMP ${lmp === undefined ? '&mdash;' : fmt.format(lmp)} $/MWh`
+			!d || d.scalarMode === 'price'
+				? `LMP ${price === undefined ? '&mdash;' : fmt.format(price)} objective units/MW`
 				: `${d.scalarLabel} ${
 						scalar === undefined ? '&mdash;' : displayFmt(d.scalarMode, scalar)
-					} ${d.scalarUnit}<br>LMP ${lmp === undefined ? '&mdash;' : fmt.format(lmp)} $/MWh`;
+					} ${d.scalarUnit}<br>LMP ${price === undefined ? '&mdash;' : fmt.format(price)} objective units/MW`;
 		return {
 			html: `<div class="tt"><b>bus ${bus.id}</b>
 				${scalarRow}<br>
@@ -838,6 +852,60 @@
 		if (!overlay || !layerCtors) return;
 		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
 		const layers: Layer[] = [];
+		const study = app.studyView;
+		if (study) {
+			const s = study.solution;
+			const mode = app.displayMode;
+			const series =
+				mode === 'angle'
+					? (s.va ?? [])
+					: mode === 'voltage'
+						? (s.vm ??
+							(s.w ?? []).map((v) => ({
+								...v,
+								value: Math.sqrt(Math.max(0, v.value))
+							})))
+						: (s.lmp ?? []);
+			const values = new Map(series.map((v) => [v.bus, v.value]));
+			const domain = scalarDomain(
+				mode,
+				series.map((v) => v.value)
+			);
+			const flows = new Map((s.flows ?? []).map((f) => [f.branch, f.loading]));
+			layers.push(
+				new PathLayer<NetworkBranch>({
+					id: 'study-branches',
+					data: study.network.branches,
+					getPath: (b) => b.path,
+					getColor: (b) => branchColor(flows.get(b.id) ?? 0, b.status === 1),
+					getWidth: (b) => branchWidth(flows.get(b.id) ?? 0),
+					widthUnits: 'pixels',
+					widthMinPixels: 1.5,
+					pickable: true,
+					updateTriggers: { getColor: [study], getWidth: [study] }
+				}),
+				new ScatterplotLayer<NetworkBus>({
+					id: 'study-buses',
+					data: study.network.buses,
+					getPosition: (b) => [b.lon, b.lat],
+					getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
+					radiusUnits: 'pixels',
+					getFillColor: (b) => {
+						const value = values.get(b.id);
+						return value === undefined
+							? [110, 115, 120, 200]
+							: priceColor((value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12));
+					},
+					pickable: true,
+					stroked: true,
+					getLineColor: [46, 42, 34, 110],
+					lineWidthUnits: 'pixels',
+					updateTriggers: { getFillColor: [study, mode] }
+				})
+			);
+			overlay.setProps({ layers });
+			return;
+		}
 		for (const c of app.cases) {
 			if (!c.network) continue;
 			const d = display.get(c.id);
@@ -847,7 +915,7 @@
 					data: c.network.branches,
 					getPath: (b) => b.path,
 					// The selected branch draws in the selection blue of the bus halo cue,
-					// wider, so the ∂LMP/∂rating source line reads at a glance.
+					// wider, so the price-rating source line reads at a glance.
 					getColor: (b) =>
 						c.id === app.activeCaseId && b.id === app.selectedBranch
 							? [47, 111, 187, 255]
@@ -983,7 +1051,12 @@
 			}
 			if (c.substations) {
 				layers.push(
-					new ScatterplotLayer<{ number: number; name: string; lon: number; lat: number }>({
+					new ScatterplotLayer<{
+						number: number;
+						name: string;
+						lon: number;
+						lat: number;
+					}>({
 						id: `local-subs-${c.id}`,
 						data: c.substations.points,
 						getPosition: (s) => [s.lon, s.lat],
@@ -1129,6 +1202,7 @@
 	});
 
 	function boundsFor(target: string): LngLatBoundsLike | null {
+		if (app.studyView) return foldMapBounds(app.studyView.network.buses.map((b) => [b.lon, b.lat]));
 		const points: [number, number][] = [];
 		const fold = (pts: { lon: number; lat: number }[]) => {
 			for (const b of pts) points.push([b.lon, b.lat]);
@@ -1422,9 +1496,9 @@
 		/* rides above the bottom sheet so attribution stays legible */
 		bottom: calc(18px + var(--chrome-inset, 0px));
 		display: flex;
-		flex-direction: column;
+		flex-direction: row;
 		align-items: flex-end;
-		gap: 6px;
+		gap: 16px;
 		transition:
 			bottom var(--dur-med) var(--ease-out),
 			opacity var(--dur-fast) var(--ease-out);
@@ -1442,9 +1516,9 @@
 	}
 
 	.map :global(.maplibregl-ctrl-attrib) {
-		order: -1;
-		position: relative;
-		right: 2px;
+		position: absolute;
+		bottom: 74px;
+		right: 0;
 		width: auto;
 		min-width: 0;
 		max-width: calc(100vw - 96px);
@@ -1494,10 +1568,14 @@
 	}
 
 	@media (max-width: 760px) {
+		.map :global(.maplibregl-ctrl-bottom-right) {
+			bottom: calc(36px + var(--chrome-inset, 0px));
+		}
 		.map :global(.maplibregl-ctrl-attrib) {
 			/* last in the column so it rests on the sheet's edge instead of
 			   floating over the network a zoom control's height above it */
-			order: 1;
+			position: relative;
+			bottom: auto;
 			width: auto;
 			min-width: 0;
 			right: 0;

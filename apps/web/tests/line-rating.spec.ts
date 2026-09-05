@@ -1,7 +1,7 @@
 import { expect, test } from './fixtures/page-errors.js';
 
 // End-to-end branch rating flow on a congested local case: select the binding
-// line from the panel list, see a non-flat ∂LMP/∂rating column, relax the
+// line from the panel list, see a non-flat LMP/rating column, relax the
 // rating, and confirm the exact re-solve lowers the cost.
 
 // The engine crate's 3-bus fixture with the bus2-bus3 line tightened to 40 MW
@@ -102,7 +102,7 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await expect(page.locator('.chip', { hasText: '∂LMP/∂rating' })).toBeVisible({
 		timeout: 30_000
 	});
-	await expect(page.getByText(/LMP response per MVA of rating on line/)).toBeVisible();
+	await expect(page.getByText(/LMP response to the rating on line/)).toBeVisible();
 	// A binding line's column is structured, not the flat/uniform tint.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
 	await expect(labels).not.toContainText('uniform');

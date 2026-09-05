@@ -2,40 +2,49 @@
 	import { getAppState, getController } from '../context.svelte.js';
 	import { fmt } from '../format.js';
 	import type { LocalCase } from '../state.svelte.js';
+	import { formatPowerIoDiagnostic, type PowerIoDiagnostic } from '@tellegen/engine';
 
 	const app = getAppState();
 	const ctrl = getController();
 
-	// Export tokens the committed state writes to; labels carry their extensions.
-	// `model-json` is powerio's own model document, not a case format.
+	// Grid exchange formats the committed state can export.
 	const EXPORT_FORMATS = [
 		{ token: 'matpower', label: 'MATPOWER (.m)' },
 		{ token: 'psse', label: 'PSS/E (.raw)' },
 		{ token: 'powerworld', label: 'PowerWorld (.aux)' },
 		{ token: 'pslf', label: 'PSLF (.epc)' },
 		{ token: 'powermodels-json', label: 'PowerModels (.json)' },
-		{ token: 'pandapower-json', label: 'pandapower (.json)' },
-		{ token: 'model-json', label: 'PowerIO model (.json)' }
+		{ token: 'pandapower-json', label: 'pandapower (.json)' }
 	];
 
 	let busy = $state(false);
 	let exportOpen = $state(false);
-	let exportWarnings = $state<string[]>([]);
+	let exportDiagnostics = $state<PowerIoDiagnostic[]>([]);
 
-	async function saveStudy(lc: LocalCase) {
+	async function saveCase(lc: LocalCase) {
 		busy = true;
-		exportWarnings = [];
+		exportDiagnostics = [];
 		try {
-			await ctrl.saveStudyPackage(lc);
+			await ctrl.saveCaseModule(lc);
 		} finally {
 			busy = false;
 		}
 	}
 
-	async function exportStudy(lc: LocalCase, token: string) {
+	async function saveSolution(lc: LocalCase) {
+		busy = true;
+		exportDiagnostics = [];
+		try {
+			await ctrl.saveSolutionModule(lc);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function exportCase(lc: LocalCase, token: string) {
 		busy = true;
 		try {
-			exportWarnings = await ctrl.exportStudyAs(lc, token);
+			exportDiagnostics = await ctrl.exportCaseAs(lc, token);
 			exportOpen = false;
 		} finally {
 			busy = false;
@@ -94,6 +103,16 @@
 				<dd>{fmt.format(lc.summary.base_mva)}</dd>
 			</div>
 		</dl>
+		{#if lc.summary.diagnostics.length > 0}
+			<ul class="warnings mono">
+				{#each lc.summary.diagnostics.slice(0, 4) as diagnostic, i (i)}
+					<li>{formatPowerIoDiagnostic(diagnostic)}</li>
+				{/each}
+				{#if lc.summary.diagnostics.length > 4}
+					<li>+{lc.summary.diagnostics.length - 4} more</li>
+				{/if}
+			</ul>
+		{/if}
 		{#if lc.summary.warnings.length > 0}
 			<ul class="warnings mono">
 				{#each lc.summary.warnings.slice(0, 4) as w, i (i)}
@@ -128,11 +147,16 @@
 			</ul>
 		{/if}
 		<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
-		{#if lc.networkJson}
-			<div class="study">
-				<button class="reset mono" disabled={busy} onclick={() => saveStudy(lc)}>
-					save study (.pio.json)
+		{#if lc.studyInputJson}
+			<div class="case-actions">
+				<button class="reset mono" disabled={busy} onclick={() => saveCase(lc)}>
+					save PowerIO module (.json)
 				</button>
+				{#if lc.formulation === 'dcopf' && lc.solution}
+					<button class="reset mono" disabled={busy} onclick={() => saveSolution(lc)}>
+						save exact solution (.json)
+					</button>
+				{/if}
 				<div class="export">
 					<button
 						class="reset mono"
@@ -146,7 +170,11 @@
 						<ul class="export-menu mono">
 							{#each EXPORT_FORMATS as f (f.token)}
 								<li>
-									<button class="reset mono" disabled={busy} onclick={() => exportStudy(lc, f.token)}>
+									<button
+										class="reset mono"
+										disabled={busy}
+										onclick={() => exportCase(lc, f.token)}
+									>
 										{f.label}
 									</button>
 								</li>
@@ -160,13 +188,13 @@
 					</button>
 				{/if}
 			</div>
-			{#if exportWarnings.length > 0}
+			{#if exportDiagnostics.length > 0}
 				<ul class="warnings mono">
-					{#each exportWarnings.slice(0, 4) as w, i (i)}
-						<li>{w}</li>
+					{#each exportDiagnostics.slice(0, 4) as diagnostic, i (i)}
+						<li>{formatPowerIoDiagnostic(diagnostic)}</li>
 					{/each}
-					{#if exportWarnings.length > 4}
-						<li>+{exportWarnings.length - 4} more</li>
+					{#if exportDiagnostics.length > 4}
+						<li>+{exportDiagnostics.length - 4} more</li>
 					{/if}
 				</ul>
 			{/if}
@@ -226,7 +254,7 @@
 		color: var(--text-accent);
 	}
 
-	.study {
+	.case-actions {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;

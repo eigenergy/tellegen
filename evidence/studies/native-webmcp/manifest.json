@@ -1,0 +1,28 @@
+{
+  "schema": "tellegen.native-webmcp-evidence/1",
+  "captured_at": "2026-09-05T12:51:55.285237+00:00",
+  "source_commit": "a12ac8e92c89a5765ccc7120a5f8b860d503d06b",
+  "engine_source_commit": "a12ac8e92c89a5765ccc7120a5f8b860d503d06b",
+  "powerio_commit": "a84d97d97343b4175e9a846aa358997ff53b0e5f",
+  "origin": "http://127.0.0.1:4186",
+  "browser": "Codex in-app Chromium, native WebMCP capability",
+  "fixture": "Synthetic three-bus corridor; existing planning-case.ts fixture; illustrative coordinates",
+  "backend": "Initial exact native CLI result; subsequent solves in Clarabel WASM; remote compute disabled",
+  "private_reasoning_recorded": false,
+  "files": {
+    "after-release-rebuild-summary.json": "sha256:ca62220eab76468906c0baf2b61933292145bb771ee858a3a3430c4603ad0f0e",
+    "before-apply.png": "sha256:6fec102d8c854adb3c9e6c79b35a91a29b245712a6a7fe1c55b8782a9b63ed0c",
+    "before-release-rebuild-summary.json": "sha256:14240a6c275f8c33f8dde131ca7aefb2991050ea812783cb76c90c54170ff213",
+    "calls.json": "sha256:1a8a07e02de8ee3be0fe92d653c299a35619025f0c7ca5e719e4af4fb950fd53",
+    "capacity-experiment.json": "sha256:7e7042cb469522178baf0dd18051158045daadbc5844560cd7e1193e3e6f5986",
+    "comparison.png": "sha256:6e3cec16fc069783caae6a8f6e3692c74909b4fde7e39a60288baf74bfc1a7e4",
+    "demand-experiment.json": "sha256:c4bcb87eea52cf4275e0e4f97ce48fb538870e69e3a9b0e639264409096f4cdc",
+    "initial-solution.json": "sha256:e99cab46d8143c90c34564ebde6fe8dfea0749f56f87a34080b67d90ab4a1718",
+    "input.pio.json": "sha256:1cd48af402bc98c803df5e2a08e4a8f1e7da22a830bcedbe50e7683092571ddc"
+  },
+  "wasm_assets": {
+    "packages/engine/dist/wasm-pkg/tellegen_bg.wasm": "sha256:92b5341ccfa9f22de8d1cb8cafe2d8ccd8a60c019ced05d222a1da69e636f7f9",
+    "packages/engine/src/wasm-pkg/tellegen_bg.wasm": "sha256:92b5341ccfa9f22de8d1cb8cafe2d8ccd8a60c019ced05d222a1da69e636f7f9"
+  },
+  "application": "Unapplied; native Apply click blocked by agent approval review; browser tests cover application and stale approvals."
+}

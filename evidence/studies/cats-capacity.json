@@ -1,0 +1,103 @@
+{
+  "create": {
+    "id": "cats-capacity",
+    "title": "CATS capacity",
+    "formulation": "dcopf",
+    "request": "Lower the weighted prices at buses [6354, 2101, 541] using capacity. Show the consequences elsewhere.",
+    "interpretation": "Minimize the sum of selected active-power marginal prices. Changes are relative to the captured source state.",
+    "objective": {
+      "kind": "weighted_observable",
+      "operand": {
+        "Price": "Active"
+      },
+      "weights": [
+        {
+          "element": 6354,
+          "weight": 1.0
+        },
+        {
+          "element": 2101,
+          "weight": 1.0
+        },
+        {
+          "element": 541,
+          "weight": 1.0
+        }
+      ]
+    },
+    "decisions": {
+      "variables": [
+        {
+          "id": "8481-5371",
+          "element": "8481-5371",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 50.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "6874-6877",
+          "element": "6874-6877",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 50.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "7723-7724",
+          "element": "7723-7724",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 50.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "6354-6371",
+          "element": "6354-6371",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 50.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "4232-225",
+          "element": "4232-225",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 50.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "1063-6874",
+          "element": "1063-6874",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 50.0,
+          "budget_weight": 1
+        }
+      ],
+      "total_budget": 100,
+      "max_changed_elements": 2,
+      "demand": null
+    }
+  },
+  "search": {
+    "max_solves": 8,
+    "max_iterations": 8,
+    "beam_width": 2,
+    "min_improvement": 0.001
+  },
+  "rationale": "Use the implicit objective gradient to rank feasible moves and retain the best exact result.",
+  "tolerances": {
+    "objective_absolute": 1e-05,
+    "objective_relative": 1e-05,
+    "demand_total_mw": 1e-07
+  },
+  "source_sha256": "sha256:1749ea6f3b0587a4c565ee7d794e4b67373249f34a2cff39abb29c05f4f9fa56"
+}

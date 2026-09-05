@@ -47,12 +47,14 @@ jobs:
       - uses: ./.github/actions/js-setup
       - run: npm run wasm
       - run: npm run build:engine
+      - run: npm run build:webmcp
       - run: npm run build:svelte
       - name: Pack artifacts
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/tellegen-package"
           npm --workspace @tellegen/engine pack --pack-destination "$RUNNER_TEMP/tellegen-package"
+          npm --workspace @tellegen/webmcp pack --pack-destination "$RUNNER_TEMP/tellegen-package"
           npm --workspace @tellegen/svelte pack --pack-destination "$RUNNER_TEMP/tellegen-package"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

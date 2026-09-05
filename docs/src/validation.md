@@ -10,9 +10,10 @@ harness run with its provenance.
 
 ## DC objective
 
-tellegen's DC objective (constant cost term included) is compared against the
-published `DC ($/h)`. The per-unit cost scaling cancels exactly, so the comparison
-is in dollars per hour directly.
+tellegen's declared DC objective, including its constant cost term, is compared
+against the published DC baseline. Both values come from the same PGLib cost
+data. Per-unit power scaling cancels; tellegen does not assign a currency to
+objectives from other sources.
 
 ## Relaxation lower bound
 

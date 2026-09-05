@@ -1,0 +1,78 @@
+{
+  "schema": "tellegen.study-evidence/1",
+  "spec_sha256": "sha256:80c976422e94c2100b5b98fbe74f849134a0910f68c028c088cf3fd5a80ea520",
+  "source_sha256": "sha256:086db50d06a673dc3cb6cf86703e3df18d7ac2f50eda71ebaadbb48857f2dbaf",
+  "source_name": "texas-convex-cost-scenario.pio.json",
+  "powerio_sha256": "sha256:41e83d58f8dc7b25502c114dce2aae717c26d422e0f93bea6f4b8b047df161e8",
+  "tellegen_sha256": "sha256:71efccb62d6abf8643d4043570c42907bbbaa492d19e33bb2d5d08bf06e2e27a",
+  "input_sha256": "sha256:086db50d06a673dc3cb6cf86703e3df18d7ac2f50eda71ebaadbb48857f2dbaf",
+  "apply_requested": false,
+  "tolerances": {
+    "objective_absolute": 1e-05,
+    "objective_relative": 1e-05,
+    "demand_total_mw": 1e-07
+  },
+  "scenario_evidence_sha256": "sha256:cf2896dac166a04e75fa4951e1b9f489f33b55bba3727ff0c44e8fdd42734db8",
+  "initial_state": "sha256:5c26ae079e9b272760b4a1fff4f2415b65acab36dfe039664a42c6358e2b123f",
+  "recommended_state": "sha256:5c26ae079e9b272760b4a1fff4f2415b65acab36dfe039664a42c6358e2b123f",
+  "applied_state": "sha256:5c26ae079e9b272760b4a1fff4f2415b65acab36dfe039664a42c6358e2b123f",
+  "comparison": {
+    "goal": "sha256:b9cf06b2d2d768bad3cf19493acf78ff77e3b5469451524f57d5a255ef38732b",
+    "left_value": 87.08117942845188,
+    "right_value": 87.08117942845188,
+    "improvement": 0.0
+  },
+  "improvement_tolerance": 0.0008708117942845188,
+  "outcome": "no_verified_improvement",
+  "experiment": {
+    "start_state": "sha256:5c26ae079e9b272760b4a1fff4f2415b65acab36dfe039664a42c6358e2b123f",
+    "goal": "sha256:b9cf06b2d2d768bad3cf19493acf78ff77e3b5469451524f57d5a255ef38732b",
+    "kind": "planning",
+    "rationale": "Investigate the high-price load region and the limiting 230273-230267 corridor identified in the exact starting solution. Rank feasible moves with the implicit gradient and require an exact improvement above the recorded numerical tolerance.",
+    "evidence": [
+      "sha256:17e48d1cd809bef938de2953a0bddba7b9d3d8d71805783380aa0a06bb8e8f3d"
+    ],
+    "trials": [
+      {
+        "changes": [
+          -5.0,
+          0.0,
+          5.0
+        ],
+        "predicted_value": 87.08117942049282,
+        "exact_value": 87.08117617688669,
+        "state": "sha256:43cdeb5753194e1d75bed7dcb894602b416a7b630b0f503da5c9e496cc6e593a",
+        "accepted": false,
+        "failure": null,
+        "evidence": [
+          "sha256:699c42caef259420476549ef7325529c4a83a8cbd3b766f8cbc68a25857ecf88"
+        ]
+      },
+      {
+        "changes": [
+          0.0,
+          -5.0,
+          5.0
+        ],
+        "predicted_value": 87.08117942128935,
+        "exact_value": 87.08117626703537,
+        "state": "sha256:0621b2e677d2f1ccdf79cebe5bcc4c0ae309782a59ac5279e02e17ea55190c5a",
+        "accepted": false,
+        "failure": null,
+        "evidence": [
+          "sha256:49d9515fae1f5bf003a8a407d4b52a8cb1842f8162f55ad2e2779b3c22b14e0b"
+        ]
+      }
+    ],
+    "result_states": [
+      "sha256:43cdeb5753194e1d75bed7dcb894602b416a7b630b0f503da5c9e496cc6e593a",
+      "sha256:0621b2e677d2f1ccdf79cebe5bcc4c0ae309782a59ac5279e02e17ea55190c5a",
+      "sha256:5c26ae079e9b272760b4a1fff4f2415b65acab36dfe039664a42c6358e2b123f"
+    ],
+    "assessed_recommendation": null,
+    "solve_count": 3,
+    "termination": "no_verified_improvement"
+  },
+  "study_sha256": "sha256:5e666b9e18c5ed7ec74d3ca82b11901614a3ff74a3f94772e7bbeaeb34bb338a",
+  "elapsed_seconds": 52.8321976219886
+}

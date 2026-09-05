@@ -2,86 +2,115 @@
 //! balanced [`crate::ingest_case`] path.
 //!
 //! A dropped OpenDSS `.dss`, PMD JSON, or BMOPF JSON parses through
-//! [`powerio_dist`] into the canonical [`MulticonductorNetwork`]; a `.pio.json`
-//! package carrying a multiconductor payload comes in through [`powerio_pkg`].
+//! [`powerio::parse`] into a module holding a canonical
+//! [`MulticonductorNetwork`] or a multiconductor problem instance; a
+//! `.pio.json` PowerIO IR document carrying a multiconductor value comes in
+//! through [`tellegen::ir::deserialize_module`].
 //! Either way the network is projected to a render-ready bus/terminal graph
-//! ([`DistNetwork::graph`]) and serialized as the drop-panel payload the
-//! frontend reads. No solve, no model build — this path only views topology.
+//! ([`MulticonductorNetwork::to_graph`]) and serialized as the drop-panel payload
+//! the frontend reads. No solve, no model build — this path only views
+//! topology.
 //!
-//! The two entry points ([`ingest_dist`] and [`ingest_dist_package`]) are
+//! The entry points ([`ingest_dist`] and [`ingest_dist_module`]) are
 //! string-typed and return `Result<_, String>` so they run in native unit
 //! tests; the `#[wasm_bindgen]` wrapper in `lib.rs` maps the error to a
 //! `JsError` at the boundary. Input is untrusted: a malformed, truncated, or
 //! oversized payload rejects as an `Err`, never a panic.
 
-use powerio_dist::{
-    parse_bytes, parse_str, CoordinateSpace, DistGeoMeta, DistGraphEdgeKind, MulticonductorNetwork,
-};
-use powerio_pkg::{ModelKind, NetworkPackage};
+use powerio::{PioModule, PioValue};
+use powerio_dist::{CoordinateSpace, DistGeoMeta, DistGraphEdgeKind, MulticonductorNetwork};
+use tellegen::ir::deserialize_module;
 
 /// Parse `text` in a distribution `format` (`dss`, `bmopf`, or `pmd`) and
 /// return the drop-panel payload JSON (see [`ingest_dist_value`]). The format
-/// token is the one [`powerio_dist::dist_target_from_name`] accepts; anything
-/// else — including the balanced transmission formats — is an error.
+/// token is resolved by PowerIO's universal parser; anything else, including
+/// the balanced transmission formats, is an error on this viewing path.
 pub fn ingest_dist(text: &str, format: &str) -> Result<String, String> {
-    serde_json::to_string(&ingest_dist_text_value(text, format)?).map_err(|e| e.to_string())
+    ingest_dist_bytes(text.as_bytes(), format)
 }
 
 /// Byte counterpart of [`ingest_dist`]. Dropped files stay byte exact until
-/// powerio-dist performs its strict UTF-8 decode.
+/// the PowerIO family reader performs its strict UTF-8 decode.
 pub fn ingest_dist_bytes(bytes: &[u8], format: &str) -> Result<String, String> {
     serde_json::to_string(&ingest_dist_bytes_value(bytes, format)?).map_err(|e| e.to_string())
-}
-
-fn ingest_dist_text_value(text: &str, format: &str) -> Result<serde_json::Value, String> {
-    let net = parse_str(text, format).map_err(|e| e.to_string())?;
-    ingest_dist_value(&net)
 }
 
 pub(crate) fn ingest_dist_bytes_value(
     bytes: &[u8],
     format: &str,
 ) -> Result<serde_json::Value, String> {
-    let net = parse_bytes(bytes, format).map_err(|e| e.to_string())?;
-    ingest_dist_value(&net)
+    let format = crate::source_format_id(format)?;
+    // The angle bracketed name marks an anonymous in-memory source; the
+    // readers take the case's own name (e.g. the OpenDSS circuit name).
+    let source = powerio::Source::from_memory("<case>", bytes.to_vec())
+        .map_err(|e| e.to_string())?
+        .with_format(format);
+    let module = powerio::parse(source).map_err(|e| e.to_string())?;
+    let Some(network) = multiconductor_network(module.value()) else {
+        return Err(format!(
+            "parsed a {} value, expected a multiconductor network or calculation",
+            module.value().type_name()
+        ));
+    };
+    ingest_dist_value(network, module.diagnostics())
 }
 
-/// Parse `text` as a `.pio.json` package and, when it carries a multiconductor
-/// payload, return the same drop-panel payload [`ingest_dist`] does. A balanced
-/// package is rejected: the frontend routes those to the study-restore path.
-pub fn ingest_dist_package(text: &str) -> Result<String, String> {
-    let package = NetworkPackage::from_json(text).map_err(|e| e.to_string())?;
-    serde_json::to_string(&ingest_dist_package_value(&package)?).map_err(|e| e.to_string())
+/// Parse `text` as a `.pio.json` stored module and, when it holds a
+/// multiconductor network, problem instance, or solution, return the same
+/// drop-panel payload [`ingest_dist`] does. A balanced value is rejected: the
+/// frontend routes those to the study and network ingest paths.
+pub fn ingest_dist_module(text: &str) -> Result<String, String> {
+    let module = deserialize_module(text)?;
+    serde_json::to_string(&ingest_dist_module_value(module)?).map_err(|e| e.to_string())
 }
 
-/// Byte counterpart of [`ingest_dist_package`], including the package reader's
-/// strict UTF-8 and lineage checks.
-pub fn ingest_dist_package_bytes(bytes: &[u8]) -> Result<String, String> {
-    let package = NetworkPackage::from_json_bytes(bytes).map_err(|e| e.to_string())?;
-    serde_json::to_string(&ingest_dist_package_value(&package)?).map_err(|e| e.to_string())
+/// Byte counterpart of [`ingest_dist_module`]; the module reader's strict
+/// UTF-8 and lineage checks apply.
+pub fn ingest_dist_module_bytes(bytes: &[u8]) -> Result<String, String> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| "stored module document is not valid UTF-8".to_owned())?;
+    ingest_dist_module(text)
 }
 
-pub(crate) fn ingest_dist_package_value(
-    package: &NetworkPackage,
+pub(crate) fn ingest_dist_module_value(
+    module: PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
-    if package.model_kind() != ModelKind::Multiconductor {
-        return Err("package is not a multiconductor case".to_owned());
+    let Some(network) = multiconductor_network(module.value()) else {
+        return Err(format!(
+            "stored module holds {}, expected a multiconductor network or calculation",
+            module.value().type_name()
+        ));
+    };
+    ingest_dist_value(network, module.diagnostics())
+}
+
+pub(crate) fn is_viewable_module_value(value: &PioValue) -> bool {
+    multiconductor_network(value).is_some()
+}
+
+fn multiconductor_network(value: &PioValue) -> Option<&MulticonductorNetwork> {
+    match value {
+        PioValue::MulticonductorNetwork(network) => Some(network),
+        PioValue::McAcPfInstance(instance) => Some(instance.network()),
+        PioValue::McAcOpfInstance(instance) => Some(instance.network()),
+        PioValue::McAcPfSolution(solution) => Some(solution.network()),
+        PioValue::McAcOpfSolution(solution) => Some(solution.network()),
+        _ => None,
     }
-    let net = package
-        .as_multiconductor()
-        .ok_or("package payload is not multiconductor")?;
-    ingest_dist_value(net)
 }
 
 /// Everything the drop panel needs from one multiconductor parse: the case
-/// name and element counts, total connected load and generation (kW), parse
-/// warnings, coordinate provenance, and the full bus/terminal graph the
-/// frontend renders. `graph` is the serde form of [`powerio_dist::DistGraph`]:
-/// buses carry their terminals, grounded terminals, optional `xy`, and terminal
-/// attachments; edges carry their kind, endpoints, per-conductor terminal
-/// pairs, and open/closed state.
-fn ingest_dist_value(net: &MulticonductorNetwork) -> Result<serde_json::Value, String> {
-    let graph = net.graph();
+/// name and element counts, total connected load and generation (kW),
+/// structured PowerIO diagnostics, coordinate provenance, and the full
+/// bus/terminal graph the frontend renders. `graph` is the serde
+/// form of [`powerio_dist::DistGraph`]: buses carry their terminals, grounded
+/// terminals, optional `xy`, and terminal attachments; edges carry their
+/// kind, endpoints, per-conductor terminal pairs, and open/closed state.
+fn ingest_dist_value(
+    net: &MulticonductorNetwork,
+    diagnostics: &[powerio::Diagnostic],
+) -> Result<serde_json::Value, String> {
+    let graph = net.to_graph();
 
     let mut n_line = 0usize;
     let mut n_switch = 0usize;
@@ -102,11 +131,11 @@ fn ingest_dist_value(net: &MulticonductorNetwork) -> Result<serde_json::Value, S
     let placed = graph.buses.iter().filter(|b| b.xy.is_some()).count();
     let has_coords = placed > 0;
 
-    let coords_space = coords_space(net.geo.as_ref());
+    let coords_space = coords_space(net.geo().as_ref());
     let coords_kind = coords_kind(coords_space, has_coords);
 
     Ok(serde_json::json!({
-        "name": net.name,
+        "name": net.name(),
         // Discriminates this payload from the balanced `ingest_case` shape so the
         // frontend routes it to the viewing-only multiconductor state.
         "model": "multiconductor",
@@ -115,23 +144,23 @@ fn ingest_dist_value(net: &MulticonductorNetwork) -> Result<serde_json::Value, S
         "n_line": n_line,
         "n_switch": n_switch,
         "n_transformer": n_transformer,
-        "n_load": net.loads.len(),
-        "n_generator": net.generators.len(),
-        "n_ibr": net.ibrs.len(),
-        "n_source": net.sources.len(),
-        "n_shunt": net.shunts.len(),
+        "n_load": net.loads().len(),
+        "n_generator": net.generators().len(),
+        "n_ibr": net.ibrs().len(),
+        "n_source": net.sources().len(),
+        "n_shunt": net.shunts().len(),
         // Only the BMOPF reader gives a capacitor its own type. A `.dss` or PMD
         // capacitor reads as a shunt, so the two counts do not overlap.
-        "n_capacitor": net.capacitors.len(),
+        "n_capacitor": net.capacitors().len(),
         "load_kw": load_kw,
         "gen_kw": gen_kw,
-        "base_frequency": net.base_frequency,
+        "base_frequency": net.base_frequency(),
         "has_coords": has_coords,
         // How many buses carry a position; the rest fall back to the layout.
         "placed_buses": placed,
         "coords_space": coords_space,
         "coords_kind": coords_kind,
-        "warnings": net.warnings,
+        "diagnostics": diagnostics,
         "graph": graph,
     }))
 }
@@ -290,6 +319,12 @@ mod tests {
     }
 
     #[test]
+    fn format_tokens_keep_case_and_historical_alias_normalization() {
+        assert!(ingest_dist(MICRO_DSS, "DSS").is_ok());
+        assert!(ingest_dist(MICRO_BMOPF, "BMOPF_JSON").is_ok());
+    }
+
+    #[test]
     fn malformed_and_oversized_input_rejects_without_panicking() {
         // Every one of these must return an `Err` (a wasm panic aborts the
         // instance) rather than crashing the parser.
@@ -336,20 +371,22 @@ mod tests {
     }
 
     #[test]
-    fn balanced_package_is_rejected_by_the_multiconductor_path() {
-        // A balanced study package must not be viewed as multiconductor; the
-        // frontend routes it to the study-restore path instead.
+    fn balanced_module_is_rejected_by_the_multiconductor_path() {
+        // A stored module holding a balanced network must not be viewed as
+        // multiconductor; the frontend routes it to the network ingest and
+        // study-restore paths instead.
         let net = powerio::BalancedNetwork::in_memory("demo", 100.0, vec![], vec![]);
-        let package = powerio_pkg::NetworkPackage::from_balanced(net);
-        let json = package.to_json().expect("package json");
-        assert!(ingest_dist_package(&json).is_err());
+        let module = powerio::PioModule::new(powerio::PioValue::BalancedNetwork(net));
+        let json = tellegen::ir::serialize_module(&module).expect("module json");
+        let error = ingest_dist_module(&json).expect_err("balanced module rejected");
+        assert!(error.contains("powerio.BalancedNetwork"), "{error}");
     }
 
     #[test]
-    fn package_ingest_rejects_untrusted_input_without_panicking() {
+    fn module_ingest_rejects_untrusted_input_without_panicking() {
         let big = "\"".repeat(100_000);
         for bad in ["", "   ", "{", "null", "[]", "42", "not json", big.as_str()] {
-            assert!(ingest_dist_package(bad).is_err());
+            assert!(ingest_dist_module(bad).is_err());
         }
     }
 }

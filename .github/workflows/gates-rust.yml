@@ -25,6 +25,8 @@ jobs:
         with:
           workspaces: .
 
+      - name: Verify the PowerIO dependency source
+        run: python3 .github/scripts/powerio-pin.py
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy (shipping crates, warnings denied)
@@ -60,7 +62,7 @@ jobs:
           github.event_name == 'pull_request' &&
           startsWith(github.head_ref, 'release-plz-') &&
           github.event.pull_request.head.repo.full_name == github.repository
-        uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2.86.4
+        uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
         with:
           tool: cargo-semver-checks@0.48
           fallback: none
@@ -71,9 +73,8 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository
         run: cargo semver-checks check-release --manifest-path crates/tellegen/Cargo.toml
 
-      # This is the build-executing half of crate publication. The privileged
-      # release job uploads with --no-verify after this exact commit passes.
+      # This is the build-executing half of crate publication. It remains red
+      # while a packaged dependency is unavailable from crates.io, which keeps
+      # Tellegen behind the PowerIO release in the publication order.
       - name: Package and verify the published crate
-        run: |
-          rm -rf target/package
-          cargo package -p tellegen --locked
+        run: cargo package -p tellegen --locked

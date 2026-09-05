@@ -1,0 +1,78 @@
+{
+  "create": {
+    "id": "texas7k-redistribution",
+    "title": "TEXAS7K redistribution",
+    "formulation": "dcopf",
+    "request": "Lower the weighted prices at buses [230209, 230220, 230224] using redistribution. Show the consequences elsewhere.",
+    "interpretation": "Minimize the sum of selected active-power marginal prices. Changes are relative to the captured source state.",
+    "objective": {
+      "kind": "weighted_observable",
+      "operand": {
+        "Price": "Active"
+      },
+      "weights": [
+        {
+          "element": 230209,
+          "weight": 1.0
+        },
+        {
+          "element": 230220,
+          "weight": 1.0
+        },
+        {
+          "element": 230224,
+          "weight": 1.0
+        }
+      ]
+    },
+    "decisions": {
+      "variables": [
+        {
+          "id": "230209",
+          "element": 230209,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 10,
+          "increment": 5,
+          "budget_weight": 1
+        },
+        {
+          "id": "230220",
+          "element": 230220,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 10,
+          "increment": 5,
+          "budget_weight": 1
+        },
+        {
+          "id": "230243",
+          "element": 230243,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 10,
+          "increment": 5,
+          "budget_weight": 1
+        }
+      ],
+      "total_budget": 20,
+      "max_changed_elements": 2,
+      "demand": {
+        "kind": "redistribution"
+      }
+    }
+  },
+  "search": {
+    "max_solves": 8,
+    "max_iterations": 8,
+    "beam_width": 2,
+    "min_improvement": 0.001
+  },
+  "rationale": "Investigate the high-price load region and the limiting 230273-230267 corridor identified in the exact starting solution. Rank feasible moves with the implicit gradient and require an exact improvement above the recorded numerical tolerance.",
+  "tolerances": {
+    "objective_absolute": 1e-05,
+    "objective_relative": 1e-05,
+    "demand_total_mw": 1e-07
+  },
+  "source_sha256": "sha256:56dbe2b9f79fe2a02d4830cb6049e55b2481d61e562cd86b7eb14d0f4bd2ae05"
+}

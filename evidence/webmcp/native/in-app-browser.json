@@ -1,0 +1,541 @@
+{
+  "schema": "tellegen.native-webmcp-evidence/1",
+  "captured_at": "2026-08-31T05:56:00Z",
+  "browser": "Codex in-app browser",
+  "page_url": "http://127.0.0.1:8000/?native=aggregate-error",
+  "software": {
+    "tellegen_revision": "962032367b96d3e414b224a32d058dbc29fae90c",
+    "tellegen_tree": "f38de1cdd34d2da58cbdd2716e19c54608fe5ee9",
+    "powerio_revision": "e4794115202256da442f43ffed01fbb79d043ea9",
+    "powerio_review_revision": "e39afc9d669349df5133ff6140598010a498cdb1",
+    "powerio_tree": "c1bd2fed467d92fdac380a5746f9dd8921059196",
+    "powerio_tree_equivalent": true,
+    "powerio_version": "1.0.0"
+  },
+  "source_digest": "sha256:5cb2980efbebd0128fd0974e1cd9e597e5dcfa2c47bef34423de15fed3e6c319",
+  "checks": {
+    "missing_callback_options": {
+      "tool": "inspect_case",
+      "input": {},
+      "callback_options": "omitted",
+      "result": {
+        "data": {
+          "active": true,
+          "available_formulations": ["dcopf", "socwr"],
+          "case_id": "cats",
+          "edits": {
+            "demand_count": 0,
+            "demand_sample": [],
+            "rating_count": 0,
+            "rating_sample": []
+          },
+          "formulation": "dcopf",
+          "label": "CATS (California)",
+          "network": {
+            "base_mva": 100,
+            "branches": 10823,
+            "buses": 8870
+          },
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r1",
+          "selection": null,
+          "session_id": "session-2786f1f1-2305-4e70-b297-3758120a5f5b",
+          "solution": {
+            "base_objective": 752160.513959975,
+            "binding_branches": 24,
+            "objective": 752160.513959975,
+            "objective_delta": 0,
+            "solve_backend": "none",
+            "solve_ms": null
+          },
+          "solving": false,
+          "source_digest": "sha256:5cb2980efbebd0128fd0974e1cd9e597e5dcfa2c47bef34423de15fed3e6c319",
+          "staged_proposal": null
+        },
+        "ok": true
+      },
+      "passed": true
+    },
+    "baseline_reset": {
+      "data": {
+        "after": {
+          "binding_branches": 24,
+          "demand_edit_count": 0,
+          "formulation": "dcopf",
+          "objective": 752160.513959975,
+          "objective_delta": 0,
+          "rating_edit_count": 0,
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r2"
+        },
+        "before": {
+          "binding_branches": 24,
+          "demand_edit_count": 0,
+          "formulation": "dcopf",
+          "objective": 752160.513959975,
+          "objective_delta": 0,
+          "rating_edit_count": 0,
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r1"
+        },
+        "case_id": "cats",
+        "demand_edit_count": 0,
+        "formulation": "dcopf",
+        "rating_edit_count": 0,
+        "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r2",
+        "solution": {
+          "base_objective": 752160.513959975,
+          "binding_branches": 24,
+          "objective": 752160.513959975,
+          "objective_delta": 0,
+          "solve_backend": "clarabel-wasm",
+          "solve_ms": 1729
+        }
+      },
+      "ok": true
+    },
+    "network_query": {
+      "branches": {
+        "data": {
+          "case_id": "cats",
+          "element_kind": "branch",
+          "elements": [
+            {
+              "editable": true,
+              "element_id": "branch:10216",
+              "flow_mw": -756.2680899999639,
+              "from_bus": 7723,
+              "legacy_id": 10216,
+              "loading": 0.999999999999952,
+              "rating_mw": 756.26809,
+              "to_bus": 7724
+            },
+            {
+              "editable": true,
+              "element_id": "branch:5311",
+              "flow_mw": -615.9999999999515,
+              "from_bus": 8481,
+              "legacy_id": 5311,
+              "loading": 0.9999999999999212,
+              "rating_mw": 616,
+              "to_bus": 5371
+            },
+            {
+              "editable": true,
+              "element_id": "branch:8658",
+              "flow_mw": 140.99999999998803,
+              "from_bus": 6874,
+              "legacy_id": 8658,
+              "loading": 0.9999999999999152,
+              "rating_mw": 141,
+              "to_bus": 6877
+            },
+            {
+              "editable": true,
+              "element_id": "branch:3822",
+              "flow_mw": 307.99999999995225,
+              "from_bus": 4232,
+              "legacy_id": 3822,
+              "loading": 0.999999999999845,
+              "rating_mw": 308,
+              "to_bus": 225
+            },
+            {
+              "editable": true,
+              "element_id": "branch:10616",
+              "flow_mw": -608.9999999998934,
+              "from_bus": 8480,
+              "legacy_id": 10616,
+              "loading": 0.999999999999825,
+              "rating_mw": 609,
+              "to_bus": 8481
+            }
+          ],
+          "returned": 5,
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r1",
+          "total": 10823
+        },
+        "ok": true
+      },
+      "buses": {
+        "data": {
+          "case_id": "cats",
+          "element_kind": "bus",
+          "elements": [
+            {
+              "base_demand_mw": 0,
+              "demand_mw": 0,
+              "editable": true,
+              "element_id": "bus:6354",
+              "generation_mw": 0,
+              "legacy_id": 6354,
+              "price": 25.98141607570725
+            },
+            {
+              "base_demand_mw": 10.3969995,
+              "demand_mw": 10.3969995,
+              "editable": true,
+              "element_id": "bus:2101",
+              "generation_mw": 0,
+              "legacy_id": 2101,
+              "price": 25.62318456127174
+            },
+            {
+              "base_demand_mw": 0,
+              "demand_mw": 0,
+              "editable": true,
+              "element_id": "bus:6384",
+              "generation_mw": 0,
+              "legacy_id": 6384,
+              "price": 25.623184561262388
+            }
+          ],
+          "returned": 3,
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r1",
+          "total": 8870
+        },
+        "ok": true
+      }
+    },
+    "proposal": {
+      "input": {
+        "case_id": "cats",
+        "expected_revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r2",
+        "objective": {
+          "kind": "weighted_lmp",
+          "weights": [
+            {
+              "bus_id": "bus:6354",
+              "weight": 1
+            }
+          ]
+        },
+        "candidates": ["branch:10216", "branch:5311", "branch:8658"],
+        "max_increase_per_branch_mw": 20,
+        "budget_mw": 30,
+        "increment_mw": 10,
+        "max_changed_lines": 2,
+        "exact_solve_budget": 6
+      },
+      "result": {
+        "data": {
+          "activity_id": "plan-0ef64f74-85c0-4197-9003-20f9ab49a1bd",
+          "baseline": {
+            "declared_objective": 752160.514,
+            "exact_solve": 1,
+            "phi": 25.9814
+          },
+          "baseline_phi": 25.9814,
+          "exact_phi_delta": -0.7359,
+          "exact_solves": 4,
+          "exact_verified_result": {
+            "declared_objective": 751909.229,
+            "exact_solve": 4,
+            "phi": 25.2456
+          },
+          "final_phi": 25.2456,
+          "first_order_error": 1.1291,
+          "iterations": {
+            "accepted": 3,
+            "total": 3
+          },
+          "predicted_phi_delta": -1.865,
+          "proposal": [
+            {
+              "branch_id": "branch:5311",
+              "delta_mw": 20
+            },
+            {
+              "branch_id": "branch:8658",
+              "delta_mw": 10
+            }
+          ],
+          "proposal_count": 2,
+          "proposal_id": "proposal-b668e610-95bd-4988-ad10-d4d751b6e8dc",
+          "proposal_truncated": false,
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r2",
+          "session_id": "session-2786f1f1-2305-4e70-b297-3758120a5f5b",
+          "source_digest": "sha256:5cb2980efbebd0128fd0974e1cd9e597e5dcfa2c47bef34423de15fed3e6c319",
+          "spent_budget_mw": 30,
+          "stop_reason": "exact re-solve improves the objective"
+        },
+        "ok": true
+      }
+    },
+    "application_before_approval": {
+      "error": {
+        "code": "APPROVAL_REQUIRED",
+        "message": "a human must press Approve on this proposal before apply_capacity_plan can run"
+      },
+      "ok": false
+    },
+    "visible_approval": {
+      "used": true,
+      "control": "button named Approve"
+    },
+    "application": {
+      "data": {
+        "activity_id": "plan-0ef64f74-85c0-4197-9003-20f9ab49a1bd",
+        "after": {
+          "binding_branches": 21,
+          "demand_edit_count": 0,
+          "formulation": "dcopf",
+          "objective": 751909.199426484,
+          "objective_delta": -251.31453349103683,
+          "rating_edit_count": 2,
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r3"
+        },
+        "applied": [
+          {
+            "branch_id": "branch:5311",
+            "delta_mw": 20
+          },
+          {
+            "branch_id": "branch:8658",
+            "delta_mw": 10
+          }
+        ],
+        "applied_count": 2,
+        "applied_truncated": false,
+        "before": {
+          "binding_branches": 24,
+          "demand_edit_count": 0,
+          "formulation": "dcopf",
+          "objective": 752160.513959975,
+          "objective_delta": 0,
+          "rating_edit_count": 0,
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r2"
+        },
+        "case_id": "cats",
+        "exact_phi": 25.2461,
+        "formulation": "dcopf",
+        "proposal_id": "proposal-b668e610-95bd-4988-ad10-d4d751b6e8dc",
+        "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r3",
+        "session_id": "session-2786f1f1-2305-4e70-b297-3758120a5f5b",
+        "solution": {
+          "base_objective": 752160.513959975,
+          "binding_branches": 21,
+          "objective": 751909.199426484,
+          "objective_delta": -251.31453349103683,
+          "solve_backend": "clarabel-wasm",
+          "solve_ms": 1593
+        },
+        "source_digest": "sha256:5cb2980efbebd0128fd0974e1cd9e597e5dcfa2c47bef34423de15fed3e6c319"
+      },
+      "ok": true
+    },
+    "stale_mutation": {
+      "input": {
+        "case_id": "cats",
+        "expected_revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r2"
+      },
+      "error": {
+        "code": "STALE_REVISION",
+        "message": "case edits changed; inspect_case now reports revision session-2786f1f1-2305-4e70-b297-3758120a5f5b:r3"
+      },
+      "ok": false
+    },
+    "invalid_mutation": {
+      "input": {
+        "case_id": "cats",
+        "expected_revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r3",
+        "mode": "set",
+        "ratings": [
+          {
+            "branch_id": "branch:5311",
+            "delta_mw": 500
+          }
+        ]
+      },
+      "error": {
+        "code": "EDIT_OUT_OF_RANGE",
+        "message": "branch branch:5311 rating delta must be from -50 to 50 MW"
+      },
+      "ok": false
+    },
+    "rejected_mutation_rollback": {
+      "passed": true,
+      "input": {
+        "case_id": "cats",
+        "expected_revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r3",
+        "mode": "set",
+        "ratings": [
+          {
+            "branch_id": "branch:5311",
+            "delta_mw": 500
+          }
+        ]
+      },
+      "error": {
+        "code": "EDIT_OUT_OF_RANGE",
+        "message": "branch branch:5311 rating delta must be from -50 to 50 MW"
+      },
+      "before": {
+        "data": {
+          "active": true,
+          "available_formulations": ["dcopf", "socwr"],
+          "case_id": "cats",
+          "edits": {
+            "demand_count": 0,
+            "demand_sample": [],
+            "rating_count": 2,
+            "rating_sample": [
+              {
+                "branch_id": "5311",
+                "delta_mw": 20
+              },
+              {
+                "branch_id": "8658",
+                "delta_mw": 10
+              }
+            ]
+          },
+          "formulation": "dcopf",
+          "label": "CATS (California)",
+          "network": {
+            "base_mva": 100,
+            "branches": 10823,
+            "buses": 8870
+          },
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r3",
+          "selection": null,
+          "session_id": "session-2786f1f1-2305-4e70-b297-3758120a5f5b",
+          "solution": {
+            "base_objective": 752160.513959975,
+            "binding_branches": 21,
+            "objective": 751909.199426484,
+            "objective_delta": -251.31453349103683,
+            "solve_backend": "clarabel-wasm",
+            "solve_ms": 1593
+          },
+          "solving": false,
+          "source_digest": "sha256:5cb2980efbebd0128fd0974e1cd9e597e5dcfa2c47bef34423de15fed3e6c319",
+          "staged_proposal": null
+        },
+        "ok": true
+      },
+      "after": {
+        "data": {
+          "active": true,
+          "available_formulations": ["dcopf", "socwr"],
+          "case_id": "cats",
+          "edits": {
+            "demand_count": 0,
+            "demand_sample": [],
+            "rating_count": 2,
+            "rating_sample": [
+              {
+                "branch_id": "5311",
+                "delta_mw": 20
+              },
+              {
+                "branch_id": "8658",
+                "delta_mw": 10
+              }
+            ]
+          },
+          "formulation": "dcopf",
+          "label": "CATS (California)",
+          "network": {
+            "base_mva": 100,
+            "branches": 10823,
+            "buses": 8870
+          },
+          "revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r3",
+          "selection": null,
+          "session_id": "session-2786f1f1-2305-4e70-b297-3758120a5f5b",
+          "solution": {
+            "base_objective": 752160.513959975,
+            "binding_branches": 21,
+            "objective": 751909.199426484,
+            "objective_delta": -251.31453349103683,
+            "solve_backend": "clarabel-wasm",
+            "solve_ms": 1593
+          },
+          "solving": false,
+          "source_digest": "sha256:5cb2980efbebd0128fd0974e1cd9e597e5dcfa2c47bef34423de15fed3e6c319",
+          "staged_proposal": null
+        },
+        "ok": true
+      }
+    },
+    "navigation_invalidation": {
+      "in_flight": true,
+      "input": {
+        "case_id": "cats",
+        "expected_revision": "session-2786f1f1-2305-4e70-b297-3758120a5f5b:r3",
+        "objective": {
+          "kind": "weighted_lmp",
+          "weights": [
+            {
+              "bus_id": "bus:6354",
+              "weight": 1
+            }
+          ]
+        },
+        "candidates": ["branch:10216", "branch:5311", "branch:8658"],
+        "max_increase_per_branch_mw": 20,
+        "budget_mw": 30,
+        "increment_mw": 10,
+        "max_changed_lines": 2,
+        "exact_solve_budget": 6
+      },
+      "call": {
+        "resolved": false,
+        "name": "Error",
+        "message": "Browser Use encountered an error interacting with this webpage: Error: WebMCP tool \"propose_capacity_plan\" is stale. Call fetchTools() again."
+      },
+      "after_reload": {
+        "data": {
+          "active": true,
+          "available_formulations": ["dcopf", "socwr"],
+          "case_id": "cats",
+          "edits": {
+            "demand_count": 0,
+            "demand_sample": [],
+            "rating_count": 0,
+            "rating_sample": []
+          },
+          "formulation": "dcopf",
+          "label": "CATS (California)",
+          "network": {
+            "base_mva": 100,
+            "branches": 10823,
+            "buses": 8870
+          },
+          "revision": "session-ec600034-498a-4b6d-8b2f-67ff6108fcaa:r1",
+          "selection": null,
+          "session_id": "session-ec600034-498a-4b6d-8b2f-67ff6108fcaa",
+          "solution": {
+            "base_objective": 752160.513959975,
+            "binding_branches": 24,
+            "objective": 752160.513959975,
+            "objective_delta": 0,
+            "solve_backend": "none",
+            "solve_ms": null
+          },
+          "solving": false,
+          "source_digest": "sha256:5cb2980efbebd0128fd0974e1cd9e597e5dcfa2c47bef34423de15fed3e6c319",
+          "staged_proposal": null
+        },
+        "ok": true
+      },
+      "new_session": true,
+      "proposal_cleared": true
+    }
+  },
+  "screenshots": [
+    {
+      "path": "docs/assets/challenge/proposal-staged.png",
+      "sha256": "edf05720879ba2cf03fa4d3f3b84e84f31af420fc205d725597ad47f3a903eab",
+      "state": "pending approval"
+    },
+    {
+      "path": "docs/assets/challenge/plan-applied.png",
+      "sha256": "a38b9bf65082579dff030866bc684dfff309def7b57bd2f43db9df2e06087228",
+      "state": "applied"
+    }
+  ],
+  "video": {
+    "path": "docs/assets/challenge/native-webmcp-demo.mp4",
+    "sha256": "04ab59aad80a0542df1cf0f2c488f0a625cd9dbcf55338e26d5481b1d7aa21e6",
+    "run": "evidence/webmcp/native/video-run.json"
+  }
+}

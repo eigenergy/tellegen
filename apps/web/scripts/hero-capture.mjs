@@ -47,7 +47,7 @@ const chip = page.locator('.case-activate').filter({ hasText: caseText }).first(
 await chip.waitFor({ timeout: 60_000 });
 await chip.click();
 
-// Select the first binding line once the case solves, for the dLMP/drating
+// Select the first binding line once the case solves, for the price/rating
 // view. Texas7k and ACTIVSg500 each have exactly one.
 const bindingLine = page.locator('.binding-lines button').first();
 await bindingLine.waitFor({ timeout: 120_000 });

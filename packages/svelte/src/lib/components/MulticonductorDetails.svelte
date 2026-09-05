@@ -8,7 +8,7 @@
 		isPhaseTerminal,
 		phaseColor
 	} from '../multiconductor.js';
-	import type { DistAttachmentKind } from '@tellegen/engine';
+	import { formatPowerIoDiagnostic, type DistAttachmentKind } from '@tellegen/engine';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -62,13 +62,13 @@
 			{/if}
 		</dl>
 
-		{#if s.warnings.length > 0}
+		{#if s.diagnostics.length > 0}
 			<ul class="warnings mono">
-				{#each s.warnings.slice(0, 4) as w, i (i)}
-					<li>{w}</li>
+				{#each s.diagnostics.slice(0, 4) as diagnostic, i (i)}
+					<li>{formatPowerIoDiagnostic(diagnostic)}</li>
 				{/each}
-				{#if s.warnings.length > 4}
-					<li>+{s.warnings.length - 4} more</li>
+				{#if s.diagnostics.length > 4}
+					<li>+{s.diagnostics.length - 4} more</li>
 				{/if}
 			</ul>
 		{/if}

@@ -1,15 +1,14 @@
 <p align="center">
-  <img src="docs/assets/hero.svg" alt="tellegen reactive power flow visualization" width="100%">
+  <img src="docs/assets/hero.svg" alt="tellegen power system visualization" width="100%">
 </p>
 
 # tellegen
 
-Reactive visualization for power systems optimization. Demand and rating edits
-preview through KKT sensitivity columns and commit as exact solves, entirely in
-the browser: DC OPF, AC power flow, and the SOCWR relaxation run in
-WebAssembly. Case parsing uses
-[powerio](https://github.com/eigenergy/powerio). The name is Tellegen's
-theorem, the reciprocity result behind adjoint sensitivities.
+Browser visualization for DC OPF, AC power flow, SOCWR, and their sensitivities.
+Demand and rating edits preview through KKT sensitivity columns and commit as
+fresh solves in WebAssembly. Case parsing uses
+[powerio](https://github.com/eigenergy/powerio). The project is named for
+Tellegen's theorem.
 
 Live demo: [tellegen.dev](https://tellegen.dev). Documentation:
 [eigenergy.github.io/tellegen](https://eigenergy.github.io/tellegen/).
@@ -19,11 +18,17 @@ Live demo: [tellegen.dev](https://tellegen.dev). Documentation:
 ```sh
 npm install @tellegen/engine   # case parsing and wasm solves, framework agnostic
 npm install @tellegen/svelte   # map, panels, and solve card as Svelte components
+npm install @tellegen/webmcp   # WebMCP tools and host adapter contract
 ```
 
 `@tellegen/engine` exports case parsing, browser solving, the `Study` preview
 and commit calls, sensitivities, and generated TypeScript types.
 `@tellegen/svelte` exports the map, panels, local file flow, and solve card.
+`@tellegen/webmcp` exports the general OPF tools and the conditionally
+registered `propose_capacity_plan` and `apply_capacity_plan` tools through an
+adapter that does not depend on a UI framework. The hosted demo connects the
+live Svelte controller to that adapter. See the
+[WebMCP guide](docs/src/webmcp.md).
 Start with the
 [framework quickstart](https://eigenergy.github.io/tellegen/framework-quickstart.html);
 `examples/browser-minimal/` and `examples/svelte-minimal/` are working
@@ -41,10 +46,11 @@ cargo add tellegen powerio serde_json
 ```
 
 ```rust
-use tellegen::{solve_network, SolveRequest};
+use tellegen::{solve_instance, SolveRequest};
 
-let case = std::fs::read_to_string("case30.m")?;
-let network = powerio::parse_str(&case, "matpower")?.network;
+let parsed = powerio::parse(powerio::Source::open("case30.m")?)?;
+let network_module = tellegen::ir::balanced_module(parsed)?;
+let instance = powerio::DcOpfInstance::from_network(network_module.value().clone())?;
 
 // A DC OPF with bus 2 shifted 50 MW, and the LMP column against demand.
 let request: SolveRequest = serde_json::from_str(
@@ -57,18 +63,21 @@ let request: SolveRequest = serde_json::from_str(
     }"#,
 )?;
 
-let solved = solve_network(&network, &request).map_err(|e| e.to_string())?;
+let solved = solve_instance(&instance, &request).map_err(|e| e.to_string())?;
 println!("{:?} objective {:?}", solved.status, solved.objective);
 ```
 
-`solve_json` takes and returns JSON strings instead, for a caller that already
-holds a serialized network. Default features carry the differentiable engine:
-DC OPF, AC power flow, and the KKT sensitivities. `conic` adds the SOCWR
-relaxation and its sensitivities. `--no-default-features` drops faer and
-num-complex and leaves the DC OPF solve on its own.
+`solve_module_json` takes and returns JSON strings for callers that hold a
+stored PowerIO module. It accepts modules containing a balanced network or a
+declared problem instance; it does not accept bare network JSON. Default
+features carry the differentiable engine: DC OPF, AC power flow, and the KKT
+sensitivities. `conic` adds the SOCWR relaxation and its sensitivities.
+`--no-default-features` drops faer and num-complex and leaves the DC OPF solve
+on its own.
 
-`tellegen-cli` wraps the same call for scripting: it reads a powerio
-`BalancedNetwork` as JSON on stdin and writes the solve to stdout.
+`tellegen-cli` wraps the same call for scripting: it reads a stored PowerIO
+module on stdin and writes the solve response to stdout. Its `solve-module`
+command writes an exact PowerIO solution module.
 
 ## Demo
 
@@ -76,12 +85,12 @@ The demo serves three TAMU ACTIVSg synthetic grids and the CATS California
 Test System. These are synthetic networks on geographic footprints, not
 surveyed infrastructure:
 
-| case | territory | buses | branches |
-|---|---|---:|---:|
-| ACTIVSg200 | central Illinois | 200 | 245 |
-| ACTIVSg500 | South Carolina | 500 | 597 |
-| ACTIVSg7000 | Texas | 6717 | 9140 |
-| CATS | California | 8870 | 10823 |
+| case        | territory        | buses | branches |
+| ----------- | ---------------- | ----: | -------: |
+| ACTIVSg200  | central Illinois |   200 |      245 |
+| ACTIVSg500  | South Carolina   |   500 |      597 |
+| ACTIVSg7000 | Texas            |  6717 |     9140 |
+| CATS        | California       |  8870 |    10823 |
 
 Bus color is locational marginal price. Selecting a bus shows ∂LMP/∂demand at
 that bus; selecting a binding line shows ∂LMP/∂rating. Dragging a slider
@@ -93,8 +102,8 @@ parse in the browser and never upload. Files with coordinates render in place;
 files without can be placed by clicking the map or paired with `.csv`, `.json`,
 or `.geojson` geography (powerio's GeoLayer reader; branch routes render as
 polylines). A PowerWorld `.pwd` file renders as approximate substation
-positions, or fills a coordinate-less sibling case through its substation
-numbers. Saved studies and exports carry the placement, and the layout
+positions, or fills a sibling case without coordinates through its substation
+numbers. Saved PowerIO modules and exports carry the placement, and the layout
 downloads as a `.geo.json` layer.
 
 ## Development
@@ -111,6 +120,7 @@ TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
 npm ci
 npm run wasm
 npm run build:engine
+npm run build:webmcp
 npm run build:svelte
 npm --workspace tellegen-frontend run dev
 ```
@@ -131,6 +141,7 @@ stages the complete cases into `data/`; the server serves whatever is staged.
 - `crates/`: Rust workspace — `tellegen` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
 - `packages/engine/`: `@tellegen/engine` browser package
 - `packages/svelte/`: `@tellegen/svelte` component package
+- `packages/webmcp/`: reusable WebMCP tools, validation, and registration
 - `apps/web/`: the hosted demo, a SvelteKit consumer of the Svelte package
 - `examples/`: minimal Vite and Svelte integrations of each package
 - `docs/src/`: mdBook source; `scripts/build-docs.sh` builds it

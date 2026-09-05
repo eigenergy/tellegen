@@ -1,0 +1,77 @@
+name: PowerIO Candidate
+
+# Run this before a PowerIO release to exercise Tellegen's Rust, WebAssembly,
+# WebMCP, and browser surfaces against the exact proposed commit.
+on:
+  pull_request:
+    paths:
+      - .github/scripts/powerio-pin.py
+      - .github/scripts/test-powerio-pin.py
+      - .github/workflows/powerio-candidate.yml
+      - Cargo.lock
+      - Cargo.toml
+  workflow_dispatch:
+    inputs:
+      powerio_ref:
+        description: Full 40-character PowerIO commit SHA
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: powerio-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  downstream:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TELLEGEN_ALLOW_FALLBACK: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select the PowerIO candidate
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          POWERIO_REF: ${{ inputs.powerio_ref }}
+        run: python3 .github/scripts/powerio-pin.py --set "$POWERIO_REF"
+      - uses: ./.github/actions/js-setup
+      # Resolving without --locked updates only this disposable runner's lock
+      # for the selected git revision. The next step proves all six PowerIO
+      # components resolved together before any build starts.
+      - name: Resolve and verify the candidate
+        run: |
+          cargo fetch
+          python3 .github/scripts/powerio-pin.py
+      - name: Clippy (shipping crates, warnings denied)
+        run: |
+          cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli \
+            --all-targets -- -D warnings
+      - name: Test Rust surfaces
+        run: |
+          cargo test --workspace
+          cargo test -p tellegen --features conic
+          cargo test -p tellegen-wasm --features conic
+      - name: Build candidate WebAssembly
+        run: npm run wasm
+      - name: Test WebMCP and package surfaces
+        run: |
+          npm run check:webmcp
+          npm run pack:webmcp
+          npm run check:engine
+          npm run build:engine
+          npm run test:import
+          npm run check:svelte
+          npm run test:svelte
+          npm run check:web
+          npm run test:svelte-packed
+          npm --workspace tellegen-frontend run build
+          npm run smoke:web
+      - name: Test browser integration
+        run: |
+          npm --workspace tellegen-frontend exec playwright install --with-deps chromium
+          npm run test:browser

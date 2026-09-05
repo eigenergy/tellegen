@@ -15,9 +15,11 @@ crate-type = ["cdylib", "rlib"]
 # `sensitivity` feature below forwards to `tellegen/sensitivity` for the sens build.
 tellegen = { path = "../tellegen", default-features = false }
 powerio.workspace = true
-powerio-pkg.workspace = true
 powerio-dist.workspace = true
+powerio-tx.workspace = true
 wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
 serde.workspace = true
 serde_json.workspace = true
 # Forwards Rust panics to a readable console.error with a JS stack, instead of the bare

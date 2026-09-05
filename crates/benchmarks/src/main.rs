@@ -1,10 +1,9 @@
 //! PGLib-OPF validation and benchmark harness for tellegen.
 //!
-//! Drives tellegen's public API (`solve_json` / `solve_network` / `solve_prebuilt`,
-//! `socwr_opf`, `ac_pf`, and the typed sensitivity engines) over the PGLib-OPF
-//! v23.07 corpus, validates against two independent baselines — the published PGLib
-//! reference solves (`BASELINE.md`) and finite-difference derivatives — and records
-//! every result, skip, and cap. See the `book` (Benchmarks, Methodology) for the spec.
+//! Drives Tellegen's typed PowerIO DC OPF, AC power flow, and SOCWR entries
+//! over the PGLib-OPF v23.07 corpus. It validates against the published
+//! PGLib reference solves (`BASELINE.md`) and finite difference derivatives,
+//! recording every result, skip, and cap. See the book's methodology chapter.
 //!
 //! Usage:
 //! ```text
@@ -12,9 +11,9 @@
 //!   --variants typ|api|sad|all   variant set (default: all)
 //!   --max-bus N                  skip cases above N buses (default: unlimited)
 //!   --max-sens-bus N             skip sensitivity sampling above N buses (default: 1500)
-//!   --timeout SECS               per-case wall-clock guard (default: 180)
+//!   --timeout SECS               per case wall time limit (default: 180)
 //!   --limit N                    run only the first N (smallest) cases
-//!   --no-sens                    disable finite-difference parity sampling
+//!   --no-sens                    disable finite difference parity sampling
 //!   --pglib PATH                 corpus root (default: $PGLIB_OPF_PATH or ~/Datasets/pglib-opf)
 //!   --out DIR                    artifact directory (default: target/pglib-bench)
 //!   --book                       also copy the markdown snapshot into docs/src

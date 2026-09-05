@@ -1,13 +1,14 @@
-//! The per-`(case, variant)` result record — one row of the validation matrix
-//! (`docs/src/methodology.md`) — and its JSON/CSV-friendly sub-structs. The runner fills
-//! these; the report module serializes them.
+//! The per `(case, variant)` result record, one row of the validation matrix in
+//! `docs/src/methodology.md`. The runner fills these values and the report
+//! module serializes them.
 
 use serde::Serialize;
 
 use crate::corpus::{CaseFile, Variant};
 
-/// Outcome of a case. `Caveat` is solved-but-noteworthy (PF non-convergence, DC load
-/// shedding, a relaxation bound violation, a parity outlier); the detail is in `notes`.
+/// Outcome of a case. `Caveat` records a solved case with a qualification (PF
+/// nonconvergence, DC load shedding, a relaxation bound violation, or a parity
+/// outlier); the detail is in `notes`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum Status {
     Solved,
@@ -29,8 +30,8 @@ pub struct Timings {
     pub sens_ms: f64,
 }
 
-/// DC OPF result vs the BASELINE `DC ($/h)` column. `objective` includes the constant
-/// cost term so it is comparable to the published value.
+/// DC OPF result against the published BASELINE objective. `objective`
+/// includes the constant cost term so it is comparable to that value.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct DcResult {
     pub objective: Option<f64>,
@@ -47,10 +48,10 @@ pub struct DcResult {
     pub error: Option<String>,
 }
 
-/// Conic SOCWR result vs the BASELINE `AC ($/h)` / `SOC Gap (%)` columns.
+/// Conic SOCWR result against the BASELINE AC objective and SOC gap columns.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct SocResult {
-    /// SOCWR objective, $/h incl. the constant cost term (a convex lower bound on AC).
+    /// SOCWR objective including the constant cost term, a convex lower bound on AC.
     pub objective: Option<f64>,
     pub iterations: Option<usize>,
     /// Phasor's gap `(AC − socwr) / AC · 100`, using the baseline AC objective.
@@ -58,11 +59,10 @@ pub struct SocResult {
     pub baseline_soc_gap: Option<f64>,
     /// The published QC relaxation gap, recorded for context (tellegen has no QC path).
     pub baseline_qc_gap: Option<f64>,
-    /// `gap_pct − baseline_soc_gap`: near zero is the expected steelman result (same
-    /// Jabr relaxation family).
+    /// `gap_pct − baseline_soc_gap`: near zero means the two Jabr-family gaps agree.
     pub delta_gap: Option<f64>,
     pub baseline_ac: Option<f64>,
-    /// `socwr ≤ AC · (1 + tol)`: the relaxation lower-bound property. `false` is a
+    /// `socwr ≤ AC · (1 + tol)`: the relaxation lower bound property. `false` is a
     /// correctness failure.
     pub bound_ok: Option<bool>,
     pub error: Option<String>,
@@ -127,9 +127,9 @@ pub struct ParitySummary {
     /// `(operand, parameter)` cells probed and how many the formulation supports.
     pub cells_probed: usize,
     pub cells_supported: usize,
-    /// Worst `|adjoint − forward|` over sampled cells (a solve-consistency bound).
+    /// Worst `|adjoint − forward|` over sampled cells (a solve consistency bound).
     pub worst_adjoint_forward: f64,
-    /// Columns finite-differenced (significant, above the floor).
+    /// Columns checked by finite differences (significant, above the floor).
     pub fd_columns: usize,
     /// Worst (outlier) relative FD error among `FdClean` cells (active power routed).
     pub worst_fd_clean: f64,

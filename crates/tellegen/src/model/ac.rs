@@ -9,12 +9,46 @@
 use std::collections::BTreeMap;
 
 use num_complex::Complex;
-use powerio::{BalancedNetwork, IndexedNetwork, LoadVoltageModel};
-use powerio_prob::{build_ac_opf_instance, AcOpfOptions, Units};
+use powerio::{BalancedNetwork, LoadVoltageModel};
+#[cfg(feature = "conic")]
+use powerio_matrix::PreparedObjective;
+use powerio_matrix::{build_ac_opf_preparation, AcOpfAssemblyOptions, Units};
+use powerio_prob::{AcBusSpecification, AcOpfInstance, AcPfInstance};
 
-use super::{flatten_gen_costs, normalize_angle_bounds, normalize_for_model, reconstruct_ids, Ids};
+#[cfg(feature = "conic")]
+use super::{
+    normalize_angle_bounds, reject_unsupported_active_elements, uids_for_source_rows,
+    validate_canonical_identity, PiecewiseCost,
+};
+use super::{normalize_for_model, reconstruct_ids, Ids};
 
 const NEAR_ZERO_IMPEDANCE_SQUARED: f64 = 1.0e-10;
+
+#[cfg(feature = "conic")]
+fn stable_source_ids(
+    source_rows: &[Option<usize>],
+    source_len: usize,
+    family: &str,
+) -> Result<Vec<usize>, String> {
+    let mut next_synthetic = source_len
+        .checked_add(1)
+        .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
+    source_rows
+        .iter()
+        .map(|row| match row {
+            Some(row) => row
+                .checked_add(1)
+                .ok_or_else(|| format!("{family} id space exhausted")),
+            None => {
+                let id = next_synthetic;
+                next_synthetic = next_synthetic
+                    .checked_add(1)
+                    .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
+                Ok(id)
+            }
+        })
+        .collect()
+}
 
 /// AC network data in the vectorized pi-model admittance form.
 ///
@@ -25,7 +59,7 @@ const NEAR_ZERO_IMPEDANCE_SQUARED: f64 = 1.0e-10;
 /// to `(pg_i − pd_i) + j(qg_i − qd_i)`.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
-pub struct AcNetwork {
+pub(crate) struct AcNetwork {
     /// Buses and branches after filtering (in-service, non-isolated).
     pub n: usize,
     pub m: usize,
@@ -57,7 +91,9 @@ pub struct AcNetwork {
     /// the source leaves them unset or unconstrained (shared with the DC model). The AC
     /// OPF enforces these as linear inequalities; the conic SOCWR maps them onto the
     /// W-space products `wr`/`wi`.
+    #[cfg(feature = "conic")]
     pub angmin: Vec<f64>,
+    #[cfg(feature = "conic")]
     pub angmax: Vec<f64>,
     /// Branch switching state (1 closed, 0 open). All branches start closed.
     pub sw: Vec<f64>,
@@ -77,52 +113,318 @@ pub struct AcNetwork {
     pub gen_bus: Vec<usize>,
     /// Per-unit generator real and reactive output bounds, per generator. The
     /// conic OPF optimizes over these; the power flow uses the per-bus aggregates.
+    #[cfg(feature = "conic")]
     pub pmin: Vec<f64>,
+    #[cfg(feature = "conic")]
     pub pmax: Vec<f64>,
     pub qmin: Vec<f64>,
     pub qmax: Vec<f64>,
     /// Per-unit generation cost `cq[g] pg² + cl[g] pg + cc[g]` per generator.
+    #[cfg(feature = "conic")]
     pub cq: Vec<f64>,
+    #[cfg(feature = "conic")]
     pub cl: Vec<f64>,
+    #[cfg(feature = "conic")]
     pub cc: Vec<f64>,
+    /// Exact convex piecewise linear costs aligned with generator columns.
+    #[cfg(feature = "conic")]
+    pub(crate) piecewise_costs: Vec<Option<PiecewiseCost>>,
     /// Dense generator index -> original source generator id.
     pub gen_ids: Vec<usize>,
     /// Per-bus voltage magnitude bounds, and the per-bus magnitude setpoint: the
     /// regulating generator's voltage setpoint (`vg`) at PV and slack buses, the bus
     /// voltage elsewhere. The power flow holds PV/slack magnitudes at this value; it also
     /// seeds the flat start.
+    #[cfg(feature = "conic")]
     pub vm_min: Vec<f64>,
+    #[cfg(feature = "conic")]
     pub vm_max: Vec<f64>,
     pub vm_set: Vec<f64>,
     /// Reference (slack) bus, dense index.
     pub slack: usize,
+    /// Buses whose AC power flow magnitude is prescribed. The reference is
+    /// represented separately by `slack`.
+    pub(crate) pf_pv: Vec<bool>,
     /// Dense index -> original source id, as in [`DcNetwork`](super::DcNetwork).
     pub bus_ids: Vec<usize>,
     pub branch_ids: Vec<usize>,
+    pub(crate) bus_source_rows: Vec<Option<usize>>,
+    #[cfg(feature = "conic")]
+    pub(crate) branch_sources: Option<Vec<powerio_matrix::AnalysisBranchSource>>,
     /// Dense index -> powerio row uid (`None` when the source network carried no
     /// uids), as in [`DcNetwork`](super::DcNetwork).
     pub bus_uids: Vec<Option<String>>,
     pub branch_uids: Vec<Option<String>>,
     /// System base power (MVA).
     pub base_mva: f64,
+    /// Objective and active constraints compiled from the PowerIO instance.
+    #[cfg(feature = "conic")]
+    pub(crate) objective: PreparedObjective,
+    #[cfg(feature = "conic")]
+    pub(crate) voltage_bound_active: Vec<bool>,
+    #[cfg(feature = "conic")]
+    pub(crate) generator_capability_active: Vec<bool>,
+    #[cfg(feature = "conic")]
+    pub(crate) thermal_limit_active: Vec<bool>,
+    #[cfg(feature = "conic")]
+    pub(crate) angle_bound_active: Vec<bool>,
     /// An active generator names a different regulated bus. The SOCWR model
     /// ignores voltage-control actions; ACPF rejects this explicitly.
     pub has_remote_voltage_control: bool,
 }
 
 impl AcNetwork {
+    /// Build the private AC power flow workspace from the supplied PowerIO
+    /// instance. Boundary specifications, not inferred generator placement,
+    /// determine the PQ, PV, and reference equations.
+    pub fn from_pf_instance(instance: &AcPfInstance) -> Result<AcNetwork, String> {
+        let mut model = Self::from_network(instance.network())?;
+        if instance.specifications().len() != instance.network().buses().len() {
+            return Err(format!(
+                "AC power flow instance has {} bus specifications for {} buses",
+                instance.specifications().len(),
+                instance.network().buses().len()
+            ));
+        }
+
+        model.pf_pv.fill(false);
+        let mut reference = None;
+        for (dense, &source_id) in model.bus_ids.iter().enumerate() {
+            let source_row = model.bus_source_rows[dense].ok_or_else(|| {
+                format!(
+                    "synthetic AC preparation bus {source_id} has no source power flow specification"
+                )
+            })?;
+            let specification = instance.specifications()[source_row];
+            match specification {
+                AcBusSpecification::Pq { p, q } => {
+                    model.pg[dense] = model.pd[dense] + p / model.base_mva;
+                    model.qg[dense] = model.qd[dense] + q / model.base_mva;
+                }
+                AcBusSpecification::Pv { p, vm } => {
+                    model.pg[dense] = model.pd[dense] + p / model.base_mva;
+                    model.vm_set[dense] = vm;
+                    model.pf_pv[dense] = true;
+                }
+                AcBusSpecification::Reference { vm, va } => {
+                    if va.abs() > 1e-12 {
+                        return Err(format!(
+                            "AC power flow reference bus {source_id} states angle {va} degrees; Tellegen currently requires zero"
+                        ));
+                    }
+                    if reference.replace(dense).is_some() {
+                        return Err(
+                            "AC power flow instance states more than one reference bus".to_owned()
+                        );
+                    }
+                    model.vm_set[dense] = vm;
+                }
+                AcBusSpecification::Isolated => {
+                    return Err(format!(
+                        "isolated AC power flow bus {source_id} entered the analysis preparation"
+                    ));
+                }
+                _ => {
+                    return Err(format!(
+                        "AC power flow bus {source_id} uses an unsupported specification"
+                    ));
+                }
+            }
+        }
+        model.slack = reference.ok_or("AC power flow instance has no reference bus")?;
+        model.pf_pv[model.slack] = false;
+        Ok(model)
+    }
+
+    /// Build the private AC solver workspace from the supplied PowerIO
+    /// instance, preserving its declared objective and constraint selections.
+    #[cfg(feature = "conic")]
+    pub fn from_instance(instance: &AcOpfInstance) -> Result<AcNetwork, String> {
+        let raw = instance.network();
+        validate_canonical_identity(raw)?;
+        reject_unsupported_active_elements(raw)?;
+        let voltage_dependent_loads = raw
+            .loads()
+            .iter()
+            .filter(|load| {
+                load.in_service
+                    && !matches!(
+                        load.voltage_model.as_ref(),
+                        None | Some(LoadVoltageModel::ConstantPower)
+                    )
+            })
+            .count();
+        if voltage_dependent_loads > 0 {
+            return Err(format!(
+                "network contains {voltage_dependent_loads} active voltage-dependent load(s); SOCWR supports constant-power loads only"
+            ));
+        }
+        let mut assembly = AcOpfAssemblyOptions::default();
+        assembly.units = Units::PerUnit;
+        assembly.skip_zero_impedance = false;
+        assembly.synthesize_unrated_limits = true;
+        let prep = build_ac_opf_preparation(instance, &assembly)
+            .map_err(|e| format!("{}: {e}", e.code().code))?;
+        let n = prep.n_buses;
+        let m = prep.n_branches();
+        let k = prep.n_generators();
+        if k == 0 {
+            return Err("network has no in-service generators".to_owned());
+        }
+        for branch in 0..m {
+            if !prep.branches.angle_bound_active[branch] {
+                continue;
+            }
+            let min = prep.branches.angle_min[branch];
+            let max = prep.branches.angle_max[branch];
+            let covers_principal_circle =
+                min <= -std::f64::consts::PI && max >= std::f64::consts::PI;
+            if !covers_principal_circle
+                && (min <= -std::f64::consts::FRAC_PI_2 || max >= std::f64::consts::FRAC_PI_2)
+            {
+                return Err(format!(
+                    "SOCWR cannot represent active angle bounds [{min}, {max}] on branch {} outside (-pi/2, pi/2)",
+                    prep.branches.identities[branch]
+                ));
+            }
+        }
+
+        let bus_ids: Vec<usize> = prep.bus_ids.iter().map(|id| id.0).collect();
+        let bus_uids =
+            uids_for_source_rows(&prep.bus_source_rows, raw.buses(), |bus| &bus.uid, "bus")?;
+        let branch_source_rows = super::branch_source_rows(&prep.branches.analysis_sources);
+        let branch_uids = uids_for_source_rows(
+            &branch_source_rows,
+            raw.branches(),
+            |branch| &branch.uid,
+            "branch",
+        )?;
+        let branch_ids = stable_source_ids(&branch_source_rows, raw.branches().len(), "branch")?;
+        let gen_ids = stable_source_ids(
+            &prep.generators.source_rows,
+            raw.generators().len(),
+            "generator",
+        )?;
+        let slack = prep.reference_buses.single().map_err(|e| e.to_string())?;
+        let mut vm_set = prep.calc_vm_setpoints();
+        let mut pg = vec![0.0; n];
+        let mut qg = vec![0.0; n];
+        let mut pf_pv = vec![false; n];
+        for (generator, &bus) in prep.generators.bus_of_gen.iter().enumerate() {
+            pf_pv[bus] = true;
+            pg[bus] += prep.generators.pg[generator];
+            qg[bus] += prep.generators.qg[generator];
+            let vg = prep.generators.vg[generator];
+            if vg > 0.0 {
+                let lo = prep.buses.vm_min[bus];
+                let hi = prep.buses.vm_max[bus];
+                vm_set[bus] = if lo.is_finite() && hi.is_finite() && lo <= hi {
+                    vg.clamp(lo, hi)
+                } else {
+                    vg
+                };
+            }
+        }
+        pf_pv[slack] = false;
+        let has_remote_voltage_control = raw.generators().iter().any(|generator| {
+            generator.in_service
+                && generator
+                    .regulated_bus
+                    .is_some_and(|regulated| regulated != generator.bus)
+        });
+
+        Ok(AcNetwork {
+            n,
+            m,
+            br_from: prep.branches.from_bus.clone(),
+            br_to: prep.branches.to_bus.clone(),
+            g: prep.branches.g.clone(),
+            b: prep.branches.b.clone(),
+            g_fr: prep.branches.g_fr.clone(),
+            b_fr: prep.branches.b_fr.clone(),
+            g_to: prep.branches.g_to.clone(),
+            b_to: prep.branches.b_to.clone(),
+            tap: prep.branches.tap.clone(),
+            shift: prep.branches.shift.clone(),
+            rate_a: prep.branches.s_max.clone(),
+            angmin: prep.branches.angle_min.clone(),
+            angmax: prep.branches.angle_max.clone(),
+            sw: vec![1.0; m],
+            gs: prep.buses.g_s.clone(),
+            bs: prep.buses.b_s.clone(),
+            pd: prep.buses.p_d.clone(),
+            qd: prep.buses.q_d.clone(),
+            pg,
+            qg,
+            k,
+            gen_bus: prep.generators.bus_of_gen.clone(),
+            pmin: prep.generators.pmin.clone(),
+            pmax: prep.generators.pmax.clone(),
+            qmin: prep.generators.qmin.clone(),
+            qmax: prep.generators.qmax.clone(),
+            cq: prep.generators.q.iter().map(|value| value / 2.0).collect(),
+            cl: prep.generators.c.clone(),
+            cc: prep.generators.c0.clone(),
+            piecewise_costs: prep
+                .generators
+                .piecewise_linear
+                .clone()
+                .into_iter()
+                .map(|cost| cost.map(PiecewiseCost::from_prepared))
+                .collect(),
+            gen_ids,
+            vm_min: prep.buses.vm_min.clone(),
+            vm_max: prep.buses.vm_max.clone(),
+            vm_set,
+            slack,
+            pf_pv,
+            bus_ids,
+            branch_ids,
+            bus_source_rows: prep.bus_source_rows.clone(),
+            branch_sources: Some(prep.branches.analysis_sources.clone()),
+            bus_uids,
+            branch_uids,
+            base_mva: prep.base_mva,
+            objective: prep.objective,
+            voltage_bound_active: prep.buses.voltage_bound_active.clone(),
+            generator_capability_active: prep.generators.capability_active.clone(),
+            thermal_limit_active: prep.branches.thermal_limit_active.clone(),
+            angle_bound_active: prep.branches.angle_bound_active.clone(),
+            has_remote_voltage_control,
+        })
+    }
+
+    /// Whether an active angle selection produces a nonredundant convex row
+    /// in W space. Bounds spanning the whole principal angle circle are exact
+    /// no-ops; narrower bounds outside ±pi/2 are rejected at construction.
+    #[cfg(feature = "conic")]
+    pub(crate) fn conic_angle_bound_active(&self, branch: usize) -> bool {
+        self.angle_bound_active[branch]
+            && !(self.angmin[branch] <= -std::f64::consts::PI
+                && self.angmax[branch] >= std::f64::consts::PI)
+    }
+
+    /// Evaluate one declared generator cost at `power` in per unit.
+    #[cfg(feature = "conic")]
+    pub(crate) fn generator_cost(&self, generator: usize, power: f64) -> f64 {
+        self.piecewise_costs[generator].as_ref().map_or_else(
+            || self.cq[generator] * power * power + self.cl[generator] * power + self.cc[generator],
+            |cost| cost.evaluate(power),
+        )
+    }
+
     /// Build the AC model from a parsed powerio `BalancedNetwork`, normalizing through
     /// `BalancedNetwork::to_normalized` (per unit, radians, filtered, densely reindexed,
     /// reference inferred) and reading its nodal and generator data from a
     /// `powerio-prob` [`AcOpfInstance`](powerio_prob::AcOpfInstance): per-unit demand,
     /// generator PQ bounds and scheduled output, voltage bands and setpoints. The
-    /// cost policy runs first ([`flatten_gen_costs`], so the instance's `GenCost`
-    /// accessors accept every row). The instance owns the complete complex pi model,
-    /// including per-terminal charging and 3-winding star lowering; Tellegen layers
-    /// only its `rate_a == 0` cone sentinel and angle-bound policy on top.
+    /// instance owns the complete complex pi model and preserves its quadratic
+    /// or convex piecewise linear objective, including per-terminal charging and
+    /// 3-winding star lowering. Tellegen layers only its `rate_a == 0` cone
+    /// sentinel and angle-bound policy on top.
     pub fn from_network(raw: &BalancedNetwork) -> Result<AcNetwork, String> {
         let voltage_dependent_loads = raw
-            .loads
+            .loads()
             .iter()
             .filter(|load| {
                 load.in_service
@@ -137,30 +439,25 @@ impl AcNetwork {
                 "network contains {voltage_dependent_loads} active voltage-dependent load(s); ACPF/SOCWR support constant-power loads only"
             ));
         }
-        let has_remote_voltage_control = raw.generators.iter().any(|generator| {
+        let has_remote_voltage_control = raw.generators().iter().any(|generator| {
             generator.in_service
                 && generator
                     .regulated_bus
                     .is_some_and(|regulated| regulated != generator.bus)
         });
         let input = normalize_for_model(raw)?;
-        let mut norm = input.network;
+        let norm = input.network;
         let source_rows = input.source_rows;
-        flatten_gen_costs(&mut norm)?;
-        let view = IndexedNetwork::new(&norm);
 
-        let instance = build_ac_opf_instance(
-            &view,
-            &AcOpfOptions {
-                units: Units::PerUnit,
-                // Omitting this row would also omit its topology and terminal
-                // charging. Fail closed instead of returning a plausible solve
-                // for a different network.
-                skip_zero_impedance: false,
-                ..AcOpfOptions::default()
-            },
-        )
-        .map_err(|e| e.to_string())?;
+        let instance = AcOpfInstance::from_network(norm).map_err(|e| e.to_string())?;
+        let mut assembly = AcOpfAssemblyOptions::default();
+        assembly.units = Units::PerUnit;
+        // Omitting a zero impedance row would also omit its topology and
+        // terminal charging. Fail closed instead of returning a plausible
+        // solve for a different network.
+        assembly.skip_zero_impedance = false;
+        let prep = build_ac_opf_preparation(&instance, &assembly)
+            .map_err(|e| format!("{}: {e}", e.code().code))?;
 
         let Ids {
             n,
@@ -173,24 +470,33 @@ impl AcNetwork {
             branch_uids,
         } = reconstruct_ids(
             raw,
-            &instance.bus_ids,
-            &instance.branches.source_rows,
-            &instance.generators.source_rows,
+            &prep.bus_ids,
+            &prep.branches.analysis_rows,
+            &prep.generators.analysis_rows,
             &source_rows,
         )?;
 
-        let mut vm_set = instance.vm_setpoints();
-        let slack = instance
-            .reference_buses
-            .single()
-            .map_err(|e| e.to_string())?;
+        let mut vm_set = prep.calc_vm_setpoints();
+        let slack = prep.reference_buses.single().map_err(|e| e.to_string())?;
 
-        // Move the complete PowerIO problem columns out of the one-shot instance.
-        // Its bus shunts already include folded self-loop pi stamps, and its active
-        // branch columns carry canonical per-terminal charging.
-        let buses = instance.buses;
-        let generators = instance.generators;
-        let branches = instance.branches;
+        // Move the complete PowerIO problem columns out of the one-shot
+        // preparation. Its bus shunts already include folded self-loop pi
+        // stamps, and its active branch columns carry canonical per-terminal
+        // charging.
+        let buses = prep.buses;
+        let generators = prep.generators;
+        let branches = prep.branches;
+        let bus_source_rows = source_rows.buses.clone();
+        #[cfg(feature = "conic")]
+        let objective = prep.objective;
+        #[cfg(feature = "conic")]
+        let voltage_bound_active = buses.voltage_bound_active.clone();
+        #[cfg(feature = "conic")]
+        let generator_capability_active = generators.capability_active.clone();
+        #[cfg(feature = "conic")]
+        let thermal_limit_active = branches.thermal_limit_active.clone();
+        #[cfg(feature = "conic")]
+        let angle_bound_active = branches.angle_bound_active.clone();
         debug_assert_eq!(n, buses.p_d.len());
         debug_assert_eq!(m, branches.g.len());
         debug_assert_eq!(k, generators.q.len());
@@ -237,6 +543,7 @@ impl AcNetwork {
             .into_iter()
             .map(|rate| if rate > 0.0 { rate } else { 1.0e3 })
             .collect();
+        #[cfg(feature = "conic")]
         let (angmin, angmax): (Vec<_>, Vec<_>) = branches
             .angle_min
             .into_iter()
@@ -249,8 +556,10 @@ impl AcNetwork {
         // and costs for SOCWR. PowerIO states the quadratic as `0.5*q*p^2`.
         let mut pg = vec![0.0; n];
         let mut qg = vec![0.0; n];
+        let mut pf_pv = vec![false; n];
         let gen_bus = generators.bus_of_gen;
         for (i, bus) in gen_bus.iter().copied().enumerate() {
+            pf_pv[bus] = true;
             pg[bus] += generators.pg[i];
             qg[bus] += generators.qg[i];
             // Regulate this bus's magnitude to the generator's voltage setpoint, clamped
@@ -271,10 +580,21 @@ impl AcNetwork {
                 };
             }
         }
+        #[cfg(feature = "conic")]
         let cq = generators.q.into_iter().map(|value| value / 2.0).collect();
+        #[cfg(feature = "conic")]
         let cl = generators.c;
+        #[cfg(feature = "conic")]
         let cc = generators.c0;
+        #[cfg(feature = "conic")]
+        let piecewise_costs = generators
+            .piecewise_linear
+            .into_iter()
+            .map(|cost| cost.map(PiecewiseCost::from_prepared))
+            .collect();
+        #[cfg(feature = "conic")]
         let pmin = generators.pmin;
+        #[cfg(feature = "conic")]
         let pmax = generators.pmax;
         let qmin = generators.qmin;
         let qmax = generators.qmax;
@@ -293,7 +613,9 @@ impl AcNetwork {
             tap,
             shift,
             rate_a,
+            #[cfg(feature = "conic")]
             angmin,
+            #[cfg(feature = "conic")]
             angmax,
             sw,
             gs,
@@ -304,23 +626,46 @@ impl AcNetwork {
             qg,
             k,
             gen_bus,
+            #[cfg(feature = "conic")]
             pmin,
+            #[cfg(feature = "conic")]
             pmax,
             qmin,
             qmax,
+            #[cfg(feature = "conic")]
             cq,
+            #[cfg(feature = "conic")]
             cl,
+            #[cfg(feature = "conic")]
             cc,
+            #[cfg(feature = "conic")]
+            piecewise_costs,
             gen_ids,
+            #[cfg(feature = "conic")]
             vm_min,
+            #[cfg(feature = "conic")]
             vm_max,
             vm_set,
             slack,
+            pf_pv,
             bus_ids,
             branch_ids,
+            bus_source_rows,
+            #[cfg(feature = "conic")]
+            branch_sources: None,
             bus_uids,
             branch_uids,
-            base_mva: raw.base_mva,
+            base_mva: raw.base_mva(),
+            #[cfg(feature = "conic")]
+            objective,
+            #[cfg(feature = "conic")]
+            voltage_bound_active,
+            #[cfg(feature = "conic")]
+            generator_capability_active,
+            #[cfg(feature = "conic")]
+            thermal_limit_active,
+            #[cfg(feature = "conic")]
+            angle_bound_active,
             has_remote_voltage_control,
         })
     }
@@ -397,6 +742,35 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "conic")]
+    fn typed_instance_objective_and_constraint_masks_reach_the_workspace() {
+        use powerio_prob::{ActiveConstraints, ConstraintSelection, Objective};
+
+        let mut network = crate::model::parse_matpower(CASE3).expect("parse case3");
+        network.generators_mut()[0].uid = Some("generator-a".into());
+        network.branches_mut()[0].uid = Some("line-a".into());
+        let mut constraints = ActiveConstraints::default();
+        constraints.voltage_bounds = ConstraintSelection::Only(vec!["2".into()]);
+        constraints.generator_capability = ConstraintSelection::None;
+        constraints.thermal_limits = ConstraintSelection::Only(vec!["line-a".into()]);
+        constraints.angle_bounds = ConstraintSelection::None;
+        let instance = AcOpfInstance::from_network(network)
+            .expect("instance")
+            .with_objective(Objective::none())
+            .with_constraints(constraints);
+
+        let model = AcNetwork::from_instance(&instance).expect("workspace");
+        assert_eq!(model.objective, PreparedObjective::Feasibility);
+        assert_eq!(model.voltage_bound_active, vec![false, true, false]);
+        assert_eq!(model.generator_capability_active, vec![false, false]);
+        assert_eq!(model.thermal_limit_active, vec![true, false, false]);
+        assert_eq!(model.angle_bound_active, vec![false, false, false]);
+        assert!(model.cq.iter().all(|value| *value == 0.0));
+        assert!(model.cl.iter().all(|value| *value == 0.0));
+        assert!(model.cc.iter().all(|value| *value == 0.0));
+    }
+
+    #[test]
     fn near_zero_impedance_jumper_is_a_tie_not_an_open_circuit() {
         // Regression for the same CATS bug already fixed in `DcNetwork::from_network`
         // (see `model::dc::tests::near_zero_impedance_jumper_is_a_tie_not_an_open_circuit`):
@@ -411,9 +785,7 @@ mod tests {
             "1 3 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
             "1 3 1e-7 1e-6 0 250 250 250 0 0 1 -360 360;",
         );
-        let net = powerio::parse_str(&text, "matpower")
-            .expect("parse jumper case3")
-            .network;
+        let net = crate::model::parse_matpower(&text).expect("parse jumper case3");
         let ac = AcNetwork::from_network(&net).expect("build AcNetwork with jumper branch");
 
         let z2 = 1e-7_f64.powi(2) + 1e-6_f64.powi(2);
@@ -434,10 +806,8 @@ mod tests {
             "1 3 0.01 0.1 0 250 250 250 0 0 1 -360 360;",
             "1 3 1e-7 1e-6 0 250 250 250 0 0 1 -360 360;",
         );
-        let mut net = powerio::parse_str(&text, "matpower")
-            .expect("parse jumper case3")
-            .network;
-        net.branches[1].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        let mut net = crate::model::parse_matpower(&text).expect("parse jumper case3");
+        net.branches_mut()[1].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
         let ac = AcNetwork::from_network(&net).expect("build charged jumper");
         assert!(ac.g[1].abs() > 1.0e4);
         assert!(ac.b[1].abs() > 1.0e5);
@@ -449,10 +819,8 @@ mod tests {
 
     #[test]
     fn canonical_asymmetric_terminal_charging_reaches_the_pi_model() {
-        let mut net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse case3")
-            .network;
-        net.branches[0].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse case3");
+        net.branches_mut()[0].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
 
         let ac = AcNetwork::from_network(&net).expect("build charged AC network");
         approx(ac.g_fr[0], 0.01);
@@ -469,15 +837,13 @@ mod tests {
 
     #[test]
     fn voltage_dependent_loads_fail_closed_but_constant_power_is_explicitly_safe() {
-        let mut net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse case3")
-            .network;
-        net.loads[0].voltage_model = Some(LoadVoltageModel::ConstantPower);
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse case3");
+        net.loads_mut()[0].voltage_model = Some(LoadVoltageModel::ConstantPower);
         AcNetwork::from_network(&net).expect("explicit constant power");
 
-        net.loads[0].voltage_model = Some(LoadVoltageModel::Zip {
-            p_constant_power: net.loads[0].p,
-            q_constant_power: net.loads[0].q,
+        net.loads_mut()[0].voltage_model = Some(LoadVoltageModel::Zip {
+            p_constant_power: net.loads()[0].p,
+            q_constant_power: net.loads()[0].q,
             p_constant_current: 0.0,
             q_constant_current: 0.0,
             p_constant_impedance: 0.0,
@@ -489,9 +855,9 @@ mod tests {
         let error = AcNetwork::from_network(&net).unwrap_err();
         assert!(error.contains("voltage-dependent load"), "{error}");
 
-        net.loads[0].voltage_model = Some(LoadVoltageModel::Exponential {
-            p: net.loads[0].p,
-            q: net.loads[0].q,
+        net.loads_mut()[0].voltage_model = Some(LoadVoltageModel::Exponential {
+            p: net.loads()[0].p,
+            q: net.loads()[0].q,
             v_nom: Some(1.0),
             gamma_p: 1.0,
             gamma_q: 2.0,
@@ -502,27 +868,24 @@ mod tests {
 
     #[test]
     fn remote_generator_voltage_control_is_preserved_as_an_acpf_guard() {
-        let mut net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse case3")
-            .network;
-        net.generators[0].regulated_bus = Some(powerio::BusId(2));
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse case3");
+        net.generators_mut()[0].regulated_bus = Some(powerio::BusId(2));
         let ac = AcNetwork::from_network(&net).expect("SOCWR model remains constructible");
         assert!(ac.has_remote_voltage_control);
 
-        net.generators[0].regulated_bus = None;
+        net.generators_mut()[0].regulated_bus = None;
         let ac = AcNetwork::from_network(&net).expect("terminal regulation");
         assert!(!ac.has_remote_voltage_control);
     }
 
     #[test]
+    #[cfg(feature = "conic")]
     fn raw_and_normalized_inputs_build_the_same_ac_model() {
-        let mut raw = powerio::parse_str(CASE3, "matpower")
-            .expect("parse case3")
-            .network;
-        raw.branches[0].shift = 15.0;
-        raw.branches[0].angmin = -30.0;
-        raw.branches[0].angmax = 30.0;
-        raw.branches[0].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        let mut raw = crate::model::parse_matpower(CASE3).expect("parse case3");
+        raw.branches_mut()[0].shift = 15.0;
+        raw.branches_mut()[0].angmin = -30.0;
+        raw.branches_mut()[0].angmax = 30.0;
+        raw.branches_mut()[0].charging = Some(powerio::BranchCharging::new(0.01, 0.02, 0.03, 0.04));
         let normalized = raw.to_normalized().expect("normalize case3");
         let a = AcNetwork::from_network(&raw).expect("build raw");
         let b = AcNetwork::from_network(&normalized).expect("build normalized");
@@ -560,16 +923,15 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "conic")]
     fn active_three_winding_transformer_is_lowered_with_stable_ids() {
-        let mut net = powerio::parse_str(CASE3, "matpower")
-            .expect("parse case3")
-            .network;
+        let mut net = crate::model::parse_matpower(CASE3).expect("parse case3");
         let mut windings = [1, 2, 3].map(|bus| powerio::Winding::new(powerio::BusId(bus)));
         for winding in &mut windings {
-            winding.rate_a = net.base_mva;
+            winding.rate_a = net.base_mva();
         }
-        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva);
-        net.transformers_3w
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva());
+        net.transformers_3w_mut()
             .push(powerio::Transformer3W::new(windings, [impedance; 3]));
 
         let ac = AcNetwork::from_network(&net).expect("build 3W AC network");
@@ -580,8 +942,10 @@ mod tests {
         assert_eq!(&ac.branch_uids[3..], &[None, None, None]);
         for branch in 3..6 {
             assert_eq!(ac.br_to[branch], 3, "winding must terminate at star bus");
-            approx(ac.angmin[branch], -std::f64::consts::PI / 3.0);
-            approx(ac.angmax[branch], std::f64::consts::PI / 3.0);
+            // PowerIO owns the lowered winding rows and pads them with its
+            // PowerModels angle window.
+            approx(ac.angmin[branch], -powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD);
+            approx(ac.angmax[branch], powerio_tx::POWER_MODELS_ANGLE_BOUND_PAD);
         }
 
         let normalized = net.to_normalized().expect("normalize 3W case");

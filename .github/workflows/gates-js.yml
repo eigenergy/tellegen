@@ -20,13 +20,10 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/js-setup
 
-      # Cheapest gates first, so a formatting error does not wait for a browser.
+      # Cheapest deterministic gates first, so a formatting error does not wait for a browser.
       - run: npm run lint:web
-      # The npm counterpart of cargo-deny. The line is `high`. Below it sit a
-      # SvelteKit request handling advisory and the cookie parser under it,
-      # neither of which the shipped artifact runs: apps/web builds static
-      # through adapter-static, and tellegen-server serves the files.
-      - run: npm audit --audit-level=high
+      - run: npm run check:webmcp
+      - run: npm run pack:webmcp
       - run: npm run wasm
       - run: npm run check:engine
       - run: npm run build:engine
@@ -40,4 +37,16 @@ jobs:
       - run: npm --workspace tellegen-frontend run build
       - run: npm run smoke:web
       - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
+      - name: Build the native Study interface for browser parity
+        run: cargo build -p tellegen-cli --features conic
       - run: npm run test:browser
+        env:
+          TELLEGEN_STUDY_CLI: ${{ github.workspace }}/target/debug/tellegen
+      # The npm counterpart of cargo-deny. Keep this mandatory, but run it
+      # after deterministic checks: a registry outage must not conceal their
+      # results. The line is `high`. Below it sit a SvelteKit request handling
+      # advisory and the cookie parser under it, neither of which the shipped
+      # artifact runs: apps/web builds static through adapter-static, and
+      # tellegen-server serves the files.
+      - if: ${{ !cancelled() }}
+        run: npm audit --audit-level=high

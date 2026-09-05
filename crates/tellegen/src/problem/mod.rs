@@ -9,14 +9,17 @@
 //! sparse `(P, q, A, b)` accumulation so each formulation writes only its own blocks.
 //!
 //! The DC OPF is the convex QP below — variables, objective, and constraints, with the
-//! named dual on each constraint. The reported objective also includes `sum(cc)`, each
-//! generator's constant (no-load) cost term, added back on at readout since a constant
-//! cannot move the argmin and so is left out of the QP itself:
+//! named dual on each constraint. A piecewise generator replaces its polynomial
+//! term with one epigraph variable `t_g` and one row for each declared segment
+//! line `a_s g + b_s`. The reported objective also includes `sum(cc)` for the
+//! polynomial generators; a constant cannot move the argmin and is left out of
+//! the QP itself.
 //!
 //! ```text
-//! min  sum(cq g^2 + cl g) + (tau^2/2) ||f||^2 + sum(c_shed psh)
+//! min  sum_polynomial(cq g^2 + cl g) + sum_piecewise(t_g) + sum(c_shed psh)
 //! s.t. G_inc g + psh - d = B theta        (nu_bal)   <- LMP
 //!      f = W A theta                       (nu_flow)
+//!      t_g >= a_s g + b_s                  (alpha_gs)
 //!      -fmax <= f <= fmax                  (lam_lb, lam_ub)
 //!      gmin <= g <= gmax                   (rho_lb, rho_ub)
 //!      0 <= psh <= max(d, 0)               (mu_lb, mu_ub)
@@ -41,24 +44,24 @@ mod pf_dc;
 #[cfg(feature = "conic")]
 pub(crate) use conic::SocWrLayout;
 #[cfg(feature = "conic")]
-pub use conic::{build_conic_opf, socwr_opf, ConicOpfFormulation, SocWrSolution};
-#[cfg_attr(not(test), allow(unused_imports))]
+pub(crate) use conic::{build_conic_opf, socwr_opf, SocWrSolution};
+#[cfg(all(test, feature = "sensitivity"))]
 pub(crate) use dc::dc_opf;
 pub(crate) use dc::dc_opf_cancellable;
-pub use dc::DcOpfSolution;
+pub(crate) use dc::DcOpfSolution;
 #[cfg(feature = "sensitivity")]
 pub(crate) use pf_ac::{ac_injections, ac_jacobian};
 #[cfg(feature = "sensitivity")]
-pub use pf_ac::{ac_pf, AcPfFormulation, AcPfLayout, AcPfSolution};
+pub(crate) use pf_ac::{ac_pf, AcPfLayout, AcPfSolution};
 #[cfg(feature = "sensitivity")]
-pub use pf_dc::{build_dc_pf, dc_pf, DcPfFormulation, DcPfSolution, DcPfSystem};
+pub(crate) use pf_dc::dc_pf;
 
 /// A sparse convex program in Clarabel's standard form
 /// `min 1/2 x'Px + q'x  s.t. Ax + s = b, s in K`. Produced by [`build_opf`] and
 /// consumed by [`crate::solve::run`]. Formulations construct one through a
 /// [`ProgramBuilder`].
 #[non_exhaustive]
-pub struct OpfProgram {
+pub(crate) struct OpfProgram {
     pub(crate) p: CscMatrix<f64>,
     pub(crate) q: Vec<f64>,
     pub(crate) a: CscMatrix<f64>,
@@ -156,7 +159,7 @@ impl ProgramBuilder {
 
 /// A formulation that can assemble an optimal power flow program. The dispatch point
 /// the generic [`build_opf`] calls. Not sealed.
-pub trait OpfFormulation: Formulation {
+pub(crate) trait OpfFormulation: Formulation {
     /// Assemble the OPF program (Clarabel standard form) for `model`.
     fn assemble_opf(&self, model: &DcNetwork) -> OpfProgram;
 }
@@ -164,6 +167,6 @@ pub trait OpfFormulation: Formulation {
 /// Build the OPF program for `model` under formulation `f`. Generic over the
 /// formulation so each gets its own monomorphized assembly; the runtime `match`
 /// (string -> concrete formulation) lives in `api`, above this.
-pub fn build_opf<F: OpfFormulation>(f: &F, model: &DcNetwork) -> OpfProgram {
+pub(crate) fn build_opf<F: OpfFormulation>(f: &F, model: &DcNetwork) -> OpfProgram {
     f.assemble_opf(model)
 }

@@ -22,8 +22,8 @@ The facade has the same methods as the direct exports:
 - `ingestCase(bytes, format)`
 - `parseDisplay(bytes)`
 - `capabilities()`
-- `solveJson(networkJson, request)`
-- `createStudy(networkJson, formulation)`
+- `solveModule(moduleJson, request)`
+- `createStudy(moduleJson, formulation)`
 
 ## Case And Display Helpers
 
@@ -32,17 +32,15 @@ The facade has the same methods as the direct exports:
 - `classifyJson(bytes)`: asynchronously classifies JSON bytes and returns
   `{ kind, format }`.
 - `ingestJsonDrop(bytes)`: classifies and parses a JSON drop in one call.
-- `ingestCase(bytes, format)`: parses case bytes and returns a network JSON
-  payload plus summary and topology.
+- `ingestCase(bytes, format)`: parses case bytes and returns a retained PowerIO
+  module plus derived display data, summary, and topology.
 - `parseDisplay(bytes)`: parses PowerWorld display data for diagram overlays.
 
 `ingestJsonDrop` returns a discriminated `IngestedJsonDrop` union:
 
 | `kind`                   | `format` | `payload`          |
 | ------------------------ | -------- | ------------------ |
-| `balanced-package`       | `null`   | `LoadedPackage`    |
-| `multiconductor-package` | `null`   | `IngestedDistCase` |
-| `model-json`             | `null`   | `IngestedCase`     |
+| `module`                 | `null`   | balanced or multiconductor payload |
 | `transmission`           | `string` | `IngestedCase`     |
 | `distribution`           | `string` | `IngestedDistCase` |
 | `ambiguous` or `unknown` | `null`   | `null`             |
@@ -53,21 +51,27 @@ reader selected for transmission and distribution documents.
 ## Solves And Studies
 
 - `capabilities()`: returns available formulations, operands, and parameters.
-- `solveJson(networkJson, request)`: stateless solve over the generalized Rust API.
-- `createStudy(networkJson, formulation)`: builds a browser `Study`.
+- `solveModule(moduleJson, request)`: stateless solve from a PowerIO module.
+- `createStudy(moduleJson, formulation)`: builds a browser `Study` from a
+  PowerIO module and solves its declared problem instance.
 - `Study` / `BrowserStudy`: browser handle with:
   - `currentSolution()`
   - `preview(deltas, rates?)`
   - `commit(caseId, deltas, rates, target)`
   - `sensitivity(caseId, deltas, rates, target)`
+  - `saveModule()`
+  - `saveSolutionModule()` for an exact DC OPF result
+  - `plan(spec, signal?)` for a read only, bounded capacity planning run on a
+    disposable Study clone
+  - `export(format)`
   - `free()`
 
 `deltas` are demand deltas in MW keyed by bus; `rates` are thermal rating
 deltas in MW keyed by branch. A key is the original numeric id (bus id, 1-based
-branch position) or the powerio row uid string (`"buses:1"`, `"branches:2"`)
-stamped at ingest — `ingestCase` payloads carry the uid on every topology and
-view element, and solve responses echo it on bus and branch scalars.
-Three-winding transformers remain typed in `network_json`, while topology and
+branch position) or a PowerIO row uid string when the source carries one.
+`ingestCase` returns `null` for topology and view UIDs when the source has none;
+solve responses omit absent UIDs.
+Three-winding transformers remain typed in the retained module, while topology and
 view payloads include their lowered star rows so the rendered graph matches the
 solver. Those display-only rows have `editable: false`; persist edits only on
 canonical rows. Closed transmission switches, in-service storage, and
@@ -76,11 +80,18 @@ in-service HVDC links are rejected until their solver models are implemented.
 `n_analysis_bus` and `n_analysis_branch` count the lowered topology rows. The
 analysis counts are optional in TypeScript so clients remain compatible with
 older engine builds.
-`target` is `{ bus }` for the ∂LMP/∂d column,
-`{ branch }` for the ∂LMP/∂rating column (nonzero only on binding lines), or
+`target` is `{ bus }` for the LMP/demand column,
+`{ branch }` for the LMP/rating column (nonzero only on binding lines), or
 `null` for no column.
 
 Call `free()` when a host app discards a study.
+
+`CapacityPlanSpecJson` accepts a weighted LMP objective, canonical
+candidate branch identities, MW bounds and increments, a final line count,
+and an exact solve budget. `BrowserStudy.plan` materializes the committed
+PowerIO module onto a disposable host, so the returned
+`CapacityPlanOutcomeJson` is an unapplied proposal and cancellation does not
+invalidate the retained interactive Study.
 
 ## Migrating To 0.2
 
@@ -91,8 +102,8 @@ file.arrayBuffer())` for a browser `File`.
   `{ kind, format }`: `const { kind, format } = await classifyJson(bytes)`.
 - `@tellegen/svelte` no longer exports `isStudyPackageText`. For classification
   only, check
-  `(await classifyJson(bytes)).kind === "balanced-package"`. To classify and
-  parse a drop, use `await ingestJsonDrop(bytes)`.
+  `(await classifyJson(bytes)).kind === "module"`. To identify the module value
+  family and parse the drop, use `await ingestJsonDrop(bytes)`.
 - `JsonDropKind` now uses `transmission` and `distribution` with a separate
   `format`, plus `ambiguous` and `unknown`. The former `bmopf` and `pmd` kinds
   are distribution formats; `not-json` is now `unknown`.
@@ -105,6 +116,7 @@ Public types include:
 - `SensRequest`, `SensitivityMatrix`, `SensitivityColumn`
 - `Network`, `NetworkBus`, `NetworkBranch`
 - `Solution`, `SolveIteration`, `DemandDeltas`
+- `ImplicitObjectiveJson`, `CapacityPlanSpecJson`, `CapacityPlanOutcomeJson`
 - `IngestedJsonDrop`, `JsonDropClassification`, `JsonDropKind`
 - `BrowserFormulation`, `FormulationId`, `SolveStatus`
 

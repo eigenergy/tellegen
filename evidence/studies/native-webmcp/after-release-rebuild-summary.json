@@ -1,0 +1,32 @@
+{
+  "data": {
+    "active_goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+    "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+    "experiment_count": 8,
+    "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+    "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+    "recent_experiments": [
+      {
+        "id": "sha256:abe5d4f73e78328ec3428b2db8b129a0d727de633f66c8934f99a46b465bcff3",
+        "kind": "inspection",
+        "solve_count": 0,
+        "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "termination": "completed",
+        "trial_count": 0
+      },
+      {
+        "id": "sha256:b054bee94799bb71596c4af361978062bb4ebc579dc61ff743ad912c98a5f0ee",
+        "kind": "challenge",
+        "solve_count": 0,
+        "start_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "termination": "completed",
+        "trial_count": 0
+      }
+    ],
+    "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+    "revision": 10,
+    "state_count": 5,
+    "title": "Lower corridor prices"
+  },
+  "ok": true
+}

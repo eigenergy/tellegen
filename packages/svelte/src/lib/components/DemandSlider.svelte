@@ -26,7 +26,7 @@
 		'The black tick marks the last committed demand. Drag the knob to preview a new demand; release to solve and move the tick to that point.';
 	const disabledTip = 'this analysis bus is display-only; demand is not adjustable';
 	const scoreTip =
-		'Gradient is the estimate of total cost change versus base before the solve finishes. It uses the selected bus LMP times the demand step, plus local curvature when the preview engine is unavailable. Exact is the resolved OPF objective change.';
+		'Gradient estimates the declared objective change before the solve finishes. It uses the selected bus LMP times the demand step, plus local curvature when the preview engine is unavailable. Exact is the resolved OPF objective change.';
 </script>
 
 {#if ctrl.activeSolvable}
@@ -41,41 +41,41 @@
 				<button
 					type="button"
 					class:active={app.demandRangeMode === 'local'}
-						aria-pressed={app.demandRangeMode === 'local'}
-						aria-label="nearby demand range"
-						disabled={disabled}
+					aria-pressed={app.demandRangeMode === 'local'}
+					aria-label="nearby demand range"
+					{disabled}
 					title="range near the selected demand setting"
 					onclick={() => ctrl.setDemandRangeMode('local')}>nearby</button
 				>
 				<button
 					type="button"
 					class:active={app.demandRangeMode === 'full'}
-						aria-pressed={app.demandRangeMode === 'full'}
-						aria-label="full demand range"
-						disabled={disabled}
+					aria-pressed={app.demandRangeMode === 'full'}
+					aria-label="full demand range"
+					{disabled}
 					title="range from zero load to the local physical limit"
 					onclick={() => ctrl.setDemandRangeMode('full')}>full range</button
 				>
 			</div>
-				<span class="mono dim">
-					{#if disabled}
-						not adjustable
-					{:else}
-						{fmt.format(ctrl.sliderMin)} to {fmt.format(ctrl.sliderMax)} MW
-					{/if}
-				</span>
+			<span class="mono dim">
+				{#if disabled}
+					not adjustable
+				{:else}
+					{fmt.format(ctrl.sliderMin)} to {fmt.format(ctrl.sliderMax)} MW
+				{/if}
+			</span>
 		</div>
 		<div
 			class="slider-track"
 			style="--fill-lo:{fillLo}; --fill-hi:{fillHi}; --neutral-pos:{neutralPos}"
-				title={disabled ? disabledTip : sliderTip}
+			title={disabled ? disabledTip : sliderTip}
 		>
 			<input
 				type="range"
 				min={ctrl.sliderMin}
-					max={ctrl.sliderMax}
-					step="any"
-					disabled={disabled}
+				max={ctrl.sliderMax}
+				step="any"
+				{disabled}
 				bind:value={ctrl.sliderCurrent, ctrl.setSliderPreview}
 				aria-label="demand delta at selected bus"
 				onpointerdown={() => ctrl.setSliderPreview(ctrl.sliderValue)}
@@ -88,7 +88,7 @@
 		<div class="demand-feedback" class:idle={!ctrl.previewing && !ctrl.isPerturbed(c)}>
 			<p class="pred mono dim" aria-hidden={!(ctrl.predictedDeltaObj !== null && ctrl.previewing)}>
 				{#if ctrl.predictedDeltaObj !== null && ctrl.previewing}
-					predicted &Delta;cost {signed(ctrl.predictedDeltaObj)} $/h
+					predicted &Delta;objective {signed(ctrl.predictedDeltaObj)}
 				{:else}
 					&nbsp;
 				{/if}
@@ -98,8 +98,7 @@
 					<span title={scoreTip}>
 						gradient {signed(ctrl.gradientScore.pred)} &middot; exact {signed(
 							ctrl.gradientScore.exact
-						)}
-						$/h
+						)} objective units
 					</span>
 				{:else}
 					&nbsp;
