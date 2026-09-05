@@ -295,6 +295,7 @@ test('capacity planning stages a proposal that applies only after a human approv
 	await expect.poll(() => listTools(page)).toEqual(PLANNING_TOOLS);
 	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('applied');
 	await page.reload();
+	await expect.poll(() => listTools(page)).toContain('inspect_study');
 	const resumedStudy = await callTool(page, 'inspect_study', { study_id: planned.data.study_id });
 	expect(resumedStudy).toMatchObject({
 		ok: true,
