@@ -44,16 +44,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = { version = "1", features = ["derive"] }
 
-# Reviewed PowerIO 0.11 release candidate. Keep all six components and the
-# lockfile on this exact revision until the 0.11 crates publish.
-[patch.crates-io]
-powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "a84d97d97343b4175e9a846aa358997ff53b0e5f" }
-powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "a84d97d97343b4175e9a846aa358997ff53b0e5f" }
-powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "a84d97d97343b4175e9a846aa358997ff53b0e5f" }
-powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "a84d97d97343b4175e9a846aa358997ff53b0e5f" }
-powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "a84d97d97343b4175e9a846aa358997ff53b0e5f" }
-powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "a84d97d97343b4175e9a846aa358997ff53b0e5f" }
-
 # Shared lints, opted into per crate with `[lints] workspace = true`. Kept modest so a
 # `cargo clippy -- -D warnings` CI gate stays green: clippy's default `all`, plus guards
 # against a stray `todo!`/`dbg!` reaching a shipped build.
