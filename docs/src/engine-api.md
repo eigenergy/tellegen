@@ -80,13 +80,13 @@ in-service HVDC links are rejected until their solver models are implemented.
 `n_analysis_bus` and `n_analysis_branch` count the lowered topology rows. The
 analysis counts are optional in TypeScript so clients remain compatible with
 older engine builds.
-`target` is `{ bus }` for the nodal value/demand column,
-`{ branch }` for the nodal value/rating column (nonzero only on binding lines), or
+`target` is `{ bus }` for the LMP/demand column,
+`{ branch }` for the LMP/rating column (nonzero only on binding lines), or
 `null` for no column.
 
 Call `free()` when a host app discards a study.
 
-`CapacityPlanSpecJson` accepts a weighted nodal value objective, canonical
+`CapacityPlanSpecJson` accepts a weighted LMP objective, canonical
 candidate branch identities, MW bounds and increments, a final line count,
 and an exact solve budget. `BrowserStudy.plan` materializes the committed
 PowerIO module onto a disposable host, so the returned

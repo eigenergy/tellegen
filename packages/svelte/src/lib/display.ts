@@ -22,7 +22,7 @@ export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 	const options: DisplayOption[] = [
 		{
 			mode: 'price',
-			label: 'nodal value',
+			label: 'LMP',
 			unit: 'objective units/MW',
 			copy: priceCopy(c.formulation),
 			gradient: priceGradient

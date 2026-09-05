@@ -9,14 +9,14 @@
 			'objective units'
 		)
 	);
-	const unitTitle = $derived(`Nodal value response per MW of demand, in ${units}.`);
+	const unitTitle = $derived(`LMP response per MW of demand, in ${units}.`);
 </script>
 
 <div class="movers-block">
 	{#if !ctrl.previewing && ctrl.topMovers.length > 0}
 		<table class="mono">
 			<caption class="mono dim" title={unitTitle}>
-				largest nodal value response <span class="unit">{units}</span>
+				largest LMP response <span class="unit">{units}</span>
 			</caption>
 			<tbody>
 				{#each ctrl.topMovers as mover (mover.bus)}

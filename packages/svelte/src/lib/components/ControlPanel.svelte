@@ -64,8 +64,8 @@
 	/** Single line shown on the grab bar while collapsed. */
 	const summary = $derived.by(() => {
 		if (app.error) return 'error — open for details';
-		if (app.selectedBus !== null) return `bus ${app.selectedBus} · ∂value/∂d`;
-		if (app.selectedBranch !== null) return `line ${app.selectedBranch} · ∂value/∂rating`;
+		if (app.selectedBus !== null) return `bus ${app.selectedBus} · ∂LMP/∂d`;
+		if (app.selectedBranch !== null) return `line ${app.selectedBranch} · ∂LMP/∂rating`;
 		const stats = ctrl.networkStats;
 		if (!stats) return app.parsingFile ? 'parsing…' : 'loading…';
 		return `${caseLabel} · ${stats.buses} buses · ${stats.branches} lines`;

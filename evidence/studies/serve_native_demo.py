@@ -21,7 +21,7 @@ def main():
     if {b['id'] for b in net['buses']} != coords.keys():
         raise ValueError('This demonstration requires the synthetic three-bus case')
     network = dict(
-        id='study-demo', name='Synthetic corridor study', base_mva=net['base_mva'],
+        id='study-demo', name='3-bus example', base_mva=net['base_mva'],
         synthetic_coords=True,
         buses=[dict(id=b['id'], uid=b['uid'], lon=coords[b['id']][0], lat=coords[b['id']][1],
                     demand_mw=sum(l['p'] for l in net['loads'] if l['bus'] == b['id']),
@@ -39,7 +39,7 @@ def main():
     )
     routes = {
         '/api/compute': {'enabled': False},
-        '/api/cases': [dict(id='study-demo', name='Synthetic corridor study', n_bus=3, n_branch=3, n_gen=2)],
+        '/api/cases': [dict(id='study-demo', name='3-bus example', n_bus=3, n_branch=3, n_gen=2)],
         '/api/cases/study-demo/network': network,
         '/api/cases/study-demo/solution': solution,
         '/api/cases/study-demo/case': module,

@@ -36,7 +36,7 @@ The Study keeps three separate state pointers:
 
 | Pointer | Meaning |
 |---|---|
-| Inspecting | The saved state shown on the map and used for the next experiment |
+| Inspecting | The saved state shown on the map and used for the next action |
 | Recommended | The best verified candidate from the current proposal |
 | Applied | The state explicitly accepted through the Apply action |
 
@@ -51,6 +51,28 @@ assesses with `assessed_recommendation`.
 The saved-state map belongs to the Study. **Return to live case** returns to the
 interactive case loaded outside it. Importing or inspecting a Study does not
 execute imported text or silently overwrite that live case.
+
+## Demand edits and base-case reset
+
+**Solve demand edit** adds a signed MW increment at a permitted bus in the
+selected saved state. Successive edits accumulate across buses and survive
+export and reload. Bounds, increments, the absolute-change budget and the
+number of changed buses apply to the cumulative changes from the goal anchor.
+A partial placement or redistribution remains a saved candidate until its total
+is satisfied; it cannot be applied as a recommendation yet. Edit evidence
+includes the sparse demand-change vector relative to the original network data.
+
+**Prepare base-case reset** exactly solves the original network input and saves
+a reset candidate. Applying that candidate restores the original demand and
+ratings without deleting the goal revisions, earlier states or activity. The
+original input is distinct from the Study's starting point, which may already
+contain live edits. Native `CreateStudy` accepts optional `base_input` for that
+original PowerIO IR; without it, the supplied `input` is the base. Older imported
+bundles without retained base data report that reset is unavailable.
+
+The shared operations are `edit_demand` and `restore_base`. Both leave the
+applied pointer unchanged until an explicit Apply action. Observations,
+edits and solves, planning trials, and decisions remain distinct in Activity.
 
 ## Storage and continuation
 
@@ -98,7 +120,7 @@ records. `expected_revision` accompanies each mutation.
 
 Browser WebMCP exposes `create_study`, `inspect_study`, `revise_study_goal`,
 `branch_study`, `compare_study_states`, `propose_study` and
-`record_study_evidence`. Inspection returns compact continuation context and
+`record_study_evidence`, `edit_demand` and `restore_base_case`. Inspection returns compact continuation context and
 bounded pages of larger records. The browser controls call the same controller.
 PowerMCP's `tellegen` adapter invokes the native CLI directly and uses the same
 request schemas. Its agent interface leaves application to an explicit user

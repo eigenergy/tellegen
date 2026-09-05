@@ -32,7 +32,7 @@
 	<div class="binding-lines">
 		<p
 			class="mono dim head"
-			title="lines loaded to their thermal rating; select one to see nodal value sensitivity to the rating"
+			title="lines loaded to their thermal rating; select one to see LMP sensitivity to the rating"
 		>
 			binding lines
 		</p>

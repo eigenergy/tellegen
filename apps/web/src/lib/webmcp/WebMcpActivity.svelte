@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
+	import AgentGuide from './AgentGuide.svelte';
+	import { getAppState } from '@tellegen/svelte';
+	const app = getAppState();
 	import type {
 		ExperimentRecord,
 		JsonValue,
@@ -13,6 +18,8 @@
 	import type { CapacityPlanActivity, PlanningActivityStore } from './planning-activity.svelte.js';
 
 	let {
+		studyExpanded,
+		closeStudy,
 		supported,
 		registrationError,
 		activities,
@@ -20,6 +27,8 @@
 		experiments,
 		exportJournal
 	}: {
+		studyExpanded: boolean;
+		closeStudy: () => void;
 		supported: boolean;
 		registrationError: string | null;
 		activities: TellegenToolActivityEvent[];
@@ -28,12 +37,36 @@
 		exportJournal: () => void;
 	} = $props();
 
-	const EXAMPLE_PROMPT =
-		'Inspect the active case. Find and focus its most heavily loaded branch, analyze nodal value sensitivity to that branch rating, preview a 5 MW rating increase, and apply it if the predicted objective improves. Compare the exact result with the original.';
-
 	let open = $state(false);
-	let copied = $state(false);
+	let tab = $state<'activity' | 'connect'>('connect');
+	let welcome = $state(false);
+	const welcomeKey = 'tellegen.welcome.studies-v1';
+	onMount(() => {
+		try {
+			welcome = localStorage.getItem(welcomeKey) !== 'seen';
+		} catch {
+			welcome = true;
+		}
+	});
+	function dismiss() {
+		welcome = false;
+		try {
+			localStorage.setItem(welcomeKey, 'seen');
+		} catch {
+			/* Dismissal applies to this visit. */
+		}
+	}
+	function show() {
+		if (app.compactLayout) closeStudy();
+		open = true;
+		tab = activities.length || planning.entries.length ? 'activity' : 'connect';
+		dismiss();
+	}
+
 	let autoOpened = false;
+	$effect(() => {
+		if (studyExpanded && app.compactLayout) open = false;
+	});
 
 	$effect(() => {
 		if (
@@ -41,6 +74,8 @@
 			!autoOpened
 		) {
 			autoOpened = true;
+			if (app.compactLayout) closeStudy();
+			tab = 'activity';
 			open = true;
 		}
 	});
@@ -118,329 +153,374 @@
 		if (!finished(activity) || !activity.response.ok) return null;
 		return record(data(activity.response)?.prediction);
 	}
-
-	async function copyPrompt() {
-		try {
-			await navigator.clipboard.writeText(EXAMPLE_PROMPT);
-			copied = true;
-			setTimeout(() => (copied = false), 1_500);
-		} catch {
-			copied = false;
-		}
-	}
 </script>
 
-{#if supported || registrationError}
+<div class="agent-workspace" style:--activity-top="{app.headerInset + 10}px">
 	{#if open}
 		<aside class="activity-panel" data-webmcp-activity="open" aria-label="WebMCP activity">
 			<header>
-				<div>
-					<span class="eyebrow mono">WebMCP</span>
-					<h2>agent activity</h2>
-				</div>
-				<button
-					class="close mono"
-					aria-label="collapse agent activity"
-					onclick={() => (open = false)}
+				<h2>Agent <span class="activity-count">{experiments.length || ''}</span></h2>
+				{#if experiments.length > 0}<button
+						class="export"
+						data-testid="export-experiment-journal"
+						onclick={exportJournal}>Export activity</button
+					>{/if}
+				<button class="close" aria-label="Close agent panel" onclick={() => (open = false)}
+					><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"
+						><path d="m4 4 8 8m0-8-8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg
+					></button
 				>
-					&#10005;
-				</button>
 			</header>
+			<nav aria-label="Agent panel">
+				<button
+					class:active={tab === 'activity'}
+					aria-pressed={tab === 'activity'}
+					onclick={() => (tab = 'activity')}>Activity</button
+				>
+				<button
+					class:active={tab === 'connect'}
+					aria-pressed={tab === 'connect'}
+					onclick={() => (tab = 'connect')}>Connect</button
+				>
+			</nav>
+			<div class="agent-content">
+				{#if tab === 'connect'}<AgentGuide {supported} {registrationError} />{:else}
+					{#if registrationError}
+						<p class="registration-error mono" data-testid="webmcp-registration-error">
+							WebMCP tools could not be registered: {registrationError}
+						</p>
+					{/if}
 
-			{#if experiments.length > 0}
-				<div class="journal-bar mono">
-					<span>{experiments.length} recorded experiments</span>
-					<button class="copy mono" data-testid="export-experiment-journal" onclick={exportJournal}
-						>Export journal</button
-					>
-				</div>
-			{/if}
+					{#if activities.length === 0 && planning.entries.length === 0}
+						<div class="empty">
+							<p>No agent activity yet.</p>
+							<button class="copy" onclick={() => (tab = 'connect')}>Connect an agent</button>
+						</div>
+					{/if}
 
-			{#if registrationError}
-				<p class="registration-error mono" data-testid="webmcp-registration-error">
-					WebMCP tools could not be registered: {registrationError}
-				</p>
-			{/if}
-
-			{#if supported && !registrationError && activities.length === 0 && planning.entries.length === 0}
-				<div class="empty">
-					<p>The active case is available to the agent through structured tools.</p>
-					<p class="prompt mono">“{EXAMPLE_PROMPT}”</p>
-					<button class="copy mono" onclick={copyPrompt}
-						>{copied ? 'copied' : 'copy example prompt'}</button
-					>
-				</div>
-			{/if}
-
-			{#if planning.entries.length > 0}
-				<section class="plans" aria-label="capacity planning activity">
-					<div class="section-head">
-						<h3 class="mono">capacity proposals</h3>
-					</div>
-					<ol aria-live="polite">
-						{#each planning.entries as entry (entry.id)}
-							{@const outcome = entry.outcome}
-							{@const status = entry.decision}
-							<li class="plan" data-testid="capacity-plan-card" data-activity-id={entry.id}>
-								<div class="plan-head">
-									<strong>capacity proposal</strong>
-									<span
-										class="chip-status mono"
-										data-testid="capacity-plan-status"
-										data-status={status}>{status}</span
-									>
-								</div>
-								{#if outcome}
-									<div class="phi mono">
-										<span class="label">Φ</span>
-										<span
-											>{formatNumber(outcome.baseline_phi)} → {formatNumber(outcome.final_phi)}
-											({formatDelta(exactPhiDelta(entry))} objective units/MW)</span
-										>
-									</div>
-									<div class="phi-detail mono">
-										<span>predicted {formatDelta(predictedPhiDelta(entry))}</span>
-										<span>exact {formatDelta(exactPhiDelta(entry))}</span>
-										<span>first order error {formatNumber(firstOrderError(entry), 4)}</span>
-									</div>
-									{#if entry.displayProposal.length > 0}
-										<ul class="changes mono">
-											{#each entry.displayProposal as change (change.branchId)}
-												<li>
-													<span>{change.branchId}</span>
-													<span>{formatDelta(change.deltaMw)} MW rating</span>
-												</li>
-											{/each}
-										</ul>
-									{/if}
-								{/if}
-								{#if isStaged(entry)}
-									<div class="review">
-										{#if isApproved(entry)}
-											<span class="approved mono" data-testid="capacity-plan-approved"
-												>approved — the agent may apply once</span
-											>
-										{:else}
-											<button
-												class="approve mono"
-												data-testid="capacity-plan-approve"
-												onclick={() => planning.approve()}
-											>
-												Approve
-											</button>
-										{/if}
-										<button
-											class="reject mono"
-											data-testid="capacity-plan-reject"
-											onclick={() => planning.rejectStaged()}
-										>
-											Reject
-										</button>
-									</div>
-								{/if}
-							</li>
-						{/each}
-					</ol>
-				</section>
-			{/if}
-
-			{#if activities.length > 0}
-				<ol aria-live="polite">
-					{#each activities as activity (activity.id)}
-						{@const compare = comparison(activity)}
-						{@const predicted = prediction(activity)}
-						{@const check = experiments.find((entry) => entry.id === activity.id)?.predictionCheck}
-						<li
-							class:running={!finished(activity)}
-							class:failed={finished(activity) && !activity.response.ok}
-						>
-							<div class="activity-head">
-								<span class="status" aria-hidden="true"></span>
-								<div>
-									<strong>{activity.title}</strong>
-									<span class="tool-name mono">{activity.toolName}</span>
-								</div>
-								<span class="elapsed mono">{elapsed(activity)}</span>
+					{#if planning.entries.length > 0}
+						<section class="plans" aria-label="capacity planning activity">
+							<div class="section-head">
+								<h3 class="mono">capacity proposals</h3>
 							</div>
+							<ol aria-live="polite">
+								{#each planning.entries as entry (entry.id)}
+									{@const outcome = entry.outcome}
+									{@const status = entry.decision}
+									<li class="plan" data-testid="capacity-plan-card" data-activity-id={entry.id}>
+										<div class="plan-head">
+											<strong>capacity proposal</strong>
+											<span
+												class="chip-status mono"
+												data-testid="capacity-plan-status"
+												data-status={status}>{status}</span
+											>
+										</div>
+										{#if outcome}
+											<div class="phi mono">
+												<span class="label">Φ</span>
+												<span
+													>{formatNumber(outcome.baseline_phi)} → {formatNumber(outcome.final_phi)}
+													({formatDelta(exactPhiDelta(entry))} objective units/MW)</span
+												>
+											</div>
+											<div class="phi-detail mono">
+												<span>predicted {formatDelta(predictedPhiDelta(entry))}</span>
+												<span>exact {formatDelta(exactPhiDelta(entry))}</span>
+												<span>first order error {formatNumber(firstOrderError(entry), 4)}</span>
+											</div>
+											{#if entry.displayProposal.length > 0}
+												<ul class="changes mono">
+													{#each entry.displayProposal as change (change.branchId)}
+														<li>
+															<span>{change.branchId}</span>
+															<span>{formatDelta(change.deltaMw)} MW rating</span>
+														</li>
+													{/each}
+												</ul>
+											{/if}
+										{/if}
+										{#if isStaged(entry)}
+											<div class="review">
+												{#if isApproved(entry)}
+													<span class="approved mono" data-testid="capacity-plan-approved"
+														>approved — the agent may apply once</span
+													>
+												{:else}
+													<button
+														class="approve mono"
+														data-testid="capacity-plan-approve"
+														onclick={() => planning.approve()}
+													>
+														Approve
+													</button>
+												{/if}
+												<button
+													class="reject mono"
+													data-testid="capacity-plan-reject"
+													onclick={() => planning.rejectStaged()}
+												>
+													Reject
+												</button>
+											</div>
+										{/if}
+									</li>
+								{/each}
+							</ol>
+						</section>
+					{/if}
 
-							{#if predicted}
-								<div class="preview-result">
-									<span class="mono label">predicted Δ objective</span>
-									<b class="mono">{formatDelta(number(predicted.objective_delta))}</b>
-									<span class="mono dim">state unchanged</span>
-								</div>
-							{/if}
+					{#if activities.length > 0}
+						<ol aria-live="polite">
+							{#each activities as activity (activity.id)}
+								{@const compare = comparison(activity)}
+								{@const predicted = prediction(activity)}
+								{@const check = experiments.find(
+									(entry) => entry.id === activity.id
+								)?.predictionCheck}
+								<li
+									class:running={!finished(activity)}
+									class:failed={finished(activity) && !activity.response.ok}
+								>
+									<div class="activity-head">
+										<span class="status" aria-hidden="true"></span>
+										<div>
+											<strong>{activity.title}</strong>
+										</div>
+										<span class="elapsed mono">{elapsed(activity)}</span>
+									</div>
 
-							{#if compare}
-								<div class="comparison">
-									<div class="comparison-head mono">
-										<span>exact result</span><span>before</span><span>after</span>
-									</div>
-									<div class="metric mono">
-										<span>objective</span>
-										<span>{formatNumber(number(compare.before.objective))}</span>
-										<span>{formatNumber(number(compare.after.objective))}</span>
-									</div>
-									<div class="metric mono">
-										<span>binding lines</span>
-										<span>{formatNumber(number(compare.before.binding_branches), 0)}</span>
-										<span>{formatNumber(number(compare.after.binding_branches), 0)}</span>
-									</div>
-									<div class="metric mono">
-										<span>edits (demand/rating)</span>
-										<span
-											>{formatNumber(number(compare.before.demand_edit_count), 0)} / {formatNumber(
-												number(compare.before.rating_edit_count),
-												0
-											)}</span
-										>
-										<span
-											>{formatNumber(number(compare.after.demand_edit_count), 0)} / {formatNumber(
-												number(compare.after.rating_edit_count),
-												0
-											)}</span
-										>
-									</div>
-								</div>
-							{/if}
+									{#if predicted}
+										<div class="preview-result">
+											<span class="mono label">predicted Δ objective</span>
+											<b class="mono">{formatDelta(number(predicted.objective_delta))}</b>
+											<span class="mono dim">state unchanged</span>
+										</div>
+									{/if}
 
-							{#if finished(activity) && !activity.response.ok}
-								<p class="error mono">
-									{activity.response.error.code}: {activity.response.error.message}
-								</p>
-							{/if}
-							{#if check}
-								<div class="preview-result mono" data-testid="experiment-prediction-check">
-									<span>predicted Δ {formatDelta(check.predictedDelta)}</span>
-									<span>exact Δ {formatDelta(check.exactDelta)}</span>
-									<span>prediction error {formatNumber(check.absoluteError, 4)}</span>
-								</div>
-							{/if}
-						</li>
-					{/each}
-				</ol>
-			{/if}
+									{#if compare}
+										<div class="comparison">
+											<div class="comparison-head mono">
+												<span>exact result</span><span>before</span><span>after</span>
+											</div>
+											<div class="metric mono">
+												<span>objective</span>
+												<span>{formatNumber(number(compare.before.objective))}</span>
+												<span>{formatNumber(number(compare.after.objective))}</span>
+											</div>
+											<div class="metric mono">
+												<span>binding lines</span>
+												<span>{formatNumber(number(compare.before.binding_branches), 0)}</span>
+												<span>{formatNumber(number(compare.after.binding_branches), 0)}</span>
+											</div>
+											<div class="metric mono">
+												<span>edits (demand/rating)</span>
+												<span
+													>{formatNumber(number(compare.before.demand_edit_count), 0)} / {formatNumber(
+														number(compare.before.rating_edit_count),
+														0
+													)}</span
+												>
+												<span
+													>{formatNumber(number(compare.after.demand_edit_count), 0)} / {formatNumber(
+														number(compare.after.rating_edit_count),
+														0
+													)}</span
+												>
+											</div>
+										</div>
+									{/if}
+
+									{#if finished(activity) && !activity.response.ok}
+										<p class="error mono">
+											{activity.response.error.code}: {activity.response.error.message}
+										</p>
+									{/if}
+									{#if check}
+										<div class="preview-result mono" data-testid="experiment-prediction-check">
+											<span>predicted Δ {formatDelta(check.predictedDelta)}</span>
+											<span>exact Δ {formatDelta(check.exactDelta)}</span>
+											<span>prediction error {formatNumber(check.absoluteError, 4)}</span>
+										</div>
+									{/if}
+								</li>
+							{/each}
+						</ol>
+					{/if}
+				{/if}
+			</div>
 		</aside>
 	{:else}
-		<button class="activity-toggle" data-webmcp-activity="collapsed" onclick={() => (open = true)}>
-			<span class="pulse" aria-hidden="true"></span>
-			<span>{registrationError ? 'agent tools unavailable' : 'agent tools'}</span>
-			<span class="mono count">{registrationError ? '!' : activities.length || 7}</span>
+		<button
+			class="activity-toggle"
+			data-webmcp-activity="collapsed"
+			aria-label="Agent"
+			aria-expanded="false"
+			onclick={show}
+		>
+			<svg
+				width="16"
+				height="16"
+				viewBox="0 0 20 20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.3"
+				aria-hidden="true"
+				><rect x="3" y="6" width="14" height="11" rx="3" /><path
+					d="M10 3v3M7 10v3m6-3v3M1 10h2m14 0h2"
+				/></svg
+			>
+			Agent {#if activities.length}<span class="count">{activities.length}</span>{/if}
 		</button>
+		{#if welcome}<aside class="welcome" aria-label="New to Tellegen">
+				<span>New: saved studies and agent tools.</span><a href={resolve('/changelog')}
+					>What's new</a
+				><button aria-label="Dismiss introduction" onclick={dismiss}
+					><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"
+						><path d="m4 4 8 8m0-8-8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg
+					></button
+				>
+			</aside>{/if}
 	{/if}
-{/if}
+</div>
 
 <style>
-	.journal-bar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 8px 14px;
-		border-bottom: 1px solid var(--line);
-		font-size: var(--fs-small);
-	}
-	.activity-panel,
-	.activity-toggle {
+	.agent-workspace {
 		position: fixed;
+		top: var(--activity-top);
 		right: 20px;
-		bottom: 18px;
 		z-index: var(--z-overlay);
-		background: var(--panel);
-		border: 1px solid var(--line);
-		box-shadow: var(--elev-2);
-		backdrop-filter: blur(8px);
+		color: var(--ink);
+		font: 13px/1.5 var(--font-display);
 	}
-
 	.activity-panel {
-		width: min(390px, calc(100vw - 40px));
-		max-height: min(560px, calc(100vh - 100px));
+		width: min(370px, calc(100vw - 40px));
+		max-height: calc(100dvh - var(--activity-top) - 132px);
 		display: flex;
 		flex-direction: column;
-		border-radius: var(--radius-sm);
+		background: var(--paper);
+		border: 1px solid var(--line);
+		border-radius: 6px;
+		box-shadow: var(--elev-2);
 		overflow: hidden;
-		animation: rise var(--dur-med) var(--ease-out) both;
 	}
-
 	header {
 		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: var(--space-md);
-		padding: 13px 14px 11px;
-		border-bottom: 1px solid var(--line);
+		align-items: center;
+		gap: 12px;
+		padding: 12px 16px;
+		flex: none;
 	}
-
-	.registration-error {
-		margin: 0;
-		padding: 12px 14px;
-		border-bottom: 1px solid var(--line);
-		color: var(--danger);
-		font-size: var(--fs-small);
-		line-height: 1.45;
-	}
-
-	.eyebrow {
-		display: block;
-		margin-bottom: 2px;
-		color: var(--text-accent);
-		font-size: var(--fs-micro);
-		font-weight: 500;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-	}
-
 	h2 {
-		margin: 0;
+		flex: 1;
 		font-size: 16px;
 		font-weight: 600;
+		margin: 0;
 	}
-
-	.close,
-	.copy {
-		border: 1px solid var(--line);
-		background: var(--surface-control);
+	.activity-count {
 		color: var(--text-secondary);
+		font-size: 12px;
+		margin-left: 6px;
+		font-weight: 400;
+	}
+	button {
+		font: inherit;
 		cursor: pointer;
 	}
-
 	.close {
 		width: 28px;
 		height: 28px;
-		border-radius: var(--radius-xs);
-		font-size: 9px;
+		display: grid;
+		place-items: center;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: var(--text-secondary);
+		border-radius: 4px;
 	}
-
-	.close:hover,
-	.copy:hover {
-		border-color: var(--accent);
+	.export {
+		border: 0;
+		padding: 5px 0;
+		background: none;
+		color: var(--text-secondary);
+		font-size: 11px;
+	}
+	header button:hover {
 		color: var(--text-accent);
 	}
-
-	.empty {
-		padding: 14px;
+	nav {
+		display: flex;
+		gap: 24px;
+		padding: 0 16px;
+		border-bottom: 1px solid var(--line);
+		flex: none;
 	}
-
-	.empty p {
-		margin: 0;
-		font-size: 12px;
-		line-height: 1.45;
-	}
-
-	.empty .prompt {
-		margin-top: 10px;
-		padding: 10px;
-		background: var(--accent-soft);
+	nav button {
+		border: 0;
+		border-bottom: 2px solid transparent;
+		padding: 8px 0 10px;
+		background: transparent;
 		color: var(--text-secondary);
-		font-size: 10px;
-		line-height: 1.5;
 	}
-
+	nav button.active {
+		border-bottom-color: var(--accent);
+		color: var(--ink);
+	}
+	.agent-content {
+		overflow: auto;
+		min-height: 0;
+	}
+	.registration-error {
+		margin: 0;
+		padding: 16px;
+		color: var(--danger);
+		font-size: 12px;
+	}
+	.empty {
+		padding: 24px 20px;
+	}
+	.empty p {
+		margin: 0 0 12px;
+		color: var(--text-secondary);
+	}
 	.copy {
-		margin-top: 10px;
-		padding: 5px 8px;
-		border-radius: var(--radius-xs);
-		font-size: 9px;
+		padding: 7px 10px;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		background: white;
+		color: var(--ink);
+	}
+	.welcome {
+		position: absolute;
+		top: 46px;
+		right: 0;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		width: max-content;
+		max-width: calc(100vw - 40px);
+		padding: 10px 12px;
+		background: var(--paper);
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		font-size: 11px;
+		box-shadow: var(--elev-1);
+	}
+	.welcome a {
+		color: var(--text-accent);
+		white-space: nowrap;
+		text-underline-offset: 3px;
+	}
+	.welcome button {
+		display: grid;
+		place-items: center;
+		padding: 3px;
+		border: 0;
+		background: none;
+		color: var(--text-secondary);
+	}
+	:global(body:has(.study-workspace.expanded)) .welcome {
+		display: none;
 	}
 
 	.plans {
@@ -603,8 +683,7 @@
 		background: var(--red);
 	}
 
-	strong,
-	.tool-name {
+	strong {
 		display: block;
 	}
 
@@ -613,7 +692,6 @@
 		font-weight: 600;
 	}
 
-	.tool-name,
 	.elapsed {
 		color: var(--text-tertiary);
 		font-size: 8.5px;
@@ -689,48 +767,40 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 8px 10px;
-		border-radius: 999px;
+		margin-left: auto;
+		min-height: 36px;
+		padding: 7px 12px;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		background: var(--paper);
 		color: var(--ink);
-		font-family: var(--font-display);
-		font-size: 11px;
-		font-weight: 600;
-		cursor: pointer;
+		box-shadow: var(--elev-1);
 	}
-
-	.activity-toggle:hover {
-		border-color: var(--accent);
-	}
-
-	.pulse {
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		background: var(--accent-bright);
-	}
-
 	.count {
-		display: grid;
-		place-items: center;
-		min-width: 18px;
-		height: 18px;
-		padding: 0 4px;
-		border-radius: 9px;
-		background: var(--accent-soft);
-		color: var(--text-accent);
-		font-size: 8px;
+		font-size: 11px;
+		color: var(--text-secondary);
 	}
-
 	@media (max-width: 760px) {
-		.activity-panel,
-		.activity-toggle {
-			right: 10px;
-			bottom: 10px;
+		:global(body:has(.activity-panel) .maplibregl-ctrl-bottom-right) {
+			bottom: 12px;
+			opacity: 1;
+			pointer-events: auto;
 		}
-
+		.agent-workspace {
+			right: 12px;
+		}
 		.activity-panel {
-			width: calc(100vw - 20px);
-			max-height: min(520px, calc(100vh - 20px));
+			width: calc(100vw - 24px);
+			max-height: calc(100dvh - var(--activity-top) - 60px);
+		}
+		.welcome {
+			max-width: calc(100vw - 24px);
+			gap: 8px;
+			font-size: 10px;
+		}
+		:global(body:has(.activity-panel) aside.panel) {
+			visibility: hidden;
+			pointer-events: none;
 		}
 	}
 </style>

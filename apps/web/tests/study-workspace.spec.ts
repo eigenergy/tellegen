@@ -17,9 +17,8 @@ async function bundle(page: Page): Promise<StudyBundle> {
 async function create(page: Page) {
 	await installWebMcpHarness(page);
 	await congestCase(page);
-	await page.getByRole('button', { name: 'Studies Explore a goal +' }).click();
-	await page.getByRole('button', { name: 'Resolve equipment and weights' }).click();
-	await page.getByRole('button', { name: 'Create from live case' }).click();
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	await page.getByRole('button', { name: 'Create study' }).click();
 	await expect(page.getByText('Revision 0, 1 saved states')).toBeVisible({ timeout: 60_000 });
 	return bundle(page);
 }
@@ -74,15 +73,13 @@ test('Study proposal, branching, durable reload and explicit application', async
 	expect(viewed.document.inspected_state).toBe(proposed.document.recommended_state);
 	expect(viewed.document.applied_state).toBe(d.applied_state);
 	await page.reload();
-	await page.getByRole('button', { name: 'Studies Explore a goal +' }).click();
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	await page.getByLabel('Saved study').selectOption(d.id);
-	await expect(page.getByText('Saved-state map.', { exact: false })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Show on map' })).toBeVisible();
 	const restored = await bundle(page);
 	expect(restored).toEqual(viewed);
-	await page.getByRole('button', { name: 'Apply this recommendation to the Study' }).click();
-	await expect(
-		page.getByRole('button', { name: 'Apply this recommendation to the Study' })
-	).toHaveCount(0);
+	await page.getByRole('button', { name: 'Apply recommendation' }).click();
+	await expect(page.getByRole('button', { name: 'Apply recommendation' })).toHaveCount(0);
 	const applied = await bundle(page);
 	expect(applied.document.applied_state).toBe(proposed.document.recommended_state);
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -162,7 +159,7 @@ test('cancelled Study proposal saves its completed planning record', async ({ pa
 	expect(record.kind).toBe('planning');
 	expect(record.termination).toBe('cancelled');
 	await page.reload();
-	await page.getByRole('button', { name: 'Studies Explore a goal +' }).click();
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	await page.getByLabel('Saved study').selectOption(saved.document.id);
 	expect(await bundle(page)).toEqual(saved);
 });
@@ -186,4 +183,87 @@ test('storage exhaustion leaves the saved Study intact and permits recovery', as
 	await page.getByRole('button', { name: 'Find a proposal' }).click();
 	await expect(page.getByText(/Revision 1, .* saved states/)).toBeVisible({ timeout: 60_000 });
 	expect((await bundle(page)).document.revision).toBe(1);
+});
+
+test('WebMCP demand edits accumulate and a base reset preserves history until explicit apply', async ({
+	page
+}) => {
+	test.setTimeout(180_000);
+	const initial = await create(page);
+	const d = initial.document;
+	expect(d.base_input).toBeTruthy();
+	const revised = await callTool(page, 'revise_study_goal', {
+		study_id: d.id,
+		expected_revision: d.revision,
+		operation: {
+			kind: 'revise_goal',
+			goal: {
+				...d.goals[d.active_goal!],
+				parent: d.active_goal,
+				decisions: {
+					variables: [2, 3].map((bus) => ({
+						id: `demand:${bus}`,
+						element: bus,
+						intervention: 'active_demand',
+						lower: bus === 2 ? -10 : 0,
+						upper: 10,
+						increment: 1,
+						budget_weight: 1
+					})),
+					total_budget: 20,
+					max_changed_elements: 2,
+					demand: { kind: 'redistribution' }
+				}
+			}
+		}
+	});
+	expect(revised.ok).toBe(true);
+	let saved = await bundle(page);
+	for (const [bus, delta_mw] of [
+		[3, 2],
+		[2, -2],
+		[3, 1],
+		[2, -1]
+	]) {
+		const document = saved.document;
+		const edited = await callTool(page, 'edit_demand', {
+			study_id: d.id,
+			expected_revision: document.revision,
+			operation: {
+				kind: 'edit_demand',
+				state: document.inspected_state,
+				goal: document.active_goal,
+				changes: [{ bus, delta_mw }],
+				rationale: `Adjust bus ${bus} by ${delta_mw} MW`
+			}
+		});
+		expect(edited.ok).toBe(true);
+		saved = await bundle(page);
+		const record = saved.document.experiments[String(edited.ok && edited.data.experiment)];
+		expect(record.result_states).toHaveLength(1);
+		expect(saved.document.applied_state).toBe(d.applied_state);
+	}
+	const count = Object.keys(saved.document.states).length;
+	const reset = await callTool(page, 'restore_base_case', {
+		study_id: d.id,
+		expected_revision: saved.document.revision,
+		operation: {
+			kind: 'restore_base',
+			state: saved.document.inspected_state,
+			goal: saved.document.active_goal,
+			rationale: 'Restore the original network data'
+		}
+	});
+	expect(reset.ok).toBe(true);
+	const resetBundle = await bundle(page);
+	const record = resetBundle.document.experiments[String(reset.ok && reset.data.experiment)];
+	expect(record.termination).toBe('base_case_ready');
+	expect(
+		JSON.parse(resetBundle.artifacts[record.evidence[0]].text).cumulative_demand_changes
+	).toEqual([]);
+	expect(Object.keys(resetBundle.document.states)).toHaveLength(count + 1);
+	expect(resetBundle.document.applied_state).toBe(d.applied_state);
+	await page.getByRole('button', { name: 'Apply recommendation' }).click();
+	await expect(page.getByRole('button', { name: 'Apply recommendation' })).toHaveCount(0);
+	expect((await bundle(page)).document.applied_state).toBe(resetBundle.document.recommended_state);
 });

@@ -17,7 +17,11 @@
 
 	import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 	import { createStudyAdapter } from '../studies/adapter.js';
-	let { workspace }: { workspace: StudyWorkspace } = $props();
+	let {
+		workspace,
+		studyExpanded,
+		closeStudy
+	}: { workspace: StudyWorkspace; studyExpanded: boolean; closeStudy: () => void } = $props();
 	const ctrl = getController();
 	const planning = new PlanningActivityStore(() => workspace);
 	const journal = new ExperimentJournal(webMcpSessionId());
@@ -114,6 +118,8 @@
 </script>
 
 <WebMcpActivity
+	{studyExpanded}
+	{closeStudy}
 	{supported}
 	{registrationError}
 	{activities}

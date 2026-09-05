@@ -17,9 +17,11 @@ export function formulationHint(id: Formulation): string {
 }
 
 export function priceCopy(id: Formulation): string {
+	const definition =
+		'Locational marginal price (LMP): the change in the OPF objective for an additional MW at a bus, in objective units/MW.';
 	return id === 'socwr'
-		? 'Select a bus to see how relaxed prices change.'
-		: 'Select a bus to see how prices change.';
+		? `${definition} Prices come from the SOCWR relaxation. Select a bus to see their sensitivity.`
+		: `${definition} Select a bus to see its demand sensitivity.`;
 }
 
 export function splitName(name: string): [string, string] {

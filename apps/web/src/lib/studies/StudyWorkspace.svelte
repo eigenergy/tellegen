@@ -9,6 +9,9 @@
 	const ctrl = getController();
 	const workspace = new StudyWorkspace(ctrl);
 	let expanded = $state(false);
+	let tab = $state<'goal' | 'states' | 'timeline'>('states');
+	let editing = $state(false);
+	let creating = $state(false);
 	let title = $state('Grid study');
 	let request = $state('Lower demand-weighted prices while respecting the intervention budget.');
 	let intervention = $state<'capacity' | 'redistribution' | 'placement'>('capacity');
@@ -25,6 +28,8 @@
 	let goalForComparison = $state('');
 	let historyLimit = $state(30);
 	let solveBudget = $state(12);
+	let demandBus = $state('');
+	let demandIncrement = $state(1);
 	const doc = $derived(workspace.document);
 	const goal = $derived(workspace.goal);
 	const network = $derived(ctrl.app.studyView?.network ?? ctrl.activeSolvable?.network);
@@ -59,7 +64,7 @@
 		doc?.experiment_order.toReversed().find((id) => {
 			const e = doc!.experiments[id];
 			return (
-				e.kind === 'planning' &&
+				['planning', 'counterfactual'].includes(e.kind) &&
 				e.goal === doc!.active_goal &&
 				!!doc!.recommended_state &&
 				e.result_states.includes(doc!.recommended_state)
@@ -94,6 +99,20 @@
 		} catch (error) {
 			formError = error instanceof Error ? error.message : String(error);
 		}
+	}
+	function activityLabel(kind: string) {
+		return (
+			(
+				{
+					inspection: 'Observation',
+					sensitivity: 'Sensitivity analysis',
+					planning: 'Plan trials',
+					counterfactual: 'Edit and solve',
+					challenge: 'Scenario assessment',
+					historical_import: 'Imported activity'
+				} as Record<string, string>
+			)[kind] ?? kind
+		);
 	}
 	function interpret() {
 		if (!network) throw new Error('Load a solvable network first');
@@ -184,6 +203,9 @@
 		if (!c) throw new Error('Select a solvable case first');
 		await workspace.create(draft(), c.id, caseRevision(c));
 		expanded = true;
+		creating = false;
+		editing = false;
+		tab = 'states';
 	}
 	async function revise() {
 		if (!doc?.inspected_state) return;
@@ -215,6 +237,8 @@
 	}
 	function loadGoal() {
 		if (!goal) return;
+		editing = true;
+		creating = false;
 		request = goal.request;
 		interpretationJson = JSON.stringify(
 			{ objective: goal.objective, decisions: goal.decisions },
@@ -238,59 +262,231 @@
 		Number.isFinite(v) ? v.toLocaleString(undefined, { maximumFractionDigits: 5 }) : 'Unavailable';
 </script>
 
-<TellegenWebMcp {workspace} />
-<div class="study-workspace" class:expanded>
-	<button class="study-toggle" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
-		<span>Studies</span><span>{doc ? doc.title : 'Explore a goal'} {expanded ? '-' : '+'}</span>
-	</button>
-	{#if expanded}
-		<section aria-label="Study workspace">
-			<div class="toolbar">
-				<label
-					>Saved study <select
-						value={doc?.id ?? ''}
-						disabled={workspace.busy}
-						onchange={(e) => {
-							const id = e.currentTarget.value;
-							if (id) void attempt(() => workspace.open(id));
-						}}
-						><option value="">Choose a study</option
-						>{#each workspace.saved as saved (saved.id)}<option value={saved.id}
-								>{saved.title}, revision {saved.revision}</option
-							>{/each}</select
-					></label
-				>
-				<label class="file-button"
-					>Import<input
-						type="file"
-						accept=".json,application/json"
-						disabled={workspace.busy}
-						onchange={(e) => {
-							const file = e.currentTarget.files?.[0];
-							if (file)
-								void attempt(async () => {
-									if (file.size > 512 * 1024 * 1024)
-										throw new Error('Study bundle exceeds 512 MiB');
-									await workspace.import(await file.text());
-								});
-							e.currentTarget.value = '';
-						}}
-					/></label
-				>
-				{#if doc}<button onclick={() => download(workspace.export(), 'tellegen-study.json')}
-						>Export</button
-					>{/if}
-			</div>
+<TellegenWebMcp {workspace} studyExpanded={expanded} closeStudy={() => (expanded = false)} />
+<div class="study-workspace" class:expanded style:--study-top="{ctrl.app.headerInset + 10}px">
+	{#if !expanded}
+		<button
+			class="study-toggle"
+			aria-label="Studies"
+			aria-expanded="false"
+			onclick={() => (expanded = true)}
+			><svg
+				width="16"
+				height="16"
+				viewBox="0 0 20 20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.3"
+				aria-hidden="true"
+				><path d="M5 4v12m0-8h8m0 0V4m0 4v8" /><circle
+					cx="5"
+					cy="3"
+					r="2"
+					fill="var(--paper)"
+				/><circle cx="5" cy="17" r="2" fill="var(--paper)" /><circle
+					cx="13"
+					cy="3"
+					r="2"
+					fill="var(--paper)"
+				/><circle cx="13" cy="17" r="2" fill="var(--paper)" /></svg
+			><span>Studies</span>{#if doc}<span class="study-name">{doc.title}</span>{/if}</button
+		>
+	{:else}
+		<header class="workspace-header">
+			<h2>Studies</h2>
+			<button
+				class="text-button"
+				onclick={() => {
+					creating = true;
+					editing = false;
+					interpretationJson = '';
+					tab = 'goal';
+				}}>New study</button
+			><button class="close" aria-label="Close studies" onclick={() => (expanded = false)}
+				><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"
+					><path d="m4 4 8 8m0-8-8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg
+				></button
+			>
+		</header>
+		<div class="storage">
+			<label
+				>Saved study <select
+					value={doc?.id ?? ''}
+					disabled={workspace.busy}
+					onchange={(e) => {
+						const id = e.currentTarget.value;
+						if (id) void attempt(() => workspace.open(id));
+					}}
+					><option value="">Open a saved study</option
+					>{#each workspace.saved as saved (saved.id)}<option value={saved.id}>{saved.title}</option
+						>{/each}</select
+				></label
+			>
+			<label class="file-button"
+				>Import<input
+					type="file"
+					accept=".json,application/json"
+					disabled={workspace.busy}
+					onchange={(e) => {
+						const file = e.currentTarget.files?.[0];
+						if (file)
+							void attempt(async () => {
+								if (file.size > 512 * 1024 * 1024) throw new Error('Study bundle exceeds 512 MiB');
+								await workspace.import(await file.text());
+							});
+						e.currentTarget.value = '';
+					}}
+				/></label
+			>
+			{#if doc}<button
+					disabled={workspace.busy}
+					onclick={() => download(workspace.export(), 'tellegen-study.json')}>Export</button
+				>{/if}
+		</div>
+		<nav aria-label="Study sections">
+			<button
+				class:active={!doc || creating || tab === 'goal'}
+				aria-pressed={!doc || creating || tab === 'goal'}
+				onclick={() => {
+					tab = 'goal';
+					creating = false;
+				}}>Goal</button
+			>
+			<button
+				disabled={!doc}
+				class:active={!!doc && !creating && tab === 'states'}
+				aria-pressed={!!doc && !creating && tab === 'states'}
+				onclick={() => {
+					tab = 'states';
+					creating = false;
+				}}
+				>States {#if doc}<span>{Object.keys(doc.states).length}</span>{/if}</button
+			>
+			<button
+				disabled={!doc}
+				class:active={!!doc && !creating && tab === 'timeline'}
+				aria-pressed={!!doc && !creating && tab === 'timeline'}
+				onclick={() => {
+					tab = 'timeline';
+					creating = false;
+				}}>Timeline</button
+			>
+		</nav>
+		<section class="workspace-content" aria-label="Study workspace">
 			{#if formError || workspace.error}<p class="error" role="alert">
 					{formError ?? workspace.error}
 				</p>{/if}
-			{#if doc}
-				<p class="eyebrow">
-					Revision {doc.revision}, {Object.keys(doc.states).length} saved states
-				</p>
-				<p class="request">
-					{goal?.request ?? 'Historical evidence; electrical states unavailable.'}
-				</p>
+			{#if !doc || creating || tab === 'goal'}
+				{#if !doc || creating || editing}
+					<h3>{doc && !creating ? 'Revise goal' : 'New study'}</h3>
+
+					<label>Title<input bind:value={title} /></label>
+					<label>Goal<textarea rows="2" bind:value={request}></textarea></label>
+					<div class="form-grid">
+						<label
+							>Formulation<select bind:value={formulation}
+								><option value="dcopf">DC OPF</option><option value="socwr">SOCWR OPF</option
+								><option value="acpf">AC power flow</option></select
+							></label
+						><label
+							>Objective<select bind:value={objectiveKind}
+								><option value="price">Weighted active LMP</option><option value="voltage"
+									>Voltage target</option
+								></select
+							></label
+						>
+					</div>
+					<label>Buses<input bind:value={region} placeholder="Bus IDs, e.g. 2, 14, 30" /></label>
+					{#if objectiveKind === 'voltage'}<label
+							>Voltage target (pu)<input type="number" step="0.01" bind:value={target} /></label
+						>{/if}
+					<label
+						>Allowed changes<select bind:value={intervention}
+							><option value="capacity">Capacity upgrades</option><option value="redistribution"
+								>Demand redistribution</option
+							><option value="placement">Demand placement</option></select
+						></label
+					>
+					<div class="form-grid">
+						<label>Budget<input type="number" min="0" bind:value={budget} /></label><label
+							>Increment<input type="number" min="0.001" bind:value={increment} /></label
+						><label>Maximum elements<input type="number" min="1" bind:value={cardinality} /></label
+						>{#if intervention === 'placement'}<label
+								>Total added demand (MW)<input type="number" min="0" bind:value={increase} /></label
+							>{/if}
+					</div>
+					<p class="hint">
+						{intervention === 'capacity'
+							? formulation === 'socwr'
+								? 'Ratings in MVA.'
+								: 'Ratings in MW.'
+							: 'Demand in MW. Transfers count both ends toward the budget.'}
+					</p>
+					<details class="advanced">
+						<summary>Equipment, weights and bounds</summary>
+						<button
+							onclick={() =>
+								void attempt(async () => {
+									interpret();
+								})}>Resolve equipment and weights</button
+						>
+
+						<label
+							>Objective and decisions (JSON)<textarea
+								class="json"
+								rows="8"
+								bind:value={interpretationJson}
+								placeholder="Resolve equipment, then review or edit the weights, bounds and candidate IDs."
+							></textarea></label
+						>
+						<p class="hint">
+							Defaults: five load buses, eight candidate elements. Resolve again after changing the
+							form.
+						</p>
+					</details>
+				{:else}
+					<h3>{doc.title}</h3>
+					<p class="request">{goal?.request ?? 'Imported history'}</p>
+					{#if goal}<dl class="goal-facts">
+							<div>
+								<dt>Formulation</dt>
+								<dd>
+									{doc.inspected_state
+										? {
+												dcopf: 'DC OPF',
+												dcpf: 'DC power flow',
+												acpf: 'AC power flow',
+												socwr: 'SOCWR OPF',
+												acopf: 'AC OPF'
+											}[doc.states[doc.inspected_state].formulation]
+										: 'Unavailable'}
+								</dd>
+							</div>
+							<div>
+								<dt>Candidate elements</dt>
+								<dd>{goal.decisions.variables.length}</dd>
+							</div>
+							<div>
+								<dt>Maximum changes</dt>
+								<dd>{goal.decisions.max_changed_elements}</dd>
+							</div>
+							<div>
+								<dt>Budget</dt>
+								<dd>{goal.decisions.total_budget}</dd>
+							</div>
+						</dl>
+						<details>
+							<summary>Objective and permitted changes</summary>
+							<p>{goal.interpretation}</p>
+							<pre>{JSON.stringify(
+									{ objective: goal.objective, decisions: goal.decisions },
+									null,
+									2
+								)}</pre>
+						</details>
+						<button onclick={loadGoal}>Edit goal</button>{/if}
+				{/if}
+			{:else if tab === 'states'}
 				<dl class="pointers">
 					<div>
 						<dt>Inspecting</dt>
@@ -306,10 +502,8 @@
 					</div>
 				</dl>
 				<div class="toolbar">
-					<button onclick={() => void attempt(() => workspace.showView())}
-						>Show saved state on map</button
-					>
-					<button onclick={() => workspace.closeView()}>Return to live case</button>
+					<button onclick={() => void attempt(() => workspace.showView())}>Show on map</button>
+					<button onclick={() => workspace.closeView()}>Live case</button>
 					{#if ctrl.app.studyView}<label
 							>Map values<select bind:value={ctrl.app.displayMode}
 								><option value="price">Active LMP</option><option value="voltage"
@@ -318,23 +512,9 @@
 							></label
 						>{/if}
 				</div>
-				<p class="hint">
-					Saved-state map. Inspecting changes the view; the Apply button changes the Study's applied
-					state.
-				</p>
-				<details>
-					<summary>Goal interpretation and permitted interventions</summary>
-					<p>{goal?.interpretation}</p>
-					<pre>{JSON.stringify(goal, null, 2)}</pre>
-				</details>
 				<div class="toolbar">
 					<label
-						>Exact solve budget<input
-							type="number"
-							min="1"
-							max="256"
-							bind:value={solveBudget}
-						/></label
+						>Solve limit<input type="number" min="1" max="256" bind:value={solveBudget} /></label
 					>
 					<button
 						class="primary"
@@ -362,19 +542,43 @@
 						class="primary"
 						disabled={workspace.busy}
 						onclick={() => void attempt(() => workspace.applyFromUser(latestProposal!))}
-						>Apply this recommendation to the Study</button
+						>Apply recommendation</button
 					>{/if}
-				<h3>Explored states</h3>
+				<details>
+					<summary>Edit demand</summary>
+					<p class="hint">Edits accumulate at each bus. Transfers must balance before applying.</p>
+					<div class="toolbar">
+						<label>Bus<input bind:value={demandBus} placeholder="2" /></label>
+						<label>Change (MW)<input type="number" bind:value={demandIncrement} /></label>
+						<button
+							disabled={workspace.busy ||
+								!doc.inspected_state ||
+								!doc.active_goal ||
+								!demandBus.trim()}
+							onclick={() =>
+								void attempt(() =>
+									operation({
+										kind: 'edit_demand',
+										state: doc!.inspected_state!,
+										goal: doc!.active_goal!,
+										changes: [{ bus: demandBus.trim(), delta_mw: demandIncrement }],
+										rationale: `Adjust bus ${demandBus} demand by ${demandIncrement} MW`
+									})
+								)}>Solve edit</button
+						>
+					</div>
+				</details>
+				<h3>Network states</h3>
 				<ul class="history">
 					{#each states as [id, state] (id)}<li style:padding-left="{depth(id) * 10}px">
 							<button
 								class:selected={id === doc.inspected_state}
 								disabled={workspace.busy}
 								onclick={() => void attempt(() => operation({ kind: 'inspect', state: id }))}
-								>{state.label}{id === doc.recommended_state ? ' [recommended]' : ''}{id ===
-								doc.applied_state
-									? ' [applied]'
-									: ''}</button
+								><span>{state.label}</span><span class="state-flags"
+									>{#if id === doc.recommended_state}<small>Recommended</small
+										>{/if}{#if id === doc.applied_state}<small>Applied</small>{/if}</span
+								></button
 							><button
 								class="branch"
 								disabled={workspace.busy}
@@ -385,7 +589,7 @@
 											state: id,
 											rationale: 'Continue exploration from this saved state'
 										})
-									)}>Branch here</button
+									)}>Branch</button
 							>
 						</li>{/each}
 				</ul>
@@ -394,7 +598,7 @@
 					>{/if}
 				<div class="toolbar">
 					<label
-						>Compare under goal<select bind:value={goalForComparison}
+						>Goal revision<select bind:value={goalForComparison}
 							><option value="">Active goal</option
 							>{#each Object.entries(doc.goals) as [id, g] (id)}<option value={id}
 									>{g.request.slice(0, 60)}</option
@@ -436,13 +640,38 @@
 							>
 						</table>
 					</div>{/if}
-				<h3>Experiments and evidence</h3>
+				<details class="reset">
+					<summary>Restore original network</summary>
+					<button
+						disabled={workspace.busy || !doc.base_input || !doc.inspected_state || !doc.active_goal}
+						onclick={() =>
+							void attempt(() =>
+								operation({
+									kind: 'restore_base',
+									state: doc!.inspected_state!,
+									goal: doc!.active_goal!,
+									rationale: 'Restore the original network data'
+								})
+							)}>Restore base case</button
+					>
+					<p class="hint">
+						{doc.base_input
+							? 'Creates a new candidate from the original network data.'
+							: 'Original network data is unavailable in this import.'}
+					</p>
+				</details>
+			{:else}
+				<h3>Activity timeline</h3>
 				{#each doc.experiment_order.toReversed().slice(0, historyLimit) as id (id)}{@const e =
 						doc.experiments[id]}
 					<details>
-						<summary>{e.kind}: {e.termination}, {e.solve_count} solves</summary>
+						<summary
+							><span>{activityLabel(e.kind)}</span><span class="event-status"
+								>{e.termination.replaceAll('_', ' ')}</span
+							></summary
+						>
 						<p>{e.rationale}</p>
-						<p class="hint">{e.trials.length} numerical trials belong to this operation.</p>
+						<p class="hint">{e.solve_count} solves, {e.trials.length} trials</p>
 						<pre>{JSON.stringify(e, null, 2)}</pre>
 						{#each e.evidence as ref (ref)}<details>
 								<summary>Evidence {ref.slice(0, 10)}</summary>
@@ -450,86 +679,26 @@
 							</details>{/each}
 					</details>{/each}
 			{/if}
-			<details open={!doc}>
-				<summary>{doc ? 'Revise this goal or start another Study' : 'Define a Study'}</summary>
-				<label>Title<input bind:value={title} /></label>
-				<label>User goal<textarea rows="3" bind:value={request}></textarea></label>
-				<div class="form-grid">
-					<label
-						>Formulation<select bind:value={formulation}
-							><option value="dcopf">DC OPF</option><option value="socwr">SOCWR OPF</option><option
-								value="acpf">AC power flow</option
-							></select
-						></label
-					><label
-						>Objective<select bind:value={objectiveKind}
-							><option value="price">Weighted active LMP</option><option value="voltage"
-								>Voltage target</option
-							></select
-						></label
-					>
-				</div>
-				<label
-					>Region bus IDs, comma separated<input
-						bind:value={region}
-						placeholder="Default: five buses with greatest demand"
-					/></label
-				>
-				{#if objectiveKind === 'voltage'}<label
-						>Voltage target (pu)<input type="number" step="0.01" bind:value={target} /></label
-					>{/if}
-				<label
-					>Permitted interventions<select bind:value={intervention}
-						><option value="capacity">Capacity upgrades</option><option value="redistribution"
-							>Demand redistribution</option
-						><option value="placement">Demand placement</option></select
-					></label
-				>
-				<div class="form-grid">
-					<label
-						>Total absolute change budget<input type="number" min="0" bind:value={budget} /></label
-					><label>Increment<input type="number" min="0.001" bind:value={increment} /></label><label
-						>Maximum changed elements<input type="number" min="1" bind:value={cardinality} /></label
-					>{#if intervention === 'placement'}<label
-							>Total added demand (MW)<input type="number" min="0" bind:value={increase} /></label
-						>{/if}
-				</div>
-				<p class="hint">
-					Capacity uses MW for DC OPF and MVA for SOCWR. Demand uses MW; transfers count both ends
-					toward the absolute-change budget. AC power flow supports demand decisions and voltage
-					objectives.
-				</p>
-				<button
-					onclick={() =>
-						void attempt(async () => {
-							interpret();
-						})}>Resolve equipment and weights</button
-				>
-				{#if goal}<button onclick={loadGoal}>Load current interpretation</button>{/if}
-				<label
-					>Resolved objective and decisions<textarea
-						class="json"
-						rows="8"
-						bind:value={interpretationJson}
-						placeholder="Resolve equipment, then review or edit the weights, bounds and candidate IDs."
-					></textarea></label
-				>
-				<p class="hint">
-					The resolved JSON is authoritative. Resolve again after changing the controls. Default
-					candidates are limited to eight elements; edit this list to choose corridors or demand
-					locations.
-				</p>
-				<div class="toolbar">
-					<button
-						disabled={workspace.busy || !ctrl.activeSolvable}
-						onclick={() => void attempt(create)}>Create from live case</button
-					>{#if doc?.inspected_state}<button
-							disabled={workspace.busy}
-							onclick={() => void attempt(revise)}>Save goal revision from inspected state</button
-						>{/if}
-				</div>
-			</details>
 		</section>
+		{#if !doc || creating || (tab === 'goal' && editing)}<div class="form-actions">
+				{#if !doc || creating}<button
+						class="primary"
+						disabled={workspace.busy || !ctrl.activeSolvable}
+						onclick={() => void attempt(create)}>Create study</button
+					>{/if}{#if doc?.inspected_state && !creating}<button
+						disabled={workspace.busy}
+						onclick={() =>
+							void attempt(async () => {
+								await revise();
+								editing = false;
+							})}>Save revision</button
+					>{/if}
+			</div>{/if}
+		{#if doc}<div class="workspace-status">
+				Revision {doc.revision}, {Object.keys(doc.states).length} saved states{#if workspace.busy}<span
+						>Solving...</span
+					>{:else}<span>Saved</span>{/if}
+			</div>{/if}
 	{/if}
 </div>
 
@@ -537,39 +706,145 @@
 	.study-workspace {
 		position: fixed;
 		left: 20px;
-		bottom: 22px;
+		bottom: 48px;
 		z-index: 25;
-		width: min(440px, calc(100vw - 40px));
-		color: var(--ink, #20242b);
-		font: 12px/1.5 var(--font-mono, monospace);
-		background: var(--panel, #fcfbf7);
-		border: 1px solid var(--line, #d5d2ca);
-		border-radius: 5px;
-		box-shadow: 0 4px 18px #20242b18;
+		color: var(--ink);
+		font: 13px/1.5 var(--font-display);
+	}
+	.study-workspace.expanded {
+		top: var(--study-top);
+		bottom: auto;
+		display: flex;
+		flex-direction: column;
+		width: min(410px, calc(100vw - 40px));
+		max-height: calc(100dvh - var(--study-top) - 104px);
+		background: var(--paper);
+		border: 1px solid var(--line);
+		border-radius: 6px;
+		box-shadow: var(--elev-2);
+		overflow: hidden;
 	}
 	.study-toggle {
 		display: flex;
-		justify-content: space-between;
-		width: 100%;
-		padding: 12px;
+		align-items: center;
+		gap: 10px;
+		max-width: 320px;
+		min-height: 38px;
+		background: var(--paper);
+		box-shadow: var(--elev-1);
+	}
+	.study-name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--text-secondary);
+		max-width: 190px;
+		font-size: 11px;
+	}
+	.workspace-header {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		padding: 12px 16px;
+		flex: none;
+	}
+	h2 {
+		font-size: 16px;
+		font-weight: 600;
+		margin: 0;
+		flex: 1;
+	}
+	.workspace-header .text-button {
+		padding: 4px 0;
 		border: 0;
-		background: transparent;
-		text-align: left;
+		font-size: 11px;
+		color: var(--text-secondary);
 	}
-	.study-toggle span:first-child {
-		font-weight: 700;
+	.workspace-header .close {
+		padding: 0;
+		width: 28px;
+		height: 28px;
+		display: grid;
+		place-items: center;
+		border: 0;
 	}
-	section {
-		padding: 0 14px 14px;
-		max-height: min(76vh, 900px);
+	.storage {
+		display: flex;
+		align-items: flex-end;
+		gap: 8px;
+		padding: 0 16px 16px;
+	}
+	.storage label:first-child {
+		flex: 1;
+		min-width: 0;
+	}
+	.storage label:first-child :global(select) {
+		width: 100%;
+	}
+	.storage .file-button {
+		position: relative;
+		flex: none;
+		overflow: hidden;
+		padding: 8px;
+		font-weight: 400;
+		cursor: pointer;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+	}
+	.file-button input {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		opacity: 0;
+		cursor: pointer;
+	}
+	.file-button:focus-within {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 2px;
+	}
+	.storage > button {
+		padding: 8px;
+	}
+	nav {
+		display: flex;
+		gap: 24px;
+		padding: 0 16px;
+		border-bottom: 1px solid var(--line);
+		flex: none;
+	}
+	nav button {
+		border: 0;
+		border-bottom: 2px solid transparent;
+		border-radius: 0;
+		padding: 8px 0 10px;
+		color: var(--text-secondary);
+	}
+	nav button.active {
+		border-bottom-color: var(--accent);
+		color: var(--ink);
+	}
+	nav button span {
+		font-size: 11px;
+		margin-left: 4px;
+		color: var(--text-secondary);
+	}
+	.workspace-content {
+		padding: 20px;
 		overflow: auto;
+		min-height: 0;
+		overscroll-behavior: contain;
 	}
 	label {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
-		margin: 8px 0;
-		flex: 1;
+		gap: 6px;
+		margin: 0 0 16px;
+		min-width: 0;
+		font-size: 12px;
+	}
+	.storage label,
+	.toolbar label {
+		margin: 0;
 	}
 	input,
 	select,
@@ -584,148 +859,219 @@
 		min-width: 0;
 		width: 100%;
 		box-sizing: border-box;
-		background: #fff;
-		border: 1px solid var(--line, #d5d2ca);
-		padding: 7px;
-		border-radius: 3px;
+		background: white;
+		border: 1px solid var(--line);
+		padding: 8px 9px;
+		border-radius: 4px;
 	}
-	button,
-	.file-button {
-		padding: 7px 9px;
-		border: 1px solid var(--line, #d5d2ca);
-		border-radius: 3px;
+	textarea {
+		resize: vertical;
+	}
+	button {
+		padding: 8px 12px;
+		border: 1px solid var(--line);
+		border-radius: 4px;
 		background: transparent;
 		cursor: pointer;
 	}
 	button:disabled {
-		opacity: 0.5;
-		cursor: wait;
+		opacity: 0.45;
+		cursor: default;
 	}
-	button:hover:enabled,
-	button.selected {
-		background: #e9eee8;
+	button:hover:enabled {
+		background: var(--accent-soft);
 	}
-	.primary:hover:enabled {
-		background: #306255;
+	button.primary {
+		background: var(--ink);
+		border-color: var(--ink);
+		color: white;
 	}
-	.primary {
-		background: #244a40;
-		color: #fff;
+	button.primary:hover:enabled {
+		background: #3c4249;
 	}
 	.toolbar {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
-		align-items: end;
-		margin: 10px 0;
+		gap: 8px;
+		align-items: flex-end;
+		margin: 16px 0;
 	}
-	.file-button {
-		flex: 0;
-		margin: 0;
+	.toolbar label {
+		flex: 1;
 	}
-	.file-button input {
-		width: 115px;
+	.toolbar label:has(input[type='number']) {
+		max-width: 132px;
 	}
 	.form-grid {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
-		gap: 8px;
+		gap: 0 16px;
 	}
 	.request {
-		font-size: 15px;
-		font-family: var(--font-sans, sans-serif);
+		margin: 10px 0 20px;
+		font-size: 14px;
+		line-height: 1.6;
 	}
-	.eyebrow,
-	.hint,
-	dt {
-		color: #5d635e;
-		font-size: 10px;
+	.hint {
+		margin: 10px 0 16px;
+		color: var(--text-secondary);
+		font-size: 11px;
+		line-height: 1.5;
 	}
 	.error {
-		color: #8d2a21;
+		color: var(--red);
 		background: #fff0ed;
-		padding: 8px;
+		padding: 12px;
+		overflow-wrap: anywhere;
 	}
 	.pointers {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 8px;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 16px;
+		margin: 0 0 16px;
+	}
+	dt {
+		color: var(--text-secondary);
+		font-size: 11px;
+		margin-bottom: 4px;
 	}
 	dd {
 		margin: 0;
 		overflow-wrap: anywhere;
+		font-size: 12px;
+	}
+	.goal-facts {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 16px;
+		margin-bottom: 20px;
 	}
 	details {
-		border-top: 1px solid var(--line, #d5d2ca);
-		padding: 10px 0;
+		border-top: 1px solid var(--line);
+		padding: 14px 0;
 	}
 	summary {
 		cursor: pointer;
+		font-size: 12px;
+	}
+	summary .event-status {
+		display: block;
+		margin: 4px 0 0 14px;
+		color: var(--text-secondary);
+		font-size: 11px;
 	}
 	pre {
-		font: 10px/1.5 var(--font-mono, monospace);
+		font: 11px/1.5 var(--font-mono);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 		max-height: 260px;
 		overflow: auto;
 	}
 	.json {
-		font-size: 10px;
+		font: 11px/1.5 var(--font-mono);
 	}
 	h3 {
-		font-size: 12px;
-		margin: 18px 0 6px;
+		font-size: 14px;
+		font-weight: 600;
+		margin: 4px 0 16px;
 	}
 	.history {
 		padding: 0;
 		list-style: none;
+		margin: 0 0 20px;
 	}
 	.history li {
 		display: flex;
-		gap: 3px;
-		margin: 4px 0;
+		gap: 8px;
+		margin: 6px 0;
 	}
 	.history li > button:first-child {
+		display: flex;
 		flex: 1;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
 		text-align: left;
+		min-width: 0;
+	}
+	.history button.selected {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+	}
+	.state-flags {
+		display: flex;
+		flex-direction: column;
+		text-align: right;
+	}
+	.state-flags small {
+		font-size: 9px;
+		color: var(--text-secondary);
 	}
 	.branch {
-		font-size: 10px;
-		white-space: nowrap;
+		border: 0;
+		font-size: 11px;
+		padding: 8px 0;
+		color: var(--text-secondary);
 	}
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 10px;
+		font: 11px/1.5 var(--font-mono);
 	}
 	td,
 	th {
-		padding: 5px 2px;
+		padding: 8px 4px;
 		text-align: right;
-		border-bottom: 1px solid var(--line, #d5d2ca);
+		border-bottom: 1px solid var(--line);
 	}
-	:global(body:has(.study-workspace.expanded) [data-webmcp-activity]) {
-		display: none;
+	td:first-child,
+	th:first-child {
+		text-align: left;
+	}
+	.form-actions {
+		display: flex;
+		gap: 8px;
+		padding: 12px 20px;
+		border-top: 1px solid var(--line);
+		flex: none;
+	}
+	.workspace-status {
+		display: flex;
+		justify-content: space-between;
+		border-top: 1px solid var(--line);
+		color: var(--text-secondary);
+		font-size: 10px;
+		padding: 10px 16px;
+		flex: none;
+	}
+	:global(body:has(.study-workspace.expanded) aside.panel) {
+		visibility: hidden;
+		pointer-events: none;
 	}
 	@media (max-width: 760px) {
-		.study-workspace:not(.expanded) {
-			width: calc(100vw - 190px);
-		}
-		.study-toggle {
-			gap: 8px;
-		}
-		.study-toggle span:last-child {
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-		}
 		.study-workspace {
-			left: 8px;
-			bottom: 8px;
-			width: calc(100vw - 16px);
+			left: 12px;
+			top: var(--study-top);
+			bottom: auto;
 		}
-		section {
-			max-height: 65vh;
+		.study-workspace.expanded {
+			width: calc(100vw - 24px);
+			top: calc(var(--study-top) + 46px);
+			max-height: calc(100dvh - var(--study-top) - 104px);
+		}
+		.study-name {
+			display: none;
+		}
+		.workspace-content {
+			padding: 16px;
+		}
+		:global(body:has(.study-workspace.expanded) .agent-workspace:has(.activity-panel)) {
+			z-index: 26;
+		}
+		:global(body:has(.study-workspace.expanded) .maplibregl-ctrl-bottom-right) {
+			bottom: 12px;
+			opacity: 1;
+			pointer-events: auto;
 		}
 	}
 </style>

@@ -12,10 +12,10 @@
 		)
 	);
 	const busUnitTitle = $derived(
-		`Nodal value response to active demand, in ${reportedUnits}. The response is small while the active set stays unchanged.`
+		`LMP response to active demand, in ${reportedUnits}. The response is small while the active set stays unchanged.`
 	);
 	const branchUnitTitle = $derived(
-		`Nodal value response to the thermal rating, in ${reportedUnits}. The column is zero when the limit is inactive.`
+		`LMP response to the thermal rating, in ${reportedUnits}. The column is zero when the limit is inactive.`
 	);
 
 	// Branch mode: the selection is a line and the column is price/rating; the
@@ -40,7 +40,7 @@
 
 <div class="mode">
 	<span class="chip">
-		{ctrl.previewing ? 'nodal value preview' : branchMode ? '∂value/∂rating' : '∂value/∂d'}
+		{ctrl.previewing ? 'LMP preview' : branchMode ? '∂LMP/∂rating' : '∂LMP/∂d'}
 	</span>
 	<span class="mono dim">
 		{#if branchMode}line {branchLabel}{:else}bus {app.selectedBus}{/if}
@@ -53,8 +53,8 @@
 	{#if ctrl.previewing}
 		<p class="dim small">
 			{ctrl.activeSolvable?.solving
-				? 'Exact solve running; the map keeps the nodal value preview.'
-				: 'First order nodal value preview. Release for the exact solve.'}
+				? 'Exact solve running; the map keeps the LMP preview.'
+				: 'First order LMP preview. Release for the exact solve.'}
 		</p>
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
@@ -67,21 +67,21 @@
 		{:else if ctrl.previewScale}
 			<!-- The bounds are fixed for the whole drag (column scale × full slider
 			     deflection), so the ramp ends label the colors: full green/purple is
-			     the predicted nodal value change at full deflection, and intensity grows with the
+			     the predicted LMP change at full deflection, and intensity grows with the
 			     step instead of renormalizing every frame. -->
 			<div class="legend" style:background={sensGradient}></div>
 			<div class="legend-labels mono">
 				<span>&minus;{ctrl.previewScale.toExponential(1)}</span>
-				<span>&Delta; nodal value {previewUnits}</span>
+				<span>&Delta; LMP {previewUnits}</span>
 				<span>+{ctrl.previewScale.toExponential(1)}</span>
 			</div>
 		{/if}
 	{:else}
 		<p class="dim small sensitivity-copy" title={unitTitle}>
 			{#if branchMode}
-				Nodal value response to the rating on line {branchLabel}.
+				LMP response to the rating on line {branchLabel}.
 			{:else}
-				Nodal value response to demand at bus {app.selectedBus}.
+				LMP response to demand at bus {app.selectedBus}.
 			{/if}
 			<span class="hint-dot mono" title={unitTitle} aria-label={unitTitle}>i</span>
 		</p>

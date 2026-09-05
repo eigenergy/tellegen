@@ -25,7 +25,7 @@
 {#if ctrl.activeDisplay && ctrl.displayStats}
 	{#if ctrl.activeDisplay.mode === 'price'}
 		<div class="legend-heading">
-			<span class="legend-title">Nodal marginal value</span>
+			<span class="legend-title">Locational marginal price</span>
 			<span
 				class="hint-dot mono"
 				title={ctrl.activeDisplay.copy}

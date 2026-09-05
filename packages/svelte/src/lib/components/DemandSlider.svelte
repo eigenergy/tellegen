@@ -26,7 +26,7 @@
 		'The black tick marks the last committed demand. Drag the knob to preview a new demand; release to solve and move the tick to that point.';
 	const disabledTip = 'this analysis bus is display-only; demand is not adjustable';
 	const scoreTip =
-		'Gradient estimates the declared objective change before the solve finishes. It uses the selected bus nodal value times the demand step, plus local curvature when the preview engine is unavailable. Exact is the resolved OPF objective change.';
+		'Gradient estimates the declared objective change before the solve finishes. It uses the selected bus LMP times the demand step, plus local curvature when the preview engine is unavailable. Exact is the resolved OPF objective change.';
 </script>
 
 {#if ctrl.activeSolvable}

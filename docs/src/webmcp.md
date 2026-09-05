@@ -1,5 +1,12 @@
 # WebMCP
 
+Open **Agent**, then **Connect**, on the map for connection status, a copyable example
+request and the connection guide. A connected agent must discover the WebMCP
+tools exposed by this browser tab. A regular browser without WebMCP still
+supports manual interaction. The first-visit introduction links to the
+application changelog.
+
+
 Tellegen exposes the solved case in the current browser tab through structured
 tools. They read and update the state shown in the interface and run the same
 WebAssembly solver.

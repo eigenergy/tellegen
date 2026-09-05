@@ -16,7 +16,7 @@ Per `(case, variant)`, the harness parses a PowerIO module and declares the
 calculation as `DcOpfInstance`, `AcOpfInstance`, or `AcPfInstance`. It then
 drives the same typed facade available to downstream consumers:
 
-- DC OPF: `solve_instance` (objective, dispatch, nodal values);
+- DC OPF: `solve_instance` (objective, dispatch, LMPs);
 - conic SOCWR: `solve_ac_instance` (objective, gap, W-space primals);
 - AC power flow: `solve_ac_pf_instance` (convergence, residual);
 - sensitivities: the same typed solve entries in forward and adjoint modes.

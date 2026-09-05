@@ -105,6 +105,8 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 				'branch_study',
 				'compare_study_states',
 				'create_study',
+				'edit_demand',
+				'restore_base_case',
 				'inspect_study',
 				'propose_study',
 				'record_study_evidence',
@@ -161,7 +163,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	if (!focused.ok) return;
 	const focusedRevision = String(focused.data.revision);
 	expect(focusedRevision).not.toBe(revision);
-	await expect(page.locator('.chip', { hasText: '∂value/∂d' })).toBeVisible();
+	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible();
 
 	const previewed = await callTool(page, 'preview_case_update', {
 		case_id: caseId,
@@ -428,6 +430,8 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 				'branch_study',
 				'compare_study_states',
 				'create_study',
+				'edit_demand',
+				'restore_base_case',
 				'inspect_study',
 				'propose_study',
 				'record_study_evidence',
