@@ -101,7 +101,8 @@ def main():
             tolerance = max(spec['tolerances'].get('objective_absolute', 0),
                             spec['tolerances'].get('objective_relative', 0) * abs(comparison['left_value']))
             packet['improvement_tolerance'] = tolerance
-            packet['outcome'] = ('verified_candidate' if comparison['improvement'] > tolerance
+            packet['outcome'] = ('no_verified_improvement' if summary['recommended_state'] == initial
+                                 else 'verified_candidate' if comparison['improvement'] > tolerance
                                  else 'improvement_below_tolerance')
         else:
             packet['outcome'] = 'no_verified_candidate'

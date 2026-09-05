@@ -41,7 +41,7 @@ COPY packages/svelte packages/svelte
 COPY packages/webmcp packages/webmcp
 COPY examples/browser-minimal examples/browser-minimal
 COPY examples/svelte-minimal examples/svelte-minimal
-COPY crates/tellegen/src/api.rs crates/tellegen/src/api.rs
+COPY crates/tellegen/src crates/tellegen/src
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
 RUN npm run build:engine && npm run build:web && npm run smoke:web
 
