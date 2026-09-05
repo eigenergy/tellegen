@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createTellegenPlanningTools,
+  createTellegenStudyTools,
   createTellegenTools,
   DEFAULT_OUTPUT_BUDGET,
   DEFAULT_TOOL_TIMEOUT_MS,
@@ -537,5 +538,30 @@ describe("planning tool surface", () => {
       },
     });
     expect(JSON.stringify(committed).length).toBeLessThanOrEqual(256);
+  });
+});
+
+
+describe("persistent Study tool completion", () => {
+  it("uses the host's generated schema and retains a saved result after cancellation", async () => {
+    const cancel = new AbortController();
+    const schema = { type: "object" as const, properties: { expected_revision: { type: "integer" } } };
+    const tools = createTellegenStudyTools({
+      inputSchema: () => schema,
+      execute: async () => { cancel.abort(); return { id: "s", revision: 3, experiment: "e", termination: "cancelled" }; },
+    });
+    expect(tools).toHaveLength(7);
+    expect(tools.every(tool => tool.inputSchema === schema)).toBe(true);
+    expect(tools.some(tool => tool.name.includes("apply"))).toBe(false);
+    const proposal = tools.find(tool => tool.name === "propose_study")!;
+    const response = await proposal.execute({ expected_revision: 2 }, { signal: cancel.signal });
+    expect(response).toMatchObject({ ok: true, data: { id: "s", revision: 3, experiment: "e", termination: "cancelled" } });
+  });
+  it("rejects oversized input before invoking the Study controller", async () => {
+    const run = vi.fn();
+    const tools = createTellegenStudyTools({ inputSchema: () => ({ type: "object" }), execute: run });
+    const response = await tools[0].execute({ text: "x".repeat(1_048_576) });
+    expect(response.ok).toBe(false);
+    expect(run).not.toHaveBeenCalled();
   });
 });

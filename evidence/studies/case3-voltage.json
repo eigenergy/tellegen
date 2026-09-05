@@ -1,0 +1,65 @@
+{
+  "create": {
+    "id": "case3-voltage-target",
+    "title": "AC power-flow voltage target",
+    "formulation": "acpf",
+    "request": "Move up to 10 MW of demand from bus 2 to bus 3 to bring the bus 2 voltage closer to 1 per unit. Preserve total demand.",
+    "interpretation": "Minimize the squared difference between solved bus 2 voltage magnitude and 1 per unit. Solve balanced AC power flow with fixed generator voltage setpoints and the original reactive demand.",
+    "objective": {
+      "kind": "squared_target",
+      "target": 1.0,
+      "expression": {
+        "kind": "weighted_observable",
+        "operand": {
+          "Voltage": "Magnitude"
+        },
+        "weights": [
+          {
+            "element": 2,
+            "weight": 1
+          }
+        ]
+      }
+    },
+    "decisions": {
+      "variables": [
+        {
+          "id": "bus2",
+          "element": 2,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 0,
+          "increment": 2,
+          "budget_weight": 1
+        },
+        {
+          "id": "bus3",
+          "element": 3,
+          "intervention": "active_demand",
+          "lower": 0,
+          "upper": 10,
+          "increment": 2,
+          "budget_weight": 1
+        }
+      ],
+      "total_budget": 20,
+      "max_changed_elements": 2,
+      "demand": {
+        "kind": "redistribution"
+      }
+    }
+  },
+  "search": {
+    "max_solves": 8,
+    "max_iterations": 8,
+    "beam_width": 2,
+    "min_improvement": 1e-10
+  },
+  "rationale": "Follow the implicit voltage-objective direction and verify paired demand transfers with exact AC power flow.",
+  "source_sha256": "sha256:1b3df5591ce2294f2c9ecb90c9528cd7e21f2d8511d2eff2799fd91c6c4635ec",
+  "tolerances": {
+    "objective_absolute": 1e-09,
+    "voltage_per_unit": 1e-07,
+    "demand_total_mw": 1e-07
+  }
+}

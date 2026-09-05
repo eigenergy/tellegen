@@ -1,5 +1,7 @@
 import type {
   TellegenPlanningAdapter,
+  TellegenStudyAdapter,
+  StudyToolName,
   TellegenToolDefinition,
   TellegenToolActivityEvent,
   TellegenWebMcpAdapter,
@@ -144,7 +146,9 @@ function committedSuccess(
     completed: true,
     output_truncated: true,
   };
-  if (toolName === "propose_capacity_plan") {
+  if (toolName.includes("study")) {
+    for (const key of ["id", "revision", "experiment", "active_goal", "inspected_state", "recommended_state", "applied_state"]) copyPrimitive(summary, result, key);
+  } else if (toolName === "propose_capacity_plan") {
     copyPrimitive(summary, result, "proposal_id");
     copyPrimitive(summary, result, "revision");
     copyPrimitive(summary, result, "exact_solves");
@@ -823,4 +827,26 @@ export function createTellegenPlanningTools(
     planning: [proposeCapacityPlan],
     proposal: [applyCapacityPlan],
   };
+}
+
+/** Persistent Study tools use host schemas generated from the numerical contracts. */
+export function createTellegenStudyTools(adapter: TellegenStudyAdapter, options: CreateTellegenToolsOptions = {}): TellegenToolDefinition[] {
+  const { outputBudget, timeoutMs } = executionLimits(options);
+  let sequence = 0;
+  const descriptions: Record<StudyToolName, string> = {
+    create_study: "Create and save a Study from the active case, its interpreted goal and permitted interventions. The starting state is solved exactly.",
+    inspect_study: "Inspect the open Study, read a bounded page of goals, states or evidence, or open a saved Study. Saved candidates remain unapplied.",
+    revise_study_goal: "Save a new goal revision without changing historical goals. The revision invalidates the current recommendation and approvals.",
+    branch_study: "Inspect a saved state and continue exploration from it. This changes the inspected pointer, not the applied state.",
+    compare_study_states: "Compare two saved states under one goal revision. Results include the outer objective and consequences across the network.",
+    propose_study: "Explore feasible capacity or demand interventions using implicit gradients and exact solves. Every trial counts against the solve budget. Save the best verified recommendation without applying it. The user applies it in the Study panel.",
+    record_study_evidence: "Attach a stated rationale and evidence to a state and goal without creating an electrical state. Do not record private agent reasoning."
+  };
+  return (Object.entries(descriptions) as [StudyToolName, string][]).map(([name, description]) => ({
+    name, title: name.replaceAll("_", " "), description, inputSchema: adapter.inputSchema(name), annotations: annotations(name === "inspect_study"),
+    execute: execute(name, name.replaceAll("_", " "), input => {
+      if (!input || typeof input !== "object" || Array.isArray(input) || JSON.stringify(input).length > 1_048_576) throw new TellegenToolError("INVALID_INPUT", "Study input must be an object no larger than 1 MiB");
+      return input as Record<string, unknown>;
+    }, (input, signal) => adapter.execute(name, input, signal), outputBudget, Math.max(timeoutMs, 300_000), options.onActivity, () => `tellegen-study-${++sequence}`, "commit-aware", options.recordValidatedInput)
+  }));
 }

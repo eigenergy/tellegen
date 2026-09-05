@@ -581,7 +581,6 @@ pub(super) struct Ids {
     branch_ids: Vec<usize>,
     gen_ids: Vec<usize>,
     bus_uids: Vec<Option<String>>,
-    #[cfg(feature = "conic")]
     branch_uids: Vec<Option<String>>,
 }
 
@@ -609,7 +608,6 @@ pub(super) fn reconstruct_ids(
     }
     let bus_ids = bus_ids_for_source_rows(&source_rows.buses, &source_rows.transformers_3w, raw)?;
     let bus_uids = uids_for_source_rows(&source_rows.buses, raw.buses(), |bus| &bus.uid, "bus")?;
-    #[cfg(feature = "conic")]
     let branch_source_rows =
         project_source_rows(branch_view_rows, &source_rows.branches, "branch")?;
     let branch_ids = branch_ids_for_view_rows(
@@ -618,7 +616,6 @@ pub(super) fn reconstruct_ids(
         &source_rows.transformers_3w,
         raw,
     )?;
-    #[cfg(feature = "conic")]
     let branch_uids = uids_for_source_rows(
         &branch_source_rows,
         raw.branches(),
@@ -640,7 +637,6 @@ pub(super) fn reconstruct_ids(
         branch_ids,
         gen_ids,
         bus_uids,
-        #[cfg(feature = "conic")]
         branch_uids,
     })
 }

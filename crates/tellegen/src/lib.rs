@@ -22,13 +22,19 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 mod api;
+#[cfg(feature = "sensitivity")]
+pub mod document;
 mod emit;
+#[cfg(feature = "sensitivity")]
+pub mod exploration;
 mod formulation;
 pub mod geo;
 #[cfg(feature = "sensitivity")]
 mod history;
 pub mod ir;
 mod model;
+#[cfg(feature = "sensitivity")]
+pub mod objective;
 #[cfg(feature = "sensitivity")]
 pub mod plan;
 mod problem;
@@ -37,13 +43,18 @@ mod sens;
 mod solve;
 #[cfg(feature = "sensitivity")]
 pub mod study;
+#[cfg(feature = "sensitivity")]
+pub mod study_ops;
+#[cfg(all(feature = "sensitivity", not(target_arch = "wasm32")))]
+pub mod study_storage;
 
 #[cfg(feature = "conic")]
 pub use api::solve_ac_instance;
 pub use api::{
     capabilities_json, solve_instance, solve_instance_cancellable, solve_module_json,
-    validate_canonical_identity, BranchFlow, BusInjection, BusScalar, Edits, ElementKey,
-    GenDispatch, Iterations, Problem, ProblemCaps, SolveRequest, SolveResponse, SolveStatus,
+    validate_canonical_identity, BranchFlow, BranchScalar, BusInjection, BusScalar, Edits,
+    ElementKey, GenDispatch, Iterations, Problem, ProblemCaps, SolveRequest, SolveResponse,
+    SolveStatus,
 };
 #[cfg(feature = "sensitivity")]
 pub use api::{solve_ac_pf_instance, SensRequest};

@@ -80,6 +80,16 @@ pub enum ElementKey {
     Uid(String),
 }
 
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for ElementKey {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ElementKey".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({ "oneOf": [{ "type": "integer" }, { "type": "string" }] })
+    }
+}
+
 impl std::fmt::Display for ElementKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -286,7 +296,8 @@ pub fn validate_canonical_identity(net: &BalancedNetwork) -> Result<(), String> 
 // ---------------------------------------------------------------------------
 
 /// A solve outcome that succeeded. A failed solve is the `Err` arm of a solve entry.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum SolveStatus {
     /// An OPF reached optimality.
@@ -299,7 +310,8 @@ pub enum SolveStatus {
 /// solve-card sparkline); the AC power flow carries its Newton count and final
 /// mismatch. Untagged: the OPF arm serializes to the same bare array the DC OPF
 /// always returned.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum Iterations {
     /// Interior-point iterate trace (dcopf / socwr).
@@ -311,7 +323,8 @@ pub enum Iterations {
 /// A scalar keyed by original bus id (LMP, voltage, angle, squared magnitude).
 /// `uid` is the bus's powerio row uid when the solved network carried one, so an
 /// overlay can re-key on stable identity instead of the positional id.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BusScalar {
     pub bus: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -320,9 +333,9 @@ pub struct BusScalar {
 }
 
 /// A nodal net injection (MW / MVAr), keyed by original bus id (plus the row uid
-/// when carried, as in [`BusScalar`]). The AC power flow solution is nodal, not
-/// branch-resolved, so it reports these instead of flows.
-#[derive(Clone, Debug, Serialize)]
+/// when carried, as in [`BusScalar`]). Injections describe the net nodal power balance.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BusInjection {
     pub bus: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -331,11 +344,20 @@ pub struct BusInjection {
     pub q: f64,
 }
 
+/// A branch-indexed voltage product, in squared per unit.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BranchScalar {
+    pub branch: usize,
+    pub value: f64,
+}
+
 /// Branch flows, keyed by original branch id (plus the row uid when carried, as in
 /// [`BusScalar`]). `pf` (from-end active, MW) and `loading` (|S|/limit,
 /// dimensionless) are present on every formulation that has flows; the reactive
 /// and to-end legs are `None` on the DC paths.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BranchFlow {
     pub branch: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -351,9 +373,13 @@ pub struct BranchFlow {
 }
 
 /// Generator dispatch, keyed by original generator id. `qg` is `None` on the DC paths.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GenDispatch {
     pub gen: usize,
+    /// Original bus identity, allowing exact aggregation of co-located dispatch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bus: Option<usize>,
     pub pg: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qg: Option<f64>,
@@ -365,7 +391,8 @@ pub struct GenDispatch {
 /// `w = |V|^2` per unit squared. Element ids
 /// are the original bus/branch/generator ids, so the frontend joins straight onto
 /// its case.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SolveResponse {
     /// The formulation that produced this, echoed for the client.
     pub formulation: Problem,
@@ -382,16 +409,21 @@ pub struct SolveResponse {
     /// wire-format stability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lmp_q: Option<Vec<BusScalar>>,
-    /// Voltage magnitude, per unit (acpf). SOCWR reports `w`, not `vm`.
+    /// Voltage magnitude, per unit (ACPF or square root of SOCWR squared magnitude).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vm: Option<Vec<BusScalar>>,
     /// Voltage angle, radians (every path except socwr, which is W-space).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub va: Option<Vec<BusScalar>>,
     /// Squared voltage magnitude `w = |V|^2`, per unit squared (socwr). The conic
-    /// relaxation does not guarantee a consistent angle, so it reports `w`, not `vm`.
+    /// relaxation does not guarantee a globally consistent set of voltage angles.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub w: Option<Vec<BusScalar>>,
+    /// Real and imaginary oriented branch voltage products (SOCWR).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wr: Option<Vec<BranchScalar>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wi: Option<Vec<BranchScalar>>,
     /// Nodal injections (acpf), MW/MVAr.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub injections: Option<Vec<BusInjection>>,
@@ -624,6 +656,8 @@ pub(crate) fn dc_opf_assemble(
         vm: None,
         va: Some(zip_bus(&dc.bus_ids, &dc.bus_uids, &sol.va)),
         w: None,
+        wr: None,
+        wi: None,
         injections: None,
         flows: Some(dc_branch_flows(
             &dc.branch_ids,
@@ -632,7 +666,7 @@ pub(crate) fn dc_opf_assemble(
             &dc.fmax,
             base,
         )),
-        dispatch: Some(zip_gen_pg(&dc.gen_ids, &sol.pg, base)),
+        dispatch: Some(zip_gen_pg(dc, &sol.pg, base)),
         #[cfg(feature = "sensitivity")]
         sensitivities,
     })
@@ -678,6 +712,8 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
         vm: None,
         va: Some(zip_bus(&dc.bus_ids, &dc.bus_uids, &sol.va)),
         w: None,
+        wr: None,
+        wi: None,
         injections: None,
         flows: Some(dc_branch_flows(
             &dc.branch_ids,
@@ -722,6 +758,7 @@ pub(crate) fn ac_pf_assemble(
     req: &SolveRequest,
 ) -> Result<SolveResponse, String> {
     let base = acnet.base_mva;
+    let [pf, qf, pt, qt] = crate::emit::ac_terminal_flows(acnet, sol);
     let sensitivities = run_cells(&super::sens::AcNewton::new(acnet, sol), &req.sensitivities)?;
 
     Ok(SolveResponse {
@@ -737,6 +774,8 @@ pub(crate) fn ac_pf_assemble(
         vm: Some(zip_bus(&acnet.bus_ids, &acnet.bus_uids, &sol.vm)),
         va: Some(zip_bus(&acnet.bus_ids, &acnet.bus_uids, &sol.va)),
         w: None,
+        wr: None,
+        wi: None,
         injections: Some(zip_injections(
             &acnet.bus_ids,
             &acnet.bus_uids,
@@ -744,7 +783,16 @@ pub(crate) fn ac_pf_assemble(
             &sol.q,
             base,
         )),
-        flows: None,
+        flows: Some(ac_branch_flows(
+            &acnet.branch_ids,
+            &acnet.branch_uids,
+            &pf,
+            &qf,
+            &pt,
+            &qt,
+            &acnet.rate_a,
+            base,
+        )),
         dispatch: None,
         sensitivities,
     })
@@ -803,10 +851,31 @@ pub(crate) fn socwr_assemble(
         iterations: Some(Iterations::Ipm(sol.iterations.clone())),
         lmp: (acnet.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost)
             .then(|| zip_scaled(&acnet.bus_ids, &acnet.bus_uids, &sol.lmp, 1.0 / base)),
-        lmp_q: None,
-        vm: None,
+        lmp_q: (acnet.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost)
+            .then(|| zip_scaled(&acnet.bus_ids, &acnet.bus_uids, &sol.lmp_q, 1.0 / base)),
+        vm: Some(zip_bus(
+            &acnet.bus_ids,
+            &acnet.bus_uids,
+            &sol.w.iter().map(|w| w.sqrt()).collect::<Vec<_>>(),
+        )),
         va: None,
         w: Some(zip_bus(&acnet.bus_ids, &acnet.bus_uids, &sol.w)),
+        wr: Some(
+            acnet
+                .branch_ids
+                .iter()
+                .zip(&sol.wr)
+                .map(|(&branch, &value)| BranchScalar { branch, value })
+                .collect(),
+        ),
+        wi: Some(
+            acnet
+                .branch_ids
+                .iter()
+                .zip(&sol.wi)
+                .map(|(&branch, &value)| BranchScalar { branch, value })
+                .collect(),
+        ),
         injections: None,
         flows: Some(ac_branch_flows(
             &acnet.branch_ids,
@@ -818,7 +887,7 @@ pub(crate) fn socwr_assemble(
             &acnet.rate_a,
             base,
         )),
-        dispatch: Some(zip_gen_pq(&acnet.gen_ids, &sol.pg, &sol.qg, base)),
+        dispatch: Some(zip_gen_pq(acnet, &sol.pg, &sol.qg, base)),
         sensitivities,
     })
 }
@@ -937,7 +1006,9 @@ fn formulation_caps() -> Vec<ProblemCaps> {
         ProblemCaps {
             formulation: Problem::AcPf,
             available: cfg!(feature = "sensitivity"),
-            blocks: ["vm", "va", "injections"].map(str::to_owned).to_vec(),
+            blocks: ["vm", "va", "injections", "flows"]
+                .map(str::to_owned)
+                .to_vec(),
             #[cfg(feature = "sensitivity")]
             operands: vec![
                 Operand::Voltage(VoltageKind::Magnitude),
@@ -968,7 +1039,7 @@ fn formulation_caps() -> Vec<ProblemCaps> {
         ProblemCaps {
             formulation: Problem::Socwr,
             available: cfg!(feature = "conic"),
-            blocks: ["lmp", "w", "flows", "dispatch"]
+            blocks: ["lmp", "lmp_q", "vm", "w", "wr", "wi", "flows", "dispatch"]
                 .map(str::to_owned)
                 .to_vec(),
             #[cfg(feature = "sensitivity")]
@@ -1284,12 +1355,15 @@ fn zip_scaled(ids: &[usize], uids: &[Option<String>], vals: &[f64], scale: f64) 
         .collect()
 }
 
-fn zip_gen_pg(gen_ids: &[usize], pg: &[f64], base: f64) -> Vec<GenDispatch> {
-    gen_ids
+fn zip_gen_pg(network: &DcNetwork, pg: &[f64], base: f64) -> Vec<GenDispatch> {
+    network
+        .gen_ids
         .iter()
         .zip(pg)
-        .map(|(&gen, &p)| GenDispatch {
+        .enumerate()
+        .map(|(j, (&gen, &p))| GenDispatch {
             gen,
+            bus: Some(network.bus_ids[network.gen_bus[j]]),
             pg: p * base,
             qg: None,
         })
@@ -1297,12 +1371,19 @@ fn zip_gen_pg(gen_ids: &[usize], pg: &[f64], base: f64) -> Vec<GenDispatch> {
 }
 
 #[cfg(feature = "conic")]
-fn zip_gen_pq(gen_ids: &[usize], pg: &[f64], qg: &[f64], base: f64) -> Vec<GenDispatch> {
-    gen_ids
+fn zip_gen_pq(
+    network: &crate::model::AcNetwork,
+    pg: &[f64],
+    qg: &[f64],
+    base: f64,
+) -> Vec<GenDispatch> {
+    network
+        .gen_ids
         .iter()
         .enumerate()
         .map(|(j, &gen)| GenDispatch {
             gen,
+            bus: Some(network.bus_ids[network.gen_bus[j]]),
             pg: pg[j] * base,
             qg: Some(qg[j] * base),
         })
@@ -1362,7 +1443,7 @@ fn dc_branch_flows(
 
 /// AC/conic branch flows: all four legs (MW/MVAr) and loading as the larger end's
 /// apparent power over the rating (both per unit, dimensionless).
-#[cfg(feature = "conic")]
+#[cfg(feature = "sensitivity")]
 #[allow(clippy::too_many_arguments)]
 fn ac_branch_flows(
     branch_ids: &[usize],
@@ -1421,6 +1502,13 @@ mod tests {
         let response: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["formulation"], "dcopf");
         assert_eq!(response["status"], "optimal");
+        let buses: Vec<_> = response["dispatch"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["bus"].as_u64().unwrap())
+            .collect();
+        assert_eq!(buses, vec![1, 3]);
 
         let error = solve_module_json(&case3_json(), "{}")
             .expect_err("bare model JSON is not a portable solve input");

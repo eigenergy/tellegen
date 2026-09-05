@@ -9,6 +9,9 @@ import type { WasmModule, WasmStudy } from "./module.js";
 
 export type EngineRequest =
   | { op: "preload" }
+  | { op: "study_document_create"; request: string }
+  | { op: "study_document_import"; bundle: string }
+  | { op: "study_document_run"; bundle: string; request: string }
   | { op: "classify_json"; bytes: Uint8Array }
   | { op: "ingest_json_drop"; bytes: Uint8Array }
   | { op: "ingest_case"; bytes: Uint8Array; format: string }
@@ -38,12 +41,13 @@ export type EngineRequest =
   | { op: "study_solution"; study: number }
   | { op: "study_plan"; study: number; spec: string }
   | { op: "study_save_module"; study: number }
+  | { op: "study_save_instance_module"; study: number }
   | { op: "study_save_solution_module"; study: number }
   | { op: "study_export"; study: number; format: string }
   | { op: "study_apply_geo"; study: number; layer: string }
   | { op: "study_free"; study: number };
 
-export type WorkerRequest = EngineRequest & { id: number };
+export type WorkerRequest = (EngineRequest & { id: number }) | { op: "cancel_study_operation"; id: number };
 
 export type WorkerResponse =
   | { id: number; ok: true; value: string | null }
@@ -59,13 +63,17 @@ export function runRequest(
   mod: WasmModule,
   studies: Map<number, WasmStudy>,
   req: EngineRequest,
-): string | null {
+  cancelled: () => boolean = () => false,
+): string | null | Promise<string> {
   const study = (handle: number): WasmStudy => {
     const s = studies.get(handle);
     if (!s) throw new Error(`unknown study handle ${handle}`);
     return s;
   };
   switch (req.op) {
+    case "study_document_create": return mod.study_document_create(req.request);
+    case "study_document_import": return mod.study_document_import(req.bundle);
+    case "study_document_run": return mod.study_document_run(req.bundle, req.request, cancelled);
     case "preload":
       return null; // loading the module was the work
     case "classify_json":
@@ -105,6 +113,8 @@ export function runRequest(
       return study(req.study).solution();
     case "study_plan":
       return study(req.study).plan(req.spec);
+    case "study_save_instance_module":
+      return study(req.study).save_instance_module();
     case "study_save_module":
       return study(req.study).save_module();
     case "study_save_solution_module":

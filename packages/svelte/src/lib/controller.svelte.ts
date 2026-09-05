@@ -2093,6 +2093,14 @@ export class Controller {
 		else this.placeLocalCase(lon, lat);
 	};
 
+	async projectStudyInput(input: string): Promise<Network> {
+		const parsed = await ingestJsonDrop(new TextEncoder().encode(input));
+		if (!parsed.payload || !('topology' in parsed.payload)) throw new Error('Study requires a balanced network');
+		const c = parsed.payload;
+		const view = c.view ?? placeSyntheticTopology(c.topology, { lon: -98, lat: 38 });
+		return { id: 'study', name: c.name, base_mva: c.base_mva, synthetic_coords: !c.view, ...view };
+	}
+
 	/** Build a local case from a balanced PowerIO ingest payload without activating
 	 * it yet; co-dropped placement data is applied before the first solve. */
 	private localFromBalancedPayload = (fileName: string, payload: IngestedCase): LocalCase => {
@@ -2114,7 +2122,7 @@ export class Controller {
 	/** Build (or reuse) the case's Study and commit it at the current edit state, so a
 	 * save or export captures exactly what is on screen. Null (with an error set) when no
 	 * PowerIO module or Study is available. */
-	private syncedStudy = async (c: SolvableCase): Promise<BrowserStudy | null> => {
+	public syncedStudy = async (c: SolvableCase): Promise<BrowserStudy | null> => {
 		const studyInputJson = await this.ensureStudyInputJson(c);
 		if (!studyInputJson) {
 			this.app.error = `${this.caseName(c)}: no PowerIO module available to save`;

@@ -47,10 +47,13 @@ const scope = globalThis as unknown as {
   close(): void;
 };
 
+const cancelledOperations = new Set<number>();
+
 scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const req = ev.data;
+  if (req.op === "cancel_study_operation") { cancelledOperations.add(req.id); return; }
   try {
-    const value = runRequest(await wasmModule(), studies, req);
+    const value = await runRequest(await wasmModule(), studies, req, () => cancelledOperations.has(req.id));
     scope.postMessage({ id: req.id, ok: true, value });
   } catch (e) {
     // A Rust panic or a failed allocation is a wasm trap, and a trapped
@@ -66,5 +69,7 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
       wasmReady = null;
       scope.close();
     }
+  } finally {
+    cancelledOperations.delete(req.id);
   }
 };

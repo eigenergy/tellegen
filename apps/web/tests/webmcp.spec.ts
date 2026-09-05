@@ -93,15 +93,24 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 				).__tellegenWebMcpTest.list()
 			)
 		)
-		.toEqual([
-			'analyze_sensitivity',
-			'focus_network',
-			'inspect_case',
-			'preview_case_update',
-			'query_network',
-			'reset_case',
-			'update_case'
-		]);
+		.toEqual(
+			[
+				'analyze_sensitivity',
+				'focus_network',
+				'inspect_case',
+				'preview_case_update',
+				'query_network',
+				'reset_case',
+				'update_case',
+				'branch_study',
+				'compare_study_states',
+				'create_study',
+				'inspect_study',
+				'propose_study',
+				'record_study_evidence',
+				'revise_study_goal'
+			].sort()
+		);
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'ready');
 
 	await page.locator('input[type="file"]').setInputFiles([
@@ -407,13 +416,22 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 				).__tellegenWebMcpTest.list()
 			)
 		)
-		.toEqual([
-			'analyze_sensitivity',
-			'focus_network',
-			'inspect_case',
-			'preview_case_update',
-			'query_network',
-			'reset_case',
-			'update_case'
-		]);
+		.toEqual(
+			[
+				'analyze_sensitivity',
+				'focus_network',
+				'inspect_case',
+				'preview_case_update',
+				'query_network',
+				'reset_case',
+				'update_case',
+				'branch_study',
+				'compare_study_states',
+				'create_study',
+				'inspect_study',
+				'propose_study',
+				'record_study_evidence',
+				'revise_study_goal'
+			].sort()
+		);
 });

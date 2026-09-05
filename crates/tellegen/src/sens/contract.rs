@@ -182,6 +182,7 @@ impl Parameter {
 /// A source-id reference for a dense row or column, so a [`SensitivityMatrix`]
 /// self-describes and the api serializes it without re-deriving id maps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum ElementId {
     Bus(usize),
@@ -307,7 +308,8 @@ pub trait Differentiable {
 }
 
 /// Identity and quantity metadata for one row of a [`SensitivityMatrix`].
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct RowMeta {
     pub operand: Operand,
@@ -317,7 +319,8 @@ pub struct RowMeta {
 }
 
 /// Identity and quantity metadata for one column of a [`SensitivityMatrix`].
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct ColMeta {
     pub parameter: Parameter,
@@ -329,7 +332,8 @@ pub struct ColMeta {
 /// A self-describing sensitivity result: `values[r][c] = d(rows[r])/d(cols[c])`,
 /// with row and column metadata naming each quantity and its source element, and the
 /// served-unit label.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct SensitivityMatrix {
     /// `values[r][c] = d(operand_r)/d(parameter_c)`, in the units named by `units`. The
@@ -670,6 +674,139 @@ pub fn weighted_sensitivity(
     )
     .map_err(SensError::Solve)?;
     Ok(values.into_iter().next().unwrap_or_default())
+}
+
+/// Differentiate one scalar functional of several served observables with one
+/// adjoint solve. Parameter columns are assembled in batches of at most 32, so
+/// memory does not grow as the product of all observables and all decisions.
+/// Direct dependence on interventions belongs to the caller's scalar expression.
+pub fn functional_gradient(
+    sys: &dyn Differentiable,
+    seeds: &[(Operand, Vec<(usize, f64)>)],
+    decisions: &[(Parameter, usize)],
+) -> Result<Vec<f64>, SensError> {
+    let Some(&(reference, _)) = decisions.first() else {
+        return Ok(Vec::new());
+    };
+    let dim = sys.dim();
+    let mut rhs = Mat::<f64>::zeros(dim, 1);
+    let mut groups: Vec<(Parameter, Vec<(usize, usize)>)> = Vec::new();
+    for (position, &(parameter, index)) in decisions.iter().enumerate() {
+        let len = sys.parameter_len(parameter).ok_or_else(|| {
+            SensError::Assembly(format!(
+                "{} does not differentiate {parameter:?}",
+                sys.formulation()
+            ))
+        })?;
+        if index >= len {
+            return Err(SensError::IndexOutOfRange {
+                axis: parameter.axis(),
+                index,
+                len,
+            });
+        }
+        if let Some((_, entries)) = groups.iter_mut().find(|(p, _)| *p == parameter) {
+            entries.push((position, index));
+        } else {
+            groups.push((parameter, vec![(position, index)]));
+        }
+    }
+    for (operand, weights) in seeds {
+        let len = sys.operand_len(*operand).ok_or(SensError::Unsupported {
+            formulation: sys.formulation(),
+            operand: *operand,
+            parameter: reference,
+        })?;
+        let selector = sys.operand_selector(*operand)?;
+        if selector.elements.len() != len || selector.map.len() != len {
+            return Err(SensError::Assembly(
+                "operand selector dimensions disagree".into(),
+            ));
+        }
+        let positions: std::collections::HashMap<_, _> = selector
+            .elements
+            .iter()
+            .enumerate()
+            .map(|(position, &index)| (index, position))
+            .collect();
+        let scale = sys.unit_scale(*operand, reference) * selector.sign;
+        for &(index, weight) in weights {
+            if !weight.is_finite() || !scale.is_finite() {
+                return Err(SensError::Assembly(
+                    "functional weights and unit scales must be finite".into(),
+                ));
+            }
+            let &position = positions.get(&index).ok_or(SensError::IndexOutOfRange {
+                axis: operand.axis(),
+                index,
+                len,
+            })?;
+            for &(row, coefficient) in &selector.map[position] {
+                if row >= dim || !coefficient.is_finite() {
+                    return Err(SensError::Assembly(
+                        "invalid functional selector row".into(),
+                    ));
+                }
+                rhs[(row, 0)] += weight * scale * coefficient;
+            }
+        }
+    }
+    if seeds.is_empty() {
+        return Ok(vec![0.0; decisions.len()]);
+    }
+    let transpose = sys
+        .jacobian()
+        .into_iter()
+        .map(|(r, c, v)| (c, r, v))
+        .collect::<Vec<_>>();
+    let spec = sys.solve_spec();
+    let adjoint = solve_refined(
+        dim,
+        &transpose,
+        rhs,
+        spec.eps,
+        spec.refine_iters,
+        spec.tol_factor,
+    )
+    .map_err(SensError::Solve)?;
+    let first = seeds[0].0;
+    let mut gradient = vec![0.0; decisions.len()];
+    for (parameter, entries) in groups {
+        let ratio = sys.unit_scale(first, parameter) / sys.unit_scale(first, reference);
+        if !ratio.is_finite()
+            || seeds.iter().any(|(operand, _)| {
+                let other =
+                    sys.unit_scale(*operand, parameter) / sys.unit_scale(*operand, reference);
+                !other.is_finite() || (other - ratio).abs() > 1e-12 * ratio.abs().max(1.0)
+            })
+        {
+            return Err(SensError::Assembly(
+                "observable and intervention units do not separate".into(),
+            ));
+        }
+        for batch in entries.chunks(32) {
+            let indices = batch.iter().map(|&(_, index)| index).collect::<Vec<_>>();
+            let jacobian = sys.parameter_jacobian(parameter, &indices)?;
+            if jacobian.nrows() != dim || jacobian.ncols() != batch.len() {
+                return Err(SensError::Assembly(
+                    "parameter Jacobian dimensions disagree".into(),
+                ));
+            }
+            for (column, &(position, _)) in batch.iter().enumerate() {
+                let value = -(0..dim)
+                    .map(|row| adjoint[(row, 0)] * jacobian[(row, column)])
+                    .sum::<f64>()
+                    * ratio;
+                if !value.is_finite() {
+                    return Err(SensError::Solve(
+                        "functional derivative is not finite".into(),
+                    ));
+                }
+                gradient[position] = value;
+            }
+        }
+    }
+    Ok(gradient)
 }
 
 #[cfg(test)]

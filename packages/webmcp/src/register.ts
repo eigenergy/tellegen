@@ -1,5 +1,6 @@
 import {
   createTellegenPlanningTools,
+  createTellegenStudyTools,
   createTellegenTools,
   type CreateTellegenToolsOptions,
 } from "./tools.js";
@@ -97,7 +98,7 @@ export async function registerTellegenWebMcp(
     onActivity: options.onActivity,
     recordValidatedInput: options.recordValidatedInput,
   };
-  const tools = createTellegenTools(adapter, toolOptions);
+  const tools = [...createTellegenTools(adapter, toolOptions), ...(adapter.studies ? createTellegenStudyTools(adapter.studies, toolOptions) : [])];
   let dynamicNames: () => string[] = () => [];
   let unsubscribe: () => void = () => {};
   let registrationError: Error | null = null;

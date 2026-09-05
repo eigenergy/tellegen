@@ -1,79 +1,76 @@
-# WebMCP Challenge
+# Tellegen product showcase
 
-Tellegen lets an agent inspect and change the power system case already open
-in the user’s browser. The agent receives typed network and sensitivity data,
-while the user sees the same selected elements, proposed edits, exact solves,
-and approval controls.
+Tellegen is a power-system laboratory shared by a user and an agent. The network
+stays central while a persistent Study records the goal, alternatives explored,
+exact results and recommendation. OPF supplies the operating point; an outer
+Study objective describes what the user wants to improve.
 
-The challenge workflow adds capacity planning to Tellegen’s existing OPF
-interface. A user supplies a weighted LMP objective and bounds on branch
-capacity increases. Tellegen differentiates that objective through the solved
-DC OPF, uses the local derivative to choose trials, and solves each trial
-exactly. The result is an unapplied proposal with its first order predictions
-and exact outcomes.
+For example:
 
-## Why WebMCP is used
+> Lower demand-weighted prices in this region. Add at most 20 MW across two
+> lines, and show how prices elsewhere change.
 
-The browser owns the imported local file, current formulation, committed edits,
-map selection, pending proposal, and visible approval. WebMCP exposes that live
-state through typed calls to the controller and WebAssembly solver.
+The goal interpretation resolves the region to equipment identities and weights.
+The user can inspect and edit that interpretation before exploration. A combined
+implicit derivative ranks feasible interventions, and exact solves determine
+whether a trial improves the objective. The Study preserves accepted, rejected
+and failed trials, constraint changes and the reason exploration stopped.
+Prediction error belongs in the expandable evidence beside those trials.
 
-The tool boundary is described in [WebMCP](webmcp.md). The general tools cover
-OPF inspection and edits. `propose_capacity_plan` and `apply_capacity_plan` add
-the planning workflow. The proposal tool changes no electrical state. The
-apply tool exists only for a current proposal and requires the user’s one use
-approval.
+## One Study across interfaces
 
-## Evaluation
+The browser controls and WebMCP call the same Study controller. Both can create a
+Study, inspect its history, revise a goal, branch from a saved state, compare
+candidates, propose interventions and attach evidence. Capacity-tool compatibility
+adapters create the same persistent Studies. Native Rust and CLI operations use
+the same generated contracts; PowerMCP invokes the CLI directly.
 
-Deterministic tests check registration, schemas, runtime validation, revision
-expiry, queued mutations, rollback after failed solves, approval consumption,
-planner bounds, and visible state. Before release, run the same calls through
-native WebMCP, including a call that supplies no callback options.
+Three pointers keep navigation clear: the inspected state, the recommended state
+and the applied state. Viewing an alternative does not apply it. Human approval
+binds a particular proposal, starting state and goal. A revised goal or changed
+proposal expires that approval.
 
-Large case evidence is generated from checked in request specifications and
-records:
+Electrical inputs, instances and solutions use PowerIO generation-2 IR. Study
+semantics live in a separate document with hashed, deduplicated artifacts.
+Browser IndexedDB and atomic filesystem storage preserve completed operations.
+A portable bundle can move from a browser to a headless agent and back. Import
+validates identities, hashes and references, and restores no approvals.
 
-- the PowerIO source digest;
-- the exact PowerIO and Tellegen revisions;
-- the planning request;
-- baseline and proposed exact results;
-- the number of exact solves;
-- every accepted and rejected trial; and
-- the final PowerIO solution module's kind, termination, objective, and
-  canonical JSON digest.
+## Showcase sequence
 
-The commands, schemas, and publication rule are in
-[Challenge Evidence](challenge-evidence.md). Publish a CATS or Texas result only
-with an artifact reproduced from its recorded command and revisions.
+1. Open a congested case and inspect dispatch, prices and limiting branches.
+2. State the regional objective, resolve its weights and review the intervention budget.
+3. Ask for a proposal. Inspect exact improvements and consequences elsewhere.
+4. Select a rejected candidate in the branching history to explain the explored alternative.
+5. Revise the goal to conserve total demand and redistribute it among selected buses.
+6. Compare candidates under the chosen goal revision. Expand a trial's numerical evidence.
+7. Apply the reviewed recommendation through the explicit user control.
+8. Export, reload and resume the Study with another agent.
 
-## Demo sequence
+A small AC power-flow example instead minimizes squared voltage-target error
+through demand transfers. This uses the existing AC power-flow solver. Nonlinear
+AC OPF and multiconductor solving are outside Tellegen's supported calculations.
 
-The submission video uses this sequence in the live browser:
+## Reproducible evidence
 
-1. Open a congested DC OPF case and show its solved state.
-2. Call `inspect_case` and query the most loaded branches and highest marginal
-   demand values.
-3. Call `propose_capacity_plan` with a stated weighted LMP objective, candidate
-   branches, budget, increment, line count, and exact solve budget.
-4. Compare the first order prediction with the exact trial results while the
-   case remains unchanged.
-5. Attempt application before approval and show `APPROVAL_REQUIRED`.
-6. Approve the proposal in the interface and call `apply_capacity_plan`.
-7. Show the exact before and after results.
-8. Stage another proposal, commit an edit with `update_case`, and show that the stale
-   proposal expires.
+[Studies](studies.md) describes the document and operations. The checked-in
+[Study declarations and runner](https://github.com/eigenergy/tellegen/tree/codex/webmcp-challenge-v1/evidence/studies)
+record executable and input hashes, exact trial outcomes, solve budgets and
+numerical tolerances. Browser tests run the same declared Study through native
+and WASM implementations and compare semantic results.
 
-Screenshots and video for the submission must come from native WebMCP calls.
-Playwright remains the regression suite, not the source of submission evidence.
-The checked artifacts are the [pending proposal screenshot](assets/challenge/proposal-staged.png),
-[applied result screenshot](assets/challenge/plan-applied.png), and
-[native browser video](assets/challenge/native-webmcp-demo.mp4). Their call
-records and hashes are described in [Challenge Evidence](challenge-evidence.md).
+The Texas7k example explicitly records a lower-convex-cost scenario because the
+original input contains nonconvex piecewise cost curves. Its results describe
+that scenario, not an optimum for the original economic model.
+
+The [earlier capacity demonstration](challenge-evidence.md) retains its own call
+records, revisions and hashes. Fresh native WebMCP evidence accompanies the
+persistent Study release. The showcase can be reproduced independently of a
+contest submission.
 
 ## References
 
+- [WebMCP tool contract](webmcp.md)
 - [WebMCP specification](https://github.com/webmachinelearning/webmcp)
 - [Chrome WebMCP documentation](https://developer.chrome.com/docs/ai/webmcp)
-- [WebMCP evaluations](https://developer.chrome.com/docs/ai/webmcp/evals)
-- [WebMCP Challenge](https://openai.com/webmcp-challenge/)
+- [Chrome WebMCP evaluations](https://developer.chrome.com/docs/ai/webmcp/evals)

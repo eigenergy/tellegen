@@ -140,6 +140,7 @@ type PreviewFn<'a> = dyn FnMut(&dyn Differentiable) -> Result<Vec<PreviewColumn>
 /// — the same on-the-stack borrow trick `run_cells` uses — so the `&dyn Differentiable`
 /// borrow never escapes the callback and no factorization is ever cached across commits.
 trait SolvedState {
+    fn clone_box(&self) -> Box<dyn SolvedState>;
     /// Re-assemble this formulation's [`SolveResponse`] at the committed point, computing
     /// any sensitivity cells in `req.sensitivities` in the same pass (no second solve).
     fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String>;
@@ -166,6 +167,14 @@ trait SolvedState {
         None
     }
 
+    fn ac_exact(&self) -> Option<(&AcNetwork, &AcPfSolution)> {
+        None
+    }
+    #[cfg(feature = "conic")]
+    fn socwr_exact(&self) -> Option<(&AcNetwork, &SocWrSolution)> {
+        None
+    }
+
     /// The committed DC model, when this formulation is the DC OPF; `None`
     /// otherwise. The planning engine differentiates only through the DC
     /// KKT today.
@@ -175,12 +184,16 @@ trait SolvedState {
 }
 
 /// DC OPF committed state.
+#[derive(Clone)]
 struct DcState {
     net: DcNetwork,
     sol: DcOpfSolution,
 }
 
 impl SolvedState for DcState {
+    fn clone_box(&self) -> Box<dyn SolvedState> {
+        Box::new(self.clone())
+    }
     fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
         dc_opf_assemble(&self.net, &self.sol, req)
     }
@@ -214,17 +227,24 @@ impl SolvedState for DcState {
 }
 
 /// AC power flow committed state.
+#[derive(Clone)]
 struct AcPfState {
     net: AcNetwork,
     sol: AcPfSolution,
 }
 
 impl SolvedState for AcPfState {
+    fn clone_box(&self) -> Box<dyn SolvedState> {
+        Box::new(self.clone())
+    }
     fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
         ac_pf_assemble(&self.net, &self.sol, req)
     }
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
         f(&AcNewton::new(&self.net, &self.sol))
+    }
+    fn ac_exact(&self) -> Option<(&AcNetwork, &AcPfSolution)> {
+        Some((&self.net, &self.sol))
     }
     fn lmp(&self) -> Option<Vec<f64>> {
         None
@@ -233,6 +253,7 @@ impl SolvedState for AcPfState {
 
 /// SOCWR conic relaxation committed state.
 #[cfg(feature = "conic")]
+#[derive(Clone)]
 struct ConicState {
     net: AcNetwork,
     sol: SocWrSolution,
@@ -240,12 +261,18 @@ struct ConicState {
 
 #[cfg(feature = "conic")]
 impl SolvedState for ConicState {
+    fn clone_box(&self) -> Box<dyn SolvedState> {
+        Box::new(self.clone())
+    }
     fn assemble(&self, req: &SolveRequest) -> Result<SolveResponse, String> {
         socwr_assemble(&self.net, &self.sol, req)
     }
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
         let sys = ConicKkt::new(&self.net, &self.sol).map_err(|e| e.to_string())?;
         f(&sys)
+    }
+    fn socwr_exact(&self) -> Option<(&AcNetwork, &SocWrSolution)> {
+        Some((&self.net, &self.sol))
     }
     fn lmp(&self) -> Option<Vec<f64>> {
         let base = self.net.base_mva;
@@ -455,7 +482,316 @@ impl Study {
         })
     }
 
+    /// Evaluate an outer goal and its full derivative at this exact state.
+    /// `changes` names the interventions relative to the goal's base state.
+    pub fn objective_gradient(
+        &self,
+        objective: &crate::objective::StudyObjective,
+        space: &crate::objective::DecisionSpace,
+        changes: &[f64],
+    ) -> Result<crate::objective::ObjectiveResult, String> {
+        use crate::objective::{
+            source_element_id, DecisionDerivative, DerivativeMethod, DerivativeNumerics,
+            ObjectiveResult,
+        };
+        space.validate(self.formulation)?;
+        objective.validate(space)?;
+        if changes.len() != space.variables.len() || changes.iter().any(|v| !v.is_finite()) {
+            return Err("objective requires one finite change per decision".into());
+        }
+        let interventions = space
+            .variables
+            .iter()
+            .zip(changes)
+            .map(|(v, &x)| (v.id.clone(), x))
+            .collect();
+        let evaluation = objective.evaluate(&self.last, &self.base, &interventions)?;
+        let mut derivative = None;
+        let mut numerics = None;
+        self.solved.with_system(&mut |system| {
+            let resolve = |axis: Axis, key: &ElementKey, length: usize| -> Result<usize, String> {
+                let id = source_element_id(&self.base, axis, key)?;
+                (0..length)
+                    .find(|&index| match system.element_id(axis, index) {
+                        ElementId::Bus(value)
+                        | ElementId::Branch(value)
+                        | ElementId::Generator(value) => value == id,
+                    })
+                    .ok_or_else(|| {
+                        format!("{axis:?} {key} is unavailable in the selected formulation")
+                    })
+            };
+            let mut seeds: Vec<(Operand, Vec<(usize, f64)>)> = Vec::new();
+            for (operand, key, weight) in &evaluation.observables {
+                let count = system
+                    .operand_len(*operand)
+                    .ok_or_else(|| format!("unsupported objective observable {operand:?}"))?;
+                // Selectors can omit fixed voltages; their indices remain in the
+                // full source axis rather than becoming new dense identities.
+                let selector = system
+                    .operand_selector(*operand)
+                    .map_err(|e| e.to_string())?;
+                let id = source_element_id(&self.base, operand.axis(), key)?;
+                let index = selector.elements.iter().copied().find(|&index| {
+                    match system.element_id(operand.axis(), index) {
+                        ElementId::Bus(value)
+                        | ElementId::Branch(value)
+                        | ElementId::Generator(value) => value == id,
+                    }
+                });
+                let Some(index) = index else {
+                    // AC reference angles and prescribed magnitudes have zero
+                    // demand derivatives because the solve fixes those values.
+                    if self.formulation == Problem::AcPf
+                        && matches!(
+                            operand,
+                            Operand::Voltage(
+                                crate::VoltageKind::Magnitude | crate::VoltageKind::Angle
+                            )
+                        )
+                    {
+                        continue;
+                    }
+                    return Err(format!(
+                        "objective element {key} is not among {count} supported {operand:?} values"
+                    ));
+                };
+                if let Some((_, weights)) = seeds.iter_mut().find(|(op, _)| op == operand) {
+                    weights.push((index, *weight));
+                } else {
+                    seeds.push((*operand, vec![(index, *weight)]));
+                }
+            }
+            let mut decisions = Vec::new();
+            for variable in &space.variables {
+                let parameter = variable.intervention.parameter();
+                let count = system
+                    .parameter_len(parameter)
+                    .ok_or_else(|| format!("unsupported decision {parameter:?}"))?;
+                decisions.push((
+                    parameter,
+                    resolve(parameter.axis(), &variable.element, count)?,
+                ));
+            }
+            let spec = system.solve_spec();
+            numerics = Some(DerivativeNumerics {
+                method: DerivativeMethod::CombinedAdjoint,
+                regularization: spec.eps,
+                refinement_iterations: spec.refine_iters,
+                residual_tolerance_factor: spec.tol_factor,
+            });
+            derivative = Some(
+                crate::sens::functional_gradient(system, &seeds, &decisions)
+                    .map_err(|e| e.to_string())?,
+            );
+            Ok(Vec::new())
+        })?;
+        let gradient = space
+            .variables
+            .iter()
+            .zip(derivative.ok_or("missing objective derivative")?)
+            .map(|(v, implicit)| DecisionDerivative {
+                decision: v.id.clone(),
+                value: implicit + evaluation.direct.get(&v.id).copied().unwrap_or(0.0),
+                units: format!("objective_unit/{}", v.intervention.units(self.formulation)),
+            })
+            .collect::<Vec<_>>();
+        if gradient.iter().any(|g| !g.value.is_finite()) {
+            return Err("objective derivative is not finite".into());
+        }
+        Ok(ObjectiveResult {
+            value: evaluation.value,
+            gradient,
+            local_only: true,
+            numerics: numerics.ok_or("missing derivative numerical settings")?,
+        })
+    }
+
+    pub(crate) fn check_decision_state(
+        &self,
+        space: &crate::objective::DecisionSpace,
+        changes: &[f64],
+    ) -> Result<(), String> {
+        let mut seen = std::collections::BTreeSet::new();
+        for variable in &space.variables {
+            let axis = variable.intervention.parameter().axis();
+            let id = crate::objective::source_element_id(&self.base, axis, &variable.element)?;
+            if !seen.insert((format!("{axis:?}"), id)) {
+                return Err("decision aliases resolve to the same equipment".into());
+            }
+        }
+        let mut expected = self.base.clone();
+        apply_network_edits(
+            &mut expected,
+            &crate::exploration::decision_edits(space, changes),
+        )?;
+        if serde_json::to_value(expected).map_err(|e| e.to_string())?
+            != serde_json::to_value(self.materialized_network()?).map_err(|e| e.to_string())?
+        {
+            return Err("declared decisions do not reproduce the starting electrical state".into());
+        }
+        Ok(())
+    }
+
+    /// Fork the exact retained solver state without performing another solve.
+    pub fn fork(&self) -> Self {
+        Self {
+            formulation: self.formulation,
+            input: self.input.clone(),
+            base: self.base.clone(),
+            base_module_json: self.base_module_json.clone(),
+            log: self.log.clone(),
+            commit_bounds: self.commit_bounds.clone(),
+            solved: self.solved.clone_box(),
+            last: self.last.clone(),
+        }
+    }
+
+    /// Evaluate a scalar outer goal without factoring its derivative system.
+    pub fn objective_value(
+        &self,
+        objective: &crate::objective::StudyObjective,
+        space: &crate::objective::DecisionSpace,
+        changes: &[f64],
+    ) -> Result<f64, String> {
+        space.validate(self.formulation)?;
+        objective.validate(space)?;
+        if changes.len() != space.variables.len() || changes.iter().any(|x| !x.is_finite()) {
+            return Err("objective requires one finite value per decision".into());
+        }
+        let values = space
+            .variables
+            .iter()
+            .zip(changes)
+            .map(|(v, &x)| (v.id.clone(), x))
+            .collect();
+        Ok(objective.evaluate(&self.last, &self.base, &values)?.value)
+    }
+
     /// The formulation this study solves.
+    /// Inequality boundaries active in the compiled inner problem, at 1e-7 scaled tolerance.
+    pub fn active_constraints(&self) -> std::collections::BTreeSet<String> {
+        let mut active = std::collections::BTreeSet::new();
+        let mut bound = |id: String, value: f64, limit: f64| {
+            if limit.is_finite() && (value - limit).abs() <= 1e-7 * (1.0 + limit.abs()) {
+                active.insert(id);
+            }
+        };
+        if let Some((net, sol)) = self.solved.dc_exact() {
+            for e in 0..net.m {
+                let id = &net.branch_identities[e];
+                if net.thermal_limit_active[e] {
+                    bound(format!("branch:{id}:flow_max"), sol.f[e], net.fmax[e]);
+                    bound(format!("branch:{id}:flow_min"), sol.f[e], -net.fmax[e]);
+                }
+                if net.angle_bound_active[e] {
+                    let angle = sol.va[net.br_from[e]] - sol.va[net.br_to[e]];
+                    bound(format!("branch:{id}:angle_min"), angle, net.angmin[e]);
+                    bound(format!("branch:{id}:angle_max"), angle, net.angmax[e]);
+                }
+            }
+            for g in 0..net.k {
+                let id = net.gen_ids[g];
+                if net.generator_capability_active[g] {
+                    bound(format!("generator:{id}:p_min"), sol.pg[g], net.gmin[g]);
+                    bound(format!("generator:{id}:p_max"), sol.pg[g], net.gmax[g]);
+                }
+                if let (Some(cost), Some(value)) = (&net.piecewise_costs[g], sol.cost_epigraph[g]) {
+                    for (segment, (&slope, &intercept)) in
+                        cost.slopes.iter().zip(&cost.intercepts).enumerate()
+                    {
+                        bound(
+                            format!("generator:{id}:cost_segment:{segment}"),
+                            value,
+                            slope * sol.pg[g] + intercept,
+                        );
+                    }
+                }
+            }
+            if net.allow_shed {
+                for i in 0..net.n {
+                    bound(format!("bus:{}:shed_min", net.bus_ids[i]), sol.psh[i], 0.0);
+                    bound(
+                        format!("bus:{}:shed_max", net.bus_ids[i]),
+                        sol.psh[i],
+                        net.demand[i],
+                    );
+                }
+            }
+        }
+        #[cfg(feature = "conic")]
+        if let Some((net, sol)) = self.solved.socwr_exact() {
+            for i in 0..net.n {
+                if net.voltage_bound_active[i] {
+                    bound(
+                        format!("bus:{}:voltage_min", net.bus_ids[i]),
+                        sol.w[i],
+                        net.vm_min[i].powi(2),
+                    );
+                    bound(
+                        format!("bus:{}:voltage_max", net.bus_ids[i]),
+                        sol.w[i],
+                        net.vm_max[i].powi(2),
+                    );
+                }
+            }
+            for g in 0..net.k {
+                let id = net.gen_ids[g];
+                if net.generator_capability_active[g] {
+                    bound(format!("generator:{id}:p_min"), sol.pg[g], net.pmin[g]);
+                    bound(format!("generator:{id}:p_max"), sol.pg[g], net.pmax[g]);
+                    bound(format!("generator:{id}:q_min"), sol.qg[g], net.qmin[g]);
+                    bound(format!("generator:{id}:q_max"), sol.qg[g], net.qmax[g]);
+                }
+                if let Some(cost) = &net.piecewise_costs[g] {
+                    let value = cost.evaluate(sol.pg[g]);
+                    for (segment, (&slope, &intercept)) in
+                        cost.slopes.iter().zip(&cost.intercepts).enumerate()
+                    {
+                        bound(
+                            format!("generator:{id}:cost_segment:{segment}"),
+                            value,
+                            slope * sol.pg[g] + intercept,
+                        );
+                    }
+                }
+            }
+            for e in 0..net.m {
+                let id = net.branch_ids[e];
+                if net.thermal_limit_active[e] {
+                    bound(
+                        format!("branch:{id}:thermal_from"),
+                        sol.pf[e].hypot(sol.qf[e]),
+                        net.rate_a[e],
+                    );
+                    bound(
+                        format!("branch:{id}:thermal_to"),
+                        sol.pt[e].hypot(sol.qt[e]),
+                        net.rate_a[e],
+                    );
+                }
+                if net.angle_bound_active[e] {
+                    bound(
+                        format!("branch:{id}:angle_min"),
+                        sol.wi[e],
+                        sol.wr[e] * net.angmin[e].tan(),
+                    );
+                    bound(
+                        format!("branch:{id}:angle_max"),
+                        sol.wi[e],
+                        sol.wr[e] * net.angmax[e].tan(),
+                    );
+                }
+                bound(
+                    format!("branch:{id}:voltage_product_cone"),
+                    sol.wr[e].powi(2) + sol.wi[e].powi(2),
+                    sol.w[net.br_from[e]] * sol.w[net.br_to[e]],
+                );
+            }
+        }
+        active
+    }
+
     pub fn formulation(&self) -> Problem {
         self.formulation
     }
@@ -733,6 +1069,119 @@ impl Study {
         let net = self.materialized_network()?;
         let module = self.retained_module(PioValue::BalancedNetwork(net))?;
         crate::ir::serialize_module(&module).map_err(|e| e.to_string())
+    }
+
+    /// Save the exact problem definition without adding Study history to PowerIO.
+    pub fn save_instance_module(&self) -> Result<String, String> {
+        let value = self.materialized_instance()?;
+        crate::ir::serialize_module(&self.electrical_module(value)?)
+    }
+
+    pub(crate) fn materialized_instance(&self) -> Result<PioValue, String> {
+        let network = self.materialized_network()?;
+        match &self.input {
+            StudyInput::BalancedNetwork => match self.formulation {
+                Problem::DcOpf => DcOpfInstance::from_network(network).map(PioValue::DcOpfInstance),
+                Problem::AcPf => AcPfInstance::from_network(network).map(PioValue::AcPfInstance),
+                #[cfg(feature = "conic")]
+                Problem::Socwr => AcOpfInstance::from_network(network).map(PioValue::AcOpfInstance),
+                _ => return Err("unsupported Study formulation".into()),
+            },
+            StudyInput::DcOpf(instance) => instance
+                .clone()
+                .with_network(network)
+                .map(PioValue::DcOpfInstance),
+            StudyInput::AcPf(instance) => {
+                // Bus specifications carry net injections independently of network demand.
+                // Apply the cumulative demand change to PQ and PV specifications.
+                let mut specifications = instance.specifications().to_vec();
+                for (row, bus) in network.buses().iter().enumerate() {
+                    let base_id = bus.id;
+                    let delta = self
+                        .log
+                        .iter()
+                        .filter_map(|edit| match edit {
+                            NetworkEdit::AddLoad { bus, p_mw } => Some((bus, *p_mw)),
+                            _ => None,
+                        })
+                        .try_fold(0.0, |sum, (key, amount)| -> Result<f64, String> {
+                            let id =
+                                crate::objective::source_element_id(&self.base, Axis::Bus, key)?;
+                            Ok(sum + if id == base_id.0 { amount } else { 0.0 })
+                        })?;
+                    match &mut specifications[row] {
+                        powerio::AcBusSpecification::Pq { p, .. }
+                        | powerio::AcBusSpecification::Pv { p, .. } => *p -= delta,
+                        _ => {}
+                    }
+                }
+                instance
+                    .clone()
+                    .with_network(network.clone())
+                    .and_then(|rebound| {
+                        let mut exact = AcPfInstance::new(network, specifications)?;
+                        if let Some(initial) = rebound.initial_point() {
+                            exact = exact.with_initial_point(initial.clone());
+                        }
+                        Ok(exact)
+                    })
+                    .map(PioValue::AcPfInstance)
+            }
+            #[cfg(feature = "conic")]
+            StudyInput::AcOpf(instance) => instance
+                .clone()
+                .with_network(network)
+                .map(PioValue::AcOpfInstance),
+        }
+        .map_err(|e| e.to_string())
+    }
+
+    /// Serialize the exact solution without embedding application Study semantics.
+    pub fn save_exact_module(&self) -> Result<String, String> {
+        let producer = format!("tellegen {}", env!("CARGO_PKG_VERSION"));
+        let value = match self.materialized_instance()? {
+            PioValue::DcOpfInstance(instance) => {
+                let (model, solution) = self.solved.dc_exact().ok_or("missing DC solution")?;
+                PioValue::DcOpfSolution(crate::emit::emit_dc_opf_solution(
+                    std::sync::Arc::new(instance),
+                    model,
+                    solution,
+                    producer,
+                )?)
+            }
+            PioValue::AcPfInstance(instance) => {
+                let (model, solution) = self
+                    .solved
+                    .ac_exact()
+                    .ok_or("missing AC power flow solution")?;
+                PioValue::AcPfSolution(crate::emit::emit_ac_pf_solution(
+                    std::sync::Arc::new(instance),
+                    model,
+                    solution,
+                    producer,
+                )?)
+            }
+            #[cfg(feature = "conic")]
+            PioValue::AcOpfInstance(instance) => {
+                let (model, solution) =
+                    self.solved.socwr_exact().ok_or("missing SOCWR solution")?;
+                PioValue::SocwrOpfSolution(crate::emit::emit_socwr_solution(
+                    std::sync::Arc::new(instance),
+                    model,
+                    solution,
+                    producer,
+                )?)
+            }
+            _ => return Err("unsupported exact Study solution".into()),
+        };
+        crate::ir::serialize_module(&self.electrical_module(value)?)
+    }
+
+    fn electrical_module(&self, value: PioValue) -> Result<PioModule<PioValue>, String> {
+        let source = crate::ir::deserialize_module(&self.base_module_json)?;
+        let mut module = source.map_value(|_| value).sever_source();
+        module.sever_value_targets();
+        Ok(module)
     }
 
     /// Serialize the committed exact DC OPF result as a PowerIO solution
@@ -2278,5 +2727,301 @@ mod tests {
         assert_eq!(value["value"]["type"], "powerio.BalancedNetwork");
         assert_eq!(value["history"].as_array().unwrap().len(), 1);
         assert!(!s.save_module().unwrap().is_empty());
+    }
+    fn outer_fixture(formulation: Problem) -> (Study, crate::objective::DecisionSpace) {
+        use crate::objective::{DecisionSpace, DecisionVariable, DemandConstraint, Intervention};
+        let mut network = case3_with_uids_network();
+        network.branches_mut()[0].rate_a = 35.0;
+        let study = Study::new(&module_json(network), formulation).unwrap();
+        let mut variables = vec![
+            DecisionVariable {
+                id: "demand2".into(),
+                element: ElementKey::Uid("buses:1".into()),
+                intervention: Intervention::ActiveDemand,
+                lower: -20.0,
+                upper: 20.0,
+                increment: 1.0,
+                budget_weight: 1.0,
+            },
+            DecisionVariable {
+                id: "demand3".into(),
+                element: ElementKey::Uid("buses:2".into()),
+                intervention: Intervention::ActiveDemand,
+                lower: -20.0,
+                upper: 20.0,
+                increment: 1.0,
+                budget_weight: 1.0,
+            },
+        ];
+        if formulation == Problem::DcOpf {
+            variables.insert(
+                0,
+                DecisionVariable {
+                    id: "capacity".into(),
+                    element: ElementKey::Uid("branches:0".into()),
+                    intervention: Intervention::BranchRating,
+                    lower: 0.0,
+                    upper: 20.0,
+                    increment: 1.0,
+                    budget_weight: 1.0,
+                },
+            );
+        }
+        (
+            study,
+            DecisionSpace {
+                max_changed_elements: variables.len(),
+                variables,
+                total_budget: 40.0,
+                demand: Some(DemandConstraint::Redistribution),
+            },
+        )
+    }
+
+    fn outer_value(
+        study: &mut Study,
+        objective: &crate::objective::StudyObjective,
+        space: &crate::objective::DecisionSpace,
+        changes: &[f64],
+    ) -> f64 {
+        use crate::objective::Intervention;
+        let edits = space
+            .variables
+            .iter()
+            .zip(changes)
+            .map(|(variable, &x)| match variable.intervention {
+                Intervention::BranchRating => NetworkEdit::AdjustBranchRating {
+                    branch: variable.element.clone(),
+                    delta_mw: x,
+                },
+                Intervention::ActiveDemand => NetworkEdit::AddLoad {
+                    bus: variable.element.clone(),
+                    p_mw: x,
+                },
+            })
+            .collect::<Vec<_>>();
+        study.replace_edits(&edits).unwrap();
+        let values = space
+            .variables
+            .iter()
+            .zip(changes)
+            .map(|(v, &x)| (v.id.clone(), x))
+            .collect();
+        objective
+            .evaluate(study.solution(), &study.base, &values)
+            .unwrap()
+            .value
+    }
+
+    #[test]
+    fn combined_outer_adjoint_matches_exact_finite_differences() {
+        use crate::objective::{ObservableWeight, StudyObjective as O};
+        let (mut study, space) = outer_fixture(Problem::DcOpf);
+        let weighted = |operand, element, weight| O::WeightedObservable {
+            operand,
+            weights: vec![ObservableWeight { element, weight }],
+        };
+        let objective = O::Sum {
+            terms: vec![
+                weighted(Operand::Price(Power::Active), 2.into(), 0.3),
+                O::Scale {
+                    factor: 0.02,
+                    expression: Box::new(O::SquaredTarget {
+                        target: 42.0,
+                        expression: Box::new(weighted(
+                            Operand::Dispatch(Power::Active),
+                            1.into(),
+                            1.0,
+                        )),
+                    }),
+                },
+                weighted(
+                    Operand::Flow {
+                        power: Power::Active,
+                        end: crate::End::From,
+                    },
+                    1.into(),
+                    0.1,
+                ),
+                O::SquaredTarget {
+                    target: 1.0,
+                    expression: Box::new(O::InterventionPenalty {
+                        decision: "capacity".into(),
+                        linear: 0.05,
+                        quadratic: 0.02,
+                    }),
+                },
+            ],
+        };
+        let changes = vec![2.0, -3.0, 3.0];
+        let value = outer_value(&mut study, &objective, &space, &changes);
+        let analytic = study
+            .objective_gradient(&objective, &space, &changes)
+            .unwrap();
+        assert!((value - analytic.value).abs() < 1e-12);
+        for column in 0..changes.len() {
+            let mut plus = changes.clone();
+            plus[column] += 0.001;
+            let mut minus = changes.clone();
+            minus[column] -= 0.001;
+            let fd = (outer_value(&mut study, &objective, &space, &plus)
+                - outer_value(&mut study, &objective, &space, &minus))
+                / 0.002;
+            let actual = analytic.gradient[column].value;
+            assert!(
+                (actual - fd).abs() < 1e-4 * fd.abs().max(1.0),
+                "column {column}: adjoint {actual}, finite difference {fd}"
+            );
+        }
+    }
+
+    #[test]
+    fn ac_voltage_target_outer_adjoint_matches_paired_transfer() {
+        use crate::objective::{ObservableWeight, StudyObjective as O};
+        let (mut study, space) = outer_fixture(Problem::AcPf);
+        let objective = O::SquaredTarget {
+            target: 1.0,
+            expression: Box::new(O::WeightedObservable {
+                operand: Operand::Voltage(crate::VoltageKind::Magnitude),
+                weights: vec![ObservableWeight {
+                    element: ElementKey::Uid("buses:1".into()),
+                    weight: 1.0,
+                }],
+            }),
+        };
+        let changes = vec![-3.0, 3.0];
+        outer_value(&mut study, &objective, &space, &changes);
+        let analytic = study
+            .objective_gradient(&objective, &space, &changes)
+            .unwrap();
+        let fd = (outer_value(&mut study, &objective, &space, &[-2.999, 2.999])
+            - outer_value(&mut study, &objective, &space, &[-3.001, 3.001]))
+            / 0.002;
+        let actual = analytic.gradient[0].value - analytic.gradient[1].value;
+        assert!(
+            (actual - fd).abs() < 1e-8,
+            "adjoint {actual}, finite difference {fd}"
+        );
+    }
+
+    #[test]
+    fn prescribed_ac_voltages_contribute_zero_outer_derivative() {
+        use crate::objective::{ObservableWeight, StudyObjective};
+        for kind in [crate::VoltageKind::Magnitude, crate::VoltageKind::Angle] {
+            let (mut study, space) = outer_fixture(Problem::AcPf);
+            let objective = StudyObjective::WeightedObservable {
+                operand: Operand::Voltage(kind),
+                weights: vec![ObservableWeight {
+                    element: 1.into(),
+                    weight: 1.0,
+                }],
+            };
+            let baseline = outer_value(&mut study, &objective, &space, &[-3.0, 3.0]);
+            let derivative = study
+                .objective_gradient(&objective, &space, &[-3.0, 3.0])
+                .unwrap();
+            assert!(derivative
+                .gradient
+                .iter()
+                .all(|entry| entry.value.abs() < 1e-12));
+            assert_eq!(derivative.numerics.regularization, 0.0);
+            assert_eq!(
+                baseline,
+                outer_value(&mut study, &objective, &space, &[-2.0, 2.0])
+            );
+        }
+    }
+
+    #[test]
+    fn outer_goals_reject_unsupported_and_malformed_requests() {
+        use crate::objective::{ObservableWeight, StudyObjective as O};
+        let (study, mut space) = outer_fixture(Problem::DcOpf);
+        assert!(space.feasible(&[2.0, -3.0, 3.0], 1e-8));
+        assert!(!space.feasible(&[2.0, -3.0, 4.0], 1e-8));
+        assert!(!space.feasible(&[2.5, -3.0, 3.0], 1e-8));
+        let mut objective = O::WeightedObservable {
+            operand: Operand::Voltage(crate::VoltageKind::Magnitude),
+            weights: vec![ObservableWeight {
+                element: 2.into(),
+                weight: 1.0,
+            }],
+        };
+        assert!(study
+            .objective_gradient(&objective, &space, &[0.0; 3])
+            .is_err());
+        for _ in 0..18 {
+            objective = O::Scale {
+                factor: 1.0,
+                expression: Box::new(objective),
+            };
+        }
+        assert!(objective.validate(&space).is_err());
+        space.variables[0].increment = 0.0;
+        assert!(space.validate(Problem::DcOpf).is_err());
+        let malformed = r#"{"kind":"intervention_penalty","decision":"missing","linear":1,"quadratic":0,"execute":"anything"}"#;
+        assert!(serde_json::from_str::<O>(malformed).is_err());
+    }
+    #[test]
+    fn ac_flow_outer_objective_matches_exact_transfer() {
+        use crate::objective::{ObservableWeight, StudyObjective};
+        let (mut study, space) = outer_fixture(Problem::AcPf);
+        let objective = StudyObjective::WeightedObservable {
+            operand: Operand::Flow {
+                power: Power::Reactive,
+                end: crate::End::To,
+            },
+            weights: vec![ObservableWeight {
+                element: 1.into(),
+                weight: 1.0,
+            }],
+        };
+        outer_value(&mut study, &objective, &space, &[-3.0, 3.0]);
+        let analytic = study
+            .objective_gradient(&objective, &space, &[-3.0, 3.0])
+            .unwrap();
+        let fd = (outer_value(&mut study, &objective, &space, &[-2.999, 2.999])
+            - outer_value(&mut study, &objective, &space, &[-3.001, 3.001]))
+            / 0.002;
+        assert!((analytic.gradient[0].value - analytic.gradient[1].value - fd).abs() < 1e-6);
+    }
+
+    #[cfg(feature = "conic")]
+    #[test]
+    fn socwr_outer_observables_match_exact_transfer() {
+        use crate::objective::{ObservableWeight, StudyObjective};
+        for (operand, element) in [
+            (Operand::Price(Power::Reactive), 2),
+            (Operand::Dispatch(Power::Reactive), 1),
+            (Operand::Voltage(crate::VoltageKind::Magnitude), 2),
+            (Operand::Voltage(crate::VoltageKind::ProductReal), 1),
+            (Operand::Voltage(crate::VoltageKind::ProductImag), 1),
+        ] {
+            let (mut study, space) = outer_fixture(Problem::Socwr);
+            let objective = StudyObjective::WeightedObservable {
+                operand,
+                weights: vec![ObservableWeight {
+                    element: element.into(),
+                    weight: 1.0,
+                }],
+            };
+            outer_value(&mut study, &objective, &space, &[-3.0, 3.0]);
+            let analytic = study
+                .objective_gradient(&objective, &space, &[-3.0, 3.0])
+                .unwrap();
+            let active = study.active_constraints();
+            let plus = outer_value(&mut study, &objective, &space, &[-2.9, 2.9]);
+            assert_eq!(study.active_constraints(), active);
+            let minus = outer_value(&mut study, &objective, &space, &[-3.1, 3.1]);
+            assert_eq!(study.active_constraints(), active);
+            let fd = (plus - minus) / 0.2;
+            let actual = analytic.gradient[0].value - analytic.gradient[1].value;
+            // The conic KKT uses regularization near weakly active constraints.
+            // A 0.1 MW perturbation exceeds the exact solver's numerical floor.
+            assert!(
+                (actual - fd).abs() < 0.01 * fd.abs() + 1e-8,
+                "{operand:?}: adjoint {actual}, finite difference {fd}"
+            );
+            assert_eq!(analytic.numerics.regularization, 1e-9);
+        }
     }
 }

@@ -694,7 +694,7 @@ interface StudySolveResponse {
   va?: { bus: number; value: number }[];
   w?: { bus: number; value: number }[];
   flows?: { branch: number; pf: number; loading: number }[];
-  dispatch?: { gen: number; pg: number }[];
+  dispatch?: { gen: number; bus?: number; pg: number }[];
 }
 
 /** The Preview JSON the Study returns: first-order operand changes plus the
@@ -766,7 +766,7 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
       mw: f.pf,
       loading: f.loading,
     })),
-    dispatch: (out.dispatch ?? []).map((d) => ({ gen: d.gen, mw: d.pg })),
+    dispatch: (out.dispatch ?? []).map((d) => ({ gen: d.gen, bus: d.bus, mw: d.pg })),
   };
 }
 
@@ -948,6 +948,11 @@ export class BrowserStudy {
     return expectText(
       await this.#host.call({ op: "study_save_module", study: this.#handle }),
     );
+  }
+
+  /** Preserve the materialized instance's inner objective and constraints in PowerIO IR. */
+  async saveInstanceModule(): Promise<string> {
+    return expectText(await this.#host.call({ op: "study_save_instance_module", study: this.#handle }));
   }
 
   /** Serialize the current exact DC OPF result as a PowerIO solution module.
@@ -1161,3 +1166,10 @@ export function createBrowserWasmTransport(): EngineTransport {
 }
 
 export { BrowserStudy as Study };
+
+export { IndexedDbStudyStore, StudyDocumentController, studyBackend } from "./study-document.js";
+export type { StudyBackend, StudyStore } from "./study-document.js";
+export type { CreateStudy, StudyBundle, StudyDocument, StudyRequest, StudyOperation, StudyOperationResult, GoalRevision, DecisionSpace, StudyObjective, StateNode, Comparison } from "./generated/study-contracts.js";
+
+export type { SolveResponse as StudyView, SearchOptions, StudySummary } from "./generated/study-contracts.js";
+export { studySchema } from './generated/study-schema.js';

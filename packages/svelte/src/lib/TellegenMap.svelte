@@ -579,6 +579,16 @@
 	function tooltip(info: PickingInfo): { html: string } | null {
 		const { object } = info;
 		if (!object) return null;
+		if (app.studyView && info.layer?.id.startsWith('study-')) {
+			const view = app.studyView.solution;
+			const id = Number((object as { id: number }).id);
+			if (info.layer.id === 'study-branches') {
+				const flow = view.flows?.find(f => f.branch === id);
+				return { html: `<b>branch ${id}</b><br>saved state: ${esc(app.studyView.label)}${flow ? `<br>P from ${flow.pf.toFixed(3)} MW, loading ${(100 * flow.loading).toFixed(1)}%` : ''}` };
+			}
+			const p = view.lmp?.find(v => v.bus === id), v = view.vm?.find(v => v.bus === id);
+			return { html: `<b>bus ${id}</b><br>saved state: ${esc(app.studyView.label)}${p ? `<br>LMP ${p.value.toFixed(4)}` : ''}${v ? `<br>voltage ${v.value.toFixed(5)} pu` : ''}` };
+		}
 		if (info.layer?.id.startsWith('local-subs-')) {
 			// PowerWorld .pwd substation: display data only, position inferred from the diagram.
 			// The name is free text from a dropped file, so escape it; the number
@@ -837,6 +847,29 @@
 		if (!overlay || !layerCtors) return;
 		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
 		const layers: Layer[] = [];
+		const study = app.studyView;
+		if (study) {
+			const s = study.solution;
+			const mode = app.displayMode;
+			const series = mode === 'angle' ? s.va ?? [] : mode === 'voltage' ? s.vm ?? (s.w ?? []).map(v => ({ ...v, value: Math.sqrt(Math.max(0, v.value)) })) : s.lmp ?? [];
+			const values = new Map(series.map(v => [v.bus, v.value]));
+			const domain = scalarDomain(mode, series.map(v => v.value));
+			const flows = new Map((s.flows ?? []).map(f => [f.branch, f.loading]));
+			layers.push(new PathLayer<NetworkBranch>({
+				id: 'study-branches', data: study.network.branches, getPath: b => b.path,
+				getColor: b => branchColor(flows.get(b.id) ?? 0, b.status === 1),
+				getWidth: b => branchWidth(flows.get(b.id) ?? 0), widthUnits: 'pixels', widthMinPixels: 1.5,
+				pickable: true, updateTriggers: { getColor: [study], getWidth: [study] }
+			}), new ScatterplotLayer<NetworkBus>({
+				id: 'study-buses', data: study.network.buses, getPosition: b => [b.lon, b.lat],
+				getRadius: b => busRadius(Math.max(b.demand_mw, b.gen_mw)), radiusUnits: 'pixels',
+				getFillColor: b => { const value = values.get(b.id); return value === undefined ? [110, 115, 120, 200] : priceColor((value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)); },
+				pickable: true, stroked: true, getLineColor: [46, 42, 34, 110], lineWidthUnits: 'pixels',
+				updateTriggers: { getFillColor: [study, mode] }
+			}));
+			overlay.setProps({ layers });
+			return;
+		}
 		for (const c of app.cases) {
 			if (!c.network) continue;
 			const d = display.get(c.id);
@@ -1133,6 +1166,7 @@
 	});
 
 	function boundsFor(target: string): LngLatBoundsLike | null {
+		if (app.studyView) return foldMapBounds(app.studyView.network.buses.map(b => [b.lon, b.lat]));
 		const points: [number, number][] = [];
 		const fold = (pts: { lon: number; lat: number }[]) => {
 			for (const b of pts) points.push([b.lon, b.lat]);

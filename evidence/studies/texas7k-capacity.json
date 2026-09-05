@@ -1,0 +1,103 @@
+{
+  "create": {
+    "id": "texas7k-capacity",
+    "title": "TEXAS7K capacity",
+    "formulation": "dcopf",
+    "request": "Lower the weighted prices at buses [111078, 110449, 110127] using capacity. Show the consequences elsewhere.",
+    "interpretation": "Minimize the sum of selected active-power marginal prices. Changes are relative to the captured source state.",
+    "objective": {
+      "kind": "weighted_observable",
+      "operand": {
+        "Price": "Active"
+      },
+      "weights": [
+        {
+          "element": 111078,
+          "weight": 1.0
+        },
+        {
+          "element": 110449,
+          "weight": 1.0
+        },
+        {
+          "element": 110127,
+          "weight": 1.0
+        }
+      ]
+    },
+    "decisions": {
+      "variables": [
+        {
+          "id": "110450-110449",
+          "element": "110450-110449",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 25.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "110097-110127",
+          "element": "110097-110127",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 25.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "111082-110449",
+          "element": "111082-110449",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 25.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "110121-110127",
+          "element": "110121-110127",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 25.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "110449-110458",
+          "element": "110449-110458",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 25.0,
+          "budget_weight": 1
+        },
+        {
+          "id": "111078-111294",
+          "element": "111078-111294",
+          "intervention": "branch_rating",
+          "lower": 0,
+          "upper": 100,
+          "increment": 25.0,
+          "budget_weight": 1
+        }
+      ],
+      "total_budget": 100,
+      "max_changed_elements": 2,
+      "demand": null
+    }
+  },
+  "search": {
+    "max_solves": 8,
+    "max_iterations": 8,
+    "beam_width": 2,
+    "min_improvement": 1e-07
+  },
+  "rationale": "Use the implicit objective gradient to rank feasible moves and retain the best exact result.",
+  "tolerances": {
+    "objective_absolute": 1e-05,
+    "objective_relative": 1e-05,
+    "demand_total_mw": 1e-07
+  },
+  "source_sha256": "sha256:56dbe2b9f79fe2a02d4830cb6049e55b2481d61e562cd86b7eb14d0f4bd2ae05"
+}

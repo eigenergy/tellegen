@@ -1,4 +1,5 @@
 import { tick } from 'svelte';
+import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 import {
 	FORMULATIONS,
 	createStudy,
@@ -110,6 +111,7 @@ interface CaseLookup {
 	branches: Map<string, NetworkBranch>;
 	prices: Map<number, number>;
 	flows: Map<number, Solution['flows'][number]>;
+	generation: Map<number, number> | null;
 }
 
 const lookups = new WeakMap<SolvableCase, CaseLookup>();
@@ -187,7 +189,17 @@ function caseLookup(c: SolvableCase): CaseLookup {
 	const branches = new Map<string, NetworkBranch>();
 	for (const bus of network.buses) addAliases(buses, bus, 'bus');
 	for (const branch of network.branches) addAliases(branches, branch, 'branch');
+	const dispatch = c.solution?.dispatch;
+	const generation =
+		dispatch?.length && dispatch.every((entry) => entry.bus !== undefined)
+			? new Map<number, number>()
+			: null;
+	if (generation && dispatch) {
+		for (const entry of dispatch)
+			generation.set(entry.bus!, (generation.get(entry.bus!) ?? 0) + entry.mw);
+	}
 	const next: CaseLookup = {
+		generation,
 		network,
 		solution: c.solution,
 		buses,
@@ -415,7 +427,8 @@ function query(ctrl: Controller, input: QueryNetworkInput): ToolPayload {
 					legacy_id: bus.id,
 					demand_mw: finite(bus.demand_mw + (c.deltas[bus.id] ?? 0)),
 					base_demand_mw: finite(bus.demand_mw),
-					generation_mw: finite(bus.gen_mw),
+					generation_capacity_mw: finite(bus.gen_mw),
+					generation_mw: lookup.generation ? finite(lookup.generation.get(bus.id) ?? 0) : null,
 					price: finite(lookup.prices.get(bus.id)),
 					editable: !isDisplayOnlyElement(bus)
 				}))
@@ -915,6 +928,7 @@ function phiAt(c: SolvableCase, weights: CapacityPlanBusWeightJson[]): number | 
 async function proposeCapacityPlan(
 	ctrl: Controller,
 	activities: PlanningActivityStore,
+	workspace: StudyWorkspace | undefined,
 	input: ProposeCapacityPlanInput,
 	signal: AbortSignal
 ): Promise<ToolPayload> {
@@ -995,10 +1009,10 @@ async function proposeCapacityPlan(
 		);
 	}
 	signal.throwIfAborted();
-	// BrowserStudy.plan materializes and solves on one disposable worker. This
-	// keeps cancellation away from the retained interactive Study and avoids a
-	// second clone/base solve here.
-	const outcome = await cached.study.plan(spec, signal);
+	const planned = workspace
+		? await workspace.planCapacity(spec, c.id, revision, signal)
+		: { outcome: await cached.study.plan(spec, signal), binding: undefined };
+	const outcome = planned.outcome;
 	signal.throwIfAborted();
 	const publicProposal = outcome.proposal.map((change) => {
 		const branch = candidateBranches.get(change.branch);
@@ -1047,6 +1061,7 @@ async function proposeCapacityPlan(
 	if (staged) {
 		activities.stage({
 			proposalId,
+			study: planned.binding,
 			activityId,
 			caseId: c.id,
 			sessionId: SESSION_ID,
@@ -1063,6 +1078,7 @@ async function proposeCapacityPlan(
 	return withBudgetedRows(
 		{
 			activity_id: activityId,
+			...(planned.binding ? { study_id: planned.binding.studyId } : {}),
 			proposal_id: staged ? proposalId : null,
 			session_id: SESSION_ID,
 			source_digest,
@@ -1097,6 +1113,7 @@ async function proposeCapacityPlan(
 async function applyCapacityPlan(
 	ctrl: Controller,
 	activities: PlanningActivityStore,
+	workspace: StudyWorkspace | undefined,
 	input: ApplyCapacityPlanInput,
 	signal: AbortSignal
 ): Promise<ToolPayload> {
@@ -1145,24 +1162,33 @@ async function applyCapacityPlan(
 	signal.throwIfAborted();
 	const before = caseSnapshot(c);
 	const prepared = await prepareExactSolve(ctrl, c, demand, ratings, c.formulation, signal);
+	let published = false;
 	try {
 		signal.throwIfAborted();
 		requireRevision(activeCase(ctrl, input.caseId), input.expectedRevision);
 		if (activities.proposal?.proposalId !== staged.proposalId || !activities.isApproved(staged)) {
 			throw new TellegenToolError(
 				'STALE_PROPOSAL',
-				'the proposal or its approval changed while the exact solve was running'
+				'The proposal or approval changed during the exact solve'
 			);
 		}
-		if (c.solving) {
-			throw new TellegenToolError('CASE_SOLVING', 'the active case began another solve');
-		}
-		publishExactSolve(ctrl, c, demand, ratings, prepared);
-	} catch (error) {
-		prepared.study.free();
-		throw error;
+		if (c.solving) throw new TellegenToolError('CASE_SOLVING', 'The case began another solve');
+		const publish = () => {
+			// A different live case may finish loading while storage commits. Its edits remain independent.
+			if (ctrl.activeSolvable === c && caseRevision(c) === input.expectedRevision && !c.solving) {
+				publishExactSolve(ctrl, c, demand, ratings, prepared);
+				published = true;
+			}
+			activities.commitApplied(staged);
+			return published;
+		};
+		if (staged.study) {
+			if (!workspace) throw new Error('The proposal Study is unavailable');
+			await workspace.applyCapacity(staged.study, publish, signal);
+		} else publish();
+	} finally {
+		if (!published) prepared.study.free();
 	}
-	activities.commitApplied(staged);
 	const weights = activities.entries.find((entry) => entry.id === staged.activityId)?.spec.objective
 		.weights;
 	const exactPhi = weights ? phiAt(c, weights) : null;
@@ -1173,6 +1199,8 @@ async function applyCapacityPlan(
 	return withBudgetedRows(
 		{
 			case_id: c.id,
+			case_updated: published,
+			...(staged.study ? { study_id: staged.study.studyId } : {}),
 			session_id: SESSION_ID,
 			source_digest,
 			revision: caseRevision(c),
@@ -1194,7 +1222,8 @@ async function applyCapacityPlan(
 /** Create the app adapter. Mutations are serialized and re-check revisions in queue order. */
 export function createTellegenWebMcpAdapter(
 	ctrl: Controller,
-	activities?: PlanningActivityStore
+	activities?: PlanningActivityStore,
+	workspace?: StudyWorkspace
 ): TellegenWebMcpAdapter {
 	let mutationTail: Promise<void> = Promise.resolve();
 	const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
@@ -1205,12 +1234,24 @@ export function createTellegenWebMcpAdapter(
 		);
 		return next;
 	};
+	const observe = async (
+		tool: string,
+		input: unknown,
+		signal: AbortSignal,
+		run: () => ToolPayload | Promise<ToolPayload>
+	) => {
+		const context = workspace?.captureCaseEvidence();
+		const result = await run();
+		if (context) await workspace!.recordCaseEvidence(context, tool, input, result, signal);
+		return result;
+	};
 	let planning: TellegenPlanningAdapter | undefined;
 	if (activities) {
 		planning = {
-			proposeCapacityPlan: (input, signal) => proposeCapacityPlan(ctrl, activities, input, signal),
+			proposeCapacityPlan: (input, signal) =>
+				proposeCapacityPlan(ctrl, activities, workspace, input, signal),
 			applyCapacityPlan: (input, signal) =>
-				enqueue(() => applyCapacityPlan(ctrl, activities, input, signal)),
+				enqueue(() => applyCapacityPlan(ctrl, activities, workspace, input, signal)),
 			planningAvailable() {
 				const c = ctrl.activeSolvable;
 				if (!c || !c.network || c.formulation !== 'dcopf' || c.solving) return false;
@@ -1243,13 +1284,14 @@ export function createTellegenWebMcpAdapter(
 		...(planning ? { planning } : {}),
 		inspectCase(signal) {
 			signal.throwIfAborted();
-			return inspect(ctrl, activities, signal);
+			return observe('inspect_case', {}, signal, () => inspect(ctrl, activities, signal));
 		},
 		queryNetwork(input, signal) {
 			signal.throwIfAborted();
-			return query(ctrl, input);
+			return observe('query_network', input, signal, () => query(ctrl, input));
 		},
-		analyzeSensitivity: (input, signal) => sensitivity(ctrl, input, signal),
+		analyzeSensitivity: (input, signal) =>
+			observe('analyze_sensitivity', input, signal, () => sensitivity(ctrl, input, signal)),
 		focusNetwork: (input, signal) => enqueue(() => focus(ctrl, input, signal)),
 		previewCaseUpdate: (input, signal) => preview(ctrl, input, signal),
 		updateCase: (input, signal) => enqueue(() => update(ctrl, input, signal)),

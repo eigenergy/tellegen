@@ -11,14 +11,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use clarabel::solver::{DefaultInfo, DefaultSettings, DefaultSolver, IPSolver, SolverStatus};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::problem::OpfProgram;
 
 /// One interior-point iterate: the iteration index, the primal objective, and
 /// the primal and dual residuals. Collected once per Clarabel iteration to draw
 /// the convergence plot. Shape matches the frontend `SolveIteration`.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SolveIteration {
     pub iter: u32,
     pub objective: f64,

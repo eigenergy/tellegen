@@ -20,6 +20,11 @@ powerio.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ctrlc = { version = "3.4", features = ["termination"] }
+
+[features]
+default = []
+conic = ["tellegen/conic"]
 
 [lints]
 workspace = true

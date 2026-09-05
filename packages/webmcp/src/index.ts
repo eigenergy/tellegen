@@ -1,6 +1,7 @@
 export {
   DEFAULT_OUTPUT_BUDGET,
   createTellegenPlanningTools,
+  createTellegenStudyTools,
   createTellegenTools,
   type CreateTellegenToolsOptions,
 } from "./tools.js";
@@ -38,6 +39,8 @@ export type {
   ResetCaseInput,
   SortDirection,
   TellegenPlanningAdapter,
+  TellegenStudyAdapter,
+  StudyToolName,
   TellegenToolDefinition,
   TellegenToolActivityEvent,
   TellegenWebMcpAdapter,

@@ -649,6 +649,7 @@ mod tests {
             (&a.shunt_conductance, &b.shunt_conductance),
             (&a.phase_withdrawal(), &b.phase_withdrawal()),
             (&a.b, &b.b),
+            #[cfg(feature = "sensitivity")]
             (&a.shift, &b.shift),
             (&a.fmax, &b.fmax),
             (&a.angmin, &b.angmin),
@@ -674,6 +675,7 @@ mod tests {
         assert_eq!(dc.k, 2);
         assert_eq!(dc.bus_ids, vec![1, 2, 3]);
         assert_eq!(dc.branch_ids, vec![1, 2, 3]);
+        #[cfg(feature = "sensitivity")]
         assert_eq!(dc.branch_identities, vec!["1-2", "1-3", "2-3"]);
         assert_eq!(dc.gen_ids, vec![1, 2]);
         assert_eq!(dc.branch_source_rows, vec![Some(0), Some(1), Some(2)]);
@@ -706,6 +708,7 @@ mod tests {
         assert_eq!(model.thermal_limit_active, vec![true, false, false]);
         assert_eq!(model.angle_bound_active, vec![false, false, false]);
         assert_eq!(model.bus_uids[1].as_deref(), Some("load-bus"));
+        #[cfg(feature = "sensitivity")]
         assert_eq!(model.branch_identities[0], "line-a");
         assert!(model.cq.iter().all(|value| *value == 0.0));
         assert!(model.cl.iter().all(|value| *value == 0.0));
@@ -742,7 +745,7 @@ mod tests {
 
         approx(dc.demand[1], 0.9);
         approx(dc.shunt_conductance[1], 0.1);
-        approx(dc.flow_offset[0], dc.b[0] * dc.shift[0]);
+        approx(dc.flow_offset[0], dc.b[0] * 15.0_f64.to_radians());
         let phase = dc.phase_withdrawal();
         approx(phase.iter().sum(), 0.0);
         let fixed = dc.current_fixed_withdrawal();

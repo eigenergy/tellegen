@@ -1,3 +1,4 @@
+import "./generate-study-contracts.mjs";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -126,6 +127,7 @@ export interface BranchFlow {
 }
 
 export interface GenDispatch {
+\tbus?: number;
 \tgen: number;
 \tpg: number;
 \tqg?: number;
@@ -214,7 +216,7 @@ export interface Solution {
 \tva: { bus: number; value: number }[];
 \tw: { bus: number; value: number }[];
 \tflows: { branch: number; mw: number; loading: number }[];
-\tdispatch: { gen: number; mw: number }[];
+\tdispatch: { gen: number; bus?: number; mw: number }[];
 }
 
 export interface SensitivityColumn {

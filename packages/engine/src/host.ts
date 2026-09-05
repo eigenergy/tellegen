@@ -15,6 +15,8 @@ import {
 
 export interface EngineHost {
   call(req: EngineRequest): Promise<string | null>;
+  /** Finish the current exact trial, then preserve a cancelled planning record. */
+  requestStop?(): void;
   /** Stop this host's current work. Returns false for the direct host, whose
    * synchronous wasm call cannot be interrupted. Callers still check the
    * signal after that call and discard an aborted result before publishing
@@ -49,7 +51,7 @@ class WorkerHost implements EngineHost {
    * session (requests reject; the next engineHost() spawns a fresh worker). */
   #failed: { forward: EngineHost | null; error: Error } | null = null;
 
-  constructor(worker: Worker) {
+  constructor(worker: Worker, private readonly fallback: EngineHost = directHost) {
     this.#worker = worker;
     worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
       this.#answered = true;
@@ -80,9 +82,9 @@ class WorkerHost implements EngineHost {
       // The worker never started (module workers unsupported, script blocked):
       // everything moves to the main thread, including the pending requests —
       // their study handles stay valid because the caller allocated them.
-      this.#failed = { forward: directHost, error };
-      if (activeHost === this) activeHost = directHost;
-      for (const p of pending) directHost.call(p.req).then(p.resolve, p.reject);
+      this.#failed = { forward: this.fallback, error };
+      if (activeHost === this) activeHost = this.fallback;
+      for (const p of pending) this.fallback.call(p.req).then(p.resolve, p.reject);
       return;
     }
     // A crash mid session loses the worker's studies; callers see their next
@@ -105,6 +107,13 @@ class WorkerHost implements EngineHost {
       const msg: WorkerRequest = { ...req, id };
       this.#worker.postMessage(msg);
     });
+  }
+
+  requestStop(): void {
+    for (const [id, pending] of this.#pending) {
+      if (pending.req.op === "study_document_run") this.#worker.postMessage({ op: "cancel_study_operation", id });
+    }
+    this.#failed?.forward?.requestStop?.();
   }
 
   cancel(reason: Error): boolean {
@@ -131,16 +140,28 @@ export function engineHost(): EngineHost {
  * runtime without Worker falls back to synchronous wasm: cancellation then
  * takes effect after the call returns, before the caller publishes its result. */
 export function isolatedEngineHost(): EngineHost {
-  return createHost();
+  const fallback = isolatedDirectHost();
+  return createHost(fallback);
 }
 
-function createHost(): EngineHost {
-  if (typeof Worker === "undefined") return directHost;
+function isolatedDirectHost(): EngineHost {
+  let stopped = false;
+  const studies = new Map<number, WasmStudy>();
+  return {
+    async call(req) { return runRequest(await engineModule(), studies, req, () => stopped); },
+    requestStop() { stopped = true; },
+    cancel() { stopped = true; return false; },
+  };
+}
+
+function createHost(fallback: EngineHost = directHost): EngineHost {
+  if (typeof Worker === "undefined") return fallback;
   try {
     return new WorkerHost(
       new Worker(new URL("./worker.js", import.meta.url), { type: "module" }),
+      fallback,
     );
   } catch {
-    return directHost;
+    return fallback;
   }
 }

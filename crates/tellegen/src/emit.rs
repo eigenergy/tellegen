@@ -148,6 +148,145 @@ pub fn emit_dc_opf_solution(
     Ok(emitted.with_producer(producer.into()))
 }
 
+#[cfg(feature = "sensitivity")]
+fn scatter(values: &[f64], ids: &[usize], count: usize, scale: f64) -> Result<Vec<f64>, String> {
+    if values.len() != ids.len() {
+        return Err("solution identity and value lengths disagree".into());
+    }
+    let mut out = vec![f64::NAN; count];
+    for (&value, &id) in values.iter().zip(ids) {
+        if let Some(row) = id.checked_sub(1).filter(|&row| row < count) {
+            out[row] = value * scale;
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(feature = "sensitivity")]
+fn scatter_bus(
+    values: &[f64],
+    model: &crate::model::AcNetwork,
+    count: usize,
+    scale: f64,
+) -> Result<Vec<f64>, String> {
+    if values.len() != model.bus_source_rows.len() {
+        return Err("bus solution and source rows disagree".into());
+    }
+    let mut out = vec![f64::NAN; count];
+    for (&value, &row) in values.iter().zip(&model.bus_source_rows) {
+        if let Some(row) = row {
+            *out.get_mut(row).ok_or("bus source row is out of range")? = value * scale;
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(feature = "sensitivity")]
+pub(crate) fn ac_terminal_flows(
+    model: &crate::model::AcNetwork,
+    sol: &crate::problem::AcPfSolution,
+) -> [Vec<f64>; 4] {
+    use num_complex::Complex;
+    let mut flows: [Vec<f64>; 4] = std::array::from_fn(|_| Vec::with_capacity(model.m));
+    for e in 0..model.m {
+        let f = model.br_from[e];
+        let t = model.br_to[e];
+        let vf = Complex::from_polar(sol.vm[f], sol.va[f]);
+        let vt = Complex::from_polar(sol.vm[t], sol.va[t]);
+        let (yff, yft, ytf, ytt) = model.branch_admittance(e);
+        let sf = vf * (yff * vf + yft * vt).conj();
+        let st = vt * (ytf * vf + ytt * vt).conj();
+        for (column, value) in flows.iter_mut().zip([sf.re, sf.im, st.re, st.im]) {
+            column.push(value);
+        }
+    }
+    flows
+}
+
+#[cfg(feature = "sensitivity")]
+pub(crate) fn emit_ac_pf_solution(
+    instance: Arc<powerio::AcPfInstance>,
+    model: &crate::model::AcNetwork,
+    sol: &crate::problem::AcPfSolution,
+    producer: String,
+) -> Result<powerio::AcPfSolution, String> {
+    let n = instance.network().buses().len();
+    let m = instance.network().branches().len();
+    let base = model.base_mva;
+    let [pf, qf, pt, qt] = ac_terminal_flows(model, sol);
+    let transformers = vec![
+        powerio::ThreeWindingTransformerTerminalPower::default();
+        instance.network().transformers_3w().len()
+    ];
+    powerio::AcPfSolution::new(
+        instance,
+        Termination::Converged,
+        scatter_bus(&sol.vm, model, n, 1.0)?,
+        scatter_bus(&sol.va, model, n, 180.0 / std::f64::consts::PI)?,
+        scatter_bus(&sol.p, model, n, base)?,
+        scatter_bus(&sol.q, model, n, base)?,
+        scatter(&pf, &model.branch_ids, m, base)?,
+        scatter(&qf, &model.branch_ids, m, base)?,
+        scatter(&pt, &model.branch_ids, m, base)?,
+        scatter(&qt, &model.branch_ids, m, base)?,
+        transformers,
+    )
+    .map(|s| s.with_producer(producer))
+    .map_err(|e| e.to_string())
+}
+
+#[cfg(feature = "conic")]
+pub(crate) fn emit_socwr_solution(
+    instance: Arc<powerio::AcOpfInstance>,
+    model: &crate::model::AcNetwork,
+    sol: &crate::problem::SocWrSolution,
+    producer: String,
+) -> Result<powerio::SocwrOpfSolution, String> {
+    let n = instance.network().buses().len();
+    let m = instance.network().branches().len();
+    let k = instance.network().generators().len();
+    let base = model.base_mva;
+    let mut values = powerio::SocwrOpfValues::default();
+    values.bus_voltage_magnitude_squared = scatter_bus(&sol.w, model, n, 1.0)?;
+    values.branch_voltage_product_real = scatter(&sol.wr, &model.branch_ids, m, 1.0)?;
+    values.branch_voltage_product_imaginary = scatter(&sol.wi, &model.branch_ids, m, 1.0)?;
+    values.generator_active_power = scatter(&sol.pg, &model.gen_ids, k, base)?;
+    values.generator_reactive_power = scatter(&sol.qg, &model.gen_ids, k, base)?;
+    values.branch_from_active_power = scatter(&sol.pf, &model.branch_ids, m, base)?;
+    values.branch_from_reactive_power = scatter(&sol.qf, &model.branch_ids, m, base)?;
+    values.branch_to_active_power = scatter(&sol.pt, &model.branch_ids, m, base)?;
+    values.branch_to_reactive_power = scatter(&sol.qt, &model.branch_ids, m, base)?;
+    values.three_winding_transformer_terminal_powers = vec![
+            powerio::ThreeWindingTransformerTerminalPower::default();
+            instance.network().transformers_3w().len()
+        ];
+    if let Some(sources) = &model.branch_sources {
+        for (dense, source) in sources.iter().enumerate() {
+            if let AnalysisBranchSource::ThreeWindingTransformerWinding {
+                transformer_row,
+                winding,
+            } = source
+            {
+                let terminal =
+                    &mut values.three_winding_transformer_terminal_powers[*transformer_row];
+                terminal.p_mw[*winding] = sol.pf[dense] * base;
+                terminal.q_mvar[*winding] = sol.qf[dense] * base;
+            }
+        }
+    } else if !values.three_winding_transformer_terminal_powers.is_empty() {
+        return Err("SOCWR transformer solution requires source winding identities".into());
+    }
+    let mut solution =
+        powerio::SocwrOpfSolution::new(instance, Termination::Converged, values, sol.objective)
+            .map_err(|e| e.to_string())?;
+    if model.objective == PreparedObjective::NetworkGeneratorCost {
+        let mut duals = powerio::SocwrOpfDuals::default();
+        duals.bus_active_power_marginal = Some(scatter_bus(&sol.lmp, model, n, 1.0 / base)?);
+        solution = solution.with_duals(duals).map_err(|e| e.to_string())?;
+    }
+    Ok(solution.with_producer(producer))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

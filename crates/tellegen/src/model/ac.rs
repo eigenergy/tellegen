@@ -85,7 +85,6 @@ pub(crate) struct AcNetwork {
     /// Per-unit apparent-power thermal limit per branch (`rate_a`; a large sentinel
     /// stands in for an unlimited `rate_a == 0` branch). The conic OPF caps each
     /// branch's `|S|` at this with a second-order cone.
-    #[cfg(feature = "conic")]
     pub rate_a: Vec<f64>,
     /// Per-branch voltage-angle-difference bounds (radians): `va_from − va_to ∈
     /// [angmin, angmax]`. Normalized to the ±60° MATPOWER/PowerModels convention when
@@ -150,10 +149,11 @@ pub(crate) struct AcNetwork {
     pub bus_ids: Vec<usize>,
     pub branch_ids: Vec<usize>,
     pub(crate) bus_source_rows: Vec<Option<usize>>,
+    #[cfg(feature = "conic")]
+    pub(crate) branch_sources: Option<Vec<powerio_matrix::AnalysisBranchSource>>,
     /// Dense index -> powerio row uid (`None` when the source network carried no
     /// uids), as in [`DcNetwork`](super::DcNetwork).
     pub bus_uids: Vec<Option<String>>,
-    #[cfg(feature = "conic")]
     pub branch_uids: Vec<Option<String>>,
     /// System base power (MVA).
     pub base_mva: f64,
@@ -381,6 +381,7 @@ impl AcNetwork {
             bus_ids,
             branch_ids,
             bus_source_rows: prep.bus_source_rows.clone(),
+            branch_sources: Some(prep.branches.analysis_sources.clone()),
             bus_uids,
             branch_uids,
             base_mva: prep.base_mva,
@@ -466,7 +467,6 @@ impl AcNetwork {
             branch_ids,
             gen_ids,
             bus_uids,
-            #[cfg(feature = "conic")]
             branch_uids,
         } = reconstruct_ids(
             raw,
@@ -538,7 +538,6 @@ impl AcNetwork {
         let b_to = suppress(branches.b_to);
         let tap = branches.tap;
         let shift = branches.shift;
-        #[cfg(feature = "conic")]
         let rate_a = branches
             .s_max
             .into_iter()
@@ -613,7 +612,6 @@ impl AcNetwork {
             b_to,
             tap,
             shift,
-            #[cfg(feature = "conic")]
             rate_a,
             #[cfg(feature = "conic")]
             angmin,
@@ -653,8 +651,9 @@ impl AcNetwork {
             bus_ids,
             branch_ids,
             bus_source_rows,
-            bus_uids,
             #[cfg(feature = "conic")]
+            branch_sources: None,
+            bus_uids,
             branch_uids,
             base_mva: raw.base_mva(),
             #[cfg(feature = "conic")]

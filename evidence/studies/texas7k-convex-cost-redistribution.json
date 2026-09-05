@@ -1,0 +1,78 @@
+{
+  "create": {
+    "id": "texas7k-convex-cost-redistribution",
+    "title": "Texas7k lower-convex-cost scenario, redistribution",
+    "formulation": "dcopf",
+    "request": "Lower the weighted prices at buses [111078, 110449, 110127] using redistribution. Show the consequences elsewhere.",
+    "interpretation": "Minimize the sum of selected active-power marginal prices. Changes are relative to the captured source state. The inner costs use the explicitly recorded lower convex envelope of the source curves; this is a different economic scenario, not the original nonconvex OPF.",
+    "objective": {
+      "kind": "weighted_observable",
+      "operand": {
+        "Price": "Active"
+      },
+      "weights": [
+        {
+          "element": 111078,
+          "weight": 1.0
+        },
+        {
+          "element": 110449,
+          "weight": 1.0
+        },
+        {
+          "element": 110127,
+          "weight": 1.0
+        }
+      ]
+    },
+    "decisions": {
+      "variables": [
+        {
+          "id": "111078",
+          "element": 111078,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 10,
+          "increment": 5,
+          "budget_weight": 1
+        },
+        {
+          "id": "110449",
+          "element": 110449,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 10,
+          "increment": 5,
+          "budget_weight": 1
+        },
+        {
+          "id": "110127",
+          "element": 110127,
+          "intervention": "active_demand",
+          "lower": -10,
+          "upper": 10,
+          "increment": 5,
+          "budget_weight": 1
+        }
+      ],
+      "total_budget": 20,
+      "max_changed_elements": 2,
+      "demand": {
+        "kind": "redistribution"
+      }
+    }
+  },
+  "search": {
+    "max_solves": 8,
+    "max_iterations": 8,
+    "beam_width": 2,
+    "min_improvement": 1e-07
+  },
+  "rationale": "Use the implicit objective gradient to rank feasible moves and retain the best exact result.",
+  "tolerances": {
+    "objective_absolute": 1e-05,
+    "objective_relative": 1e-05,
+    "demand_total_mw": 1e-07
+  },
+  "scenario": "lower_convex_cost_envelope"
+}

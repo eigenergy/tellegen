@@ -1,4 +1,6 @@
 import type { CapacityPlanOutcomeJson, CapacityPlanSpecJson } from '@tellegen/svelte';
+import type { CapacityStudyBinding } from '../studies/capacity-compat.js';
+import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 
 export type ProposalDecision = 'pending' | 'applied' | 'rejected' | 'expired' | 'no_change';
 
@@ -32,6 +34,7 @@ export interface StagedProposalChange {
 }
 
 export interface StagedCapacityProposal {
+	study?: CapacityStudyBinding;
 	proposalId: string;
 	activityId: string;
 	caseId: string;
@@ -58,6 +61,10 @@ export class PlanningActivityStore {
 	approval = $state.raw<ProposalApproval | null>(null);
 
 	#listeners = new Set<() => void>();
+	constructor(readonly getWorkspace?: () => StudyWorkspace) {}
+	get workspace() {
+		return this.getWorkspace?.();
+	}
 
 	subscribe(listener: () => void): () => void {
 		this.#listeners.add(listener);
@@ -95,6 +102,7 @@ export class PlanningActivityStore {
 	approve(): void {
 		const staged = this.proposal;
 		if (!staged) return;
+		if (staged.study) this.workspace!.approveCapacity(staged.study);
 		this.approval = {
 			proposalId: staged.proposalId,
 			caseId: staged.caseId,
@@ -107,6 +115,7 @@ export class PlanningActivityStore {
 	isApproved(staged: StagedCapacityProposal): boolean {
 		const approval = this.approval;
 		return (
+			(!staged.study || !!this.workspace?.capacityApproved(staged.study)) &&
 			approval?.proposalId === staged.proposalId &&
 			approval.caseId === staged.caseId &&
 			approval.sessionId === staged.sessionId &&
@@ -125,7 +134,11 @@ export class PlanningActivityStore {
 
 	/** Consume proposal and approval only after the exact solve has succeeded. */
 	commitApplied(staged: StagedCapacityProposal): void {
-		if (this.proposal?.proposalId !== staged.proposalId || !this.isApproved(staged)) return;
+		if (
+			this.proposal?.proposalId !== staged.proposalId ||
+			this.approval?.proposalId !== staged.proposalId
+		)
+			return;
 		this.proposal = null;
 		this.approval = null;
 		this.#decide(staged.activityId, 'applied');
@@ -139,7 +152,8 @@ export class PlanningActivityStore {
 			(!current ||
 				staged.caseId !== current.caseId ||
 				staged.sessionId !== current.sessionId ||
-				staged.revision !== current.revision)
+				staged.revision !== current.revision ||
+				(staged.study && !this.workspace?.capacityCurrent(staged.study)))
 		) {
 			this.proposal = null;
 			this.approval = null;

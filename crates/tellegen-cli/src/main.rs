@@ -41,6 +41,8 @@ const USAGE: &str =
      solve-module\n\
                    read a stored PowerIO module on stdin and\n\
                    print the solved dc_opf_solution stored module.\n\
+     study create|inspect|run|export|import PATH\n\
+                   create, inspect, continue or move a durable Study.\n\
      plan\n\
                    read {\"module\": POWERIO_MODULE, \"spec\": CAPACITY_PLAN_SPEC}\n\
                    from stdin and print the proposal and exact proposed solution.";
@@ -54,6 +56,7 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         "contract" => return run(contract_json),
+        "study" => return run(study_command),
         "-h" | "--help" => {
             println!("{USAGE}");
             return ExitCode::SUCCESS;
@@ -82,6 +85,58 @@ fn main() -> ExitCode {
         let module_json = read_stdin()?;
         tellegen::solve_module_json(&module_json, request)
     })
+}
+
+fn study_command() -> Result<String, String> {
+    use tellegen::document::StudyBundle;
+    use tellegen::study_ops::{create_study, execute_study, CreateStudy, StudyRequest};
+    use tellegen::study_storage::FileStudyStore;
+    let args = std::env::args().skip(2).collect::<Vec<_>>();
+    let progress = args.len() == 3 && args[0] == "run" && args[2] == "--progress";
+    if args.len() != 2 && !progress {
+        return Err("usage: tellegen study create|inspect|run|export|import PATH [--progress for run] (JSON request on stdin for create/run/import)".into());
+    }
+    let store = FileStudyStore::new(&args[1]);
+    match args[0].as_str() {
+        "create" => {
+            let request: CreateStudy =
+                serde_json::from_str(&read_stdin()?).map_err(|e| e.to_string())?;
+            let bundle = create_study(request)?;
+            store.create(&bundle)?;
+            serde_json::to_string(&bundle.summary(8)).map_err(|e| e.to_string())
+        }
+        "inspect" => serde_json::to_string(&store.load()?.summary(8)).map_err(|e| e.to_string()),
+        "export" => store.load()?.export(),
+        "import" => {
+            let bundle = StudyBundle::import(&read_stdin()?)?;
+            store.create(&bundle)?;
+            serde_json::to_string(&bundle.summary(8)).map_err(|e| e.to_string())
+        }
+        "run" => {
+            let request: StudyRequest =
+                serde_json::from_str(&read_stdin()?).map_err(|e| e.to_string())?;
+            let expected = request.expected_revision;
+            let mut bundle = store.load()?;
+            let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let signal = cancelled.clone();
+            ctrlc::set_handler(move || signal.store(true, std::sync::atomic::Ordering::Relaxed))
+                .map_err(|error| format!("cannot install Study cancellation handler: {error}"))?;
+            let mut checkpoint = 0usize;
+            let result = execute_study(&mut bundle, request, || {
+                checkpoint += 1;
+                if progress {
+                    eprintln!(
+                        "{}",
+                        serde_json::json!({ "event": "study_checkpoint", "index": checkpoint })
+                    );
+                }
+                cancelled.load(std::sync::atomic::Ordering::Relaxed)
+            })?;
+            store.commit(expected, &bundle)?;
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
+        _ => Err("unknown Study command; use create, inspect, run, export or import".into()),
+    }
 }
 
 fn run(operation: impl FnOnce() -> Result<String, String>) -> ExitCode {
@@ -227,6 +282,11 @@ fn contract_value() -> Result<serde_json::Value, String> {
         "tellegen_version": tellegen::VERSION,
         "powerio_version": env!("TELLEGEN_POWERIO_VERSION"),
         "schemas": {
+            "study_bundle": schemars::schema_for!(tellegen::document::StudyBundle),
+            "study_create": schemars::schema_for!(tellegen::study_ops::CreateStudy),
+            "study_request": schemars::schema_for!(tellegen::study_ops::StudyRequest),
+            "study_result": schemars::schema_for!(tellegen::study_ops::StudyOperationResult),
+
             "powerio_module": ir_schema()?,
             "capacity_plan_spec": serde_json::to_value(schemars::schema_for!(CapacityPlanSpec))
                 .map_err(|error| error.to_string())?,

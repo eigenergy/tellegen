@@ -15,8 +15,11 @@
 	import { PlanningActivityStore } from './planning-activity.svelte.js';
 	import WebMcpActivity from './WebMcpActivity.svelte';
 
+	import type { StudyWorkspace } from '../studies/workspace.svelte.js';
+	import { createStudyAdapter } from '../studies/adapter.js';
+	let { workspace }: { workspace: StudyWorkspace } = $props();
 	const ctrl = getController();
-	const planning = new PlanningActivityStore();
+	const planning = new PlanningActivityStore(() => workspace);
 	const journal = new ExperimentJournal(webMcpSessionId());
 	let experiments = $state.raw<ExperimentRecord[]>([]);
 	let supported = $state(false);
@@ -55,6 +58,8 @@
 		// Solving and solution readiness also control dynamic planning registration.
 		void c?.solving;
 		void c?.solution;
+		void workspace.document?.revision;
+		void workspace.document?.id;
 		planning.expireIfStale(
 			c && c.network && c.formulation
 				? { caseId: c.id, sessionId: webMcpSessionId(), revision: caseRevision(c) }
@@ -66,7 +71,9 @@
 		const lifecycle = new AbortController();
 		let disposed = false;
 		let handle: Awaited<ReturnType<typeof registerDocumentTellegenWebMcp>> | null = null;
-		void registerDocumentTellegenWebMcp(document, createTellegenWebMcpAdapter(ctrl, planning), {
+		const adapter = createTellegenWebMcpAdapter(ctrl, planning, workspace);
+		adapter.studies = createStudyAdapter(workspace);
+		void registerDocumentTellegenWebMcp(document, adapter, {
 			signal: lifecycle.signal,
 			onActivity: recordActivity,
 			recordValidatedInput: true,

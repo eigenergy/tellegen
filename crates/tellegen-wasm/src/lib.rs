@@ -282,6 +282,62 @@ pub fn capabilities_json() -> String {
     tellegen::capabilities_json()
 }
 
+/// Create a portable application Study through the shared native controller.
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+pub fn study_document_create(request_json: &str) -> Result<String, JsError> {
+    install_panic_hook();
+    let request = serde_json::from_str(request_json).map_err(jserr)?;
+    tellegen::study_ops::create_study(request)
+        .and_then(|bundle| bundle.export())
+        .map_err(jserr)
+}
+
+/// Validate and normalize a portable bundle without executing its contents.
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+pub fn study_document_import(bundle_json: &str) -> Result<String, JsError> {
+    install_panic_hook();
+    tellegen::document::StudyBundle::import(bundle_json)
+        .and_then(|bundle| bundle.export())
+        .map_err(jserr)
+}
+
+/// Execute a revision-checked Study operation and return the completed bundle.
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+pub async fn study_document_run(
+    bundle_json: String,
+    request_json: String,
+    cancelled: js_sys::Function,
+) -> Result<String, JsError> {
+    install_panic_hook();
+    let mut bundle = tellegen::document::StudyBundle::import(&bundle_json).map_err(jserr)?;
+    let request = serde_json::from_str(&request_json).map_err(jserr)?;
+    let result = tellegen::study_ops::execute_study_async(&mut bundle, request, || {
+        let cancelled = cancelled.clone();
+        async move {
+            let promise = js_sys::Promise::new(&mut |resolve, _| study_set_timeout(&resolve, 0));
+            let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+            cancelled
+                .call0(&JsValue::NULL)
+                .ok()
+                .and_then(|value| value.as_bool())
+                .unwrap_or(true)
+        }
+    })
+    .await
+    .map_err(jserr)?;
+    serde_json::to_string(&serde_json::json!({ "bundle": bundle, "result": result })).map_err(jserr)
+}
+
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_name = setTimeout)]
+    fn study_set_timeout(callback: &js_sys::Function, milliseconds: i32);
+}
+
 // ---------------------------------------------------------------------------
 // Stateful study (build once, solve many) — the reactive hot path
 // ---------------------------------------------------------------------------
@@ -405,6 +461,12 @@ impl Study {
     pub fn save_module(&self) -> Result<String, JsError> {
         install_panic_hook();
         self.0.save_module().map_err(jserr)
+    }
+
+    /// Serialize the exact problem instance, including its inner objective and constraints.
+    pub fn save_instance_module(&self) -> Result<String, JsError> {
+        install_panic_hook();
+        self.0.save_instance_module().map_err(jserr)
     }
 
     /// Save the committed exact DC OPF result as a PowerIO solution module.

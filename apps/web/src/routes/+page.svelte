@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { TellegenShell } from '@tellegen/svelte';
 	import SeoHead from '$lib/components/SeoHead.svelte';
-	import TellegenWebMcp from '$lib/webmcp/TellegenWebMcp.svelte';
+	import StudyWorkspace from '$lib/studies/StudyWorkspace.svelte';
 </script>
 
 <SeoHead
@@ -12,4 +12,4 @@
 />
 
 <TellegenShell />
-<TellegenWebMcp />
+<StudyWorkspace />

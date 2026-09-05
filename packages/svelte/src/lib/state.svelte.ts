@@ -10,6 +10,7 @@ import type {
 } from './api.js';
 import {
 	DEFAULT_FORMULATION,
+	type StudyView,
 	type BranchRatingDeltas,
 	type CaseFileSummary,
 	type DistGraph,
@@ -246,6 +247,8 @@ export class MulticonductorCase {
 }
 
 export class AppState {
+	/** Saved Study inspection is independent of the editable case and its solution. */
+	studyView = $state.raw<{ id: string; label: string; network: Network; solution: StudyView } | null>(null);
 	cases = $state.raw<CaseState[]>([]);
 	activeCaseId = $state<string | null>(null);
 	/** Selected bus in the active case. */

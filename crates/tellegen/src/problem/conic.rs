@@ -396,10 +396,8 @@ pub struct SocWrSolution {
     pub qg: Vec<f64>,
     /// Squared bus voltage magnitude `w_i = |V_i|^2`.
     pub w: Vec<f64>,
-    /// Branch voltage products retained for central difference tests.
-    #[cfg(test)]
+    /// Oriented branch voltage products in squared per unit.
     pub wr: Vec<f64>,
-    #[cfg(test)]
     pub wi: Vec<f64>,
     /// Branch from/to active and reactive flows.
     pub pf: Vec<f64>,
@@ -408,6 +406,8 @@ pub struct SocWrSolution {
     pub qt: Vec<f64>,
     /// Nodal price (real-power-balance dual), per bus.
     pub lmp: Vec<f64>,
+    /// Reactive-power balance marginal value per unit of demand.
+    pub lmp_q: Vec<f64>,
     /// Objective value (generation cost, constant term included).
     pub objective: f64,
     /// Interior-point iteration trace.
@@ -431,9 +431,7 @@ fn read_socwr(net: &AcNetwork, lay: &SocWrLayout, raw: &RawSolution) -> SocWrSol
         pg: (0..k).map(|g| x[lay.col_pg(g)]).collect(),
         qg: (0..k).map(|g| x[lay.col_qg(g)]).collect(),
         w: (0..n).map(|i| x[lay.col_w(i)]).collect(),
-        #[cfg(test)]
         wr: (0..m).map(|e| x[lay.col_wr(e)]).collect(),
-        #[cfg(test)]
         wi: (0..m).map(|e| x[lay.col_wi(e)]).collect(),
         pf: (0..m).map(|e| x[lay.col_pf(e)]).collect(),
         pt: (0..m).map(|e| x[lay.col_pt(e)]).collect(),
@@ -442,6 +440,7 @@ fn read_socwr(net: &AcNetwork, lay: &SocWrLayout, raw: &RawSolution) -> SocWrSol
         // Equality dual sign flip (nu = -z), as in the DC OPF readout, so the price
         // is the positive marginal cost of demand.
         lmp: (0..n).map(|i| -raw.z[lay.r_pbal(i)]).collect(),
+        lmp_q: (0..n).map(|i| -raw.z[lay.r_qbal(i)]).collect(),
         objective,
         iterations: raw.iterations.clone(),
         x: raw.x.clone(),
