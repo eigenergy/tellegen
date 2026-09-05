@@ -49,7 +49,7 @@
   "devDependencies": {
     "@changesets/changelog-github": "1.0.0",
     "@changesets/cli": "3.0.1",
-    "vite": "^8.2.1"
+    "vite": "^8.2.2"
   },
   "//overrides": "Vite must be a single copy. @sveltejs/kit and vite-plugin-svelte import `vite` at runtime for its resolve defaults, and vitest pulls its own; a workspace on a different major than the hoisted one is an npm-resolution accident waiting to bite. The `$vite` alias resolves to the range declared above, which is why vite is also a root dependency, and it keeps Dependabot in charge of the version.",
   "overrides": {
