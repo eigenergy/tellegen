@@ -11,8 +11,8 @@ workspaces.
 
 ## Status
 
-Version 0.2.0 is under development. DC OPF and AC power flow are included by
-default. The `conic` feature adds SOCWR. The `sensitivity` feature supplies the
+DC OPF and AC power flow are included by default. The `conic` feature adds
+SOCWR. The `sensitivity` feature supplies the
 implicit derivative API and the retained `Study` runtime.
 
 Active three winding transformers are lowered to an equivalent star network for
@@ -61,6 +61,20 @@ let response = study.commit(&[NetworkEdit::AddLoad {
 
 `capabilities_json` reports the formulations and sensitivity cells compiled
 into the current build.
+
+## API compatibility
+
+The 0.3 release uses PowerIO 0.11 typed problem instances and generation-2
+`pio-ir` documents. Rust consumers must use the matching PowerIO types when
+calling `solve_instance`, `solve_ac_pf_instance`, or `solve_ac_instance`.
+The module JSON entry points require the same generation-2 input contract.
+These input changes require migration from the 0.2 API and are released as a
+new minor version, rather than a compatible patch to 0.2.
+
+Persistent investigations use `document::StudyDocument` and the operations in
+`study_ops`, with immutable states, goal revisions and explicit application.
+The document's schema version identifies its storage contract separately from
+the crate version and PowerIO IR generation.
 
 ## Build
 

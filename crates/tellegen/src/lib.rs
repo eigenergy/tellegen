@@ -10,7 +10,7 @@
 //! ```ignore
 //! use tellegen::{solve_instance, SolveRequest};
 //!
-//! let module = powerio::stored::read_module(&module_json)?;
+//! let module = tellegen::ir::deserialize_module(&module_json)?;
 //! use powerio::IntoTypedModule;
 //! let instance_module: powerio::PioModule<powerio::DcOpfInstance> =
 //!     module.into_typed()?;
