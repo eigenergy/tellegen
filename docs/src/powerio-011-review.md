@@ -17,6 +17,9 @@ be dispatched with a proposed full PowerIO commit SHA before a PowerIO release.
 The isolated runner resolves all six PowerIO components together, then exercises
 the Rust, WebAssembly, WebMCP package, and browser integration. Normal CI also
 rejects a manifest and lockfile that name different PowerIO revisions.
+After publication, the same check accepts unpatched crates.io dependencies
+only when all six components have one version and registry checksums. A manual
+candidate run can add temporary Git patches to that published baseline.
 
 Tellegen consumes PowerIO modules at its public entry points. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem

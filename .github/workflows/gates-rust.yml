@@ -25,7 +25,7 @@ jobs:
         with:
           workspaces: .
 
-      - name: Verify the PowerIO git pin
+      - name: Verify the PowerIO dependency source
         run: python3 .github/scripts/powerio-pin.py
       - name: Format
         run: cargo fmt --all --check

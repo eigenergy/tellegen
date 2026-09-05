@@ -34,6 +34,8 @@ Pass `onActivity` to `createTellegenTools` or a registration helper to observe
 bounded start and finish events. Events contain the tool identity and response.
 Request recording is opt-in through `recordValidatedInput: true`; only inputs
 that pass validation are copied into completed events.
+Requests larger than 16,384 JSON characters are omitted from the record;
+execution is unchanged.
 
 Use `ExperimentJournal` to retain those events and compare a preview with an
 exact update of the same case, revision, formulation, and edits:
