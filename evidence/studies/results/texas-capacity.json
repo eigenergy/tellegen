@@ -3,8 +3,8 @@
   "spec_sha256": "sha256:d42453e7c7532c4a0e57fbcac8d657e78734ac353b5a0eb4b2abd52b4c2ea6f6",
   "source_sha256": "sha256:086db50d06a673dc3cb6cf86703e3df18d7ac2f50eda71ebaadbb48857f2dbaf",
   "source_name": "texas-convex-cost-scenario.pio.json",
-  "powerio_sha256": "sha256:a0528dff86e18894596aee270dcf54974ed7a4402db2d44ac7b178fd7f44f0c7",
-  "tellegen_sha256": "sha256:95f22d124360564a831e98f528d626c16066e9a4632070c0030b2ade57bb7f40",
+  "powerio_sha256": "sha256:41e83d58f8dc7b25502c114dce2aae717c26d422e0f93bea6f4b8b047df161e8",
+  "tellegen_sha256": "sha256:71efccb62d6abf8643d4043570c42907bbbaa492d19e33bb2d5d08bf06e2e27a",
   "input_sha256": "sha256:086db50d06a673dc3cb6cf86703e3df18d7ac2f50eda71ebaadbb48857f2dbaf",
   "apply_requested": false,
   "tolerances": {
@@ -174,5 +174,5 @@
     "termination": "solve_budget"
   },
   "study_sha256": "sha256:c892ed15d6dee0ae2118335078882b2039b6cfe5ec049f2e499c288810fcd3be",
-  "elapsed_seconds": 96.37600425898563
+  "elapsed_seconds": 144.26395912197768
 }

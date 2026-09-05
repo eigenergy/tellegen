@@ -89,11 +89,12 @@ tolerance. The planner reports that limit instead of presenting numerical noise
 as a gain. None of these searches applies its recommendation automatically.
 
 The [native WebMCP demonstration](https://github.com/eigenergy/tellegen/tree/codex/webmcp-challenge-v1/evidence/studies/native-webmcp)
-records all seven Study tools, explicit application, reload, branching, goal
-revision and a rejected stale request. On its synthetic three-bus case, a 5 MW
+records all seven Study tools, reload, branching, goal revision and a rejected
+stale request. Application and stale approvals have separate browser tests. On its synthetic three-bus case, a 5 MW
 capacity increase lowers the target bus price but raises the price at another
 bus. A second goal explores demand transfers from the original starting state.
-The applied capacity choice and the new recommendation remain distinct.
+The inspected capacity choice, demand recommendation and applied starting
+point remain distinct.
 
 ![Native Study comparison showing the target improvement and prices elsewhere](assets/challenge/study-comparison.png)
 

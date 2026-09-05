@@ -3,8 +3,8 @@
   "spec_sha256": "sha256:738b2a0bd0e634d20ba20f76df5d8111b83a0cb47cdfb171322593155293e395",
   "source_sha256": "sha256:1749ea6f3b0587a4c565ee7d794e4b67373249f34a2cff39abb29c05f4f9fa56",
   "source_name": "CaliforniaTestSystem.m",
-  "powerio_sha256": "sha256:a0528dff86e18894596aee270dcf54974ed7a4402db2d44ac7b178fd7f44f0c7",
-  "tellegen_sha256": "sha256:95f22d124360564a831e98f528d626c16066e9a4632070c0030b2ade57bb7f40",
+  "powerio_sha256": "sha256:41e83d58f8dc7b25502c114dce2aae717c26d422e0f93bea6f4b8b047df161e8",
+  "tellegen_sha256": "sha256:71efccb62d6abf8643d4043570c42907bbbaa492d19e33bb2d5d08bf06e2e27a",
   "input_sha256": "sha256:96c0847eb63c5d5d434f753759efe4a96e17cde4e08e823e3743c906609d388a",
   "apply_requested": false,
   "tolerances": {
@@ -103,5 +103,5 @@
     "termination": "no_feasible_moves"
   },
   "study_sha256": "sha256:a989ff7ab0dab472206c5564f79c0ecb83faecffd819dea06a7a6338465196eb",
-  "elapsed_seconds": 54.5685007449938
+  "elapsed_seconds": 84.36860511399573
 }

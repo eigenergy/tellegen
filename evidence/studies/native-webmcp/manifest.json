@@ -1,25 +1,28 @@
 {
   "schema": "tellegen.native-webmcp-evidence/1",
-  "captured_at": "2026-09-05T11:49:57.968587+00:00",
-  "source_commit": "2a0028c41b5c971b6635b664ce75836898b420b6",
-  "engine_source_commit": "2009b3558b887365914fbcae5500f55c2b032703",
-  "powerio_commit": "65dbc042372d340e9901443f503537bc14a94c01",
+  "captured_at": "2026-09-05T12:51:55.285237+00:00",
+  "source_commit": "a12ac8e92c89a5765ccc7120a5f8b860d503d06b",
+  "engine_source_commit": "a12ac8e92c89a5765ccc7120a5f8b860d503d06b",
+  "powerio_commit": "a84d97d97343b4175e9a846aa358997ff53b0e5f",
   "origin": "http://127.0.0.1:4186",
   "browser": "Codex in-app Chromium, native WebMCP capability",
   "fixture": "Synthetic three-bus corridor; existing planning-case.ts fixture; illustrative coordinates",
   "backend": "Initial exact native CLI result; subsequent solves in Clarabel WASM; remote compute disabled",
   "private_reasoning_recorded": false,
   "files": {
-    "before-apply.png": "sha256:2858b8c294707b5589b770256a1d0c5bff0258dc9b5b2832f1b7f3f975bb00c8",
-    "calls.json": "sha256:499df4820ba0ecf624a911cb3122de6a24d379dbd4d87add8f6bf9415959e428",
-    "capacity-experiment.json": "sha256:acbb3eaf22a27313389b9507149e42409dda2fac16f8750bd6e382a3b9365f59",
-    "comparison.png": "sha256:50b627c4b5f193b965084b964bb449674fa2c2b298386f121e199e9a95f0347b",
-    "demand-experiment.json": "sha256:e3eb566eb2cb439c7d098ce8a7f146d64c35cd361372c8a95938e709dc4f07f2",
+    "after-release-rebuild-summary.json": "sha256:ca62220eab76468906c0baf2b61933292145bb771ee858a3a3430c4603ad0f0e",
+    "before-apply.png": "sha256:6fec102d8c854adb3c9e6c79b35a91a29b245712a6a7fe1c55b8782a9b63ed0c",
+    "before-release-rebuild-summary.json": "sha256:14240a6c275f8c33f8dde131ca7aefb2991050ea812783cb76c90c54170ff213",
+    "calls.json": "sha256:1a8a07e02de8ee3be0fe92d653c299a35619025f0c7ca5e719e4af4fb950fd53",
+    "capacity-experiment.json": "sha256:7e7042cb469522178baf0dd18051158045daadbc5844560cd7e1193e3e6f5986",
+    "comparison.png": "sha256:6e3cec16fc069783caae6a8f6e3692c74909b4fde7e39a60288baf74bfc1a7e4",
+    "demand-experiment.json": "sha256:c4bcb87eea52cf4275e0e4f97ce48fb538870e69e3a9b0e639264409096f4cdc",
     "initial-solution.json": "sha256:e99cab46d8143c90c34564ebde6fe8dfea0749f56f87a34080b67d90ab4a1718",
     "input.pio.json": "sha256:1cd48af402bc98c803df5e2a08e4a8f1e7da22a830bcedbe50e7683092571ddc"
   },
   "wasm_assets": {
-    "packages/engine/dist/wasm-pkg/tellegen_bg.wasm": "sha256:1fda18d3f4cb03dcc645ab0240b046f72e5fb9654dd2607b13f0a789c0507af6",
-    "packages/engine/src/wasm-pkg/tellegen_bg.wasm": "sha256:1fda18d3f4cb03dcc645ab0240b046f72e5fb9654dd2607b13f0a789c0507af6"
-  }
+    "packages/engine/dist/wasm-pkg/tellegen_bg.wasm": "sha256:92b5341ccfa9f22de8d1cb8cafe2d8ccd8a60c019ced05d222a1da69e636f7f9",
+    "packages/engine/src/wasm-pkg/tellegen_bg.wasm": "sha256:92b5341ccfa9f22de8d1cb8cafe2d8ccd8a60c019ced05d222a1da69e636f7f9"
+  },
+  "application": "Unapplied; native Apply click blocked by agent approval review; browser tests cover application and stale approvals."
 }

@@ -1,6 +1,45 @@
 [
   {
-    "tool": "inspect_case",
+    "name": "inspect_study",
+    "input": {
+      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+      "section": "summary"
+    },
+    "output": {
+      "data": {
+        "active_goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "experiment_count": 8,
+        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recent_experiments": [
+          {
+            "id": "sha256:abe5d4f73e78328ec3428b2db8b129a0d727de633f66c8934f99a46b465bcff3",
+            "kind": "inspection",
+            "solve_count": 0,
+            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+            "termination": "completed",
+            "trial_count": 0
+          },
+          {
+            "id": "sha256:b054bee94799bb71596c4af361978062bb4ebc579dc61ff743ad912c98a5f0ee",
+            "kind": "challenge",
+            "solve_count": 0,
+            "start_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+            "termination": "completed",
+            "trial_count": 0
+          }
+        ],
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 10,
+        "state_count": 5,
+        "title": "Lower corridor prices"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_case",
     "input": {},
     "output": {
       "data": {
@@ -23,9 +62,9 @@
           "branches": 3,
           "buses": 3
         },
-        "revision": "session-cf86a9d0-de7b-4533-a136-ab73c2cc257e:r1",
+        "revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r1",
         "selection": null,
-        "session_id": "session-cf86a9d0-de7b-4533-a136-ab73c2cc257e",
+        "session_id": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72",
         "solution": {
           "base_objective": 626.9487179486758,
           "binding_branches": 0,
@@ -42,59 +81,11 @@
     }
   },
   {
-    "tool": "query_network",
+    "name": "update_case",
     "input": {
       "case_id": "study-demo",
-      "element_kind": "branch"
-    },
-    "output": {
-      "data": {
-        "case_id": "study-demo",
-        "element_kind": "branch",
-        "elements": [
-          {
-            "editable": true,
-            "element_id": "2-3",
-            "flow_mw": -50.17094016608355,
-            "from_bus": 2,
-            "legacy_id": 3,
-            "loading": 0.8361823361013925,
-            "rating_mw": 60,
-            "to_bus": 3
-          },
-          {
-            "editable": true,
-            "element_id": "1-2",
-            "flow_mw": 39.82905983391532,
-            "from_bus": 1,
-            "legacy_id": 1,
-            "loading": 0.1593162393356613,
-            "rating_mw": 250,
-            "to_bus": 2
-          },
-          {
-            "editable": true,
-            "element_id": "1-3",
-            "flow_mw": -10.341880332168165,
-            "from_bus": 1,
-            "legacy_id": 2,
-            "loading": 0.04136752132867265,
-            "rating_mw": 250,
-            "to_bus": 3
-          }
-        ],
-        "returned": 3,
-        "revision": "session-cf86a9d0-de7b-4533-a136-ab73c2cc257e:r1",
-        "total": 3
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "update_case",
-    "input": {
-      "case_id": "study-demo",
-      "expected_revision": "session-cf86a9d0-de7b-4533-a136-ab73c2cc257e:r1",
+      "expected_revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r1",
+      "mode": "set",
       "ratings": [
         {
           "branch_id": "2-3",
@@ -111,7 +102,7 @@
           "objective": 635.2200000167709,
           "objective_delta": 8.271282068095047,
           "rating_edit_count": 1,
-          "revision": "session-cf86a9d0-de7b-4533-a136-ab73c2cc257e:r2"
+          "revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r2"
         },
         "before": {
           "binding_branches": 0,
@@ -120,30 +111,30 @@
           "objective": 626.9487179486758,
           "objective_delta": 0,
           "rating_edit_count": 0,
-          "revision": "session-cf86a9d0-de7b-4533-a136-ab73c2cc257e:r1"
+          "revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r1"
         },
         "case_id": "study-demo",
         "demand_edit_count": 0,
         "formulation": "dcopf",
         "rating_edit_count": 1,
-        "revision": "session-cf86a9d0-de7b-4533-a136-ab73c2cc257e:r2",
+        "revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r2",
         "solution": {
           "base_objective": 626.9487179486758,
           "binding_branches": 1,
           "objective": 635.2200000167709,
           "objective_delta": 8.271282068095047,
           "solve_backend": "clarabel-wasm",
-          "solve_ms": 143
+          "solve_ms": 99
         }
       },
       "ok": true
     }
   },
   {
-    "tool": "create_study",
+    "name": "create_study",
     "input": {
       "case_id": "study-demo",
-      "expected_case_revision": "session-cf86a9d0-de7b-4533-a136-ab73c2cc257e:r2",
+      "expected_case_revision": "session-e69f87fc-ea9c-4ffc-8bd4-9e0acc30cb72:r2",
       "goal": {
         "title": "Lower corridor prices",
         "formulation": "dcopf",
@@ -183,7 +174,7 @@
         "active_goal": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb",
         "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "experiment_count": 1,
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
         "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "recent_experiments": [
           {
@@ -204,9 +195,9 @@
     }
   },
   {
-    "tool": "propose_study",
+    "name": "propose_study",
     "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
       "expected_revision": 0,
       "operation": {
         "kind": "propose",
@@ -218,14 +209,14 @@
           "max_iterations": 4,
           "min_improvement": 0.000001
         },
-        "rationale": "Use the implicit price gradient to rank corridor upgrades and retain an exact improvement within the capacity budget."
+        "rationale": "Test bounded capacity increases and retain an exact verified price improvement."
       }
     },
     "output": {
       "data": {
         "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-        "experiment": "sha256:185e7cdd9703b99e008793bf64b131c06740483ec59da341b664ab1799653519",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+        "experiment": "sha256:8bd71cdbb6ede3ad0a9acc6f8d9c64c0304cb53cc06990e0d7faf8875ca4f6e4",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
         "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
         "revision": 1
@@ -234,9 +225,9 @@
     }
   },
   {
-    "tool": "compare_study_states",
+    "name": "compare_study_states",
     "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
       "expected_revision": 1,
       "operation": {
         "kind": "compare",
@@ -255,7 +246,7 @@
           "right_value": 11.487179490293975
         },
         "experiment": "sha256:2f216ffb29c220a8dcd7d3eb1136d54e7c319d517c7ee478e7e5c67267e8c672",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
         "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
         "revision": 2
@@ -264,92 +255,29 @@
     }
   },
   {
-    "tool": "inspect_study",
+    "name": "inspect_study",
     "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "section": "experiment",
-      "record_id": "sha256:185e7cdd9703b99e008793bf64b131c06740483ec59da341b664ab1799653519"
-    },
-    "output": {
-      "data": {
-        "encoding": "json",
-        "fragment": "{\"assessed_recommendation\":null,\"evidence\":[\"sha256:f5ad5e73588571d34a87a94c0f1f85c434e4e9cfb5dd3090e3cebcfb4dddc17b\"],\"goal\":\"sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb\",\"kind\":\"planning\",\"rationale\":\"Use the implicit price gradient to rank corridor upgrades and retain an exact improvement within the capacity budget.\",\"result_states\":[\"sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af\",\"sha256:69a22114d1a44615c1bc3ee65dfe7ffd2560012969bc8cc7adb47db2d8ccb623\"],\"solve_count\":3,\"start_state\":\"sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "next_offset": 600,
-        "offset": 0,
-        "revision": 2,
-        "section": "experiment"
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "inspect_study",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "section": "experiment",
-      "record_id": "sha256:185e7cdd9703b99e008793bf64b131c06740483ec59da341b664ab1799653519",
-      "offset": 600,
-      "expected_revision": 2
-    },
-    "output": {
-      "data": {
-        "encoding": "json",
-        "fragment": "a2aa80afefe5300029\",\"termination\":\"no_verified_improvement\",\"trials\":[{\"accepted\":true,\"changes\":[5],\"evidence\":[\"sha256:2d826bff67d1f8e417a58fc0e88c40f7fd6dc21d20973ce7980c5ce83ec3bab8\"],\"exact_value\":11.487179490293975,\"failure\":null,\"predicted_value\":6.31005515692374,\"state\":\"sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af\"},{\"accepted\":false,\"changes\":[10],\"evidence\":[\"sha256:9297a1a02747bc75a4cd8b8d61e28c179613415460ca8dc219295f14c74a17c8\"],\"exact_value\":11.48717949128172,\"failure\":null,\"predicted_value\":11.48717948430603,\"state\":\"sha256:69a22114d1a44615c1bc3ee65df",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "next_offset": 1200,
-        "offset": 600,
-        "revision": 2,
-        "section": "experiment"
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "inspect_study",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "section": "experiment",
-      "record_id": "sha256:185e7cdd9703b99e008793bf64b131c06740483ec59da341b664ab1799653519",
-      "offset": 1200,
-      "expected_revision": 2
-    },
-    "output": {
-      "data": {
-        "encoding": "json",
-        "fragment": "e7ffd2560012969bc8cc7adb47db2d8ccb623\"}]}",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "next_offset": null,
-        "offset": 1200,
-        "revision": 2,
-        "section": "experiment"
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "inspect_study",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa"
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "summary"
     },
     "output": {
       "data": {
         "active_goal": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb",
         "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-        "experiment_count": 4,
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "inspected_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "experiment_count": 3,
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "recent_experiments": [
           {
-            "id": "sha256:2f216ffb29c220a8dcd7d3eb1136d54e7c319d517c7ee478e7e5c67267e8c672",
-            "kind": "inspection",
-            "solve_count": 0,
+            "id": "sha256:8bd71cdbb6ede3ad0a9acc6f8d9c64c0304cb53cc06990e0d7faf8875ca4f6e4",
+            "kind": "planning",
+            "solve_count": 3,
             "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-            "termination": "completed",
-            "trial_count": 0
+            "termination": "no_verified_improvement",
+            "trial_count": 2
           },
           {
-            "id": "sha256:b4029bbd88b30c9181a337923d29578e789ecdcdc8936fc599b9e72c23c61f5d",
+            "id": "sha256:2f216ffb29c220a8dcd7d3eb1136d54e7c319d517c7ee478e7e5c67267e8c672",
             "kind": "inspection",
             "solve_count": 0,
             "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
@@ -358,119 +286,42 @@
           }
         ],
         "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "revision": 4,
-        "state_count": 3,
-        "title": "Lower corridor prices"
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "inspect_study",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa"
-    },
-    "output": {
-      "data": {
-        "active_goal": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb",
-        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "experiment_count": 4,
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "inspected_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "recent_experiments": [
-          {
-            "id": "sha256:2f216ffb29c220a8dcd7d3eb1136d54e7c319d517c7ee478e7e5c67267e8c672",
-            "kind": "inspection",
-            "solve_count": 0,
-            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-            "termination": "completed",
-            "trial_count": 0
-          },
-          {
-            "id": "sha256:b4029bbd88b30c9181a337923d29578e789ecdcdc8936fc599b9e72c23c61f5d",
-            "kind": "inspection",
-            "solve_count": 0,
-            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-            "termination": "completed",
-            "trial_count": 0
-          }
-        ],
-        "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "revision": 5,
+        "revision": 2,
         "state_count": 3,
         "title": "Lower corridor prices"
       },
       "ok": true
     },
-    "ui_action": "Apply this recommendation to the Study"
+    "after_reload": true
   },
   {
-    "tool": "inspect_study",
+    "name": "branch_study",
     "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa"
-    },
-    "output": {
-      "data": {
-        "active_goal": "sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb",
-        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "experiment_count": 4,
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "inspected_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "recent_experiments": [
-          {
-            "id": "sha256:2f216ffb29c220a8dcd7d3eb1136d54e7c319d517c7ee478e7e5c67267e8c672",
-            "kind": "inspection",
-            "solve_count": 0,
-            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-            "termination": "completed",
-            "trial_count": 0
-          },
-          {
-            "id": "sha256:b4029bbd88b30c9181a337923d29578e789ecdcdc8936fc599b9e72c23c61f5d",
-            "kind": "inspection",
-            "solve_count": 0,
-            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-            "termination": "completed",
-            "trial_count": 0
-          }
-        ],
-        "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "revision": 5,
-        "state_count": 3,
-        "title": "Lower corridor prices"
-      },
-      "ok": true
-    },
-    "ui_action": "reload"
-  },
-  {
-    "tool": "branch_study",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "expected_revision": 5,
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 2,
       "operation": {
         "kind": "branch",
         "state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-        "rationale": "Explore conserved demand transfers from the saved starting point while retaining the applied capacity recommendation."
+        "rationale": "Compare conserved demand redistribution from the original electrical state."
       }
     },
     "output": {
       "data": {
-        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "experiment": "sha256:245b09da8d09cbd3ba5ece589c2e19cb95c8b9ee54a8cdbe4929acddd8dfd03b",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:e13bd56dc651eee1b74388299963037f10f60c65f2e31d3f02ddffd2e28149f9",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
         "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "recommended_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "revision": 6
+        "revision": 3
       },
       "ok": true
     }
   },
   {
-    "tool": "revise_study_goal",
+    "name": "revise_study_goal",
     "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "expected_revision": 6,
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 3,
       "operation": {
         "kind": "revise_goal",
         "goal": {
@@ -522,31 +373,32 @@
     },
     "output": {
       "data": {
-        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "experiment": null,
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
         "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "recommended_state": null,
-        "revision": 7
+        "revision": 4
       },
       "ok": true
     }
   },
   {
-    "tool": "inspect_study",
+    "name": "inspect_study",
     "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa"
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "summary"
     },
     "output": {
       "data": {
         "active_goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
-        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "experiment_count": 5,
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment_count": 4,
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
         "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "recent_experiments": [
           {
-            "id": "sha256:b4029bbd88b30c9181a337923d29578e789ecdcdc8936fc599b9e72c23c61f5d",
+            "id": "sha256:2f216ffb29c220a8dcd7d3eb1136d54e7c319d517c7ee478e7e5c67267e8c672",
             "kind": "inspection",
             "solve_count": 0,
             "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
@@ -554,7 +406,7 @@
             "trial_count": 0
           },
           {
-            "id": "sha256:245b09da8d09cbd3ba5ece589c2e19cb95c8b9ee54a8cdbe4929acddd8dfd03b",
+            "id": "sha256:e13bd56dc651eee1b74388299963037f10f60c65f2e31d3f02ddffd2e28149f9",
             "kind": "inspection",
             "solve_count": 0,
             "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
@@ -563,7 +415,7 @@
           }
         ],
         "recommended_state": null,
-        "revision": 7,
+        "revision": 4,
         "state_count": 3,
         "title": "Lower corridor prices"
       },
@@ -571,10 +423,10 @@
     }
   },
   {
-    "tool": "propose_study",
+    "name": "propose_study",
     "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "expected_revision": 7,
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 4,
       "operation": {
         "kind": "propose",
         "state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
@@ -585,37 +437,30 @@
           "max_iterations": 4,
           "min_improvement": 0.000001
         },
-        "rationale": "Test paired demand transfers using the implicit direction while preserving the declared total demand."
+        "rationale": "Test paired demand transfers, preserve total demand, and retain the best exact result."
       }
     },
     "output": {
       "data": {
-        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "experiment": "sha256:93b40190eb955bb425d4b6aaad42dbaeef52da1b81aba3e0bc24831415bb03a4",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:cbd937d1fcca9e57a02cf288f9aecbcf76917354cfae87e2fbe40ccd041caba2",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
         "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
-        "revision": 8
+        "revision": 5
       },
       "ok": true
     }
   },
   {
-    "tool": "propose_study",
+    "name": "branch_study",
     "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "expected_revision": 7,
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 4,
       "operation": {
-        "kind": "propose",
+        "kind": "branch",
         "state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-        "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
-        "options": {
-          "max_solves": 6,
-          "beam_width": 2,
-          "max_iterations": 4,
-          "min_improvement": 0.000001
-        },
-        "rationale": "Test paired demand transfers using the implicit direction while preserving the declared total demand."
+        "rationale": "Verify that a stale revision cannot change the inspected state."
       }
     },
     "output": {
@@ -624,13 +469,183 @@
         "message": "Stale Study revision; inspect the current Study and retry"
       },
       "ok": false
-    },
-    "expectation": "stale revision rejected"
+    }
   },
   {
-    "tool": "compare_study_states",
+    "name": "compare_study_states",
     "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 5,
+      "operation": {
+        "kind": "compare",
+        "left": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "right": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca"
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "comparison": {
+          "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+          "improvement": 3.972820514679419,
+          "left_value": 15.460000003642069,
+          "right_value": 11.487179488962648
+        },
+        "experiment": "sha256:d3e16b9ca7e2ca3f863cc218caf1c2de86c6b6d7913d60c04e2c1ee8b253d20d",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 6
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "record_study_evidence",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 6,
+      "operation": {
+        "kind": "record_evidence",
+        "state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+        "sensitivity": false,
+        "rationale": "The conserved-demand scenario provides an exact alternative to the capacity recommendation.",
+        "evidence": {
+          "kind": "scenario_comparison",
+          "scenario": "paired 5 MW transfers from bus 2 to bus 3",
+          "capacity_recommendation": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+          "demand_recommendation": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+          "total_demand_preserved": true,
+          "comparison": {
+            "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+            "improvement": 3.972820514679419,
+            "left_value": 15.460000003642069,
+            "right_value": 11.487179488962648
+          }
+        },
+        "assessed_recommendation": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da"
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:0ed4ce72b12c6c561df7eb733c1b043d70c6267f8e1262156edb351a108f01bb",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 7
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "experiment",
+      "record_id": "sha256:8bd71cdbb6ede3ad0a9acc6f8d9c64c0304cb53cc06990e0d7faf8875ca4f6e4"
+    },
+    "output": {
+      "data": {
+        "encoding": "json",
+        "fragment": "{\"assessed_recommendation\":null,\"evidence\":[\"sha256:f5ad5e73588571d34a87a94c0f1f85c434e4e9cfb5dd3090e3cebcfb4dddc17b\"],\"goal\":\"sha256:e04fbcae7cfd1d17bc4056319ee3524747a0023e6173dec886d1f99c5f41bceb\",\"kind\":\"planning\",\"rationale\":\"Test bounded capacity increases and retain an exact verified price improvement.\",\"result_states\":[\"sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af\",\"sha256:69a22114d1a44615c1bc3ee65dfe7ffd2560012969bc8cc7adb47db2d8ccb623\"],\"solve_count\":3,\"start_state\":\"sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029\",\"termination\":\"no_",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "next_offset": 600,
+        "offset": 0,
+        "revision": 7,
+        "section": "experiment"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "experiment",
+      "record_id": "sha256:cbd937d1fcca9e57a02cf288f9aecbcf76917354cfae87e2fbe40ccd041caba2"
+    },
+    "output": {
+      "data": {
+        "encoding": "json",
+        "fragment": "{\"assessed_recommendation\":null,\"evidence\":[\"sha256:67823bbf46151c1835f2f3c5fd7c87592cc2006a4adadab370d65a60641430aa\"],\"goal\":\"sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca\",\"kind\":\"planning\",\"rationale\":\"Test paired demand transfers, preserve total demand, and retain the best exact result.\",\"result_states\":[\"sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da\",\"sha256:1c51c9c2cb316f35d3f04921387de0a7741d3fa1184b39dd0fea2c1ae40ca7f8\"],\"solve_count\":3,\"start_state\":\"sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029\",\"terminatio",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "next_offset": 600,
+        "offset": 0,
+        "revision": 7,
+        "section": "experiment"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "inspect_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "section": "summary"
+    },
+    "output": {
+      "data": {
+        "active_goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment_count": 7,
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "recent_experiments": [
+          {
+            "id": "sha256:d3e16b9ca7e2ca3f863cc218caf1c2de86c6b6d7913d60c04e2c1ee8b253d20d",
+            "kind": "inspection",
+            "solve_count": 0,
+            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+            "termination": "completed",
+            "trial_count": 0
+          },
+          {
+            "id": "sha256:0ed4ce72b12c6c561df7eb733c1b043d70c6267f8e1262156edb351a108f01bb",
+            "kind": "challenge",
+            "solve_count": 0,
+            "start_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+            "termination": "completed",
+            "trial_count": 0
+          }
+        ],
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 7,
+        "state_count": 5,
+        "title": "Lower corridor prices"
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "branch_study",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+      "expected_revision": 7,
+      "operation": {
+        "kind": "branch",
+        "state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "rationale": "Inspect the capacity candidate while keeping the demand recommendation and original applied state separate."
+      }
+    },
+    "output": {
+      "data": {
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:7c7c786f541d33488080db129bed4d4d2c723f36e1e52d17fcc4da8865081de7",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
+        "revision": 8
+      },
+      "ok": true
+    }
+  },
+  {
+    "name": "compare_study_states",
+    "input": {
+      "study_id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
       "expected_revision": 8,
       "operation": {
         "kind": "compare",
@@ -641,159 +656,18 @@
     },
     "output": {
       "data": {
-        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
+        "applied_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
         "comparison": {
           "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
           "improvement": 3.972820514679419,
           "left_value": 15.460000003642069,
           "right_value": 11.487179488962648
         },
-        "experiment": "sha256:abe5d4f73e78328ec3428b2db8b129a0d727de633f66c8934f99a46b465bcff3",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
+        "experiment": "sha256:4db009188f24dfe4ff74c984d8bbf41e9fd0266b93a8d69c75ec1bd508700a67",
+        "id": "d3d3e1f0-05a8-4b1f-9e24-f84bdb31bceb",
+        "inspected_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
         "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
         "revision": 9
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "inspect_study",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "section": "experiment",
-      "record_id": "sha256:93b40190eb955bb425d4b6aaad42dbaeef52da1b81aba3e0bc24831415bb03a4",
-      "offset": 0,
-      "expected_revision": 9
-    },
-    "output": {
-      "data": {
-        "encoding": "json",
-        "fragment": "{\"assessed_recommendation\":null,\"evidence\":[\"sha256:67823bbf46151c1835f2f3c5fd7c87592cc2006a4adadab370d65a60641430aa\"],\"goal\":\"sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca\",\"kind\":\"planning\",\"rationale\":\"Test paired demand transfers using the implicit direction while preserving the declared total demand.\",\"result_states\":[\"sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da\",\"sha256:1c51c9c2cb316f35d3f04921387de0a7741d3fa1184b39dd0fea2c1ae40ca7f8\"],\"solve_count\":3,\"start_state\":\"sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe53000",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "next_offset": 600,
-        "offset": 0,
-        "revision": 9,
-        "section": "experiment"
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "inspect_study",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "section": "experiment",
-      "record_id": "sha256:93b40190eb955bb425d4b6aaad42dbaeef52da1b81aba3e0bc24831415bb03a4",
-      "offset": 600,
-      "expected_revision": 9
-    },
-    "output": {
-      "data": {
-        "encoding": "json",
-        "fragment": "29\",\"termination\":\"no_verified_improvement\",\"trials\":[{\"accepted\":true,\"changes\":[-5,5],\"evidence\":[\"sha256:5c7a38702ead7ad86010af0bffbff2cdaf4037721fdb62ad64582a4c7c258902\"],\"exact_value\":11.487179488962648,\"failure\":null,\"predicted_value\":9.360036772496523,\"state\":\"sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da\"},{\"accepted\":false,\"changes\":[-10,10],\"evidence\":[\"sha256:5933751cf1e8b3ef654b2ae9d18004f097718ac390bdf5ecac75faf56d446f84\"],\"exact_value\":11.48717948757814,\"failure\":null,\"predicted_value\":11.487179483722192,\"state\":\"sha256:1c51c9c2cb316f35d3f04921387de0a774",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "next_offset": 1200,
-        "offset": 600,
-        "revision": 9,
-        "section": "experiment"
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "inspect_study",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "section": "experiment",
-      "record_id": "sha256:93b40190eb955bb425d4b6aaad42dbaeef52da1b81aba3e0bc24831415bb03a4",
-      "offset": 1200,
-      "expected_revision": 9
-    },
-    "output": {
-      "data": {
-        "encoding": "json",
-        "fragment": "1d3fa1184b39dd0fea2c1ae40ca7f8\"}]}",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "next_offset": null,
-        "offset": 1200,
-        "revision": 9,
-        "section": "experiment"
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "record_study_evidence",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-      "expected_revision": 9,
-      "operation": {
-        "kind": "record_evidence",
-        "state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
-        "goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
-        "sensitivity": false,
-        "rationale": "The exact candidate satisfies the price target and the recorded paired transfer conserves total demand.",
-        "assessed_recommendation": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
-        "evidence": {
-          "kind": "recommendation_check",
-          "price_target": 12,
-          "exact_price": 11.487179488962648,
-          "demand_changes_mw": [
-            -5,
-            5
-          ],
-          "total_demand_change_mw": 0,
-          "source_experiment": "sha256:93b40190eb955bb425d4b6aaad42dbaeef52da1b81aba3e0bc24831415bb03a4"
-        }
-      }
-    },
-    "output": {
-      "data": {
-        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "experiment": "sha256:b054bee94799bb71596c4af361978062bb4ebc579dc61ff743ad912c98a5f0ee",
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
-        "revision": 10
-      },
-      "ok": true
-    }
-  },
-  {
-    "tool": "inspect_study",
-    "input": {
-      "study_id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa"
-    },
-    "output": {
-      "data": {
-        "active_goal": "sha256:6b24decbd148be3bc2173f9be7e94d6795de5965c15f5eeb2f87cc03c232b6ca",
-        "applied_state": "sha256:100f64729bca7513ec165c4cc10358c21fe6a6e7f34055dfe430e4f5d02cf6af",
-        "experiment_count": 8,
-        "id": "af6f64b7-f7e7-4de8-9373-e1525b1acffa",
-        "inspected_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-        "recent_experiments": [
-          {
-            "id": "sha256:abe5d4f73e78328ec3428b2db8b129a0d727de633f66c8934f99a46b465bcff3",
-            "kind": "inspection",
-            "solve_count": 0,
-            "start_state": "sha256:12c162495ae9fc55659de650fbab4d36e55c3d669c0724a2aa80afefe5300029",
-            "termination": "completed",
-            "trial_count": 0
-          },
-          {
-            "id": "sha256:b054bee94799bb71596c4af361978062bb4ebc579dc61ff743ad912c98a5f0ee",
-            "kind": "challenge",
-            "solve_count": 0,
-            "start_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
-            "termination": "completed",
-            "trial_count": 0
-          }
-        ],
-        "recommended_state": "sha256:ae2f49f95337560b2446320c91432ff4f89a350c238ee5eea79a9e23bb8f69da",
-        "revision": 10,
-        "state_count": 5,
-        "title": "Lower corridor prices"
       },
       "ok": true
     }

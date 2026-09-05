@@ -41,18 +41,26 @@ tellegen '{}' < evidence/studies/native-webmcp/input.pio.json
    additional improvement. The planning operation uses three exact solves,
    in addition to the Study creation solve.
 4. Comparison shows prices falling at buses 1 and 2 and rising at bus 3.
-   Selecting Trial 1 changes the inspected state while the starting state
-   remains applied. The visible Apply button then explicitly applies Trial 1.
-5. Reload and `inspect_study` restore revision 5 and its applied candidate.
-6. `branch_study` returns inspection to the starting state. A new goal revision
-   permits conserved demand transfers; it clears the old recommendation and
-   retains the applied capacity candidate and earlier goal history.
+   The capacity recommendation remains unapplied.
+5. Reload and `inspect_study` restore revision 2, including the saved proposal.
+   A separate saved Study from the preceding build also restores its revision,
+   five states, eight experiments and all three pointers exactly.
+6. `branch_study` selects the starting state. A new goal revision permits
+   conserved demand transfers, clears the old recommendation and retains the
+   earlier goal history.
 7. Demand planning accepts a -5/+5 MW transfer from bus 2 to bus 3, reducing
    the objective to 11.4871794890. The next paired transfer is below tolerance.
-   A replay with a stale revision is rejected.
-8. `record_study_evidence` links the exact-price and demand-conservation check
-   to its recommendation without adding an electrical state. Revision 10 has
-   five saved states: starting point, two capacity trials and two demand trials.
+   A request with a stale revision is rejected.
+8. `record_study_evidence` links the demand scenario to its recommendation
+   without adding an electrical state. At revision 9 the capacity candidate
+   is inspected, the demand candidate is recommended and the starting point
+   remains applied. Five saved states preserve both sets of trials.
+
+The final native capture leaves recommendations unapplied. The agent's approval
+review prevented the explicit Apply click; application and stale approvals are
+covered separately by the browser tests. This capture does not claim a fresh
+manual application. `calls.json` contains operation calls and the first pages
+of large records; the complete retrieved planning records are saved separately.
 
 The search termination `no_verified_improvement` describes why it stopped after
 an accepted move. It does not erase the best verified recommendation. These

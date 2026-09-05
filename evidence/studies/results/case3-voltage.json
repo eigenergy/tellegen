@@ -3,8 +3,8 @@
   "spec_sha256": "sha256:0b9f8198fd56edfda26f9ffa3bff55ed1c9ea90672e27278383a21f19837e130",
   "source_sha256": "sha256:1b3df5591ce2294f2c9ecb90c9528cd7e21f2d8511d2eff2799fd91c6c4635ec",
   "source_name": "case3.m",
-  "powerio_sha256": "sha256:a0528dff86e18894596aee270dcf54974ed7a4402db2d44ac7b178fd7f44f0c7",
-  "tellegen_sha256": "sha256:95f22d124360564a831e98f528d626c16066e9a4632070c0030b2ade57bb7f40",
+  "powerio_sha256": "sha256:41e83d58f8dc7b25502c114dce2aae717c26d422e0f93bea6f4b8b047df161e8",
+  "tellegen_sha256": "sha256:71efccb62d6abf8643d4043570c42907bbbaa492d19e33bb2d5d08bf06e2e27a",
   "input_sha256": "sha256:30d655a0c40740f28eda24fd73a42718457f0b14cdfcb2d7ea40081005104a4f",
   "apply_requested": false,
   "tolerances": {
@@ -115,5 +115,5 @@
     "termination": "no_feasible_moves"
   },
   "study_sha256": "sha256:5600d439f3534206a46b9f2698cb1fe718df116e651f8c0a5f3a7db73bf3e708",
-  "elapsed_seconds": 0.1162726360198576
+  "elapsed_seconds": 0.08871557100792415
 }
