@@ -11,7 +11,8 @@ proxy that owns ports 80 and 443.
 - 4 GB RAM minimum; 8 GB recommended for the bundled cases
 - external Docker network `edge`, owned by the Caddy edge stack
 - staged demo data under the deploy path's `data/` directory
-- GHCR pull access on the host, or a public `ghcr.io/eigenergy/tellegen` package
+- For manual deployment, GHCR pull access on the host or a public
+  `ghcr.io/eigenergy/tellegen` package; the workflow authenticates its own pulls
 
 ## Shared Edge Layout
 
@@ -132,14 +133,14 @@ repository variable:
 TELLEGEN_DEPLOY_ENABLED=true
 ```
 
-Leave that variable unset until the host has staged data, an `edge` network,
-and GHCR pull access. Once enabled, the workflow builds and smoke-tests the
+Leave that variable unset until the host has staged data and an `edge` network.
+Once enabled, the workflow builds and smoke-tests the
 exact commit whose CI passed, then checks that it is still the latest successful
 CI push for `main`. Superseded runs stop without publishing; a newer failing or
 in-progress commit does not suppress the last green deployment. The current run
 pushes the already smoke-tested local image, resolves its immutable registry
 digest, and repeats the latest-green check after any environment wait. It then
-copies the three deploy files into a unique per-run bundle, invokes the locked
+copies the deploy files into a unique per-run bundle, invokes the locked
 host deploy with that bundle and digest, and checks
 `${TELLEGEN_DEMO_URL}/api/health`. A manual run redeploys the latest green
 commit. It checks latest-green state again immediately before promotion; a
@@ -163,8 +164,13 @@ Required repository secrets:
   the verified output of `ssh-keyscan -H <host>` or an equivalent known hosts
   entry. The workflow refuses to deploy without this secret.
 
-The workflow does not send the GitHub Actions token to the host. The host must
-already be able to pull the GHCR image, or the GHCR package must be public.
+The deployment job has read-only package access. It sends its temporary
+`GITHUB_TOKEN` through SSH stdin for `docker login`, with a private temporary
+Docker configuration used only by that deployment or rollback command.
+The helper removes the configuration on success, failure, or a handled signal,
+and the job token expires when the job finishes. Existing host credentials
+remain untouched. No registry token needs to be stored as a repository secret
+or kept on the host.
 
 ## Preflight
 
