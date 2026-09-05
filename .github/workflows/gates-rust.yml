@@ -62,7 +62,7 @@ jobs:
           github.event_name == 'pull_request' &&
           startsWith(github.head_ref, 'release-plz-') &&
           github.event.pull_request.head.repo.full_name == github.repository
-        uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2.86.4
+        uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
         with:
           tool: cargo-semver-checks@0.48
           fallback: none
