@@ -1,5 +1,10 @@
 <script lang="ts">
-	import type { JsonValue, TellegenToolActivityEvent, ToolResponse } from '@tellegen/webmcp';
+	import type {
+		ExperimentRecord,
+		JsonValue,
+		TellegenToolActivityEvent,
+		ToolResponse
+	} from '@tellegen/webmcp';
 	import {
 		capacityPlanExactPhiDelta,
 		capacityPlanFirstOrderError,
@@ -11,12 +16,16 @@
 		supported,
 		registrationError,
 		activities,
-		planning
+		planning,
+		experiments,
+		exportJournal
 	}: {
 		supported: boolean;
 		registrationError: string | null;
 		activities: TellegenToolActivityEvent[];
 		planning: PlanningActivityStore;
+		experiments: ExperimentRecord[];
+		exportJournal: () => void;
 	} = $props();
 
 	const EXAMPLE_PROMPT =
@@ -138,6 +147,15 @@
 				</button>
 			</header>
 
+			{#if experiments.length > 0}
+				<div class="journal-bar mono">
+					<span>{experiments.length} recorded experiments</span>
+					<button class="copy mono" data-testid="export-experiment-journal" onclick={exportJournal}
+						>Export journal</button
+					>
+				</div>
+			{/if}
+
 			{#if registrationError}
 				<p class="registration-error mono" data-testid="webmcp-registration-error">
 					WebMCP tools could not be registered: {registrationError}
@@ -231,6 +249,7 @@
 					{#each activities as activity (activity.id)}
 						{@const compare = comparison(activity)}
 						{@const predicted = prediction(activity)}
+						{@const check = experiments.find((entry) => entry.id === activity.id)?.predictionCheck}
 						<li
 							class:running={!finished(activity)}
 							class:failed={finished(activity) && !activity.response.ok}
@@ -290,6 +309,13 @@
 									{activity.response.error.code}: {activity.response.error.message}
 								</p>
 							{/if}
+							{#if check}
+								<div class="preview-result mono" data-testid="experiment-prediction-check">
+									<span>predicted Δ {formatDelta(check.predictedDelta)}</span>
+									<span>exact Δ {formatDelta(check.exactDelta)}</span>
+									<span>prediction error {formatNumber(check.absoluteError, 4)}</span>
+								</div>
+							{/if}
 						</li>
 					{/each}
 				</ol>
@@ -305,6 +331,15 @@
 {/if}
 
 <style>
+	.journal-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 8px 14px;
+		border-bottom: 1px solid var(--line);
+		font-size: var(--fs-small);
+	}
 	.activity-panel,
 	.activity-toggle {
 		position: fixed;

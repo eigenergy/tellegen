@@ -191,6 +191,8 @@ export type TellegenToolActivityEvent =
       title: string;
       startedAt: number;
       finishedAt: number;
+      /** Validated wire input, copied before the adapter runs. Invalid input is omitted. */
+      input?: ToolPayload;
       response: ToolResponse;
     };
 

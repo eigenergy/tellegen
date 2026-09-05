@@ -52,7 +52,7 @@ pub(crate) fn ingest_dist_bytes_value(
             module.value().type_name()
         ));
     };
-    ingest_dist_value(network, &module.diagnostics)
+    ingest_dist_value(network, module.diagnostics())
 }
 
 /// Parse `text` as a `.pio.json` stored module and, when it holds a
@@ -81,7 +81,7 @@ pub(crate) fn ingest_dist_module_value(
             module.value().type_name()
         ));
     };
-    ingest_dist_value(network, &module.diagnostics)
+    ingest_dist_value(network, module.diagnostics())
 }
 
 pub(crate) fn is_viewable_module_value(value: &PioValue) -> bool {

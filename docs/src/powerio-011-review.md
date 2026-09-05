@@ -4,7 +4,9 @@ PowerIO v0.11.0 is the baseline for this integration. The release preparation
 merged in [powerio#482](https://github.com/eigenergy/powerio/pull/482), with
 dependency maintenance in
 [powerio#485](https://github.com/eigenergy/powerio/pull/485).
-Tellegen pins merge revision `e852f1902a582d5dbf20dedd169056aeb7cdceba`
+The final documentation and release checks are in
+[powerio#491](https://github.com/eigenergy/powerio/pull/491).
+Tellegen pins merge revision `ca8cfcec8bdc35d083dfc91b0bb9025ac8bb7507`
 until the component crates are published. The earlier 1.0 candidate in
 [powerio#454](https://github.com/eigenergy/powerio/pull/454) is no longer the
 release target.
@@ -19,7 +21,8 @@ rejects a manifest and lockfile that name different PowerIO revisions.
 Tellegen consumes PowerIO modules at its public entry points. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem
 instance. The browser and CLI save PowerIO case and solution modules; Tellegen
-defines no second portable network, study, or experiment format. PowerIO IR
+uses PowerIO IR for portable networks and solutions. Its optional experiment
+journal records browser tool activity and never replaces the electrical module. PowerIO IR
 text is written and read through `tellegen::ir`, which calls
 `powerio::serialize` and `powerio::deserialize`.
 
@@ -46,7 +49,7 @@ Tellegen uses the v0.11 facade directly:
 - `powerio::parse(input)` for automatic routing and
   `powerio::parse_with_options(input, &ParseOptions)` for an explicit format;
 - `powerio::serialize` and `powerio::deserialize` for `.pio.json` documents;
-- `PioModule::value()` for reads and `PioModule::value_mut()` for edits;
+- `PioModule::value()` and `diagnostics()` for reads, with `value_mut()` for edits;
 - `PioModule::try_map_value` for typed narrowing;
 - `PioValue::type_name()` for canonical structural type names;
 - `powerio::emit` for grid exchange formats.

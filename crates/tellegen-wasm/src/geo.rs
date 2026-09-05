@@ -95,7 +95,7 @@ pub fn apply_layout_impl(
         .to_geo_layer()
         .to_geojson_checked()
         .map_err(|e| e.to_string())?;
-    let diagnostics = module.diagnostics.clone();
+    let diagnostics = module.diagnostics().to_vec();
     let mut value = ingest_value(module_network(&module)?, &diagnostics, Vec::new(), None)?;
     value = with_module_json(value, module)?;
     let object = value
@@ -221,7 +221,7 @@ fn payload_with_report(
     module: PioModule<PioValue>,
     report: GeoApplyReport,
 ) -> Result<String, String> {
-    let diagnostics = module.diagnostics.clone();
+    let diagnostics = module.diagnostics().to_vec();
     let mut value = ingest_value(module_network(&module)?, &diagnostics, Vec::new(), None)?;
     value = with_module_json(value, module)?;
     let object = value

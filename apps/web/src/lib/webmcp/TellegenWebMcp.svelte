@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getController } from '@tellegen/svelte';
-	import { registerDocumentTellegenWebMcp, type TellegenToolActivityEvent } from '@tellegen/webmcp';
+	import {
+		ExperimentJournal,
+		registerDocumentTellegenWebMcp,
+		type ExperimentRecord,
+		type TellegenToolActivityEvent
+	} from '@tellegen/webmcp';
 	import {
 		caseRevision,
 		createTellegenWebMcpAdapter,
@@ -12,16 +17,34 @@
 
 	const ctrl = getController();
 	const planning = new PlanningActivityStore();
+	const journal = new ExperimentJournal(webMcpSessionId());
+	let experiments = $state.raw<ExperimentRecord[]>([]);
 	let supported = $state(false);
 	let registrationError = $state<string | null>(null);
 	let activities = $state<TellegenToolActivityEvent[]>([]);
 
 	function recordActivity(event: TellegenToolActivityEvent) {
+		journal.record(event);
+		if (event.type === 'finished') experiments = journal.records;
 		const index = activities.findIndex((activity) => activity.id === event.id);
 		activities =
 			index === -1
 				? [event, ...activities].slice(0, 12)
 				: activities.map((activity, activityIndex) => (activityIndex === index ? event : activity));
+	}
+
+	function exportJournal() {
+		const document = { ...journal.export(), capacityPlans: planning.entries };
+		const url = URL.createObjectURL(
+			new Blob([JSON.stringify(document, null, 2)], {
+				type: 'application/json'
+			})
+		);
+		const link = window.document.createElement('a');
+		link.href = url;
+		link.download = 'tellegen-experiments.json';
+		link.click();
+		setTimeout(() => URL.revokeObjectURL(url), 1_000);
 	}
 
 	// The one reactive watcher registration follows: the active case, its
@@ -46,6 +69,7 @@
 		void registerDocumentTellegenWebMcp(document, createTellegenWebMcpAdapter(ctrl, planning), {
 			signal: lifecycle.signal,
 			onActivity: recordActivity,
+			recordValidatedInput: true,
 			onRegistrationError: (error) => {
 				registrationError = error?.message ?? null;
 				document.documentElement.dataset.webmcp = error ? 'error' : 'ready';
@@ -82,4 +106,11 @@
 	});
 </script>
 
-<WebMcpActivity {supported} {registrationError} {activities} {planning} />
+<WebMcpActivity
+	{supported}
+	{registrationError}
+	{activities}
+	{planning}
+	{experiments}
+	{exportJournal}
+/>

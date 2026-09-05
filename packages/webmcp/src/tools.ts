@@ -175,6 +175,7 @@ function execute<T>(
   onActivity: ((event: TellegenToolActivityEvent) => void) | undefined,
   nextActivityId: () => string,
   completion: "abortable" | "commit-aware" = "abortable",
+  recordValidatedInput = false,
 ): TellegenToolDefinition["execute"] {
   return async (input, options) => {
     const id = nextActivityId();
@@ -187,6 +188,7 @@ function execute<T>(
       startedAt,
     });
     let response: ToolResponse;
+    let recordedInput: ToolPayload | undefined;
     const parentSignal = options?.signal;
     const controller = new AbortController();
     const relayAbort = () => {
@@ -210,7 +212,18 @@ function execute<T>(
     let rejectAbort: (() => void) | undefined;
     try {
       controller.signal.throwIfAborted();
-      const running = Promise.resolve(run(validate(input), controller.signal));
+      const validated = validate(input);
+      // Keep a bounded, detached copy for the journal. Recording must never
+      // alter execution, including for an unusual non-JSON host object.
+      if (recordValidatedInput)
+        try {
+          const text = JSON.stringify(input);
+          if (text.length <= 16_384)
+            recordedInput = JSON.parse(text) as ToolPayload;
+        } catch {
+          // The adapter can still consume the validated value.
+        }
+      const running = Promise.resolve(run(validated, controller.signal));
       let result: ToolPayload;
       if (completion === "commit-aware") {
         // The adapter checks the signal immediately before its commit point.
@@ -247,6 +260,7 @@ function execute<T>(
       title,
       startedAt,
       finishedAt: Date.now(),
+      ...(recordedInput ? { input: recordedInput } : {}),
       response,
     });
     return response;
@@ -268,6 +282,8 @@ export interface CreateTellegenToolsOptions {
   outputBudget?: number;
   timeoutMs?: number;
   onActivity?: (event: TellegenToolActivityEvent) => void;
+  /** Include a bounded copy of validated requests in completed activity events. */
+  recordValidatedInput?: boolean;
 }
 
 function executionLimits(options: CreateTellegenToolsOptions): {
@@ -320,6 +336,7 @@ export function createTellegenTools(
       options.onActivity,
       nextActivityId,
       completion,
+      options.recordValidatedInput,
     );
 
   return [
@@ -660,6 +677,7 @@ export function createTellegenPlanningTools(
       options.onActivity,
       nextActivityId,
       completion,
+      options.recordValidatedInput,
     );
 
   const proposeCapacityPlan: TellegenToolDefinition = {

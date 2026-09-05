@@ -34,7 +34,11 @@
     "dist/validation.d.ts",
     "dist/validation.d.ts.map",
     "dist/validation.js",
-    "dist/validation.js.map"
+    "dist/validation.js.map",
+    "dist/journal.d.ts",
+    "dist/journal.d.ts.map",
+    "dist/journal.js",
+    "dist/journal.js.map"
   ],
   "publishConfig": {
     "access": "public"

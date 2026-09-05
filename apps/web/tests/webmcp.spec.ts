@@ -268,13 +268,33 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	const branchId = String(
 		(branchQuery.data.elements as Array<{ element_id: string }>)[0].element_id
 	);
-	const smallRating = await callTool(page, 'update_case', {
+	const ratingRequest = {
 		case_id: caseId,
 		expected_revision: String(updated.data.revision),
 		mode: 'set',
 		ratings: [{ branch_id: branchId, delta_mw: 0.1 }]
-	});
+	};
+	const ratingPreview = await callTool(page, 'preview_case_update', ratingRequest);
+	expect(ratingPreview.ok).toBe(true);
+	const smallRating = await callTool(page, 'update_case', ratingRequest);
 	expect(smallRating).toMatchObject({ ok: true, data: { rating_edit_count: 1 } });
+	await expect(page.getByTestId('experiment-prediction-check').first()).toBeVisible();
+	const downloadPromise = page.waitForEvent('download');
+	await page.getByTestId('export-experiment-journal').click();
+	const download = await downloadPromise;
+	expect(download.suggestedFilename()).toBe('tellegen-experiments.json');
+	const stream = await download.createReadStream();
+	if (!stream) throw new Error('journal download is unavailable');
+	const chunks = [];
+	for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+	const journal = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+	expect(journal).toMatchObject({ schema: 'tellegen.experiment-journal', version: 1, sessionId });
+	const verified = journal.records.findLast(
+		(record: { toolName: string; predictionCheck?: unknown }) =>
+			record.toolName === 'update_case' && record.predictionCheck
+	);
+	expect(verified.input).toEqual(ratingRequest);
+	expect(Number.isFinite(verified.predictionCheck.absoluteError)).toBe(true);
 
 	const replay = await callTool(page, 'update_case', {
 		case_id: caseId,

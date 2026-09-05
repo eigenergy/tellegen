@@ -643,7 +643,11 @@ async function preview(
 	});
 	let predicted: Awaited<ReturnType<BrowserStudy['preview']>>;
 	try {
-		await study.commit(c.id, c.deltas, c.ratings, null, signal);
+		// Construction already solved the base case. Re-solve only when the
+		// visible operating point contains edits that the clone must reproduce.
+		if (Object.keys(c.deltas).length > 0 || Object.keys(c.ratings).length > 0) {
+			await study.commit(c.id, c.deltas, c.ratings, null, signal);
+		}
 		signal.throwIfAborted();
 		predicted = await study.preview(demand, ratings);
 	} finally {

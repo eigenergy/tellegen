@@ -11,6 +11,12 @@ export {
   type RegisterOptions,
 } from "./register.js";
 export { TellegenToolError } from "./types.js";
+export {
+  ExperimentJournal,
+  type ExperimentJournalDocument,
+  type ExperimentRecord,
+  type PredictionCheck,
+} from "./journal.js";
 export type {
   AnalyzeSensitivityInput,
   ApplyCapacityPlanInput,

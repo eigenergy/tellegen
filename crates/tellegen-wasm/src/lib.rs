@@ -171,7 +171,7 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
     let (kind, format, payload) = match classification {
         JsonClass::Module => {
             let module = read_module_bytes(bytes)?;
-            let diagnostics = module.diagnostics.clone();
+            let diagnostics = module.diagnostics().to_vec();
             let payload = if let Some(network) = balanced_study_network(module.value()) {
                 let mut payload = ingest_value(network, &diagnostics, Vec::new(), None)?;
                 let module_json = std::str::from_utf8(bytes)
@@ -261,7 +261,7 @@ pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
     let network = serde_json::to_value(module.value()).map_err(jserr)?;
     serde_json::to_string(&serde_json::json!({
         "network": network,
-        "diagnostics": module.diagnostics,
+        "diagnostics": module.diagnostics(),
     }))
     .map_err(jserr)
 }
@@ -655,7 +655,7 @@ fn ingest_case_value(bytes: &[u8], format: &str) -> Result<serde_json::Value, St
             .map_err(|_| "PowerWorld aux source is not valid UTF-8".to_owned())?;
         apply_aux_substation_locations(module.value_mut(), source_text)?;
     }
-    let payload = ingest_value(module.value(), &module.diagnostics, Vec::new(), None)?;
+    let payload = ingest_value(module.value(), module.diagnostics(), Vec::new(), None)?;
     with_module_json(payload, module.map_value(PioValue::BalancedNetwork))
 }
 

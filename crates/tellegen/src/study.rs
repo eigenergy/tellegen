@@ -2152,9 +2152,9 @@ mod tests {
         assert_eq!(saved.history()[1].id().as_str(), "tellegen-edit-2");
         assert!(saved.sources().is_empty(), "{:?}", saved.sources());
         assert!(saved.source_map().is_empty());
-        assert_eq!(saved.diagnostics.len(), 1);
-        assert_eq!(saved.diagnostics[0].message(), "retained finding");
-        assert!(saved.diagnostics[0].target().is_none());
+        assert_eq!(saved.diagnostics().len(), 1);
+        assert_eq!(saved.diagnostics()[0].message(), "retained finding");
+        assert!(saved.diagnostics()[0].target().is_none());
     }
 
     #[test]

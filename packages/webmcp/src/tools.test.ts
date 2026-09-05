@@ -11,6 +11,7 @@ import type {
   ModelContextLike,
   TellegenWebMcpAdapter,
   ToolPayload,
+  TellegenToolActivityEvent,
 } from "./types.js";
 
 const payload = (operation: string): ToolPayload => ({ operation });
@@ -31,6 +32,24 @@ function adapter(
 }
 
 const signal = () => new AbortController().signal;
+
+it("records a detached validated request and omits rejected input", async () => {
+  const events: TellegenToolActivityEvent[] = [];
+  const tools = createTellegenTools(adapter(), {
+    recordValidatedInput: true,
+    onActivity: (event) => events.push(event),
+  });
+  const query = tools.find((tool) => tool.name === "query_network")!;
+  const request = { case_id: "case", element_kind: "bus", limit: 2 };
+  await query.execute(request);
+  request.limit = 8;
+  expect(events.at(-1)).toMatchObject({
+    type: "finished",
+    input: { limit: 2 },
+  });
+  await query.execute({ ...request, unwanted: "do not retain" });
+  expect(events.at(-1)).not.toHaveProperty("input");
+});
 
 function schemaDescriptions(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];

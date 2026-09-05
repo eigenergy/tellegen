@@ -65,7 +65,20 @@ application consumes neither the proposal nor its approval.
 
 ## Persistence
 
-Tool activity, proposals, and approvals stay in memory. Saving a case writes
+The activity panel records the last 100 completed tool calls in an experiment
+journal, including validated requests, bounded results, failures, and elapsed
+time. **Export journal** downloads that record with the retained capacity
+planning trials and their decisions. The export identifies its browser session
+and reports how many older records were discarded. Invalid requests are omitted
+from the recorded input.
+
+When a preview and a successful update name the same case, revision, formulation,
+and edits, the panel shows the predicted objective change beside the exact
+change and absolute error. A failed update leaves the comparison empty. The
+relative error is undefined when the exact change is zero.
+
+Journal exports contain data only; importing one never authorizes or executes
+an edit. Proposals and approvals stay in memory. Saving a case writes
 its materialized PowerIO module. Loading that module starts a fresh runtime
 `Study`; its history records transformations applied to the stored value.
 Saving an exact result writes a PowerIO solution module containing the

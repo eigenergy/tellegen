@@ -95,6 +95,7 @@ export async function registerTellegenWebMcp(
     outputBudget: options.outputBudget,
     timeoutMs: options.timeoutMs,
     onActivity: options.onActivity,
+    recordValidatedInput: options.recordValidatedInput,
   };
   const tools = createTellegenTools(adapter, toolOptions);
   let dynamicNames: () => string[] = () => [];

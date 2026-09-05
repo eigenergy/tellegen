@@ -31,9 +31,29 @@ can call every descriptor's `execute` function with or without an
 `AbortSignal`.
 
 Pass `onActivity` to `createTellegenTools` or a registration helper to observe
-bounded start and finish events. Events contain the tool identity and response,
-while omitting raw input. A host can use them for visible agent activity and
-bounded result summaries without changing tool behavior.
+bounded start and finish events. Events contain the tool identity and response.
+Request recording is opt-in through `recordValidatedInput: true`; only inputs
+that pass validation are copied into completed events.
+
+Use `ExperimentJournal` to retain those events and compare a preview with an
+exact update of the same case, revision, formulation, and edits:
+
+```ts
+import {
+  ExperimentJournal,
+  registerDocumentTellegenWebMcp,
+} from "@tellegen/webmcp";
+
+const journal = new ExperimentJournal(crypto.randomUUID());
+const registration = await registerDocumentTellegenWebMcp(document, adapter, {
+  recordValidatedInput: true,
+  onActivity: (event) => journal.record(event),
+});
+const savedJournal = journal.export(); // call when the user chooses to save
+```
+
+The journal keeps up to 100 completed calls by default and reports discarded
+records in its export. Its data cannot authorize or execute edits.
 
 The adapter exposes case, network, sensitivity, and edit operations. Hosts keep
 PowerIO v0.11 generation-2 `pio-ir` modules, typed state selection, and

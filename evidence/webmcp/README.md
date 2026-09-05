@@ -20,7 +20,7 @@ The runner refuses tracked or untracked changes other than earlier generated
 JSON files in `results/`. It records the Tellegen commit and tree, the PowerIO
 commit, the lockfile digest, the invocation spec digest, and the source digest.
 Before PowerIO v0.11.0 is published, the common Git dependency supplies the
-exact #482 merge commit. After publication, every component crate must
+exact reviewed candidate recorded in `Cargo.toml` and `Cargo.lock`. After publication, every component crate must
 resolve to one registry version with a Cargo.lock checksum, and
 `powerio-releases.json` must map that release tag to its commit. The runner
 creates outputs with exclusive writes, so a second run cannot replace evidence
