@@ -98,7 +98,11 @@ def main():
             comparison = compared['comparison']
             packet['comparison'] = {key: comparison[key] for key in (
                 'goal', 'left_value', 'right_value', 'improvement')}
-            packet['outcome'] = 'verified_candidate'
+            tolerance = max(spec['tolerances'].get('objective_absolute', 0),
+                            spec['tolerances'].get('objective_relative', 0) * abs(comparison['left_value']))
+            packet['improvement_tolerance'] = tolerance
+            packet['outcome'] = ('verified_candidate' if comparison['improvement'] > tolerance
+                                 else 'improvement_below_tolerance')
         else:
             packet['outcome'] = 'no_verified_candidate'
         bundle = call(args.tellegen, 'export', study_path)

@@ -3,7 +3,7 @@
     "id": "texas7k-redistribution",
     "title": "TEXAS7K redistribution",
     "formulation": "dcopf",
-    "request": "Lower the weighted prices at buses [111078, 110449, 110127] using redistribution. Show the consequences elsewhere.",
+    "request": "Lower the weighted prices at buses [230209, 230220, 230224] using redistribution. Show the consequences elsewhere.",
     "interpretation": "Minimize the sum of selected active-power marginal prices. Changes are relative to the captured source state.",
     "objective": {
       "kind": "weighted_observable",
@@ -12,15 +12,15 @@
       },
       "weights": [
         {
-          "element": 111078,
+          "element": 230209,
           "weight": 1.0
         },
         {
-          "element": 110449,
+          "element": 230220,
           "weight": 1.0
         },
         {
-          "element": 110127,
+          "element": 230224,
           "weight": 1.0
         }
       ]
@@ -28,8 +28,8 @@
     "decisions": {
       "variables": [
         {
-          "id": "111078",
-          "element": 111078,
+          "id": "230209",
+          "element": 230209,
           "intervention": "active_demand",
           "lower": -10,
           "upper": 10,
@@ -37,8 +37,8 @@
           "budget_weight": 1
         },
         {
-          "id": "110449",
-          "element": 110449,
+          "id": "230220",
+          "element": 230220,
           "intervention": "active_demand",
           "lower": -10,
           "upper": 10,
@@ -46,8 +46,8 @@
           "budget_weight": 1
         },
         {
-          "id": "110127",
-          "element": 110127,
+          "id": "230243",
+          "element": 230243,
           "intervention": "active_demand",
           "lower": -10,
           "upper": 10,
@@ -66,9 +66,9 @@
     "max_solves": 8,
     "max_iterations": 8,
     "beam_width": 2,
-    "min_improvement": 1e-07
+    "min_improvement": 0.001
   },
-  "rationale": "Use the implicit objective gradient to rank feasible moves and retain the best exact result.",
+  "rationale": "Investigate the high-price load region and the limiting 230273-230267 corridor identified in the exact starting solution. Rank feasible moves with the implicit gradient and require an exact improvement above the recorded numerical tolerance.",
   "tolerances": {
     "objective_absolute": 1e-05,
     "objective_relative": 1e-05,

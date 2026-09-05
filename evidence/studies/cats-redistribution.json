@@ -66,7 +66,7 @@
     "max_solves": 8,
     "max_iterations": 8,
     "beam_width": 2,
-    "min_improvement": 1e-07
+    "min_improvement": 0.001
   },
   "rationale": "Use the implicit objective gradient to rank feasible moves and retain the best exact result.",
   "tolerances": {

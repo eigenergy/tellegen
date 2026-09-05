@@ -3,7 +3,7 @@
     "id": "texas7k-capacity",
     "title": "TEXAS7K capacity",
     "formulation": "dcopf",
-    "request": "Lower the weighted prices at buses [111078, 110449, 110127] using capacity. Show the consequences elsewhere.",
+    "request": "Lower the weighted prices at buses [230209, 230220, 230224] using capacity upgrades. Show the consequences elsewhere.",
     "interpretation": "Minimize the sum of selected active-power marginal prices. Changes are relative to the captured source state.",
     "objective": {
       "kind": "weighted_observable",
@@ -12,15 +12,15 @@
       },
       "weights": [
         {
-          "element": 111078,
+          "element": 230209,
           "weight": 1.0
         },
         {
-          "element": 110449,
+          "element": 230220,
           "weight": 1.0
         },
         {
-          "element": 110127,
+          "element": 230224,
           "weight": 1.0
         }
       ]
@@ -28,8 +28,8 @@
     "decisions": {
       "variables": [
         {
-          "id": "110450-110449",
-          "element": "110450-110449",
+          "id": "230273-230267",
+          "element": "230273-230267",
           "intervention": "branch_rating",
           "lower": 0,
           "upper": 100,
@@ -37,8 +37,8 @@
           "budget_weight": 1
         },
         {
-          "id": "110097-110127",
-          "element": "110097-110127",
+          "id": "230273-230288",
+          "element": "230273-230288",
           "intervention": "branch_rating",
           "lower": 0,
           "upper": 100,
@@ -46,8 +46,8 @@
           "budget_weight": 1
         },
         {
-          "id": "111082-110449",
-          "element": "111082-110449",
+          "id": "120462-120437",
+          "element": "120462-120437",
           "intervention": "branch_rating",
           "lower": 0,
           "upper": 100,
@@ -55,8 +55,8 @@
           "budget_weight": 1
         },
         {
-          "id": "110121-110127",
-          "element": "110121-110127",
+          "id": "120462-120468",
+          "element": "120462-120468",
           "intervention": "branch_rating",
           "lower": 0,
           "upper": 100,
@@ -64,8 +64,8 @@
           "budget_weight": 1
         },
         {
-          "id": "110449-110458",
-          "element": "110449-110458",
+          "id": "190194-240299",
+          "element": "190194-240299",
           "intervention": "branch_rating",
           "lower": 0,
           "upper": 100,
@@ -73,8 +73,8 @@
           "budget_weight": 1
         },
         {
-          "id": "111078-111294",
-          "element": "111078-111294",
+          "id": "230068-230263",
+          "element": "230068-230263",
           "intervention": "branch_rating",
           "lower": 0,
           "upper": 100,
@@ -91,9 +91,9 @@
     "max_solves": 8,
     "max_iterations": 8,
     "beam_width": 2,
-    "min_improvement": 1e-07
+    "min_improvement": 0.001
   },
-  "rationale": "Use the implicit objective gradient to rank feasible moves and retain the best exact result.",
+  "rationale": "Investigate the high-price load region and the limiting 230273-230267 corridor identified in the exact starting solution. Rank feasible moves with the implicit gradient and require an exact improvement above the recorded numerical tolerance.",
   "tolerances": {
     "objective_absolute": 1e-05,
     "objective_relative": 1e-05,
