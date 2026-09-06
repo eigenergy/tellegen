@@ -126,7 +126,9 @@ PowerMCP's `tellegen` server (`powermcp run tellegen`) invokes the native CLI
 directly and uses the same request schemas: `solve`, `solve_module` and `plan`
 wrap the stateless commands, and `study_create`, `study_inspect`, `study_run`,
 `study_export` and `study_import` wrap the Study commands, with `study_create`
-accepting a grid exchange file that PowerIO parses into the Study input.
+accepting a grid exchange file that PowerIO parses into the Study input. The
+server's `capabilities`, `contract` and `study_contract` tools expose read-only
+introspection of that same CLI contract.
 Its agent interface leaves application to an explicit user action: `study_run`
 refuses the `apply` operation.
 

@@ -14,9 +14,10 @@ The six component crates are published on crates.io at 0.11.0 and
 [powerio#454](https://github.com/eigenergy/powerio/pull/454) is no longer the
 release target.
 
-Every pull request that changes the temporary pin runs the `PowerIO Candidate`
-workflow at the checked-in revision. Once the workflow is on `main`, it can also
-be dispatched with a proposed full PowerIO commit SHA before a PowerIO release.
+A pull request that changes `Cargo.lock`, `Cargo.toml`, or the pin scripts runs
+the `PowerIO Candidate` workflow at the checked-in revision. A manual dispatch
+can instead pin all six crates to one proposed full PowerIO commit SHA ahead of
+a release.
 The isolated runner resolves all six PowerIO components together, then exercises
 the Rust, WebAssembly, WebMCP package, and browser integration. Normal CI also
 rejects a manifest and lockfile that name different PowerIO revisions.
@@ -46,7 +47,7 @@ The PowerIO release, stored IR generation, and C ABI are independent:
 The historical `powerio.module` version 1 document and bare balanced-network
 model JSON are not current input formats. Regenerate those documents from
 their original case data. Checked-in evidence produced with the old candidate
-is historical and must be rerun before it is cited for this pin.
+is historical and must be rerun before it is cited for this baseline.
 
 ## Current module API
 
