@@ -79,6 +79,12 @@ on its own.
 module on stdin and writes the solve response to stdout. Its `solve-module`
 command writes an exact PowerIO solution module.
 
+## Optional Moreau backend
+
+The `moreau` Cargo feature adds independently selectable DC OPF solves and
+selected derivatives. Clarabel and the specialized Tellegen sensitivities remain
+the defaults. See [Moreau execution and comparisons](docs/src/moreau.md).
+
 ## Demo
 
 The demo serves three TAMU ACTIVSg synthetic grids and the CATS California

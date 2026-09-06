@@ -269,6 +269,28 @@ impl SolveSpec {
 /// request (build `K` once, `dK/dp` once, the selector once) plus O(rows + cols) for
 /// metadata; the heavy linear algebra never crosses the trait object.
 pub trait Differentiable {
+    /// Effective implementation for an explicitly selected execution policy.
+    fn derivative_implementation(
+        &self,
+        _operand: Operand,
+        _parameter: Parameter,
+    ) -> Option<&'static str> {
+        None
+    }
+
+    /// Optional derivative implementation returning per-unit output rows.
+    /// `None` selects the formulation's KKT implementation.
+    fn selected_derivative(
+        &self,
+        _operand: Operand,
+        _parameter: Parameter,
+        _indices: &[usize],
+        _mode: Mode,
+        _weights: Option<&[(usize, f64)]>,
+    ) -> Option<Result<Vec<Vec<f64>>, SensError>> {
+        None
+    }
+
     /// Stable lowercase formulation tag, for [`SensError::Unsupported`] and
     /// diagnostics.
     fn formulation(&self) -> &'static str;
@@ -336,6 +358,9 @@ pub struct ColMeta {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct SensitivityMatrix {
+    /// Effective derivative implementation when execution was explicitly selected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation: Option<String>,
     /// `values[r][c] = d(operand_r)/d(parameter_c)`, in the units named by `units`. The
     /// engine produces per-unit values; the api edge rescales to served units.
     pub values: Vec<Vec<f64>>,
@@ -542,23 +567,29 @@ pub fn sensitivity(
             selector.elements.len(),
         )));
     }
-    let dim = sys.dim();
-    let kkt = sys.jacobian();
-    let dkdp = sys.parameter_jacobian(parameter, &cols)?;
-
     let direction = match mode {
         Mode::Auto => auto_mode(cols.len(), selector.map.len()),
         m => m,
     };
-
-    // forward_rhs is the natural +dK/dp; the leading minus of dz/dp = -K⁻¹ dK/dp
-    // rides in the sign, composed with the operand's reporting flip.
-    let spec = sys.solve_spec();
-    let sign = -selector.sign;
-    let values = forward_adjoint(dim, &kkt, dkdp, &selector.map, sign, direction, |t, rhs| {
-        solve_refined(dim, t, rhs, spec.eps, spec.refine_iters, spec.tol_factor)
-    })
-    .map_err(SensError::Solve)?;
+    let values =
+        if let Some(result) = sys.selected_derivative(operand, parameter, &cols, direction, None) {
+            result?
+        } else {
+            let dim = sys.dim();
+            let kkt = sys.jacobian();
+            let dkdp = sys.parameter_jacobian(parameter, &cols)?;
+            let spec = sys.solve_spec();
+            forward_adjoint(
+                dim,
+                &kkt,
+                dkdp,
+                &selector.map,
+                -selector.sign,
+                direction,
+                |t, rhs| solve_refined(dim, t, rhs, spec.eps, spec.refine_iters, spec.tol_factor),
+            )
+            .map_err(SensError::Solve)?
+        };
 
     // The engine stays per-unit; the served-unit rescale (`unit_scale`) is applied at
     // the api edge, per the engine invariant.
@@ -582,6 +613,9 @@ pub fn sensitivity(
         .collect();
 
     Ok(SensitivityMatrix {
+        implementation: sys
+            .derivative_implementation(operand, parameter)
+            .map(str::to_owned),
         values,
         rows,
         cols: cols_meta,
@@ -658,6 +692,11 @@ pub fn weighted_sensitivity(
         }
     }
 
+    if let Some(result) =
+        sys.selected_derivative(operand, parameter, &cols, Mode::Adjoint, Some(weights))
+    {
+        return Ok(result?.into_iter().next().unwrap_or_default());
+    }
     let dim = sys.dim();
     let kkt = sys.jacobian();
     let dkdp = sys.parameter_jacobian(parameter, &cols)?;

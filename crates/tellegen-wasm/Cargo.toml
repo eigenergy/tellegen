@@ -28,6 +28,7 @@ console_error_panic_hook = "0.1"
 
 [features]
 default = []
+moreau = ["tellegen/moreau"]
 # Gates the `#[wasm_bindgen] Study` export and the dLMP/dd column in `solve_dc`.
 sensitivity = ["tellegen/sensitivity"]
 # The SOCWR (Jabr) conic relaxation. Pulls `sensitivity` so the Study export stays

@@ -24,12 +24,14 @@ export type EngineRequest =
   | { op: "extract_geo"; module_json: string }
   | { op: "apply_display_geo"; module_json: string; bytes: Uint8Array }
   | { op: "capabilities" }
-  | { op: "solve_module"; module_json: string; request: string }
+  | { op: "execution_capabilities" }
+  | { op: "solve_module"; module_json: string; request: string; execution?: string }
   | {
       op: "study_new";
       study: number;
       module_json: string;
       formulation: string;
+      execution?: string;
     }
   | {
       op: "study_replace_edits";
@@ -100,10 +102,12 @@ export function runRequest(
       return mod.apply_display_geo(req.module_json, req.bytes);
     case "capabilities":
       return mod.capabilities_json();
+    case "execution_capabilities":
+      return mod.execution_capabilities_json();
     case "solve_module":
-      return mod.solve_module(req.module_json, req.request);
+      return req.execution === undefined ? mod.solve_module(req.module_json, req.request) : mod.solve_module_with_execution(req.module_json, req.request, req.execution);
     case "study_new":
-      studies.set(req.study, new mod.Study(req.module_json, req.formulation));
+      studies.set(req.study, req.execution === undefined ? new mod.Study(req.module_json, req.formulation) : mod.Study.withExecution(req.module_json, req.formulation, req.execution));
       return null;
     case "study_replace_edits":
       return study(req.study).replace_edits(req.edits, req.sensitivities);

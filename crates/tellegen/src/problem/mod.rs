@@ -35,7 +35,7 @@ use crate::model::DcNetwork;
 
 #[cfg(feature = "conic")]
 mod conic;
-mod dc;
+pub(crate) mod dc;
 #[cfg(feature = "sensitivity")]
 mod pf_ac;
 #[cfg(feature = "sensitivity")]

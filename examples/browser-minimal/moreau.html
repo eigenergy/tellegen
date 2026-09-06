@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Moreau backend comparison</title></head>
+<body>
+  <h1>DC OPF backend comparison</h1>
+  <p>Compare solves, demand previews, commits, and capacity planning in a browser worker. The default case is IEEE 14-bus.</p>
+  <label>Optional MATPOWER case <input id="case" type="file" accept=".m"></label>
+  <button id="run">Compare backends</button>
+  <p id="status" role="status">Ready</p>
+  <pre id="results"></pre>
+  <script type="module" src="/src/moreau.ts"></script>
+</body>
+</html>

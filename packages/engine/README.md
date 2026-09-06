@@ -95,3 +95,12 @@ npm run pack:engine
 Svelte package. It releases through Changesets with the other npm packages. The
 hosted demo under `apps/web` is private and consumes `@tellegen/svelte` through
 the same workspace file dependency used by the local examples.
+
+## Optional Moreau execution
+
+Build with `npm run wasm:moreau` to include the optional DC backend. Pass
+`{ execution: { dc_solver: "moreau", dc_derivatives: "moreau_selected" } }`
+as the third argument to `createStudy`. `solveModule` accepts the same
+execution object as its third argument. `executionCapabilities()` reports
+availability and the selected-derivative policy. Existing calls retain the
+Clarabel and specialized Tellegen defaults. See `docs/src/moreau.md`.

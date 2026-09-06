@@ -1115,6 +1115,13 @@
           },
           "type": "array"
         },
+        "implementation": {
+          "description": "Effective derivative implementation when execution was explicitly selected.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "rows": {
           "items": {
             "$ref": "#/$defs/RowMeta"
@@ -2102,5 +2109,5 @@
   ],
   "title": "StudyContract",
   "type": "object",
-  "x-rust-source-sha256": "738e3a9cf5bc66121284cf7ea6d377e0871ad66639cde35d16743ff7b2eff8f0"
+  "x-rust-source-sha256": "1ef3581f7ee4f406b3d8e0a44fc22ffd58ae54e56a042706509ff74a68f09190"
 }

@@ -547,9 +547,26 @@ export async function capabilities(): Promise<ProblemCaps[]> {
   );
 }
 
+/** Live execution choices; these are not part of a saved PowerIO case. */
+export interface ExecutionOptions {
+  dc_solver?: "clarabel" | "moreau";
+  dc_derivatives?: "tellegen" | "moreau_selected";
+}
+
+export interface ExecutionCapabilities {
+  moreau: boolean;
+  default: Required<ExecutionOptions>;
+  moreau_selected: { columns: string[]; weighted: string[]; other_operations: "tellegen" };
+}
+
+export async function executionCapabilities(): Promise<ExecutionCapabilities> {
+  return JSON.parse(expectText(await engineHost().call({ op: "execution_capabilities" })));
+}
+
 export async function solveModule(
   moduleJson: string,
   request: SolveRequest = {},
+  execution?: ExecutionOptions,
 ): Promise<SolveResponse> {
   return JSON.parse(
     expectText(
@@ -557,6 +574,7 @@ export async function solveModule(
         op: "solve_module",
         module_json: moduleJson,
         request: JSON.stringify(request),
+        ...(execution === undefined ? {} : { execution: JSON.stringify(execution) }),
       }),
     ),
   );
@@ -780,6 +798,7 @@ export class BrowserStudy {
   #host: EngineHost;
   /** The caller-allocated handle naming the wasm Study on the host. */
   #handle: number;
+  readonly execution: Readonly<Required<ExecutionOptions>>;
   #formulation: Formulation;
   #planningHost: () => EngineHost;
   /** External bus id -> dense positional bus index, built once from the committed solution's
@@ -796,7 +815,9 @@ export class BrowserStudy {
     handle: number,
     formulation: Formulation = DEFAULT_FORMULATION,
     planningHost: () => EngineHost = isolatedEngineHost,
+    execution: ExecutionOptions = {},
   ) {
+    this.execution = Object.freeze({ dc_solver: execution.dc_solver ?? "clarabel", dc_derivatives: execution.dc_derivatives ?? "tellegen" });
     this.#host = host;
     this.#handle = handle;
     this.#formulation = formulation;
@@ -999,6 +1020,7 @@ export class BrowserStudy {
       this.#formulation,
       this.#planningHost(),
       signal,
+      this.execution,
     );
     try {
       return await planningStudy.#planInPlace(spec, signal);
@@ -1071,10 +1093,10 @@ let studySeq = 0;
 export async function createStudy(
   moduleJson: string,
   formulation: Formulation = DEFAULT_FORMULATION,
-  options: { isolated?: boolean; signal?: AbortSignal } = {},
+  options: { isolated?: boolean; signal?: AbortSignal; execution?: ExecutionOptions } = {},
 ): Promise<BrowserStudy> {
   const host = options.isolated ? isolatedEngineHost() : engineHost();
-  return createStudyOnHost(moduleJson, formulation, host, options.signal);
+  return createStudyOnHost(moduleJson, formulation, host, options.signal, options.execution);
 }
 
 async function createStudyOnHost(
@@ -1082,6 +1104,7 @@ async function createStudyOnHost(
   formulation: Formulation,
   host: EngineHost,
   signal?: AbortSignal,
+  execution?: ExecutionOptions,
 ): Promise<BrowserStudy> {
   // Handles are allocated here, not by the host, so a pending build replayed
   // onto the fallback host keeps naming the same study.
@@ -1097,6 +1120,7 @@ async function createStudyOnHost(
       study: handle,
       module_json: moduleJson,
       formulation,
+      ...(execution === undefined ? {} : { execution: JSON.stringify(execution) }),
     });
     signal?.throwIfAborted();
   } catch (error) {
@@ -1105,7 +1129,7 @@ async function createStudyOnHost(
   } finally {
     signal?.removeEventListener("abort", cancel);
   }
-  return new BrowserStudy(host, handle, formulation);
+  return new BrowserStudy(host, handle, formulation, isolatedEngineHost, execution);
 }
 
 export interface EngineTransport {
@@ -1135,11 +1159,12 @@ export interface EngineTransport {
   solveModule(
     moduleJson: string,
     request?: SolveRequest,
+    execution?: ExecutionOptions,
   ): Promise<SolveResponse>;
   createStudy(
     moduleJson: string,
     formulation?: Formulation,
-    options?: { isolated?: boolean; signal?: AbortSignal },
+    options?: { isolated?: boolean; signal?: AbortSignal; execution?: ExecutionOptions },
   ): Promise<BrowserStudy>;
 }
 

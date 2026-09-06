@@ -19,3 +19,11 @@ npm run wasm
 npm run build:engine
 npm --workspace @tellegen/example-browser-minimal run dev
 ```
+
+## Moreau comparison
+
+Build the engine with `npm --workspace @tellegen/engine run wasm:moreau`, then
+`npm run build:engine` from the repository root. Start this example's Vite
+server and open `/moreau.html`. The comparison runs all four solver/derivative
+combinations in isolated workers and reports timings and failures. It accepts
+a local MATPOWER file or uses the embedded IEEE 14-bus fixture.

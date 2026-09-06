@@ -1065,6 +1065,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "moreau-cpu"
+version = "0.4.0"
+source = "git+https://github.com/samtalki/moreau?rev=6f2949933cdab7d8444b64d1e0917e64d5e3e73b#6f2949933cdab7d8444b64d1e0917e64d5e3e73b"
+dependencies = [
+ "amd",
+ "cfg-if",
+ "derive_builder",
+ "enum_dispatch",
+ "itertools",
+ "lazy_static",
+ "num-traits",
+ "rayon",
+ "thiserror 1.0.69",
+ "web-time",
+]
+
+[[package]]
 name = "nano-gemm"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1837,6 +1854,7 @@ version = "0.2.0"
 dependencies = [
  "clarabel",
  "faer",
+ "moreau-cpu",
  "num-complex",
  "powerio",
  "powerio-matrix",

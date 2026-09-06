@@ -8,6 +8,7 @@
 - [WebMCP](webmcp.md)
 - [Product Showcase](webmcp-challenge.md)
 - [Challenge Evidence](challenge-evidence.md)
+- [Optional Moreau Execution](moreau.md)
 - [Engine API Reference](engine-api.md)
 - [Transports](transports.md)
 - [Getting Started](getting-started.md)

@@ -74,6 +74,7 @@ const DEFAULT_SHED_COST_MULTIPLIER: f64 = 10.0;
 // major bump.
 #[non_exhaustive]
 pub(crate) struct DcNetwork {
+    pub execution: crate::ExecutionOptions,
     /// Buses, branches, generators after filtering (in-service, non-isolated).
     pub n: usize,
     pub m: usize,
@@ -411,6 +412,7 @@ impl DcNetwork {
         let c_shed = vec![DEFAULT_SHED_COST_MULTIPLIER * marginal_cost_ub; n];
 
         Ok(DcNetwork {
+            execution: crate::ExecutionOptions::default(),
             n,
             m,
             k,

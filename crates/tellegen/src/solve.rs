@@ -30,6 +30,7 @@ pub struct SolveIteration {
 /// The raw output of a solve: the primal `x`, the conic dual `z`, the objective,
 /// and the iteration trace. A formulation-specific readout (in [`crate::problem`])
 /// turns this into a named solution.
+#[derive(Clone)]
 pub(crate) struct RawSolution {
     pub x: Vec<f64>,
     pub z: Vec<f64>,

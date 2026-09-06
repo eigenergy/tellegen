@@ -442,6 +442,57 @@ impl<'a> DcKkt<'a> {
 }
 
 impl Differentiable for DcKkt<'_> {
+    #[cfg(feature = "moreau")]
+    fn derivative_implementation(
+        &self,
+        _operand: Operand,
+        parameter: Parameter,
+    ) -> Option<&'static str> {
+        (self.dc.execution.dc_derivatives == crate::DcDerivatives::MoreauSelected).then_some(
+            if matches!(
+                parameter,
+                Parameter::Demand(Power::Active) | Parameter::LineLimit
+            ) {
+                "moreau"
+            } else {
+                "tellegen"
+            },
+        )
+    }
+
+    #[cfg(feature = "moreau")]
+    fn selected_derivative(
+        &self,
+        operand: Operand,
+        parameter: Parameter,
+        indices: &[usize],
+        mode: super::Mode,
+        weights: Option<&[(usize, f64)]>,
+    ) -> Option<Result<Vec<Vec<f64>>, SensError>> {
+        if self.dc.execution.dc_derivatives != crate::DcDerivatives::MoreauSelected
+            || !matches!(
+                parameter,
+                Parameter::Demand(Power::Active) | Parameter::LineLimit
+            )
+        {
+            return None;
+        }
+        if weights.is_some()
+            && (operand != Operand::Price(Power::Active) || parameter != Parameter::LineLimit)
+        {
+            return None;
+        }
+        Some(crate::problem::dc::moreau_derivative(
+            self.dc,
+            &self.snapped,
+            operand,
+            parameter,
+            indices,
+            mode,
+            weights,
+        ))
+    }
+
     fn formulation(&self) -> &'static str {
         "dc"
     }

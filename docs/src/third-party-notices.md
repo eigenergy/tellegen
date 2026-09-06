@@ -28,6 +28,12 @@ The repository does not modify or vendor those dependency sources. License and
 notice files from dependencies are distributed through their normal package
 archives.
 
+## Moreau
+
+The optional `moreau-cpu` backend is Apache-2.0 licensed. Its license and NOTICE,
+including upstream Clarabel, diffqcp, and DAQP attribution, are included in
+`packages/engine/third-party/moreau/` for browser package distribution.
+
 ## Demo Case Data
 
 The demo data is staged by the operator and is not vendored in this repository.
