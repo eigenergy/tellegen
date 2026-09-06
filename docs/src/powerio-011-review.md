@@ -15,9 +15,9 @@ The six component crates are published on crates.io at 0.11.0 and
 release target.
 
 A pull request that changes `Cargo.lock`, `Cargo.toml`, or the pin scripts runs
-the `PowerIO Candidate` workflow at the checked-in revision. A manual dispatch
-can instead pin all six crates to one proposed full PowerIO commit SHA ahead of
-a release.
+the `PowerIO Candidate` workflow against the PowerIO release the lockfile
+names. A manual dispatch can instead pin all six crates to one proposed full
+PowerIO commit SHA ahead of a release.
 The isolated runner resolves all six PowerIO components together, then exercises
 the Rust, WebAssembly, WebMCP package, and browser integration. Normal CI also
 rejects a manifest and lockfile that name different PowerIO revisions.
