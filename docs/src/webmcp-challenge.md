@@ -23,7 +23,8 @@ The browser controls and WebMCP call the same Study controller. Both can create 
 Study, inspect its history, revise a goal, branch from a saved state, compare
 candidates, propose interventions and attach evidence. Capacity-tool compatibility
 adapters create the same persistent Studies. Native Rust and CLI operations use
-the same generated contracts; PowerMCP invokes the CLI directly.
+the same generated contracts; PowerMCP's `tellegen` server invokes the CLI
+directly and exchanges PowerIO IR with it.
 
 Three pointers keep navigation clear: the inspected state, the recommended state
 and the applied state. Viewing an alternative does not apply it. Human approval

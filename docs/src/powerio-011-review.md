@@ -6,8 +6,11 @@ dependency maintenance in
 [powerio#485](https://github.com/eigenergy/powerio/pull/485).
 The final documentation and release checks are in
 [powerio#491](https://github.com/eigenergy/powerio/pull/491).
-Tellegen pins merge revision `ca8cfcec8bdc35d083dfc91b0bb9025ac8bb7507`
-until the component crates are published. The earlier 1.0 candidate in
+The six component crates are published on crates.io at 0.11.0 and
+`Cargo.lock` resolves them there with registry checksums; the temporary
+`[patch.crates-io]` pins are gone, and
+`evidence/webmcp/powerio-releases.json` records the release commit
+(`aa8cec55c8eaf597f1849b15af21a1d894633a05`). The earlier 1.0 candidate in
 [powerio#454](https://github.com/eigenergy/powerio/pull/454) is no longer the
 release target.
 

@@ -122,9 +122,13 @@ Browser WebMCP exposes `create_study`, `inspect_study`, `revise_study_goal`,
 `branch_study`, `compare_study_states`, `propose_study` and
 `record_study_evidence`, `edit_demand` and `restore_base_case`. Inspection returns compact continuation context and
 bounded pages of larger records. The browser controls call the same controller.
-PowerMCP's `tellegen` adapter invokes the native CLI directly and uses the same
-request schemas. Its agent interface leaves application to an explicit user
-action.
+PowerMCP's `tellegen` server (`powermcp run tellegen`) invokes the native CLI
+directly and uses the same request schemas: `solve`, `solve_module` and `plan`
+wrap the stateless commands, and `study_create`, `study_inspect`, `study_run`,
+`study_export` and `study_import` wrap the Study commands, with `study_create`
+accepting a grid exchange file that PowerIO parses into the Study input.
+Its agent interface leaves application to an explicit user action: `study_run`
+refuses the `apply` operation.
 
 A sensitivity build supports DC OPF and AC power flow Studies. The `conic`
 feature adds SOCWR. Nonlinear AC OPF and multiconductor solving are unavailable;
