@@ -6,16 +6,20 @@
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { branchColor, busNeutral, busRadius, priceColor, scalarDomain } from '../colors.js';
 	import { rgbaCss } from '../format.js';
+	import type { MulticonductorCase } from '../state.svelte.js';
+	import { edgeColor, attachmentColor } from '../multiconductor.js';
 	import { diagramLabels } from '../diagram-labels.js';
 
 	let {
 		network,
+		multiconductor = null,
 		caseId,
 		onbusclick,
 		onbranchclick,
 		onclear
 	}: {
 		network: Network;
+		multiconductor?: MulticonductorCase | null;
 		caseId: string;
 		onbusclick: (id: number) => void;
 		onbranchclick: (id: number) => void;
@@ -47,7 +51,19 @@
 			}))
 			.filter((path) => path.points.length > 1)
 	);
+	const selectedBus = $derived(
+		multiconductor
+			? (network.buses.find((bus) => bus.uid === multiconductor.selectedBusId)?.id ?? null)
+			: app.selectedBus
+	);
+	const selectedBranch = $derived(
+		multiconductor
+			? (network.branches.find((branch) => branch.uid === multiconductor.selectedEdgeId)?.id ??
+					null)
+			: app.selectedBranch
+	);
 	const series = $derived.by(() => {
+		if (multiconductor) return [];
 		if (!app.studyView) return ctrl.activeDisplay?.values ?? [];
 		const solution = app.studyView.solution;
 		if (app.displayMode === 'angle') return solution?.va ?? [];
@@ -71,7 +87,7 @@
 		)
 	);
 	const values = $derived(new Map(series.map((value) => [value.bus, value.value])));
-	const labels = $derived(diagramLabels(buses, scale, x, y, width, height, app.selectedBus));
+	const labels = $derived(diagramLabels(buses, scale, x, y, width, height, selectedBus));
 	const loading = $derived(
 		new Map(
 			(app.studyView
@@ -81,6 +97,12 @@
 		)
 	);
 	function color(bus: NetworkBus) {
+		if (multiconductor) {
+			const source = multiconductor.view?.buses[bus.id];
+			return source?.attachmentKinds.length
+				? rgbaCss([...attachmentColor(source.attachmentKinds[0])])
+				: rgbaCss(busNeutral);
+		}
 		const value = values.get(bus.id);
 		return rgbaCss(
 			value === undefined
@@ -88,6 +110,14 @@
 				: priceColor((value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12))
 		);
 	}
+	function branchLabel(id: number) {
+		const edge = multiconductor?.view?.edges[id];
+		const branch = network.branches.find((branch) => branch.id === id)!;
+		return edge
+			? `${edge.kind} ${edge.id}, bus ${edge.from} to bus ${edge.to}`
+			: `Line ${branch.id}, bus ${branch.from} to bus ${branch.to}`;
+	}
+
 	function bounds(points: [number, number][]) {
 		let minX = Infinity,
 			maxX = -Infinity,
@@ -287,29 +317,29 @@
 					<path
 						d={`M${points.map((point) => point.join(',')).join(' L')}`}
 						fill="none"
-						stroke={app.selectedBranch === branch.id
+						stroke={selectedBranch === branch.id
 							? '#2f6fbb'
-							: rgbaCss(branchColor(loading.get(branch.id) ?? 0, branch.status !== 0))}
-						stroke-width={app.selectedBranch === branch.id ? 4 : 2}
+							: multiconductor?.view?.edges[branch.id]
+								? rgbaCss(edgeColor(multiconductor.view.edges[branch.id].kind, branch.status !== 0))
+								: rgbaCss(branchColor(loading.get(branch.id) ?? 0, branch.status !== 0))}
+						stroke-width={selectedBranch === branch.id ? 4 : 2}
 						vector-effect="non-scaling-stroke"
 						role="button"
-						tabindex={app.selectedBranch === branch.id ? 0 : -1}
-						aria-label={`Line ${branch.id}, bus ${branch.from} to bus ${branch.to}`}
+						tabindex={selectedBranch === branch.id ? 0 : -1}
+						aria-label={branchLabel(branch.id)}
 						data-element="branch"
 						data-branch-id={branch.id}
 						onclick={() => onbranchclick(branch.id)}
 						onkeydown={(event) => choose(event, () => onbranchclick(branch.id))}
-						><title>Line {branch.id}, bus {branch.from} to bus {branch.to}</title></path
+						><title>{branchLabel(branch.id)}</title></path
 					>
 				{/each}
 				{#each buses as bus, index (bus.id)}
 					<g
 						class="bus"
 						role="button"
-						tabindex={app.selectedBus === bus.id || (app.selectedBus === null && index === 0)
-							? 0
-							: -1}
-						aria-label={`Bus ${bus.id}${bus.name ? `, ${bus.name}` : ''}`}
+						tabindex={selectedBus === bus.id || (selectedBus === null && index === 0) ? 0 : -1}
+						aria-label={`Bus ${multiconductor ? bus.uid : bus.id}${!multiconductor && bus.name ? `, ${bus.name}` : ''}`}
 						data-element="bus"
 						data-bus-id={bus.id}
 						onclick={() => onbusclick(bus.id)}
@@ -320,8 +350,8 @@
 							cy={bus.lat}
 							r={Math.max(5, busRadius(Math.max(bus.demand_mw, bus.gen_mw))) / scale}
 							fill={color(bus)}
-							stroke={app.selectedBus === bus.id ? '#2f6fbb' : '#756a5b'}
-							stroke-width={app.selectedBus === bus.id ? 3 : 1}
+							stroke={selectedBus === bus.id ? '#2f6fbb' : '#756a5b'}
+							stroke-width={selectedBus === bus.id ? 3 : 1}
 							vector-effect="non-scaling-stroke"
 						/>
 						<text
@@ -331,9 +361,10 @@
 							font-size={11 / scale}>{bus.name || bus.id}</text
 						>
 						<title
-							>Bus {bus.id}{bus.name ? `, ${bus.name}` : ''}, {bus.demand_mw.toFixed(1)} MW demand{values.has(
-								bus.id
-							)
+							>Bus {multiconductor ? bus.uid : bus.id}{!multiconductor && bus.name
+								? `, ${bus.name}`
+								: ''}, {(bus.demand_mw * (multiconductor ? 1000 : 1)).toFixed(1)}
+							{multiconductor ? 'kW' : 'MW'} demand{values.has(bus.id)
 								? `, ${values.get(bus.id)!.toFixed(4)} ${displayMode === 'price' ? 'objective units/MW LMP' : displayMode === 'voltage' ? 'pu voltage' : 'rad voltage angle'}`
 								: ''}</title
 						>

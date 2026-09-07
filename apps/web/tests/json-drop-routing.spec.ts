@@ -1,3 +1,4 @@
+import { noticeDetails } from './fixtures/notices.js';
 import { expect, test } from './fixtures/page-errors.js';
 
 const POWER_MODELS_TWO_BUS = JSON.stringify({
@@ -92,7 +93,7 @@ test('a stray JSON object is not swallowed as an empty multiconductor case', asy
 		}
 	]);
 
-	await expect(page.locator('p.error')).toContainText('no bus coordinates', {
+	await expect(await noticeDetails(page)).toContainText('no bus coordinates', {
 		timeout: 30_000
 	});
 	await expect(page.getByRole('heading', { name: /stray/i })).toHaveCount(0);

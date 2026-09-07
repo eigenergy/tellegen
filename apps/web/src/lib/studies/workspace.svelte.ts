@@ -13,6 +13,7 @@ import { capacityGoal, capacityOutcome, type CapacityStudyBinding } from './capa
 import type { CapacityPlanSpecJson } from '@tellegen/svelte';
 import type { Controller } from '@tellegen/svelte';
 import { caseRevision } from '../webmcp/tellegen-adapter.js';
+import { trackUsage, type EventData } from '../analytics/client.js';
 
 type CaseEvidenceContext = {
 	studyId: string;
@@ -66,9 +67,15 @@ export class StudyWorkspace {
 			this.error = String(error);
 		}
 	}
-	async #run<T>(run: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+	async #run<T>(
+		run: (signal: AbortSignal) => Promise<T>,
+		signal?: AbortSignal,
+		event = 'study.operation',
+		metrics: EventData = {}
+	): Promise<T> {
 		if (this.busy)
 			throw new Error('A Study operation is running; wait or cancel it before continuing');
+		const started = performance.now();
 		this.busy = true;
 		this.error = null;
 		const abort = new AbortController();
@@ -77,8 +84,23 @@ export class StudyWorkspace {
 		if (signal?.aborted) cancel();
 		else signal?.addEventListener('abort', cancel, { once: true });
 		try {
-			return await run(abort.signal);
+			const result = await run(abort.signal);
+			const experiment = (result as StudyOperationResult | undefined)?.experiment;
+			const evidence = experiment ? this.document?.experiments[experiment] : undefined;
+			trackUsage(event, {
+				...metrics,
+				result: abort.signal.aborted ? 'cancelled' : 'completed',
+				duration_ms: performance.now() - started,
+				solve_count: evidence?.solve_count,
+				trial_count: evidence?.trials.length
+			});
+			return result;
 		} catch (error) {
+			trackUsage(event, {
+				...metrics,
+				result: abort.signal.aborted ? 'cancelled' : 'failed',
+				duration_ms: performance.now() - started
+			});
 			this.error = error instanceof Error ? error.message : String(error);
 			throw error;
 		} finally {
@@ -97,117 +119,135 @@ export class StudyWorkspace {
 		signal?: AbortSignal,
 		show = true
 	) {
-		return this.#run(async (abort) => {
-			const c = this.grid.activeSolvable;
-			if (!c || c.id !== caseId || caseRevision(c) !== expectedCaseRevision || c.solving)
-				throw new Error('Case changed; inspect the current case before creating a Study');
-			const base_input = await this.grid.ensureStudyInputJson(c);
-			const captured = await this.grid.captureSavedCase(c);
-			const geometry = c.network;
-			const display = geometry
-				? {
-						case_id: c.id,
-						camera: geometry.coordinate_space === 'diagram' ? null : this.grid.app.camera,
-						diagram_camera:
-							geometry.coordinate_space === 'diagram' &&
-							this.grid.app.diagramCamera?.caseId === c.id
-								? {
-										center: this.grid.app.diagramCamera.center,
-										scale: this.grid.app.diagramCamera.scale
-									}
-								: null,
-						layers:
-							'diagram' in c && c.diagram
-								? [c.diagram.layer, ...(await this.grid.caseGeographyLayers(c))]
-								: [],
-						geo_layer: JSON.stringify({
-							type: 'FeatureCollection',
-							powerio_geo: {
-								space: geometry.coordinate_space ?? 'geographic',
-								kind: geometry.synthetic_coords ? 'synthetic' : 'source'
-							},
-							features: [
-								...geometry.buses.map((b) => ({
-									type: 'Feature',
-									properties: { target: 'bus', id: String(b.id), ...(b.uid ? { uid: b.uid } : {}) },
-									geometry: { type: 'Point', coordinates: [b.lon, b.lat] }
-								})),
-								...geometry.branches
-									.filter((b) => b.path.length >= 2)
-									.map((b) => ({
+		return this.#run(
+			async (abort) => {
+				const c = this.grid.activeSolvable;
+				if (!c || c.id !== caseId || caseRevision(c) !== expectedCaseRevision || c.solving)
+					throw new Error('Case changed; inspect the current case before creating a Study');
+				const base_input = await this.grid.ensureStudyInputJson(c);
+				const captured = await this.grid.captureSavedCase(c);
+				const geometry = c.network;
+				const display = geometry
+					? {
+							case_id: c.id,
+							camera: geometry.coordinate_space === 'diagram' ? null : this.grid.app.camera,
+							diagram_camera:
+								geometry.coordinate_space === 'diagram' &&
+								this.grid.app.diagramCamera?.caseId === c.id
+									? {
+											center: this.grid.app.diagramCamera.center,
+											scale: this.grid.app.diagramCamera.scale
+										}
+									: null,
+							layers:
+								'diagram' in c && c.diagram
+									? [c.diagram.layer, ...(await this.grid.caseGeographyLayers(c))]
+									: [],
+							geo_layer: JSON.stringify({
+								type: 'FeatureCollection',
+								powerio_geo: {
+									space: geometry.coordinate_space ?? 'geographic',
+									kind: geometry.synthetic_coords ? 'synthetic' : 'source'
+								},
+								features: [
+									...geometry.buses.map((b) => ({
 										type: 'Feature',
 										properties: {
-											target: 'branch',
-											branch_id: String(b.id),
-											...(b.uid ? { uid: b.uid } : {}),
-											from: String(b.from),
-											to: String(b.to)
+											target: 'bus',
+											id: String(b.id),
+											...(b.uid ? { uid: b.uid } : {})
 										},
-										geometry: { type: 'LineString', coordinates: b.path }
-									}))
-							]
-						})
-					}
-				: undefined;
-			abort.throwIfAborted();
-			if (this.grid.activeSolvable !== c || caseRevision(c) !== expectedCaseRevision)
-				throw new Error('Case changed while capturing the Study starting point; retry');
-			const controller = await StudyDocumentController.create(
-				{
-					...draft,
-					...captured,
-					id: crypto.randomUUID(),
-					base_input,
-					display,
-					model_details: c.network?.model_details
-				},
-				this.store,
-				undefined,
-				abort
-			);
-			this.#controller = controller;
-			this.#caseAnchor = {
-				caseId,
-				revision: expectedCaseRevision,
-				state: controller.bundle.document.applied_state!
-			};
-			this.comparison = null;
-			await this.#publish(false, show);
-			return this.summary();
-		}, signal);
+										geometry: { type: 'Point', coordinates: [b.lon, b.lat] }
+									})),
+									...geometry.branches
+										.filter((b) => b.path.length >= 2)
+										.map((b) => ({
+											type: 'Feature',
+											properties: {
+												target: 'branch',
+												branch_id: String(b.id),
+												...(b.uid ? { uid: b.uid } : {}),
+												from: String(b.from),
+												to: String(b.to)
+											},
+											geometry: { type: 'LineString', coordinates: b.path }
+										}))
+								]
+							})
+						}
+					: undefined;
+				abort.throwIfAborted();
+				if (this.grid.activeSolvable !== c || caseRevision(c) !== expectedCaseRevision)
+					throw new Error('Case changed while capturing the Study starting point; retry');
+				const controller = await StudyDocumentController.create(
+					{
+						...draft,
+						...captured,
+						id: crypto.randomUUID(),
+						base_input,
+						display,
+						model_details: c.network?.model_details
+					},
+					this.store,
+					undefined,
+					abort
+				);
+				this.#controller = controller;
+				this.#caseAnchor = {
+					caseId,
+					revision: expectedCaseRevision,
+					state: controller.bundle.document.applied_state!
+				};
+				this.comparison = null;
+				await this.#publish(false, show);
+				return this.summary();
+			},
+			signal,
+			'study.save'
+		);
 	}
 	async open(id: string) {
-		return this.#run(async () => {
-			this.#controller = await StudyDocumentController.open(id, this.store);
-			this.#caseAnchor = null;
-			this.comparison = null;
-			await this.#publish(true);
-		});
+		return this.#run(
+			async () => {
+				this.#controller = await StudyDocumentController.open(id, this.store);
+				this.#caseAnchor = null;
+				this.comparison = null;
+				await this.#publish(true);
+			},
+			undefined,
+			'study.open'
+		);
 	}
 	async import(text: string) {
-		return this.#run(async () => {
-			const imported: unknown = JSON.parse(text);
-			if (imported && typeof imported === 'object' && 'document' in imported) {
-				const document = imported.document;
-				if (
-					document &&
-					typeof document === 'object' &&
-					'id' in document &&
-					typeof document.id === 'string' &&
-					(await this.store.load(document.id))
-				) {
-					throw new Error('This study is already saved. Open it from Saved study.');
+		return this.#run(
+			async () => {
+				const imported: unknown = JSON.parse(text);
+				if (imported && typeof imported === 'object' && 'document' in imported) {
+					const document = imported.document;
+					if (
+						document &&
+						typeof document === 'object' &&
+						'id' in document &&
+						typeof document.id === 'string' &&
+						(await this.store.load(document.id))
+					) {
+						throw new Error('This study is already saved. Open it from Saved study.');
+					}
 				}
-			}
-			this.#controller = await StudyDocumentController.import(text, this.store);
-			this.#caseAnchor = null;
-			this.comparison = null;
-			await this.#publish(true);
-		});
+				this.#controller = await StudyDocumentController.import(text, this.store);
+				this.#caseAnchor = null;
+				this.comparison = null;
+				await this.#publish(true);
+			},
+			undefined,
+			'study.import'
+		);
 	}
 	export(): string {
 		if (!this.#controller) throw new Error('No Study is open');
-		return this.#controller.export();
+		const output = this.#controller.export();
+		trackUsage('study.export', { result: 'completed' });
+		return output;
 	}
 	closeView() {
 		this.grid.app.studyView = null;
@@ -222,30 +262,40 @@ export class StudyWorkspace {
 		signal?: AbortSignal,
 		show = true
 	): Promise<StudyOperationResult> {
-		return this.#run(async (abort) => {
-			if (!this.#controller || this.document?.id !== studyId)
-				throw new Error('Open the requested Study before continuing');
-			const result = await this.#controller.execute(
-				{ expected_revision: revision, operation },
-				abort
-			);
-			if (operation.kind === 'record_evidence') {
-				this.bundle = this.#controller.bundle;
-			} else {
-				this.comparison = result.comparison ?? null;
-				await this.#publish(false, show);
-			}
-			return result;
-		}, signal);
+		return this.#run(
+			async (abort) => {
+				if (!this.#controller || this.document?.id !== studyId)
+					throw new Error('Open the requested Study before continuing');
+				const result = await this.#controller.execute(
+					{ expected_revision: revision, operation },
+					abort
+				);
+				if (operation.kind === 'record_evidence') {
+					this.bundle = this.#controller.bundle;
+				} else {
+					this.comparison = result.comparison ?? null;
+					await this.#publish(false, show);
+				}
+				return result;
+			},
+			signal,
+			'study.operation',
+			{ operation: operation.kind }
+		);
 	}
 	async applyFromUser(proposal: string) {
-		return this.#run(async (abort) => {
-			if (!this.#controller) throw new Error('No Study is open');
-			const token = this.#controller.recordUserApproval(proposal);
-			const result = await this.#controller.applyApprovedProposal(token, abort);
-			await this.#publish(false);
-			return result;
-		});
+		return this.#run(
+			async (abort) => {
+				if (!this.#controller) throw new Error('No Study is open');
+				const token = this.#controller.recordUserApproval(proposal);
+				const result = await this.#controller.applyApprovedProposal(token, abort);
+				await this.#publish(false);
+				return result;
+			},
+			undefined,
+			'study.operation',
+			{ operation: 'apply' }
+		);
 	}
 	get demandRows() {
 		const base = new Map(this.#baseNetwork?.buses.map((b) => [b.id, b.demand_mw]) ?? []);
@@ -258,21 +308,26 @@ export class StudyWorkspace {
 		}));
 	}
 	async #userEdit(operation: StudyOperation) {
-		return this.#run(async (abort) => {
-			if (!this.#controller || !this.document) throw new Error('No Study is open');
-			const result = await this.#controller.execute(
-				{ expected_revision: this.document.revision, operation },
-				abort
-			);
-			this.bundle = this.#controller.bundle;
-			const state = this.document!.recommended_state;
-			if (result.experiment && state && this.document!.states[state].solution) {
-				const token = this.#controller.recordUserApproval(result.experiment);
-				await this.#controller.applyApprovedProposal(token, abort);
-			}
-			await this.#publish(false);
-			return result;
-		});
+		return this.#run(
+			async (abort) => {
+				if (!this.#controller || !this.document) throw new Error('No Study is open');
+				const result = await this.#controller.execute(
+					{ expected_revision: this.document.revision, operation },
+					abort
+				);
+				this.bundle = this.#controller.bundle;
+				const state = this.document!.recommended_state;
+				if (result.experiment && state && this.document!.states[state].solution) {
+					const token = this.#controller.recordUserApproval(result.experiment);
+					await this.#controller.applyApprovedProposal(token, abort);
+				}
+				await this.#publish(false);
+				return result;
+			},
+			undefined,
+			'study.operation',
+			{ operation: operation.kind }
+		);
 	}
 	async editDemandFromUser(changes: Array<{ bus: number | string; delta_mw: number }>) {
 		const d = this.document;

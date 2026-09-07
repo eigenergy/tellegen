@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import type { Page } from '@playwright/test';
 import type { StudyBundle } from '@tellegen/engine';
 import { expect, test } from './fixtures/page-errors.js';
+import { noticeDetails } from './fixtures/notices.js';
 import { installWebMcpHarness, congestCase, callTool } from './fixtures/planning-case.js';
 
 async function bundle(page: Page): Promise<StudyBundle> {
@@ -158,7 +159,7 @@ test('Study import rejects tampered artifacts and goal revisions invalidate reco
 		mimeType: 'application/json',
 		buffer: Buffer.from(JSON.stringify(corrupt))
 	});
-	await expect(page.getByRole('alert')).toContainText(/hash|artifact|JSON|invalid/i);
+	await expect(await noticeDetails(page)).toContainText(/hash|artifact|JSON|invalid/i);
 	expect(await bundle(page)).toEqual(saved);
 });
 
@@ -195,7 +196,9 @@ test('storage exhaustion leaves the saved Study intact and permits recovery', as
 	const initial = await create(page);
 	await page.evaluate(() => sessionStorage.setItem('simulate-study-quota', 'yes'));
 	await page.getByRole('button', { name: 'Find a proposal' }).click();
-	await expect(page.getByRole('alert')).toContainText('Free browser storage', { timeout: 60_000 });
+	await expect(await noticeDetails(page)).toContainText('Free browser storage', {
+		timeout: 60_000
+	});
 	expect(await bundle(page)).toEqual(initial);
 	await page.evaluate(() => sessionStorage.removeItem('simulate-study-quota'));
 	await page.getByRole('button', { name: 'Find a proposal' }).click();

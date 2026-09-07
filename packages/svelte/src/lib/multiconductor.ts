@@ -39,7 +39,7 @@ export interface PlacedMultiEdge {
 	conductors: [string, string][];
 	closed: boolean;
 	n_phases: number;
-	path: [[number, number], [number, number]];
+	path: [number, number][];
 }
 
 /** The placed graph the map renders. */
@@ -116,12 +116,109 @@ function viewFrom(graph: DistGraph, coords: Map<string, [number, number]>): Mult
 
 /** Place a geographic graph: each bus's `xy` is `[longitude, latitude]` and
  * drops straight onto the map. */
-export function buildGeographicView(graph: DistGraph): MultiView {
+export function buildGeographicView(graph: DistGraph, layer?: string): MultiView {
 	const coords = new Map<string, [number, number]>();
 	for (const bus of graph.buses) {
 		if (bus.xy) coords.set(bus.id, bus.xy);
 	}
-	return viewFrom(graph, coords);
+	return withRoutes(viewFrom(graph, coords), layer);
+}
+
+/** Retain native drawing positions; unpositioned buses receive a separate generated layout. */
+export function buildDiagramView(graph: DistGraph, layer?: string): MultiView {
+	const generated = layoutSynthetic(graph, { lon: 0, lat: 0 });
+	const coords = new Map<string, [number, number]>();
+	const positioned = graph.buses.filter((bus) => bus.xy?.every(Number.isFinite));
+	const offset = positioned.length ? Math.max(...positioned.map((bus) => bus.xy![0])) + 100 : 0;
+	for (const bus of graph.buses) {
+		if (bus.xy?.every(Number.isFinite)) coords.set(bus.id, bus.xy);
+		else {
+			const xy = generated.get(bus.id);
+			if (xy) coords.set(bus.id, [offset + xy[0] * 100, xy[1] * 100]);
+		}
+	}
+	return withRoutes(viewFrom(graph, coords), layer);
+}
+
+/** Match canonical GeoLayer paths by equipment identity or an unambiguous endpoint pair. */
+function withRoutes(view: MultiView, layer?: string): MultiView {
+	if (!layer) return view;
+	let features: unknown;
+	try {
+		features = JSON.parse(layer).features;
+	} catch {
+		return view;
+	}
+	if (!Array.isArray(features)) return view;
+	const routes = new Map<string, [number, number][]>();
+	const same = (a: unknown, b: string) =>
+		typeof a === 'string' && a.toLowerCase() === b.toLowerCase();
+	for (const feature of features) {
+		const props = feature?.properties;
+		const geometry = feature?.geometry;
+		if (!props || geometry?.type !== 'LineString' || !Array.isArray(geometry.coordinates)) continue;
+		const points = geometry.coordinates
+			.filter(
+				(point: unknown) =>
+					Array.isArray(point) &&
+					point.length >= 2 &&
+					Number.isFinite(point[0]) &&
+					Number.isFinite(point[1])
+			)
+			.map((point: number[]): [number, number] => [point[0], point[1]]);
+		if (points.length < 2) continue;
+		const from = props.from ?? props.bus_from;
+		const to = props.to ?? props.bus_to;
+		const id = props.id ?? props.uid;
+		const matches = view.edges.filter((edge) =>
+			id !== undefined
+				? same(id, edge.id)
+				: (same(from, edge.from) && same(to, edge.to)) ||
+					(same(from, edge.to) && same(to, edge.from))
+		);
+		if (matches.length !== 1) continue;
+		const edge = matches[0];
+		const reverse = same(from, edge.to) && same(to, edge.from);
+		routes.set(edge.id, reverse ? points.reverse() : points);
+	}
+	return {
+		...view,
+		edges: view.edges.map((edge) => ({ ...edge, path: routes.get(edge.id) ?? edge.path }))
+	};
+}
+
+/** Numeric indices address drawing objects only; source identities remain on each object. */
+export function multiDiagramNetwork(
+	id: string,
+	name: string,
+	view: MultiView
+): import('./api.js').Network {
+	const indexes = new Map(view.buses.map((bus, index) => [bus.id.toLowerCase(), index]));
+	return {
+		id,
+		name,
+		base_mva: 1,
+		coordinate_space: 'diagram',
+		synthetic_coords: false,
+		buses: view.buses.map((bus, index) => ({
+			id: index,
+			uid: bus.id,
+			name: bus.id,
+			lon: bus.lon,
+			lat: bus.lat,
+			demand_mw: bus.load_kw / 1000,
+			gen_mw: bus.gen_kw / 1000
+		})),
+		branches: view.edges.map((edge, index) => ({
+			id: index,
+			uid: edge.id,
+			from: indexes.get(edge.from.toLowerCase())!,
+			to: indexes.get(edge.to.toLowerCase())!,
+			path: edge.path,
+			rate_mw: 0,
+			status: edge.closed ? 1 : 0
+		}))
+	};
 }
 
 /** Whether at least two buses carry a planar `xy`, enough to fit a layout to. */

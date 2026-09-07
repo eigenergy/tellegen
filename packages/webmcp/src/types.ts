@@ -24,6 +24,12 @@ export interface SelectCaseInput {
   expectedRevision?: string;
 }
 
+export interface SolveMulticonductorInput {
+  caseId: string;
+  expectedRevision: string;
+  maxIterations: number;
+}
+
 export interface TellegenCaseAdapter {
   listCases(
     input: ListCasesInput,
@@ -45,6 +51,7 @@ export interface QueryNetworkInput {
     | "generation_mw"
     | "price"
     | "voltage_pu"
+    | "voltage_v"
     | "loading"
     | "flow_mw"
     | "rating_mw";
@@ -179,6 +186,10 @@ export interface TellegenStudyAdapter {
 export interface TellegenWebMcpAdapter {
   /** Case discovery and display selection, when supported by the host. */
   cases?: TellegenCaseAdapter;
+  solveMulticonductorPowerFlow?(
+    input: SolveMulticonductorInput,
+    signal: AbortSignal,
+  ): MaybePromise<ToolPayload>;
   studies?: TellegenStudyAdapter;
   /**
    * The differentiable planning capability, when the host provides one.

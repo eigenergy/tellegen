@@ -53,8 +53,12 @@ pub fn parse_geo_impl(bytes: &[u8], hint: &str) -> Result<String, String> {
 /// now carries the locations and routes) with a `report` of matched/unmatched
 /// counts.
 pub fn apply_geo_impl(module_json: &str, layer_geojson: &str) -> Result<String, String> {
-    let mut module = parse_network_module(module_json)?;
     let layer = parse_layer(layer_geojson)?;
+    let module = tellegen::ir::deserialize_module(module_json)?;
+    if crate::dist::is_viewable_module_value(module.value()) {
+        return apply_multiconductor_geo(module, &layer);
+    }
+    let mut module = module;
     let report = edit_network(&mut module, |network| network.apply_geo_layer(&layer))?;
     if report.matched_buses == 0 && report.matched_branches == 0 {
         return Err(format!(
@@ -109,7 +113,12 @@ pub fn apply_layout_impl(
 /// per located bus, one route per routed branch, provenance preserved. Errors
 /// when the case carries no coordinates.
 pub fn extract_geo_impl(module_json: &str) -> Result<String, String> {
-    let module = parse_network_module(module_json)?;
+    let module = tellegen::ir::deserialize_module(module_json)?;
+    if let Some(network) = crate::dist::multiconductor_network(module.value()) {
+        return powerio::dist_geo::to_dist_geo_layer(network)
+            .to_geojson_checked()
+            .map_err(|e| e.to_string());
+    }
     module_network(&module)?
         .to_geo_layer()
         .to_geojson_checked()
@@ -145,6 +154,46 @@ pub fn apply_display_geo_impl(module_json: &str, bytes: &[u8]) -> Result<String,
         .notes
         .push("Positions use drawing coordinates on a diagram canvas".to_owned());
     payload_with_report(module, report)
+}
+
+fn apply_multiconductor_geo(
+    mut module: PioModule<PioValue>,
+    layer: &GeoLayer,
+) -> Result<String, String> {
+    let mut network = crate::dist::multiconductor_network(module.value())
+        .ok_or("case does not contain a multiconductor network")?
+        .clone();
+    let report = powerio::dist_geo::apply_dist_geo_layer(&mut network, layer);
+    if report.matched_buses == 0 && report.matched_branches == 0 {
+        return Err(format!(
+            "no case elements matched the geographic file ({} feature(s) unmatched)",
+            report.unmatched_features
+        ));
+    }
+    let value =
+        match module.value() {
+            PioValue::MulticonductorNetwork(_) => PioValue::MulticonductorNetwork(network),
+            PioValue::McAcPfInstance(instance) => PioValue::McAcPfInstance(
+                instance
+                    .clone()
+                    .with_network(network)
+                    .map_err(|e| e.to_string())?,
+            ),
+            PioValue::McAcOpfInstance(instance) => PioValue::McAcOpfInstance(
+                instance
+                    .clone()
+                    .with_network(network)
+                    .map_err(|e| e.to_string())?,
+            ),
+            _ => return Err(
+                "Attach coordinates to the multiconductor input case before importing its solution"
+                    .to_owned(),
+            ),
+        };
+    *module.value_mut() = value;
+    let mut payload = crate::dist::ingest_dist_module_value(module)?;
+    payload["report"] = report_value(&report);
+    serde_json::to_string(&payload).map_err(|e| e.to_string())
 }
 
 fn parse_network_module(module_json: &str) -> Result<PioModule<PioValue>, String> {

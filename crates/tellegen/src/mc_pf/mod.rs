@@ -22,11 +22,13 @@ use num_complex::Complex64;
 use powerio_prob::solution::{McAcPfSolution, Residuals, Termination};
 use powerio_prob::McAcPfInstance;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use network::PreparedNetwork;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct McPfOptions {
     pub tolerance: f64,
@@ -54,6 +56,7 @@ impl Default for McPfOptions {
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McComplex {
     pub re: f64,
     pub im: f64,
@@ -69,6 +72,7 @@ impl From<Complex64> for McComplex {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McTerminalResult {
     pub bus: String,
     pub terminal: String,
@@ -80,6 +84,7 @@ pub struct McTerminalResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McSourceReaction {
     pub source: String,
     pub terminal: String,
@@ -88,6 +93,7 @@ pub struct McSourceReaction {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McElementPort {
     pub element: String,
     pub kind: String,
@@ -99,6 +105,7 @@ pub struct McElementPort {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McPfResult {
     pub converged: bool,
     pub iterations: usize,
@@ -118,20 +125,73 @@ impl McPfResult {
     /// solution.  Complex currents remain available on this result because
     /// the v0.11 portable solution stores current and active-power magnitudes.
     pub fn to_powerio_solution(&self, instance: &McAcPfInstance) -> Result<McAcPfSolution, String> {
-        let magnitudes = self
-            .terminals
+        if !self.converged {
+            return Err("cannot export an unconverged AC power flow as a solution".to_owned());
+        }
+        let mut by_terminal = BTreeMap::new();
+        for terminal in &self.terminals {
+            let key = (terminal.bus.as_str(), terminal.terminal.as_str());
+            if by_terminal.insert(key, terminal).is_some() {
+                return Err(format!("duplicate result terminal {}:{}", key.0, key.1));
+            }
+            for value in [
+                terminal.voltage,
+                terminal.current_into_network,
+                terminal.power_into_network,
+            ] {
+                if !value.re.is_finite() || !value.im.is_finite() {
+                    return Err(format!("non-finite result at terminal {}:{}", key.0, key.1));
+                }
+            }
+        }
+        let mut ordered = Vec::with_capacity(self.terminals.len());
+        for bus in instance.network().buses() {
+            for terminal in &bus.terminals {
+                ordered.push(
+                    by_terminal
+                        .remove(&(bus.id.as_str(), terminal.as_str()))
+                        .ok_or_else(|| format!("missing result terminal {}:{terminal}", bus.id))?,
+                );
+            }
+        }
+        if !by_terminal.is_empty() {
+            return Err("result contains terminals absent from the calculation".to_owned());
+        }
+        let mut by_source = BTreeMap::new();
+        for source in &self.source_reactions {
+            let key = (source.source.as_str(), source.terminal.as_str());
+            if by_source
+                .insert(key, source.power_into_network.re)
+                .is_some()
+            {
+                return Err(format!("duplicate source result {}:{}", key.0, key.1));
+            }
+            if !source.power_into_network.re.is_finite() {
+                return Err(format!("non-finite source power {}:{}", key.0, key.1));
+            }
+        }
+        let mut source_active = Vec::with_capacity(self.source_reactions.len());
+        for source in instance.network().sources() {
+            for terminal in &source.terminal_map {
+                source_active.push(
+                    by_source
+                        .remove(&(source.name.as_str(), terminal.as_str()))
+                        .ok_or_else(|| {
+                            format!("missing source result {}:{terminal}", source.name)
+                        })?,
+                );
+            }
+        }
+        if !by_source.is_empty() {
+            return Err("result contains sources absent from the calculation".to_owned());
+        }
+        let magnitudes = ordered
             .iter()
-            .map(|t| (t.voltage.re * t.voltage.re + t.voltage.im * t.voltage.im).sqrt())
+            .map(|t| t.voltage.re.hypot(t.voltage.im))
             .collect();
-        let angles = self
-            .terminals
+        let angles = ordered
             .iter()
             .map(|t| t.voltage.im.atan2(t.voltage.re))
-            .collect();
-        let source_active = self
-            .source_reactions
-            .iter()
-            .map(|s| s.power_into_network.re)
             .collect();
         let solution = McAcPfSolution::new(
             Arc::new(instance.clone()),
@@ -141,20 +201,11 @@ impl McPfResult {
             source_active,
         )
         .map_err(|e| e.to_string())?;
-        let currents = self
-            .terminals
+        let currents = ordered
             .iter()
-            .map(|t| {
-                (t.current_into_network.re * t.current_into_network.re
-                    + t.current_into_network.im * t.current_into_network.im)
-                    .sqrt()
-            })
+            .map(|t| t.current_into_network.re.hypot(t.current_into_network.im))
             .collect();
-        let powers = self
-            .terminals
-            .iter()
-            .map(|t| t.power_into_network.re)
-            .collect();
+        let powers = ordered.iter().map(|t| t.power_into_network.re).collect();
         let solution = solution
             .with_terminal_currents(currents)
             .map_err(|e| e.to_string())?
@@ -484,6 +535,51 @@ mod tests {
             .re;
         let expected = (10.0_f64 + (100.0_f64 - 4.0).sqrt()) / 2.0;
         assert!((v - expected).abs() < 1e-6, "{v} vs {expected}");
+    }
+
+    #[test]
+    fn portable_solution_matches_terminal_identities_after_reordering() {
+        let instance = one_phase(1.0);
+        let mut result = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap();
+        result.terminals.reverse();
+        let solution = result.to_powerio_solution(&instance).unwrap();
+        assert_eq!(
+            solution.terminal_voltage_magnitude("source", "1"),
+            Some(10.0)
+        );
+        let expected = (10.0_f64 + 96.0_f64.sqrt()) / 2.0;
+        assert!(
+            (solution.terminal_voltage_magnitude("load", "1").unwrap() - expected).abs() < 1e-6
+        );
+        result.terminals[0].bus = "absent".to_owned();
+        assert!(result
+            .to_powerio_solution(&instance)
+            .unwrap_err()
+            .contains("missing result terminal"));
+    }
+
+    #[test]
+    fn portable_solution_rejects_duplicate_nonfinite_and_unconverged_results() {
+        let instance = one_phase(1.0);
+        let result = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap();
+        let mut duplicate = result.clone();
+        duplicate.terminals.push(result.terminals[0].clone());
+        assert!(duplicate
+            .to_powerio_solution(&instance)
+            .unwrap_err()
+            .contains("duplicate result terminal"));
+        let mut nonfinite = result.clone();
+        nonfinite.terminals[0].voltage.re = f64::NAN;
+        assert!(nonfinite
+            .to_powerio_solution(&instance)
+            .unwrap_err()
+            .contains("non-finite"));
+        let mut unconverged = result;
+        unconverged.converged = false;
+        assert!(unconverged
+            .to_powerio_solution(&instance)
+            .unwrap_err()
+            .contains("unconverged"));
     }
 
     #[test]

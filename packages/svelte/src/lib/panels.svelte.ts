@@ -44,6 +44,7 @@ export class PanelLayout {
 	viewportWidth = $state(1280);
 	viewportHeight = $state(800);
 	top = $state(100);
+	bottom = $state(88);
 	storageError = $state<string | null>(null);
 	#storage: Storage | undefined;
 	#gesture: {
@@ -164,20 +165,20 @@ export class PanelLayout {
 				x: panel.side === 'left' ? 24 : this.viewportWidth - panel.width - 24,
 				y: this.top + 16,
 				width: panel.width,
-				height: Math.min(520, this.viewportHeight - this.top - 110)
+				height: Math.min(520, this.viewportHeight - this.top - this.bottom - 22)
 			}
 		);
 	}
 	clamp(bounds: PanelBounds): PanelBounds {
 		const availableWidth = Math.max(1, this.viewportWidth - 32);
-		const availableHeight = Math.max(1, this.viewportHeight - this.top - 100);
+		const availableHeight = Math.max(1, this.viewportHeight - this.top - this.bottom - 12);
 		const width = Math.min(availableWidth, Math.max(240, bounds.width));
 		const height = Math.min(availableHeight, Math.max(120, bounds.height));
 		return {
 			width,
 			height,
 			x: Math.max(16, Math.min(bounds.x, this.viewportWidth - width - 16)),
-			y: Math.max(this.top, Math.min(bounds.y, this.viewportHeight - height - 88))
+			y: Math.max(this.top, Math.min(bounds.y, this.viewportHeight - height - this.bottom))
 		};
 	}
 	resizeViewport(width: number, height: number, top: number) {

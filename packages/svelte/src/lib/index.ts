@@ -1,3 +1,4 @@
+export { getNoticeCenter, errorNoticeTitle } from './notices.svelte.js';
 export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as PanelFrame } from './components/PanelFrame.svelte';
 export { getPanelLayout } from './panels.svelte.js';

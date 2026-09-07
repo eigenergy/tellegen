@@ -103,26 +103,6 @@
 				<dd>{fmt.format(lc.summary.base_mva)}</dd>
 			</div>
 		</dl>
-		{#if lc.summary.diagnostics.length > 0}
-			<ul class="warnings mono">
-				{#each lc.summary.diagnostics.slice(0, 4) as diagnostic, i (i)}
-					<li>{formatPowerIoDiagnostic(diagnostic)}</li>
-				{/each}
-				{#if lc.summary.diagnostics.length > 4}
-					<li>+{lc.summary.diagnostics.length - 4} more</li>
-				{/if}
-			</ul>
-		{/if}
-		{#if lc.summary.warnings.length > 0}
-			<ul class="warnings mono">
-				{#each lc.summary.warnings.slice(0, 4) as w, i (i)}
-					<li>{w}</li>
-				{/each}
-				{#if lc.summary.warnings.length > 4}
-					<li>+{lc.summary.warnings.length - 4} more</li>
-				{/if}
-			</ul>
-		{/if}
 		{#if lc.displayMode === 'diagram' && lc.diagram}
 			<p class="footnote mono">Drawing: {lc.diagram.name}</p>
 			{#if lc.diagram.warnings.length}
@@ -145,16 +125,6 @@
 			<p class="footnote mono">
 				coordinates: geographic file data from {lc.geoSource}
 			</p>
-		{/if}
-		{#if lc.displayMode !== 'diagram' && lc.geoWarnings && lc.geoWarnings.length > 0}
-			<ul class="warnings mono">
-				{#each lc.geoWarnings.slice(0, 4) as w, i (i)}
-					<li>{w}</li>
-				{/each}
-				{#if lc.geoWarnings.length > 4}
-					<li>+{lc.geoWarnings.length - 4} more</li>
-				{/if}
-			</ul>
 		{/if}
 		<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 		{#if lc.studyInputJson}

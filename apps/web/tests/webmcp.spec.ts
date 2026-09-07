@@ -96,6 +96,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 		.toEqual(
 			[
 				'analyze_sensitivity',
+				'solve_multiconductor_pf',
 				'focus_network',
 				'inspect_case',
 				'list_cases',
@@ -427,6 +428,7 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 		.toEqual(
 			[
 				'analyze_sensitivity',
+				'solve_multiconductor_pf',
 				'focus_network',
 				'inspect_case',
 				'list_cases',

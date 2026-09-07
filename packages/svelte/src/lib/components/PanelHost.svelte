@@ -2,9 +2,12 @@
 	import { onMount, untrack } from 'svelte';
 	import { getAppState } from '../context.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
+	import { getNoticeCenter } from '../notices.svelte.js';
 	import PanelCard from './PanelCard.svelte';
 	const app = getAppState();
 	const layout = getPanelLayout();
+	const notices = getNoticeCenter();
+	const bottomReserve = $derived(notices.entries.length ? 120 : 88);
 	const left = $derived(layout.ordered('left').filter((p) => p.open));
 	const right = $derived(layout.ordered('right').filter((p) => p.open));
 	const floating = $derived(
@@ -16,7 +19,10 @@
 	const drawerHeight = $derived(
 		Math.max(
 			1,
-			Math.min(layout.viewportHeight * 0.6, (layout.viewportHeight - panelTop - 96) * 0.75)
+			Math.min(
+				layout.viewportHeight * 0.6,
+				(layout.viewportHeight - panelTop - bottomReserve - 8) * 0.75
+			)
 		)
 	);
 	function resize() {
@@ -32,12 +38,14 @@
 	});
 	$effect(() => {
 		const top = panelTop;
+		const bottom = bottomReserve;
 		untrack(() => {
+			layout.bottom = bottom;
 			layout.resizeViewport(window.innerWidth, window.innerHeight, top);
 		});
 	});
 	$effect(() => {
-		app.sheetInset = layout.compact && drawer ? drawerHeight + 88 : 0;
+		app.sheetInset = layout.compact && drawer ? drawerHeight + bottomReserve : 0;
 	});
 </script>
 
@@ -76,12 +84,13 @@
 		{layout.storageError}
 	</p>{/if}
 {#if layout.compact}
-	{#if drawer}<div class="drawer" style:height="{drawerHeight}px">
+	{#if drawer}<div class="drawer" style:bottom="{bottomReserve}px" style:height="{drawerHeight}px">
 			<PanelCard panel={drawer} mobile />
 		</div>{/if}
 {:else}
 	<div
 		class="dock left"
+		style:bottom="{Math.max(100, bottomReserve)}px"
 		data-panel-dock="left"
 		style:top="{panelTop}px"
 		style:width="{layout.dockWidth('left')}px"
@@ -90,6 +99,7 @@
 	</div>
 	<div
 		class="dock right"
+		style:bottom="{Math.max(100, bottomReserve)}px"
 		data-panel-dock="right"
 		style:top="{panelTop}px"
 		style:width="{layout.dockWidth('right')}px"

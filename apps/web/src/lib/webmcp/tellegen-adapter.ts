@@ -290,10 +290,31 @@ function displayedRevision(ctrl: Controller): string {
 	const view = ctrl.app.studyView;
 	if (view) return `${view.studyId}:${view.id}`;
 	const c = ctrl.activeSolvable;
+	const mc = ctrl.app.activeMulti;
+	if (mc) return `mc:${mc.id}:${mc.revisionGeneration}`;
 	return c ? caseRevision(c) : `view:${ctrl.app.activeMultiId ?? ctrl.app.activeLocalId ?? 'none'}`;
 }
 
 function displayedContext(ctrl: Controller): ToolPayload {
+	const mc = ctrl.app.studyView ? null : ctrl.app.activeMulti;
+	if (mc)
+		return {
+			case_id: mc.id,
+			study_id: null,
+			state_id: null,
+			revision: displayedRevision(ctrl),
+			calculation: 'multiconductor_ac_pf',
+			view: 'live_case',
+			units: {
+				demand: 'MW',
+				voltage: 'V',
+				current: 'A',
+				active_power: 'W',
+				reactive_power: 'var',
+				angle: 'degrees',
+				lmp: null
+			}
+		};
 	const view = ctrl.app.studyView;
 	const c = ctrl.activeSolvable;
 	return {
@@ -378,7 +399,7 @@ function listCases(ctrl: Controller, input: ListCasesInput): ToolPayload {
 			name: clip(c.label, 64),
 			kind: 'distribution',
 			availability: c.placed ? 'ready' : 'placement_required',
-			calculation: 'display_only',
+			calculation: c.summary?.mc_pf_enabled ? 'multiconductor_ac_pf' : 'display_only',
 			selected: !ctrl.app.studyView && ctrl.app.activeMultiId === c.id
 		}))
 	];
@@ -536,7 +557,19 @@ async function inspect(
 			...displayedContext(ctrl),
 			label: clip(c.label, 80),
 			editable: false,
-			calculation: 'display_only',
+			calculation: 'multiconductor_ac_pf',
+			solving: c.solving,
+			can_solve:
+				!!c.moduleJson && !!c.summary?.mc_pf_enabled && !c.summary?.mc_pf_unavailable_reason,
+			unavailable_reason: c.summary?.mc_pf_unavailable_reason ?? null,
+			solution: c.result
+				? {
+						converged: c.result.converged,
+						iterations: c.result.iterations,
+						kcl_residual_a: c.result.physical_kcl_residual,
+						solve_ms: c.solveMs
+					}
+				: null,
 			network: { buses: c.graph?.buses.length ?? 0, branches: c.graph?.edges.length ?? 0 }
 		};
 	}
@@ -640,11 +673,32 @@ function queryDistribution(ctrl: Controller, input: QueryNetworkInput): ToolPayl
 	if (!graph)
 		throw new TellegenToolError('CASE_NOT_READY', 'the distribution network is unavailable');
 	const sortBy = input.sortBy ?? (input.elementKind === 'bus' ? 'demand_mw' : 'id');
-	if (sortBy !== 'id' && !(input.elementKind === 'bus' && sortBy === 'demand_mw')) {
+	if (
+		sortBy !== 'id' &&
+		!(input.elementKind === 'bus' && ['demand_mw', 'voltage_v'].includes(sortBy))
+	) {
 		throw new TellegenToolError(
 			'METRIC_UNAVAILABLE',
-			'this distribution case is display-only; solved prices, flows, and dispatch are unavailable'
+			'Use id, demand_mw, or voltage_v for this multiconductor case. AC power flow does not calculate LMP.'
 		);
+	}
+	if (sortBy === 'voltage_v' && !c.result)
+		throw new TellegenToolError(
+			'METRIC_UNAVAILABLE',
+			'Run solve_multiconductor_pf to calculate terminal voltages.'
+		);
+	const values = new Map<string, ToolPayload[]>();
+	for (const terminal of c.result?.terminals ?? []) {
+		const list = values.get(terminal.bus) ?? [];
+		list.push({
+			terminal: terminal.terminal,
+			voltage_v: round4(Math.hypot(terminal.voltage.re, terminal.voltage.im)),
+			angle_deg: round4((Math.atan2(terminal.voltage.im, terminal.voltage.re) * 180) / Math.PI),
+			current_a: round4(
+				Math.hypot(terminal.current_into_network.re, terminal.current_into_network.im)
+			)
+		});
+		values.set(terminal.bus, list);
 	}
 	const rows: ToolPayload[] =
 		input.elementKind === 'bus'
@@ -653,6 +707,10 @@ function queryDistribution(ctrl: Controller, input: QueryNetworkInput): ToolPayl
 					demand_mw: b.load_kw / 1000,
 					generation_capacity_mw: b.gen_kw / 1000,
 					terminals: b.terminals,
+					voltage_v: values.has(b.id)
+						? Math.max(...values.get(b.id)!.map((t) => Number(t.voltage_v)))
+						: null,
+					terminal_values: values.get(b.id) ?? [],
 					editable: false
 				}))
 			: graph.edges.map((e) => ({
@@ -675,7 +733,7 @@ function queryDistribution(ctrl: Controller, input: QueryNetworkInput): ToolPayl
 		const value =
 			sortBy === 'id'
 				? String(a.element_id).localeCompare(String(b.element_id))
-				: Number(a.demand_mw) - Number(b.demand_mw);
+				: Number(a[sortBy]) - Number(b[sortBy]);
 		return (
 			(input.direction === 'asc' ? value : -value) ||
 			String(a.element_id).localeCompare(String(b.element_id))
@@ -715,6 +773,11 @@ function query(ctrl: Controller, input: QueryNetworkInput): ToolPayload {
 			'the displayed state has no LMP result; inspect_case reports its formulation and solve status'
 		);
 	}
+	if (sortBy === 'voltage_v')
+		throw new TellegenToolError(
+			'METRIC_UNAVAILABLE',
+			'Balanced cases report voltage_pu; voltage_v applies to multiconductor cases.'
+		);
 	if (sortBy === 'voltage_pu' && lookup.voltages.size === 0) {
 		throw new TellegenToolError(
 			'METRIC_UNAVAILABLE',
@@ -1697,6 +1760,41 @@ export function createTellegenWebMcpAdapter(
 			},
 			selectCase: (input, signal) => enqueue(() => selectCase(ctrl, input, signal))
 		},
+		solveMulticonductorPowerFlow: (input, signal) =>
+			enqueue(async () => {
+				signal.throwIfAborted();
+				const c = ctrl.app.studyView ? null : ctrl.app.activeMulti;
+				if (!c || c.id !== input.caseId)
+					throw new TellegenToolError(
+						'STALE_CASE',
+						'Select the multiconductor case before solving.'
+					);
+				if (displayedRevision(ctrl) !== input.expectedRevision)
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'The displayed case changed; inspect_case before solving.'
+					);
+				const result = await ctrl.solveMultiCase(
+					c,
+					{ max_iterations: input.maxIterations },
+					signal
+				);
+				signal.throwIfAborted();
+				if (ctrl.app.activeMulti !== c || ctrl.app.studyView)
+					throw new TellegenToolError(
+						'STALE_CASE',
+						'The displayed case changed during the calculation.'
+					);
+				return {
+					...displayedContext(ctrl),
+					converged: result.converged,
+					iterations: result.iterations,
+					terminal_count: result.terminals.length,
+					kcl_residual_a: result.physical_kcl_residual,
+					scaled_kcl_residual: result.scaled_kcl_residual,
+					solve_ms: c.solveMs
+				};
+			}),
 		...(planning ? { planning } : {}),
 		inspectCase(signal) {
 			signal.throwIfAborted();

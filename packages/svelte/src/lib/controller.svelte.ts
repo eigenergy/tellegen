@@ -27,8 +27,9 @@ import {
 import { placeSyntheticTopology } from './synthetic-layout.js';
 import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
-import { buildGeographicView, placeMultiView } from './multiconductor.js';
+import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
 import {
+	browserWasmTransport,
 	applyDisplayGeo,
 	applyGeo,
 	applyLayout,
@@ -44,6 +45,9 @@ import {
 	isPermanentEngineFailure,
 	parseDisplay,
 	parseGeo,
+	type EngineTransport,
+	type McPfOptions,
+	type McPfResult,
 	type AppliedGeoCase,
 	type BrowserStudy,
 	type DisplayPreview,
@@ -158,11 +162,13 @@ type DemandRangeAnchor = {
 export interface ControllerOptions {
 	api?: TellegenApiClient;
 	apiBase?: string;
+	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'>;
 }
 
 export class Controller {
 	app: AppState;
 	api: TellegenApiClient;
+	mcTransport: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'>;
 	abort: AbortController | null = null;
 	// While set (epoch ms), the server sensitivity fallback is rate limited: skip
 	// the request and show the rate-limit copy instead of burning the budget on a
@@ -247,6 +253,7 @@ export class Controller {
 	constructor(app: AppState, options: ControllerOptions = {}) {
 		this.app = app;
 		this.api = options.api ?? createApiClient({ apiBase: options.apiBase });
+		this.mcTransport = options.mcTransport ?? browserWasmTransport;
 	}
 
 	// ===== helpers =====
@@ -1275,19 +1282,29 @@ export class Controller {
 	private async attachSidecarsToSelected(
 		layers: GeoLayerFile[],
 		displays: DisplayFile[] = [],
-		expected?: SolvableCase | null
+		expected?: SolvableCase | MulticonductorCase | null
 	) {
 		if (this.app.studyView) {
 			this.app.error = 'Return to the live case before attaching coordinates';
 			return;
 		}
-		const source = this.app.activeLocal ?? this.app.active;
+		const source = this.app.activeMulti ?? this.app.activeLocal ?? this.app.active;
 		if (expected !== undefined && source !== expected) {
 			this.app.error = 'The selected case changed. Attach the coordinates again';
 			return;
 		}
 		if (!source) {
 			this.app.error = 'Select the matching case before attaching coordinates';
+			return;
+		}
+		if (source instanceof MulticonductorCase) {
+			try {
+				await this.applyMultiGeoLayers(source, layers);
+			} catch (error) {
+				this.app.error = errorText(error);
+			}
+			if (displays.length)
+				this.app.error = 'Attach a GeoJSON or CSV drawing to this multiconductor case';
 			return;
 		}
 		const selectedId = source.id;
@@ -1946,7 +1963,7 @@ export class Controller {
 	};
 
 	private ingestFileBatch = async (list: File[]) => {
-		const sidecarTarget = this.app.activeLocal ?? this.app.active;
+		const sidecarTarget = this.app.activeMulti ?? this.app.activeLocal ?? this.app.active;
 		let parsedCaseCount = 0;
 
 		// Routable `.json` content (saved packages, model JSON, and transmission or
@@ -2022,7 +2039,14 @@ export class Controller {
 		try {
 			for (const { file, route } of routedJson) {
 				if (route.outcome === 'multiconductor') {
-					this.addMultiCase(file.name, route.payload);
+					const multi = this.addMultiCase(file.name, route.payload);
+					if (geoLayers.length) {
+						try {
+							await this.applyMultiGeoLayers(multi, geoLayers);
+						} catch (error) {
+							this.app.error = errorText(error);
+						}
+					}
 					continue;
 				}
 				if (route.outcome !== 'balanced') continue;
@@ -2039,7 +2063,16 @@ export class Controller {
 			// OpenDSS routes by extension into the multiconductor viewing path.
 			const distFormat = distExtensionFormat(file.name);
 			if (distFormat) {
-				if (await this.ingestDistFile(file, distFormat)) parsedCaseCount++;
+				if (await this.ingestDistFile(file, distFormat)) {
+					parsedCaseCount++;
+					if (geoLayers.length && this.app.activeMulti) {
+						try {
+							await this.applyMultiGeoLayers(this.app.activeMulti, geoLayers);
+						} catch (error) {
+							this.app.error = errorText(error);
+						}
+					}
+				}
 				continue;
 			}
 			const format = formatOf(file.name);
@@ -2241,15 +2274,16 @@ export class Controller {
 		}
 	};
 
-	/** Build a `MulticonductorCase` from an ingest payload and make it active.
-	 * Geographic cases place immediately; planar/synthetic cases enter placement
-	 * (a map click or "place on map") so the user picks their center. */
+	/** Retain parsed electrical inputs and draw each declared coordinate space directly. */
 	private addMultiCase(fileName: string, payload: IngestedDistCase) {
 		const { graph, ...summary }: { graph: IngestedDistCase['graph'] } & MultiCaseSummary = payload;
 		const coordsKind = payload.coords_kind as MultiCoordsKind;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
-		const view = coordsKind === 'geographic' ? buildGeographicView(graph) : null;
+		const view =
+			coordsKind === 'geographic'
+				? buildGeographicView(graph, payload.geo_layer)
+				: buildDiagramView(graph, payload.geo_layer);
 		const c = new MulticonductorCase({
 			id: `dist-${++this.localSeq}`,
 			label,
@@ -2259,9 +2293,126 @@ export class Controller {
 			coordsKind,
 			view
 		});
+		this.app.studyView = null;
+		this.clearSelection();
 		this.app.addMulti(c);
 		if (c.placed) this.app.requestFrame(c.id);
+		return c;
 	}
+
+	/** Compute terminal quantities only for the retained input and current case revision. */
+	solveMultiCase = async (
+		c: MulticonductorCase,
+		options: McPfOptions = {},
+		signal?: AbortSignal
+	): Promise<McPfResult> => {
+		if (signal?.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
+		if (c.solving) throw new Error('A calculation is already running for this case');
+		const unavailable = !c.moduleJson
+			? 'This case has no retained electrical input'
+			: c.summary?.mc_pf_unavailable_reason || c.summary?.mc_pf_enabled !== true
+				? (c.summary?.mc_pf_unavailable_reason ?? 'AC power flow is unavailable for this case')
+				: null;
+		if (unavailable) {
+			this.app.error = unavailable;
+			throw new Error(unavailable);
+		}
+		const input = c.moduleJson!;
+		const revision = c.revisionGeneration;
+		const seq = ++c.solveSeq;
+		const abort = new AbortController();
+		const cancel = () => abort.abort();
+		signal?.addEventListener('abort', cancel, { once: true });
+		c.solveAbort = abort;
+		c.solving = true;
+		this.app.error = null;
+		const started = performance.now();
+		try {
+			const result = await this.mcTransport.solveMcModule(input, options, abort.signal);
+			if (abort.signal.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
+			if (
+				seq !== c.solveSeq ||
+				input !== c.moduleJson ||
+				revision !== c.revisionGeneration ||
+				!this.app.multiCases.includes(c)
+			)
+				throw new Error('The case changed while calculating. Run AC power flow again');
+			if (!result.converged) throw new Error('AC power flow did not converge');
+			c.result = result;
+			c.solveMs = performance.now() - started;
+			c.revisionGeneration++;
+			return result;
+		} catch (error) {
+			if (
+				!abort.signal.aborted &&
+				!(error instanceof DOMException && error.name === 'AbortError')
+			) {
+				this.app.error = errorText(error);
+				this.app.errorRetry = () => {
+					void this.solveMultiCase(c, options).catch(() => {});
+				};
+			}
+			throw error;
+		} finally {
+			signal?.removeEventListener('abort', cancel);
+			if (c.solveSeq === seq) {
+				c.solving = false;
+				c.solveAbort = null;
+			}
+		}
+	};
+
+	/** Apply coordinates atomically to the explicitly selected conductor-resolved case. */
+	applyMultiGeoLayers = async (c: MulticonductorCase, layers: GeoLayerFile[]) => {
+		if (!layers.length) return;
+		if (this.app.studyView || this.app.activeMulti !== c)
+			throw new Error('Select the matching case before attaching coordinates');
+		if (c.solving) throw new Error('Wait for the calculation before attaching coordinates');
+		if (!c.moduleJson || !this.mcTransport.applyMcGeo)
+			throw new Error('Coordinate attachment is unavailable for this case');
+		const input = c.moduleJson;
+		const revision = c.revisionGeneration;
+		let next = input;
+		let payload: Awaited<ReturnType<NonNullable<EngineTransport['applyMcGeo']>>> | undefined;
+		const notes: string[] = [];
+		let matched = 0;
+		for (const layer of layers) {
+			payload = await this.mcTransport.applyMcGeo(next, layer.layer);
+			if (!payload.module_json)
+				throw new Error('Coordinate attachment returned no electrical input');
+			next = payload.module_json;
+			matched += payload.report.matched_buses + payload.report.matched_branches;
+			notes.push(
+				`${payload.report.matched_buses} buses, ${payload.report.matched_branches} routes matched; ${payload.report.unmatched_features} unmatched objects`,
+				...payload.report.notes,
+				...layer.diagnostics.map(formatPowerIoDiagnostic)
+			);
+		}
+		if (!payload || !matched) throw new Error('No coordinates matched the selected case');
+		if (
+			this.app.studyView ||
+			this.app.activeMulti !== c ||
+			c.moduleJson !== input ||
+			c.revisionGeneration !== revision ||
+			c.solving
+		)
+			throw new Error('The selected case changed. Attach the coordinates again');
+		const { graph, ...summary } = payload;
+		c.moduleJson = next;
+		c.geoLayer = payload.geo_layer ?? null;
+		c.graph = graph;
+		c.summary = summary;
+		c.coordsKind = payload.coords_kind;
+		c.view =
+			payload.coords_kind === 'geographic'
+				? buildGeographicView(graph, payload.geo_layer)
+				: buildDiagramView(graph, payload.geo_layer);
+		c.geoWarnings = notes;
+		c.revisionGeneration++;
+		this.app.placingMultiId = null;
+		this.app.error = null;
+		this.app.requestFrame(c.id);
+	};
 
 	/** Make a multiconductor case active, framing it when it is placed. */
 	activateMulti = (c: MulticonductorCase) => {
@@ -2324,6 +2475,7 @@ export class Controller {
 
 	removeMultiCase = async (c: MulticonductorCase, event?: MouseEvent) => {
 		event?.stopPropagation();
+		c.solveAbort?.abort();
 		if (this.app.activeMultiId === c.id) {
 			c.selectedBusId = null;
 			c.selectedEdgeId = null;

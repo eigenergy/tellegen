@@ -1,3 +1,4 @@
+import { noticeDetails } from './fixtures/notices.js';
 import { expect, test } from './fixtures/page-errors.js';
 import { lookupBus, mockDataRoutes } from './fixtures/backend-case';
 
@@ -23,7 +24,7 @@ test('compute reported off up front: notice shown, no server sensitivity request
 	await expect(page.getByRole('heading', { name: /Case One/i })).toBeVisible({ timeout: 30_000 });
 
 	await lookupBus(page, 1);
-	const error = page.getByRole('complementary', { name: 'Network', exact: true }).locator('.error');
+	const error = await noticeDetails(page);
 	await expect(error).toContainText('server side compute is disabled');
 	await expect(error).toContainText('talks@umich.edu');
 	expect(sensitivityFetches).toBe(0);
@@ -44,7 +45,7 @@ test('compute status unavailable: first 403 shows the notice and latches', async
 	await expect(page.getByRole('heading', { name: /Case One/i })).toBeVisible({ timeout: 30_000 });
 
 	await lookupBus(page, 1);
-	const error = page.getByRole('complementary', { name: 'Network', exact: true }).locator('.error');
+	const error = await noticeDetails(page);
 	await expect(error).toContainText('server side compute is disabled');
 	await expect(error).toContainText('talks@umich.edu');
 	expect(sensitivityFetches).toBe(1);

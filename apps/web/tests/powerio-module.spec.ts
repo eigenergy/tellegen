@@ -1,3 +1,4 @@
+import { noticeDetails } from './fixtures/notices.js';
 import { readFileSync } from 'node:fs';
 import { expect, test } from './fixtures/page-errors.js';
 import { CASE14 } from '../../../examples/browser-minimal/src/case14';
@@ -65,6 +66,6 @@ test('the retired tellegen.study envelope is rejected', async ({ page }) => {
 			buffer: Buffer.from(JSON.stringify({ schema: 'tellegen.study', version: 1, module: {} }))
 		}
 	]);
-	await expect(page.locator('p.error')).toBeVisible();
+	await expect(await noticeDetails(page)).toBeVisible();
 	await expect(page.locator('.solvecard')).toHaveCount(0);
 });

@@ -121,12 +121,16 @@ export interface Topology {
 /** One parse per dropped file: summary stats, plus map geometry when the
  * file carries coordinates and topology for synthetic placement otherwise. */
 export interface IngestedCase extends CaseFileSummary {
-	/** Calculation declared by a typed problem instance. */
-	formulation?: Formulation;
+  /** Calculation declared by a typed problem instance. */
+  formulation?: Formulation;
   /** Generation 2 PowerIO IR used for display edits and every solver Study. */
   module_json: string;
   topology: Topology;
-  view: { coordinate_space?: "geographic" | "diagram"; buses: NetworkBus[]; branches: NetworkBranch[] } | null;
+  view: {
+    coordinate_space?: "geographic" | "diagram";
+    buses: NetworkBus[];
+    branches: NetworkBranch[];
+  } | null;
 }
 
 /** Edge family in the collapsed distribution graph. */
@@ -176,13 +180,12 @@ export interface DistGraph {
   edges: DistGraphEdge[];
 }
 
-/** One multiconductor parse for the viewing path: element counts, connected
- * load and generation (kW), parse diagnostics, coordinate provenance, and the
- * bus/terminal graph. No solve, no network JSON — distribution cases are viewed,
- * not solved. `coords_kind` tells the frontend how to place buses: `geographic`
- * drops `xy` straight onto the map, `planar` fits provided positions into a box
- * at a placement center, `synthetic` runs the force layout. */
+/** Multiconductor case data, terminal graph, and retained PowerIO IR. */
 export interface IngestedDistCase {
+  module_json?: string;
+  geo_layer?: string;
+  mc_pf_enabled?: boolean;
+  mc_pf_unavailable_reason?: string | null;
   name: string | null;
   model: "multiconductor";
   n_bus: number;
@@ -284,11 +287,7 @@ export async function preloadEngine(): Promise<void> {
 }
 
 export type JsonDropKind =
-  | "module"
-  | "transmission"
-  | "distribution"
-  | "ambiguous"
-  | "unknown";
+  "module" | "transmission" | "distribution" | "ambiguous" | "unknown";
 
 export interface JsonDropClassification {
   kind: JsonDropKind;
@@ -436,6 +435,10 @@ export interface GeoApplyReport {
 /** The refreshed ingest payload after a geo apply: `module_json`, the view,
  * and the summary all reflect the applied coordinates, and `report` carries
  * the matched/unmatched counts for the warnings panel. */
+export interface AppliedMcGeoCase extends IngestedDistCase {
+  report: GeoApplyReport;
+}
+
 export interface AppliedGeoCase extends IngestedCase {
   report: GeoApplyReport;
 }
@@ -478,6 +481,26 @@ export async function applyGeo(
       }),
     ),
   );
+}
+
+/** Apply geographic or drawing coordinates to a multiconductor case. */
+export async function applyMcGeo(
+  moduleJson: string,
+  layer: string,
+): Promise<AppliedMcGeoCase> {
+  assertEngineInputLength(moduleJson.length);
+  const result = JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "apply_geo",
+        module_json: moduleJson,
+        layer,
+      }),
+    ),
+  );
+  if (result.model !== "multiconductor")
+    throw new Error("Expected a multiconductor case");
+  return result;
 }
 
 /** Stamp a computed layout (bus id => [lon, lat]) onto a case network with
@@ -627,17 +650,26 @@ export async function solveMcBmopf(
 export async function solveMcModule(
   moduleJson: string,
   options: McPfOptions = {},
+  signal?: AbortSignal,
 ): Promise<McPfResult> {
   assertEngineInputLength(moduleJson.length);
-  return JSON.parse(
-    expectText(
-      await engineHost().call({
-        op: "solve_mc_module",
-        module_json: moduleJson,
-        options: JSON.stringify(options),
-      }),
-    ),
-  );
+  signal?.throwIfAborted();
+  const host = isolatedEngineHost();
+  const abort = () =>
+    host.cancel?.(new Error("Multiconductor calculation cancelled"));
+  signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const result = await host.call({
+      op: "solve_mc_module",
+      module_json: moduleJson,
+      options: JSON.stringify(options),
+    });
+    signal?.throwIfAborted();
+    return JSON.parse(expectText(result));
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    host.cancel?.(new Error("Multiconductor calculation finished"));
+  }
 }
 
 export { errorText } from "./errors.js";
@@ -845,7 +877,11 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
       mw: f.pf,
       loading: f.loading,
     })),
-    dispatch: (out.dispatch ?? []).map((d) => ({ gen: d.gen, bus: d.bus, mw: d.pg })),
+    dispatch: (out.dispatch ?? []).map((d) => ({
+      gen: d.gen,
+      bus: d.bus,
+      mw: d.pg,
+    })),
   };
 }
 
@@ -1022,8 +1058,14 @@ export class BrowserStudy {
 
   /** The Study's current exact solution. Called immediately after Study creation
    * to cache the base point for formulation comparisons. */
-  async currentView(): Promise<import("./generated/study-contracts.js").SolveResponse> {
-    return JSON.parse(expectText(await this.#host.call({ op: "study_solution", study: this.#handle })));
+  async currentView(): Promise<
+    import("./generated/study-contracts.js").SolveResponse
+  > {
+    return JSON.parse(
+      expectText(
+        await this.#host.call({ op: "study_solution", study: this.#handle }),
+      ),
+    );
   }
 
   async currentSolution(): Promise<Solution> {
@@ -1039,7 +1081,12 @@ export class BrowserStudy {
 
   /** Preserve the materialized instance's inner objective and constraints in PowerIO IR. */
   async saveInstanceModule(): Promise<string> {
-    return expectText(await this.#host.call({ op: "study_save_instance_module", study: this.#handle }));
+    return expectText(
+      await this.#host.call({
+        op: "study_save_instance_module",
+        study: this.#handle,
+      }),
+    );
   }
 
   /** Serialize the current exact DC OPF result as a PowerIO solution module.
@@ -1208,6 +1255,7 @@ export interface EngineTransport {
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   parseGeo(bytes: Uint8Array, hint: string): Promise<ParsedGeoLayer>;
   applyGeo(moduleJson: string, layer: string): Promise<AppliedGeoCase>;
+  applyMcGeo?(moduleJson: string, layer: string): Promise<AppliedMcGeoCase>;
   applyLayout(
     moduleJson: string,
     coords: Record<number, [number, number]>,
@@ -1223,13 +1271,11 @@ export interface EngineTransport {
     moduleJson: string,
     request?: SolveRequest,
   ): Promise<SolveResponse>;
-  solveMcBmopf(
-    text: string,
-    options?: McPfOptions,
-  ): Promise<McPfResult>;
+  solveMcBmopf(text: string, options?: McPfOptions): Promise<McPfResult>;
   solveMcModule(
     moduleJson: string,
     options?: McPfOptions,
+    signal?: AbortSignal,
   ): Promise<McPfResult>;
   createStudy(
     moduleJson: string,
@@ -1248,6 +1294,7 @@ export const browserWasmTransport: EngineTransport = {
   parseDisplay,
   parseGeo,
   applyGeo,
+  applyMcGeo,
   applyLayout,
   extractGeo,
   applyDisplayGeo,
@@ -1264,9 +1311,30 @@ export function createBrowserWasmTransport(): EngineTransport {
 
 export { BrowserStudy as Study };
 
-export { IndexedDbStudyStore, StudyDocumentController, studyBackend } from "./study-document.js";
+export {
+  IndexedDbStudyStore,
+  StudyDocumentController,
+  studyBackend,
+} from "./study-document.js";
 export type { StudyBackend, StudyStore } from "./study-document.js";
-export type { CreateStudy, StudyBundle, StudyDocument, StudyRequest, StudyOperation, StudyOperationResult, GoalRevision, DecisionSpace, StudyObjective, StateNode, Comparison } from "./generated/study-contracts.js";
+export type {
+  CreateStudy,
+  StudyBundle,
+  StudyDocument,
+  StudyRequest,
+  StudyOperation,
+  StudyOperationResult,
+  GoalRevision,
+  DecisionSpace,
+  StudyObjective,
+  StateNode,
+  Comparison,
+} from "./generated/study-contracts.js";
 
-export type { ModelDetails, SolveResponse as StudyView, SearchOptions, StudySummary } from "./generated/study-contracts.js";
-export { studySchema } from './generated/study-schema.js';
+export type {
+  ModelDetails,
+  SolveResponse as StudyView,
+  SearchOptions,
+  StudySummary,
+} from "./generated/study-contracts.js";
+export { studySchema } from "./generated/study-schema.js";

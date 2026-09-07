@@ -161,7 +161,11 @@ describe('WebMCP displayed-state context', () => {
 	it('keeps all enabled calculations available for a plain local network', async () => {
 		const { ctrl, app, live } = host();
 		app.studyView = null;
-		const local = new LocalCase({ id: live.id, label: 'Network', fileName: 'case.m' });
+		const local = new LocalCase({
+			id: live.id,
+			label: 'Network',
+			fileName: 'case.m'
+		});
 		local.network = live.network;
 		app.cases[0] = local;
 		const inspected = await createTellegenWebMcpAdapter(ctrl).inspectCase(signal());
@@ -246,10 +250,18 @@ describe('WebMCP displayed-state context', () => {
 			]
 		};
 		const result = await createTellegenWebMcpAdapter(ctrl).queryNetwork(
-			{ caseId: live.id, elementKind: 'bus', sortBy: 'voltage_pu', direction: 'asc', limit: 1 },
+			{
+				caseId: live.id,
+				elementKind: 'bus',
+				sortBy: 'voltage_pu',
+				direction: 'asc',
+				limit: 1
+			},
 			signal()
 		);
-		expect(result).toMatchObject({ elements: [{ legacy_id: 1, voltage_pu: 0.98 }] });
+		expect(result).toMatchObject({
+			elements: [{ legacy_id: 1, voltage_pu: 0.98 }]
+		});
 	});
 
 	it('returns the current document revision after recording a saved-state observation', async () => {
@@ -343,7 +355,13 @@ describe('WebMCP displayed-state context', () => {
 		await expect(
 			Promise.resolve().then(() =>
 				adapter.queryNetwork(
-					{ caseId: 'case-a', elementKind: 'bus', sortBy: 'price', direction: 'desc', limit: 1 },
+					{
+						caseId: 'case-a',
+						elementKind: 'bus',
+						sortBy: 'price',
+						direction: 'desc',
+						limit: 1
+					},
 					signal()
 				)
 			)
@@ -397,12 +415,21 @@ describe('WebMCP displayed-state context', () => {
 
 	it('keeps unavailable configured cases in the catalogue and rejects selection', async () => {
 		const { ctrl, app } = host();
-		Object.assign(app.cases[1], { network: null, unavailableReason: 'Case data is missing' });
+		Object.assign(app.cases[1], {
+			network: null,
+			unavailableReason: 'Case data is missing'
+		});
 		const adapter = createTellegenWebMcpAdapter(ctrl);
 		const listed = await adapter.cases!.listCases({ offset: 1, limit: 1 }, signal());
 		expect(listed).toMatchObject({
 			total: 2,
-			cases: [{ case_id: 'case-b', availability: 'unavailable', reason: 'Case data is missing' }]
+			cases: [
+				{
+					case_id: 'case-b',
+					availability: 'unavailable',
+					reason: 'Case data is missing'
+				}
+			]
 		});
 		await expect(adapter.cases!.selectCase({ caseId: 'case-b' }, signal())).rejects.toMatchObject({
 			code: 'CASE_UNAVAILABLE',
@@ -430,7 +457,7 @@ describe('WebMCP displayed-state context', () => {
 		expect(app.studyView?.id).toBe('state-1');
 	});
 
-	it('reports distribution cases as display-only and never invents prices', async () => {
+	it('reports unsolved distribution data without inventing prices', async () => {
 		const { ctrl, app } = host();
 		const multi = {
 			id: 'dist-1',
@@ -465,7 +492,8 @@ describe('WebMCP displayed-state context', () => {
 		expect(await adapter.inspectCase(signal())).toMatchObject({
 			case_id: multi.id,
 			editable: false,
-			calculation: 'display_only'
+			calculation: 'multiconductor_ac_pf',
+			can_solve: false
 		});
 		expect(
 			await adapter.queryNetwork(
@@ -510,5 +538,89 @@ describe('WebMCP displayed-state context', () => {
 		await expect(second).rejects.toMatchObject({ name: 'AbortError' });
 		expect(ctrl.activateCase).toHaveBeenCalledTimes(1);
 		expect(app.activeCaseId).toBe('case-b');
+	});
+});
+
+it('solves the displayed MC case through its controller and queries terminal volts', async () => {
+	const { ctrl, app } = host();
+	const mc = {
+		id: 'mc-case',
+		label: 'Feeder',
+		revisionGeneration: 0,
+		moduleJson: '{}',
+		summary: { mc_pf_enabled: true },
+		solveMs: 12,
+		graph: {
+			buses: [{ id: 'src', terminals: ['a'], load_kw: 0, gen_kw: 0 }],
+			edges: []
+		},
+		result: null as unknown
+	};
+	Object.assign(app, {
+		studyView: null,
+		activeCaseId: null,
+		activeMultiId: mc.id,
+		activeMulti: mc
+	});
+	const solve = vi.fn(async () => {
+		const result = {
+			converged: true,
+			iterations: 3,
+			physical_kcl_residual: 1e-8,
+			scaled_kcl_residual: 0.1,
+			terminals: [
+				{
+					bus: 'src',
+					terminal: 'a',
+					voltage: { re: 230, im: 0 },
+					current_into_network: { re: 1, im: 0 }
+				}
+			]
+		};
+		mc.result = result;
+		mc.revisionGeneration++;
+		return result;
+	});
+	Object.assign(ctrl, { solveMultiCase: solve });
+	const adapter = createTellegenWebMcpAdapter(ctrl);
+	await expect(
+		adapter.solveMulticonductorPowerFlow!(
+			{ caseId: mc.id, expectedRevision: 'old', maxIterations: 10 },
+			signal()
+		)
+	).rejects.toMatchObject({ code: 'STALE_REVISION' });
+	expect(solve).not.toHaveBeenCalled();
+	const initial = await adapter.inspectCase(signal());
+	const solved = await adapter.solveMulticonductorPowerFlow!(
+		{
+			caseId: mc.id,
+			expectedRevision: String(initial.revision),
+			maxIterations: 10
+		},
+		signal()
+	);
+	expect(solved).toMatchObject({
+		converged: true,
+		revision: 'mc:mc-case:1',
+		units: { voltage: 'V', lmp: null }
+	});
+	const values = await adapter.queryNetwork(
+		{
+			caseId: mc.id,
+			elementKind: 'bus',
+			sortBy: 'voltage_v',
+			direction: 'desc',
+			limit: 1
+		},
+		signal()
+	);
+	expect(values).toMatchObject({
+		elements: [
+			{
+				element_id: 'src',
+				voltage_v: 230,
+				terminal_values: [{ terminal: 'a', voltage_v: 230, current_a: 1 }]
+			}
+		]
 	});
 });

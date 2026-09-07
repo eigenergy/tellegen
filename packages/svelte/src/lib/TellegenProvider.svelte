@@ -10,6 +10,7 @@
 	import { createController } from './controller.svelte.js';
 	import { createAppState } from './state.svelte.js';
 	import { PanelLayout, setPanelLayout } from './panels.svelte.js';
+	import { NoticeCenter, setNoticeCenter } from './notices.svelte.js';
 
 	interface Props extends TellegenUiOptions {
 		children?: Snippet;
@@ -32,6 +33,7 @@
 	const ctrl = createController(app, { apiBase: config.apiBase });
 
 	setPanelLayout(new PanelLayout());
+	setNoticeCenter(new NoticeCenter());
 	setUiConfig(config);
 	setAppState(app);
 	setController(ctrl);

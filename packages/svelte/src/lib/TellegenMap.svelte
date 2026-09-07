@@ -29,7 +29,8 @@
 		transformerMarks,
 		type PlacedMultiBus,
 		type PlacedMultiEdge,
-		type TransformerMark
+		type TransformerMark,
+		multiDiagramNetwork
 	} from './multiconductor.js';
 	import { transformerIcon } from './transformer-icon.js';
 	import { foldMapBounds } from './map-bounds.js';
@@ -63,12 +64,27 @@
 	const ctrl = getController();
 	const panels = getPanelLayout();
 	const diagramCase = $derived(app.studyView ? null : (app.active ?? app.activeLocal));
+	const diagramMulti = $derived(
+		!app.studyView && app.activeMulti?.coordsKind !== 'geographic' ? app.activeMulti : null
+	);
+	const multiNetwork = $derived(
+		diagramMulti?.view
+			? multiDiagramNetwork(diagramMulti.id, diagramMulti.label, diagramMulti.view)
+			: null
+	);
 	const displayedNetwork = $derived(app.studyView?.network ?? diagramCase?.network);
 	const diagramNetwork = $derived(
-		displayedNetwork?.coordinate_space === 'diagram' ? displayedNetwork : null
+		multiNetwork ?? (displayedNetwork?.coordinate_space === 'diagram' ? displayedNetwork : null)
 	);
-	const diagramCaseId = $derived(app.studyView?.caseId ?? diagramCase?.id ?? 'diagram');
+	const diagramCaseId = $derived(
+		app.studyView?.caseId ?? diagramMulti?.id ?? diagramCase?.id ?? 'diagram'
+	);
 	function selectDiagramBus(busId: number) {
+		if (diagramMulti?.view) {
+			const bus = diagramMulti.view.buses[busId];
+			if (bus) onmultibusclick(diagramMulti.id, bus.id);
+			return;
+		}
 		if (app.studyView) {
 			app.selectedBranch = null;
 			app.selectedBus = busId;
@@ -76,6 +92,11 @@
 		else onbusclick(diagramCaseId, busId);
 	}
 	function selectDiagramBranch(branchId: number) {
+		if (diagramMulti?.view) {
+			const edge = diagramMulti.view.edges[branchId];
+			if (edge) onmultiedgeclick?.(diagramMulti.id, edge.id);
+			return;
+		}
 		if (app.studyView) {
 			app.selectedBus = null;
 			app.selectedBranch = branchId;
@@ -618,7 +639,7 @@
 			const s = object as { number: number; name: string };
 			const named = s.name ? ` ${esc(s.name)}` : '';
 			return {
-				html: `<div class="tt"><b>substation ${Number(s.number)}</b>${named}<br><span style="opacity:0.6">.pwd diagram &#8901; approx. position</span></div>`
+				html: `<div class="tt"><b>substation ${Number(s.number)}</b>${named}<br><span style="opacity:0.6">.pwd diagram, approximate position</span></div>`
 			};
 		}
 		const layerId = info.layer?.id;
@@ -1123,7 +1144,7 @@
 		// kind and buses badged by attachment role. Selecting a bus fans its
 		// incident conductors and expands its terminal stack in the SVG overlay.
 		for (const c of app.multiCases) {
-			if (!c.view) continue;
+			if (c.coordsKind !== 'geographic' || !c.view) continue;
 			const selectedId = c.id === app.activeMultiId ? c.selectedBusId : null;
 			const selectedEdgeId = c.id === app.activeMultiId ? c.selectedEdgeId : null;
 			layers.push(
@@ -1260,6 +1281,7 @@
 			if (c.substations) fold(c.substations.points);
 		}
 		for (const c of app.multiCases) {
+			if (c.coordsKind !== 'geographic') continue;
 			if (target !== 'all' && c.id !== target) continue;
 			if (c.view) fold(c.view.buses);
 		}
@@ -1314,6 +1336,7 @@
 {#if diagramNetwork}
 	<DiagramCanvas
 		network={diagramNetwork}
+		multiconductor={diagramMulti}
 		caseId={diagramCaseId}
 		onbusclick={selectDiagramBus}
 		onbranchclick={selectDiagramBranch}

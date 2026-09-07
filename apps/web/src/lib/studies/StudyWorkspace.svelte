@@ -1,6 +1,12 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
-	import { getController, PanelFrame, ModelDetails } from '@tellegen/svelte';
+	import { onMount, tick, untrack } from 'svelte';
+	import {
+		getController,
+		PanelFrame,
+		ModelDetails,
+		getNoticeCenter,
+		errorNoticeTitle
+	} from '@tellegen/svelte';
 	import type { StudyOperation } from '@tellegen/engine';
 	import TellegenWebMcp from '../webmcp/TellegenWebMcp.svelte';
 	import { caseRevision } from '../webmcp/tellegen-adapter.js';
@@ -21,6 +27,12 @@
 
 	const ctrl = getController();
 	const workspace = new StudyWorkspace(ctrl);
+	const notices = getNoticeCenter();
+	$effect(() => {
+		const details = workspace.error;
+		if (details)
+			untrack(() => notices.push({ kind: 'error', title: errorNoticeTitle(details), details }));
+	});
 	let expanded = $state(false);
 	let tab = $state<'case' | 'history' | 'plan'>('case');
 	let creating = $state(false);
@@ -161,7 +173,8 @@
 		try {
 			await run();
 		} catch (error) {
-			formError = error instanceof Error ? error.message : String(error);
+			const message = error instanceof Error ? error.message : String(error);
+			formError = workspace.error === message ? null : message;
 		}
 	}
 	async function resetScroll() {
@@ -376,8 +389,8 @@
 					>{/each}
 			</nav>{/if}
 		<section class="workspace-content" aria-label="Study workspace" bind:this={content}>
-			{#if formError || workspace.error}<p class="error" role="alert">
-					{formError ?? workspace.error}
+			{#if formError}<p class="error" role="alert">
+					{formError}
 				</p>{/if}
 			{#if !doc || creating}
 				<h3>Save this case</h3>

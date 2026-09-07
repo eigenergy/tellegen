@@ -16,6 +16,7 @@ import {
 	type DistGraph,
 	type Formulation,
 	type IngestedDistCase,
+	type McPfResult,
 	type SensTarget,
 	type Topology
 } from '@tellegen/engine';
@@ -209,26 +210,30 @@ export type SolvableCase = CaseState | LocalCase;
  * connected load/generation, coordinate provenance, and diagnostics. */
 export type MultiCaseSummary = Omit<IngestedDistCase, 'graph'>;
 
-/** How a multiconductor case is placed on the map. `geographic` positions drop
- * straight on; `planar`/`synthetic` need a map center, so they sit `pending`
- * until the user places them. */
+/** Geographic coordinates use the map; other positions use the diagram canvas. */
 export type MultiCoordsKind = 'geographic' | 'planar' | 'synthetic';
 
-/** A multiconductor distribution case parsed in the browser, viewed only: no
- * formulation, no sliders, no Study. It carries the bus/terminal graph, its
- * placed map view, and the selected bus whose terminal detail expands. Fields
- * are reactive like the solvable cases so the panel and map track them. */
+/** A conductor-resolved case with retained electrical inputs and terminal results. */
 export class MulticonductorCase {
 	readonly id: string;
 	readonly label: string;
 	readonly fileName: string;
+	moduleJson: string | null = $state.raw<string | null>(null);
+	geoLayer: string | null = $state.raw<string | null>(null);
+	geoWarnings: string[] = $state.raw<string[]>([]);
+	result: McPfResult | null = $state.raw<McPfResult | null>(null);
+	solving = $state(false);
+	solveMs = $state<number | null>(null);
+	solveSeq = 0;
+	revisionGeneration = $state(0);
+	solveAbort: AbortController | null = null;
 	/** Summary counts and coordinate provenance from the parse. */
 	summary: MultiCaseSummary | null = $state.raw<MultiCaseSummary | null>(null);
 	/** The render-ready bus/terminal graph. */
 	graph: DistGraph | null = $state.raw<DistGraph | null>(null);
 	/** Placement kind resolved at ingest from the case's coordinate space. */
 	coordsKind: MultiCoordsKind = $state.raw<MultiCoordsKind>('synthetic');
-	/** The placed map view; null until placed (planar/synthetic await a center). */
+	/** The map or diagram positions. */
 	view: MultiView | null = $state.raw<MultiView | null>(null);
 	syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<
 		{ lon: number; lat: number } | undefined
@@ -253,6 +258,8 @@ export class MulticonductorCase {
 		this.label = init.label;
 		this.fileName = init.fileName;
 		this.summary = init.summary;
+		this.moduleJson = init.summary.module_json ?? null;
+		this.geoLayer = init.summary.geo_layer ?? null;
 		this.graph = init.graph;
 		this.coordsKind = init.coordsKind;
 		this.view = init.view ?? null;
@@ -361,6 +368,7 @@ export class AppState {
 	displayMode = $state<DisplayMode>('price');
 	sensitivityLoading = $state(false);
 	#error = $state<string | null>(null);
+	errorRevision = $state(0);
 	/** Re-runs the operation behind the current `error`, when one applies. Every
 	 * write to `error` clears it, so a retry op can never outlive its message. */
 	errorRetry: (() => void) | null = $state.raw<(() => void) | null>(null);
@@ -371,6 +379,7 @@ export class AppState {
 
 	set error(message: string | null) {
 		this.#error = message;
+		if (message) this.errorRevision++;
 		this.errorRetry = null;
 	}
 

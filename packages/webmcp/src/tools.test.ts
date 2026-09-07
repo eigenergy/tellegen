@@ -620,3 +620,27 @@ describe("case navigation capability", () => {
     ).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
   });
 });
+
+it("validates bounded multiconductor solves and forwards cancellation", async () => {
+  const solve = vi.fn(() => ({ converged: true }));
+  const tool = createTellegenTools(
+    adapter({ solveMulticonductorPowerFlow: solve }),
+  ).find((tool) => tool.name === "solve_multiconductor_pf")!;
+  expect(tool).toBeDefined();
+  expect(tool.name.length).toBeLessThanOrEqual(30);
+  const rejected = await tool.execute({
+    case_id: "mc",
+    max_iterations: 100000,
+  });
+  expect(rejected).toMatchObject({ ok: false });
+  expect(solve).not.toHaveBeenCalled();
+  const result = await tool.execute({
+    case_id: "mc",
+    expected_revision: "mc:1:0",
+  });
+  expect(result).toMatchObject({ ok: true });
+  expect(solve).toHaveBeenCalledWith(
+    { caseId: "mc", expectedRevision: "mc:1:0", maxIterations: 100 },
+    expect.any(AbortSignal),
+  );
+});

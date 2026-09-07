@@ -36,6 +36,7 @@ export type {
   QueryNetworkInput,
   ListCasesInput,
   SelectCaseInput,
+  SolveMulticonductorInput,
   TellegenCaseAdapter,
   RatingEdit,
   RegistrationHandle,

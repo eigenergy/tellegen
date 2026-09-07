@@ -43,6 +43,10 @@ const USAGE: &str =
      solve-module\n\
                    read a stored PowerIO module on stdin and\n\
                    print the solved dc_opf_solution stored module.\n\
+     solve-mc [OPTIONS_JSON]\n\
+                   solve multiconductor PowerIO IR, returning terminal V, A and VA.\n\
+     solve-mc-bmopf [OPTIONS_JSON]\n\
+                   solve a BMOPF JSON case with the same AC power flow solver.\n\
      study create|inspect|run|export|import PATH\n\
                    create, inspect, continue or move a durable Study.\n\
      plan\n\
@@ -81,6 +85,30 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
             return run(solve_module);
+        }
+        "solve-mc" | "solve-mc-bmopf" => {
+            return run(|| {
+                if std::env::args().nth(3).is_some() {
+                    return Err(
+                        "usage: tellegen solve-mc|solve-mc-bmopf [OPTIONS_JSON] (case on stdin)"
+                            .to_owned(),
+                    );
+                }
+                let options = std::env::args()
+                    .nth(2)
+                    .map(|text| {
+                        serde_json::from_str::<tellegen::McPfOptions>(&text)
+                            .map_err(|e| e.to_string())
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                let input = read_stdin()?;
+                if arg == "solve-mc-bmopf" {
+                    tellegen::solve_bmopf_json(&input, &options)
+                } else {
+                    tellegen::solve_mc_module_json(&input, &options)
+                }
+            });
         }
         "plan" => {
             if std::env::args().nth(2).is_some() {
@@ -294,6 +322,8 @@ fn contract_value() -> Result<serde_json::Value, String> {
         "tellegen_version": tellegen::VERSION,
         "powerio_version": env!("TELLEGEN_POWERIO_VERSION"),
         "schemas": {
+            "mc_pf_options": schemars::schema_for!(tellegen::McPfOptions),
+            "mc_pf_result": schemars::schema_for!(tellegen::McPfResult),
             "study_bundle": schemars::schema_for!(tellegen::document::StudyBundle),
             "study_create": schemars::schema_for!(tellegen::study_ops::CreateStudy),
             "study_request": schemars::schema_for!(tellegen::study_ops::StudyRequest),

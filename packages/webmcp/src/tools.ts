@@ -19,6 +19,7 @@ import {
   validateQueryNetwork,
   validateListCases,
   validateSelectCase,
+  validateSolveMulticonductor,
   validateResetCase,
   validateUpdateCase,
 } from "./validation.js";
@@ -416,8 +417,47 @@ export function createTellegenTools(
         },
       ]
     : [];
+  const mcTools: TellegenToolDefinition[] = adapter.solveMulticonductorPowerFlow
+    ? [
+        {
+          name: "solve_multiconductor_pf",
+          title: "Solve multiconductor AC power flow",
+          description:
+            "Calculate terminal voltages, currents, and powers for the displayed multiconductor case. Uses prescribed demand and source voltages. Rejects unsupported equipment physics. Does not optimize dispatch or change electrical inputs. Use query_network for terminal results.",
+          inputSchema: objectSchema(
+            {
+              case_id: {
+                type: "string",
+                description: "Case ID from inspect_case.",
+              },
+              expected_revision: {
+                type: "string",
+                description: "Displayed revision from inspect_case.",
+              },
+              max_iterations: {
+                type: "integer",
+                minimum: 1,
+                maximum: 10000,
+                description: "Iteration limit, default 100.",
+              },
+            },
+            ["case_id", "expected_revision"],
+          ),
+          execute: tracked(
+            "solve_multiconductor_pf",
+            "Solve multiconductor AC power flow",
+            validateSolveMulticonductor,
+            (input, signal) =>
+              adapter.solveMulticonductorPowerFlow!(input, signal),
+            "commit-aware",
+          ),
+          annotations: annotations(false),
+        },
+      ]
+    : [];
   return [
     ...caseTools,
+    ...mcTools,
     {
       name: "inspect_case",
       title: "Inspect network",
@@ -463,6 +503,7 @@ export function createTellegenTools(
               "generation_mw",
               "price",
               "voltage_pu",
+              "voltage_v",
               "loading",
               "flow_mw",
               "rating_mw",

@@ -1,21 +1,5 @@
-//! Multiconductor distribution ingest: the viewing-only counterpart of the
-//! balanced [`crate::ingest_case`] path.
-//!
-//! A dropped OpenDSS `.dss`, PMD JSON, or BMOPF JSON parses through
-//! [`powerio::parse`] into a module holding a canonical
-//! [`MulticonductorNetwork`] or a multiconductor problem instance; a
-//! `.pio.json` PowerIO IR document carrying a multiconductor value comes in
-//! through [`tellegen::ir::deserialize_module`].
-//! Either way the network is projected to a render-ready bus/terminal graph
-//! ([`MulticonductorNetwork::to_graph`]) and serialized as the drop-panel payload
-//! the frontend reads. No solve, no model build — this path only views
-//! topology.
-//!
-//! The entry points ([`ingest_dist`] and [`ingest_dist_module`]) are
-//! string-typed and return `Result<_, String>` so they run in native unit
-//! tests; the `#[wasm_bindgen]` wrapper in `lib.rs` maps the error to a
-//! `JsError` at the boundary. Input is untrusted: a malformed, truncated, or
-//! oversized payload rejects as an `Err`, never a panic.
+//! Multiconductor case import with portable electrical data and display geometry.
+//! Parsing retains the PowerIO module for subsequent calculations and exports.
 
 use powerio::{PioModule, PioValue};
 use powerio_dist::{CoordinateSpace, DistGeoMeta, DistGraphEdgeKind, MulticonductorNetwork};
@@ -44,15 +28,33 @@ pub(crate) fn ingest_dist_bytes_value(
     // readers take the case's own name (e.g. the OpenDSS circuit name).
     let source = powerio::Source::from_memory("<case>", bytes.to_vec())
         .map_err(|e| e.to_string())?
-        .with_format(format);
+        .with_format(format.clone());
     let module = powerio::parse(source).map_err(|e| e.to_string())?;
+    #[cfg(feature = "mc-pf")]
+    let module = if format.to_string() == "bmopf-json" {
+        let text = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
+        match tellegen::mc_pf::validate_bmopf_json(text) {
+            Ok(()) => module,
+            Err(reason) => module
+                .with_diagnostic(powerio::Diagnostic::new(
+                    powerio::DiagnosticCode::new("PARTNER.TELLEGEN.MC_PF_UNSUPPORTED")
+                        .map_err(|e| e.to_string())?,
+                    powerio::DiagnosticSeverity::Warning,
+                    reason,
+                ))
+                .map_err(|e| e.to_string())?,
+        }
+    } else {
+        module
+    };
     let Some(network) = multiconductor_network(module.value()) else {
         return Err(format!(
             "parsed a {} value, expected a multiconductor network or calculation",
             module.value().type_name()
         ));
     };
-    ingest_dist_value(network, module.diagnostics())
+    let payload = ingest_dist_value(network, module.diagnostics())?;
+    crate::with_module_json(payload, module)
 }
 
 /// Parse `text` as a `.pio.json` stored module and, when it holds a
@@ -81,14 +83,15 @@ pub(crate) fn ingest_dist_module_value(
             module.value().type_name()
         ));
     };
-    ingest_dist_value(network, module.diagnostics())
+    let payload = ingest_dist_value(network, module.diagnostics())?;
+    crate::with_module_json(payload, module)
 }
 
 pub(crate) fn is_viewable_module_value(value: &PioValue) -> bool {
     multiconductor_network(value).is_some()
 }
 
-fn multiconductor_network(value: &PioValue) -> Option<&MulticonductorNetwork> {
+pub(crate) fn multiconductor_network(value: &PioValue) -> Option<&MulticonductorNetwork> {
     match value {
         PioValue::MulticonductorNetwork(network) => Some(network),
         PioValue::McAcPfInstance(instance) => Some(instance.network()),
@@ -139,6 +142,11 @@ fn ingest_dist_value(
         // Discriminates this payload from the balanced `ingest_case` shape so the
         // frontend routes it to the viewing-only multiconductor state.
         "model": "multiconductor",
+        "mc_pf_enabled": cfg!(feature = "mc-pf"),
+        "mc_pf_unavailable_reason": diagnostics.iter()
+            .find(|d| d.code() == "PARTNER.TELLEGEN.MC_PF_UNSUPPORTED")
+            .map(|d| d.message()),
+        "geo_layer": powerio::dist_geo::to_dist_geo_layer(net).to_geojson(),
         "n_bus": graph.buses.len(),
         "n_edge": graph.edges.len(),
         "n_line": n_line,
@@ -215,6 +223,71 @@ mod tests {
 
     fn parse(out: &str) -> Value {
         serde_json::from_str(out).expect("ingest output is JSON")
+    }
+
+    #[cfg(feature = "mc-pf")]
+    const PF_BMOPF: &str =
+        include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_1ph_line.json");
+
+    #[test]
+    #[cfg(feature = "mc-pf")]
+    fn imported_case_solves_after_geographic_attachment_and_ir_reload() {
+        let payload = parse(&ingest_dist(PF_BMOPF, "bmopf-json").unwrap());
+        let module = payload["module_json"].as_str().unwrap();
+        let options = tellegen::McPfOptions::default();
+        let before: tellegen::McPfResult =
+            serde_json::from_str(&tellegen::solve_mc_module_json(module, &options).unwrap())
+                .unwrap();
+        let layer = serde_json::json!({
+            "type": "FeatureCollection", "features": [
+                {"type": "Feature", "properties": {"bus": "src"},
+                 "geometry": {"type": "Point", "coordinates": [-83.9, 35.9]}},
+                {"type": "Feature", "properties": {"bus": "lb"},
+                 "geometry": {"type": "Point", "coordinates": [-83.8, 35.8]}},
+                {"type": "Feature", "properties": {"bus_from": "src", "bus_to": "lb"},
+                 "geometry": {"type": "LineString", "coordinates": [[-83.9, 35.9], [-83.85, 35.87], [-83.8, 35.8]]}}
+            ]
+        });
+        let updated = parse(&crate::geo::apply_geo_impl(module, &layer.to_string()).unwrap());
+        assert_eq!(updated["report"]["matched_buses"], 2);
+        assert_eq!(updated["report"]["matched_branches"], 1);
+        assert_eq!(updated["coords_kind"], "geographic");
+        let saved = updated["module_json"].as_str().unwrap();
+        let reloaded = parse(&ingest_dist_module(saved).unwrap());
+        assert_eq!(reloaded["graph"], updated["graph"]);
+        assert_eq!(reloaded["geo_layer"], updated["geo_layer"]);
+        let after: tellegen::McPfResult =
+            serde_json::from_str(&tellegen::solve_mc_module_json(saved, &options).unwrap())
+                .unwrap();
+        assert_eq!(
+            serde_json::to_value(before).unwrap(),
+            serde_json::to_value(after).unwrap()
+        );
+        assert!(crate::geo::extract_geo_impl(saved)
+            .unwrap()
+            .contains("-83.85"));
+    }
+
+    #[test]
+    #[cfg(feature = "mc-pf")]
+    fn unsupported_source_physics_remains_explicit_after_ir_reload() {
+        let mut raw: Value = serde_json::from_str(PF_BMOPF).unwrap();
+        raw["voltage_source"]["source"]["r1"] = serde_json::json!(0.1);
+        let payload = parse(&ingest_dist(&raw.to_string(), "bmopf-json").unwrap());
+        assert!(payload["mc_pf_unavailable_reason"]
+            .as_str()
+            .unwrap()
+            .contains("finite impedance"));
+        let saved = payload["module_json"].as_str().unwrap();
+        assert!(
+            tellegen::solve_mc_module_json(saved, &tellegen::McPfOptions::default())
+                .unwrap_err()
+                .contains("MC_PF_UNSUPPORTED")
+        );
+        assert_eq!(
+            parse(&ingest_dist_module(saved).unwrap())["mc_pf_unavailable_reason"],
+            payload["mc_pf_unavailable_reason"]
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import AppFooter from './components/AppFooter.svelte';
+	import NotificationCenter from './components/NotificationCenter.svelte';
 	import AppHeader from './components/AppHeader.svelte';
 	import ControlPanel from './components/ControlPanel.svelte';
 	import DropZone from './components/DropZone.svelte';
@@ -130,6 +131,7 @@
 
 	<AppHeader />
 	<PanelHost />
+	<NotificationCenter />
 	<ControlPanel />
 	<SolveCard />
 	{#if !app.studyView}

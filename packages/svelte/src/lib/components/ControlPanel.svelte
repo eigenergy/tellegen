@@ -89,13 +89,6 @@
 		{#if app.studyView}
 			<SavedNetworkDetails />
 		{:else}
-			{#if app.error}
-				<p class="error mono">{app.error}</p>
-				<div class="error-actions">
-					<button class="reset mono" onclick={ctrl.retryError}>retry</button>
-					<button class="reset mono" onclick={() => (app.error = null)}>dismiss</button>
-				</div>
-			{/if}
 			{#if app.parsingFile}
 				<p class="dim mono blink">parsing&hellip;</p>
 			{/if}
@@ -126,7 +119,7 @@
 				<MulticonductorDetails />
 			{/if}
 			{#if !ctrl.networkStats}
-				{#if !app.error && !app.activeLocal && !app.activeMulti}
+				{#if !app.activeLocal && !app.activeMulti}
 					{#if ctrl.casesLoaded && app.cases.length === 0}
 						<p class="dim mono">
 							{config.loadDefaultCases ? 'no default cases loaded' : 'drop a case file to begin'}
@@ -186,11 +179,6 @@
 		margin: 12px 0;
 	}
 
-	.error {
-		color: var(--red);
-		font-size: 12px;
-	}
-
 	.view-mode {
 		display: flex;
 		gap: 4px;
@@ -212,9 +200,5 @@
 	.view-mode button:focus-visible {
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
-	}
-	.error-actions {
-		display: flex;
-		gap: 6px;
 	}
 </style>
