@@ -17,6 +17,7 @@ import {
 	type Formulation,
 	type IngestedDistCase,
 	type McPfResult,
+	type McStudySnapshot,
 	type SensTarget,
 	type Topology
 } from '@tellegen/engine';
@@ -222,6 +223,8 @@ export class MulticonductorCase {
 	geoLayer: string | null = $state.raw<string | null>(null);
 	geoWarnings: string[] = $state.raw<string[]>([]);
 	result: McPfResult | null = $state.raw<McPfResult | null>(null);
+	mcSnapshot: McStudySnapshot | null = $state.raw<McStudySnapshot | null>(null);
+	mcSavedAt = $state<string | null>(null);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveSeq = 0;
@@ -263,6 +266,19 @@ export class MulticonductorCase {
 		this.graph = init.graph;
 		this.coordsKind = init.coordsKind;
 		this.view = init.view ?? null;
+	}
+
+	get mcPfReason(): string | null {
+		if (!this.moduleJson) return 'This case has no retained electrical input';
+		if (this.summary?.mc_pf_enabled !== true) return 'AC power flow is unavailable in this build';
+		return (
+			this.summary.mc_pf_reason ??
+			this.summary.mc_pf_unavailable_reason ??
+			(this.summary.mc_pf_supported !== true ? 'AC power flow is unavailable for this case' : null)
+		);
+	}
+	get mcPfSupported(): boolean {
+		return this.mcPfReason === null;
 	}
 
 	/** Whether the case is placed and ready to render. */
@@ -388,7 +404,7 @@ export class AppState {
 	/** Local case the panel shows; clicking a bundled case or a bus clears it. */
 	activeLocalId = $state<string | null>(null);
 	placingLocalId = $state<string | null>(null);
-	/** Multiconductor distribution cases parsed in the browser (viewing only). */
+	/** Multiconductor cases with retained inputs and AC power flow results. */
 	multiCases: MulticonductorCase[] = $state.raw<MulticonductorCase[]>([]);
 	/** Multiconductor case the panel shows; mutually exclusive with the solvable
 	 * active ids. */

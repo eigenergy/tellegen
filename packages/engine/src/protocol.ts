@@ -28,6 +28,15 @@ export type EngineRequest =
   | { op: "solve_mc_bmopf"; text: string; options: string }
   | { op: "solve_mc_module"; module_json: string; options: string }
   | {
+      op: "solve_mc_study";
+      module_json: string;
+      study_id: string;
+      study_title: string;
+      options: string;
+    }
+  | { op: "replay_mc_study"; snapshot: string }
+  | { op: "apply_mc_study_geo"; snapshot: string; layer: string }
+  | {
       op: "study_new";
       study: number;
       module_json: string;
@@ -49,7 +58,9 @@ export type EngineRequest =
   | { op: "study_apply_geo"; study: number; layer: string }
   | { op: "study_free"; study: number };
 
-export type WorkerRequest = (EngineRequest & { id: number }) | { op: "cancel_study_operation"; id: number };
+export type WorkerRequest =
+  | (EngineRequest & { id: number })
+  | { op: "cancel_study_operation"; id: number };
 
 export type WorkerResponse =
   | { id: number; ok: true; value: string | null }
@@ -73,9 +84,12 @@ export function runRequest(
     return s;
   };
   switch (req.op) {
-    case "study_document_create": return mod.study_document_create(req.request);
-    case "study_document_import": return mod.study_document_import(req.bundle);
-    case "study_document_run": return mod.study_document_run(req.bundle, req.request, cancelled);
+    case "study_document_create":
+      return mod.study_document_create(req.request);
+    case "study_document_import":
+      return mod.study_document_import(req.bundle);
+    case "study_document_run":
+      return mod.study_document_run(req.bundle, req.request, cancelled);
     case "preload":
       return null; // loading the module was the work
     case "classify_json":
@@ -108,6 +122,17 @@ export function runRequest(
       return mod.solve_mc_bmopf(req.text, req.options);
     case "solve_mc_module":
       return mod.solve_mc_module(req.module_json, req.options);
+    case "solve_mc_study":
+      return mod.solve_mc_study(
+        req.module_json,
+        req.study_id,
+        req.study_title,
+        req.options,
+      );
+    case "replay_mc_study":
+      return mod.replay_mc_study(req.snapshot);
+    case "apply_mc_study_geo":
+      return mod.apply_mc_study_geo(req.snapshot, req.layer);
     case "study_new":
       studies.set(req.study, new mod.Study(req.module_json, req.formulation));
       return null;

@@ -6,3 +6,4 @@ src/lib/wasm-pkg/
 playwright-report/
 test-results/
 tests/fixtures/mc-pf-browser/LICENSE.md
+static/examples/four-wire.LICENSE.md

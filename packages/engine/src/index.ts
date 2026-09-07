@@ -154,6 +154,8 @@ export interface DistGraphBus {
   id: string;
   terminals: string[];
   grounded: string[];
+  /** Declared or conservative conventional neutral terminal, when present. */
+  neutral_terminal?: string | null;
   xy?: [number, number];
   load_kw: number;
   gen_kw: number;
@@ -211,6 +213,10 @@ export interface IngestedDistCase {
   coords_kind: "geographic" | "planar" | "synthetic";
   diagnostics: PowerIoDiagnostic[];
   graph: DistGraph;
+  /** Explicit capability from the reader; absent means inspection only. */
+  mc_pf_supported?: boolean;
+  /** Reader explanation for an inspection-only distribution payload. */
+  mc_pf_reason?: string;
 }
 
 /** A materialized case written to a target format: the serialized case text,
@@ -629,6 +635,21 @@ export interface McPfResult {
   source_reactions: McSourceReaction[];
 }
 
+/** Self-contained saved Study result for a supported distribution AC PF.
+ * The input and solution modules make this replayable; `result` is the rich
+ * terminal/element view rendered by the Study panel. */
+export interface McStudySnapshot {
+  schema: "tellegen-mc-pf-study";
+  version: 1;
+  id: string;
+  title: string;
+  formulation: "mc_ac_pf";
+  input_module: string;
+  solution_module: string;
+  options: McPfOptions;
+  result: McPfResult;
+}
+
 /** Parse and solve a raw BMOPF multiconductor case in the wasm module. */
 export async function solveMcBmopf(
   text: string,
@@ -670,6 +691,72 @@ export async function solveMcModule(
     signal?.removeEventListener("abort", abort);
     host.cancel?.(new Error("Multiconductor calculation finished"));
   }
+}
+
+/** Solve a supported multiconductor Study input and return a replayable
+ * snapshot containing the typed input, PowerIO solution, and rich result. */
+export async function solveMcStudy(
+  moduleJson: string,
+  studyId: string,
+  studyTitle: string,
+  options: McPfOptions = {},
+  signal?: AbortSignal,
+): Promise<McStudySnapshot> {
+  assertEngineInputLength(moduleJson.length);
+  signal?.throwIfAborted();
+  const host = isolatedEngineHost();
+  const abort = () =>
+    host.cancel?.(new Error("Multiconductor calculation cancelled"));
+  signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const result = await host.call({
+      op: "solve_mc_study",
+      module_json: moduleJson,
+      study_id: studyId,
+      study_title: studyTitle,
+      options: JSON.stringify(options),
+    });
+    signal?.throwIfAborted();
+    return JSON.parse(expectText(result));
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    host.cancel?.(new Error("Multiconductor calculation finished"));
+  }
+}
+
+/** Validate and canonicalize a saved multiconductor Study snapshot without
+ * running the solver again. */
+export async function replayMcStudy(
+  snapshotJson: string,
+): Promise<McStudySnapshot> {
+  assertEngineInputLength(snapshotJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "replay_mc_study",
+        snapshot: snapshotJson,
+      }),
+    ),
+  );
+}
+
+/** Update both saved modules with matching positions while retaining the solved values. */
+export async function applyMcStudyGeo(
+  snapshot: McStudySnapshot,
+  layer: string,
+): Promise<McStudySnapshot> {
+  const text = JSON.stringify(snapshot);
+  assertEngineInputLength(text.length);
+  assertEngineInputLength(layer.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "apply_mc_study_geo",
+        snapshot: text,
+        layer,
+      }),
+    ),
+  );
 }
 
 export { errorText } from "./errors.js";
@@ -1277,6 +1364,18 @@ export interface EngineTransport {
     options?: McPfOptions,
     signal?: AbortSignal,
   ): Promise<McPfResult>;
+  solveMcStudy(
+    moduleJson: string,
+    studyId: string,
+    studyTitle: string,
+    options?: McPfOptions,
+    signal?: AbortSignal,
+  ): Promise<McStudySnapshot>;
+  replayMcStudy(snapshotJson: string): Promise<McStudySnapshot>;
+  applyMcStudyGeo?(
+    snapshot: McStudySnapshot,
+    layer: string,
+  ): Promise<McStudySnapshot>;
   createStudy(
     moduleJson: string,
     formulation?: Formulation,
@@ -1302,6 +1401,9 @@ export const browserWasmTransport: EngineTransport = {
   solveModule,
   solveMcBmopf,
   solveMcModule,
+  solveMcStudy,
+  replayMcStudy,
+  applyMcStudyGeo,
   createStudy,
 };
 

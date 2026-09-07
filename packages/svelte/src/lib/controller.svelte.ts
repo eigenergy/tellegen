@@ -162,13 +162,15 @@ type DemandRangeAnchor = {
 export interface ControllerOptions {
 	api?: TellegenApiClient;
 	apiBase?: string;
-	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'>;
+	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
+		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo'>>;
 }
 
 export class Controller {
 	app: AppState;
 	api: TellegenApiClient;
-	mcTransport: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'>;
+	mcTransport: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
+		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo'>>;
 	abort: AbortController | null = null;
 	// While set (epoch ms), the server sensitivity fallback is rate limited: skip
 	// the request and show the rate-limit copy instead of burning the budget on a
@@ -2308,11 +2310,7 @@ export class Controller {
 	): Promise<McPfResult> => {
 		if (signal?.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
 		if (c.solving) throw new Error('A calculation is already running for this case');
-		const unavailable = !c.moduleJson
-			? 'This case has no retained electrical input'
-			: c.summary?.mc_pf_unavailable_reason || c.summary?.mc_pf_enabled !== true
-				? (c.summary?.mc_pf_unavailable_reason ?? 'AC power flow is unavailable for this case')
-				: null;
+		const unavailable = c.mcPfReason;
 		if (unavailable) {
 			this.app.error = unavailable;
 			throw new Error(unavailable);
@@ -2328,7 +2326,17 @@ export class Controller {
 		this.app.error = null;
 		const started = performance.now();
 		try {
-			const result = await this.mcTransport.solveMcModule(input, options, abort.signal);
+			const snapshot = this.mcTransport.solveMcStudy
+				? await this.mcTransport.solveMcStudy(
+						input,
+						crypto.randomUUID(),
+						c.label,
+						options,
+						abort.signal
+					)
+				: null;
+			const result =
+				snapshot?.result ?? (await this.mcTransport.solveMcModule(input, options, abort.signal));
 			if (abort.signal.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
 			if (
 				seq !== c.solveSeq ||
@@ -2339,6 +2347,8 @@ export class Controller {
 				throw new Error('The case changed while calculating. Run AC power flow again');
 			if (!result.converged) throw new Error('AC power flow did not converge');
 			c.result = result;
+			c.mcSnapshot = snapshot;
+			c.mcSavedAt = null;
 			c.solveMs = performance.now() - started;
 			c.revisionGeneration++;
 			return result;
@@ -2373,11 +2383,17 @@ export class Controller {
 		const input = c.moduleJson;
 		const revision = c.revisionGeneration;
 		let next = input;
+		let snapshot = c.mcSnapshot;
 		let payload: Awaited<ReturnType<NonNullable<EngineTransport['applyMcGeo']>>> | undefined;
 		const notes: string[] = [];
 		let matched = 0;
 		for (const layer of layers) {
 			payload = await this.mcTransport.applyMcGeo(next, layer.layer);
+			if (snapshot) {
+				if (!this.mcTransport.applyMcStudyGeo)
+					throw new Error('Saved result coordinates are unavailable in this build');
+				snapshot = await this.mcTransport.applyMcStudyGeo(snapshot, layer.layer);
+			}
 			if (!payload.module_json)
 				throw new Error('Coordinate attachment returned no electrical input');
 			next = payload.module_json;
@@ -2399,6 +2415,8 @@ export class Controller {
 			throw new Error('The selected case changed. Attach the coordinates again');
 		const { graph, ...summary } = payload;
 		c.moduleJson = next;
+		c.mcSnapshot = snapshot ? { ...snapshot, id: crypto.randomUUID() } : null;
+		c.mcSavedAt = null;
 		c.geoLayer = payload.geo_layer ?? null;
 		c.graph = graph;
 		c.summary = summary;

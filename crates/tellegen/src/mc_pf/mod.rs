@@ -12,6 +12,7 @@ mod transformer;
 
 pub use input::{
     parse_bmopf_instance, solve_bmopf_json, solve_mc_module_json, validate_bmopf_json,
+    validate_mc_module_json,
 };
 pub use transformer::{
     build_transformer_yprim, prepare_transformer, ComplexMatrix, PreparedTransformer,
@@ -118,6 +119,505 @@ pub struct McPfResult {
     pub terminals: Vec<McTerminalResult>,
     pub element_ports: Vec<McElementPort>,
     pub source_reactions: Vec<McSourceReaction>,
+}
+
+/// A portable, replayable distribution Study snapshot.
+///
+/// This deliberately sits beside the balanced KKT Study rather than pretending
+/// that a multiconductor fixed-point result has balanced buses, objectives, or
+/// sensitivity columns. The input and solution modules make the snapshot
+/// self-contained; the rich result is the UI-facing terminal/element view.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct McStudySnapshot {
+    pub schema: String,
+    pub version: u32,
+    pub id: String,
+    pub title: String,
+    pub formulation: String,
+    pub input_module: String,
+    pub solution_module: String,
+    pub options: McPfOptions,
+    pub result: McPfResult,
+}
+
+impl McStudySnapshot {
+    pub const SCHEMA: &'static str = "tellegen-mc-pf-study";
+    pub const VERSION: u32 = 1;
+
+    pub fn solve(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        input_module: &str,
+        options: McPfOptions,
+    ) -> Result<Self, String> {
+        let module = crate::ir::deserialize_module(input_module)?;
+        input::validate_mc_module(&module)?;
+        let instance = input::instance_from_value(module.value())?;
+        let result = solve_mc_ac_pf_instance(&instance, &options)?;
+        let solution = result.to_powerio_solution(&instance)?;
+        let solution_module = crate::ir::serialize_module(&powerio::PioModule::new(
+            powerio::PioValue::McAcPfSolution(solution),
+        ))
+        .map_err(|e| e.to_string())?;
+        let snapshot = Self {
+            schema: Self::SCHEMA.to_owned(),
+            version: Self::VERSION,
+            id: id.into(),
+            title: title.into(),
+            formulation: "mc_ac_pf".to_owned(),
+            input_module: input_module.to_owned(),
+            solution_module,
+            options,
+            result,
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.schema != Self::SCHEMA || self.version != Self::VERSION {
+            return Err("unsupported multiconductor Study snapshot schema".to_owned());
+        }
+        if self.id.trim().is_empty() || self.title.trim().is_empty() {
+            return Err("multiconductor Study snapshot requires an id and title".to_owned());
+        }
+        if self.formulation != "mc_ac_pf" {
+            return Err("multiconductor Study snapshot formulation must be mc_ac_pf".to_owned());
+        }
+        validate_options(&self.options)?;
+        let input = crate::ir::deserialize_module(&self.input_module)?;
+        input::validate_mc_module(&input)?;
+        let input_instance = input::instance_from_value(input.value())?;
+        let solution = crate::ir::deserialize_module(&self.solution_module)?;
+        let powerio::PioValue::McAcPfSolution(solution) = solution.into_value() else {
+            return Err("multiconductor Study snapshot solution must be McAcPfSolution".to_owned());
+        };
+        let input_instance_json = instance_module_value(&input_instance)?;
+        let solution_instance_json = instance_module_value(solution.instance())?;
+        if input_instance_json != solution_instance_json {
+            return Err(
+                "multiconductor Study snapshot input and solution instances differ".to_owned(),
+            );
+        }
+        validate_result_against_solution(&self.result, &solution, &self.options)?;
+        Ok(())
+    }
+
+    /// Attach equipment positions to both saved modules without recalculating electrical results.
+    pub fn apply_geo_layer(&mut self, layer: &powerio::GeoLayer) -> Result<(), String> {
+        self.validate()?;
+        let mut input = crate::ir::deserialize_module(&self.input_module)?;
+        let instance = input::instance_from_value(input.value())?;
+        let mut network = instance.network().clone();
+        let report = powerio::dist_geo::apply_dist_geo_layer(&mut network, layer);
+        if report.matched_buses == 0 && report.matched_branches == 0 {
+            return Err("no saved case equipment matched the geographic file".to_owned());
+        }
+        let instance = instance
+            .with_network(network.clone())
+            .map_err(|e| e.to_string())?;
+        *input.value_mut() = match input.value() {
+            powerio::PioValue::MulticonductorNetwork(_) => {
+                powerio::PioValue::MulticonductorNetwork(network)
+            }
+            powerio::PioValue::McAcPfInstance(_) => {
+                powerio::PioValue::McAcPfInstance(instance.clone())
+            }
+            _ => {
+                return Err("saved power flow requires a network or AC power flow input".to_owned())
+            }
+        };
+        let mut solution = crate::ir::deserialize_module(&self.solution_module)?;
+        *solution.value_mut() =
+            powerio::PioValue::McAcPfSolution(self.result.to_powerio_solution(&instance)?);
+        let mut updated = self.clone();
+        updated.input_module = crate::ir::serialize_module(&input)?;
+        updated.solution_module = crate::ir::serialize_module(&solution)?;
+        updated.validate()?;
+        *self = updated;
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, String> {
+        self.validate()?;
+        serde_json::to_string(self).map_err(|e| e.to_string())
+    }
+
+    pub fn from_json(text: &str) -> Result<Self, String> {
+        let snapshot: Self = serde_json::from_str(text)
+            .map_err(|e| format!("invalid multiconductor Study snapshot: {e}"))?;
+        snapshot.validate()?;
+        Ok(snapshot)
+    }
+}
+
+fn instance_module_value(instance: &McAcPfInstance) -> Result<serde_json::Value, String> {
+    let module = crate::ir::serialize_module(&powerio::PioModule::new(
+        powerio::PioValue::McAcPfInstance(instance.clone()),
+    ))
+    .map_err(|e| e.to_string())?;
+    serde_json::from_str(&module).map_err(|e| e.to_string())
+}
+
+fn validate_result_against_solution(
+    result: &McPfResult,
+    solution: &McAcPfSolution,
+    options: &McPfOptions,
+) -> Result<(), String> {
+    if solution.termination() != &Termination::Converged {
+        return Err("multiconductor Study solution is not marked converged".to_owned());
+    }
+    if !result.converged
+        || result.iterations == 0
+        || !result.voltage_change.is_finite()
+        || !result.physical_kcl_residual.is_finite()
+        || !result.scaled_kcl_residual.is_finite()
+        || result.voltage_change < 0.0
+        || result.physical_kcl_residual < 0.0
+        || result.scaled_kcl_residual < 0.0
+        || result.scaled_kcl_residual > 1.0 + 1e-10
+        || result.voltage_change > options.tolerance * (1.0 + 1e-10)
+        || result.iterations > options.max_iterations
+    {
+        return Err(
+            "multiconductor Study snapshot does not contain a finite converged result".to_owned(),
+        );
+    }
+    let network = solution.network();
+    let expected_count: usize = network.buses().iter().map(|bus| bus.terminals.len()).sum();
+    if result.terminals.len() != expected_count {
+        return Err(
+            "multiconductor Study result terminal count differs from its solution".to_owned(),
+        );
+    }
+    let terminal_voltages: std::collections::BTreeMap<_, _> = result
+        .terminals
+        .iter()
+        .map(|terminal| {
+            (
+                (terminal.bus.clone(), terminal.terminal.clone()),
+                terminal.voltage,
+            )
+        })
+        .collect();
+    if terminal_voltages.len() != result.terminals.len() {
+        return Err(
+            "multiconductor Study result contains duplicate terminal identities".to_owned(),
+        );
+    }
+    let mut index = 0usize;
+    for bus in network.buses() {
+        for (column, terminal) in bus.terminals.iter().enumerate() {
+            let index = index + column;
+            let actual = &result.terminals[index];
+            if actual.bus != bus.id || actual.terminal != *terminal {
+                return Err(format!(
+                    "multiconductor Study result terminal identity/order differs at {}/{}",
+                    bus.id, terminal
+                ));
+            }
+            let magnitude = actual.voltage.re.hypot(actual.voltage.im);
+            let angle = actual.voltage.im.atan2(actual.voltage.re);
+            let expected_magnitude = solution
+                .terminal_voltage_magnitude(&bus.id, terminal)
+                .ok_or_else(|| format!("solution omits terminal {}/{}", bus.id, terminal))?;
+            let expected_angle = solution
+                .terminal_voltage_angle(&bus.id, terminal)
+                .ok_or_else(|| format!("solution omits terminal {}/{}", bus.id, terminal))?;
+            if !complex_finite(actual.voltage)
+                || !complex_finite(actual.current_into_network)
+                || !complex_finite(actual.power_into_network)
+                || !close_complex(
+                    actual.power_into_network,
+                    actual.voltage.into_complex()
+                        * actual.current_into_network.into_complex().conj(),
+                )
+                || !close(magnitude, expected_magnitude)
+                || !close(angle, expected_angle)
+            {
+                return Err(format!(
+                    "multiconductor Study result voltage is not linked to solution at {}/{}",
+                    bus.id, terminal
+                ));
+            }
+            let expected_current = solution.terminal_current_magnitude(&bus.id, terminal);
+            let Some(expected_current) = expected_current else {
+                return Err(format!(
+                    "solution omits terminal current at {}/{}",
+                    bus.id, terminal
+                ));
+            };
+            if !close(
+                actual
+                    .current_into_network
+                    .re
+                    .hypot(actual.current_into_network.im),
+                expected_current,
+            ) {
+                return Err(format!(
+                    "multiconductor Study result current is not linked to solution at {}/{}",
+                    bus.id, terminal
+                ));
+            }
+            let expected_power = solution.terminal_active_power(&bus.id, terminal);
+            let Some(expected_power) = expected_power else {
+                return Err(format!(
+                    "solution omits terminal power at {}/{}",
+                    bus.id, terminal
+                ));
+            };
+            if !close(actual.power_into_network.re, expected_power) {
+                return Err(format!(
+                    "multiconductor Study result power is not linked to solution at {}/{}",
+                    bus.id, terminal
+                ));
+            }
+        }
+        index += bus.terminals.len();
+    }
+    let mut source_index = 0usize;
+    for source in network.sources() {
+        for terminal in &source.terminal_map {
+            let reaction = result
+                .source_reactions
+                .get(source_index)
+                .ok_or_else(|| "multiconductor Study result omits a source reaction".to_owned())?;
+            if reaction.source != source.name || reaction.terminal != *terminal {
+                return Err(
+                    "multiconductor Study source reaction identity/order differs from solution"
+                        .to_owned(),
+                );
+            }
+            let expected_power = solution
+                .source_active_injections()
+                .get(source_index)
+                .ok_or_else(|| "solution omits a source reaction".to_owned())?;
+            let voltage = terminal_voltages
+                .get(&(source.bus.clone(), terminal.clone()))
+                .copied()
+                .ok_or_else(|| "source reaction has no matching terminal voltage".to_owned())?;
+            if !complex_finite(reaction.current_into_network)
+                || !complex_finite(reaction.power_into_network)
+                || !close_complex(
+                    reaction.power_into_network,
+                    voltage.into_complex() * reaction.current_into_network.into_complex().conj(),
+                )
+                || !close(reaction.power_into_network.re, *expected_power)
+            {
+                return Err(
+                    "multiconductor Study source reaction is not linked to solution".to_owned(),
+                );
+            }
+            source_index += 1;
+        }
+    }
+    if result.source_reactions.len() != source_index {
+        return Err("multiconductor Study result has extra source reactions".to_owned());
+    }
+    let expected_ports = expected_element_port_keys(solution.instance())?;
+    let mut actual_ports = std::collections::BTreeSet::new();
+    for port in &result.element_ports {
+        let key = (
+            port.kind.clone(),
+            port.element.clone(),
+            port.branch,
+            port.bus.clone(),
+            port.terminal.clone(),
+        );
+        if !actual_ports.insert(key) {
+            return Err("multiconductor Study result contains duplicate element ports".to_owned());
+        }
+        let voltage = terminal_voltages
+            .get(&(port.bus.clone(), port.terminal.clone()))
+            .copied()
+            .ok_or_else(|| "element port has no matching terminal voltage".to_owned())?;
+        if !complex_finite(port.current_into_element)
+            || !complex_finite(port.power_into_element)
+            || !close_complex(
+                port.power_into_element,
+                voltage.into_complex() * port.current_into_element.into_complex().conj(),
+            )
+        {
+            return Err(
+                "multiconductor Study result contains a non-finite element port".to_owned(),
+            );
+        }
+    }
+    if actual_ports != expected_ports {
+        return Err(
+            "multiconductor Study result element port identities do not match its input".to_owned(),
+        );
+    }
+    Ok(())
+}
+
+type ElementPortKey = (String, String, usize, String, String);
+
+fn expected_element_port_keys(
+    instance: &McAcPfInstance,
+) -> Result<std::collections::BTreeSet<ElementPortKey>, String> {
+    use powerio_dist::Configuration;
+    let network = instance.network();
+    let mut expected = std::collections::BTreeSet::new();
+    let mut push = |kind: &str, element: &str, branch: usize, bus: &str, terminal: &str| {
+        expected.insert((
+            kind.to_owned(),
+            element.to_owned(),
+            branch,
+            bus.to_owned(),
+            terminal.to_owned(),
+        ));
+    };
+    for load_instance in instance.loads() {
+        let load = network
+            .loads()
+            .iter()
+            .find(|load| load.name == load_instance.load)
+            .ok_or_else(|| {
+                format!(
+                    "instance load `{}` is absent from its network",
+                    load_instance.load
+                )
+            })?;
+        let terminals = &load_instance.terminals;
+        let neutral = if load.configuration == Configuration::Wye
+            && terminals.len() == load_instance.p_w.len() + 1
+        {
+            load.extras
+                .get("neutral_terminal")
+                .and_then(|value| value.as_str())
+                .or_else(|| terminals.last().map(String::as_str))
+        } else {
+            None
+        };
+        let branches: Vec<Vec<&str>> = match load.configuration {
+            Configuration::Wye => terminals
+                .iter()
+                .filter(|t| Some(t.as_str()) != neutral)
+                .map(|phase| {
+                    let mut row = vec![phase.as_str()];
+                    if let Some(n) = neutral {
+                        row.push(n);
+                    }
+                    row
+                })
+                .collect(),
+            Configuration::Delta if terminals.len() == 2 * load_instance.p_w.len() => terminals
+                .chunks_exact(2)
+                .map(|pair| vec![pair[0].as_str(), pair[1].as_str()])
+                .collect(),
+            Configuration::Delta
+                if terminals.len() == load_instance.p_w.len() && !terminals.is_empty() =>
+            {
+                (0..load_instance.p_w.len())
+                    .map(|i| {
+                        vec![
+                            terminals[i].as_str(),
+                            terminals[(i + 1) % terminals.len()].as_str(),
+                        ]
+                    })
+                    .collect()
+            }
+            Configuration::Delta => {
+                return Err(format!(
+                    "load `{}` terminal/power dimensions are inconsistent",
+                    load.name
+                ));
+            }
+            Configuration::SinglePhase if terminals.len() == 2 && load_instance.p_w.len() == 1 => {
+                vec![vec![terminals[0].as_str(), terminals[1].as_str()]]
+            }
+            Configuration::SinglePhase => {
+                return Err(format!(
+                    "load `{}` requires two terminals and one power",
+                    load.name
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "load `{}` uses unsupported connection configuration",
+                    load.name
+                ))
+            }
+        };
+        if branches.len() != load_instance.p_w.len() {
+            return Err(format!(
+                "load `{}` branch count does not match its powers",
+                load.name
+            ));
+        }
+        for (branch, row) in branches.iter().enumerate() {
+            for terminal in row {
+                push("load", &load.name, branch, &load.bus, terminal);
+            }
+        }
+    }
+    for line in network.lines() {
+        for terminal in &line.terminal_map_from {
+            push("line", &line.name, 0, &line.bus_from, terminal);
+        }
+        for terminal in &line.terminal_map_to {
+            push("line", &line.name, 0, &line.bus_to, terminal);
+        }
+    }
+    for shunt in network.shunts() {
+        for terminal in &shunt.terminal_map {
+            push("shunt", &shunt.name, 0, &shunt.bus, terminal);
+        }
+    }
+    for capacitor in network.capacitors() {
+        for terminal in &capacitor.terminal_map {
+            push("capacitor", &capacitor.name, 0, &capacitor.bus, terminal);
+        }
+    }
+    for transformer in network.transformers() {
+        let primitive = prepare_transformer(transformer).map_err(|error| error.to_string())?;
+        for terminal in primitive.terminals {
+            push(
+                "transformer",
+                &primitive.name,
+                0,
+                &terminal.bus,
+                &terminal.terminal,
+            );
+        }
+    }
+    Ok(expected)
+}
+
+fn close(left: f64, right: f64) -> bool {
+    left.is_finite()
+        && right.is_finite()
+        && (left - right).abs() <= 1e-8 * (1.0 + left.abs().max(right.abs()))
+}
+
+fn close_complex(left: McComplex, right: Complex64) -> bool {
+    close(left.re, right.re) && close(left.im, right.im)
+}
+
+trait McComplexValue {
+    fn into_complex(self) -> Complex64;
+}
+
+impl McComplexValue for McComplex {
+    fn into_complex(self) -> Complex64 {
+        Complex64::new(self.re, self.im)
+    }
+}
+
+/// Solve a typed MC Study and return its self-contained snapshot JSON.
+pub fn solve_mc_study_json(
+    module_json: &str,
+    id: &str,
+    title: &str,
+    options: &McPfOptions,
+) -> Result<String, String> {
+    McStudySnapshot::solve(id, title, module_json, *options)?.to_json()
+}
+
+/// Validate and canonicalize a saved MC Study snapshot without re-solving it.
+pub fn replay_mc_study_json(snapshot_json: &str) -> Result<String, String> {
+    McStudySnapshot::from_json(snapshot_json)?.to_json()
 }
 
 impl McPfResult {
@@ -850,5 +1350,78 @@ mod tests {
             error.contains("omits explicit nominal branch voltage"),
             "{error}"
         );
+    }
+
+    fn one_phase_module(power: f64) -> String {
+        let instance = one_phase(power);
+        crate::ir::serialize_module(&powerio::PioModule::new(powerio::PioValue::McAcPfInstance(
+            instance,
+        )))
+        .expect("MC instance module")
+    }
+
+    #[test]
+    fn study_snapshot_is_self_contained_and_replayable() {
+        let snapshot = McStudySnapshot::solve(
+            "distribution-study",
+            "Distribution PF",
+            &one_phase_module(1.0),
+            McPfOptions::default(),
+        )
+        .expect("snapshot solve");
+        let text = snapshot.to_json().expect("snapshot JSON");
+        let replayed = McStudySnapshot::from_json(&text).expect("snapshot replay");
+        assert_eq!(replayed.schema, McStudySnapshot::SCHEMA);
+        assert_eq!(replayed.formulation, "mc_ac_pf");
+        assert_eq!(replayed.result.factorization_count, 1);
+        assert!(replayed.solution_module.contains("McAcPfSolution"));
+    }
+
+    #[test]
+    fn saved_geography_updates_both_modules_without_changing_results() {
+        let mut snapshot = McStudySnapshot::solve(
+            "geo-study",
+            "Feeder",
+            &one_phase_module(1.0),
+            McPfOptions::default(),
+        )
+        .unwrap();
+        let result = serde_json::to_value(&snapshot.result).unwrap();
+        let layer = powerio::GeoLayer::parse(r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","properties":{"bus":"source"},"geometry":{"type":"Point","coordinates":[-83.9,35.9]}},
+          {"type":"Feature","properties":{"bus":"load"},"geometry":{"type":"Point","coordinates":[-83.8,35.8]}},
+          {"type":"Feature","properties":{"bus_from":"source","bus_to":"load"},"geometry":{"type":"LineString","coordinates":[[-83.9,35.9],[-83.85,35.87],[-83.8,35.8]]}}
+        ]}"#, Some("case.geo.json")).unwrap();
+        snapshot.apply_geo_layer(&layer.layer).unwrap();
+        let restored = McStudySnapshot::from_json(&snapshot.to_json().unwrap()).unwrap();
+        assert_eq!(serde_json::to_value(&restored.result).unwrap(), result);
+        for text in [&restored.input_module, &restored.solution_module] {
+            assert!(text.contains("-83.85"), "saved route midpoint is absent");
+        }
+        let saved = snapshot.to_json().unwrap();
+        let unrelated = powerio::GeoLayer::parse(r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","properties":{"bus":"absent"},"geometry":{"type":"Point","coordinates":[-70,30]}}
+        ]}"#, Some("case.geo.json")).unwrap();
+        assert!(snapshot.apply_geo_layer(&unrelated.layer).is_err());
+        assert_eq!(snapshot.to_json().unwrap(), saved);
+    }
+
+    #[test]
+    fn study_snapshot_rejects_tampered_result_and_instance() {
+        let snapshot = McStudySnapshot::solve(
+            "distribution-study",
+            "Distribution PF",
+            &one_phase_module(1.0),
+            McPfOptions::default(),
+        )
+        .expect("snapshot solve");
+        let mut value: serde_json::Value =
+            serde_json::from_str(&snapshot.to_json().unwrap()).unwrap();
+        value["result"]["terminals"][0]["voltage"]["re"] = serde_json::json!(999.0);
+        assert!(McStudySnapshot::from_json(&value.to_string()).is_err());
+
+        value = serde_json::from_str(&snapshot.to_json().unwrap()).unwrap();
+        value["input_module"] = serde_json::Value::String(one_phase_module(2.0));
+        assert!(McStudySnapshot::from_json(&value.to_string()).is_err());
     }
 }

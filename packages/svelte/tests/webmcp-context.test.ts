@@ -548,7 +548,7 @@ it('solves the displayed MC case through its controller and queries terminal vol
 		label: 'Feeder',
 		revisionGeneration: 0,
 		moduleJson: '{}',
-		summary: { mc_pf_enabled: true },
+		summary: { mc_pf_enabled: true, mc_pf_supported: true },
 		solveMs: 12,
 		graph: {
 			buses: [{ id: 'src', terminals: ['a'], load_kw: 0, gen_kw: 0 }],

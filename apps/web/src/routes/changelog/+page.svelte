@@ -12,6 +12,26 @@
 	<a href={resolve('/')}>Back to Tellegen</a>
 	<h1>What's new in Tellegen</h1>
 	<p class="date">September 2026 preview</p>
+	<h2>Distribution AC power flow</h2>
+	<p>
+		Calculate terminal voltages and currents, compare voltages to ground or neutral, and save or
+		export the result. Start with the 4-conductor example. This extends <a
+			href="https://github.com/eigenergy/tellegen/pull/109"
+			>Frederik Geth's multiconductor power-flow work</a
+		>.
+	</p>
+	<h2>Quieter messages</h2>
+	<p>
+		Calculation and import errors appear briefly at the bottom. Repeated messages stay together;
+		expand the recent list for details or retry.
+	</p>
+	<h2>Usage measurements</h2>
+	<p>
+		Anonymous counts and timings help improve case loading, calculations, Studies and agent tools.
+		Uploaded data, study text and equipment values stay out of analytics. Disable measurements in <a
+			href={resolve('/privacy')}>Privacy</a
+		>.
+	</p>
 	<h2>Save a case, add a goal later</h2>
 	<p>
 		A Study is a saved case with its changes and results. Start with a name; add a planning goal

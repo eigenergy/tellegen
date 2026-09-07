@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AppliedMcGeoCase, DistGraph, IngestedDistCase, McPfResult } from '@tellegen/engine';
+import type {
+	AppliedMcGeoCase,
+	DistGraph,
+	IngestedDistCase,
+	McPfResult,
+	McStudySnapshot
+} from '@tellegen/engine';
 import { AppState, MulticonductorCase } from '../src/lib/state.svelte.js';
 import { Controller } from '../src/lib/controller.svelte.js';
 import { buildDiagramView, buildGeographicView } from '../src/lib/multiconductor.js';
@@ -51,6 +57,7 @@ function payload(input = 'input'): IngestedDistCase {
 	return {
 		module_json: input,
 		mc_pf_enabled: true,
+		mc_pf_supported: true,
 		mc_pf_unavailable_reason: null,
 		name: 'feeder',
 		model: 'multiconductor',
@@ -164,6 +171,56 @@ describe('multiconductor calculation and coordinates', () => {
 		).rejects.toThrow('Select the matching case');
 		expect(app.activeMultiId).toBeNull();
 		expect(apply).toHaveBeenCalledTimes(1);
+	});
+	it('retains one snapshot and updates its coordinates atomically without another solve', async () => {
+		const { ctrl, c, solve } = host();
+		const snapshot: McStudySnapshot = {
+			schema: 'tellegen-mc-pf-study',
+			version: 1,
+			id: 'saved',
+			title: 'Feeder',
+			formulation: 'mc_ac_pf',
+			input_module: 'input',
+			solution_module: 'solution',
+			options: {},
+			result
+		};
+		const saveSolve = vi.fn(async () => snapshot);
+		ctrl.mcTransport.solveMcStudy = saveSolve;
+		await ctrl.solveMultiCase(c);
+		expect(saveSolve).toHaveBeenCalledWith(
+			'input',
+			expect.any(String),
+			'Feeder',
+			{},
+			expect.any(AbortSignal)
+		);
+		expect(solve).not.toHaveBeenCalled();
+		expect(c.mcSnapshot).toBe(snapshot);
+		c.mcSavedAt = 'saved';
+		const applySnapshot = vi.fn(async () => ({
+			...snapshot,
+			input_module: 'with-geo',
+			solution_module: 'solution-with-geo'
+		}));
+		ctrl.mcTransport.applyMcStudyGeo = applySnapshot;
+		await ctrl.applyMultiGeoLayers(c, [{ name: 'coordinates', layer: 'layer', diagnostics: [] }]);
+		expect(c.result).toBe(result);
+		expect(c.mcSnapshot).toMatchObject({
+			input_module: 'with-geo',
+			solution_module: 'solution-with-geo',
+			result
+		});
+		expect(c.mcSnapshot!.id).not.toBe('saved');
+		expect(c.mcSavedAt).toBeNull();
+		expect(saveSolve).toHaveBeenCalledTimes(1);
+		const before = c.mcSnapshot;
+		applySnapshot.mockRejectedValueOnce(new Error('No coordinates matched'));
+		await expect(
+			ctrl.applyMultiGeoLayers(c, [{ name: 'other', layer: 'other', diagnostics: [] }])
+		).rejects.toThrow('No coordinates');
+		expect(c.mcSnapshot).toBe(before);
+		expect(c.moduleJson).toBe('with-geo');
 	});
 	it('preserves raw drawing positions and full routed paths', () => {
 		const layer = JSON.stringify({

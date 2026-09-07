@@ -8,13 +8,22 @@
 		isPhaseTerminal,
 		phaseColor
 	} from '../multiconductor.js';
-	import McResults from './McResults.svelte';
+	import { getPanelLayout } from '../panels.svelte.js';
 	import { getNoticeCenter } from '../notices.svelte.js';
 	import { type DistAttachmentKind } from '@tellegen/engine';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const notices = getNoticeCenter();
+	const panels = getPanelLayout();
+	function openResults() {
+		const panel = panels.panels.find((p) => p.id === 'studies');
+		if (panel) {
+			panel.setOpen(true);
+			panels.activate(panel);
+			if (panels.compact) panels.drawer = panel.id;
+		}
+	}
 
 	const NEUTRAL_RGBA = [120, 114, 102, 255] as const;
 	const ATTACHMENT_LEGEND: DistAttachmentKind[] = ['source', 'generator', 'ibr', 'load', 'shunt'];
@@ -76,34 +85,29 @@
 				>
 			{:else}
 				<button
-					disabled={!mc.moduleJson ||
-						mc.summary?.mc_pf_enabled !== true ||
-						!!mc.summary.mc_pf_unavailable_reason}
+					disabled={!mc.mcPfSupported}
 					onclick={() => {
-						void ctrl.solveMultiCase(mc).catch(() => {});
+						void ctrl
+							.solveMultiCase(mc)
+							.then(openResults)
+							.catch(() => {});
 					}}>Solve AC power flow</button
 				>
-				{#if !mc.moduleJson || mc.summary?.mc_pf_enabled !== true || !!mc.summary.mc_pf_unavailable_reason}
+				{#if !mc.mcPfSupported}
 					<button
 						class="quiet"
 						onclick={() =>
 							notices.push({
 								kind: 'warning',
 								title: 'AC power flow unavailable',
-								details:
-									mc.summary?.mc_pf_unavailable_reason ??
-									'This case cannot run AC power flow in this browser'
+								details: mc.mcPfReason ?? 'This case cannot run AC power flow in this browser'
 							})}>Why unavailable</button
 					>
 				{/if}
 			{/if}
 		</div>
-		{#if mc.result}<McResults
-				result={mc.result}
-				elapsedMs={mc.solveMs}
-				selectedBus={mc.selectedBusId}
-				selectedEdge={mc.selectedEdgeId}
-			/>{/if}
+		{#if mc.result}<p class="footnote">Converged, {mc.result.iterations} iterations</p>
+			<button class="reset mono" onclick={openResults}>View results in Studies</button>{/if}
 	{/if}
 
 	{#if mc.selectedBus}

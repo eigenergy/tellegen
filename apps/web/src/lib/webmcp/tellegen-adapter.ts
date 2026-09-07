@@ -399,7 +399,7 @@ function listCases(ctrl: Controller, input: ListCasesInput): ToolPayload {
 			name: clip(c.label, 64),
 			kind: 'distribution',
 			availability: c.placed ? 'ready' : 'placement_required',
-			calculation: c.summary?.mc_pf_enabled ? 'multiconductor_ac_pf' : 'display_only',
+			calculation: c.mcPfSupported ? 'multiconductor_ac_pf' : 'display_only',
 			selected: !ctrl.app.studyView && ctrl.app.activeMultiId === c.id
 		}))
 	];
@@ -559,9 +559,8 @@ async function inspect(
 			editable: false,
 			calculation: 'multiconductor_ac_pf',
 			solving: c.solving,
-			can_solve:
-				!!c.moduleJson && !!c.summary?.mc_pf_enabled && !c.summary?.mc_pf_unavailable_reason,
-			unavailable_reason: c.summary?.mc_pf_unavailable_reason ?? null,
+			can_solve: !!c.mcPfSupported,
+			unavailable_reason: c.mcPfReason ?? null,
 			solution: c.result
 				? {
 						converged: c.result.converged,

@@ -315,6 +315,48 @@ pub fn solve_mc_module(module_json: &str, options_json: &str) -> Result<String, 
     tellegen::solve_mc_module_json(module_json, &options).map_err(jserr)
 }
 
+/// Solve a supported multiconductor Study input and return a self-contained,
+/// replayable snapshot containing the typed input, PowerIO solution module, and
+/// terminal-aware result view.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn solve_mc_study(
+    module_json: &str,
+    study_id: &str,
+    study_title: &str,
+    options_json: &str,
+) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    ensure_input_text(options_json)?;
+    install_panic_hook();
+    let options: tellegen::McPfOptions = serde_json::from_str(options_json).map_err(jserr)?;
+    tellegen::solve_mc_study_json(module_json, study_id, study_title, &options).map_err(jserr)
+}
+
+/// Validate and canonicalize a saved multiconductor Study snapshot without
+/// re-solving it.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn replay_mc_study(snapshot_json: &str) -> Result<String, JsError> {
+    ensure_input_text(snapshot_json)?;
+    install_panic_hook();
+    tellegen::replay_mc_study_json(snapshot_json).map_err(jserr)
+}
+
+/// Attach geographic or drawing positions to a saved multiconductor result.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn apply_mc_study_geo(snapshot_json: &str, layer_geojson: &str) -> Result<String, JsError> {
+    ensure_input_text(snapshot_json)?;
+    ensure_input_text(layer_geojson)?;
+    install_panic_hook();
+    let mut snapshot = tellegen::McStudySnapshot::from_json(snapshot_json).map_err(jserr)?;
+    snapshot
+        .apply_geo_layer(&geo::parse_layer(layer_geojson).map_err(jserr)?)
+        .map_err(jserr)?;
+    snapshot.to_json().map_err(jserr)
+}
+
 /// The capability matrix as JSON: which `(formulation, operand, parameter)` cells this
 /// build supports, so the UI can populate menus and grey out the rest.
 #[wasm_bindgen]

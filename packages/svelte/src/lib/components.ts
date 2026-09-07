@@ -17,3 +17,5 @@ export { default as SizeLegend } from './components/SizeLegend.svelte';
 export { default as SolveCard } from './components/SolveCard.svelte';
 export { default as TopMovers } from './components/TopMovers.svelte';
 export { default as Sparkline } from './Sparkline.svelte';
+
+export { default as McResults } from './components/McResults.svelte';

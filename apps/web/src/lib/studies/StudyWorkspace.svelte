@@ -4,6 +4,7 @@
 		getController,
 		PanelFrame,
 		ModelDetails,
+		McResults,
 		getNoticeCenter,
 		errorNoticeTitle
 	} from '@tellegen/svelte';
@@ -53,6 +54,8 @@
 	let goalForComparison = $state('');
 	let content: HTMLElement | undefined;
 	const pageSize = 20;
+	const multi = $derived(ctrl.app.activeMulti);
+	const mcDoc = $derived(workspace.activeMcDocument);
 	const doc = $derived(workspace.document);
 	const goal = $derived(workspace.goal);
 	const modelDetails = $derived(
@@ -180,6 +183,15 @@
 	async function resetScroll() {
 		await tick();
 		content?.scrollTo({ top: 0 });
+	}
+	async function loadMcExample() {
+		const response = await fetch('/examples/four-wire.bmopf.json');
+		if (!response.ok) throw new Error('The example could not be loaded. Try again.');
+		await ctrl.ingestFiles([
+			new File([await response.text()], 'four-wire.bmopf.json', { type: 'application/json' })
+		]);
+		creating = false;
+		await resetScroll();
 	}
 	function newStudy() {
 		creating = true;
@@ -325,20 +337,29 @@
 
 <TellegenWebMcp {workspace} studyExpanded={expanded} closeStudy={() => (expanded = false)} />
 <PanelFrame id="studies" title="Studies" side="left" order={20} width={400} bind:open={expanded}>
-	{#snippet headerActions()}<button class="text-button" disabled={workspace.busy} onclick={newStudy}
-			>New study</button
+	{#snippet headerActions()}<button
+			class="text-button"
+			disabled={workspace.busy || !!multi}
+			onclick={newStudy}>New study</button
 		>{/snippet}
 	<div class="study-workspace">
 		<div class="storage">
 			<label
 				><span class="sr-only">Saved study</span><select
-					value={creating ? '' : (doc?.id ?? '')}
+					value={multi
+						? multi.mcSavedAt && mcDoc
+							? `mc:${mcDoc.id}`
+							: ''
+						: creating
+							? ''
+							: (doc?.id ?? '')}
 					disabled={workspace.busy}
 					onchange={(event) => {
 						const id = event.currentTarget.value;
 						if (id)
 							void attempt(async () => {
-								await workspace.open(id);
+								if (id.startsWith('mc:')) await workspace.openMulti(id.slice(3));
+								else await workspace.open(id);
 								creating = false;
 								editingGoal = false;
 								goalForComparison = '';
@@ -362,7 +383,10 @@
 						if (file)
 							void attempt(async () => {
 								if (file.size > 512 * 1024 * 1024) throw new Error('Study bundle exceeds 512 MiB.');
-								await workspace.import(await file.text());
+								const text = await file.text();
+								if (JSON.parse(text)?.schema === 'tellegen-mc-pf-study')
+									await workspace.importMulti(text);
+								else await workspace.import(text);
 								creating = false;
 								editingGoal = false;
 								goalForComparison = '';
@@ -373,12 +397,14 @@
 					}}
 				/></label
 			>
-			{#if doc}<button
+			{#if multi ? mcDoc : doc}<button
 					disabled={workspace.busy}
-					onclick={() => download(workspace.export(), 'tellegen-study.json')}>Export</button
+					onclick={() =>
+						download(multi ? workspace.exportMulti() : workspace.export(), 'tellegen-study.json')}
+					>Export</button
 				>{/if}
 		</div>
-		{#if doc && !creating}<nav aria-label="Study sections">
+		{#if doc && !creating && !multi}<nav aria-label="Study sections">
 				{#each ['case', 'history', 'plan'] as section (section)}<button
 						class:active={tab === section}
 						aria-pressed={tab === section}
@@ -392,9 +418,47 @@
 			{#if formError}<p class="error" role="alert">
 					{formError}
 				</p>{/if}
-			{#if !doc || creating}
+			{#if multi}
+				<h3>{multi.label}</h3>
+				<p class="hint">Distribution power flow</p>
+				<div class="action-row">
+					{#if multi.solving}<span role="status">Calculating...</span><button
+							onclick={() => multi.solveAbort?.abort()}>Cancel</button
+						>
+					{:else}<button
+							class="primary"
+							disabled={!multi.mcPfSupported || workspace.busy}
+							onclick={() => {
+								void ctrl.solveMultiCase(multi).catch(() => {});
+							}}>Run power flow</button
+						>{/if}
+					<button
+						disabled={!multi.mcSnapshot || multi.solving || workspace.busy || !!multi.mcSavedAt}
+						onclick={() => void attempt(() => workspace.saveMulti())}>Save result</button
+					>
+				</div>
+				{#if !multi.mcPfSupported}<button
+						class="text-button"
+						onclick={() =>
+							notices.push({
+								kind: 'warning',
+								title: 'AC power flow unavailable',
+								details: multi.mcPfReason ?? 'This case cannot run AC power flow'
+							})}>Why unavailable</button
+					>{/if}
+				{#if multi.result}<McResults
+						result={multi.result}
+						elapsedMs={multi.solveMs}
+						selectedBus={multi.selectedBusId}
+						selectedEdge={multi.selectedEdgeId}
+						graph={multi.graph}
+					/>{/if}
+			{:else if !doc || creating}
 				<h3>Save this case</h3>
 				<p class="hint">A saved case with its changes and results.</p>
+				<button class="text-button" onclick={() => void attempt(loadMcExample)}
+					>Load 4-conductor example</button
+				>
 				<label>Study name<input bind:value={title} maxlength="200" /></label>
 				{#if network}<p class="case-name">
 						{network.name}<span>{network.buses.length.toLocaleString()} buses</span>

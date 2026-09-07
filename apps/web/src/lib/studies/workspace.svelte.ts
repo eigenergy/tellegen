@@ -1,5 +1,7 @@
 import {
 	IndexedDbStudyStore,
+	replayMcStudy,
+	type McStudySnapshot,
 	StudyDocumentController,
 	type CreateStudy,
 	type StudyBundle,
@@ -12,6 +14,7 @@ import {
 import { capacityGoal, capacityOutcome, type CapacityStudyBinding } from './capacity-compat.js';
 import type { CapacityPlanSpecJson } from '@tellegen/svelte';
 import type { Controller } from '@tellegen/svelte';
+import { McStudyStore } from './mc-study-store.js';
 import { caseRevision } from '../webmcp/tellegen-adapter.js';
 import { trackUsage, type EventData } from '../analytics/client.js';
 
@@ -34,6 +37,8 @@ export class StudyWorkspace {
 	bundle = $state.raw<StudyBundle | null>(null);
 	comparison = $state.raw<Comparison | null>(null);
 	saved = $state.raw<Array<{ id: string; title: string; revision: number }>>([]);
+	mcSaved = $state.raw<Array<{ id: string; title: string }>>([]);
+	#mcStore = new McStudyStore();
 	busy = $state(false);
 	error = $state<string | null>(null);
 	network = $state.raw<Network | null>(null);
@@ -57,8 +62,76 @@ export class StudyWorkspace {
 		return d?.active_goal ? d.goals[d.active_goal] : null;
 	}
 
+	get activeMcDocument(): McStudySnapshot | null {
+		return this.grid.app.activeMulti?.mcSnapshot ?? null;
+	}
 	async refreshSaved() {
-		this.saved = await this.store.list();
+		const [saved, mcSaved] = await Promise.all([this.store.list(), this.#mcStore.list()]);
+		this.saved = saved;
+		this.mcSaved = mcSaved.map(({ id, title }) => ({ id, title }));
+	}
+	async saveMulti() {
+		return this.#run(
+			async () => {
+				const c = this.grid.app.activeMulti;
+				if (!c?.mcSnapshot || c.solving)
+					throw new Error('Run AC power flow before saving its result');
+				const snapshot = c.mcSnapshot;
+				const stored = await this.#mcStore.get(snapshot.id);
+				if (stored && JSON.stringify(stored) !== JSON.stringify(snapshot))
+					throw new Error('This study is already saved. Open it from Saved study.');
+				if (!stored) await this.#mcStore.put(snapshot);
+				if (c.mcSnapshot === snapshot) c.mcSavedAt = new Date().toISOString();
+				await this.refreshSaved();
+				return snapshot;
+			},
+			undefined,
+			'study.save'
+		);
+	}
+	async #showMulti(snapshot: McStudySnapshot) {
+		const previous = this.grid.app.activeMulti;
+		await this.grid.ingestFiles([
+			new File([snapshot.input_module], `${snapshot.title}.pio.json`, { type: 'application/json' })
+		]);
+		const c = this.grid.app.activeMulti;
+		if (!c || c === previous) throw new Error('Saved distribution power flow could not be opened');
+		c.mcSnapshot = snapshot;
+		c.result = snapshot.result;
+		c.mcSavedAt = new Date().toISOString();
+		c.revisionGeneration++;
+		this.comparison = null;
+	}
+	async openMulti(id: string) {
+		return this.#run(
+			async () => {
+				const stored = await this.#mcStore.get(id);
+				if (!stored) throw new Error('Saved distribution power flow was not found');
+				await this.#showMulti(await replayMcStudy(JSON.stringify(stored)));
+			},
+			undefined,
+			'study.open'
+		);
+	}
+	exportMulti(): string {
+		const snapshot = this.activeMcDocument;
+		if (!snapshot) throw new Error('Run AC power flow before exporting its result');
+		trackUsage('study.export', { result: 'completed' });
+		return JSON.stringify(snapshot, null, 2);
+	}
+	async importMulti(text: string) {
+		return this.#run(
+			async () => {
+				const snapshot = await replayMcStudy(text);
+				if (await this.#mcStore.get(snapshot.id))
+					throw new Error('This study is already saved. Open it from Saved study.');
+				await this.#mcStore.put(snapshot);
+				await this.refreshSaved();
+				await this.#showMulti(snapshot);
+			},
+			undefined,
+			'study.import'
+		);
 	}
 	async initialize() {
 		try {
@@ -101,7 +174,8 @@ export class StudyWorkspace {
 				result: abort.signal.aborted ? 'cancelled' : 'failed',
 				duration_ms: performance.now() - started
 			});
-			this.error = error instanceof Error ? error.message : String(error);
+			if (!abort.signal.aborted)
+				this.error = error instanceof Error ? error.message : String(error);
 			throw error;
 		} finally {
 			signal?.removeEventListener('abort', cancel);
@@ -540,6 +614,7 @@ export class StudyWorkspace {
 			geo
 		);
 		const solution = state.view ? (JSON.parse(b.artifacts[state.view].text) as StudyView) : null;
+		this.grid.app.activeMultiId = null;
 		this.grid.app.studyView = {
 			id: d.inspected_state,
 			label: state.label,
