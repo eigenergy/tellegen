@@ -65,5 +65,9 @@ name = "convex_cost_scenario"
 required-features = ["sensitivity"]
 
 [[example]]
+name = "verify_planning"
+required-features = ["sensitivity"]
+
+[[example]]
 name = "mc_pf"
 required-features = ["mc-pf"]
