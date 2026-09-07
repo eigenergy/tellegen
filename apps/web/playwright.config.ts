@@ -9,12 +9,20 @@ export default defineConfig({
 		trace: 'retain-on-failure',
 		viewport: { width: 1280, height: 800 }
 	},
-	webServer: {
-		command: 'npm run preview -- --host 127.0.0.1 --port 4173',
-		url: 'http://127.0.0.1:4173',
-		reuseExistingServer: !process.env.CI,
-		timeout: 120_000
-	},
+	webServer: [
+		{
+			command: 'npm run preview -- --host 127.0.0.1 --port 4173',
+			url: 'http://127.0.0.1:4173',
+			reuseExistingServer: !process.env.CI,
+			timeout: 120_000
+		},
+		{
+			command: 'npx vite --config tests/mc-pf-vite.config.ts --host 127.0.0.1 --port 4174',
+			url: 'http://127.0.0.1:4174',
+			reuseExistingServer: !process.env.CI,
+			timeout: 120_000
+		}
+	],
 	projects: [
 		{
 			name: 'chromium',

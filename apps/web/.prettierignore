@@ -5,3 +5,4 @@ node_modules/
 src/lib/wasm-pkg/
 playwright-report/
 test-results/
+tests/fixtures/mc-pf-browser/LICENSE.md

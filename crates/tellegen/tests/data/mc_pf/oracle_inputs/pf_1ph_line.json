@@ -1,0 +1,668 @@
+{
+  "voltage_source": {
+    "source": {
+      "v_magnitude": [
+        240,
+        0
+      ],
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "bus": "src",
+      "v_angle": [
+        0,
+        0
+      ]
+    }
+  },
+  "line": {
+    "l1": {
+      "length": 500,
+      "bus_from": "src",
+      "bus_to": "lb",
+      "terminal_map_from": [
+        "a"
+      ],
+      "terminal_map_to": [
+        "a"
+      ],
+      "linecode": "_line_l1"
+    }
+  },
+  "name": "pf_1ph_line",
+  "terminal_conventions": {
+    "phase": [
+      "a"
+    ],
+    "earth": [
+    ],
+    "neutral": [
+      "n"
+    ]
+  },
+  "meta": {
+    "$schema": "https://raw.githubusercontent.com/distribution-system-opt/dsopt-schema/main/schema/bmopf/0.1.0/bmopf.schema.json",
+    "provenance": {
+      "powerio_source_mapping": {
+        "unmapped_fields": [
+          "units"
+        ],
+        "by_field": {
+          "units": {
+            "scopes": [
+              "line:l1"
+            ],
+            "mapped_scopes": [
+            ],
+            "physical_readiness_blocking": false,
+            "status": "unmapped",
+            "target": "unmapped",
+            "reason": "source_units_have_no_direct_BMOPF_field",
+            "scope_count": 1,
+            "unmapped_scopes": [
+              "line:l1"
+            ],
+            "impact": "representational",
+            "warned_scopes": [
+              "line:l1"
+            ],
+            "transform": "none"
+          },
+          "phases": {
+            "scopes": [
+              "load:ld1"
+            ],
+            "mapped_scopes": [
+              "load:ld1"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped",
+            "target": "load.terminal_map/configuration",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "load:ld1"
+            ],
+            "transform": "source_phase_count_to_terminal_structure"
+          },
+          "model": {
+            "scopes": [
+              "source:source"
+            ],
+            "mapped_scopes": [
+              "source:source"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_contract",
+            "target": "voltage_source.v_magnitude/v_angle",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "source:source"
+            ],
+            "transform": "source_model_ideal_to_fixed_voltage_boundary"
+          },
+          "vmaxpu": {
+            "scopes": [
+              "load:ld1"
+            ],
+            "mapped_scopes": [
+              "load:ld1"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_contract",
+            "target": "_meta.powerio_source_semantics.load_voltage_thresholds",
+            "reason": "preserved_as_load_behavior_contract_not_bus_voltage_bound",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "active_in_original_model": false,
+            "impact": "physical_or_operating_point",
+            "warned_scopes": [
+              "load:ld1"
+            ],
+            "transform": "source_load_voltage_behavior_threshold_contract"
+          },
+          "kv": {
+            "scopes": [
+              "load:ld1"
+            ],
+            "mapped_scopes": [
+              "load:ld1"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped",
+            "target": "load.v_nom",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "load:ld1"
+            ],
+            "transform": "kV_to_volts"
+          },
+          "vminpu": {
+            "scopes": [
+              "load:ld1"
+            ],
+            "mapped_scopes": [
+              "load:ld1"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_contract",
+            "target": "_meta.powerio_source_semantics.load_voltage_thresholds",
+            "reason": "preserved_as_load_behavior_contract_not_bus_voltage_bound",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "active_in_original_model": false,
+            "impact": "physical_or_operating_point",
+            "warned_scopes": [
+              "load:ld1"
+            ],
+            "transform": "source_load_voltage_behavior_threshold_contract"
+          },
+          "angle": {
+            "scopes": [
+              "source:source"
+            ],
+            "mapped_scopes": [
+              "source:source"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_transform",
+            "target": "voltage_source.v_angle",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "source:source"
+            ],
+            "transform": "source_angle_with_phase_sequence"
+          },
+          "basekv": {
+            "scopes": [
+              "source:source"
+            ],
+            "mapped_scopes": [
+              "source:source"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_transform",
+            "target": "voltage_source.v_magnitude",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "source:source"
+            ],
+            "transform": "line_to_neutral_voltage_conversion"
+          }
+        },
+        "warnings_truncated_upstream": false,
+        "fields": [
+          "angle",
+          "basekv",
+          "kv",
+          "model",
+          "phases",
+          "vmaxpu",
+          "vminpu"
+        ],
+        "warning_status": "parsed",
+        "blocking_unmapped_fields": [
+        ],
+        "warnings_seen": 8,
+        "warnings_classified": 8,
+        "unclassified_warnings": [
+        ]
+      },
+      "frequency_source": "powerio",
+      "migration_notes": [
+        {
+          "ids": [
+            "ld1"
+          ],
+          "message": "Lowercased load `model` values (the upstream schema moved the enum to uppercase; this package and its bundled schema use lowercase).",
+          "code": "W.MIGRATE.LOAD_MODEL_CASE"
+        }
+      ],
+      "powerio_source_mapped_fields": [
+        "angle",
+        "basekv",
+        "kv",
+        "model",
+        "phases",
+        "vmaxpu",
+        "vminpu"
+      ],
+      "powerio_diagnostics": [
+        {
+          "component_id": "l1",
+          "source_records": [
+            6
+          ],
+          "elements": [
+            "line l1"
+          ],
+          "message": "line l1: `units` has no place in the BMOPF schema; dropped from the output",
+          "severity": "WARNING",
+          "count": 1,
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "attributions": [
+            {
+              "elements_truncated": false,
+              "elements": [
+                "line l1"
+              ],
+              "source_element_count": 1,
+              "source_record": 6,
+              "field": "units"
+            }
+          ],
+          "component_type": "line"
+        },
+        {
+          "component_id": "ld1",
+          "source_records": [
+            3,
+            5,
+            7,
+            8
+          ],
+          "messages": [
+            "load ld1: `kv` has no place in the BMOPF schema; dropped from the output",
+            "load ld1: `phases` has no place in the BMOPF schema; dropped from the output",
+            "load ld1: `vmaxpu` has no place in the BMOPF schema; dropped from the output",
+            "load ld1: `vminpu` has no place in the BMOPF schema; dropped from the output"
+          ],
+          "elements": [
+            "load ld1"
+          ],
+          "message": "4 occurrences, e.g. load ld1: `kv` has no place in the BMOPF schema; dropped from the output",
+          "severity": "WARNING",
+          "count": 4,
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "attributions": [
+            {
+              "elements_truncated": false,
+              "elements": [
+                "load ld1"
+              ],
+              "source_element_count": 1,
+              "source_record": 3,
+              "field": "kv"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "load ld1"
+              ],
+              "source_element_count": 1,
+              "source_record": 5,
+              "field": "phases"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "load ld1"
+              ],
+              "source_element_count": 1,
+              "source_record": 7,
+              "field": "vmaxpu"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "load ld1"
+              ],
+              "source_element_count": 1,
+              "source_record": 8,
+              "field": "vminpu"
+            }
+          ],
+          "component_type": "load"
+        },
+        {
+          "component_id": "source",
+          "source_records": [
+            1,
+            2,
+            4
+          ],
+          "messages": [
+            "voltage source source: `angle` has no place in the BMOPF schema; dropped from the output",
+            "voltage source source: `basekv` has no place in the BMOPF schema; dropped from the output",
+            "voltage source source: `model` has no place in the BMOPF schema; dropped from the output"
+          ],
+          "elements": [
+            "voltage_source source"
+          ],
+          "message": "3 occurrences, e.g. voltage source source: `angle` has no place in the BMOPF schema; dropped from the output",
+          "severity": "WARNING",
+          "count": 3,
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "attributions": [
+            {
+              "elements_truncated": false,
+              "elements": [
+                "voltage_source source"
+              ],
+              "source_element_count": 1,
+              "source_record": 1,
+              "field": "angle"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "voltage_source source"
+              ],
+              "source_element_count": 1,
+              "source_record": 2,
+              "field": "basekv"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "voltage_source source"
+              ],
+              "source_element_count": 1,
+              "source_record": 4,
+              "field": "model"
+            }
+          ],
+          "component_type": "voltage_source"
+        }
+      ],
+      "powerio_warnings": [
+        "EMIT.BMOPF.FIELD_DROPPED: voltage source source: `angle` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: voltage source source: `basekv` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: load ld1: `kv` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: voltage source source: `model` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: load ld1: `phases` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: line l1: `units` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: load ld1: `vmaxpu` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: load ld1: `vminpu` has no place in the BMOPF schema; dropped from the output"
+      ],
+      "powerio_source_semantics": {
+        "load_voltage_thresholds": [
+          {
+            "interpretation": "load_voltage_behavior_threshold_not_bus_bound",
+            "scope": "load:ld1",
+            "status": "observed_ordered",
+            "vmaxpu": 2,
+            "vminpu": 0
+          }
+        ],
+        "voltage_source_models": [
+          {
+            "scope": "source:source",
+            "model": "ideal",
+            "status": "represented_as_fixed_voltage_boundary",
+            "target": "voltage_source.v_magnitude/v_angle"
+          }
+        ]
+      },
+      "powerio_diagnostic_details": [
+        {
+          "details": {
+            "elements": [
+              "voltage source source"
+            ],
+            "count": 1,
+            "field": "angle"
+          },
+          "suggested_action": null,
+          "message": "voltage source source: `angle` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "voltage source source",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "voltage source source"
+            ],
+            "count": 1,
+            "field": "basekv"
+          },
+          "suggested_action": null,
+          "message": "voltage source source: `basekv` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "voltage source source",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "load ld1"
+            ],
+            "count": 1,
+            "field": "kv"
+          },
+          "suggested_action": null,
+          "message": "load ld1: `kv` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "load ld1",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "voltage source source"
+            ],
+            "count": 1,
+            "field": "model"
+          },
+          "suggested_action": null,
+          "message": "voltage source source: `model` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "voltage source source",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "load ld1"
+            ],
+            "count": 1,
+            "field": "phases"
+          },
+          "suggested_action": null,
+          "message": "load ld1: `phases` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "load ld1",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "line l1"
+            ],
+            "count": 1,
+            "field": "units"
+          },
+          "suggested_action": null,
+          "message": "line l1: `units` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "line l1",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "load ld1"
+            ],
+            "count": 1,
+            "field": "vmaxpu"
+          },
+          "suggested_action": null,
+          "message": "load ld1: `vmaxpu` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "load ld1",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "load ld1"
+            ],
+            "count": 1,
+            "field": "vminpu"
+          },
+          "suggested_action": null,
+          "message": "load ld1: `vminpu` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "load ld1",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        }
+      ],
+      "powerio_source_metadata": {
+        "by_scope": {
+          "source:source": [
+            "angle",
+            "basekv",
+            "model"
+          ],
+          "load:ld1": [
+            "kv",
+            "phases",
+            "vmaxpu",
+            "vminpu"
+          ],
+          "line:l1": [
+            "units"
+          ]
+        },
+        "field_count": 8,
+        "objects_inspected": 6,
+        "fields": [
+          "angle",
+          "basekv",
+          "kv",
+          "model",
+          "phases",
+          "units",
+          "vmaxpu",
+          "vminpu"
+        ],
+        "extras_status": "available",
+        "objects_with_extras": 6,
+        "source_format": "dss"
+      },
+      "powerio_source": "/Users/uqfgeth/Documents/GitHub/BMOPFTools.jl/test/data/pf_comparison/pf_1ph_line.dss"
+    },
+    "case_study_generator": {
+      "version": "0.11.0",
+      "tool": "powerio"
+    },
+    "created": "2026-09-07T05:28:03Z",
+    "frequency": 50
+  },
+  "load": {
+    "ld1": {
+      "v_nom": [
+        240
+      ],
+      "p_nom": [
+        10000
+      ],
+      "model": "constant_power",
+      "q_nom": [
+        3000
+      ],
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "bus": "lb",
+      "configuration": "SINGLE_PHASE"
+    }
+  },
+  "bus": {
+    "lb": {
+      "perfectly_grounded_terminals": [
+        "n"
+      ],
+      "terminal_names": [
+        "a",
+        "n"
+      ]
+    },
+    "src": {
+      "perfectly_grounded_terminals": [
+        "n"
+      ],
+      "terminal_names": [
+        "a",
+        "n"
+      ]
+    }
+  },
+  "linecode": {
+    "_line_l1": {
+      "G_from_1_1": 0,
+      "R_series_1_1": 0.0005,
+      "G_to_1_1": 0,
+      "B_from_1_1": 5.340707511102649e-10,
+      "X_series_1_1": 0.0002,
+      "B_to_1_1": 5.340707511102649e-10,
+      "i_max": [
+        600
+      ]
+    }
+  }
+}

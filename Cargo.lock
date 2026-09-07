@@ -1839,6 +1839,7 @@ dependencies = [
  "faer",
  "num-complex",
  "powerio",
+ "powerio-dist",
  "powerio-matrix",
  "powerio-prob",
  "powerio-tx",

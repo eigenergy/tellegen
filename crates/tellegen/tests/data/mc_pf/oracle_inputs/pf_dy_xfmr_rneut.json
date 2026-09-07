@@ -1,0 +1,822 @@
+{
+  "voltage_source": {
+    "source": {
+      "v_magnitude": [
+        6350.852961085884,
+        6350.852961085884,
+        6350.852961085884,
+        0.0
+      ],
+      "terminal_map": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ],
+      "bus": "hv",
+      "v_angle": [
+        0,
+        -2.0943951023931953,
+        2.0943951023931957,
+        0
+      ]
+    }
+  },
+  "name": "pf_dy_xfmr_rneut",
+  "terminal_conventions": {
+    "phase": [
+      "a",
+      "b",
+      "c"
+    ],
+    "earth": [
+    ],
+    "neutral": [
+      "n"
+    ]
+  },
+  "meta": {
+    "$schema": "https://raw.githubusercontent.com/distribution-system-opt/dsopt-schema/main/schema/bmopf/0.1.0/bmopf.schema.json",
+    "provenance": {
+      "frequency_source": "powerio",
+      "powerio_source_semantics": {
+        "load_voltage_thresholds": [
+          {
+            "interpretation": "load_voltage_behavior_threshold_not_bus_bound",
+            "scope": "load:ld1",
+            "status": "observed_ordered",
+            "vmaxpu": 2,
+            "vminpu": 0
+          },
+          {
+            "interpretation": "load_voltage_behavior_threshold_not_bus_bound",
+            "scope": "load:ld2",
+            "status": "observed_ordered",
+            "vmaxpu": 2,
+            "vminpu": 0
+          },
+          {
+            "interpretation": "load_voltage_behavior_threshold_not_bus_bound",
+            "scope": "load:ld3",
+            "status": "observed_ordered",
+            "vmaxpu": 2,
+            "vminpu": 0
+          }
+        ],
+        "voltage_source_models": [
+          {
+            "scope": "source:source",
+            "model": "ideal",
+            "status": "represented_as_fixed_voltage_boundary",
+            "target": "voltage_source.v_magnitude/v_angle"
+          }
+        ]
+      },
+      "explicit_transformer_core_shunts": {
+        "delta_wye/t1": {
+          "source": {
+            "winding": 2,
+            "g": 0.008709536942952532,
+            "b": 0
+          },
+          "subtype": "delta_wye",
+          "shunt_id": "powerio_core_delta_wye_t1",
+          "transformer_id": "t1"
+        }
+      },
+      "powerio_source": "/Users/uqfgeth/Documents/GitHub/BMOPFTools.jl/test/data/pf_comparison/pf_dy_xfmr_rneut.dss",
+      "migration_notes": [
+        {
+          "fields": [
+            "r_neutral_to",
+            "x_neutral_to",
+            "no_load_shunt"
+          ],
+          "message": "Folded r_neutral_to, x_neutral_to, no_load_shunt back from extras.transformer.delta_wye (BMOPF schema 0.1.0 relocation) onto the transformer.",
+          "id": "t1",
+          "subtype": "delta_wye",
+          "code": "W.MIGRATE.XFMR_EXTRAS_FOLD"
+        },
+        {
+          "message": "Migrated lumped r_series/x_series (wye-referred) onto the wye winding's r/x_series_to (r/x_series_from=0).",
+          "id": "t1",
+          "subtype": "delta_wye",
+          "code": "W.MIGRATE.XFMR_SERIES_FIELDS"
+        },
+        {
+          "ids": [
+            "ld1",
+            "ld2",
+            "ld3"
+          ],
+          "message": "Lowercased load `model` values (the upstream schema moved the enum to uppercase; this package and its bundled schema use lowercase).",
+          "code": "W.MIGRATE.LOAD_MODEL_CASE"
+        }
+      ],
+      "powerio_warnings": [
+        "EMIT.BMOPF.RETAINED_SOURCE_ONLY: transformer t1: r_neutral_to, x_neutral_to, no_load_shunt have no delta_wye slot in BMOPF schema 0.1.0; kept under extras.transformer",
+        "EMIT.BMOPF.FIELD_DROPPED: voltage source source: `angle` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: voltage source source: `basekv` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: `kv` has no place in the BMOPF schema; dropped from 3 elements",
+        "EMIT.BMOPF.FIELD_DROPPED: voltage source source: `model` has no place in the BMOPF schema; dropped from the output",
+        "EMIT.BMOPF.FIELD_DROPPED: `phases` has no place in the BMOPF schema; dropped from 3 elements",
+        "EMIT.BMOPF.FIELD_DROPPED: `vmaxpu` has no place in the BMOPF schema; dropped from 3 elements",
+        "EMIT.BMOPF.FIELD_DROPPED: `vminpu` has no place in the BMOPF schema; dropped from 3 elements"
+      ],
+      "powerio_source_metadata": {
+        "by_scope": {
+          "source:source": [
+            "angle",
+            "basekv",
+            "model"
+          ],
+          "load:ld1": [
+            "kv",
+            "phases",
+            "vmaxpu",
+            "vminpu"
+          ],
+          "load:ld2": [
+            "kv",
+            "phases",
+            "vmaxpu",
+            "vminpu"
+          ],
+          "load:ld3": [
+            "kv",
+            "phases",
+            "vmaxpu",
+            "vminpu"
+          ],
+          "transformer:t1": [
+            "%imag",
+            "%noloadloss"
+          ]
+        },
+        "field_count": 9,
+        "objects_inspected": 7,
+        "fields": [
+          "%imag",
+          "%noloadloss",
+          "angle",
+          "basekv",
+          "kv",
+          "model",
+          "phases",
+          "vmaxpu",
+          "vminpu"
+        ],
+        "extras_status": "available",
+        "objects_with_extras": 7,
+        "source_format": "dss"
+      },
+      "powerio_source_mapping": {
+        "unmapped_fields": [
+        ],
+        "by_field": {
+          "phases": {
+            "scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "mapped_scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped",
+            "target": "load.terminal_map/configuration",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 3,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "transform": "source_phase_count_to_terminal_structure"
+          },
+          "model": {
+            "scopes": [
+              "source:source"
+            ],
+            "mapped_scopes": [
+              "source:source"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_contract",
+            "target": "voltage_source.v_magnitude/v_angle",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "source:source"
+            ],
+            "transform": "source_model_ideal_to_fixed_voltage_boundary"
+          },
+          "vmaxpu": {
+            "scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "mapped_scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_contract",
+            "target": "_meta.powerio_source_semantics.load_voltage_thresholds",
+            "reason": "preserved_as_load_behavior_contract_not_bus_voltage_bound",
+            "scope_count": 3,
+            "unmapped_scopes": [
+            ],
+            "active_in_original_model": false,
+            "impact": "physical_or_operating_point",
+            "warned_scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "transform": "source_load_voltage_behavior_threshold_contract"
+          },
+          "kv": {
+            "scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "mapped_scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped",
+            "target": "load.v_nom",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 3,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "transform": "kV_to_volts"
+          },
+          "vminpu": {
+            "scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "mapped_scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_contract",
+            "target": "_meta.powerio_source_semantics.load_voltage_thresholds",
+            "reason": "preserved_as_load_behavior_contract_not_bus_voltage_bound",
+            "scope_count": 3,
+            "unmapped_scopes": [
+            ],
+            "active_in_original_model": false,
+            "impact": "physical_or_operating_point",
+            "warned_scopes": [
+              "load:ld1",
+              "load:ld2",
+              "load:ld3"
+            ],
+            "transform": "source_load_voltage_behavior_threshold_contract"
+          },
+          "angle": {
+            "scopes": [
+              "source:source"
+            ],
+            "mapped_scopes": [
+              "source:source"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_transform",
+            "target": "voltage_source.v_angle",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "source:source"
+            ],
+            "transform": "source_angle_with_phase_sequence"
+          },
+          "basekv": {
+            "scopes": [
+              "source:source"
+            ],
+            "mapped_scopes": [
+              "source:source"
+            ],
+            "physical_readiness_blocking": false,
+            "status": "mapped_with_transform",
+            "target": "voltage_source.v_magnitude",
+            "reason": "mapping_covers_every_source_scope",
+            "scope_count": 1,
+            "unmapped_scopes": [
+            ],
+            "impact": "represented",
+            "warned_scopes": [
+              "source:source"
+            ],
+            "transform": "line_to_neutral_voltage_conversion"
+          }
+        },
+        "warnings_truncated_upstream": false,
+        "fields": [
+          "angle",
+          "basekv",
+          "kv",
+          "model",
+          "phases",
+          "vmaxpu",
+          "vminpu"
+        ],
+        "warning_status": "partially_classified",
+        "blocking_unmapped_fields": [
+        ],
+        "warnings_seen": 8,
+        "warnings_classified": 7,
+        "unclassified_warnings": [
+          "EMIT.BMOPF.RETAINED_SOURCE_ONLY: transformer t1: r_neutral_to, x_neutral_to, no_load_shunt have no delta_wye slot in BMOPF schema 0.1.0; kept under extras.transformer"
+        ]
+      },
+      "powerio_source_mapped_fields": [
+        "angle",
+        "basekv",
+        "kv",
+        "model",
+        "phases",
+        "vmaxpu",
+        "vminpu"
+      ],
+      "powerio_diagnostic_details": [
+        {
+          "details": null,
+          "suggested_action": null,
+          "message": "transformer t1: r_neutral_to, x_neutral_to, no_load_shunt have no delta_wye slot in BMOPF schema 0.1.0; kept under extras.transformer",
+          "id": null,
+          "severity": "warning",
+          "target": null,
+          "code": "EMIT.BMOPF.RETAINED_SOURCE_ONLY",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "voltage source source"
+            ],
+            "count": 1,
+            "field": "angle"
+          },
+          "suggested_action": null,
+          "message": "voltage source source: `angle` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "voltage source source",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "voltage source source"
+            ],
+            "count": 1,
+            "field": "basekv"
+          },
+          "suggested_action": null,
+          "message": "voltage source source: `basekv` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "voltage source source",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "load ld1",
+              "load ld2",
+              "load ld3"
+            ],
+            "count": 3,
+            "field": "kv"
+          },
+          "suggested_action": null,
+          "message": "`kv` has no place in the BMOPF schema; dropped from 3 elements",
+          "id": null,
+          "severity": "warning",
+          "target": null,
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "voltage source source"
+            ],
+            "count": 1,
+            "field": "model"
+          },
+          "suggested_action": null,
+          "message": "voltage source source: `model` has no place in the BMOPF schema; dropped from the output",
+          "id": null,
+          "severity": "warning",
+          "target": "voltage source source",
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "load ld1",
+              "load ld2",
+              "load ld3"
+            ],
+            "count": 3,
+            "field": "phases"
+          },
+          "suggested_action": null,
+          "message": "`phases` has no place in the BMOPF schema; dropped from 3 elements",
+          "id": null,
+          "severity": "warning",
+          "target": null,
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "load ld1",
+              "load ld2",
+              "load ld3"
+            ],
+            "count": 3,
+            "field": "vmaxpu"
+          },
+          "suggested_action": null,
+          "message": "`vmaxpu` has no place in the BMOPF schema; dropped from 3 elements",
+          "id": null,
+          "severity": "warning",
+          "target": null,
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        },
+        {
+          "details": {
+            "elements": [
+              "load ld1",
+              "load ld2",
+              "load ld3"
+            ],
+            "count": 3,
+            "field": "vminpu"
+          },
+          "suggested_action": null,
+          "message": "`vminpu` has no place in the BMOPF schema; dropped from 3 elements",
+          "id": null,
+          "severity": "warning",
+          "target": null,
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "related": [
+          ],
+          "spans": [
+          ]
+        }
+      ],
+      "powerio_diagnostics": [
+        {
+          "source_records": [
+            4,
+            6,
+            7,
+            8
+          ],
+          "messages": [
+            "`kv` has no place in the BMOPF schema; dropped from 3 elements",
+            "`phases` has no place in the BMOPF schema; dropped from 3 elements",
+            "`vmaxpu` has no place in the BMOPF schema; dropped from 3 elements",
+            "`vminpu` has no place in the BMOPF schema; dropped from 3 elements"
+          ],
+          "elements": [
+            "load ld1",
+            "load ld2",
+            "load ld3"
+          ],
+          "message": "4 occurrences, e.g. `kv` has no place in the BMOPF schema; dropped from 3 elements",
+          "severity": "WARNING",
+          "count": 4,
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "attributions": [
+            {
+              "elements_truncated": false,
+              "elements": [
+                "load ld1",
+                "load ld2",
+                "load ld3"
+              ],
+              "source_element_count": 3,
+              "source_record": 4,
+              "field": "kv"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "load ld1",
+                "load ld2",
+                "load ld3"
+              ],
+              "source_element_count": 3,
+              "source_record": 6,
+              "field": "phases"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "load ld1",
+                "load ld2",
+                "load ld3"
+              ],
+              "source_element_count": 3,
+              "source_record": 7,
+              "field": "vmaxpu"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "load ld1",
+                "load ld2",
+                "load ld3"
+              ],
+              "source_element_count": 3,
+              "source_record": 8,
+              "field": "vminpu"
+            }
+          ],
+          "component_type": "load"
+        },
+        {
+          "component_id": "source",
+          "source_records": [
+            2,
+            3,
+            5
+          ],
+          "messages": [
+            "voltage source source: `angle` has no place in the BMOPF schema; dropped from the output",
+            "voltage source source: `basekv` has no place in the BMOPF schema; dropped from the output",
+            "voltage source source: `model` has no place in the BMOPF schema; dropped from the output"
+          ],
+          "elements": [
+            "voltage_source source"
+          ],
+          "message": "3 occurrences, e.g. voltage source source: `angle` has no place in the BMOPF schema; dropped from the output",
+          "severity": "WARNING",
+          "count": 3,
+          "code": "EMIT.BMOPF.FIELD_DROPPED",
+          "attributions": [
+            {
+              "elements_truncated": false,
+              "elements": [
+                "voltage_source source"
+              ],
+              "source_element_count": 1,
+              "source_record": 2,
+              "field": "angle"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "voltage_source source"
+              ],
+              "source_element_count": 1,
+              "source_record": 3,
+              "field": "basekv"
+            },
+            {
+              "elements_truncated": false,
+              "elements": [
+                "voltage_source source"
+              ],
+              "source_element_count": 1,
+              "source_record": 5,
+              "field": "model"
+            }
+          ],
+          "component_type": "voltage_source"
+        },
+        {
+          "component_id": "t1",
+          "source_records": [
+            1
+          ],
+          "elements": [
+            "transformer t1"
+          ],
+          "message": "transformer t1: r_neutral_to, x_neutral_to, no_load_shunt have no delta_wye slot in BMOPF schema 0.1.0; kept under extras.transformer",
+          "severity": "WARNING",
+          "count": 1,
+          "code": "EMIT.BMOPF.RETAINED_SOURCE_ONLY",
+          "component_type": "transformer"
+        }
+      ]
+    },
+    "case_study_generator": {
+      "version": "0.11.0",
+      "tool": "powerio"
+    },
+    "created": "2026-09-07T05:28:04Z",
+    "frequency": 50
+  },
+  "extras": {
+  },
+  "transformer": {
+    "delta_wye": {
+      "t1": {
+        "x_series_to": 0.013777999999999999,
+        "s_rating": 500000,
+        "terminal_map_to": [
+          "a",
+          "b",
+          "c",
+          "n"
+        ],
+        "r_series_from": 0,
+        "v_nom_to": 415,
+        "x_series_from": 0,
+        "v_nom_from": 11000,
+        "bus_from": "hv",
+        "terminal_map_from": [
+          "a",
+          "b",
+          "c"
+        ],
+        "r_series_to": 0.006889,
+        "r_neutral_to": 2,
+        "bus_to": "lv",
+        "x_neutral_to": 1
+      }
+    }
+  },
+  "shunt": {
+    "powerio_core_delta_wye_t1": {
+      "B_3_3": 0,
+      "B_4_4": 0,
+      "G_1_3": 0,
+      "B_1_2": 0,
+      "B_4_1": 0,
+      "G_3_3": 0.008709536942952532,
+      "B_2_1": 0,
+      "B_4_2": 0,
+      "bus": "lv",
+      "G_1_4": -0.008709536942952532,
+      "B_4_3": 0,
+      "B_1_1": 0,
+      "G_4_2": -0.008709536942952532,
+      "G_2_4": -0.008709536942952532,
+      "B_2_2": 0,
+      "G_4_4": 0.026128610828857597,
+      "B_2_3": 0,
+      "G_1_2": 0,
+      "B_3_4": 0,
+      "G_4_3": -0.008709536942952532,
+      "B_2_4": 0,
+      "B_1_3": 0,
+      "G_3_4": -0.008709536942952532,
+      "G_4_1": -0.008709536942952532,
+      "B_1_4": 0,
+      "G_2_1": 0,
+      "G_2_2": 0.008709536942952532,
+      "G_3_2": 0,
+      "terminal_map": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ],
+      "B_3_2": 0,
+      "B_3_1": 0,
+      "G_3_1": 0,
+      "G_1_1": 0.008709536942952532,
+      "G_2_3": 0
+    }
+  },
+  "load": {
+    "ld1": {
+      "v_nom": [
+        240
+      ],
+      "p_nom": [
+        180000
+      ],
+      "model": "constant_power",
+      "q_nom": [
+        60000
+      ],
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "bus": "lv",
+      "configuration": "SINGLE_PHASE"
+    },
+    "ld3": {
+      "v_nom": [
+        240
+      ],
+      "p_nom": [
+        120000
+      ],
+      "model": "constant_power",
+      "q_nom": [
+        40000
+      ],
+      "terminal_map": [
+        "c",
+        "n"
+      ],
+      "bus": "lv",
+      "configuration": "SINGLE_PHASE"
+    },
+    "ld2": {
+      "v_nom": [
+        240
+      ],
+      "p_nom": [
+        60000
+      ],
+      "model": "constant_power",
+      "q_nom": [
+        20000
+      ],
+      "terminal_map": [
+        "b",
+        "n"
+      ],
+      "bus": "lv",
+      "configuration": "SINGLE_PHASE"
+    }
+  },
+  "bus": {
+    "hv": {
+      "perfectly_grounded_terminals": [
+        "n"
+      ],
+      "terminal_names": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ]
+    },
+    "lv": {
+      "terminal_names": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ]
+    }
+  }
+}

@@ -11,8 +11,8 @@ description = "WebAssembly browser adapter for the tellegen power flow engine."
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# The engine. Core wasm build takes it without default features (no faer); the
-# `sensitivity` feature below forwards to `tellegen/sensitivity` for the sens build.
+# The engine. The default wasm build keeps the lightweight core; `mc-pf`,
+# `sensitivity`, and `conic` opt into their numerical backends explicitly.
 tellegen = { path = "../tellegen", default-features = false }
 powerio.workspace = true
 powerio-dist.workspace = true
@@ -28,11 +28,13 @@ console_error_panic_hook = "0.1"
 
 [features]
 default = []
+# The multiconductor fixed-point PF and its raw BMOPF entry point.
+mc-pf = ["tellegen/mc-pf"]
 # Gates the `#[wasm_bindgen] Study` export and the dLMP/dd column in `solve_dc`.
 sensitivity = ["tellegen/sensitivity"]
 # The SOCWR (Jabr) conic relaxation. Pulls `sensitivity` so the Study export stays
 # present, mirroring the engine's `conic = ["sensitivity"]`.
-conic = ["sensitivity", "tellegen/conic"]
+conic = ["sensitivity", "mc-pf", "tellegen/conic"]
 
 [lints]
 workspace = true
