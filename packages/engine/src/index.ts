@@ -148,6 +148,8 @@ export interface DistGraphBus {
   id: string;
   terminals: string[];
   grounded: string[];
+  /** Declared or conservative conventional neutral terminal, when present. */
+  neutral_terminal?: string | null;
   xy?: [number, number];
   load_kw: number;
   gen_kw: number;
@@ -174,10 +176,11 @@ export interface DistGraph {
   edges: DistGraphEdge[];
 }
 
-/** One multiconductor parse for the viewing path: element counts, connected
- * load and generation (kW), parse diagnostics, coordinate provenance, and the
- * bus/terminal graph. No solve, no network JSON — distribution cases are viewed,
- * not solved. `coords_kind` tells the frontend how to place buses: `geographic`
+/** One multiconductor parse: element counts, connected load and generation
+ * (kW), parse diagnostics, coordinate provenance, and the bus/terminal graph.
+ * `module_json` is present when the reader retained a typed PowerIO module that
+ * the fixed-point distribution solver can run. `coords_kind` tells the frontend
+ * how to place buses: `geographic`
  * drops `xy` straight onto the map, `planar` fits provided positions into a box
  * at a placement center, `synthetic` runs the force layout. */
 export interface IngestedDistCase {
@@ -206,6 +209,12 @@ export interface IngestedDistCase {
   coords_kind: "geographic" | "planar" | "synthetic";
   diagnostics: PowerIoDiagnostic[];
   graph: DistGraph;
+  /** Retained typed PowerIO multiconductor module, when solveable. */
+  module_json?: string;
+  /** Explicit capability from the reader; absent means inspection only. */
+  mc_pf_supported?: boolean;
+  /** Reader explanation for an inspection-only distribution payload. */
+  mc_pf_reason?: string;
 }
 
 /** A materialized case written to a target format: the serialized case text,
@@ -282,11 +291,7 @@ export async function preloadEngine(): Promise<void> {
 }
 
 export type JsonDropKind =
-  | "module"
-  | "transmission"
-  | "distribution"
-  | "ambiguous"
-  | "unknown";
+  "module" | "transmission" | "distribution" | "ambiguous" | "unknown";
 
 export interface JsonDropClassification {
   kind: JsonDropKind;
@@ -618,6 +623,21 @@ export interface McPfResult {
   source_reactions: McSourceReaction[];
 }
 
+/** Self-contained saved Study result for a supported distribution AC PF.
+ * The input and solution modules make this replayable; `result` is the rich
+ * terminal/element view rendered by the Study panel. */
+export interface McStudySnapshot {
+  schema: "tellegen-mc-pf-study";
+  version: 1;
+  id: string;
+  title: string;
+  formulation: "mc_ac_pf";
+  input_module: string;
+  solution_module: string;
+  options: McPfOptions;
+  result: McPfResult;
+}
+
 /** Parse and solve a raw BMOPF multiconductor case in the wasm module. */
 export async function solveMcBmopf(
   text: string,
@@ -647,6 +667,44 @@ export async function solveMcModule(
         op: "solve_mc_module",
         module_json: moduleJson,
         options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** Solve a supported multiconductor Study input and return a replayable
+ * snapshot containing the typed input, PowerIO solution, and rich result. */
+export async function solveMcStudy(
+  moduleJson: string,
+  studyId: string,
+  studyTitle: string,
+  options: McPfOptions = {},
+): Promise<McStudySnapshot> {
+  assertEngineInputLength(moduleJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_mc_study",
+        module_json: moduleJson,
+        study_id: studyId,
+        study_title: studyTitle,
+        options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** Validate and canonicalize a saved multiconductor Study snapshot without
+ * running the solver again. */
+export async function replayMcStudy(
+  snapshotJson: string,
+): Promise<McStudySnapshot> {
+  assertEngineInputLength(snapshotJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "replay_mc_study",
+        snapshot: snapshotJson,
       }),
     ),
   );
@@ -856,7 +914,11 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
       mw: f.pf,
       loading: f.loading,
     })),
-    dispatch: (out.dispatch ?? []).map((d) => ({ gen: d.gen, bus: d.bus, mw: d.pg })),
+    dispatch: (out.dispatch ?? []).map((d) => ({
+      gen: d.gen,
+      bus: d.bus,
+      mw: d.pg,
+    })),
   };
 }
 
@@ -1042,7 +1104,12 @@ export class BrowserStudy {
 
   /** Preserve the materialized instance's inner objective and constraints in PowerIO IR. */
   async saveInstanceModule(): Promise<string> {
-    return expectText(await this.#host.call({ op: "study_save_instance_module", study: this.#handle }));
+    return expectText(
+      await this.#host.call({
+        op: "study_save_instance_module",
+        study: this.#handle,
+      }),
+    );
   }
 
   /** Serialize the current exact DC OPF result as a PowerIO solution module.
@@ -1226,14 +1293,15 @@ export interface EngineTransport {
     moduleJson: string,
     request?: SolveRequest,
   ): Promise<SolveResponse>;
-  solveMcBmopf(
-    text: string,
-    options?: McPfOptions,
-  ): Promise<McPfResult>;
-  solveMcModule(
+  solveMcBmopf(text: string, options?: McPfOptions): Promise<McPfResult>;
+  solveMcModule(moduleJson: string, options?: McPfOptions): Promise<McPfResult>;
+  solveMcStudy(
     moduleJson: string,
+    studyId: string,
+    studyTitle: string,
     options?: McPfOptions,
-  ): Promise<McPfResult>;
+  ): Promise<McStudySnapshot>;
+  replayMcStudy(snapshotJson: string): Promise<McStudySnapshot>;
   createStudy(
     moduleJson: string,
     formulation?: Formulation,
@@ -1258,6 +1326,8 @@ export const browserWasmTransport: EngineTransport = {
   solveModule,
   solveMcBmopf,
   solveMcModule,
+  solveMcStudy,
+  replayMcStudy,
   createStudy,
 };
 
@@ -1267,9 +1337,29 @@ export function createBrowserWasmTransport(): EngineTransport {
 
 export { BrowserStudy as Study };
 
-export { IndexedDbStudyStore, StudyDocumentController, studyBackend } from "./study-document.js";
+export {
+  IndexedDbStudyStore,
+  StudyDocumentController,
+  studyBackend,
+} from "./study-document.js";
 export type { StudyBackend, StudyStore } from "./study-document.js";
-export type { CreateStudy, StudyBundle, StudyDocument, StudyRequest, StudyOperation, StudyOperationResult, GoalRevision, DecisionSpace, StudyObjective, StateNode, Comparison } from "./generated/study-contracts.js";
+export type {
+  CreateStudy,
+  StudyBundle,
+  StudyDocument,
+  StudyRequest,
+  StudyOperation,
+  StudyOperationResult,
+  GoalRevision,
+  DecisionSpace,
+  StudyObjective,
+  StateNode,
+  Comparison,
+} from "./generated/study-contracts.js";
 
-export type { SolveResponse as StudyView, SearchOptions, StudySummary } from "./generated/study-contracts.js";
-export { studySchema } from './generated/study-schema.js';
+export type {
+  SolveResponse as StudyView,
+  SearchOptions,
+  StudySummary,
+} from "./generated/study-contracts.js";
+export { studySchema } from "./generated/study-schema.js";

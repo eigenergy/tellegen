@@ -20,6 +20,8 @@
 use powerio::{PioModule, PioValue};
 use powerio_dist::{CoordinateSpace, DistGeoMeta, DistGraphEdgeKind, MulticonductorNetwork};
 use tellegen::ir::deserialize_module;
+#[cfg(feature = "mc-pf")]
+use tellegen::ir::serialize_module;
 
 /// Parse `text` in a distribution `format` (`dss`, `bmopf`, or `pmd`) and
 /// return the drop-panel payload JSON (see [`ingest_dist_value`]). The format
@@ -42,6 +44,26 @@ pub(crate) fn ingest_dist_bytes_value(
     let format = crate::source_format_id(format)?;
     // The angle bracketed name marks an anonymous in-memory source; the
     // readers take the case's own name (e.g. the OpenDSS circuit name).
+    let raw_study_error = if matches!(format.as_str(), "dss") {
+        Some(
+            "OpenDSS imports are view-only for MC Study mode until finite-source and control semantics are normalized; use BMOPF or a typed MC AC PF module"
+                .to_owned(),
+        )
+    } else if matches!(format.as_str(), "bmopf-json" | "bmopf") {
+        #[cfg(feature = "mc-pf")]
+        let preflight = tellegen::validate_bmopf_json(
+            std::str::from_utf8(bytes).map_err(|_| "BMOPF input is not valid UTF-8".to_owned())?,
+        )
+        .err();
+        #[cfg(not(feature = "mc-pf"))]
+        let preflight = Some(
+            "MC PF support is disabled in this build; distribution input remains view-only"
+                .to_owned(),
+        );
+        preflight
+    } else {
+        None
+    };
     let source = powerio::Source::from_memory("<case>", bytes.to_vec())
         .map_err(|e| e.to_string())?
         .with_format(format);
@@ -52,7 +74,8 @@ pub(crate) fn ingest_dist_bytes_value(
             module.value().type_name()
         ));
     };
-    ingest_dist_value(network, module.diagnostics())
+    let payload = ingest_dist_value(network, module.diagnostics())?;
+    attach_mc_study_metadata(payload, &module, raw_study_error)
 }
 
 /// Parse `text` as a `.pio.json` stored module and, when it holds a
@@ -81,7 +104,67 @@ pub(crate) fn ingest_dist_module_value(
             module.value().type_name()
         ));
     };
-    ingest_dist_value(network, module.diagnostics())
+    let payload = ingest_dist_value(network, module.diagnostics())?;
+    attach_mc_study_metadata(payload, &module, None)
+}
+
+/// Add the retained typed input only when the source is safe for the fixed
+/// ideal-source MC PF Study. Unsupported raw semantics deliberately leave the
+/// graph available for viewing but omit the module_json field, so a later
+/// re-import cannot bypass the preflight decision.
+#[cfg(feature = "mc-pf")]
+fn attach_mc_study_metadata(
+    mut payload: serde_json::Value,
+    module: &PioModule<PioValue>,
+    preflight_error: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let object = payload
+        .as_object_mut()
+        .ok_or("multiconductor ingest payload is not an object")?;
+    if let Some(reason) = preflight_error {
+        object.insert("mc_pf_supported".into(), false.into());
+        object.insert("mc_pf_reason".into(), reason.into());
+        return Ok(payload);
+    }
+    let runnable = matches!(
+        module.value(),
+        PioValue::MulticonductorNetwork(_) | PioValue::McAcPfInstance(_)
+    );
+    if !runnable {
+        object.insert("mc_pf_supported".into(), false.into());
+        object.insert(
+            "mc_pf_reason".into(),
+            "this PowerIO value is view-only for MC Study mode; use a MulticonductorNetwork or McAcPfInstance"
+                .into(),
+        );
+        return Ok(payload);
+    }
+    let module_json = serialize_module(module)?;
+    if let Err(reason) = tellegen::validate_mc_module_json(&module_json) {
+        object.insert("mc_pf_supported".into(), false.into());
+        object.insert("mc_pf_reason".into(), reason.into());
+        return Ok(payload);
+    }
+    object.insert("module_json".into(), serde_json::Value::String(module_json));
+    object.insert("mc_pf_supported".into(), true.into());
+    Ok(payload)
+}
+
+#[cfg(not(feature = "mc-pf"))]
+fn attach_mc_study_metadata(
+    mut payload: serde_json::Value,
+    _module: &PioModule<PioValue>,
+    _preflight_error: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let object = payload
+        .as_object_mut()
+        .ok_or("multiconductor ingest payload is not an object")?;
+    object.insert("mc_pf_supported".into(), false.into());
+    object.insert(
+        "mc_pf_reason".into(),
+        "MC PF support is disabled in this build; distribution input remains view-only".into(),
+    );
+    Ok(payload)
 }
 
 pub(crate) fn is_viewable_module_value(value: &PioValue) -> bool {
@@ -111,6 +194,7 @@ fn ingest_dist_value(
     diagnostics: &[powerio::Diagnostic],
 ) -> Result<serde_json::Value, String> {
     let graph = net.to_graph();
+    let graph_value = graph_with_neutral_metadata(net, &graph)?;
 
     let mut n_line = 0usize;
     let mut n_switch = 0usize;
@@ -161,8 +245,115 @@ fn ingest_dist_value(
         "coords_space": coords_space,
         "coords_kind": coords_kind,
         "diagnostics": diagnostics,
-        "graph": graph,
+        "graph": graph_value,
     }))
+}
+
+/// Add the neutral identity used by the MC Study view to PowerIO's stable
+/// graph projection.  PowerIO deliberately keeps terminal-role conventions in
+/// network extras, so this small presentation field must be derived here. An
+/// explicit bus or BMOPF network convention wins; the familiar `n`, `4`, and
+/// `neutral` aliases are only a fallback when no convention is declared.
+fn graph_with_neutral_metadata(
+    net: &MulticonductorNetwork,
+    graph: &powerio_dist::DistGraph,
+) -> Result<serde_json::Value, String> {
+    let buses_by_id: std::collections::BTreeMap<_, _> = net
+        .buses()
+        .iter()
+        .map(|bus| (bus.id.to_ascii_lowercase(), bus))
+        .collect();
+    let mut value = serde_json::to_value(graph).map_err(|e| e.to_string())?;
+    let Some(buses) = value
+        .get_mut("buses")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Err("PowerIO graph omitted its bus array".to_owned());
+    };
+    for graph_bus in buses {
+        let Some(id) = graph_bus.get("id").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let Some(bus) = buses_by_id.get(&id.to_ascii_lowercase()) else {
+            continue;
+        };
+        if let Some(neutral) = neutral_terminal(net, bus) {
+            graph_bus
+                .as_object_mut()
+                .expect("serialized graph bus is an object")
+                .insert(
+                    "neutral_terminal".to_owned(),
+                    neutral.map_or(serde_json::Value::Null, serde_json::Value::String),
+                );
+        }
+    }
+    Ok(value)
+}
+
+fn neutral_terminal(
+    net: &MulticonductorNetwork,
+    bus: &powerio_dist::DistBus,
+) -> Option<Option<String>> {
+    if let Some(value) = bus.extras.get("neutral_terminal") {
+        return Some(
+            value
+                .as_str()
+                .filter(|name| bus.terminals.iter().any(|t| t == *name))
+                .map(str::to_owned),
+        );
+    }
+    if let Some(value) = bus.extras.get("neutral") {
+        return Some(
+            value
+                .as_str()
+                .filter(|name| bus.terminals.iter().any(|t| t == *name))
+                .map(str::to_owned),
+        );
+    }
+    if let Some(value) = bus.extras.get("terminal_conventions") {
+        if declared_neutral_present(value) {
+            return Some(declared_neutral_name(value, &bus.terminals));
+        }
+    }
+
+    let global = net
+        .extras()
+        .get("bmopf_terminal_conventions")
+        .or_else(|| net.extras().get("terminal_conventions"));
+    if let Some(value) = global {
+        if declared_neutral_present(value) {
+            return Some(declared_neutral_name(value, &bus.terminals));
+        }
+    }
+
+    let aliases = ["n", "4", "neutral"];
+    let mut matches = bus.terminals.iter().filter(|terminal| {
+        aliases
+            .iter()
+            .any(|alias| alias.eq_ignore_ascii_case(terminal.trim()))
+    });
+    let first = matches.next()?.clone();
+    if matches.next().is_some() {
+        Some(None)
+    } else {
+        Some(Some(first))
+    }
+}
+
+fn declared_neutral_name(value: &serde_json::Value, terminals: &[String]) -> Option<String> {
+    let names = value
+        .get("neutral")
+        .and_then(|neutral| neutral.as_array())?;
+    let matches: Vec<_> = names
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|name| terminals.iter().any(|terminal| terminal == *name))
+        .collect();
+    (matches.len() == 1).then(|| matches[0].to_owned())
+}
+
+fn declared_neutral_present(value: &serde_json::Value) -> bool {
+    value.get("neutral").is_some()
 }
 
 /// The network's declared coordinate space as a stable snake-case token. `none`
@@ -255,6 +446,12 @@ mod tests {
                 .iter()
                 .any(|id| id.eq_ignore_ascii_case(e["to"].as_str().unwrap())));
         }
+        #[cfg(feature = "mc-pf")]
+        {
+            assert_eq!(v["mc_pf_supported"], false);
+            assert!(v["module_json"].is_null());
+            assert!(v["mc_pf_reason"].as_str().unwrap().contains("view-only"));
+        }
     }
 
     #[test]
@@ -301,6 +498,43 @@ mod tests {
             kinds.contains(&"load"),
             "load attachment present: {kinds:?}"
         );
+        #[cfg(feature = "mc-pf")]
+        {
+            assert_eq!(v["mc_pf_supported"], true);
+            assert!(!v["module_json"].as_str().unwrap().is_empty());
+            assert!(v["mc_pf_reason"].is_null());
+        }
+    }
+
+    #[test]
+    fn bmopf_preserves_explicit_custom_neutral_terminal_in_each_bus_graph_node() {
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).expect("fixture JSON");
+        raw["terminal_conventions"] = serde_json::json!({
+            "phase": ["1", "2", "3"],
+            "neutral": ["return"],
+            "earth": []
+        });
+        for bus in raw["bus"].as_object_mut().unwrap().values_mut() {
+            let terminals = bus["terminal_names"].as_array_mut().unwrap();
+            terminals[3] = Value::String("return".to_owned());
+            bus["perfectly_grounded_terminals"] = serde_json::json!(["return"]);
+        }
+        let value = parse(&ingest_dist(&raw.to_string(), "bmopf").expect("custom neutral"));
+        for bus in value["graph"]["buses"].as_array().unwrap() {
+            assert_eq!(bus["neutral_terminal"], "return");
+        }
+    }
+
+    #[cfg(feature = "mc-pf")]
+    #[test]
+    fn bmopf_preflight_failure_keeps_view_but_omits_runnable_module() {
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).expect("fixture JSON");
+        raw["load"]["ld1"]["model"] = Value::String("mystery_model".to_owned());
+        let v = parse(&ingest_dist(&raw.to_string(), "bmopf").expect("view malformed load"));
+        assert_eq!(v["model"], "multiconductor");
+        assert_eq!(v["mc_pf_supported"], false);
+        assert!(v["module_json"].is_null());
+        assert!(v["mc_pf_reason"].as_str().unwrap().contains("model"));
     }
 
     #[test]

@@ -28,6 +28,7 @@ export {
 	edgeColor,
 	edgeWidth,
 	phaseColor,
+	neutralTerminal,
 	placeMultiView,
 	buildGeographicView
 } from './multiconductor.js';

@@ -1,5 +1,39 @@
 # Multiconductor fixed-point power flow
 
+In the web app, open **Studies** and choose **Load four-wire example**, or
+upload a supported BMOPF JSON distribution case. The Studies panel changes to
+**Distribution power flow** for multiconductor inputs. Choose **Run power
+flow**, then select a bus or branch on the map to inspect its results.
+
+Bus tables report each terminal's voltage magnitude to earth in volts and
+angle in degrees, including an explicit neutral. When a bus has a neutral,
+additional columns show the magnitude and angle of the complex difference
+`V_terminal - V_neutral`. The neutral-to-neutral voltage is zero and its angle
+is undefined. Branch tables report conductor
+currents in amperes and terminal active/reactive powers. The summary reports
+source power in kW/kvar and passive active losses in kW. These are simulation
+results; the distribution Study does not expose balanced-network optimization
+goals or sensitivities.
+
+Solver availability follows the parsed input type and supported electrical
+semantics. Balanced transmission cases retain their existing Study workflow.
+Unsupported distribution cases can still be inspected on the map, with a
+reason explaining why the power-flow action is unavailable. Raw OpenDSS
+imports remain view-only until their source and load semantics can be retained
+without approximation; use a supported normalized BMOPF input for this solver.
+
+Saved distribution results use a separate, versioned simulation snapshot in
+the browser's IndexedDB. A snapshot contains the typed input, solver options,
+portable PowerIO solution, and detailed terminal results. Reopening validates
+the saved input/result association without running a new factorization.
+Use **Save result** to retain it locally, **Export** to download the snapshot,
+and **Import** or the **Saved study** selector to reopen it. Browser storage is
+local to the app's origin; export a snapshot to move it to another browser.
+
+The corresponding engine APIs are `solveMcStudy` and `replayMcStudy`;
+Rust exposes `solve_mc_study_json` and `replay_mc_study_json`. These simulation
+snapshots are distinct from the optimization-oriented `StudyDocument` format.
+
 The multiconductor PF entry point is `tellegen::solve_bmopf_json`. It accepts
 raw BMOPF JSON, validates fields that PowerIO 0.11.0 would otherwise collapse,
 then parses the document through PowerIO and solves the resulting typed

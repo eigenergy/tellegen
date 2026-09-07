@@ -1,5 +1,32 @@
 # Independent MC correctness cases
 
+## Distribution Study integration
+
+The distribution simulation branch uses parsed MC capability metadata, with
+raw BMOPF preflight before normalization. Ingest regressions cover supported
+BMOPF, view-only raw DSS, and unsupported BMOPF load semantics. Saved snapshots
+validate the full typed instance, portable solution, terminal and element-port
+identities, finite values, power consistency, and convergence evidence without
+a new global factorization. Malformed saved load connections return errors.
+
+The final three Chromium MC regressions passed: raw/typed worker solving;
+Study earth/neutral voltage values plus distinct saved results across reloads
+and validated reopening; and the built-in demo plus a three-wire case with no
+neutral-relative columns. Twelve multiconductor UI helper tests passed,
+including declared neutral identity and absent-neutral behavior. Custom-neutral
+WASM ingest tests passed within the 26-test WASM suite.
+Four existing balanced Study regressions also passed: proposal and
+application, artifact tampering, storage exhaustion/recovery, and demand edits
+with base reset. The previously reproduced cancellation failure remains excluded
+from this passing subset.
+
+Manual browser inspection of the four-wire example confirmed 23 iterations,
+49.8253352802 kW source power, 16.507917275 kvar source reactive power, and
+4.8253352808 kW passive loss. Load-bus voltages to earth are 221.761933914,
+228.615871255, 213.351123776, and 11.897554292 V for a/b/c/n. Independent complex
+subtraction gives phase-to-neutral magnitudes 222.332976215, 238.828149852,
+202.975849439 V and angles -2.757520307, -118.601871145, 121.639709693 degrees.
+
 ## Current acceptance summary
 
 This summary supersedes historical checkpoint statuses below. Independent scientific

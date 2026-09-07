@@ -6,6 +6,7 @@
 		attachmentGlyph,
 		edgeColor,
 		isPhaseTerminal,
+		neutralTerminal,
 		phaseColor
 	} from '../multiconductor.js';
 	import { formatPowerIoDiagnostic, type DistAttachmentKind } from '@tellegen/engine';
@@ -14,16 +15,62 @@
 	const ctrl = getController();
 
 	const NEUTRAL_RGBA = [120, 114, 102, 255] as const;
-	const ATTACHMENT_LEGEND: DistAttachmentKind[] = [
-		'source',
-		'generator',
-		'ibr',
-		'load',
-		'shunt'
-	];
+	const ATTACHMENT_LEGEND: DistAttachmentKind[] = ['source', 'generator', 'ibr', 'load', 'shunt'];
 
 	function terminalColor(t: string): string {
 		return rgbaCss(isPhaseTerminal(t) ? phaseColor(t) : [...NEUTRAL_RGBA]);
+	}
+	function magnitude(z: { re: number; im: number }): number {
+		return Math.hypot(z.re, z.im);
+	}
+	function angle(z: { re: number; im: number }): number {
+		return (Math.atan2(z.im, z.re) * 180) / Math.PI;
+	}
+	function angleText(z: { re: number; im: number }): string {
+		return magnitude(z) === 0 ? '—' : `${fixed(angle(z), 2)}°`;
+	}
+	function relativeVoltage(
+		voltage: { re: number; im: number },
+		neutral: { re: number; im: number } | null
+	): { re: number; im: number } {
+		return neutral ? { re: voltage.re - neutral.re, im: voltage.im - neutral.im } : voltage;
+	}
+	function powerKw(z: { re: number; im: number }): number {
+		return z.re / 1000;
+	}
+	function powerKvar(z: { re: number; im: number }): number {
+		return z.im / 1000;
+	}
+	function fixed(value: number, digits = 3): string {
+		return Number.isFinite(value) ? value.toFixed(digits) : '—';
+	}
+	function busNeutral(bus: {
+		terminals: string[];
+		neutral_terminal?: string | null;
+	}): string | null {
+		return neutralTerminal(bus.terminals, bus.neutral_terminal);
+	}
+	function terminalResults(mc: typeof app.activeMulti, bus: string) {
+		return mc?.mcResult?.terminals.filter((t) => t.bus === bus) ?? [];
+	}
+	function edgeResults(mc: typeof app.activeMulti, id: string, kind: string) {
+		const result = mc?.mcResult;
+		if (!result) return [];
+		return result.element_ports.filter((p) => p.element === id && p.kind === kind);
+	}
+	function sourceTotals(mc: typeof app.activeMulti) {
+		return (mc?.mcResult?.source_reactions ?? []).reduce(
+			(total, r) => ({
+				re: total.re + r.power_into_network.re,
+				im: total.im + r.power_into_network.im
+			}),
+			{ re: 0, im: 0 }
+		);
+	}
+	function passiveLossKw(mc: typeof app.activeMulti) {
+		return (mc?.mcResult?.element_ports ?? [])
+			.filter((p) => p.kind !== 'load' && p.kind !== 'generator' && p.kind !== 'ibr')
+			.reduce((sum, p) => sum + powerKw(p.power_into_element), 0);
 	}
 </script>
 
@@ -32,7 +79,7 @@
 	{@const s = mc.summary}
 	<h2>{mc.label} <span class="region mono">via {mc.fileName}</span></h2>
 	{#if s}
-		<p class="tag mono">multiconductor &#8901; viewing only</p>
+		<p class="tag mono">multiconductor &#8901; distribution power flow</p>
 		<dl class="mono">
 			<div>
 				<dt>buses</dt>
@@ -73,6 +120,53 @@
 			</ul>
 		{/if}
 
+		<section class="mc-solve" aria-label="Distribution power flow">
+			<h3 class="mono">Distribution power flow</h3>
+			{#if mc.mcPfSupported && mc.moduleJson}
+				<p class="footnote mono">typed PowerIO input retained for the fixed-point solver</p>
+				<button
+					class="primary mono"
+					disabled={mc.mcSolving}
+					onclick={() => void ctrl.runMultiSolve(mc)}
+					>{mc.mcSolving ? 'running…' : mc.mcResult ? 'run again' : 'run power flow'}</button
+				>
+			{:else}
+				<p class="footnote mono">
+					{mc.mcPfReason ??
+						'This input is available for inspection; no typed solver module was retained.'}
+				</p>
+			{/if}
+			{#if mc.mcError}<p class="error mono" role="alert">{mc.mcError}</p>{/if}
+			{#if mc.mcResult}
+				{@const result = mc.mcResult}
+				{@const source = sourceTotals(mc)}
+				<dl class="mono result-facts">
+					<div>
+						<dt>status</dt>
+						<dd>{result.converged ? 'converged' : 'not converged'}</dd>
+					</div>
+					<div>
+						<dt>iterations</dt>
+						<dd>{result.iterations}</dd>
+					</div>
+					<div>
+						<dt>source P / Q</dt>
+						<dd>
+							{fixed(powerKw(source))} / {fixed(powerKvar(source))} kW / kvar
+						</dd>
+					</div>
+					<div>
+						<dt>network loss</dt>
+						<dd>{fixed(passiveLossKw(mc))} kW</dd>
+					</div>
+					<div>
+						<dt>KCL residual</dt>
+						<dd>{result.physical_kcl_residual.toExponential(3)} A</dd>
+					</div>
+				</dl>
+			{/if}
+		</section>
+
 		{#if !mc.placed}
 			<p class="footnote mono">
 				{s.coords_kind === 'planar'
@@ -84,7 +178,9 @@
 		{:else if mc.coordsKind === 'planar'}
 			<p class="footnote mono">coordinates: diagram layout fit where you placed it</p>
 		{:else}
-			<p class="footnote mono">coordinates: synthetic topology layout centered where you placed it</p>
+			<p class="footnote mono">
+				coordinates: synthetic topology layout centered where you placed it
+			</p>
 		{/if}
 	{/if}
 
@@ -104,6 +200,43 @@
 				</span>
 			{/each}
 		</div>
+		{#if mc.mcResult}
+			{@const rows = terminalResults(mc, b.id)}
+			{@const neutralName = busNeutral(b)}
+			{@const neutral = neutralName
+				? (rows.find((row) => row.terminal === neutralName) ?? null)
+				: null}
+			{@const hasNeutral = neutral !== null}
+			{#if rows.length > 0}
+				<div class="mc-table-scroll">
+					<table class="mc-values mono">
+						<thead
+							><tr
+								><th>terminal</th><th>|V| to earth</th><th>angle to earth</th>{#if hasNeutral}<th
+										>|V| to neutral</th
+									><th>angle to neutral</th>{/if}</tr
+							></thead
+						>
+						<tbody
+							>{#each rows as row (row.bus + row.terminal)}
+								{@const isNeutral = hasNeutral && row.terminal === neutralName}
+								{@const earthVoltage = row.voltage}
+								{@const neutralVoltage = isNeutral
+									? { re: 0, im: 0 }
+									: relativeVoltage(row.voltage, hasNeutral ? neutral!.voltage : null)}
+								<tr
+									><td>{row.terminal}</td><td>{fixed(magnitude(earthVoltage))} V</td><td
+										>{angleText(earthVoltage)}</td
+									>{#if hasNeutral}<td>{fixed(magnitude(neutralVoltage))} V</td><td
+											>{angleText(neutralVoltage)}</td
+										>{/if}</tr
+								>
+							{/each}</tbody
+						>
+					</table>
+				</div>
+			{/if}
+		{/if}
 		{#if b.attachmentKinds.length > 0}
 			<div class="badges">
 				{#each b.attachmentKinds as kind (kind)}
@@ -120,7 +253,8 @@
 		<hr />
 		<h3 class="mono">
 			<i class="swatch" style={`--sc:${rgbaCss([...edgeColor(e.kind, e.closed)])}`}></i>
-			{e.kind} {e.from}&#8201;&ndash;&#8201;{e.to}
+			{e.kind}
+			{e.from}&#8201;&ndash;&#8201;{e.to}
 		</h3>
 		<dl class="mono">
 			<div>
@@ -143,6 +277,29 @@
 				</span>
 			{/each}
 		</div>
+		{#if mc.mcResult}
+			{@const ports = edgeResults(mc, e.id, e.kind)}
+			{#if ports.length > 0}
+				<div class="mc-table-scroll">
+					<table class="mc-values mono">
+						<thead><tr><th>port</th><th>I</th><th>P / Q</th></tr></thead>
+						<tbody
+							>{#each ports as port (JSON.stringify( [port.kind, port.element, port.branch, port.bus, port.terminal] ))}
+								<tr>
+									<td>{port.bus} · {port.terminal}</td>
+									<td>{fixed(magnitude(port.current_into_element))} A</td>
+									<td
+										>{fixed(powerKw(port.power_into_element))} / {fixed(
+											powerKvar(port.power_into_element)
+										)} kW / kvar</td
+									>
+								</tr>
+							{/each}</tbody
+						>
+					</table>
+				</div>
+			{/if}
+		{/if}
 	{:else if mc.placed}
 		<p class="footnote mono">select a bus or a line to expand its detail</p>
 	{/if}
@@ -156,9 +313,8 @@
 		</span>
 		<span class="legend-row">
 			{#each ATTACHMENT_LEGEND as kind (kind)}
-				<i class="swatch" style={`--sc:${rgbaCss([...attachmentColor(kind)])}`}></i>{attachmentGlyph(
-					kind
-				)}
+				<i class="swatch" style={`--sc:${rgbaCss([...attachmentColor(kind)])}`}
+				></i>{attachmentGlyph(kind)}
 			{/each}
 		</span>
 	</div>
@@ -277,6 +433,13 @@
 		flex-wrap: wrap;
 		gap: 8px;
 		margin-top: 8px;
+	}
+	.mc-table-scroll {
+		max-width: 100%;
+		overflow-x: auto;
+	}
+	.mc-values {
+		min-width: 330px;
 	}
 
 	.pair {

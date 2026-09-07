@@ -514,6 +514,75 @@ pub fn parse_bmopf_instance(text: &str) -> Result<McAcPfInstance, String> {
     instance_from_value(module.value())
 }
 
+/// Validate a stored PowerIO module before exposing it as a runnable MC Study.
+///
+/// A multiconductor network and an explicit McAcPfInstance are the only
+/// values with the fixed-point Study capability. OPF instances, solutions,
+/// operating points, and time-series values remain viewable where supported,
+/// but they are not advertised as MC Study inputs.
+pub fn validate_mc_module_json(text: &str) -> Result<(), String> {
+    let module = crate::ir::deserialize_module(text)?;
+    validate_mc_module(&module)
+}
+
+pub(crate) fn validate_mc_module(module: &powerio::PioModule<PioValue>) -> Result<(), String> {
+    reject_lossy_diagnostics(module)?;
+    match module.value() {
+        PioValue::MulticonductorNetwork(network) => validate_mc_network(network),
+        PioValue::McAcPfInstance(instance) => validate_mc_network(instance.network()),
+        PioValue::McAcPfSolution(solution) => validate_mc_network(solution.network()),
+        PioValue::McAcOpfInstance(_) => Err(
+            "multiconductor AC OPF instances are view-only; MC Study mode supports AC PF only"
+                .to_owned(),
+        ),
+        PioValue::McAcOpfSolution(_) => Err(
+            "multiconductor AC OPF solutions are view-only; MC Study mode supports AC PF only"
+                .to_owned(),
+        ),
+        other => Err(format!(
+            "PowerIO module holds {}; MC Study mode requires MulticonductorNetwork or McAcPfInstance",
+            other.type_name()
+        )),
+    }
+}
+
+fn validate_mc_network(network: &powerio_dist::MulticonductorNetwork) -> Result<(), String> {
+    if !network.untyped_objects().is_empty() {
+        let names = network
+            .untyped_objects()
+            .iter()
+            .map(|object| format!("{}.{}", object.class, object.name))
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "multiconductor network retains unsupported active objects: {}",
+            names.join(", ")
+        ));
+    }
+    if !network.control_profiles().is_empty() {
+        return Err(
+            "multiconductor network contains active regulator controls; solve a fixed operating snapshot"
+                .to_owned(),
+        );
+    }
+    // The DSS reader preserves source properties outside the typed ideal source
+    // fields in extras. Permit only provenance values that do not change the
+    // prescribed ideal voltage; finite source data must be normalized explicitly.
+    const SOURCE_METADATA: &[&str] = &["basekv", "angle", "pu"];
+    for source in network.sources() {
+        if let Some(key) = source
+            .extras
+            .keys()
+            .find(|key| !SOURCE_METADATA.contains(&key.as_str()))
+        {
+            return Err(format!(
+                "source {} retains unsupported property {}; finite source data must be normalized before MC Study mode",
+                source.name, key
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn reject_lossy_diagnostics(module: &powerio::PioModule<PioValue>) -> Result<(), String> {
     let lossy: Vec<String> = module
         .diagnostics()
@@ -537,7 +606,7 @@ fn reject_lossy_diagnostics(module: &powerio::PioModule<PioValue>) -> Result<(),
     }
 }
 
-fn instance_from_value(value: &PioValue) -> Result<McAcPfInstance, String> {
+pub(crate) fn instance_from_value(value: &PioValue) -> Result<McAcPfInstance, String> {
     match value {
         PioValue::MulticonductorNetwork(network) => {
             McAcPfInstance::from_network(network.clone()).map_err(|e| e.to_string())
@@ -570,6 +639,10 @@ pub fn solve_bmopf_json(text: &str, options: &McPfOptions) -> Result<String, Str
 /// point; the module remains typed by PowerIO throughout.
 pub fn solve_mc_module_json(text: &str, options: &McPfOptions) -> Result<String, String> {
     let module = crate::ir::deserialize_module(text)?;
+    // Keep this established low-level entry point compatible with the raw
+    // BMOPF solver: an MC OPF module has a well-defined PF projection.  The
+    // stricter `validate_mc_module` gate is used by Study ingestion, where a
+    // capability must never be inferred from a lossy projection.
     reject_lossy_diagnostics(&module)?;
     let instance = instance_from_value(module.value())?;
     let result = solve_mc_ac_pf_instance(&instance, options)?;
