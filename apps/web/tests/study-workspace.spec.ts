@@ -151,6 +151,7 @@ test('Study import rejects tampered artifacts and goal revisions invalidate reco
 	expect(Object.keys(saved.document.goals)).toHaveLength(2);
 	expect(saved.document.goals[goalId]).toEqual(goal);
 	const corrupt = structuredClone(saved);
+	corrupt.document.id = crypto.randomUUID();
 	corrupt.artifacts[Object.keys(corrupt.artifacts)[0]].text += 'tampered';
 	await page.locator('.study-workspace input[type="file"]').setInputFiles({
 		name: 'tampered.json',
@@ -276,10 +277,20 @@ test('WebMCP demand edits accumulate and a base reset preserves history until ex
 	expect(reset.ok).toBe(true);
 	const resetBundle = await bundle(page);
 	const record = resetBundle.document.experiments[String(reset.ok && reset.data.experiment)];
-	expect(record.termination).toBe('base_case_ready');
-	expect(
-		JSON.parse(resetBundle.artifacts[record.evidence[0]].text).cumulative_demand_changes
-	).toEqual([]);
+	expect(record).toMatchObject({
+		kind: 'counterfactual',
+		termination: 'completed',
+		solve_count: 1
+	});
+	expect(JSON.parse(resetBundle.artifacts[record.evidence[0]].text)).toMatchObject({
+		operation: 'restore_base',
+		cumulative_demand_changes: [],
+		solve_error: null
+	});
+	expect(resetBundle.document.states[record.result_states[0]]).toMatchObject({
+		label: 'Base case'
+	});
+	expect(resetBundle.document.states[record.result_states[0]].solution).toBeTruthy();
 	expect(Object.keys(resetBundle.document.states)).toHaveLength(count + 1);
 	expect(resetBundle.document.applied_state).toBe(d.applied_state);
 	await page.getByRole('button', { name: 'Case', exact: true }).click();
