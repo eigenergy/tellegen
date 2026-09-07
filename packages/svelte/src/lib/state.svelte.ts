@@ -70,6 +70,8 @@ export interface LocalCaseInit {
 	id: string; // `local-1`, `local-2`, ...
 	label: string;
 	fileName: string;
+	formulation?: Formulation;
+	declaredFormulation?: Formulation;
 	summary?: CaseFileSummary | null;
 	/** Retained PowerIO module used to construct solver studies. */
 	studyInputJson?: string;
@@ -89,6 +91,7 @@ export class LocalCase {
 	readonly id: string;
 	readonly label: string;
 	readonly fileName: string;
+	readonly declaredFormulation?: Formulation;
 	/** Case stats; null for a .pwd display only entry. */
 	summary: CaseFileSummary | null = $state.raw<CaseFileSummary | null>(null);
 	/** Generation 2 PowerIO IR used for display edits and solver studies. */
@@ -113,8 +116,7 @@ export class LocalCase {
 	deltas: DemandDeltas = $state.raw<DemandDeltas>({});
 	/** Committed branch rating deltas (MW from base, keyed by branch). */
 	ratings: BranchRatingDeltas = $state.raw<BranchRatingDeltas>({});
-	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
-	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
+	/** The selected calculation. Changing it rebuilds the numerical Study. */
 	formulation = $state<Formulation>(DEFAULT_FORMULATION);
 	iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
@@ -135,6 +137,8 @@ export class LocalCase {
 		this.id = init.id;
 		this.label = init.label;
 		this.fileName = init.fileName;
+		this.formulation = init.formulation ?? DEFAULT_FORMULATION;
+		this.declaredFormulation = init.declaredFormulation;
 		this.summary = init.summary ?? null;
 		this.studyInputJson = init.studyInputJson;
 		this.topology = init.topology;

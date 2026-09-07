@@ -1,11 +1,13 @@
 import type { StudyWorkspace } from '../../../apps/web/src/lib/studies/workspace.svelte.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { Controller, Network, SolvableCase, StudyDisplaySnapshot } from '../src/lib/index.js';
+import { LocalCase } from '../src/lib/state.svelte.js';
 import { createTellegenWebMcpAdapter } from '../../../apps/web/src/lib/webmcp/tellegen-adapter.js';
 import type { PlanningActivityStore } from '../../../apps/web/src/lib/webmcp/planning-activity.svelte.js';
 
-vi.mock('@tellegen/svelte', () => ({
-	FORMULATIONS: [{ id: 'dcopf' }],
+vi.mock('@tellegen/svelte', async () => ({
+	LocalCase: (await import('../src/lib/state.svelte.js')).LocalCase,
+	FORMULATIONS: [{ id: 'dcopf' }, { id: 'acpf' }, { id: 'socwr', disabled: true }],
 	createStudy: vi.fn(() => {
 		throw new Error('Unexpected solve');
 	})
@@ -119,6 +121,53 @@ function host() {
 const signal = () => new AbortController().signal;
 
 describe('WebMCP displayed-state context', () => {
+	it('restricts declared AC power flow instances before changing edits or solving', async () => {
+		const { ctrl, app, live } = host();
+		app.studyView = null;
+		const local = new LocalCase({
+			id: live.id,
+			label: 'AC power flow case',
+			fileName: 'case.pio.json',
+			formulation: 'acpf',
+			declaredFormulation: 'acpf'
+		});
+		local.network = live.network;
+		local.solution = { ...live.solution!, objective: null, prices: [] };
+		local.deltas = live.deltas;
+		app.cases[0] = local;
+		const adapter = createTellegenWebMcpAdapter(ctrl);
+		const inspected = await adapter.inspectCase(signal());
+		expect(inspected.available_formulations).toEqual(['acpf']);
+		vi.mocked(ctrl.ensureStudyInputJson).mockClear();
+		await expect(
+			adapter.updateCase(
+				{
+					caseId: local.id,
+					expectedRevision: String(inspected.revision),
+					formulation: 'dcopf',
+					mode: 'increment',
+					demand: [{ busId: '1', deltaMw: 5 }],
+					ratings: []
+				},
+				signal()
+			)
+		).rejects.toMatchObject({ code: 'FORMULATION_UNAVAILABLE' });
+		expect(local.formulation).toBe('acpf');
+		expect(local.deltas).toBe(live.deltas);
+		expect(local.deltas).toEqual({ 1: 9 });
+		expect(ctrl.ensureStudyInputJson).not.toHaveBeenCalled();
+	});
+
+	it('keeps all enabled calculations available for a plain local network', async () => {
+		const { ctrl, app, live } = host();
+		app.studyView = null;
+		const local = new LocalCase({ id: live.id, label: 'Network', fileName: 'case.m' });
+		local.network = live.network;
+		app.cases[0] = local;
+		const inspected = await createTellegenWebMcpAdapter(ctrl).inspectCase(signal());
+		expect(inspected.available_formulations).toEqual(['dcopf', 'acpf']);
+	});
+
 	it('ranks AC power flow voltages and reports unavailable LMP analysis', async () => {
 		const { ctrl, app, live, saved } = host();
 		app.studyView = null;

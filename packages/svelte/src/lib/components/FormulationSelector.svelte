@@ -23,8 +23,13 @@
 				onchange={(e) => ctrl.changeFormulation(c, e.currentTarget.value as Formulation)}
 			>
 				{#each FORMULATIONS as f (f.id)}
-					<option value={f.id} disabled={f.disabled}>
-						{f.label}{f.disabled ? ' (unavailable)' : ''}
+					{@const unavailable =
+						f.disabled ||
+						('declaredFormulation' in c &&
+							c.declaredFormulation != null &&
+							c.declaredFormulation !== f.id)}
+					<option value={f.id} disabled={unavailable}>
+						{f.label}{unavailable ? ' (unavailable)' : ''}
 					</option>
 				{/each}
 			</select>

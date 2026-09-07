@@ -23,7 +23,7 @@ test('compute reported off up front: notice shown, no server sensitivity request
 	await expect(page.getByRole('heading', { name: /Case One/i })).toBeVisible({ timeout: 30_000 });
 
 	await lookupBus(page, 1);
-	const error = page.locator('.panel .error');
+	const error = page.getByRole('complementary', { name: 'Network', exact: true }).locator('.error');
 	await expect(error).toContainText('server side compute is disabled');
 	await expect(error).toContainText('talks@umich.edu');
 	expect(sensitivityFetches).toBe(0);
@@ -44,7 +44,7 @@ test('compute status unavailable: first 403 shows the notice and latches', async
 	await expect(page.getByRole('heading', { name: /Case One/i })).toBeVisible({ timeout: 30_000 });
 
 	await lookupBus(page, 1);
-	const error = page.locator('.panel .error');
+	const error = page.getByRole('complementary', { name: 'Network', exact: true }).locator('.error');
 	await expect(error).toContainText('server side compute is disabled');
 	await expect(error).toContainText('talks@umich.edu');
 	expect(sensitivityFetches).toBe(1);

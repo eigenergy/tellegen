@@ -2,6 +2,7 @@ import { tick } from 'svelte';
 import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 import {
 	FORMULATIONS,
+	LocalCase,
 	createStudy,
 	type BrowserStudy,
 	type CapacityPlanBusWeightJson,
@@ -41,6 +42,14 @@ import type { PlanningActivityStore, StagedCapacityProposal } from './planning-a
 
 const OUTPUT_ID_LENGTH = 64;
 type FormulationOption = { id: Formulation; disabled?: boolean };
+
+function availableFormulations(c: SolvableCase): Formulation[] {
+	const declared = c instanceof LocalCase ? c.declaredFormulation : undefined;
+	return FORMULATIONS.filter(
+		(entry: FormulationOption) => !entry.disabled && (!declared || entry.id === declared)
+	).map((entry: FormulationOption) => entry.id);
+}
+
 type QueryRow = Record<string, string | number | boolean | null> & {
 	element_id: string;
 	legacy_id: number;
@@ -571,9 +580,7 @@ async function inspect(
 		label: clip(ctrl.caseName(c), 80),
 		revision,
 		formulation: c.formulation,
-		available_formulations: FORMULATIONS.filter((entry: FormulationOption) => !entry.disabled).map(
-			(entry: FormulationOption) => entry.id
-		),
+		available_formulations: availableFormulations(c),
 		solving: c.solving,
 		network: {
 			buses: c.network?.buses.length ?? 0,
@@ -1182,22 +1189,22 @@ async function update(
 	if (c.solving)
 		throw new TellegenToolError('CASE_SOLVING', 'wait for the active exact solve to finish');
 	signal.throwIfAborted();
-	const { demand, ratings } = proposedEdits(ctrl, c, input);
-	const before = caseSnapshot(c);
 	let formulation: Formulation | undefined;
 	if (input.formulation !== undefined) {
 		const option = FORMULATIONS.find(
 			(entry: FormulationOption) => entry.id === input.formulation
 		) as FormulationOption | undefined;
-		if (!option || option.disabled) {
+		if (!option || !availableFormulations(c).includes(option.id)) {
 			throw new TellegenToolError(
 				'FORMULATION_UNAVAILABLE',
-				`formulation ${clip(input.formulation)} is unavailable`
+				`Calculation ${clip(input.formulation)} is unavailable for this case`
 			);
 		}
 		formulation = option.id;
 	}
 
+	const { demand, ratings } = proposedEdits(ctrl, c, input);
+	const before = caseSnapshot(c);
 	const targetFormulation = formulation ?? c.formulation;
 	const prepared = await prepareExactSolve(ctrl, c, demand, ratings, targetFormulation, signal);
 	try {

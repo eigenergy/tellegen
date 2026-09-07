@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import type { StudyBundle } from '@tellegen/engine';
 import { expect, test } from './fixtures/page-errors.js';
 import {
 	CASE3_COORDS,
@@ -79,6 +81,8 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await expect(
 		page.getByRole('heading', { name: 'Three-bus power flow', exact: true })
 	).toBeVisible();
+	await page.getByRole('button', { name: 'Show on map', exact: true }).click();
+	await expect(page.getByRole('region', { name: 'Saved network details' })).toBeVisible();
 	const saved = await callTool(page, 'query_network', {
 		case_id: caseId,
 		element_kind: 'bus',
@@ -88,6 +92,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	});
 	expect(saved).toMatchObject({ ok: true, data: { formulation: 'acpf' } });
 	if (!saved.ok) throw new Error('Saved voltage query failed');
+	expect(saved.data.state_id).toBeTruthy();
 	expect(
 		(saved.data.elements as typeof buses).map((bus) => [bus.legacy_id, bus.voltage_pu, bus.price])
 	).toEqual(buses.map((bus) => [bus.legacy_id, bus.voltage_pu, bus.price]));
@@ -96,5 +101,28 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await expect(calculation).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'LMP', exact: true })).toBeVisible();
 	await expect(page.locator('.solvecard')).toContainText('OPF solve');
+	await expect(page.locator('.error')).toHaveCount(0);
+	const download = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'Export', exact: true }).click();
+	const bundle: StudyBundle = JSON.parse(await readFile((await (await download).path())!, 'utf8'));
+	const state = bundle.document.states[bundle.document.inspected_state!];
+	await page.locator('input[type="file"]').setInputFiles({
+		name: 'declared-ac-pf.pio.json',
+		mimeType: 'application/json',
+		buffer: Buffer.from(bundle.artifacts[state.input].text)
+	});
+	await expect(calculation).toHaveValue('acpf');
+	await expect(calculation).toBeEnabled();
+	await expect(page.locator('.solvecard')).toContainText('Power flow');
+	await expect(page.getByRole('button', { name: '|V|', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	const dropped = await callTool(page, 'inspect_case', {});
+	expect(dropped).toMatchObject({
+		ok: true,
+		data: { formulation: 'acpf', available_formulations: ['acpf'], solution: { objective: null } }
+	});
+	await expect(calculation.locator('option[value="dcopf"]')).toHaveJSProperty('disabled', true);
 	await expect(page.locator('.error')).toHaveCount(0);
 });

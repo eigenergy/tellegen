@@ -157,6 +157,8 @@ fn balanced_network(value: &PioValue) -> Option<&BalancedNetwork> {
     match value {
         PioValue::BalancedNetwork(network) => Some(network),
         PioValue::DcOpfInstance(instance) => Some(instance.network()),
+        PioValue::AcPfInstance(instance) => Some(instance.network()),
+        PioValue::AcOpfInstance(instance) => Some(instance.network()),
         _ => None,
     }
 }
@@ -180,19 +182,42 @@ fn edit_network<R>(
         };
         return Ok(edit(network));
     }
-    let PioValue::DcOpfInstance(instance) = module.value() else {
-        return Err(format!(
-            "PowerIO IR holds {}, not a viewable balanced value",
-            module.value().type_name()
-        ));
-    };
-    let instance = instance.clone();
-    let mut network = instance.network().clone();
+    let mut network = module_network(module)?.clone();
     let result = edit(&mut network);
-    let instance = instance
-        .with_network(network)
-        .map_err(|error| error.to_string())?;
-    *module.value_mut() = PioValue::DcOpfInstance(instance);
+    let value = match module.value() {
+        PioValue::DcOpfInstance(instance) => PioValue::DcOpfInstance(
+            instance
+                .clone()
+                .with_network(network)
+                .map_err(|e| e.to_string())?,
+        ),
+        PioValue::AcOpfInstance(instance) => PioValue::AcOpfInstance(
+            instance
+                .clone()
+                .with_network(network)
+                .map_err(|e| e.to_string())?,
+        ),
+        PioValue::AcPfInstance(instance) => {
+            // Display edits preserve the declared injections and voltage setpoints.
+            let mut updated =
+                powerio::AcPfInstance::new(network.clone(), instance.specifications().to_vec())
+                    .map_err(|e| e.to_string())?;
+            if instance.initial_point().is_some() {
+                updated = updated.with_initial_point(
+                    instance
+                        .clone()
+                        .with_network(network)
+                        .map_err(|e| e.to_string())?
+                        .initial_point()
+                        .ok_or("AC initial point is unavailable")?
+                        .clone(),
+                );
+            }
+            PioValue::AcPfInstance(updated)
+        }
+        _ => unreachable!("supported network kind checked"),
+    };
+    *module.value_mut() = value;
     Ok(result)
 }
 
@@ -326,6 +351,41 @@ mpc.gencost = [
             .location
             .expect("location persisted on instance network");
         assert_eq!((location.x, location.y), (-84.0, 33.0));
+    }
+
+    #[test]
+    fn geo_edit_preserves_ac_instances_and_declared_bus_values() {
+        let net = tellegen::ir::balanced_module(
+            tellegen::ir::deserialize_module(&case3_module_json()).unwrap(),
+        )
+        .unwrap()
+        .into_value();
+        let pf = powerio::AcPfInstance::from_network(net.clone()).unwrap();
+        let mut specifications = pf.specifications().to_vec();
+        specifications[1] = powerio::AcBusSpecification::Pq { p: -72.0, q: -24.0 };
+        let pf = powerio::AcPfInstance::new(net.clone(), specifications.clone()).unwrap();
+        let opf = powerio::AcOpfInstance::from_network(net).unwrap();
+        for value in [PioValue::AcPfInstance(pf), PioValue::AcOpfInstance(opf)] {
+            let name = value.type_name().to_owned();
+            let text = tellegen::ir::serialize_module(&PioModule::new(value)).unwrap();
+            let stamped: Value = serde_json::from_str(
+                &apply_layout_impl(&text, r#"{"1":[-84.0,33.0],"2":[-84.1,33.1]}"#, "manual")
+                    .unwrap(),
+            )
+            .unwrap();
+            let updated = stamped["module_json"].as_str().unwrap();
+            let module = tellegen::ir::deserialize_module(updated).unwrap();
+            assert_eq!(module.value().type_name(), name);
+            let location = module_network(&module).unwrap().buses()[0]
+                .location
+                .unwrap();
+            assert_eq!((location.x, location.y), (-84.0, 33.0));
+            if let PioValue::AcPfInstance(instance) = module.value() {
+                assert_eq!(stamped["formulation"], "acpf");
+                assert_eq!(instance.specifications(), specifications);
+            }
+            assert!(extract_geo_impl(updated).unwrap().contains("-84.0"));
+        }
     }
 
     #[test]

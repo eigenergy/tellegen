@@ -96,9 +96,8 @@
 			<p class="score mono" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
 				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
 					<span title={scoreTip}>
-						gradient {signed(ctrl.gradientScore.pred)} &middot; exact {signed(
-							ctrl.gradientScore.exact
-						)} objective units
+						gradient {signed(ctrl.gradientScore.pred)}, exact {signed(ctrl.gradientScore.exact)} objective
+						units
 					</span>
 				{:else}
 					&nbsp;

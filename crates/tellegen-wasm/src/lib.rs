@@ -86,6 +86,9 @@ fn with_module_json(
     mut payload: serde_json::Value,
     module: powerio::PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
+    if matches!(module.value(), PioValue::AcPfInstance(_)) {
+        payload["formulation"] = serde_json::json!("acpf");
+    }
     let module_json = serialize_module(&module)?;
     payload
         .as_object_mut()
@@ -104,6 +107,7 @@ fn balanced_study_network(value: &PioValue) -> Option<&powerio::BalancedNetwork>
     match value {
         PioValue::BalancedNetwork(network) => Some(network),
         PioValue::DcOpfInstance(instance) => Some(instance.network()),
+        PioValue::AcPfInstance(instance) => Some(instance.network()),
         _ => None,
     }
 }
@@ -174,6 +178,9 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
             let diagnostics = module.diagnostics().to_vec();
             let payload = if let Some(network) = balanced_study_network(module.value()) {
                 let mut payload = ingest_value(network, &diagnostics, Vec::new(), None)?;
+                if matches!(module.value(), PioValue::AcPfInstance(_)) {
+                    payload["formulation"] = serde_json::json!("acpf");
+                }
                 let module_json = std::str::from_utf8(bytes)
                     .map_err(|_| "stored module document is not valid UTF-8".to_owned())?;
                 payload
@@ -1432,26 +1439,29 @@ mpc.gencost = [
         assert_eq!(dc_drop.payload["n_bus"], 14);
         assert_eq!(dc_drop.payload["module_json"], dc_instance_json);
 
-        // The browser has no AC PF or AC OPF formulation selector. Keep the
-        // declared calculation intact and refuse it instead of opening its
-        // network under the default DC OPF formulation.
         let ac_opf = powerio::AcOpfInstance::from_network(parse_matpower(CASE14_NO_COORDS))
             .expect("AC OPF instance");
         let (ac_pf, _) = ac_opf.to_ac_pf().expect("AC PF instance");
-        for value in [
-            powerio::PioValue::AcPfInstance(ac_pf),
+        let pf_json = serialize_module(&powerio::PioModule::new(powerio::PioValue::AcPfInstance(
+            ac_pf,
+        )))
+        .unwrap();
+        assert_eq!(
+            classify_json_drop_value(pf_json.as_bytes()).unwrap().kind,
+            "module"
+        );
+        let pf_drop = ingest_json_drop_value(pf_json.as_bytes()).unwrap();
+        assert_eq!(pf_drop.payload["formulation"], "acpf");
+        assert_eq!(pf_drop.payload["module_json"], pf_json);
+        assert_eq!(pf_drop.payload["n_bus"], 14);
+
+        // An AC OPF input requires an explicit choice of supported calculation.
+        let opf_json = serialize_module(&powerio::PioModule::new(
             powerio::PioValue::AcOpfInstance(ac_opf),
-        ] {
-            let kind = value.type_name().to_owned();
-            let module_json =
-                serialize_module(&powerio::PioModule::new(value)).expect("AC instance module JSON");
-            let classify_error = classify_json_drop_value(module_json.as_bytes())
-                .expect_err("AC instance must not classify as viewable");
-            assert!(classify_error.contains(&kind), "{classify_error}");
-            let ingest_error = ingest_json_drop_value(module_json.as_bytes())
-                .expect_err("AC instance must not ingest as a DC study");
-            assert!(ingest_error.contains(&kind), "{ingest_error}");
-        }
+        ))
+        .unwrap();
+        assert!(classify_json_drop_value(opf_json.as_bytes()).is_err());
+        assert!(ingest_json_drop_value(opf_json.as_bytes()).is_err());
 
         // One holding a multiconductor network routes to the dist view.
         let dist_source = Source::from_memory(

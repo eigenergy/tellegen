@@ -121,6 +121,8 @@ export interface Topology {
 /** One parse per dropped file: summary stats, plus map geometry when the
  * file carries coordinates and topology for synthetic placement otherwise. */
 export interface IngestedCase extends CaseFileSummary {
+	/** Calculation declared by a typed problem instance. */
+	formulation?: Formulation;
   /** Generation 2 PowerIO IR used for display edits and every solver Study. */
   module_json: string;
   topology: Topology;

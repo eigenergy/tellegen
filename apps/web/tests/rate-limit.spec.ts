@@ -30,7 +30,7 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 	// One selection, one 429: the rate limit copy, no "Error:" prefix, no retry
 	// of the same doomed request.
 	await lookupBus(page, 1);
-	const error = page.locator('.panel .error');
+	const error = page.getByRole('complementary', { name: 'Network', exact: true }).locator('.error');
 	await expect(error).toHaveText('rate limited; wait a few seconds and try again');
 	expect(sensitivityFetches).toBe(1);
 

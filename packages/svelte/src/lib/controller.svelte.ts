@@ -975,6 +975,8 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.activeLocalId = c.id;
+		if (c.formulation === 'acpf' && this.app.displayMode === 'price')
+			this.app.displayMode = 'voltage';
 		this.app.placingLocalId = c.coordsKind === 'synthetic_pending' && !c.diagram ? c.id : null;
 		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
 		this.maybeStartLocalSolve(c.id);
@@ -998,6 +1000,8 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.addLocal(c);
+		if (c.formulation === 'acpf' && this.app.displayMode === 'price')
+			this.app.displayMode = 'voltage';
 		if (c.diagram) this.app.placingLocalId = null;
 		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
 		this.maybeStartLocalSolve(c.id);
@@ -1884,15 +1888,13 @@ export class Controller {
 		this.runSolve(c, this.selectionTarget);
 	};
 
-	// Switch the active case to a new OPF formulation. Solving every formulation stays
-	// entirely in the browser via the Study (nothing is routed to the server), so this
-	// disposes the old Study — `getStudy` rebuilds it for the new formulation, re-parsing
-	// and re-solving the base — then re-solves at the committed demand. The base solution
-	// is dropped so it is recaptured under the new formulation (a DC and an AC objective
-	// are not comparable). A no-op when the choice is unchanged.
+	/** Rebuild the numerical Study for a selected calculation at the current demand. */
 	changeFormulation = (c: SolvableCase, next: Formulation) => {
 		if (c.formulation === next) return;
-		// Disabled menu items (e.g. AC OPF, coming soon) are not selectable in the engine yet.
+		if (c instanceof LocalCase && c.declaredFormulation && c.declaredFormulation !== next) {
+			this.fail('This PowerIO instance requires its declared calculation.');
+			return;
+		}
 		if (FORMULATIONS.find((f) => f.id === next)?.disabled) return;
 		c.formulation = next;
 		this.app.displayMode = next === 'acpf' ? 'voltage' : 'price';
@@ -2405,13 +2407,15 @@ export class Controller {
 	/** Build a local case from a balanced PowerIO ingest payload without activating
 	 * it yet; co-dropped placement data is applied before the first solve. */
 	private localFromBalancedPayload = (fileName: string, payload: IngestedCase): LocalCase => {
-		const { module_json, topology, view, ...summary } = payload;
+		const { module_json, topology, view, formulation, ...summary } = payload;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
 		return new LocalCase({
 			id: `local-${++this.localSeq}`,
 			label,
 			fileName,
+			formulation,
+			declaredFormulation: formulation,
 			summary,
 			studyInputJson: module_json,
 			topology,
