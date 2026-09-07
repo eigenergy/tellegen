@@ -279,7 +279,7 @@ test('raw BMOPF voltage-dependent loads solve and replay with their models', asy
 	const headerFileInput = page.locator('header input[type="file"][accept*=".dss"]');
 	await expect(headerFileInput).toHaveCount(1);
 	await headerFileInput.setInputFiles(loadModelsCase);
-	await expect(page.getByText('multiconductor', { exact: true }).first()).toBeVisible({
+	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible({
 		timeout: 60_000
 	});
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
@@ -389,7 +389,7 @@ test('raw BMOPF voltage-dependent loads solve and replay with their models', asy
 		mimeType: 'application/json',
 		buffer: Buffer.from(JSON.stringify(constantPower))
 	});
-	await expect(page.getByText('multiconductor', { exact: true }).first()).toBeVisible({
+	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible({
 		timeout: 60_000
 	});
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();

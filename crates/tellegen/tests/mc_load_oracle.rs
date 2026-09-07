@@ -65,7 +65,7 @@ fn run_case(case: &Case, data_dir: &Path) {
     assert_eq!(
         result.factorization_count,
         usize::from(resistance > 0.0),
-        "{} LU reuse contract",
+        "{} LU factorization count",
         case.case
     );
 
