@@ -25,6 +25,8 @@ export type EngineRequest =
   | { op: "apply_display_geo"; module_json: string; bytes: Uint8Array }
   | { op: "capabilities" }
   | { op: "solve_module"; module_json: string; request: string }
+  | { op: "solve_mc_bmopf"; text: string; options: string }
+  | { op: "solve_mc_module"; module_json: string; options: string }
   | {
       op: "study_new";
       study: number;
@@ -102,6 +104,10 @@ export function runRequest(
       return mod.capabilities_json();
     case "solve_module":
       return mod.solve_module(req.module_json, req.request);
+    case "solve_mc_bmopf":
+      return mod.solve_mc_bmopf(req.text, req.options);
+    case "solve_mc_module":
+      return mod.solve_mc_module(req.module_json, req.options);
     case "study_new":
       studies.set(req.study, new mod.Study(req.module_json, req.formulation));
       return null;

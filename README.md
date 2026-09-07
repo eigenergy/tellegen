@@ -79,6 +79,10 @@ on its own.
 module on stdin and writes the solve response to stdout. Its `solve-module`
 command writes an exact PowerIO solution module.
 
+The multiconductor constant-power API, supported transformer profile, units,
+convergence options, and raw BMOPF limitations are documented in the
+[multiconductor power-flow guide](docs/multiconductor-power-flow.md).
+
 ## Demo
 
 The demo serves three TAMU ACTIVSg synthetic grids and the CATS California

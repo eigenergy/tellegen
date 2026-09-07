@@ -282,6 +282,39 @@ pub fn solve_module(module_json: &str, request_json: &str) -> Result<String, JsE
     tellegen::solve_module_json(module_json, request_json).map_err(jserr)
 }
 
+/// Solve a raw BMOPF multiconductor constant-power case.  The parser and
+/// fixed-point implementation remain in the engine crate; this export only
+/// performs the bounded text/JSON conversion at the browser boundary.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn solve_mc_bmopf(text: &str, options_json: &str) -> Result<String, JsError> {
+    ensure_input_text(text)?;
+    ensure_input_text(options_json)?;
+    install_panic_hook();
+    let options = if options_json.trim().is_empty() {
+        tellegen::McPfOptions::default()
+    } else {
+        serde_json::from_str(options_json).map_err(jserr)?
+    };
+    tellegen::solve_bmopf_json(text, &options).map_err(jserr)
+}
+
+/// Solve a stored PowerIO multiconductor module. This accepts the portable
+/// module form used by browser persistence in addition to raw BMOPF text.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn solve_mc_module(module_json: &str, options_json: &str) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    ensure_input_text(options_json)?;
+    install_panic_hook();
+    let options = if options_json.trim().is_empty() {
+        tellegen::McPfOptions::default()
+    } else {
+        serde_json::from_str(options_json).map_err(jserr)?
+    };
+    tellegen::solve_mc_module_json(module_json, &options).map_err(jserr)
+}
+
 /// The capability matrix as JSON: which `(formulation, operand, parameter)` cells this
 /// build supports, so the UI can populate menus and grey out the rest.
 #[wasm_bindgen]

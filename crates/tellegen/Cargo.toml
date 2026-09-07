@@ -22,6 +22,7 @@ powerio-prob.workspace = true
 # generator bounds and costs, thermal limits, reference coverage, source row
 # mappings) the solver formulates over.
 powerio-matrix.workspace = true
+powerio-dist.workspace = true
 # DC/conic OPF QP/SOCP solver. Default features only (QDLDL + amd), so it stays pure
 # Rust and compiles to wasm32 as-is.
 clarabel = "0.11.1"
@@ -39,7 +40,10 @@ sha2 = "0.10"
 schemars = { workspace = true, optional = true }
 
 [features]
-default = ["sensitivity"]
+default = ["sensitivity", "mc-pf"]
+# The multiconductor fixed-point solver is deliberately independent of the
+# sensitivity feature, including in browser builds.
+mc-pf = ["dep:faer", "dep:num-complex"]
 sensitivity = ["dep:faer", "dep:num-complex"]
 # The SOCWR (Jabr) conic relaxation of AC OPF and its KKT sensitivities. Solved with
 # Clarabel's second-order cone support (already linked); the sensitivity reuses the faer
@@ -59,3 +63,7 @@ required-features = ["schema"]
 [[example]]
 name = "convex_cost_scenario"
 required-features = ["sensitivity"]
+
+[[example]]
+name = "mc_pf"
+required-features = ["mc-pf"]

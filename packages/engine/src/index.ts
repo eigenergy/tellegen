@@ -550,6 +550,96 @@ export async function solveModule(
   );
 }
 
+/** Portable terminal-aware result returned by the multiconductor fixed-point
+ * BMOPF entry point. Complex quantities use `{re, im}` so the JSON remains
+ * lossless across the wasm boundary. */
+export interface McPfOptions {
+  tolerance?: number;
+  max_iterations?: number;
+  damping?: number;
+  zero_voltage_tolerance?: number;
+  /** Absolute physical KCL floor in amperes; default 1e-6. */
+  absolute_kcl_tolerance?: number;
+  /** Relative KCL tolerance against prepared incident current. */
+  relative_kcl_tolerance?: number;
+}
+
+export interface McComplex {
+  re: number;
+  im: number;
+}
+
+export interface McElementPort {
+  element: string;
+  kind: string;
+  branch: number;
+  bus: string;
+  terminal: string;
+  current_into_element: McComplex;
+  power_into_element: McComplex;
+}
+
+export interface McSourceReaction {
+  source: string;
+  terminal: string;
+  current_into_network: McComplex;
+  power_into_network: McComplex;
+}
+
+export interface McPfResult {
+  converged: boolean;
+  iterations: number;
+  factorization_count: number;
+  matrix_dimension: number;
+  matrix_nonzeros: number;
+  voltage_change: number;
+  physical_kcl_residual: number;
+  scaled_kcl_residual: number;
+  terminals: Array<{
+    bus: string;
+    terminal: string;
+    voltage: McComplex;
+    current_into_network: McComplex;
+    power_into_network: McComplex;
+  }>;
+  element_ports: McElementPort[];
+  source_reactions: McSourceReaction[];
+}
+
+/** Parse and solve a raw BMOPF multiconductor case in the wasm module. */
+export async function solveMcBmopf(
+  text: string,
+  options: McPfOptions = {},
+): Promise<McPfResult> {
+  assertEngineInputLength(text.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_mc_bmopf",
+        text,
+        options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** Solve a stored PowerIO multiconductor module through the same PF engine. */
+export async function solveMcModule(
+  moduleJson: string,
+  options: McPfOptions = {},
+): Promise<McPfResult> {
+  assertEngineInputLength(moduleJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_mc_module",
+        module_json: moduleJson,
+        options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
 export { errorText } from "./errors.js";
 
 /** True when the engine wasm module has failed to load in a way it can never
@@ -1133,6 +1223,14 @@ export interface EngineTransport {
     moduleJson: string,
     request?: SolveRequest,
   ): Promise<SolveResponse>;
+  solveMcBmopf(
+    text: string,
+    options?: McPfOptions,
+  ): Promise<McPfResult>;
+  solveMcModule(
+    moduleJson: string,
+    options?: McPfOptions,
+  ): Promise<McPfResult>;
   createStudy(
     moduleJson: string,
     formulation?: Formulation,
@@ -1155,6 +1253,8 @@ export const browserWasmTransport: EngineTransport = {
   applyDisplayGeo,
   capabilities,
   solveModule,
+  solveMcBmopf,
+  solveMcModule,
   createStudy,
 };
 

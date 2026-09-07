@@ -45,12 +45,23 @@ jobs:
 
       - name: Test the workspace
         run: cargo test --workspace
+      - name: Test the independent multiconductor feature
+        run: cargo test -p tellegen --no-default-features --features mc-pf
       # The two runs below use non-default features, which the workspace run
       # above does not reach. Keep them separate: `tellegen-wasm` takes
       # `tellegen` with `default-features = false`, so this is the only run that
       # tests the feature set the browser ships.
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
+      - name: Reproduce the pinned multiconductor OpenDSS oracle
+        run: |
+          python3 -m pip install --disable-pip-version-check \
+            opendssdirect.py==0.9.4 dss-python==0.15.7 dss-python-backend==0.14.5
+          git clone --no-checkout --filter=blob:none https://github.com/frederikgeth/BMOPFTools.jl.git /tmp/BMOPFTools.jl
+          git -C /tmp/BMOPFTools.jl checkout --detach 8ca84ab12c0c91aaa8ad4c9986d6adbeb969ea0b
+          python3 crates/tellegen/tests/generate_mc_pf_oracle.py \
+            --dss-dir /tmp/BMOPFTools.jl/test/data/pf_comparison
+          cargo test -p tellegen --test mc_pf_oracle
       - name: Test the wasm adapter as it ships
         run: cargo test -p tellegen-wasm --features conic
 
