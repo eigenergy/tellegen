@@ -17,7 +17,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 	await page.goto('/');
 	await expect(page.getByText('no default cases loaded')).toBeVisible();
-	await page.locator('input[type="file"]').setInputFiles([
+	await page.locator('input[type="file"][multiple]').setInputFiles([
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3pf.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_PLANNING) }
 	]);
@@ -106,7 +106,7 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await page.getByRole('button', { name: 'Export', exact: true }).click();
 	const bundle: StudyBundle = JSON.parse(await readFile((await (await download).path())!, 'utf8'));
 	const state = bundle.document.states[bundle.document.inspected_state!];
-	await page.locator('input[type="file"]').setInputFiles({
+	await page.locator('input[type="file"][multiple]').setInputFiles({
 		name: 'declared-ac-pf.pio.json',
 		mimeType: 'application/json',
 		buffer: Buffer.from(bundle.artifacts[state.input].text)
