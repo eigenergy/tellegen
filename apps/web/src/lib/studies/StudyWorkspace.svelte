@@ -371,6 +371,9 @@
 					<option value="">Open a saved study</option>
 					{#each workspace.saved as saved (saved.id)}<option value={saved.id}>{saved.title}</option
 						>{/each}
+					{#each workspace.mcSaved as saved (saved.id)}<option value={`mc:${saved.id}`}
+							>{saved.title}, distribution</option
+						>{/each}
 				</select></label
 			>
 			<label class="file-button"

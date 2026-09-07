@@ -19,6 +19,8 @@
 	function openResults() {
 		const panel = panels.panels.find((p) => p.id === 'studies');
 		if (panel) {
+			const network = panels.panels.find((p) => p.id === 'network');
+			if (network) panels.close(network);
 			panel.setOpen(true);
 			panels.activate(panel);
 			if (panels.compact) panels.drawer = panel.id;

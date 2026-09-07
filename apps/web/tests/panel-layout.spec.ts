@@ -29,11 +29,13 @@ test('panels detach, resize, persist, redock and reset without leaving the viewp
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect.poll(async () => await box(panel)).toEqual(resized);
 	await page.setViewportSize({ width: 1024, height: 700 });
-	const clamped = await box(panel);
-	expect(clamped.x).toBeGreaterThanOrEqual(16);
-	expect(clamped.y).toBeGreaterThanOrEqual(0);
-	expect(clamped.x + clamped.width).toBeLessThanOrEqual(1008);
-	expect(clamped.y + clamped.height).toBeLessThanOrEqual(612);
+	await expect(async () => {
+		const clamped = await box(panel);
+		expect(clamped.x).toBeGreaterThanOrEqual(16);
+		expect(clamped.y).toBeGreaterThanOrEqual(0);
+		expect(clamped.x + clamped.width).toBeLessThanOrEqual(1008);
+		expect(clamped.y + clamped.height).toBeLessThanOrEqual(612);
+	}).toPass();
 	await page.getByRole('button', { name: 'Agent panel options' }).click();
 	await page.getByRole('button', { name: 'Dock left', exact: true }).click();
 	await expect(page.locator('[data-panel-dock="left"] [data-panel="agent"]')).toBeVisible();

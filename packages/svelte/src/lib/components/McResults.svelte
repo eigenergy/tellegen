@@ -108,26 +108,23 @@
 			oninput={() => (page = 0)}
 		/></label
 	>
-	<div class="scroll">
+	<!-- Scrollable result tables accept keyboard navigation. -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+	<div class="scroll" role="region" aria-label="Terminal result columns" tabindex="0">
 		<table aria-label="Terminal results">
 			<thead
 				><tr
-					><th>Terminal</th><th>To ground<br />V</th><th>Angle<br />deg</th>{#if neutral}<th
-							>To neutral<br />V</th
-						><th>Angle<br />deg</th>{/if}<th>Net current<br />A</th></tr
+					><th>Terminal</th><th>To ground<br />V</th><th>Angle<br />deg</th><th
+						>Net current<br />A</th
+					></tr
 				></thead
 			>
 			<tbody
 				>{#each visible as row (JSON.stringify([row.bus, row.terminal]))}
-					{@const relative = neutral
-						? { re: row.voltage.re - neutral.re, im: row.voltage.im - neutral.im }
-						: null}
 					<tr
 						><td>{row.terminal}</td><td>{fixed(magnitude(row.voltage))}</td><td
 							>{angle(row.voltage)}</td
-						>{#if relative}<td>{fixed(magnitude(relative))}</td><td>{angle(relative)}</td>{/if}<td
-							>{fixed(magnitude(row.current_into_network))}</td
-						></tr
+						><td>{fixed(magnitude(row.current_into_network))}</td></tr
 					>
 				{/each}</tbody
 			>
@@ -145,6 +142,31 @@
 				aria-label="Next terminals">Next</button
 			>{/if}
 	</div>
+	{#if neutral}
+		<details>
+			<summary>Voltages to neutral</summary>
+			<!-- Scrollable result tables accept keyboard navigation. -->
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+			<div class="scroll" role="region" aria-label="Neutral voltage columns" tabindex="0">
+				<table aria-label="Neutral voltage results">
+					<thead><tr><th>Terminal</th><th>To neutral<br />V</th><th>Angle<br />deg</th></tr></thead>
+					<tbody
+						>{#each visible as row (JSON.stringify([row.bus, row.terminal]))}
+							{@const relative = {
+								re: row.voltage.re - neutral.re,
+								im: row.voltage.im - neutral.im
+							}}
+							<tr
+								><td>{row.terminal}</td><td>{fixed(magnitude(relative))}</td><td
+									>{angle(relative)}</td
+								></tr
+							>
+						{/each}</tbody
+					>
+				</table>
+			</div>
+		</details>
+	{/if}
 	<details>
 		<summary>Equipment currents and power</summary>
 		<label class="search"
@@ -161,7 +183,9 @@
 			></label
 		>
 		<p>Current enters the named equipment at each bus terminal.</p>
-		<div class="scroll">
+		<!-- Scrollable result tables accept keyboard navigation. -->
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<div class="scroll" role="region" aria-label="Equipment current columns" tabindex="0">
 			<table aria-label="Equipment currents">
 				<thead
 					><tr
@@ -277,6 +301,11 @@
 	}
 	.scroll {
 		overflow: auto;
+		max-width: 100%;
+	}
+	.scroll:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
 	}
 	table {
 		width: 100%;

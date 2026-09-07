@@ -39,6 +39,7 @@ export const BASE_TOOLS = [
 	'inspect_case',
 	'list_cases',
 	'select_case',
+	'solve_multiconductor_pf',
 	'preview_case_update',
 	'query_network',
 	'reset_case',

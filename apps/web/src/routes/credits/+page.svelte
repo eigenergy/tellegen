@@ -4,7 +4,7 @@
 
 <SeoHead
 	path="/credits/"
-	title="Credits — tellegen"
+	title="Credits - tellegen"
 	description="Credits for tellegen demo case data, software, map tiles, and open source sources used by the public browser demo."
 />
 
@@ -12,12 +12,19 @@
 	<a class="back mono" href="/">back to tellegen</a>
 	<h1>Credits</h1>
 	<p>
-		tellegen serves synthetic public test cases and open source software. The demo case data is
-		staged by the operator and is not vendored in this repository.
+		Tellegen uses synthetic public test cases and open source software. ACTIVSg and CATS data are
+		staged by the operator. The small distribution example is included with the app.
 	</p>
 
 	<section>
 		<h2>Case Data</h2>
+		<h3>Distribution example and power flow</h3>
+		<p>
+			Frederik Geth at the University of Queensland contributed the multiconductor AC power-flow
+			solver and the 4-conductor example. The <a href="/examples/four-wire.LICENSE.md"
+				>example license</a
+			> includes its attribution and reuse terms.
+		</p>
 		<h3>ACTIVSg Synthetic Grids</h3>
 		<p>
 			The ACTIVSg cases are synthetic grids from the

@@ -1,3 +1,4 @@
+import { noticeDetails } from './fixtures/notices.js';
 import { readFile } from 'node:fs/promises';
 import type { StudyBundle } from '@tellegen/engine';
 import { expect, test } from './fixtures/page-errors.js';
@@ -120,14 +121,16 @@ test('drawing coordinates remain separate from geography and support navigation'
 		mimeType: 'application/json',
 		buffer: Buffer.from(bundleText)
 	});
-	await expect(page.getByRole('alert')).toHaveText(
+	await expect(await noticeDetails(page)).toHaveText(
 		'This study is already saved. Open it from Saved study.'
 	);
 	await expect.poll(viewNumbers).toEqual(changedView);
 	await page
 		.getByRole('combobox', { name: 'Saved study', exact: true })
 		.selectOption(bundle.document.id);
-	await expect(page.getByRole('alert')).toHaveCount(0);
+	await expect(page.getByRole('combobox', { name: 'Saved study', exact: true })).toHaveValue(
+		bundle.document.id
+	);
 	const context = await browser.newContext({ viewport: page.viewportSize()! });
 	try {
 		const imported = await context.newPage();

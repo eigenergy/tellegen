@@ -84,40 +84,30 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	await expect(study.getByText(/49\.825 \/ 16\.508 kW \/ kvar/)).toBeVisible();
 	await expect(study.getByText(/4\.825 kW/)).toBeVisible();
 	await study.getByLabel('Bus result').selectOption('lb');
-	await expect(study.getByText('To neutral', { exact: false })).toBeVisible();
+	await study.getByText('Voltages to neutral', { exact: true }).click();
 	const terminalRow = (terminal: string) =>
 		study
 			.getByRole('table', { name: 'Terminal results', exact: true })
 			.locator('tbody tr')
 			.filter({ hasText: new RegExp(`^${terminal}`) });
-	expect((await terminalRow('a').locator('td').allTextContents()).slice(0, 5)).toEqual([
-		'a',
-		'221.762',
-		'0.31',
-		'222.333',
-		'-2.76'
-	]);
-	expect((await terminalRow('b').locator('td').allTextContents()).slice(0, 5)).toEqual([
-		'b',
-		'228.616',
-		'-120.10',
-		'238.828',
-		'-118.60'
-	]);
-	expect((await terminalRow('c').locator('td').allTextContents()).slice(0, 5)).toEqual([
-		'c',
-		'213.351',
-		'120.04',
-		'202.976',
-		'121.64'
-	]);
-	expect((await terminalRow('n').locator('td').allTextContents()).slice(0, 5)).toEqual([
-		'n',
-		'11.898',
-		'91.53',
-		'0.000',
-		'-'
-	]);
+	const neutralRow = (terminal: string) =>
+		study
+			.getByRole('table', { name: 'Neutral voltage results', exact: true })
+			.locator('tbody tr')
+			.filter({ hasText: new RegExp(`^${terminal}`) });
+	for (const [terminal, ground, angle, neutral, relativeAngle] of [
+		['a', '221.762', '0.31', '222.333', '-2.76'],
+		['b', '228.616', '-120.10', '238.828', '-118.60'],
+		['c', '213.351', '120.04', '202.976', '121.64'],
+		['n', '11.898', '91.53', '0.000', '-']
+	]) {
+		expect((await terminalRow(terminal).locator('td').allTextContents()).slice(0, 3)).toEqual([
+			terminal,
+			ground,
+			angle
+		]);
+		await expect(neutralRow(terminal).locator('td')).toHaveText([terminal, neutral, relativeAngle]);
+	}
 	await expect(study.getByRole('button', { name: 'Save result' })).toBeEnabled();
 	await study.getByRole('button', { name: 'Save result' }).click();
 	await expect(savedDistributionOptions(page)).toHaveCount(1);
@@ -195,5 +185,5 @@ test('built-in 4-conductor example solves and a 3-conductor case omits neutral-r
 		timeout: 60_000
 	});
 	await threeWireStudy.getByLabel('Bus result').selectOption('lb');
-	await expect(threeWireStudy.getByText('To neutral', { exact: false })).toHaveCount(0);
+	await expect(threeWireStudy.getByText('Voltages to neutral', { exact: true })).toHaveCount(0);
 });

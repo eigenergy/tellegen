@@ -1,6 +1,6 @@
 # Multiconductor fixed-point power flow
 
-In the web app, open **Studies** and choose **Load four-wire example**, or
+In the web app, open **Studies** and choose **Load 4-conductor example**, or
 upload a supported BMOPF JSON distribution case. The Studies panel changes to
 **Distribution power flow** for multiconductor inputs. Choose **Run power
 flow**, then select a bus or branch on the map to inspect its results.
@@ -32,7 +32,7 @@ local to the app's origin; export a snapshot to move it to another browser.
 
 The corresponding engine APIs are `solveMcStudy` and `replayMcStudy`;
 Rust exposes `solve_mc_study_json` and `replay_mc_study_json`. These simulation
-snapshots are distinct from the optimization-oriented `StudyDocument` format.
+snapshots are distinct from the balanced-network `StudyDocument`.
 
 The multiconductor PF entry point is `tellegen::solve_bmopf_json`. It accepts
 raw BMOPF JSON, validates fields that PowerIO 0.11.0 would otherwise collapse,
@@ -77,7 +77,7 @@ cannot carry a tap because PowerIO 0.11.0 drops that field; a canonical typed
 two-winding record can carry its fixed winding taps. Constant-current,
 constant-impedance, ZIP, and exponential load models are rejected explicitly.
 Constant-power loads must carry explicit nominal branch voltages; the solver
-does not invent a nominal voltage for a two-wire or other branch connection.
+does not invent a nominal voltage for a two-conductor or other branch connection.
 Legacy `g_no_load`/`b_no_load` values require
 normalization to an explicit `no_load_shunt`; this avoids choosing between the
 tagged schema and BMOPFTools legacy reference sides. An OPF instance can be
