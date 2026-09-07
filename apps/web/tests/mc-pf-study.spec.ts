@@ -294,8 +294,9 @@ test('raw BMOPF voltage-dependent loads solve and replay with their models', asy
 		.filter({ hasText: 'Source P / Q' })
 		.locator('..')
 		.locator('dd');
-	const loss = study.locator('dt').filter({ hasText: 'Network loss' }).locator('..').locator('dd');
+	const loss = study.locator('dt').filter({ hasText: 'Passive loss' }).locator('..').locator('dd');
 	const modelSource = (await source.textContent())?.trim();
+	await expect(loss).toBeVisible();
 	const modelLoss = (await loss.textContent())?.trim();
 	if (!modelSource || !modelLoss) throw new Error('voltage-dependent result summary is missing');
 	// The source is ideal and all four loads share its bus. At |V| =
@@ -368,7 +369,7 @@ test('raw BMOPF voltage-dependent loads solve and replay with their models', asy
 		study.locator('dt').filter({ hasText: 'Source P / Q' }).locator('..').locator('dd')
 	).toHaveText(modelSource);
 	await expect(
-		study.locator('dt').filter({ hasText: 'Network loss' }).locator('..').locator('dd')
+		study.locator('dt').filter({ hasText: 'Passive loss' }).locator('..').locator('dd')
 	).toHaveText(modelLoss);
 
 	await page.reload();
@@ -380,7 +381,7 @@ test('raw BMOPF voltage-dependent loads solve and replay with their models', asy
 		reopened.locator('dt').filter({ hasText: 'Source P / Q' }).locator('..').locator('dd')
 	).toHaveText(modelSource);
 	await expect(
-		reopened.locator('dt').filter({ hasText: 'Network loss' }).locator('..').locator('dd')
+		reopened.locator('dt').filter({ hasText: 'Passive loss' }).locator('..').locator('dd')
 	).toHaveText(modelLoss);
 
 	await page.reload();
