@@ -1,0 +1,111 @@
+{
+  "name": "zip_nonunit-0.8-0.7",
+  "terminal_conventions": {
+    "phase": [
+      "a"
+    ],
+    "neutral": [
+      "n"
+    ],
+    "earth": []
+  },
+  "bus": {
+    "src": {
+      "terminal_names": [
+        "a",
+        "n"
+      ],
+      "perfectly_grounded_terminals": [
+        "n"
+      ]
+    },
+    "lb": {
+      "terminal_names": [
+        "a",
+        "n"
+      ],
+      "perfectly_grounded_terminals": [
+        "n"
+      ]
+    }
+  },
+  "voltage_source": {
+    "source": {
+      "bus": "src",
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "v_magnitude": [
+        192.0,
+        0
+      ],
+      "v_angle": [
+        0.6457718232379019,
+        0
+      ]
+    }
+  },
+  "load": {
+    "ld": {
+      "bus": "lb",
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "configuration": "SINGLE_PHASE",
+      "model": "zip",
+      "p_nom": [
+        2400.0
+      ],
+      "q_nom": [
+        800.0
+      ],
+      "v_nom": [
+        240.0
+      ],
+      "alpha_z": [
+        -0.2
+      ],
+      "alpha_i": [
+        0.3
+      ],
+      "alpha_p": [
+        1.2
+      ],
+      "beta_z": [
+        0.5
+      ],
+      "beta_i": [
+        -0.1
+      ],
+      "beta_p": [
+        0.8
+      ]
+    }
+  },
+  "line": {
+    "l1": {
+      "bus_from": "src",
+      "bus_to": "lb",
+      "terminal_map_from": [
+        "a"
+      ],
+      "terminal_map_to": [
+        "a"
+      ],
+      "length": 1,
+      "linecode": "lc"
+    }
+  },
+  "linecode": {
+    "lc": {
+      "R_series_1_1": 0.7,
+      "X_series_1_1": 0.2,
+      "G_from_1_1": 0,
+      "G_to_1_1": 0,
+      "B_from_1_1": 0,
+      "B_to_1_1": 0
+    }
+  }
+}

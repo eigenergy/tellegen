@@ -1,0 +1,60 @@
+{
+  "name": "constant_impedance-1.2-0",
+  "terminal_conventions": {
+    "phase": [
+      "a"
+    ],
+    "neutral": [
+      "n"
+    ],
+    "earth": []
+  },
+  "bus": {
+    "src": {
+      "terminal_names": [
+        "a",
+        "n"
+      ],
+      "perfectly_grounded_terminals": [
+        "n"
+      ]
+    }
+  },
+  "voltage_source": {
+    "source": {
+      "bus": "src",
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "v_magnitude": [
+        288.0,
+        0
+      ],
+      "v_angle": [
+        0.6457718232379019,
+        0
+      ]
+    }
+  },
+  "load": {
+    "ld": {
+      "bus": "src",
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "configuration": "SINGLE_PHASE",
+      "model": "constant_impedance",
+      "p_nom": [
+        2400.0
+      ],
+      "q_nom": [
+        800.0
+      ],
+      "v_nom": [
+        240.0
+      ]
+    }
+  }
+}

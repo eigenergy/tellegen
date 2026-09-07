@@ -69,18 +69,40 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
                 .and_then(Value::as_str)
                 .unwrap_or("constant_power")
                 .to_ascii_lowercase();
-            if model != "constant_power" {
+            let supported = [
+                "constant_power",
+                "constant_current",
+                "constant_impedance",
+                "zip",
+                "exponential",
+            ];
+            if !supported.contains(&model.as_str()) {
                 return Err(format!(
-                    "load `{name}` requests model `{model}`; multiconductor fixed-point PF supports constant_power only"
+                    "load `{name}` requests model `{model}`, which is unsupported"
                 ));
             }
-            if model == "zip"
-                && [
-                    "alpha_z", "alpha_i", "alpha_p", "beta_z", "beta_i", "beta_p",
-                ]
+            for key in ["p_nom", "q_nom"] {
+                if let Some(value) = load.get(key) {
+                    validate_numeric_vector(value, &format!("load `{name}` {key}"))?;
+                }
+            }
+            let branch_count = load.get("p_nom").and_then(Value::as_array).map(Vec::len);
+            if let (Some(p), Some(q)) = (
+                load.get("p_nom").and_then(Value::as_array),
+                load.get("q_nom").and_then(Value::as_array),
+            ) {
+                if p.len() != q.len() {
+                    return Err(format!("load `{name}` has mismatched p_nom/q_nom lengths"));
+                }
+            }
+            let zip_fields = [
+                "alpha_z", "alpha_i", "alpha_p", "beta_z", "beta_i", "beta_p",
+            ];
+            let has_zip_fields = zip_fields.iter().any(|key| load.contains_key(*key));
+            let has_exponential_fields = ["gamma_p", "gamma_q"]
                 .iter()
-                .any(|key| !load.contains_key(*key))
-            {
+                .any(|key| load.contains_key(*key));
+            if model == "zip" && zip_fields.iter().any(|key| !load.contains_key(*key)) {
                 return Err(format!(
                     "load `{name}` requests ZIP without all six coefficient arrays; PowerIO would read it as constant power"
                 ));
@@ -91,6 +113,32 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
                 return Err(format!(
                     "load `{name}` requests exponential voltage dependence without gamma_p and gamma_q; PowerIO would read it as constant power"
                 ));
+            }
+            if model != "zip" && has_zip_fields {
+                return Err(format!(
+                    "load `{name}` carries ZIP coefficients with model `{model}`"
+                ));
+            }
+            if model != "exponential" && has_exponential_fields {
+                return Err(format!(
+                    "load `{name}` carries exponential exponents with model `{model}`"
+                ));
+            }
+            for key in zip_fields.iter().chain(["gamma_p", "gamma_q"].iter()) {
+                if let Some(value) = load.get(*key) {
+                    let field = format!("load `{name}` {key}");
+                    validate_numeric_vector(value, &field)?;
+                    if let Some(branches) = branch_count {
+                        validate_vector_arity(value, &field, branches)?;
+                    }
+                }
+            }
+            if let Some(value) = load.get("v_nom") {
+                let field = format!("load `{name}` v_nom");
+                validate_numeric_vector(value, &field)?;
+                if let Some(branches) = branch_count {
+                    validate_vector_arity(value, &field, branches)?;
+                }
             }
             if let Some(model) = load.get("model") {
                 let Some(model) = model.as_str() else {
@@ -301,6 +349,32 @@ fn terminal_convention_names(conventions: Option<&Value>, role: &str) -> Vec<Str
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect()
+}
+
+fn validate_numeric_vector(value: &Value, field: &str) -> Result<(), String> {
+    let Some(values) = value.as_array() else {
+        return Err(format!("{field} must be a numeric array"));
+    };
+    if values.is_empty() {
+        return Err(format!("{field} must not be empty"));
+    }
+    if values
+        .iter()
+        .any(|value| value.as_f64().is_none_or(|v| !v.is_finite()))
+    {
+        return Err(format!("{field} must contain only finite numbers"));
+    }
+    Ok(())
+}
+
+fn validate_vector_arity(value: &Value, field: &str, branches: usize) -> Result<(), String> {
+    let length = value.as_array().map_or(0, Vec::len);
+    if length != 1 && length != branches {
+        return Err(format!(
+            "{field} has length {length}; expected 1 or {branches}"
+        ));
+    }
+    Ok(())
 }
 
 fn validate_wye_terminal_order(
@@ -659,6 +733,72 @@ mod tests {
         let raw = json!({"load": {"l": {"model": "mystery"}}});
         let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
         assert!(error.contains("requests model"), "{error}");
+    }
+
+    #[test]
+    fn accepts_explicit_voltage_dependent_load_models() {
+        for model in ["constant_current", "constant_impedance"] {
+            let raw = json!({
+                "load": {"l": {
+                    "model": model,
+                    "p_nom": [1.0],
+                    "q_nom": [0.2],
+                    "v_nom": [10.0]
+                }}
+            });
+            validate_bmopf_json(&raw.to_string()).unwrap();
+        }
+        let zip = json!({
+            "load": {"l": {
+                "model": "zip", "p_nom": [1.0], "q_nom": [0.2], "v_nom": [10.0],
+                "alpha_z": [0.2], "alpha_i": [0.3], "alpha_p": [0.5],
+                "beta_z": [0.1], "beta_i": [0.4], "beta_p": [0.5]
+            }}
+        });
+        validate_bmopf_json(&zip.to_string()).unwrap();
+        let exponential = json!({
+            "load": {"l": {
+                "model": "exponential", "p_nom": [1.0], "q_nom": [0.2], "v_nom": [10.0],
+                "gamma_p": [0.7], "gamma_q": [2.3]
+            }}
+        });
+        validate_bmopf_json(&exponential.to_string()).unwrap();
+    }
+
+    #[test]
+    fn rejects_conflicting_voltage_model_fields() {
+        let raw = json!({
+            "load": {"l": {
+                "model": "zip", "p_nom": [1.0], "q_nom": [0.2], "v_nom": [10.0],
+                "alpha_z": [0.2], "alpha_i": [0.3], "alpha_p": [0.5],
+                "beta_z": [0.1], "beta_i": [0.4], "beta_p": [0.5],
+                "gamma_p": [1.0], "gamma_q": [1.0]
+            }}
+        });
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("exponential exponents"), "{error}");
+    }
+
+    #[test]
+    fn rejects_nonfinite_or_wrong_length_voltage_model_fields() {
+        let wrong_length = json!({
+            "load": {"l": {
+                "model": "zip", "p_nom": [1.0, 2.0], "q_nom": [0.2, 0.3], "v_nom": [10.0, 10.0],
+                "alpha_z": [0.2, 0.3, 0.5], "alpha_i": [0.3], "alpha_p": [0.5],
+                "beta_z": [0.1], "beta_i": [0.4], "beta_p": [0.5]
+            }}
+        });
+        let error = validate_bmopf_json(&wrong_length.to_string()).unwrap_err();
+        assert!(error.contains("expected 1 or 2"), "{error}");
+
+        let nonfinite = json!({
+            "load": {"l": {
+                "model": "exponential", "p_nom": [1.0], "q_nom": [0.2], "v_nom": [10.0],
+                "gamma_p": ["nan"], "gamma_q": [2.0]
+            }}
+        });
+        let error = validate_bmopf_json(&nonfinite.to_string()).unwrap_err();
+        assert!(error.contains("gamma_p"), "{error}");
     }
 
     #[test]
