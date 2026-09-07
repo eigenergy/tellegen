@@ -34,9 +34,7 @@ use tower_http::{
 };
 
 use tellegen::geo::{complete_coords_for, lowered_coords, spread_stacks, synthetic_layout, Coords};
-use tellegen::{
-    solve_instance, solve_instance_cancellable, Iterations, SolveRequest, SolveResponse,
-};
+use tellegen::{solve_instance_cancellable, Iterations, SolveRequest, SolveResponse};
 #[cfg(feature = "sensitivity")]
 use tellegen::{ElementId, Mode, Operand, Parameter, Power, SensRequest, SensitivityMatrix};
 
@@ -66,7 +64,8 @@ const CASE_SPECS: &[CaseSpec] = &[
         "Texas7k (Texas)",
         "ACTIVSg7000/Texas7k_20210804.m",
         "ACTIVSg7000/Texas7k_lat_long.csv",
-    ),
+    )
+    .with_cost_fit(),
     CaseSpec::bus_csv_with_branch_geo(
         "cats",
         "CATS (California)",
@@ -98,6 +97,7 @@ struct CaseSpec {
     casefile: &'static str,
     coords: CoordSpec,
     branch_geo: Option<&'static str>,
+    cost_preparation: tellegen::preparation::CostPreparation,
 }
 
 #[derive(Clone, Copy)]
@@ -107,6 +107,10 @@ enum CoordSpec {
 }
 
 impl CaseSpec {
+    const fn with_cost_fit(mut self) -> Self {
+        self.cost_preparation = tellegen::preparation::CostPreparation::ConvexQuadraticFit;
+        self
+    }
     const fn aux(
         id: &'static str,
         name: &'static str,
@@ -119,6 +123,7 @@ impl CaseSpec {
             casefile,
             coords: CoordSpec::Aux(auxfile),
             branch_geo: None,
+            cost_preparation: tellegen::preparation::CostPreparation::Exact,
         }
     }
 
@@ -134,6 +139,7 @@ impl CaseSpec {
             casefile,
             coords: CoordSpec::BusCsv(csvfile),
             branch_geo: None,
+            cost_preparation: tellegen::preparation::CostPreparation::Exact,
         }
     }
 
@@ -150,6 +156,7 @@ impl CaseSpec {
             casefile,
             coords: CoordSpec::BusCsv(csvfile),
             branch_geo: Some(branch_geo),
+            cost_preparation: tellegen::preparation::CostPreparation::Exact,
         }
     }
 
@@ -171,6 +178,7 @@ struct FallbackSpec {
 #[derive(Clone)]
 pub struct AppState {
     cases: Arc<BTreeMap<String, Arc<CaseEntry>>>,
+    unavailable: Arc<Vec<UnavailableCase>>,
     solver_permits: Arc<Semaphore>,
     solver_timeout: Duration,
     expensive_rate_limits: RateLimitConfig,
@@ -231,10 +239,21 @@ struct CaseEntry {
     dc_branch_ids: Vec<usize>,
     view: NetworkPayload,
     base_solution: SolutionPayload,
+    saved_case: SavedCase,
+}
+
+#[derive(Clone, Serialize)]
+struct SavedCase {
+    base_input: String,
+    input: String,
+    solution: String,
+    view: SolveResponse,
+    display_solution: SolutionPayload,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CaseSummary {
+    pub unavailable_reason: Option<String>,
     pub id: String,
     pub name: String,
     /// Canonical typed PowerIO row counts.
@@ -247,13 +266,22 @@ pub struct CaseSummary {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct UnavailableCase {
+    pub id: String,
+    pub name: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct HealthPayload {
+    pub unavailable: Vec<UnavailableCase>,
     pub status: &'static str,
     pub cases: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct NetworkPayload {
+    pub model_details: Option<tellegen::preparation::ModelDetails>,
     pub id: String,
     pub name: String,
     pub base_mva: f64,
@@ -265,6 +293,9 @@ pub struct NetworkPayload {
 #[derive(Clone, Debug, Serialize)]
 pub struct NetworkBus {
     pub id: usize,
+    pub name: Option<String>,
+    pub area: usize,
+    pub zone: usize,
     pub lon: f64,
     pub lat: f64,
     pub demand_mw: f64,
@@ -430,37 +461,27 @@ impl AppState {
             .collect();
         let mut cases = BTreeMap::new();
 
-        // Serve whatever cases are staged rather than demanding the full set. A case
-        // added to CASE_SPECS must not break a running deploy because its data has not
-        // been staged yet: it simply appears once the data lands. A case whose files
-        // are present but unparseable is skipped (logged), never fatal, so a bad data
-        // drop cannot crash the server. The embedded fallback is used only when nothing
-        // at all is staged. This keeps the served case set decoupled from any single
-        // hardcoded list, so the deploy never fails over a missing or extra case.
+        let mut unavailable = Vec::new();
         if !staged_specs.is_empty() {
-            for spec in &staged_specs {
-                match build_staged_entry(&data_dir, *spec) {
+            for spec in CASE_SPECS {
+                let result = if staged(&data_dir, spec) {
+                    build_staged_entry(&data_dir, *spec)
+                } else {
+                    Err("Case data is not staged on the server".into())
+                };
+                match result {
                     Ok(entry) => {
                         cases.insert(entry.id.clone(), Arc::new(entry));
                     }
-                    Err(e) => {
-                        tracing::error!(case = spec.id, "skipping case that failed to load: {e}")
+                    Err(reason) => {
+                        tracing::error!(case = spec.id, %reason, "case unavailable");
+                        unavailable.push(UnavailableCase {
+                            id: spec.id.into(),
+                            name: spec.name.into(),
+                            reason,
+                        });
                     }
                 }
-            }
-            let missing: Vec<_> = CASE_SPECS
-                .iter()
-                .map(|s| s.id)
-                .filter(|id| !cases.contains_key(*id))
-                .collect();
-            if !missing.is_empty() {
-                tracing::warn!(
-                    data_dir = %data_dir.display(),
-                    "serving {} of {} cases; not loaded: {}",
-                    cases.len(),
-                    CASE_SPECS.len(),
-                    missing.join(", ")
-                );
             }
         } else if allow_fallback {
             tracing::warn!(
@@ -483,6 +504,7 @@ impl AppState {
         }
         Ok(Self {
             cases: Arc::new(cases),
+            unavailable: Arc::new(unavailable),
             solver_permits: Arc::new(Semaphore::new(solver_concurrency())),
             solver_timeout: solver_timeout(),
             expensive_rate_limits: rate_limit_config(),
@@ -596,6 +618,7 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         .route("/api/cases/{id}/case", get(case_module_json))
         .route("/api/cases/{id}/network", get(network))
         .route("/api/cases/{id}/solution", get(solution))
+        .route("/api/cases/{id}/snapshot", get(saved_case))
         .merge(compute_routes)
         .route("/api/{*path}", any(api_not_found))
         .layer(TraceLayer::new_for_http())
@@ -666,7 +689,8 @@ async fn compute_status(State(state): State<Arc<AppState>>) -> impl IntoResponse
 
 async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let ids = state.case_ids();
-    let status = if ids.is_empty() {
+    let degraded = ids.is_empty() || !state.unavailable.is_empty();
+    let status = if degraded {
         StatusCode::SERVICE_UNAVAILABLE
     } else {
         StatusCode::OK
@@ -674,7 +698,8 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     (
         status,
         Json(HealthPayload {
-            status: if ids.is_empty() { "degraded" } else { "ok" },
+            status: if degraded { "degraded" } else { "ok" },
+            unavailable: state.unavailable.as_ref().clone(),
             cases: ids,
         }),
     )
@@ -686,6 +711,7 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
             .cases
             .values()
             .map(|entry| CaseSummary {
+                unavailable_reason: None,
                 id: entry.id.clone(),
                 name: entry.name.clone(),
                 n_bus: entry.network.buses().len(),
@@ -699,8 +725,25 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
                     .filter(|gen| gen.in_service)
                     .count(),
             })
+            .chain(state.unavailable.iter().map(|case| CaseSummary {
+                id: case.id.clone(),
+                name: case.name.clone(),
+                unavailable_reason: Some(case.reason.clone()),
+                n_bus: 0,
+                n_branch: 0,
+                n_analysis_bus: 0,
+                n_analysis_branch: 0,
+                n_gen: 0,
+            }))
             .collect(),
     )
+}
+
+async fn saved_case(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<String>,
+) -> ApiResult<Json<SavedCase>> {
+    Ok(Json(state.case(&id)?.saved_case.clone()))
 }
 
 async fn case_module_json(
@@ -1032,7 +1075,20 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
             path.is_file().then(|| load_branch_paths(&path))
         })
         .transpose()?;
-    build_entry(spec.id, spec.name, case_module, coords, branch_paths, false)
+    let mut located = case_module.into_value();
+    retain_geometry(&mut located, &coords, branch_paths.as_ref(), false);
+    let (prepared, details) =
+        tellegen::preparation::prepare_costs(&located, spec.cost_preparation)?;
+    let mut entry = build_entry(
+        spec.id,
+        spec.name,
+        PioModule::new(prepared),
+        coords,
+        branch_paths,
+        false,
+    )?;
+    entry.view.model_details = details;
+    Ok(entry)
 }
 
 fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, String> {
@@ -1246,6 +1302,46 @@ fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
     build_entry(spec.id, spec.name, case_module, coords, None, true)
 }
 
+fn retain_geometry(
+    network: &mut BalancedNetwork,
+    coords: &Coords,
+    paths: Option<&BranchPaths>,
+    synthetic: bool,
+) {
+    for bus in network.buses_mut() {
+        if let Some(&(lon, lat)) = coords.get(&bus.id.0) {
+            bus.location = Some(powerio::Location {
+                x: lon,
+                y: lat,
+                kind: None,
+            });
+        }
+    }
+    if let Some(paths) = paths {
+        for (i, branch) in network.branches_mut().iter_mut().enumerate() {
+            if let Some(path) = paths
+                .get(&BranchPathKey::Id(i + 1))
+                .or_else(|| paths.get(&BranchPathKey::Edge(branch.from.0, branch.to.0)))
+                .or_else(|| paths.get(&BranchPathKey::Edge(branch.to.0, branch.from.0)))
+            {
+                branch.route = Some(
+                    path.iter()
+                        .map(|&[x, y]| powerio::Location { x, y, kind: None })
+                        .collect(),
+                );
+            }
+        }
+    }
+    *network.geo_mut() = Some(powerio::GeoMeta {
+        space: powerio::CoordinateSpace::Geographic { crs: None },
+        kind: Some(if synthetic {
+            powerio::CoordsKind::Synthetic
+        } else {
+            powerio::CoordsKind::Source
+        }),
+    });
+}
+
 fn build_entry(
     id: &str,
     name: &str,
@@ -1254,12 +1350,23 @@ fn build_entry(
     branch_paths: Option<BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<CaseEntry, String> {
-    let network = module.value().clone();
+    let mut module = module;
+    let network = module.value_mut();
+    retain_geometry(network, &coords, branch_paths.as_ref(), synthetic_coords);
+    let network = network.clone();
     let module_json =
         tellegen::ir::serialize_module(&module.map_value(powerio::PioValue::BalancedNetwork))?;
     let dc_instance =
         Arc::new(DcOpfInstance::from_network(network.clone()).map_err(|e| e.to_string())?);
-    let base = solve_instance(&dc_instance, &SolveRequest::default())?;
+    let study = tellegen::Study::new(&module_json, tellegen::Problem::DcOpf)?;
+    let base = study.solution().clone();
+    let saved_case = SavedCase {
+        base_input: module_json.clone(),
+        input: study.save_instance_module()?,
+        solution: study.save_solution_module()?,
+        view: base.clone(),
+        display_solution: solution_payload(&base),
+    };
     let dc_bus_ids = base
         .va
         .as_deref()
@@ -1292,6 +1399,7 @@ fn build_entry(
         dc_branch_ids,
         view,
         base_solution: solution_payload(&base),
+        saved_case,
     })
 }
 
@@ -1349,6 +1457,9 @@ fn network_payload(
                 .ok_or_else(|| format!("{}: missing coordinates for bus {}", id, bus.id.0))?;
             Ok(NetworkBus {
                 id: bus.id.0,
+                name: bus.name.clone(),
+                area: bus.area,
+                zone: bus.zone,
                 lon,
                 lat,
                 demand_mw: demand.get(&bus.id.0).copied().unwrap_or(0.0),
@@ -1392,6 +1503,7 @@ fn network_payload(
         })
         .collect::<Result<Vec<_>, String>>()?;
     Ok(NetworkPayload {
+        model_details: None,
         id: id.into(),
         name: name.into(),
         base_mva: net.base_mva(),
@@ -1857,6 +1969,111 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "ok");
         assert_eq!(body["cases"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn unavailable_cases_remain_listed_and_fail_health() {
+        let mut state = (*fallback_state()).clone();
+        state.unavailable = Arc::new(vec![UnavailableCase {
+            id: "case7000".into(),
+            name: "Texas7k".into(),
+            reason: "Case data is not staged on the server".into(),
+        }]);
+        let state = Arc::new(state);
+        let (status, _, body) =
+            get_raw_with_state(Arc::clone(&state), "/api/health", &next_client()).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        let body: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(body["status"], "degraded");
+        assert_eq!(body["unavailable"][0]["id"], "case7000");
+        let (status, _, body) = get_raw_with_state(state, "/api/cases", &next_client()).await;
+        assert_eq!(status, StatusCode::OK);
+        let body: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let missing = body
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == "case7000")
+            .unwrap();
+        assert_eq!(missing["name"], "Texas7k");
+        assert!(missing["unavailable_reason"]
+            .as_str()
+            .unwrap()
+            .contains("not staged"));
+    }
+
+    #[tokio::test]
+    async fn cached_snapshot_saves_result_without_another_solve() {
+        let (status, body) = get("/api/cases/case200/snapshot").await;
+        assert_eq!(status, StatusCode::OK);
+        let request = serde_json::from_value(serde_json::json!({
+            "id": "cached", "title": "Saved case", "formulation": "dcopf",
+            "input": body["input"], "base_input": body["base_input"],
+            "solution": body["solution"], "view": body["view"]
+        }))
+        .unwrap();
+        let bundle = tellegen::study_ops::create_study(request).unwrap();
+        assert_eq!(bundle.document.states.len(), 1);
+        assert!(bundle.document.goals.is_empty());
+        assert!(bundle
+            .document
+            .states
+            .values()
+            .next()
+            .unwrap()
+            .solution
+            .is_some());
+        assert!(bundle
+            .document
+            .experiments
+            .values()
+            .all(|entry| entry.solve_count == 0));
+    }
+
+    #[test]
+    fn saved_inputs_keep_bus_locations_and_branch_paths() {
+        let mut network = parse_balanced(FALLBACK_SPECS[0].text, "<fallback>", "m")
+            .unwrap()
+            .into_value();
+        let branch = &network.branches()[0];
+        let from = branch.from.0;
+        let to = branch.to.0;
+        let coords = Coords::from([(from, (-85.0, 34.0)), (to, (-84.0, 35.0))]);
+        let path = vec![[-85.0, 34.0], [-84.7, 34.8], [-84.0, 35.0]];
+        let mut paths = BranchPaths::default();
+        paths.insert(vec![BranchPathKey::Edge(from, to)], path.clone());
+        retain_geometry(&mut network, &coords, Some(&paths), false);
+        let json = tellegen::ir::serialize_module(&PioModule::new(
+            powerio::PioValue::BalancedNetwork(network),
+        ))
+        .unwrap();
+        let restored = tellegen::ir::deserialize_module(&json).unwrap();
+        let powerio::PioValue::BalancedNetwork(network) = restored.into_value() else {
+            panic!("expected a balanced network");
+        };
+        assert_eq!(
+            network
+                .buses()
+                .iter()
+                .find(|bus| bus.id.0 == from)
+                .unwrap()
+                .location
+                .unwrap()
+                .x,
+            -85.0
+        );
+        let route = network.branches()[0].route.as_ref().unwrap();
+        assert_eq!(
+            route
+                .iter()
+                .map(|point| [point.x, point.y])
+                .collect::<Vec<_>>(),
+            path
+        );
+        assert!(matches!(
+            network.geo().as_ref().unwrap().space,
+            powerio::CoordinateSpace::Geographic { .. }
+        ));
     }
 
     #[tokio::test]

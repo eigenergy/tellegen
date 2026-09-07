@@ -107,7 +107,7 @@ export class IndexedDbStudyStore implements StudyStore {
   async close(): Promise<void> { (await this.#database).close(); }
 }
 
-type Approval = { proposal: string; state: string; goal: string; base: string; revision: number };
+type Approval = { proposal: string; state: string; goal: string | null; base: string; revision: number };
 
 /** Browser controls and agent tools share serialized, durable Study mutations. */
 export class StudyDocumentController {
@@ -163,9 +163,9 @@ export class StudyDocumentController {
   recordUserApproval(proposal: string): string {
     const d = this.#bundle.document;
     const experiment = d.experiments[proposal];
-    if (!experiment || !["planning", "counterfactual"].includes(experiment.kind) || !experiment.start_state || experiment.goal !== d.active_goal || !d.active_goal || !d.recommended_state || !experiment.result_states.includes(d.recommended_state)) throw new Error("The proposal no longer matches the active goal and recommendation");
+    if (!experiment || !["planning", "counterfactual"].includes(experiment.kind) || !experiment.start_state || experiment.goal !== d.active_goal || !d.recommended_state || !experiment.result_states.includes(d.recommended_state)) throw new Error("The proposal no longer matches the active goal and recommendation");
     const token = crypto.randomUUID();
-    this.#approvals.set(token, { proposal, state: d.recommended_state, goal: d.active_goal, base: experiment.start_state, revision: d.revision });
+    this.#approvals.set(token, { proposal, state: d.recommended_state, goal: d.active_goal ?? null, base: experiment.start_state, revision: d.revision });
     return token;
   }
   isApprovalCurrent(token: string): boolean {

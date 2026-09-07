@@ -37,11 +37,16 @@
 		{#each app.cases as c (c.id)}
 			{@const [cname, cregion] = splitName(c.name)}
 			<div class="case-chip" class:active={app.activeCaseId === c.id}>
-				<button class="case-activate" onclick={() => ctrl.activateCase(c.id)}>
+				<button
+					class="case-activate"
+					disabled={!!c.unavailableReason}
+					title={c.unavailableReason ?? undefined}
+					onclick={() => ctrl.activateCase(c.id)}
+				>
 					<span class="cname"
 						>{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"></i>{/if}</span
 					>
-					<span class="cregion mono">{cregion}</span>
+					<span class="cregion mono">{c.unavailableReason ? 'Unavailable' : cregion}</span>
 				</button>
 				<button
 					class="case-remove mono"
@@ -201,6 +206,11 @@
 		padding: 5px 20px 4px 10px;
 		background: transparent;
 		border: 0;
+	}
+
+	.case-activate:disabled {
+		color: var(--text-secondary);
+		cursor: not-allowed;
 	}
 
 	.case-remove {

@@ -1,14 +1,5 @@
 import { devices, expect, test } from './fixtures/page-errors.js';
 
-// The compact layout puts the control panel in a bottom sheet over the map.
-// Two things that regress silently when the sheet's geometry changes:
-//   - basemap attribution has to stay visible, which means above the sheet;
-//   - what the last tap produced has to land above the fold, so a selection
-//     leads the sheet body instead of sitting under the case stats.
-
-// The device descriptor carries defaultBrowserType: 'webkit' and CI installs
-// chromium only, so pin the browser and keep the phone's viewport, pixel ratio
-// and touch input — which is what the coarse pointer rules key off.
 test.use({ ...devices['iPhone 13'], browserName: 'chromium' });
 
 const CASE3 = `function mpc = case3test
@@ -54,18 +45,20 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3congested.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3) }
 	]);
+	await page.getByRole('button', { name: 'Solver', exact: true }).click();
 	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await page.getByRole('button', { name: 'Network', exact: true }).click();
 
-	// The panel is a sheet here, not the desktop card.
-	const sheet = page.locator('aside.panel.sheet');
+	// Compact panels share one drawer.
+	const sheet = page.locator('[data-panel="network"].mobile');
 	await expect(sheet).toBeVisible();
 
 	// The grab bar has to be worth aiming a thumb at.
-	const headBox = await page.locator('.sheet-head').boundingBox();
+	const headBox = await page.locator('[data-panel="network"] > header').boundingBox();
 	expect(headBox!.height).toBeGreaterThanOrEqual(44);
 
 	// Basemap attribution is a licensing requirement: on screen, opaque, and
-	// above the sheet rather than under it.
+	// in the reserved control strip below the drawer.
 	await expect
 		.poll(async () => {
 			const sheetBox = (await sheet.boundingBox())!;
@@ -74,7 +67,9 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 				.locator('.maplibregl-ctrl-bottom-right')
 				.evaluate((el) => getComputedStyle(el).opacity);
 			return (
-				opacity === '1' && attribBox.y >= 0 && attribBox.y + attribBox.height <= sheetBox.y + 1
+				opacity === '1' &&
+				attribBox.y >= sheetBox.y + sheetBox.height &&
+				attribBox.y + attribBox.height <= 844
 			);
 		})
 		.toBe(true);

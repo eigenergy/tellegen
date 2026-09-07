@@ -22,11 +22,11 @@ pub struct ObservableWeight {
 pub enum StudyObjective {
     WeightedObservable {
         operand: Operand,
-        #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 4096)))]
+        #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 65536)))]
         weights: Vec<ObservableWeight>,
     },
     Sum {
-        #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 4096)))]
+        #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 65536)))]
         terms: Vec<StudyObjective>,
     },
     Scale {
@@ -100,11 +100,11 @@ pub enum DemandConstraint {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DecisionSpace {
-    #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 4096)))]
+    #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 65536)))]
     pub variables: Vec<DecisionVariable>,
     #[cfg_attr(feature = "schema", schemars(range(min = 0)))]
     pub total_budget: f64,
-    #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 4096)))]
+    #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 65536)))]
     pub max_changed_elements: usize,
     pub demand: Option<DemandConstraint>,
 }
@@ -151,14 +151,14 @@ impl StudyObjective {
             count: &mut usize,
         ) -> Result<(), String> {
             *count += 1;
-            if depth > 16 || *count > 4096 {
-                return Err("objective exceeds 16 levels or 4096 terms".into());
+            if depth > 16 || *count > 65536 {
+                return Err("objective exceeds 16 levels or 65536 terms".into());
             }
             match expr {
                 StudyObjective::WeightedObservable { weights, .. } => {
                     *count += weights.len();
                     if weights.is_empty()
-                        || *count > 4096
+                        || *count > 65536
                         || weights.iter().any(|w| !w.weight.is_finite())
                     {
                         return Err(
@@ -286,8 +286,8 @@ impl StudyObjective {
 
 impl DecisionSpace {
     pub fn validate(&self, formulation: Problem) -> Result<(), String> {
-        if self.variables.is_empty() || self.variables.len() > 4096 {
-            return Err("decision space requires 1 to 4096 variables".into());
+        if self.variables.is_empty() || self.variables.len() > 65536 {
+            return Err("decision space requires 1 to 65536 variables".into());
         }
         if !self.total_budget.is_finite()
             || self.total_budget < 0.0

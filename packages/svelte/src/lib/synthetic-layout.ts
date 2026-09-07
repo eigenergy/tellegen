@@ -51,6 +51,7 @@ export function placeSyntheticTopology(
 		buses: buses.map((bus) => {
 			const [lon, lat] = coords.get(bus.id)!;
 			return {
+				...bus,
 				id: bus.id,
 				uid: bus.uid,
 				editable: bus.editable,

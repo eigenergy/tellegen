@@ -18,12 +18,12 @@ type CaseEvidenceContext = {
 	studyId: string;
 	revision: number;
 	state: string;
-	goal: string;
+	goal: string | null;
 	caseId: string;
 	caseRevision: string;
 };
 
-export type GoalDraft = Omit<CreateStudy, 'input' | 'base_input' | 'id'>;
+export type GoalDraft = Omit<CreateStudy, 'input' | 'base_input' | 'id' | 'solution' | 'view' | 'display'>;
 
 /** One workspace session shared by browser controls and WebMCP. */
 export class StudyWorkspace {
@@ -32,6 +32,8 @@ export class StudyWorkspace {
 	saved = $state.raw<Array<{ id: string; title: string; revision: number }>>([]);
 	busy = $state(false);
 	error = $state<string | null>(null);
+	network = $state.raw<Network | null>(null);
+	#baseNetwork: Network | null = null;
 	#controller: StudyDocumentController | null = null;
 	#store: IndexedDbStudyStore | null = null;
 	#cancel: AbortController | null = null;
@@ -89,24 +91,31 @@ export class StudyWorkspace {
 		draft: GoalDraft,
 		caseId: string,
 		expectedCaseRevision: string,
-		signal?: AbortSignal
+		signal?: AbortSignal,
+        show = true
 	) {
 		return this.#run(async (abort) => {
 			const c = this.grid.activeSolvable;
 			if (!c || c.id !== caseId || caseRevision(c) !== expectedCaseRevision || c.solving)
 				throw new Error('Case changed; inspect the current case before creating a Study');
 			const base_input = await this.grid.ensureStudyInputJson(c);
-			const study = await this.grid.syncedStudy(c);
-			if (!study) throw new Error(this.grid.app.error ?? 'Current case is unavailable');
-			const input =
-				draft.formulation === c.formulation
-					? await study.saveInstanceModule()
-					: await study.saveModule();
+            const captured = await this.grid.captureSavedCase(c);
+            const geometry = c.network;
+            const display = geometry ? {
+                case_id: c.id, camera: geometry.coordinate_space === 'diagram' ? null : this.grid.app.camera,
+                diagram_camera: geometry.coordinate_space === 'diagram' && this.grid.app.diagramCamera?.caseId === c.id
+                    ? {center: this.grid.app.diagramCamera.center, scale: this.grid.app.diagramCamera.scale} : null,
+                layers: 'diagram' in c && c.diagram ? [c.diagram.layer, ...await this.grid.caseGeographyLayers(c)] : [],
+                geo_layer: JSON.stringify({ type: 'FeatureCollection', powerio_geo: {space: geometry.coordinate_space ?? 'geographic', kind: geometry.synthetic_coords ? 'synthetic' : 'source'}, features: [
+                    ...geometry.buses.map(b => ({type: 'Feature', properties: {target: 'bus', id: String(b.id), ...(b.uid ? {uid: b.uid} : {})}, geometry: {type: 'Point', coordinates: [b.lon, b.lat]}})),
+                    ...geometry.branches.filter(b => b.path.length >= 2).map(b => ({type: 'Feature', properties: {target: 'branch', branch_id: String(b.id), ...(b.uid ? {uid: b.uid} : {}), from: String(b.from), to: String(b.to)}, geometry: {type: 'LineString', coordinates: b.path}}))
+                ]})
+            } : undefined;
 			abort.throwIfAborted();
 			if (this.grid.activeSolvable !== c || caseRevision(c) !== expectedCaseRevision)
 				throw new Error('Case changed while capturing the Study starting point; retry');
 			const controller = await StudyDocumentController.create(
-				{ ...draft, id: crypto.randomUUID(), input, base_input },
+				{ ...draft, ...captured, id: crypto.randomUUID(), base_input, display, model_details: c.network?.model_details },
 				this.store,
 				undefined,
 				abort
@@ -118,7 +127,7 @@ export class StudyWorkspace {
 				state: controller.bundle.document.applied_state!
 			};
 			this.comparison = null;
-			await this.#publish(true);
+			await this.#publish(false, show);
 			return this.summary();
 		}, signal);
 	}
@@ -132,6 +141,14 @@ export class StudyWorkspace {
 	}
 	async import(text: string) {
 		return this.#run(async () => {
+			const imported: unknown = JSON.parse(text);
+			if (imported && typeof imported === 'object' && 'document' in imported) {
+				const document = imported.document;
+				if (document && typeof document === 'object' && 'id' in document &&
+					typeof document.id === 'string' && await this.store.load(document.id)) {
+					throw new Error('This study is already saved. Open it from Saved study.');
+				}
+			}
 			this.#controller = await StudyDocumentController.import(text, this.store);
 			this.#caseAnchor = null;
 			this.comparison = null;
@@ -152,7 +169,8 @@ export class StudyWorkspace {
 		studyId: string,
 		revision: number,
 		operation: StudyOperation,
-		signal?: AbortSignal
+		signal?: AbortSignal,
+        show = true
 	): Promise<StudyOperationResult> {
 		return this.#run(async (abort) => {
 			if (!this.#controller || this.document?.id !== studyId)
@@ -165,7 +183,7 @@ export class StudyWorkspace {
 				this.bundle = this.#controller.bundle;
 			} else {
 				this.comparison = result.comparison ?? null;
-				await this.#publish(false);
+				await this.#publish(false, show);
 			}
 			return result;
 		}, signal);
@@ -179,6 +197,34 @@ export class StudyWorkspace {
 			return result;
 		});
 	}
+    get demandRows() {
+        const base = new Map(this.#baseNetwork?.buses.map(b => [b.id, b.demand_mw]) ?? []);
+        return (this.network?.buses ?? []).map(b => ({bus: b.id, name: b.name ?? undefined, baseMw: base.get(b.id) ?? b.demand_mw, currentMw: b.demand_mw, deltaMw: b.demand_mw - (base.get(b.id) ?? b.demand_mw)}));
+    }
+    async #userEdit(operation: StudyOperation) {
+        return this.#run(async abort => {
+            if (!this.#controller || !this.document) throw new Error('No Study is open');
+            const result = await this.#controller.execute({expected_revision: this.document.revision, operation}, abort);
+            this.bundle = this.#controller.bundle;
+            const state = this.document!.recommended_state;
+            if (result.experiment && state && this.document!.states[state].solution) {
+                const token = this.#controller.recordUserApproval(result.experiment);
+                await this.#controller.applyApprovedProposal(token, abort);
+            }
+            await this.#publish(false);
+            return result;
+        });
+    }
+    async editDemandFromUser(changes: Array<{bus: number | string; delta_mw: number}>) {
+        const d = this.document;
+        if (!d?.inspected_state) throw new Error('No saved case is selected');
+        return this.#userEdit({kind: 'edit_demand', state: d.inspected_state, goal: d.active_goal ?? null, constrain_to_goal: false, changes, rationale: 'Update bus demand'});
+    }
+    async resetFromUser() {
+        const d = this.document;
+        if (!d?.inspected_state) throw new Error('No saved case is selected');
+        return this.#userEdit({kind: 'restore_base', state: d.inspected_state, goal: d.active_goal ?? null, rationale: 'Reset to base case'});
+    }
 	captureCaseEvidence(): CaseEvidenceContext | null {
 		const c = this.grid.activeSolvable,
 			anchor = this.#caseAnchor,
@@ -186,7 +232,7 @@ export class StudyWorkspace {
 		if (
 			!c ||
 			!anchor ||
-			!d?.active_goal ||
+			!d ||
 			c.id !== anchor.caseId ||
 			caseRevision(c) !== anchor.revision
 		)
@@ -195,7 +241,7 @@ export class StudyWorkspace {
 			studyId: d.id,
 			revision: d.revision,
 			state: anchor.state,
-			goal: d.active_goal,
+			goal: d.active_goal ?? null,
 			caseId: c.id,
 			caseRevision: anchor.revision
 		};
@@ -229,9 +275,10 @@ export class StudyWorkspace {
 		spec: CapacityPlanSpecJson,
 		caseId: string,
 		revision: string,
-		signal: AbortSignal
+		signal: AbortSignal,
+		elements: Readonly<Record<string, number>>
 	) {
-		await this.create(capacityGoal(spec), caseId, revision, signal);
+		await this.create(capacityGoal(spec, elements), caseId, revision, signal, false);
 		const d = this.document!;
 		const result = await this.execute(
 			d.id,
@@ -241,7 +288,7 @@ export class StudyWorkspace {
 				state: d.inspected_state!,
 				goal: d.active_goal!,
 				options: {
-					max_solves: Math.max(0, spec.exact_solve_budget - 1),
+					max_solves: Math.max(0, spec.exact_solve_budget - Object.values(d.experiments).reduce((total, activity) => total + activity.solve_count, 0)),
 					beam_width: 2,
 					max_iterations: 256,
 					min_improvement:
@@ -250,7 +297,7 @@ export class StudyWorkspace {
 				rationale:
 					'Explore capacity upgrades using the implicit weighted-price gradient and exact solves.'
 			},
-			signal
+			signal, false
 		);
 		const current = this.document!;
 		const binding: CapacityStudyBinding = {
@@ -298,7 +345,7 @@ export class StudyWorkspace {
 				const c = this.grid.activeSolvable!;
 				this.#caseAnchor = { caseId: c.id, revision: caseRevision(c), state: binding.state };
 			}
-			await this.#publish(false);
+			await this.#publish(false, false);
 			return result;
 		}, signal);
 	}
@@ -321,7 +368,7 @@ export class StudyWorkspace {
 			id: d.id,
 			title: d.title,
 			revision: d.revision,
-			active_goal: d.active_goal,
+			active_goal: d.active_goal ?? null,
 			inspected_state: d.inspected_state,
 			recommended_state: d.recommended_state,
 			applied_state: d.applied_state,
@@ -330,11 +377,11 @@ export class StudyWorkspace {
 			recent_experiments: recent
 		};
 	}
-	async #publish(frame: boolean) {
+	async #publish(frame: boolean, show = true) {
 		this.bundle = this.#controller!.bundle;
 		// Persistence completed; display failures must not report a failed mutation.
 		try {
-			await this.#display(frame);
+			if (show) await this.#display(frame);
 			await this.refreshSaved();
 		} catch (error) {
 			this.grid.app.studyView = null;
@@ -349,18 +396,35 @@ export class StudyWorkspace {
 			return;
 		}
 		const state = d.states[d.inspected_state];
-		let network = this.#geometry.get(state.input);
-		if (!network) {
-			network = await this.grid.projectStudyInput(b.artifacts[state.input].text);
-			if (this.#geometry.size >= 8) this.#geometry.delete(this.#geometry.keys().next().value!);
-			this.#geometry.set(state.input, network);
-		}
-		const solution = JSON.parse(b.artifacts[state.view].text) as StudyView;
-		this.grid.app.studyView = { id: d.inspected_state, label: state.label, network, solution };
-		if (!solution.lmp?.length && solution.vm?.length) this.grid.app.displayMode = 'voltage';
-		this.grid.app.selectedBus = null;
-		this.grid.app.selectedBranch = null;
-		if (frame) void this.grid.app.requestFrame('all');
+        if (state.formulation === 'dcpf' || state.formulation === 'acopf') throw new Error('This saved formulation is not supported by the Study viewer');
+        const geo = d.display ? b.artifacts[d.display.geography].text : undefined;
+        const geometryKey = state.input + ':' + (d.display?.geography ?? '');
+        let network = this.#geometry.get(geometryKey);
+        if (!network) {
+            network = await this.grid.projectStudyInput(b.artifacts[state.input].text, geo);
+            if (this.#geometry.size >= 8) this.#geometry.delete(this.#geometry.keys().next().value!);
+            this.#geometry.set(geometryKey, network);
+        }
+        this.network = network;
+        this.#baseNetwork = await this.grid.projectStudyInput(b.artifacts[d.base_input ?? state.input].text, geo);
+        const solution = state.view ? JSON.parse(b.artifacts[state.view].text) as StudyView : null;
+        this.grid.app.studyView = {
+            id: d.inspected_state, label: state.label, network, solution,
+            caseId: d.display?.case_id ?? d.id, studyId: d.id, revision: d.revision,
+            formulation: state.formulation, inputJson: b.artifacts[state.input].text,
+            baseDemandMw: Object.fromEntries(this.#baseNetwork.buses.map(b => [String(b.id), b.demand_mw]))
+        };
+        if (!solution?.lmp?.length && solution?.vm?.length) this.grid.app.displayMode = 'voltage';
+        if (frame) {
+            if (network.coordinate_space === 'diagram' && d.display?.diagram_camera) {
+                this.grid.app.requestDiagramCamera(d.display.case_id, {
+                    center: [d.display.diagram_camera.center[0], d.display.diagram_camera.center[1]],
+                    scale: d.display.diagram_camera.scale
+                });
+            } else if (network.coordinate_space !== 'diagram' && d.display?.camera) this.grid.app.requestCamera({...d.display.camera, center: [d.display.camera.center[0], d.display.camera.center[1]]});
+            else void this.grid.app.requestFrame('all');
+        }
+
 	}
 	dispose() {
 		this.cancel();

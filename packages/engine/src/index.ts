@@ -124,7 +124,7 @@ export interface IngestedCase extends CaseFileSummary {
   /** Generation 2 PowerIO IR used for display edits and every solver Study. */
   module_json: string;
   topology: Topology;
-  view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
+  view: { coordinate_space?: "geographic" | "diagram"; buses: NetworkBus[]; branches: NetworkBranch[] } | null;
 }
 
 /** Edge family in the collapsed distribution graph. */
@@ -395,22 +395,8 @@ export async function ingestDistCaseBytes(
   );
 }
 
-/** Substations from a PowerWorld .pwd display file. `x`/`y` are diagram
- * coordinates as stored; `lon`/`lat` are the engine's approximate projection
- * (powerio's inverse of the auto layout Mercator — hand edited diagrams
- * drift from it). */
-export interface DisplayPreview {
-  substations: {
-    number: number;
-    name: string;
-    x: number;
-    y: number;
-    lon: number;
-    lat: number;
-  }[];
-  canvas_width: number;
-  canvas_height: number;
-}
+/** A PowerWorld drawing decoded in its declared diagram coordinate system. */
+export type DisplayPreview = ParsedGeoLayer;
 
 /** True for binary display files (PowerWorld .pwd), read via parseDisplay.
  * Kept separate from formatOf: a .pwd is display data, not a case format. */
@@ -628,10 +614,8 @@ const STUDY_CAPABILITY = {
   ratingParameter: "LineLimit",
 } as const;
 
-/** The formulations the full wasm build solves entirely in the browser. Each returns nodal marginal values,
- * so the price map, legend, and price sensitivity overlay apply unchanged to all of them. Tags
- * are the engine's serde-lowercase `Problem` variants accepted by `new Study(json, tag)`.
- * `dcopf` is the default (zero regression from the prior fixed behavior). */
+/** Calculation names accepted by the browser engine. Power flow returns voltages
+ * and flows; OPF calculations also return an objective and LMPs. */
 export type Formulation = BrowserFormulation;
 
 /** UI-facing formulation menu: tag, a short label, and a one-line description. The order
@@ -643,6 +627,7 @@ export const FORMULATIONS: ReadonlyArray<{
   disabled?: boolean;
 }> = [
   { id: "dcopf", label: "DC OPF", hint: "DC optimal power flow (the default)" },
+  { id: "acpf", label: "AC power flow", hint: "Balanced AC power flow" },
   {
     id: "socwr",
     label: "SOCWR",
@@ -656,7 +641,7 @@ export const FORMULATIONS: ReadonlyArray<{
   },
 ];
 
-/** The default formulation: DC OPF, preserving the prior fixed behavior byte-for-byte. */
+/** DC OPF is the default calculation. */
 export const DEFAULT_FORMULATION: Formulation = "dcopf";
 
 /** The `Operand[]` JSON `Study.preview` watches (the active nodal value column). */
@@ -688,9 +673,10 @@ function sensitivitiesJson(
 interface StudySolveResponse {
   formulation: string;
   status: string;
-  objective: number;
+  objective: number | null;
   iterations?: SolveIteration[];
   lmp?: { bus: number; value: number }[];
+  vm?: { bus: number; value: number }[];
   va?: { bus: number; value: number }[];
   w?: { bus: number; value: number }[];
   flows?: { branch: number; pf: number; loading: number }[];
@@ -757,8 +743,9 @@ function sensitivityColumn(
 
 function solveResponseToSolution(out: StudySolveResponse): Solution {
   return {
-    objective: out.objective ?? 0,
+    objective: out.objective ?? null,
     prices: (out.lmp ?? []).map((e) => ({ bus: e.bus, value: e.value })),
+    vm: out.vm ?? undefined,
     va: out.va ?? [],
     w: out.w ?? [],
     flows: (out.flows ?? []).map((f) => ({
@@ -847,7 +834,7 @@ export class BrowserStudy {
   async #senseTarget(
     target: SensTarget | null,
   ): Promise<{ kind: "bus" | "branch"; index: number } | null> {
-    if (target === null) return null;
+    if (target === null || this.#formulation === "acpf") return null;
     if ("bus" in target) {
       if (!this.#busToIndex) {
         const sol = await this.#solution();
@@ -902,6 +889,7 @@ export class BrowserStudy {
     rates: BranchRatingDeltas,
     target: SensTarget,
   ): Promise<SensitivityColumn | null> {
+    if (this.#formulation === "acpf") return null;
     const out = await this.#replaceEdits(deltas, rates, target);
     return sensitivityColumn(caseId, out.sensitivities);
   }
@@ -917,6 +905,9 @@ export class BrowserStudy {
     objectiveDelta: number | null;
     units: string | null;
   }> {
+    if (this.#formulation === "acpf") {
+      return { prices: [], objectiveDelta: null, units: null };
+    }
     const out: StudyPreview = JSON.parse(
       expectText(
         await this.#host.call({
@@ -939,6 +930,10 @@ export class BrowserStudy {
 
   /** The Study's current exact solution. Called immediately after Study creation
    * to cache the base point for formulation comparisons. */
+  async currentView(): Promise<import("./generated/study-contracts.js").SolveResponse> {
+    return JSON.parse(expectText(await this.#host.call({ op: "study_solution", study: this.#handle })));
+  }
+
   async currentSolution(): Promise<Solution> {
     return solveResponseToSolution(await this.#solution());
   }
@@ -1171,5 +1166,5 @@ export { IndexedDbStudyStore, StudyDocumentController, studyBackend } from "./st
 export type { StudyBackend, StudyStore } from "./study-document.js";
 export type { CreateStudy, StudyBundle, StudyDocument, StudyRequest, StudyOperation, StudyOperationResult, GoalRevision, DecisionSpace, StudyObjective, StateNode, Comparison } from "./generated/study-contracts.js";
 
-export type { SolveResponse as StudyView, SearchOptions, StudySummary } from "./generated/study-contracts.js";
+export type { ModelDetails, SolveResponse as StudyView, SearchOptions, StudySummary } from "./generated/study-contracts.js";
 export { studySchema } from './generated/study-schema.js';

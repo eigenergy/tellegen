@@ -14,7 +14,7 @@
 			for="formulation-select"
 			title={formulationHint(c.formulation)}
 		>
-			<span>formulation</span>
+			<span>Calculation</span>
 			<select
 				id="formulation-select"
 				class="mono"
@@ -24,7 +24,7 @@
 			>
 				{#each FORMULATIONS as f (f.id)}
 					<option value={f.id} disabled={f.disabled}>
-						{f.label}{f.disabled ? ' (coming soon)' : ''}
+						{f.label}{f.disabled ? ' (unavailable)' : ''}
 					</option>
 				{/each}
 			</select>

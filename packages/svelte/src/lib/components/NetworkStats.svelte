@@ -20,25 +20,27 @@
 			<dt>lines</dt>
 			<dd>{stats.branches}</dd>
 		</div>
-		<div>
-			<dt>binding lines</dt>
-			<dd>{stats.binding ?? '…'}</dd>
-		</div>
-		<div>
-			<dt>declared objective</dt>
-			<dd>
-				{#if stats.objective === null}
-					<span class="blink">solving&hellip;</span>
-				{:else}
-					{fmt.format(stats.objective)}
-				{/if}
-			</dd>
-		</div>
-		{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null}
-			<div class="delta">
-				<dt>vs base</dt>
-				<dd>{signed(deltaObjective)}</dd>
+		{#if ctrl.activeFormulation !== 'acpf'}
+			<div>
+				<dt>binding lines</dt>
+				<dd>{stats.binding ?? '...'}</dd>
 			</div>
+			<div>
+				<dt>OPF objective</dt>
+				<dd>
+					{#if stats.objective === null}
+						<span class="blink">solving...</span>
+					{:else}
+						{fmt.format(stats.objective)}
+					{/if}
+				</dd>
+			</div>
+			{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null}
+				<div class="delta">
+					<dt>vs base</dt>
+					<dd>{signed(deltaObjective)}</dd>
+				</div>
+			{/if}
 		{/if}
 	</dl>
 {/if}

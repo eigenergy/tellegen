@@ -23,7 +23,20 @@ import type { MultiView } from './multiconductor.js';
 
 export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
 /** A map framing request: a case id, 'all', or one branch to center. */
-export type FrameTarget = string | 'all' | { caseId: string; branchId: number };
+export type FrameTarget =
+	string | 'all' | { caseId: string; branchId: number } | { caseId: string; busId: number };
+export interface CameraSnapshot {
+	center: [number, number];
+	zoom: number;
+	bearing: number;
+	pitch: number;
+}
+export interface DiagramCameraSnapshot {
+	caseId: string;
+	center: [number, number];
+	scale: number;
+}
+
 export type DemandRangeMode = 'local' | 'full';
 export type DisplayMode = 'price' | 'angle' | 'voltage';
 
@@ -41,7 +54,11 @@ export interface LocalSubstations {
 }
 
 type CoordsKind = 'file' | 'synthetic_pending' | 'synthetic' | 'manual' | 'geofile';
-type LocalView = { buses: NetworkBus[]; branches: NetworkBranch[] };
+type LocalView = {
+	coordinate_space?: 'geographic' | 'diagram';
+	buses: NetworkBus[];
+	branches: NetworkBranch[];
+};
 
 /** A case is perturbed when any committed demand or rating delta is nonzero. Shared
  * by both solvable case classes so the "perturbed" rule stays single-sourced. */
@@ -73,28 +90,33 @@ export class LocalCase {
 	readonly label: string;
 	readonly fileName: string;
 	/** Case stats; null for a .pwd display only entry. */
-	summary = $state.raw<CaseFileSummary | null>(null);
+	summary: CaseFileSummary | null = $state.raw<CaseFileSummary | null>(null);
 	/** Generation 2 PowerIO IR used for display edits and solver studies. */
-	studyInputJson = $state.raw<string | undefined>(undefined);
+	studyInputJson: string | undefined = $state.raw<string | undefined>(undefined);
 	/** Topology for synthetic placement when the file has no coordinates. */
-	topology = $state.raw<Topology | undefined>(undefined);
-	coordsKind = $state.raw<CoordsKind | undefined>(undefined);
+	topology: Topology | undefined = $state.raw<Topology | undefined>(undefined);
+	coordsKind: CoordsKind | undefined = $state.raw<CoordsKind | undefined>(undefined);
 	/** Map geometry when the file carried or received coordinates. */
-	view = $state.raw<LocalView | null>(null);
-	syntheticCenter = $state.raw<{ lon: number; lat: number } | undefined>(undefined);
-	geoSource = $state.raw<string | undefined>(undefined);
-	geoWarnings = $state.raw<string[] | undefined>(undefined);
-	network = $state.raw<Network | null>(null);
-	baseSolution = $state.raw<Solution | null>(null);
-	solution = $state.raw<Solution | null>(null);
-	sensitivity = $state.raw<SensitivityColumn | null>(null);
-	deltas = $state.raw<DemandDeltas>({});
+	view: LocalView | null = $state.raw<LocalView | null>(null);
+	syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<
+		{ lon: number; lat: number } | undefined
+	>(undefined);
+	diagram: { view: LocalView; layer: string; name: string; warnings: string[] } | null =
+		$state.raw(null);
+	displayMode: 'geographic' | 'diagram' = $state('geographic');
+	geoSource: string | undefined = $state.raw<string | undefined>(undefined);
+	geoWarnings: string[] | undefined = $state.raw<string[] | undefined>(undefined);
+	network: Network | null = $state.raw<Network | null>(null);
+	baseSolution: Solution | null = $state.raw<Solution | null>(null);
+	solution: Solution | null = $state.raw<Solution | null>(null);
+	sensitivity: SensitivityColumn | null = $state.raw<SensitivityColumn | null>(null);
+	deltas: DemandDeltas = $state.raw<DemandDeltas>({});
 	/** Committed branch rating deltas (MW from base, keyed by branch). */
-	ratings = $state.raw<BranchRatingDeltas>({});
+	ratings: BranchRatingDeltas = $state.raw<BranchRatingDeltas>({});
 	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
 	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
 	formulation = $state<Formulation>(DEFAULT_FORMULATION);
-	iterations = $state.raw<SolveIteration[]>([]);
+	iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveBackend = $state<SolveBackend | null>(null);
@@ -107,7 +129,7 @@ export class LocalCase {
 	sensitivitySeq = 0;
 	predictedObjective = $state<number | null>(null);
 	/** Present for a PowerWorld .pwd display only entry. */
-	substations = $state.raw<LocalSubstations | undefined>(undefined);
+	substations: LocalSubstations | undefined = $state.raw<LocalSubstations | undefined>(undefined);
 
 	constructor(init: LocalCaseInit) {
 		this.id = init.id;
@@ -131,22 +153,23 @@ export class LocalCase {
 export class CaseState {
 	readonly id: string;
 	readonly name: string;
-	network = $state.raw<Network | null>(null);
+	readonly unavailableReason: string | null;
+	network: Network | null = $state.raw<Network | null>(null);
 	/** Retained PowerIO module for the browser solver; fetched lazily. */
-	studyInputJson = $state.raw<string | null>(null);
+	studyInputJson: string | null = $state.raw<string | null>(null);
 	/** Boot solution at base demand; never changes. */
-	baseSolution = $state.raw<Solution | null>(null);
+	baseSolution: Solution | null = $state.raw<Solution | null>(null);
 	/** Exact solution at the current committed perturbation. */
-	solution = $state.raw<Solution | null>(null);
-	sensitivity = $state.raw<SensitivityColumn | null>(null);
+	solution: Solution | null = $state.raw<Solution | null>(null);
+	sensitivity: SensitivityColumn | null = $state.raw<SensitivityColumn | null>(null);
 	/** Committed demand deltas (MW from base, keyed by bus). */
-	deltas = $state.raw<DemandDeltas>({});
+	deltas: DemandDeltas = $state.raw<DemandDeltas>({});
 	/** Committed branch rating deltas (MW from base, keyed by branch). */
-	ratings = $state.raw<BranchRatingDeltas>({});
+	ratings: BranchRatingDeltas = $state.raw<BranchRatingDeltas>({});
 	/** The OPF formulation the browser Study solves for this case: DC OPF (default),
 	 * full AC OPF, or the SOCWR relaxation. Changing it rebuilds the Study. */
 	formulation = $state<Formulation>(DEFAULT_FORMULATION);
-	iterations = $state.raw<SolveIteration[]>([]);
+	iterations: SolveIteration[] = $state.raw<SolveIteration[]>([]);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveBackend = $state<SolveBackend | null>(null);
@@ -167,6 +190,7 @@ export class CaseState {
 	constructor(summary: CaseSummary) {
 		this.id = summary.id;
 		this.name = summary.name;
+		this.unavailableReason = summary.unavailable_reason ?? null;
 	}
 
 	get perturbed(): boolean {
@@ -195,14 +219,16 @@ export class MulticonductorCase {
 	readonly label: string;
 	readonly fileName: string;
 	/** Summary counts and coordinate provenance from the parse. */
-	summary = $state.raw<MultiCaseSummary | null>(null);
+	summary: MultiCaseSummary | null = $state.raw<MultiCaseSummary | null>(null);
 	/** The render-ready bus/terminal graph. */
-	graph = $state.raw<DistGraph | null>(null);
+	graph: DistGraph | null = $state.raw<DistGraph | null>(null);
 	/** Placement kind resolved at ingest from the case's coordinate space. */
-	coordsKind = $state.raw<MultiCoordsKind>('synthetic');
+	coordsKind: MultiCoordsKind = $state.raw<MultiCoordsKind>('synthetic');
 	/** The placed map view; null until placed (planar/synthetic await a center). */
-	view = $state.raw<MultiView | null>(null);
-	syntheticCenter = $state.raw<{ lon: number; lat: number } | undefined>(undefined);
+	view: MultiView | null = $state.raw<MultiView | null>(null);
+	syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<
+		{ lon: number; lat: number } | undefined
+	>(undefined);
 	/** The selected bus id, whose terminal stack and incident conductors expand;
 	 * null when nothing is selected. String-keyed: distribution bus ids are names. */
 	selectedBusId = $state<string | null>(null);
@@ -246,10 +272,66 @@ export class MulticonductorCase {
 	}
 }
 
+export interface StudyDisplaySnapshot {
+	id: string;
+	studyId: string;
+	caseId: string;
+	revision: number;
+	label: string;
+	formulation: Formulation;
+	network: Network;
+	solution: StudyView | null;
+	inputJson?: string;
+	baseDemandMw?: Record<string, number>;
+}
+
 export class AppState {
+	camera: CameraSnapshot | null = $state.raw<CameraSnapshot | null>(null);
+	cameraRequest: CameraSnapshot | null = $state.raw<CameraSnapshot | null>(null);
+	cameraSeq = $state(0);
+	diagramCamera: DiagramCameraSnapshot | null = $state.raw<DiagramCameraSnapshot | null>(null);
+	diagramCameraRequest: DiagramCameraSnapshot | null = $state.raw<DiagramCameraSnapshot | null>(
+		null
+	);
+	diagramCameraSeq = $state(0);
+
+	requestDiagramCamera(caseId: string, snapshot: Omit<DiagramCameraSnapshot, 'caseId'>): void {
+		if (
+			!Array.isArray(snapshot.center) ||
+			snapshot.center.length !== 2 ||
+			![...snapshot.center, snapshot.scale].every(Number.isFinite) ||
+			snapshot.scale <= 0
+		) {
+			throw new Error('Invalid saved drawing view');
+		}
+		this.settleFrame();
+		this.diagramCameraRequest = { caseId, center: [...snapshot.center], scale: snapshot.scale };
+		this.diagramCameraSeq++;
+	}
+
+	requestCamera(snapshot: CameraSnapshot): void {
+		if (
+			!Array.isArray(snapshot.center) ||
+			snapshot.center.length !== 2 ||
+			![...snapshot.center, snapshot.zoom, snapshot.bearing, snapshot.pitch].every(
+				Number.isFinite
+			) ||
+			Math.abs(snapshot.center[1]) > 90 ||
+			snapshot.zoom < 0 ||
+			snapshot.zoom > 24 ||
+			snapshot.pitch < 0 ||
+			snapshot.pitch > 85
+		) {
+			throw new Error('Invalid saved camera position');
+		}
+		this.settleFrame();
+		this.cameraRequest = { ...snapshot, center: [...snapshot.center] };
+		this.cameraSeq++;
+	}
+
 	/** Saved Study inspection is independent of the editable case and its solution. */
-	studyView = $state.raw<{ id: string; label: string; network: Network; solution: StudyView } | null>(null);
-	cases = $state.raw<CaseState[]>([]);
+	studyView: StudyDisplaySnapshot | null = $state.raw<StudyDisplaySnapshot | null>(null);
+	cases: CaseState[] = $state.raw<CaseState[]>([]);
 	activeCaseId = $state<string | null>(null);
 	/** Selected bus in the active case. */
 	selectedBus = $state<number | null>(null);
@@ -277,7 +359,7 @@ export class AppState {
 	#error = $state<string | null>(null);
 	/** Re-runs the operation behind the current `error`, when one applies. Every
 	 * write to `error` clears it, so a retry op can never outlive its message. */
-	errorRetry = $state.raw<(() => void) | null>(null);
+	errorRetry: (() => void) | null = $state.raw<(() => void) | null>(null);
 
 	get error(): string | null {
 		return this.#error;
@@ -289,12 +371,12 @@ export class AppState {
 	}
 
 	/** Case files parsed in the browser via the powerio wasm module. */
-	localCases = $state.raw<LocalCase[]>([]);
+	localCases: LocalCase[] = $state.raw<LocalCase[]>([]);
 	/** Local case the panel shows; clicking a bundled case or a bus clears it. */
 	activeLocalId = $state<string | null>(null);
 	placingLocalId = $state<string | null>(null);
 	/** Multiconductor distribution cases parsed in the browser (viewing only). */
-	multiCases = $state.raw<MulticonductorCase[]>([]);
+	multiCases: MulticonductorCase[] = $state.raw<MulticonductorCase[]>([]);
 	/** Multiconductor case the panel shows; mutually exclusive with the solvable
 	 * active ids. */
 	activeMultiId = $state<string | null>(null);
@@ -321,7 +403,7 @@ export class AppState {
 	 * returns a promise the map resolves when the camera lands (or immediately
 	 * when it cannot fly), so a caller can defer heavy work until the animation
 	 * finishes. */
-	frameTarget = $state.raw<FrameTarget>('all');
+	frameTarget: FrameTarget = $state.raw<FrameTarget>('all');
 	frameSeq = $state(0);
 	#frameSettled: (() => void) | null = null;
 
@@ -407,7 +489,7 @@ export class AppState {
 	// else a remaining local case that can render (a view or substations) or is
 	// awaiting placement, else the first remaining local. Frames whatever it picks.
 	activateFallback(): FallbackTarget {
-		this.activeCaseId = this.cases[0]?.id ?? null;
+		this.activeCaseId = this.cases.find((c) => !c.unavailableReason)?.id ?? null;
 		if (this.activeCaseId) {
 			this.requestFrame(this.activeCaseId);
 			return { kind: 'backend', id: this.activeCaseId };

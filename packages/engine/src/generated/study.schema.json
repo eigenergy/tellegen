@@ -3,6 +3,7 @@
     "ArtifactKind": {
       "enum": [
         "powerio_ir",
+        "geo_layer",
         "evidence"
       ],
       "type": "string"
@@ -140,6 +141,39 @@
       ],
       "type": "object"
     },
+    "Camera": {
+      "additionalProperties": false,
+      "properties": {
+        "bearing": {
+          "format": "double",
+          "type": "number"
+        },
+        "center": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "pitch": {
+          "format": "double",
+          "type": "number"
+        },
+        "zoom": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "center",
+        "zoom",
+        "bearing",
+        "pitch"
+      ],
+      "type": "object"
+    },
     "ColMeta": {
       "description": "Identity and quantity metadata for one column of a [`SensitivityMatrix`].",
       "properties": {
@@ -167,44 +201,108 @@
       "additionalProperties": false,
       "properties": {
         "goal": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "improvement": {
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "left": {
           "type": "string"
         },
         "left_value": {
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "left_view": {
-          "$ref": "#/$defs/SolveResponse"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SolveResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "right": {
           "type": "string"
         },
         "right_value": {
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "right_view": {
-          "$ref": "#/$defs/SolveResponse"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SolveResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
-        "goal",
         "left",
-        "right",
-        "left_value",
-        "right_value",
-        "improvement",
-        "left_view",
-        "right_view"
+        "right"
       ],
       "type": "object"
+    },
+    "CostApproximation": {
+      "properties": {
+        "bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "generator": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_breakpoint_error": {
+          "format": "double",
+          "type": "number"
+        },
+        "model_cost": {
+          "$ref": "#/$defs/GenCost"
+        },
+        "rms_breakpoint_error": {
+          "format": "double",
+          "type": "number"
+        },
+        "source_cost": {
+          "$ref": "#/$defs/GenCost"
+        }
+      },
+      "required": [
+        "generator",
+        "bus",
+        "source_cost",
+        "model_cost",
+        "rms_breakpoint_error",
+        "max_breakpoint_error"
+      ],
+      "type": "object"
+    },
+    "CostPreparation": {
+      "enum": [
+        "exact",
+        "convex_quadratic_fit"
+      ],
+      "type": "string"
     },
     "CostTerm": {
       "description": "Which generation-cost coefficient: the quadratic `cq` or the linear `cl`.",
@@ -213,6 +311,50 @@
         "Linear"
       ],
       "type": "string"
+    },
+    "CreateDisplay": {
+      "additionalProperties": false,
+      "properties": {
+        "camera": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Camera"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "case_id": {
+          "type": "string"
+        },
+        "diagram_camera": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiagramCamera"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "geo_layer": {
+          "type": "string"
+        },
+        "layers": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "case_id",
+        "geo_layer"
+      ],
+      "type": "object"
     },
     "CreateStudy": {
       "additionalProperties": false,
@@ -226,7 +368,24 @@
           ]
         },
         "decisions": {
-          "$ref": "#/$defs/DecisionSpace"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DecisionSpace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "display": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CreateDisplay"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "formulation": {
           "enum": [
@@ -243,13 +402,39 @@
           "type": "string"
         },
         "interpretation": {
+          "default": "",
           "type": "string"
+        },
+        "model_details": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelDetails"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "objective": {
-          "$ref": "#/$defs/StudyObjective"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StudyObjective"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "request": {
+          "default": "",
           "type": "string"
+        },
+        "solution": {
+          "description": "A saved solution must belong to the supplied instance.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "success_value": {
           "format": "double",
@@ -260,17 +445,23 @@
         },
         "title": {
           "type": "string"
+        },
+        "view": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SolveResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "id",
         "title",
         "input",
-        "formulation",
-        "request",
-        "interpretation",
-        "objective",
-        "decisions"
+        "formulation"
       ],
       "type": "object"
     },
@@ -332,7 +523,7 @@
         },
         "max_changed_elements": {
           "format": "uint",
-          "maximum": 4096,
+          "maximum": 65536,
           "minimum": 1,
           "type": "integer"
         },
@@ -345,7 +536,7 @@
           "items": {
             "$ref": "#/$defs/DecisionVariable"
           },
-          "maxItems": 4096,
+          "maxItems": 65536,
           "minItems": 1,
           "type": "array"
         }
@@ -482,6 +673,74 @@
           "type": "object"
         }
       ]
+    },
+    "DiagramCamera": {
+      "additionalProperties": false,
+      "properties": {
+        "center": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "scale": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "center",
+        "scale"
+      ],
+      "type": "object"
+    },
+    "DisplayContext": {
+      "additionalProperties": false,
+      "properties": {
+        "camera": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Camera"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "case_id": {
+          "type": "string"
+        },
+        "diagram_camera": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiagramCamera"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "geography": {
+          "description": "Content-addressed PowerIO GeoLayer used for display, independent of physics.",
+          "type": "string"
+        },
+        "layers": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "case_id",
+        "geography"
+      ],
+      "type": "object"
     },
     "ElementId": {
       "description": "A source-id reference for a dense row or column, so a [`SensitivityMatrix`]\nself-describes and the api serializes it without re-deriving id maps.",
@@ -689,6 +948,48 @@
       ],
       "type": "string"
     },
+    "GenCost": {
+      "description": "A generator cost curve (`mpc.gencost` row).",
+      "properties": {
+        "coeffs": {
+          "description": "Raw coefficients, highest order first for the polynomial model:\n`[c_{k-1}, …, c1, c0]`.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "model": {
+          "description": "1 = piecewise linear, 2 = polynomial.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ncost": {
+          "description": "Number of cost coefficients (polynomial) or breakpoints (piecewise).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shutdown": {
+          "format": "double",
+          "type": "number"
+        },
+        "startup": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "model",
+        "startup",
+        "shutdown",
+        "ncost",
+        "coeffs"
+      ],
+      "type": "object"
+    },
     "GenDispatch": {
       "description": "Generator dispatch, keyed by original generator id. `qg` is `None` on the DC paths.",
       "properties": {
@@ -804,6 +1105,40 @@
         }
       ],
       "description": "The convergence record. OPF paths carry the full interior-point trace (for the\nsolve-card sparkline); the AC power flow carries its Newton count and final\nmismatch. Untagged: the OPF arm serializes to the same bare array the DC OPF\nalways returned."
+    },
+    "ModelDetails": {
+      "properties": {
+        "approximations": {
+          "items": {
+            "$ref": "#/$defs/CostApproximation"
+          },
+          "type": "array"
+        },
+        "method": {
+          "$ref": "#/$defs/CostPreparation"
+        },
+        "model": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "units": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "source",
+        "model",
+        "quantity",
+        "units",
+        "approximations"
+      ],
+      "type": "object"
     },
     "ObservableWeight": {
       "additionalProperties": false,
@@ -1346,17 +1681,21 @@
           ]
         },
         "solution": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "view": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "formulation",
         "input",
-        "solution",
-        "view",
         "label"
       ],
       "type": "object"
@@ -1426,6 +1765,16 @@
           },
           "type": "object"
         },
+        "display": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DisplayContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "experiment_order": {
           "items": {
             "type": "string"
@@ -1451,6 +1800,16 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "model_details": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelDetails"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "recommended_state": {
@@ -1513,7 +1872,7 @@
               "items": {
                 "$ref": "#/$defs/ObservableWeight"
               },
-              "maxItems": 4096,
+              "maxItems": 65536,
               "minItems": 1,
               "type": "array"
             }
@@ -1536,7 +1895,7 @@
               "items": {
                 "$ref": "#/$defs/StudyObjective"
               },
-              "maxItems": 4096,
+              "maxItems": 65536,
               "minItems": 1,
               "type": "array"
             }
@@ -1681,7 +2040,10 @@
           "additionalProperties": false,
           "properties": {
             "goal": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "kind": {
               "const": "compare",
@@ -1697,8 +2059,7 @@
           "required": [
             "kind",
             "left",
-            "right",
-            "goal"
+            "right"
           ],
           "type": "object"
         },
@@ -1738,12 +2099,19 @@
               "items": {
                 "$ref": "#/$defs/DemandAdjustment"
               },
-              "maxItems": 4096,
+              "maxItems": 65536,
               "minItems": 1,
               "type": "array"
             },
+            "constrain_to_goal": {
+              "default": true,
+              "type": "boolean"
+            },
             "goal": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "kind": {
               "const": "edit_demand",
@@ -1759,7 +2127,6 @@
           "required": [
             "kind",
             "state",
-            "goal",
             "changes",
             "rationale"
           ],
@@ -1769,7 +2136,10 @@
           "additionalProperties": false,
           "properties": {
             "goal": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "kind": {
               "const": "restore_base",
@@ -1785,7 +2155,6 @@
           "required": [
             "kind",
             "state",
-            "goal",
             "rationale"
           ],
           "type": "object"
@@ -1801,7 +2170,10 @@
             },
             "evidence": true,
             "goal": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "kind": {
               "const": "record_evidence",
@@ -1820,7 +2192,6 @@
           "required": [
             "kind",
             "state",
-            "goal",
             "sensitivity",
             "rationale",
             "evidence"
@@ -1835,7 +2206,10 @@
               "type": "string"
             },
             "goal": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "kind": {
               "const": "apply",
@@ -1852,7 +2226,6 @@
             "kind",
             "proposal",
             "state",
-            "goal",
             "base_state"
           ],
           "type": "object"
@@ -2102,5 +2475,5 @@
   ],
   "title": "StudyContract",
   "type": "object",
-  "x-rust-source-sha256": "738e3a9cf5bc66121284cf7ea6d377e0871ad66639cde35d16743ff7b2eff8f0"
+  "x-rust-source-sha256": "b7e568dddc5f907977fdb7167503c511663dcce1c0c6f22fff71494ef761d2b3"
 }

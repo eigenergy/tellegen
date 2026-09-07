@@ -37,6 +37,8 @@ export const BASE_TOOLS = [
 	'analyze_sensitivity',
 	'focus_network',
 	'inspect_case',
+	'list_cases',
+	'select_case',
 	'preview_case_update',
 	'query_network',
 	'reset_case',

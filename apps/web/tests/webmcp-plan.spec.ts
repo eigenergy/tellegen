@@ -65,7 +65,7 @@ test('capacity planning stages a proposal that applies only after a human approv
 	const study = await callTool(page, 'inspect_study', {});
 	expect(study).toMatchObject({
 		ok: true,
-		data: { id: planned.data.study_id, experiment_count: 2 }
+		data: { id: planned.data.study_id, experiment_count: 1 }
 	});
 	expect(JSON.stringify(planned).length).toBeLessThanOrEqual(1_450);
 	const proposalId = String(planned.data.proposal_id);
@@ -83,6 +83,7 @@ test('capacity planning stages a proposal that applies only after a human approv
 
 	// The staged proposal registers apply and renders a reviewable card.
 	await expect.poll(() => listTools(page)).toEqual(PROPOSAL_TOOLS);
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	const card = page.locator('[data-testid="capacity-plan-card"]').first();
 	await expect(card).toBeVisible();
 	await expect(card.locator('[data-testid="capacity-plan-status"]')).toHaveText('pending');
@@ -128,6 +129,7 @@ test('capacity planning stages a proposal that applies only after a human approv
 		ok: true,
 		data: {
 			revision,
+			state_id: null,
 			staged_proposal: { proposal_id: proposalId, approved: false }
 		}
 	});
@@ -175,6 +177,7 @@ test('capacity planning stages a proposal that applies only after a human approv
 		ok: true,
 		data: {
 			revision,
+			state_id: null,
 			staged_proposal: { proposal_id: proposalId, approved: true }
 		}
 	});
@@ -281,6 +284,10 @@ test('capacity planning stages a proposal that applies only after a human approv
 	if (!applied.ok) return;
 	expect(applied.data.source_digest).toBe(sourceDigest);
 	expect(applied.data.case_updated).toBe(true);
+	expect(await callTool(page, 'inspect_case', {})).toMatchObject({
+		ok: true,
+		data: { case_id: caseId, state_id: null }
+	});
 	const savedStudy = await callTool(page, 'inspect_study', {});
 	expect(savedStudy.ok).toBe(true);
 	if (!savedStudy.ok) return;
@@ -327,6 +334,7 @@ test('a case edit expires the staged proposal and drops apply_capacity_plan', as
 	await expect.poll(() => listTools(page)).toEqual(PROPOSAL_TOOLS);
 
 	// Even an approval granted before the edit must not survive it.
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	const card = page.locator('[data-testid="capacity-plan-card"]').first();
 	await card.locator('[data-testid="capacity-plan-approve"]').click();
 
@@ -386,11 +394,12 @@ test('switching cases expires the staged proposal and its approval', async ({ pa
 	if (!planned.ok) return;
 	const proposalId = String(planned.data.proposal_id);
 	await expect.poll(() => listTools(page)).toEqual(PROPOSAL_TOOLS);
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	const card = page.locator('[data-testid="capacity-plan-card"]').first();
 	await card.locator('[data-testid="capacity-plan-approve"]').click();
 	await expect(card.locator('[data-testid="capacity-plan-approved"]')).toBeVisible();
 
-	await page.locator('input[type="file"]').setInputFiles([
+	await page.locator('input[type="file"][accept*=".m,"]').setInputFiles([
 		{ name: 'case3-copy-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3-copy.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_PLANNING) }
 	]);
@@ -458,6 +467,7 @@ test('a revised Study goal expires the capacity compatibility approval', async (
 		exact_solve_budget: 6
 	});
 	if (!plan.ok) throw new Error(plan.error.message);
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	const card = page.locator('[data-testid="capacity-plan-card"]').first();
 	await card.locator('[data-testid="capacity-plan-approve"]').click();
 	const summary = await callTool(page, 'inspect_study', {});

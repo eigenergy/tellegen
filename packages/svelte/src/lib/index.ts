@@ -1,3 +1,7 @@
+export { default as ModelDetails } from './components/ModelDetails.svelte';
+export { default as PanelFrame } from './components/PanelFrame.svelte';
+export { getPanelLayout } from './panels.svelte.js';
+export type { PanelSide, PanelPosition, PanelBounds } from './panels.svelte.js';
 export { default as TellegenProvider } from './TellegenProvider.svelte';
 export { default as TellegenShell } from './TellegenShell.svelte';
 export { default as TellegenViewer } from './TellegenViewer.svelte';
@@ -70,6 +74,8 @@ export type { TellegenUiConfig, TellegenUiOptions } from './context.svelte.js';
 export type { ControllerOptions } from './controller.svelte.js';
 export type { DisplayOption } from './display.js';
 export type {
+	CameraSnapshot,
+	DiagramCameraSnapshot,
 	DemandRangeMode,
 	DisplayMode,
 	FallbackTarget,
@@ -78,6 +84,7 @@ export type {
 	MultiCaseSummary,
 	MultiCoordsKind,
 	SolvableCase,
+	StudyDisplaySnapshot,
 	SolveBackend
 } from './state.svelte.js';
 export type { MultiView, PlacedMultiBus, PlacedMultiEdge } from './multiconductor.js';

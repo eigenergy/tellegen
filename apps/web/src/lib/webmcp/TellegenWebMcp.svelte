@@ -58,7 +58,7 @@
 	// readiness, its formulation, and its revision. Any change expires a stale
 	// proposal and pulses the planning store's availability listeners.
 	$effect(() => {
-		const c = ctrl.activeSolvable;
+		const c = ctrl.app.studyView ? null : ctrl.activeSolvable;
 		// Solving and solution readiness also control dynamic planning registration.
 		void c?.solving;
 		void c?.solution;

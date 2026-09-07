@@ -563,6 +563,9 @@ fn commit_output(resp: &SolveResponse) -> serde_json::Value {
 #[derive(Serialize)]
 struct ViewBus {
     id: usize,
+    name: Option<String>,
+    area: usize,
+    zone: usize,
     /// powerio row uid when the source format carries one (GOC3 does), null
     /// otherwise. The numeric `id` remains the edit key. The TS layer mirrors
     /// this shape.
@@ -594,6 +597,7 @@ struct ViewBranch {
 
 #[derive(Serialize)]
 struct View {
+    coordinate_space: &'static str,
     buses: Vec<ViewBus>,
     branches: Vec<ViewBranch>,
 }
@@ -601,6 +605,9 @@ struct View {
 #[derive(Serialize)]
 struct TopologyBus {
     id: usize,
+    name: Option<String>,
+    area: usize,
+    zone: usize,
     /// powerio row uid, as on [`ViewBus`].
     uid: Option<String>,
     demand_mw: f64,
@@ -817,6 +824,9 @@ pub(crate) fn ingest_value(
             .map(|(i, b)| {
                 Ok(TopologyBus {
                     id: b.id.0,
+                    name: b.name.clone(),
+                    area: b.area,
+                    zone: b.zone,
                     uid: analysis_bus_uids[i].clone(),
                     demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                     gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
@@ -854,7 +864,19 @@ pub(crate) fn ingest_value(
                     "{missing_buses} bus(es) lacked coordinates and are omitted from the map"
                 ));
             }
-            spread_stacks(&mut cs);
+            let coordinate_space = match net.geo().as_ref().map(|g| &g.space) {
+                Some(powerio::CoordinateSpace::Diagram { .. }) => "diagram",
+                Some(powerio::CoordinateSpace::Projected { .. }) => {
+                    return Err(
+                        "Projected coordinates require an explicit geographic transformation"
+                            .into(),
+                    )
+                }
+                _ => "geographic",
+            };
+            if coordinate_space == "geographic" {
+                spread_stacks(&mut cs);
+            }
             let buses: Vec<ViewBus> = analysis
                 .buses()
                 .iter()
@@ -863,6 +885,9 @@ pub(crate) fn ingest_value(
                     let &(lon, lat) = cs.get(&b.id.0)?;
                     Some(Ok(ViewBus {
                         id: b.id.0,
+                        name: b.name.clone(),
+                        area: b.area,
+                        zone: b.zone,
                         uid: analysis_bus_uids[i].clone(),
                         lon,
                         lat,
@@ -903,7 +928,11 @@ pub(crate) fn ingest_value(
                     "{missing_branches} branch(es) lacked endpoint coordinates and are omitted from the map"
                 ));
             }
-            Some(View { buses, branches })
+            Some(View {
+                coordinate_space,
+                buses,
+                branches,
+            })
         }
     };
 
@@ -941,32 +970,7 @@ fn coords_kind_token(net: &powerio::BalancedNetwork, has_view: bool) -> &'static
     }
 }
 
-#[derive(Serialize)]
-struct ViewSubstation {
-    number: u32,
-    name: String,
-    x: f64,
-    y: f64,
-    /// Approximate longitude/latitude via powerio's inverse of the projection
-    /// PowerWorld's auto generated layouts use, so the frontend never
-    /// reimplements the Mercator constant.
-    lon: f64,
-    lat: f64,
-}
-
-#[derive(Serialize)]
-struct DisplayView {
-    substations: Vec<ViewSubstation>,
-    canvas_width: f64,
-    canvas_height: f64,
-}
-
-/// Decode a PowerWorld `.pwd` display file (binary). Returns the substation
-/// symbols at the diagram coordinates the file stores (x east, y north) plus
-/// the canvas size, each with the approximate `lon`/`lat` projection
-/// (`to_lonlat_from_pwd_mercator`; hand edited diagrams drift from it). A `.pwd`
-/// carries no buses or branches. `format` is "pwd". Pure in-memory parsing,
-/// no filesystem, so it runs in the browser.
+/// Decode a PowerWorld drawing as a canonical PowerIO GeoLayer in diagram units.
 #[wasm_bindgen]
 pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
@@ -976,45 +980,13 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
     install_panic_hook();
     let source = Source::from_memory("display.pwd", bytes.to_vec()).map_err(jserr)?;
     let module = powerio::parse(source).map_err(jserr)?;
-    let PioValue::GeoLayer(layer) = module.into_value() else {
-        return Err(JsError::new(
-            "PowerWorld display did not parse as a geographic layer",
-        ));
+    let PioValue::GeoLayer(layer) = module.value() else {
+        return Err(JsError::new("Display did not parse as a PowerIO GeoLayer"));
     };
-    let (canvas_width, canvas_height) = match &layer.space {
-        powerio::CoordinateSpace::Diagram {
-            canvas: Some(canvas),
-        } => (canvas.width.unwrap_or(0.0), canvas.height.unwrap_or(0.0)),
-        _ => (0.0, 0.0),
-    };
-    let substations = layer
-        .features
-        .into_iter()
-        .filter_map(|feature| {
-            if feature.target != powerio::GeoTarget::Substation {
-                return None;
-            }
-            let powerio::GeoGeometry::Point([x, y]) = feature.geometry else {
-                return None;
-            };
-            let number = feature.key.id?.parse().ok()?;
-            let (lon, lat) = powerio::to_lonlat_from_pwd_mercator(x, y);
-            Some(ViewSubstation {
-                number,
-                name: feature.key.name.unwrap_or_default(),
-                x,
-                y,
-                lon,
-                lat,
-            })
-        })
-        .collect();
-    serde_json::to_string(&DisplayView {
-        substations,
-        canvas_width,
-        canvas_height,
-    })
-    .map_err(jserr)
+    serde_json::to_string(&serde_json::json!({"layer":layer.to_geojson(), "diagnostics":module.diagnostics(),
+        "n_points":layer.features.iter().filter(|f| matches!(f.geometry,powerio::GeoGeometry::Point(_))).count(),
+        "n_routes":layer.features.iter().filter(|f| matches!(f.geometry,powerio::GeoGeometry::LineString(_))).count()
+    })).map_err(jserr)
 }
 
 // ---------------------------------------------------------------------------

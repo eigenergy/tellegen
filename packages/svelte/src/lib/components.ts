@@ -1,3 +1,4 @@
+export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as AppFooter } from './components/AppFooter.svelte';
 export { default as AppHeader } from './components/AppHeader.svelte';
 export { default as BusPicker } from './components/BusPicker.svelte';

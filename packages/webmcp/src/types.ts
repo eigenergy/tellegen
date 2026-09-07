@@ -14,6 +14,27 @@ export interface ElementTarget {
   elementId: string;
 }
 
+export interface ListCasesInput {
+  offset: number;
+  limit: number;
+}
+
+export interface SelectCaseInput {
+  caseId: string;
+  expectedRevision?: string;
+}
+
+export interface TellegenCaseAdapter {
+  listCases(
+    input: ListCasesInput,
+    signal: AbortSignal,
+  ): MaybePromise<ToolPayload>;
+  selectCase(
+    input: SelectCaseInput,
+    signal: AbortSignal,
+  ): MaybePromise<ToolPayload>;
+}
+
 export interface QueryNetworkInput {
   caseId: string;
   elementKind: ElementKind;
@@ -23,6 +44,7 @@ export interface QueryNetworkInput {
     | "demand_mw"
     | "generation_mw"
     | "price"
+    | "voltage_pu"
     | "loading"
     | "flow_mw"
     | "rating_mw";
@@ -134,14 +156,29 @@ export interface TellegenPlanningAdapter {
  * It has no dependency on the engine `Study` class or on Svelte. Host adapters
  * keep PowerIO modules as their portable input and persistence boundary.
  */
-export type StudyToolName = "create_study" | "inspect_study" | "revise_study_goal" | "branch_study" | "compare_study_states" | "propose_study" | "record_study_evidence" | "edit_demand" | "restore_base_case";
+export type StudyToolName =
+  | "create_study"
+  | "inspect_study"
+  | "revise_study_goal"
+  | "branch_study"
+  | "compare_study_states"
+  | "propose_study"
+  | "record_study_evidence"
+  | "edit_demand"
+  | "restore_base_case";
 
 export interface TellegenStudyAdapter {
   inputSchema(name: StudyToolName): Record<string, unknown>;
-  execute(name: StudyToolName, input: Record<string, unknown>, signal: AbortSignal): MaybePromise<ToolPayload>;
+  execute(
+    name: StudyToolName,
+    input: Record<string, unknown>,
+    signal: AbortSignal,
+  ): MaybePromise<ToolPayload>;
 }
 
 export interface TellegenWebMcpAdapter {
+  /** Case discovery and display selection, when supported by the host. */
+  cases?: TellegenCaseAdapter;
   studies?: TellegenStudyAdapter;
   /**
    * The differentiable planning capability, when the host provides one.

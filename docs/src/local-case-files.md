@@ -91,8 +91,8 @@ CSV and JSON branch records can use:
 | Meaning              | Accepted fields                                         |
 | -------------------- | ------------------------------------------------------- |
 | Branch id            | `branch`, `branch_id`, `branch number`, `cats_id`, `id` |
-| From bus             | `f_bus`, `from`, `from_bus`                             |
-| To bus               | `t_bus`, `to`, `to_bus`                                 |
+| From bus             | `f_bus`, `from`, `from_bus`, `bus_from`                             |
+| To bus               | `t_bus`, `to`, `to_bus`, `bus_to`                                 |
 | Endpoint coordinates | `Lat1`, `Lon1`, `Lat2`, `Lon2` and lowercase variants   |
 
 GeoJSON `LineString` features are also accepted. The reader matches a route by
@@ -109,8 +109,16 @@ rows and rows with decreasing segment slopes are rejected before a solve.
 
 ## Display Files
 
-PowerWorld `.pwd` files are display overlays. Dropped alone, they show
-substation symbols at approximate projected positions. Dropped alongside a
-case file that has no coordinates, the substation points join onto buses
-through the `SubNum` field on the bus rows and fill the case's positions; a
-`.pwd` whose numbers match nothing stays a separate overlay entry.
+PowerWorld `.pwd` files supply drawing positions and branch paths. Drop one
+with its case or attach it to the explicitly selected case. Tellegen reports
+matched buses, matched routes, and unmatched objects. A file with no supported
+equipment positions returns an error.
+
+Drawings use a plain canvas with pan, zoom, and fit controls. Geographic files
+use the map. When both are supplied, **Map** and **Diagram** select the view;
+neither replaces the other. A later attachment to a demo case creates a local
+copy and preserves its current edits and result.
+
+Supported New England PWB files include geographic bus locations. Their RAW
+revision 33 companions lack those records and need a matching geographic
+sidecar. Arbitrary drawing positions are never treated as latitude/longitude.

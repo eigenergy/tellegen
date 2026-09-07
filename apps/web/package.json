@@ -13,7 +13,8 @@
 		"test:browser": "playwright test",
 		"wasm": "npm --prefix ../.. run wasm",
 		"preview": "vite preview",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && npm run test:study-goals",
+		"test:study-goals": "node --experimental-strip-types scripts/test-goal-form.mjs",
 		"format": "prettier --write .",
 		"lint": "prettier --check ."
 	},

@@ -17,6 +17,8 @@ import {
   validatePreviewCaseUpdate,
   validateProposeCapacityPlan,
   validateQueryNetwork,
+  validateListCases,
+  validateSelectCase,
   validateResetCase,
   validateUpdateCase,
 } from "./validation.js";
@@ -147,7 +149,16 @@ function committedSuccess(
     output_truncated: true,
   };
   if (toolName.includes("study")) {
-    for (const key of ["id", "revision", "experiment", "active_goal", "inspected_state", "recommended_state", "applied_state"]) copyPrimitive(summary, result, key);
+    for (const key of [
+      "id",
+      "revision",
+      "experiment",
+      "active_goal",
+      "inspected_state",
+      "recommended_state",
+      "applied_state",
+    ])
+      copyPrimitive(summary, result, key);
   } else if (toolName === "propose_capacity_plan") {
     copyPrimitive(summary, result, "proposal_id");
     copyPrimitive(summary, result, "revision");
@@ -161,8 +172,10 @@ function committedSuccess(
   } else if (toolName === "update_case" || toolName === "reset_case") {
     copyPrimitive(summary, result, "revision");
     copyPrimitive(summary, result, "formulation");
-  } else if (toolName === "focus_network") {
+  } else if (toolName === "focus_network" || toolName === "select_case") {
     copyPrimitive(summary, result, "revision");
+    copyPrimitive(summary, result, "case_id");
+    copyPrimitive(summary, result, "state_id");
   }
   const compact = withinBudget({ ok: true, data: summary }, outputBudget);
   if (compact.ok) return compact;
@@ -343,16 +356,77 @@ export function createTellegenTools(
       options.recordValidatedInput,
     );
 
+  const caseTools: TellegenToolDefinition[] = adapter.cases
+    ? [
+        {
+          name: "list_cases",
+          title: "List available cases",
+          description:
+            "List configured and imported cases, including unavailable cases and their reported reasons. Returns stable case IDs, the displayed revision, and a pagination offset for select_case.",
+          inputSchema: objectSchema({
+            offset: {
+              type: "integer",
+              minimum: 0,
+              maximum: 100000,
+              description:
+                "Pagination offset. Defaults to 0; use next_offset from the previous result.",
+            },
+            limit: {
+              type: "integer",
+              minimum: 1,
+              maximum: 20,
+              description: "Maximum cases. Defaults to 10.",
+            },
+          }),
+          execute: tracked(
+            "list_cases",
+            "List available cases",
+            validateListCases,
+            (input, signal) => adapter.cases!.listCases(input, signal),
+          ),
+          annotations: annotations(true),
+        },
+        {
+          name: "select_case",
+          title: "Switch network case",
+          description:
+            "Show a case from list_cases using the same controls as the case tabs. Leaves saved Studies intact and exits historical inspection. Changes the view only; no proposal approval is required.",
+          inputSchema: objectSchema(
+            {
+              case_id: {
+                type: "string",
+                description: "Case ID from list_cases.",
+              },
+              expected_revision: {
+                type: "string",
+                description:
+                  "Optional displayed revision from list_cases or inspect_case, checked before selection.",
+              },
+            },
+            ["case_id"],
+          ),
+          execute: tracked(
+            "select_case",
+            "Switch network case",
+            validateSelectCase,
+            (input, signal) => adapter.cases!.selectCase(input, signal),
+            "commit-aware",
+          ),
+          annotations: annotations(false),
+        },
+      ]
+    : [];
   return [
+    ...caseTools,
     {
       name: "inspect_case",
-      title: "Inspect active case",
+      title: "Inspect network",
       description:
-        "Inspect the active tellegen case, its network and solve state, committed edits, selection, and revision. Call before a mutation to obtain case_id and expected_revision.",
+        "Inspect the displayed network, including a saved Study state when one is shown. Returns case, state, formulation, units, and revision. Saved states are read-only; select_case returns to the editable case.",
       inputSchema: objectSchema({}),
       execute: tracked(
         "inspect_case",
-        "Inspect active case",
+        "Inspect network",
         validateEmpty,
         (_input, signal) => adapter.inspectCase(signal),
       ),
@@ -362,7 +436,7 @@ export function createTellegenTools(
       name: "query_network",
       title: "Query network elements",
       description:
-        "Query a bounded list of buses or branches in the active case by stable ID or metric. Returns current solved values and IDs that other tellegen tools accept.",
+        "Query buses or branches in the displayed network by stable ID or metric. For the highest LMP use element_kind bus, sort_by price, direction desc, limit 1. Returns saved-state values when a Study state is shown.",
       inputSchema: objectSchema(
         {
           case_id: {
@@ -388,6 +462,7 @@ export function createTellegenTools(
               "demand_mw",
               "generation_mw",
               "price",
+              "voltage_pu",
               "loading",
               "flow_mw",
               "rating_mw",
@@ -421,7 +496,7 @@ export function createTellegenTools(
       name: "analyze_sensitivity",
       title: "Analyze sensitivity",
       description:
-        "Compute the current formulation's nodal price sensitivity for one bus demand or branch rating and return the largest responses. Leaves the visible selection unchanged.",
+        "Compute the displayed formulation's LMP sensitivity for one bus demand or branch rating and return the largest responses. Leaves the visible selection unchanged.",
       inputSchema: objectSchema(
         {
           case_id: {
@@ -550,7 +625,7 @@ export function createTellegenTools(
       name: "update_case",
       title: "Update and solve case",
       description:
-        "Atomically set or increment demand and branch-rating deltas, optionally choose a formulation, then run the exact solve and update the visible interface. Requires the current revision.",
+        "Atomically set or increment demand and branch-rating deltas, optionally choose a formulation, then solve and update the visible interface. Requires the current revision.",
       inputSchema: objectSchema(
         {
           case_id: {
@@ -624,7 +699,7 @@ export function createTellegenTools(
       name: "reset_case",
       title: "Reset case edits",
       description:
-        "Clear all committed demand and branch-rating edits in the active case, keep its formulation, run the exact solve, and update the visible interface. Requires the current revision.",
+        "Clear all committed demand and branch-rating edits in the active case, keep its formulation, solve, and update the visible interface. Requires the current revision.",
       inputSchema: objectSchema(
         {
           case_id: {
@@ -765,7 +840,8 @@ export function createTellegenPlanningTools(
           type: "integer",
           minimum: 2,
           maximum: 32,
-          description: "Total exact solves, including baseline and all trials.",
+          description:
+            "Solve budget, including the starting point and all trials.",
         },
       },
       [
@@ -830,22 +906,34 @@ export function createTellegenPlanningTools(
 }
 
 /** Persistent Study tools use host schemas generated from the numerical contracts. */
-export function createTellegenStudyTools(adapter: TellegenStudyAdapter, options: CreateTellegenToolsOptions = {}): TellegenToolDefinition[] {
+export function createTellegenStudyTools(
+  adapter: TellegenStudyAdapter,
+  options: CreateTellegenToolsOptions = {},
+): TellegenToolDefinition[] {
   const { outputBudget, timeoutMs } = executionLimits(options);
   let sequence = 0;
   const descriptions: Record<StudyToolName, string> = {
-    create_study: "Create and save a Study from the active case, its interpreted goal and permitted interventions. The starting state is solved exactly.",
-    inspect_study: "Inspect the open Study, read a bounded page of goals, states or evidence, or open a saved Study. Saved candidates remain unapplied.",
-    revise_study_goal: "Save a new goal revision without changing historical goals. The revision invalidates the current recommendation and approvals.",
-    branch_study: "Inspect a saved state and continue exploration from it. This changes the inspected pointer, not the applied state.",
-    compare_study_states: "Compare two saved states under one goal revision. Results include the outer objective and consequences across the network.",
-    propose_study: "Explore feasible capacity or demand interventions using implicit gradients and exact solves. Every trial counts against the solve budget. Save the best verified recommendation without applying it. The user applies it in the Study panel.",
-    edit_demand: "Add signed MW increments at permitted buses to the selected saved state. Edits accumulate across calls and persist after reload. Individual bounds and the total change budget apply to every step; incomplete demand totals stay unapplied. Read the resulting state's evidence for the cumulative demand vector.",
-    restore_base_case: "Exactly solve the retained original network data and save a reset candidate without applying it or deleting history. The user can apply the reset in the Study panel. Reports when the original input is unavailable.",
-    record_study_evidence: "Attach a stated rationale and evidence to a state and goal without creating an electrical state. Do not record private agent reasoning."
+    create_study:
+      "Save the current case and its results as a Study. A planning goal is optional; add or revise it later. Creating a Study does not change the network or apply a proposal.",
+    inspect_study:
+      "Inspect the open Study, read a bounded page of goals, states or evidence, or open a saved Study. Saved candidates remain unapplied.",
+    revise_study_goal:
+      "Save a new goal revision without changing historical goals. The revision invalidates the current recommendation and approvals.",
+    branch_study:
+      "Inspect a saved state and continue exploration from it. This changes the inspected pointer, not the applied state.",
+    compare_study_states:
+      "Compare two saved network states, optionally under a selected goal revision. Results include operating-point changes and goal progress when a goal is selected.",
+    propose_study:
+      "Explore feasible capacity or demand interventions using implicit gradients and exact solves. Every trial counts against the solve budget. Save the best verified recommendation without applying it. The user applies it in the Study panel.",
+    edit_demand:
+      "Add signed MW increments at permitted buses to the selected saved state. Edits accumulate across calls and persist after reload. Individual bounds and the total change budget apply to every step; incomplete demand totals stay unapplied. Read the resulting state's evidence for the cumulative demand vector.",
+    restore_base_case:
+      "Exactly solve the retained original network data and save a reset candidate without applying it or deleting history. The user can apply the reset in the Study panel. Reports when the original input is unavailable.",
+    record_study_evidence:
+      "Attach a stated rationale and evidence to a saved state without creating an electrical state. Do not record private agent reasoning.",
   };
   const titles: Record<StudyToolName, string> = {
-    create_study: "Start a saved investigation",
+    create_study: "Save the current case",
     inspect_study: "Read saved goals, states and evidence",
     revise_study_goal: "Revise the objective and permitted changes",
     branch_study: "Continue from a saved network state",
@@ -855,11 +943,37 @@ export function createTellegenStudyTools(adapter: TellegenStudyAdapter, options:
     restore_base_case: "Restore the original network base case",
     record_study_evidence: "Record an observation or sensitivity result",
   };
-  return (Object.entries(descriptions) as [StudyToolName, string][]).map(([name, description]) => ({
-    name, title: titles[name], description, inputSchema: adapter.inputSchema(name), annotations: annotations(name === "inspect_study"),
-    execute: execute(name, titles[name], input => {
-      if (!input || typeof input !== "object" || Array.isArray(input) || JSON.stringify(input).length > 1_048_576) throw new TellegenToolError("INVALID_INPUT", "Study input must be an object no larger than 1 MiB");
-      return input as Record<string, unknown>;
-    }, (input, signal) => adapter.execute(name, input, signal), outputBudget, Math.max(timeoutMs, 300_000), options.onActivity, () => `tellegen-study-${++sequence}`, "commit-aware", options.recordValidatedInput)
-  }));
+  return (Object.entries(descriptions) as [StudyToolName, string][]).map(
+    ([name, description]) => ({
+      name,
+      title: titles[name],
+      description,
+      inputSchema: adapter.inputSchema(name),
+      annotations: annotations(name === "inspect_study"),
+      execute: execute(
+        name,
+        titles[name],
+        (input) => {
+          if (
+            !input ||
+            typeof input !== "object" ||
+            Array.isArray(input) ||
+            JSON.stringify(input).length > 1_048_576
+          )
+            throw new TellegenToolError(
+              "INVALID_INPUT",
+              "Study input must be an object no larger than 1 MiB",
+            );
+          return input as Record<string, unknown>;
+        },
+        (input, signal) => adapter.execute(name, input, signal),
+        outputBudget,
+        Math.max(timeoutMs, 300_000),
+        options.onActivity,
+        () => `tellegen-study-${++sequence}`,
+        "commit-aware",
+        options.recordValidatedInput,
+      ),
+    }),
+  );
 }

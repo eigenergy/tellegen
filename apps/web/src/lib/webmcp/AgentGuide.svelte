@@ -3,7 +3,7 @@
 	let { supported, registrationError }: { supported: boolean; registrationError: string | null } =
 		$props();
 	const prompt =
-		'Use the WebMCP tools in this Tellegen tab to inspect the network, explain congestion, and compare demand or capacity changes. Save the results in a Study. Ask before applying a proposal.';
+		'Use the WebMCP tools in this Tellegen tab. Inspect/query the displayed case; list_cases/select_case switch cases. Save a Study only when asked, and ask before applying a proposal. If tools are unavailable, report that instead of requesting screen recording.';
 	let copied = $state(false);
 	let copyError = $state(false);
 	async function copy() {
@@ -18,7 +18,7 @@
 </script>
 
 <section aria-label="Use Tellegen with an agent">
-	<p>Open this tab in your agent's browser, then send this request.</p>
+	<p>Open this tab in your agent's browser and copy this prompt.</p>
 	<label for="agent-prompt">Agent prompt</label>
 	<textarea id="agent-prompt" rows="5" readonly value={prompt}></textarea>
 	<div class="actions">
@@ -33,8 +33,8 @@
 		<span class:available={supported && !registrationError}></span>{registrationError
 			? 'Registration failed. Reload to retry.'
 			: supported
-				? 'WebMCP is ready in this tab.'
-				: 'Requires a browser with WebMCP support.'}
+				? 'WebMCP tools available. Calls appear in Activity.'
+				: 'WebMCP tools unavailable in this browser.'}
 	</p>
 </section>
 

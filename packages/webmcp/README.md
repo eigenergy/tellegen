@@ -24,7 +24,17 @@ lifecycle.abort();
 registration.dispose();
 ```
 
-`createTellegenTools(adapter)` returns the general OPF descriptors.
+`createTellegenTools(adapter)` returns the general OPF descriptors. Hosts that
+provide `adapter.cases` also register `list_cases` and `select_case`. Listing
+is paginated with `offset`, `limit`, and `next_offset`; selection takes a
+`case_id` and an optional `expected_revision` for the displayed view. Case
+selection changes the view without applying a proposal or deleting saved work.
+
+Inspection and queries describe the displayed network, including saved Study
+states. Results identify `case_id`, `study_id`, `state_id`, `formulation`, and
+units. A saved state's view revision follows its immutable state identity;
+`study_revision` separately identifies the document revision. Live editing
+requires returning to the live case through `select_case`.
 `createTellegenPlanningTools(planning)` returns the proposal and application
 descriptors in their dynamic registration groups. Tests and browser runners
 can call every descriptor's `execute` function with or without an

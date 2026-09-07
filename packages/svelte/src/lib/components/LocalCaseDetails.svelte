@@ -123,7 +123,17 @@
 				{/if}
 			</ul>
 		{/if}
-		{#if !lc.view}
+		{#if lc.displayMode === 'diagram' && lc.diagram}
+			<p class="footnote mono">Drawing: {lc.diagram.name}</p>
+			{#if lc.diagram.warnings.length}
+				<details>
+					<summary>Drawing details</summary>
+					<ul class="warnings mono">
+						{#each lc.diagram.warnings as warning, i (i)}<li>{warning}</li>{/each}
+					</ul>
+				</details>
+			{/if}
+		{:else if !lc.view}
 			<p class="footnote mono">
 				no coordinates in this file: click the map or drop a geographic file
 			</p>
@@ -136,7 +146,7 @@
 				coordinates: geographic file data from {lc.geoSource}
 			</p>
 		{/if}
-		{#if lc.geoWarnings && lc.geoWarnings.length > 0}
+		{#if lc.displayMode !== 'diagram' && lc.geoWarnings && lc.geoWarnings.length > 0}
 			<ul class="warnings mono">
 				{#each lc.geoWarnings.slice(0, 4) as w, i (i)}
 					<li>{w}</li>
@@ -182,9 +192,11 @@
 						</ul>
 					{/if}
 				</div>
-				{#if lc.view}
+				{#if lc.view || lc.diagram}
 					<button class="reset mono" disabled={busy} onclick={() => downloadLayout(lc)}>
-						download layout (.geo.json)
+						{lc.displayMode === 'diagram'
+							? 'Download drawing (.geo.json)'
+							: 'Download geography (.geo.json)'}
 					</button>
 				{/if}
 			</div>
@@ -200,7 +212,7 @@
 			{/if}
 		{/if}
 	{/if}
-	{#if lc.topology && lc.coordsKind !== 'file'}
+	{#if lc.displayMode !== 'diagram' && lc.topology && lc.coordsKind !== 'file'}
 		<button class="reset mono" onclick={() => ctrl.moveLocalCase(lc)}>
 			{lc.coordsKind === 'synthetic_pending'
 				? 'place on map'

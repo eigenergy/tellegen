@@ -98,6 +98,8 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 				'analyze_sensitivity',
 				'focus_network',
 				'inspect_case',
+				'list_cases',
+				'select_case',
 				'preview_case_update',
 				'query_network',
 				'reset_case',
@@ -115,7 +117,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 		);
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'ready');
 
-	await page.locator('input[type="file"]').setInputFiles([
+	await page.locator('input[type="file"][accept*=".m,"]').setInputFiles([
 		{
 			name: 'case14-coords.csv',
 			mimeType: 'text/csv',
@@ -141,8 +143,10 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 	expect(revision.startsWith(`${sessionId}:r`)).toBe(true);
 	expect(Number.parseInt(revision.slice(`${sessionId}:r`.length), 10)).toBeGreaterThan(0);
 	expect(JSON.stringify(inspected).length).toBeLessThanOrEqual(1_450);
+	await expect(page.locator('[data-webmcp-activity="open"]')).not.toBeVisible();
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
 	await expect(page.locator('[data-webmcp-activity="open"]')).toBeVisible();
-	await expect(page.getByText('Inspect active case')).toBeVisible();
+	await expect(page.getByText('Inspect network')).toBeVisible();
 
 	const queried = await callTool(page, 'query_network', {
 		case_id: caseId,
@@ -346,7 +350,7 @@ test('inspect_case refuses a snapshot whose revision changes while its source is
 	});
 	await page.goto('/');
 	await expect(page.getByText('no default cases loaded')).toBeVisible();
-	await page.locator('input[type="file"]').setInputFiles([
+	await page.locator('input[type="file"][accept*=".m,"]').setInputFiles([
 		{
 			name: 'case14-coords.csv',
 			mimeType: 'text/csv',
@@ -392,7 +396,7 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 	await page.goto('/');
 	await expect(page.getByText('no default cases loaded')).toBeVisible();
 
-	await page.locator('input[type="file"]').setInputFiles([
+	await page.locator('input[type="file"][accept*=".m,"]').setInputFiles([
 		{
 			name: 'case14-coords.csv',
 			mimeType: 'text/csv',
@@ -407,6 +411,8 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
 
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'error');
+	await page.getByRole('button', { name: 'Agent', exact: true }).click();
+	await page.getByRole('button', { name: 'Activity', exact: true }).click();
 	await expect(page.getByTestId('webmcp-registration-error')).toContainText(
 		'registration refused for propose_capacity_plan'
 	);
@@ -423,6 +429,8 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 				'analyze_sensitivity',
 				'focus_network',
 				'inspect_case',
+				'list_cases',
+				'select_case',
 				'preview_case_update',
 				'query_network',
 				'reset_case',

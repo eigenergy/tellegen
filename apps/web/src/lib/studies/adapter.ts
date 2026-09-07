@@ -50,10 +50,24 @@ function inputSchema(name: StudyToolName): Schema {
 		delete create.properties.input;
 		delete create.properties.base_input;
 		delete create.properties.id;
-		create.required = create.required.filter((key: string) => key !== 'input' && key !== 'id');
-		return withDefinitions(
-			object({ case_id: string, expected_case_revision: string, goal: create })
+		create.required = create.required.filter(
+			(key: string) => !['input', 'base_input', 'id'].includes(key)
 		);
+		return withDefinitions({
+			...object(
+				{
+					case_id: string,
+					expected_case_revision: string,
+					study: create,
+					goal: { ...create, description: 'Legacy alias for study.' }
+				},
+				['case_id', 'expected_case_revision']
+			),
+			oneOf: [
+				{ required: ['study'], not: { required: ['goal'] } },
+				{ required: ['goal'], not: { required: ['study'] } }
+			]
+		});
 	}
 	if (name === 'inspect_study')
 		return object(
@@ -86,10 +100,16 @@ export function createStudyAdapter(workspace: StudyWorkspace): TellegenStudyAdap
 		async execute(name, input, signal) {
 			signal.throwIfAborted();
 			if (name === 'create_study') {
-				if (!input.goal || typeof input.goal !== 'object')
-					throw new Error('A structured goal is required');
+				if (input.study !== undefined && input.goal !== undefined)
+					throw new TellegenToolError('INVALID_INPUT', 'Use study, or its legacy alias goal, once');
+				const draft = input.study ?? input.goal;
+				if (!draft || typeof draft !== 'object' || Array.isArray(draft))
+					throw new TellegenToolError(
+						'INVALID_INPUT',
+						'study must contain the name and case formulation; a planning goal is optional'
+					);
 				await workspace.create(
-					input.goal as GoalDraft,
+					draft as GoalDraft,
 					text(input, 'case_id'),
 					text(input, 'expected_case_revision'),
 					signal

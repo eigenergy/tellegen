@@ -1,153 +1,106 @@
-# Persistent Studies
+# Saved Studies
 
-A Study records a goal, the electrical states explored in pursuit of it, and the
-exact evidence behind a recommendation. Open **Studies** in the network view,
-state a goal, resolve the equipment and weights, and review the interpretation
-before creating the Study. The editable JSON is the numerical request.
+A Study is **a saved case with its changes and results**. Open **Studies**, give
+the current case a name, and select **Save study**. A planning goal is optional.
+Saving keeps the current result when it matches the case; an unsolved case can
+also be saved. Saving does not move the network or reset the camera.
 
-The starting PowerIO calculation instance preserves the inner OPF objective and
-constraints. The Study objective is a separate scalar expression over its solved
-prices, dispatch, flows or voltages. Expressions compose weighted observables,
-sums, scaling, squared target deviations and direct intervention penalties.
-The engine evaluates the complete derivative with a combined adjoint solve,
-including the direct penalty terms. It does not build a dense matrix containing
-all observable/decision pairs.
+## Case, History, and Plan
 
-## Explore, compare and apply
+- **Case** shows the selected saved state. Demand rows show base demand, current
+  demand, and the accumulated change in MW. Edits at different buses remain
+  part of one cumulative set of changes.
+- **History** holds saved states and activity. Select a state to inspect it or
+  branch from it to explore another option. Observations, edits, solves,
+  planning trials, and decisions have distinct labels. An observation adds
+  evidence without inventing an electrical state.
+- **Plan** is optional. Choose a goal, then explicitly choose the whole network,
+  an area, or selected equipment. Searchable tables show bus names and IDs,
+  line endpoints, weights, limits, and units. The displayed counts include
+  every selected element; there are no hidden bus or line limits.
 
-Capacity decisions use MW for DC OPF and MVA for SOCWR. Active-demand decisions
-use MW. Each decision states a stable element identity, bounds and an increment.
-The shared feasible set adds a weighted absolute-change budget and a maximum
-number of changed elements. A goal retains its starting anchor: continuing from
-a candidate measures cumulative changes from that anchor and does not reset the
-budget. Placement allocates the declared total additional load; redistribution
-uses paired transfers that preserve total demand.
+**Reset to base case** restores the original electrical inputs and retains
+previous states and activity. The base is the network data supplied to the
+Study, which can differ from its starting state when demand was already edited.
+Older imported Studies without a base input report that reset is unavailable.
 
-**Find a proposal** ranks feasible moves with the current gradient, solves a
-bounded beam exactly, keeps a verified improvement and recomputes the direction.
-Every attempted solve consumes the budget, including baseline reconstruction and
-failed trials. The returned recommendation is the best verified candidate found,
-not a certificate of global optimality. Active-set changes can invalidate a
-local derivative. Trial evidence records predictions, exact values, changed
-active constraints, failures and termination. Derivative evidence includes its
-regularization and refinement settings.
+The saved state currently being inspected, the recommended candidate, and the
+applied state remain distinct. Selecting a candidate changes the displayed
+network. An agent proposal requires an explicit **Apply** action. **Live case**
+returns to the case outside the Study.
 
-The Study keeps three separate state pointers:
+## Planning
 
-| Pointer | Meaning |
-|---|---|
-| Inspecting | The saved state shown on the map and used for the next action |
-| Recommended | The best verified candidate from the current proposal |
-| Applied | The state explicitly accepted through the Apply action |
+The OPF objective describes operating cost inside the power-system calculation.
+A planning goal describes what to improve across candidate cases, such as a
+weighted LMP or voltage target. Custom expressions remain available through
+the structured API: weighted observables, sums, scaling, squared target
+deviations, and direct intervention penalties.
 
-Selecting a state or branching from it changes the view. Applying a proposal is
-an explicit action. Approval binds the proposal to its goal, base state and
-revision; changing any of them expires the approval. A goal revision retains the
-previous interpretation and its evidence. Comparisons can evaluate saved
-candidates under a selected goal revision. Inspection and attached evidence do
-not invent a new electrical state. A challenge can name the recommendation it
-assesses with `assessed_recommendation`.
+Line capacity uses MW for DC OPF and MVA for SOCWR. Demand uses MW. Limits and
+increments apply to the cumulative changes from the goal's starting state.
+Demand placement allocates a stated additional total; redistribution preserves
+the total through paired transfers.
 
-The saved-state map belongs to the Study. **Return to live case** returns to the
-interactive case loaded outside it. Importing or inspecting a Study does not
-execute imported text or silently overwrite that live case.
+**Find a proposal** uses the objective gradient to choose candidate edits,
+solves each candidate, and retains verified improvements. Every attempted solve
+counts against **Solve budget**, including failed trials and any required
+starting-point solve. The result is the best verified candidate found within
+that budget. It does not establish a global optimum. Expand the evidence for
+prediction error, active-constraint changes, failed trials, and numerical
+settings.
 
-## Demand edits and base-case reset
+The derivative uses a combined adjoint calculation, including direct penalties,
+without constructing a dense observable-by-decision matrix. Changing the goal
+creates a new revision and retains earlier results. Changing a proposal's goal
+or starting state invalidates its approval.
 
-**Solve demand edit** adds a signed MW increment at a permitted bus in the
-selected saved state. Successive edits accumulate across buses and survive
-export and reload. Bounds, increments, the absolute-change budget and the
-number of changed buses apply to the cumulative changes from the goal anchor.
-A partial placement or redistribution remains a saved candidate until its total
-is satisfied; it cannot be applied as a recommendation yet. Edit evidence
-includes the sparse demand-change vector relative to the original network data.
+## Save, reopen, and continue
 
-**Prepare base-case reset** exactly solves the original network input and saves
-a reset candidate. Applying that candidate restores the original demand and
-ratings without deleting the goal revisions, earlier states or activity. The
-original input is distinct from the Study's starting point, which may already
-contain live edits. Native `CreateStudy` accepts optional `base_input` for that
-original PowerIO IR; without it, the supplied `input` is the base. Older imported
-bundles without retained base data report that reset is unavailable.
+The browser stores completed operations atomically in IndexedDB. **Export**
+creates a portable bundle containing PowerIO generation-2 inputs and solutions,
+deduplicated SHA-256 artifacts, goals, states, and activity. Geographic layers,
+line paths, drawings, and the selected view travel with it. **Import** checks
+versions, hashes, identities, and references. It never restores approval tokens
+or executes imported text. Older journals remain historical evidence when their
+electrical states are unavailable.
 
-The shared operations are `edit_demand` and `restore_base`. Both leave the
-applied pointer unchanged until an explicit Apply action. Observations,
-edits and solves, planning trials, and decisions remain distinct in Activity.
+A failed save reports the problem instead of discarding history. Free storage
+or export the saved Study before retrying. Cancellation retains completed trials
+and the best candidate after the running solve finishes.
 
-## Storage and continuation
-
-Electrical inputs, calculation instances and exact solutions use PowerIO
-IR generation 2. Study semantics live in the application document. A portable
-bundle contains a deduplicated SHA-256 artifact map, immutable state and goal
-records, experiments, evidence references and decisions. Browser storage uses
-IndexedDB; the native interface saves the same bundle on the filesystem.
-Completed operations save atomically before the controller publishes them.
-
-Export a Study to continue in another browser or through the native CLI.
-Import checks document versions, identities, artifact hashes and references,
-and verifies that saved solution instances agree with their state inputs.
-Approval tokens never enter the bundle. Older experiment journals import as
-historical evidence; unavailable electrical states remain explicitly unavailable.
-
-A storage failure reports the failed save and recovery choices. Free storage or
-export the current saved Study before retrying. Filesystem writers use a revision
-check and an exclusive lock; inspect a leftover lock's process before removing
-it. A second writer cannot silently replace a newer revision.
-
-Cancellation finishes the current exact trial, then saves the completed trials,
-best candidate and cancelled termination. An exact solve is indivisible, so
-cancellation latency depends on that trial. Closing or forcibly killing the
-process before the save can lose the current operation; the previous completed
-revision remains durable. PowerMCP defaults to a 300-second graceful termination window before forcing a
-stopped process to exit. Its runtime and cancellation limits are configurable.
-
-## Native and agent interfaces
+## Native and agent access
 
 ```sh
 cargo build -p tellegen-cli --features conic
-tellegen contract
+tellegen describe
 tellegen study create study.json < create-request.json
 tellegen study inspect study.json
 tellegen study run study.json < operation-request.json
 tellegen study export study.json > portable-study.json
-tellegen study import another-study.json < portable-study.json
 ```
 
-`tellegen contract` returns generated schemas for `CreateStudy`, `StudyRequest`,
-`StudyBundle` and the operation result. Rust is the contract authority; the
-browser's TypeScript types and runtime schemas are generated from those same
-records. `expected_revision` accompanies each mutation.
+`tellegen describe` lists commands and generated JSON schemas. Rust definitions
+also generate the TypeScript types. Browser controls, WebMCP, and the CLI use
+the same Study operations and revision checks. PowerMCP invokes the CLI directly.
 
-Browser WebMCP exposes `create_study`, `inspect_study`, `revise_study_goal`,
-`branch_study`, `compare_study_states`, `propose_study` and
-`record_study_evidence`, `edit_demand` and `restore_base_case`. Inspection returns compact continuation context and
-bounded pages of larger records. The browser controls call the same controller.
-PowerMCP's `tellegen` adapter invokes the native CLI directly and uses the same
-request schemas. Its agent interface leaves application to an explicit user
-action.
+WebMCP `list_cases` and `select_case` change the visible case without proposal
+approval. Network queries identify the displayed case and saved state, so an
+LMP question refers to the same result shown on screen. Creating a Study is
+needed only when saving or planning is requested.
 
-A sensitivity build supports DC OPF and AC power flow Studies. The `conic`
-feature adds SOCWR. Nonlinear AC OPF and multiconductor solving are unavailable;
-unsupported objective/formulation combinations fail before exploration.
+Supported calculations are DC OPF, AC power flow, and, with the `conic` build
+option, SOCWR. Unsupported objective and solver combinations are rejected
+before planning.
 
-The capacity WebMCP tools create persistent Studies and use the same bounded
-search as `propose_study`. Their compact response includes `study_id` for
-continuation. The creation solve and every planning solve count toward the
-capacity call's budget. A human capacity approval binds the Study's goal, starting
-state and recommended state. Goal changes expire it; recording inspection evidence
-does not. Failed persistence leaves the approval available for a retry.
+## Model details
 
-When a matching live case is open, case inspection, network queries and sensitivity
-queries attach evidence to its captured Study state. They create no electrical
-state. Queries about a different or edited live case remain independent until a
-new Study captures that case. If a different case finishes loading while an
-approved capacity change is being saved, the saved Study remains the authoritative
-result and the tool reports `case_updated: false`; the new live case is untouched.
+Texas7k uses an explicitly configured convex quadratic or linear fit to its
+piecewise generator costs. **Model details** records the method, original and
+prepared costs, affected generators, units, and measured breakpoint errors.
+Those errors describe an approximation; they are not a relaxation bound.
+The prepared costs persist through saved cases, exports, and reset.
 
-Reproducible large-case declarations and an installed-CLI runner live in
-[`evidence/studies`](https://github.com/eigenergy/tellegen/tree/codex/webmcp-challenge-v1/evidence/studies).
-The original Texas7k cost curves include decreasing piecewise slopes, which the
-convex DC OPF formulation rejects. A separately labelled example constructs and
-records their lower convex envelope through PowerIO's typed network API. It
-changes the inner economic model and does not establish an optimum for the
-original nonconvex case.
+The same preparation is available for any balanced case through
+`tellegen prepare-model`. The command returns prepared PowerIO IR and its
+approximation report. Other cases retain their declared costs by default.

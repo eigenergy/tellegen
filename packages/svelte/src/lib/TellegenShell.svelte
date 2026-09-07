@@ -2,17 +2,17 @@
 	import { onMount } from 'svelte';
 	import AppFooter from './components/AppFooter.svelte';
 	import AppHeader from './components/AppHeader.svelte';
-	import BusPicker from './components/BusPicker.svelte';
 	import ControlPanel from './components/ControlPanel.svelte';
 	import DropZone from './components/DropZone.svelte';
 	import PlacementCue from './components/PlacementCue.svelte';
 	import RestoreDefaultsButton from './components/RestoreDefaultsButton.svelte';
 	import SolveCard from './components/SolveCard.svelte';
+	import PanelHost from './components/PanelHost.svelte';
+	import { PANEL_COMPACT_QUERY } from './panels.svelte.js';
 	import { getAppState, getController, getUiConfig } from './context.svelte.js';
 	import TellegenMap from './TellegenMap.svelte';
 
 	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
-	const COMPACT_QUERY = '(max-width: 760px)';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -53,7 +53,7 @@
 		syncFileDropUi();
 		query.addEventListener('change', syncFileDropUi);
 
-		const compact = window.matchMedia(COMPACT_QUERY);
+		const compact = window.matchMedia(PANEL_COMPACT_QUERY);
 		const syncCompact = () => {
 			app.compactLayout = compact.matches;
 			if (!compact.matches) app.sheetInset = 0;
@@ -61,8 +61,7 @@
 		syncCompact();
 		compact.addEventListener('change', syncCompact);
 
-		// The sheet sizes its snaps against the viewport and the map caps how far
-		// it lifts the basemap chrome, so both read one measurement taken here.
+		// Shared viewport measurements keep panel and map framing dimensions aligned.
 		const syncViewport = () => (app.viewportHeight = window.innerHeight);
 		syncViewport();
 		window.addEventListener('resize', syncViewport);
@@ -130,16 +129,13 @@
 	/>
 
 	<AppHeader />
-	{#if !app.studyView}
+	<PanelHost />
 	<ControlPanel />
 	<SolveCard />
-	<!-- ControlPanel mounts the lookup and the footer inline when compact. -->
-	{#if !app.compactLayout}
-		<BusPicker />
-	{/if}
-	<DropZone />
-	<PlacementCue />
-	<RestoreDefaultsButton />
+	{#if !app.studyView}
+		<DropZone />
+		<PlacementCue />
+		<RestoreDefaultsButton />
 	{/if}
 	{#if config.showFooter && !app.compactLayout}
 		<AppFooter />

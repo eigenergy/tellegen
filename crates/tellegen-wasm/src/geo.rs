@@ -16,7 +16,7 @@
 
 use powerio::geo::{apply_substation_points, CoordsKind, GeoApplyReport, GeoGeometry, GeoLayer};
 use powerio::{BalancedNetwork, PioModule, PioValue};
-use tellegen::geo::{pwd_lonlat_layer, stamp_layout, Coords};
+use tellegen::geo::{stamp_layout, Coords};
 
 use crate::{ingest_value, with_module_json};
 
@@ -116,17 +116,14 @@ pub fn extract_geo_impl(module_json: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Fill case coordinates from a PowerWorld `.pwd` display sibling: the decoded
-/// substation symbols project to approximate longitude/latitude and join onto
-/// buses through the `SubNum` extras key. Errors when no bus joined (the case
-/// carries no substation identity, or the numbers do not line up); otherwise
-/// returns the refreshed drop-panel payload with a `report`.
+/// Apply bus, branch, and substation drawing positions in their declared units.
+/// The caller retains the geographic case separately when presenting this view.
 pub fn apply_display_geo_impl(module_json: &str, bytes: &[u8]) -> Result<String, String> {
     let source =
         powerio::Source::from_memory("display.pwd", bytes.to_vec()).map_err(|e| e.to_string())?;
     let display_module = powerio::parse(source).map_err(|e| e.to_string())?;
     let layer = match display_module.into_value() {
-        PioValue::GeoLayer(layer) => pwd_lonlat_layer(layer),
+        PioValue::GeoLayer(layer) => layer,
         other => {
             return Err(format!(
                 "PowerWorld display parsed as {}, expected powerio.GeoLayer",
@@ -136,17 +133,17 @@ pub fn apply_display_geo_impl(module_json: &str, bytes: &[u8]) -> Result<String,
     };
     let mut module = parse_network_module(module_json)?;
     let mut report = edit_network(&mut module, |network| {
-        apply_substation_points(network, &layer)
+        let stations = apply_substation_points(network, &layer);
+        let mut report = network.apply_geo_layer(&layer);
+        report.matched_buses += stations.matched_buses;
+        report
     })?;
     if report.matched_buses == 0 {
-        return Err(
-            "no case buses joined the .pwd substations (no matching SubNum on the bus rows)"
-                .to_owned(),
-        );
+        return Err("No drawing bus or substation identities matched this case".to_owned());
     }
     report
         .notes
-        .push("positions are projected from diagram coordinates and are approximate".to_owned());
+        .push("Positions use drawing coordinates on a diagram canvas".to_owned());
     payload_with_report(module, report)
 }
 

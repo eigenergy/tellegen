@@ -1,18 +1,18 @@
-//! `tellegen` — a thin CLI over the engine's JSON contracts, for
+//! `tellegen` provides JSON commands for
 //! reproducible solves, capacity proposals, parity checks, and scripting.
 //!
 //! ```text
 //! tellegen capabilities                       # the support matrix
-//! tellegen contract                           # versioned machine contract
+//! tellegen describe                           # commands and JSON schemas
 //! tellegen < case.pio.json                    # base-case DC OPF response
 //! tellegen '{"formulation":"socwr"}' < case.pio.json
 //! tellegen solve-module < case.pio.json       # stored module in, solution module out
 //! tellegen plan < plan-request.json          # capacity planning proposal
 //! ```
 //!
-//! `solve-module` and `plan` are the headless MCP boundary: a stored
+//! `solve-module` and `plan` accept a stored
 //! generation 2 `pio-ir` document on stdin, and a stored
-//! DC OPF solution module — nodal values and thermal multipliers attached —
+//! DC OPF solution module with LMPs and thermal multipliers
 //! or a capacity proposal and its exact proposed solution on stdout. A module holding a
 //! typed `dc_opf_instance` is consumed natively; a balanced network becomes
 //! the default instance first. Any other value kind is refused by name.
@@ -37,7 +37,9 @@ const USAGE: &str =
      \n\
      REQUEST_JSON  a solve request; default '{}' is a base-case DC OPF.\n\
      capabilities  print the formulation/operand/parameter capability matrix.\n\
-     contract      print the versioned CLI contract and generated JSON Schemas.\n\
+     describe      print supported commands and generated JSON schemas.\n\
+     prepare-model\n\
+                   fit convex quadratic or linear costs, retaining an error report.\n\
      solve-module\n\
                    read a stored PowerIO module on stdin and\n\
                    print the solved dc_opf_solution stored module.\n\
@@ -55,7 +57,17 @@ fn main() -> ExitCode {
             println!("{}", tellegen::capabilities_json());
             return ExitCode::SUCCESS;
         }
-        "contract" => return run(contract_json),
+        "prepare-model" => {
+            return run(|| {
+                let source = balanced_module(deserialize_module(&read_stdin()?)?)?.into_value();
+                let (model, details) = tellegen::preparation::prepare_costs(
+                    &source,
+                    tellegen::preparation::CostPreparation::ConvexQuadraticFit,
+                )?;
+                serde_json::to_string(&serde_json::json!({"input": serialize_module(&PioModule::new(PioValue::BalancedNetwork(model)))?, "model_details": details})).map_err(|e| e.to_string())
+            })
+        }
+        "describe" | "contract" => return run(contract_json),
         "study" => return run(study_command),
         "-h" | "--help" => {
             println!("{USAGE}");

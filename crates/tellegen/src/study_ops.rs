@@ -18,11 +18,31 @@ pub struct CreateStudy {
     pub base_input: Option<String>,
     #[cfg_attr(feature = "schema", schemars(schema_with = "study_formulation_schema"))]
     pub formulation: Problem,
+    #[serde(default)]
     pub request: String,
+    #[serde(default)]
     pub interpretation: String,
-    pub objective: StudyObjective,
-    pub decisions: DecisionSpace,
+    pub objective: Option<StudyObjective>,
+    pub decisions: Option<DecisionSpace>,
     pub success_value: Option<f64>,
+    /// A saved solution must belong to the supplied instance.
+    pub solution: Option<String>,
+    pub view: Option<crate::SolveResponse>,
+    pub display: Option<CreateDisplay>,
+    pub model_details: Option<crate::preparation::ModelDetails>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreateDisplay {
+    pub case_id: String,
+    pub geo_layer: String,
+    #[serde(default)]
+    pub layers: Vec<String>,
+    pub camera: Option<Camera>,
+    #[serde(default)]
+    pub diagram_camera: Option<DiagramCamera>,
 }
 
 #[cfg(feature = "schema")]
@@ -60,7 +80,7 @@ pub enum StudyOperation {
     Compare {
         left: String,
         right: String,
-        goal: String,
+        goal: Option<String>,
     },
     Propose {
         state: String,
@@ -70,19 +90,21 @@ pub enum StudyOperation {
     },
     EditDemand {
         state: String,
-        goal: String,
-        #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 4096)))]
+        goal: Option<String>,
+        #[serde(default = "default_true")]
+        constrain_to_goal: bool,
+        #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 65536)))]
         changes: Vec<DemandAdjustment>,
         rationale: String,
     },
     RestoreBase {
         state: String,
-        goal: String,
+        goal: Option<String>,
         rationale: String,
     },
     RecordEvidence {
         state: String,
-        goal: String,
+        goal: Option<String>,
         sensitivity: bool,
         assessed_recommendation: Option<String>,
         rationale: String,
@@ -92,9 +114,13 @@ pub enum StudyOperation {
     Apply {
         proposal: String,
         state: String,
-        goal: String,
+        goal: Option<String>,
         base_state: String,
     },
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -120,14 +146,14 @@ pub struct DemandChange {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Comparison {
-    pub goal: String,
+    pub goal: Option<String>,
     pub left: String,
     pub right: String,
-    pub left_value: f64,
-    pub right_value: f64,
-    pub improvement: f64,
-    pub left_view: crate::SolveResponse,
-    pub right_view: crate::SolveResponse,
+    pub left_value: Option<f64>,
+    pub right_value: Option<f64>,
+    pub improvement: Option<f64>,
+    pub left_view: Option<crate::SolveResponse>,
+    pub right_view: Option<crate::SolveResponse>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -143,47 +169,106 @@ pub struct StudyOperationResult {
 }
 
 pub fn create_study(request: CreateStudy) -> Result<StudyBundle, String> {
-    request.decisions.validate(request.formulation)?;
-    request.objective.validate(&request.decisions)?;
     let base_input = request.base_input.as_deref().unwrap_or(&request.input);
     same_bus_identities(&input_network(base_input)?, &input_network(&request.input)?)?;
-    let study = Study::new(&request.input, request.formulation)?;
-    let changes = vec![0.0; request.decisions.variables.len()];
-    study.check_decision_state(&request.decisions, &changes)?;
-    let value = study.objective_value(&request.objective, &request.decisions, &changes)?;
-    let exact = ExactCandidate::capture(&study, changes, value)?;
     let mut bundle = StudyBundle::empty(request.id, request.title)?;
     bundle.document.base_input =
         Some(bundle.add_artifact(ArtifactKind::PowerioIr, base_input.into())?);
-    let root = bundle.capture_state(&exact, None, "Starting point".into())?;
+    if let Some(display) = request.display {
+        let geography = bundle.add_artifact(ArtifactKind::GeoLayer, display.geo_layer)?;
+        let layers = display
+            .layers
+            .into_iter()
+            .map(|text| bundle.add_artifact(ArtifactKind::GeoLayer, text))
+            .collect::<Result<Vec<_>, _>>()?;
+        bundle.document.display = Some(DisplayContext {
+            case_id: display.case_id,
+            geography,
+            layers,
+            camera: display.camera,
+            diagram_camera: display.diagram_camera,
+        });
+    }
+    bundle.document.model_details = request.model_details;
+    let goal = match (request.objective, request.decisions) {
+        (Some(objective), Some(decisions)) => {
+            decisions.validate(request.formulation)?;
+            objective.validate(&decisions)?;
+            Some((objective, decisions))
+        }
+        (None, None) => None,
+        _ => return Err("A planning goal requires both an objective and permitted changes".into()),
+    };
+    let mut solve_count = 0;
+    let root = match (request.solution, request.view) {
+        (Some(solution), Some(view)) => bundle.capture_state(
+            &ExactCandidate {
+                input: request.input.clone(),
+                solution,
+                view: serde_json::to_string(&view).map_err(|e| e.to_string())?,
+                changes: vec![],
+                value: 0.0,
+            },
+            None,
+            "Starting point".into(),
+        )?,
+        (None, None) if goal.is_some() => {
+            let study = Study::new(&request.input, request.formulation)?;
+            solve_count = 1;
+            let (objective, decisions) = goal.as_ref().unwrap();
+            let changes = vec![0.0; decisions.variables.len()];
+            study.check_decision_state(decisions, &changes)?;
+            let value = study.objective_value(objective, decisions, &changes)?;
+            bundle.capture_state(
+                &ExactCandidate::capture(&study, changes, value)?,
+                None,
+                "Starting point".into(),
+            )?
+        }
+        (None, None) => {
+            let input = bundle.add_artifact(ArtifactKind::PowerioIr, request.input)?;
+            bundle.add_state(StateNode {
+                parent: None,
+                formulation: request.formulation,
+                input,
+                solution: None,
+                view: None,
+                label: "Starting point".into(),
+            })?
+        }
+        _ => return Err("A saved result requires both its solution and display values".into()),
+    };
     bundle.document.applied_state = Some(root.clone());
     bundle.document.inspected_state = Some(root.clone());
-    let goal = bundle.revise_goal(GoalRevision {
-        parent: None,
-        anchor_state: root.clone(),
-        request: request.request,
-        interpretation: request.interpretation,
-        objective: request.objective,
-        decisions: request.decisions,
-        success_value: request.success_value,
-    })?;
-    let evidence = bundle.add_artifact(
-        ArtifactKind::Evidence,
-        serde_json::json!({ "operation": "create_study", "exact_value": value, "solve_count": 1 })
-            .to_string(),
-    )?;
-    bundle.add_experiment(ExperimentRecord {
-        start_state: Some(root),
-        goal: Some(goal),
-        kind: ExperimentKind::Counterfactual,
-        rationale: "Establish the exact starting operating point".into(),
-        evidence: vec![evidence],
-        trials: vec![],
-        result_states: vec![],
-        assessed_recommendation: None,
-        solve_count: 1,
-        termination: "completed".into(),
-    })?;
+    if let Some((objective, decisions)) = goal {
+        bundle.revise_goal(GoalRevision {
+            parent: None,
+            anchor_state: root.clone(),
+            request: request.request,
+            interpretation: request.interpretation,
+            objective,
+            decisions,
+            success_value: request.success_value,
+        })?;
+    }
+    if solve_count > 0 {
+        let evidence = bundle.add_artifact(
+            ArtifactKind::Evidence,
+            serde_json::json!({"operation":"solve", "solve_count":solve_count}).to_string(),
+        )?;
+        bundle.add_experiment(ExperimentRecord {
+            start_state: Some(root),
+            goal: bundle.document.active_goal.clone(),
+            kind: ExperimentKind::Counterfactual,
+            rationale: "Solve the starting case".into(),
+            evidence: vec![evidence],
+            trials: vec![],
+            result_states: vec![],
+            assessed_recommendation: None,
+            solve_count,
+            termination: "completed".into(),
+        })?;
+    }
     bundle.validate()?;
     Ok(bundle)
 }
@@ -205,14 +290,10 @@ pub fn execute_study(
             }
             StudyOperation::Branch { state, rationale } => {
                 next.inspect(&state)?;
-                let goal = next
-                    .document
-                    .active_goal
-                    .clone()
-                    .ok_or("branch requires an active goal")?;
+                let goal = next.document.active_goal.clone();
                 let experiment = next.add_experiment(ExperimentRecord {
                     start_state: Some(state),
-                    goal: Some(goal),
+                    goal,
                     kind: ExperimentKind::Inspection,
                     rationale,
                     evidence: vec![],
@@ -229,14 +310,14 @@ pub fn execute_study(
                 Ok((None, None))
             }
             StudyOperation::Compare { left, right, goal } => {
-                let comparison = compare_states(next, &left, &right, &goal)?;
+                let comparison = compare_states_optional(next, &left, &right, goal.as_deref())?;
                 let evidence = next.add_artifact(
                     ArtifactKind::Evidence,
                     serde_json::to_string(&comparison).map_err(|e| e.to_string())?,
                 )?;
                 let experiment = next.add_experiment(ExperimentRecord {
                     start_state: Some(left),
-                    goal: Some(goal),
+                    goal,
                     kind: ExperimentKind::Inspection,
                     rationale: "Compare exact saved candidates under the selected goal revision"
                         .into(),
@@ -253,13 +334,15 @@ pub fn execute_study(
                 state,
                 goal,
                 changes,
+                constrain_to_goal,
                 rationale,
             } => {
                 let id = counterfactual(
                     next,
                     &state,
-                    &goal,
+                    goal.as_deref(),
                     Some(changes),
+                    constrain_to_goal,
                     rationale,
                     &mut cancelled,
                 )?;
@@ -270,7 +353,15 @@ pub fn execute_study(
                 goal,
                 rationale,
             } => {
-                let id = counterfactual(next, &state, &goal, None, rationale, &mut cancelled)?;
+                let id = counterfactual(
+                    next,
+                    &state,
+                    goal.as_deref(),
+                    None,
+                    false,
+                    rationale,
+                    &mut cancelled,
+                )?;
                 Ok((Some(id), None))
             }
             StudyOperation::RecordEvidence {
@@ -284,7 +375,7 @@ pub fn execute_study(
                 let artifact = next.add_artifact(ArtifactKind::Evidence, evidence.to_string())?;
                 let experiment = next.add_experiment(ExperimentRecord {
                     start_state: Some(state),
-                    goal: Some(goal),
+                    goal,
                     kind: if assessed_recommendation.is_some() {
                         ExperimentKind::Challenge
                     } else if sensitivity {
@@ -326,9 +417,9 @@ pub fn execute_study(
                 if !matches!(
                     record.kind,
                     ExperimentKind::Planning | ExperimentKind::Counterfactual
-                ) || record.goal.as_ref() != Some(&goal)
+                ) || record.goal != goal
                     || record.start_state.as_ref() != Some(&base_state)
-                    || next.document.active_goal.as_ref() != Some(&goal)
+                    || next.document.active_goal != goal
                     || next.document.recommended_state.as_ref() != Some(&state)
                     || !record.result_states.contains(&state)
                 {
@@ -362,6 +453,7 @@ fn operation_result(
         .document
         .inspected_state
         .as_ref()
+        .filter(|state| bundle.document.states[*state].view.is_some())
         .map(|state| bundle.state_view(state))
         .transpose()?;
     Ok(StudyOperationResult {
@@ -443,14 +535,47 @@ pub fn compare_states(
     let (left_value, left_view) = evaluate(left)?;
     let (right_value, right_view) = evaluate(right)?;
     Ok(Comparison {
-        goal: goal_id.into(),
+        goal: Some(goal_id.into()),
         left: left.into(),
         right: right.into(),
-        left_value,
-        right_value,
-        improvement: left_value - right_value,
-        left_view,
-        right_view,
+        left_value: Some(left_value),
+        right_value: Some(right_value),
+        improvement: Some(left_value - right_value),
+        left_view: Some(left_view),
+        right_view: Some(right_view),
+    })
+}
+
+fn compare_states_optional(
+    bundle: &StudyBundle,
+    left: &str,
+    right: &str,
+    goal: Option<&str>,
+) -> Result<Comparison, String> {
+    if let Some(goal) = goal {
+        return compare_states(bundle, left, right, goal);
+    }
+    let view = |id: &str| -> Result<Option<crate::SolveResponse>, String> {
+        let state = bundle
+            .document
+            .states
+            .get(id)
+            .ok_or("state is unavailable")?;
+        state
+            .view
+            .as_ref()
+            .map(|_| bundle.state_view(id))
+            .transpose()
+    };
+    Ok(Comparison {
+        goal: None,
+        left: left.into(),
+        right: right.into(),
+        left_value: None,
+        right_value: None,
+        improvement: None,
+        left_view: view(left)?,
+        right_view: view(right)?,
     })
 }
 
@@ -597,17 +722,135 @@ fn network_changes(
         .collect()
 }
 
-fn counterfactual(
+fn edit_saved_case(
     bundle: &mut StudyBundle,
     state_id: &str,
-    goal_id: &str,
+    goal: Option<&str>,
     adjustments: Option<Vec<DemandAdjustment>>,
     rationale: String,
     cancelled: &mut impl FnMut() -> bool,
 ) -> Result<String, String> {
-    if bundle.document.active_goal.as_deref() != Some(goal_id) {
+    if cancelled() {
+        return Err("cancelled".into());
+    }
+    let state = bundle
+        .document
+        .states
+        .get(state_id)
+        .ok_or("state is unavailable")?
+        .clone();
+    let restore = adjustments.is_none();
+    let mut network = if restore {
+        let base = bundle
+            .document
+            .base_input
+            .as_ref()
+            .ok_or("The base case is unavailable")?;
+        input_network(&bundle.artifacts[base].text)?
+    } else {
+        state_network(bundle, state_id)?
+    };
+    let label = if let Some(adjustments) = adjustments {
+        if adjustments.is_empty() || adjustments.len() > 65536 {
+            return Err("Choose between 1 and 65536 demand changes".into());
+        }
+        let edits = adjustments
+            .iter()
+            .map(|a| crate::NetworkEdit::AddLoad {
+                bus: a.bus.clone(),
+                p_mw: a.delta_mw,
+            })
+            .collect::<Vec<_>>();
+        crate::study::apply_network_edits(&mut network, &edits)?;
+        if adjustments.len() == 1 {
+            format!(
+                "Bus {}: {:+} MW",
+                adjustments[0].bus, adjustments[0].delta_mw
+            )
+        } else {
+            format!("Demand changes at {} buses", adjustments.len())
+        }
+    } else {
+        "Base case".into()
+    };
+    let input = crate::ir::serialize_module(&powerio::PioModule::new(
+        powerio::PioValue::BalancedNetwork(network),
+    ))?;
+    if cancelled() {
+        return Err("cancelled".into());
+    }
+    let solved = Study::new(&input, state.formulation);
+    let (result_state, failure) = match solved {
+        Ok(study) => (
+            bundle.capture_state(
+                &ExactCandidate::capture(&study, vec![], 0.0)?,
+                Some(state_id.into()),
+                label,
+            )?,
+            None,
+        ),
+        Err(error) => {
+            let input = bundle.add_artifact(ArtifactKind::PowerioIr, input)?;
+            (
+                bundle.add_state(StateNode {
+                    parent: Some(state_id.into()),
+                    formulation: state.formulation,
+                    input,
+                    solution: None,
+                    view: None,
+                    label,
+                })?,
+                Some(error),
+            )
+        }
+    };
+    let evidence = bundle.add_artifact(
+        ArtifactKind::Evidence,
+        serde_json::json!({
+            "operation": if restore { "restore_base" } else { "edit_demand" },
+            "cumulative_demand_changes": demand_changes(bundle, &result_state)?, "solve_count": 1,
+            "solve_error": failure,
+        })
+        .to_string(),
+    )?;
+    let id = bundle.add_experiment(ExperimentRecord {
+        start_state: Some(state_id.into()),
+        goal: goal.map(String::from),
+        kind: ExperimentKind::Counterfactual,
+        rationale,
+        evidence: vec![evidence],
+        trials: vec![],
+        result_states: vec![result_state.clone()],
+        assessed_recommendation: None,
+        solve_count: 1,
+        termination: if failure.is_some() {
+            "solve_failed"
+        } else {
+            "completed"
+        }
+        .into(),
+    })?;
+    bundle.inspect(&result_state)?;
+    bundle.document.recommended_state = Some(result_state);
+    Ok(id)
+}
+
+fn counterfactual(
+    bundle: &mut StudyBundle,
+    state_id: &str,
+    goal_id: Option<&str>,
+    adjustments: Option<Vec<DemandAdjustment>>,
+    constrain_to_goal: bool,
+    rationale: String,
+    cancelled: &mut impl FnMut() -> bool,
+) -> Result<String, String> {
+    if bundle.document.active_goal.as_deref() != goal_id {
         return Err("operation requires the active goal revision".into());
     }
+    if goal_id.is_none() || !constrain_to_goal {
+        return edit_saved_case(bundle, state_id, goal_id, adjustments, rationale, cancelled);
+    }
+    let goal_id = goal_id.unwrap();
     let goal = bundle
         .document
         .goals
@@ -631,8 +874,8 @@ fn counterfactual(
     let label;
     let input;
     if let Some(adjustments) = adjustments {
-        if adjustments.is_empty() || adjustments.len() > 4096 {
-            return Err("demand edits require between 1 and 4096 adjustments".into());
+        if adjustments.is_empty() || adjustments.len() > 65536 {
+            return Err("demand edits require between 1 and 65536 adjustments".into());
         }
         let mut expected = anchor.clone();
         crate::study::apply_network_edits(
@@ -981,14 +1224,14 @@ mod tests {
             formulation: Problem::DcOpf,
             request: "Lower bus 2 price".into(),
             interpretation: "Minimize bus 2 LMP with a 10 MW line upgrade budget".into(),
-            objective: StudyObjective::WeightedObservable {
+            objective: Some(StudyObjective::WeightedObservable {
                 operand: Operand::Price(Power::Active),
                 weights: vec![ObservableWeight {
                     element: 2.into(),
                     weight: 1.0,
                 }],
-            },
-            decisions: DecisionSpace {
+            }),
+            decisions: Some(DecisionSpace {
                 variables: vec![DecisionVariable {
                     id: "line1".into(),
                     element: 1.into(),
@@ -1001,8 +1244,12 @@ mod tests {
                 total_budget: 10.0,
                 max_changed_elements: 1,
                 demand: None,
-            },
+            }),
             success_value: None,
+            display: None,
+            model_details: None,
+            solution: None,
+            view: None,
         })
         .unwrap()
     }
@@ -1071,9 +1318,13 @@ mod tests {
             formulation: Problem::DcOpf,
             request: "Move demand between buses 2 and 3".into(),
             interpretation: "Preserve total demand with at most 10 MW per bus".into(),
-            objective: goal.objective,
-            decisions: goal.decisions,
+            objective: Some(goal.objective),
+            decisions: Some(goal.decisions),
             success_value: None,
+            display: None,
+            model_details: None,
+            solution: None,
+            view: None,
         })
         .unwrap();
         bundle
@@ -1109,8 +1360,9 @@ mod tests {
         let request = StudyRequest {
             expected_revision: bundle.document.revision,
             operation: StudyOperation::EditDemand {
+                constrain_to_goal: true,
                 state: bundle.document.inspected_state.clone().unwrap(),
-                goal: bundle.document.active_goal.clone().unwrap(),
+                goal: bundle.document.active_goal.clone(),
                 changes: vec![DemandAdjustment {
                     bus: bus.into(),
                     delta_mw,
@@ -1148,7 +1400,7 @@ mod tests {
             expected_revision: bundle.document.revision,
             operation: StudyOperation::RestoreBase {
                 state: adjusted.clone(),
-                goal: bundle.document.active_goal.clone().unwrap(),
+                goal: bundle.document.active_goal.clone(),
                 rationale: "Return to the original network data".into(),
             },
         };
@@ -1162,7 +1414,7 @@ mod tests {
         let operation = StudyOperation::Apply {
             proposal: restored.experiment.unwrap(),
             state: reset.clone(),
-            goal: bundle.document.active_goal.clone().unwrap(),
+            goal: bundle.document.active_goal.clone(),
             base_state: adjusted,
         };
         let revision = bundle.document.revision;
@@ -1186,8 +1438,9 @@ mod tests {
         for (bus, delta_mw) in [(2, 3.0), (1, 1.0), (2, f64::NAN)] {
             let before = bundle.export().unwrap();
             let operation = StudyOperation::EditDemand {
+                constrain_to_goal: true,
                 state: bundle.document.inspected_state.clone().unwrap(),
-                goal: bundle.document.active_goal.clone().unwrap(),
+                goal: bundle.document.active_goal.clone(),
                 changes: vec![DemandAdjustment {
                     bus: bus.into(),
                     delta_mw,
@@ -1210,7 +1463,7 @@ mod tests {
         let before = bundle.export().unwrap();
         let operation = StudyOperation::RestoreBase {
             state: bundle.document.inspected_state.clone().unwrap(),
-            goal: bundle.document.active_goal.clone().unwrap(),
+            goal: bundle.document.active_goal.clone(),
             rationale: "Restore unavailable source".into(),
         };
         let revision = bundle.document.revision;
@@ -1351,7 +1604,7 @@ mod tests {
         assert_eq!(bundle.document.applied_state.as_ref(), Some(&base));
         assert!(bundle.document.experiments[&proposal].solve_count <= 5);
         let comparison = compare_states(&bundle, &base, &recommended, &goal).unwrap();
-        assert!(comparison.improvement > 0.0);
+        assert!(comparison.improvement.unwrap() > 0.0);
         let count = bundle.document.states.len();
         execute_study(
             &mut bundle,
@@ -1375,7 +1628,7 @@ mod tests {
                 operation: StudyOperation::Apply {
                     proposal: proposal.clone(),
                     state: recommended.clone(),
-                    goal: goal.clone(),
+                    goal: Some(goal.clone()),
                     base_state: base.clone()
                 }
             },
@@ -1389,7 +1642,7 @@ mod tests {
                 operation: StudyOperation::Apply {
                     proposal,
                     state: recommended.clone(),
-                    goal,
+                    goal: Some(goal),
                     base_state: base,
                 },
             },
@@ -1463,7 +1716,7 @@ mod tests {
                 operation: StudyOperation::Apply {
                     proposal,
                     state,
-                    goal,
+                    goal: Some(goal),
                     base_state: base
                 }
             },
@@ -1471,5 +1724,128 @@ mod tests {
         )
         .is_err());
         assert_eq!(bundle.export().unwrap(), before);
+    }
+}
+
+#[cfg(test)]
+mod saved_case_tests {
+    use super::*;
+
+    #[test]
+    fn cached_voltage_results_save_without_a_goal_or_another_solve() {
+        #[cfg(not(feature = "conic"))]
+        let cases = [Problem::AcPf];
+        #[cfg(feature = "conic")]
+        let cases = [Problem::AcPf, Problem::Socwr];
+        for calculation in cases {
+            let net = crate::model::parse_matpower(crate::model::CASE3).unwrap();
+            let input = crate::ir::serialize_module(&powerio::PioModule::new(
+                powerio::PioValue::BalancedNetwork(net),
+            ))
+            .unwrap();
+            let mut study = Study::new(&input, calculation).unwrap();
+            study
+                .commit(&[crate::NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 1.0,
+                }])
+                .unwrap();
+            let request: CreateStudy = serde_json::from_value(serde_json::json!({
+                "id":"voltage", "title":"Voltage results", "formulation":calculation,
+                "input":study.save_instance_module().unwrap(),
+                "base_input":input, "solution":study.save_solution_module().unwrap(),
+                "view":study.solution()
+            }))
+            .unwrap();
+            let bundle = create_study(request).unwrap();
+            assert!(bundle.document.goals.is_empty());
+            assert!(bundle.document.experiments.is_empty());
+            let restored = StudyBundle::import(&bundle.export().unwrap()).unwrap();
+            let state = restored.document.states.values().next().unwrap();
+            assert_eq!(state.formulation, calculation);
+            assert!(state.solution.is_some());
+        }
+    }
+
+    #[test]
+    fn unsolved_save_observations_edits_and_reset_do_not_require_a_goal() {
+        let net = crate::model::parse_matpower(crate::model::CASE3).unwrap();
+        let input = crate::ir::serialize_module(&powerio::PioModule::new(
+            powerio::PioValue::BalancedNetwork(net),
+        ))
+        .unwrap();
+        let request: CreateStudy=serde_json::from_value(serde_json::json!({"id":"saved", "title":"Saved case", "input":input, "formulation":"dcopf"})).unwrap();
+        let mut bundle = create_study(request).unwrap();
+        let root = bundle.document.inspected_state.clone().unwrap();
+        assert!(bundle.document.active_goal.is_none());
+        assert!(bundle.document.states[&root].solution.is_none());
+        assert!(bundle.document.experiments.is_empty());
+        let observe = StudyOperation::RecordEvidence {
+            state: root.clone(),
+            goal: None,
+            sensitivity: false,
+            assessed_recommendation: None,
+            rationale: "Inspect bus demand".into(),
+            evidence: serde_json::json!({"bus":2}),
+        };
+        execute_study(
+            &mut bundle,
+            StudyRequest {
+                expected_revision: 0,
+                operation: observe,
+            },
+            || false,
+        )
+        .unwrap();
+        assert_eq!(bundle.document.states.len(), 1);
+        for delta in [5.0, -2.0] {
+            let operation = StudyOperation::EditDemand {
+                state: bundle.document.inspected_state.clone().unwrap(),
+                goal: None,
+                constrain_to_goal: false,
+                changes: vec![DemandAdjustment {
+                    bus: 2.into(),
+                    delta_mw: delta,
+                }],
+                rationale: "Adjust demand".into(),
+            };
+            let revision = bundle.document.revision;
+            execute_study(
+                &mut bundle,
+                StudyRequest {
+                    expected_revision: revision,
+                    operation,
+                },
+                || false,
+            )
+            .unwrap();
+        }
+        assert_eq!(bundle.document.states.len(), 3);
+        let edited = bundle.document.inspected_state.clone().unwrap();
+        let operation = StudyOperation::RestoreBase {
+            state: edited,
+            goal: None,
+            rationale: "Reset to base case".into(),
+        };
+        let revision = bundle.document.revision;
+        execute_study(
+            &mut bundle,
+            StudyRequest {
+                expected_revision: revision,
+                operation,
+            },
+            || false,
+        )
+        .unwrap();
+        assert_eq!(bundle.document.states.len(), 4);
+        assert_eq!(bundle.document.applied_state.as_ref(), Some(&root));
+        let restored = bundle.document.inspected_state.clone().unwrap();
+        let original =
+            input_network(&bundle.artifacts[&bundle.document.states[&root].input].text).unwrap();
+        let final_network =
+            input_network(&bundle.artifacts[&bundle.document.states[&restored].input].text)
+                .unwrap();
+        assert_eq!(original.loads(), final_network.loads());
+        StudyBundle::import(&bundle.export().unwrap()).unwrap();
     }
 }

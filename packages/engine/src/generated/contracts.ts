@@ -11,7 +11,7 @@ export type FormulationId = (typeof FORMULATION_IDS)[number];
 export const SOLVE_STATUSES = ["optimal","feasible"] as const;
 export type SolveStatus = (typeof SOLVE_STATUSES)[number];
 
-export type BrowserFormulation = Extract<FormulationId, 'dcopf' | 'acopf' | 'socwr'>;
+export type BrowserFormulation = Extract<FormulationId, 'dcopf' | 'acpf' | 'acopf' | 'socwr'>;
 export type Power = 'Active' | 'Reactive';
 export type End = 'From' | 'To';
 export type VoltageKind = 'Magnitude' | 'Angle' | 'Squared' | 'ProductReal' | 'ProductImag';
@@ -145,6 +145,9 @@ export interface ProblemCaps {
 
 export interface NetworkBus {
 	id: number;
+	name?: string | null;
+	area?: number;
+	zone?: number;
 	/** PowerIO row uid when the source carries one; older payloads omit the field. */
 	uid?: string | null;
 	/** False for a display-only row synthesized by analysis lowering. */
@@ -169,6 +172,8 @@ export interface NetworkBranch {
 }
 
 export interface Network {
+	coordinate_space?: 'geographic' | 'diagram';
+	model_details?: import('./study-contracts.js').ModelDetails | null;
 	id: string;
 	name: string;
 	base_mva: number;
@@ -178,8 +183,9 @@ export interface Network {
 }
 
 export interface Solution {
-	objective: number;
+	objective: number | null;
 	prices: { bus: number; value: number }[];
+	vm?: { bus: number; value: number }[];
 	va: { bus: number; value: number }[];
 	w: { bus: number; value: number }[];
 	flows: { branch: number; mw: number; loading: number }[];
@@ -199,6 +205,8 @@ export interface SensitivityColumn {
 }
 
 export interface CaseSummary {
+	/** Configured cases remain listed when loading or solving fails. */
+	unavailable_reason?: string | null;
 	id: string;
 	name: string;
 	/** Canonical typed PowerIO bus rows. */
