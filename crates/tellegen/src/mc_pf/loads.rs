@@ -1,7 +1,26 @@
-//! Constant-power branch laws and nominal admittance compensation.
+//! Voltage-dependent branch laws and nominal admittance compensation.
 
 use num_complex::Complex64;
 use powerio_dist::{Configuration, DistLoad, DistLoadVoltageModel};
+
+#[derive(Clone, Debug)]
+pub(crate) enum BranchVoltageModel {
+    ConstantPower,
+    ConstantCurrent,
+    ConstantImpedance,
+    Zip {
+        alpha_z: Vec<f64>,
+        alpha_i: Vec<f64>,
+        alpha_p: Vec<f64>,
+        beta_z: Vec<f64>,
+        beta_i: Vec<f64>,
+        beta_p: Vec<f64>,
+    },
+    Exponential {
+        gamma_p: Vec<f64>,
+        gamma_q: Vec<f64>,
+    },
+}
 
 use super::network::{NetworkIndex, StampedMatrix};
 
@@ -12,6 +31,8 @@ pub(crate) struct BranchLoad {
     pub incidence: Vec<Vec<(usize, Complex64)>>,
     pub power: Vec<Complex64>,
     pub y_ref: Vec<Complex64>,
+    pub nominal_voltage: Vec<f64>,
+    pub model: BranchVoltageModel,
 }
 
 impl BranchLoad {
@@ -21,21 +42,164 @@ impl BranchLoad {
         voltage: &[Complex64],
         zero_tol: f64,
     ) -> Result<Complex64, String> {
-        let s = self.power[branch];
-        if s.norm() == 0.0 {
-            return Ok(Complex64::default());
-        }
         let u: Complex64 = self.incidence[branch]
             .iter()
             .map(|&(i, c)| c * voltage[i])
             .sum();
-        if u.norm() <= zero_tol {
+        // A zero-power branch carries no current for every supported law. Do
+        // this before checking voltage so an unloaded branch is well-defined
+        // even when it is disconnected from a prescribed source.
+        if self.power[branch].norm() == 0.0 {
+            return Ok(Complex64::default());
+        }
+        // Calculate the magnitude with hypot;
+        // hypot preserves a nonzero magnitude for subnormal phasors.
+        let magnitude = u.re.hypot(u.im);
+        if magnitude == 0.0 {
+            if self.zero_current_at_zero_voltage(branch, magnitude, zero_tol) {
+                return Ok(Complex64::default());
+            }
             return Err(format!(
                 "load `{}` branch {branch} has near-zero voltage",
                 self.name
             ));
         }
-        Ok((s / u).conj())
+        if magnitude <= zero_tol && !self.near_zero_law_is_safe(branch) {
+            return Err(format!(
+                "load `{}` branch {branch} has near-zero voltage",
+                self.name
+            ));
+        }
+        // Evaluate the radial current equations. Dividing by |U| and
+        // multiplying by the unit phasor avoids forming U*conjugate(U), which
+        // underflows for a perfectly valid tiny nonzero voltage.
+        let current = self.current_at_voltage(branch, u, magnitude);
+        if !current.re.is_finite() || !current.im.is_finite() {
+            return Err(format!(
+                "load `{}` branch {branch} produced a non-finite current",
+                self.name
+            ));
+        }
+        let absorbed_power = u * current.conj();
+        if !absorbed_power.re.is_finite() || !absorbed_power.im.is_finite() {
+            return Err(format!(
+                "load `{}` branch {branch} produced a non-finite absorbed power",
+                self.name
+            ));
+        }
+        Ok(current)
+    }
+
+    fn current_at_voltage(&self, branch: usize, u: Complex64, magnitude: f64) -> Complex64 {
+        let phase = u / magnitude;
+        let s = self.power[branch];
+        let ratio = magnitude / self.nominal_voltage(branch);
+        match &self.model {
+            BranchVoltageModel::ConstantPower => s.conj() * (phase / magnitude),
+            BranchVoltageModel::ConstantCurrent => {
+                s.conj() * (phase / self.nominal_voltage(branch))
+            }
+            BranchVoltageModel::ConstantImpedance => self.y_ref[branch] * u,
+            BranchVoltageModel::Zip {
+                alpha_z,
+                alpha_i,
+                alpha_p,
+                beta_z,
+                beta_i,
+                beta_p,
+            } => {
+                let vnom = self.nominal_voltage(branch);
+                let p = if s.re == 0.0 {
+                    0.0
+                } else {
+                    s.re / vnom
+                        * (alpha_z[branch] * ratio
+                            + alpha_i[branch]
+                            + if alpha_p[branch] == 0.0 {
+                                0.0
+                            } else {
+                                alpha_p[branch] / ratio
+                            })
+                };
+                let q = if s.im == 0.0 {
+                    0.0
+                } else {
+                    s.im / vnom
+                        * (beta_z[branch] * ratio
+                            + beta_i[branch]
+                            + if beta_p[branch] == 0.0 {
+                                0.0
+                            } else {
+                                beta_p[branch] / ratio
+                            })
+                };
+                phase * Complex64::new(p, -q)
+            }
+            BranchVoltageModel::Exponential { gamma_p, gamma_q } => {
+                Complex64::new(
+                    if s.re == 0.0 {
+                        0.0
+                    } else {
+                        s.re / self.nominal_voltage(branch) * ratio.powf(gamma_p[branch] - 1.0)
+                    },
+                    if s.im == 0.0 {
+                        0.0
+                    } else {
+                        -s.im / self.nominal_voltage(branch) * ratio.powf(gamma_q[branch] - 1.0)
+                    },
+                ) * phase
+            }
+        }
+    }
+
+    fn nominal_voltage(&self, branch: usize) -> f64 {
+        self.nominal_voltage[branch]
+    }
+
+    fn zero_current_at_zero_voltage(&self, branch: usize, magnitude: f64, zero_tol: f64) -> bool {
+        if magnitude > zero_tol {
+            return false;
+        }
+        let s = self.power[branch];
+        match &self.model {
+            BranchVoltageModel::ConstantImpedance => true,
+            BranchVoltageModel::ConstantPower | BranchVoltageModel::ConstantCurrent => {
+                s.norm() == 0.0
+            }
+            BranchVoltageModel::Zip {
+                alpha_i,
+                alpha_p,
+                beta_i,
+                beta_p,
+                ..
+            } => {
+                // A constant-power or linear-current contribution has no
+                // unique phasor at exactly zero branch voltage. Pure Z terms
+                // have a well-defined zero current.
+                s.re * alpha_p[branch] == 0.0
+                    && s.im * beta_p[branch] == 0.0
+                    && s.re * alpha_i[branch] == 0.0
+                    && s.im * beta_i[branch] == 0.0
+            }
+            BranchVoltageModel::Exponential { gamma_p, gamma_q } => {
+                (s.re == 0.0 || gamma_p[branch] > 1.0) && (s.im == 0.0 || gamma_q[branch] > 1.0)
+            }
+        }
+    }
+
+    fn near_zero_law_is_safe(&self, branch: usize) -> bool {
+        let s = self.power[branch];
+        match &self.model {
+            BranchVoltageModel::ConstantImpedance => true,
+            BranchVoltageModel::ConstantCurrent => true,
+            BranchVoltageModel::Zip {
+                alpha_p, beta_p, ..
+            } => s.re * alpha_p[branch] == 0.0 && s.im * beta_p[branch] == 0.0,
+            BranchVoltageModel::Exponential { gamma_p, gamma_q } => {
+                (s.re == 0.0 || gamma_p[branch] >= 1.0) && (s.im == 0.0 || gamma_q[branch] >= 1.0)
+            }
+            BranchVoltageModel::ConstantPower => false,
+        }
     }
 
     pub(crate) fn add_current(
@@ -93,15 +257,6 @@ pub(crate) fn prepare_load(load: &DistLoad, index: &NetworkIndex) -> Result<Bran
             load.name
         ));
     }
-    if !matches!(
-        load.voltage_model,
-        DistLoadVoltageModel::ConstantPower { .. }
-    ) {
-        return Err(format!(
-            "load `{}` uses {:?}; only constant-power loads are supported",
-            load.name, load.voltage_model
-        ));
-    }
     let incidence = connection_incidence(load, index)?;
     if incidence.len() != load.p_nom.len() {
         return Err(format!(
@@ -111,14 +266,15 @@ pub(crate) fn prepare_load(load: &DistLoad, index: &NetworkIndex) -> Result<Bran
             load.p_nom.len()
         ));
     }
-    let vnom = load.voltage_model.v_nom().to_vec();
-    if vnom.is_empty() {
+    let vnom_raw = load.voltage_model.v_nom();
+    if vnom_raw.is_empty() {
         return Err(format!(
             "load `{}` omits explicit nominal branch voltage; cross-voltage inference is unsupported",
             load.name
         ));
     }
-    if vnom.len() != load.p_nom.len() || vnom.iter().any(|v| !v.is_finite() || *v <= 0.0) {
+    let vnom = coefficients(&load.name, "v_nom", vnom_raw, load.p_nom.len())?;
+    if vnom.iter().any(|v| *v <= 0.0) {
         return Err(format!(
             "load `{}` has invalid nominal branch voltages",
             load.name
@@ -132,7 +288,7 @@ pub(crate) fn prepare_load(load: &DistLoad, index: &NetworkIndex) -> Result<Bran
         .collect();
     let y_ref: Vec<Complex64> = power
         .iter()
-        .zip(vnom)
+        .zip(vnom.iter().copied())
         .map(|(&s, v)| s.conj() / (v * v))
         .collect();
     if y_ref
@@ -144,12 +300,69 @@ pub(crate) fn prepare_load(load: &DistLoad, index: &NetworkIndex) -> Result<Bran
             load.name
         ));
     }
+    let model = match &load.voltage_model {
+        DistLoadVoltageModel::ConstantPower { .. } => BranchVoltageModel::ConstantPower,
+        DistLoadVoltageModel::ConstantCurrent { .. } => BranchVoltageModel::ConstantCurrent,
+        DistLoadVoltageModel::ConstantImpedance { .. } => BranchVoltageModel::ConstantImpedance,
+        DistLoadVoltageModel::Zip {
+            alpha_z,
+            alpha_i,
+            alpha_p,
+            beta_z,
+            beta_i,
+            beta_p,
+            ..
+        } => BranchVoltageModel::Zip {
+            alpha_z: coefficients(&load.name, "alpha_z", alpha_z, load.p_nom.len())?,
+            alpha_i: coefficients(&load.name, "alpha_i", alpha_i, load.p_nom.len())?,
+            alpha_p: coefficients(&load.name, "alpha_p", alpha_p, load.p_nom.len())?,
+            beta_z: coefficients(&load.name, "beta_z", beta_z, load.p_nom.len())?,
+            beta_i: coefficients(&load.name, "beta_i", beta_i, load.p_nom.len())?,
+            beta_p: coefficients(&load.name, "beta_p", beta_p, load.p_nom.len())?,
+        },
+        DistLoadVoltageModel::Exponential {
+            gamma_p, gamma_q, ..
+        } => BranchVoltageModel::Exponential {
+            gamma_p: coefficients(&load.name, "gamma_p", gamma_p, load.p_nom.len())?,
+            gamma_q: coefficients(&load.name, "gamma_q", gamma_q, load.p_nom.len())?,
+        },
+        _ => {
+            return Err(format!(
+                "load `{}` uses an unsupported voltage model",
+                load.name
+            ))
+        }
+    };
     Ok(BranchLoad {
         name: load.name.clone(),
         incidence,
         power,
         y_ref,
+        nominal_voltage: vnom,
+        model,
     })
+}
+
+fn coefficients(
+    name: &str,
+    field: &str,
+    values: &[f64],
+    branches: usize,
+) -> Result<Vec<f64>, String> {
+    if values.len() != 1 && values.len() != branches {
+        return Err(format!(
+            "load `{name}` {field} has length {}; expected 1 or {branches}",
+            values.len()
+        ));
+    }
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(format!("load `{name}` {field} contains a non-finite value"));
+    }
+    if values.len() == 1 {
+        Ok(vec![values[0]; branches])
+    } else {
+        Ok(values.to_vec())
+    }
 }
 
 fn connection_incidence(

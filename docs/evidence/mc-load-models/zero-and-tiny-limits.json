@@ -1,0 +1,152 @@
+{
+  "binary_sha256": "7a1e724baa55b1016fb7179a9628e0577c9f95302425f1bb135959eed5f412b9",
+  "cases": [
+    {
+      "case": "named-1-0",
+      "error": "mc_pf: load `ld` branch 0 has near-zero voltage"
+    },
+    {
+      "case": "named-1-1e-200",
+      "error": null,
+      "current": {
+        "re": 1.099543021623317,
+        "im": 0.20249726812840185
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "named-1-1e-12",
+      "error": null,
+      "current": {
+        "re": 1.099543021623317,
+        "im": 0.20249726812840185
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "zip-1-0",
+      "error": "mc_pf: load `ld` branch 0 has near-zero voltage"
+    },
+    {
+      "case": "zip-1-1e-200",
+      "error": null,
+      "current": {
+        "re": 1.099543021623317,
+        "im": 0.20249726812840185
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "zip-1-1e-12",
+      "error": null,
+      "current": {
+        "re": 1.099543021623317,
+        "im": 0.20249726812840185
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "exponential-1-0",
+      "error": "mc_pf: load `ld` branch 0 has near-zero voltage"
+    },
+    {
+      "case": "exponential-1-1e-200",
+      "error": null,
+      "current": {
+        "re": 1.099543021623317,
+        "im": 0.20249726812840185
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "exponential-1-1e-12",
+      "error": null,
+      "current": {
+        "re": 1.099543021623317,
+        "im": 0.20249726812840185
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "named-2-0",
+      "error": null,
+      "current": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "named-2-1e-200",
+      "error": null,
+      "current": {
+        "re": 1.099543021623317e-201,
+        "im": 2.0249726812840183e-202
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "named-2-1e-12",
+      "error": null,
+      "current": {
+        "re": 1.0995430216233169e-13,
+        "im": 2.0249726812840176e-14
+      },
+      "absolute_error": 1.5777218104420236e-29
+    },
+    {
+      "case": "zip-2-0",
+      "error": null,
+      "current": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "zip-2-1e-200",
+      "error": null,
+      "current": {
+        "re": 1.0995430216233169e-201,
+        "im": 2.024972681284018e-202
+      },
+      "absolute_error": 1.868820507956949e-217
+    },
+    {
+      "case": "zip-2-1e-12",
+      "error": null,
+      "current": {
+        "re": 1.099543021623317e-13,
+        "im": 2.024972681284019e-14
+      },
+      "absolute_error": 3.1554436208840472e-30
+    },
+    {
+      "case": "exponential-2-0",
+      "error": null,
+      "current": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "absolute_error": 0.0
+    },
+    {
+      "case": "exponential-2-1e-200",
+      "error": null,
+      "current": {
+        "re": 1.0995430216233169e-201,
+        "im": 2.024972681284018e-202
+      },
+      "absolute_error": 1.868820507956949e-217
+    },
+    {
+      "case": "exponential-2-1e-12",
+      "error": null,
+      "current": {
+        "re": 1.099543021623317e-13,
+        "im": 2.024972681284019e-14
+      },
+      "absolute_error": 3.1554436208840472e-30
+    }
+  ]
+}

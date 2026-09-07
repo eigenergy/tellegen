@@ -1,5 +1,26 @@
 # Independent MC correctness cases
 
+## Voltage-dependent load extension
+
+The supported load set now includes constant impedance, constant current, ZIP
+with independent P/Q coefficients, and exponential models with independent
+P/Q exponents, in addition to constant power. Historical strict-CP feeder
+results below remain evidence for that earlier profile.
+
+`crates/tellegen/tests/generate_mc_load_oracle.py` generates 56 synthetic OpenDSS references
+in `crates/tellegen/tests/data/mc_load_oracle`. Cases exercise complex voltages at 37 degrees,
+0.8/1.0/1.2 nominal voltage, fixed buses and loaded feeders, signed/nonunit ZIP
+coefficients, nominal ZIP cancellation, fractional/negative exponents, mixed
+P/Q exponents, and zero-voltage impedance loads. The reference explicitly sets
+50 Hz before constructing the circuit and disables voltage-band fallbacks and
+ZIPV cutoff. Input source angles are radians; DSS command angles are degrees.
+
+Independent native comparison converged on all 56 cases with zero
+factorizations for fully prescribed cases and one for each feeder solve.
+Maximum complex-voltage error was `1.08e-7 V`, maximum current error
+`6.79e-9 A`, and maximum physical KCL residual `1.45e-9 A`. These comparisons
+validate the declared BMOPF laws, not default OpenDSS fallback behavior.
+
 ## Distribution Study integration
 
 The distribution simulation branch uses parsed MC capability metadata, with
@@ -26,6 +47,44 @@ Manual browser inspection of the four-wire example confirmed 23 iterations,
 228.615871255, 213.351123776, and 11.897554292 V for a/b/c/n. Independent complex
 subtraction gives phase-to-neutral magnitudes 222.332976215, 238.828149852,
 202.975849439 V and angles -2.757520307, -118.601871145, 121.639709693 degrees.
+
+## Voltage-dependent load extension acceptance
+
+The subsequent CI, CZ, ZIP and exponential extension is independently accepted.
+This extends the earlier constant-power-only scope below without adding OpenDSS
+voltage-band fallback or ZIPV dropout behavior. ZIP active/reactive coefficients
+are applied independently as supplied, including signed and nonunit sums;
+finite exponential exponents are not clamped or normalized.
+
+The synthetic generator `crates/tellegen/tests/generate_mc_load_oracle.py` and
+56 frozen references cover 37-degree phasors, 0.8/1/1.2 nominal voltage, fixed
+and loaded buses, independent P/Q ZIP coefficients, signed/nonunit coefficients,
+nominal cancellation, fractional and negative exponents, mixed exponents 0/2,
+and exact-zero CZ. Raw BMOPF angles are radians. DSS source command angles are
+degrees; both element base and solve frequency are 50 Hz. Native comparisons
+check complex voltage, current and absorbed power, not magnitudes alone.
+
+Final native comparison passed all 56 cases with zero global factorizations for
+fully fixed networks and one for the feeder cases. Maximum complex voltage error
+was 1.076e-7 V and maximum complex current error 6.782e-9 A. Independent analytic
+current equations matched DSS within 1.224e-11 A. Additional 18 raw checks
+confirmed equivalent CI/ZIP-I/exponential-1 and CZ/ZIP-Z/exponential-2 laws at
+zero, 1e-200 V and 1e-12 V: current-type laws reject exact zero; impedance-type
+laws have zero current there, and tiny positive voltages remain evaluable.
+Inactive P/Q components bypass unused powers, and overflow in absorbed power
+returns a controlled error. The final frozen-oracle harness and five focused
+voltage-dependent tests passed independently.
+
+Final integration checks passed the locked workspace tests, independent `mc-pf`
+feature suite, Rust formatting and Clippy with warnings denied, WASM release
+build, JavaScript checks/build and web formatting. All four Chromium MC
+regressions passed. The added browser case verifies operating powers and complex
+currents, model preservation in both exported modules, snapshot reimport,
+saved-result reopening, and a constant-power baseline.
+
+Reports, exact native binary hashes and backend versions are in
+`docs/evidence/mc-load-models`. The reference executable remains OpenDSSDirect.py
+0.9.4 / DSS C-API 0.14.5, distinct from the supplied r4176 source baseline.
 
 ## Current acceptance summary
 

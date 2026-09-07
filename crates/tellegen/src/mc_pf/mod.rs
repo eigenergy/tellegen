@@ -1102,6 +1102,8 @@ mod tests {
             incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
             power: vec![Complex64::new(3.0, 2.0)],
             y_ref: vec![Complex64::new(0.0, 0.0)],
+            nominal_voltage: vec![1.0],
+            model: crate::mc_pf::loads::BranchVoltageModel::ConstantPower,
         };
         let mut actual_values = vec![Complex64::default()];
         load.add_current(&[voltage], 1e-12, &mut actual_values)
@@ -1109,6 +1111,169 @@ mod tests {
         let actual = actual_values[0];
         let expected = (Complex64::new(3.0, 2.0) / voltage).conj();
         assert!((actual - expected).norm() < 1e-12);
+    }
+
+    fn direct_branch_load(
+        model: crate::mc_pf::loads::BranchVoltageModel,
+    ) -> crate::mc_pf::loads::BranchLoad {
+        crate::mc_pf::loads::BranchLoad {
+            name: "law".into(),
+            incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
+            power: vec![Complex64::new(10.0, 5.0)],
+            y_ref: vec![Complex64::new(0.1, -0.05)],
+            nominal_voltage: vec![10.0],
+            model,
+        }
+    }
+
+    #[test]
+    fn voltage_dependent_branch_laws_follow_powerio_equations() {
+        let voltage = [Complex64::new(8.0, 0.0)];
+        let expected = [
+            (
+                crate::mc_pf::loads::BranchVoltageModel::ConstantCurrent,
+                Complex64::new(1.0, -0.5),
+            ),
+            (
+                crate::mc_pf::loads::BranchVoltageModel::ConstantImpedance,
+                Complex64::new(0.8, -0.4),
+            ),
+            (
+                crate::mc_pf::loads::BranchVoltageModel::Zip {
+                    alpha_z: vec![0.2],
+                    alpha_i: vec![0.3],
+                    alpha_p: vec![0.5],
+                    beta_z: vec![0.1],
+                    beta_i: vec![0.4],
+                    beta_p: vec![0.5],
+                },
+                Complex64::new(8.68 / 8.0, -4.42 / 8.0),
+            ),
+            (
+                crate::mc_pf::loads::BranchVoltageModel::Exponential {
+                    gamma_p: vec![0.7],
+                    gamma_q: vec![2.3],
+                },
+                Complex64::new(
+                    10.0 * 0.8_f64.powf(0.7) / 8.0,
+                    -5.0 * 0.8_f64.powf(2.3) / 8.0,
+                ),
+            ),
+        ];
+        for (model, expected) in expected {
+            let load = direct_branch_load(model);
+            let actual = load.branch_current(0, &voltage, 1e-12).unwrap();
+            assert!(
+                (actual - expected).norm() < 1e-12,
+                "{actual:?} vs {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn voltage_dependent_laws_have_controlled_zero_voltage_limits() {
+        let zero = [Complex64::default()];
+        let mut load =
+            direct_branch_load(crate::mc_pf::loads::BranchVoltageModel::ConstantImpedance);
+        assert_eq!(
+            load.branch_current(0, &zero, 1e-12).unwrap(),
+            Complex64::default()
+        );
+
+        load.model = crate::mc_pf::loads::BranchVoltageModel::ConstantCurrent;
+        assert!(load.branch_current(0, &zero, 1e-12).is_err());
+
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Zip {
+            alpha_z: vec![0.0],
+            alpha_i: vec![1.0],
+            alpha_p: vec![0.0],
+            beta_z: vec![0.0],
+            beta_i: vec![1.0],
+            beta_p: vec![0.0],
+        };
+        assert!(load.branch_current(0, &zero, 1e-12).is_err());
+
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
+            gamma_p: vec![2.0],
+            gamma_q: vec![2.0],
+        };
+        assert_eq!(
+            load.branch_current(0, &zero, 1e-12).unwrap(),
+            Complex64::default()
+        );
+
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
+            gamma_p: vec![0.7],
+            gamma_q: vec![2.0],
+        };
+        assert!(load.branch_current(0, &zero, 1e-12).is_err());
+
+        // A very small nonzero voltage remains evaluable for a bounded
+        // current law; the voltage check does not round it to zero.
+        load.model = crate::mc_pf::loads::BranchVoltageModel::ConstantCurrent;
+        let tiny = [Complex64::new(1e-200, 1e-200)];
+        let ci_current = load.branch_current(0, &tiny, 1e-12).unwrap();
+        assert!(ci_current.norm() > 0.0);
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
+            gamma_p: vec![1.0],
+            gamma_q: vec![1.0],
+        };
+        let exp_current = load.branch_current(0, &tiny, 1e-12).unwrap();
+        assert!((exp_current - ci_current).norm() < 1e-12);
+
+        // An inactive P or Q component must not evaluate its unused exponent:
+        // 0 * infinity would otherwise turn a finite current into NaN.
+        load.power = vec![Complex64::new(10.0, 0.0)];
+        load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
+            gamma_p: vec![2.0],
+            gamma_q: vec![-1_000_000.0],
+        };
+        let current = load
+            .branch_current(0, &[Complex64::new(8.0, 0.0)], 1e-12)
+            .unwrap();
+        assert!(current.re.is_finite() && current.im.is_finite());
+
+        let huge = crate::mc_pf::loads::BranchLoad {
+            name: "huge".into(),
+            incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
+            power: vec![Complex64::new(1e308, 0.0)],
+            y_ref: vec![Complex64::new(1e306, 0.0)],
+            nominal_voltage: vec![10.0],
+            model: crate::mc_pf::loads::BranchVoltageModel::ConstantImpedance,
+        };
+        assert!(huge
+            .branch_current(0, &[Complex64::new(20.0, 0.0)], 1e-12)
+            .is_err());
+    }
+
+    #[test]
+    fn voltage_dependent_models_reuse_one_factorization() {
+        let models = [
+            DistLoadVoltageModel::ConstantCurrent { v_nom: vec![10.0] },
+            DistLoadVoltageModel::ConstantImpedance { v_nom: vec![10.0] },
+            DistLoadVoltageModel::Zip {
+                v_nom: vec![10.0],
+                alpha_z: vec![0.2],
+                alpha_i: vec![0.3],
+                alpha_p: vec![0.5],
+                beta_z: vec![0.1],
+                beta_i: vec![0.4],
+                beta_p: vec![0.5],
+            },
+            DistLoadVoltageModel::Exponential {
+                v_nom: vec![10.0],
+                gamma_p: vec![0.7],
+                gamma_q: vec![2.3],
+            },
+        ];
+        for model in models {
+            let mut network = one_phase(1.0).network().clone();
+            network.loads_mut()[0].voltage_model = model;
+            let instance = McAcPfInstance::from_network(network).unwrap();
+            let result = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap();
+            assert!(result.converged);
+            assert_eq!(result.factorization_count, 1);
+        }
     }
 
     #[test]

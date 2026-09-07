@@ -1,0 +1,78 @@
+{
+	"voltage_source": {
+		"source": {
+			"v_magnitude": [239.6003617136947, 239.6003617136947, 239.6003617136947, 0.0],
+			"terminal_map": ["a", "b", "c", "n"],
+			"bus": "src",
+			"v_angle": [0, -2.0943951023931953, 2.0943951023931957, 0]
+		}
+	},
+	"line": {},
+	"name": "mc_pf_load_models",
+	"terminal_conventions": {
+		"phase": ["a", "b", "c"],
+		"earth": [],
+		"neutral": ["n"]
+	},
+	"shunt": {
+		"grnd": {
+			"B_1_1": 0,
+			"G_1_1": 1000.0000000000001,
+			"bus": "src",
+			"terminal_map": ["n"]
+		}
+	},
+	"load": {
+		"ld1": {
+			"v_nom": [200],
+			"p_nom": [12000],
+			"model": "constant_current",
+			"q_nom": [4000],
+			"terminal_map": ["a", "n"],
+			"bus": "src",
+			"configuration": "SINGLE_PHASE"
+		},
+		"ld2": {
+			"v_nom": [200],
+			"p_nom": [10000],
+			"model": "constant_impedance",
+			"q_nom": [3000],
+			"terminal_map": ["b", "n"],
+			"bus": "src",
+			"configuration": "SINGLE_PHASE"
+		},
+		"ld3": {
+			"v_nom": [200],
+			"p_nom": [15000],
+			"model": "zip",
+			"q_nom": [5000],
+			"terminal_map": ["c", "n"],
+			"bus": "src",
+			"configuration": "SINGLE_PHASE",
+			"alpha_z": [0.2],
+			"alpha_i": [0.3],
+			"alpha_p": [0.5],
+			"beta_z": [0.1],
+			"beta_i": [0.2],
+			"beta_p": [0.7]
+		},
+		"ld4": {
+			"v_nom": [200],
+			"p_nom": [8000],
+			"model": "exponential",
+			"q_nom": [3000],
+			"terminal_map": ["a", "n"],
+			"bus": "src",
+			"configuration": "SINGLE_PHASE",
+			"gamma_p": [1.5],
+			"gamma_q": [2.0]
+		}
+	},
+	"bus": {
+		"src": {
+			"perfectly_grounded_terminals": [],
+			"terminal_names": ["a", "b", "c", "n"]
+		}
+	},
+	"linecode": {}
+}

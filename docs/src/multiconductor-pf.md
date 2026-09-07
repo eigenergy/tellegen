@@ -8,7 +8,7 @@ Geographic GeoJSON can accompany the case or be attached to the selected case la
 
 ## Supported calculations
 
-The solver uses one complex sparse LU factorization and updates compensated load currents until both voltage changes and physical KCL residuals meet their tolerances. Constant-power loads, ideal voltage sources, lines, shunts, explicit neutral conductors, and supported two-winding equipment are included. A two-winding entry expressed using BMOPF's n-winding representation is also supported.
+The solver uses one complex sparse LU factorization and updates compensated load currents until both voltage changes and physical KCL residuals meet their tolerances. Constant-power, constant-current, constant-impedance, ZIP, and exponential loads are included, along with ideal voltage sources, lines, shunts, explicit neutral conductors, and supported two-winding equipment. A two-winding entry expressed using BMOPF's n-winding representation is also supported.
 
 Finite source impedance, active device controls, generator/IBR injections, unsupported load models, unsupported per-phase taps, ideal zero-leakage winding models, and more than two windings require additional numerical models. Such data can remain available for inspection, but the calculation reports unsupported physics instead of silently simplifying it. Draft BMOPF 0.2 data remains subject to Task Force review.
 

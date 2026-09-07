@@ -58,7 +58,7 @@ and the physical KCL test: the residual must be below
 Voltages are volts, currents are amperes, and terminal powers are VA. Complex
 values cross JSON as `{ "re": ..., "im": ... }`.
 
-The solver supports prescribed constant-power loads, ideal voltage sources,
+The solver supports voltage-dependent loads, ideal voltage sources,
 lines, passive shunts, and finite-leakage two-winding transformers, including
 two-winding `n_winding` records with explicit BMOPF delta rolls. Transformer
 admittance follows the
@@ -74,9 +74,8 @@ transformer unit tests.
 
 Raw BMOPF inputs must use scalar or uniform taps. An `n_winding` raw record
 cannot carry a tap because PowerIO 0.11.0 drops that field; a canonical typed
-two-winding record can carry its fixed winding taps. Constant-current,
-constant-impedance, ZIP, and exponential load models are rejected explicitly.
-Constant-power loads must carry explicit nominal branch voltages; the solver
+two-winding record can carry its fixed winding taps.
+Loads must carry explicit nominal branch voltages; the solver
 does not invent a nominal voltage for a two-conductor or other branch connection.
 Legacy `g_no_load`/`b_no_load` values require
 normalization to an explicit `no_load_shunt`; this avoids choosing between the
@@ -95,3 +94,45 @@ Within one prepared solve, the sparse factor is built once and reused for
 every fixed-point iteration while topology, taps, nominal admittances, and
 fixed terminals are unchanged. A solve with no unknown terminals has no
 factorization to perform.
+
+## Load voltage models
+
+Each load branch uses its complex terminal-to-terminal voltage `U`, including
+neutral displacement for an explicit WYE neutral and line-to-line voltage for
+a DELTA branch. Let `r = abs(U) / v_nom`, with nominal powers `P0` and `Q0`.
+
+| BMOPF model | Active power | Reactive power |
+| --- | --- | --- |
+| `constant_power` | `P0` | `Q0` |
+| `constant_current` | `P0 * r` | `Q0 * r` |
+| `constant_impedance` | `P0 * r^2` | `Q0 * r^2` |
+| `zip` | `P0 * (alpha_z*r^2 + alpha_i*r + alpha_p)` | `Q0 * (beta_z*r^2 + beta_i*r + beta_p)` |
+| `exponential` | `P0 * r^gamma_p` | `Q0 * r^gamma_q` |
+
+For nonzero branch voltage, consumed current is `conj((P + j*Q) / U)`.
+Constant-current loads therefore track the branch-voltage angle and retain
+their power factor; they are not fixed complex current phasors. ZIP coefficients
+are used as supplied, without silently normalizing their sums. Active and
+reactive coefficients or exponents may differ.
+At exactly zero voltage, laws with a continuous zero-current limit return zero;
+nonzero constant-power or constant-current contributions return a controlled
+error. Tiny nonzero voltages remain usable for bounded current laws. Non-finite
+currents or absorbed powers are rejected.
+Explicit nominal voltages, ZIP coefficients and exponential exponents may be
+supplied once for all branches or separately per branch. Unknown model names,
+incomplete parameter sets and conflicting coefficient families are rejected;
+they are not interpreted through PowerIO's permissive model fallback.
+
+The nominal admittance remains fixed. Each iteration compensates its current
+against the selected load law, so these models retain the single-factorization
+algorithm. Reported load currents and powers use the operating voltage, rather
+than merely copying nominal powers.
+
+These are the BMOPF voltage laws, not the complete OpenDSS load engine.
+OpenDSS low/high-voltage fallback, ZIPV cutoff, time-dependent load multipliers,
+and control behavior are not added by this extension. OpenDSS comparisons must
+disable those differences or remain within the matching operating range.
+The frozen load references use OpenDSS model 2 for impedance, model 5 for
+current, model 8 for ZIP with cutoff disabled, and model 4 with specified CVR
+exponents for exponential loads. This comparison does not add support for
+OpenDSS model-number input or its time-series/load-status semantics.
