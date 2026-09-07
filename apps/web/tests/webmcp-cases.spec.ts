@@ -35,6 +35,7 @@ test('WebMCP switches cases without cursor input and keeps saved work', async ({
 	await page.getByLabel('Study name').fill('Saved operating point');
 	await page.getByRole('button', { name: 'Save study', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Saved operating point' })).toBeVisible();
+	await page.getByRole('button', { name: 'Show on map', exact: true }).click();
 
 	const baseline = await callTool(page, 'inspect_case', {});
 	expect(baseline.ok, JSON.stringify(baseline)).toBe(true);
