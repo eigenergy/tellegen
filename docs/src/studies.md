@@ -82,7 +82,14 @@ tellegen study export study.json > portable-study.json
 
 `tellegen describe` lists commands and generated JSON schemas. Rust definitions
 also generate the TypeScript types. Browser controls, WebMCP, and the CLI use
-the same Study operations and revision checks. PowerMCP invokes the CLI directly.
+the same Study operations and revision checks.
+
+PowerMCP's Tellegen server (`powermcp run tellegen`) invokes the native CLI.
+Its `solve`, `solve_module`, and `plan` tools handle calculations;
+`study_create`, `study_inspect`, `study_run`, `study_export`, and `study_import`
+handle saved cases. `study_create` also accepts a grid file for PowerIO to read.
+The server provides read-only capability descriptions and leaves applying a
+proposal to an explicit user action: `study_run` refuses `apply`.
 
 WebMCP `list_cases` and `select_case` change the visible case without proposal
 approval. Network queries identify the displayed case and saved state, so an
