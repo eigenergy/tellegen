@@ -89,6 +89,7 @@ export type {
 	DistGraphAttachment,
 	DistGraphBus,
 	DistGraphEdge,
+	DistNetworkDetails,
 	DisplayPreview,
 	Formulation,
 	IngestedCase,

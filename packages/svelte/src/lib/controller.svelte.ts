@@ -2001,7 +2001,7 @@ export class Controller {
 	 * Geographic cases place immediately; planar/synthetic cases enter placement
 	 * (a map click or "place on map") so the user picks their center. */
 	private addMultiCase(fileName: string, payload: IngestedDistCase) {
-		const { graph, ...summary }: { graph: IngestedDistCase['graph'] } & MultiCaseSummary = payload;
+		const { graph, network_details, ...summary } = payload;
 		const coordsKind = payload.coords_kind as MultiCoordsKind;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
@@ -2012,6 +2012,7 @@ export class Controller {
 			fileName,
 			summary,
 			graph,
+			networkDetails: network_details,
 			coordsKind,
 			view
 		});

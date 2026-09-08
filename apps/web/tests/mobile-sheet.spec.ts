@@ -103,12 +103,11 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 	expect(chipBox.y).toBeGreaterThanOrEqual(sheetBox.y);
 	expect(chipBox.y + chipBox.height).toBeLessThanOrEqual(sheetBox.y + sheetBox.height);
 
-	// The demand control is the next thing a reader wants, so it comes before the
-	// rule that separates the selection from the case stats below it.
+	// The demand control is the next thing a reader wants, so the selected-element
+	// pane moves ahead of the case pane in the compact sheet.
 	const sliderBox = (await page.getByLabel('demand delta at selected bus').boundingBox())!;
-	const ruleTop = await page
-		.locator('.panel-body hr')
-		.first()
+	const casePaneTop = await page
+		.locator('[data-pane="case-overview"]')
 		.evaluate((el) => el.getBoundingClientRect().top);
-	expect(sliderBox.y).toBeLessThan(ruleTop);
+	expect(sliderBox.y).toBeLessThan(casePaneTop);
 });

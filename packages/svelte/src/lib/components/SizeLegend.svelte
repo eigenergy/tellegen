@@ -2,6 +2,7 @@
 	import { busRadius } from '../colors.js';
 
 	const SIZE_SAMPLES = [10, 100, 500];
+	let { unit = 'MW' }: { unit?: 'MW' | 'kW' } = $props();
 </script>
 
 <div class="sizes">
@@ -11,7 +12,7 @@
 			{mw}
 		</span>
 	{/each}
-	<span class="mono dim caption">MW, max(load,&#8201;gen)</span>
+	<span class="mono dim caption">{unit}, max(load,&#8201;gen)</span>
 </div>
 
 <style>

@@ -2,19 +2,15 @@
 	import { untrack } from 'svelte';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
 	import { splitName } from '../format.js';
+	import AnalysisDetails from './AnalysisDetails.svelte';
 	import AppFooter from './AppFooter.svelte';
-	import BindingLines from './BindingLines.svelte';
 	import BusPicker from './BusPicker.svelte';
-	import DemandSlider from './DemandSlider.svelte';
-	import DisplayControls from './DisplayControls.svelte';
-	import FormulationSelector from './FormulationSelector.svelte';
+	import CollapsiblePane from './CollapsiblePane.svelte';
+	import ElementInspector from './ElementInspector.svelte';
 	import LocalCaseDetails from './LocalCaseDetails.svelte';
-	import MulticonductorDetails from './MulticonductorDetails.svelte';
+	import MapDisplayDetails from './MapDisplayDetails.svelte';
+	import MulticonductorCaseOverview from './MulticonductorCaseOverview.svelte';
 	import NetworkStats from './NetworkStats.svelte';
-	import RatingSlider from './RatingSlider.svelte';
-	import SensitivityReadout from './SensitivityReadout.svelte';
-	import SizeLegend from './SizeLegend.svelte';
-	import TopMovers from './TopMovers.svelte';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -85,7 +81,36 @@
 	/** Compact only: a resolved selection outranks the case stats it was read
 	 * against. Gated on networkStats because that is what renders the readout. */
 	const selectionLeads = $derived(
-		app.compactLayout && !!ctrl.networkStats && (busReadout || branchReadout)
+		app.compactLayout &&
+			((!!ctrl.networkStats && (busReadout || branchReadout)) ||
+				app.activeMulti?.selectedBusId != null ||
+				app.activeMulti?.selectedEdgeId != null)
+	);
+
+	const analysisSummary = $derived.by(() => {
+		const c = ctrl.activeSolvable;
+		if (!c) return app.activeMulti ? 'viewing only' : 'inactive';
+		const binding = ctrl.networkStats?.binding;
+		return `${c.formulation.toUpperCase()} · ${c.solving ? 'solving' : c.solution ? 'solved' : 'waiting'}${binding == null ? '' : ` · ${binding} binding`}`;
+	});
+
+	const elementSummary = $derived.by(() => {
+		if (app.selectedBus !== null) return `bus · ${app.selectedBus}`;
+		if (app.selectedBranch !== null) {
+			const branch = ctrl.selectedBranchData;
+			return branch ? `line · ${branch.from}–${branch.to}` : `line · ${app.selectedBranch}`;
+		}
+		if (app.activeMulti?.selectedBusId != null) return `bus · ${app.activeMulti.selectedBusId}`;
+		if (app.activeMulti?.selectedEdge) return `${app.activeMulti.selectedEdge.kind} · ${app.activeMulti.selectedEdge.id}`;
+		return 'nothing selected';
+	});
+
+	const displaySummary = $derived(
+		ctrl.activeSolvable
+			? `${app.displayMode} · color and size`
+			: app.activeMulti
+				? 'phases · attachments · size'
+				: 'inactive'
 	);
 
 	$effect(() => {
@@ -108,7 +133,11 @@
 	// reaching the bus lookup scrolls it down, and the readout that replaces it as
 	// the first block would otherwise open out of view.
 	$effect(() => {
-		const selected = app.selectedBus ?? app.selectedBranch;
+		const selected =
+			app.selectedBus ??
+			app.selectedBranch ??
+			app.activeMulti?.selectedBusId ??
+			app.activeMulti?.selectedEdgeId;
 		if (selected === null) return;
 		untrack(() => {
 			if (!app.compactLayout) return;
@@ -215,55 +244,27 @@
 	{/if}
 
 	<div class="panel-body" id="control-panel-body" bind:this={bodyEl}>
-		{#snippet selectionBlock()}
-			{#if busReadout}
-				<SensitivityReadout />
-
-				<DemandSlider />
-
-				{#if ctrl.showMoverSlot}
-					<TopMovers />
-				{/if}
-			{:else if branchReadout}
-				<SensitivityReadout />
-
-				<RatingSlider />
-
-				{#if ctrl.showMoverSlot}
-					<TopMovers />
-				{/if}
-			{:else}
-				<DisplayControls />
-			{/if}
-		{/snippet}
-
 		{#if app.error}
-			<p class="error mono">{app.error}</p>
-			<div class="error-actions">
-				<button class="reset mono" onclick={ctrl.retryError}>retry</button>
-				<button class="reset mono" onclick={() => (app.error = null)}>dismiss</button>
+			<div class="panel-notice">
+				<p class="error mono">{app.error}</p>
+				<div class="error-actions">
+					<button class="reset mono" onclick={ctrl.retryError}>retry</button>
+					<button class="reset mono" onclick={() => (app.error = null)}>dismiss</button>
+				</div>
 			</div>
 		{/if}
 		{#if app.parsingFile}
-			<p class="dim mono blink">parsing&hellip;</p>
+			<p class="panel-notice dim mono blink">parsing&hellip;</p>
 		{/if}
 
-		<!-- The sheet shows a few hundred px at most, so what the last tap produced
-		     leads; the case provenance and stats it was read against follow. -->
-		{#if selectionLeads}
-			{@render selectionBlock()}
-
-			<hr />
-		{/if}
-
-		{#if app.activeLocal}
-			<LocalCaseDetails />
-		{/if}
-		{#if app.activeMulti}
-			<MulticonductorDetails />
-		{/if}
-		{#if !ctrl.networkStats}
-			{#if !app.error && !app.activeLocal && !app.activeMulti}
+		<CollapsiblePane id="case-overview" title="Case overview" summary={caseLabel || 'no active case'}>
+			{#if app.activeLocal}
+				<LocalCaseDetails />
+			{:else if app.activeMulti}
+				<MulticonductorCaseOverview />
+			{:else if ctrl.networkStats}
+				<NetworkStats />
+			{:else if !app.error}
 				{#if ctrl.casesLoaded && app.cases.length === 0}
 					<p class="dim mono">
 						{config.loadDefaultCases ? 'no default cases loaded' : 'drop a case file to begin'}
@@ -279,33 +280,25 @@
 					<p class="dim mono blink">loading cases&hellip;</p>
 				{/if}
 			{/if}
-		{:else}
-			{#if !app.activeLocal}
-				<NetworkStats />
-			{/if}
+		</CollapsiblePane>
 
-			{#if ctrl.activeSolvable}
-				<FormulationSelector />
-			{/if}
+		<CollapsiblePane id="analysis" title="Analysis" summary={analysisSummary}>
+			<AnalysisDetails />
+		</CollapsiblePane>
 
-			{#if app.compactLayout}
-				<BusPicker inline />
-			{/if}
+		<CollapsiblePane
+			id="element-inspector"
+			title="Element inspector"
+			summary={elementSummary}
+			class={selectionLeads ? 'selection-priority' : ''}
+		>
+			{#if app.compactLayout && ctrl.activeSolvable}<BusPicker inline />{/if}
+			<ElementInspector />
+		</CollapsiblePane>
 
-			{#if !app.placingLocalId}
-				<BindingLines />
-			{/if}
-
-			{#if !selectionLeads}
-				<hr />
-
-				{@render selectionBlock()}
-			{/if}
-
-			<hr />
-
-			<SizeLegend />
-		{/if}
+		<CollapsiblePane id="map-display" title="Map display" summary={displaySummary}>
+			<MapDisplayDetails />
+		</CollapsiblePane>
 
 		{#if app.compactLayout && config.showFooter}
 			<AppFooter inline />
@@ -324,28 +317,34 @@
 		width: 312px;
 		max-height: calc(100% - 122px);
 		overflow: hidden;
-		background: var(--panel);
-		border: 1px solid var(--line);
-		border-radius: 3px;
-		backdrop-filter: blur(6px);
-		box-shadow: 0 4px 24px rgba(32, 36, 43, 0.08);
+		background: transparent;
+		border: 0;
 		animation: rise 0.5s 0.12s ease-out both;
 	}
 
 	.panel-body {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
 		flex: 1 1 auto;
 		min-height: 0;
 		overflow-y: auto;
 		/* A flick that runs past the end of the panel must not scroll the page or
 		   pan the map underneath. */
 		overscroll-behavior: contain;
-		padding: 16px 18px;
+		padding: 0 5px 8px 0;
 	}
 
-	hr {
-		border: 0;
-		border-top: 1px solid var(--line);
-		margin: 12px 0;
+	:global(.selection-priority) {
+		order: -1;
+	}
+
+	.panel-notice {
+		margin: 0;
+		padding: 10px 12px;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 3px;
 	}
 
 	.error {
@@ -412,6 +411,7 @@
 		width: auto;
 		max-height: none;
 		background: var(--paper);
+		border: 1px solid var(--line);
 		border-width: 1px 0 0;
 		border-radius: 12px 12px 0 0;
 		box-shadow: 0 -6px 28px rgba(32, 36, 43, 0.14);
@@ -419,6 +419,7 @@
 	}
 
 	.sheet .panel-body {
+		gap: 0;
 		padding: 0 16px 14px;
 		/* clear the home indicator on a phone with no bezel */
 		padding-bottom: max(14px, env(safe-area-inset-bottom));

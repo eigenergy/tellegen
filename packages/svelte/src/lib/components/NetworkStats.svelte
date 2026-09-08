@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getAppState, getController } from '../context.svelte.js';
-	import { fmt, signed, splitName } from '../format.js';
+	import { splitName } from '../format.js';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -9,7 +9,6 @@
 {#if ctrl.networkStats}
 	{@const stats = ctrl.networkStats}
 	{@const [cname, cregion] = splitName(app.active?.name ?? '')}
-	{@const deltaObjective = stats.deltaObjective}
 	<h2>{cname} <span class="region mono">{cregion}</span></h2>
 	<dl class="mono">
 		<div>
@@ -20,26 +19,6 @@
 			<dt>lines</dt>
 			<dd>{stats.branches}</dd>
 		</div>
-		<div>
-			<dt>binding lines</dt>
-			<dd>{stats.binding ?? '…'}</dd>
-		</div>
-		<div>
-			<dt>declared objective</dt>
-			<dd>
-				{#if stats.objective === null}
-					<span class="blink">solving&hellip;</span>
-				{:else}
-					{fmt.format(stats.objective)}
-				{/if}
-			</dd>
-		</div>
-		{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null}
-			<div class="delta">
-				<dt>vs base</dt>
-				<dd>{signed(deltaObjective)}</dd>
-			</div>
-		{/if}
 	</dl>
 {/if}
 
@@ -59,10 +38,6 @@
 		display: flex;
 		justify-content: space-between;
 		padding: 3px 0;
-	}
-
-	dl .delta dd {
-		color: var(--text-accent);
 	}
 
 	dt {

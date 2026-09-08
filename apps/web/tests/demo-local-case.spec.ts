@@ -40,6 +40,20 @@ test('selected local case reaches the browser solve path', async ({ page }) => {
 	await expect(solveCard).toContainText(/\d+ ms/);
 	await expect(solveCard).not.toContainText('server solve');
 	await expect(solveCard.locator('.fallback-reason')).toHaveCount(0);
+
+	// The control rail separates stable case data, live analysis, selection data,
+	// and map encoding. Every pane starts open and its whole header is a disclosure.
+	for (const name of ['Case overview', 'Analysis', 'Element inspector', 'Map display']) {
+		await expect(page.getByRole('button', { name: new RegExp(name, 'i') })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+	}
+	const mapDisplay = page.getByRole('button', { name: /Map display/i });
+	await mapDisplay.click();
+	await expect(mapDisplay).toHaveAttribute('aria-expanded', 'false');
+	await mapDisplay.click();
+	await expect(mapDisplay).toHaveAttribute('aria-expanded', 'true');
 });
 
 test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
@@ -71,6 +85,12 @@ test('slider drag shows the scaled LMP preview legend', async ({ page }) => {
 	await lookup.fill('3');
 	await lookup.press('Enter');
 	await expect(page.locator('.chip', { hasText: '∂LMP/∂d' })).toBeVisible({ timeout: 30_000 });
+	const inspector = page.locator('[data-pane="element-inspector"]');
+	await expect(inspector.locator('.element-heading')).toContainText(/bus\s+3/i);
+	await expect(inspector).toContainText('Model properties');
+	await expect(inspector).toContainText('kind');
+	await expect(inspector).toContainText('Current solution');
+	await expect(inspector).toContainText('Scenario controls');
 
 	// Drive a preview without committing: set the slider value and fire only an
 	// input event (pointerup/change would trigger the exact re-solve).
