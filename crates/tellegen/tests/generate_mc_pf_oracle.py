@@ -37,8 +37,18 @@ CASES = [
 ]
 
 
+def stable_float(value: float) -> float:
+    """Remove backend/platform noise from the checked-in JSON oracle."""
+    if abs(value) < 1e-12:
+        return 0.0
+    return float(f"{value:.10g}")
+
+
 def cplx(values: list[float], offset: int, scale: float = 1.0) -> dict[str, float]:
-    return {"re": float(values[offset] * scale), "im": float(values[offset + 1] * scale)}
+    return {
+        "re": stable_float(values[offset] * scale),
+        "im": stable_float(values[offset + 1] * scale),
+    }
 
 
 def terminal_number(name: str) -> int:

@@ -59,8 +59,15 @@ MODELS = [
 ]
 
 
+def stable_float(value):
+    """Remove backend/platform noise from the checked-in JSON oracle."""
+    if abs(value) < 1e-9:
+        return 0.0
+    return float(f"{value:.10g}")
+
+
 def complex_json(value):
-    return {"re": value.real, "im": value.imag}
+    return {"re": stable_float(value.real), "im": stable_float(value.imag)}
 
 
 def as_complex(value):
@@ -205,7 +212,7 @@ def main():
                     "input_sha256": hashlib.sha256(input_path.read_bytes()).hexdigest(),
                     "voltage": complex_json(voltage), "current": complex_json(current),
                     "power": complex_json(voltage * current.conjugate()),
-                    "analytic_current_error_A": error,
+                    "analytic_current_error_A": stable_float(error),
                 }
                 if args.binary:
                     compare_native(args.binary, input_path, row, resistance)
