@@ -61,12 +61,14 @@ values cross JSON as `{ "re": ..., "im": ... }`.
 
 The solver supports voltage-dependent loads, ideal voltage sources,
 lines, passive shunts, and finite-leakage two-winding transformers, including
-two-winding `n_winding` records with explicit BMOPF delta rolls. Transformer
+two-winding `n_winding` records with explicit BMOPF delta rolls and fixed-tap
+`single_phase_autotransformer` regulator snapshots. Transformer
 admittance follows the
 OpenDSS terminal primitive: common leakage base, winding voltage/tap maps,
 actual WYE/DELTA coil incidence, explicit neutral impedance, and explicit
 per-coil excitation shunts. Zero leakage (an ideal voltage constraint),
-transformers with more than two windings, finite source impedance, and unsupported controls
+transformers with more than two windings, ideal zero-impedance regulators,
+finite source impedance, and unsupported controls
 are rejected with an error rather than approximated.
 The direct OpenDSS YPrim comparison, including YY/DD/YD/DY fixed-tap cases and
 per-winding delta-roll cases, is frozen in
