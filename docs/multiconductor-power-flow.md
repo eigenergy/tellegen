@@ -84,10 +84,12 @@ voltage zone a line-to-neutral base from transformer winding ratings or other
 explicit nameplates, falling back to its ideal source voltage when no rated
 anchor exists. It converts that base to the load's WYE, DELTA, or single-phase
 branch voltage. Missing or conflicting anchors are rejected instead of guessed.
-Legacy `g_no_load`/`b_no_load` values require
+Nonzero legacy `g_no_load`/`b_no_load` values on isolating transformers require
 normalization to an explicit `no_load_shunt`; this avoids choosing between the
-tagged schema and BMOPFTools legacy reference sides. An OPF instance can be
-projected to PF through PowerIO's typed conversion; its objective and active
+tagged schema and BMOPFTools legacy reference sides. Exact-zero legacy fields
+are accepted as no-ops, and `single_phase_autotransformer` defines nonzero
+legacy excitation across its from winding unambiguously. An OPF instance can
+be projected to PF through PowerIO's typed conversion; its objective and active
 constraints are discarded by that conversion and PowerIO emits the standard
 projection diagnostic; the convenience raw solve proceeds with the projected
 PF instance.

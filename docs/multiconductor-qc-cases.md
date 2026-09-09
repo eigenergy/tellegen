@@ -273,6 +273,51 @@ The 1e-12 ohm source oracle suffers subtraction/cancellation in source current,
 so use independent global KCL and power balance for source reactions rather
 than claiming exact source-current agreement with that approximation.
 
+## IEEE distribution feeder spot checks
+
+IEEE 13-, 34-, and 123-bus DSS cases from OpenDSSToPMDJSON commit
+`9da7a8530a58422a395506a075cbf537c722d09b` were exported by BMOPFTools commit
+`8ca84ab12c0c91aaa8ad4c9986d6adbeb969ea0b`. The independent comparison used
+OpenDSSDirect.py 0.9.4 with DSS C-API 0.14.5. Tellegen received the raw BMOPF
+document through its public example runner; no solver-specific model rewrite
+was used for the 13- or 34-bus case. The comparison covers complex phase-node
+voltages. Neutral/reference terminals are intentionally excluded because the
+OpenDSS node list and BMOPF explicit-neutral representation differ.
+
+| Feeder | BMOPF preparation | Tellegen iterations / factors | Voltage range (pu) | Physical KCL (A) | Compared phase nodes | Max / RMS complex-voltage error against ideal-source OpenDSS (V) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| IEEE 13 | Unmodified export | 13 / 1 | 0.975895–1.056725 | 1.19e-8 | 41 | 2.88e-2 / 2.14e-2 |
+| IEEE 34 | Unmodified export | 15 / 1 | 0.913167–1.047912 | 7.68e-9 | 138 | 1.97e-3 / 1.17e-3 |
+| IEEE 123 | Orphan bus `610` removed; see below | 12 / 1 | 0.987564–1.042578 | 9.23e-7 | 271 | 8.73e-3 / 3.95e-3 |
+
+All three completed solves converged within the physical KCL gate, reused one
+sparse factorization, and passed the default 0.85–1.15 pu validity assessment.
+IEEE 34 is the direct acceptance case for `single_phase_autotransformer`: all
+six fixed regulator phases retain their BMOPF tap, Type B connection and
+referred series impedance. Its maximum relative complex-voltage error against
+the matched OpenDSS model is 1.68e-7.
+
+The source model matters when interpreting absolute differences. BMOPF exposes
+an ideal prescribed source while the original DSS cases retain finite Thevenin
+impedance. With the original sources, IEEE 13 and 34 had maximum errors of
+14.74 V and 0.416 V respectively, concentrated at `sourcebus`; their maximum
+non-source errors were 0.623 V and 0.156 V. Replacing only the OpenDSS source
+impedance with `r1=r0=0`, `x1=x0=1e-12` reduced the maxima to the table values.
+The IEEE 123 source was already nearly ideal (`x1=x0=1e-7` ohm), so its
+original-source maximum was 9.83e-3 V.
+
+The unmodified IEEE 123 export fails deliberately at sparse factorization. Its
+DSS case contains an unloaded two-winding delta–delta transformer from `61s`
+to `610`. The observed BMOPFTools export omits that transformer but leaves the
+three-terminal bus `610`, producing a disconnected structural nullspace. A
+temporary comparison copy that removed only this orphan bus converged as shown
+above. OpenDSS bus
+`610` was excluded from the 271-node comparison; because the omitted
+transformer has no load or excitation shunt, it draws no current and does not
+change the energized feeder solution. This is evidence for an explicit
+orphan-bus diagnostic or producer cleanup, not justification for silently
+deleting arbitrary islands in the solver.
+
 The two reproduced adversarial failures at this checkpoint are retained in
 `/tmp/tellegen-qc-shared-source.json` (two coincident sources each report full
 reaction, doubling total supply) and `/tmp/tellegen-qc-unknown-connection.json`
