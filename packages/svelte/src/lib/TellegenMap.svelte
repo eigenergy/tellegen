@@ -680,7 +680,7 @@
 			import('@deck.gl/layers')
 		]);
 		return {
-			maplibregl: maplibre.default,
+			maplibregl: maplibre,
 			MapboxOverlay: mapbox.MapboxOverlay,
 			PathLayer: layers.PathLayer,
 			ScatterplotLayer: layers.ScatterplotLayer,
