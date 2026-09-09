@@ -36,6 +36,14 @@ pub struct McPfOptions {
     pub zero_voltage_tolerance: f64,
     pub absolute_kcl_tolerance: f64,
     pub relative_kcl_tolerance: f64,
+    /// Apply the OpenDSS-style bounded-voltage load envelope.
+    pub voltage_envelope: bool,
+    /// Below this per-unit voltage, loads use their nominal impedance.
+    pub v_low_pu: f64,
+    /// Lower edge of the load model's normal voltage range.
+    pub v_min_pu: f64,
+    /// Upper edge of the load model's normal voltage range.
+    pub v_max_pu: f64,
 }
 
 impl Default for McPfOptions {
@@ -50,6 +58,10 @@ impl Default for McPfOptions {
             // relative term still scales acceptance with incident currents.
             absolute_kcl_tolerance: 1e-6,
             relative_kcl_tolerance: 1e-8,
+            voltage_envelope: true,
+            v_low_pu: 0.5,
+            v_min_pu: 0.85,
+            v_max_pu: 1.15,
         }
     }
 }
@@ -88,6 +100,17 @@ pub struct McSourceReaction {
     pub power_into_network: McComplex,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct McVoltageViolation {
+    pub load: String,
+    pub branch: usize,
+    pub bus: String,
+    pub voltage: f64,
+    pub nominal_voltage: f64,
+    pub voltage_pu: f64,
+    pub bound: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct McElementPort {
     pub element: String,
@@ -102,6 +125,11 @@ pub struct McElementPort {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct McPfResult {
     pub converged: bool,
+    /// Whether every load branch lies inside the configured normal voltage band.
+    pub voltage_valid: bool,
+    pub min_voltage_pu: Option<f64>,
+    pub max_voltage_pu: Option<f64>,
+    pub voltage_violations: Vec<McVoltageViolation>,
     pub iterations: usize,
     pub factorization_count: usize,
     pub matrix_dimension: usize,
@@ -236,6 +264,26 @@ fn validate_result_against_solution(
         || result.scaled_kcl_residual > 1.0 + 1e-10
         || result.voltage_change > options.tolerance * (1.0 + 1e-10)
         || result.iterations > options.max_iterations
+        || result.voltage_valid != result.voltage_violations.is_empty()
+        || result
+            .min_voltage_pu
+            .is_some_and(|value| !value.is_finite() || value < 0.0)
+        || result
+            .max_voltage_pu
+            .is_some_and(|value| !value.is_finite() || value < 0.0)
+        || result.min_voltage_pu.is_some() != result.max_voltage_pu.is_some()
+        || result
+            .min_voltage_pu
+            .zip(result.max_voltage_pu)
+            .is_some_and(|(min, max)| min > max)
+        || result.voltage_violations.iter().any(|violation| {
+            !violation.voltage.is_finite()
+                || !violation.nominal_voltage.is_finite()
+                || !violation.voltage_pu.is_finite()
+                || violation.voltage < 0.0
+                || violation.nominal_voltage <= 0.0
+                || !matches!(violation.bound.as_str(), "minimum" | "maximum")
+        })
     {
         return Err(
             "multiconductor Study snapshot does not contain a finite converged result".to_owned(),
@@ -261,6 +309,33 @@ fn validate_result_against_solution(
     if terminal_voltages.len() != result.terminals.len() {
         return Err(
             "multiconductor Study result contains duplicate terminal identities".to_owned(),
+        );
+    }
+    let prepared = PreparedNetwork::prepare(solution.instance())?;
+    let prepared_voltage = prepared
+        .index
+        .terminal_ids
+        .iter()
+        .map(|(bus, terminal)| {
+            terminal_voltages
+                .get(&(bus.clone(), terminal.clone()))
+                .copied()
+                .map(McComplexValue::into_complex)
+                .ok_or_else(|| {
+                    format!("multiconductor Study result omits terminal `{bus}:{terminal}`")
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let (expected_min, expected_max, expected_violations) =
+        assess_load_voltages(&prepared, &prepared_voltage, options);
+    if result.min_voltage_pu != expected_min
+        || result.max_voltage_pu != expected_max
+        || result.voltage_violations != expected_violations
+        || result.voltage_valid != expected_violations.is_empty()
+    {
+        return Err(
+            "multiconductor Study voltage-band assessment differs from its terminal voltages"
+                .to_owned(),
         );
     }
     let mut index = 0usize;
@@ -654,7 +729,7 @@ pub fn solve_mc_ac_pf_instance(
     let mut iterations = 0;
     for k in 0..options.max_iterations {
         iterations = k + 1;
-        let load_current = total_load_current(&prepared, &voltage, options.zero_voltage_tolerance)?;
+        let load_current = total_load_current(&prepared, &voltage, options)?;
         let compensated = prepared
             .unknown
             .iter()
@@ -676,15 +751,14 @@ pub fn solve_mc_ac_pf_instance(
             voltage[i] = next;
         }
         if final_change <= options.tolerance {
-            let candidate_load =
-                total_load_current(&prepared, &voltage, options.zero_voltage_tolerance)?;
+            let candidate_load = total_load_current(&prepared, &voltage, options)?;
             let (_, candidate_scaled) = kcl_metrics(&prepared, &voltage, &candidate_load, options);
             if candidate_scaled <= 1.0 {
                 break;
             }
         }
     }
-    let load_current = total_load_current(&prepared, &voltage, options.zero_voltage_tolerance)?;
+    let load_current = total_load_current(&prepared, &voltage, options)?;
     let (residual, scaled_residual) = kcl_metrics(&prepared, &voltage, &load_current, options);
     if !final_change.is_finite() || !residual.is_finite() || !scaled_residual.is_finite() {
         return Err("fixed-point iteration produced a non-finite residual".to_owned());
@@ -706,7 +780,7 @@ pub fn solve_mc_ac_pf_instance(
     let mut element_ports = Vec::new();
     for load in &prepared.loads {
         for (branch, incidence) in load.incidence.iter().enumerate() {
-            let current = load.branch_current(branch, &voltage, options.zero_voltage_tolerance)?;
+            let current = load.branch_current(branch, &voltage, options)?;
             for &(i, c) in incidence {
                 let terminal_current = c.conj() * current;
                 let (bus, terminal) = &prepared.index.terminal_ids[i];
@@ -780,8 +854,14 @@ pub fn solve_mc_ac_pf_instance(
             "fixed-point PF produced a non-finite voltage, current, or power output".to_owned(),
         );
     }
+    let (min_voltage_pu, max_voltage_pu, voltage_violations) =
+        assess_load_voltages(&prepared, &voltage, options);
     Ok(McPfResult {
         converged: true,
+        voltage_valid: voltage_violations.is_empty(),
+        min_voltage_pu,
+        max_voltage_pu,
+        voltage_violations,
         iterations,
         factorization_count: prepared
             .factor
@@ -818,6 +898,12 @@ fn validate_options(options: &McPfOptions) -> Result<(), String> {
         || options.absolute_kcl_tolerance <= 0.0
         || !options.relative_kcl_tolerance.is_finite()
         || options.relative_kcl_tolerance < 0.0
+        || !options.v_low_pu.is_finite()
+        || !options.v_min_pu.is_finite()
+        || !options.v_max_pu.is_finite()
+        || options.v_low_pu <= 0.0
+        || options.v_low_pu >= options.v_min_pu
+        || options.v_min_pu >= options.v_max_pu
     {
         return Err("invalid multiconductor PF options".to_owned());
     }
@@ -848,8 +934,7 @@ fn kcl_metrics(
     }
     for load in &network.loads {
         for branch in 0..load.power.len() {
-            let current = match load.branch_current(branch, voltage, options.zero_voltage_tolerance)
-            {
+            let current = match load.branch_current(branch, voltage, options) {
                 Ok(current) => current.norm(),
                 Err(_) => f64::INFINITY,
             };
@@ -874,13 +959,51 @@ fn kcl_metrics(
 fn total_load_current(
     network: &PreparedNetwork,
     voltage: &[Complex64],
-    zero_tol: f64,
+    options: &McPfOptions,
 ) -> Result<Vec<Complex64>, String> {
     let mut current = vec![Complex64::new(0.0, 0.0); voltage.len()];
     for load in &network.loads {
-        load.add_current(voltage, zero_tol, &mut current)?;
+        load.add_current(voltage, options, &mut current)?;
     }
     Ok(current)
+}
+
+fn assess_load_voltages(
+    network: &PreparedNetwork,
+    voltage: &[Complex64],
+    options: &McPfOptions,
+) -> (Option<f64>, Option<f64>, Vec<McVoltageViolation>) {
+    let mut minimum: Option<f64> = None;
+    let mut maximum: Option<f64> = None;
+    let mut violations = Vec::new();
+    for load in &network.loads {
+        for branch in 0..load.power.len() {
+            let magnitude = load.branch_voltage(branch, voltage).norm();
+            let nominal = load.nominal_voltage[branch];
+            let pu = magnitude / nominal;
+            minimum = Some(minimum.map_or(pu, |value| value.min(pu)));
+            maximum = Some(maximum.map_or(pu, |value| value.max(pu)));
+            let bound = if pu < options.v_min_pu {
+                Some("minimum")
+            } else if pu > options.v_max_pu {
+                Some("maximum")
+            } else {
+                None
+            };
+            if let Some(bound) = bound {
+                violations.push(McVoltageViolation {
+                    load: load.name.clone(),
+                    branch,
+                    bus: load.bus.clone(),
+                    voltage: magnitude,
+                    nominal_voltage: nominal,
+                    voltage_pu: pu,
+                    bound: bound.to_owned(),
+                });
+            }
+        }
+    }
+    (minimum, maximum, violations)
 }
 
 #[cfg(test)]
@@ -888,9 +1011,16 @@ mod tests {
     use super::*;
     use powerio_dist::{
         Configuration, DistBus, DistLine, DistLineCode, DistLoad, DistLoadVoltageModel,
-        MulticonductorNetwork, VoltageSource,
+        DistTransformer, DistWinding, DistWindingConn, MulticonductorNetwork, VoltageSource,
     };
     use powerio_prob::McAcPfInstance;
+
+    fn raw_load_options() -> McPfOptions {
+        McPfOptions {
+            voltage_envelope: false,
+            ..Default::default()
+        }
+    }
 
     fn one_phase(p: f64) -> McAcPfInstance {
         let mut net = MulticonductorNetwork::new();
@@ -939,6 +1069,7 @@ mod tests {
         )
         .expect("solve");
         assert!(result.converged);
+        assert!(result.voltage_valid);
         assert_eq!(result.factorization_count, 1);
         let v = result
             .terminals
@@ -952,14 +1083,16 @@ mod tests {
     }
 
     #[test]
-    fn zero_voltage_branch_is_a_controlled_error() {
+    fn voltage_envelope_has_a_finite_zero_voltage_limit() {
         let mut instance = one_phase(1.0);
         // The source is the only fixed terminal; force a zero source voltage.
         let mut net = instance.network().clone();
         net.sources_mut()[0].v_magnitude[0] = 0.0;
         instance = McAcPfInstance::from_network(net).expect("instance");
-        let error = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap_err();
-        assert!(!error.is_empty());
+        let result = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap();
+        assert!(result.converged);
+        assert!(!result.voltage_valid);
+        assert_eq!(result.min_voltage_pu, Some(0.0));
     }
 
     #[test]
@@ -968,6 +1101,7 @@ mod tests {
         let voltage = Complex64::from_polar(2.0, angle);
         let load = crate::mc_pf::loads::BranchLoad {
             name: "rotated".into(),
+            bus: "load".into(),
             incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
             power: vec![Complex64::new(3.0, 2.0)],
             y_ref: vec![Complex64::new(0.0, 0.0)],
@@ -975,7 +1109,7 @@ mod tests {
             model: crate::mc_pf::loads::BranchVoltageModel::ConstantPower,
         };
         let mut actual_values = vec![Complex64::default()];
-        load.add_current(&[voltage], 1e-12, &mut actual_values)
+        load.add_current(&[voltage], &raw_load_options(), &mut actual_values)
             .unwrap();
         let actual = actual_values[0];
         let expected = (Complex64::new(3.0, 2.0) / voltage).conj();
@@ -987,6 +1121,7 @@ mod tests {
     ) -> crate::mc_pf::loads::BranchLoad {
         crate::mc_pf::loads::BranchLoad {
             name: "law".into(),
+            bus: "load".into(),
             incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
             power: vec![Complex64::new(10.0, 5.0)],
             y_ref: vec![Complex64::new(0.1, -0.05)],
@@ -1031,11 +1166,56 @@ mod tests {
         ];
         for (model, expected) in expected {
             let load = direct_branch_load(model);
-            let actual = load.branch_current(0, &voltage, 1e-12).unwrap();
+            let actual = load
+                .branch_current(0, &voltage, &raw_load_options())
+                .unwrap();
             assert!(
                 (actual - expected).norm() < 1e-12,
                 "{actual:?} vs {expected:?}"
             );
+        }
+    }
+
+    #[test]
+    fn opendss_voltage_envelope_matches_each_reference_region() {
+        let load = direct_branch_load(crate::mc_pf::loads::BranchVoltageModel::ConstantPower);
+        let options = McPfOptions::default();
+        let y_ref = Complex64::new(0.1, -0.05);
+        let at_low = y_ref * (10.0 * options.v_low_pu);
+        let at_min = y_ref * (10.0 / options.v_min_pu);
+
+        let cases = [
+            (4.0, y_ref * 4.0),
+            (5.0, at_low),
+            (
+                7.0,
+                at_low
+                    + (at_min - at_low) * (0.7 - options.v_low_pu)
+                        / (options.v_min_pu - options.v_low_pu),
+            ),
+            (8.5, at_min),
+            (10.0, Complex64::new(1.0, -0.5)),
+            (12.0, y_ref * 12.0 / options.v_max_pu.powi(2)),
+        ];
+        for (voltage, expected) in cases {
+            let actual = load
+                .branch_current(0, &[Complex64::new(voltage, 0.0)], &options)
+                .unwrap();
+            assert!(
+                (actual - expected).norm() < 1e-12,
+                "at {voltage} V: {actual:?} vs {expected:?}"
+            );
+        }
+
+        // Both transitions are continuous, including for a rotated phasor.
+        for boundary in [options.v_low_pu, options.v_min_pu, options.v_max_pu] {
+            let angle = 0.37;
+            let epsilon = 1e-9;
+            let below = Complex64::from_polar(10.0 * (boundary - epsilon), angle);
+            let above = Complex64::from_polar(10.0 * (boundary + epsilon), angle);
+            let below = load.branch_current(0, &[below], &options).unwrap();
+            let above = load.branch_current(0, &[above], &options).unwrap();
+            assert!((below - above).norm() < 1e-7, "boundary {boundary}");
         }
     }
 
@@ -1045,12 +1225,12 @@ mod tests {
         let mut load =
             direct_branch_load(crate::mc_pf::loads::BranchVoltageModel::ConstantImpedance);
         assert_eq!(
-            load.branch_current(0, &zero, 1e-12).unwrap(),
+            load.branch_current(0, &zero, &raw_load_options()).unwrap(),
             Complex64::default()
         );
 
         load.model = crate::mc_pf::loads::BranchVoltageModel::ConstantCurrent;
-        assert!(load.branch_current(0, &zero, 1e-12).is_err());
+        assert!(load.branch_current(0, &zero, &raw_load_options()).is_err());
 
         load.model = crate::mc_pf::loads::BranchVoltageModel::Zip {
             alpha_z: vec![0.0],
@@ -1060,14 +1240,14 @@ mod tests {
             beta_i: vec![1.0],
             beta_p: vec![0.0],
         };
-        assert!(load.branch_current(0, &zero, 1e-12).is_err());
+        assert!(load.branch_current(0, &zero, &raw_load_options()).is_err());
 
         load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
             gamma_p: vec![2.0],
             gamma_q: vec![2.0],
         };
         assert_eq!(
-            load.branch_current(0, &zero, 1e-12).unwrap(),
+            load.branch_current(0, &zero, &raw_load_options()).unwrap(),
             Complex64::default()
         );
 
@@ -1075,19 +1255,19 @@ mod tests {
             gamma_p: vec![0.7],
             gamma_q: vec![2.0],
         };
-        assert!(load.branch_current(0, &zero, 1e-12).is_err());
+        assert!(load.branch_current(0, &zero, &raw_load_options()).is_err());
 
         // A very small nonzero voltage remains evaluable for a bounded
         // current law; it is not rounded to zero by the guard.
         load.model = crate::mc_pf::loads::BranchVoltageModel::ConstantCurrent;
         let tiny = [Complex64::new(1e-200, 1e-200)];
-        let ci_current = load.branch_current(0, &tiny, 1e-12).unwrap();
+        let ci_current = load.branch_current(0, &tiny, &raw_load_options()).unwrap();
         assert!(ci_current.norm() > 0.0);
         load.model = crate::mc_pf::loads::BranchVoltageModel::Exponential {
             gamma_p: vec![1.0],
             gamma_q: vec![1.0],
         };
-        let exp_current = load.branch_current(0, &tiny, 1e-12).unwrap();
+        let exp_current = load.branch_current(0, &tiny, &raw_load_options()).unwrap();
         assert!((exp_current - ci_current).norm() < 1e-12);
 
         // An inactive P or Q component must not evaluate its unused exponent:
@@ -1098,12 +1278,13 @@ mod tests {
             gamma_q: vec![-1_000_000.0],
         };
         let current = load
-            .branch_current(0, &[Complex64::new(8.0, 0.0)], 1e-12)
+            .branch_current(0, &[Complex64::new(8.0, 0.0)], &raw_load_options())
             .unwrap();
         assert!(current.re.is_finite() && current.im.is_finite());
 
         let huge = crate::mc_pf::loads::BranchLoad {
             name: "huge".into(),
+            bus: "load".into(),
             incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
             power: vec![Complex64::new(1e308, 0.0)],
             y_ref: vec![Complex64::new(1e306, 0.0)],
@@ -1111,7 +1292,7 @@ mod tests {
             model: crate::mc_pf::loads::BranchVoltageModel::ConstantImpedance,
         };
         assert!(huge
-            .branch_current(0, &[Complex64::new(20.0, 0.0)], 1e-12)
+            .branch_current(0, &[Complex64::new(20.0, 0.0)], &raw_load_options())
             .is_err());
     }
 
@@ -1374,16 +1555,139 @@ mod tests {
     }
 
     #[test]
-    fn omitted_load_nominal_voltage_is_rejected_explicitly() {
+    fn omitted_constant_power_nominal_voltage_is_inferred_from_its_voltage_zone() {
         let mut network = one_phase(1.0).network().clone();
         network.loads_mut()[0].voltage_model =
             DistLoadVoltageModel::ConstantPower { v_nom: Vec::new() };
         let instance = McAcPfInstance::from_network(network).unwrap();
-        let error = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap_err();
-        assert!(
-            error.contains("omits explicit nominal branch voltage"),
-            "{error}"
+        let result = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap();
+        assert!(result.voltage_valid);
+        let minimum = result.min_voltage_pu.expect("one load branch");
+        assert!((minimum - 0.9898979486).abs() < 1e-8, "{minimum}");
+    }
+
+    #[test]
+    fn omitted_nominal_voltage_uses_the_local_transformer_winding_rating() {
+        let mut network = MulticonductorNetwork::new();
+        network
+            .buses_mut()
+            .push(DistBus::new("hv", vec!["p".into(), "n".into()]));
+        network
+            .buses_mut()
+            .push(DistBus::new("lv", vec!["p".into(), "n".into()]));
+        network.buses_mut()[0].grounded.push("n".into());
+        network.buses_mut()[1].grounded.push("n".into());
+        network.sources_mut().push(VoltageSource::new(
+            "source",
+            "hv",
+            vec!["p".into(), "n".into()],
+            vec![100.0, 0.0],
+            vec![0.0, 0.0],
+        ));
+        let mut high = DistWinding::new(
+            "hv",
+            vec!["p".into(), "n".into()],
+            DistWindingConn::Wye,
+            100.0,
+            1_000.0,
         );
+        high.r_pct = 0.5;
+        let mut low = DistWinding::new(
+            "lv",
+            vec!["p".into(), "n".into()],
+            DistWindingConn::Wye,
+            10.0,
+            1_000.0,
+        );
+        low.r_pct = 0.5;
+        network.transformers_mut().push(DistTransformer::new(
+            "step-down",
+            vec![high, low],
+            vec![2.0],
+            1,
+        ));
+        network.loads_mut().push(DistLoad::new(
+            "secondary-load",
+            "lv",
+            vec!["p".into(), "n".into()],
+            Configuration::SinglePhase,
+            vec![10.0],
+            vec![2.0],
+        ));
+
+        let result = solve_mc_ac_pf_instance(
+            &McAcPfInstance::from_network(network).unwrap(),
+            &McPfOptions::default(),
+        )
+        .unwrap();
+        let load_voltage = result
+            .terminals
+            .iter()
+            .find(|terminal| terminal.bus == "lv" && terminal.terminal == "p")
+            .unwrap()
+            .voltage;
+        let inferred = load_voltage.re.hypot(load_voltage.im) / result.min_voltage_pu.unwrap();
+        assert!((inferred - 10.0).abs() < 1e-9, "{inferred}");
+    }
+
+    #[test]
+    fn invalid_voltage_envelope_options_are_rejected() {
+        let error = solve_mc_ac_pf_instance(
+            &one_phase(1.0),
+            &McPfOptions {
+                v_min_pu: 1.2,
+                v_max_pu: 1.1,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("invalid multiconductor PF options"));
+    }
+
+    #[test]
+    fn envelope_can_converge_to_a_solution_that_is_flagged_outside_the_normal_band() {
+        let stressed = one_phase(30.0);
+        let raw_error = solve_mc_ac_pf_instance(
+            &stressed,
+            &McPfOptions {
+                max_iterations: 40,
+                voltage_envelope: false,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(raw_error.contains("did not converge"), "{raw_error}");
+
+        let result = solve_mc_ac_pf_instance(
+            &stressed,
+            &McPfOptions {
+                max_iterations: 200,
+                ..Default::default()
+            },
+        )
+        .expect("bounded-voltage solve");
+        assert!(result.converged);
+        assert!(!result.voltage_valid);
+        assert!(result.min_voltage_pu.unwrap() < 0.85);
+        assert_eq!(result.voltage_violations.len(), 1);
+        assert_eq!(result.voltage_violations[0].bound, "minimum");
+        assert_eq!(result.voltage_violations[0].load, "pl");
+    }
+
+    #[test]
+    fn voltage_assessment_reports_the_upper_band_separately_from_convergence() {
+        let mut network = one_phase(1.0).network().clone();
+        network.loads_mut()[0].voltage_model =
+            DistLoadVoltageModel::ConstantPower { v_nom: vec![8.0] };
+        let result = solve_mc_ac_pf_instance(
+            &McAcPfInstance::from_network(network).unwrap(),
+            &McPfOptions::default(),
+        )
+        .unwrap();
+        assert!(result.converged);
+        assert!(!result.voltage_valid);
+        assert!(result.max_voltage_pu.unwrap() > 1.15);
+        assert_eq!(result.voltage_violations[0].bound, "maximum");
     }
 
     fn one_phase_module(power: f64) -> String {
@@ -1423,6 +1727,10 @@ mod tests {
         let mut value: serde_json::Value =
             serde_json::from_str(&snapshot.to_json().unwrap()).unwrap();
         value["result"]["terminals"][0]["voltage"]["re"] = serde_json::json!(999.0);
+        assert!(McStudySnapshot::from_json(&value.to_string()).is_err());
+
+        value = serde_json::from_str(&snapshot.to_json().unwrap()).unwrap();
+        value["result"]["min_voltage_pu"] = serde_json::json!(0.1);
         assert!(McStudySnapshot::from_json(&value.to_string()).is_err());
 
         value = serde_json::from_str(&snapshot.to_json().unwrap()).unwrap();

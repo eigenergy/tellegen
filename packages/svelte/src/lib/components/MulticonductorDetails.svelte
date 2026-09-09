@@ -150,6 +150,22 @@
 						<dd>{result.iterations}</dd>
 					</div>
 					<div>
+						<dt>voltage band</dt>
+						<dd>
+							{result.voltage_valid
+								? 'valid'
+								: `${result.voltage_violations.length} violation${result.voltage_violations.length === 1 ? '' : 's'}`}
+						</dd>
+					</div>
+					<div>
+						<dt>load voltage range</dt>
+						<dd>
+							{result.min_voltage_pu == null || result.max_voltage_pu == null
+								? 'n/a'
+								: `${fixed(result.min_voltage_pu)}–${fixed(result.max_voltage_pu)} pu`}
+						</dd>
+					</div>
+					<div>
 						<dt>source P / Q</dt>
 						<dd>
 							{fixed(powerKw(source))} / {fixed(powerKvar(source))} kW / kvar

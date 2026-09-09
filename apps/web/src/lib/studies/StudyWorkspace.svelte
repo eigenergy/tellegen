@@ -491,6 +491,22 @@
 								<dd>{multi.mcResult.iterations}</dd>
 							</div>
 							<div>
+								<dt>Voltage band</dt>
+								<dd>
+									{multi.mcResult.voltage_valid
+										? 'Valid'
+										: `${multi.mcResult.voltage_violations.length} violation${multi.mcResult.voltage_violations.length === 1 ? '' : 's'}`}
+								</dd>
+							</div>
+							<div>
+								<dt>Load voltage range</dt>
+								<dd>
+									{multi.mcResult.min_voltage_pu == null || multi.mcResult.max_voltage_pu == null
+										? 'n/a'
+										: `${mcFixed(multi.mcResult.min_voltage_pu)}–${mcFixed(multi.mcResult.max_voltage_pu)} pu`}
+								</dd>
+							</div>
+							<div>
 								<dt>Source P / Q</dt>
 								<dd>{mcFixed(mcKw(source))} / {mcFixed(mcKvar(source))} kW / kvar</dd>
 							</div>

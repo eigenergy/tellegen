@@ -10,6 +10,35 @@ use super::linear::RetainedComplexLu;
 use super::loads::{prepare_load, BranchLoad};
 use super::transformer::prepare_transformer;
 
+#[derive(Debug)]
+struct BusComponents {
+    parent: Vec<usize>,
+}
+
+impl BusComponents {
+    fn new(len: usize) -> Self {
+        Self {
+            parent: (0..len).collect(),
+        }
+    }
+
+    fn root(&mut self, index: usize) -> usize {
+        let parent = self.parent[index];
+        if parent != index {
+            self.parent[index] = self.root(parent);
+        }
+        self.parent[index]
+    }
+
+    fn union(&mut self, a: usize, b: usize) {
+        let a = self.root(a);
+        let b = self.root(b);
+        if a != b {
+            self.parent[b] = a;
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct NetworkIndex {
     pub terminal_ids: Vec<(String, String)>,
@@ -419,6 +448,7 @@ impl PreparedNetwork {
                 "fixed-point MC PF does not yet support generator or IBR injections".to_owned(),
             );
         }
+        let inferred_nominal_voltage = infer_missing_load_voltages(instance)?;
         let loads = instance
             .loads()
             .iter()
@@ -437,7 +467,13 @@ impl PreparedNetwork {
                 effective.q_nom = l.q_var.clone();
                 effective.terminal_map = l.terminals.clone();
                 effective.voltage_model = l.voltage_model.clone();
-                prepare_load(&effective, &index)
+                prepare_load(
+                    &effective,
+                    &index,
+                    inferred_nominal_voltage
+                        .get(&effective.name)
+                        .map(Vec::as_slice),
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
         for load in &loads {
@@ -495,6 +531,251 @@ impl PreparedNetwork {
                     + self.yref.row_fixed_mul(i, &self.fixed))
             })
             .collect()
+    }
+}
+
+/// Infer the branch-voltage base only for constant-power loads whose source
+/// format did not state one. Voltage levels are propagated through lines;
+/// transformer winding ratings and explicit load nameplates are authoritative
+/// anchors, with source operating voltages used only when a component has no
+/// nameplate anchor.
+fn infer_missing_load_voltages(
+    instance: &McAcPfInstance,
+) -> Result<BTreeMap<String, Vec<f64>>, String> {
+    let network = instance.network();
+    if !network.loads().iter().any(|load| {
+        load.voltage_model.v_nom().is_empty()
+            && matches!(
+                load.voltage_model,
+                powerio_dist::DistLoadVoltageModel::ConstantPower { .. }
+            )
+    }) {
+        return Ok(BTreeMap::new());
+    }
+    let bus_position: BTreeMap<_, _> = network
+        .buses()
+        .iter()
+        .enumerate()
+        .map(|(index, bus)| (bus.id.as_str(), index))
+        .collect();
+    let mut components = BusComponents::new(network.buses().len());
+    for line in network.lines() {
+        let from = *bus_position
+            .get(line.bus_from.as_str())
+            .ok_or_else(|| format!("line `{}` references an unknown from bus", line.name))?;
+        let to = *bus_position
+            .get(line.bus_to.as_str())
+            .ok_or_else(|| format!("line `{}` references an unknown to bus", line.name))?;
+        components.union(from, to);
+    }
+    for switch in network.switches().iter().filter(|switch| !switch.open) {
+        let from = *bus_position
+            .get(switch.bus_from.as_str())
+            .ok_or_else(|| format!("switch `{}` references an unknown from bus", switch.name))?;
+        let to = *bus_position
+            .get(switch.bus_to.as_str())
+            .ok_or_else(|| format!("switch `{}` references an unknown to bus", switch.name))?;
+        components.union(from, to);
+    }
+
+    let mut rated = BTreeMap::<usize, Vec<(String, f64)>>::new();
+    let mut source = BTreeMap::<usize, Vec<(String, f64)>>::new();
+    let conventions = network.extras().get("bmopf_terminal_conventions");
+    let mut add = |bus: &str,
+                   label: String,
+                   value: f64,
+                   target: &mut BTreeMap<usize, Vec<(String, f64)>>|
+     -> Result<(), String> {
+        if !value.is_finite() || value <= 0.0 {
+            return Err(format!("{label} provides an invalid nominal voltage"));
+        }
+        let position = *bus_position
+            .get(bus)
+            .ok_or_else(|| format!("{label} references unknown bus `{bus}`"))?;
+        target
+            .entry(components.root(position))
+            .or_default()
+            .push((label, value));
+        Ok(())
+    };
+
+    for transformer in network.transformers() {
+        for (index, winding) in transformer.windings.iter().enumerate() {
+            let line_neutral = if transformer.phases >= 2 {
+                winding.v_ref / 3f64.sqrt()
+            } else {
+                winding.v_ref
+            };
+            add(
+                &winding.bus,
+                format!("transformer `{}` winding {}", transformer.name, index + 1),
+                line_neutral,
+                &mut rated,
+            )?;
+        }
+    }
+    for capacitor in network.capacitors() {
+        let bus = &network.buses()[*bus_position
+            .get(capacitor.bus.as_str())
+            .expect("capacitor bus validated by the network")];
+        let phase_to_phase =
+            terminals_are_phase_to_phase(bus, &capacitor.terminal_map, conventions);
+        let line_neutral =
+            branch_base_to_line_neutral(capacitor.configuration, phase_to_phase, capacitor.v_nom)?;
+        add(
+            &capacitor.bus,
+            format!("capacitor `{}`", capacitor.name),
+            line_neutral,
+            &mut rated,
+        )?;
+    }
+    for load in network.loads() {
+        let values = load.voltage_model.v_nom();
+        if values.is_empty() {
+            continue;
+        }
+        let bus = &network.buses()[*bus_position
+            .get(load.bus.as_str())
+            .expect("load bus validated by the network")];
+        let phase_to_phase = terminals_are_phase_to_phase(bus, &load.terminal_map, conventions);
+        for (branch, value) in values.iter().copied().enumerate() {
+            let line_neutral =
+                branch_base_to_line_neutral(load.configuration, phase_to_phase, value)?;
+            add(
+                &load.bus,
+                format!("load `{}` branch {branch}", load.name),
+                line_neutral,
+                &mut rated,
+            )?;
+        }
+    }
+    for prescribed in instance.sources() {
+        let voltage_source = network
+            .sources()
+            .iter()
+            .find(|source| source.name == prescribed.source)
+            .ok_or_else(|| {
+                format!(
+                    "instance voltage source `{}` is absent from its network",
+                    prescribed.source
+                )
+            })?;
+        let mut magnitudes = prescribed
+            .v_magnitude
+            .iter()
+            .copied()
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .collect::<Vec<_>>();
+        if magnitudes.is_empty() {
+            continue;
+        }
+        magnitudes.sort_by(f64::total_cmp);
+        let line_neutral = magnitudes[magnitudes.len() / 2];
+        add(
+            &voltage_source.bus,
+            format!("voltage source `{}`", voltage_source.name),
+            line_neutral,
+            &mut source,
+        )?;
+    }
+
+    let mut bases = BTreeMap::<usize, f64>::new();
+    for position in 0..network.buses().len() {
+        let root = components.root(position);
+        if bases.contains_key(&root) {
+            continue;
+        }
+        let candidates = rated.get(&root).or_else(|| source.get(&root));
+        let Some(candidates) = candidates else {
+            continue;
+        };
+        let base = candidates[0].1;
+        for (label, candidate) in &candidates[1..] {
+            let relative = (candidate - base).abs() / base.max(*candidate);
+            // Ratings imported from different formats commonly mix rounded
+            // line-line and line-neutral values (for example 415/sqrt(3)
+            // versus 240 V). Treat a one-percent difference as the same zone,
+            // while still rejecting genuinely ambiguous voltage levels.
+            if relative > 1e-2 {
+                return Err(format!(
+                    "conflicting nominal voltage anchors in one line-connected component: {} V and {label}={} V",
+                    base, candidate
+                ));
+            }
+        }
+        bases.insert(root, base);
+    }
+
+    let mut inferred = BTreeMap::new();
+    for load in network.loads() {
+        if !load.voltage_model.v_nom().is_empty()
+            || !matches!(
+                load.voltage_model,
+                powerio_dist::DistLoadVoltageModel::ConstantPower { .. }
+            )
+        {
+            continue;
+        }
+        let position = *bus_position
+            .get(load.bus.as_str())
+            .ok_or_else(|| format!("load `{}` references an unknown bus", load.name))?;
+        let root = components.root(position);
+        let line_neutral = *bases.get(&root).ok_or_else(|| {
+            format!(
+                "load `{}` omits nominal voltage and bus `{}` has no source, transformer, or nameplate voltage anchor",
+                load.name, load.bus
+            )
+        })?;
+        let bus = &network.buses()[position];
+        let phase_to_phase = terminals_are_phase_to_phase(bus, &load.terminal_map, conventions);
+        let branch_voltage = match load.configuration {
+            powerio_dist::Configuration::Wye => line_neutral,
+            powerio_dist::Configuration::Delta => line_neutral * 3f64.sqrt(),
+            powerio_dist::Configuration::SinglePhase if phase_to_phase => {
+                line_neutral * 3f64.sqrt()
+            }
+            powerio_dist::Configuration::SinglePhase => line_neutral,
+            _ => {
+                return Err(format!(
+                    "load `{}` has an unsupported configuration for nominal-voltage inference",
+                    load.name
+                ))
+            }
+        };
+        inferred.insert(load.name.clone(), vec![branch_voltage; load.p_nom.len()]);
+    }
+    Ok(inferred)
+}
+
+fn terminals_are_phase_to_phase(
+    bus: &powerio_dist::DistBus,
+    terminals: &[String],
+    conventions: Option<&serde_json::Value>,
+) -> bool {
+    let phases: BTreeSet<_> = bus
+        .phase_indices(conventions)
+        .into_iter()
+        .map(|index| bus.terminals[index].as_str())
+        .collect();
+    terminals.len() == 2
+        && terminals
+            .iter()
+            .all(|terminal| phases.contains(terminal.as_str()))
+}
+
+fn branch_base_to_line_neutral(
+    configuration: powerio_dist::Configuration,
+    phase_to_phase: bool,
+    branch_voltage: f64,
+) -> Result<f64, String> {
+    match configuration {
+        powerio_dist::Configuration::Wye => Ok(branch_voltage),
+        powerio_dist::Configuration::Delta => Ok(branch_voltage / 3f64.sqrt()),
+        powerio_dist::Configuration::SinglePhase if phase_to_phase => {
+            Ok(branch_voltage / 3f64.sqrt())
+        }
+        powerio_dist::Configuration::SinglePhase => Ok(branch_voltage),
+        _ => Err("unsupported configuration for nominal-voltage inference".to_owned()),
     }
 }
 

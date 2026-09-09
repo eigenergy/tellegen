@@ -22,11 +22,15 @@ pub(crate) enum BranchVoltageModel {
     },
 }
 
-use super::network::{NetworkIndex, StampedMatrix};
+use super::{
+    network::{NetworkIndex, StampedMatrix},
+    McPfOptions,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchLoad {
     pub name: String,
+    pub bus: String,
     /// Signed incidence rows from global nodal voltages to branch voltages.
     pub incidence: Vec<Vec<(usize, Complex64)>>,
     pub power: Vec<Complex64>,
@@ -40,12 +44,9 @@ impl BranchLoad {
         &self,
         branch: usize,
         voltage: &[Complex64],
-        zero_tol: f64,
+        options: &McPfOptions,
     ) -> Result<Complex64, String> {
-        let u: Complex64 = self.incidence[branch]
-            .iter()
-            .map(|&(i, c)| c * voltage[i])
-            .sum();
+        let u = self.branch_voltage(branch, voltage);
         // A zero-power branch carries no current for every supported law. Do
         // this before the voltage guard so an unloaded branch is well-defined
         // even when it is disconnected from a prescribed source.
@@ -56,7 +57,13 @@ impl BranchLoad {
         // hypot preserves a nonzero magnitude for subnormal phasors.
         let magnitude = u.re.hypot(u.im);
         if magnitude == 0.0 {
-            if self.zero_current_at_zero_voltage(branch, magnitude, zero_tol) {
+            if options.voltage_envelope
+                || self.zero_current_at_zero_voltage(
+                    branch,
+                    magnitude,
+                    options.zero_voltage_tolerance,
+                )
+            {
                 return Ok(Complex64::default());
             }
             return Err(format!(
@@ -64,7 +71,10 @@ impl BranchLoad {
                 self.name
             ));
         }
-        if magnitude <= zero_tol && !self.near_zero_law_is_safe(branch) {
+        if !options.voltage_envelope
+            && magnitude <= options.zero_voltage_tolerance
+            && !self.near_zero_law_is_safe(branch)
+        {
             return Err(format!(
                 "load `{}` branch {branch} has near-zero voltage",
                 self.name
@@ -73,7 +83,11 @@ impl BranchLoad {
         // Evaluate the radial laws in current form.  Dividing by |U| and
         // multiplying by the unit phasor avoids forming U*conjugate(U), which
         // underflows for a perfectly valid tiny nonzero voltage.
-        let current = self.current_at_voltage(branch, u, magnitude);
+        let current = if options.voltage_envelope {
+            self.enveloped_current(branch, u, magnitude, options)
+        } else {
+            self.current_at_voltage(branch, u, magnitude)
+        };
         if !current.re.is_finite() || !current.im.is_finite() {
             return Err(format!(
                 "load `{}` branch {branch} produced a non-finite current",
@@ -88,6 +102,44 @@ impl BranchLoad {
             ));
         }
         Ok(current)
+    }
+
+    pub(crate) fn branch_voltage(&self, branch: usize, voltage: &[Complex64]) -> Complex64 {
+        self.incidence[branch]
+            .iter()
+            .map(|&(i, c)| c * voltage[i])
+            .sum()
+    }
+
+    fn enveloped_current(
+        &self,
+        branch: usize,
+        u: Complex64,
+        magnitude: f64,
+        options: &McPfOptions,
+    ) -> Complex64 {
+        let v_nom = self.nominal_voltage(branch);
+        let ratio = magnitude / v_nom;
+        if matches!(&self.model, BranchVoltageModel::ConstantImpedance) {
+            return self.y_ref[branch] * u;
+        }
+        if ratio <= options.v_low_pu {
+            return self.y_ref[branch] * u;
+        }
+        if ratio <= options.v_min_pu {
+            // OpenDSS transitions linearly in complex current from
+            // nominal impedance at Vlow to the constant-power current at
+            // Vmin. Multiplication by the voltage unit phasor retains the
+            // operating branch angle.
+            let low = self.y_ref[branch] * (v_nom * options.v_low_pu);
+            let at_min = self.y_ref[branch] * (v_nom / options.v_min_pu);
+            let fraction = (ratio - options.v_low_pu) / (options.v_min_pu - options.v_low_pu);
+            return (u / magnitude) * (low + fraction * (at_min - low));
+        }
+        if ratio > options.v_max_pu {
+            return self.y_ref[branch] / options.v_max_pu.powi(2) * u;
+        }
+        self.current_at_voltage(branch, u, magnitude)
     }
 
     fn current_at_voltage(&self, branch: usize, u: Complex64, magnitude: f64) -> Complex64 {
@@ -205,14 +257,14 @@ impl BranchLoad {
     pub(crate) fn add_current(
         &self,
         voltage: &[Complex64],
-        zero_tol: f64,
+        options: &McPfOptions,
         result: &mut [Complex64],
     ) -> Result<(), String> {
         if result.len() != voltage.len() {
             return Err("load current scratch vector has the wrong dimension".to_owned());
         }
         for (row, incidence) in self.incidence.iter().enumerate() {
-            let i_branch = self.branch_current(row, voltage, zero_tol)?;
+            let i_branch = self.branch_current(row, voltage, options)?;
             // I_load = conjugate(S / U), with positive S consumed by the
             // branch.  Conjugating only S is wrong for nonzero voltage angle.
             for &(i, c) in incidence {
@@ -236,7 +288,11 @@ impl BranchLoad {
     }
 }
 
-pub(crate) fn prepare_load(load: &DistLoad, index: &NetworkIndex) -> Result<BranchLoad, String> {
+pub(crate) fn prepare_load(
+    load: &DistLoad,
+    index: &NetworkIndex,
+    inferred_nominal_voltage: Option<&[f64]>,
+) -> Result<BranchLoad, String> {
     if load.p_nom.len() != load.q_nom.len() {
         return Err(format!(
             "load `{}` has mismatched p_nom/q_nom lengths",
@@ -267,13 +323,32 @@ pub(crate) fn prepare_load(load: &DistLoad, index: &NetworkIndex) -> Result<Bran
         ));
     }
     let vnom_raw = load.voltage_model.v_nom();
-    if vnom_raw.is_empty() {
+    if vnom_raw.is_empty()
+        && !matches!(
+            load.voltage_model,
+            DistLoadVoltageModel::ConstantPower { .. }
+        )
+    {
         return Err(format!(
-            "load `{}` omits explicit nominal branch voltage; cross-voltage inference is unsupported",
+            "load `{}` omits nominal branch voltage required by its voltage-dependent model",
             load.name
         ));
     }
-    let vnom = coefficients(&load.name, "v_nom", vnom_raw, load.p_nom.len())?;
+    let vnom = if vnom_raw.is_empty() {
+        coefficients(
+            &load.name,
+            "inferred v_nom",
+            inferred_nominal_voltage.ok_or_else(|| {
+                format!(
+                    "load `{}` omits nominal branch voltage and its bus voltage base could not be inferred",
+                    load.name
+                )
+            })?,
+            load.p_nom.len(),
+        )?
+    } else {
+        coefficients(&load.name, "v_nom", vnom_raw, load.p_nom.len())?
+    };
     if vnom.iter().any(|v| *v <= 0.0) {
         return Err(format!(
             "load `{}` has invalid nominal branch voltages",
@@ -335,6 +410,7 @@ pub(crate) fn prepare_load(load: &DistLoad, index: &NetworkIndex) -> Result<Bran
     };
     Ok(BranchLoad {
         name: load.name.clone(),
+        bus: load.bus.clone(),
         incidence,
         power,
         y_ref,

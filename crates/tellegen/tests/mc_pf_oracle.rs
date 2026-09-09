@@ -46,8 +46,19 @@ struct Complex {
 }
 
 fn run(case: &str, input: &str, reference: &str) {
-    let result: McPfResult =
-        serde_json::from_str(&solve_bmopf_json(input, &McPfOptions::default()).unwrap()).unwrap();
+    let result: McPfResult = serde_json::from_str(
+        &solve_bmopf_json(
+            input,
+            &McPfOptions {
+                // The frozen references predate the solver-wide OpenDSS
+                // envelope and intentionally exercise raw load equations.
+                voltage_envelope: false,
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    )
+    .unwrap();
     assert!(result.converged, "{case} did not converge: {result:?}");
     assert_eq!(result.factorization_count, 1, "{case} must retain one LU");
     let oracle: Oracle = serde_json::from_str(reference).unwrap();
