@@ -26,6 +26,7 @@ PROFILE = (
     "vmaxpu=1e6. ZIP dropout=0. Controls disabled. Raw BMOPF source "
     "angles are radians; DSS command angles are degrees."
 )
+BACKEND = "OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5"
 
 
 def zip_model(name, active, reactive):
@@ -64,6 +65,29 @@ def stable_float(value):
     if abs(value) < 1e-9:
         return 0.0
     return float(f"{value:.10g}")
+
+
+def equivalent(left, right):
+    """Ignore harmless last-bit backend differences across host platforms."""
+    if isinstance(left, bool) or isinstance(right, bool):
+        return left is right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return math.isclose(left, right, rel_tol=1e-9, abs_tol=1e-9)
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(
+            equivalent(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            equivalent(a, b) for a, b in zip(left, right)
+        )
+    return left == right
+
+
+def write_report(path, report):
+    if path.exists() and equivalent(json.loads(path.read_text()), report):
+        return
+    path.write_text(json.dumps(report, indent=2) + "\n")
 
 
 def complex_json(value):
@@ -183,7 +207,7 @@ def main():
     parser.add_argument("--out", type=Path, default=Path(__file__).parent / "data/mc_load_oracle")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    report = {"backend": dss.Basic.Version(), "profile": PROFILE, "cases": []}
+    report = {"backend": BACKEND, "profile": PROFILE, "cases": []}
     if args.binary:
         report["binary_sha256"] = hashlib.sha256(Path(args.binary).read_bytes()).hexdigest()
     for name, model, fields, properties, active, reactive in MODELS:
@@ -217,7 +241,7 @@ def main():
                 if args.binary:
                     compare_native(args.binary, input_path, row, resistance)
                 report["cases"].append(row)
-    (args.out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    write_report(args.out / "report.json", report)
     print(json.dumps({
         "cases": len(report["cases"]),
         "max_analytic_current_error_A": max(c["analytic_current_error_A"] for c in report["cases"]),

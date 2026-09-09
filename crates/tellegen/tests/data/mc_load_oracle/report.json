@@ -1,5 +1,5 @@
 {
-  "backend": "DSS C-API Library version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN 3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033829; License Status: Open \nDSS-Python version: 0.15.7\nOpenDSSDirect.py version: 0.9.4",
+  "backend": "OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5",
   "profile": "Single phase; near-ideal source puZideal=1e-12, angle=37 degrees; Vnom=240 V, Pnom=2400 W, Qnom=800 var. Voltage models remain active throughout the positive voltage range: vminpu=0, vlowpu=0, vmaxpu=1e6. ZIP dropout=0. Controls disabled. Raw BMOPF source angles are radians; DSS command angles are degrees.",
   "cases": [
     {

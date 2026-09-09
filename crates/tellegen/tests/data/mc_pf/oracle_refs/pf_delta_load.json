@@ -2,8 +2,7 @@
   "schema": "tellegen.mc_pf.open_dss_reference.v1",
   "case": "pf_delta_load",
   "provenance": {
-    "open_dssdirect": "0.9.4",
-    "opendss_c_api": "DSS C-API Library version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN 3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033829; License Status: Open \nDSS-Python version: 0.15.7\nOpenDSSDirect.py version: 0.9.4",
+    "backend": "OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5",
     "source_bmopftools": "8ca84ab12c0c91aaa8ad4c9986d6adbeb969ea0b",
     "input_sha256": "167743d1560a1f806cb8e32754554c9b574e80138a9648353730b9fb8af656d1",
     "dss_sha256": "ddb7ec76f88523c09daf78020371551665f7f5b5d4e779c116009e8585512ab1",
