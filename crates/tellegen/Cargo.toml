@@ -25,7 +25,7 @@ powerio-matrix.workspace = true
 # DC/conic OPF QP/SOCP solver. Default features only (QDLDL + amd), so it stays pure
 # Rust and compiles to wasm32 as-is.
 clarabel = "0.11.1"
-moreau = { package = "moreau-cpu", git = "https://github.com/samtalki/moreau", rev = "6f2949933cdab7d8444b64d1e0917e64d5e3e73b", default-features = false, optional = true }
+moreau = { package = "moreau-cpu", version = "0.4.0", git = "https://github.com/samtalki/moreau", rev = "6f2949933cdab7d8444b64d1e0917e64d5e3e73b", default-features = false, optional = true }
 # Sparse LU for the sensitivity solves. Optional so a consumer that only needs
 # the solve can drop it (the browser core build does). faer pulls pulp with
 # default features off and only `std`/`x86-v3`, so pulp's `relaxed-simd` feature
