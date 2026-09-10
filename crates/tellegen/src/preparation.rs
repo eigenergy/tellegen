@@ -1,5 +1,5 @@
 //! Explicit, reproducible model approximations over preserved source data.
-use crate::document::content_id;
+use crate::content_id::content_id;
 use powerio::{BalancedNetwork, GenCost};
 use serde::{Deserialize, Serialize};
 
