@@ -76,7 +76,15 @@
 	<dl class="totals">
 		<div>
 			<dt>Status</dt>
-			<dd>Converged</dd>
+			<dd>{result.converged ? 'Converged' : 'Not converged'}</dd>
+		</div>
+		<div>
+			<dt>Voltage band</dt>
+			<dd>{result.voltage_valid ? 'Valid' : `${result.voltage_violations.length} violations`}</dd>
+		</div>
+		<div>
+			<dt>Load voltage range</dt>
+			<dd>{result.min_voltage_pu == null || result.max_voltage_pu == null ? 'n/a' : `${fixed(result.min_voltage_pu)}–${fixed(result.max_voltage_pu)} pu`}</dd>
 		</div>
 		<div>
 			<dt>Source P / Q</dt>

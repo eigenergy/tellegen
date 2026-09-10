@@ -173,6 +173,14 @@ pub fn build_transformer_yprim(
 pub fn prepare_transformer(
     transformer: &DistTransformer,
 ) -> Result<TransformerPrimitive, TransformerError> {
+    if transformer
+        .extras
+        .get("bmopf_subtype")
+        .and_then(Value::as_str)
+        == Some("single_phase_autotransformer")
+    {
+        return prepare_single_phase_autotransformer(transformer);
+    }
     validate_shape(transformer)?;
     let w1 = &transformer.windings[0];
     let w2 = &transformer.windings[1];
@@ -351,6 +359,141 @@ pub fn prepare_transformer(
         y_prim,
         grounded_terminals,
         delta_direction: direction,
+        y_1volt,
+    })
+}
+
+/// Prepare the fixed-ratio BMOPF single-phase autotransformer/regulator.
+///
+/// Unlike an isolating transformer, this subtype states its impedance in
+/// referred ohms and its ratio as regulated/source voltage.  Its winding
+/// primitive is therefore `y * [1, -n; -n, n^2]`, where `n = 1/a` for the
+/// default ANSI Type B connection and `n = a` for Type A.  This matches the
+/// BMOPFTools calculation contract and the equivalent fixed-tap OpenDSS
+/// two-winding regulator.
+fn prepare_single_phase_autotransformer(
+    transformer: &DistTransformer,
+) -> Result<TransformerPrimitive, TransformerError> {
+    let name = transformer.name.clone();
+    if transformer.phases != 1 || transformer.windings.len() != 2 {
+        return Err(TransformerError::Unsupported {
+            transformer: name,
+            reason: format!(
+                "single_phase_autotransformer requires one phase and two windings; got {} phases and {} windings",
+                transformer.phases,
+                transformer.windings.len()
+            ),
+        });
+    }
+    let from = &transformer.windings[0];
+    let to = &transformer.windings[1];
+    for (idx, winding) in [from, to].iter().enumerate() {
+        if winding.conn != DistWindingConn::Wye || winding.terminal_map.len() != 2 {
+            return Err(TransformerError::Invalid {
+                transformer: transformer.name.clone(),
+                field: format!("windings[{idx}].terminal_map"),
+                reason: "autotransformer winding requires phase and reference terminals".into(),
+            });
+        }
+    }
+
+    let tap_ratio = checked_tap(to, &transformer.name)?;
+    let regulator_type = transformer
+        .extras
+        .get("regulator_type")
+        .and_then(Value::as_str)
+        .unwrap_or("B")
+        .trim()
+        .to_ascii_uppercase();
+    let n_eff = match regulator_type.as_str() {
+        "A" => tap_ratio,
+        "B" => 1.0 / tap_ratio,
+        _ => {
+            return Err(TransformerError::Invalid {
+                transformer: transformer.name.clone(),
+                field: "regulator_type".into(),
+                reason: format!("expected A or B, got `{regulator_type}`"),
+            });
+        }
+    };
+    let impedance = |key: &str| -> Result<f64, TransformerError> {
+        let value = value_number(&transformer.extras, key).unwrap_or(0.0);
+        if !value.is_finite() || value < 0.0 {
+            return Err(TransformerError::Invalid {
+                transformer: transformer.name.clone(),
+                field: key.into(),
+                reason: "must be finite and nonnegative".into(),
+            });
+        }
+        Ok(value)
+    };
+    let z = Complex64::new(
+        impedance("r_series_from")? + n_eff.powi(2) * impedance("r_series_to")?,
+        impedance("x_series_from")? + n_eff.powi(2) * impedance("x_series_to")?,
+    );
+    if z.norm() == 0.0 {
+        return Err(TransformerError::Unsupported {
+            transformer: transformer.name.clone(),
+            reason: "zero series impedance requires an ideal regulator voltage constraint".into(),
+        });
+    }
+    let y = z.recip();
+    let y_1volt = vec![vec![y, -n_eff * y], vec![-n_eff * y, n_eff.powi(2) * y]];
+
+    // Match the BMOPFTools primitive order: from phase, to phase, from
+    // reference, to reference. Repeated physical terminals are coalesced.
+    let mut terminals = Vec::new();
+    for (winding, terminal) in [
+        (from, &from.terminal_map[0]),
+        (to, &to.terminal_map[0]),
+        (from, &from.terminal_map[1]),
+        (to, &to.terminal_map[1]),
+    ] {
+        if !terminals
+            .iter()
+            .any(|item: &TransformerTerminal| item.bus == winding.bus && item.terminal == *terminal)
+        {
+            terminals.push(TransformerTerminal {
+                bus: winding.bus.clone(),
+                terminal: terminal.clone(),
+            });
+        }
+    }
+    let mut from_incidence = vec![0.0; terminals.len()];
+    let mut to_incidence = vec![0.0; terminals.len()];
+    for (incidence, winding) in [(&mut from_incidence, from), (&mut to_incidence, to)] {
+        let phase = terminal_index(&terminals, &winding.bus, &winding.terminal_map[0]).unwrap();
+        let reference = terminal_index(&terminals, &winding.bus, &winding.terminal_map[1]).unwrap();
+        incidence[phase] += 1.0;
+        incidence[reference] -= 1.0;
+    }
+    let winding_difference: Vec<f64> = from_incidence
+        .iter()
+        .zip(&to_incidence)
+        .map(|(from, to)| from - n_eff * to)
+        .collect();
+    let mut y_series = vec![vec![Complex64::default(); terminals.len()]; terminals.len()];
+    for i in 0..terminals.len() {
+        for j in 0..terminals.len() {
+            y_series[i][j] = y * winding_difference[i] * winding_difference[j];
+        }
+    }
+    let mut y_shunt = vec![vec![Complex64::default(); terminals.len()]; terminals.len()];
+    add_excitation(transformer, &mut y_shunt, &terminals)?;
+    let mut y_prim = y_series.clone();
+    for i in 0..terminals.len() {
+        for j in 0..terminals.len() {
+            y_prim[i][j] += y_shunt[i][j];
+        }
+    }
+    Ok(TransformerPrimitive {
+        name: transformer.name.clone(),
+        terminals,
+        y_series,
+        y_shunt,
+        y_prim,
+        grounded_terminals: Vec::new(),
+        delta_direction: 1,
         y_1volt,
     })
 }
@@ -750,6 +893,46 @@ mod tests {
         t
     }
 
+    fn autotransformer(regulator_type: &str, tap_ratio: f64) -> DistTransformer {
+        let from = DistWinding::new(
+            "src",
+            vec!["p".into(), "n".into()],
+            DistWindingConn::Wye,
+            2_400.0,
+            500_000.0,
+        );
+        let mut to = DistWinding::new(
+            "reg",
+            vec!["p".into(), "n".into()],
+            DistWindingConn::Wye,
+            2_400.0,
+            500_000.0,
+        );
+        to.tap = tap_ratio;
+        let mut transformer = DistTransformer::new("reg", vec![from, to], vec![0.0], 1);
+        transformer.extras.insert(
+            "bmopf_subtype".into(),
+            Value::String("single_phase_autotransformer".into()),
+        );
+        transformer.extras.insert(
+            "regulator_type".into(),
+            Value::String(regulator_type.into()),
+        );
+        transformer
+            .extras
+            .insert("r_series_from".into(), serde_json::json!(0.5));
+        transformer
+            .extras
+            .insert("x_series_from".into(), serde_json::json!(2.0));
+        transformer
+            .extras
+            .insert("r_series_to".into(), serde_json::json!(0.25));
+        transformer
+            .extras
+            .insert("x_series_to".into(), serde_json::json!(0.5));
+        transformer
+    }
+
     fn assert_entry(p: &TransformerPrimitive, row: usize, col: usize, re: f64, im: f64) {
         let got = p.y_prim[row][col];
         let expected = Complex64::new(re, im);
@@ -845,6 +1028,68 @@ mod tests {
         assert_entry(&minus_plus, 0, 3, -0.04519408791593774, 0.2711645274956265);
         assert_entry(&minus_plus, 0, 4, 0.09038817583187549, -0.542329054991253);
         assert_entry(&minus_plus, 1, 3, -0.04519408791593774, 0.2711645274956265);
+    }
+
+    #[test]
+    fn type_b_autotransformer_matches_bmopf_winding_primitive() {
+        let tap = 1.05;
+        let n_eff = 1.0 / tap;
+        let p = prepare_transformer(&autotransformer("B", tap)).unwrap();
+        let z = Complex64::new(0.5 + n_eff * n_eff * 0.25, 2.0 + n_eff * n_eff * 0.5);
+        let y = z.recip();
+        assert_eq!(p.terminals.len(), 4);
+        assert!((p.y_prim[0][0] - y).norm() < 1e-12);
+        assert!((p.y_prim[0][1] + n_eff * y).norm() < 1e-12);
+        assert!((p.y_prim[1][1] - n_eff * n_eff * y).norm() < 1e-12);
+        for row in &p.y_prim {
+            assert!(row.iter().copied().sum::<Complex64>().norm() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn type_a_autotransformer_uses_reciprocal_connection() {
+        let tap = 1.05;
+        let p = prepare_transformer(&autotransformer("A", tap)).unwrap();
+        let z = Complex64::new(0.5 + tap * tap * 0.25, 2.0 + tap * tap * 0.5);
+        let y = z.recip();
+        assert!((p.y_prim[0][1] + tap * y).norm() < 1e-12);
+        assert!((p.y_prim[1][1] - tap * tap * y).norm() < 1e-12);
+    }
+
+    #[test]
+    fn autotransformer_no_load_shunt_spans_the_from_winding() {
+        let mut transformer = autotransformer("B", 1.05);
+        transformer
+            .extras
+            .insert("g_no_load".into(), serde_json::json!(0.001));
+        transformer
+            .extras
+            .insert("b_no_load".into(), serde_json::json!(-0.002));
+        let p = prepare_transformer(&transformer).unwrap();
+        let shunt = Complex64::new(0.001, -0.002);
+        assert!((p.y_shunt[0][0] - shunt).norm() < 1e-14);
+        assert!((p.y_shunt[0][2] + shunt).norm() < 1e-14);
+        assert!((p.y_shunt[2][0] + shunt).norm() < 1e-14);
+        assert!((p.y_shunt[2][2] - shunt).norm() < 1e-14);
+    }
+
+    #[test]
+    fn ideal_autotransformer_is_rejected_as_a_constraint() {
+        let mut transformer = autotransformer("B", 1.05);
+        for key in [
+            "r_series_from",
+            "x_series_from",
+            "r_series_to",
+            "x_series_to",
+        ] {
+            transformer
+                .extras
+                .insert(key.into(), serde_json::json!(0.0));
+        }
+        assert!(matches!(
+            prepare_transformer(&transformer),
+            Err(TransformerError::Unsupported { .. })
+        ));
     }
 
     #[test]

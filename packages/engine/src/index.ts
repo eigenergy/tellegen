@@ -591,6 +591,14 @@ export interface McPfOptions {
   absolute_kcl_tolerance?: number;
   /** Relative KCL tolerance against prepared incident current. */
   relative_kcl_tolerance?: number;
+  /** Apply the OpenDSS-style bounded-voltage load envelope; default true. */
+  voltage_envelope?: boolean;
+  /** Nominal-impedance breakpoint in per unit; default 0.5. */
+  v_low_pu?: number;
+  /** Lower edge of the normal load-model range; default 0.85. */
+  v_min_pu?: number;
+  /** Upper edge of the normal load-model range; default 1.15. */
+  v_max_pu?: number;
 }
 
 export interface McComplex {
@@ -617,6 +625,18 @@ export interface McSourceReaction {
 
 export interface McPfResult {
   converged: boolean;
+  voltage_valid: boolean;
+  min_voltage_pu: number | null;
+  max_voltage_pu: number | null;
+  voltage_violations: Array<{
+    load: string;
+    branch: number;
+    bus: string;
+    voltage: number;
+    nominal_voltage: number;
+    voltage_pu: number;
+    bound: "minimum" | "maximum";
+  }>;
   iterations: number;
   factorization_count: number;
   matrix_dimension: number;

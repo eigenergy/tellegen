@@ -49,23 +49,26 @@ For a serialized PowerIO MC module, use `solve_mc_module_json` in Rust,
 `solve_mc_module` in WASM, or `solveMcModule` in TypeScript. Typed Rust callers
 can pass an `McAcPfInstance` directly to `solve_mc_ac_pf_instance`.
 
-Options are JSON fields `tolerance`, `max_iterations`, `damping`, and
-`zero_voltage_tolerance`, `absolute_kcl_tolerance`, and
-`relative_kcl_tolerance`; defaults are `1e-8`, `100`, `1.0`, `1e-9`,
-`1e-6 A`, and `1e-8`. Convergence requires both the voltage-change tolerance
-and the physical KCL test: the residual must be below
+Options are JSON fields `tolerance`, `max_iterations`, `damping`,
+`zero_voltage_tolerance`, `absolute_kcl_tolerance`,
+`relative_kcl_tolerance`, `voltage_envelope`, `v_low_pu`, `v_min_pu`, and
+`v_max_pu`; defaults are `1e-8`, `100`, `1.0`, `1e-9`, `1e-6 A`, `1e-8`,
+`true`, `0.5`, `0.85`, and `1.15`. Convergence requires both the
+voltage-change tolerance and the physical KCL test: the residual must be below
 `absolute_kcl_tolerance + relative_kcl_tolerance * incident_current_scale`.
 Voltages are volts, currents are amperes, and terminal powers are VA. Complex
 values cross JSON as `{ "re": ..., "im": ... }`.
 
 The solver supports voltage-dependent loads, ideal voltage sources,
 lines, passive shunts, and finite-leakage two-winding transformers, including
-two-winding `n_winding` records with explicit BMOPF delta rolls. Transformer
+two-winding `n_winding` records with explicit BMOPF delta rolls and fixed-tap
+`single_phase_autotransformer` regulator snapshots. Transformer
 admittance follows the
 OpenDSS terminal primitive: common leakage base, winding voltage/tap maps,
 actual WYE/DELTA coil incidence, explicit neutral impedance, and explicit
 per-coil excitation shunts. Zero leakage (an ideal voltage constraint),
-transformers with more than two windings, finite source impedance, and unsupported controls
+transformers with more than two windings, ideal zero-impedance regulators,
+finite source impedance, and unsupported controls
 are rejected with an error rather than approximated.
 The direct OpenDSS YPrim comparison, including YY/DD/YD/DY fixed-tap cases and
 per-winding delta-roll cases, is frozen in
@@ -75,12 +78,18 @@ transformer unit tests.
 Raw BMOPF inputs must use scalar or uniform taps. An `n_winding` raw record
 cannot carry a tap because PowerIO 0.11.0 drops that field; a canonical typed
 two-winding record can carry its fixed winding taps.
-Loads must carry explicit nominal branch voltages; the solver
-does not invent a nominal voltage for a two-conductor or other branch connection.
-Legacy `g_no_load`/`b_no_load` values require
+Non-constant-power loads must carry explicit nominal branch voltages.
+Constant-power loads may omit them: the solver assigns each line-connected
+voltage zone a line-to-neutral base from transformer winding ratings or other
+explicit nameplates, falling back to its ideal source voltage when no rated
+anchor exists. It converts that base to the load's WYE, DELTA, or single-phase
+branch voltage. Missing or conflicting anchors are rejected instead of guessed.
+Nonzero legacy `g_no_load`/`b_no_load` values on isolating transformers require
 normalization to an explicit `no_load_shunt`; this avoids choosing between the
-tagged schema and BMOPFTools legacy reference sides. An OPF instance can be
-projected to PF through PowerIO's typed conversion; its objective and active
+tagged schema and BMOPFTools legacy reference sides. Exact-zero legacy fields
+are accepted as no-ops, and `single_phase_autotransformer` defines nonzero
+legacy excitation across its from winding unambiguously. An OPF instance can
+be projected to PF through PowerIO's typed conversion; its objective and active
 constraints are discarded by that conversion and PowerIO emits the standard
 projection diagnostic; the convenience raw solve proceeds with the projected
 PF instance.
@@ -114,10 +123,20 @@ Constant-current loads therefore track the branch-voltage angle and retain
 their power factor; they are not fixed complex current phasors. ZIP coefficients
 are used as supplied, without silently normalizing their sums. Active and
 reactive coefficients or exponents may differ.
-At exactly zero voltage, laws with a continuous zero-current limit return zero;
-nonzero constant-power or constant-current contributions return a controlled
-error. Tiny nonzero voltages remain usable for bounded current laws. Non-finite
-currents or absorbed powers are rejected.
+With the default voltage envelope, all non-impedance load models use nominal
+impedance below `v_low_pu`, linearly interpolate complex current between the
+impedance and constant-power values from `v_low_pu` to `v_min_pu`, use the
+declared model from `v_min_pu` through `v_max_pu`, and use the impedance fixed
+at `v_max_pu` above it. This is the convergence fallback used by OpenDSS, with
+the normal band widened here to the solver-wide 0.85–1.15 pu defaults. Constant
+impedance is unchanged. Disabling `voltage_envelope` restores the raw equations;
+at exactly zero voltage, raw laws without a continuous limit return a controlled
+error. Non-finite currents or absorbed powers are always rejected.
+
+The piecewise regions follow the [OpenDSS convergence-model
+description](https://opendss.epri.com/LoadModelsThatNearlyAlwaysConver.html)
+and its [`Load.pas`
+implementation](https://github.com/tshort/OpenDSS/blob/master/Source/PCElements/Load.pas).
 Explicit nominal voltages, ZIP coefficients and exponential exponents may be
 supplied once for all branches or separately per branch. Unknown model names,
 incomplete parameter sets and conflicting coefficient families are rejected;
@@ -128,10 +147,15 @@ against the selected load law, so these models retain the single-factorization
 algorithm. Reported load currents and powers use the operating voltage, rather
 than merely copying nominal powers.
 
-These are the BMOPF voltage laws, not the complete OpenDSS load engine.
-OpenDSS low/high-voltage fallback, ZIPV cutoff, time-dependent load multipliers,
-and control behavior are not added by this extension. OpenDSS comparisons must
-disable those differences or remain within the matching operating range.
+Convergence and voltage validity are reported separately. `voltage_valid` is
+true only when every load branch lies within the configured `v_min_pu` and
+`v_max_pu` band. `min_voltage_pu`, `max_voltage_pu`, and
+`voltage_violations` identify the observed range and each offending load branch.
+
+These are the BMOPF voltage laws plus the OpenDSS low/high-voltage fallback,
+not the complete OpenDSS load engine. ZIPV cutoff, time-dependent load
+multipliers, and control behavior are not added by this extension. Equation-only
+OpenDSS comparisons disable the envelope or remain within the matching range.
 The frozen load references use OpenDSS model 2 for impedance, model 5 for
 current, model 8 for ZIP with cutoff disabled, and model 4 with specified CVR
 exponents for exponential loads. This comparison does not add support for

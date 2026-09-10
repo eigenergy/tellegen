@@ -1012,7 +1012,7 @@
 					</details>{/each}
 			{/if}
 		</section>
-		{#if doc}<footer class="workspace-status">
+		{#if doc && !multi}<footer class="workspace-status">
 				<span
 					>{Object.keys(doc.states).length} saved {Object.keys(doc.states).length === 1
 						? 'state'

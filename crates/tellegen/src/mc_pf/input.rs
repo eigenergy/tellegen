@@ -206,7 +206,12 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
         for (subtype, records) in transformers {
             if !matches!(
                 subtype.as_str(),
-                "single_phase" | "center_tap" | "wye_delta" | "delta_wye" | "n_winding"
+                "single_phase"
+                    | "center_tap"
+                    | "wye_delta"
+                    | "delta_wye"
+                    | "single_phase_autotransformer"
+                    | "n_winding"
             ) {
                 return Err(format!("transformer subtype `{subtype}` is unknown; PowerIO reads it as a single-phase pair"));
             }
@@ -231,7 +236,12 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
         for (subtype, records) in groups {
             if !matches!(
                 subtype.as_str(),
-                "single_phase" | "center_tap" | "wye_delta" | "delta_wye" | "n_winding"
+                "single_phase"
+                    | "center_tap"
+                    | "wye_delta"
+                    | "delta_wye"
+                    | "single_phase_autotransformer"
+                    | "n_winding"
             ) {
                 return Err(format!(
                     "extras.transformer subtype `{subtype}` is unknown and would be ignored by PowerIO"
@@ -452,12 +462,71 @@ fn validate_transformer_record(subtype: &str, name: &str, raw: &Value) -> Result
             require_uniform_scalar(value, &format!("transformer `{name}` field `{key}`"))?;
         }
     }
-    if (record.contains_key("g_no_load") || record.contains_key("b_no_load"))
+    // Zero legacy fields carry no placement semantics and are emitted by the
+    // pinned BMOPFTools conversion for otherwise lossless transformers.  The
+    // autotransformer subtype also defines these fields unambiguously across
+    // its from winding, so neither case needs producer-profile normalization.
+    let mut ambiguous_legacy_no_load = false;
+    for key in ["g_no_load", "b_no_load"] {
+        let Some(value) = record.get(key) else {
+            continue;
+        };
+        let Some(value) = value.as_f64().filter(|value| value.is_finite()) else {
+            return Err(format!(
+                "transformer `{name}` field `{key}` must be a finite number"
+            ));
+        };
+        if key == "g_no_load" && value < 0.0 {
+            return Err(format!(
+                "transformer `{name}` field `g_no_load` must be nonnegative"
+            ));
+        }
+        ambiguous_legacy_no_load |= value != 0.0;
+    }
+    if ambiguous_legacy_no_load
         && !record.contains_key("no_load_shunt")
+        && subtype != "single_phase_autotransformer"
     {
         return Err(format!(
             "transformer `{name}` uses legacy g_no_load/b_no_load without an explicit no_load_shunt; normalize the producer profile before MC PF"
         ));
+    }
+    if subtype == "single_phase_autotransformer" {
+        for key in [
+            "r_series_from",
+            "x_series_from",
+            "r_series_to",
+            "x_series_to",
+        ] {
+            let Some(value) = record.get(key) else {
+                continue;
+            };
+            let Some(value) = value.as_f64().filter(|value| value.is_finite()) else {
+                return Err(format!(
+                    "transformer `{name}` field `{key}` must be a finite number"
+                ));
+            };
+            if value < 0.0 {
+                return Err(format!(
+                    "transformer `{name}` field `{key}` must be nonnegative"
+                ));
+            }
+        }
+        if let Some(regulator_type) = record.get("regulator_type") {
+            let Some(regulator_type) = regulator_type.as_str() else {
+                return Err(format!(
+                    "transformer `{name}` regulator_type must be A or B"
+                ));
+            };
+            if !matches!(
+                regulator_type.trim().to_ascii_uppercase().as_str(),
+                "A" | "B"
+            ) {
+                return Err(format!(
+                    "transformer `{name}` regulator_type `{regulator_type}` must be A or B"
+                ));
+            }
+        }
     }
     if subtype == "n_winding" && (record.contains_key("tap") || record.contains_key("tap_ratio")) {
         return Err(format!(
@@ -835,6 +904,86 @@ mod tests {
             }}
         });
         validate_bmopf_json(&raw.to_string()).unwrap();
+    }
+
+    #[test]
+    fn accepts_fixed_autotransformer_and_rejects_unknown_regulator_type() {
+        let mut raw = json!({
+            "transformer": {"single_phase_autotransformer": {
+                "reg": {
+                    "bus_from": "src", "bus_to": "reg",
+                    "terminal_map_from": ["a", "n"],
+                    "terminal_map_to": ["a", "n"],
+                    "tap_ratio": 1.05,
+                    "regulator_type": "B",
+                    "r_series_from": 0.5,
+                    "x_series_from": 2.0
+                }
+            }}
+        });
+        validate_bmopf_json(&raw.to_string()).unwrap();
+        raw["transformer"]["single_phase_autotransformer"]["reg"]["regulator_type"] =
+            json!("mystery");
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("must be A or B"), "{error}");
+
+        raw["transformer"]["single_phase_autotransformer"]["reg"]["regulator_type"] = json!("B");
+        raw["transformer"]["single_phase_autotransformer"]["reg"]["r_series_from"] =
+            json!("not-a-number");
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("must be a finite number"), "{error}");
+    }
+
+    #[test]
+    fn solves_fixed_autotransformer_snapshot_from_raw_bmopf() {
+        let raw = json!({
+            "name": "fixed-regulator",
+            "terminal_conventions": {"phase": ["a"], "neutral": ["n"], "earth": []},
+            "bus": {
+                "src": {"terminal_names": ["a", "n"], "perfectly_grounded_terminals": ["n"]},
+                "reg": {"terminal_names": ["a", "n"], "perfectly_grounded_terminals": ["n"]}
+            },
+            "voltage_source": {"source": {
+                "bus": "src", "terminal_map": ["a"],
+                "v_magnitude": [2400.0], "v_angle": [0.0]
+            }},
+            "transformer": {"single_phase_autotransformer": {"regulator": {
+                "bus_from": "src", "bus_to": "reg",
+                "terminal_map_from": ["a", "n"], "terminal_map_to": ["a", "n"],
+                "s_rating": 500000.0, "tap_ratio": 1.05, "regulator_type": "B",
+                "r_series_from": 0.0576, "x_series_from": 0.1152,
+                "r_series_to": 0.0576, "x_series_to": 0.0
+            }}},
+            "load": {"load": {
+                "bus": "reg", "terminal_map": ["a", "n"],
+                "configuration": "SINGLE_PHASE", "model": "constant_power",
+                "p_nom": [400000.0], "q_nom": [100000.0], "v_nom": [2400.0]
+            }}
+        });
+        let output = solve_bmopf_json(&raw.to_string(), &McPfOptions::default()).unwrap();
+        let result: super::super::McPfResult = serde_json::from_str(&output).unwrap();
+        assert!(result.converged);
+        assert_eq!(result.factorization_count, 1);
+        assert!(result.physical_kcl_residual < 1e-6);
+        let regulated = result
+            .terminals
+            .iter()
+            .find(|terminal| terminal.bus == "reg" && terminal.terminal == "a")
+            .unwrap();
+        assert!(regulated.voltage.re.hypot(regulated.voltage.im) > 2400.0);
+    }
+
+    #[test]
+    fn accepts_zero_legacy_core_fields_as_no_op() {
+        let mut raw = json!({
+            "transformer": {"single_phase": {
+                "t": {"g_no_load": 0.0, "b_no_load": 0.0}
+            }}
+        });
+        validate_bmopf_json(&raw.to_string()).unwrap();
+        raw["transformer"]["single_phase"]["t"]["g_no_load"] = json!("zero");
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("must be a finite number"), "{error}");
     }
 
     #[test]

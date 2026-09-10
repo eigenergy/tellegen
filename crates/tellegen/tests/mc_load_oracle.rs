@@ -57,8 +57,16 @@ fn run_case(case: &Case, data_dir: &Path) {
     let resistance = if load_bus == "lb" { 0.7 } else { 0.0 };
 
     let result: McPfResult = serde_json::from_str(
-        &solve_bmopf_json(&input, &McPfOptions::default())
-            .unwrap_or_else(|error| panic!("{}: {error}", case.case)),
+        &solve_bmopf_json(
+            &input,
+            &McPfOptions {
+                // These fixtures isolate the declared BMOPF laws; the
+                // default solver envelope is covered separately.
+                voltage_envelope: false,
+                ..Default::default()
+            },
+        )
+        .unwrap_or_else(|error| panic!("{}: {error}", case.case)),
     )
     .expect("serialized MC PF result");
     assert!(result.converged, "{} did not converge", case.case);
