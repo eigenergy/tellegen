@@ -62,7 +62,7 @@ jobs:
       # Retry with backoff so a service hiccup does not fail the run.
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
         continue-on-error: true
       - name: Wait before retrying the Pages deployment
         if: steps.deployment.outcome == 'failure'
@@ -70,11 +70,11 @@ jobs:
       - name: Deploy to GitHub Pages (second attempt)
         id: deployment-retry
         if: steps.deployment.outcome == 'failure'
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
         continue-on-error: true
       - name: Wait before the final Pages deployment attempt
         if: steps.deployment.outcome == 'failure' && steps.deployment-retry.outcome == 'failure'
         run: sleep 300
       - name: Deploy to GitHub Pages (final attempt)
         if: steps.deployment.outcome == 'failure' && steps.deployment-retry.outcome == 'failure'
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
