@@ -1,7 +1,7 @@
 //! Explicit, reproducible model approximations over preserved source data.
+use crate::document::content_id;
 use powerio::{BalancedNetwork, GenCost};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -90,8 +90,8 @@ pub fn prepare_costs(
     ))?;
     let details = ModelDetails {
         method,
-        source: format!("sha256:{:x}", Sha256::digest(source_ir.as_bytes())),
-        model: format!("sha256:{:x}", Sha256::digest(model_ir.as_bytes())),
+        source: content_id(source_ir.as_bytes()),
+        model: content_id(model_ir.as_bytes()),
         quantity: "generator cost".into(),
         units: "objective units".into(),
         approximations,
