@@ -40,6 +40,7 @@ import {
 	ingestCase,
 	ingestDistCaseBytes,
 	ingestJsonDrop,
+	solveMcStudy,
 	isDisplayFile,
 	isPermanentEngineFailure,
 	parseDisplay,
@@ -50,6 +51,7 @@ import {
 	type Formulation,
 	type IngestedCase,
 	type IngestedDistCase,
+	type McPfResult,
 	type PowerIoDiagnostic,
 	type SensTarget
 } from '@tellegen/engine';
@@ -85,7 +87,11 @@ type DisplayFile = {
  * `.raw`. An unrouted result retains the bytes for the geographic fallback. */
 type JsonDropRoute =
 	| { outcome: 'balanced'; payload: IngestedCase }
-	| { outcome: 'multiconductor'; payload: IngestedDistCase }
+	| {
+			outcome: 'multiconductor';
+			payload: IngestedDistCase;
+			moduleJson?: string;
+	  }
 	| { outcome: 'failed' }
 	| { outcome: 'unrouted'; bytes: Uint8Array | null };
 
@@ -2022,7 +2028,12 @@ export class Controller {
 		try {
 			for (const { file, route } of routedJson) {
 				if (route.outcome === 'multiconductor') {
-					this.addMultiCase(file.name, route.payload);
+					this.addMultiCase(
+						file.name,
+						route.payload,
+						route.moduleJson,
+						route.payload.mc_pf_supported ?? !!route.moduleJson
+					);
 					continue;
 				}
 				if (route.outcome !== 'balanced') continue;
@@ -2208,7 +2219,12 @@ export class Controller {
 				// marker decides the route, mirroring the engine's value kind.
 				this.app.error = null;
 				const payload = result.payload;
-				if ('model' in payload) return { outcome: 'multiconductor', payload };
+				if ('model' in payload)
+					return {
+						outcome: 'multiconductor',
+						payload,
+						moduleJson: new TextDecoder().decode(bytes)
+					};
 				return { outcome: 'balanced', payload };
 			}
 			if (result.kind === 'distribution') {
@@ -2230,7 +2246,14 @@ export class Controller {
 		this.app.parsingFile = true;
 		try {
 			const bytes = new Uint8Array(await file.arrayBuffer());
-			this.addMultiCase(file.name, await ingestDistCaseBytes(bytes, format));
+			const payload = await ingestDistCaseBytes(bytes, format);
+			const moduleJson = format === 'pio' ? new TextDecoder().decode(bytes) : payload.module_json;
+			this.addMultiCase(
+				file.name,
+				payload,
+				moduleJson,
+				payload.mc_pf_supported ?? format === 'pio'
+			);
 			this.app.error = null;
 			return true;
 		} catch (e) {
@@ -2244,8 +2267,19 @@ export class Controller {
 	/** Build a `MulticonductorCase` from an ingest payload and make it active.
 	 * Geographic cases place immediately; planar/synthetic cases enter placement
 	 * (a map click or "place on map") so the user picks their center. */
-	private addMultiCase(fileName: string, payload: IngestedDistCase) {
-		const { graph, ...summary }: { graph: IngestedDistCase['graph'] } & MultiCaseSummary = payload;
+	private addMultiCase(
+		fileName: string,
+		payload: IngestedDistCase,
+		moduleJson?: string,
+		capability?: boolean
+	) {
+		const {
+			graph,
+			module_json: retainedModule,
+			mc_pf_supported: mcPfSupported,
+			mc_pf_reason: mcPfReason,
+			...summary
+		} = payload;
 		const coordsKind = payload.coords_kind as MultiCoordsKind;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
@@ -2257,7 +2291,10 @@ export class Controller {
 			summary,
 			graph,
 			coordsKind,
-			view
+			view,
+			moduleJson: moduleJson ?? retainedModule ?? null,
+			mcPfSupported: mcPfSupported ?? capability ?? false,
+			mcPfReason
 		});
 		this.app.addMulti(c);
 		if (c.placed) this.app.requestFrame(c.id);
@@ -2267,6 +2304,7 @@ export class Controller {
 	activateMulti = (c: MulticonductorCase) => {
 		this.app.studyView = null;
 		this.clearSelection();
+		this.app.studyView = null;
 		this.app.activeCaseId = null;
 		this.app.activeLocalId = null;
 		this.app.activeMultiId = c.id;
@@ -2276,13 +2314,14 @@ export class Controller {
 	};
 
 	/** Select a bus in a multiconductor case: its terminal stack and incident
-	 * conductors expand. Selecting is viewing detail only — no solve. */
+	 * conductors expand. */
 	selectMultiBus = (caseId: string, busId: string) => {
 		const c = this.app.multiCases.find((mc) => mc.id === caseId);
 		if (!c) return;
 		this.app.activeCaseId = null;
 		this.app.activeLocalId = null;
 		this.app.activeMultiId = caseId;
+		this.app.studyView = null;
 		this.app.placingMultiId = null;
 		c.selectedEdgeId = null;
 		c.selectedBusId = c.selectedBusId === busId ? null : busId;
@@ -2296,9 +2335,42 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.app.activeLocalId = null;
 		this.app.activeMultiId = caseId;
+		this.app.studyView = null;
 		this.app.placingMultiId = null;
 		c.selectedBusId = null;
 		c.selectedEdgeId = c.selectedEdgeId === edgeId ? null : edgeId;
+	};
+
+	/** Solve the retained typed multiconductor module. The sequence and case
+	 * identity checks are both required: a worker response can arrive after the
+	 * user has started another run or switched to a different case. */
+	runMultiSolve = async (
+		c: MulticonductorCase | null = this.app.activeMulti
+	): Promise<McPfResult | null> => {
+		if (!c) throw new Error('Select a multiconductor case first');
+		if (!c.moduleJson || !c.mcPfSupported) {
+			c.mcError = c.mcPfReason ?? 'This distribution input has no retained typed power-flow module';
+			return null;
+		}
+		const seq = ++c.mcSolveSeq;
+		c.mcSolving = true;
+		c.mcError = null;
+		c.mcSolveMs = null;
+		const started = performance.now();
+		try {
+			const studyId = c.mcSnapshot?.id ?? crypto.randomUUID();
+			const snapshot = await solveMcStudy(c.moduleJson, studyId, c.label);
+			if (seq !== c.mcSolveSeq || this.app.activeMulti !== c) return null;
+			c.mcSnapshot = snapshot;
+			c.mcResult = snapshot.result;
+			c.mcSolveMs = Math.round(performance.now() - started);
+			return snapshot.result;
+		} catch (error) {
+			if (seq === c.mcSolveSeq) c.mcError = errorText(error);
+			return null;
+		} finally {
+			if (seq === c.mcSolveSeq) c.mcSolving = false;
+		}
 	};
 
 	/** Place a multiconductor case awaiting a center: fit its provided planar

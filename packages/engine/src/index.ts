@@ -150,6 +150,8 @@ export interface DistGraphBus {
   id: string;
   terminals: string[];
   grounded: string[];
+  /** Declared or conservative conventional neutral terminal, when present. */
+  neutral_terminal?: string | null;
   xy?: [number, number];
   load_kw: number;
   gen_kw: number;
@@ -176,10 +178,11 @@ export interface DistGraph {
   edges: DistGraphEdge[];
 }
 
-/** One multiconductor parse for the viewing path: element counts, connected
- * load and generation (kW), parse diagnostics, coordinate provenance, and the
- * bus/terminal graph. No solve, no network JSON — distribution cases are viewed,
- * not solved. `coords_kind` tells the frontend how to place buses: `geographic`
+/** One multiconductor parse: element counts, connected load and generation
+ * (kW), parse diagnostics, coordinate provenance, and the bus/terminal graph.
+ * `module_json` is present when the reader retained a typed PowerIO module that
+ * the fixed-point distribution solver can run. `coords_kind` tells the frontend
+ * how to place buses: `geographic`
  * drops `xy` straight onto the map, `planar` fits provided positions into a box
  * at a placement center, `synthetic` runs the force layout. */
 export interface IngestedDistCase {
@@ -208,6 +211,12 @@ export interface IngestedDistCase {
   coords_kind: "geographic" | "planar" | "synthetic";
   diagnostics: PowerIoDiagnostic[];
   graph: DistGraph;
+  /** Retained typed PowerIO multiconductor module, when solveable. */
+  module_json?: string;
+  /** Explicit capability from the reader; absent means inspection only. */
+  mc_pf_supported?: boolean;
+  /** Reader explanation for an inspection-only distribution payload. */
+  mc_pf_reason?: string;
 }
 
 /** A materialized case written to a target format: the serialized case text,
@@ -284,11 +293,7 @@ export async function preloadEngine(): Promise<void> {
 }
 
 export type JsonDropKind =
-  | "module"
-  | "transmission"
-  | "distribution"
-  | "ambiguous"
-  | "unknown";
+  "module" | "transmission" | "distribution" | "ambiguous" | "unknown";
 
 export interface JsonDropClassification {
   kind: JsonDropKind;
@@ -550,6 +555,169 @@ export async function solveModule(
   );
 }
 
+/** Portable terminal-aware result returned by the multiconductor fixed-point
+ * BMOPF entry point. Complex quantities use `{re, im}` so the JSON remains
+ * lossless across the wasm boundary. */
+export interface McPfOptions {
+  tolerance?: number;
+  max_iterations?: number;
+  damping?: number;
+  zero_voltage_tolerance?: number;
+  /** Absolute physical KCL floor in amperes; default 1e-6. */
+  absolute_kcl_tolerance?: number;
+  /** Relative KCL tolerance against prepared incident current. */
+  relative_kcl_tolerance?: number;
+  /** Apply the OpenDSS-style bounded-voltage load envelope; default true. */
+  voltage_envelope?: boolean;
+  /** Nominal-impedance breakpoint in per unit; default 0.5. */
+  v_low_pu?: number;
+  /** Lower edge of the normal load-model range; default 0.85. */
+  v_min_pu?: number;
+  /** Upper edge of the normal load-model range; default 1.15. */
+  v_max_pu?: number;
+}
+
+export interface McComplex {
+  re: number;
+  im: number;
+}
+
+export interface McElementPort {
+  element: string;
+  kind: string;
+  branch: number;
+  bus: string;
+  terminal: string;
+  current_into_element: McComplex;
+  power_into_element: McComplex;
+}
+
+export interface McSourceReaction {
+  source: string;
+  terminal: string;
+  current_into_network: McComplex;
+  power_into_network: McComplex;
+}
+
+export interface McPfResult {
+  converged: boolean;
+  voltage_valid: boolean;
+  min_voltage_pu: number | null;
+  max_voltage_pu: number | null;
+  voltage_violations: Array<{
+    load: string;
+    branch: number;
+    bus: string;
+    voltage: number;
+    nominal_voltage: number;
+    voltage_pu: number;
+    bound: "minimum" | "maximum";
+  }>;
+  iterations: number;
+  factorization_count: number;
+  matrix_dimension: number;
+  matrix_nonzeros: number;
+  voltage_change: number;
+  physical_kcl_residual: number;
+  scaled_kcl_residual: number;
+  terminals: Array<{
+    bus: string;
+    terminal: string;
+    voltage: McComplex;
+    current_into_network: McComplex;
+    power_into_network: McComplex;
+  }>;
+  element_ports: McElementPort[];
+  source_reactions: McSourceReaction[];
+}
+
+/** Self-contained saved Study result for a supported distribution AC PF.
+ * The input and solution modules make this replayable; `result` is the rich
+ * terminal/element view rendered by the Study panel. */
+export interface McStudySnapshot {
+  schema: "tellegen-mc-pf-study";
+  version: 1;
+  id: string;
+  title: string;
+  formulation: "mc_ac_pf";
+  input_module: string;
+  solution_module: string;
+  options: McPfOptions;
+  result: McPfResult;
+}
+
+/** Parse and solve a raw BMOPF multiconductor case in the wasm module. */
+export async function solveMcBmopf(
+  text: string,
+  options: McPfOptions = {},
+): Promise<McPfResult> {
+  assertEngineInputLength(text.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_mc_bmopf",
+        text,
+        options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** Solve a stored PowerIO multiconductor module through the same PF engine. */
+export async function solveMcModule(
+  moduleJson: string,
+  options: McPfOptions = {},
+): Promise<McPfResult> {
+  assertEngineInputLength(moduleJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_mc_module",
+        module_json: moduleJson,
+        options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** Solve a supported multiconductor Study input and return a replayable
+ * snapshot containing the typed input, PowerIO solution, and rich result. */
+export async function solveMcStudy(
+  moduleJson: string,
+  studyId: string,
+  studyTitle: string,
+  options: McPfOptions = {},
+): Promise<McStudySnapshot> {
+  assertEngineInputLength(moduleJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_mc_study",
+        module_json: moduleJson,
+        study_id: studyId,
+        study_title: studyTitle,
+        options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** Validate and canonicalize a saved multiconductor Study snapshot without
+ * running the solver again. */
+export async function replayMcStudy(
+  snapshotJson: string,
+): Promise<McStudySnapshot> {
+  assertEngineInputLength(snapshotJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "replay_mc_study",
+        snapshot: snapshotJson,
+      }),
+    ),
+  );
+}
+
 export { errorText } from "./errors.js";
 
 /** True when the engine wasm module has failed to load in a way it can never
@@ -755,7 +923,11 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
       mw: f.pf,
       loading: f.loading,
     })),
-    dispatch: (out.dispatch ?? []).map((d) => ({ gen: d.gen, bus: d.bus, mw: d.pg })),
+    dispatch: (out.dispatch ?? []).map((d) => ({
+      gen: d.gen,
+      bus: d.bus,
+      mw: d.pg,
+    })),
   };
 }
 
@@ -949,7 +1121,12 @@ export class BrowserStudy {
 
   /** Preserve the materialized instance's inner objective and constraints in PowerIO IR. */
   async saveInstanceModule(): Promise<string> {
-    return expectText(await this.#host.call({ op: "study_save_instance_module", study: this.#handle }));
+    return expectText(
+      await this.#host.call({
+        op: "study_save_instance_module",
+        study: this.#handle,
+      }),
+    );
   }
 
   /** Serialize the current exact DC OPF result as a PowerIO solution module.
@@ -1133,6 +1310,15 @@ export interface EngineTransport {
     moduleJson: string,
     request?: SolveRequest,
   ): Promise<SolveResponse>;
+  solveMcBmopf(text: string, options?: McPfOptions): Promise<McPfResult>;
+  solveMcModule(moduleJson: string, options?: McPfOptions): Promise<McPfResult>;
+  solveMcStudy(
+    moduleJson: string,
+    studyId: string,
+    studyTitle: string,
+    options?: McPfOptions,
+  ): Promise<McStudySnapshot>;
+  replayMcStudy(snapshotJson: string): Promise<McStudySnapshot>;
   createStudy(
     moduleJson: string,
     formulation?: Formulation,
@@ -1155,6 +1341,10 @@ export const browserWasmTransport: EngineTransport = {
   applyDisplayGeo,
   capabilities,
   solveModule,
+  solveMcBmopf,
+  solveMcModule,
+  solveMcStudy,
+  replayMcStudy,
   createStudy,
 };
 
@@ -1164,9 +1354,25 @@ export function createBrowserWasmTransport(): EngineTransport {
 
 export { BrowserStudy as Study };
 
-export { IndexedDbStudyStore, StudyDocumentController, studyBackend } from "./study-document.js";
+export {
+  IndexedDbStudyStore,
+  StudyDocumentController,
+  studyBackend,
+} from "./study-document.js";
 export type { StudyBackend, StudyStore } from "./study-document.js";
-export type { CreateStudy, StudyBundle, StudyDocument, StudyRequest, StudyOperation, StudyOperationResult, GoalRevision, DecisionSpace, StudyObjective, StateNode, Comparison } from "./generated/study-contracts.js";
+export type {
+  CreateStudy,
+  StudyBundle,
+  StudyDocument,
+  StudyRequest,
+  StudyOperation,
+  StudyOperationResult,
+  GoalRevision,
+  DecisionSpace,
+  StudyObjective,
+  StateNode,
+  Comparison,
+} from "./generated/study-contracts.js";
 
 export type { ModelDetails, SolveResponse as StudyView, SearchOptions, StudySummary } from "./generated/study-contracts.js";
 export { studySchema } from './generated/study-schema.js';

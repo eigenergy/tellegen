@@ -49,11 +49,11 @@
     "pack:dry-run": "npm pack --dry-run --cache ../../node_modules/.cache/npm-pack"
   },
   "dependencies": {
-    "@deck.gl/core": "^9.3.11",
-    "@deck.gl/layers": "^9.3.11",
-    "@deck.gl/mapbox": "^9.3.11",
+    "@deck.gl/core": "^9.4.0",
+    "@deck.gl/layers": "^9.4.0",
+    "@deck.gl/maplibre": "^9.4.0",
     "@tellegen/engine": "^0.2.0",
-    "maplibre-gl": "^5.0.0"
+    "maplibre-gl": "^6.9.0"
   },
   "peerDependencies": {
     "svelte": ">=5.30 <6"

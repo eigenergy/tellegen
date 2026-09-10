@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { getController, PanelFrame, ModelDetails } from '@tellegen/svelte';
+	import { getController, PanelFrame, ModelDetails, neutralTerminal } from '@tellegen/svelte';
 	import type { StudyOperation } from '@tellegen/engine';
 	import TellegenWebMcp from '../webmcp/TellegenWebMcp.svelte';
 	import { caseRevision } from '../webmcp/tellegen-adapter.js';
@@ -42,6 +42,51 @@
 	let content: HTMLElement | undefined;
 	const pageSize = 20;
 	const doc = $derived(workspace.document);
+	const multi = $derived(ctrl.app.activeMulti);
+	function mcMagnitude(z: { re: number; im: number }) {
+		return Math.hypot(z.re, z.im);
+	}
+	function mcAngle(z: { re: number; im: number }) {
+		return (Math.atan2(z.im, z.re) * 180) / Math.PI;
+	}
+	function mcAngleText(z: { re: number; im: number }) {
+		return mcMagnitude(z) === 0 ? '—' : `${mcFixed(mcAngle(z), 2)}°`;
+	}
+	function mcRelativeVoltage(
+		voltage: { re: number; im: number },
+		neutral: { re: number; im: number } | null
+	) {
+		return neutral ? { re: voltage.re - neutral.re, im: voltage.im - neutral.im } : voltage;
+	}
+	function mcKw(z: { re: number; im: number }) {
+		return z.re / 1000;
+	}
+	function mcKvar(z: { re: number; im: number }) {
+		return z.im / 1000;
+	}
+	function mcFixed(value: number, digits = 3) {
+		return Number.isFinite(value) ? value.toFixed(digits) : '—';
+	}
+	function mcSources(c: typeof ctrl.app.activeMulti) {
+		return (c?.mcResult?.source_reactions ?? []).reduce(
+			(total, reaction) => ({
+				re: total.re + reaction.power_into_network.re,
+				im: total.im + reaction.power_into_network.im
+			}),
+			{ re: 0, im: 0 }
+		);
+	}
+	function mcLoss(c: typeof ctrl.app.activeMulti) {
+		return (c?.mcResult?.element_ports ?? [])
+			.filter((port) => port.kind !== 'load' && port.kind !== 'generator' && port.kind !== 'ibr')
+			.reduce((sum, port) => sum + mcKw(port.power_into_element), 0);
+	}
+	function mcBusNeutral(bus: {
+		terminals: string[];
+		neutral_terminal?: string | null;
+	}): string | null {
+		return neutralTerminal(bus.terminals, bus.neutral_terminal);
+	}
 	const goal = $derived(workspace.goal);
 	const modelDetails = $derived(
 		doc && !creating ? doc.model_details : ctrl.activeSolvable?.network?.model_details
@@ -163,6 +208,23 @@
 		} catch (error) {
 			formError = error instanceof Error ? error.message : String(error);
 		}
+	}
+	async function runMulti() {
+		if (!multi) throw new Error('Select a multiconductor case first');
+		const result = await ctrl.runMultiSolve(multi);
+		if (!result && multi.mcError) throw new Error(multi.mcError);
+	}
+	async function saveMulti() {
+		if (!multi) throw new Error('Select a multiconductor case first');
+		await workspace.saveMulti();
+	}
+	async function loadFourWireExample() {
+		const response = await fetch('/examples/four-wire.bmopf.json');
+		if (!response.ok) throw new Error('The four-wire example could not be loaded');
+		const file = new File([await response.blob()], 'four-wire.bmopf.json', {
+			type: 'application/json'
+		});
+		await ctrl.ingestFiles([file]);
 	}
 	async function resetScroll() {
 		await tick();
@@ -319,13 +381,20 @@
 		<div class="storage">
 			<label
 				><span class="sr-only">Saved study</span><select
-					value={creating ? '' : (doc?.id ?? '')}
+					value={multi
+						? workspace.activeMcDocument
+							? `mc:${workspace.activeMcDocument.id}`
+							: ''
+						: creating
+							? ''
+							: (doc?.id ?? '')}
 					disabled={workspace.busy}
 					onchange={(event) => {
 						const id = event.currentTarget.value;
 						if (id)
 							void attempt(async () => {
-								await workspace.open(id);
+								if (id.startsWith('mc:')) await workspace.openMulti(id.slice(3));
+								else await workspace.open(id);
 								creating = false;
 								editingGoal = false;
 								goalForComparison = '';
@@ -349,7 +418,10 @@
 						if (file)
 							void attempt(async () => {
 								if (file.size > 512 * 1024 * 1024) throw new Error('Study bundle exceeds 512 MiB.');
-								await workspace.import(await file.text());
+								const text = await file.text();
+								const value = JSON.parse(text);
+								if (value?.schema === 'tellegen-mc-pf-study') await workspace.importMulti(text);
+								else await workspace.import(text);
 								creating = false;
 								editingGoal = false;
 								goalForComparison = '';
@@ -360,12 +432,14 @@
 					}}
 				/></label
 			>
-			{#if doc}<button
+			{#if doc || multi?.mcSnapshot}<button
 					disabled={workspace.busy}
-					onclick={() => download(workspace.export(), 'tellegen-study.json')}>Export</button
+					onclick={() =>
+						download(multi ? workspace.exportMulti() : workspace.export(), 'tellegen-study.json')}
+					>Export</button
 				>{/if}
 		</div>
-		{#if doc && !creating}<nav aria-label="Study sections">
+		{#if doc && !creating && !multi}<nav aria-label="Study sections">
 				{#each ['case', 'history', 'plan'] as section (section)}<button
 						class:active={tab === section}
 						aria-pressed={tab === section}
@@ -379,8 +453,171 @@
 			{#if formError || workspace.error}<p class="error" role="alert">
 					{formError ?? workspace.error}
 				</p>{/if}
-			{#if !doc || creating}
+			{#if multi}
+				<h3>{multi.label}</h3>
+				<p class="request">Distribution power flow</p>
+				<p class="hint">
+					Run a three- or four-wire distribution simulation, inspect terminal results, and save the
+					operating point.
+				</p>
+				{#if multi.mcPfSupported && multi.moduleJson}
+					<div class="toolbar">
+						<button
+							class="primary"
+							disabled={multi.mcSolving}
+							onclick={() => void attempt(runMulti)}
+							>{multi.mcSolving
+								? 'Running…'
+								: multi.mcResult
+									? 'Run again'
+									: 'Run power flow'}</button
+						>
+						<button
+							disabled={multi.mcSolving || !multi.mcResult}
+							onclick={() => void attempt(saveMulti)}>Save result</button
+						>
+					</div>
+					{#if multi.mcResult}
+						{@const source = mcSources(multi)}
+						<dl class="pointers">
+							<div>
+								<dt>Status</dt>
+								<dd>{multi.mcResult.converged ? 'Converged' : 'Not converged'}</dd>
+							</div>
+							<div>
+								<dt>Iterations</dt>
+								<dd>{multi.mcResult.iterations}</dd>
+							</div>
+							<div>
+								<dt>Voltage band</dt>
+								<dd>
+									{multi.mcResult.voltage_valid
+										? 'Valid'
+										: `${multi.mcResult.voltage_violations.length} violation${multi.mcResult.voltage_violations.length === 1 ? '' : 's'}`}
+								</dd>
+							</div>
+							<div>
+								<dt>Load voltage range</dt>
+								<dd>
+									{multi.mcResult.min_voltage_pu == null || multi.mcResult.max_voltage_pu == null
+										? 'n/a'
+										: `${mcFixed(multi.mcResult.min_voltage_pu)}–${mcFixed(multi.mcResult.max_voltage_pu)} pu`}
+								</dd>
+							</div>
+							<div>
+								<dt>Source P / Q</dt>
+								<dd>{mcFixed(mcKw(source))} / {mcFixed(mcKvar(source))} kW / kvar</dd>
+							</div>
+							<div>
+								<dt>Network loss</dt>
+								<dd>{mcFixed(mcLoss(multi))} kW</dd>
+							</div>
+						</dl>
+						<div class="toolbar result-pickers">
+							<label
+								>Bus result<select
+									value={multi.selectedBusId ?? ''}
+									onchange={(event) => {
+										const id = event.currentTarget.value;
+										if (id) ctrl.selectMultiBus(multi.id, id);
+									}}
+									><option value="">Select a bus</option
+									>{#each multi.graph?.buses ?? [] as bus (bus.id)}<option value={bus.id}
+											>{bus.id}</option
+										>{/each}</select
+								></label
+							>
+							<label
+								>Edge result<select
+									value={multi.selectedEdgeId ?? ''}
+									onchange={(event) => {
+										const id = event.currentTarget.value;
+										if (id) ctrl.selectMultiEdge(multi.id, id);
+									}}
+									><option value="">Select an edge</option
+									>{#each multi.graph?.edges ?? [] as edge (edge.id)}<option value={edge.id}
+											>{edge.kind} {edge.id}</option
+										>{/each}</select
+								></label
+							>
+						</div>
+						{#if multi.selectedBusId}
+							{@const selectedBus = multi.graph?.buses.find(
+								(bus) => bus.id === multi.selectedBusId
+							)}
+							{@const rows = multi.mcResult.terminals.filter(
+								(row) => row.bus === multi.selectedBusId
+							)}
+							{@const neutralName = selectedBus ? mcBusNeutral(selectedBus) : null}
+							{@const neutral = neutralName
+								? (rows.find((row) => row.terminal === neutralName) ?? null)
+								: null}
+							{@const hasNeutral = neutral !== null}
+							{#if selectedBus && rows.length > 0}<h4>Bus {selectedBus.id} terminals</h4>
+								<div class="mc-table-scroll">
+									<table class="mc-result-table">
+										<thead
+											><tr
+												><th>Terminal</th><th>|V| to earth</th><th>Angle to earth</th
+												>{#if hasNeutral}<th>|V| to neutral</th><th>Angle to neutral</th>{/if}</tr
+											></thead
+										><tbody>
+											{#each rows as row (row.bus + row.terminal)}{@const isNeutral =
+													hasNeutral && row.terminal === neutralName}{@const earthVoltage =
+													row.voltage}{@const neutralVoltage = isNeutral
+													? { re: 0, im: 0 }
+													: mcRelativeVoltage(row.voltage, hasNeutral ? neutral!.voltage : null)}<tr
+													><td>{row.terminal}</td><td>{mcFixed(mcMagnitude(earthVoltage))} V</td><td
+														>{mcAngleText(earthVoltage)}</td
+													>{#if hasNeutral}<td>{mcFixed(mcMagnitude(neutralVoltage))} V</td><td
+															>{mcAngleText(neutralVoltage)}</td
+														>{/if}</tr
+												>{/each}
+										</tbody>
+									</table>
+								</div>{/if}
+						{:else if multi.selectedEdgeId}
+							{@const selectedEdge = multi.graph?.edges.find(
+								(edge) => edge.id === multi.selectedEdgeId
+							)}
+							{@const ports = multi.mcResult.element_ports.filter(
+								(port) => port.element === multi.selectedEdgeId && port.kind === selectedEdge?.kind
+							)}
+							{#if selectedEdge && ports.length > 0}<h4>
+									{selectedEdge.kind}
+									{selectedEdge.id} ports
+								</h4>
+								<div class="mc-table-scroll">
+									<table class="mc-result-table">
+										<thead><tr><th>Port</th><th>Current</th><th>P / Q</th></tr></thead><tbody>
+											{#each ports as port (JSON.stringify( [port.kind, port.element, port.branch, port.bus, port.terminal] ))}<tr
+													><td>{port.bus} · {port.terminal}</td><td
+														>{mcFixed(mcMagnitude(port.current_into_element))} A</td
+													><td
+														>{mcFixed(mcKw(port.power_into_element))} / {mcFixed(
+															mcKvar(port.power_into_element)
+														)} kW / kvar</td
+													></tr
+												>{/each}
+										</tbody>
+									</table>
+								</div>{/if}
+						{/if}
+					{/if}
+				{:else}
+					<p class="hint">
+						{multi.mcPfReason ?? 'This input has no retained typed power-flow module.'}
+					</p>
+				{/if}
+				{#if multi.mcError}<p class="error" role="alert">{multi.mcError}</p>{/if}
+				<p class="hint">
+					Select a bus or edge on the map to inspect phase voltages and element currents.
+				</p>
+			{:else if !doc || creating}
 				<h3>Save this case</h3>
+				{#if !ctrl.activeSolvable}<button onclick={() => void attempt(loadFourWireExample)}
+						>Load four-wire example</button
+					>{/if}
 				<p class="hint">A saved case with its changes and results.</p>
 				<label>Study name<input bind:value={title} maxlength="200" /></label>
 				{#if network}<p class="case-name">
@@ -932,7 +1169,7 @@
 					</details>{/each}
 			{/if}
 		</section>
-		{#if doc}<footer class="workspace-status">
+		{#if doc && !multi}<footer class="workspace-status">
 				<span
 					>{Object.keys(doc.states).length} saved {Object.keys(doc.states).length === 1
 						? 'state'
@@ -1297,5 +1534,26 @@
 	}
 	.workspace-status button {
 		padding: 3px 6px;
+	}
+	.mc-result-table {
+		width: 100%;
+		min-width: 390px;
+		border-collapse: collapse;
+		font: 11px/1.4 var(--font-mono);
+	}
+	.mc-result-table th,
+	.mc-result-table td {
+		padding: 4px 3px;
+		border-bottom: 1px solid var(--line);
+		text-align: right;
+		white-space: nowrap;
+	}
+	.mc-result-table th:first-child,
+	.mc-result-table td:first-child {
+		text-align: left;
+	}
+	.mc-table-scroll {
+		max-width: 100%;
+		overflow-x: auto;
 	}
 </style>

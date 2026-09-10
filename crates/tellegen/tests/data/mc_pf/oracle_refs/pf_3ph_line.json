@@ -1,0 +1,448 @@
+{
+  "schema": "tellegen.mc_pf.open_dss_reference.v1",
+  "case": "pf_3ph_line",
+  "provenance": {
+    "backend": "OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5",
+    "source_bmopftools": "8ca84ab12c0c91aaa8ad4c9986d6adbeb969ea0b",
+    "input_sha256": "6ef5bead53bb0857e5927bb89c84bf4ce3a8766880893925245a81410bdf079d",
+    "dss_sha256": "5a6a81fac8b97285b6b198f06dc729f7d57d2faee6cc18fda67de48133754551",
+    "upstream_license_sha256": "331e77cd102c8777902e2785f1fd7809236707e16b79ede4de353ca0e7e0ae24",
+    "configuration": "controlmode=off; algorithm=normal; tolerance=1e-11; maxiterations=1000; load vminpu=0 vmaxpu=2; vsource model=ideal puZideal=[1e-12,0]; transformer ppm_antifloat=0",
+    "license": "BMOPFTools.jl LICENSE.md (copyright 2026 Frederik Geth, permissive BSD-3-Clause-style terms); hash recorded above."
+  },
+  "converged": true,
+  "terminals": [
+    {
+      "bus": "lb",
+      "terminal": "a",
+      "voltage": {
+        "re": 221.758703,
+        "im": 1.197066539
+      }
+    },
+    {
+      "bus": "lb",
+      "terminal": "b",
+      "voltage": {
+        "re": -114.6487681,
+        "im": -197.789981
+      }
+    },
+    {
+      "bus": "lb",
+      "terminal": "c",
+      "voltage": {
+        "re": -106.7931054,
+        "im": 184.6995795
+      }
+    },
+    {
+      "bus": "lb",
+      "terminal": "n",
+      "voltage": {
+        "re": -0.3168295207,
+        "im": 11.893335
+      }
+    },
+    {
+      "bus": "src",
+      "terminal": "a",
+      "voltage": {
+        "re": 239.6003617,
+        "im": 8.098827692e-08
+      }
+    },
+    {
+      "bus": "src",
+      "terminal": "b",
+      "voltage": {
+        "re": -119.8001808,
+        "im": -207.5
+      }
+    },
+    {
+      "bus": "src",
+      "terminal": "c",
+      "voltage": {
+        "re": -119.8001809,
+        "im": 207.5
+      }
+    },
+    {
+      "bus": "src",
+      "terminal": "n",
+      "voltage": {
+        "re": 0.0,
+        "im": 0.0
+      }
+    }
+  ],
+  "elements": [
+    {
+      "name": "Vsource.source",
+      "bus_names": [
+        "src.1.2.3",
+        "src.0.0.0"
+      ],
+      "node_order": [
+        {
+          "bus": "src",
+          "nodes": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "bus": "src",
+          "nodes": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "num_terminals": 2,
+      "num_conductors": 3,
+      "currents": [
+        {
+          "re": -80.0,
+          "im": 25.70850695
+        },
+        {
+          "re": 119832.0,
+          "im": 207552.0
+        },
+        {
+          "re": 119832.0,
+          "im": -207584.0
+        },
+        {
+          "re": 80.0,
+          "im": -25.70850695
+        },
+        {
+          "re": -119832.0,
+          "im": -207552.0
+        },
+        {
+          "re": -119832.0,
+          "im": 207584.0
+        }
+      ],
+      "powers": [
+        {
+          "re": -19168.02894,
+          "im": -6159.767571
+        },
+        {
+          "re": -57422935.27,
+          "im": -372.8757395
+        },
+        {
+          "re": -57429575.27,
+          "im": -3460.749458
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Reactor.grnd",
+      "bus_names": [
+        "src.0",
+        "src.0.0.0"
+      ],
+      "node_order": [
+        {
+          "bus": "src",
+          "nodes": [
+            0,
+            2,
+            3
+          ]
+        },
+        {
+          "bus": "src",
+          "nodes": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "num_terminals": 2,
+      "num_conductors": 3,
+      "currents": [
+        {
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "re": -119800.1808,
+          "im": -207500.0
+        },
+        {
+          "re": -119800.1809,
+          "im": 207500.0
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "re": 119800.1808,
+          "im": 207500.0
+        },
+        {
+          "re": 119800.1809,
+          "im": -207500.0
+        }
+      ],
+      "powers": [
+        {
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "re": 57408333.33,
+          "im": 0.0
+        },
+        {
+          "re": 57408333.33,
+          "im": 3.725290298e-09
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Line.l1",
+      "bus_names": [
+        "src.1.2.3.0",
+        "lb.1.2.3.4"
+      ],
+      "node_order": [
+        {
+          "bus": "src",
+          "nodes": [
+            1,
+            2,
+            3,
+            0
+          ]
+        },
+        {
+          "bus": "lb",
+          "nodes": [
+            1,
+            2,
+            3,
+            4
+          ]
+        }
+      ],
+      "num_terminals": 2,
+      "num_conductors": 4,
+      "currents": [
+        {
+          "re": 66.30633613,
+          "im": -25.70850695
+        },
+        {
+          "re": -31.07300096,
+          "im": -30.74809998
+        },
+        {
+          "re": -22.32766432,
+          "im": 101.9791473
+        },
+        {
+          "re": -12.90567085,
+          "im": -45.52254034
+        },
+        {
+          "re": -66.30633613,
+          "im": 25.70850695
+        },
+        {
+          "re": 31.07300096,
+          "im": 30.74809998
+        },
+        {
+          "re": 22.32766432,
+          "im": -101.9791473
+        },
+        {
+          "re": 12.90567085,
+          "im": 45.52254034
+        }
+      ],
+      "powers": [
+        {
+          "re": 15887.02212,
+          "im": 6159.76757
+        },
+        {
+          "re": 10102.78188,
+          "im": 2764.019763
+        },
+        {
+          "re": 23835.53128,
+          "im": 7584.129944
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "re": -14673.23231,
+          "im": -5780.458254
+        },
+        {
+          "re": -9644.14739,
+          "im": -2620.696484
+        },
+        {
+          "re": -21219.94622,
+          "im": -6766.759613
+        },
+        {
+          "re": 537.3259247,
+          "im": 167.9143515
+        }
+      ]
+    },
+    {
+      "name": "Load.ld1",
+      "bus_names": [
+        "lb.1.4"
+      ],
+      "node_order": [
+        {
+          "bus": "lb",
+          "nodes": [
+            1,
+            4
+          ]
+        }
+      ],
+      "num_terminals": 1,
+      "num_conductors": 2,
+      "currents": [
+        {
+          "re": 66.30633613,
+          "im": -25.70850695
+        },
+        {
+          "re": -66.30633613,
+          "im": 25.70850695
+        }
+      ],
+      "powers": [
+        {
+          "re": 14673.23231,
+          "im": 5780.458254
+        },
+        {
+          "re": 326.7676901,
+          "im": -780.4582541
+        }
+      ]
+    },
+    {
+      "name": "Load.ld2",
+      "bus_names": [
+        "lb.2.4"
+      ],
+      "node_order": [
+        {
+          "bus": "lb",
+          "nodes": [
+            2,
+            4
+          ]
+        }
+      ],
+      "num_terminals": 1,
+      "num_conductors": 2,
+      "currents": [
+        {
+          "re": -31.07300096,
+          "im": -30.74809998
+        },
+        {
+          "re": 31.07300096,
+          "im": 30.74809998
+        }
+      ],
+      "powers": [
+        {
+          "re": 9644.14739,
+          "im": 2620.696484
+        },
+        {
+          "re": 355.8526096,
+          "im": 379.3035155
+        }
+      ]
+    },
+    {
+      "name": "Load.ld3",
+      "bus_names": [
+        "lb.3.4"
+      ],
+      "node_order": [
+        {
+          "bus": "lb",
+          "nodes": [
+            3,
+            4
+          ]
+        }
+      ],
+      "num_terminals": 1,
+      "num_conductors": 2,
+      "currents": [
+        {
+          "re": -22.32766432,
+          "im": 101.9791473
+        },
+        {
+          "re": 22.32766432,
+          "im": -101.9791473
+        }
+      ],
+      "powers": [
+        {
+          "re": 21219.94622,
+          "im": 6766.759613
+        },
+        {
+          "re": -1219.946224,
+          "im": 233.2403871
+        }
+      ]
+    }
+  ]
+}

@@ -32,6 +32,8 @@ pub mod geo;
 #[cfg(feature = "sensitivity")]
 mod history;
 pub mod ir;
+#[cfg(feature = "mc-pf")]
+pub mod mc_pf;
 mod model;
 #[cfg(feature = "sensitivity")]
 pub mod objective;
@@ -59,6 +61,13 @@ pub use api::{
 #[cfg(feature = "sensitivity")]
 pub use api::{solve_ac_pf_instance, SensRequest};
 pub use emit::solve_dc_opf_instance;
+#[cfg(feature = "mc-pf")]
+pub use mc_pf::{
+    parse_bmopf_instance, replay_mc_study_json, solve_bmopf_json, solve_mc_ac_pf_instance,
+    solve_mc_module_json, solve_mc_study_json, validate_bmopf_json, validate_mc_module_json,
+    McComplex, McElementPort, McPfOptions, McPfResult, McSourceReaction, McStudySnapshot,
+    McTerminalResult, McVoltageViolation,
+};
 #[cfg(feature = "sensitivity")]
 pub use plan::{
     plan_capacity, plan_capacity_cancellable, BusWeight, CapacityPlanExecution,

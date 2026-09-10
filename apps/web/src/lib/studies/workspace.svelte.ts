@@ -1,5 +1,6 @@
 import {
 	IndexedDbStudyStore,
+	replayMcStudy,
 	StudyDocumentController,
 	type CreateStudy,
 	type StudyBundle,
@@ -7,7 +8,8 @@ import {
 	type StudyOperationResult,
 	type Comparison,
 	type Network,
-	type StudyView
+	type StudyView,
+	type McStudySnapshot
 } from '@tellegen/engine';
 import { capacityGoal, capacityOutcome, type CapacityStudyBinding } from './capacity-compat.js';
 import type { CapacityPlanSpecJson } from '@tellegen/svelte';
@@ -28,17 +30,75 @@ export type GoalDraft = Omit<
 	'input' | 'base_input' | 'id' | 'solution' | 'view' | 'display'
 >;
 
+const MC_STUDIES_DB = 'tellegen-multiconductor-studies-v1';
+const MC_STUDIES_STORE = 'snapshots';
+
+class McStudyStore {
+	#db: Promise<IDBDatabase> | null = null;
+	private db(): Promise<IDBDatabase> {
+		if (typeof indexedDB === 'undefined')
+			throw new Error('Saved distribution studies require IndexedDB');
+		return (this.#db ??= new Promise((resolve, reject) => {
+			const request = indexedDB.open(MC_STUDIES_DB, 1);
+			request.onupgradeneeded = () =>
+				request.result.createObjectStore(MC_STUDIES_STORE, { keyPath: 'id' });
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () =>
+				reject(request.error ?? new Error('Unable to open saved distribution studies'));
+		}));
+	}
+	async list(): Promise<McStudySnapshot[]> {
+		const db = await this.db();
+		return new Promise((resolve, reject) => {
+			const request = db
+				.transaction(MC_STUDIES_STORE, 'readonly')
+				.objectStore(MC_STUDIES_STORE)
+				.getAll();
+			request.onsuccess = () => resolve(request.result as McStudySnapshot[]);
+			request.onerror = () =>
+				reject(request.error ?? new Error('Unable to list saved distribution studies'));
+		});
+	}
+	async get(id: string): Promise<McStudySnapshot | null> {
+		const db = await this.db();
+		return new Promise((resolve, reject) => {
+			const request = db
+				.transaction(MC_STUDIES_STORE, 'readonly')
+				.objectStore(MC_STUDIES_STORE)
+				.get(id);
+			request.onsuccess = () => resolve((request.result as McStudySnapshot | undefined) ?? null);
+			request.onerror = () =>
+				reject(request.error ?? new Error('Unable to open saved distribution study'));
+		});
+	}
+	async put(snapshot: McStudySnapshot): Promise<void> {
+		const db = await this.db();
+		return new Promise((resolve, reject) => {
+			const transaction = db.transaction(MC_STUDIES_STORE, 'readwrite');
+			transaction.objectStore(MC_STUDIES_STORE).put(snapshot);
+			transaction.oncomplete = () => resolve();
+			transaction.onerror = () =>
+				reject(transaction.error ?? new Error('Unable to save distribution study'));
+			transaction.onabort = () =>
+				reject(transaction.error ?? new Error('Unable to save distribution study'));
+		});
+	}
+}
+
 /** One workspace session shared by browser controls and WebMCP. */
 export class StudyWorkspace {
 	bundle = $state.raw<StudyBundle | null>(null);
 	comparison = $state.raw<Comparison | null>(null);
 	saved = $state.raw<Array<{ id: string; title: string; revision: number }>>([]);
+	mcSaved = $state.raw<Array<{ id: string; title: string }>>([]);
+	mcDocument = $state.raw<McStudySnapshot | null>(null);
 	busy = $state(false);
 	error = $state<string | null>(null);
 	network = $state.raw<Network | null>(null);
 	#baseNetwork: Network | null = null;
 	#controller: StudyDocumentController | null = null;
 	#store: IndexedDbStudyStore | null = null;
+	#mcStore = new McStudyStore();
 	#cancel: AbortController | null = null;
 	#geometry = new Map<string, Network>();
 	#capacityApprovals = new Map<string, string>();
@@ -55,9 +115,56 @@ export class StudyWorkspace {
 		const d = this.document;
 		return d?.active_goal ? d.goals[d.active_goal] : null;
 	}
+	get activeMcDocument(): McStudySnapshot | null {
+		const snapshot = this.grid.app.activeMulti?.mcSnapshot;
+		return snapshot && this.mcSaved.some((saved) => saved.id === snapshot.id) ? snapshot : null;
+	}
 
 	async refreshSaved() {
 		this.saved = await this.store.list();
+		try {
+			this.mcSaved = (await this.#mcStore.list()).map(({ id, title }) => ({ id, title }));
+		} catch {
+			this.mcSaved = [];
+		}
+	}
+	async saveMulti() {
+		const c = this.grid.app.activeMulti;
+		if (!c?.moduleJson || !c.mcPfSupported || !c.mcSnapshot)
+			throw new Error('Run the typed distribution power flow before saving its result');
+		const snapshot = c.mcSnapshot;
+		await this.#mcStore.put(snapshot);
+		this.mcDocument = snapshot;
+		c.mcSavedAt = new Date().toISOString();
+		await this.refreshSaved();
+		return snapshot;
+	}
+	async openMulti(id: string) {
+		const stored = await this.#mcStore.get(id);
+		if (!stored) throw new Error('Saved distribution power flow was not found');
+		const snapshot = await replayMcStudy(JSON.stringify(stored));
+		const file = new File([snapshot.input_module], `${snapshot.title}.pio.json`, {
+			type: 'application/json'
+		});
+		const previous = this.grid.app.activeMulti;
+		await this.grid.ingestFiles([file]);
+		const c = this.grid.app.activeMulti;
+		if (!c || c === previous)
+			throw new Error('Saved distribution power flow could not be reopened');
+		c.mcSnapshot = snapshot;
+		c.mcResult = snapshot.result;
+		this.mcDocument = snapshot;
+	}
+	exportMulti(): string {
+		const snapshot = this.activeMcDocument;
+		if (!snapshot) throw new Error('Save the active distribution power-flow result first');
+		return JSON.stringify(snapshot, null, 2);
+	}
+	async importMulti(text: string) {
+		const snapshot = await replayMcStudy(text);
+		await this.#mcStore.put(snapshot);
+		await this.refreshSaved();
+		await this.openMulti(snapshot.id);
 	}
 	async initialize() {
 		try {
@@ -166,6 +273,7 @@ export class StudyWorkspace {
 				abort
 			);
 			this.#controller = controller;
+			this.mcDocument = null;
 			this.#caseAnchor = {
 				caseId,
 				revision: expectedCaseRevision,
@@ -179,6 +287,7 @@ export class StudyWorkspace {
 	async open(id: string) {
 		return this.#run(async () => {
 			this.#controller = await StudyDocumentController.open(id, this.store);
+			this.mcDocument = null;
 			this.#caseAnchor = null;
 			this.comparison = null;
 			await this.#publish(true);
@@ -200,6 +309,7 @@ export class StudyWorkspace {
 				}
 			}
 			this.#controller = await StudyDocumentController.import(text, this.store);
+			this.mcDocument = null;
 			this.#caseAnchor = null;
 			this.comparison = null;
 			await this.#publish(true);

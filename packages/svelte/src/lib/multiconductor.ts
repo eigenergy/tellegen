@@ -22,6 +22,7 @@ export interface PlacedMultiBus {
 	lat: number;
 	terminals: string[];
 	grounded: string[];
+	neutral_terminal?: string | null;
 	load_kw: number;
 	gen_kw: number;
 	has_source: boolean;
@@ -67,6 +68,7 @@ function placedBus(bus: DistGraphBus, lon: number, lat: number): PlacedMultiBus 
 		lat,
 		terminals: bus.terminals,
 		grounded: bus.grounded,
+		neutral_terminal: bus.neutral_terminal,
 		load_kw: bus.load_kw,
 		gen_kw: bus.gen_kw,
 		has_source: bus.has_source,
@@ -259,6 +261,18 @@ export function phaseColor(terminal: string): RGBA {
 /** True when a terminal is a phase conductor (not a neutral/ground return). */
 export function isPhaseTerminal(terminal: string): boolean {
 	return ['1', '2', '3', 'a', 'b', 'c'].includes(terminal.trim().toLowerCase());
+}
+
+/** Return the explicit neutral conductor in a terminal map. Other non-phase
+ * labels are left alone: an arbitrary terminal name is not evidence that the
+ * network has a usable neutral reference. */
+
+export function neutralTerminal(terminals: string[], declared?: string | null): string | null {
+	if (declared !== undefined) return declared && terminals.includes(declared) ? declared : null;
+	return (
+		terminals.find((terminal) => ['n', '4', 'neutral'].includes(terminal.trim().toLowerCase())) ??
+		null
+	);
 }
 
 /** Base color for an edge by kind and state. Lines are the warm gray of the

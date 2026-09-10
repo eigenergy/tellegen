@@ -207,17 +207,21 @@ export type SolvableCase = CaseState | LocalCase;
 
 /** The multiconductor ingest payload without the graph: the summary counts,
  * connected load/generation, coordinate provenance, and diagnostics. */
-export type MultiCaseSummary = Omit<IngestedDistCase, 'graph'>;
+export type MultiCaseSummary = Omit<
+	IngestedDistCase,
+	'graph' | 'module_json' | 'mc_pf_supported' | 'mc_pf_reason'
+>;
 
 /** How a multiconductor case is placed on the map. `geographic` positions drop
  * straight on; `planar`/`synthetic` need a map center, so they sit `pending`
  * until the user places them. */
 export type MultiCoordsKind = 'geographic' | 'planar' | 'synthetic';
 
-/** A multiconductor distribution case parsed in the browser, viewed only: no
- * formulation, no sliders, no Study. It carries the bus/terminal graph, its
- * placed map view, and the selected bus whose terminal detail expands. Fields
- * are reactive like the solvable cases so the panel and map track them. */
+/** A multiconductor distribution case parsed in the browser. It carries the
+ * bus/terminal graph, an optional retained typed module for the fixed-point
+ * solver, its placed map view, and the selected bus whose terminal detail
+ * expands. Fields are reactive like the solvable cases so the panel and map
+ * track them. */
 export class MulticonductorCase {
 	readonly id: string;
 	readonly label: string;
@@ -230,6 +234,21 @@ export class MulticonductorCase {
 	coordsKind: MultiCoordsKind = $state.raw<MultiCoordsKind>('synthetic');
 	/** The placed map view; null until placed (planar/synthetic await a center). */
 	view: MultiView | null = $state.raw<MultiView | null>(null);
+	/** Typed PowerIO module retained by the ingest path, when solveable. */
+	moduleJson = $state.raw<string | null>(null);
+	/** Reader capability and explanation for the Study power-flow branch. */
+	mcPfSupported = $state<boolean>(false);
+	mcPfReason = $state<string | null>(null);
+	/** Last fixed-point distribution result for this case. */
+	mcResult = $state.raw<import('@tellegen/engine').McPfResult | null>(null);
+	mcSnapshot = $state.raw<import('@tellegen/engine').McStudySnapshot | null>(null);
+	mcSolving = $state(false);
+	mcSolveMs = $state<number | null>(null);
+	mcError = $state<string | null>(null);
+	/** Monotone token: a stale worker response cannot overwrite a newer run. */
+	mcSolveSeq = 0;
+	/** Timestamp of the last saved MC snapshot, if any. */
+	mcSavedAt = $state<string | null>(null);
 	syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<
 		{ lon: number; lat: number } | undefined
 	>(undefined);
@@ -248,6 +267,9 @@ export class MulticonductorCase {
 		graph: DistGraph;
 		coordsKind: MultiCoordsKind;
 		view?: MultiView | null;
+		moduleJson?: string | null;
+		mcPfSupported?: boolean;
+		mcPfReason?: string | null;
 	}) {
 		this.id = init.id;
 		this.label = init.label;
@@ -256,6 +278,9 @@ export class MulticonductorCase {
 		this.graph = init.graph;
 		this.coordsKind = init.coordsKind;
 		this.view = init.view ?? null;
+		this.moduleJson = init.moduleJson ?? null;
+		this.mcPfSupported = init.mcPfSupported ?? false;
+		this.mcPfReason = init.mcPfReason ?? null;
 	}
 
 	/** Whether the case is placed and ready to render. */
@@ -379,7 +404,7 @@ export class AppState {
 	/** Local case the panel shows; clicking a bundled case or a bus clears it. */
 	activeLocalId = $state<string | null>(null);
 	placingLocalId = $state<string | null>(null);
-	/** Multiconductor distribution cases parsed in the browser (viewing only). */
+	/** Multiconductor distribution cases parsed in the browser. */
 	multiCases: MulticonductorCase[] = $state.raw<MulticonductorCase[]>([]);
 	/** Multiconductor case the panel shows; mutually exclusive with the solvable
 	 * active ids. */
@@ -513,8 +538,8 @@ export class AppState {
 		}
 		this.activeLocalId = null;
 		this.placingLocalId = null;
-		// A multiconductor case is viewing only, so no hydration target: activate
-		// it, frame whatever is placed, and report `none`.
+		// Activate the first remaining multiconductor case and frame whatever is
+		// placed; it has no balanced-case hydration target.
 		const nextMulti = this.multiCases[0] ?? null;
 		this.activeMultiId = nextMulti?.id ?? null;
 		this.placingMultiId = nextMulti && !nextMulti.placed ? nextMulti.id : null;

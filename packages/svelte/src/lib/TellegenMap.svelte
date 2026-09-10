@@ -3,7 +3,7 @@
 	import { tick } from 'svelte';
 	import type { Layer, PickingInfo } from '@deck.gl/core';
 	import type { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
-	import type { MapboxOverlay } from '@deck.gl/mapbox';
+	import type { MapLibreOverlay } from '@deck.gl/maplibre';
 	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
 	import type { NetworkBranch, NetworkBus } from './api.js';
 	import {
@@ -89,7 +89,7 @@
 	const BRANCH_FOCUS_MAX_ZOOM = 9.5;
 
 	let map = $state.raw<MapLibreMap | null>(null);
-	let overlay = $state.raw<MapboxOverlay | null>(null);
+	let overlay = $state.raw<MapLibreOverlay | null>(null);
 	// Bumped to remount the map after a WebGL context is lost and cannot be
 	// repainted in place. See initMap's context-loss handling.
 	let mapGen = $state(0);
@@ -691,14 +691,14 @@
 	}
 
 	async function loadMapModules() {
-		const [maplibre, mapbox, layers] = await Promise.all([
+		const [maplibre, deckMap, layers] = await Promise.all([
 			import('maplibre-gl'),
-			import('@deck.gl/mapbox'),
+			import('@deck.gl/maplibre'),
 			import('@deck.gl/layers')
 		]);
 		return {
-			maplibregl: maplibre.default,
-			MapboxOverlay: mapbox.MapboxOverlay,
+			maplibregl: maplibre,
+			MapLibreOverlay: deckMap.MapLibreOverlay,
 			PathLayer: layers.PathLayer,
 			ScatterplotLayer: layers.ScatterplotLayer,
 			IconLayer: layers.IconLayer
@@ -713,9 +713,9 @@
 	// memory and tab pressure, and one context survives that far better; the
 	// deck layers also inherit maplibre's 4096 canvas clamp. The flat positron
 	// basemap writes no depth, so the overlay always draws on top.
-	function buildOverlay(MapboxOverlay: MapModules['MapboxOverlay']): MapboxOverlay {
+	function buildOverlay(MapLibreOverlay: MapModules['MapLibreOverlay']): MapLibreOverlay {
 		const touch = coarsePointer();
-		return new MapboxOverlay({
+		return new MapLibreOverlay({
 			interleaved: true,
 			layers: [],
 			parameters: {
@@ -738,7 +738,7 @@
 		let cleanup = () => {};
 		let cancelled = false;
 		void loadMapModules()
-			.then(({ maplibregl, MapboxOverlay, PathLayer, ScatterplotLayer, IconLayer }) => {
+			.then(({ maplibregl, MapLibreOverlay, PathLayer, ScatterplotLayer, IconLayer }) => {
 				if (cancelled) return;
 				layerCtors = { PathLayer, ScatterplotLayer, IconLayer };
 				const m = new maplibregl.Map({
@@ -749,7 +749,7 @@
 					canvasContextAttributes: { antialias: true },
 					attributionControl: { compact: true }
 				});
-				const o = buildOverlay(MapboxOverlay);
+				const o = buildOverlay(MapLibreOverlay);
 				m.addControl(o);
 				m.on('click', (e) => {
 					if (app.placingId) onplacecase(e.lngLat.lng, e.lngLat.lat);
