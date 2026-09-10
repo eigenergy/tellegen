@@ -36,7 +36,7 @@ faer = { version = "0.24.4", default-features = false, features = ["std", "linal
 num-complex = { version = "0.4", default-features = false, optional = true }
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "0.10"
+sha2 = "0.11"
 schemars = { workspace = true, optional = true }
 
 [features]
@@ -62,6 +62,10 @@ required-features = ["schema"]
 
 [[example]]
 name = "convex_cost_scenario"
+required-features = ["sensitivity"]
+
+[[example]]
+name = "verify_planning"
 required-features = ["sensitivity"]
 
 [[example]]

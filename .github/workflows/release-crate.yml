@@ -47,7 +47,7 @@ jobs:
       # `update` writes the version bump and changelog locally and nothing else,
       # which is exactly what the sealed patch below needs.
       - name: Install release-plz
-        uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
           tool: release-plz@0.3.160
       - name: Generate release-plz update
@@ -192,7 +192,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: release-plz release
-        uses: MarcoIeni/release-plz-action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
+        uses: MarcoIeni/release-plz-action@aec534bbd8631793b9b3b8f1ee6cd886c322e17f # v0.5.133
         with:
           command: release
           version: "0.3.160"

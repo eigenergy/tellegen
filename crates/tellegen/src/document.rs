@@ -13,7 +13,14 @@ const MAX_RECORDS: usize = 100_000;
 const MAX_BUNDLE_BYTES: usize = 512 * 1024 * 1024;
 
 pub fn content_id(bytes: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(bytes))
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut id = String::with_capacity(7 + 64);
+    id.push_str("sha256:");
+    for byte in Sha256::digest(bytes) {
+        id.push(char::from(HEX[usize::from(byte >> 4)]));
+        id.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    id
 }
 
 fn record_id<T: Serialize>(value: &T) -> Result<String, String> {
@@ -818,6 +825,18 @@ fn validate_artifact(artifact: &StudyArtifact) -> Result<Option<(Problem, bool, 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn content_ids_keep_the_sha256_wire_format() {
+        assert_eq!(
+            super::content_id(b""),
+            "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            super::content_id(b"abc"),
+            "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
     use super::*;
     use crate::objective::{DecisionVariable, Intervention, ObservableWeight};
     use crate::{NetworkEdit, Operand, Power, Study};

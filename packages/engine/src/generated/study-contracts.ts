@@ -1,5 +1,5 @@
 // Generated from Rust by study_contract and generate-study-contracts.mjs.
-// Source SHA256: b7e568dddc5f907977fdb7167503c511663dcce1c0c6f22fff71494ef761d2b3
+// Source SHA256: 0f2db285aa98576b5b7d8e5e45e2adb38b23382eb3f569d669e09287cd0659ca
 
 export type ArtifactKind = "powerio_ir" | "geo_layer" | "evidence";
 
