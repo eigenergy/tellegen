@@ -22,6 +22,7 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 mod api;
+mod content_id;
 #[cfg(feature = "sensitivity")]
 pub mod document;
 mod emit;

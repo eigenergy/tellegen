@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::objective::{DecisionSpace, StudyObjective};
 use crate::Problem;
@@ -13,14 +12,7 @@ const MAX_RECORDS: usize = 100_000;
 const MAX_BUNDLE_BYTES: usize = 512 * 1024 * 1024;
 
 pub fn content_id(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut id = String::with_capacity(7 + 64);
-    id.push_str("sha256:");
-    for byte in Sha256::digest(bytes) {
-        id.push(char::from(HEX[usize::from(byte >> 4)]));
-        id.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    id
+    crate::content_id::content_id(bytes)
 }
 
 fn record_id<T: Serialize>(value: &T) -> Result<String, String> {
