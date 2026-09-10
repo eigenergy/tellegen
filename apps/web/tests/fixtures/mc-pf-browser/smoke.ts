@@ -11,7 +11,9 @@ async function main() {
 		fetch('/mc-pf-three-phase.pio.json').then((response) => response.text()),
 		fetch('/mc-pf-three-phase.oracle.json').then((response) => response.json())
 	]);
-	const options = { tolerance: 1e-8, max_iterations: 100 };
+	// These frozen OpenDSS references use the original load equations, as in
+	// the native oracle tests. The Study tests exercise the default envelope.
+	const options = { tolerance: 1e-8, max_iterations: 100, voltage_envelope: false };
 	const rawResult = await solveMcBmopf(raw, options);
 	const typedResult = await solveMcModule(moduleJson, options);
 	const oracleTerminals = oracle.terminals as Terminal[];

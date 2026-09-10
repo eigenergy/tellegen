@@ -113,6 +113,10 @@ const loadModelSpecs: Record<string, LoadModelSpec> = {
 };
 
 function expectedLoadPower(spec: LoadModelSpec, ratio: number) {
+	// Above the default 1.15 pu ceiling, non-impedance models use the
+	// boundary's constant-power equivalent admittance.
+	if (spec.model !== 'constant_impedance' && ratio > 1.15)
+		return { p: spec.p * (ratio / 1.15) ** 2, q: spec.q * (ratio / 1.15) ** 2 };
 	if (spec.model === 'constant_current') return { p: spec.p * ratio, q: spec.q * ratio };
 	if (spec.model === 'constant_impedance')
 		return { p: spec.p * ratio ** 2, q: spec.q * ratio ** 2 };
@@ -144,42 +148,53 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	});
 	await study.getByRole('button', { name: 'Run power flow' }).click();
 	await expect(study.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
-	await expect(study.getByText(/49\.825 \/ 16\.508 kW \/ kvar/)).toBeVisible();
-	await expect(study.getByText(/4\.825 kW/)).toBeVisible();
-	await study.getByLabel('Bus result').selectOption('lb');
-	await expect(study.getByText('|V| to neutral', { exact: true })).toBeVisible();
-	const terminalRow = (terminal: string) =>
-		study.locator('.mc-result-table tbody tr').filter({ hasText: new RegExp(`^${terminal}`) });
-	await expect(terminalRow('a').locator('td')).toHaveText([
-		'a',
-		'221.762 V',
-		'0.31°',
-		'222.333 V',
-		'-2.76°'
-	]);
-	await expect(terminalRow('b').locator('td')).toHaveText([
-		'b',
-		'228.616 V',
-		'-120.10°',
-		'238.828 V',
-		'-118.60°'
-	]);
-	await expect(terminalRow('c').locator('td')).toHaveText([
-		'c',
-		'213.351 V',
-		'120.04°',
-		'202.976 V',
-		'121.64°'
-	]);
-	await expect(terminalRow('n').locator('td')).toHaveText([
-		'n',
-		'11.898 V',
-		'91.53°',
-		'0.000 V',
-		'—'
-	]);
 	await expect(study.getByRole('button', { name: 'Save result' })).toBeEnabled();
 	await study.getByRole('button', { name: 'Save result' }).click();
+	const downloadWait = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'Export', exact: true }).click();
+	const exportPath = await (await downloadWait).path();
+	if (!exportPath) throw new Error('saved distribution result has no export');
+	const snapshot = JSON.parse(await readFile(exportPath, 'utf8'));
+	const result = snapshot.result;
+	expect(result.converged).toBe(true);
+	expect(result.factorization_count).toBe(1);
+	// The default voltage envelope changes this fixture's operating point.
+	// Compare the rendered phasors to the saved result; the worker oracle test
+	// independently checks the original load equations against OpenDSS.
+	const source = result.source_reactions.reduce(
+		(
+			sum: { re: number; im: number },
+			entry: { power_into_network: { re: number; im: number } }
+		) => ({
+			re: sum.re + entry.power_into_network.re,
+			im: sum.im + entry.power_into_network.im
+		}),
+		{ re: 0, im: 0 }
+	);
+	await expect(
+		study.locator('dt').filter({ hasText: 'Source P / Q' }).locator('..').locator('dd')
+	).toHaveText(`${(source.re / 1000).toFixed(3)} / ${(source.im / 1000).toFixed(3)} kW / kvar`);
+	await study.getByLabel('Bus result').selectOption('lb');
+	await expect(study.getByText('|V| to neutral', { exact: true })).toBeVisible();
+	type Terminal = { bus: string; terminal: string; voltage: { re: number; im: number } };
+	const terminals = (result.terminals as Terminal[]).filter((row) => row.bus === 'lb');
+	expect(terminals.map((row) => row.terminal).sort()).toEqual(['a', 'b', 'c', 'n']);
+	const neutral = terminals.find((row) => row.terminal === 'n')!.voltage;
+	const formatted = (voltage: { re: number; im: number }) => [
+		`${Math.hypot(voltage.re, voltage.im).toFixed(3)} V`,
+		Math.hypot(voltage.re, voltage.im) === 0
+			? '—'
+			: `${((Math.atan2(voltage.im, voltage.re) * 180) / Math.PI).toFixed(2)}°`
+	];
+	for (const row of terminals) {
+		const relative = { re: row.voltage.re - neutral.re, im: row.voltage.im - neutral.im };
+		await expect(
+			study
+				.locator('.mc-result-table tbody tr')
+				.filter({ hasText: new RegExp(`^${row.terminal}`) })
+				.locator('td')
+		).toHaveText([row.terminal, ...formatted(row.voltage), ...formatted(relative)]);
+	}
 	await expect(savedDistributionOptions(page)).toHaveCount(1);
 	const firstSavedValue = await savedDistributionOptions(page).nth(0).getAttribute('value');
 	if (!firstSavedValue) throw new Error('first saved distribution option has no value');
@@ -259,160 +274,186 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 	await expect(threeWireStudy.getByText('|V| to neutral', { exact: true })).toHaveCount(0);
 });
 
-test('raw BMOPF voltage-dependent loads solve and replay with their models', async ({ page }) => {
-	test.setTimeout(180_000);
-	const rawText = await readFile(loadModelsCase, 'utf8');
-	const raw = JSON.parse(rawText) as {
-		load: Record<string, Record<string, unknown>>;
-	};
-	expect(Object.values(raw.load).map((load) => load.model)).toEqual(
-		expect.arrayContaining(['constant_current', 'constant_impedance', 'zip', 'exponential'])
-	);
-	const constantPower = structuredClone(raw);
-	for (const load of Object.values(constantPower.load)) {
-		load.model = 'constant_power';
-		for (const field of [
-			'alpha_z',
-			'alpha_i',
-			'alpha_p',
-			'beta_z',
-			'beta_i',
-			'beta_p',
-			'gamma_p',
-			'gamma_q'
-		])
-			delete load[field];
-	}
-
-	await page.goto('/');
-	const headerFileInput = page.locator('header input[type="file"][accept*=".dss"]');
-	await expect(headerFileInput).toHaveCount(1);
-	await headerFileInput.setInputFiles(loadModelsCase);
-	await expect(page.getByText('multiconductor', { exact: true }).first()).toBeVisible({
-		timeout: 60_000
-	});
-	await page.getByRole('button', { name: 'Studies', exact: true }).click();
-	const study = page.getByRole('region', { name: 'Study workspace' });
-	await expect(study.getByRole('button', { name: 'Run power flow' })).toBeEnabled({
-		timeout: 60_000
-	});
-	await study.getByRole('button', { name: 'Run power flow' }).click();
-	await expect(study.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
-	const source = study
-		.locator('dt')
-		.filter({ hasText: 'Source P / Q' })
-		.locator('..')
-		.locator('dd');
-	const loss = study.locator('dt').filter({ hasText: 'Network loss' }).locator('..').locator('dd');
-	const modelSource = (await source.textContent())?.trim();
-	const modelLoss = (await loss.textContent())?.trim();
-	if (!modelSource || !modelLoss) throw new Error('voltage-dependent result summary is missing');
-	// The source is ideal and all four loads share its bus. At |V| =
-	// 239.6003617136947 V and Vnom = 200 V, the four model laws consume
-	// 56.414755 kW and 18.818863 kvar in aggregate.
-	await expect(source).toHaveText('56.415 / 18.819 kW / kvar');
-	await study.getByRole('button', { name: 'Save result' }).click();
-	await expect(savedDistributionOptions(page)).toHaveCount(1);
-	const downloadWait = page.waitForEvent('download');
-	await page.getByRole('button', { name: 'Export', exact: true }).click();
-	const download = await downloadWait;
-	const exportPath = await download.path();
-	if (!exportPath) throw new Error('distribution snapshot export has no local path');
-	const snapshot = JSON.parse(await readFile(exportPath, 'utf8')) as {
-		input_module: string;
-		solution_module: string;
-		result: {
-			terminals: Array<{ bus: string; terminal: string; voltage: { re: number; im: number } }>;
-			element_ports: Array<{
-				element: string;
-				kind: string;
-				terminal: string;
-				current_into_element: { re: number; im: number };
-				power_into_element: { re: number; im: number };
-			}>;
+for (const nominalVoltage of [200, 240]) {
+	test(`raw BMOPF load models solve and replay at ${nominalVoltage} V nominal`, async ({
+		page
+	}) => {
+		test.setTimeout(180_000);
+		const rawText = await readFile(loadModelsCase, 'utf8');
+		const raw = JSON.parse(rawText) as {
+			load: Record<string, Record<string, unknown>>;
 		};
-	};
-	const expectedModels = ['constant_current', 'constant_impedance', 'exponential', 'zip'];
-	expect(voltageModels(snapshot.input_module)).toEqual(expectedModels);
-	expect(voltageModels(snapshot.solution_module)).toEqual(expectedModels);
-	for (const [element, spec] of Object.entries(loadModelSpecs)) {
-		const port = snapshot.result.element_ports.find(
-			(candidate) =>
-				candidate.element === element &&
-				candidate.kind === 'load' &&
-				candidate.terminal === spec.terminal
+		expect(Object.values(raw.load).map((load) => load.model)).toEqual(
+			expect.arrayContaining(['constant_current', 'constant_impedance', 'zip', 'exponential'])
 		);
-		if (!port) throw new Error(`exported snapshot has no phase port for ${element}`);
-		const phase = snapshot.result.terminals.find(
-			(candidate) => candidate.bus === 'src' && candidate.terminal === spec.terminal
-		);
-		const neutral = snapshot.result.terminals.find(
-			(candidate) => candidate.bus === 'src' && candidate.terminal === 'n'
-		);
-		if (!phase || !neutral)
-			throw new Error(`exported snapshot has no branch voltage for ${element}`);
-		const voltage = {
-			re: phase.voltage.re - neutral.voltage.re,
-			im: phase.voltage.im - neutral.voltage.im
-		};
-		const ratio = Math.hypot(voltage.re, voltage.im) / 200;
-		const expected = expectedLoadPower(spec, ratio);
-		const denominator = voltage.re ** 2 + voltage.im ** 2;
-		const quotient = {
-			re: (expected.p * voltage.re + expected.q * voltage.im) / denominator,
-			im: (expected.q * voltage.re - expected.p * voltage.im) / denominator
-		};
-		expect(port.power_into_element.re).toBeCloseTo(expected.p, 6);
-		expect(port.power_into_element.im).toBeCloseTo(expected.q, 6);
-		expect(port.current_into_element.re).toBeCloseTo(quotient.re, 6);
-		expect(port.current_into_element.im).toBeCloseTo(-quotient.im, 6);
-	}
-	await page.locator('label.file-button input[type="file"]').setInputFiles({
-		name: 'exported-mc-pf-study.json',
-		mimeType: 'application/json',
-		buffer: Buffer.from(JSON.stringify(snapshot))
-	});
-	await expect(study.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
-	await expect(
-		study.locator('dt').filter({ hasText: 'Source P / Q' }).locator('..').locator('dd')
-	).toHaveText(modelSource);
-	await expect(
-		study.locator('dt').filter({ hasText: 'Network loss' }).locator('..').locator('dd')
-	).toHaveText(modelLoss);
+		for (const load of Object.values(raw.load)) load.v_nom = [nominalVoltage];
+		const constantPower = structuredClone(raw);
+		for (const load of Object.values(constantPower.load)) {
+			load.model = 'constant_power';
+			for (const field of [
+				'alpha_z',
+				'alpha_i',
+				'alpha_p',
+				'beta_z',
+				'beta_i',
+				'beta_p',
+				'gamma_p',
+				'gamma_q'
+			])
+				delete load[field];
+		}
 
-	await page.reload();
-	await page.getByRole('button', { name: 'Studies', exact: true }).click();
-	const reopened = page.getByRole('region', { name: 'Study workspace' });
-	await page.getByLabel('Saved study').selectOption({ index: 1 });
-	await expect(reopened.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
-	await expect(
-		reopened.locator('dt').filter({ hasText: 'Source P / Q' }).locator('..').locator('dd')
-	).toHaveText(modelSource);
-	await expect(
-		reopened.locator('dt').filter({ hasText: 'Network loss' }).locator('..').locator('dd')
-	).toHaveText(modelLoss);
-
-	await page.reload();
-	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles({
-		name: 'mc-pf-load-models-constant-power.bmopf.json',
-		mimeType: 'application/json',
-		buffer: Buffer.from(JSON.stringify(constantPower))
-	});
-	await expect(page.getByText('multiconductor', { exact: true }).first()).toBeVisible({
-		timeout: 60_000
-	});
-	await page.getByRole('button', { name: 'Studies', exact: true }).click();
-	const baseline = page.getByRole('region', { name: 'Study workspace' });
-	await baseline.getByRole('button', { name: 'Run power flow' }).click();
-	await expect(baseline.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
-	const baselineSource = (
-		await baseline
+		await page.goto('/');
+		const headerFileInput = page.locator('header input[type="file"][accept*=".dss"]');
+		await expect(headerFileInput).toHaveCount(1);
+		await headerFileInput.setInputFiles({
+			name: 'load-models.bmopf.json',
+			mimeType: 'application/json',
+			buffer: Buffer.from(JSON.stringify(raw))
+		});
+		await expect(page.getByText('multiconductor', { exact: true }).first()).toBeVisible({
+			timeout: 60_000
+		});
+		await page.getByRole('button', { name: 'Studies', exact: true }).click();
+		const study = page.getByRole('region', { name: 'Study workspace' });
+		await expect(study.getByRole('button', { name: 'Run power flow' })).toBeEnabled({
+			timeout: 60_000
+		});
+		await study.getByRole('button', { name: 'Run power flow' }).click();
+		await expect(study.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
+		const source = study
 			.locator('dt')
 			.filter({ hasText: 'Source P / Q' })
 			.locator('..')
-			.locator('dd')
-			.textContent()
-	)?.trim();
-	if (!baselineSource) throw new Error('constant-power baseline summary is missing');
-	expect(baselineSource).toBe('45.000 / 15.000 kW / kvar');
-});
+			.locator('dd');
+		const loss = study
+			.locator('dt')
+			.filter({ hasText: 'Network loss' })
+			.locator('..')
+			.locator('dd');
+		const modelSource = (await source.textContent())?.trim();
+		const modelLoss = (await loss.textContent())?.trim();
+		if (!modelSource || !modelLoss) throw new Error('voltage-dependent result summary is missing');
+		// This ideal-source fixture gives an independent analytical total, both
+		// inside the normal voltage band and above the default 1.15 pu ceiling.
+		const ratio = 239.6003617136947 / nominalVoltage;
+		const expectedTotal = Object.values(loadModelSpecs).reduce(
+			(sum, spec) => {
+				const power = expectedLoadPower(spec, ratio);
+				return { p: sum.p + power.p, q: sum.q + power.q };
+			},
+			{ p: 0, q: 0 }
+		);
+		await expect(source).toHaveText(
+			`${(expectedTotal.p / 1000).toFixed(3)} / ${(expectedTotal.q / 1000).toFixed(3)} kW / kvar`
+		);
+		await study.getByRole('button', { name: 'Save result' }).click();
+		await expect(savedDistributionOptions(page)).toHaveCount(1);
+		const downloadWait = page.waitForEvent('download');
+		await page.getByRole('button', { name: 'Export', exact: true }).click();
+		const download = await downloadWait;
+		const exportPath = await download.path();
+		if (!exportPath) throw new Error('distribution snapshot export has no local path');
+		const snapshot = JSON.parse(await readFile(exportPath, 'utf8')) as {
+			input_module: string;
+			solution_module: string;
+			result: {
+				terminals: Array<{ bus: string; terminal: string; voltage: { re: number; im: number } }>;
+				element_ports: Array<{
+					element: string;
+					kind: string;
+					terminal: string;
+					current_into_element: { re: number; im: number };
+					power_into_element: { re: number; im: number };
+				}>;
+			};
+		};
+		const expectedModels = ['constant_current', 'constant_impedance', 'exponential', 'zip'];
+		expect(voltageModels(snapshot.input_module)).toEqual(expectedModels);
+		expect(voltageModels(snapshot.solution_module)).toEqual(expectedModels);
+		for (const [element, spec] of Object.entries(loadModelSpecs)) {
+			const port = snapshot.result.element_ports.find(
+				(candidate) =>
+					candidate.element === element &&
+					candidate.kind === 'load' &&
+					candidate.terminal === spec.terminal
+			);
+			if (!port) throw new Error(`exported snapshot has no phase port for ${element}`);
+			const phase = snapshot.result.terminals.find(
+				(candidate) => candidate.bus === 'src' && candidate.terminal === spec.terminal
+			);
+			const neutral = snapshot.result.terminals.find(
+				(candidate) => candidate.bus === 'src' && candidate.terminal === 'n'
+			);
+			if (!phase || !neutral)
+				throw new Error(`exported snapshot has no branch voltage for ${element}`);
+			const voltage = {
+				re: phase.voltage.re - neutral.voltage.re,
+				im: phase.voltage.im - neutral.voltage.im
+			};
+			const ratio = Math.hypot(voltage.re, voltage.im) / nominalVoltage;
+			const expected = expectedLoadPower(spec, ratio);
+			const denominator = voltage.re ** 2 + voltage.im ** 2;
+			const quotient = {
+				re: (expected.p * voltage.re + expected.q * voltage.im) / denominator,
+				im: (expected.q * voltage.re - expected.p * voltage.im) / denominator
+			};
+			expect(port.power_into_element.re).toBeCloseTo(expected.p, 6);
+			expect(port.power_into_element.im).toBeCloseTo(expected.q, 6);
+			expect(port.current_into_element.re).toBeCloseTo(quotient.re, 6);
+			expect(port.current_into_element.im).toBeCloseTo(-quotient.im, 6);
+		}
+		await page.locator('label.file-button input[type="file"]').setInputFiles({
+			name: 'exported-mc-pf-study.json',
+			mimeType: 'application/json',
+			buffer: Buffer.from(JSON.stringify(snapshot))
+		});
+		await expect(study.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
+		await expect(
+			study.locator('dt').filter({ hasText: 'Source P / Q' }).locator('..').locator('dd')
+		).toHaveText(modelSource);
+		await expect(
+			study.locator('dt').filter({ hasText: 'Network loss' }).locator('..').locator('dd')
+		).toHaveText(modelLoss);
+
+		await page.reload();
+		await page.getByRole('button', { name: 'Studies', exact: true }).click();
+		const reopened = page.getByRole('region', { name: 'Study workspace' });
+		await page.getByLabel('Saved study').selectOption({ index: 1 });
+		await expect(reopened.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
+		await expect(
+			reopened.locator('dt').filter({ hasText: 'Source P / Q' }).locator('..').locator('dd')
+		).toHaveText(modelSource);
+		await expect(
+			reopened.locator('dt').filter({ hasText: 'Network loss' }).locator('..').locator('dd')
+		).toHaveText(modelLoss);
+
+		await page.reload();
+		await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles({
+			name: 'mc-pf-load-models-constant-power.bmopf.json',
+			mimeType: 'application/json',
+			buffer: Buffer.from(JSON.stringify(constantPower))
+		});
+		await expect(page.getByText('multiconductor', { exact: true }).first()).toBeVisible({
+			timeout: 60_000
+		});
+		await page.getByRole('button', { name: 'Studies', exact: true }).click();
+		const baseline = page.getByRole('region', { name: 'Study workspace' });
+		await baseline.getByRole('button', { name: 'Run power flow' }).click();
+		await expect(baseline.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
+		const baselineSource = (
+			await baseline
+				.locator('dt')
+				.filter({ hasText: 'Source P / Q' })
+				.locator('..')
+				.locator('dd')
+				.textContent()
+		)?.trim();
+		if (!baselineSource) throw new Error('constant-power baseline summary is missing');
+		const baselineRatio = 239.6003617136947 / nominalVoltage;
+		const baselineScale = baselineRatio > 1.15 ? (baselineRatio / 1.15) ** 2 : 1;
+		expect(baselineSource).toBe(
+			`${(45 * baselineScale).toFixed(3)} / ${(15 * baselineScale).toFixed(3)} kW / kvar`
+		);
+	});
+}
