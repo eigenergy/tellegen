@@ -2,6 +2,7 @@
 
 use schemars::JsonSchema;
 use sha2::{Digest, Sha256};
+use std::fmt::Write;
 
 #[derive(JsonSchema)]
 #[allow(dead_code)]
@@ -28,7 +29,12 @@ fn main() {
     }
     let mut schema =
         serde_json::to_value(schemars::schema_for!(StudyContract)).expect("Study schema");
-    schema["x-rust-source-sha256"] = format!("{:x}", hash.finalize()).into();
+    let digest = hash.finalize();
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        write!(&mut hex, "{byte:02x}").expect("write to String");
+    }
+    schema["x-rust-source-sha256"] = hex.into();
     println!(
         "{}",
         serde_json::to_string_pretty(&schema).expect("Study schema JSON")
