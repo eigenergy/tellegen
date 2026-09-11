@@ -58,11 +58,3 @@ dbg_macro = "warn"
 [profile.release]
 opt-level = "s"
 lto = true
-
-[patch.crates-io]
-powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "0628f05553d4841c3def9ade0e695f0ab2f8542c" }
-powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "0628f05553d4841c3def9ade0e695f0ab2f8542c" }
-powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "0628f05553d4841c3def9ade0e695f0ab2f8542c" }
-powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "0628f05553d4841c3def9ade0e695f0ab2f8542c" }
-powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "0628f05553d4841c3def9ade0e695f0ab2f8542c" }
-powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "0628f05553d4841c3def9ade0e695f0ab2f8542c" }

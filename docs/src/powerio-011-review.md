@@ -1,28 +1,17 @@
 # PowerIO 0.11 consumer review
 
-PowerIO v0.11.0 is the baseline for this integration. The release preparation
-merged in [powerio#482](https://github.com/eigenergy/powerio/pull/482), with
-dependency maintenance in
-[powerio#485](https://github.com/eigenergy/powerio/pull/485).
-The final documentation and release checks are in
-[powerio#491](https://github.com/eigenergy/powerio/pull/491).
-The six component crates are published on crates.io at 0.11.0. The published
-baseline used registry checksums, and
-`evidence/webmcp/powerio-releases.json` records the release commit
-(`aa8cec55c8eaf597f1849b15af21a1d894633a05`). The earlier 1.0 candidate in
-[powerio#454](https://github.com/eigenergy/powerio/pull/454) is no longer the
-release target.
+Tellegen uses the published PowerIO 0.11.1 crates. All six PowerIO components
+resolve from crates.io at 0.11.1 with registry checksums. The release tag
+[`v0.11.1`](https://github.com/eigenergy/powerio/releases/tag/v0.11.1) identifies
+commit `432f795a3cc10ad3ee2ed5041406e562e6eb929b`.
+`evidence/webmcp/powerio-releases.json` records published release revisions.
 
-A pull request that changes `Cargo.lock`, `Cargo.toml`, or the pin scripts runs
-the `PowerIO Candidate` workflow against the PowerIO release the lockfile
-names. A manual dispatch can instead pin all six crates to one proposed full
-PowerIO commit SHA ahead of a release.
-The isolated runner resolves all six PowerIO components together, then exercises
-the Rust, WebAssembly, WebMCP package, and browser integration. Normal CI also
-rejects a manifest and lockfile that name different PowerIO revisions.
-After publication, the same check accepts unpatched crates.io dependencies
-only when all six components have one version and registry checksums. A manual
-candidate run can add temporary Git patches to that published baseline.
+Pull requests that change the dependency manifests, lockfile, or pin scripts
+run the `PowerIO Candidate` workflow against the committed dependency set.
+Manual dispatch can test a full PowerIO commit SHA using temporary Git patches
+and a disposable lockfile. Both paths verify one common version and source for
+all six components before exercising Rust, WebAssembly, WebMCP, and browser
+integration.
 
 Tellegen consumes PowerIO modules at its public entry points. `DcNetwork` and
 `AcNetwork` are private solver workspaces built from a PowerIO problem
@@ -36,27 +25,17 @@ text is written and read through `tellegen::ir`, which calls
 
 The PowerIO release, stored IR generation, and C ABI are independent:
 
-| Concern | Current value | Tellegen integration |
-| --- | --- | --- |
-| Rust crate release | `0.11.0` | dependency requirement `0.11` |
-| Stored IR | `"schema": "pio-ir"`, `"version": 2` | sole durable browser and CLI JSON boundary |
-| Producer | `powerio` `0.11.0` | records which release wrote an IR document |
-| C ABI | `7` | unchanged and not used as an IR or crate version |
+| Concern            | Current value                        | Tellegen integration                             |
+| ------------------ | ------------------------------------ | ------------------------------------------------ |
+| Rust crate release | `0.11.1`                             | dependency requirement `0.11.1`                  |
+| Stored IR          | `"schema": "pio-ir"`, `"version": 2` | sole durable browser and CLI JSON boundary       |
+| Producer           | `powerio` `0.11.1`                   | records which release wrote an IR document       |
+| C ABI              | `7`                                  | unchanged and not used as an IR or crate version |
 
 The historical `powerio.module` version 1 document and bare balanced-network
 model JSON are not current input formats. Regenerate those documents from
 their original case data. Checked-in evidence produced with the old candidate
-is historical and must be rerun before it is cited for this baseline.
-
-## 0.11.1 preview
-
-The geography fixes build on [PowerIO #495](https://github.com/eigenergy/powerio/pull/495)
-in [PowerIO #496](https://github.com/eigenergy/powerio/pull/496), with Julia tests
-in [PowerIO.jl #145](https://github.com/eigenergy/PowerIO.jl/pull/145).
-The preview pins all PowerIO crates to
-`0628f05553d4841c3def9ade0e695f0ab2f8542c` pending publication of 0.11.1.
-Published 0.11.0 artifacts remain unchanged. Release and production updates
-wait for the preview review.
+is historical and must be rerun before it is cited for this release.
 
 ## Current module API
 
