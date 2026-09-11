@@ -4,6 +4,34 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.3.0](https://github.com/eigenergy/tellegen/compare/v0.2.0...v0.3.0) - 2026-09-11
+
+### Added
+
+- *(studies)* persist demand adjustments and restore original network data
+
+### Other
+
+- Merge remote-tracking branch 'origin/codex/release-fixes' into codex/preview-additions
+- Keep preparation hashes available in reduced-feature builds
+- Fix saved distribution selection, feature builds, and SHA-256 preparation IDs
+- Merge remote-tracking branch 'origin/codex/multiconductor-fixed-point' into codex/opendss-load-envelope
+- Test the distribution solver with the remaining dependency updates
+- Repair schema generation for sha2 0.11 and update the clean base
+- Preserve Study content IDs with sha2 0.11
+- Bump sha2 from 0.10.9 to 0.11.0
+- [**breaking**] document the PowerIO 0.11 input contract
+- Pin final PowerIO transformer corrections and conic Study contracts
+- Verify singular outer derivatives and document cumulative Study budgets
+- Add persistent Studies with composable objectives and bounded exploration
+- Integrate final PowerIO 0.11 candidate and export verified WebMCP experiments
+- Document the universal PowerIO display parser
+- Fix v0.11 lockfile and Rust formatting
+- Align Tellegen with PowerIO v0.11 IR generation 2
+- Move Tellegen onto the PowerIO 1.0 module API
+- Remove release bypasses and stale claims
+- Use PowerIO modules for OPF and capacity planning
+
 ## [0.2.0](https://github.com/eigenergy/tellegen/compare/v0.1.1...v0.2.0) - 2026-08-23
 
 ### Added
