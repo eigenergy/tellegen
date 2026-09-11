@@ -310,6 +310,11 @@ async function assertBuildOutput() {
   if (!files.some((file) => /worker/.test(file) && file.endsWith(".js"))) {
     throw new Error("consumer build did not emit the engine worker chunk");
   }
+  if (!files.some((file) => /maplibre-gl-worker-[^/]+\.js$/.test(file))) {
+    throw new Error(
+      "consumer build did not emit the geographic map worker chunk",
+    );
+  }
 
   console.log(`packed Svelte consumer emitted ${wasmFiles.length} wasm assets`);
 }
