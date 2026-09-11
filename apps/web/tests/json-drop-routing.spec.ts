@@ -71,6 +71,52 @@ const POWER_MODELS_TWO_BUS = JSON.stringify({
 	dcline: {}
 });
 
+const BMOPF_TWO_BUS = JSON.stringify({
+	name: 'micro-bmopf',
+	base_frequency: 60,
+	bus: {
+		src: {
+			terminal_names: ['1', '2', '3', '4'],
+			perfectly_grounded_terminals: ['4'],
+			longitude: -83.92,
+			latitude: 35.96
+		},
+		load_bus: {
+			terminal_names: ['1', '2', '3', '4'],
+			perfectly_grounded_terminals: ['4'],
+			longitude: -83.9,
+			latitude: 35.95
+		}
+	},
+	line: {
+		l1: {
+			bus_from: 'src',
+			bus_to: 'load_bus',
+			terminal_map_from: ['1', '2', '3'],
+			terminal_map_to: ['1', '2', '3'],
+			linecode: 'lc1',
+			length: 100
+		}
+	},
+	voltage_source: {
+		vs: {
+			bus: 'src',
+			terminal_map: ['1', '2', '3', '4'],
+			v_magnitude: [7200, 7200, 7200, 0],
+			v_angle: [0, -2.0944, 2.0944, 0]
+		}
+	},
+	load: {
+		ld1: {
+			bus: 'load_bus',
+			terminal_map: ['1', '2', '3', '4'],
+			configuration: 'WYE',
+			p_nom: [50000, 50000, 50000],
+			q_nom: [10000, 10000, 10000]
+		}
+	}
+});
+
 // The Rust byte classifier must leave an unknown JSON object unrouted. This guards
 // that it falls through to the geo sidecar path and its precise error, instead of
 // landing as a phantom empty multiconductor case.
@@ -127,4 +173,30 @@ test('a balanced JSON case consumes a co-dropped geographic sidecar', async ({ p
 	).toBeVisible();
 	await expect(page.getByText('click the map to place the topology layout')).toHaveCount(0);
 	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+});
+
+test('a BMOPF distribution case uses the same four-pane information hierarchy', async ({
+	page
+}) => {
+	await page.route('**/api/cases', (route) => void route.fulfill({ json: [] }));
+	await page.goto('/');
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await page.locator('input[type="file"]').setInputFiles({
+		name: 'micro-bmopf.json',
+		mimeType: 'application/json',
+		buffer: Buffer.from(BMOPF_TWO_BUS)
+	});
+
+	await expect(page.getByRole('heading', { name: /micro-bmopf/i })).toBeVisible({
+		timeout: 30_000
+	});
+	for (const name of ['Case overview', 'Analysis', 'Element inspector', 'Map display']) {
+		await expect(page.getByRole('button', { name: new RegExp(name, 'i') })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+	}
+	await expect(page.locator('[data-pane="analysis"]')).toContainText('viewing only');
+	await expect(page.locator('[data-pane="map-display"]')).toContainText('conductors');
+	await expect(page.locator('[data-pane="map-display"]')).toContainText('kW, max(load');
 });

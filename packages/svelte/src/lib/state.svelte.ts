@@ -14,6 +14,7 @@ import {
 	type BranchRatingDeltas,
 	type CaseFileSummary,
 	type DistGraph,
+	type DistNetworkDetails,
 	type Formulation,
 	type IngestedDistCase,
 	type SensTarget,
@@ -179,7 +180,7 @@ export type SolvableCase = CaseState | LocalCase;
 
 /** The multiconductor ingest payload without the graph: the summary counts,
  * connected load/generation, coordinate provenance, and diagnostics. */
-export type MultiCaseSummary = Omit<IngestedDistCase, 'graph'>;
+export type MultiCaseSummary = Omit<IngestedDistCase, 'graph' | 'network_details'>;
 
 /** How a multiconductor case is placed on the map. `geographic` positions drop
  * straight on; `planar`/`synthetic` need a map center, so they sit `pending`
@@ -198,6 +199,8 @@ export class MulticonductorCase {
 	summary = $state.raw<MultiCaseSummary | null>(null);
 	/** The render-ready bus/terminal graph. */
 	graph = $state.raw<DistGraph | null>(null);
+	/** Canonical typed records used by the element inspector. */
+	networkDetails = $state.raw<DistNetworkDetails | null>(null);
 	/** Placement kind resolved at ingest from the case's coordinate space. */
 	coordsKind = $state.raw<MultiCoordsKind>('synthetic');
 	/** The placed map view; null until placed (planar/synthetic await a center). */
@@ -216,6 +219,7 @@ export class MulticonductorCase {
 		fileName: string;
 		summary: MultiCaseSummary;
 		graph: DistGraph;
+		networkDetails: DistNetworkDetails;
 		coordsKind: MultiCoordsKind;
 		view?: MultiView | null;
 	}) {
@@ -224,6 +228,7 @@ export class MulticonductorCase {
 		this.fileName = init.fileName;
 		this.summary = init.summary;
 		this.graph = init.graph;
+		this.networkDetails = init.networkDetails;
 		this.coordsKind = init.coordsKind;
 		this.view = init.view ?? null;
 	}

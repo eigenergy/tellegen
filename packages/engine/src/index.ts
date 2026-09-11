@@ -174,9 +174,36 @@ export interface DistGraph {
   edges: DistGraphEdge[];
 }
 
+/** Canonical PowerIO distribution records retained for element inspection.
+ * Records intentionally stay open-ended: each source family has typed common
+ * fields plus an `extras` object, and PowerIO may add backwards-compatible
+ * fields without requiring the viewer to discard them. */
+export interface DistNetworkDetails {
+  name?: string | null;
+  base_frequency?: number;
+  geo?: Record<string, unknown> | null;
+  buses: Record<string, unknown>[];
+  linecodes: Record<string, unknown>[];
+  lines: Record<string, unknown>[];
+  switches: Record<string, unknown>[];
+  transformers: Record<string, unknown>[];
+  loads: Record<string, unknown>[];
+  generators: Record<string, unknown>[];
+  ibrs?: Record<string, unknown>[];
+  control_profiles?: Record<string, unknown>[];
+  shunts: Record<string, unknown>[];
+  capacitors?: Record<string, unknown>[];
+  sources: Record<string, unknown>[];
+  untyped?: Record<string, unknown>[];
+  commands?: unknown[];
+  options?: unknown[];
+  extras?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 /** One multiconductor parse for the viewing path: element counts, connected
  * load and generation (kW), parse diagnostics, coordinate provenance, and the
- * bus/terminal graph. No solve, no network JSON — distribution cases are viewed,
+ * bus/terminal graph and canonical element records. Distribution cases are viewed,
  * not solved. `coords_kind` tells the frontend how to place buses: `geographic`
  * drops `xy` straight onto the map, `planar` fits provided positions into a box
  * at a placement center, `synthetic` runs the force layout. */
@@ -206,6 +233,7 @@ export interface IngestedDistCase {
   coords_kind: "geographic" | "planar" | "synthetic";
   diagnostics: PowerIoDiagnostic[];
   graph: DistGraph;
+  network_details: DistNetworkDetails;
 }
 
 /** A materialized case written to a target format: the serialized case text,

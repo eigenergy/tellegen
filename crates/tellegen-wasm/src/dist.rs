@@ -162,6 +162,12 @@ fn ingest_dist_value(
         "coords_kind": coords_kind,
         "diagnostics": diagnostics,
         "graph": graph,
+        // Keep the canonical typed records beside the render projection. The
+        // graph deliberately collapses voltage bounds, equipment parameters,
+        // line codes, transformer windings, and source-format extras; the
+        // element inspector needs those values without reparsing on every map
+        // selection.
+        "network_details": net,
     }))
 }
 
@@ -301,6 +307,19 @@ mod tests {
             kinds.contains(&"load"),
             "load attachment present: {kinds:?}"
         );
+
+        // The inspector payload retains canonical records that the collapsed
+        // graph intentionally omits.
+        let detail_bus = v["network_details"]["buses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["id"] == "load_bus")
+            .expect("canonical load bus");
+        assert_eq!(detail_bus["terminals"].as_array().unwrap().len(), 4);
+        let detail_line = &v["network_details"]["lines"][0];
+        assert_eq!(detail_line["linecode"], "lc1");
+        assert_eq!(detail_line["length"], 100.0);
     }
 
     #[test]

@@ -5,6 +5,7 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	let { showClear = true }: { showClear?: boolean } = $props();
 	const reportedUnits = $derived(
 		(ctrl.selectedSensitivity?.units ?? '(objective units/MW)/MW').replaceAll(
 			'objective_unit',
@@ -45,9 +46,11 @@
 	<span class="mono dim">
 		{#if branchMode}line {branchLabel}{:else}bus {app.selectedBus}{/if}
 	</span>
-	<button class="mono" onclick={ctrl.clearSelection}
-		><span class="key-hint">esc&nbsp;</span>clear</button
-	>
+	{#if showClear}
+		<button class="mono" onclick={ctrl.clearSelection}
+			><span class="key-hint">esc&nbsp;</span>clear</button
+		>
+	{/if}
 </div>
 <div class="sensitivity-readout" aria-live="polite">
 	{#if ctrl.previewing}
