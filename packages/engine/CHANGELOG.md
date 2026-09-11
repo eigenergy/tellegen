@@ -1,5 +1,48 @@
 # @tellegen/engine
 
+## 0.3.0
+
+### Minor Changes
+
+- [#97](https://github.com/eigenergy/tellegen/pull/97) [`5d93591`](https://github.com/eigenergy/tellegen/commit/5d93591d74ecbba1b80fc1e0f9a9fc8e4de4cc31) Thanks [@samtalki](https://github.com/samtalki)! - Save a case with its changes and results as a portable Study. Planning goals are
+  optional. Preserve geographic positions, line paths, drawings, camera settings,
+  and unsolved cases. Keep cumulative demand changes and reset electrical inputs
+  to the base case while retaining history.
+
+  Add searchable equipment selection and bounded capacity or demand planning.
+  Share supported objective expressions, verified candidate results, activity,
+  and explicit proposal approval across browser and native tools. Every attempted
+  solve counts against the stated budget.
+
+  Restore Texas7k through reusable generator-cost preparation, with original cost
+  data and measured fit errors available in Model details. Show every configured
+  demo case, including an explanation when a case is unavailable.
+
+  Add movable, resizable panels with saved layouts. Display geographic data on
+  the map and drawing coordinates on a plain canvas. Include balanced AC power
+  flow with voltage and angle results.
+
+  Introduce `@tellegen/webmcp` at 0.1.0. Agents can list and select cases, query the
+  same saved state displayed on screen, and continue a Study. Combine connection
+  instructions and recorded tool activity in one Agent panel.
+
+- [#113](https://github.com/eigenergy/tellegen/pull/113) [`653bf18`](https://github.com/eigenergy/tellegen/commit/653bf186dbc8528d95633364cc42e2529708542f) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Add multiconductor AC power flow for supported BMOPF networks and typed PowerIO
+  inputs, including explicit neutral conductors and finite-leakage transformers.
+  Inspect terminal voltages, currents, source powers, convergence, and KCL residuals.
+  Save and reopen distribution studies with their input and solution modules.
+
+  Use published PowerIO 0.11.1 dependencies. Portable electrical modules continue
+  to use PowerIO IR generation 2.
+
+  Apply the OpenDSS load-voltage envelope and report voltage validity separately
+  from convergence. Support fixed-tap single-phase autotransformers, including
+  ANSI Type A/B ratios, winding impedance, and excitation shunts.
+
+  Retain electrical results when attaching geography to saved distribution studies.
+  Share cancellable calculations between browser controls and WebMCP, expose
+  terminal results to agent queries, and add compact notifications and
+  privacy-filtered usage events.
+
 ## 0.2.0
 
 ### Minor Changes
