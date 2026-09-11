@@ -10,3 +10,7 @@ Save and reopen distribution studies with their input and solution modules.
 
 Use published PowerIO 0.11.1 dependencies. Portable electrical modules continue
 to use PowerIO IR generation 2.
+
+Apply the OpenDSS load-voltage envelope and report voltage validity separately
+from convergence. Support fixed-tap single-phase autotransformers, including
+ANSI Type A/B ratios, winding impedance, and excitation shunts.
