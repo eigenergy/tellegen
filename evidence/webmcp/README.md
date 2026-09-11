@@ -19,9 +19,9 @@ node evidence/webmcp/run.mjs evidence/webmcp/specs/texas7k.json evidence/webmcp/
 The runner refuses tracked or untracked changes other than earlier generated
 JSON files in `results/`. It records the Tellegen commit and tree, the PowerIO
 commit, the lockfile digest, the invocation spec digest, and the source digest.
-PowerIO v0.11.0 is published: every component crate must resolve to that one
+PowerIO v0.11.1 is published: every component crate must resolve to that one
 registry version with a Cargo.lock checksum, and `powerio-releases.json` maps
-the release tag to its commit (`v0.11.0` is `aa8cec55…`). A candidate run
+the release tag to its commit (`v0.11.1` is `432f795a3cc10ad3ee2ed5041406e562e6eb929b`). A candidate run
 against an unpublished PowerIO revision instead pins one Git revision for all
 six crates in `Cargo.toml` and `Cargo.lock`. The runner
 creates outputs with exclusive writes, so a second run cannot replace evidence
