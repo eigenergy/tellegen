@@ -40,12 +40,16 @@ jobs:
           POWERIO_REF: ${{ inputs.powerio_ref }}
         run: python3 .github/scripts/powerio-pin.py --set "$POWERIO_REF"
       - uses: ./.github/actions/js-setup
-      # Resolving without --locked updates only this disposable runner's lock
-      # for the selected git revision. The next step proves all six PowerIO
-      # components resolved together before any build starts.
-      - name: Resolve and verify the candidate
+      # Manual candidates resolve all six PowerIO components together in a
+      # disposable lockfile. Pull requests verify their committed lockfile.
+      - name: Resolve the selected candidate version
+        if: github.event_name == 'workflow_dispatch'
         run: |
-          cargo fetch
+          cargo update -p powerio -p powerio-core -p powerio-dist \
+            -p powerio-matrix -p powerio-prob -p powerio-tx
+      - name: Fetch and verify the candidate
+        run: |
+          cargo fetch --locked
           python3 .github/scripts/powerio-pin.py
       - name: Clippy (shipping crates, warnings denied)
         run: |
