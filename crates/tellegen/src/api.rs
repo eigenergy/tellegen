@@ -463,6 +463,20 @@ pub(crate) fn solve_test_network_json(
 /// default problem instance for the requested formulation; a stored DC or AC
 /// OPF instance keeps its declared objective and constraint selections.
 pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String, String> {
+    solve_module_json_with_execution(
+        module_json,
+        request_json,
+        &crate::ExecutionOptions::default(),
+    )
+}
+
+/// Solve a stored module with execution choices that do not alter its declaration.
+pub fn solve_module_json_with_execution(
+    module_json: &str,
+    request_json: &str,
+    execution: &crate::ExecutionOptions,
+) -> Result<String, String> {
+    execution.validate()?;
     let module = crate::ir::deserialize_module(module_json)?;
     let req: SolveRequest = if request_json.trim().is_empty() {
         SolveRequest::default()
@@ -473,7 +487,7 @@ pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String
         powerio::PioValue::BalancedNetwork(network) => match req.formulation {
             Problem::DcOpf => {
                 let instance = DcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
-                solve_instance(&instance, &req)?
+                solve_instance_with_execution(&instance, &req, execution, None)?
             }
             #[cfg(feature = "sensitivity")]
             Problem::AcPf => {
@@ -487,7 +501,9 @@ pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String
             }
             _ => solve_network(&network, &req)?,
         },
-        powerio::PioValue::DcOpfInstance(instance) => solve_instance(&instance, &req)?,
+        powerio::PioValue::DcOpfInstance(instance) => {
+            solve_instance_with_execution(&instance, &req, execution, None)?
+        }
         #[cfg(feature = "sensitivity")]
         powerio::PioValue::AcPfInstance(instance) => solve_ac_pf_instance(&instance, &req)?,
         #[cfg(feature = "conic")]
@@ -547,6 +563,17 @@ pub fn solve_instance_cancellable(
     req: &SolveRequest,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<SolveResponse, String> {
+    solve_instance_with_execution(instance, req, &crate::ExecutionOptions::default(), cancel)
+}
+
+/// Solve a DC instance with independent solver and derivative choices and cancellation.
+pub fn solve_instance_with_execution(
+    instance: &DcOpfInstance,
+    req: &SolveRequest,
+    execution: &crate::ExecutionOptions,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<SolveResponse, String> {
+    execution.validate()?;
     if req.formulation != Problem::DcOpf {
         return Err(format!(
             "a dc_opf_instance cannot be solved as {:?}",
@@ -554,7 +581,9 @@ pub fn solve_instance_cancellable(
         ));
     }
     validate_canonical_edits(instance.network(), &req.edits)?;
-    dc_opf_response(DcNetwork::from_instance(instance)?, req, cancel)
+    let mut model = DcNetwork::from_instance(instance)?;
+    model.execution = *execution;
+    dc_opf_response(model, req, cancel)
 }
 
 /// Solve a typed PowerIO AC power flow instance. The instance's PQ, PV, and

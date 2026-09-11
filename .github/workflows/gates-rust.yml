@@ -51,6 +51,11 @@ jobs:
       # tests the feature set the browser ships.
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
+      - name: Check the optional Moreau backends
+        run: |
+          cargo clippy -p tellegen -p tellegen-wasm --all-targets --features moreau,conic -- -D warnings
+          cargo test -p tellegen --features moreau,conic
+          cargo check -p tellegen --no-default-features --features moreau
       - name: Test the wasm adapter as it ships
         run: cargo test -p tellegen-wasm --features conic
 

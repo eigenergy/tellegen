@@ -275,6 +275,26 @@ pub fn solve_module(module_json: &str, request_json: &str) -> Result<String, JsE
     tellegen::solve_module_json(module_json, request_json).map_err(jserr)
 }
 
+/// Solve with explicit DC backend choices outside the portable module.
+#[wasm_bindgen]
+pub fn solve_module_with_execution(
+    module_json: &str,
+    request_json: &str,
+    execution_json: &str,
+) -> Result<String, JsError> {
+    install_panic_hook();
+    let options: tellegen::ExecutionOptions =
+        serde_json::from_str(execution_json).map_err(jserr)?;
+    tellegen::solve_module_json_with_execution(module_json, request_json, &options).map_err(jserr)
+}
+
+/// Available execution choices and the selected-derivative operation policy.
+#[wasm_bindgen]
+pub fn execution_capabilities_json() -> String {
+    serde_json::json!({"moreau": cfg!(feature = "moreau"), "default": tellegen::ExecutionOptions::default(),
+        "moreau_selected": {"columns": ["active_demand", "line_rating"], "weighted": ["weighted_lmp_line_rating"], "other_operations": "tellegen"}}).to_string()
+}
+
 /// The capability matrix as JSON: which `(formulation, operand, parameter)` cells this
 /// build supports, so the UI can populate menus and grey out the rest.
 #[wasm_bindgen]
@@ -373,6 +393,26 @@ impl Study {
         tellegen::Study::new(module_json, problem)
             .map(Study)
             .map_err(jserr)
+    }
+
+    /// Construct with independent solver and derivative choices.
+    #[wasm_bindgen(js_name = withExecution)]
+    pub fn with_execution(
+        module_json: &str,
+        formulation: &str,
+        execution_json: &str,
+    ) -> Result<Study, JsError> {
+        install_panic_hook();
+        let options: tellegen::ExecutionOptions =
+            serde_json::from_str(execution_json).map_err(jserr)?;
+        tellegen::Study::new_with_execution(module_json, parse_problem(formulation)?, options)
+            .map(Study)
+            .map_err(jserr)
+    }
+
+    /// Return the execution policy retained by this live study.
+    pub fn execution_json(&self) -> String {
+        serde_json::to_string(&self.0.execution()).unwrap()
     }
 
     /// Apply `edits_json` (a `NetworkEdit[]`) at the committed point and exact-re-solve,

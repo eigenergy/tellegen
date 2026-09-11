@@ -1,5 +1,5 @@
 // Generated from Rust by study_contract and generate-study-contracts.mjs.
-// Source SHA256: 40ef387f7a0ffc88f403bf96e2fd306b2b9d480b238fcd1014de2dcaaff6753d
+// Source SHA256: a45d5e681df1576c096a011b6517d2c7e85527a6f87b724411263dd9f7dd0009
 
 export type ArtifactKind = "powerio_ir" | "evidence";
 
@@ -71,7 +71,7 @@ export type RowMeta = { "element": ElementId; "index": number; "operand": Operan
 
 export type SearchOptions = { "beam_width": number; "max_iterations": number; "max_solves": number; "min_improvement": number; };
 
-export type SensitivityMatrix = { "cols": Array<ColMeta>; "rows": Array<RowMeta>; "units": string; "values": Array<Array<number>>; };
+export type SensitivityMatrix = { "cols": Array<ColMeta>; "implementation"?: string | null; "rows": Array<RowMeta>; "units": string; "values": Array<Array<number>>; };
 
 export type SolveIteration = { "inf_du": number; "inf_pr": number; "iter": number; "objective": number; };
 

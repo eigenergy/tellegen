@@ -31,7 +31,11 @@ describe("isolated study cancellation", () => {
     });
     const isolatedHost: EngineHost = {
       call: (request) => {
-        if (request.op === "study_new" || request.op === "study_free") {
+        if (request.op === "study_new") {
+          expect(JSON.parse(request.execution!)).toEqual({ dc_solver: "clarabel", dc_derivatives: "moreau_selected" });
+          return Promise.resolve(null);
+        }
+        if (request.op === "study_free") {
           return Promise.resolve(null);
         }
         if (request.op === "study_plan") {
@@ -67,7 +71,10 @@ describe("isolated study cancellation", () => {
       call: sharedCall,
       cancel: sharedCancel,
     };
-    const study = new BrowserStudy(sharedHost, 1, "dcopf", () => isolatedHost);
+    const execution = { dc_derivatives: "moreau_selected" } as const;
+    const study = new BrowserStudy(sharedHost, 1, "dcopf", () => isolatedHost, execution);
+    expect(study.execution).toEqual({ dc_solver: "clarabel", dc_derivatives: "moreau_selected" });
+    expect(Object.isFrozen(study.execution)).toBe(true);
     const controller = new AbortController();
 
     const pending = study.plan(planSpec, controller.signal);

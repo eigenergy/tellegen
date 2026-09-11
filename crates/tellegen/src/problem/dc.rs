@@ -23,6 +23,8 @@ use super::{build_opf, OpfFormulation, OpfProgram, ProgramBuilder};
 #[derive(Clone)]
 #[cfg_attr(not(feature = "sensitivity"), allow(dead_code))]
 pub struct DcOpfSolution {
+    #[cfg(feature = "moreau")]
+    pub(crate) raw: Option<Arc<RawSolution>>,
     pub va: Vec<f64>,
     pub pg: Vec<f64>,
     pub f: Vec<f64>,
@@ -296,6 +298,9 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
         _ => raw.objective,
     };
     DcOpfSolution {
+        #[cfg(feature = "moreau")]
+        raw: (dc.execution.dc_derivatives == crate::DcDerivatives::MoreauSelected)
+            .then(|| Arc::new(raw.clone())),
         va: (0..n).map(|i| x[lay.col_va(i)]).collect(),
         pg: (0..k).map(|j| x[lay.col_pg(j)]).collect(),
         f: (0..m).map(|e| x[lay.col_f(e)]).collect(),
@@ -348,8 +353,266 @@ pub(crate) fn dc_opf_cancellable(
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<DcOpfSolution, String> {
     let prog = build_opf(&Dc::new(), model);
-    let raw = run(&prog, cancel)?;
+    model.execution.validate()?;
+    let raw = match model.execution.dc_solver {
+        crate::DcSolver::Clarabel => run(&prog, cancel)?,
+        crate::DcSolver::Moreau => {
+            #[cfg(feature = "moreau")]
+            {
+                crate::moreau_backend::solve(&prog, cancel)?
+            }
+            #[cfg(not(feature = "moreau"))]
+            {
+                return Err("Moreau requires the `moreau` feature".into());
+            }
+        }
+    };
     Ok(read_dc_solution(model, &raw))
+}
+
+/// Moreau perturbations and readout selectors use the same offsets as DC assembly.
+#[cfg(all(feature = "moreau", feature = "sensitivity"))]
+pub(crate) fn moreau_derivative(
+    dc: &DcNetwork,
+    sol: &DcOpfSolution,
+    operand: crate::Operand,
+    parameter: crate::Parameter,
+    indices: &[usize],
+    mode: crate::Mode,
+    weights: Option<&[(usize, f64)]>,
+) -> Result<Vec<Vec<f64>>, crate::SensError> {
+    use crate::{End, Mode, Operand, Parameter, Power, SensError, VoltageKind};
+    use moreau::{
+        algebra::CscMatrix,
+        solver::{diff, DefaultSettings, DefaultSolver, DiffMethod},
+    };
+    let raw = sol
+        .raw
+        .as_ref()
+        .ok_or_else(|| SensError::Assembly("Moreau derivative state is missing".into()))?;
+    let program = build_opf(&Dc::new(), dc);
+    let lay = OpfLayout::dc(dc);
+    // Fixed-zero shedding contributes no primal freedom. Removing its two bound
+    // rows avoids nonunique shedding duals and its inactive penalty in equilibration.
+    let mut keep_columns = vec![true; lay.nvar()];
+    let mut keep_rows = vec![true; lay.ncon()];
+    for i in 0..dc.n {
+        if dc.shed_cap(i) == 0.0 {
+            keep_columns[lay.col_psh(i)] = false;
+            keep_rows[lay.r_shedub(i)] = false;
+            keep_rows[lay.r_shedlb(i)] = false;
+        }
+    }
+    let index_map = |keep: &[bool]| {
+        let mut index = 0;
+        keep.iter()
+            .map(|&yes| {
+                if yes {
+                    let next = index;
+                    index += 1;
+                    Some(next)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    // Scalar inequality derivatives hold the strictly complementary active set
+    // fixed. Inactive rows cannot affect the local equality-constrained problem.
+    for (row, keep) in keep_rows.iter_mut().enumerate().skip(lay.n_eq) {
+        *keep &= raw.z[row] > 1e-6;
+    }
+    let column_map = index_map(&keep_columns);
+    let row_map = index_map(&keep_rows);
+    let p = crate::moreau_backend::reduced_matrix(&program.p, &column_map, &column_map);
+    let a = crate::moreau_backend::reduced_matrix(&program.a, &row_map, &column_map);
+    let n = p.n;
+    let m = a.m;
+    let q: Vec<_> = program
+        .q
+        .iter()
+        .zip(&keep_columns)
+        .filter_map(|(&v, &keep)| keep.then_some(v))
+        .collect();
+    let b: Vec<_> = program
+        .b
+        .iter()
+        .zip(&keep_rows)
+        .filter_map(|(&v, &keep)| keep.then_some(v))
+        .collect();
+    let x: Vec<_> = raw
+        .x
+        .iter()
+        .zip(&keep_columns)
+        .filter_map(|(&v, &keep)| keep.then_some(v))
+        .collect();
+    let z: Vec<_> = raw
+        .z
+        .iter()
+        .zip(&keep_rows)
+        .filter_map(|(&v, &keep)| keep.then_some(v))
+        .collect();
+    let cones = [moreau::solver::ZeroConeT(m)];
+    let mut slack = b.clone();
+    for (col, value) in x.iter().enumerate() {
+        for pos in a.colptr[col]..a.colptr[col + 1] {
+            slack[a.rowval[pos]] -= a.nzval[pos] * value;
+        }
+    }
+    let mut settings = DefaultSettings {
+        verbose: false,
+        ..DefaultSettings::default()
+    };
+    settings.ipm.presolve_enable = false;
+    let mut derivative = DefaultSolver::new(&p, &q, &a, &b, &cones, settings)
+        .map_err(|e| SensError::Assembly(format!("Moreau derivative setup: {e}")))?;
+    derivative.solution.x = x;
+    derivative.solution.z = z;
+    derivative.solution.s = slack;
+    // Each selector entry is (dual, row, reporting weight).
+    let selectors: Vec<(bool, usize, f64)> = match operand {
+        Operand::Price(Power::Active) => (0..dc.n).map(|i| (true, lay.r_pb(i), -1.0)).collect(),
+        Operand::Dispatch(Power::Active) => {
+            (0..dc.k).map(|i| (false, lay.col_pg(i), 1.0)).collect()
+        }
+        Operand::Flow {
+            power: Power::Active,
+            end,
+        } => (0..dc.m)
+            .map(|i| {
+                (
+                    false,
+                    lay.col_f(i),
+                    if end == End::From { 1.0 } else { -1.0 },
+                )
+            })
+            .collect(),
+        Operand::Voltage(VoltageKind::Angle) => {
+            (0..dc.n).map(|i| (false, lay.col_va(i), 1.0)).collect()
+        }
+        _ => {
+            return Err(SensError::Unsupported {
+                formulation: "dc",
+                operand,
+                parameter,
+            })
+        }
+    };
+    let selectors: Vec<_> = selectors
+        .into_iter()
+        .map(|(dual, row, weight)| {
+            let index = if dual { row_map[row] } else { column_map[row] };
+            index.map(|index| (dual, index, weight)).ok_or_else(|| {
+                SensError::Assembly("operand refers to an eliminated variable".into())
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let columns: Vec<Vec<(usize, f64)>> = indices
+        .iter()
+        .map(|&i| match parameter {
+            Parameter::Demand(Power::Active) => {
+                let mut entries = vec![(lay.r_pb(i), 1.0)];
+                if dc.allow_shed && dc.demand[i] > 0.0 {
+                    entries.push((lay.r_shedub(i), 1.0));
+                }
+                entries
+            }
+            Parameter::LineLimit if dc.thermal_limit_active[i] => {
+                vec![(lay.r_lineub(i), 1.0), (lay.r_linelb(i), 1.0)]
+            }
+            _ => Vec::new(),
+        })
+        .collect();
+    let columns: Vec<Vec<_>> = columns
+        .into_iter()
+        .map(|entries| {
+            entries
+                .into_iter()
+                .filter_map(|(row, value)| row_map[row].map(|row| (row, value)))
+                .collect()
+        })
+        .collect();
+    let direction = if weights.is_some() {
+        Mode::Adjoint
+    } else {
+        mode
+    };
+    let output_rows = if weights.is_some() {
+        1
+    } else {
+        selectors.len()
+    };
+    let mut values = vec![vec![0.0; indices.len()]; output_rows];
+    if indices.is_empty() {
+        return Ok(values);
+    }
+    match direction {
+        Mode::Forward => {
+            let zero_p = CscMatrix::zeros((n, n));
+            let zero_a = CscMatrix::zeros((m, n));
+            let zero_q = vec![0.0; n];
+            for (col, entries) in columns.iter().enumerate() {
+                let mut db = vec![0.0; m];
+                for &(row, value) in entries {
+                    db[row] += value;
+                }
+                let (dx, dz, _) = derivative
+                    .forward_batch(&zero_p, &zero_q, &zero_a, &db, DiffMethod::Exact, 0.0)
+                    .map_err(|e| SensError::Solve(e.to_string()))?;
+                for (out, &(dual, row, weight)) in selectors.iter().enumerate() {
+                    values[out][col] = weight * if dual { dz[row] } else { dx[row] };
+                }
+            }
+        }
+        Mode::Adjoint => {
+            for (out, row_values) in values.iter_mut().enumerate() {
+                let mut dx = vec![0.0; n];
+                let mut dz = vec![0.0; m];
+                let unit_weight = [(out, 1.0)];
+                for &(element, weight) in weights.unwrap_or(&unit_weight) {
+                    let (dual, row, sign) = selectors[element];
+                    if dual {
+                        dz[row] += weight * sign;
+                    } else {
+                        dx[row] += weight * sign;
+                    }
+                }
+                let result = diff::differentiate_adjoint(
+                    &p,
+                    &q,
+                    &a,
+                    &b,
+                    &cones,
+                    &derivative.solution.x,
+                    &derivative.solution.s,
+                    &derivative.solution.z,
+                    1.0,
+                    &dx,
+                    &dz,
+                    &vec![0.0; m],
+                    DiffMethod::Exact,
+                    0.0,
+                );
+                for (col, entries) in columns.iter().enumerate() {
+                    row_values[col] = entries
+                        .iter()
+                        .map(|&(row, value)| value * result.db[row])
+                        .sum();
+                }
+            }
+        }
+        Mode::Auto => {
+            return Err(SensError::InvalidInput(
+                "derivative direction must be resolved".into(),
+            ))
+        }
+    }
+    if values.iter().flatten().any(|v| !v.is_finite()) {
+        return Err(SensError::Solve(
+            "Moreau returned a non-finite derivative".into(),
+        ));
+    }
+    Ok(values)
 }
 
 #[cfg(test)]

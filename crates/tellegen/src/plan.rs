@@ -260,7 +260,19 @@ pub fn plan_capacity_cancellable(
     spec: &CapacityPlanSpec,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<CapacityPlanExecution, String> {
-    let model = DcNetwork::from_instance(&instance)?;
+    plan_capacity_with_execution(instance, spec, &crate::ExecutionOptions::default(), cancel)
+}
+
+/// Plan capacity using explicit DC execution choices for every trial and derivative.
+pub fn plan_capacity_with_execution(
+    instance: Arc<DcOpfInstance>,
+    spec: &CapacityPlanSpec,
+    execution: &crate::ExecutionOptions,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<CapacityPlanExecution, String> {
+    execution.validate()?;
+    let mut model = DcNetwork::from_instance(&instance)?;
+    model.execution = *execution;
     let planned = plan_capacity_impl(&model, spec, cancel, None, |_| {})?;
     let mut amended_network = instance.network().clone();
     for change in &planned.outcome.proposal {
@@ -655,6 +667,23 @@ mod tests {
         // shedding.
         dc.fmax[0] = 0.36;
         dc
+    }
+
+    #[cfg(feature = "moreau")]
+    #[test]
+    fn moreau_planning_retains_execution_and_matches_specialized_trials() {
+        let mut dc = congested_case3();
+        dc.allow_shed = false;
+        let expected = plan_capacity_model(&dc, &plan_spec()).unwrap();
+        dc.execution = crate::ExecutionOptions {
+            dc_solver: crate::DcSolver::Moreau,
+            dc_derivatives: crate::DcDerivatives::MoreauSelected,
+        };
+        let actual = plan_capacity_impl(&dc, &plan_spec(), None, None, |_| {}).unwrap();
+        assert_eq!(actual.model.execution, dc.execution);
+        assert!((actual.outcome.final_phi - expected.final_phi).abs() < 1e-3);
+        assert_eq!(actual.outcome.proposal.len(), expected.proposal.len());
+        assert!(!actual.outcome.iterations.is_empty());
     }
 
     fn plan_spec() -> CapacityPlanSpec {

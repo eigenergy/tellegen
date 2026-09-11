@@ -146,6 +146,7 @@ export interface ColMeta {
 }
 
 export interface SensitivityMatrix {
+\timplementation?: string;
 \tvalues: number[][];
 \trows: RowMeta[];
 \tcols: ColMeta[];

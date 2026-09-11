@@ -50,3 +50,27 @@ jobs:
       # tellegen-server serves the files.
       - if: ${{ !cancelled() }}
         run: npm audit --audit-level=high
+
+  moreau-browser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/js-setup
+      - run: npm --workspace @tellegen/engine run wasm:moreau
+      - run: npm run check:engine && npm run build:engine
+      - run: npm --workspace @tellegen/example-browser-minimal run build
+      - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
+      - name: Compare backends in browser workers
+        run: |
+          npm --workspace @tellegen/example-browser-minimal run dev -- --host 127.0.0.1 --port 5175 > /tmp/moreau-vite.log 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5175/moreau.html > /dev/null; then break; fi
+            sleep 1
+          done
+          node scripts/moreau-browser-smoke.mjs

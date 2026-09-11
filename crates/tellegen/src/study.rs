@@ -291,15 +291,20 @@ fn solve_state(
     input: &StudyInput,
     net: &BalancedNetwork,
     req: &SolveRequest,
+    execution: crate::ExecutionOptions,
 ) -> Result<Box<dyn SolvedState>, String> {
     match (input, req.formulation) {
         (StudyInput::BalancedNetwork, Problem::DcOpf) => {
             let instance = DcOpfInstance::from_network(net.clone()).map_err(|e| e.to_string())?;
-            let (net, sol) = dc_opf_solved(DcNetwork::from_instance(&instance)?, req, None)?;
+            let mut dc = DcNetwork::from_instance(&instance)?;
+            dc.execution = execution;
+            let (net, sol) = dc_opf_solved(dc, req, None)?;
             Ok(Box::new(DcState { net, sol }))
         }
         (StudyInput::DcOpf(instance), Problem::DcOpf) => {
-            let (net, sol) = dc_opf_solved(DcNetwork::from_instance(instance)?, req, None)?;
+            let mut dc = DcNetwork::from_instance(instance)?;
+            dc.execution = execution;
+            let (net, sol) = dc_opf_solved(dc, req, None)?;
             Ok(Box::new(DcState { net, sol }))
         }
         (StudyInput::BalancedNetwork, Problem::AcPf) => {
@@ -356,6 +361,7 @@ impl StudyInput {
 /// away. Every commit re-solves from a fresh clone of that base, so the operating point
 /// is always `base + the whole edit log` — never an accumulated drift.
 pub struct Study {
+    execution: crate::ExecutionOptions,
     formulation: Problem,
     input: StudyInput,
     /// The parsed base network: the source of truth re-solved (cloned) at every commit.
@@ -380,8 +386,18 @@ impl Study {
     /// Read a retained PowerIO module and solve its declared network or problem
     /// instance. Bare model JSON is not a Study input.
     pub fn new(module_json: &str, formulation: Problem) -> Result<Self, String> {
+        Self::new_with_execution(module_json, formulation, crate::ExecutionOptions::default())
+    }
+
+    /// Construct a study with execution choices retained across commits, forks, and planning.
+    pub fn new_with_execution(
+        module_json: &str,
+        formulation: Problem,
+        execution: crate::ExecutionOptions,
+    ) -> Result<Self, String> {
+        execution.validate()?;
         let module = crate::ir::deserialize_module(module_json).map_err(|e| e.to_string())?;
-        Self::from_dynamic_module(module, formulation)
+        Self::from_dynamic_module(module, formulation, execution)
     }
 
     /// Build a retained module from a network for crate tests. Public callers
@@ -391,7 +407,7 @@ impl Study {
         let producer = powerio::Producer::new("tellegen", env!("CARGO_PKG_VERSION"))
             .map_err(|e| e.to_string())?;
         let module = PioModule::new(PioValue::BalancedNetwork(net.clone())).with_producer(producer);
-        Self::from_dynamic_module(module, formulation)
+        Self::from_dynamic_module(module, formulation, crate::ExecutionOptions::default())
     }
 
     /// Build from a typed PowerIO module, retaining all module records as the
@@ -403,12 +419,19 @@ impl Study {
         let net = module.value().clone();
         let dynamic = module.map_value(PioValue::BalancedNetwork);
         let module_json = crate::ir::serialize_module(&dynamic).map_err(|e| e.to_string())?;
-        Self::from_network_and_module(&net, StudyInput::BalancedNetwork, formulation, module_json)
+        Self::from_network_and_module(
+            &net,
+            StudyInput::BalancedNetwork,
+            formulation,
+            module_json,
+            crate::ExecutionOptions::default(),
+        )
     }
 
     fn from_dynamic_module(
         module: PioModule<PioValue>,
         formulation: Problem,
+        execution: crate::ExecutionOptions,
     ) -> Result<Self, String> {
         let module_json = crate::ir::serialize_module(&module).map_err(|e| e.to_string())?;
         match module.into_value() {
@@ -417,6 +440,7 @@ impl Study {
                 StudyInput::BalancedNetwork,
                 formulation,
                 module_json,
+                execution,
             ),
             PioValue::DcOpfInstance(instance) => {
                 let net = instance.network().clone();
@@ -425,6 +449,7 @@ impl Study {
                     StudyInput::DcOpf(instance),
                     formulation,
                     module_json,
+                    execution,
                 )
             }
             PioValue::AcPfInstance(instance) => {
@@ -434,6 +459,7 @@ impl Study {
                     StudyInput::AcPf(instance),
                     formulation,
                     module_json,
+                    execution,
                 )
             }
             #[cfg(feature = "conic")]
@@ -444,6 +470,7 @@ impl Study {
                     StudyInput::AcOpf(instance),
                     formulation,
                     module_json,
+                    execution,
                 )
             }
             other => Err(format!(
@@ -458,6 +485,7 @@ impl Study {
         input: StudyInput,
         formulation: Problem,
         base_module_json: String,
+        execution: crate::ExecutionOptions,
     ) -> Result<Self, String> {
         // A base study must be safe before the first edit. Otherwise an empty
         // study could solve successfully and only discover ambiguous uid lookup
@@ -468,9 +496,10 @@ impl Study {
             edits: Edits::default(),
             ..Default::default()
         };
-        let solved = solve_state(&input, net, &req)?;
+        let solved = solve_state(&input, net, &req, execution)?;
         let last = solved.assemble(&req)?;
         Ok(Study {
+            execution,
             formulation,
             input,
             base: net.clone(),
@@ -636,6 +665,7 @@ impl Study {
     /// Fork the exact retained solver state without performing another solve.
     pub fn fork(&self) -> Self {
         Self {
+            execution: self.execution,
             formulation: self.formulation,
             input: self.input.clone(),
             base: self.base.clone(),
@@ -887,7 +917,7 @@ impl Study {
         };
         // Re-solve from a fresh clone of the base (the source of truth), then assemble the
         // response — including the requested sensitivity cells — from the committed state.
-        let solved = solve_state(&self.input, &self.base, &req)?;
+        let solved = solve_state(&self.input, &self.base, &req, self.execution)?;
         let resp = solved.assemble(&req)?;
         Ok((solved, resp))
     }
@@ -1029,6 +1059,11 @@ impl Study {
             ));
         };
         crate::plan::plan_capacity_from_exact(dc, solution, spec)
+    }
+
+    /// Execution policy for this study; portable case exports omit this policy.
+    pub fn execution(&self) -> crate::ExecutionOptions {
+        self.execution
     }
 
     /// The number of committed edit batches. A study with no edits has zero.

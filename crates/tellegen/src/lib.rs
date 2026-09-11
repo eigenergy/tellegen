@@ -22,6 +22,13 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 mod api;
+mod execution;
+#[cfg(feature = "moreau")]
+mod moreau_backend;
+pub use api::{solve_instance_with_execution, solve_module_json_with_execution};
+pub use execution::{DcDerivatives, DcSolver, ExecutionOptions};
+#[cfg(feature = "sensitivity")]
+pub use plan::plan_capacity_with_execution;
 #[cfg(feature = "sensitivity")]
 pub mod document;
 mod emit;

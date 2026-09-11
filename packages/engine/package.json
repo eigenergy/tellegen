@@ -15,7 +15,8 @@
   "homepage": "https://eigenergy.github.io/tellegen/",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "third-party"
   ],
   "publishConfig": {
     "access": "public"
@@ -35,6 +36,7 @@
     "contracts": "node scripts/generate-contracts.mjs",
     "contracts:check": "node scripts/generate-contracts.mjs --check",
     "build": "npm run contracts:check && tsc -p tsconfig.json && node scripts/copy-wasm-assets.mjs",
+    "wasm:moreau": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --features conic,moreau",
     "wasm": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --features conic",
     "check": "npm run contracts:check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm test",
     "test": "vitest run",

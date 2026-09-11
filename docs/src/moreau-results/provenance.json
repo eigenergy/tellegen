@@ -1,0 +1,67 @@
+{
+  "date": "2026-09-06",
+  "cpu": "AMD Ryzen 7 PRO 4750U, 8 cores, 16 logical CPUs",
+  "os": "Linux x86_64, 7.1.12-100.fc43.x86_64",
+  "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+  "node": "22.22.2",
+  "wasm_pack": "0.15.0",
+  "native_profile": {
+    "opt_level": "s",
+    "lto": true
+  },
+  "wasm_profile": "wasm-pack release, default wasm-opt optimization",
+  "warmups_per_operation": 3,
+  "timed_samples_per_operation": 10,
+  "samples_order": "sorted ascending",
+  "tellegen_base": "ec74c1004c6a37bc77c872aed2193858a043d054",
+  "moreau_revision": "6f2949933cdab7d8444b64d1e0917e64d5e3e73b",
+  "implementation_sources_sha256": {
+    "Cargo.lock": "681be91821df0eaee688222b4e270a3927eb317f33ff51dc80390e18aefc31dc",
+    "crates/tellegen/src/moreau_backend.rs": "a520a63643b734f3f5532fcce21d627a55a973b5c77ac6c938ff4943238e9231",
+    "crates/tellegen/src/execution.rs": "11df88f4b87cdf102869e1cdffe849addb766cdbf2fe9275560aa15eb11e09f2",
+    "crates/tellegen/src/problem/dc.rs": "805e584d35ace5d622d4022a25a6f4f355a00111267b24c069d7764de707d55d",
+    "crates/tellegen/src/sens/dc.rs": "c142dc4e448f028039ffce36ccf82e5e4cae092239cd169e1be295be46377e79",
+    "crates/tellegen/src/sens/contract.rs": "93000a8cc96b66c8c4e01b7abc9e524be5ce7829ed3f8d3d4e798a4f2840c955",
+    "crates/tellegen/src/study.rs": "4fce343d5b6b940cbe0105884ed23ff044b0b44b873cd3ea77869c6479792eec",
+    "crates/tellegen-wasm/src/lib.rs": "a5f866215344710a9d82793b6d56ddc5f0645c8476fff921bbfa050b5cda8ee7",
+    "packages/engine/src/index.ts": "3b14a407f9e222a72ac25d255a330542af6d190f7188362ce2931bf446c80f07",
+    "packages/engine/src/protocol.ts": "b2bb452335f2bb4952f449ece99251f012917228364d4ab3d9f7bf4356601085",
+    "examples/browser-minimal/src/moreau.ts": "4c86fb0afebd6cfc799139fec65d9ecf2628ce784b7f16909b7ffd794ea71269",
+    "scripts/moreau-browser-smoke.mjs": "a37cdb12ed848b28168e65c2006a3a5d97ef50d0780d1c878e408baf2cb5168a"
+  },
+  "cases": {
+    "congested_case3": {
+      "source": "crates/tellegen/src/model/cases.rs",
+      "source_sha256": "0716346fc32f4de6b4a79ad4fcd07bfa34a002b980e47a19b2677462ae0202f7",
+      "adjustments": "allow_shed=false; fmax[0]=0.36 per unit"
+    },
+    "case14": {
+      "source": "examples/browser-minimal/src/case14.ts",
+      "source_sha256": "cd4a37eeba7c08ee314633443cfed8ffda60ad0fb7ab5934c24aa72860aa1bad"
+    },
+    "case200": {
+      "source": "https://github.com/power-grid-lib/pglib-opf/blob/dc6be4b2f85ca0e776952ec22cbd4c22396ea5a3/pglib_opf_case200_activ.m",
+      "sha256": "676e6f54a3b6726b199b531e7758ad8bf75ba2b076ea3fee86dc3f5cf5846f6b",
+      "native_adjustments": "allow_shed=false"
+    }
+  },
+  "wasm": {
+    "default": {
+      "bytes": 9243630,
+      "gzip_bytes": 3122846,
+      "sha256": "928b21ad379348a289c1d70142065e93838a395dd0f02fddb912438255c39e8f"
+    },
+    "moreau": {
+      "bytes": 9534154,
+      "gzip_bytes": 3239751,
+      "sha256": "73344626397a0f4ab4827693ef1c3aad5c8e805e07c8dc33140628410903350d"
+    }
+  },
+  "limitations": [
+    "Single-host exploratory measurements with fixed backend order; no concurrent task builds during final samples.",
+    "Browser worker initialization includes parsing and the initial solve; HTTP and browser compilation caches may be warm.",
+    "JIT, allocator, and CPU frequency effects remain; these measurements do not justify default changes.",
+    "Browser planning has a two-solve budget and records a single elapsed time, not ten samples.",
+    "Derivatives include setup and conversion; numerical factorization reuse is not implemented by the Moreau adapter."
+  ]
+}
