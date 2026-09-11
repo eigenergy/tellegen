@@ -16,6 +16,7 @@ struct StudyContract {
 fn main() {
     let sources = [
         include_str!("../src/document.rs"),
+        include_str!("../src/preparation.rs"),
         include_str!("../src/objective.rs"),
         include_str!("../src/exploration.rs"),
         include_str!("../src/study_ops.rs"),

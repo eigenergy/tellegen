@@ -6,7 +6,6 @@ tools exposed by this browser tab. A regular browser without WebMCP still
 supports manual interaction. The first-visit introduction links to the
 application changelog.
 
-
 Tellegen exposes the solved case in the current browser tab through structured
 tools. They read and update the state shown in the interface and run the same
 WebAssembly solver.
@@ -18,7 +17,9 @@ tools.
 
 | Tool                    | Behavior                                                                                                                             |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `inspect_case`          | Read the active case, formulation, solve summary, edit counts, case ID, and revision.                                                |
+| `list_cases`            | List configured and imported cases, availability, and stable case IDs.                                                                    |
+| `select_case`           | Switch the displayed case without deleting saved Studies or applying proposals.                                                      |
+| `inspect_case`          | Read the displayed case or saved state, formulation, solve summary, IDs, units, and revision.                                        |
 | `query_network`         | Return a bounded set of buses or branches by stable identity or solved metric.                                                       |
 | `analyze_sensitivity`   | Compute an LMP sensitivity column for the current DC OPF solution.                                                                   |
 | `focus_network`         | Select a bus or branch in the visible interface.                                                                                     |
@@ -28,8 +29,11 @@ tools.
 | `propose_capacity_plan` | Use implicit derivatives to choose bounded capacity increase trials, verify them with exact solves, and stage an unapplied proposal. |
 | `apply_capacity_plan`   | Apply an approved proposal after checking its session, case, and revision.                                                           |
 
-The general OPF tools register for the page lifecycle. `inspect_case` reports
-when no solvable case is active; the other general tools require one.
+The general tools register for the page lifecycle. `list_cases` and `select_case`
+also cover local files and distribution cases. Distribution queries return connected
+load and equipment data; they do not claim computed LMPs or flows. Inspection and
+queries use the saved state when one is displayed. Live edit tools require
+returning to the live case through `select_case`.
 `propose_capacity_plan` registers when the active formulation supports it.
 `apply_capacity_plan` registers only while a staged proposal matches the current
 state.

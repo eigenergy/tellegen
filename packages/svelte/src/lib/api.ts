@@ -32,6 +32,7 @@ export interface TellegenApiClient {
 	getNetwork(caseId: string): Promise<Network>;
 	getCaseModuleJson(caseId: string, signal?: AbortSignal): Promise<string>;
 	getSolution(caseId: string): Promise<Solution>;
+    getSavedCase?(caseId: string): Promise<{base_input:string;input:string;solution:string;view:import('@tellegen/engine').StudyView;display_solution:Solution}>;
 	getSensitivity(
 		caseId: string,
 		bus: number,
@@ -159,6 +160,7 @@ export function createApiClient(options: TellegenApiClientOptions = {}): Tellege
 			const res = await checkedFetch(fetchImpl, url, signal);
 			return res.text();
 		},
+        getSavedCase: (caseId) => getJson(fetchImpl, apiPath(apiBase, `/cases/${caseId}/snapshot`)),
 		getSolution: (caseId) =>
 			getJson<Solution>(fetchImpl, apiPath(apiBase, `/cases/${caseId}/solution`)),
 		getSensitivity(caseId, bus, deltas = {}, signal) {

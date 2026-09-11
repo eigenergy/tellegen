@@ -8,19 +8,27 @@
 		isPhaseTerminal,
 		phaseColor
 	} from '../multiconductor.js';
-	import { formatPowerIoDiagnostic, type DistAttachmentKind } from '@tellegen/engine';
+	import { getPanelLayout } from '../panels.svelte.js';
+	import { getNoticeCenter } from '../notices.svelte.js';
+	import { type DistAttachmentKind } from '@tellegen/engine';
 
 	const app = getAppState();
 	const ctrl = getController();
+	const notices = getNoticeCenter();
+	const panels = getPanelLayout();
+	function openResults() {
+		const panel = panels.panels.find((p) => p.id === 'studies');
+		if (panel) {
+			const network = panels.panels.find((p) => p.id === 'network');
+			if (network) panels.close(network);
+			panel.setOpen(true);
+			panels.activate(panel);
+			if (panels.compact) panels.drawer = panel.id;
+		}
+	}
 
 	const NEUTRAL_RGBA = [120, 114, 102, 255] as const;
-	const ATTACHMENT_LEGEND: DistAttachmentKind[] = [
-		'source',
-		'generator',
-		'ibr',
-		'load',
-		'shunt'
-	];
+	const ATTACHMENT_LEGEND: DistAttachmentKind[] = ['source', 'generator', 'ibr', 'load', 'shunt'];
 
 	function terminalColor(t: string): string {
 		return rgbaCss(isPhaseTerminal(t) ? phaseColor(t) : [...NEUTRAL_RGBA]);
@@ -32,60 +40,76 @@
 	{@const s = mc.summary}
 	<h2>{mc.label} <span class="region mono">via {mc.fileName}</span></h2>
 	{#if s}
-		<p class="tag mono">multiconductor &#8901; viewing only</p>
-		<dl class="mono">
-			<div>
-				<dt>buses</dt>
-				<dd>{s.n_bus}</dd>
-			</div>
-			<div>
-				<dt>lines / switches / xfmrs</dt>
-				<dd>{s.n_line} / {s.n_switch} / {s.n_transformer}</dd>
-			</div>
-			<div>
-				<dt>load</dt>
-				<dd>{fmt.format(s.load_kw)} kW</dd>
-			</div>
-			<div>
-				<dt>gen capacity</dt>
-				<dd>{fmt.format(s.gen_kw)} kW</dd>
-			</div>
-			<div>
-				<dt>sources / loads / gens</dt>
-				<dd>{s.n_source} / {s.n_load} / {s.n_generator}</dd>
-			</div>
-			{#if s.n_ibr > 0 || s.n_shunt > 0 || (s.n_capacitor ?? 0) > 0}
+		<p class="tag mono">Multiconductor</p>
+		<details class="case-details">
+			<summary>{s.n_bus} buses, {s.n_edge} {s.n_edge === 1 ? 'branch' : 'branches'}</summary>
+			<dl class="mono">
 				<div>
-					<dt>IBRs / shunts / caps</dt>
-					<dd>{s.n_ibr} / {s.n_shunt} / {s.n_capacitor ?? 0}</dd>
+					<dt>buses</dt>
+					<dd>{s.n_bus}</dd>
 				</div>
-			{/if}
-		</dl>
-
-		{#if s.diagnostics.length > 0}
-			<ul class="warnings mono">
-				{#each s.diagnostics.slice(0, 4) as diagnostic, i (i)}
-					<li>{formatPowerIoDiagnostic(diagnostic)}</li>
-				{/each}
-				{#if s.diagnostics.length > 4}
-					<li>+{s.diagnostics.length - 4} more</li>
+				<div>
+					<dt>Lines / switches / transformers</dt>
+					<dd>{s.n_line} / {s.n_switch} / {s.n_transformer}</dd>
+				</div>
+				<div>
+					<dt>load</dt>
+					<dd>{fmt.format(s.load_kw)} kW</dd>
+				</div>
+				<div>
+					<dt>Generation capacity</dt>
+					<dd>{fmt.format(s.gen_kw)} kW</dd>
+				</div>
+				<div>
+					<dt>sources / loads / gens</dt>
+					<dd>{s.n_source} / {s.n_load} / {s.n_generator}</dd>
+				</div>
+				{#if s.n_ibr > 0 || s.n_shunt > 0 || (s.n_capacitor ?? 0) > 0}
+					<div>
+						<dt>IBRs / shunts / caps</dt>
+						<dd>{s.n_ibr} / {s.n_shunt} / {s.n_capacitor ?? 0}</dd>
+					</div>
 				{/if}
-			</ul>
-		{/if}
+			</dl>
+		</details>
 
-		{#if !mc.placed}
-			<p class="footnote mono">
-				{s.coords_kind === 'planar'
-					? 'coordinates are diagram-only: click the map to place the layout'
-					: 'no coordinates in this file: click the map to place the layout'}
-			</p>
-		{:else if mc.coordsKind === 'geographic'}
-			<p class="footnote mono">coordinates: geographic, from the case file</p>
-		{:else if mc.coordsKind === 'planar'}
-			<p class="footnote mono">coordinates: diagram layout fit where you placed it</p>
-		{:else}
-			<p class="footnote mono">coordinates: synthetic topology layout centered where you placed it</p>
-		{/if}
+		<p class="footnote mono">
+			{mc.coordsKind === 'geographic'
+				? 'Geographic coordinates'
+				: mc.coordsKind === 'planar'
+					? 'Drawing coordinates'
+					: 'Generated diagram'}
+		</p>
+		<div class="calculation-actions">
+			{#if mc.solving}
+				<span role="status">Calculating...</span><button onclick={() => mc.solveAbort?.abort()}
+					>Cancel</button
+				>
+			{:else}
+				<button
+					disabled={!mc.mcPfSupported}
+					onclick={() => {
+						void ctrl
+							.solveMultiCase(mc)
+							.then(openResults)
+							.catch(() => {});
+					}}>Solve AC power flow</button
+				>
+				{#if !mc.mcPfSupported}
+					<button
+						class="quiet"
+						onclick={() =>
+							notices.push({
+								kind: 'warning',
+								title: 'AC power flow unavailable',
+								details: mc.mcPfReason ?? 'This case cannot run AC power flow in this browser'
+							})}>Why unavailable</button
+					>
+				{/if}
+			{/if}
+		</div>
+		{#if mc.result}<p class="footnote">Converged, {mc.result.iterations} iterations</p>
+			<button class="reset mono" onclick={openResults}>View results in Studies</button>{/if}
 	{/if}
 
 	{#if mc.selectedBus}
@@ -120,12 +144,13 @@
 		<hr />
 		<h3 class="mono">
 			<i class="swatch" style={`--sc:${rgbaCss([...edgeColor(e.kind, e.closed)])}`}></i>
-			{e.kind} {e.from}&#8201;&ndash;&#8201;{e.to}
+			{e.kind}
+			{e.from}&#8201;&ndash;&#8201;{e.to}
 		</h3>
 		<dl class="mono">
 			<div>
 				<dt>phases</dt>
-				<dd>{e.n_phases}&#966; &#8901; {e.conductors.length} conductors</dd>
+				<dd>{e.n_phases}&#966; , {e.conductors.length} conductors</dd>
 			</div>
 			{#if e.kind === 'switch'}
 				<div>
@@ -156,22 +181,53 @@
 		</span>
 		<span class="legend-row">
 			{#each ATTACHMENT_LEGEND as kind (kind)}
-				<i class="swatch" style={`--sc:${rgbaCss([...attachmentColor(kind)])}`}></i>{attachmentGlyph(
-					kind
-				)}
+				<i class="swatch" style={`--sc:${rgbaCss([...attachmentColor(kind)])}`}
+				></i>{attachmentGlyph(kind)}
 			{/each}
 		</span>
 	</div>
 
-	{#if !mc.placed}
-		<button class="reset mono" onclick={() => ctrl.moveMultiCase(mc)}>place on map</button>
-	{:else}
-		<button class="reset mono" onclick={() => ctrl.moveMultiCase(mc)}>move layout</button>
-	{/if}
+	<button class="reset mono" onclick={() => app.requestFrame(mc.id)}>Fit case</button>
 	<button class="reset mono" onclick={() => ctrl.removeMultiCase(mc)}>remove</button>
 {/if}
 
 <style>
+	.case-details {
+		margin: 10px 0;
+		font-size: 12px;
+	}
+	.case-details summary {
+		cursor: pointer;
+		color: var(--text-secondary);
+	}
+	.case-details dl {
+		margin-top: 8px;
+	}
+	.calculation-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		align-items: center;
+		margin: 14px 0;
+	}
+	.calculation-actions button {
+		font: inherit;
+		padding: 7px 10px;
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		background: var(--ink);
+		color: var(--paper);
+		cursor: pointer;
+	}
+	.calculation-actions button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.calculation-actions button.quiet {
+		background: transparent;
+		color: var(--ink);
+	}
+
 	h2 {
 		margin: 0 0 8px;
 		font-size: 16px;
@@ -314,15 +370,6 @@
 		font-size: 10px;
 		color: var(--text-tertiary);
 		letter-spacing: 0;
-	}
-
-	.warnings {
-		margin: 8px 0 0;
-		padding: 0;
-		list-style: none;
-		font-size: 10.5px;
-		line-height: 1.5;
-		color: var(--text-accent);
 	}
 
 	hr {

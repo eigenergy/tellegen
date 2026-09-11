@@ -35,7 +35,7 @@ export default defineConfig({
 			allow: [searchForWorkspaceRoot(configDir)]
 		},
 		proxy: {
-			'/api': 'http://localhost:8000'
+			'/api': process.env.TELLEGEN_API_ORIGIN ?? 'http://localhost:8000'
 		}
 	}
 });

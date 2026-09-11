@@ -330,9 +330,9 @@ jobs:
               sleep 10
               continue
             }
-            # Gate on liveness (status ok with at least one case), not a hardcoded
-            # case set, so adding/removing a case never breaks the deploy.
-            if jq -e '.status == "ok" and (.cases | type == "array" and length > 0)' \
+            # Promotion requires every configured public demo to load and solve.
+            if jq -e '.status == "ok" and (.unavailable == []) and
+              (.cases | sort == ["case200", "case500", "case7000", "cats"])' \
               <<< "$health" >/dev/null; then
               exit 0
             fi

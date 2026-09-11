@@ -1,5 +1,7 @@
 import {
 	IndexedDbStudyStore,
+	replayMcStudy,
+	type McStudySnapshot,
 	StudyDocumentController,
 	type CreateStudy,
 	type StudyBundle,
@@ -12,26 +14,35 @@ import {
 import { capacityGoal, capacityOutcome, type CapacityStudyBinding } from './capacity-compat.js';
 import type { CapacityPlanSpecJson } from '@tellegen/svelte';
 import type { Controller } from '@tellegen/svelte';
+import { McStudyStore } from './mc-study-store.js';
 import { caseRevision } from '../webmcp/tellegen-adapter.js';
+import { trackUsage, type EventData } from '../analytics/client.js';
 
 type CaseEvidenceContext = {
 	studyId: string;
 	revision: number;
 	state: string;
-	goal: string;
+	goal: string | null;
 	caseId: string;
 	caseRevision: string;
 };
 
-export type GoalDraft = Omit<CreateStudy, 'input' | 'base_input' | 'id'>;
+export type GoalDraft = Omit<
+	CreateStudy,
+	'input' | 'base_input' | 'id' | 'solution' | 'view' | 'display'
+>;
 
 /** One workspace session shared by browser controls and WebMCP. */
 export class StudyWorkspace {
 	bundle = $state.raw<StudyBundle | null>(null);
 	comparison = $state.raw<Comparison | null>(null);
 	saved = $state.raw<Array<{ id: string; title: string; revision: number }>>([]);
+	mcSaved = $state.raw<Array<{ id: string; title: string }>>([]);
+	#mcStore = new McStudyStore();
 	busy = $state(false);
 	error = $state<string | null>(null);
+	network = $state.raw<Network | null>(null);
+	#baseNetwork: Network | null = null;
 	#controller: StudyDocumentController | null = null;
 	#store: IndexedDbStudyStore | null = null;
 	#cancel: AbortController | null = null;
@@ -51,8 +62,76 @@ export class StudyWorkspace {
 		return d?.active_goal ? d.goals[d.active_goal] : null;
 	}
 
+	get activeMcDocument(): McStudySnapshot | null {
+		return this.grid.app.activeMulti?.mcSnapshot ?? null;
+	}
 	async refreshSaved() {
-		this.saved = await this.store.list();
+		const [saved, mcSaved] = await Promise.all([this.store.list(), this.#mcStore.list()]);
+		this.saved = saved;
+		this.mcSaved = mcSaved.map(({ id, title }) => ({ id, title }));
+	}
+	async saveMulti() {
+		return this.#run(
+			async () => {
+				const c = this.grid.app.activeMulti;
+				if (!c?.mcSnapshot || c.solving)
+					throw new Error('Run AC power flow before saving its result');
+				const snapshot = c.mcSnapshot;
+				const stored = await this.#mcStore.get(snapshot.id);
+				if (stored && JSON.stringify(stored) !== JSON.stringify(snapshot))
+					throw new Error('This study is already saved. Open it from Saved study.');
+				if (!stored) await this.#mcStore.put(snapshot);
+				if (c.mcSnapshot === snapshot) c.mcSavedAt = new Date().toISOString();
+				await this.refreshSaved();
+				return snapshot;
+			},
+			undefined,
+			'study.save'
+		);
+	}
+	async #showMulti(snapshot: McStudySnapshot) {
+		const previous = this.grid.app.activeMulti;
+		await this.grid.ingestFiles([
+			new File([snapshot.input_module], `${snapshot.title}.pio.json`, { type: 'application/json' })
+		]);
+		const c = this.grid.app.activeMulti;
+		if (!c || c === previous) throw new Error('Saved distribution power flow could not be opened');
+		c.mcSnapshot = snapshot;
+		c.result = snapshot.result;
+		c.mcSavedAt = new Date().toISOString();
+		c.revisionGeneration++;
+		this.comparison = null;
+	}
+	async openMulti(id: string) {
+		return this.#run(
+			async () => {
+				const stored = await this.#mcStore.get(id);
+				if (!stored) throw new Error('Saved distribution power flow was not found');
+				await this.#showMulti(await replayMcStudy(JSON.stringify(stored)));
+			},
+			undefined,
+			'study.open'
+		);
+	}
+	exportMulti(): string {
+		const snapshot = this.activeMcDocument;
+		if (!snapshot) throw new Error('Run AC power flow before exporting its result');
+		trackUsage('study.export', { result: 'completed' });
+		return JSON.stringify(snapshot, null, 2);
+	}
+	async importMulti(text: string) {
+		return this.#run(
+			async () => {
+				const snapshot = await replayMcStudy(text);
+				if (await this.#mcStore.get(snapshot.id))
+					throw new Error('This study is already saved. Open it from Saved study.');
+				await this.#mcStore.put(snapshot);
+				await this.refreshSaved();
+				await this.#showMulti(snapshot);
+			},
+			undefined,
+			'study.import'
+		);
 	}
 	async initialize() {
 		try {
@@ -61,9 +140,15 @@ export class StudyWorkspace {
 			this.error = String(error);
 		}
 	}
-	async #run<T>(run: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+	async #run<T>(
+		run: (signal: AbortSignal) => Promise<T>,
+		signal?: AbortSignal,
+		event = 'study.operation',
+		metrics: EventData = {}
+	): Promise<T> {
 		if (this.busy)
 			throw new Error('A Study operation is running; wait or cancel it before continuing');
+		const started = performance.now();
 		this.busy = true;
 		this.error = null;
 		const abort = new AbortController();
@@ -72,9 +157,25 @@ export class StudyWorkspace {
 		if (signal?.aborted) cancel();
 		else signal?.addEventListener('abort', cancel, { once: true });
 		try {
-			return await run(abort.signal);
+			const result = await run(abort.signal);
+			const experiment = (result as StudyOperationResult | undefined)?.experiment;
+			const evidence = experiment ? this.document?.experiments[experiment] : undefined;
+			trackUsage(event, {
+				...metrics,
+				result: abort.signal.aborted ? 'cancelled' : 'completed',
+				duration_ms: performance.now() - started,
+				solve_count: evidence?.solve_count,
+				trial_count: evidence?.trials.length
+			});
+			return result;
 		} catch (error) {
-			this.error = error instanceof Error ? error.message : String(error);
+			trackUsage(event, {
+				...metrics,
+				result: abort.signal.aborted ? 'cancelled' : 'failed',
+				duration_ms: performance.now() - started
+			});
+			if (!abort.signal.aborted)
+				this.error = error instanceof Error ? error.message : String(error);
 			throw error;
 		} finally {
 			signal?.removeEventListener('abort', cancel);
@@ -89,58 +190,138 @@ export class StudyWorkspace {
 		draft: GoalDraft,
 		caseId: string,
 		expectedCaseRevision: string,
-		signal?: AbortSignal
+		signal?: AbortSignal,
+		show = true
 	) {
-		return this.#run(async (abort) => {
-			const c = this.grid.activeSolvable;
-			if (!c || c.id !== caseId || caseRevision(c) !== expectedCaseRevision || c.solving)
-				throw new Error('Case changed; inspect the current case before creating a Study');
-			const base_input = await this.grid.ensureStudyInputJson(c);
-			const study = await this.grid.syncedStudy(c);
-			if (!study) throw new Error(this.grid.app.error ?? 'Current case is unavailable');
-			const input =
-				draft.formulation === c.formulation
-					? await study.saveInstanceModule()
-					: await study.saveModule();
-			abort.throwIfAborted();
-			if (this.grid.activeSolvable !== c || caseRevision(c) !== expectedCaseRevision)
-				throw new Error('Case changed while capturing the Study starting point; retry');
-			const controller = await StudyDocumentController.create(
-				{ ...draft, id: crypto.randomUUID(), input, base_input },
-				this.store,
-				undefined,
-				abort
-			);
-			this.#controller = controller;
-			this.#caseAnchor = {
-				caseId,
-				revision: expectedCaseRevision,
-				state: controller.bundle.document.applied_state!
-			};
-			this.comparison = null;
-			await this.#publish(true);
-			return this.summary();
-		}, signal);
+		return this.#run(
+			async (abort) => {
+				const c = this.grid.activeSolvable;
+				if (!c || c.id !== caseId || caseRevision(c) !== expectedCaseRevision || c.solving)
+					throw new Error('Case changed; inspect the current case before creating a Study');
+				const base_input = await this.grid.ensureStudyInputJson(c);
+				const captured = await this.grid.captureSavedCase(c);
+				const geometry = c.network;
+				const display = geometry
+					? {
+							case_id: c.id,
+							camera: geometry.coordinate_space === 'diagram' ? null : this.grid.app.camera,
+							diagram_camera:
+								geometry.coordinate_space === 'diagram' &&
+								this.grid.app.diagramCamera?.caseId === c.id
+									? {
+											center: this.grid.app.diagramCamera.center,
+											scale: this.grid.app.diagramCamera.scale
+										}
+									: null,
+							layers:
+								'diagram' in c && c.diagram
+									? [c.diagram.layer, ...(await this.grid.caseGeographyLayers(c))]
+									: [],
+							geo_layer: JSON.stringify({
+								type: 'FeatureCollection',
+								powerio_geo: {
+									space: geometry.coordinate_space ?? 'geographic',
+									kind: geometry.synthetic_coords ? 'synthetic' : 'source'
+								},
+								features: [
+									...geometry.buses.map((b) => ({
+										type: 'Feature',
+										properties: {
+											target: 'bus',
+											id: String(b.id),
+											...(b.uid ? { uid: b.uid } : {})
+										},
+										geometry: { type: 'Point', coordinates: [b.lon, b.lat] }
+									})),
+									...geometry.branches
+										.filter((b) => b.path.length >= 2)
+										.map((b) => ({
+											type: 'Feature',
+											properties: {
+												target: 'branch',
+												branch_id: String(b.id),
+												...(b.uid ? { uid: b.uid } : {}),
+												from: String(b.from),
+												to: String(b.to)
+											},
+											geometry: { type: 'LineString', coordinates: b.path }
+										}))
+								]
+							})
+						}
+					: undefined;
+				abort.throwIfAborted();
+				if (this.grid.activeSolvable !== c || caseRevision(c) !== expectedCaseRevision)
+					throw new Error('Case changed while capturing the Study starting point; retry');
+				const controller = await StudyDocumentController.create(
+					{
+						...draft,
+						...captured,
+						id: crypto.randomUUID(),
+						base_input,
+						display,
+						model_details: c.network?.model_details
+					},
+					this.store,
+					undefined,
+					abort
+				);
+				this.#controller = controller;
+				this.#caseAnchor = {
+					caseId,
+					revision: expectedCaseRevision,
+					state: controller.bundle.document.applied_state!
+				};
+				this.comparison = null;
+				await this.#publish(false, show);
+				return this.summary();
+			},
+			signal,
+			'study.save'
+		);
 	}
 	async open(id: string) {
-		return this.#run(async () => {
-			this.#controller = await StudyDocumentController.open(id, this.store);
-			this.#caseAnchor = null;
-			this.comparison = null;
-			await this.#publish(true);
-		});
+		return this.#run(
+			async () => {
+				this.#controller = await StudyDocumentController.open(id, this.store);
+				this.#caseAnchor = null;
+				this.comparison = null;
+				await this.#publish(true);
+			},
+			undefined,
+			'study.open'
+		);
 	}
 	async import(text: string) {
-		return this.#run(async () => {
-			this.#controller = await StudyDocumentController.import(text, this.store);
-			this.#caseAnchor = null;
-			this.comparison = null;
-			await this.#publish(true);
-		});
+		return this.#run(
+			async () => {
+				const imported: unknown = JSON.parse(text);
+				if (imported && typeof imported === 'object' && 'document' in imported) {
+					const document = imported.document;
+					if (
+						document &&
+						typeof document === 'object' &&
+						'id' in document &&
+						typeof document.id === 'string' &&
+						(await this.store.load(document.id))
+					) {
+						throw new Error('This study is already saved. Open it from Saved study.');
+					}
+				}
+				this.#controller = await StudyDocumentController.import(text, this.store);
+				this.#caseAnchor = null;
+				this.comparison = null;
+				await this.#publish(true);
+			},
+			undefined,
+			'study.import'
+		);
 	}
 	export(): string {
 		if (!this.#controller) throw new Error('No Study is open');
-		return this.#controller.export();
+		const output = this.#controller.export();
+		trackUsage('study.export', { result: 'completed' });
+		return output;
 	}
 	closeView() {
 		this.grid.app.studyView = null;
@@ -152,50 +333,109 @@ export class StudyWorkspace {
 		studyId: string,
 		revision: number,
 		operation: StudyOperation,
-		signal?: AbortSignal
+		signal?: AbortSignal,
+		show = true
 	): Promise<StudyOperationResult> {
-		return this.#run(async (abort) => {
-			if (!this.#controller || this.document?.id !== studyId)
-				throw new Error('Open the requested Study before continuing');
-			const result = await this.#controller.execute(
-				{ expected_revision: revision, operation },
-				abort
-			);
-			if (operation.kind === 'record_evidence') {
-				this.bundle = this.#controller.bundle;
-			} else {
-				this.comparison = result.comparison ?? null;
-				await this.#publish(false);
-			}
-			return result;
-		}, signal);
+		return this.#run(
+			async (abort) => {
+				if (!this.#controller || this.document?.id !== studyId)
+					throw new Error('Open the requested Study before continuing');
+				const result = await this.#controller.execute(
+					{ expected_revision: revision, operation },
+					abort
+				);
+				if (operation.kind === 'record_evidence') {
+					this.bundle = this.#controller.bundle;
+				} else {
+					this.comparison = result.comparison ?? null;
+					await this.#publish(false, show);
+				}
+				return result;
+			},
+			signal,
+			'study.operation',
+			{ operation: operation.kind }
+		);
 	}
 	async applyFromUser(proposal: string) {
-		return this.#run(async (abort) => {
-			if (!this.#controller) throw new Error('No Study is open');
-			const token = this.#controller.recordUserApproval(proposal);
-			const result = await this.#controller.applyApprovedProposal(token, abort);
-			await this.#publish(false);
-			return result;
+		return this.#run(
+			async (abort) => {
+				if (!this.#controller) throw new Error('No Study is open');
+				const token = this.#controller.recordUserApproval(proposal);
+				const result = await this.#controller.applyApprovedProposal(token, abort);
+				await this.#publish(false);
+				return result;
+			},
+			undefined,
+			'study.operation',
+			{ operation: 'apply' }
+		);
+	}
+	get demandRows() {
+		const base = new Map(this.#baseNetwork?.buses.map((b) => [b.id, b.demand_mw]) ?? []);
+		return (this.network?.buses ?? []).map((b) => ({
+			bus: b.id,
+			name: b.name ?? undefined,
+			baseMw: base.get(b.id) ?? b.demand_mw,
+			currentMw: b.demand_mw,
+			deltaMw: b.demand_mw - (base.get(b.id) ?? b.demand_mw)
+		}));
+	}
+	async #userEdit(operation: StudyOperation) {
+		return this.#run(
+			async (abort) => {
+				if (!this.#controller || !this.document) throw new Error('No Study is open');
+				const result = await this.#controller.execute(
+					{ expected_revision: this.document.revision, operation },
+					abort
+				);
+				this.bundle = this.#controller.bundle;
+				const state = this.document!.recommended_state;
+				if (result.experiment && state && this.document!.states[state].solution) {
+					const token = this.#controller.recordUserApproval(result.experiment);
+					await this.#controller.applyApprovedProposal(token, abort);
+				}
+				await this.#publish(false);
+				return result;
+			},
+			undefined,
+			'study.operation',
+			{ operation: operation.kind }
+		);
+	}
+	async editDemandFromUser(changes: Array<{ bus: number | string; delta_mw: number }>) {
+		const d = this.document;
+		if (!d?.inspected_state) throw new Error('No saved case is selected');
+		return this.#userEdit({
+			kind: 'edit_demand',
+			state: d.inspected_state,
+			goal: d.active_goal ?? null,
+			constrain_to_goal: false,
+			changes,
+			rationale: 'Update bus demand'
+		});
+	}
+	async resetFromUser() {
+		const d = this.document;
+		if (!d?.inspected_state) throw new Error('No saved case is selected');
+		return this.#userEdit({
+			kind: 'restore_base',
+			state: d.inspected_state,
+			goal: d.active_goal ?? null,
+			rationale: 'Reset to base case'
 		});
 	}
 	captureCaseEvidence(): CaseEvidenceContext | null {
 		const c = this.grid.activeSolvable,
 			anchor = this.#caseAnchor,
 			d = this.document;
-		if (
-			!c ||
-			!anchor ||
-			!d?.active_goal ||
-			c.id !== anchor.caseId ||
-			caseRevision(c) !== anchor.revision
-		)
+		if (!c || !anchor || !d || c.id !== anchor.caseId || caseRevision(c) !== anchor.revision)
 			return null;
 		return {
 			studyId: d.id,
 			revision: d.revision,
 			state: anchor.state,
-			goal: d.active_goal,
+			goal: d.active_goal ?? null,
 			caseId: c.id,
 			caseRevision: anchor.revision
 		};
@@ -229,9 +469,10 @@ export class StudyWorkspace {
 		spec: CapacityPlanSpecJson,
 		caseId: string,
 		revision: string,
-		signal: AbortSignal
+		signal: AbortSignal,
+		elements: Readonly<Record<string, number>>
 	) {
-		await this.create(capacityGoal(spec), caseId, revision, signal);
+		await this.create(capacityGoal(spec, elements), caseId, revision, signal, false);
 		const d = this.document!;
 		const result = await this.execute(
 			d.id,
@@ -241,7 +482,14 @@ export class StudyWorkspace {
 				state: d.inspected_state!,
 				goal: d.active_goal!,
 				options: {
-					max_solves: Math.max(0, spec.exact_solve_budget - 1),
+					max_solves: Math.max(
+						0,
+						spec.exact_solve_budget -
+							Object.values(d.experiments).reduce(
+								(total, activity) => total + activity.solve_count,
+								0
+							)
+					),
 					beam_width: 2,
 					max_iterations: 256,
 					min_improvement:
@@ -250,7 +498,8 @@ export class StudyWorkspace {
 				rationale:
 					'Explore capacity upgrades using the implicit weighted-price gradient and exact solves.'
 			},
-			signal
+			signal,
+			false
 		);
 		const current = this.document!;
 		const binding: CapacityStudyBinding = {
@@ -298,7 +547,7 @@ export class StudyWorkspace {
 				const c = this.grid.activeSolvable!;
 				this.#caseAnchor = { caseId: c.id, revision: caseRevision(c), state: binding.state };
 			}
-			await this.#publish(false);
+			await this.#publish(false, false);
 			return result;
 		}, signal);
 	}
@@ -321,7 +570,7 @@ export class StudyWorkspace {
 			id: d.id,
 			title: d.title,
 			revision: d.revision,
-			active_goal: d.active_goal,
+			active_goal: d.active_goal ?? null,
 			inspected_state: d.inspected_state,
 			recommended_state: d.recommended_state,
 			applied_state: d.applied_state,
@@ -330,11 +579,11 @@ export class StudyWorkspace {
 			recent_experiments: recent
 		};
 	}
-	async #publish(frame: boolean) {
+	async #publish(frame: boolean, show = true) {
 		this.bundle = this.#controller!.bundle;
 		// Persistence completed; display failures must not report a failed mutation.
 		try {
-			await this.#display(frame);
+			if (show) await this.#display(frame);
 			await this.refreshSaved();
 		} catch (error) {
 			this.grid.app.studyView = null;
@@ -349,18 +598,51 @@ export class StudyWorkspace {
 			return;
 		}
 		const state = d.states[d.inspected_state];
-		let network = this.#geometry.get(state.input);
+		if (state.formulation === 'dcpf' || state.formulation === 'acopf')
+			throw new Error('This saved formulation is not supported by the Study viewer');
+		const geo = d.display ? b.artifacts[d.display.geography].text : undefined;
+		const geometryKey = state.input + ':' + (d.display?.geography ?? '');
+		let network = this.#geometry.get(geometryKey);
 		if (!network) {
-			network = await this.grid.projectStudyInput(b.artifacts[state.input].text);
+			network = await this.grid.projectStudyInput(b.artifacts[state.input].text, geo);
 			if (this.#geometry.size >= 8) this.#geometry.delete(this.#geometry.keys().next().value!);
-			this.#geometry.set(state.input, network);
+			this.#geometry.set(geometryKey, network);
 		}
-		const solution = JSON.parse(b.artifacts[state.view].text) as StudyView;
-		this.grid.app.studyView = { id: d.inspected_state, label: state.label, network, solution };
-		if (!solution.lmp?.length && solution.vm?.length) this.grid.app.displayMode = 'voltage';
-		this.grid.app.selectedBus = null;
-		this.grid.app.selectedBranch = null;
-		if (frame) void this.grid.app.requestFrame('all');
+		this.network = network;
+		this.#baseNetwork = await this.grid.projectStudyInput(
+			b.artifacts[d.base_input ?? state.input].text,
+			geo
+		);
+		const solution = state.view ? (JSON.parse(b.artifacts[state.view].text) as StudyView) : null;
+		this.grid.app.activeMultiId = null;
+		this.grid.app.studyView = {
+			id: d.inspected_state,
+			label: state.label,
+			network,
+			solution,
+			caseId: d.display?.case_id ?? d.id,
+			studyId: d.id,
+			revision: d.revision,
+			formulation: state.formulation,
+			inputJson: b.artifacts[state.input].text,
+			baseDemandMw: Object.fromEntries(
+				this.#baseNetwork.buses.map((b) => [String(b.id), b.demand_mw])
+			)
+		};
+		if (!solution?.lmp?.length && solution?.vm?.length) this.grid.app.displayMode = 'voltage';
+		if (frame) {
+			if (network.coordinate_space === 'diagram' && d.display?.diagram_camera) {
+				this.grid.app.requestDiagramCamera(d.display.case_id, {
+					center: [d.display.diagram_camera.center[0], d.display.diagram_camera.center[1]],
+					scale: d.display.diagram_camera.scale
+				});
+			} else if (network.coordinate_space !== 'diagram' && d.display?.camera)
+				this.grid.app.requestCamera({
+					...d.display.camera,
+					center: [d.display.camera.center[0], d.display.camera.center[1]]
+				});
+			else void this.grid.app.requestFrame('all');
+		}
 	}
 	dispose() {
 		this.cancel();

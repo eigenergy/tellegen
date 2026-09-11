@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { trackUsage } from '../analytics/client.js';
 	import { getController } from '@tellegen/svelte';
 	import {
 		ExperimentJournal,
@@ -32,6 +33,12 @@
 
 	function recordActivity(event: TellegenToolActivityEvent) {
 		journal.record(event);
+		if (event.type === 'finished')
+			trackUsage('agent.call', {
+				tool: event.toolName,
+				result: event.response.ok ? 'completed' : 'failed',
+				duration_ms: event.finishedAt - event.startedAt
+			});
 		if (event.type === 'finished') experiments = journal.records;
 		const index = activities.findIndex((activity) => activity.id === event.id);
 		activities =
@@ -58,7 +65,7 @@
 	// readiness, its formulation, and its revision. Any change expires a stale
 	// proposal and pulses the planning store's availability listeners.
 	$effect(() => {
-		const c = ctrl.activeSolvable;
+		const c = ctrl.app.studyView ? null : ctrl.activeSolvable;
 		// Solving and solution readiness also control dynamic planning registration.
 		void c?.solving;
 		void c?.solution;
@@ -94,6 +101,9 @@
 				}
 				handle = registered;
 				supported = registered.supported;
+				trackUsage('agent.availability', {
+					result: supported && !registered.registrationError ? 'completed' : 'unavailable'
+				});
 				registrationError = registered.registrationError?.message ?? null;
 				if (registered.supported) {
 					document.documentElement.dataset.webmcp = registrationError ? 'error' : 'ready';

@@ -6,38 +6,62 @@
 <SeoHead
 	path="/changelog/"
 	title="What's new in Tellegen"
-	description="New features in Tellegen: saved Studies, agent tools, demand edits and power-system comparisons."
+	description="Tellegen updates: simpler saved Studies, Texas7k, movable panels, preserved maps and drawings, and agent tools."
 />
 <main>
 	<a href={resolve('/')}>Back to Tellegen</a>
 	<h1>What's new in Tellegen</h1>
-	<p class="date">September 2026</p>
-	<h2>Saved studies</h2>
+	<p class="date">September 2026 preview</p>
+	<h2>Distribution AC power flow</h2>
 	<p>
-		Studies save the goal, permitted interventions, exact operating points, explored alternatives
-		and decisions. Reopen a Study or export it to continue with another agent.
+		Calculate terminal voltages and currents, compare voltages to ground or neutral, and save or
+		export the result. Start with the 4-conductor example. This extends <a
+			href="https://github.com/eigenergy/tellegen/pull/109"
+			>Frederik Geth's multiconductor power-flow work</a
+		>.
 	</p>
-	<h2>Explore with an agent</h2>
+	<h2>Quieter messages</h2>
 	<p>
-		WebMCP lets a connected browser agent inspect a network, run sensitivity analyses, compare saved
-		states and propose capacity or demand changes. Open <strong>Agent</strong>, then
-		<strong>Connect</strong>, on the map for instructions and an example request.
+		Calculation and import errors appear briefly at the bottom. Repeated messages stay together;
+		expand the recent list for details or retry.
 	</p>
-	<h2>Change demand and return to the base case</h2>
+	<h2>Usage measurements</h2>
 	<p>
-		Demand edits accumulate by bus. Studies retain the original network data, so a base-case reset
-		can be solved, reviewed and applied without erasing earlier work. Inspecting a candidate changes
-		the view; Apply chooses the operating point.
+		Anonymous counts and timings help improve case loading, calculations, Studies and agent tools.
+		Uploaded data, study text and equipment values stay out of analytics. Disable measurements in <a
+			href={resolve('/privacy')}>Privacy</a
+		>.
 	</p>
-	<h2>Compare exact results</h2>
+	<h2>Save a case, add a goal later</h2>
 	<p>
-		Evaluate weighted locational marginal prices, voltage targets and intervention costs. Bounded
-		searches use implicit derivatives to select trials, then verify candidates with exact solves.
-		Evidence includes changes in constraints and prediction accuracy.
+		A Study is a saved case with its changes and results. Start with a name; add a planning goal
+		when needed. Reopen it or export it to continue elsewhere.
 	</p>
+	<h2>Adjust demand and reset</h2>
 	<p>
-		PowerIO 0.11 provides the shared network and problem data. Supported calculations remain DC OPF,
-		AC power flow and the SOCWR relaxation; available operations depend on the formulation.
+		Demand changes accumulate by bus. <strong>Reset to base case</strong> restores the original network
+		inputs and keeps earlier changes and results in History.
+	</p>
+	<h2>Texas7k is back</h2>
+	<p>
+		The demo uses fitted generator costs. Expand <strong>Model details</strong> to see the approximation
+		method and measured errors.
+	</p>
+	<h2>Arrange the workspace</h2>
+	<p>
+		Panels share left and right docks. Drag a heading to detach a panel, resize it, or use its menu
+		to redock. <strong>Reset layout</strong> restores the default positions.
+	</p>
+	<h2>Keep maps and drawings</h2>
+	<p>
+		Saved Studies retain equipment positions, line paths and the current view. Geographic data
+		appears on the map; drawing coordinates use a plain canvas with pan and zoom.
+	</p>
+	<h2>Let an agent use the same network</h2>
+	<p>
+		WebMCP tools can list and switch cases, answer network questions and inspect the saved state
+		being displayed. Open <strong>Agent</strong>, then <strong>Connect</strong>, for a ready-to-copy
+		request. Activity shows which tools were called.
 	</p>
 	<div class="links">
 		<a href="https://eigenergy.github.io/tellegen/" target="_blank" rel="noreferrer"

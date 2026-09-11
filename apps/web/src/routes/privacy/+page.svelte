@@ -1,90 +1,108 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import SeoHead from '$lib/components/SeoHead.svelte';
+	import { browserAnalytics } from '$lib/analytics/client.js';
+	let optedOut = $state(true);
+	let browserBlocked = $state(false);
+	let ready = $state(false);
+	onMount(() => {
+		const analytics = browserAnalytics()!;
+		const update = () => {
+			optedOut = analytics.optedOut;
+			browserBlocked = analytics.blockedByBrowser;
+			ready = true;
+		};
+		update();
+		return analytics.subscribe(update);
+	});
 </script>
 
 <SeoHead
 	path="/privacy/"
-	title="Privacy — tellegen"
-	description="How tellegen handles dropped case files in the public demo: local browser parsing, runtime requests for demo cases, and planned opt in sharing defaults."
+	title="Privacy - tellegen"
+	description="Local case files, saved studies, optional usage analytics, and map tile requests in Tellegen."
 />
 
 <main class="privacy">
-	<a class="back mono" href="/">back to tellegen</a>
+	<a class="back mono" href="/">Back to Tellegen</a>
 	<h1>Privacy</h1>
-	<p>
-		tellegen parses dropped case files in your browser. Those files are not uploaded to the server
-		by the current public demo.
-	</p>
-
 	<section>
-		<h2>Current Demo</h2>
-		<ul>
-			<li>
-				Dropped `.m`, `.raw`, `.aux`, `.epc`, `.pwb`, `.dss`, `.pwd`, `.csv`, `.json`, and
-				`.geojson` files stay on your device.
-			</li>
-			<li>The browser uses local file contents to draw the map and run DC solves.</li>
-			<li>The server receives ordinary page and API requests for the built in demo cases.</li>
-			<li>There is no analytics product wired to uploaded case contents.</li>
-			<li>
-				The map basemap comes from CARTO (<code>*.basemaps.cartocdn.com</code>). Your browser
-				requests those tiles directly, so CARTO receives your IP address, your user agent, and the
-				map area you view. Your case file is never sent, but the map area shows where a locally
-				parsed case sits. Nothing else on the page loads from a third party.
-			</li>
-		</ul>
-	</section>
-
-	<section>
-		<h2>Future Opt In Sharing</h2>
+		<h2>Case files and saved studies</h2>
 		<p>
-			If tellegen adds a sharing feature, it will be explicit. The action will say what will be sent
-			and will require a separate confirmation before upload.
+			Dropped case files and coordinate files are processed in the browser. Their contents stay on
+			the device. Saved studies, changes, and results use this browser's local storage. Exporting
+			creates a local download.
 		</p>
-		<p>Planned defaults for shared files:</p>
-		<ul>
-			<li>Raw shared files will be retained for 180 days.</li>
-			<li>Derived aggregate statistics may be retained without a fixed end date.</li>
-			<li>Each upload will return a share id that can be used to request deletion.</li>
-			<li>Shared files will not be sold or used for third party advertising.</li>
-		</ul>
-	</section>
-
-	<section>
-		<h2>Hosting And Legal Notes</h2>
 		<p>
-			The public demo is intended to run on Hetzner infrastructure. Before accepting uploaded user
-			files, the operator will conclude Hetzner's Data Processing Agreement and publish controller
-			contact details.
+			The server receives ordinary page and API requests for the public demo cases. Loading a local
+			file does not upload it.
 		</p>
-		<ul>
-			<li>
-				<a
-					href="https://docs.hetzner.com/general/company-and-policy/data-protection-at-hetzner/"
-					target="_blank"
-					rel="noreferrer">Hetzner data protection notes</a
-				>
-			</li>
-			<li>
-				<a href="https://gdpr-info.eu/art-5-gdpr/" target="_blank" rel="noreferrer"
-					>GDPR Article 5</a
-				>
-			</li>
-			<li>
-				<a href="https://gdpr-info.eu/art-6-gdpr/" target="_blank" rel="noreferrer"
-					>GDPR Article 6</a
-				>
-			</li>
-			<li>
-				<a href="https://gdpr-info.eu/art-13-gdpr/" target="_blank" rel="noreferrer"
-					>GDPR Article 13</a
-				>
-			</li>
-		</ul>
+	</section>
+	<section>
+		<h2>Usage analytics</h2>
+		<p>
+			Tellegen uses <a href="https://umami.is/privacy" rel="noreferrer">Umami Cloud</a> to understand
+			page visits, use of public demos, actions, completion status, counts, calculation timings, and page
+			speed.
+		</p>
+		<p>
+			Analytics exclude uploaded filenames and contents, study names and goals, equipment
+			identities, coordinates, electrical values, agent prompts, and error text. There is no screen
+			recording or replay, and Tellegen does not assign persistent visitor IDs.
+		</p>
+		<p>
+			Page addresses are reduced to fixed public pages. Search parameters, fragments, and referring
+			addresses are excluded. Umami receives the browser's network request; its privacy policy
+			describes the service's processing.
+		</p>
+		<label class="analytics-choice"
+			><input
+				type="checkbox"
+				disabled={!ready || browserBlocked}
+				checked={optedOut || browserBlocked}
+				onchange={(event) => browserAnalytics()?.setOptOut(event.currentTarget.checked)}
+			/>Disable usage analytics in this browser</label
+		>
+		<p class="preference" role="status">
+			{browserBlocked
+				? 'Your browser privacy setting disables analytics.'
+				: optedOut
+					? 'Analytics are disabled in this browser.'
+					: 'Analytics are enabled on the public site.'}
+		</p>
+		<p>
+			Do Not Track and Global Privacy Control are respected. Local and preview addresses do not load
+			analytics. This preference is stored only in this browser.
+		</p>
+	</section>
+	<section>
+		<h2>Map tiles</h2>
+		<p>
+			The geographic basemap loads directly from CARTO. Tile requests reveal the map area, IP
+			address, and browser details to that service. Case files and equipment data are not included.
+			The plain diagram view does not request a basemap.
+		</p>
+		<p><a href="https://carto.com/privacy" rel="noreferrer">CARTO privacy policy</a></p>
 	</section>
 </main>
 
 <style>
+	.analytics-choice {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 12px 0;
+		font-size: 15px;
+	}
+	.analytics-choice input {
+		width: 18px;
+		height: 18px;
+		accent-color: var(--accent);
+	}
+	.preference {
+		color: var(--text-secondary);
+		font-size: 13px;
+	}
 	.privacy {
 		min-height: 100dvh;
 		max-width: 760px;
@@ -117,15 +135,9 @@
 		font-size: 18px;
 	}
 
-	p,
-	li {
+	p {
 		font-size: 15px;
 		line-height: 1.65;
-	}
-
-	ul {
-		margin: 0;
-		padding-left: 20px;
 	}
 
 	a {
@@ -133,6 +145,22 @@
 	}
 
 	@media (max-width: 560px) {
+		.analytics-choice {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 12px 0;
+			font-size: 15px;
+		}
+		.analytics-choice input {
+			width: 18px;
+			height: 18px;
+			accent-color: var(--accent);
+		}
+		.preference {
+			color: var(--text-secondary);
+			font-size: 13px;
+		}
 		.privacy {
 			padding: 24px 16px 48px;
 		}

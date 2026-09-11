@@ -103,27 +103,17 @@
 				<dd>{fmt.format(lc.summary.base_mva)}</dd>
 			</div>
 		</dl>
-		{#if lc.summary.diagnostics.length > 0}
-			<ul class="warnings mono">
-				{#each lc.summary.diagnostics.slice(0, 4) as diagnostic, i (i)}
-					<li>{formatPowerIoDiagnostic(diagnostic)}</li>
-				{/each}
-				{#if lc.summary.diagnostics.length > 4}
-					<li>+{lc.summary.diagnostics.length - 4} more</li>
-				{/if}
-			</ul>
-		{/if}
-		{#if lc.summary.warnings.length > 0}
-			<ul class="warnings mono">
-				{#each lc.summary.warnings.slice(0, 4) as w, i (i)}
-					<li>{w}</li>
-				{/each}
-				{#if lc.summary.warnings.length > 4}
-					<li>+{lc.summary.warnings.length - 4} more</li>
-				{/if}
-			</ul>
-		{/if}
-		{#if !lc.view}
+		{#if lc.displayMode === 'diagram' && lc.diagram}
+			<p class="footnote mono">Drawing: {lc.diagram.name}</p>
+			{#if lc.diagram.warnings.length}
+				<details>
+					<summary>Drawing details</summary>
+					<ul class="warnings mono">
+						{#each lc.diagram.warnings as warning, i (i)}<li>{warning}</li>{/each}
+					</ul>
+				</details>
+			{/if}
+		{:else if !lc.view}
 			<p class="footnote mono">
 				no coordinates in this file: click the map or drop a geographic file
 			</p>
@@ -135,16 +125,6 @@
 			<p class="footnote mono">
 				coordinates: geographic file data from {lc.geoSource}
 			</p>
-		{/if}
-		{#if lc.geoWarnings && lc.geoWarnings.length > 0}
-			<ul class="warnings mono">
-				{#each lc.geoWarnings.slice(0, 4) as w, i (i)}
-					<li>{w}</li>
-				{/each}
-				{#if lc.geoWarnings.length > 4}
-					<li>+{lc.geoWarnings.length - 4} more</li>
-				{/if}
-			</ul>
 		{/if}
 		<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 		{#if lc.studyInputJson}
@@ -182,9 +162,11 @@
 						</ul>
 					{/if}
 				</div>
-				{#if lc.view}
+				{#if lc.view || lc.diagram}
 					<button class="reset mono" disabled={busy} onclick={() => downloadLayout(lc)}>
-						download layout (.geo.json)
+						{lc.displayMode === 'diagram'
+							? 'Download drawing (.geo.json)'
+							: 'Download geography (.geo.json)'}
 					</button>
 				{/if}
 			</div>
@@ -200,7 +182,7 @@
 			{/if}
 		{/if}
 	{/if}
-	{#if lc.topology && lc.coordsKind !== 'file'}
+	{#if lc.displayMode !== 'diagram' && lc.topology && lc.coordsKind !== 'file'}
 		<button class="reset mono" onclick={() => ctrl.moveLocalCase(lc)}>
 			{lc.coordsKind === 'synthetic_pending'
 				? 'place on map'

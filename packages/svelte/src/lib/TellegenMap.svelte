@@ -29,13 +29,16 @@
 		transformerMarks,
 		type PlacedMultiBus,
 		type PlacedMultiEdge,
-		type TransformerMark
+		type TransformerMark,
+		multiDiagramNetwork
 	} from './multiconductor.js';
 	import { transformerIcon } from './transformer-icon.js';
 	import { foldMapBounds } from './map-bounds.js';
 	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt, rgbaCss } from './format.js';
+	import { getPanelLayout } from './panels.svelte.js';
 	import type { RGBA } from './colors.js';
+	import DiagramCanvas from './components/DiagramCanvas.svelte';
 
 	let {
 		onbusclick,
@@ -59,6 +62,47 @@
 
 	const app = getAppState();
 	const ctrl = getController();
+	const panels = getPanelLayout();
+	const diagramCase = $derived(app.studyView ? null : (app.active ?? app.activeLocal));
+	const diagramMulti = $derived(
+		!app.studyView && app.activeMulti?.coordsKind !== 'geographic' ? app.activeMulti : null
+	);
+	const multiNetwork = $derived(
+		diagramMulti?.view
+			? multiDiagramNetwork(diagramMulti.id, diagramMulti.label, diagramMulti.view)
+			: null
+	);
+	const displayedNetwork = $derived(app.studyView?.network ?? diagramCase?.network);
+	const diagramNetwork = $derived(
+		multiNetwork ?? (displayedNetwork?.coordinate_space === 'diagram' ? displayedNetwork : null)
+	);
+	const diagramCaseId = $derived(
+		app.studyView?.caseId ?? diagramMulti?.id ?? diagramCase?.id ?? 'diagram'
+	);
+	function selectDiagramBus(busId: number) {
+		if (diagramMulti?.view) {
+			const bus = diagramMulti.view.buses[busId];
+			if (bus) onmultibusclick(diagramMulti.id, bus.id);
+			return;
+		}
+		if (app.studyView) {
+			app.selectedBranch = null;
+			app.selectedBus = busId;
+		} else if (app.activeLocal) onlocalbusclick(diagramCaseId, busId);
+		else onbusclick(diagramCaseId, busId);
+	}
+	function selectDiagramBranch(branchId: number) {
+		if (diagramMulti?.view) {
+			const edge = diagramMulti.view.edges[branchId];
+			if (edge) onmultiedgeclick?.(diagramMulti.id, edge.id);
+			return;
+		}
+		if (app.studyView) {
+			app.selectedBus = null;
+			app.selectedBranch = branchId;
+		} else if (app.activeLocal) onlocalbranchclick?.(diagramCaseId, branchId);
+		else onbranchclick?.(diagramCaseId, branchId);
+	}
 
 	const STYLE = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json';
 	const CUE_MARGIN_PX = 64;
@@ -281,6 +325,7 @@
 	// click handler must not treat those clicks as "empty map" and clear the selection.
 	function isSelectableLayer(layerId: string | undefined): boolean {
 		return Boolean(
+			layerId?.startsWith('study-') ||
 			layerId?.startsWith('buses-') ||
 			layerId?.startsWith('local-buses-') ||
 			layerId?.startsWith('branches-') ||
@@ -290,28 +335,28 @@
 		);
 	}
 
+	function displayedGeometry(caseId: string) {
+		if (app.studyView) return app.studyView.caseId === caseId ? app.studyView.network : null;
+		const local = app.localCases.find((c) => c.id === caseId);
+		return app.byId(caseId)?.network ?? local?.view ?? local?.network ?? null;
+	}
 	const selectedBusCue = $derived.by(() => {
 		const busId = app.selectedBus;
-		const c = app.active ?? app.activeLocal;
-		if (!c || busId === null) return null;
-		const buses =
-			app.active?.network?.buses ??
-			app.activeLocal?.network?.buses ??
-			app.activeLocal?.view?.buses ??
-			[];
-		const bus = buses.find((b) => b.id === busId);
-		return bus ? { key: `${c.id}-${bus.id}`, id: bus.id, lon: bus.lon, lat: bus.lat } : null;
+		const caseId = app.studyView?.caseId ?? app.active?.id ?? app.activeLocal?.id;
+		if (!caseId || busId === null) return null;
+		const bus = displayedGeometry(caseId)?.buses.find((b) => b.id === busId);
+		return bus
+			? { key: `${app.studyView?.id ?? caseId}-${bus.id}`, id: bus.id, lon: bus.lon, lat: bus.lat }
+			: null;
 	});
 	const selectedBranchCue = $derived.by(() => {
 		const branchId = app.selectedBranch;
-		const c = app.active ?? app.activeLocal;
-		if (!c || branchId === null) return null;
-		const branches =
-			c instanceof CaseState ? c.network?.branches : (c.view?.branches ?? c.network?.branches);
-		const branch = branches?.find((b) => b.id === branchId);
+		const caseId = app.studyView?.caseId ?? app.active?.id ?? app.activeLocal?.id;
+		if (!caseId || branchId === null) return null;
+		const branch = displayedGeometry(caseId)?.branches.find((b) => b.id === branchId);
 		const path = branch?.path.filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
 		return branch && path && path.length >= 2
-			? { key: `${c.id}-${branch.id}`, caseId: c.id, branchId: branch.id, path }
+			? { key: `${app.studyView?.id ?? caseId}-${branch.id}`, caseId, branchId: branch.id, path }
 			: null;
 	});
 	let selectedCueEl = $state.raw<HTMLDivElement | null>(null);
@@ -319,6 +364,7 @@
 	let selectedBranchHaloPath = $state.raw<SVGPathElement | null>(null);
 	let selectedBranchLinePath = $state.raw<SVGPathElement | null>(null);
 	let handledFrameSeq = 0;
+	let handledCameraSeq = 0;
 
 	// The selected multiconductor bus and its incident edges, whose per-conductor
 	// strands and terminal stack the detail overlay draws in screen space.
@@ -494,18 +540,23 @@
 		});
 	}
 
-	/** Camera padding that keeps the framed subject clear of the panel chrome.
-	 * The branch variant also clears the rating readout on the panel's lower edge. */
+	/** Camera framing reserves the dock columns and the active compact drawer. */
 	function framePadding(width: number, height: number, kind: 'case' | 'branch') {
-		if (width <= 760) {
-			// bottom follows the sheet; capped so a fully open sheet still leaves a band to fit into
-			const clearance = kind === 'branch' ? 16 : 28;
-			const bottom = Math.min(app.sheetInset + clearance, Math.round(height * 0.55));
-			return { top: app.headerInset + 8, left: 24, right: 24, bottom };
+		const clearance = kind === 'branch' ? 16 : 28;
+		if (panels.compact) {
+			return {
+				top: panels.top + 8,
+				left: 24,
+				right: 24,
+				bottom: Math.min(app.sheetInset + clearance, Math.round(height * 0.6))
+			};
 		}
-		return kind === 'branch'
-			? { top: 106, left: 388, right: 76, bottom: 80 }
-			: { top: 96, left: 380, right: 60, bottom: 64 };
+		return {
+			top: panels.top + 16,
+			left: Math.min(panels.dockWidth('left') + 44, width * 0.34),
+			right: Math.min(panels.dockWidth('right') + 44, width * 0.34),
+			bottom: 80
+		};
 	}
 
 	function branchBounds(path: [number, number][]): LngLatBoundsLike | null {
@@ -522,23 +573,9 @@
 		return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 	}
 
-	// Compact chrome anchoring. maplibre's bottom-right controls sit over the map,
-	// so the sheet would bury them; they ride above it instead. Under
-	// CHROME_MIN_BAND_PX of map left they drop out rather than climb into the
-	// header — at that point the sheet covers what they annotate.
-	const CHROME_MIN_BAND_PX = 132;
-
-	/** How far the sheet can push the chrome up before it would reach the header. */
-	const chromeLiftCap = $derived(
-		Math.max(0, app.viewportHeight - app.headerInset - CHROME_MIN_BAND_PX)
-	);
-	const chromeInset = $derived(app.compactLayout ? Math.min(app.sheetInset, chromeLiftCap) : 0);
-	const chromeVisible = $derived(!app.compactLayout || app.sheetInset <= chromeLiftCap);
-
-	/** Fly to the selected branch; true when a camera move started. */
-	function focusSelectedBranch(): boolean {
-		if (!map || !selectedBranchCue) return false;
-		const bounds = branchBounds(selectedBranchCue.path);
+	function focusGeometry(points: [number, number][], settle: () => void): boolean {
+		if (!map) return false;
+		const bounds = branchBounds(points);
 		if (!bounds) return false;
 		const { clientWidth, clientHeight } = map.getContainer();
 		const camera = map.cameraForBounds(bounds, {
@@ -546,6 +583,7 @@
 			maxZoom: Math.min(map.getZoom() + 2, BRANCH_FOCUS_MAX_ZOOM)
 		});
 		if (!camera?.center) return false;
+		map.once('moveend', settle);
 		map.easeTo({
 			center: camera.center,
 			zoom: camera.zoom ?? map.getZoom(),
@@ -583,13 +621,13 @@
 			const view = app.studyView.solution;
 			const id = Number((object as { id: number }).id);
 			if (info.layer.id === 'study-branches') {
-				const flow = view.flows?.find((f) => f.branch === id);
+				const flow = view?.flows?.find((f) => f.branch === id);
 				return {
 					html: `<b>branch ${id}</b><br>saved state: ${esc(app.studyView.label)}${flow ? `<br>P from ${flow.pf.toFixed(3)} MW, loading ${(100 * flow.loading).toFixed(1)}%` : ''}`
 				};
 			}
-			const p = view.lmp?.find((v) => v.bus === id),
-				v = view.vm?.find((v) => v.bus === id);
+			const p = view?.lmp?.find((v) => v.bus === id),
+				v = view?.vm?.find((v) => v.bus === id);
 			return {
 				html: `<b>bus ${id}</b><br>saved state: ${esc(app.studyView.label)}${p ? `<br>LMP ${p.value.toFixed(4)}` : ''}${v ? `<br>voltage ${v.value.toFixed(5)} pu` : ''}`
 			};
@@ -601,7 +639,7 @@
 			const s = object as { number: number; name: string };
 			const named = s.name ? ` ${esc(s.name)}` : '';
 			return {
-				html: `<div class="tt"><b>substation ${Number(s.number)}</b>${named}<br><span style="opacity:0.6">.pwd diagram &#8901; approx. position</span></div>`
+				html: `<div class="tt"><b>substation ${Number(s.number)}</b>${named}<br><span style="opacity:0.6">.pwd diagram, approximate position</span></div>`
 			};
 		}
 		const layerId = info.layer?.id;
@@ -757,6 +795,16 @@
 					if (document.visibilityState === 'visible') repaint();
 				};
 				const syncCues = () => scheduleCueSync();
+				const saveCamera = () => {
+					const center = m.getCenter();
+					app.camera = {
+						center: [center.lng, center.lat],
+						zoom: m.getZoom(),
+						bearing: m.getBearing(),
+						pitch: m.getPitch()
+					};
+				};
+				m.on('moveend', saveCamera);
 				let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
 				const clearRebuild = () => {
 					if (rebuildTimer !== null) {
@@ -811,7 +859,9 @@
 				// (from the case load) can fire before the async map import finishes and
 				// be lost; re-issuing it here ensures the first view is the active case,
 				// not the default world view. A remount opens at the default view too.
-				app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
+				if (mapGen > 0 && app.camera) m.jumpTo(app.camera);
+				else if (app.cameraSeq === handledCameraSeq)
+					app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
 				if (mapGen > 0) {
 					// This is a rebuilt map. Once it has held a live context without
 					// another loss, zero the budget so the cap only ever catches a tight
@@ -858,20 +908,20 @@
 			const mode = app.displayMode;
 			const series =
 				mode === 'angle'
-					? (s.va ?? [])
+					? (s?.va ?? [])
 					: mode === 'voltage'
-						? (s.vm ??
-							(s.w ?? []).map((v) => ({
+						? (s?.vm ??
+							(s?.w ?? []).map((v) => ({
 								...v,
 								value: Math.sqrt(Math.max(0, v.value))
 							})))
-						: (s.lmp ?? []);
+						: (s?.lmp ?? []);
 			const values = new Map(series.map((v) => [v.bus, v.value]));
 			const domain = scalarDomain(
 				mode,
 				series.map((v) => v.value)
 			);
-			const flows = new Map((s.flows ?? []).map((f) => [f.branch, f.loading]));
+			const flows = new Map((s?.flows ?? []).map((f) => [f.branch, f.loading]));
 			layers.push(
 				new PathLayer<NetworkBranch>({
 					id: 'study-branches',
@@ -882,6 +932,13 @@
 					widthUnits: 'pixels',
 					widthMinPixels: 1.5,
 					pickable: true,
+					onClick: (info: PickingInfo) => {
+						const branch = info.object as NetworkBranch | undefined;
+						if (!branch) return false;
+						app.selectedBus = null;
+						app.selectedBranch = branch.id;
+						return true;
+					},
 					updateTriggers: { getColor: [study], getWidth: [study] }
 				}),
 				new ScatterplotLayer<NetworkBus>({
@@ -900,6 +957,13 @@
 					stroked: true,
 					getLineColor: [46, 42, 34, 110],
 					lineWidthUnits: 'pixels',
+					onClick: (info: PickingInfo) => {
+						const bus = info.object as NetworkBus | undefined;
+						if (!bus) return false;
+						app.selectedBranch = null;
+						app.selectedBus = bus.id;
+						return true;
+					},
 					updateTriggers: { getFillColor: [study, mode] }
 				})
 			);
@@ -1080,7 +1144,7 @@
 		// kind and buses badged by attachment role. Selecting a bus fans its
 		// incident conductors and expands its terminal stack in the SVG overlay.
 		for (const c of app.multiCases) {
-			if (!c.view) continue;
+			if (c.coordsKind !== 'geographic' || !c.view) continue;
 			const selectedId = c.id === app.activeMultiId ? c.selectedBusId : null;
 			const selectedEdgeId = c.id === app.activeMultiId ? c.selectedEdgeId : null;
 			layers.push(
@@ -1187,7 +1251,7 @@
 	// does not re-run (and re-pan) on every frame of a sheet drag.
 	$effect(() => {
 		const cue = selectedBusCue;
-		if (!map || !cue || !app.compactLayout) return;
+		if (!map || !cue || !app.compactLayout || app.studyView) return;
 		void cue.key;
 		const m = map;
 		const timer = setTimeout(() => {
@@ -1217,11 +1281,21 @@
 			if (c.substations) fold(c.substations.points);
 		}
 		for (const c of app.multiCases) {
+			if (c.coordsKind !== 'geographic') continue;
 			if (target !== 'all' && c.id !== target) continue;
 			if (c.view) fold(c.view.buses);
 		}
 		return foldMapBounds(points);
 	}
+
+	$effect(() => {
+		const seq = app.cameraSeq;
+		const snapshot = app.cameraRequest;
+		if (diagramNetwork || !map || !snapshot || seq === handledCameraSeq) return;
+		handledCameraSeq = seq;
+		handledFrameSeq = app.frameSeq;
+		map.jumpTo(snapshot);
+	});
 
 	// Fly to whatever the header, the initial load, or a branch selection asked
 	// for, and settle the request's promise once the camera lands so callers can
@@ -1229,16 +1303,19 @@
 	// until its cue exists; anything unframeable settles immediately.
 	$effect(() => {
 		const seq = app.frameSeq;
-		if (!map || seq === handledFrameSeq) return;
+		if (diagramNetwork || !map || seq === handledFrameSeq) return;
 		const m = map;
 		const target = app.frameTarget;
 		const settle = () => app.settleFrame();
 		if (typeof target === 'object') {
-			const cue = selectedBranchCue;
-			if (!cue || cue.caseId !== target.caseId || cue.branchId !== target.branchId) return;
+			const geometry = displayedGeometry(target.caseId);
+			const bus =
+				'busId' in target ? geometry?.buses.find((b) => b.id === target.busId) : undefined;
+			const branch =
+				'branchId' in target ? geometry?.branches.find((b) => b.id === target.branchId) : undefined;
 			handledFrameSeq = seq;
-			if (focusSelectedBranch()) m.once('moveend', settle);
-			else settle();
+			const points: [number, number][] = bus ? [[bus.lon, bus.lat]] : (branch?.path ?? []);
+			if (!focusGeometry(points, settle)) settle();
 			return;
 		}
 		handledFrameSeq = seq;
@@ -1248,47 +1325,53 @@
 			return;
 		}
 		const { clientWidth: w, clientHeight: h } = m.getContainer();
+		m.once('moveend', settle);
 		m.fitBounds(bounds, {
 			padding: framePadding(w, h, 'case'),
 			duration: prefersReducedMotion() ? 0 : 1400
 		});
-		m.once('moveend', settle);
 	});
 </script>
 
-{#key mapGen}
-	<div
-		class="map-stage"
-		class:chrome-clear={!chromeVisible}
-		style="--chrome-inset: {chromeInset}px"
-	>
-		<div class="map" {@attach initMap}></div>
-		{#if selectedBusCue}
-			{#key selectedBusCue.key}
-				<div class="selected-bus-cue" bind:this={selectedCueEl} aria-hidden="true"></div>
-			{/key}
-		{/if}
-		{#if selectedBranchCue}
-			{#key selectedBranchCue.key}
-				<svg class="selected-branch-cue" bind:this={selectedBranchCueEl} aria-hidden="true">
-					<path class="selected-branch-halo" bind:this={selectedBranchHaloPath}></path>
-					<path class="selected-branch-line" bind:this={selectedBranchLinePath}></path>
-				</svg>
-			{/key}
-		{/if}
-		{#if selectedMultiDetail}
-			<!-- Content is built imperatively in syncMultiDetail (screen-space
+{#if diagramNetwork}
+	<DiagramCanvas
+		network={diagramNetwork}
+		multiconductor={diagramMulti}
+		caseId={diagramCaseId}
+		onbusclick={selectDiagramBus}
+		onbranchclick={selectDiagramBranch}
+		onclear={onmapclick}
+	/>
+{:else}
+	{#key mapGen}
+		<div class="map-stage">
+			<div class="map" {@attach initMap}></div>
+			{#if selectedBusCue}
+				{#key selectedBusCue.key}
+					<div class="selected-bus-cue" bind:this={selectedCueEl} aria-hidden="true"></div>
+				{/key}
+			{/if}
+			{#if selectedBranchCue}
+				{#key selectedBranchCue.key}
+					<svg class="selected-branch-cue" bind:this={selectedBranchCueEl} aria-hidden="true">
+						<path class="selected-branch-halo" bind:this={selectedBranchHaloPath}></path>
+						<path class="selected-branch-line" bind:this={selectedBranchLinePath}></path>
+					</svg>
+				{/key}
+			{/if}
+			{#if selectedMultiDetail}
+				<!-- Content is built imperatively in syncMultiDetail (screen-space
 			     projection); file-derived text is escaped there. -->
-			<svg class="multi-detail" bind:this={multiDetailEl} aria-hidden="true"></svg>
-		{/if}
-	</div>
-{/key}
+				<svg class="multi-detail" bind:this={multiDetailEl} aria-hidden="true"></svg>
+			{/if}
+		</div>
+	{/key}
+{/if}
 
 {#if app.placingId && map}
 	<button
 		type="button"
 		class="place-at-center mono"
-		style="--chrome-inset: {chromeInset}px"
 		onclick={() => {
 			if (!map) return;
 			const center = map.getCenter();
@@ -1472,7 +1555,7 @@
 	.place-at-center {
 		position: absolute;
 		left: 50%;
-		bottom: calc(92px + var(--chrome-inset, 0px));
+		bottom: 92px;
 		z-index: 15;
 		transform: translateX(-50%);
 		padding: 7px 14px;
@@ -1487,14 +1570,13 @@
 
 	@media (max-width: 420px) {
 		.place-at-center {
-			bottom: calc(78px + var(--chrome-inset, 0px));
+			bottom: 78px;
 		}
 	}
 
 	.map :global(.maplibregl-ctrl-bottom-right) {
 		right: 20px;
-		/* rides above the bottom sheet so attribution stays legible */
-		bottom: calc(18px + var(--chrome-inset, 0px));
+		bottom: 12px;
 		display: flex;
 		flex-direction: row;
 		align-items: flex-end;
@@ -1504,20 +1586,19 @@
 			opacity var(--dur-fast) var(--ease-out);
 	}
 
-	/* The sheet has taken the map; nothing left down there to attribute. */
-	.map-stage.chrome-clear :global(.maplibregl-ctrl-bottom-right) {
-		opacity: 0;
-		pointer-events: none;
-	}
-
 	.map :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
 		float: none;
 		margin: 0;
 	}
 
+	.map :global(.maplibregl-ctrl-group) {
+		order: 2;
+	}
+
 	.map :global(.maplibregl-ctrl-attrib) {
-		position: absolute;
-		bottom: 74px;
+		order: 1;
+		position: relative;
+		bottom: 0;
 		right: 0;
 		width: auto;
 		min-width: 0;
@@ -1569,11 +1650,11 @@
 
 	@media (max-width: 760px) {
 		.map :global(.maplibregl-ctrl-bottom-right) {
-			bottom: calc(36px + var(--chrome-inset, 0px));
+			bottom: 12px;
+			right: 12px;
+			gap: 12px;
 		}
 		.map :global(.maplibregl-ctrl-attrib) {
-			/* last in the column so it rests on the sheet's edge instead of
-			   floating over the network a zoom control's height above it */
 			position: relative;
 			bottom: auto;
 			width: auto;
@@ -1582,21 +1663,21 @@
 			white-space: normal;
 		}
 
-		/* The band of map a phone has left between the header and the sheet is
-		   about the height of the solve card, which covers the buttons wherever
-		   they land. Pinch and double tap zoom; the attribution stays. */
 		.map :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group) {
-			display: none;
+			display: flex;
+		}
+		.map :global(.maplibregl-ctrl-group button + button) {
+			border-top: 0;
+			border-left: 1px solid var(--line);
 		}
 	}
 
-	/* One line on a small phone: wrapped attribution turns into a wide block
-	   sitting over the network. */
+	/* Attribution shares the bottom row with touch-sized zoom buttons. */
 	@media (max-width: 460px) {
 		.map :global(.maplibregl-ctrl-attrib) {
-			max-width: calc(100vw - 20px);
+			max-width: calc(100vw - 140px);
 			font-size: 9px;
-			white-space: nowrap;
+			white-space: normal;
 		}
 	}
 

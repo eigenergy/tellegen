@@ -3,24 +3,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::objective::{DecisionSpace, StudyObjective};
 use crate::Problem;
 
-pub const STUDY_VERSION: u32 = 1;
+pub const STUDY_VERSION: u32 = 2;
 const MAX_RECORDS: usize = 100_000;
 const MAX_BUNDLE_BYTES: usize = 512 * 1024 * 1024;
 
 pub fn content_id(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut id = String::with_capacity(7 + 64);
-    id.push_str("sha256:");
-    for byte in Sha256::digest(bytes) {
-        id.push(char::from(HEX[usize::from(byte >> 4)]));
-        id.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    id
+    crate::content_id::content_id(bytes)
 }
 
 fn record_id<T: Serialize>(value: &T) -> Result<String, String> {
@@ -36,6 +28,7 @@ fn record_id<T: Serialize>(value: &T) -> Result<String, String> {
 #[serde(rename_all = "snake_case")]
 pub enum ArtifactKind {
     PowerioIr,
+    GeoLayer,
     Evidence,
 }
 
@@ -55,8 +48,8 @@ pub struct StateNode {
     pub parent: Option<String>,
     pub formulation: Problem,
     pub input: String,
-    pub solution: String,
-    pub view: String,
+    pub solution: Option<String>,
+    pub view: Option<String>,
     pub label: String,
 }
 
@@ -138,6 +131,38 @@ pub struct DecisionRecord {
     pub evidence: Vec<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct Camera {
+    pub center: [f64; 2],
+    pub zoom: f64,
+    pub bearing: f64,
+    pub pitch: f64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DiagramCamera {
+    pub center: [f64; 2],
+    pub scale: f64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DisplayContext {
+    pub case_id: String,
+    /// Content-addressed PowerIO GeoLayer used for display, independent of physics.
+    pub geography: String,
+    #[serde(default)]
+    pub layers: Vec<String>,
+    pub camera: Option<Camera>,
+    #[serde(default)]
+    pub diagram_camera: Option<DiagramCamera>,
+}
+
 /// A document contains references, while the bundle owns deduplicated artifacts.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -160,6 +185,10 @@ pub struct StudyDocument {
     /// Original network input, retained independently of the starting operating point.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_input: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<DisplayContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_details: Option<crate::preparation::ModelDetails>,
 }
 
 /// Approvals are intentionally absent from the portable document.
@@ -225,6 +254,8 @@ impl StudyBundle {
                 recommended_state: None,
                 applied_state: None,
                 base_input: None,
+                display: None,
+                model_details: None,
             },
             artifacts: BTreeMap::new(),
         })
@@ -247,9 +278,10 @@ impl StudyBundle {
                 text,
             );
         }
-        let bundle: Self =
+        let mut bundle: Self =
             serde_json::from_str(text).map_err(|e| format!("invalid Study bundle: {e}"))?;
         bundle.validate()?;
+        bundle.document.version = STUDY_VERSION;
         Ok(bundle)
     }
 
@@ -283,6 +315,7 @@ impl StudyBundle {
     ) -> Result<T, String> {
         self.check_revision(expected)?;
         let mut next = self.clone();
+        next.document.version = STUDY_VERSION;
         let result = operation(&mut next)?;
         next.document.revision = expected.checked_add(1).ok_or("Study revision exhausted")?;
         next.validate()?;
@@ -319,8 +352,8 @@ impl StudyBundle {
             parent,
             formulation: view.formulation,
             input,
-            solution,
-            view: evidence,
+            solution: Some(solution),
+            view: Some(evidence),
             label,
         })
     }
@@ -334,7 +367,12 @@ impl StudyBundle {
         serde_json::from_str(
             &self
                 .artifacts
-                .get(&state.view)
+                .get(
+                    state
+                        .view
+                        .as_ref()
+                        .ok_or("This state has no solve result")?,
+                )
                 .ok_or("state evidence is unavailable")?
                 .text,
         )
@@ -381,14 +419,16 @@ impl StudyBundle {
         goal.decisions.validate(state.formulation)?;
         goal.objective.validate(&goal.decisions)?;
         let network = crate::study_ops::state_network(self, &goal.anchor_state)?;
-        let view = self.state_view(&goal.anchor_state)?;
         let changes = goal
             .decisions
             .variables
             .iter()
             .map(|v| (v.id.clone(), 0.0))
             .collect();
-        goal.objective.evaluate(&view, &network, &changes)?;
+        if state.view.is_some() {
+            goal.objective
+                .evaluate(&self.state_view(&goal.anchor_state)?, &network, &changes)?;
+        }
         if goal.parent != self.document.active_goal {
             return Err("goal revision must name the current goal as its parent".into());
         }
@@ -473,7 +513,7 @@ impl StudyBundle {
 
     pub fn validate(&self) -> Result<(), String> {
         let d = &self.document;
-        if d.schema != "tellegen-study" || d.version != STUDY_VERSION {
+        if d.schema != "tellegen-study" || !(1..=STUDY_VERSION).contains(&d.version) {
             return Err("unsupported Study document version".into());
         }
         if d.id.trim().is_empty() || d.id.len() > 256 || d.title.len() > 4096 {
@@ -506,19 +546,68 @@ impl StudyBundle {
             self.require_artifact(base, true)?;
             crate::study_ops::input_network(&self.artifacts[base].text)?;
         }
+        if let Some(display) = &d.display {
+            let artifact = self
+                .artifacts
+                .get(&display.geography)
+                .ok_or("missing display geography")?;
+            if !matches!(artifact.kind, ArtifactKind::GeoLayer) {
+                return Err("display geography requires a PowerIO GeoLayer".into());
+            }
+            for layer in &display.layers {
+                let artifact = self.artifacts.get(layer).ok_or("missing display layer")?;
+                if !matches!(artifact.kind, ArtifactKind::GeoLayer) {
+                    return Err("display layer requires a PowerIO GeoLayer".into());
+                }
+            }
+            if display.case_id.is_empty() {
+                return Err("display case identity is empty".into());
+            }
+            if let Some(camera) = &display.diagram_camera {
+                if !camera
+                    .center
+                    .iter()
+                    .chain([&camera.scale])
+                    .all(|v| v.is_finite())
+                    || camera.scale <= 0.0
+                {
+                    return Err("invalid drawing camera".into());
+                }
+            }
+            if let Some(camera) = &display.camera {
+                if !camera
+                    .center
+                    .iter()
+                    .chain([&camera.zoom, &camera.bearing, &camera.pitch])
+                    .all(|v| v.is_finite())
+                    || !(-90.0..=90.0).contains(&camera.center[1])
+                    || !(0.0..=24.0).contains(&camera.zoom)
+                    || !(0.0..=85.0).contains(&camera.pitch)
+                {
+                    return Err("invalid display camera".into());
+                }
+            }
+        }
         for (id, s) in &d.states {
             verify_record(id, s)?;
             self.require_artifact(&s.input, true)?;
-            self.require_artifact(&s.solution, true)?;
-            self.require_artifact(&s.view, false)?;
             if let Some(parent) = &s.parent {
                 require(&d.states, parent, "parent state")?;
             }
+            let (Some(solution), Some(view)) = (&s.solution, &s.view) else {
+                if d.version < 2 || s.solution.is_some() || s.view.is_some() {
+                    return Err("a state requires both solution and result, or neither".into());
+                }
+                crate::study_ops::input_network(&self.artifacts[&s.input].text)?;
+                continue;
+            };
+            self.require_artifact(solution, true)?;
+            self.require_artifact(view, false)?;
             if self.state_view(id)?.formulation != s.formulation {
                 return Err("state view has a different formulation".into());
             }
             let input = electrical.get(&s.input);
-            let solution = electrical.get(&s.solution);
+            let solution = electrical.get(solution);
             match (input, solution) {
                 (Some((input_kind, false, input_id)), Some((solution_kind, true, solution_id)))
                     if *input_kind == s.formulation && *solution_kind == s.formulation =>
@@ -577,10 +666,11 @@ impl StudyBundle {
         for (position, id) in d.experiment_order.iter().enumerate() {
             let e = &d.experiments[id];
             verify_record(id, &(position, e))?;
-            if !matches!(e.kind, ExperimentKind::HistoricalImport)
-                && (e.start_state.is_none() || e.goal.is_none())
-            {
-                return Err("experiment requires a starting state and goal revision".into());
+            if !matches!(e.kind, ExperimentKind::HistoricalImport) && e.start_state.is_none() {
+                return Err("activity requires a starting state".into());
+            }
+            if matches!(e.kind, ExperimentKind::Planning) && e.goal.is_none() {
+                return Err("planning activity requires a goal revision".into());
             }
             if let Some(state) = &e.start_state {
                 require(&d.states, state, "experiment start")?;
@@ -682,6 +772,14 @@ fn require<T>(records: &BTreeMap<String, T>, id: &str, kind: &str) -> Result<(),
 fn validate_artifact(artifact: &StudyArtifact) -> Result<Option<(Problem, bool, String)>, String> {
     if artifact.text.len() > MAX_BUNDLE_BYTES {
         return Err("Study artifact exceeds 512 MiB".into());
+    }
+    if matches!(artifact.kind, ArtifactKind::GeoLayer) {
+        let parsed = powerio::GeoLayer::parse(&artifact.text, Some("study.geo.json"))
+            .map_err(|e| e.to_string())?;
+        if parsed.layer.features.is_empty() || !parsed.diagnostics.is_empty() {
+            return Err("invalid or empty Study geography".into());
+        }
+        return Ok(None);
     }
     if !matches!(artifact.kind, ArtifactKind::PowerioIr) {
         serde_json::from_str::<serde_json::Value>(&artifact.text)

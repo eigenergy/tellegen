@@ -120,9 +120,9 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	// Relaxing a binding limit lowers the objective: the committed slider shows
 	// the +8 MW rating with a negative gradient/exact score pair, and the exact
 	// value comes from the re-solve (a local case has no server fallback).
-	const panel = page.locator('.panel');
+	const panel = page.getByRole('complementary', { name: 'Network', exact: true });
 	await expect(panel).toContainText('+8 MW', { timeout: 30_000 });
-	await expect(panel).toContainText(/gradient −[\d.,]+ · exact −[\d.,]+/, {
+	await expect(panel).toContainText(/gradient −[\d.,]+, exact −[\d.,]+/, {
 		timeout: 30_000
 	});
 });

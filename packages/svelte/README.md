@@ -54,10 +54,35 @@ Use `TellegenProvider` and `TellegenShell` when state should survive route chang
 </TellegenProvider>
 ```
 
+## Panel layout
+
+The shell docks Network and Studies on the left, and Solver and Agent on the
+right. The most recently opened panel gets more room in its dock; click another
+heading to expand it. Drag a panel heading to detach it; use the corner handle to resize it.
+Panel options dock it on either side, and **Reset layout** restores the default
+positions. Focus a heading or resize handle and use arrow keys for keyboard
+control; hold Shift for larger steps. Narrow windows show one active drawer.
+Panel positions are stored in the browser, independently of case and Study data.
+
+Custom panels can join the same layout inside `TellegenProvider`:
+
+```svelte
+<TellegenProvider>
+  <TellegenShell />
+  <PanelFrame id="notes" title="Notes" side="right" order={30}>
+    <p>Case notes</p>
+  </PanelFrame>
+</TellegenProvider>
+```
+
+Import `PanelFrame` from `@tellegen/svelte`. Its optional `open` prop is bindable;
+`width` sets its preferred width, and the `headerActions` snippet adds compact
+controls beside its title.
+
 ## Engine Reexports
 
 The package reexports the browser engine helpers, including `ingestCase`,
-`classifyJson`, and `ingestJsonDrop`, for custom drop surfaces. These APIs use
+`classifyJson`, and `ingestJsonDrop`, for custom file imports. These APIs use
 byte input: pass `Uint8Array` to `ingestCase`, await
 `classifyJson(bytes)` and read its `{ kind, format }` result, and use
 `ingestJsonDrop(bytes)` to classify and parse in one call. `isStudyPackageText`
@@ -66,7 +91,10 @@ was removed; stored PowerIO documents report `kind === "module"`.
 `unknown`; BMOPF and PMD are distribution `format` values rather than separate
 kinds. Every solvable ingest payload carries the retained module in
 `module_json`; the viewer uses that generation-2 IR for Study construction and
-geographic edits, with no second serialized network boundary.
+geographic edits without keeping a second serialized network.
+
+Drawing layers use a plain canvas with their own x/y coordinates. Saved Studies
+retain the drawing center and scale separately from the geographic map camera.
 
 ## Release
 

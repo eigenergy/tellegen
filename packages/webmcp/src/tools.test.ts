@@ -541,27 +541,106 @@ describe("planning tool surface", () => {
   });
 });
 
-
 describe("persistent Study tool completion", () => {
   it("uses the host's generated schema and retains a saved result after cancellation", async () => {
     const cancel = new AbortController();
-    const schema = { type: "object" as const, properties: { expected_revision: { type: "integer" } } };
+    const schema = {
+      type: "object" as const,
+      properties: { expected_revision: { type: "integer" } },
+    };
     const tools = createTellegenStudyTools({
       inputSchema: () => schema,
-      execute: async () => { cancel.abort(); return { id: "s", revision: 3, experiment: "e", termination: "cancelled" }; },
+      execute: async () => {
+        cancel.abort();
+        return {
+          id: "s",
+          revision: 3,
+          experiment: "e",
+          termination: "cancelled",
+        };
+      },
     });
     expect(tools).toHaveLength(9);
-    expect(tools.every(tool => tool.inputSchema === schema)).toBe(true);
-    expect(tools.some(tool => tool.name.includes("apply"))).toBe(false);
-    const proposal = tools.find(tool => tool.name === "propose_study")!;
-    const response = await proposal.execute({ expected_revision: 2 }, { signal: cancel.signal });
-    expect(response).toMatchObject({ ok: true, data: { id: "s", revision: 3, experiment: "e", termination: "cancelled" } });
+    expect(tools.every((tool) => tool.inputSchema === schema)).toBe(true);
+    expect(tools.some((tool) => tool.name.includes("apply"))).toBe(false);
+    const proposal = tools.find((tool) => tool.name === "propose_study")!;
+    const response = await proposal.execute(
+      { expected_revision: 2 },
+      { signal: cancel.signal },
+    );
+    expect(response).toMatchObject({
+      ok: true,
+      data: { id: "s", revision: 3, experiment: "e", termination: "cancelled" },
+    });
   });
   it("rejects oversized input before invoking the Study controller", async () => {
     const run = vi.fn();
-    const tools = createTellegenStudyTools({ inputSchema: () => ({ type: "object" }), execute: run });
+    const tools = createTellegenStudyTools({
+      inputSchema: () => ({ type: "object" }),
+      execute: run,
+    });
     const response = await tools[0].execute({ text: "x".repeat(1_048_576) });
     expect(response.ok).toBe(false);
     expect(run).not.toHaveBeenCalled();
   });
+});
+
+describe("case navigation capability", () => {
+  it("registers and validates discovery and display selection only when implemented", async () => {
+    const listCases = vi.fn((_input: import("./types.js").ListCasesInput) => ({
+      cases: [],
+      next_offset: null,
+    }));
+    const selectCase = vi.fn((input: import("./types.js").SelectCaseInput) => ({
+      case_id: input.caseId,
+      revision: "new",
+    }));
+    const tools = createTellegenTools(
+      adapter({ cases: { listCases, selectCase } }),
+    );
+    const list = tools.find((t) => t.name === "list_cases")!;
+    const select = tools.find((t) => t.name === "select_case")!;
+    expect(list.annotations.readOnlyHint).toBe(true);
+    expect(select.annotations.readOnlyHint).toBe(false);
+    expect(await list.execute({})).toMatchObject({ ok: true });
+    expect(listCases.mock.calls[0][0]).toEqual({ offset: 0, limit: 10 });
+    expect(
+      await select.execute({ case_id: "case-a", expected_revision: "old" }),
+    ).toMatchObject({ ok: true, data: { case_id: "case-a" } });
+    expect(selectCase.mock.calls[0][0]).toEqual({
+      caseId: "case-a",
+      expectedRevision: "old",
+    });
+    expect(await list.execute({ limit: 50 })).toMatchObject({
+      ok: false,
+      error: { code: "INVALID_INPUT" },
+    });
+    expect(
+      await select.execute({ case_id: "case-a", approval: true }),
+    ).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
+  });
+});
+
+it("validates bounded multiconductor solves and forwards cancellation", async () => {
+  const solve = vi.fn(() => ({ converged: true }));
+  const tool = createTellegenTools(
+    adapter({ solveMulticonductorPowerFlow: solve }),
+  ).find((tool) => tool.name === "solve_multiconductor_pf")!;
+  expect(tool).toBeDefined();
+  expect(tool.name.length).toBeLessThanOrEqual(30);
+  const rejected = await tool.execute({
+    case_id: "mc",
+    max_iterations: 100000,
+  });
+  expect(rejected).toMatchObject({ ok: false });
+  expect(solve).not.toHaveBeenCalled();
+  const result = await tool.execute({
+    case_id: "mc",
+    expected_revision: "mc:1:0",
+  });
+  expect(result).toMatchObject({ ok: true });
+  expect(solve).toHaveBeenCalledWith(
+    { caseId: "mc", expectedRevision: "mc:1:0", maxIterations: 100 },
+    expect.any(AbortSignal),
+  );
 });

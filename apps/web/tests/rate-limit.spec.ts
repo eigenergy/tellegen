@@ -1,3 +1,4 @@
+import { noticeDetails } from './fixtures/notices.js';
 import { expect, test } from './fixtures/page-errors.js';
 import { lookupBus, mockDataRoutes, sensitivityColumn } from './fixtures/backend-case';
 
@@ -30,7 +31,7 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 	// One selection, one 429: the rate limit copy, no "Error:" prefix, no retry
 	// of the same doomed request.
 	await lookupBus(page, 1);
-	const error = page.locator('.panel .error');
+	const error = await noticeDetails(page);
 	await expect(error).toHaveText('rate limited; wait a few seconds and try again');
 	expect(sensitivityFetches).toBe(1);
 
@@ -42,11 +43,18 @@ test('429 sensitivity fallback: honest copy, one request, cooldown, working retr
 	// Retry re-runs the failed bus selection (not a case list reload) and the
 	// recovered column renders the sensitivity readout.
 	sensitivityStatus = 200;
-	await page.getByRole('button', { name: 'retry', exact: true }).click();
+	await page
+		.getByTestId('notification-toast')
+		.getByRole('button', { name: 'Retry', exact: true })
+		.click();
 	// Wait for the settled readout (the chip also renders while loading) before
 	// counting requests, so the assertion doesn't race the in-flight fetch.
 	await expect(page.getByText('LMP response to demand at bus 2')).toBeVisible();
-	await expect(error).toHaveCount(0);
+	await expect(
+		page
+			.getByRole('region', { name: 'Notifications' })
+			.getByRole('button', { name: 'Retry', exact: true })
+	).toHaveCount(0);
 	await expect.poll(() => sensitivityFetches).toBe(2);
 	expect(casesFetches).toBe(1);
 });

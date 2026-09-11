@@ -1184,14 +1184,11 @@ impl Study {
         Ok(module)
     }
 
-    /// Serialize the committed exact DC OPF result as a PowerIO solution
-    /// module. Its embedded instance contains the materialized network that
-    /// was solved.
+    /// Serialize the committed result as a PowerIO solution module with the
+    /// instance and electrical values used by the solve.
     pub fn save_solution_module(&self) -> Result<String, String> {
         let Some((model, solution)) = self.solved.dc_exact() else {
-            return Err(
-                "an exact PowerIO solution module is available only for a DC OPF Study".to_owned(),
-            );
+            return self.save_exact_module();
         };
         let network = self.materialized_network()?;
         let instance = match &self.input {

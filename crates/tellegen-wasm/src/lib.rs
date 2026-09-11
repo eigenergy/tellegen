@@ -86,6 +86,9 @@ fn with_module_json(
     mut payload: serde_json::Value,
     module: powerio::PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
+    if matches!(module.value(), PioValue::AcPfInstance(_)) {
+        payload["formulation"] = serde_json::json!("acpf");
+    }
     let module_json = serialize_module(&module)?;
     payload
         .as_object_mut()
@@ -104,6 +107,7 @@ fn balanced_study_network(value: &PioValue) -> Option<&powerio::BalancedNetwork>
     match value {
         PioValue::BalancedNetwork(network) => Some(network),
         PioValue::DcOpfInstance(instance) => Some(instance.network()),
+        PioValue::AcPfInstance(instance) => Some(instance.network()),
         _ => None,
     }
 }
@@ -174,6 +178,9 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
             let diagnostics = module.diagnostics().to_vec();
             let payload = if let Some(network) = balanced_study_network(module.value()) {
                 let mut payload = ingest_value(network, &diagnostics, Vec::new(), None)?;
+                if matches!(module.value(), PioValue::AcPfInstance(_)) {
+                    payload["formulation"] = serde_json::json!("acpf");
+                }
                 let module_json = std::str::from_utf8(bytes)
                     .map_err(|_| "stored module document is not valid UTF-8".to_owned())?;
                 payload
@@ -273,6 +280,81 @@ pub fn parse_case(bytes: &[u8], format: &str) -> Result<String, JsError> {
 pub fn solve_module(module_json: &str, request_json: &str) -> Result<String, JsError> {
     install_panic_hook();
     tellegen::solve_module_json(module_json, request_json).map_err(jserr)
+}
+
+/// Solve a raw BMOPF multiconductor constant-power case.  The parser and
+/// fixed-point implementation remain in the engine crate; this export only
+/// performs the bounded text/JSON conversion at the browser boundary.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn solve_mc_bmopf(text: &str, options_json: &str) -> Result<String, JsError> {
+    ensure_input_text(text)?;
+    ensure_input_text(options_json)?;
+    install_panic_hook();
+    let options = if options_json.trim().is_empty() {
+        tellegen::McPfOptions::default()
+    } else {
+        serde_json::from_str(options_json).map_err(jserr)?
+    };
+    tellegen::solve_bmopf_json(text, &options).map_err(jserr)
+}
+
+/// Solve a stored PowerIO multiconductor module. This accepts the portable
+/// module form used by browser persistence in addition to raw BMOPF text.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn solve_mc_module(module_json: &str, options_json: &str) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    ensure_input_text(options_json)?;
+    install_panic_hook();
+    let options = if options_json.trim().is_empty() {
+        tellegen::McPfOptions::default()
+    } else {
+        serde_json::from_str(options_json).map_err(jserr)?
+    };
+    tellegen::solve_mc_module_json(module_json, &options).map_err(jserr)
+}
+
+/// Solve a supported multiconductor Study input and return a self-contained,
+/// replayable snapshot containing the typed input, PowerIO solution module, and
+/// terminal-aware result view.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn solve_mc_study(
+    module_json: &str,
+    study_id: &str,
+    study_title: &str,
+    options_json: &str,
+) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    ensure_input_text(options_json)?;
+    install_panic_hook();
+    let options: tellegen::McPfOptions = serde_json::from_str(options_json).map_err(jserr)?;
+    tellegen::solve_mc_study_json(module_json, study_id, study_title, &options).map_err(jserr)
+}
+
+/// Validate and canonicalize a saved multiconductor Study snapshot without
+/// re-solving it.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn replay_mc_study(snapshot_json: &str) -> Result<String, JsError> {
+    ensure_input_text(snapshot_json)?;
+    install_panic_hook();
+    tellegen::replay_mc_study_json(snapshot_json).map_err(jserr)
+}
+
+/// Attach geographic or drawing positions to a saved multiconductor result.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn apply_mc_study_geo(snapshot_json: &str, layer_geojson: &str) -> Result<String, JsError> {
+    ensure_input_text(snapshot_json)?;
+    ensure_input_text(layer_geojson)?;
+    install_panic_hook();
+    let mut snapshot = tellegen::McStudySnapshot::from_json(snapshot_json).map_err(jserr)?;
+    snapshot
+        .apply_geo_layer(&geo::parse_layer(layer_geojson).map_err(jserr)?)
+        .map_err(jserr)?;
+    snapshot.to_json().map_err(jserr)
 }
 
 /// The capability matrix as JSON: which `(formulation, operand, parameter)` cells this
@@ -563,6 +645,9 @@ fn commit_output(resp: &SolveResponse) -> serde_json::Value {
 #[derive(Serialize)]
 struct ViewBus {
     id: usize,
+    name: Option<String>,
+    area: usize,
+    zone: usize,
     /// powerio row uid when the source format carries one (GOC3 does), null
     /// otherwise. The numeric `id` remains the edit key. The TS layer mirrors
     /// this shape.
@@ -594,6 +679,7 @@ struct ViewBranch {
 
 #[derive(Serialize)]
 struct View {
+    coordinate_space: &'static str,
     buses: Vec<ViewBus>,
     branches: Vec<ViewBranch>,
 }
@@ -601,6 +687,9 @@ struct View {
 #[derive(Serialize)]
 struct TopologyBus {
     id: usize,
+    name: Option<String>,
+    area: usize,
+    zone: usize,
     /// powerio row uid, as on [`ViewBus`].
     uid: Option<String>,
     demand_mw: f64,
@@ -817,6 +906,9 @@ pub(crate) fn ingest_value(
             .map(|(i, b)| {
                 Ok(TopologyBus {
                     id: b.id.0,
+                    name: b.name.clone(),
+                    area: b.area,
+                    zone: b.zone,
                     uid: analysis_bus_uids[i].clone(),
                     demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                     gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
@@ -854,7 +946,19 @@ pub(crate) fn ingest_value(
                     "{missing_buses} bus(es) lacked coordinates and are omitted from the map"
                 ));
             }
-            spread_stacks(&mut cs);
+            let coordinate_space = match net.geo().as_ref().map(|g| &g.space) {
+                Some(powerio::CoordinateSpace::Diagram { .. }) => "diagram",
+                Some(powerio::CoordinateSpace::Projected { .. }) => {
+                    return Err(
+                        "Projected coordinates require an explicit geographic transformation"
+                            .into(),
+                    )
+                }
+                _ => "geographic",
+            };
+            if coordinate_space == "geographic" {
+                spread_stacks(&mut cs);
+            }
             let buses: Vec<ViewBus> = analysis
                 .buses()
                 .iter()
@@ -863,6 +967,9 @@ pub(crate) fn ingest_value(
                     let &(lon, lat) = cs.get(&b.id.0)?;
                     Some(Ok(ViewBus {
                         id: b.id.0,
+                        name: b.name.clone(),
+                        area: b.area,
+                        zone: b.zone,
                         uid: analysis_bus_uids[i].clone(),
                         lon,
                         lat,
@@ -903,7 +1010,11 @@ pub(crate) fn ingest_value(
                     "{missing_branches} branch(es) lacked endpoint coordinates and are omitted from the map"
                 ));
             }
-            Some(View { buses, branches })
+            Some(View {
+                coordinate_space,
+                buses,
+                branches,
+            })
         }
     };
 
@@ -941,32 +1052,7 @@ fn coords_kind_token(net: &powerio::BalancedNetwork, has_view: bool) -> &'static
     }
 }
 
-#[derive(Serialize)]
-struct ViewSubstation {
-    number: u32,
-    name: String,
-    x: f64,
-    y: f64,
-    /// Approximate longitude/latitude via powerio's inverse of the projection
-    /// PowerWorld's auto generated layouts use, so the frontend never
-    /// reimplements the Mercator constant.
-    lon: f64,
-    lat: f64,
-}
-
-#[derive(Serialize)]
-struct DisplayView {
-    substations: Vec<ViewSubstation>,
-    canvas_width: f64,
-    canvas_height: f64,
-}
-
-/// Decode a PowerWorld `.pwd` display file (binary). Returns the substation
-/// symbols at the diagram coordinates the file stores (x east, y north) plus
-/// the canvas size, each with the approximate `lon`/`lat` projection
-/// (`to_lonlat_from_pwd_mercator`; hand edited diagrams drift from it). A `.pwd`
-/// carries no buses or branches. `format` is "pwd". Pure in-memory parsing,
-/// no filesystem, so it runs in the browser.
+/// Decode a PowerWorld drawing as a canonical PowerIO GeoLayer in diagram units.
 #[wasm_bindgen]
 pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
     ensure_input_bytes(bytes)?;
@@ -976,45 +1062,13 @@ pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
     install_panic_hook();
     let source = Source::from_memory("display.pwd", bytes.to_vec()).map_err(jserr)?;
     let module = powerio::parse(source).map_err(jserr)?;
-    let PioValue::GeoLayer(layer) = module.into_value() else {
-        return Err(JsError::new(
-            "PowerWorld display did not parse as a geographic layer",
-        ));
+    let PioValue::GeoLayer(layer) = module.value() else {
+        return Err(JsError::new("Display did not parse as a PowerIO GeoLayer"));
     };
-    let (canvas_width, canvas_height) = match &layer.space {
-        powerio::CoordinateSpace::Diagram {
-            canvas: Some(canvas),
-        } => (canvas.width.unwrap_or(0.0), canvas.height.unwrap_or(0.0)),
-        _ => (0.0, 0.0),
-    };
-    let substations = layer
-        .features
-        .into_iter()
-        .filter_map(|feature| {
-            if feature.target != powerio::GeoTarget::Substation {
-                return None;
-            }
-            let powerio::GeoGeometry::Point([x, y]) = feature.geometry else {
-                return None;
-            };
-            let number = feature.key.id?.parse().ok()?;
-            let (lon, lat) = powerio::to_lonlat_from_pwd_mercator(x, y);
-            Some(ViewSubstation {
-                number,
-                name: feature.key.name.unwrap_or_default(),
-                x,
-                y,
-                lon,
-                lat,
-            })
-        })
-        .collect();
-    serde_json::to_string(&DisplayView {
-        substations,
-        canvas_width,
-        canvas_height,
-    })
-    .map_err(jserr)
+    serde_json::to_string(&serde_json::json!({"layer":layer.to_geojson(), "diagnostics":module.diagnostics(),
+        "n_points":layer.features.iter().filter(|f| matches!(f.geometry,powerio::GeoGeometry::Point(_))).count(),
+        "n_routes":layer.features.iter().filter(|f| matches!(f.geometry,powerio::GeoGeometry::LineString(_))).count()
+    })).map_err(jserr)
 }
 
 // ---------------------------------------------------------------------------
@@ -1460,26 +1514,29 @@ mpc.gencost = [
         assert_eq!(dc_drop.payload["n_bus"], 14);
         assert_eq!(dc_drop.payload["module_json"], dc_instance_json);
 
-        // The browser has no AC PF or AC OPF formulation selector. Keep the
-        // declared calculation intact and refuse it instead of opening its
-        // network under the default DC OPF formulation.
         let ac_opf = powerio::AcOpfInstance::from_network(parse_matpower(CASE14_NO_COORDS))
             .expect("AC OPF instance");
         let (ac_pf, _) = ac_opf.to_ac_pf().expect("AC PF instance");
-        for value in [
-            powerio::PioValue::AcPfInstance(ac_pf),
+        let pf_json = serialize_module(&powerio::PioModule::new(powerio::PioValue::AcPfInstance(
+            ac_pf,
+        )))
+        .unwrap();
+        assert_eq!(
+            classify_json_drop_value(pf_json.as_bytes()).unwrap().kind,
+            "module"
+        );
+        let pf_drop = ingest_json_drop_value(pf_json.as_bytes()).unwrap();
+        assert_eq!(pf_drop.payload["formulation"], "acpf");
+        assert_eq!(pf_drop.payload["module_json"], pf_json);
+        assert_eq!(pf_drop.payload["n_bus"], 14);
+
+        // An AC OPF input requires an explicit choice of supported calculation.
+        let opf_json = serialize_module(&powerio::PioModule::new(
             powerio::PioValue::AcOpfInstance(ac_opf),
-        ] {
-            let kind = value.type_name().to_owned();
-            let module_json =
-                serialize_module(&powerio::PioModule::new(value)).expect("AC instance module JSON");
-            let classify_error = classify_json_drop_value(module_json.as_bytes())
-                .expect_err("AC instance must not classify as viewable");
-            assert!(classify_error.contains(&kind), "{classify_error}");
-            let ingest_error = ingest_json_drop_value(module_json.as_bytes())
-                .expect_err("AC instance must not ingest as a DC study");
-            assert!(ingest_error.contains(&kind), "{ingest_error}");
-        }
+        ))
+        .unwrap();
+        assert!(classify_json_drop_value(opf_json.as_bytes()).is_err());
+        assert!(ingest_json_drop_value(opf_json.as_bytes()).is_err());
 
         // One holding a multiconductor network routes to the dist view.
         let dist_source = Source::from_memory(

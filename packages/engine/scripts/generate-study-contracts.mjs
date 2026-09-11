@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const output = join(root, "packages/engine/src/generated/study-contracts.ts");
 const schema = JSON.parse(readFileSync(join(root, "packages/engine/src/generated/study.schema.json"), "utf8"));
-const sources = ["document.rs", "objective.rs", "exploration.rs", "study_ops.rs", "api.rs", "sens/contract.rs", "solve.rs"];
+const sources = ["document.rs", "preparation.rs", "objective.rs", "exploration.rs", "study_ops.rs", "api.rs", "sens/contract.rs", "solve.rs"];
 const hash = createHash("sha256");
 for (const source of sources) hash.update(readFileSync(join(root, "crates/tellegen/src", source)));
 if (hash.digest("hex") !== schema["x-rust-source-sha256"]) {

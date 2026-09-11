@@ -1,0 +1,99 @@
+{
+  "name": "exponential-1-0.7",
+  "terminal_conventions": {
+    "phase": [
+      "a"
+    ],
+    "neutral": [
+      "n"
+    ],
+    "earth": []
+  },
+  "bus": {
+    "src": {
+      "terminal_names": [
+        "a",
+        "n"
+      ],
+      "perfectly_grounded_terminals": [
+        "n"
+      ]
+    },
+    "lb": {
+      "terminal_names": [
+        "a",
+        "n"
+      ],
+      "perfectly_grounded_terminals": [
+        "n"
+      ]
+    }
+  },
+  "voltage_source": {
+    "source": {
+      "bus": "src",
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "v_magnitude": [
+        240.0,
+        0
+      ],
+      "v_angle": [
+        0.6457718232379019,
+        0
+      ]
+    }
+  },
+  "load": {
+    "ld": {
+      "bus": "lb",
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "configuration": "SINGLE_PHASE",
+      "model": "exponential",
+      "p_nom": [
+        2400.0
+      ],
+      "q_nom": [
+        800.0
+      ],
+      "v_nom": [
+        240.0
+      ],
+      "gamma_p": [
+        0.7
+      ],
+      "gamma_q": [
+        2.3
+      ]
+    }
+  },
+  "line": {
+    "l1": {
+      "bus_from": "src",
+      "bus_to": "lb",
+      "terminal_map_from": [
+        "a"
+      ],
+      "terminal_map_to": [
+        "a"
+      ],
+      "length": 1,
+      "linecode": "lc"
+    }
+  },
+  "linecode": {
+    "lc": {
+      "R_series_1_1": 0.7,
+      "X_series_1_1": 0.2,
+      "G_from_1_1": 0,
+      "G_to_1_1": 0,
+      "B_from_1_1": 0,
+      "B_to_1_1": 0
+    }
+  }
+}

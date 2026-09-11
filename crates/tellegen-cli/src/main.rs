@@ -1,18 +1,18 @@
-//! `tellegen` — a thin CLI over the engine's JSON contracts, for
+//! `tellegen` provides JSON commands for
 //! reproducible solves, capacity proposals, parity checks, and scripting.
 //!
 //! ```text
 //! tellegen capabilities                       # the support matrix
-//! tellegen contract                           # versioned machine contract
+//! tellegen describe                           # commands and JSON schemas
 //! tellegen < case.pio.json                    # base-case DC OPF response
 //! tellegen '{"formulation":"socwr"}' < case.pio.json
 //! tellegen solve-module < case.pio.json       # stored module in, solution module out
 //! tellegen plan < plan-request.json          # capacity planning proposal
 //! ```
 //!
-//! `solve-module` and `plan` are the headless MCP boundary: a stored
+//! `solve-module` and `plan` accept a stored
 //! generation 2 `pio-ir` document on stdin, and a stored
-//! DC OPF solution module — nodal values and thermal multipliers attached —
+//! DC OPF solution module with LMPs and thermal multipliers
 //! or a capacity proposal and its exact proposed solution on stdout. A module holding a
 //! typed `dc_opf_instance` is consumed natively; a balanced network becomes
 //! the default instance first. Any other value kind is refused by name.
@@ -37,10 +37,16 @@ const USAGE: &str =
      \n\
      REQUEST_JSON  a solve request; default '{}' is a base-case DC OPF.\n\
      capabilities  print the formulation/operand/parameter capability matrix.\n\
-     contract      print the versioned CLI contract and generated JSON Schemas.\n\
+     describe      print supported commands and generated JSON schemas.\n\
+     prepare-model\n\
+                   fit convex quadratic or linear costs, retaining an error report.\n\
      solve-module\n\
                    read a stored PowerIO module on stdin and\n\
                    print the solved dc_opf_solution stored module.\n\
+     solve-mc [OPTIONS_JSON]\n\
+                   solve multiconductor PowerIO IR, returning terminal V, A and VA.\n\
+     solve-mc-bmopf [OPTIONS_JSON]\n\
+                   solve a BMOPF JSON case with the same AC power flow solver.\n\
      study create|inspect|run|export|import PATH\n\
                    create, inspect, continue or move a durable Study.\n\
      plan\n\
@@ -55,7 +61,17 @@ fn main() -> ExitCode {
             println!("{}", tellegen::capabilities_json());
             return ExitCode::SUCCESS;
         }
-        "contract" => return run(contract_json),
+        "prepare-model" => {
+            return run(|| {
+                let source = balanced_module(deserialize_module(&read_stdin()?)?)?.into_value();
+                let (model, details) = tellegen::preparation::prepare_costs(
+                    &source,
+                    tellegen::preparation::CostPreparation::ConvexQuadraticFit,
+                )?;
+                serde_json::to_string(&serde_json::json!({"input": serialize_module(&PioModule::new(PioValue::BalancedNetwork(model)))?, "model_details": details})).map_err(|e| e.to_string())
+            })
+        }
+        "describe" | "contract" => return run(contract_json),
         "study" => return run(study_command),
         "-h" | "--help" => {
             println!("{USAGE}");
@@ -69,6 +85,30 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
             return run(solve_module);
+        }
+        "solve-mc" | "solve-mc-bmopf" => {
+            return run(|| {
+                if std::env::args().nth(3).is_some() {
+                    return Err(
+                        "usage: tellegen solve-mc|solve-mc-bmopf [OPTIONS_JSON] (case on stdin)"
+                            .to_owned(),
+                    );
+                }
+                let options = std::env::args()
+                    .nth(2)
+                    .map(|text| {
+                        serde_json::from_str::<tellegen::McPfOptions>(&text)
+                            .map_err(|e| e.to_string())
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                let input = read_stdin()?;
+                if arg == "solve-mc-bmopf" {
+                    tellegen::solve_bmopf_json(&input, &options)
+                } else {
+                    tellegen::solve_mc_module_json(&input, &options)
+                }
+            });
         }
         "plan" => {
             if std::env::args().nth(2).is_some() {
@@ -282,6 +322,8 @@ fn contract_value() -> Result<serde_json::Value, String> {
         "tellegen_version": tellegen::VERSION,
         "powerio_version": env!("TELLEGEN_POWERIO_VERSION"),
         "schemas": {
+            "mc_pf_options": schemars::schema_for!(tellegen::McPfOptions),
+            "mc_pf_result": schemars::schema_for!(tellegen::McPfResult),
             "study_bundle": schemars::schema_for!(tellegen::document::StudyBundle),
             "study_create": schemars::schema_for!(tellegen::study_ops::CreateStudy),
             "study_request": schemars::schema_for!(tellegen::study_ops::StudyRequest),

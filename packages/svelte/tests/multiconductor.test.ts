@@ -6,9 +6,23 @@ import {
 	isPhaseTerminal,
 	phaseColor,
 	placeMultiView,
+	neutralTerminal,
 	transformerMarks,
 	type PlacedMultiEdge
 } from '../src/lib/multiconductor.js';
+
+describe('neutralTerminal', () => {
+	it('uses explicit metadata and does not infer arbitrary non-phase terminals', () => {
+		expect(neutralTerminal(['a', 'b', 'c'])).toBeNull();
+		expect(neutralTerminal(['a', 'return'], 'return')).toBe('return');
+		expect(neutralTerminal(['a', 'return'], null)).toBeNull();
+	});
+
+	it('recognizes the conventional neutral aliases for older graph payloads', () => {
+		expect(neutralTerminal(['a', 'b', 'c', 'n'])).toBe('n');
+		expect(neutralTerminal(['1', '2', '3', '4'])).toBe('4');
+	});
+});
 
 /** A small three-bus feeder graph: source -> line -> load bus -> transformer ->
  * secondary. Two buses carry geographic coordinates, one does not. */

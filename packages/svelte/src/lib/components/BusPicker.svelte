@@ -8,7 +8,9 @@
 	/** Render in the parent's flow instead of as a card floating over the map. */
 	let { inline = false }: { inline?: boolean } = $props();
 
-	const buses = $derived(app.active?.network?.buses ?? app.activeLocal?.view?.buses ?? []);
+	const buses = $derived(
+		app.studyView?.network.buses ?? app.active?.network?.buses ?? app.activeLocal?.view?.buses ?? []
+	);
 
 	let query = $state('');
 	let open = $state(false);
@@ -25,7 +27,11 @@
 	function commit(id: number) {
 		const caseId = app.activeCaseId;
 		const localId = app.activeLocalId;
-		if (caseId && app.active) ctrl.selectBus(caseId, id);
+		if (app.studyView) {
+			app.selectedBranch = null;
+			app.selectedBus = id;
+			void app.requestFrame({ caseId: app.studyView.caseId, busId: id });
+		} else if (caseId && app.active) ctrl.selectBus(caseId, id);
 		else if (localId && app.activeLocal) ctrl.selectLocalBus(localId, id);
 		query = '';
 		open = false;

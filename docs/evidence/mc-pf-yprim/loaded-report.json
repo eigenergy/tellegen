@@ -1,0 +1,20 @@
+{
+  "binary_sha256": "ad92ec4edae2bb1a8781fba8b0fcd6d74126706b75f197ea3e0ff7f743e89ea6",
+  "backend": "DSS C-API Library version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN 3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033829; License Status: Open \nDSS-Python version: 0.15.7\nOpenDSSDirect.py version: 0.9.4",
+  "cases": [
+    {
+      "case": "wye",
+      "converged": true,
+      "factorizations": 1,
+      "max_voltage_error_V": 2.433550069862776e-06,
+      "raw_kcl_A": 1.3967781130579448e-12
+    },
+    {
+      "case": "delta",
+      "converged": true,
+      "factorizations": 1,
+      "max_voltage_error_V": 2.433550069862607e-06,
+      "raw_kcl_A": 1.528295190547019e-12
+    }
+  ]
+}

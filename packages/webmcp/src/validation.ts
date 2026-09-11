@@ -10,6 +10,9 @@ import type {
   ProposeCapacityPlanInput,
   PreviewCaseUpdateInput,
   QueryNetworkInput,
+  ListCasesInput,
+  SelectCaseInput,
+  SolveMulticonductorInput,
   RatingEdit,
   ResetCaseInput,
   SortDirection,
@@ -24,6 +27,8 @@ const SORT_FIELDS = new Set([
   "demand_mw",
   "generation_mw",
   "price",
+  "voltage_pu",
+  "voltage_v",
   "loading",
   "flow_mw",
   "rating_mw",
@@ -138,6 +143,50 @@ export function validateEmpty(input: unknown): Record<string, never> {
   const value = object(input ?? {}, "input");
   exactKeys(value, [], "input");
   return {};
+}
+
+export function validateListCases(input: unknown): ListCasesInput {
+  const value = object(input ?? {}, "input");
+  exactKeys(value, ["offset", "limit"], "input");
+  return {
+    offset:
+      value.offset === undefined
+        ? 0
+        : integer(value.offset, "offset", 0, 100_000),
+    limit:
+      value.limit === undefined ? 10 : integer(value.limit, "limit", 1, 20),
+  };
+}
+
+export function validateSolveMulticonductor(
+  input: unknown,
+): SolveMulticonductorInput {
+  const value = object(input, "input");
+  exactKeys(value, ["case_id", "expected_revision", "max_iterations"], "input");
+  return {
+    caseId: string(value.case_id, "case_id"),
+    expectedRevision: string(value.expected_revision, "expected_revision"),
+    maxIterations:
+      value.max_iterations === undefined
+        ? 100
+        : integer(value.max_iterations, "max_iterations", 1, 10000),
+  };
+}
+
+export function validateSelectCase(input: unknown): SelectCaseInput {
+  const value = object(input, "input");
+  exactKeys(value, ["case_id", "expected_revision"], "input");
+  return {
+    caseId: string(value.case_id, "case_id"),
+    ...(value.expected_revision === undefined
+      ? {}
+      : {
+          expectedRevision: string(
+            value.expected_revision,
+            "expected_revision",
+          ),
+        }),
+  };
 }
 
 export function validateQueryNetwork(input: unknown): QueryNetworkInput {

@@ -21,6 +21,10 @@ packages/engine/src/wasm-pkg/
 
 # Operator-staged TAMU case data (scripts/stage-data.sh); never vendored
 data/
+# The compact multiconductor numerical oracle is checked-in test data.
+!crates/tellegen/tests/data/
+!crates/tellegen/tests/data/mc_pf/
+!crates/tellegen/tests/data/mc_pf/**
 
 # OS
 .DS_Store

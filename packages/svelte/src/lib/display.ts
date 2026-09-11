@@ -14,45 +14,45 @@ export type DisplayOption = {
 	gradient: string;
 };
 
-/** The display variables available for a case's current solution and formulation:
- * nodal marginal value always, the DC phase angle under DC OPF, the relaxed |V| under SOCWR. Metadata
- * only; call `displaySeriesFor` for one mode's per-bus values. Empty when unsolved. */
+/** Variables present in the current result. Power flow has no LMP values. */
 export function displayMetaFor(c: SolvableCase | null): DisplayOption[] {
 	if (!c?.solution) return [];
-	const options: DisplayOption[] = [
-		{
+	const options: DisplayOption[] = [];
+	if (c.formulation !== 'acpf' && c.solution.prices.length > 0) {
+		options.push({
 			mode: 'price',
 			label: 'LMP',
 			unit: 'objective units/MW',
 			copy: priceCopy(c.formulation),
 			gradient: priceGradient
-		}
-	];
-	if (c.formulation === 'dcopf' && c.solution.va.length > 0) {
-		options.push({
-			mode: 'angle',
-			label: 'angle',
-			unit: 'rad',
-			copy: 'DC bus voltage phase angle from the current OPF solution.',
-			gradient: priceGradient
 		});
 	}
-	if (c.formulation === 'socwr' && c.solution.w.length > 0) {
+	if (c.solution.vm?.length || c.solution.w.length > 0) {
 		options.push({
 			mode: 'voltage',
 			label: '|V|',
 			unit: 'pu',
-			copy: 'SOCWR voltage magnitude from the current relaxed solution.',
+			copy:
+				c.formulation === 'socwr'
+					? 'SOCWR voltage magnitude from the current relaxed solution.'
+					: 'Bus voltage magnitude from the current power-flow result.',
+			gradient: priceGradient
+		});
+	}
+	if (c.solution.va.length > 0) {
+		options.push({
+			mode: 'angle',
+			label: 'angle',
+			unit: 'rad',
+			copy: 'Bus voltage angle from the current result.',
 			gradient: priceGradient
 		});
 	}
 	return options;
 }
 
-/** Per-bus values for one display mode: nodal objective derivative, DC phase angle in rad, or
- * the SOCWR voltage magnitude (sqrt of the squared-voltage variable w, clamped at 0).
- * Empty when the case is unsolved. Single source for both the panel legend stats and
- * the map node coloring, so the |V| transform stays in one place. */
+/** Bus LMPs, voltage angles in radians, or voltage magnitudes in per unit.
+ * SOCWR supplies squared voltages, which are converted to magnitudes here. */
 export function displaySeriesFor(
 	c: SolvableCase | null,
 	mode: DisplayMode
@@ -61,6 +61,7 @@ export function displaySeriesFor(
 	if (!sol) return [];
 	if (mode === 'angle') return sol.va;
 	if (mode === 'voltage') {
+		if (sol.vm?.length) return sol.vm;
 		return sol.w.map((s) => ({
 			bus: s.bus,
 			value: Math.sqrt(Math.max(0, s.value))

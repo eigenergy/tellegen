@@ -121,10 +121,16 @@ export interface Topology {
 /** One parse per dropped file: summary stats, plus map geometry when the
  * file carries coordinates and topology for synthetic placement otherwise. */
 export interface IngestedCase extends CaseFileSummary {
+  /** Calculation declared by a typed problem instance. */
+  formulation?: Formulation;
   /** Generation 2 PowerIO IR used for display edits and every solver Study. */
   module_json: string;
   topology: Topology;
-  view: { buses: NetworkBus[]; branches: NetworkBranch[] } | null;
+  view: {
+    coordinate_space?: "geographic" | "diagram";
+    buses: NetworkBus[];
+    branches: NetworkBranch[];
+  } | null;
 }
 
 /** Edge family in the collapsed distribution graph. */
@@ -148,6 +154,8 @@ export interface DistGraphBus {
   id: string;
   terminals: string[];
   grounded: string[];
+  /** Declared or conservative conventional neutral terminal, when present. */
+  neutral_terminal?: string | null;
   xy?: [number, number];
   load_kw: number;
   gen_kw: number;
@@ -174,13 +182,12 @@ export interface DistGraph {
   edges: DistGraphEdge[];
 }
 
-/** One multiconductor parse for the viewing path: element counts, connected
- * load and generation (kW), parse diagnostics, coordinate provenance, and the
- * bus/terminal graph. No solve, no network JSON — distribution cases are viewed,
- * not solved. `coords_kind` tells the frontend how to place buses: `geographic`
- * drops `xy` straight onto the map, `planar` fits provided positions into a box
- * at a placement center, `synthetic` runs the force layout. */
+/** Multiconductor case data, terminal graph, and retained PowerIO IR. */
 export interface IngestedDistCase {
+  module_json?: string;
+  geo_layer?: string;
+  mc_pf_enabled?: boolean;
+  mc_pf_unavailable_reason?: string | null;
   name: string | null;
   model: "multiconductor";
   n_bus: number;
@@ -206,6 +213,10 @@ export interface IngestedDistCase {
   coords_kind: "geographic" | "planar" | "synthetic";
   diagnostics: PowerIoDiagnostic[];
   graph: DistGraph;
+  /** Explicit capability from the reader; absent means inspection only. */
+  mc_pf_supported?: boolean;
+  /** Reader explanation for an inspection-only distribution payload. */
+  mc_pf_reason?: string;
 }
 
 /** A materialized case written to a target format: the serialized case text,
@@ -282,11 +293,7 @@ export async function preloadEngine(): Promise<void> {
 }
 
 export type JsonDropKind =
-  | "module"
-  | "transmission"
-  | "distribution"
-  | "ambiguous"
-  | "unknown";
+  "module" | "transmission" | "distribution" | "ambiguous" | "unknown";
 
 export interface JsonDropClassification {
   kind: JsonDropKind;
@@ -395,22 +402,8 @@ export async function ingestDistCaseBytes(
   );
 }
 
-/** Substations from a PowerWorld .pwd display file. `x`/`y` are diagram
- * coordinates as stored; `lon`/`lat` are the engine's approximate projection
- * (powerio's inverse of the auto layout Mercator — hand edited diagrams
- * drift from it). */
-export interface DisplayPreview {
-  substations: {
-    number: number;
-    name: string;
-    x: number;
-    y: number;
-    lon: number;
-    lat: number;
-  }[];
-  canvas_width: number;
-  canvas_height: number;
-}
+/** A PowerWorld drawing decoded in its declared diagram coordinate system. */
+export type DisplayPreview = ParsedGeoLayer;
 
 /** True for binary display files (PowerWorld .pwd), read via parseDisplay.
  * Kept separate from formatOf: a .pwd is display data, not a case format. */
@@ -448,6 +441,10 @@ export interface GeoApplyReport {
 /** The refreshed ingest payload after a geo apply: `module_json`, the view,
  * and the summary all reflect the applied coordinates, and `report` carries
  * the matched/unmatched counts for the warnings panel. */
+export interface AppliedMcGeoCase extends IngestedDistCase {
+  report: GeoApplyReport;
+}
+
 export interface AppliedGeoCase extends IngestedCase {
   report: GeoApplyReport;
 }
@@ -490,6 +487,26 @@ export async function applyGeo(
       }),
     ),
   );
+}
+
+/** Apply geographic or drawing coordinates to a multiconductor case. */
+export async function applyMcGeo(
+  moduleJson: string,
+  layer: string,
+): Promise<AppliedMcGeoCase> {
+  assertEngineInputLength(moduleJson.length);
+  const result = JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "apply_geo",
+        module_json: moduleJson,
+        layer,
+      }),
+    ),
+  );
+  if (result.model !== "multiconductor")
+    throw new Error("Expected a multiconductor case");
+  return result;
 }
 
 /** Stamp a computed layout (bus id => [lon, lat]) onto a case network with
@@ -562,6 +579,206 @@ export async function solveModule(
   );
 }
 
+/** Portable terminal-aware result returned by the multiconductor fixed-point
+ * BMOPF entry point. Complex quantities use `{re, im}` so the JSON remains
+ * lossless across the wasm boundary. */
+export interface McPfOptions {
+  tolerance?: number;
+  max_iterations?: number;
+  damping?: number;
+  zero_voltage_tolerance?: number;
+  /** Absolute physical KCL floor in amperes; default 1e-6. */
+  absolute_kcl_tolerance?: number;
+  /** Relative KCL tolerance against prepared incident current. */
+  relative_kcl_tolerance?: number;
+  /** Apply the OpenDSS-style bounded-voltage load envelope; default true. */
+  voltage_envelope?: boolean;
+  /** Nominal-impedance breakpoint in per unit; default 0.5. */
+  v_low_pu?: number;
+  /** Lower edge of the normal load-model range; default 0.85. */
+  v_min_pu?: number;
+  /** Upper edge of the normal load-model range; default 1.15. */
+  v_max_pu?: number;
+}
+
+export interface McComplex {
+  re: number;
+  im: number;
+}
+
+export interface McElementPort {
+  element: string;
+  kind: string;
+  branch: number;
+  bus: string;
+  terminal: string;
+  current_into_element: McComplex;
+  power_into_element: McComplex;
+}
+
+export interface McSourceReaction {
+  source: string;
+  terminal: string;
+  current_into_network: McComplex;
+  power_into_network: McComplex;
+}
+
+export interface McPfResult {
+  converged: boolean;
+  voltage_valid: boolean;
+  min_voltage_pu: number | null;
+  max_voltage_pu: number | null;
+  voltage_violations: Array<{
+    load: string;
+    branch: number;
+    bus: string;
+    voltage: number;
+    nominal_voltage: number;
+    voltage_pu: number;
+    bound: "minimum" | "maximum";
+  }>;
+  iterations: number;
+  factorization_count: number;
+  matrix_dimension: number;
+  matrix_nonzeros: number;
+  voltage_change: number;
+  physical_kcl_residual: number;
+  scaled_kcl_residual: number;
+  terminals: Array<{
+    bus: string;
+    terminal: string;
+    voltage: McComplex;
+    current_into_network: McComplex;
+    power_into_network: McComplex;
+  }>;
+  element_ports: McElementPort[];
+  source_reactions: McSourceReaction[];
+}
+
+/** Self-contained saved Study result for a supported distribution AC PF.
+ * The input and solution modules make this replayable; `result` is the rich
+ * terminal/element view rendered by the Study panel. */
+export interface McStudySnapshot {
+  schema: "tellegen-mc-pf-study";
+  version: 1;
+  id: string;
+  title: string;
+  formulation: "mc_ac_pf";
+  input_module: string;
+  solution_module: string;
+  options: McPfOptions;
+  result: McPfResult;
+}
+
+/** Parse and solve a raw BMOPF multiconductor case in the wasm module. */
+export async function solveMcBmopf(
+  text: string,
+  options: McPfOptions = {},
+): Promise<McPfResult> {
+  assertEngineInputLength(text.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "solve_mc_bmopf",
+        text,
+        options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** Solve a stored PowerIO multiconductor module through the same PF engine. */
+export async function solveMcModule(
+  moduleJson: string,
+  options: McPfOptions = {},
+  signal?: AbortSignal,
+): Promise<McPfResult> {
+  assertEngineInputLength(moduleJson.length);
+  signal?.throwIfAborted();
+  const host = isolatedEngineHost();
+  const abort = () =>
+    host.cancel?.(new Error("Multiconductor calculation cancelled"));
+  signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const result = await host.call({
+      op: "solve_mc_module",
+      module_json: moduleJson,
+      options: JSON.stringify(options),
+    });
+    signal?.throwIfAborted();
+    return JSON.parse(expectText(result));
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    host.cancel?.(new Error("Multiconductor calculation finished"));
+  }
+}
+
+/** Solve a supported multiconductor Study input and return a replayable
+ * snapshot containing the typed input, PowerIO solution, and rich result. */
+export async function solveMcStudy(
+  moduleJson: string,
+  studyId: string,
+  studyTitle: string,
+  options: McPfOptions = {},
+  signal?: AbortSignal,
+): Promise<McStudySnapshot> {
+  assertEngineInputLength(moduleJson.length);
+  signal?.throwIfAborted();
+  const host = isolatedEngineHost();
+  const abort = () =>
+    host.cancel?.(new Error("Multiconductor calculation cancelled"));
+  signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const result = await host.call({
+      op: "solve_mc_study",
+      module_json: moduleJson,
+      study_id: studyId,
+      study_title: studyTitle,
+      options: JSON.stringify(options),
+    });
+    signal?.throwIfAborted();
+    return JSON.parse(expectText(result));
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    host.cancel?.(new Error("Multiconductor calculation finished"));
+  }
+}
+
+/** Validate and canonicalize a saved multiconductor Study snapshot without
+ * running the solver again. */
+export async function replayMcStudy(
+  snapshotJson: string,
+): Promise<McStudySnapshot> {
+  assertEngineInputLength(snapshotJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "replay_mc_study",
+        snapshot: snapshotJson,
+      }),
+    ),
+  );
+}
+
+/** Update both saved modules with matching positions while retaining the solved values. */
+export async function applyMcStudyGeo(
+  snapshot: McStudySnapshot,
+  layer: string,
+): Promise<McStudySnapshot> {
+  const text = JSON.stringify(snapshot);
+  assertEngineInputLength(text.length);
+  assertEngineInputLength(layer.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "apply_mc_study_geo",
+        snapshot: text,
+        layer,
+      }),
+    ),
+  );
+}
+
 export { errorText } from "./errors.js";
 
 /** True when the engine wasm module has failed to load in a way it can never
@@ -628,10 +845,8 @@ const STUDY_CAPABILITY = {
   ratingParameter: "LineLimit",
 } as const;
 
-/** The formulations the full wasm build solves entirely in the browser. Each returns nodal marginal values,
- * so the price map, legend, and price sensitivity overlay apply unchanged to all of them. Tags
- * are the engine's serde-lowercase `Problem` variants accepted by `new Study(json, tag)`.
- * `dcopf` is the default (zero regression from the prior fixed behavior). */
+/** Calculation names accepted by the browser engine. Power flow returns voltages
+ * and flows; OPF calculations also return an objective and LMPs. */
 export type Formulation = BrowserFormulation;
 
 /** UI-facing formulation menu: tag, a short label, and a one-line description. The order
@@ -643,6 +858,7 @@ export const FORMULATIONS: ReadonlyArray<{
   disabled?: boolean;
 }> = [
   { id: "dcopf", label: "DC OPF", hint: "DC optimal power flow (the default)" },
+  { id: "acpf", label: "AC power flow", hint: "Balanced AC power flow" },
   {
     id: "socwr",
     label: "SOCWR",
@@ -656,7 +872,7 @@ export const FORMULATIONS: ReadonlyArray<{
   },
 ];
 
-/** The default formulation: DC OPF, preserving the prior fixed behavior byte-for-byte. */
+/** DC OPF is the default calculation. */
 export const DEFAULT_FORMULATION: Formulation = "dcopf";
 
 /** The `Operand[]` JSON `Study.preview` watches (the active nodal value column). */
@@ -688,9 +904,10 @@ function sensitivitiesJson(
 interface StudySolveResponse {
   formulation: string;
   status: string;
-  objective: number;
+  objective: number | null;
   iterations?: SolveIteration[];
   lmp?: { bus: number; value: number }[];
+  vm?: { bus: number; value: number }[];
   va?: { bus: number; value: number }[];
   w?: { bus: number; value: number }[];
   flows?: { branch: number; pf: number; loading: number }[];
@@ -757,8 +974,9 @@ function sensitivityColumn(
 
 function solveResponseToSolution(out: StudySolveResponse): Solution {
   return {
-    objective: out.objective ?? 0,
+    objective: out.objective ?? null,
     prices: (out.lmp ?? []).map((e) => ({ bus: e.bus, value: e.value })),
+    vm: out.vm ?? undefined,
     va: out.va ?? [],
     w: out.w ?? [],
     flows: (out.flows ?? []).map((f) => ({
@@ -766,7 +984,11 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
       mw: f.pf,
       loading: f.loading,
     })),
-    dispatch: (out.dispatch ?? []).map((d) => ({ gen: d.gen, bus: d.bus, mw: d.pg })),
+    dispatch: (out.dispatch ?? []).map((d) => ({
+      gen: d.gen,
+      bus: d.bus,
+      mw: d.pg,
+    })),
   };
 }
 
@@ -847,7 +1069,7 @@ export class BrowserStudy {
   async #senseTarget(
     target: SensTarget | null,
   ): Promise<{ kind: "bus" | "branch"; index: number } | null> {
-    if (target === null) return null;
+    if (target === null || this.#formulation === "acpf") return null;
     if ("bus" in target) {
       if (!this.#busToIndex) {
         const sol = await this.#solution();
@@ -902,6 +1124,7 @@ export class BrowserStudy {
     rates: BranchRatingDeltas,
     target: SensTarget,
   ): Promise<SensitivityColumn | null> {
+    if (this.#formulation === "acpf") return null;
     const out = await this.#replaceEdits(deltas, rates, target);
     return sensitivityColumn(caseId, out.sensitivities);
   }
@@ -917,6 +1140,9 @@ export class BrowserStudy {
     objectiveDelta: number | null;
     units: string | null;
   }> {
+    if (this.#formulation === "acpf") {
+      return { prices: [], objectiveDelta: null, units: null };
+    }
     const out: StudyPreview = JSON.parse(
       expectText(
         await this.#host.call({
@@ -939,6 +1165,16 @@ export class BrowserStudy {
 
   /** The Study's current exact solution. Called immediately after Study creation
    * to cache the base point for formulation comparisons. */
+  async currentView(): Promise<
+    import("./generated/study-contracts.js").SolveResponse
+  > {
+    return JSON.parse(
+      expectText(
+        await this.#host.call({ op: "study_solution", study: this.#handle }),
+      ),
+    );
+  }
+
   async currentSolution(): Promise<Solution> {
     return solveResponseToSolution(await this.#solution());
   }
@@ -952,7 +1188,12 @@ export class BrowserStudy {
 
   /** Preserve the materialized instance's inner objective and constraints in PowerIO IR. */
   async saveInstanceModule(): Promise<string> {
-    return expectText(await this.#host.call({ op: "study_save_instance_module", study: this.#handle }));
+    return expectText(
+      await this.#host.call({
+        op: "study_save_instance_module",
+        study: this.#handle,
+      }),
+    );
   }
 
   /** Serialize the current exact DC OPF result as a PowerIO solution module.
@@ -1121,6 +1362,7 @@ export interface EngineTransport {
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   parseGeo(bytes: Uint8Array, hint: string): Promise<ParsedGeoLayer>;
   applyGeo(moduleJson: string, layer: string): Promise<AppliedGeoCase>;
+  applyMcGeo?(moduleJson: string, layer: string): Promise<AppliedMcGeoCase>;
   applyLayout(
     moduleJson: string,
     coords: Record<number, [number, number]>,
@@ -1136,6 +1378,24 @@ export interface EngineTransport {
     moduleJson: string,
     request?: SolveRequest,
   ): Promise<SolveResponse>;
+  solveMcBmopf(text: string, options?: McPfOptions): Promise<McPfResult>;
+  solveMcModule(
+    moduleJson: string,
+    options?: McPfOptions,
+    signal?: AbortSignal,
+  ): Promise<McPfResult>;
+  solveMcStudy(
+    moduleJson: string,
+    studyId: string,
+    studyTitle: string,
+    options?: McPfOptions,
+    signal?: AbortSignal,
+  ): Promise<McStudySnapshot>;
+  replayMcStudy(snapshotJson: string): Promise<McStudySnapshot>;
+  applyMcStudyGeo?(
+    snapshot: McStudySnapshot,
+    layer: string,
+  ): Promise<McStudySnapshot>;
   createStudy(
     moduleJson: string,
     formulation?: Formulation,
@@ -1153,11 +1413,17 @@ export const browserWasmTransport: EngineTransport = {
   parseDisplay,
   parseGeo,
   applyGeo,
+  applyMcGeo,
   applyLayout,
   extractGeo,
   applyDisplayGeo,
   capabilities,
   solveModule,
+  solveMcBmopf,
+  solveMcModule,
+  solveMcStudy,
+  replayMcStudy,
+  applyMcStudyGeo,
   createStudy,
 };
 
@@ -1167,9 +1433,30 @@ export function createBrowserWasmTransport(): EngineTransport {
 
 export { BrowserStudy as Study };
 
-export { IndexedDbStudyStore, StudyDocumentController, studyBackend } from "./study-document.js";
+export {
+  IndexedDbStudyStore,
+  StudyDocumentController,
+  studyBackend,
+} from "./study-document.js";
 export type { StudyBackend, StudyStore } from "./study-document.js";
-export type { CreateStudy, StudyBundle, StudyDocument, StudyRequest, StudyOperation, StudyOperationResult, GoalRevision, DecisionSpace, StudyObjective, StateNode, Comparison } from "./generated/study-contracts.js";
+export type {
+  CreateStudy,
+  StudyBundle,
+  StudyDocument,
+  StudyRequest,
+  StudyOperation,
+  StudyOperationResult,
+  GoalRevision,
+  DecisionSpace,
+  StudyObjective,
+  StateNode,
+  Comparison,
+} from "./generated/study-contracts.js";
 
-export type { SolveResponse as StudyView, SearchOptions, StudySummary } from "./generated/study-contracts.js";
-export { studySchema } from './generated/study-schema.js';
+export type {
+  ModelDetails,
+  SolveResponse as StudyView,
+  SearchOptions,
+  StudySummary,
+} from "./generated/study-contracts.js";
+export { studySchema } from "./generated/study-schema.js";

@@ -26,7 +26,7 @@ for bus latitude and longitude, and `CATS_lines.json` for branch paths. The
 staging script also copies `CATS_gens.csv` when present; the current map does
 not render a separate generator geometry layer.
 
-## Aux coordinate forms
+## Aux coordinates
 
 PowerWorld aux exports have used two coordinate layouts:
 
@@ -35,10 +35,10 @@ PowerWorld aux exports have used two coordinate layouts:
 - Later exports can leave the bus latitude and longitude columns empty and
   reference the `Substation` table through `SubNumber`.
 
-powerio promotes the bus row form (`Latitude:1`/`Longitude:1`) into the typed
+PowerIO promotes the bus columns (`Latitude:1`/`Longitude:1`) into the typed
 `Bus.location` at parse; tellegen keeps the two fallbacks upstream does not
 cover — bare `Latitude`/`Longitude` bus columns and the `Substation` table join
-— so dropped files of either form resolve when the data is present.
+— so dropped files using either layout resolve when the data is present.
 
 ## Buses Sharing Coordinates
 
@@ -51,3 +51,14 @@ zoom, and individual buses remain hoverable at street zoom.
 
 The embedded fallback ([deployment](deployment.md)) serves two PGLib cases
 whose coordinates are synthetic and labeled as synthetic.
+
+## Prepared generator costs
+
+The Texas7k demo selects Tellegen's reusable convex quadratic/linear fitting
+option. It fits each piecewise curve by least squares and retains a linear fit
+when the quadratic fit is nonconvex or singular. Other demo cases keep their
+declared costs. Model details retain the source and prepared cost rows and
+report RMS and maximum errors at the source breakpoints.
+
+All four configured cases must load and solve for the deployment health check
+to pass. Unavailable cases remain in the catalogue with an explanation.

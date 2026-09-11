@@ -39,7 +39,7 @@
 		<div class="line-row mono">
 			{#if branch}
 				<span class="dim"
-					>line {branch.from}&#8201;&ndash;&#8201;{branch.to} &middot; {fmt.format(branch.rate_mw)} MW</span
+					>line {branch.from}&#8201;&ndash;&#8201;{branch.to}, {fmt.format(branch.rate_mw)} MW</span
 				>
 			{/if}
 			<span class="dim">
@@ -81,9 +81,8 @@
 			<p class="score mono" aria-hidden={!(ctrl.gradientScore && ctrl.isPerturbed(c))}>
 				{#if ctrl.gradientScore && ctrl.isPerturbed(c)}
 					<span title={scoreTip}>
-						gradient {signed(ctrl.gradientScore.pred)} &middot; exact {signed(
-							ctrl.gradientScore.exact
-						)} objective units
+						gradient {signed(ctrl.gradientScore.pred)}, exact {signed(ctrl.gradientScore.exact)} objective
+						units
 					</span>
 				{:else}
 					&nbsp;

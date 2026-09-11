@@ -1,0 +1,1490 @@
+{
+  "backend": "OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5",
+  "profile": "Single phase; near-ideal source puZideal=1e-12, angle=37 degrees; Vnom=240 V, Pnom=2400 W, Qnom=800 var. Voltage models remain active throughout the positive voltage range: vminpu=0, vlowpu=0, vmaxpu=1e6. ZIP dropout=0. Controls disabled. Raw BMOPF source angles are radians; DSS command angles are degrees.",
+  "cases": [
+    {
+      "case": "constant_power-0.8-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "ae45a0fb99f2c5d43ce2ddbbd7ae886f5fded582a05ab3d4b65f60dd991ae000",
+      "voltage": {
+        "re": 153.3380179,
+        "im": 115.5484845
+      },
+      "current": {
+        "re": 12.49050647,
+        "im": 4.195039836
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_power-0.8-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "57e0eca641727707147afda6b8cb307e59a13bbff4932d67cb653df198be732e",
+      "voltage": {
+        "re": 145.0071719,
+        "im": 109.7924649
+      },
+      "current": {
+        "re": 13.17508705,
+        "im": 4.458574529
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_power-1-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "7290e5f11e5f56bb2de18bd8d28f8396538c3206f3ca0d1d61bec2f19b02b66b",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 9.992405176,
+        "im": 3.356031868
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_power-1-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "c5dfd5a9feebb3b945c18558f08544596030a1435ef637d1a37cd177700e877b",
+      "voltage": {
+        "re": 185.1394646,
+        "im": 139.929972
+      },
+      "current": {
+        "re": 10.32880596,
+        "im": 3.485532001
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_power-1.2-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "7bba5233df0484d8314e1b3033302e16ff76eccfd5e6b21cc091cfbba183ac91",
+      "voltage": {
+        "re": 230.0070268,
+        "im": 173.3227268
+      },
+      "current": {
+        "re": 8.327004314,
+        "im": 2.796693224
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_power-1.2-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=1 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "f0659dc1ec297fd0b550c97b1ddf887bd0cb05e21a2d63c5fdee1e5550a44975",
+      "voltage": {
+        "re": 224.6187297,
+        "im": 169.6101691
+      },
+      "current": {
+        "re": 8.517584054,
+        "im": 2.870058398
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_current-0.8-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "7c0a6e8ce60de00a6ea04db6a7405c689fb7058e5cb886a7dfe159df5c291fad",
+      "voltage": {
+        "re": 153.3380179,
+        "im": 115.5484845
+      },
+      "current": {
+        "re": 9.992405176,
+        "im": 3.356031868
+      },
+      "power": {
+        "re": 1920.0,
+        "im": 640.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_current-0.8-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "47ccbe1424464f5c21ebda2fa63be466f1982331b6be274969bef364f68b93e4",
+      "voltage": {
+        "re": 147.0220983,
+        "im": 111.1898095
+      },
+      "current": {
+        "re": 9.986563673,
+        "im": 3.373374736
+      },
+      "power": {
+        "re": 1843.33044,
+        "im": 614.4434799
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_current-1-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "0d372ac063fb2ee5000036cb381675ec8db98b261d3af917dd9d504bac038255",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 9.992405176,
+        "im": 3.356031868
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_current-1-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "1d4a6423bf527cefa14a81c3de5ecb06a96a25e51998c48a99d5c30fadb695e9",
+      "voltage": {
+        "re": 185.3550897,
+        "im": 140.0791239
+      },
+      "current": {
+        "re": 9.987734383,
+        "im": 3.369906972
+      },
+      "power": {
+        "re": 2323.331019,
+        "im": 774.4436728
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_current-1.2-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "998da517deafa73b9f3e9d0c87f281e31fda1a40bf74809fcfe51853e503bf32",
+      "voltage": {
+        "re": 230.0070268,
+        "im": 173.3227268
+      },
+      "current": {
+        "re": 9.992405176,
+        "im": 3.356031868
+      },
+      "power": {
+        "re": 2880.0,
+        "im": 960.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_current-1.2-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=5 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "1a1173eaa34a795873b5bf544f1c57b71ee1c9fc5c9a39d43fe27b565ea0f905",
+      "voltage": {
+        "re": 223.6885859,
+        "im": 168.9677075
+      },
+      "current": {
+        "re": 9.988514187,
+        "im": 3.367594904
+      },
+      "power": {
+        "re": 2803.331404,
+        "im": 934.4438014
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_impedance-0-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "07ceacac936643e7487e7122ac000a814a6f5dbf94dc40a9de703ed9730413bb",
+      "voltage": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "current": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "power": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_impedance-0-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "3aa7e069733c8935e88af6ec92f5e10cdcda197a79e86ffc315fa55439a4fa11",
+      "voltage": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "current": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "power": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_impedance-0.8-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "63228097754726a2709883398bf31186d47fdfbe58fb1b8094fec419d4659c1d",
+      "voltage": {
+        "re": 153.3380179,
+        "im": 115.5484845
+      },
+      "current": {
+        "re": 7.993924141,
+        "im": 2.684825495
+      },
+      "power": {
+        "re": 1536.0,
+        "im": 512.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_impedance-0.8-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "62f26467c0d4b503783d9122c787a3002c988b9700388c4822a53043a14fadc4",
+      "voltage": {
+        "re": 148.4403788,
+        "im": 112.1713987
+      },
+      "current": {
+        "re": 7.742951878,
+        "im": 2.61213635
+      },
+      "power": {
+        "re": 1442.373698,
+        "im": 480.7912327
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_impedance-1-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "5a69f364eb8791868acbb1b6f19903b713be59c6eba713bd8b0123d6aae1b582",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 9.992405176,
+        "im": 3.356031868
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_impedance-1-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "c67ff9490c4a6cd5d55f2d03c979209c957ba951ae79d546753953ddc13b5ae4",
+      "voltage": {
+        "re": 185.5504736,
+        "im": 140.2142484
+      },
+      "current": {
+        "re": 9.678689847,
+        "im": 3.265170438
+      },
+      "power": {
+        "re": 2253.708903,
+        "im": 751.2363011
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_impedance-1.2-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "44889aa7f0dc2e2f274e52423b503c4b701aeab6a8068c52b99cf78446d78ea0",
+      "voltage": {
+        "re": 230.0070268,
+        "im": 173.3227268
+      },
+      "current": {
+        "re": 11.99088621,
+        "im": 4.027238242
+      },
+      "power": {
+        "re": 3456.0,
+        "im": 1152.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "constant_impedance-1.2-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=2 vminpu=0 vlowpu=0 vmaxpu=1e6 ",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "5b0f4282f911e0f9a31911c04b4bada87a8cbc2e9b0f76977e3e51651f683ec6",
+      "voltage": {
+        "re": 222.6605683,
+        "im": 168.257098
+      },
+      "current": {
+        "re": 11.61442782,
+        "im": 3.918204525
+      },
+      "power": {
+        "re": 3245.340821,
+        "im": 1081.780274
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip-0.8-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.2,0.3,0.5,0.5,0.1,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "ecb6f4a97016049a7d3d095bd39279b0997b1e6a7db959523eba8ab31cb2d0c1",
+      "voltage": {
+        "re": 153.3380179,
+        "im": 115.5484845
+      },
+      "current": {
+        "re": 10.67124536,
+        "im": 3.867574638
+      },
+      "power": {
+        "re": 2083.2,
+        "im": 640.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip-0.8-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.2,0.3,0.5,0.5,0.1,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "d642e179b3348f22077e9fe068695149ac4c01e451fa3c9ba61bd3729b36fd67",
+      "voltage": {
+        "re": 146.5397193,
+        "im": 110.5843846
+      },
+      "current": {
+        "re": 10.85213021,
+        "im": 3.990962649
+      },
+      "power": {
+        "re": 2031.606262,
+        "im": 615.2415943
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip-1-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.2,0.3,0.5,0.5,0.1,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "f39f703987c82884c3bf923d17ae54a02bcf18b2c19b81b8b8f5a9ebaaebf61f",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 9.992405176,
+        "im": 3.356031868
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip-1-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.2,0.3,0.5,0.5,0.1,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "edd4c1e4059139347868561b365f0cdb3a7021da4de65e5b9f76795e5fd79830",
+      "voltage": {
+        "re": 185.3153147,
+        "im": 140.0163921
+      },
+      "current": {
+        "re": 10.06393968,
+        "im": 3.43775079
+      },
+      "power": {
+        "re": 2346.343612,
+        "im": 772.0486547
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip-1.2-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.2,0.3,0.5,0.5,0.1,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "44b8cc0021b38ee855c032ee2876efe98c2df7db1f12584b1dddfdbfd6e2ec86",
+      "voltage": {
+        "re": 230.0070268,
+        "im": 173.3227268
+      },
+      "current": {
+        "re": 9.713198125,
+        "im": 3.006508079
+      },
+      "power": {
+        "re": 2755.2,
+        "im": 992.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip-1.2-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.2,0.3,0.5,0.5,0.1,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "405b913a8702df451447abab8d6fe73c99fc3ebb576b7481a58f053470410df5",
+      "voltage": {
+        "re": 223.8074613,
+        "im": 169.2275683
+      },
+      "current": {
+        "re": 9.733448212,
+        "im": 3.069241149
+      },
+      "power": {
+        "re": 2697.81855,
+        "im": 960.2487023
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_nonunit-0.8-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[-0.2,0.3,1.2,0.5,-0.1,0.8,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "64ceba5dc71173b12c37b148cd805be7b290f36add9fe852fe0c4e9697b0469c",
+      "voltage": {
+        "re": 153.3380179,
+        "im": 115.5484845
+      },
+      "current": {
+        "re": 15.70548746,
+        "im": 6.409012509
+      },
+      "power": {
+        "re": 3148.8,
+        "im": 832.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_nonunit-0.8-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[-0.2,0.3,1.2,0.5,-0.1,0.8,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "de8f45138137678953dc6cf96c34afc752d800faed8de3b4ec2e190c9a1930e2",
+      "voltage": {
+        "re": 142.9841252,
+        "im": 107.3004591
+      },
+      "current": {
+        "re": 16.78741505,
+        "im": 6.986489102
+      },
+      "power": {
+        "re": 3149.987343,
+        "im": 802.3403098
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_nonunit-1-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[-0.2,0.3,1.2,0.5,-0.1,0.8,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "b17dad8b230d3740b3fa95bfffd53fc8536da30ad7c8d415526824fcb8b08c38",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 12.78952172,
+        "im": 4.629053266
+      },
+      "power": {
+        "re": 3120.0,
+        "im": 960.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_nonunit-1-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[-0.2,0.3,1.2,0.5,-0.1,0.8,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "e13d42d4181b6829f8166af1abcbc7914cb144e0ccfafcbe9035a75de2b3a07b",
+      "voltage": {
+        "re": 183.3453342,
+        "im": 138.2905146
+      },
+      "current": {
+        "re": 13.31707526,
+        "im": 4.973822821
+      },
+      "power": {
+        "re": 3129.456131,
+        "im": 929.6979827
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_nonunit-1.2-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[-0.2,0.3,1.2,0.5,-0.1,0.8,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "ed5607fb1a5b5250a9a733e37e0d1627be8cd0badc3041adb12224c7da1f2f16",
+      "voltage": {
+        "re": 230.0070268,
+        "im": 173.3227268
+      },
+      "current": {
+        "re": 10.80592816,
+        "im": 3.273434488
+      },
+      "power": {
+        "re": 3052.8,
+        "im": 1120.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_nonunit-1.2-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[-0.2,0.3,1.2,0.5,-0.1,0.8,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "9a4529b5e8335f36cd0cd278c2aa3623d9f07869510c6aa630460e503fe898c7",
+      "voltage": {
+        "re": 222.9375646,
+        "im": 168.6439381
+      },
+      "current": {
+        "re": 11.10260626,
+        "im": 3.511810634
+      },
+      "power": {
+        "re": 3067.433576,
+        "im": 1089.472733
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential-0.8-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0.7 cvrvars=2.3",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "573c6bcf06756e3484e8c90187c8a008a0bc29bd9e1d5c49faf47129739cdca4",
+      "voltage": {
+        "re": 153.3380179,
+        "im": 115.5484845
+      },
+      "current": {
+        "re": 10.04021138,
+        "im": 4.443020803
+      },
+      "power": {
+        "re": 2052.930432,
+        "im": 478.8472053
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential-0.8-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0.7 cvrvars=2.3",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "a89a48e322989a4a3e19cc97b992d11324358355ec748e94ca531ec6cb257595",
+      "voltage": {
+        "re": 147.2022196,
+        "im": 110.3071031
+      },
+      "current": {
+        "re": 10.08176432,
+        "im": 4.607183577
+      },
+      "power": {
+        "re": 1992.263159,
+        "im": 433.9025681
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential-1-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0.7 cvrvars=2.3",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "d2f436ebb3b42b3312dd912240f682affef70d941e7288758ede12593f77d53d",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 9.992405176,
+        "im": 3.356031868
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential-1-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0.7 cvrvars=2.3",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "55b0d867475845418c519a285004f8acb57e4f7b58559c6249cf0c312e27548f",
+      "voltage": {
+        "re": 185.3903742,
+        "im": 139.9642956
+      },
+      "current": {
+        "re": 9.984463654,
+        "im": 3.534881915
+      },
+      "power": {
+        "re": 2345.78071,
+        "im": 742.1353409
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential-1.2-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0.7 cvrvars=2.3",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "d027d0b1cf1320e9f3fe0cd21a2ed9bf9791dcd6b2338ea8db072771dc9d5e43",
+      "voltage": {
+        "re": 230.0070268,
+        "im": 173.3227268
+      },
+      "current": {
+        "re": 10.10385741,
+        "im": 2.323679937
+      },
+      "power": {
+        "re": 2726.704745,
+        "im": 1216.765404
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential-1.2-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0.7 cvrvars=2.3",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "1a21f2e08fa70ccd0a52357f97fee283624759bd610df5fc961e4a09481fe206",
+      "voltage": {
+        "re": 223.4612211,
+        "im": 169.5475988
+      },
+      "current": {
+        "re": 10.06998036,
+        "im": 2.515902713
+      },
+      "power": {
+        "re": 2676.815373,
+        "im": 1145.134298
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_negative-0.8-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=-0.4 cvrvars=1.4",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "fc35fc01b1632af6d248de72eb92a79c48dc57201ba192fd24f4d62c55b49323",
+      "voltage": {
+        "re": 153.3380179,
+        "im": 115.5484845
+      },
+      "current": {
+        "re": 12.74972589,
+        "im": 5.790221172
+      },
+      "power": {
+        "re": 2624.068977,
+        "im": 585.3504665
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_negative-0.8-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=-0.4 cvrvars=1.4",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "d48e7ec3477f21be0c9b7e506686b00b7d512014696a99183976b0da92ed6726",
+      "voltage": {
+        "re": 145.0633161,
+        "im": 108.2693908
+      },
+      "current": {
+        "re": 13.67567922,
+        "im": 6.491368362
+      },
+      "power": {
+        "re": 2686.655875,
+        "im": 538.9980371
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_negative-1-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=-0.4 cvrvars=1.4",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "ef50ceb6f41a692ce4456b7d83c49ffa21aa4f49120c5383a5d03aac571beea4",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 9.992405176,
+        "im": 3.356031868
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_negative-1-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=-0.4 cvrvars=1.4",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "bee077cb4822796f4d625591fd1311fbaa42e47ef36a7082313f843263402a5a",
+      "voltage": {
+        "re": 185.1659214,
+        "im": 139.7803332
+      },
+      "current": {
+        "re": 10.35033046,
+        "im": 3.693151915
+      },
+      "power": {
+        "re": 2432.758481,
+        "im": 762.9267625
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_negative-1.2-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=-0.4 cvrvars=1.4",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "143eef3b8ddb717abd186d9810195267a110aa8f05a7853fe860c99cfcd1e91c",
+      "voltage": {
+        "re": 230.0070268,
+        "im": 173.3227268
+      },
+      "current": {
+        "re": 8.34502552,
+        "im": 1.7988797
+      },
+      "power": {
+        "re": 2231.201243,
+        "im": 1032.627607
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_negative-1.2-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=-0.4 cvrvars=1.4",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "8963d166bd1e48f20ea2e4d5213b2716df19be4b4df96b5864b4a507447b01fe",
+      "voltage": {
+        "re": 224.4462162,
+        "im": 170.2217547
+      },
+      "current": {
+        "re": 8.514645003,
+        "im": 1.997204349
+      },
+      "power": {
+        "re": 2251.047482,
+        "im": 1001.112854
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_mixed-0.8-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0 cvrvars=2",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "7b53508c1dbfefab638124ba2bb626a222639b2b13c1124328517fef79fe438d",
+      "voltage": {
+        "re": 153.3380179,
+        "im": 115.5484845
+      },
+      "current": {
+        "re": 11.58778394,
+        "im": 5.3929931
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 512.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_mixed-0.8-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0 cvrvars=2",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "c90788262e60f716944384be19210089d7d6bc7e7053eed249985a392f68b1f2",
+      "voltage": {
+        "re": 146.0618143,
+        "im": 109.0416714
+      },
+      "current": {
+        "re": 12.0654814,
+        "im": 5.848166934
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 461.4463846
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_mixed-1-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0 cvrvars=2",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "d9f860de461079748ca006795196790e3ebd64f15df1bf14391a6cc623c66142",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 9.992405176,
+        "im": 3.356031868
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 800.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_mixed-1-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0 cvrvars=2",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "c0b339bddd462079bd4e8923ea616a084262a49cbd917e4ab5949b5d11ad1657",
+      "voltage": {
+        "re": 185.2672939,
+        "im": 139.8375327
+      },
+      "current": {
+        "re": 10.19485754,
+        "im": 3.655859216
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 748.3125797
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_mixed-1.2-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0 cvrvars=2",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "348561ffae857fe46390834c967b2828c0fd778b43403b92bba277f2b10fd45c",
+      "voltage": {
+        "re": 230.0070268,
+        "im": 173.3227268
+      },
+      "current": {
+        "re": 9.062556009,
+        "im": 1.820583156
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 1152.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "exponential_mixed-1.2-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=4 vminpu=0 vlowpu=0 vmaxpu=1e6 cvrwatts=0 cvrvars=2",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "f777735c461f30fbacab93d3cf850c52f257b12a11ac0f9db1b38aef186acd98",
+      "voltage": {
+        "re": 224.0056667,
+        "im": 170.0568922
+      },
+      "current": {
+        "re": 9.158715102,
+        "im": 2.048702132
+      },
+      "power": {
+        "re": 2400.0,
+        "im": 1098.58174
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_cancellation-0.8-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.5,-1.5,1,0.2,-0.6,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "bda79ffdef87e9865e9803bef4750c809030d8ed5b4b38dbc1ee51aba447fa41",
+      "voltage": {
+        "re": 153.3380179,
+        "im": 115.5484845
+      },
+      "current": {
+        "re": 1.318316269,
+        "im": 0.7429954332
+      },
+      "power": {
+        "re": 288.0,
+        "im": 38.4
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_cancellation-0.8-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=0.8 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.5,-1.5,1,0.2,-0.6,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "c62cc143830e27681de411f42e6381b2ba87708e3790e83867cf46f3d8a5194f",
+      "voltage": {
+        "re": 152.5371309,
+        "im": 114.7391267
+      },
+      "current": {
+        "re": 1.363193283,
+        "im": 0.7667415757
+      },
+      "power": {
+        "re": 295.9128512,
+        "im": 39.45504682
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_cancellation-1-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.5,-1.5,1,0.2,-0.6,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "0cc795584b3f5a3eec554de4dccea43eb51c1b8ddd010d92af4001bb46ca75e9",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "power": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_cancellation-1-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.5,-1.5,1,0.2,-0.6,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "580cd1cc7980e5000109f8f28b9f3eec22f70b8525a6b5346a1f8c8af5a8e03c",
+      "voltage": {
+        "re": 191.6725224,
+        "im": 144.4356056
+      },
+      "current": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "power": {
+        "re": 0.0,
+        "im": 0.0
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_cancellation-1.2-0",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new load.ld phases=1 bus1=src.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.5,-1.5,1,0.2,-0.6,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "492add9b3d5e4fbf50a262dca4b19df3687867f5393a80bd1f5bfbee0e46beb0",
+      "voltage": {
+        "re": 230.0070268,
+        "im": 173.3227268
+      },
+      "current": {
+        "re": -0.585918342,
+        "im": -0.3302201925
+      },
+      "power": {
+        "re": -192.0,
+        "im": -25.6
+      },
+      "analytic_current_error_A": 0.0
+    },
+    {
+      "case": "zip_cancellation-1.2-0.7",
+      "commands": [
+        "clear",
+        "set defaultbasefrequency=50",
+        "new circuit.qc phases=1 bus1=src.1.0 basekv=.24 pu=1.2 angle=37.0 frequency=50",
+        "edit vsource.source model=ideal puZideal=[1e-12,0]",
+        "new line.l1 phases=1 bus1=src.1 bus2=lb.1 rmatrix=[.7] xmatrix=[.2] cmatrix=[0] length=1 units=m",
+        "new load.ld phases=1 bus1=lb.1.0 conn=wye kv=.24 kw=2.4 kvar=.8 model=8 vminpu=0 vlowpu=0 vmaxpu=1e6 zipv=[0.5,-1.5,1,0.2,-0.6,0.4,0]",
+        "set frequency=50 controlmode=off tolerance=1e-12 maxiterations=1000",
+        "solve"
+      ],
+      "input_sha256": "06bd41ee6371af7b4745493e413251e7eb66dfcd29306e19a7fc06d2f763949f",
+      "voltage": {
+        "re": 230.353064,
+        "im": 173.6732009
+      },
+      "current": {
+        "re": -0.5892846388,
+        "im": -0.332310293
+      },
+      "power": {
+        "re": -193.4569144,
+        "im": -25.79425525
+      },
+      "analytic_current_error_A": 0.0
+    }
+  ]
+}

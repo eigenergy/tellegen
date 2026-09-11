@@ -11,7 +11,10 @@ export interface CapacityStudyBinding {
 	state: string;
 }
 
-export function capacityGoal(spec: CapacityPlanSpecJson): GoalDraft {
+export function capacityGoal(
+	spec: CapacityPlanSpecJson,
+	elements: Readonly<Record<string, number>>
+): GoalDraft {
 	return {
 		title: 'Capacity upgrade study',
 		formulation: 'dcopf',
@@ -24,15 +27,20 @@ export function capacityGoal(spec: CapacityPlanSpecJson): GoalDraft {
 			weights: spec.objective.weights.map((w) => ({ element: w.bus, weight: w.weight }))
 		},
 		decisions: {
-			variables: spec.candidates.map((element) => ({
-				id: element,
-				element,
-				intervention: 'branch_rating',
-				lower: 0,
-				upper: spec.max_increase_per_branch_mw,
-				increment: spec.increment_mw,
-				budget_weight: 1
-			})),
+			variables: spec.candidates.map((id) => {
+				const element = elements[id];
+				if (!Object.hasOwn(elements, id) || element === undefined)
+					throw new Error(`Candidate ${id} has no matching source line`);
+				return {
+					id,
+					element,
+					intervention: 'branch_rating',
+					lower: 0,
+					upper: spec.max_increase_per_branch_mw,
+					increment: spec.increment_mw,
+					budget_weight: 1
+				};
+			}),
 			total_budget: spec.budget_mw,
 			max_changed_elements: spec.max_changed_lines,
 			demand: null
@@ -49,7 +57,10 @@ export function capacityOutcome(
 	const d = bundle.document,
 		record = d.experiments[proposal];
 	if (!record?.start_state || !record.goal) throw new Error('Capacity Study has no starting state');
-	const view = (id: string) => JSON.parse(bundle.artifacts[d.states[id].view].text) as StudyView;
+	const setupSolves = Object.entries(d.experiments)
+		.filter(([id]) => id !== proposal)
+		.reduce((sum, [, activity]) => sum + activity.solve_count, 0);
+	const view = (id: string) => JSON.parse(bundle.artifacts[d.states[id].view!].text) as StudyView;
 	const phi = (id: string) => {
 		const prices = new Map(view(id).lmp?.map((x) => [x.bus, x.value]));
 		return spec.objective.weights.reduce((sum, w) => {
@@ -66,7 +77,7 @@ export function capacityOutcome(
 		iteration = -1;
 	let acceptedValue = baseline,
 		acceptedChanges = parentChanges,
-		acceptedSolve = 1;
+		acceptedSolve = setupSolves;
 	const iterations = record.trials.map((trial, index) => {
 		const details = JSON.parse(bundle.artifacts[trial.evidence[0]].text);
 		if (details.iteration !== iteration) {
@@ -80,7 +91,7 @@ export function capacityOutcome(
 		if (trial.accepted) {
 			acceptedValue = trial.exact_value!;
 			acceptedChanges = trial.changes;
-			acceptedSolve = index + 3;
+			acceptedSolve = setupSolves + index + 1;
 		}
 		return {
 			gradient: (directions[iteration]?.gradient ?? []).map(
@@ -103,7 +114,7 @@ export function capacityOutcome(
 		baseline: {
 			phi: baseline,
 			declared_objective: view(record.start_state).objective ?? 0,
-			exact_solve: 1
+			exact_solve: setupSolves
 		},
 		exact_verified_result: {
 			phi: phi(selected),
@@ -117,6 +128,6 @@ export function capacityOutcome(
 			.filter((x) => Math.abs(x.delta_mw) > 1e-9),
 		spent_budget_mw: acceptedChanges.reduce((sum, x) => sum + Math.abs(x), 0),
 		iterations,
-		exact_solves: record.solve_count + 1
+		exact_solves: record.solve_count + setupSolves
 	};
 }

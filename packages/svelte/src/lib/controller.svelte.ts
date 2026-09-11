@@ -27,8 +27,9 @@ import {
 import { placeSyntheticTopology } from './synthetic-layout.js';
 import { distExtensionFormat, isGeoFileName } from './drop-classify.js';
 import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limits.js';
-import { buildGeographicView, placeMultiView } from './multiconductor.js';
+import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
 import {
+	browserWasmTransport,
 	applyDisplayGeo,
 	applyGeo,
 	applyLayout,
@@ -44,6 +45,9 @@ import {
 	isPermanentEngineFailure,
 	parseDisplay,
 	parseGeo,
+	type EngineTransport,
+	type McPfOptions,
+	type McPfResult,
 	type AppliedGeoCase,
 	type BrowserStudy,
 	type DisplayPreview,
@@ -63,6 +67,11 @@ const DEFAULT_CASE_ID = 'case500';
  * layer document from the engine's tolerant reader, its source file name, and
  * the reader's notes on records it could not use. */
 type GeoLayerFile = { name: string; layer: string; diagnostics: PowerIoDiagnostic[] };
+type SavedCaseCapture = {
+	input: string;
+	solution?: string;
+	view?: import('@tellegen/engine').StudyView;
+};
 
 /** A parsed PowerWorld `.pwd` display awaiting routing: a coordinate-less case
  * in the same drop may consume its substation points (the SubNum join);
@@ -153,11 +162,15 @@ type DemandRangeAnchor = {
 export interface ControllerOptions {
 	api?: TellegenApiClient;
 	apiBase?: string;
+	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
+		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo'>>;
 }
 
 export class Controller {
 	app: AppState;
 	api: TellegenApiClient;
+	mcTransport: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
+		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo'>>;
 	abort: AbortController | null = null;
 	// While set (epoch ms), the server sensitivity fallback is rate limited: skip
 	// the request and show the rate-limit copy instead of burning the budget on a
@@ -179,6 +192,15 @@ export class Controller {
 			studyInputJson: string;
 			formulation: Formulation;
 			baseSolution: Solution;
+		}
+	>();
+	private detachedCaseCaptures = new WeakMap<
+		LocalCase,
+		{
+			baseInput: string;
+			edits: string;
+			solution: Solution | null;
+			captured: SavedCaseCapture;
 		}
 	>();
 	// Latch a permanent sensitivity-module failure per case so we don't retry
@@ -233,6 +255,7 @@ export class Controller {
 	constructor(app: AppState, options: ControllerOptions = {}) {
 		this.app = app;
 		this.api = options.api ?? createApiClient({ apiBase: options.apiBase });
+		this.mcTransport = options.mcTransport ?? browserWasmTransport;
 	}
 
 	// ===== helpers =====
@@ -363,20 +386,23 @@ export class Controller {
 	}
 
 	localNetwork(c: LocalCase): Network | null {
-		if (!c.summary || !c.view) return null;
+		const view = c.displayMode === 'diagram' ? c.diagram?.view : c.view;
+		if (!c.summary || !view) return null;
 		return {
 			id: c.id,
 			name: c.label,
 			base_mva: c.summary.base_mva,
 			synthetic_coords: c.coordsKind !== 'file' && c.coordsKind !== 'geofile',
-			buses: c.view.buses,
-			branches: c.view.branches
+			...(c.network?.model_details ? { model_details: c.network.model_details } : {}),
+			coordinate_space: view.coordinate_space,
+			buses: view.buses,
+			branches: view.branches
 		};
 	}
 
 	maybeStartLocalSolve(id: string) {
 		const c = this.app.localCases.find((lc) => lc.id === id);
-		if (!c?.studyInputJson || !c.view || !c.summary) return;
+		if (!c?.studyInputJson || (!c.view && !c.diagram) || !c.summary) return;
 		c.network = this.localNetwork(c) ?? c.network ?? null;
 		if (c.network && !c.solution) this.runSolve(c, null);
 	}
@@ -585,8 +611,13 @@ export class Controller {
 			branches: c.network.branches.length,
 			objective: c.solution?.objective ?? null,
 			deltaObjective:
-				c.solution && c.baseSolution ? c.solution.objective - c.baseSolution.objective : null,
-			binding: c.solution ? c.solution.flows.filter((f) => f.loading >= 0.999).length : null
+				c.solution?.objective != null && c.baseSolution?.objective != null
+					? c.solution.objective - c.baseSolution.objective
+					: null,
+			binding:
+				c.solution && c.formulation !== 'acpf'
+					? c.solution.flows.filter((f) => f.loading >= 0.999).length
+					: null
 		};
 	});
 
@@ -751,7 +782,8 @@ export class Controller {
 	predictedDeltaObj = $derived.by(() => {
 		const c = this.activeSolvable;
 		const target = this.selectionTarget;
-		if (!c?.solution || !c.baseSolution || target === null) return null;
+		if (c?.solution?.objective == null || c.baseSolution?.objective == null || target === null)
+			return null;
 		const committedPart = c.solution.objective - c.baseSolution.objective;
 		if (
 			this.previewObjective &&
@@ -767,7 +799,13 @@ export class Controller {
 
 	gradientScore = $derived.by(() => {
 		const c = this.activeSolvable;
-		if (!c?.solution || !c.baseSolution || c.predictedObjective == null || c.solving) return null;
+		if (
+			c?.solution?.objective == null ||
+			c.baseSolution?.objective == null ||
+			c.predictedObjective == null ||
+			c.solving
+		)
+			return null;
 		const exact = c.solution.objective - c.baseSolution.objective;
 		return { pred: c.predictedObjective, exact };
 	});
@@ -826,7 +864,9 @@ export class Controller {
 				this.app.activeLocalId = null;
 				this.app.placingLocalId = null;
 				this.app.activeCaseId =
-					this.app.cases.find((c) => c.id === DEFAULT_CASE_ID)?.id ?? this.app.cases[0]?.id ?? null;
+					this.app.cases.find((c) => c.id === DEFAULT_CASE_ID && !c.unavailableReason)?.id ??
+					this.app.cases.find((c) => !c.unavailableReason)?.id ??
+					null;
 				const active = this.app.active;
 				if (active) await this.loadBackendCase(active, true);
 				else this.app.requestFrame('all');
@@ -843,6 +883,10 @@ export class Controller {
 	};
 
 	loadBackendCase = async (c: CaseState, frame = false) => {
+		if (c.unavailableReason) {
+			this.fail(`${c.name}: ${c.unavailableReason}`);
+			return;
+		}
 		if (c.network && c.solution && c.baseSolution) {
 			if (frame && this.app.activeCaseId === c.id) this.app.requestFrame(c.id);
 			return;
@@ -885,10 +929,18 @@ export class Controller {
 	}
 
 	activateCase = async (id: string) => {
+		const candidate = this.app.byId(id);
+		if (!candidate) return;
+		if (candidate.unavailableReason) {
+			this.fail(`${candidate.name}: ${candidate.unavailableReason}`);
+			return;
+		}
+		const inspectedSavedState = this.app.studyView !== null;
+		this.app.studyView = null;
 		this.app.activeLocalId = null;
 		this.app.placingLocalId = null;
 		this.leaveMulti();
-		if (this.app.activeCaseId !== id) {
+		if (inspectedSavedState || this.app.activeCaseId !== id) {
 			this.clearSelection();
 			this.app.activeCaseId = id;
 		}
@@ -923,6 +975,7 @@ export class Controller {
 	};
 
 	activateLocal = (c: LocalCase) => {
+		this.app.studyView = null;
 		this.clearSelection();
 		// Mirror activateCase's reset: a local and a backend case are mutually
 		// exclusive, so drop the backend selection. Otherwise app.active (derived
@@ -931,8 +984,10 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.activeLocalId = c.id;
-		this.app.placingLocalId = c.coordsKind === 'synthetic_pending' ? c.id : null;
-		if (c.view || c.substations) this.app.requestFrame(c.id);
+		if (c.formulation === 'acpf' && this.app.displayMode === 'price')
+			this.app.displayMode = 'voltage';
+		this.app.placingLocalId = c.coordsKind === 'synthetic_pending' && !c.diagram ? c.id : null;
+		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
 		this.maybeStartLocalSolve(c.id);
 	};
 
@@ -949,11 +1004,15 @@ export class Controller {
 	};
 
 	addAndActivateLocal = (c: LocalCase) => {
+		this.app.studyView = null;
 		this.clearSelection();
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.addLocal(c);
-		if (c.view || c.substations) this.app.requestFrame(c.id);
+		if (c.formulation === 'acpf' && this.app.displayMode === 'price')
+			this.app.displayMode = 'voltage';
+		if (c.diagram) this.app.placingLocalId = null;
+		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
 		this.maybeStartLocalSolve(c.id);
 	};
 
@@ -1000,7 +1059,9 @@ export class Controller {
 		if (!c.studyInputJson) return;
 		try {
 			downloadText(
-				await extractGeo(c.studyInputJson),
+				c.displayMode === 'diagram' && c.diagram
+					? c.diagram.layer
+					: await extractGeo(c.studyInputJson),
 				`${this.caseFileStem(c)}.geo.json`,
 				'application/geo+json'
 			);
@@ -1026,6 +1087,25 @@ export class Controller {
 	applyGeoLayers = async (c: LocalCase, layers: GeoLayerFile[]): Promise<void> => {
 		if (!c.studyInputJson || layers.length === 0) return;
 		let payload: AppliedGeoCase | null = null;
+		const geographic = [];
+		for (const entry of layers) {
+			const document = JSON.parse(entry.layer);
+			const space = document.powerio_geo?.space;
+			if (space === 'diagram' || space?.kind === 'diagram') {
+				const payload = await applyGeo(c.studyInputJson, entry.layer);
+				if (payload.view) {
+					c.diagram = {
+						view: payload.view,
+						layer: entry.layer,
+						name: entry.name,
+						warnings: payload.report.notes
+					};
+					if (!c.view) c.displayMode = 'diagram';
+				}
+			} else geographic.push(entry);
+		}
+		layers = geographic;
+		if (!layers.length) return;
 		let moduleJson = c.studyInputJson;
 		const warnings: string[] = [];
 		let routes = 0;
@@ -1066,6 +1146,7 @@ export class Controller {
 		c.studyInputJson = payload.module_json;
 		c.view = payload.view;
 		c.coordsKind = 'geofile';
+		c.displayMode = payload.view?.coordinate_space === 'diagram' ? 'diagram' : 'geographic';
 		c.syntheticCenter = undefined;
 		c.geoSource = sourceLabel;
 		const placedCanonicalBuses =
@@ -1077,72 +1158,240 @@ export class Controller {
 		];
 	}
 
-	/** Apply geographic metadata to the retained base module and any live Study.
-	 * The display network stays derived data; solver construction never falls
-	 * back to it. */
+	/** Update an existing numerical Study after the base input receives geographic data. */
 	private syncStudyGeo = async (c: LocalCase, layers: string[]) => {
-		const input = c.studyInputJson;
-		if (!input) throw new Error('the case has no retained PowerIO module');
-		let cached = this.caseStudies.get(c);
-		if (cached && cached.formulation !== c.formulation) {
+		const cached = this.caseStudies.get(c);
+		if (!cached) return;
+		if (cached.formulation !== c.formulation) {
 			this.disposeStudy(c);
-			cached = undefined;
-		}
-		const moduleStudy = cached
-			? await createStudy(input, c.formulation, { isolated: true })
-			: await createStudy(input, c.formulation);
-		let keepModuleStudy = false;
-		try {
-			for (const layer of layers) await moduleStudy.applyGeoLayer(layer);
-			const nextInput = await moduleStudy.saveModule();
-			c.studyInputJson = nextInput;
-			if (cached) {
-				try {
-					for (const layer of layers) await cached.study.applyGeoLayer(layer);
-					cached.studyInputJson = nextInput;
-				} catch (error) {
-					this.disposeStudy(c);
-					throw error;
-				}
-			} else {
-				const baseSolution = await moduleStudy.currentSolution();
-				this.caseStudies.set(c, {
-					study: moduleStudy,
-					studyInputJson: nextInput,
-					formulation: c.formulation,
-					baseSolution
-				});
-				keepModuleStudy = true;
-			}
-		} finally {
-			if (!keepModuleStudy) moduleStudy.free();
-		}
-	};
-
-	applyGeoLayersToExisting = async (layers: GeoLayerFile[]) => {
-		const target =
-			(this.app.activeLocal?.studyInputJson ? this.app.activeLocal : null) ??
-			this.app.localCases.find((c) => c.coordsKind === 'synthetic_pending' && c.studyInputJson) ??
-			[...this.app.localCases].reverse().find((c) => c.studyInputJson);
-		if (!target?.studyInputJson) {
-			this.app.error =
-				'drop a case file with the geographic file, or select a parsed local case first';
 			return;
 		}
 		try {
-			await this.applyGeoLayers(target, layers);
+			for (const layer of layers) await cached.study.applyGeoLayer(layer);
+			cached.studyInputJson = c.studyInputJson!;
+		} catch (error) {
+			this.disposeStudy(c);
+			throw error;
+		}
+	};
+
+	private caseEditKey(c: SolvableCase): string {
+		return JSON.stringify([c.formulation, this.caseDeltas(c), this.caseRatings(c)]);
+	}
+
+	private async localSidecarCopy(source: CaseState): Promise<LocalCase> {
+		if (source.solving) throw new Error('Wait for the current solve before attaching coordinates');
+		const revision = source.revisionGeneration;
+		const captured = await this.captureSavedCase(source);
+		const base = await this.ensureStudyInputJson(source);
+		if (!base) throw new Error('The selected case input is unavailable');
+		const parsed = await ingestJsonDrop(new TextEncoder().encode(base));
+		if (!parsed.payload || !('topology' in parsed.payload))
+			throw new Error('The selected case has no balanced network data');
+		const copy = this.localFromBalancedPayload(`${source.name}.pio.json`, {
+			...parsed.payload,
+			name: `${source.name} (local copy)`
+		});
+		copy.formulation = source.formulation;
+		copy.deltas = { ...source.deltas };
+		copy.ratings = { ...source.ratings };
+		copy.solution = source.solution;
+		copy.baseSolution = source.baseSolution;
+		copy.iterations = source.iterations;
+		copy.solveMs = source.solveMs;
+		copy.solveBackend = source.solveBackend;
+		copy.network = source.network;
+		if (source.network) {
+			copy.view = {
+				buses: source.network.buses,
+				branches: source.network.branches,
+				coordinate_space: source.network.coordinate_space
+			};
+			copy.coordsKind = source.network.synthetic_coords ? 'synthetic' : 'file';
+			if (!source.network.synthetic_coords && source.network.coordinate_space !== 'diagram') {
+				const layer = JSON.stringify({
+					type: 'FeatureCollection',
+					powerio_geo: { space: 'geographic' },
+					features: [
+						...source.network.buses.map((bus) => ({
+							type: 'Feature',
+							properties: { target: 'bus', id: String(bus.id) },
+							geometry: { type: 'Point', coordinates: [bus.lon, bus.lat] }
+						})),
+						...source.network.branches
+							.filter((branch) => branch.path.length > 1)
+							.map((branch) => ({
+								type: 'Feature',
+								properties: {
+									target: 'branch',
+									branch_id: String(branch.id),
+									from: String(branch.from),
+									to: String(branch.to)
+								},
+								geometry: { type: 'LineString', coordinates: branch.path }
+							}))
+					]
+				});
+				const placed = await applyGeo(copy.studyInputJson!, layer);
+				copy.studyInputJson = placed.module_json;
+				copy.view = placed.view;
+			}
+		}
+		if (source.revisionGeneration !== revision || source.solving)
+			throw new Error('The selected case changed while loading. Attach the coordinates again');
+		this.detachedCaseCaptures.set(copy, {
+			baseInput: copy.studyInputJson!,
+			edits: this.caseEditKey(copy),
+			solution: copy.solution,
+			captured
+		});
+		return copy;
+	}
+
+	private stageLocalSidecars(source: LocalCase): LocalCase {
+		const copy = new LocalCase({
+			id: source.id,
+			label: source.label,
+			fileName: source.fileName,
+			summary: source.summary,
+			studyInputJson: source.studyInputJson,
+			topology: source.topology,
+			coordsKind: source.coordsKind,
+			view: source.view,
+			substations: source.substations
+		});
+		for (const key of [
+			'diagram',
+			'displayMode',
+			'geoSource',
+			'geoWarnings',
+			'syntheticCenter',
+			'formulation',
+			'deltas',
+			'ratings',
+			'solution',
+			'baseSolution',
+			'iterations',
+			'solveMs',
+			'solveBackend'
+		] as const)
+			Object.assign(copy, { [key]: source[key] });
+		const captured = this.detachedCaseCaptures.get(source);
+		if (captured) this.detachedCaseCaptures.set(copy, { ...captured });
+		return copy;
+	}
+
+	private async attachSidecarsToSelected(
+		layers: GeoLayerFile[],
+		displays: DisplayFile[] = [],
+		expected?: SolvableCase | MulticonductorCase | null
+	) {
+		if (this.app.studyView) {
+			this.app.error = 'Return to the live case before attaching coordinates';
+			return;
+		}
+		const source = this.app.activeMulti ?? this.app.activeLocal ?? this.app.active;
+		if (expected !== undefined && source !== expected) {
+			this.app.error = 'The selected case changed. Attach the coordinates again';
+			return;
+		}
+		if (!source) {
+			this.app.error = 'Select the matching case before attaching coordinates';
+			return;
+		}
+		if (source instanceof MulticonductorCase) {
+			try {
+				await this.applyMultiGeoLayers(source, layers);
+			} catch (error) {
+				this.app.error = errorText(error);
+			}
+			if (displays.length)
+				this.app.error = 'Attach a GeoJSON or CSV drawing to this multiconductor case';
+			return;
+		}
+		const selectedId = source.id;
+		const revision = source.revisionGeneration;
+		let target: LocalCase | null = null;
+		try {
+			target =
+				source instanceof CaseState
+					? await this.localSidecarCopy(source)
+					: this.stageLocalSidecars(source);
+			if ((this.app.activeLocal ?? this.app.active)?.id !== selectedId || this.app.studyView)
+				throw new Error('The selected case changed. Attach the coordinates again');
+			const placement = await this.prepareDroppedLocal(target, layers, displays);
+			const applied = placement.geoLayersConsumed || displays.some((display) => display.consumed);
+			if (!applied) throw new Error(placement.error ?? 'No coordinates matched the selected case');
+			if (
+				(this.app.activeLocal ?? this.app.active)?.id !== selectedId ||
+				this.app.studyView ||
+				source.revisionGeneration !== revision
+			)
+				throw new Error('The selected case changed. Attach the coordinates again');
+			const saved = this.detachedCaseCaptures.get(target);
+			if (saved) saved.baseInput = target.studyInputJson!;
+			if (
+				(this.app.activeLocal ?? this.app.active)?.id !== selectedId ||
+				this.app.studyView ||
+				source.revisionGeneration !== revision ||
+				source.solving
+			)
+				throw new Error('The selected case changed. Attach the coordinates again');
+			if (source instanceof LocalCase) {
+				const cached = this.caseStudies.get(source);
+				if (cached && target.studyInputJson && target.view) {
+					const layer = await extractGeo(target.studyInputJson);
+					try {
+						await cached.study.applyGeoLayer(layer);
+					} catch (error) {
+						this.disposeStudy(source);
+						throw error;
+					}
+					if (
+						(this.app.activeLocal ?? this.app.active)?.id !== selectedId ||
+						this.app.studyView ||
+						source.revisionGeneration !== revision ||
+						source.solving
+					) {
+						this.disposeStudy(source);
+						throw new Error('The selected case changed. Attach the coordinates again');
+					}
+					cached.studyInputJson = target.studyInputJson;
+				}
+				for (const key of [
+					'studyInputJson',
+					'view',
+					'diagram',
+					'displayMode',
+					'coordsKind',
+					'geoSource',
+					'geoWarnings',
+					'syntheticCenter'
+				] as const)
+					Object.assign(source, { [key]: target[key] });
+				if (saved) this.detachedCaseCaptures.set(source, saved);
+				target = source;
+			}
+			this.app.studyView = null;
+			this.clearSelection();
 			this.app.activeCaseId = null;
 			this.leaveMulti();
+			if (target !== source) this.app.addLocal(target);
 			this.app.activeLocalId = target.id;
 			this.app.placingLocalId = null;
+			target.network = this.localNetwork(target);
+			this.bumpRevision(target);
 			this.app.requestFrame(target.id);
 			this.maybeStartLocalSolve(target.id);
-			this.app.error = null;
-		} catch (e) {
-			this.app.error = `${layers.map((l) => l.name).join(' + ')}: ${errorText(
-				e
-			)}; use place on map for manual placement`;
+			this.app.error = placement.error;
+		} catch (error) {
+			if (target && target !== source) this.disposeStudy(target);
+			this.app.error = errorText(error);
 		}
+	}
+
+	applyGeoLayersToExisting = async (layers: GeoLayerFile[]) => {
+		await this.attachSidecarsToSelected(layers);
 	};
 
 	/** Ask the map to frame the selected branch and wait for the camera to land,
@@ -1184,6 +1433,7 @@ export class Controller {
 				await this.awaitFocus(caseId, target.branch, ac);
 				if (ac.signal.aborted) return;
 			}
+			if (c.formulation === 'acpf') return;
 			try {
 				// The column from the browser Study (under the case's formulation). DC OPF
 				// may reconcile a null column via the server; AC OPF / SOCWR are browser
@@ -1322,6 +1572,7 @@ export class Controller {
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
+			if (c.formulation === 'acpf') return;
 			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
 				bus: busId
 			});
@@ -1389,6 +1640,7 @@ export class Controller {
 				await this.awaitFocus(localId, branchId, ac);
 				if (ac.signal.aborted) return;
 			}
+			if (c.formulation === 'acpf') return;
 			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
 				branch: branchId
 			});
@@ -1448,6 +1700,7 @@ export class Controller {
 	// fall back: the server solves at base ratings, so a Study failure there is
 	// terminal.
 	runSolve = (c: SolvableCase, target: SensTarget | null) => {
+		if (c.formulation === 'acpf') target = null;
 		// Cancel this case's own previous server stream, if any (backend only).
 		if (this.isBackendCase(c)) {
 			c.closeStream?.();
@@ -1654,17 +1907,16 @@ export class Controller {
 		this.runSolve(c, this.selectionTarget);
 	};
 
-	// Switch the active case to a new OPF formulation. Solving every formulation stays
-	// entirely in the browser via the Study (nothing is routed to the server), so this
-	// disposes the old Study — `getStudy` rebuilds it for the new formulation, re-parsing
-	// and re-solving the base — then re-solves at the committed demand. The base solution
-	// is dropped so it is recaptured under the new formulation (a DC and an AC objective
-	// are not comparable). A no-op when the choice is unchanged.
+	/** Rebuild the numerical Study for a selected calculation at the current demand. */
 	changeFormulation = (c: SolvableCase, next: Formulation) => {
 		if (c.formulation === next) return;
-		// Disabled menu items (e.g. AC OPF, coming soon) are not selectable in the engine yet.
+		if (c instanceof LocalCase && c.declaredFormulation && c.declaredFormulation !== next) {
+			this.fail('This PowerIO instance requires its declared calculation.');
+			return;
+		}
 		if (FORMULATIONS.find((f) => f.id === next)?.disabled) return;
 		c.formulation = next;
+		this.app.displayMode = next === 'acpf' ? 'voltage' : 'price';
 		this.bumpRevision(c);
 		// The committed point carries over (same demand), but the model and its solution do
 		// not; drop the Study and the cached solutions so they rebuild under `next`.
@@ -1713,10 +1965,8 @@ export class Controller {
 	};
 
 	private ingestFileBatch = async (list: File[]) => {
+		const sidecarTarget = this.app.activeMulti ?? this.app.activeLocal ?? this.app.active;
 		let parsedCaseCount = 0;
-		// True once a dropped balanced case took the geographic sidecars. When no
-		// case parses, the selected existing case may take them at the end.
-		let geoLayersConsumed = false;
 
 		// Routable `.json` content (saved packages, model JSON, and transmission or
 		// distribution documents) shares the extension with geographic files. Route
@@ -1791,13 +2041,19 @@ export class Controller {
 		try {
 			for (const { file, route } of routedJson) {
 				if (route.outcome === 'multiconductor') {
-					this.addMultiCase(file.name, route.payload);
+					const multi = this.addMultiCase(file.name, route.payload);
+					if (geoLayers.length) {
+						try {
+							await this.applyMultiGeoLayers(multi, geoLayers);
+						} catch (error) {
+							this.app.error = errorText(error);
+						}
+					}
 					continue;
 				}
 				if (route.outcome !== 'balanced') continue;
 				const local = this.localFromBalancedPayload(file.name, route.payload);
 				const placement = await this.prepareDroppedLocal(local, geoLayers, displays);
-				geoLayersConsumed ||= placement.geoLayersConsumed;
 				this.addAndActivateLocal(local);
 				this.app.error = placement.error;
 			}
@@ -1809,7 +2065,16 @@ export class Controller {
 			// OpenDSS routes by extension into the multiconductor viewing path.
 			const distFormat = distExtensionFormat(file.name);
 			if (distFormat) {
-				if (await this.ingestDistFile(file, distFormat)) parsedCaseCount++;
+				if (await this.ingestDistFile(file, distFormat)) {
+					parsedCaseCount++;
+					if (geoLayers.length && this.app.activeMulti) {
+						try {
+							await this.applyMultiGeoLayers(this.app.activeMulti, geoLayers);
+						} catch (error) {
+							this.app.error = errorText(error);
+						}
+					}
+				}
 				continue;
 			}
 			const format = formatOf(file.name);
@@ -1820,10 +2085,7 @@ export class Controller {
 			this.app.parsingFile = true;
 			try {
 				const bytes = new Uint8Array(await file.arrayBuffer());
-				const { module_json, topology, view, ...summary } = await ingestCase(
-					bytes,
-					format
-				);
+				const { module_json, topology, view, ...summary } = await ingestCase(bytes, format);
 				if (format === 'aux' && (summary.n_branch === 0 || summary.n_gen === 0)) {
 					this.app.error = `${file.name}: aux parsed, but no complete network; drop the matching .m or .raw case file`;
 					continue;
@@ -1844,7 +2106,6 @@ export class Controller {
 					view
 				});
 				const placement = await this.prepareDroppedLocal(local, geoLayers, displays);
-				geoLayersConsumed ||= placement.geoLayersConsumed;
 				this.addAndActivateLocal(local);
 				parsedCaseCount++;
 				this.app.error = placement.error; // a successful parse clears a prior file's error
@@ -1855,31 +2116,12 @@ export class Controller {
 			}
 		}
 
-		// A .pwd no case consumed becomes a substation point preview entry, at
-		// the approximate positions the engine projected.
-		for (const d of displays.filter((entry) => !entry.consumed)) {
-			const points = d.preview.substations.map((s) => ({
-				number: s.number,
-				name: s.name,
-				lon: s.lon,
-				lat: s.lat
-			}));
-			this.addAndActivateLocal(
-				new LocalCase({
-					id: `local-${++this.localSeq}`,
-					label: d.file.name.replace(/\.[^.]+$/, ''),
-					fileName: d.file.name,
-					summary: null,
-					view: null,
-					substations: { points, approximate: true }
-				})
-			);
-		}
-
-		// When the drop carried only sidecars, apply them to the selected existing
-		// case. Every balanced case parsed in this batch already took them above.
-		if (geoLayers.length > 0 && !geoLayersConsumed && parsedCaseCount === 0) {
-			await this.applyGeoLayersToExisting(geoLayers);
+		if (parsedCaseCount === 0 && (geoLayers.length > 0 || displays.length > 0)) {
+			await this.attachSidecarsToSelected(geoLayers, displays, sidecarTarget);
+		} else {
+			const unmatchedDisplays = displays.filter((display) => !display.consumed);
+			if (unmatchedDisplays.length)
+				this.app.error = `${unmatchedDisplays.map((display) => display.file.name).join(' + ')}: no drawing objects matched the dropped case`;
 		}
 	};
 
@@ -1892,49 +2134,86 @@ export class Controller {
 		geoLayers: GeoLayerFile[],
 		displays: DisplayFile[]
 	): Promise<{ geoLayersConsumed: boolean; error: string | null }> => {
+		let geoLayersConsumed = false;
+		let error: string | null = null;
 		if (geoLayers.length > 0 && local.studyInputJson) {
 			try {
 				await this.applyGeoLayers(local, geoLayers);
-				return { geoLayersConsumed: true, error: null };
+				geoLayersConsumed = true;
 			} catch (e) {
-				return {
-					geoLayersConsumed: false,
-					error: `${geoLayers.map((l) => l.name).join(' + ')}: ${errorText(
-						e
-					)}; use place on map for manual placement`
-				};
+				error = `${geoLayers.map((layer) => layer.name).join(' + ')}: ${errorText(e)}`;
 			}
 		}
-		if (local.coordsKind === 'synthetic_pending' && local.studyInputJson) {
+		if (local.studyInputJson && displays.length > 0) {
 			await this.fillFromDisplaySibling(local, displays);
 		}
-		return { geoLayersConsumed: false, error: null };
+		if (!local.view && !local.diagram && local.topology) {
+			const view = {
+				...placeSyntheticTopology(local.topology, { lon: 0, lat: 0 }),
+				coordinate_space: 'diagram' as const
+			};
+			const layer = JSON.stringify({
+				type: 'FeatureCollection',
+				powerio_geo: { space: 'diagram', kind: 'synthetic' },
+				features: [
+					...view.buses.map((b) => ({
+						type: 'Feature',
+						properties: { target: 'bus', id: String(b.id) },
+						geometry: { type: 'Point', coordinates: [b.lon, b.lat] }
+					})),
+					...view.branches.map((b) => ({
+						type: 'Feature',
+						properties: {
+							target: 'branch',
+							branch_id: String(b.id),
+							from: String(b.from),
+							to: String(b.to)
+						},
+						geometry: { type: 'LineString', coordinates: b.path }
+					}))
+				]
+			});
+			local.diagram = {
+				view,
+				layer,
+				name: 'Network diagram',
+				warnings: ['No geographic coordinates; positions follow network connectivity.']
+			};
+			local.displayMode = 'diagram';
+		}
+		return { geoLayersConsumed, error };
 	};
 
-	/** Fill a coordinate-less case's positions from a co-dropped PowerWorld
-	 * `.pwd`: the display's substation points project to approximate
-	 * longitude/latitude and join onto buses through the `SubNum` extras key.
-	 * The first display that joins wins; one that matches nothing stays
-	 * available as its own preview entry, and the case stays placeable. */
+	/** Retain diagram geometry separately from the electrical case's geographic data. */
 	private fillFromDisplaySibling = async (c: LocalCase, displays: DisplayFile[]) => {
 		if (!c.studyInputJson) return;
 		for (const d of displays.filter((entry) => !entry.consumed)) {
 			try {
 				const payload = await applyDisplayGeo(c.studyInputJson, d.bytes);
-				this.adoptGeoPayload(
-					c,
-					payload,
-					d.file.name,
-					`${d.file.name} substations`,
-					payload.report.notes
-				);
-				await this.syncStudyGeo(c, [await extractGeo(payload.module_json)]);
+				if (!payload.view) continue;
+				c.diagram = {
+					view: payload.view,
+					layer: d.preview.layer,
+					name: d.file.name,
+					warnings: [
+						`${payload.report.matched_buses} buses, ${payload.report.matched_branches} routes matched; ${payload.report.unmatched_features} unmatched objects`,
+						...payload.report.notes
+					]
+				};
+				if (!c.view) c.displayMode = 'diagram';
+				c.geoWarnings = [...(c.geoWarnings ?? []), ...c.diagram.warnings];
 				d.consumed = true;
-				return;
-			} catch {
-				// No SubNum join against this display; try the next one.
+			} catch (error) {
+				c.geoWarnings = [errorText(error)];
 			}
 		}
+	};
+
+	setCaseDisplayMode = (c: LocalCase, mode: 'geographic' | 'diagram') => {
+		if (mode === 'diagram' ? !c.diagram : !c.view) return;
+		c.displayMode = mode;
+		c.network = this.localNetwork(c);
+		this.app.requestFrame(c.id);
 	};
 
 	/** Route a dropped `.json` by its content. Recognized payloads return without
@@ -1997,15 +2276,16 @@ export class Controller {
 		}
 	};
 
-	/** Build a `MulticonductorCase` from an ingest payload and make it active.
-	 * Geographic cases place immediately; planar/synthetic cases enter placement
-	 * (a map click or "place on map") so the user picks their center. */
+	/** Retain parsed electrical inputs and draw each declared coordinate space directly. */
 	private addMultiCase(fileName: string, payload: IngestedDistCase) {
 		const { graph, ...summary }: { graph: IngestedDistCase['graph'] } & MultiCaseSummary = payload;
 		const coordsKind = payload.coords_kind as MultiCoordsKind;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
-		const view = coordsKind === 'geographic' ? buildGeographicView(graph) : null;
+		const view =
+			coordsKind === 'geographic'
+				? buildGeographicView(graph, payload.geo_layer)
+				: buildDiagramView(graph, payload.geo_layer);
 		const c = new MulticonductorCase({
 			id: `dist-${++this.localSeq}`,
 			label,
@@ -2015,12 +2295,146 @@ export class Controller {
 			coordsKind,
 			view
 		});
+		this.app.studyView = null;
+		this.clearSelection();
 		this.app.addMulti(c);
 		if (c.placed) this.app.requestFrame(c.id);
+		return c;
 	}
+
+	/** Compute terminal quantities only for the retained input and current case revision. */
+	solveMultiCase = async (
+		c: MulticonductorCase,
+		options: McPfOptions = {},
+		signal?: AbortSignal
+	): Promise<McPfResult> => {
+		if (signal?.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
+		if (c.solving) throw new Error('A calculation is already running for this case');
+		const unavailable = c.mcPfReason;
+		if (unavailable) {
+			this.app.error = unavailable;
+			throw new Error(unavailable);
+		}
+		const input = c.moduleJson!;
+		const revision = c.revisionGeneration;
+		const seq = ++c.solveSeq;
+		const abort = new AbortController();
+		const cancel = () => abort.abort();
+		signal?.addEventListener('abort', cancel, { once: true });
+		c.solveAbort = abort;
+		c.solving = true;
+		this.app.error = null;
+		const started = performance.now();
+		try {
+			const snapshot = this.mcTransport.solveMcStudy
+				? await this.mcTransport.solveMcStudy(
+						input,
+						crypto.randomUUID(),
+						c.label,
+						options,
+						abort.signal
+					)
+				: null;
+			const result =
+				snapshot?.result ?? (await this.mcTransport.solveMcModule(input, options, abort.signal));
+			if (abort.signal.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
+			if (
+				seq !== c.solveSeq ||
+				input !== c.moduleJson ||
+				revision !== c.revisionGeneration ||
+				!this.app.multiCases.includes(c)
+			)
+				throw new Error('The case changed while calculating. Run AC power flow again');
+			if (!result.converged) throw new Error('AC power flow did not converge');
+			c.result = result;
+			c.mcSnapshot = snapshot;
+			c.mcSavedAt = null;
+			c.solveMs = performance.now() - started;
+			c.revisionGeneration++;
+			return result;
+		} catch (error) {
+			if (
+				!abort.signal.aborted &&
+				!(error instanceof DOMException && error.name === 'AbortError')
+			) {
+				this.app.error = errorText(error);
+				this.app.errorRetry = () => {
+					void this.solveMultiCase(c, options).catch(() => {});
+				};
+			}
+			throw error;
+		} finally {
+			signal?.removeEventListener('abort', cancel);
+			if (c.solveSeq === seq) {
+				c.solving = false;
+				c.solveAbort = null;
+			}
+		}
+	};
+
+	/** Apply coordinates atomically to the explicitly selected conductor-resolved case. */
+	applyMultiGeoLayers = async (c: MulticonductorCase, layers: GeoLayerFile[]) => {
+		if (!layers.length) return;
+		if (this.app.studyView || this.app.activeMulti !== c)
+			throw new Error('Select the matching case before attaching coordinates');
+		if (c.solving) throw new Error('Wait for the calculation before attaching coordinates');
+		if (!c.moduleJson || !this.mcTransport.applyMcGeo)
+			throw new Error('Coordinate attachment is unavailable for this case');
+		const input = c.moduleJson;
+		const revision = c.revisionGeneration;
+		let next = input;
+		let snapshot = c.mcSnapshot;
+		let payload: Awaited<ReturnType<NonNullable<EngineTransport['applyMcGeo']>>> | undefined;
+		const notes: string[] = [];
+		let matched = 0;
+		for (const layer of layers) {
+			payload = await this.mcTransport.applyMcGeo(next, layer.layer);
+			if (snapshot) {
+				if (!this.mcTransport.applyMcStudyGeo)
+					throw new Error('Saved result coordinates are unavailable in this build');
+				snapshot = await this.mcTransport.applyMcStudyGeo(snapshot, layer.layer);
+			}
+			if (!payload.module_json)
+				throw new Error('Coordinate attachment returned no electrical input');
+			next = payload.module_json;
+			matched += payload.report.matched_buses + payload.report.matched_branches;
+			notes.push(
+				`${payload.report.matched_buses} buses, ${payload.report.matched_branches} routes matched; ${payload.report.unmatched_features} unmatched objects`,
+				...payload.report.notes,
+				...layer.diagnostics.map(formatPowerIoDiagnostic)
+			);
+		}
+		if (!payload || !matched) throw new Error('No coordinates matched the selected case');
+		if (
+			this.app.studyView ||
+			this.app.activeMulti !== c ||
+			c.moduleJson !== input ||
+			c.revisionGeneration !== revision ||
+			c.solving
+		)
+			throw new Error('The selected case changed. Attach the coordinates again');
+		const { graph, ...summary } = payload;
+		c.moduleJson = next;
+		c.mcSnapshot = snapshot ? { ...snapshot, id: crypto.randomUUID() } : null;
+		c.mcSavedAt = null;
+		c.geoLayer = payload.geo_layer ?? null;
+		c.graph = graph;
+		c.summary = summary;
+		c.coordsKind = payload.coords_kind;
+		c.view =
+			payload.coords_kind === 'geographic'
+				? buildGeographicView(graph, payload.geo_layer)
+				: buildDiagramView(graph, payload.geo_layer);
+		c.geoWarnings = notes;
+		c.revisionGeneration++;
+		this.app.placingMultiId = null;
+		this.app.error = null;
+		this.app.requestFrame(c.id);
+	};
 
 	/** Make a multiconductor case active, framing it when it is placed. */
 	activateMulti = (c: MulticonductorCase) => {
+		this.app.studyView = null;
 		this.clearSelection();
 		this.app.activeCaseId = null;
 		this.app.activeLocalId = null;
@@ -2079,6 +2493,7 @@ export class Controller {
 
 	removeMultiCase = async (c: MulticonductorCase, event?: MouseEvent) => {
 		event?.stopPropagation();
+		c.solveAbort?.abort();
 		if (this.app.activeMultiId === c.id) {
 			c.selectedBusId = null;
 			c.selectedEdgeId = null;
@@ -2093,24 +2508,84 @@ export class Controller {
 		else this.placeLocalCase(lon, lat);
 	};
 
-	async projectStudyInput(input: string): Promise<Network> {
-		const parsed = await ingestJsonDrop(new TextEncoder().encode(input));
-		if (!parsed.payload || !('topology' in parsed.payload)) throw new Error('Study requires a balanced network');
+	async projectStudyInput(input: string, layer?: string): Promise<Network> {
+		const parsed = layer
+			? { payload: await applyGeo(input, layer) }
+			: await ingestJsonDrop(new TextEncoder().encode(input));
+		if (!parsed.payload || !('topology' in parsed.payload))
+			throw new Error('Study requires a balanced network');
 		const c = parsed.payload;
-		const view = c.view ?? placeSyntheticTopology(c.topology, { lon: -98, lat: 38 });
+		const view = c.view ?? {
+			...placeSyntheticTopology(c.topology, { lon: 0, lat: 0 }),
+			coordinate_space: 'diagram' as const
+		};
 		return { id: 'study', name: c.name, base_mva: c.base_mva, synthetic_coords: !c.view, ...view };
+	}
+
+	async caseGeographyLayers(c: LocalCase): Promise<string[]> {
+		if (!c.studyInputJson || !c.view) return [];
+		return [await extractGeo(c.studyInputJson)];
+	}
+
+	/** Capture a matching cached result without constructing or solving a model. */
+	async captureSavedCase(c: SolvableCase): Promise<SavedCaseCapture> {
+		const base = await this.ensureStudyInputJson(c);
+		if (!base) throw new Error('The case input is unavailable');
+		const detached = c instanceof LocalCase ? this.detachedCaseCaptures.get(c) : undefined;
+		if (
+			detached?.baseInput === base &&
+			detached.edits === this.caseEditKey(c) &&
+			detached.solution === c.solution
+		)
+			return detached.captured;
+		const cached = this.caseStudies.get(c);
+		if (c.solution && cached?.studyInputJson === base && cached.formulation === c.formulation) {
+			const current = await cached.study.currentSolution();
+			if (JSON.stringify(current) === JSON.stringify(c.solution)) {
+				return {
+					input: await cached.study.saveInstanceModule(),
+					solution: await cached.study.saveSolutionModule(),
+					view: await cached.study.currentView()
+				};
+			}
+		}
+		if (
+			Object.values(this.caseDeltas(c)).some((v) => v !== 0) ||
+			Object.values(this.caseRatings(c)).some((v) => v !== 0)
+		) {
+			throw new Error(
+				'The displayed edits have no matching saved result. Finish solving before saving them.'
+			);
+		}
+		if (
+			c instanceof CaseState &&
+			c.solution &&
+			c.formulation === 'dcopf' &&
+			this.api.getSavedCase
+		) {
+			const snapshot = await this.api.getSavedCase(c.id);
+			if (
+				snapshot.base_input !== base ||
+				JSON.stringify(snapshot.display_solution) !== JSON.stringify(c.solution)
+			)
+				throw new Error('The server case changed. Reload it before saving.');
+			return { input: snapshot.input, solution: snapshot.solution, view: snapshot.view };
+		}
+		return { input: base };
 	}
 
 	/** Build a local case from a balanced PowerIO ingest payload without activating
 	 * it yet; co-dropped placement data is applied before the first solve. */
 	private localFromBalancedPayload = (fileName: string, payload: IngestedCase): LocalCase => {
-		const { module_json, topology, view, ...summary } = payload;
+		const { module_json, topology, view, formulation, ...summary } = payload;
 		const label =
 			summary.name && summary.name !== 'case' ? summary.name : fileName.replace(/\.[^.]+$/, '');
 		return new LocalCase({
 			id: `local-${++this.localSeq}`,
 			label,
 			fileName,
+			formulation,
+			declaredFormulation: formulation,
 			summary,
 			studyInputJson: module_json,
 			topology,
@@ -2216,6 +2691,7 @@ export class Controller {
 	// can't preview (browser fallback path, server-only cases): the map then
 	// falls back to the JS sensitivity-times-step preview.
 	runPreview = (c: SolvableCase, bus: number, value: number) => {
+		if (c.formulation === 'acpf') return;
 		// Fast path: the committed price/demand column (already solved at the committed point),
 		// scaled by the demand step, is the same first-order linearization the engine preview
 		// returns — without rebuilding the differentiable KKT every drag frame. That engine
@@ -2330,6 +2806,7 @@ export class Controller {
 	// point (preview is replacement-absolute, so the absolute ratings map is built),
 	// then scaled by the live step; null when no Study slope is available.
 	runRatingPreview = (c: SolvableCase, branch: number, value: number) => {
+		if (c.formulation === 'acpf') return;
 		const committedAtBranch = this.caseRatings(c)[branch] ?? 0;
 		const step = (Math.abs(value) < 0.25 ? 0 : value) - committedAtBranch;
 		const col = c.sensitivity;

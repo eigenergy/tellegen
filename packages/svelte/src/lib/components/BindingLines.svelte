@@ -45,7 +45,7 @@
 						aria-pressed={app.selectedBranch === branch.id}
 						onclick={() => select(branch.id)}
 					>
-						line {branch.from}&#8201;&ndash;&#8201;{branch.to} &middot; {Math.round(loading * 100)}%
+						line {branch.from}&#8201;&ndash;&#8201;{branch.to}, {Math.round(loading * 100)}%
 					</button>
 				</li>
 			{/each}

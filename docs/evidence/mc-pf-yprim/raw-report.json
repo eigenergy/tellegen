@@ -1,0 +1,42 @@
+{
+  "backend": "DSS C-API Library version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN 3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033829; License Status: Open \nDSS-Python version: 0.15.7\nOpenDSSDirect.py version: 0.9.4",
+  "wrapper": "0.9.4",
+  "primitive_sha256": "03fd5850cb47af69090e2fefb88ab855ed1e167ed3e274e9a8b27aa3864eb786",
+  "cases": [
+    {
+      "case": "raw_wye_wye_1_1",
+      "max_entry_error_S": 4.47545209131181e-16,
+      "passed": true
+    },
+    {
+      "case": "raw_delta_delta_1_1",
+      "max_entry_error_S": 4.440892098500626e-16,
+      "passed": true
+    },
+    {
+      "case": "raw_wye_delta_1_1",
+      "max_entry_error_S": 4.440892098500626e-16,
+      "passed": true
+    },
+    {
+      "case": "raw_delta_wye_-1_1",
+      "max_entry_error_S": 1.3877787807814457e-17,
+      "passed": true
+    },
+    {
+      "case": "raw_delta_delta_1_-1_bank",
+      "max_entry_error_S": 4.440892098500626e-16,
+      "passed": true
+    },
+    {
+      "case": "raw_delta_delta_-1_1_bank",
+      "max_entry_error_S": 4.440892098500626e-16,
+      "passed": true
+    },
+    {
+      "case": "raw_wye_delta_1_-1_bank",
+      "max_entry_error_S": 4.440892098500626e-16,
+      "passed": true
+    }
+  ]
+}

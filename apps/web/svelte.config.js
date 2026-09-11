@@ -23,11 +23,11 @@ const config = {
 				'form-action': ['self'],
 				// The engine is wasm, which needs `wasm-unsafe-eval`. That allows
 				// wasm compilation only. Never widen it to `unsafe-eval`.
-				'script-src': ['self', 'wasm-unsafe-eval'],
+				'script-src': ['self', 'wasm-unsafe-eval', 'https://cloud.umami.is'],
 				// Svelte and maplibre both write inline style attributes.
 				'style-src': ['self', 'unsafe-inline'],
 				'img-src': ['self', 'data:', 'blob:', 'https://*.cartocdn.com'],
-				'connect-src': ['self', 'https://*.cartocdn.com'],
+				'connect-src': ['self', 'https://*.cartocdn.com', 'https://gateway.umami.is'],
 				// The engine worker and maplibre's workers load from blob URLs.
 				'worker-src': ['self', 'blob:'],
 				'child-src': ['self', 'blob:'],

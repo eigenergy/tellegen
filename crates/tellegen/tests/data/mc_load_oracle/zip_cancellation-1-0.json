@@ -1,0 +1,78 @@
+{
+  "name": "zip_cancellation-1-0",
+  "terminal_conventions": {
+    "phase": [
+      "a"
+    ],
+    "neutral": [
+      "n"
+    ],
+    "earth": []
+  },
+  "bus": {
+    "src": {
+      "terminal_names": [
+        "a",
+        "n"
+      ],
+      "perfectly_grounded_terminals": [
+        "n"
+      ]
+    }
+  },
+  "voltage_source": {
+    "source": {
+      "bus": "src",
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "v_magnitude": [
+        240.0,
+        0
+      ],
+      "v_angle": [
+        0.6457718232379019,
+        0
+      ]
+    }
+  },
+  "load": {
+    "ld": {
+      "bus": "src",
+      "terminal_map": [
+        "a",
+        "n"
+      ],
+      "configuration": "SINGLE_PHASE",
+      "model": "zip",
+      "p_nom": [
+        2400.0
+      ],
+      "q_nom": [
+        800.0
+      ],
+      "v_nom": [
+        240.0
+      ],
+      "alpha_z": [
+        0.5
+      ],
+      "alpha_i": [
+        -1.5
+      ],
+      "alpha_p": [
+        1
+      ],
+      "beta_z": [
+        0.2
+      ],
+      "beta_i": [
+        -0.6
+      ],
+      "beta_p": [
+        0.4
+      ]
+    }
+  }
+}

@@ -1,3 +1,4 @@
+export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as AppFooter } from './components/AppFooter.svelte';
 export { default as AppHeader } from './components/AppHeader.svelte';
 export { default as BusPicker } from './components/BusPicker.svelte';
@@ -16,3 +17,5 @@ export { default as SizeLegend } from './components/SizeLegend.svelte';
 export { default as SolveCard } from './components/SolveCard.svelte';
 export { default as TopMovers } from './components/TopMovers.svelte';
 export { default as Sparkline } from './Sparkline.svelte';
+
+export { default as McResults } from './components/McResults.svelte';

@@ -44,7 +44,7 @@ export type FormulationId = (typeof FORMULATION_IDS)[number];
 export const SOLVE_STATUSES = ${JSON.stringify(solveStatuses)} as const;
 export type SolveStatus = (typeof SOLVE_STATUSES)[number];
 
-export type BrowserFormulation = Extract<FormulationId, 'dcopf' | 'acopf' | 'socwr'>;
+export type BrowserFormulation = Extract<FormulationId, 'dcopf' | 'acpf' | 'acopf' | 'socwr'>;
 export type Power = 'Active' | 'Reactive';
 export type End = 'From' | 'To';
 export type VoltageKind = 'Magnitude' | 'Angle' | 'Squared' | 'ProductReal' | 'ProductImag';
@@ -178,6 +178,9 @@ export interface ProblemCaps {
 
 export interface NetworkBus {
 \tid: number;
+\tname?: string | null;
+\tarea?: number;
+\tzone?: number;
 \t/** PowerIO row uid when the source carries one; older payloads omit the field. */
 \tuid?: string | null;
 \t/** False for a display-only row synthesized by analysis lowering. */
@@ -202,6 +205,8 @@ export interface NetworkBranch {
 }
 
 export interface Network {
+\tcoordinate_space?: 'geographic' | 'diagram';
+\tmodel_details?: import('./study-contracts.js').ModelDetails | null;
 \tid: string;
 \tname: string;
 \tbase_mva: number;
@@ -211,8 +216,9 @@ export interface Network {
 }
 
 export interface Solution {
-\tobjective: number;
+\tobjective: number | null;
 \tprices: { bus: number; value: number }[];
+\tvm?: { bus: number; value: number }[];
 \tva: { bus: number; value: number }[];
 \tw: { bus: number; value: number }[];
 \tflows: { branch: number; mw: number; loading: number }[];
@@ -232,6 +238,8 @@ export interface SensitivityColumn {
 }
 
 export interface CaseSummary {
+\t/** Configured cases remain listed when loading or solving fails. */
+\tunavailable_reason?: string | null;
 \tid: string;
 \tname: string;
 \t/** Canonical typed PowerIO bus rows. */
