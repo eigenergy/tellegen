@@ -14,3 +14,8 @@ to use PowerIO IR generation 2.
 Apply the OpenDSS load-voltage envelope and report voltage validity separately
 from convergence. Support fixed-tap single-phase autotransformers, including
 ANSI Type A/B ratios, winding impedance, and excitation shunts.
+
+Retain electrical results when attaching geography to saved distribution studies.
+Share cancellable calculations between browser controls and WebMCP, expose
+terminal results to agent queries, and add compact notifications and
+privacy-filtered usage events.
