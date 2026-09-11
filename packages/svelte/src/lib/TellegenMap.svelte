@@ -712,11 +712,14 @@
 	}
 
 	async function loadMapModules() {
-		const [maplibre, deckMap, layers] = await Promise.all([
+		const [maplibre, deckMap, layers, worker] = await Promise.all([
 			import('maplibre-gl'),
 			import('@deck.gl/maplibre'),
-			import('@deck.gl/layers')
+			import('@deck.gl/layers'),
+			import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url')
 		]);
+		// Bundle the worker with its shared imports and configure it before creating a map.
+		maplibre.setWorkerUrl(worker.default);
 		return {
 			maplibregl: maplibre,
 			MapLibreOverlay: deckMap.MapLibreOverlay,
