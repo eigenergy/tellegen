@@ -2,7 +2,7 @@
 // Rust source: crates/tellegen/src/api.rs
 // Rust source sha256: 9728ba356f32e4174214292aa200f079d40ddad33282e2955e8e1def71c03c68
 
-export const CONTRACT_VERSION = "0.2.0" as const;
+export const CONTRACT_VERSION = "0.3.0" as const;
 export const CONTRACT_SOURCE_SHA256 = "9728ba356f32e4174214292aa200f079d40ddad33282e2955e8e1def71c03c68" as const;
 
 export const FORMULATION_IDS = ["dcpf","dcopf","acpf","socwr","acopf"] as const;
