@@ -61,19 +61,23 @@ values cross JSON as `{ "re": ..., "im": ... }`.
 
 The solver supports voltage-dependent loads, ideal voltage sources,
 lines, passive shunts, and finite-leakage two-winding transformers, including
-two-winding `n_winding` records with explicit BMOPF delta rolls and fixed-tap
-`single_phase_autotransformer` regulator snapshots. Transformer
-admittance follows the
+phase-to-phase `single_phase` records, two-winding `n_winding` records with
+explicit BMOPF delta rolls, and fixed-tap `single_phase_autotransformer`
+regulator snapshots. It also supports the three coupled windings into which
+PowerIO lowers a BMOPF `center_tap` transformer, including anti-series
+split-phase polarity, fixed taps, excitation, and neutral impedance.
+Transformer admittance follows the
 OpenDSS terminal primitive: common leakage base, winding voltage/tap maps,
 actual WYE/DELTA coil incidence, explicit neutral impedance, and explicit
 per-coil excitation shunts. Zero leakage (an ideal voltage constraint),
-transformers with more than two windings, ideal zero-impedance regulators,
-finite source impedance, and unsupported controls
+arbitrary transformers with more than two windings, ideal zero-impedance
+regulators, finite source impedance, and unsupported controls
 are rejected with an error rather than approximated.
-The direct OpenDSS YPrim comparison, including YY/DD/YD/DY fixed-tap cases and
-per-winding delta-roll cases, is frozen in
-[`docs/evidence/mc-pf-yprim`](evidence/mc-pf-yprim) and exercised by the
-transformer unit tests.
+The direct OpenDSS YPrim comparison for YY/DD/YD/DY fixed-tap and per-winding
+delta-roll cases is frozen in
+[`docs/evidence/mc-pf-yprim`](evidence/mc-pf-yprim). Transformer unit tests add
+a fixed-tap, excited centre-tap YPrim comparison, while the loaded centre-tap
+oracle also checks terminal voltages, currents, powers, losses, and polarity.
 
 Raw BMOPF inputs must use scalar or uniform taps. An `n_winding` raw record
 cannot carry a tap because PowerIO 0.11.0 drops that field; a canonical typed
