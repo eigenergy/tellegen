@@ -71,3 +71,7 @@ required-features = ["sensitivity"]
 [[example]]
 name = "mc_pf"
 required-features = ["mc-pf"]
+
+[[example]]
+name = "mc_pf_session"
+required-features = ["mc-pf"]

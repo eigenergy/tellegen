@@ -34,6 +34,25 @@ The corresponding engine APIs are `solveMcStudy` and `replayMcStudy`;
 Rust exposes `solve_mc_study_json` and `replay_mc_study_json`. These simulation
 snapshots are distinct from the balanced-network `StudyDocument`.
 
+After the first solve, selecting a bus exposes its load-branch P and Q values.
+Changing either value automatically warm-solves the same fixed-point
+current-injection problem. Rapid changes are coalesced, and **Reset** removes
+that branch's override. The edited powers and matching result are included in
+subsequent saved snapshots. Large portable input/solution modules are
+materialized only when saving, exporting, attaching geography, or explicitly
+rebuilding the calculation; ordinary edits exchange only the edit set, result,
+and load-branch state with the worker.
+
+The interactive API is a retained `McPfSession` in Rust and
+`createMcPfSession(moduleJson, options)` in TypeScript. A session keeps the
+prepared passive network, compensation matrix, sparse LU factorization, and
+last converged voltage. `replace_load_powers`/`replaceLoadPowers` accepts the
+complete set of absolute load-branch overrides relative to the session's base
+input; an empty set restores the base powers. Failed validation or convergence
+leaves the previous solved operating point intact. Topology, taps, source
+voltages, load connection maps, load voltage-model parameters, and solver
+options are structural session data: changing them requires a new session.
+
 The multiconductor PF entry point is `tellegen::solve_bmopf_json`. It accepts
 raw BMOPF JSON, validates fields that PowerIO 0.11.0 would otherwise collapse,
 then parses the document through PowerIO and solves the resulting typed
@@ -41,6 +60,13 @@ then parses the document through PowerIO and solves the resulting typed
 
 ```text
 cargo run -p tellegen --example mc_pf --features mc-pf -- case.json
+```
+
+The retained-session example scales every load branch and reports cold/warm
+timings, iteration counts, and the total factorization count:
+
+```text
+cargo run --release -p tellegen --example mc_pf_session --features mc-pf -- case.json 1.001
 ```
 
 The browser build exposes the same operation as `solve_mc_bmopf(text,
@@ -104,9 +130,10 @@ negative canonical `r_neutral` means floating. Grounded bus terminals remain
 the same exact constraint representation.
 
 Within one prepared solve, the sparse factor is built once and reused for
-every fixed-point iteration while topology, taps, nominal admittances, and
-fixed terminals are unchanged. A solve with no unknown terminals has no
-factorization to perform.
+every fixed-point iteration while topology, taps, the frozen compensation
+admittance, and fixed terminals are unchanged. A retained session also reuses
+that factor after load P/Q changes and starts from the previous converged
+voltage. A solve with no unknown terminals has no factorization to perform.
 
 ## Load voltage models
 
@@ -146,9 +173,12 @@ supplied once for all branches or separately per branch. Unknown model names,
 incomplete parameter sets and conflicting coefficient families are rejected;
 they are not interpreted through PowerIO's permissive model fallback.
 
-The nominal admittance remains fixed. Each iteration compensates its current
-against the selected load law, so these models retain the single-factorization
-algorithm. Reported load currents and powers use the operating voltage, rather
+The compensation admittance stamped into the linear operator remains fixed.
+Each iteration compensates its current against the selected load law, so these
+models retain the single-factorization algorithm. A retained session updates
+the physical nominal admittance used by impedance and voltage-envelope laws
+when P/Q changes, while leaving only the algebraic compensation reference
+frozen. Reported load currents and powers use the operating voltage, rather
 than merely copying nominal powers.
 
 Convergence and voltage validity are reported separately. `voltage_valid` is

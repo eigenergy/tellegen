@@ -66,8 +66,8 @@ pub use emit::solve_dc_opf_instance;
 pub use mc_pf::{
     parse_bmopf_instance, replay_mc_study_json, solve_bmopf_json, solve_mc_ac_pf_instance,
     solve_mc_module_json, solve_mc_study_json, validate_bmopf_json, validate_mc_module_json,
-    McComplex, McElementPort, McPfOptions, McPfResult, McSourceReaction, McStudySnapshot,
-    McTerminalResult, McVoltageViolation,
+    McComplex, McElementPort, McLoadBranchState, McLoadPowerEdit, McPfOptions, McPfResult,
+    McPfSession, McSourceReaction, McStudySnapshot, McTerminalResult, McVoltageViolation,
 };
 #[cfg(feature = "sensitivity")]
 pub use plan::{

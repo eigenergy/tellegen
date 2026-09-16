@@ -46,8 +46,10 @@ import {
 	parseDisplay,
 	parseGeo,
 	type EngineTransport,
+	type McLoadPowerEdit,
 	type McPfOptions,
 	type McPfResult,
+	type McStudySnapshot,
 	type AppliedGeoCase,
 	type BrowserStudy,
 	type DisplayPreview,
@@ -163,14 +165,14 @@ export interface ControllerOptions {
 	api?: TellegenApiClient;
 	apiBase?: string;
 	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
-		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo'>>;
+		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession'>>;
 }
 
 export class Controller {
 	app: AppState;
 	api: TellegenApiClient;
 	mcTransport: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
-		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo'>>;
+		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession'>>;
 	abort: AbortController | null = null;
 	// While set (epoch ms), the server sensitivity fallback is rate limited: skip
 	// the request and show the rate-limit copy instead of burning the budget on a
@@ -2315,7 +2317,8 @@ export class Controller {
 			this.app.error = unavailable;
 			throw new Error(unavailable);
 		}
-		const input = c.moduleJson!;
+		let input = c.moduleJson!;
+		const retainedAtStart = c.mcSession;
 		const revision = c.revisionGeneration;
 		const seq = ++c.solveSeq;
 		const abort = new AbortController();
@@ -2325,27 +2328,47 @@ export class Controller {
 		c.solving = true;
 		this.app.error = null;
 		const started = performance.now();
+		let nextSession: Awaited<ReturnType<NonNullable<EngineTransport['createMcPfSession']>>> | null =
+			null;
 		try {
-			const snapshot = this.mcTransport.solveMcStudy
-				? await this.mcTransport.solveMcStudy(
-						input,
-						crypto.randomUUID(),
-						c.label,
-						options,
-						abort.signal
-					)
-				: null;
-			const result =
-				snapshot?.result ?? (await this.mcTransport.solveMcModule(input, options, abort.signal));
+			if (retainedAtStart) input = await retainedAtStart.inputModule();
+			let snapshot = null;
+			let result: McPfResult;
+			let loadBranches = c.mcLoadBranches;
+			if (this.mcTransport.createMcPfSession) {
+				nextSession = await this.mcTransport.createMcPfSession(input, options, abort.signal);
+				[result, loadBranches] = await Promise.all([
+					nextSession.result(),
+					nextSession.loadBranches()
+				]);
+			} else {
+				snapshot = this.mcTransport.solveMcStudy
+					? await this.mcTransport.solveMcStudy(
+							input,
+							crypto.randomUUID(),
+							c.label,
+							options,
+							abort.signal
+						)
+					: null;
+				result =
+					snapshot?.result ?? (await this.mcTransport.solveMcModule(input, options, abort.signal));
+			}
 			if (abort.signal.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
 			if (
 				seq !== c.solveSeq ||
-				input !== c.moduleJson ||
+				(retainedAtStart ? retainedAtStart !== c.mcSession : input !== c.moduleJson) ||
 				revision !== c.revisionGeneration ||
 				!this.app.multiCases.includes(c)
 			)
 				throw new Error('The case changed while calculating. Run AC power flow again');
 			if (!result.converged) throw new Error('AC power flow did not converge');
+			c.mcSession?.free();
+			c.mcSession = nextSession;
+			nextSession = null;
+			c.mcLoadBranches = loadBranches;
+			c.mcLoadEdits = [];
+			c.moduleJson = input;
 			c.result = result;
 			c.mcSnapshot = snapshot;
 			c.mcSavedAt = null;
@@ -2353,6 +2376,7 @@ export class Controller {
 			c.revisionGeneration++;
 			return result;
 		} catch (error) {
+			nextSession?.free();
 			if (
 				!abort.signal.aborted &&
 				!(error instanceof DOMException && error.name === 'AbortError')
@@ -2372,6 +2396,25 @@ export class Controller {
 		}
 	};
 
+	/** Materialize the current retained operating point only when a portable
+	 * snapshot is actually needed (save/export/geography). */
+	snapshotMultiCase = async (c: MulticonductorCase): Promise<McStudySnapshot> => {
+		if (c.mcSnapshot) return c.mcSnapshot;
+		const session = c.mcSession;
+		if (!session || !c.result) throw new Error('Run AC power flow before saving its result');
+		if (c.solving) throw new Error('Wait for the calculation before saving its result');
+		const revision = c.revisionGeneration;
+		const snapshot = await session.snapshot(crypto.randomUUID(), c.label);
+		if (
+			session !== c.mcSession ||
+			revision !== c.revisionGeneration ||
+			!this.app.multiCases.includes(c)
+		)
+			throw new Error('The case changed while preparing its result');
+		c.mcSnapshot = snapshot;
+		return snapshot;
+	};
+
 	/** Apply coordinates atomically to the explicitly selected conductor-resolved case. */
 	applyMultiGeoLayers = async (c: MulticonductorCase, layers: GeoLayerFile[]) => {
 		if (!layers.length) return;
@@ -2380,10 +2423,13 @@ export class Controller {
 		if (c.solving) throw new Error('Wait for the calculation before attaching coordinates');
 		if (!c.moduleJson || !this.mcTransport.applyMcGeo)
 			throw new Error('Coordinate attachment is unavailable for this case');
-		const input = c.moduleJson;
+		const baseInput = c.moduleJson;
+		const retainedAtStart = c.mcSession;
+		let snapshot = c.mcSnapshot;
+		if (!snapshot && c.mcSession && c.result) snapshot = await this.snapshotMultiCase(c);
+		const input = snapshot?.input_module ?? c.moduleJson;
 		const revision = c.revisionGeneration;
 		let next = input;
-		let snapshot = c.mcSnapshot;
 		let payload: Awaited<ReturnType<NonNullable<EngineTransport['applyMcGeo']>>> | undefined;
 		const notes: string[] = [];
 		let matched = 0;
@@ -2408,12 +2454,17 @@ export class Controller {
 		if (
 			this.app.studyView ||
 			this.app.activeMulti !== c ||
-			c.moduleJson !== input ||
+			c.moduleJson !== baseInput ||
+			c.mcSession !== retainedAtStart ||
 			c.revisionGeneration !== revision ||
 			c.solving
 		)
 			throw new Error('The selected case changed. Attach the coordinates again');
 		const { graph, ...summary } = payload;
+		c.mcSession?.free();
+		c.mcSession = null;
+		c.mcLoadBranches = [];
+		c.mcLoadEdits = [];
 		c.moduleJson = next;
 		c.mcSnapshot = snapshot ? { ...snapshot, id: crypto.randomUUID() } : null;
 		c.mcSavedAt = null;
@@ -2430,6 +2481,84 @@ export class Controller {
 		this.app.placingMultiId = null;
 		this.app.error = null;
 		this.app.requestFrame(c.id);
+	};
+
+	/** Stage an absolute load-branch P/Q edit and coalesce rapid UI changes into
+	 * one retained-factor warm solve. */
+	queueMultiLoadPower = (
+		c: MulticonductorCase,
+		load: string,
+		branch: number,
+		p_w: number,
+		q_var: number
+	) => {
+		if (!c.mcSession) {
+			this.app.error = 'Run AC power flow once before editing loads';
+			return;
+		}
+		if (!Number.isFinite(p_w) || !Number.isFinite(q_var)) {
+			this.app.error = 'Load P and Q must be finite numbers';
+			return;
+		}
+		const row = c.mcLoadBranches.find((entry) => entry.load === load && entry.branch === branch);
+		if (!row) {
+			this.app.error = `Load ${load} branch ${branch} is unavailable`;
+			return;
+		}
+		c.mcLoadBranches = c.mcLoadBranches.map((entry) =>
+			entry.load === load && entry.branch === branch ? { ...entry, p_w, q_var } : entry
+		);
+		const next: McLoadPowerEdit = { load, branch, p_w, q_var };
+		const without = c.mcLoadEdits.filter((edit) => edit.load !== load || edit.branch !== branch);
+		c.mcLoadEdits = p_w === row.base_p_w && q_var === row.base_q_var ? without : [...without, next];
+		c.mcEditRevision++;
+		c.mcSnapshot = null;
+		c.mcSavedAt = null;
+		c.solving = true;
+		if (c.mcEditTimer !== null) clearTimeout(c.mcEditTimer);
+		c.mcEditTimer = setTimeout(() => {
+			c.mcEditTimer = null;
+			void this.flushMultiLoadPowers(c);
+		}, 180);
+	};
+
+	private flushMultiLoadPowers = async (c: MulticonductorCase): Promise<void> => {
+		if (c.mcEditRunning) return;
+		const session = c.mcSession;
+		if (!session || !this.app.multiCases.includes(c)) return;
+		c.mcEditRunning = true;
+		c.solving = true;
+		this.app.error = null;
+		try {
+			for (;;) {
+				const revision = c.mcEditRevision;
+				const edits = c.mcLoadEdits.map((edit) => ({ ...edit }));
+				const started = performance.now();
+				const result = await session.replaceLoadPowers(edits);
+				if (session !== c.mcSession || !this.app.multiCases.includes(c)) return;
+				if (revision !== c.mcEditRevision) continue;
+				const loadBranches = await session.loadBranches();
+				if (revision !== c.mcEditRevision) continue;
+				c.mcLoadBranches = loadBranches;
+				c.result = result;
+				c.mcSnapshot = null;
+				c.mcSavedAt = null;
+				c.solveMs = performance.now() - started;
+				c.revisionGeneration++;
+				break;
+			}
+		} catch (error) {
+			if (session === c.mcSession) {
+				c.mcLoadBranches = await session.loadBranches().catch(() => c.mcLoadBranches);
+			}
+			this.app.error = errorText(error);
+			this.app.errorRetry = () => void this.flushMultiLoadPowers(c);
+		} finally {
+			if (session === c.mcSession) {
+				c.mcEditRunning = false;
+				c.solving = false;
+			}
+		}
 	};
 
 	/** Make a multiconductor case active, framing it when it is placed. */
@@ -2494,6 +2623,9 @@ export class Controller {
 	removeMultiCase = async (c: MulticonductorCase, event?: MouseEvent) => {
 		event?.stopPropagation();
 		c.solveAbort?.abort();
+		if (c.mcEditTimer !== null) clearTimeout(c.mcEditTimer);
+		c.mcSession?.free();
+		c.mcSession = null;
 		if (this.app.activeMultiId === c.id) {
 			c.selectedBusId = null;
 			c.selectedEdgeId = null;

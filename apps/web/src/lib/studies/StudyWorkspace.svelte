@@ -400,11 +400,17 @@
 					}}
 				/></label
 			>
-			{#if multi ? mcDoc : doc}<button
+			{#if multi ? multi.result : doc}<button
 					disabled={workspace.busy}
-					onclick={() =>
-						download(multi ? workspace.exportMulti() : workspace.export(), 'tellegen-study.json')}
-					>Export</button
+					onclick={() => {
+						if (multi) {
+							void attempt(async () =>
+								download(await workspace.exportMulti(), 'tellegen-study.json')
+							);
+						} else {
+							download(workspace.export(), 'tellegen-study.json');
+						}
+					}}>Export</button
 				>{/if}
 		</div>
 		{#if doc && !creating && !multi}<nav aria-label="Study sections">
@@ -425,9 +431,9 @@
 				<h3>{multi.label}</h3>
 				<p class="hint">Distribution power flow</p>
 				<div class="action-row">
-					{#if multi.solving}<span role="status">Calculating...</span><button
-							onclick={() => multi.solveAbort?.abort()}>Cancel</button
-						>
+					{#if multi.solving}<span role="status">Calculating...</span>{#if multi.solveAbort}<button
+								onclick={() => multi.solveAbort?.abort()}>Cancel</button
+							>{/if}
 					{:else}<button
 							class="primary"
 							disabled={!multi.mcPfSupported || workspace.busy}
@@ -436,7 +442,7 @@
 							}}>Run power flow</button
 						>{/if}
 					<button
-						disabled={!multi.mcSnapshot || multi.solving || workspace.busy || !!multi.mcSavedAt}
+						disabled={!multi.result || multi.solving || workspace.busy || !!multi.mcSavedAt}
 						onclick={() => void attempt(() => workspace.saveMulti())}>Save result</button
 					>
 				</div>

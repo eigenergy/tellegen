@@ -333,6 +333,68 @@ pub fn solve_mc_study(
     tellegen::solve_mc_study_json(module_json, study_id, study_title, &options).map_err(jserr)
 }
 
+/// A retained fixed-point current-injection session. The prepared network,
+/// sparse LU, and last converged voltage remain in this WASM object across
+/// load edits.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub struct McPfSession(tellegen::McPfSession);
+
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+impl McPfSession {
+    #[wasm_bindgen(constructor)]
+    pub fn new(module_json: &str, options_json: &str) -> Result<McPfSession, JsError> {
+        ensure_input_text(module_json)?;
+        ensure_input_text(options_json)?;
+        install_panic_hook();
+        let options = if options_json.trim().is_empty() {
+            tellegen::McPfOptions::default()
+        } else {
+            serde_json::from_str(options_json).map_err(jserr)?
+        };
+        tellegen::McPfSession::from_module_json(module_json, options)
+            .map(McPfSession)
+            .map_err(jserr)
+    }
+
+    /// The current complete solver result.
+    pub fn result(&self) -> Result<String, JsError> {
+        serde_json::to_string(self.0.result()).map_err(jserr)
+    }
+
+    /// Editable load branches with base and current P/Q values.
+    pub fn load_branches(&self) -> Result<String, JsError> {
+        serde_json::to_string(&self.0.load_branches()).map_err(jserr)
+    }
+
+    /// Replace the absolute branch-power edit state and solve with the retained
+    /// factorization and previous converged voltage.
+    pub fn replace_load_powers(&mut self, edits_json: &str) -> Result<String, JsError> {
+        ensure_input_text(edits_json)?;
+        let edits: Vec<tellegen::McLoadPowerEdit> = serde_json::from_str(edits_json)
+            .map_err(|error| jserr(format!("bad multiconductor load edits JSON: {error}")))?;
+        let result = self.0.replace_load_powers(&edits).map_err(jserr)?;
+        serde_json::to_string(result).map_err(jserr)
+    }
+
+    /// Materialize the current edited input as PowerIO IR.
+    pub fn input_module(&self) -> Result<String, JsError> {
+        self.0.input_module_json().map_err(jserr)
+    }
+
+    /// Save the current edited point and result without re-solving.
+    pub fn snapshot(&self, study_id: &str, study_title: &str) -> Result<String, JsError> {
+        ensure_input_text(study_id)?;
+        ensure_input_text(study_title)?;
+        let snapshot = self.0.snapshot(study_id, study_title).map_err(jserr)?;
+        // The session constructs this from its current typed input and
+        // converged result. Avoid the replay validator here: it prepares a
+        // separate network and would defeat retained-factor interaction.
+        serde_json::to_string(&snapshot).map_err(jserr)
+    }
+}
+
 /// Validate and canonicalize a saved multiconductor Study snapshot without
 /// re-solving it.
 #[cfg(feature = "mc-pf")]

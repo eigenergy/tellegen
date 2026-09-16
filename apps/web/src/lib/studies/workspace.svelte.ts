@@ -74,9 +74,8 @@ export class StudyWorkspace {
 		return this.#run(
 			async () => {
 				const c = this.grid.app.activeMulti;
-				if (!c?.mcSnapshot || c.solving)
-					throw new Error('Run AC power flow before saving its result');
-				const snapshot = c.mcSnapshot;
+				if (!c?.result || c.solving) throw new Error('Run AC power flow before saving its result');
+				const snapshot = await this.grid.snapshotMultiCase(c);
 				const stored = await this.#mcStore.get(snapshot.id);
 				if (stored && JSON.stringify(stored) !== JSON.stringify(snapshot))
 					throw new Error('This study is already saved. Open it from Saved study.');
@@ -113,9 +112,10 @@ export class StudyWorkspace {
 			'study.open'
 		);
 	}
-	exportMulti(): string {
-		const snapshot = this.activeMcDocument;
-		if (!snapshot) throw new Error('Run AC power flow before exporting its result');
+	async exportMulti(): Promise<string> {
+		const c = this.grid.app.activeMulti;
+		if (!c?.result || c.solving) throw new Error('Run AC power flow before exporting its result');
+		const snapshot = await this.grid.snapshotMultiCase(c);
 		trackUsage('study.export', { result: 'completed' });
 		return JSON.stringify(snapshot, null, 2);
 	}

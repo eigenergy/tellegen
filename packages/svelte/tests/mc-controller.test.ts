@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type {
 	AppliedMcGeoCase,
+	BrowserMcPfSession,
 	DistGraph,
 	IngestedDistCase,
+	McLoadBranchState,
 	McPfResult,
 	McStudySnapshot
 } from '@tellegen/engine';
@@ -104,6 +106,68 @@ function host() {
 	return { app, ctrl, c, solve, apply };
 }
 describe('multiconductor calculation and coordinates', () => {
+	it('retains a fixed-point session and automatically warm-solves load edits', async () => {
+		vi.useFakeTimers();
+		try {
+			const { ctrl, c, solve } = host();
+			const loads: McLoadBranchState[] = [
+				{
+					load: 'customer',
+					bus: 'load',
+					branch: 0,
+					p_w: 10_000,
+					q_var: 2_000,
+					base_p_w: 10_000,
+					base_q_var: 2_000
+				}
+			];
+			const edited = { ...result, iterations: 1 };
+			const snapshot = (value: McPfResult): McStudySnapshot => ({
+				schema: 'tellegen-mc-pf-study',
+				version: 1,
+				id: 'live',
+				title: 'Feeder',
+				formulation: 'mc_ac_pf',
+				input_module: 'edited-input',
+				solution_module: 'solution',
+				options: {},
+				result: value
+			});
+			const replaceLoadPowers = vi.fn(async () => edited);
+			const session = {
+				result: vi.fn(async () => result),
+				loadBranches: vi.fn(async () => loads),
+				replaceLoadPowers,
+				inputModule: vi.fn(async () => 'edited-input'),
+				snapshot: vi.fn(async () =>
+					snapshot(replaceLoadPowers.mock.calls.length ? edited : result)
+				),
+				free: vi.fn()
+			} as unknown as BrowserMcPfSession;
+			ctrl.mcTransport.createMcPfSession = vi.fn(async () => session);
+
+			await ctrl.solveMultiCase(c);
+			expect(solve).not.toHaveBeenCalled();
+			expect(c.mcSession).toBe(session);
+			expect(c.mcLoadBranches).toEqual(loads);
+
+			ctrl.queueMultiLoadPower(c, 'customer', 0, 11_000, 2_100);
+			await vi.advanceTimersByTimeAsync(200);
+			expect(replaceLoadPowers).toHaveBeenCalledWith([
+				{ load: 'customer', branch: 0, p_w: 11_000, q_var: 2_100 }
+			]);
+			expect(c.result).toEqual(edited);
+			expect(c.moduleJson).toBe('input');
+			expect(c.mcSnapshot).toBeNull();
+			expect(session.snapshot).not.toHaveBeenCalled();
+			expect(await ctrl.snapshotMultiCase(c)).toEqual(snapshot(edited));
+			expect(c.mcSnapshot).toEqual(snapshot(edited));
+			expect(c.solving).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('records terminal results and rejects concurrent work', async () => {
 		const { ctrl, c, solve } = host();
 		const pending = ctrl.solveMultiCase(c, { tolerance: 1e-8 });

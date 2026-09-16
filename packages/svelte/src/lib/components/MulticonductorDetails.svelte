@@ -82,9 +82,9 @@
 		</p>
 		<div class="calculation-actions">
 			{#if mc.solving}
-				<span role="status">Calculating...</span><button onclick={() => mc.solveAbort?.abort()}
-					>Cancel</button
-				>
+				<span role="status">Calculating...</span>{#if mc.solveAbort}<button
+						onclick={() => mc.solveAbort?.abort()}>Cancel</button
+					>{/if}
 			{:else}
 				<button
 					disabled={!mc.mcPfSupported}
@@ -138,6 +138,62 @@
 			</div>
 		{:else}
 			<p class="footnote mono">no attachments on this bus</p>
+		{/if}
+		{@const loadBranches = mc.mcLoadBranches.filter((load) => load.bus === b.id)}
+		{#if loadBranches.length > 0}
+			<div class="load-editor">
+				<h4>Load power</h4>
+				{#each loadBranches as load (`${load.load}:${load.branch}`)}
+					<div class="load-row">
+						<span class="mono"
+							>{load.load}{loadBranches.length > 1 ? ` · ${load.branch + 1}` : ''}</span
+						>
+						<label
+							>P kW<input
+								type="number"
+								step="any"
+								value={load.p_w / 1000}
+								onchange={(event) =>
+									ctrl.queueMultiLoadPower(
+										mc,
+										load.load,
+										load.branch,
+										Number(event.currentTarget.value) * 1000,
+										load.q_var
+									)}
+							/></label
+						>
+						<label
+							>Q kvar<input
+								type="number"
+								step="any"
+								value={load.q_var / 1000}
+								onchange={(event) =>
+									ctrl.queueMultiLoadPower(
+										mc,
+										load.load,
+										load.branch,
+										load.p_w,
+										Number(event.currentTarget.value) * 1000
+									)}
+							/></label
+						>
+						<button
+							class="quiet"
+							disabled={load.p_w === load.base_p_w && load.q_var === load.base_q_var}
+							onclick={() =>
+								ctrl.queueMultiLoadPower(
+									mc,
+									load.load,
+									load.branch,
+									load.base_p_w,
+									load.base_q_var
+								)}>Reset</button
+						>
+					</div>
+				{/each}
+				<p class="footnote">Changes re-solve automatically using the retained factorization.</p>
+			</div>
 		{/if}
 	{:else if mc.selectedEdge}
 		{@const e = mc.selectedEdge}
@@ -315,6 +371,44 @@
 		color: #fff;
 		font-size: 10px;
 		letter-spacing: 0;
+	}
+
+	.load-editor {
+		margin-top: 14px;
+		padding-top: 10px;
+		border-top: 1px solid var(--line);
+	}
+
+	.load-editor h4 {
+		margin: 0 0 8px;
+		font-size: 11px;
+	}
+
+	.load-row {
+		display: grid;
+		grid-template-columns: minmax(70px, 1fr) 72px 72px auto;
+		gap: 6px;
+		align-items: end;
+		margin-bottom: 7px;
+	}
+
+	.load-row label {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-size: 9px;
+		color: var(--text-secondary);
+	}
+
+	.load-row input {
+		min-width: 0;
+		width: 100%;
+		box-sizing: border-box;
+		font: 10px var(--font-mono);
+	}
+
+	.load-row button {
+		font-size: 9px;
 	}
 
 	/* The global stylesheet's .legend is the 6px color-ramp strip; its height

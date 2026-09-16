@@ -5,9 +5,10 @@
  * the replay target when the worker errors before its first response — the
  * failure mode of a browser that cannot run module workers. */
 
-import { engineModule, type WasmStudy } from "./module.js";
+import { engineModule } from "./module.js";
 import {
   runRequest,
+  type EngineHandles,
   type EngineRequest,
   type WorkerRequest,
   type WorkerResponse,
@@ -24,11 +25,14 @@ export interface EngineHost {
   cancel?(reason: Error): boolean;
 }
 
-const directStudies = new Map<number, WasmStudy>();
+const directHandles: EngineHandles = {
+  studies: new Map(),
+  mcPfSessions: new Map(),
+};
 
 export const directHost: EngineHost = {
   async call(req) {
-    return runRequest(await engineModule(), directStudies, req);
+    return runRequest(await engineModule(), directHandles, req);
   },
   cancel() {
     return false;
@@ -146,9 +150,12 @@ export function isolatedEngineHost(): EngineHost {
 
 function isolatedDirectHost(): EngineHost {
   let stopped = false;
-  const studies = new Map<number, WasmStudy>();
+  const handles: EngineHandles = {
+    studies: new Map(),
+    mcPfSessions: new Map(),
+  };
   return {
-    async call(req) { return runRequest(await engineModule(), studies, req, () => stopped); },
+    async call(req) { return runRequest(await engineModule(), handles, req, () => stopped); },
     requestStop() { stopped = true; },
     cancel() { stopped = true; return false; },
   };

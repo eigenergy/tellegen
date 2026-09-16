@@ -5,7 +5,7 @@
  * handles are allocated by the caller, which keeps them valid when pending
  * requests replay against the other host. */
 
-import type { WasmModule, WasmStudy } from "./module.js";
+import type { WasmMcPfSession, WasmModule, WasmStudy } from "./module.js";
 
 export type EngineRequest =
   | { op: "preload" }
@@ -36,6 +36,23 @@ export type EngineRequest =
     }
   | { op: "replay_mc_study"; snapshot: string }
   | { op: "apply_mc_study_geo"; snapshot: string; layer: string }
+  | {
+      op: "mc_pf_session_new";
+      session: number;
+      module_json: string;
+      options: string;
+    }
+  | { op: "mc_pf_session_result"; session: number }
+  | { op: "mc_pf_session_load_branches"; session: number }
+  | { op: "mc_pf_session_replace_load_powers"; session: number; edits: string }
+  | { op: "mc_pf_session_input_module"; session: number }
+  | {
+      op: "mc_pf_session_snapshot";
+      session: number;
+      study_id: string;
+      study_title: string;
+    }
+  | { op: "mc_pf_session_free"; session: number }
   | {
       op: "study_new";
       study: number;
@@ -69,19 +86,29 @@ export type WorkerResponse =
    * host tears the worker down rather than serving the next request from it. */
   | { id: number; ok: false; error: string; fatal?: boolean };
 
+export interface EngineHandles {
+  studies: Map<number, WasmStudy>;
+  mcPfSessions: Map<number, WasmMcPfSession>;
+}
+
 /** Run one request against a loaded wasm module. `studies` maps caller
  * allocated handles to live wasm Study instances on this side of the
  * boundary. */
 export function runRequest(
   mod: WasmModule,
-  studies: Map<number, WasmStudy>,
+  handles: EngineHandles,
   req: EngineRequest,
   cancelled: () => boolean = () => false,
 ): string | null | Promise<string> {
   const study = (handle: number): WasmStudy => {
-    const s = studies.get(handle);
+    const s = handles.studies.get(handle);
     if (!s) throw new Error(`unknown study handle ${handle}`);
     return s;
+  };
+  const mcPfSession = (handle: number): WasmMcPfSession => {
+    const session = handles.mcPfSessions.get(handle);
+    if (!session) throw new Error(`unknown multiconductor PF session handle ${handle}`);
+    return session;
   };
   switch (req.op) {
     case "study_document_create":
@@ -133,8 +160,28 @@ export function runRequest(
       return mod.replay_mc_study(req.snapshot);
     case "apply_mc_study_geo":
       return mod.apply_mc_study_geo(req.snapshot, req.layer);
+    case "mc_pf_session_new":
+      handles.mcPfSessions.set(
+        req.session,
+        new mod.McPfSession(req.module_json, req.options),
+      );
+      return null;
+    case "mc_pf_session_result":
+      return mcPfSession(req.session).result();
+    case "mc_pf_session_load_branches":
+      return mcPfSession(req.session).load_branches();
+    case "mc_pf_session_replace_load_powers":
+      return mcPfSession(req.session).replace_load_powers(req.edits);
+    case "mc_pf_session_input_module":
+      return mcPfSession(req.session).input_module();
+    case "mc_pf_session_snapshot":
+      return mcPfSession(req.session).snapshot(req.study_id, req.study_title);
+    case "mc_pf_session_free":
+      handles.mcPfSessions.get(req.session)?.free();
+      handles.mcPfSessions.delete(req.session);
+      return null;
     case "study_new":
-      studies.set(req.study, new mod.Study(req.module_json, req.formulation));
+      handles.studies.set(req.study, new mod.Study(req.module_json, req.formulation));
       return null;
     case "study_replace_edits":
       return study(req.study).replace_edits(req.edits, req.sensitivities);
@@ -155,8 +202,8 @@ export function runRequest(
     case "study_apply_geo":
       return study(req.study).apply_geo(req.layer);
     case "study_free":
-      studies.get(req.study)?.free();
-      studies.delete(req.study);
+      handles.studies.get(req.study)?.free();
+      handles.studies.delete(req.study);
       return null;
   }
 }
