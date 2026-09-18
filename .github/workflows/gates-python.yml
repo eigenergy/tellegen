@@ -44,8 +44,16 @@ jobs:
       # An installed wheel, never `maturin develop`: `python/tellegen` shadows
       # the installed package on sys.path, so a develop install silently tests
       # the source tree without its compiled extension.
+      #
+      # Installed WITH the `mcp` extra, or the MCP tests would `importorskip`
+      # themselves and the whole server would go untested while the job stayed
+      # green. On 3.9 the extra resolves to nothing — its dependencies are
+      # marked `python_version >= '3.10'` — so that leg exercises the base
+      # package alone, which is the point of testing 3.9 at all.
       - name: Install the built wheel
-        run: python -m pip install --force-reinstall dist/*.whl
+        run: |
+          wheel=$(ls dist/*.whl)
+          python -m pip install --force-reinstall "${wheel}[mcp]"
 
       - name: Type-check
         run: python -m mypy python/tellegen
@@ -58,6 +66,28 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/pytest-cwd"
           cd "${RUNNER_TEMP}/pytest-cwd"
           python -m pytest "${GITHUB_WORKSPACE}/python/tests" -q
+
+      # The MCP tests skip themselves when the SDK is absent, which is right on
+      # 3.9 and would be a silent hole anywhere else. This fails the job if the
+      # extra did not install rather than letting the suite quietly shrink.
+      - name: Confirm the MCP surface was exercised, not skipped
+        if: matrix.python != '3.9'
+        run: |
+          cd "${RUNNER_TEMP}"
+          python - <<'PY'
+          import asyncio
+
+          from tellegen.mcp import server
+
+          names = {tool.name for tool in asyncio.run(server.mcp.list_tools())}
+          expected = {
+              "capabilities", "solve", "solve_module", "plan",
+              "study_create", "study_inspect", "study_run",
+              "study_export", "study_import",
+          }
+          assert names == expected, f"registered {sorted(names)}"
+          print("MCP server registers", len(names), "tools")
+          PY
 
       - name: Confirm the wheel is importable and dependency free
         run: |
