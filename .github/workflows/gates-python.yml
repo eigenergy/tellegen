@@ -72,3 +72,91 @@ jobs:
           assert "numpy" not in sys.modules, "numpy imported by the base package"
           assert "scipy" not in sys.modules, "scipy imported by the base package"
           PY
+
+  # The platform question. This repository has never run CI off ubuntu, and the
+  # whole premise of shipping a wheel is that `pip install tellegen` works
+  # without a Rust toolchain on the platforms people actually use. The engine's
+  # tree is pure Rust (clarabel on QDLDL, faer with default features off, sha2 —
+  # no BLAS, LAPACK or C), which is why this should hold; these legs are what
+  # turn "should" into evidence.
+  wheels:
+    name: wheel (${{ matrix.leg.os }} ${{ matrix.leg.target }})
+    runs-on: ${{ matrix.leg.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        leg:
+          - { os: ubuntu-latest, target: x86_64, native: true }
+          - { os: ubuntu-latest, target: aarch64, native: false }
+          - { os: macos-14, target: aarch64, native: true }
+          - { os: macos-14, target: x86_64, native: false }
+          - { os: windows-latest, target: x64, native: true }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: "3.13"
+
+      # abi3-py39 means one wheel per platform serves 3.9+, so each leg builds
+      # once rather than once per interpreter.
+      - name: Build wheel
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        with:
+          target: ${{ matrix.leg.target }}
+          args: --profile release-py --out dist
+          manylinux: auto
+
+      # Only where the runner can execute what it just built. The cross legs
+      # (linux aarch64, macOS x86_64) prove the build, not the run; running
+      # those would need QEMU or Rosetta and belongs with release smoke tests.
+      - name: Install the wheel and solve a case
+        if: matrix.leg.native
+        shell: bash
+        run: |
+          python -m pip install --force-reinstall dist/*.whl
+          cp evidence/studies/case3.m "${RUNNER_TEMP}/case3.m"
+          cd "${RUNNER_TEMP}"
+          python - <<'PY'
+          import tellegen
+
+          assert tellegen.formulations() == ("dcpf", "dcopf", "acpf", "socwr")
+          solution = tellegen.load("case3.m").solve()
+          assert solution["status"] == "optimal", solution["status"]
+          # The same number the CLI, the browser engine and PowerMCP #67 produce.
+          assert abs(solution["objective"] - 626.9487) < 1e-3, solution["objective"]
+          print("ok", tellegen.versions(), "objective", round(solution["objective"], 4))
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheel-${{ matrix.leg.os }}-${{ matrix.leg.target }}
+          path: dist/*.whl
+
+  # Built for inspection, not for release. maturin's sdist carries path
+  # dependencies, so this one contains the whole workspace including
+  # crates/tellegen/tests/data — whose BSD-3 fixtures are an open licensing
+  # question before anything is published (see the design doc, Q7).
+  sdist:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build sdist
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        with:
+          command: sdist
+          args: --out dist
+      - name: List what the sdist carries
+        run: tar -tzf dist/*.tar.gz | sed 's|^[^/]*/||' | sort | head -60
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdist
+          path: dist/*.tar.gz
