@@ -7,6 +7,7 @@ members = [
   "crates/tellegen-wasm",
   "crates/tellegen-server",
   "crates/tellegen-cli",
+  "crates/tellegen-py",
   "crates/benchmarks",
 ]
 default-members = ["crates/tellegen"]
@@ -58,3 +59,11 @@ dbg_macro = "warn"
 [profile.release]
 opt-level = "s"
 lto = true
+
+# The Python wheel's profile. `release` above is tuned for wasm binary size;
+# Clarabel and faer want speed on native hardware. Selected explicitly with
+# `maturin build --profile release-py`, so no other build is affected.
+[profile.release-py]
+inherits = "release"
+opt-level = 3
+lto = "thin"

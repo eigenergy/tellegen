@@ -46,6 +46,14 @@ release = false
 publish = false
 
 [[package]]
+# The PyO3 extension. Never released by release-plz: its version tracks the
+# engine crate and is bumped by hand, and the wheel ships through PyPI, not
+# crates.io.
+name = "tellegen-py"
+release = false
+publish = false
+
+[[package]]
 name = "tellegen-cli"
 release = false
 # Mirror `publish = false` in this crate's Cargo.toml. release-plz defaults a

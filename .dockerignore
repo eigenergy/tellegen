@@ -27,3 +27,10 @@ data
 # Local environment
 .env
 .DS_Store
+
+# The Python wheel surface: the image builds only tellegen-server.
+python/
+pyproject.toml
+dist/
+*.whl
+.venv/

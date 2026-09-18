@@ -23,6 +23,15 @@ allow = [
 ]
 confidence-threshold = 0.9
 
+# `target-lexicon` is a pyo3 build dependency (through pyo3-build-config) and is
+# the only crate in the tree under an SPDX `WITH` expression. Scoped here rather
+# than widening `allow` above, so the allow-list stays closed and this one
+# build-time crate is the documented exception. It links into no shipped
+# artifact: only `crates/tellegen-py` reaches it, at build time.
+[[licenses.exceptions]]
+name = "target-lexicon"
+allow = ["Apache-2.0 WITH LLVM-exception"]
+
 [advisories]
 # RustSec advisory DB. Security advisories fail the check; add IDs to `ignore` only
 # with a documented rationale.

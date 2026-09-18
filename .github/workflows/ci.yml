@@ -26,6 +26,11 @@ jobs:
       contents: read
     uses: ./.github/workflows/gates-js.yml
 
+  python:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gates-python.yml
+
   # deploy.yml builds the image only on a push to main. Without this job, a
   # Dockerfile break passes PR CI and fails after the merge.
   image:

@@ -33,6 +33,11 @@ jobs:
         run: |
           cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli \
             --all-targets -- -D warnings
+      # Its own invocation, deliberately: the extension is linted with
+      # `extension-module` ON, which is how it ships, and without
+      # `--all-targets`, which would link libpython into this gate.
+      - name: Clippy (python extension)
+        run: cargo clippy -p tellegen-py --no-deps --features extension-module -- -D warnings
       - name: Licenses, advisories, bans, sources
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
@@ -43,8 +48,13 @@ jobs:
       - name: EPL guard
         run: scripts/epl-guard.sh
 
+      # `tellegen-py` is excluded: a cdylib-only pyo3 crate has no portable
+      # cargo-test harness. Without `extension-module` the test binary links
+      # libpython and aborts; with it, it has undefined Python symbols that do
+      # not link on Linux. Its logic is covered through the loaded extension by
+      # the Python gate (gates-python.yml).
       - name: Test the workspace
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude tellegen-py
       - name: Test the independent multiconductor feature
         run: cargo test -p tellegen --no-default-features --features mc-pf
       # The two runs below use non-default features, which the workspace run

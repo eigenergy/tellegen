@@ -1,0 +1,74 @@
+name: Gates (python)
+
+# CI calls this. Add a Python gate here, not in a caller. Concurrency comes from
+# the caller: do not add a group here, or a release will queue behind a CI run.
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # The abi3-py39 floor and a current interpreter. One wheel covers both,
+        # so this matrix proves the abi3 claim rather than building twice.
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install build and lint tooling
+        run: python -m pip install --upgrade "maturin>=1.7,<2.0" pytest ruff mypy
+
+      # Lint and type-check the pure-Python layer before the slow Rust build, so
+      # a formatting slip fails in seconds rather than minutes.
+      - name: Lint
+        run: ruff check --no-fix .
+
+      - name: Build the wheel
+        run: maturin build --profile release-py --out dist
+
+      # An installed wheel, never `maturin develop`: `python/tellegen` shadows
+      # the installed package on sys.path, so a develop install silently tests
+      # the source tree without its compiled extension.
+      - name: Install the built wheel
+        run: python -m pip install --force-reinstall dist/*.whl
+
+      - name: Type-check
+        run: python -m mypy python/tellegen
+
+      # From a directory the repo tree cannot shadow. `python/tellegen` has no
+      # compiled extension in it, so importing from the checkout root would fail
+      # with a confusing ImportError instead of testing the wheel.
+      - name: Test
+        run: |
+          mkdir -p "${RUNNER_TEMP}/pytest-cwd"
+          cd "${RUNNER_TEMP}/pytest-cwd"
+          python -m pytest "${GITHUB_WORKSPACE}/python/tests" -q
+
+      - name: Confirm the wheel is importable and dependency free
+        run: |
+          cd "${RUNNER_TEMP}"
+          python - <<'PY'
+          import sys
+          import tellegen
+          print("versions:", tellegen.versions())
+          print("formulations:", tellegen.formulations())
+          assert tellegen.formulations() == ("dcpf", "dcopf", "acpf", "socwr")
+          # The base package must not drag in a numeric stack.
+          assert "numpy" not in sys.modules, "numpy imported by the base package"
+          assert "scipy" not in sys.modules, "scipy imported by the base package"
+          PY

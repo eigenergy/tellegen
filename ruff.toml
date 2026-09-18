@@ -1,0 +1,8 @@
+# Lint gate for the pure-Python layer. Scoped by `include` because a bare
+# `ruff check .` at the repo root would walk node_modules and the npm workspaces.
+include = ["python/**/*.py", "python/**/*.pyi"]
+# The wheel is abi3-py39, so the lint floor matches the install floor.
+target-version = "py39"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B", "I", "PLE", "PLW", "RUF022", "RUF100"]

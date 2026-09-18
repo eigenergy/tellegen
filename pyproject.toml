@@ -1,0 +1,52 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "tellegen"
+# Read from crates/tellegen-py/Cargo.toml by maturin, so the wheel and the crate
+# carry one version.
+dynamic = ["version"]
+description = "DC optimal power flow, AC power flow, SOCWR, and KKT sensitivities."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = ["opf", "power-flow", "power-systems", "sensitivity", "lmp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering",
+]
+# The base package has no runtime dependencies: case parsing is compiled in
+# through the powerio Rust crates, not imported from the powerio wheel.
+dependencies = []
+
+[project.optional-dependencies]
+# The MCP server. `mcp` 2.x moved the server class to
+# `mcp.server.mcpserver.MCPServer` and needs 3.10, so the marker keeps the base
+# package installable on 3.9. `powerio` supplies the filesystem path policy
+# (`powerio.mcp.sandbox`), which is shared with PowerMCP rather than copied.
+mcp = [
+  "mcp>=2,<3; python_version >= '3.10'",
+  "powerio>=0.11.3,<0.12; python_version >= '3.10'",
+]
+# Array returns for callers who want them; `import tellegen` stays dependency free.
+matrix = ["numpy>=1.21"]
+
+[project.urls]
+Homepage = "https://tellegen.dev"
+Documentation = "https://eigenergy.github.io/tellegen/"
+Repository = "https://github.com/eigenergy/tellegen"
+
+[tool.maturin]
+manifest-path = "crates/tellegen-py/Cargo.toml"
+module-name = "tellegen._tellegen"
+python-source = "python"
+features = ["extension-module"]
+# Not the root `release` profile: that one is opt-level = "s" for wasm size.
+profile = "release-py"
+strip = true
+include = [{ path = "LICENSE", format = "sdist" }]
