@@ -44,6 +44,10 @@ pyo3::create_exception!(
 /// Python layer converts it to a `TellegenError` carrying this code.
 const PANIC_CODE: &str = "BIND.PY.PANIC";
 
+/// Recent experiments carried in a Study summary. Matches the CLI's `summary(8)`
+/// so both hosts return the same shape.
+const STUDY_SUMMARY_LIMIT: usize = 8;
+
 /// Classify an engine error string into a stable code.
 ///
 /// The engine returns free-form `Result<_, String>` with no error enum at its
@@ -165,6 +169,208 @@ fn resolve_format(token: &str) -> Option<String> {
     powerio::resolve_format(token).map(|info| info.token.to_owned())
 }
 
+// ---------------------------------------------------------------------------
+// Stored-module solving, planning, and Studies.
+//
+// These mirror `crates/tellegen-cli/src/main.rs` rather than inventing a second
+// contract: the CLI is the reference implementation of the headless surface and
+// PowerMCP #67 already speaks it. The glue below — narrowing a module to a DC
+// OPF instance, and re-emitting the solution as a stored module — is copied
+// from there, because both hosts must produce byte-identical artifacts.
+// ---------------------------------------------------------------------------
+
+/// The producer identity every emitted artifact carries.
+///
+/// Deliberately the engine's version rather than this binding's: the artifact
+/// records which solver produced it, and a wheel rebuild that changes no engine
+/// code should not change the provenance of its output.
+fn producer_string() -> String {
+    format!("tellegen {} (b-theta, kkt-implicit)", tellegen::VERSION)
+}
+
+/// Narrow a stored module to a DC OPF instance, materializing the default
+/// instance for a bare network. Mirrors the CLI's `instance_from_module_json`.
+fn instance_from_module_json(
+    text: &str,
+) -> Result<powerio::PioModule<powerio::DcOpfInstance>, String> {
+    use powerio::{DcOpfInstance, PioValue};
+    let module = tellegen::ir::deserialize_module(text)?;
+    match module.value() {
+        PioValue::DcOpfInstance(_) => module.try_map_value(|value| match value {
+            PioValue::DcOpfInstance(instance) => Ok(instance),
+            other => Err(other.type_name().to_owned()),
+        }),
+        PioValue::BalancedNetwork(_) => tellegen::ir::balanced_module(module)?
+            .try_map_value(DcOpfInstance::from_network)
+            .map_err(|error| error.to_string()),
+        other => Err(format!(
+            "the module holds a {} value; solve_module and plan accept \
+             powerio.DcOpfInstance or powerio.BalancedNetwork",
+            other.type_name()
+        )),
+    }
+}
+
+/// Re-emit a solved instance as a stored solution module.
+fn solution_module_json(
+    source_module: powerio::PioModule<powerio::DcOpfInstance>,
+    solution: powerio::DcOpfSolution,
+) -> Result<String, String> {
+    let mut module = source_module
+        .map_value(|_| powerio::PioValue::DcOpfSolution(solution))
+        .sever_source()
+        .with_producer(
+            powerio::Producer::new("tellegen", tellegen::VERSION)
+                .map_err(|error| error.to_string())?,
+        );
+    module.sever_value_targets();
+    tellegen::ir::serialize_module(&module)
+}
+
+/// Solve a stored module's DC OPF instance and return the solution module.
+#[pyfunction]
+fn solve_module_to_solution(py: Python<'_>, module_json: &str) -> PyResult<String> {
+    let text = module_json.to_owned();
+    py.detach(move || {
+        let source = instance_from_module_json(&text)?;
+        let instance = std::sync::Arc::new(source.value().clone());
+        let solution = tellegen::solve_dc_opf_instance(instance, producer_string())?;
+        solution_module_json(source, solution)
+    })
+    .map_err(|message| engine_error(py, message))
+}
+
+/// Run the bounded capacity-planning search.
+///
+/// Returns `{"plan": CapacityPlanOutcome, "solution_module": <IR>}`, the same
+/// envelope the CLI's `plan` writes.
+#[pyfunction]
+fn plan_capacity(py: Python<'_>, module_json: &str, spec_json: &str) -> PyResult<String> {
+    let text = module_json.to_owned();
+    let spec_text = spec_json.to_owned();
+    py.detach(move || {
+        let spec: tellegen::CapacityPlanSpec = serde_json::from_str(&spec_text)
+            .map_err(|error| format!("unreadable planning spec: {error}"))?;
+        let source = instance_from_module_json(&text)?;
+        let instance = std::sync::Arc::new(source.value().clone());
+        let execution = tellegen::plan::plan_capacity(instance, &spec)?;
+        let (outcome, solution) = execution.into_solution(producer_string())?;
+        let solution_module = solution_module_json(source, solution)?;
+        let response = serde_json::json!({
+            "plan": outcome,
+            "solution_module": serde_json::from_str::<serde_json::Value>(&solution_module)
+                .map_err(|error| error.to_string())?,
+        });
+        serde_json::to_string(&response).map_err(|error| error.to_string())
+    })
+    .map_err(|message| engine_error(py, message))
+}
+
+/// Create a durable Study at `path` from a `CreateStudy` request.
+#[pyfunction]
+fn study_create(py: Python<'_>, path: &str, request_json: &str) -> PyResult<String> {
+    let destination = path.to_owned();
+    let text = request_json.to_owned();
+    py.detach(move || {
+        let request: tellegen::study_ops::CreateStudy =
+            serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        let bundle = tellegen::study_ops::create_study(request)?;
+        tellegen::study_storage::FileStudyStore::new(&destination).create(&bundle)?;
+        serde_json::to_string(&bundle.summary(STUDY_SUMMARY_LIMIT))
+            .map_err(|error| error.to_string())
+    })
+    .map_err(|message| engine_error(py, message))
+}
+
+/// The saved Study's summary.
+#[pyfunction]
+fn study_inspect(py: Python<'_>, path: &str) -> PyResult<String> {
+    let source = path.to_owned();
+    py.detach(move || {
+        let bundle = tellegen::study_storage::FileStudyStore::new(&source).load()?;
+        serde_json::to_string(&bundle.summary(STUDY_SUMMARY_LIMIT))
+            .map_err(|error| error.to_string())
+    })
+    .map_err(|message| engine_error(py, message))
+}
+
+/// The saved Study as a portable bundle.
+#[pyfunction]
+fn study_export(py: Python<'_>, path: &str) -> PyResult<String> {
+    let source = path.to_owned();
+    py.detach(move || {
+        tellegen::study_storage::FileStudyStore::new(&source)
+            .load()?
+            .export()
+    })
+    .map_err(|message| engine_error(py, message))
+}
+
+/// Validate a portable bundle and write it to a new Study at `path`.
+///
+/// Import restores no approvals; that is the engine's rule, not this layer's.
+#[pyfunction]
+fn study_import(py: Python<'_>, path: &str, bundle_json: &str) -> PyResult<String> {
+    let destination = path.to_owned();
+    let text = bundle_json.to_owned();
+    py.detach(move || {
+        let bundle = tellegen::document::StudyBundle::import(&text)?;
+        tellegen::study_storage::FileStudyStore::new(&destination).create(&bundle)?;
+        serde_json::to_string(&bundle.summary(STUDY_SUMMARY_LIMIT))
+            .map_err(|error| error.to_string())
+    })
+    .map_err(|message| engine_error(py, message))
+}
+
+/// Execute one Study operation and commit it under its expected revision.
+///
+/// Returns `{"result": StudyOperationResult, "progress": [...]}`. The progress
+/// entries carry the same `{"event": "study_checkpoint", "index": n}` shape the
+/// CLI prints on stderr under `--progress`, so a caller reading either host
+/// sees one contract.
+///
+/// `timeout_seconds` is how cancellation works here. The CLI cancels on SIGTERM
+/// through `ctrlc::set_handler`, which this binding must not reuse: it would
+/// hijack the interpreter's own SIGINT handling and errors when called twice in
+/// one process. A deadline read at each exact-trial checkpoint gives the same
+/// graceful stop — the trial in flight finishes and its evidence is committed —
+/// without touching signal disposition.
+#[pyfunction]
+#[pyo3(signature = (path, request_json, timeout_seconds = None))]
+fn study_run(
+    py: Python<'_>,
+    path: &str,
+    request_json: &str,
+    timeout_seconds: Option<f64>,
+) -> PyResult<String> {
+    let source = path.to_owned();
+    let text = request_json.to_owned();
+    py.detach(move || {
+        let request: tellegen::study_ops::StudyRequest =
+            serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        let expected = request.expected_revision;
+        let store = tellegen::study_storage::FileStudyStore::new(&source);
+        let mut bundle = store.load()?;
+
+        let deadline = timeout_seconds
+            .map(|seconds| std::time::Instant::now() + std::time::Duration::from_secs_f64(seconds));
+        let mut checkpoints: Vec<serde_json::Value> = Vec::new();
+        let result = tellegen::study_ops::execute_study(&mut bundle, request, || {
+            checkpoints.push(serde_json::json!({
+                "event": "study_checkpoint",
+                "index": checkpoints.len() + 1,
+            }));
+            deadline.is_some_and(|limit| std::time::Instant::now() >= limit)
+        })?;
+        // Committed even on a cancelled run: the engine records the trials that
+        // did finish, and dropping them would lose completed exact solves.
+        store.commit(expected, &bundle)?;
+        let response = serde_json::json!({ "result": result, "progress": checkpoints });
+        serde_json::to_string(&response).map_err(|error| error.to_string())
+    })
+    .map_err(|message| engine_error(py, message))
+}
+
 /// The code `classify` would assign to an engine message.
 ///
 /// Exported so the classification table can be asserted from the Python test
@@ -191,6 +397,13 @@ fn _tellegen(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(capabilities_json, m)?)?;
     m.add_function(wrap_pyfunction!(parse_case, m)?)?;
     m.add_function(wrap_pyfunction!(resolve_format, m)?)?;
+    m.add_function(wrap_pyfunction!(solve_module_to_solution, m)?)?;
+    m.add_function(wrap_pyfunction!(plan_capacity, m)?)?;
+    m.add_function(wrap_pyfunction!(study_create, m)?)?;
+    m.add_function(wrap_pyfunction!(study_inspect, m)?)?;
+    m.add_function(wrap_pyfunction!(study_export, m)?)?;
+    m.add_function(wrap_pyfunction!(study_import, m)?)?;
+    m.add_function(wrap_pyfunction!(study_run, m)?)?;
     m.add_function(wrap_pyfunction!(_classify, m)?)?;
     Ok(())
 }

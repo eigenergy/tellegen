@@ -40,5 +40,32 @@ def parse_case(bytes: bytes, format: str) -> str:
 def resolve_format(token: str) -> Optional[str]:
     """The canonical spelling of a PowerIO format token, or None."""
 
+def solve_module_to_solution(module_json: str) -> str:
+    """Solve a stored module's DC OPF instance. Returns the solution module as IR."""
+
+def plan_capacity(module_json: str, spec_json: str) -> str:
+    """Run the bounded capacity search. Returns {"plan", "solution_module"} as JSON."""
+
+def study_create(path: str, request_json: str) -> str:
+    """Create a durable Study at `path`. Returns its summary as JSON."""
+
+def study_inspect(path: str) -> str:
+    """The saved Study's summary, as JSON."""
+
+def study_export(path: str) -> str:
+    """The saved Study as a portable bundle, as JSON."""
+
+def study_import(path: str, bundle_json: str) -> str:
+    """Import a portable bundle into a new Study. Returns its summary as JSON."""
+
+def study_run(
+    path: str, request_json: str, timeout_seconds: Optional[float] = ...
+) -> str:
+    """Execute one Study operation and commit it.
+
+    Returns {"result", "progress"} as JSON. `timeout_seconds` cancels at the
+    next exact-trial checkpoint, letting the trial in flight finish.
+    """
+
 def _classify(message: str) -> str:
     """The code `classify` would assign to an engine message. Diagnostics only."""

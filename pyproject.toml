@@ -36,6 +36,10 @@ mcp = [
 # Array returns for callers who want them; `import tellegen` stays dependency free.
 matrix = ["numpy>=1.21"]
 
+[project.scripts]
+# Serves the tellegen.mcp tool surface over stdio. Needs the `mcp` extra.
+tellegen-mcp = "tellegen.mcp.server:main"
+
 [project.urls]
 Homepage = "https://tellegen.dev"
 Documentation = "https://eigenergy.github.io/tellegen/"
