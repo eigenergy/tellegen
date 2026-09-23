@@ -4,6 +4,13 @@
 
 # tellegen
 
+[![CI](https://github.com/eigenergy/tellegen/actions/workflows/ci.yml/badge.svg)](https://github.com/eigenergy/tellegen/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/tellegen.svg?label=crates.io)](https://crates.io/crates/tellegen)
+[![npm](https://img.shields.io/npm/v/%40tellegen%2Fengine.svg?label=%40tellegen%2Fengine)](https://www.npmjs.com/package/@tellegen/engine)
+[![npm](https://img.shields.io/npm/v/%40tellegen%2Fsvelte.svg?label=%40tellegen%2Fsvelte)](https://www.npmjs.com/package/@tellegen/svelte)
+[![docs](https://img.shields.io/badge/docs-eigenergy.github.io%2Ftellegen-blue)](https://eigenergy.github.io/tellegen/)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Browser visualization for DC OPF, AC power flow, SOCWR, and their sensitivities.
 Demand and rating edits preview through KKT sensitivity columns and commit as
 fresh solves in WebAssembly. Case parsing uses
@@ -81,7 +88,9 @@ command writes an exact PowerIO solution module.
 
 The multiconductor constant-power API, supported transformer profile, units,
 convergence options, and raw BMOPF limitations are documented in the
-[multiconductor power-flow guide](docs/multiconductor-power-flow.md).
+[multiconductor power flow](https://eigenergy.github.io/tellegen/multiconductor-pf.html)
+page, with the full API reference in the
+[multiconductor power-flow guide](https://github.com/eigenergy/tellegen/blob/main/docs/multiconductor-power-flow.md).
 
 ## Demo
 
@@ -154,6 +163,33 @@ The [HTTP API](https://eigenergy.github.io/tellegen/http-api.html),
 [deployment](https://eigenergy.github.io/tellegen/deployment.html), and
 [roadmap](https://eigenergy.github.io/tellegen/direction.html) pages cover the
 server surface, hosting, and where the project is going.
+
+## Citing
+
+tellegen is described in a paper at the 1st ACM Conference on Digital
+Transformation (DXConf '26, Ann Arbor, October 2026). Please cite it, and the
+software release you used; GitHub's "Cite this repository" button reads
+[`CITATION.cff`](CITATION.cff).
+
+```bibtex
+@inproceedings{talkington2026tellegen,
+  title     = {Interactive Optimal Power Flow Compiled to the Browser},
+  author    = {Talkington, Samuel and Geth, Frederik and Zhang, Qian and Xie, Le and Liu, Skyler},
+  booktitle = {DXConf '26: Proceedings of the 1st ACM Conference on Digital Transformation},
+  year      = {2026},
+  address   = {Ann Arbor, MI, USA},
+  publisher = {Association for Computing Machinery}
+}
+
+@software{tellegen2026software,
+  title     = {tellegen: interactive power flow and optimal power flow in the browser},
+  author    = {Talkington, Samuel and Geth, Frederik and Zhang, Qian and Xie, Le and Liu, Skyler},
+  year      = {2026},
+  version   = {0.3.0},
+  url       = {https://github.com/eigenergy/tellegen},
+  license   = {MIT}
+}
+```
 
 ## License
 

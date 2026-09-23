@@ -13,7 +13,12 @@
 	import { getAppState, getController, getUiConfig } from './context.svelte.js';
 	import TellegenMap from './TellegenMap.svelte';
 
-	const FILE_DROP_QUERY = '(hover: hover) and (pointer: fine) and (min-width: 761px)';
+	// Gates the drag-and-drop affordance only. The upload button in the header
+	// is always rendered: a file picker works on every device, and the plain
+	// `hover`/`pointer` queries resolve false on a touchscreen laptop that also
+	// has a mouse, which hid the whole file flow there (#110). `any-*` match
+	// when at least one attached input can hover and point precisely.
+	const FILE_DROP_QUERY = '(any-hover: hover) and (any-pointer: fine)';
 
 	const app = getAppState();
 	const ctrl = getController();

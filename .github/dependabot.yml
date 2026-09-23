@@ -24,6 +24,14 @@ updates:
       - dependency-name: maplibre-gl
         update-types:
           - version-update:semver-major
+      # svelte-check loads the TypeScript compiler API through
+      # `require("typescript")`, and TypeScript 7 exports only a version stub,
+      # so the packed-consumer smoke test refuses it by design
+      # (scripts/svelte-packed-smoke.mjs). Lift this once svelte-check's peer
+      # range admits ^7. The engine and webmcp packages already build with 7.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
     groups:
       # Deck's classes carry private types and must use one shared version.
       deck-gl:

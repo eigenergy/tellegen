@@ -2,6 +2,19 @@
   "name": "@tellegen/svelte",
   "version": "0.2.0",
   "description": "Svelte components for tellegen power system maps, local case files, and browser solves.",
+  "keywords": [
+    "svelte",
+    "sveltekit",
+    "power-flow",
+    "optimal-power-flow",
+    "power-systems",
+    "map",
+    "maplibre",
+    "deck.gl",
+    "webassembly",
+    "visualization",
+    "grid"
+  ],
   "license": "MIT",
   "type": "module",
   "repository": {

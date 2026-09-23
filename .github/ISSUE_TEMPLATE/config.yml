@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://eigenergy.github.io/tellegen/
+    about: Guides for the packages, the engine API, formulations, and deployment.
+  - name: Live demo
+    url: https://tellegen.dev
+    about: Try the hosted application before filing.
+  - name: Security report
+    url: https://github.com/eigenergy/tellegen/security/advisories/new
+    about: Report a vulnerability privately instead of opening an issue.

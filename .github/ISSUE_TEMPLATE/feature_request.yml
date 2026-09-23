@@ -1,0 +1,21 @@
+name: Feature request
+description: A formulation, data format, UI capability, or API you need.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The study or workflow, not the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What tellegen should do, and where (engine, browser packages, CLI, Python, docs).
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Papers, PowerModels or OpenDSS behaviour, or another tool that does this, if any.

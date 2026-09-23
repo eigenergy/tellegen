@@ -39,6 +39,24 @@ wasm-adapter-test:
 epl-guard:
     scripts/epl-guard.sh
 
+# CI gate: PowerIO must resolve from crates.io, never a git or path override.
+powerio-pin:
+    python3 .github/scripts/powerio-pin.py
+
+# CI gate: the multiconductor feature builds and passes on its own.
+mc-pf-test:
+    cargo test -p tellegen --no-default-features --features mc-pf
+
+# CI gate: the engine's conic path.
+conic-test:
+    cargo test -p tellegen --features conic
+
+# CI gate: the crate packages as it would publish. The OpenDSS oracle
+# regeneration stays CI-only (it clones BMOPFTools.jl and runs OpenDSS); the
+# checked-in references are compared by `cargo test --workspace`.
+crate-package:
+    cargo package -p tellegen --locked
+
 # ---- JavaScript workspace ----
 
 # Build both wasm packages (core + sensitivity) into packages/engine.
@@ -48,6 +66,14 @@ wasm:
 # Type-check the engine package.
 engine-check:
     npm run check:engine
+
+# Type-check the WebMCP package.
+webmcp-check:
+    npm run check:webmcp
+
+# CI gate: the WebMCP package packs as it would publish.
+webmcp-pack:
+    npm run pack:webmcp
 
 # Build the engine package.
 engine-build:
@@ -69,9 +95,13 @@ svelte-build:
 svelte-packed:
     npm run test:svelte-packed
 
-# Build the minimal downstream example.
+# CI gate: both minimal downstream examples build against the workspace packages.
 example-build:
     npm run build:example
+
+# CI gate: the WebMCP challenge evidence harness.
+evidence-test:
+    npm run test:evidence
 
 # CI gate: package-level import smoke test.
 js-import:
@@ -89,9 +119,10 @@ web-check:
 web-lint:
     npm run lint:web
 
-# CI gate: npm advisories, at the same severity CI fails on.
+# CI gate: npm advisories, at the same severity CI fails on, with the same
+# retry on registry errors.
 audit:
-    npm audit --audit-level=high
+    .github/scripts/npm-audit.sh
 
 # CI gate: smoke-check the static build output.
 web-smoke:
@@ -113,5 +144,5 @@ changeset-status:
 
 # ---- aggregate ----
 
-# Everything CI enforces locally, in order.
-ci: fmt-check clippy deny epl-guard test wasm-adapter-test wasm engine-check engine-build js-import web-lint audit svelte-check svelte-test web-check svelte-packed web-build web-smoke web-browser
+# Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
+ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test wasm-adapter-test crate-package web-lint webmcp-check webmcp-pack wasm engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit

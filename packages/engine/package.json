@@ -2,6 +2,23 @@
   "name": "@tellegen/engine",
   "version": "0.2.0",
   "description": "Browser engine for case parsing, solves, Study previews and commits, and sensitivities.",
+  "keywords": [
+    "power-flow",
+    "optimal-power-flow",
+    "opf",
+    "dc-opf",
+    "ac-power-flow",
+    "socwr",
+    "sensitivity",
+    "lmp",
+    "webassembly",
+    "wasm",
+    "power-systems",
+    "matpower",
+    "psse",
+    "opendss",
+    "powerio"
+  ],
   "license": "MIT",
   "type": "module",
   "repository": {

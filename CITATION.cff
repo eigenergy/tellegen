@@ -1,0 +1,76 @@
+# Citation metadata read by GitHub's "Cite this repository" button and by
+# Zenodo. Keep `version` and `date-released` in step with the crate release.
+cff-version: 1.2.0
+message: >-
+  If you use tellegen in your work, please cite the DXConf '26 paper below
+  and, where the software itself matters, the release you used.
+type: software
+title: tellegen
+abstract: >-
+  Interactive power flow and optimal power flow in the browser. The Rust
+  engine, its case parsers and solvers compile to WebAssembly; demand and
+  rating edits preview through sensitivities and commit as exact re-solves,
+  and case data never leaves the device.
+version: 0.3.0
+date-released: 2026-09-23
+license: MIT
+repository-code: https://github.com/eigenergy/tellegen
+url: https://tellegen.dev
+keywords:
+  - power flow
+  - optimal power flow
+  - WebAssembly
+  - interactive simulation
+  - sensitivity analysis
+  - multiconductor power flow
+  - WebMCP
+authors:
+  - family-names: Talkington
+    given-names: Samuel
+    affiliation: Harvard University and University of Michigan
+  - family-names: Geth
+    given-names: Frederik
+    affiliation: The University of Queensland
+  - family-names: Zhang
+    given-names: Qian
+    affiliation: Harvard University
+  - family-names: Xie
+    given-names: Le
+    affiliation: Harvard University
+  - family-names: Liu
+    given-names: Skyler
+    affiliation: Harvard University
+preferred-citation:
+  type: conference-paper
+  title: Interactive Optimal Power Flow Compiled to the Browser
+  authors:
+    - family-names: Talkington
+      given-names: Samuel
+      affiliation: Harvard University and University of Michigan
+    - family-names: Geth
+      given-names: Frederik
+      affiliation: The University of Queensland
+    - family-names: Zhang
+      given-names: Qian
+      affiliation: Harvard University
+    - family-names: Xie
+      given-names: Le
+      affiliation: Harvard University
+    - family-names: Liu
+      given-names: Skyler
+      affiliation: Harvard University
+  collection-title: >-
+    DXConf '26: Proceedings of the 1st ACM Conference on Digital
+    Transformation
+  conference:
+    name: 1st ACM Conference on Digital Transformation (DXConf '26)
+    city: Ann Arbor
+    region: MI
+    country: US
+    date-start: 2026-10-29
+    date-end: 2026-10-30
+  publisher:
+    name: Association for Computing Machinery
+  year: 2026
+  month: 10
+  # doi: add the ACM DOI once TAPS assigns it
