@@ -9,9 +9,10 @@
  * worker a single chunk (Vite's default worker format cannot code-split). */
 
 import { errorText, isPermanentWasmLoadFailure } from "./errors.js";
-import type { WasmModule, WasmStudy } from "./module.js";
+import type { WasmModule } from "./module.js";
 import {
   runRequest,
+  type EngineHandles,
   type WorkerRequest,
   type WorkerResponse,
 } from "./protocol.js";
@@ -37,7 +38,10 @@ function wasmModule(): Promise<WasmModule> {
   return wasmReady;
 }
 
-const studies = new Map<number, WasmStudy>();
+const handles: EngineHandles = {
+  studies: new Map(),
+  mcPfSessions: new Map(),
+};
 
 // Typed view of the dedicated worker global; the package compiles against the
 // DOM lib, so DedicatedWorkerGlobalScope is not in scope.
@@ -53,7 +57,7 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const req = ev.data;
   if (req.op === "cancel_study_operation") { cancelledOperations.add(req.id); return; }
   try {
-    const value = await runRequest(await wasmModule(), studies, req, () => cancelledOperations.has(req.id));
+    const value = await runRequest(await wasmModule(), handles, req, () => cancelledOperations.has(req.id));
     scope.postMessage({ id: req.id, ok: true, value });
   } catch (e) {
     // A Rust panic or a failed allocation is a wasm trap, and a trapped
@@ -65,7 +69,8 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const fatal = e instanceof WebAssembly.RuntimeError;
     scope.postMessage({ id: req.id, ok: false, error: errorText(e), fatal });
     if (fatal) {
-      studies.clear();
+      handles.studies.clear();
+      handles.mcPfSessions.clear();
       wasmReady = null;
       scope.close();
     }

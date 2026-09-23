@@ -34,7 +34,12 @@ pub(crate) struct BranchLoad {
     /// Signed incidence rows from global nodal voltages to branch voltages.
     pub incidence: Vec<Vec<(usize, Complex64)>>,
     pub power: Vec<Complex64>,
-    pub y_ref: Vec<Complex64>,
+    /// Physical nominal admittance implied by the current prescribed power.
+    /// This changes when an interactive session edits the load.
+    pub nominal_admittance: Vec<Complex64>,
+    /// Frozen compensation admittance stamped into the retained linear
+    /// operator. It is deliberately independent of later load edits.
+    pub reference_admittance: Vec<Complex64>,
     pub nominal_voltage: Vec<f64>,
     pub model: BranchVoltageModel,
 }
@@ -121,23 +126,23 @@ impl BranchLoad {
         let v_nom = self.nominal_voltage(branch);
         let ratio = magnitude / v_nom;
         if matches!(&self.model, BranchVoltageModel::ConstantImpedance) {
-            return self.y_ref[branch] * u;
+            return self.nominal_admittance[branch] * u;
         }
         if ratio <= options.v_low_pu {
-            return self.y_ref[branch] * u;
+            return self.nominal_admittance[branch] * u;
         }
         if ratio <= options.v_min_pu {
             // OpenDSS transitions linearly in complex current from
             // nominal impedance at Vlow to the constant-power current at
             // Vmin. Multiplication by the voltage unit phasor retains the
             // operating branch angle.
-            let low = self.y_ref[branch] * (v_nom * options.v_low_pu);
-            let at_min = self.y_ref[branch] * (v_nom / options.v_min_pu);
+            let low = self.nominal_admittance[branch] * (v_nom * options.v_low_pu);
+            let at_min = self.nominal_admittance[branch] * (v_nom / options.v_min_pu);
             let fraction = (ratio - options.v_low_pu) / (options.v_min_pu - options.v_low_pu);
             return (u / magnitude) * (low + fraction * (at_min - low));
         }
         if ratio > options.v_max_pu {
-            return self.y_ref[branch] / options.v_max_pu.powi(2) * u;
+            return self.nominal_admittance[branch] / options.v_max_pu.powi(2) * u;
         }
         self.current_at_voltage(branch, u, magnitude)
     }
@@ -151,7 +156,7 @@ impl BranchLoad {
             BranchVoltageModel::ConstantCurrent => {
                 s.conj() * (phase / self.nominal_voltage(branch))
             }
-            BranchVoltageModel::ConstantImpedance => self.y_ref[branch] * u,
+            BranchVoltageModel::ConstantImpedance => self.nominal_admittance[branch] * u,
             BranchVoltageModel::Zip {
                 alpha_z,
                 alpha_i,
@@ -281,10 +286,47 @@ impl BranchLoad {
         for (branch, incidence) in self.incidence.iter().enumerate() {
             for &(i, ci) in incidence {
                 for &(j, cj) in incidence {
-                    y.add(i, j, ci.conj() * self.y_ref[branch] * cj);
+                    y.add(i, j, ci.conj() * self.reference_admittance[branch] * cj);
                 }
             }
         }
+    }
+
+    pub(crate) fn replace_power(&mut self, power: Vec<Complex64>) -> Result<(), String> {
+        if power.len() != self.power.len() {
+            return Err(format!(
+                "load `{}` received {} branch powers; expected {}",
+                self.name,
+                power.len(),
+                self.power.len()
+            ));
+        }
+        if power
+            .iter()
+            .any(|value| !value.re.is_finite() || !value.im.is_finite())
+        {
+            return Err(format!(
+                "load `{}` received a non-finite prescribed power",
+                self.name
+            ));
+        }
+        let nominal_admittance = power
+            .iter()
+            .zip(&self.nominal_voltage)
+            .map(|(&s, &v)| s.conj() / (v * v))
+            .collect::<Vec<_>>();
+        if nominal_admittance
+            .iter()
+            .any(|value| !value.re.is_finite() || !value.im.is_finite())
+        {
+            return Err(format!(
+                "load `{}` produced a non-finite nominal admittance",
+                self.name
+            ));
+        }
+        self.power = power;
+        self.nominal_admittance = nominal_admittance;
+        Ok(())
     }
 }
 
@@ -361,12 +403,12 @@ pub(crate) fn prepare_load(
         .zip(&load.q_nom)
         .map(|(&p, &q)| Complex64::new(p, q))
         .collect();
-    let y_ref: Vec<Complex64> = power
+    let nominal_admittance: Vec<Complex64> = power
         .iter()
         .zip(vnom.iter().copied())
         .map(|(&s, v)| s.conj() / (v * v))
         .collect();
-    if y_ref
+    if nominal_admittance
         .iter()
         .any(|value| !value.re.is_finite() || !value.im.is_finite())
     {
@@ -413,7 +455,8 @@ pub(crate) fn prepare_load(
         bus: load.bus.clone(),
         incidence,
         power,
-        y_ref,
+        reference_admittance: nominal_admittance.clone(),
+        nominal_admittance,
         nominal_voltage: vnom,
         model,
     })

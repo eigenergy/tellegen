@@ -12,11 +12,14 @@ import {
 	DEFAULT_FORMULATION,
 	type StudyView,
 	type BranchRatingDeltas,
+	type BrowserMcPfSession,
 	type CaseFileSummary,
 	type DistGraph,
 	type Formulation,
 	type IngestedDistCase,
 	type McPfResult,
+	type McLoadBranchState,
+	type McLoadPowerEdit,
 	type McStudySnapshot,
 	type SensTarget,
 	type Topology
@@ -224,6 +227,12 @@ export class MulticonductorCase {
 	geoWarnings: string[] = $state.raw<string[]>([]);
 	result: McPfResult | null = $state.raw<McPfResult | null>(null);
 	mcSnapshot: McStudySnapshot | null = $state.raw<McStudySnapshot | null>(null);
+	mcSession: BrowserMcPfSession | null = $state.raw<BrowserMcPfSession | null>(null);
+	mcLoadBranches: McLoadBranchState[] = $state.raw<McLoadBranchState[]>([]);
+	mcLoadEdits: McLoadPowerEdit[] = $state.raw<McLoadPowerEdit[]>([]);
+	mcEditRevision = 0;
+	mcEditRunning = false;
+	mcEditTimer: ReturnType<typeof setTimeout> | null = null;
 	mcSavedAt = $state<string | null>(null);
 	solving = $state(false);
 	solveMs = $state<number | null>(null);

@@ -14,6 +14,8 @@ Finite source impedance, active device controls, generator/IBR injections, unsup
 
 A current result belongs to the input that produced it. Cancelling or failing a new calculation retains the preceding result. Numeric columns exported to PowerIO are ordered by bus/terminal and source/terminal identities, with missing or duplicate identities rejected.
 
+After an initial solve, select a bus to edit each attached load branch's active and reactive power. The browser coalesces rapid changes and automatically warm-solves from the last converged voltages. It retains the same sparse factorization because load power changes alter the nonlinear current injection, not the passive network operator. The physical impedance and voltage-envelope terms still follow the edited power; only the fixed-point compensation reference is frozen. Resetting a row removes its override, and saved results contain the edited input as well as its matching solution. The large portable input and solution documents are materialized lazily for save, export, geography attachment, or an explicit full rebuild rather than on every edit.
+
 Save a result in Studies to retain its input, solver options, terminal values, and PowerIO solution. Import/export moves the saved result between browsers. Reopening checks that its input and results agree without solving again. A geographic attachment updates both saved modules and retains all electrical values. These versioned multiconductor snapshots do not offer the balanced-network planning objectives or sensitivities.
 
 Raw OpenDSS files remain available for inspection. The multiconductor calculation requires supported BMOPF data or a typed PowerIO AC power flow input with explicit source and device settings.
@@ -37,6 +39,8 @@ tellegen solve-mc-bmopf '{"max_iterations":200}' < case.bmopf.json
 `tellegen describe` includes the options and result schemas. The JSON result carries complex terminal voltages, currents, device powers, source reactions, iteration counts, and KCL residuals.
 
 The browser package provides `solveMcModule(moduleJson, options, signal)` and `solveMcBmopf(text, options)`. The module operation runs in a separate worker so cancelling it leaves other calculations intact. Environments without workers check cancellation after synchronous execution and discard a cancelled result.
+
+For interactive load changes, `createMcPfSession(moduleJson, options)` creates a `BrowserMcPfSession` in the shared engine worker. Its `replaceLoadPowers(edits)` method takes the complete absolute override set, warm-starts from the previous solution, and reuses the prepared LU. `loadBranches()`, `inputModule()`, and `snapshot()` expose the editable identities and materialize the current solved state. Native callers use `McPfSession` and `McLoadPowerEdit`. A session must be rebuilt after structural changes such as topology, taps, source voltages, load connection maps, voltage-model parameters, or solver options.
 
 `solveMcStudy`, `replayMcStudy`, and `applyMcStudyGeo` create, reopen, and update saved multiconductor results. Native callers use `McStudySnapshot` for the same operations.
 

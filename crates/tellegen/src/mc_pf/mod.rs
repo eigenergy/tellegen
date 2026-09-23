@@ -150,6 +150,285 @@ pub struct McPfResult {
     pub source_reactions: Vec<McSourceReaction>,
 }
 
+/// One absolute branch-power override in a retained multiconductor PF session.
+///
+/// Branches use the prepared load's electrical branch order. This remains
+/// unambiguous for explicit-neutral WYE and compact DELTA terminal maps, where
+/// a prescribed power does not necessarily correspond to one terminal name.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct McLoadPowerEdit {
+    pub load: String,
+    pub branch: usize,
+    pub p_w: f64,
+    pub q_var: f64,
+}
+
+/// UI-facing identity and current/base power for one editable load branch.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct McLoadBranchState {
+    pub load: String,
+    pub bus: String,
+    pub branch: usize,
+    pub p_w: f64,
+    pub q_var: f64,
+    pub base_p_w: f64,
+    pub base_q_var: f64,
+}
+
+/// A prepared fixed-point current-injection solve session.
+///
+/// The passive network, compensation admittance, sparse LU, and last
+/// converged voltage are retained. Replacing load powers changes only the
+/// physical current laws, so subsequent solves reuse the exact same factor.
+#[derive(Debug)]
+pub struct McPfSession {
+    instance: McAcPfInstance,
+    prepared: PreparedNetwork,
+    options: McPfOptions,
+    module_json: Option<String>,
+    module_holds_network: bool,
+    base_power: Vec<Vec<Complex64>>,
+    voltage: Vec<Complex64>,
+    result: McPfResult,
+    solve_count: usize,
+}
+
+impl McPfSession {
+    /// Prepare, factor, and solve the initial operating point once.
+    pub fn new(instance: McAcPfInstance, options: McPfOptions) -> Result<Self, String> {
+        validate_options(&options)?;
+        let prepared = PreparedNetwork::prepare(&instance)?;
+        let base_power = prepared
+            .loads
+            .iter()
+            .map(|load| load.power.clone())
+            .collect();
+        let (result, voltage) = solve_prepared(&instance, &prepared, &options, None)?;
+        Ok(Self {
+            instance,
+            prepared,
+            options,
+            module_json: None,
+            module_holds_network: false,
+            base_power,
+            voltage,
+            result,
+            solve_count: 1,
+        })
+    }
+
+    /// Parse a stored PowerIO multiconductor module and create a retained session.
+    pub fn from_module_json(module_json: &str, options: McPfOptions) -> Result<Self, String> {
+        let module = crate::ir::deserialize_module(module_json)?;
+        input::validate_mc_module(&module)?;
+        let module_holds_network =
+            matches!(module.value(), powerio::PioValue::MulticonductorNetwork(_));
+        let mut session = Self::new(input::instance_from_value(module.value())?, options)?;
+        session.module_json = Some(module_json.to_owned());
+        session.module_holds_network = module_holds_network;
+        Ok(session)
+    }
+
+    pub fn result(&self) -> &McPfResult {
+        &self.result
+    }
+
+    pub fn instance(&self) -> &McAcPfInstance {
+        &self.instance
+    }
+
+    pub fn options(&self) -> McPfOptions {
+        self.options
+    }
+
+    pub fn solve_count(&self) -> usize {
+        self.solve_count
+    }
+
+    /// Total numeric factorizations performed by this session.
+    pub fn factorization_count(&self) -> usize {
+        self.prepared
+            .factor
+            .as_ref()
+            .map_or(0, |factor| factor.factorization_count())
+    }
+
+    pub fn load_branches(&self) -> Vec<McLoadBranchState> {
+        self.prepared
+            .loads
+            .iter()
+            .zip(&self.base_power)
+            .flat_map(|(load, base)| {
+                load.power
+                    .iter()
+                    .zip(base)
+                    .enumerate()
+                    .map(|(branch, (&power, &base_power))| McLoadBranchState {
+                        load: load.name.clone(),
+                        bus: load.bus.clone(),
+                        branch,
+                        p_w: power.re,
+                        q_var: power.im,
+                        base_p_w: base_power.re,
+                        base_q_var: base_power.im,
+                    })
+            })
+            .collect()
+    }
+
+    /// Materialize the current edited operating point as portable PowerIO IR.
+    pub fn input_module_json(&self) -> Result<String, String> {
+        let mut module = match &self.module_json {
+            Some(text) => crate::ir::deserialize_module(text)?,
+            None => {
+                powerio::PioModule::new(powerio::PioValue::McAcPfInstance(self.instance.clone()))
+            }
+        };
+        *module.value_mut() = if self.module_holds_network {
+            powerio::PioValue::MulticonductorNetwork(self.instance.network().clone())
+        } else {
+            powerio::PioValue::McAcPfInstance(self.instance.clone())
+        };
+        crate::ir::serialize_module(&module)
+    }
+
+    /// Build a portable saved Study at the current edited operating point
+    /// without preparing, factoring, or solving again.
+    pub fn snapshot(
+        &self,
+        id: impl Into<String>,
+        title: impl Into<String>,
+    ) -> Result<McStudySnapshot, String> {
+        let id = id.into();
+        let title = title.into();
+        if id.trim().is_empty() || title.trim().is_empty() {
+            return Err("multiconductor Study snapshot requires an id and title".to_owned());
+        }
+        let solution = self.result.to_powerio_solution(&self.instance)?;
+        let solution_module = crate::ir::serialize_module(&powerio::PioModule::new(
+            powerio::PioValue::McAcPfSolution(solution),
+        ))?;
+        Ok(McStudySnapshot {
+            schema: McStudySnapshot::SCHEMA.to_owned(),
+            version: McStudySnapshot::VERSION,
+            id,
+            title,
+            formulation: "mc_ac_pf".to_owned(),
+            input_module: self.input_module_json()?,
+            solution_module,
+            options: self.options,
+            result: self.result.clone(),
+        })
+    }
+
+    /// Replace the absolute edit set, re-solve from the last converged voltage,
+    /// and retain the previous operating point if validation or convergence fails.
+    /// An empty edit set restores the base load powers.
+    pub fn replace_load_powers(
+        &mut self,
+        edits: &[McLoadPowerEdit],
+    ) -> Result<&McPfResult, String> {
+        let mut load_index = BTreeMap::new();
+        for (index, load) in self.prepared.loads.iter().enumerate() {
+            if load_index.insert(load.name.clone(), index).is_some() {
+                return Err(format!("duplicate prepared load identity `{}`", load.name));
+            }
+        }
+        let mut next_power = self.base_power.clone();
+        let mut seen = std::collections::BTreeSet::new();
+        for edit in edits {
+            if edit.load.trim().is_empty() || !edit.p_w.is_finite() || !edit.q_var.is_finite() {
+                return Err("load-power edits require a name and finite P/Q values".to_owned());
+            }
+            let Some(&load) = load_index.get(&edit.load) else {
+                return Err(format!("unknown load `{}`", edit.load));
+            };
+            if edit.branch >= next_power[load].len() {
+                return Err(format!(
+                    "load `{}` has no branch {}; expected 0..{}",
+                    edit.load,
+                    edit.branch,
+                    next_power[load].len()
+                ));
+            }
+            if !seen.insert((load, edit.branch)) {
+                return Err(format!(
+                    "load `{}` branch {} is edited more than once",
+                    edit.load, edit.branch
+                ));
+            }
+            next_power[load][edit.branch] = Complex64::new(edit.p_w, edit.q_var);
+        }
+
+        let mut network = self.instance.network().clone();
+        // Index the network rows once. A per-load linear search is quadratic
+        // in the load count, which on a feeder with thousands of loads
+        // dominates the cost of a single-branch edit (#132 tracks removing
+        // the clone itself).
+        let row_index: BTreeMap<&str, usize> = network
+            .loads()
+            .iter()
+            .enumerate()
+            .map(|(index, row)| (row.name.as_str(), index))
+            .collect();
+        let row_positions = self
+            .prepared
+            .loads
+            .iter()
+            .map(|load| {
+                row_index
+                    .get(load.name.as_str())
+                    .copied()
+                    .ok_or_else(|| format!("load `{}` is absent from its network", load.name))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = network.loads_mut();
+        for (position, power) in row_positions.into_iter().zip(&next_power) {
+            let row = &mut rows[position];
+            row.p_nom = power.iter().map(|value| value.re).collect();
+            row.q_nom = power.iter().map(|value| value.im).collect();
+        }
+        let next_instance = self
+            .instance
+            .clone()
+            .with_network(network)
+            .map_err(|e| e.to_string())?;
+
+        let previous_power = self
+            .prepared
+            .loads
+            .iter()
+            .map(|load| load.power.clone())
+            .collect::<Vec<_>>();
+        for (load, power) in self.prepared.loads.iter_mut().zip(&next_power) {
+            load.replace_power(power.clone())?;
+        }
+        let solved = solve_prepared(
+            &next_instance,
+            &self.prepared,
+            &self.options,
+            Some(&self.voltage),
+        );
+        let (result, voltage) = match solved {
+            Ok(solved) => solved,
+            Err(error) => {
+                for (load, power) in self.prepared.loads.iter_mut().zip(previous_power) {
+                    load.replace_power(power)
+                        .expect("previous prepared load power is valid");
+                }
+                return Err(error);
+            }
+        };
+        self.instance = next_instance;
+        self.voltage = voltage;
+        self.result = result;
+        self.solve_count += 1;
+        Ok(&self.result)
+    }
+}
+
 /// A portable, replayable distribution Study snapshot.
 ///
 /// This deliberately sits beside the balanced KKT Study rather than pretending
@@ -800,23 +1079,57 @@ pub fn solve_mc_ac_pf_instance(
 ) -> Result<McPfResult, String> {
     validate_options(options)?;
     let prepared = PreparedNetwork::prepare(instance)?;
-    let mut voltage = prepared.fixed_voltage_vector();
+    solve_prepared(instance, &prepared, options, None).map(|(result, _)| result)
+}
+
+fn solve_prepared(
+    instance: &McAcPfInstance,
+    prepared: &PreparedNetwork,
+    options: &McPfOptions,
+    initial_voltage: Option<&[Complex64]>,
+) -> Result<(McPfResult, Vec<Complex64>), String> {
+    validate_options(options)?;
+    let mut voltage = if let Some(initial) = initial_voltage {
+        if initial.len() != prepared.index.terminal_ids.len() {
+            return Err(format!(
+                "initial voltage has {} terminals; expected {}",
+                initial.len(),
+                prepared.index.terminal_ids.len()
+            ));
+        }
+        if initial
+            .iter()
+            .any(|value| !value.re.is_finite() || !value.im.is_finite())
+        {
+            return Err("initial voltage contains a non-finite phasor".to_owned());
+        }
+        initial.to_vec()
+    } else {
+        prepared.fixed_voltage_vector()
+    };
+    for (i, fixed) in prepared.fixed.iter().enumerate() {
+        if let Some(value) = fixed {
+            voltage[i] = *value;
+        }
+    }
     let base_rhs = prepared.source_rhs();
     let mut unknown_pos = vec![usize::MAX; prepared.index.terminal_ids.len()];
     for (u, &i) in prepared.unknown.iter().enumerate() {
         unknown_pos[i] = u;
     }
-    if let Some(factor) = &prepared.factor {
-        let initial = factor.solve(&base_rhs)?;
-        for (u, &i) in prepared.unknown.iter().enumerate() {
-            voltage[i] = initial[u];
+    if initial_voltage.is_none() {
+        if let Some(factor) = &prepared.factor {
+            let initial = factor.solve(&base_rhs)?;
+            for (u, &i) in prepared.unknown.iter().enumerate() {
+                voltage[i] = initial[u];
+            }
         }
     }
     let mut final_change = f64::INFINITY;
     let mut iterations = 0;
     for k in 0..options.max_iterations {
         iterations = k + 1;
-        let load_current = total_load_current(&prepared, &voltage, options)?;
+        let load_current = total_load_current(prepared, &voltage, options)?;
         let compensated = prepared
             .unknown
             .iter()
@@ -838,15 +1151,15 @@ pub fn solve_mc_ac_pf_instance(
             voltage[i] = next;
         }
         if final_change <= options.tolerance {
-            let candidate_load = total_load_current(&prepared, &voltage, options)?;
-            let (_, candidate_scaled) = kcl_metrics(&prepared, &voltage, &candidate_load, options);
+            let candidate_load = total_load_current(prepared, &voltage, options)?;
+            let (_, candidate_scaled) = kcl_metrics(prepared, &voltage, &candidate_load, options);
             if candidate_scaled <= 1.0 {
                 break;
             }
         }
     }
-    let load_current = total_load_current(&prepared, &voltage, options)?;
-    let (residual, scaled_residual) = kcl_metrics(&prepared, &voltage, &load_current, options);
+    let load_current = total_load_current(prepared, &voltage, options)?;
+    let (residual, scaled_residual) = kcl_metrics(prepared, &voltage, &load_current, options);
     if !final_change.is_finite() || !residual.is_finite() || !scaled_residual.is_finite() {
         return Err("fixed-point iteration produced a non-finite residual".to_owned());
     }
@@ -855,7 +1168,7 @@ pub fn solve_mc_ac_pf_instance(
     }
     let mut terminals = Vec::with_capacity(prepared.index.terminal_ids.len());
     for (i, (bus, terminal)) in prepared.index.terminal_ids.iter().enumerate() {
-        let current = passive_current(&prepared, &voltage, i);
+        let current = passive_current(prepared, &voltage, i);
         terminals.push(McTerminalResult {
             bus: bus.clone(),
             terminal: terminal.clone(),
@@ -917,7 +1230,7 @@ pub fn solve_mc_ac_pf_instance(
             })?;
         for name in &source.terminals {
             let i = prepared.index.resolve((&source_row.bus, name))?;
-            let current = passive_current(&prepared, &voltage, i) + load_current[i];
+            let current = passive_current(prepared, &voltage, i) + load_current[i];
             source_reactions.push(McSourceReaction {
                 source: source.source.clone(),
                 terminal: name.clone(),
@@ -942,8 +1255,8 @@ pub fn solve_mc_ac_pf_instance(
         );
     }
     let (min_voltage_pu, max_voltage_pu, voltage_violations) =
-        assess_load_voltages(&prepared, &voltage, options);
-    Ok(McPfResult {
+        assess_load_voltages(prepared, &voltage, options);
+    let result = McPfResult {
         converged: true,
         voltage_valid: voltage_violations.is_empty(),
         min_voltage_pu,
@@ -965,7 +1278,8 @@ pub fn solve_mc_ac_pf_instance(
         terminals,
         element_ports,
         source_reactions,
-    })
+    };
+    Ok((result, voltage))
 }
 
 fn complex_finite(value: McComplex) -> bool {
@@ -1169,6 +1483,94 @@ mod tests {
         assert!((v - expected).abs() < 1e-6, "{v} vs {expected}");
     }
 
+    fn load_bus_voltage(result: &McPfResult) -> Complex64 {
+        result
+            .terminals
+            .iter()
+            .find(|terminal| terminal.bus == "load" && terminal.terminal == "1")
+            .map(|terminal| terminal.voltage.into_complex())
+            .expect("load terminal")
+    }
+
+    #[test]
+    fn retained_session_warm_starts_load_edits_without_refactorization() {
+        let options = McPfOptions {
+            tolerance: 1e-10,
+            ..Default::default()
+        };
+        let mut session = McPfSession::new(one_phase(1.0), options).unwrap();
+        assert_eq!(session.factorization_count(), 1);
+        assert_eq!(session.solve_count(), 1);
+        let base_iterations = session.result().iterations;
+
+        let edited = session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 0,
+                p_w: 1.001,
+                q_var: 0.0,
+            }])
+            .unwrap()
+            .clone();
+        let fresh = solve_mc_ac_pf_instance(&one_phase(1.001), &options).unwrap();
+        assert!((load_bus_voltage(&edited) - load_bus_voltage(&fresh)).norm() < 1e-10);
+        assert_eq!(session.factorization_count(), 1);
+        assert_eq!(session.solve_count(), 2);
+        assert!(
+            edited.iterations < base_iterations,
+            "warm {} vs cold {base_iterations}",
+            edited.iterations
+        );
+        assert_eq!(session.load_branches()[0].p_w, 1.001);
+
+        let reset = session.replace_load_powers(&[]).unwrap().clone();
+        let fresh_base = solve_mc_ac_pf_instance(&one_phase(1.0), &options).unwrap();
+        assert!((load_bus_voltage(&reset) - load_bus_voltage(&fresh_base)).norm() < 1e-10);
+        assert_eq!(session.factorization_count(), 1);
+    }
+
+    #[test]
+    fn retained_session_updates_physical_impedance_while_freezing_reference_factor() {
+        let mut instance = one_phase(1.0);
+        let mut network = instance.network().clone();
+        network.loads_mut()[0].voltage_model =
+            DistLoadVoltageModel::ConstantImpedance { v_nom: vec![10.0] };
+        instance = McAcPfInstance::from_network(network).unwrap();
+        let mut session = McPfSession::new(instance, McPfOptions::default()).unwrap();
+        let edited = session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 0,
+                p_w: 2.0,
+                q_var: 0.0,
+            }])
+            .unwrap();
+        let expected = 10.0 / (1.0 + 2.0 / 100.0);
+        assert!((load_bus_voltage(edited).re - expected).abs() < 1e-10);
+        assert_eq!(session.factorization_count(), 1);
+    }
+
+    #[test]
+    fn retained_session_rejects_invalid_edits_without_changing_state() {
+        let mut session = McPfSession::new(one_phase(1.0), McPfOptions::default()).unwrap();
+        let before = session.result().clone();
+        let error = session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 1,
+                p_w: 2.0,
+                q_var: 0.0,
+            }])
+            .unwrap_err();
+        assert!(error.contains("no branch 1"), "{error}");
+        assert_eq!(session.solve_count(), 1);
+        assert_eq!(session.load_branches()[0].p_w, 1.0);
+        assert_eq!(
+            load_bus_voltage(session.result()),
+            load_bus_voltage(&before)
+        );
+    }
+
     #[test]
     fn portable_solution_matches_terminal_identities_after_reordering() {
         let instance = one_phase(1.0);
@@ -1236,7 +1638,8 @@ mod tests {
             bus: "load".into(),
             incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
             power: vec![Complex64::new(3.0, 2.0)],
-            y_ref: vec![Complex64::new(0.0, 0.0)],
+            nominal_admittance: vec![Complex64::new(0.0, 0.0)],
+            reference_admittance: vec![Complex64::new(0.0, 0.0)],
             nominal_voltage: vec![1.0],
             model: crate::mc_pf::loads::BranchVoltageModel::ConstantPower,
         };
@@ -1256,7 +1659,8 @@ mod tests {
             bus: "load".into(),
             incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
             power: vec![Complex64::new(10.0, 5.0)],
-            y_ref: vec![Complex64::new(0.1, -0.05)],
+            nominal_admittance: vec![Complex64::new(0.1, -0.05)],
+            reference_admittance: vec![Complex64::new(0.1, -0.05)],
             nominal_voltage: vec![10.0],
             model,
         }
@@ -1419,7 +1823,8 @@ mod tests {
             bus: "load".into(),
             incidence: vec![vec![(0, Complex64::new(1.0, 0.0))]],
             power: vec![Complex64::new(1e308, 0.0)],
-            y_ref: vec![Complex64::new(1e306, 0.0)],
+            nominal_admittance: vec![Complex64::new(1e306, 0.0)],
+            reference_admittance: vec![Complex64::new(1e306, 0.0)],
             nominal_voltage: vec![10.0],
             model: crate::mc_pf::loads::BranchVoltageModel::ConstantImpedance,
         };
@@ -1845,6 +2250,33 @@ mod tests {
         assert_eq!(replayed.formulation, "mc_ac_pf");
         assert_eq!(replayed.result.factorization_count, 1);
         assert!(replayed.solution_module.contains("McAcPfSolution"));
+    }
+
+    #[test]
+    fn retained_session_snapshot_materializes_edited_loads_without_refactoring() {
+        let mut session =
+            McPfSession::from_module_json(&one_phase_module(1.0), McPfOptions::default()).unwrap();
+        session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 0,
+                p_w: 1.2,
+                q_var: 0.1,
+            }])
+            .unwrap();
+
+        let snapshot = session.snapshot("edited", "Edited feeder").unwrap();
+        let replayed = McStudySnapshot::from_json(&snapshot.to_json().unwrap()).unwrap();
+        let module = crate::ir::deserialize_module(&replayed.input_module).unwrap();
+        let input = input::instance_from_value(module.value()).unwrap();
+        assert_eq!(input.loads()[0].p_w, vec![1.2]);
+        assert_eq!(input.loads()[0].q_var, vec![0.1]);
+        assert_eq!(session.factorization_count(), 1);
+        assert_eq!(
+            load_bus_voltage(&replayed.result),
+            load_bus_voltage(session.result())
+        );
+        assert!(session.snapshot("", "Edited feeder").is_err());
     }
 
     #[test]

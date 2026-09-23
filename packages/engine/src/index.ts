@@ -670,6 +670,116 @@ export interface McStudySnapshot {
   result: McPfResult;
 }
 
+export interface McLoadPowerEdit {
+  load: string;
+  branch: number;
+  p_w: number;
+  q_var: number;
+}
+
+export interface McLoadBranchState extends McLoadPowerEdit {
+  bus: string;
+  base_p_w: number;
+  base_q_var: number;
+}
+
+/** A live fixed-point current-injection solver retained in the shared engine
+ * worker. Load edits reuse its sparse LU and previous converged phasors. */
+export class BrowserMcPfSession {
+  constructor(
+    private readonly host: EngineHost,
+    private readonly handle: number,
+  ) {}
+
+  async result(): Promise<McPfResult> {
+    return JSON.parse(
+      expectText(
+        await this.host.call({
+          op: "mc_pf_session_result",
+          session: this.handle,
+        }),
+      ),
+    );
+  }
+
+  async loadBranches(): Promise<McLoadBranchState[]> {
+    return JSON.parse(
+      expectText(
+        await this.host.call({
+          op: "mc_pf_session_load_branches",
+          session: this.handle,
+        }),
+      ),
+    );
+  }
+
+  async replaceLoadPowers(edits: McLoadPowerEdit[]): Promise<McPfResult> {
+    return JSON.parse(
+      expectText(
+        await this.host.call({
+          op: "mc_pf_session_replace_load_powers",
+          session: this.handle,
+          edits: JSON.stringify(edits),
+        }),
+      ),
+    );
+  }
+
+  async inputModule(): Promise<string> {
+    return expectText(
+      await this.host.call({
+        op: "mc_pf_session_input_module",
+        session: this.handle,
+      }),
+    );
+  }
+
+  async snapshot(studyId: string, studyTitle: string): Promise<McStudySnapshot> {
+    return JSON.parse(
+      expectText(
+        await this.host.call({
+          op: "mc_pf_session_snapshot",
+          session: this.handle,
+          study_id: studyId,
+          study_title: studyTitle,
+        }),
+      ),
+    );
+  }
+
+  free(): void {
+    void this.host
+      .call({ op: "mc_pf_session_free", session: this.handle })
+      .catch(() => {});
+  }
+}
+
+let mcPfSessionSeq = 0;
+
+/** Parse, prepare, factor, and solve a persistent multiconductor PF session. */
+export async function createMcPfSession(
+  moduleJson: string,
+  options: McPfOptions = {},
+  signal?: AbortSignal,
+): Promise<BrowserMcPfSession> {
+  assertEngineInputLength(moduleJson.length);
+  signal?.throwIfAborted();
+  const host = engineHost();
+  const handle = ++mcPfSessionSeq;
+  await host.call({
+    op: "mc_pf_session_new",
+    session: handle,
+    module_json: moduleJson,
+    options: JSON.stringify(options),
+  });
+  const session = new BrowserMcPfSession(host, handle);
+  if (signal?.aborted) {
+    session.free();
+    signal.throwIfAborted();
+  }
+  return session;
+}
+
 /** Parse and solve a raw BMOPF multiconductor case in the wasm module. */
 export async function solveMcBmopf(
   text: string,
@@ -1391,6 +1501,11 @@ export interface EngineTransport {
     options?: McPfOptions,
     signal?: AbortSignal,
   ): Promise<McStudySnapshot>;
+  createMcPfSession(
+    moduleJson: string,
+    options?: McPfOptions,
+    signal?: AbortSignal,
+  ): Promise<BrowserMcPfSession>;
   replayMcStudy(snapshotJson: string): Promise<McStudySnapshot>;
   applyMcStudyGeo?(
     snapshot: McStudySnapshot,
@@ -1422,6 +1537,7 @@ export const browserWasmTransport: EngineTransport = {
   solveMcBmopf,
   solveMcModule,
   solveMcStudy,
+  createMcPfSession,
   replayMcStudy,
   applyMcStudyGeo,
   createStudy,
