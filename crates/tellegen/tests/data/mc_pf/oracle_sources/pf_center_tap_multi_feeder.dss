@@ -1,0 +1,50 @@
+! Compact end-to-end feeder with three centre-tap transformers on successive
+! three-wire MV buses. The primaries use all three phase-to-phase pairings and
+! the LV loads cover balanced legs, an unbalanced leg pair, and a 480 V load.
+
+Clear
+Set DefaultBaseFreq=50
+
+New Circuit.pf_ct_multi basekv=11 pu=1 angle=0 phases=3 bus1=src.1.2.3 model=ideal
+
+New Linecode.mv3 nphases=3
+~ Rmatrix=[0.30 | 0.03 0.30 | 0.03 0.03 0.30]
+~ Xmatrix=[0.40 | 0.08 0.40 | 0.08 0.08 0.40]
+~ Cmatrix=[0 | 0 0 | 0 0 0] units=km
+New Line.mv_1 bus1=src.1.2.3 bus2=mv1.1.2.3 linecode=mv3 length=1.0 units=km phases=3
+New Line.mv_2 bus1=mv1.1.2.3 bus2=mv2.1.2.3 linecode=mv3 length=1.0 units=km phases=3
+New Line.mv_3 bus1=mv2.1.2.3 bus2=mv3.1.2.3 linecode=mv3 length=1.0 units=km phases=3
+
+New Transformer.ct_ab phases=1 windings=3
+~ wdg=1 bus=mv1.1.2 conn=wye kv=11 kva=25 %r=0.6
+~ wdg=2 bus=lv_ab.1.4 conn=wye kv=0.240 kva=25 %r=1.2
+~ wdg=3 bus=lv_ab.4.2 conn=wye kv=0.240 kva=25 %r=1.2
+~ XHL=2.04 XLT=1.36 XHT=2.04 %noloadloss=0 %imag=0
+
+New Transformer.ct_bc phases=1 windings=3
+~ wdg=1 bus=mv2.2.3 conn=wye kv=11 kva=25 %r=0.6
+~ wdg=2 bus=lv_bc.1.4 conn=wye kv=0.240 kva=25 %r=1.2
+~ wdg=3 bus=lv_bc.4.2 conn=wye kv=0.240 kva=25 %r=1.2
+~ XHL=2.04 XLT=1.36 XHT=2.04 %noloadloss=0 %imag=0
+
+New Transformer.ct_ca phases=1 windings=3
+~ wdg=1 bus=mv3.3.1 conn=wye kv=11 kva=25 %r=0.6
+~ wdg=2 bus=lv_ca.1.4 conn=wye kv=0.240 kva=25 %r=1.2
+~ wdg=3 bus=lv_ca.4.2 conn=wye kv=0.240 kva=25 %r=1.2
+~ XHL=2.04 XLT=1.36 XHT=2.04 %noloadloss=0 %imag=0
+
+New Reactor.grnd_ab bus1=lv_ab.4 bus2=lv_ab.0 R=0.01 X=0 phases=1
+New Reactor.grnd_bc bus1=lv_bc.4 bus2=lv_bc.0 R=0.01 X=0 phases=1
+New Reactor.grnd_ca bus1=lv_ca.4 bus2=lv_ca.0 R=0.01 X=0 phases=1
+
+New Load.ab_1 bus1=lv_ab.1.4 kv=0.240 kw=7 kvar=1.5 phases=1 model=1 Vminpu=0 Vmaxpu=2
+New Load.ab_2 bus1=lv_ab.4.2 kv=0.240 kw=7 kvar=1.5 phases=1 model=1 Vminpu=0 Vmaxpu=2
+New Load.bc_1 bus1=lv_bc.1.4 kv=0.240 kw=9 kvar=2.0 phases=1 model=1 Vminpu=0 Vmaxpu=2
+New Load.bc_2 bus1=lv_bc.4.2 kv=0.240 kw=3 kvar=0.5 phases=1 model=1 Vminpu=0 Vmaxpu=2
+New Load.ca_12 bus1=lv_ca.1.2 kv=0.480 kw=10 kvar=2 phases=1 model=1 Vminpu=0 Vmaxpu=2
+
+Set VoltageBases=[11, 0.415692]
+CalcVoltageBases
+Set Tolerance=1e-8
+Set MaxIterations=100
+Solve

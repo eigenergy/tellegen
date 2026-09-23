@@ -118,12 +118,12 @@ fn run(case: &str, input: &str, reference: &str) {
             );
             continue;
         }
-        // The centre-tap regression intentionally compares physical terminal
-        // current orientation and power, aggregating the two OpenDSS winding
-        // entries at the shared secondary neutral. Older transformer oracles
-        // retain only their convention-independent finite-port check.
+        // Centre-tap regressions compare physical terminal current orientation
+        // and power, aggregating the two OpenDSS winding entries at the shared
+        // secondary neutral. Other transformer oracles retain only their
+        // convention-independent finite-port check.
         if expected.name.starts_with("Transformer.") {
-            if case == "pf_center_tap_loaded" {
+            if case.starts_with("pf_center_tap_") {
                 compare_transformer_ports(case, &result, short_name, expected);
             } else {
                 assert!(
@@ -343,9 +343,24 @@ oracle_case!(
     "data/mc_pf/oracle_refs/pf_3ph_line.json"
 );
 oracle_case!(
+    pf_center_tap_balanced_heavy,
+    "data/mc_pf/oracle_inputs/pf_center_tap_balanced_heavy.json",
+    "data/mc_pf/oracle_refs/pf_center_tap_balanced_heavy.json"
+);
+oracle_case!(
     pf_center_tap_loaded,
     "data/mc_pf/oracle_inputs/pf_center_tap_loaded.json",
     "data/mc_pf/oracle_refs/pf_center_tap_loaded.json"
+);
+oracle_case!(
+    pf_center_tap_multi_feeder,
+    "data/mc_pf/oracle_inputs/pf_center_tap_multi_feeder.json",
+    "data/mc_pf/oracle_refs/pf_center_tap_multi_feeder.json"
+);
+oracle_case!(
+    pf_center_tap_rneut,
+    "data/mc_pf/oracle_inputs/pf_center_tap_rneut.json",
+    "data/mc_pf/oracle_refs/pf_center_tap_rneut.json"
 );
 oracle_case!(
     pf_delta_load,

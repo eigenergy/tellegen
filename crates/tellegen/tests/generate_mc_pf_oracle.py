@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate pinned OpenDSSDirect references for the small MC-PF corpus.
 
-The inputs are selected BMOPFTools comparison snapshots. This is a
-reproduction aid rather than a runtime dependency: CI consumes the checked-in
-JSON references produced by this script.  OpenDSS is configured as a strict
+The inputs are selected BMOPFTools comparison snapshots plus Tellegen's local
+centre-tap regression sources. This is a reproduction aid rather than a runtime
+dependency: CI consumes the checked-in JSON references produced by this script.
+OpenDSS is configured as a strict
 constant-power, ideal-source snapshot so that its boundary conditions match
 the BMOPF representation.  The source circuit's zero-voltage terminals are
 represented by node 0 in the original DSS cases and are emitted as exact zero
@@ -12,6 +13,10 @@ when a bus terminal is prescribed by the BMOPF source.
 Example (with OpenDSSDirect.py 0.9.4 installed)::
 
     python tests/generate_mc_pf_oracle.py --dss-dir /path/to/BMOPFTools.jl/test/data/pf_comparison
+
+The local centre-tap cases can be regenerated without a BMOPFTools checkout::
+
+    python tests/generate_mc_pf_oracle.py --case pf_center_tap_rneut
 """
 
 from __future__ import annotations
@@ -30,7 +35,10 @@ CASES = [
     "pf_1ph_impedanceneutral",
     "pf_1ph_line",
     "pf_3ph_line",
+    "pf_center_tap_balanced_heavy",
     "pf_center_tap_loaded",
+    "pf_center_tap_multi_feeder",
+    "pf_center_tap_rneut",
     "pf_delta_load",
     "pf_dy_xfmr",
     "pf_dy_xfmr_rneut",
@@ -39,6 +47,25 @@ CASES = [
 ]
 
 BACKEND = "OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5"
+TEST_DIR = Path(__file__).resolve().parent
+LOCAL_DSS_DIR = TEST_DIR / "data" / "mc_pf" / "oracle_sources"
+LOCAL_LICENSE = TEST_DIR / "data" / "mc_pf" / "LICENSE.md"
+BMOPFTOOLS_SNAPSHOT = "8ca84ab12c0c91aaa8ad4c9986d6adbeb969ea0b"
+BMOPFTOOLS_CENTRE_TAP_SOURCE = "720975f3adf3a78caf8a51157dba48f41bab91cc"
+LOCAL_SOURCE_PROVENANCE = {
+    "pf_center_tap_balanced_heavy": {
+        "source_bmopftools": BMOPFTOOLS_CENTRE_TAP_SOURCE,
+        "source_fixture": "pf_center_tap_balanced_heavy.dss",
+    },
+    "pf_center_tap_rneut": {
+        "source_bmopftools": BMOPFTOOLS_CENTRE_TAP_SOURCE,
+        "source_fixture": "adapted from BMOPFTools centre-tap and finite-rneut cases",
+    },
+    "pf_center_tap_multi_feeder": {
+        "source_tellegen": "synthetic reduced feeder for issue #140",
+        "derived_bmopftools": BMOPFTOOLS_CENTRE_TAP_SOURCE,
+    },
+}
 
 
 def stable_float(value: float) -> float:
@@ -106,7 +133,7 @@ def equivalent(
     return matches
 
 
-def preserve_noncomparative_elements(existing: dict, result: dict) -> None:
+def preserve_noncomparative_elements(case: str, existing: dict, result: dict) -> None:
     """Keep convention-sensitive element records that the oracle does not compare.
 
     OpenDSS source, transformer, and reactor terminal metadata and vectors can
@@ -121,9 +148,10 @@ def preserve_noncomparative_elements(existing: dict, result: dict) -> None:
         element["name"]: element for element in existing.get("elements", [])
     }
     for element in result.get("elements", []):
-        if not element.get("name", "").lower().startswith(
-            ("vsource.", "transformer.", "reactor.")
-        ):
+        kind = element.get("name", "").lower()
+        if not kind.startswith(("vsource.", "transformer.", "reactor.")):
+            continue
+        if kind.startswith("transformer.") and case.startswith("pf_center_tap_"):
             continue
         previous = previous_by_name.get(element["name"])
         if previous is None:
@@ -140,10 +168,10 @@ def preserve_noncomparative_elements(existing: dict, result: dict) -> None:
                 element[field] = previous[field]
 
 
-def write_reference(path: Path, result: dict) -> None:
+def write_reference(case: str, path: Path, result: dict) -> None:
     if path.exists():
         existing = json.loads(path.read_text())
-        preserve_noncomparative_elements(existing, result)
+        preserve_noncomparative_elements(case, existing, result)
         if equivalent(existing, result):
             return
     path.write_text(json.dumps(result, indent=2) + "\n")
@@ -161,8 +189,24 @@ def terminal_number(name: str) -> int:
     return named[name] if name in named else int(name)
 
 
-def generate(case: str, dss_dir: Path, output_dir: Path) -> None:
-    source = Path(__file__).resolve().parent / "data" / "mc_pf" / "oracle_inputs" / f"{case}.json"
+def source_paths(case: str, dss_dir: Path | None) -> tuple[Path, Path, dict[str, str]]:
+    local_dss = LOCAL_DSS_DIR / f"{case}.dss"
+    if local_dss.exists():
+        return local_dss, LOCAL_LICENSE, LOCAL_SOURCE_PROVENANCE[case]
+    if dss_dir is None:
+        raise RuntimeError(
+            f"{case} has no checked-in DSS source; pass --dss-dir for the BMOPFTools corpus"
+        )
+    return (
+        dss_dir / f"{case}.dss",
+        dss_dir.parent.parent.parent / "LICENSE.md",
+        {"source_bmopftools": BMOPFTOOLS_SNAPSHOT},
+    )
+
+
+def generate(case: str, dss_dir: Path | None, output_dir: Path) -> None:
+    source = TEST_DIR / "data" / "mc_pf" / "oracle_inputs" / f"{case}.json"
+    dss_path, license_path, source_provenance = source_paths(case, dss_dir)
     document = json.loads(source.read_text())
     source_record = next(iter(document["voltage_source"].values()))
     prescribed = {
@@ -172,7 +216,7 @@ def generate(case: str, dss_dir: Path, output_dir: Path) -> None:
         )
     }
     dss.Text.Command("clear")
-    dss.Text.Command(f"redirect {dss_dir / (case + '.dss')}")
+    dss.Text.Command(f"redirect {dss_path}")
     dss.Text.Command("set controlmode=off algorithm=normal tolerance=1e-11 maxiterations=1000")
     dss.Text.Command("batchedit load..* vminpu=0 vmaxpu=2 vlowpu=0")
     dss.Text.Command("batchedit vsource..* model=ideal puZideal=[1e-12,0]")
@@ -263,8 +307,7 @@ def generate(case: str, dss_dir: Path, output_dir: Path) -> None:
         )
 
     raw = source.read_bytes()
-    dss_raw = (dss_dir / f"{case}.dss").read_bytes()
-    license_path = dss_dir.parent.parent.parent / "LICENSE.md"
+    dss_raw = dss_path.read_bytes()
     if not license_path.exists():
         raise RuntimeError(f"missing upstream license file: {license_path}")
     license_raw = license_path.read_bytes()
@@ -273,7 +316,7 @@ def generate(case: str, dss_dir: Path, output_dir: Path) -> None:
         "case": case,
         "provenance": {
             "backend": BACKEND,
-            "source_bmopftools": "8ca84ab12c0c91aaa8ad4c9986d6adbeb969ea0b",
+            **source_provenance,
             "input_sha256": hashlib.sha256(raw).hexdigest(),
             "dss_sha256": hashlib.sha256(dss_raw).hexdigest(),
             "upstream_license_sha256": hashlib.sha256(license_raw).hexdigest(),
@@ -285,19 +328,25 @@ def generate(case: str, dss_dir: Path, output_dir: Path) -> None:
         "elements": elements,
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    write_reference(output_dir / f"{case}.json", result)
+    write_reference(case, output_dir / f"{case}.json", result)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dss-dir", type=Path, required=True)
+    parser.add_argument("--dss-dir", type=Path)
+    parser.add_argument(
+        "--case",
+        action="append",
+        choices=CASES,
+        help="case to regenerate; repeat for multiple cases (default: all)",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path(__file__).resolve().parent / "data" / "mc_pf" / "oracle_refs",
     )
     args = parser.parse_args()
-    for case in CASES:
+    for case in args.case or CASES:
         generate(case, args.dss_dir, args.output_dir)
 
 

@@ -1,5 +1,22 @@
 # Independent MC correctness cases
 
+## Centre-tap regression extension
+
+Issue #140 adds three frozen OpenDSS comparisons to the small-system oracle.
+The balanced case applies equal 9+j1.5 kVA loads to the two 120 V legs behind
+a 20 km feeder. The finite-grounding case applies unequal leg loads while the
+only secondary earth path is the transformer's 2+j1 ohm centre-point impedance.
+The reduced end-to-end feeder places three centre-tap units on consecutive MV
+buses, exercises AB, BC, and CA primaries, and mixes balanced leg, unbalanced
+leg, and 480 V phase-to-phase loading.
+
+All three converge with one retained factorization. Against the pinned
+OpenDSSDirect.py 0.9.4 references, the maximum complex terminal-voltage errors
+are 2.434e-6 V, 2.434e-6 V, and 2.200e-6 V respectively; returned physical KCL
+residuals are at most 4.54e-9 A. The oracle also compares each centre-tap
+transformer's terminal currents and powers after aggregating the two OpenDSS
+winding entries at the shared neutral. The complete frozen corpus passes 13/13.
+
 ## Voltage-dependent load extension
 
 The supported load set now includes constant impedance, constant current, ZIP
@@ -90,7 +107,7 @@ Reports, exact native binary hashes and backend versions are in
 
 This summary supersedes historical checkpoint statuses below. Independent scientific
 review accepts the documented supported profile. Final local checks passed 36 MC
-unit tests and nine frozen oracle tests. This acceptance covers the stated strict
+unit tests and 13 frozen oracle tests. This acceptance covers the stated strict
 constant-power/ideal-source profile, not default OpenDSS voltage fallback or
 unsupported equipment. Raw and typed module endpoints both reject retained
 unsupported/lossy parse diagnostics.
@@ -119,7 +136,7 @@ build in `/tmp/tellegen-baseline-qc`; it is not counted as a passing gate.
 | Missing nominal load voltage | Global-source fallback removed; explicit positive nominal branch voltage required |
 | Malformed tables, unknown connection, duplicated ideal sources | Explicit rejection guards added; regression inputs retained |
 | Browser raw and typed transport | Parent reports corrected raw+typed Chromium regression passed (224 ms). Full browser suite has failures outside this regression, so is not claimed green |
-| Frozen small-oracle Rust regression harness | Passed 9/9 in independent final rerun: actual DSS NodeOrder, numeric line/load currents and complex powers, global complex source/element balance; transformer/reactor ports presence+finite only |
+| Frozen small-oracle Rust regression harness | Passed 13/13: actual DSS NodeOrder, numeric line/load currents and complex powers, global complex source/element balance; centre-tap transformer currents/powers compared numerically, other transformer/reactor ports presence+finite only |
 | Declared neutral ordering/profile coverage | Closed for declared raw WYE load/transformer conventions: known non-final neutral rejected; conventional no-conventions inputs retained. Typed load explicit neutral extras selects all remaining phases |
 
 Independent primitive evidence is in `docs/evidence/mc-pf-yprim`: three reports,
