@@ -340,6 +340,13 @@ pub fn prepare_transformer(
 /// two-winding unit this reduces exactly to `y * [[1,-1],[-1,1]]`.
 fn winding_admittance(t: &DistTransformer) -> Result<ComplexMatrix, TransformerError> {
     let count = t.windings.len();
+    // `validate_shape` runs first and admits two windings, or three for a
+    // tagged centre tap. Keep that contract local so a new caller cannot
+    // reach the `unreachable!` in `pair_index` by skipping validation.
+    debug_assert!(
+        (2..=3).contains(&count),
+        "winding_admittance expects a validated two- or three-winding transformer"
+    );
     let reference = count - 1;
     let zbase = t.phases as f64 / t.windings[0].s_rating;
     let r_common: Vec<_> = t
@@ -405,6 +412,13 @@ fn invert_reduced_leakage(
         }
         2 if matrix.iter().all(|row| row.len() == 2) => {
             let determinant = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
+            // Only exact singularity is rejected, matching the two-winding
+            // path: an absolute pivot cutoff would refuse legitimate
+            // high-rating units whose 1 V-base impedances sit far below any
+            // fixed threshold. A nearly singular reduced matrix, such as two
+            // half windings with identical pairwise impedances to the
+            // primary, therefore inverts with reduced accuracy rather than
+            // failing here; the solver's KCL residual check reports it.
             if matrix.iter().flatten().any(|value| !finite(*value))
                 || !finite(determinant)
                 || determinant.norm() == 0.0

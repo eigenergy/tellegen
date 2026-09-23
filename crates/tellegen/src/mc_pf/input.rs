@@ -323,16 +323,24 @@ fn validate_transformer_terminal_order(
             3,
         )?;
         if let Some(terminals) = secondary {
-            if !non_phase.is_empty() {
-                let is_non_phase = |terminal: &str| non_phase.iter().any(|n| n == terminal);
-                if !is_non_phase(terminals[1])
-                    || is_non_phase(terminals[0])
-                    || is_non_phase(terminals[2])
-                {
-                    return Err(format!(
-                        "transformer `{name}` field `terminal_map_to` must order the centre-tap neutral/earth between the two secondary legs"
-                    ));
-                }
+            // The centre tap is identified only through the declared
+            // neutral/earth conventions. Without them the ordering cannot be
+            // checked, and a map such as `[leg 1, leg 2, centre]` would lower
+            // to the wrong pair of half windings while still producing
+            // plausible voltages, so refuse rather than guess.
+            if non_phase.is_empty() {
+                return Err(format!(
+                    "transformer `{name}` field `terminal_map_to` needs `terminal_conventions` to declare a neutral or earth terminal so the centre tap can be identified"
+                ));
+            }
+            let is_non_phase = |terminal: &str| non_phase.iter().any(|n| n == terminal);
+            if !is_non_phase(terminals[1])
+                || is_non_phase(terminals[0])
+                || is_non_phase(terminals[2])
+            {
+                return Err(format!(
+                    "transformer `{name}` field `terminal_map_to` must order the centre-tap neutral/earth between the two secondary legs"
+                ));
             }
         }
         return Ok(());
@@ -1140,6 +1148,19 @@ mod tests {
         raw["transformer"]["center_tap"]["t"]["terminal_map_to"] = json!(["1", "4"]);
         let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
         assert!(error.contains("exactly 3"), "{error}");
+
+        // Without a declared neutral or earth the centre tap cannot be
+        // identified, so a well-formed map is refused instead of being
+        // lowered to an unchecked winding orientation.
+        raw["transformer"]["center_tap"]["t"]["terminal_map_to"] = json!(["1", "4", "2"]);
+        raw["terminal_conventions"] =
+            json!({"phase": ["1", "2", "3", "4"], "neutral": [], "earth": []});
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("declare a neutral or earth"), "{error}");
+
+        raw.as_object_mut().unwrap().remove("terminal_conventions");
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("declare a neutral or earth"), "{error}");
     }
 
     #[test]
