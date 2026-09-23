@@ -1,0 +1,44 @@
+[package]
+name = "tellegen-py"
+# Tracks the engine crate so `pip install tellegen==X` and `cargo add tellegen@X`
+# mean the same solver. Bumped with `crates/tellegen`, by hand: release-plz does
+# not touch this crate (see release-plz.toml).
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Python bindings for the tellegen power flow engine."
+
+[lib]
+name = "_tellegen"
+crate-type = ["cdylib"]
+
+[features]
+# Opt-in so a bare `cargo build`, `cargo test --workspace` and `cargo clippy`
+# never link libpython. maturin turns it on through pyproject's
+# `[tool.maturin] features`.
+default = []
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+# No `version` field, deliberately: `.github/scripts/validate-version-changes.py`
+# requires a release-plz version bump to touch exactly Cargo.lock and
+# crates/tellegen/{Cargo.toml,CHANGELOG.md}. A version here would make
+# release-plz rewrite this manifest too and the gate would fail closed.
+#
+# `conic` implies `sensitivity`, which carries DC PF, DC OPF, AC PF and the KKT
+# sensitivities. `mc-pf` is deliberately absent: multiconductor power flow is
+# out of the first Python release's scope, so it is not compiled in.
+tellegen = { path = "../tellegen", default-features = false, features = ["conic"] }
+# Case parsing lives in powerio, not tellegen: `tellegen::ir` only moves IR
+# text. Binding it here keeps the wheel self-contained, so the base package has
+# no runtime dependency on the powerio Python wheel.
+powerio.workspace = true
+# abi3 gives one wheel per platform for CPython 3.9 and newer, which is what
+# keeps PowerMCP from needing a per-version support gate (as surge-py does).
+pyo3 = { version = "0.29", features = ["abi3-py39"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true

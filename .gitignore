@@ -43,3 +43,12 @@ notes/
 
 # Local scratch, never committed
 /private/
+
+# Python wheel build output (crates/tellegen-py + python/tellegen)
+/dist/
+*.whl
+python/tellegen/*.so
+python/tellegen/*.pyd
+__pycache__/
+.venv/
+.pytest_cache/

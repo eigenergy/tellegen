@@ -139,7 +139,12 @@ type PreviewFn<'a> = dyn FnMut(&dyn Differentiable) -> Result<Vec<PreviewColumn>
 /// Each implementor builds its KKT *on the stack* in [`with_system`](SolvedState::with_system)
 /// — the same on-the-stack borrow trick `run_cells` uses — so the `&dyn Differentiable`
 /// borrow never escapes the callback and no factorization is ever cached across commits.
-trait SolvedState {
+///
+/// `Send + Sync` keeps [`Study`] itself `Send + Sync`, which a foreign binding needs to
+/// hold a study across threads (and to drop the GIL around a solve). Every implementor is
+/// a plain model + solution pair, so the bound costs nothing; the trait is private, so it
+/// is not part of the public API.
+trait SolvedState: Send + Sync {
     fn clone_box(&self) -> Box<dyn SolvedState>;
     /// Re-assemble this formulation's [`SolveResponse`] at the committed point, computing
     /// any sensitivity cells in `req.sensitivities` in the same pass (no second solve).

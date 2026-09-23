@@ -9,6 +9,7 @@
 - [Product Showcase](webmcp-challenge.md)
 - [Challenge Evidence](challenge-evidence.md)
 - [Engine API Reference](engine-api.md)
+- [Python](python.md)
 - [Multiconductor AC power flow](multiconductor-pf.md)
 - [Transports](transports.md)
 - [Getting Started](getting-started.md)
