@@ -6,36 +6,43 @@ when all three surfaces moved together, are in the
 
 ## [0.3.0](https://github.com/eigenergy/tellegen/compare/v0.2.0...v0.3.0) - 2026-09-23
 
+The release that accompanies the DXConf '26 paper *Interactive Optimal Power
+Flow Compiled to the Browser*.
+
 ### Added
 
-- *(studies)* persist demand adjustments and restore original network data
+- Multiconductor AC power flow (`mc-pf` feature): a fixed-point current-injection
+  solver for unbalanced distribution networks from OpenDSS, PMD JSON, and BMOPF
+  inputs, with explicit neutral conductors, finite-leakage transformers, the
+  OpenDSS load-voltage envelope, and fixed regulators. Terminal voltages,
+  currents, and powers are compared with OpenDSS in CI. By Frederik Geth.
+- Phase-to-phase single-phase and centre-tap transformers, assembled as a
+  coupled three-winding primitive with winding polarity, fixed taps, excitation
+  shunts, and floating, solid, or impedance-grounded centre taps. Arbitrary
+  multiwinding transformers are still rejected. By Frederik Geth (#128).
+- `McPfSession`: a retained session that keeps the prepared network, frozen
+  compensation matrix, sparse LU, and last converged voltage, so per-load P/Q
+  edits re-solve warm with one factorization. By Frederik Geth (#129).
+- Persistent Studies with composable objectives and bounded exploration;
+  *(studies)* persist demand adjustments and restore original network data.
+- Study operations (`study_ops`) and a filesystem Study store shared by the
+  CLI, the browser, and the new Python binding (`crates/tellegen-py`, not
+  published to crates.io). By Qian Zhang (#133).
 
-### Other
+### Changed
 
-- Merge pull request #133 from qian-harvard/feat/python-package
-- Merge pull request #129 from frederikgeth/codex/interactive-mc-pf
-- Keep interactive load editing alive when the retained session is replaced
-- Add interactive multiconductor power flow sessions
-- Support phase-to-phase and center-tap transformers
-- Merge remote-tracking branch 'origin/codex/release-fixes' into codex/preview-additions
-- Keep preparation hashes available in reduced-feature builds
-- Fix saved distribution selection, feature builds, and SHA-256 preparation IDs
-- Merge remote-tracking branch 'origin/codex/multiconductor-fixed-point' into codex/opendss-load-envelope
-- Test the distribution solver with the remaining dependency updates
-- Repair schema generation for sha2 0.11 and update the clean base
-- Preserve Study content IDs with sha2 0.11
-- Bump sha2 from 0.10.9 to 0.11.0
-- [**breaking**] document the PowerIO 0.11 input contract
-- Pin final PowerIO transformer corrections and conic Study contracts
-- Verify singular outer derivatives and document cumulative Study budgets
-- Add persistent Studies with composable objectives and bounded exploration
-- Integrate final PowerIO 0.11 candidate and export verified WebMCP experiments
-- Document the universal PowerIO display parser
-- Fix v0.11 lockfile and Rust formatting
-- Align Tellegen with PowerIO v0.11 IR generation 2
-- Move Tellegen onto the PowerIO 1.0 module API
-- Remove release bypasses and stale claims
-- Use PowerIO modules for OPF and capacity planning
+- [**breaking**] The PowerIO 0.11 input contract is documented and required:
+  portable electrical modules use PowerIO IR generation 2 through the PowerIO
+  module API, for OPF and capacity planning alike. Depends on PowerIO 0.11.
+- Study content IDs and preparation hashes use sha2 0.11 and stay available in
+  reduced-feature builds.
+
+### Fixed
+
+- Saved distribution selection, feature-gated builds, and SHA-256 preparation
+  IDs.
+- Centre-tap terminal maps are refused when no neutral or earth convention
+  identifies the centre tap, instead of lowering to an unchecked orientation.
 
 ## [0.2.0](https://github.com/eigenergy/tellegen/compare/v0.1.1...v0.2.0) - 2026-08-23
 

@@ -3,7 +3,7 @@ name = "tellegen-py"
 # Tracks the engine crate so `pip install tellegen==X` and `cargo add tellegen@X`
 # mean the same solver. Bumped with `crates/tellegen`, by hand: release-plz does
 # not touch this crate (see release-plz.toml).
-version = "0.2.0"
+version = "0.3.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
