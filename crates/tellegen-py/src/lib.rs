@@ -345,6 +345,26 @@ fn study_run(
 ) -> PyResult<String> {
     let source = path.to_owned();
     let text = request_json.to_owned();
+    // Checked before releasing the GIL: `Duration::from_secs_f64` panics on a
+    // negative, NaN, or overflowing value, and a panic here would surface as a
+    // `PanicException` that the MCP tool wrapper cannot catch.
+    let timeout = match timeout_seconds {
+        None => None,
+        Some(seconds) if seconds.is_finite() && seconds >= 0.0 => Some(
+            std::time::Duration::try_from_secs_f64(seconds).map_err(|_| {
+                engine_error(
+                    py,
+                    format!("bad request JSON: timeout_seconds {seconds} is out of range"),
+                )
+            })?,
+        ),
+        Some(seconds) => {
+            return Err(engine_error(
+                py,
+                format!("bad request JSON: timeout_seconds must be a finite, nonnegative number, not {seconds}"),
+            ));
+        }
+    };
     py.detach(move || {
         let request: tellegen::study_ops::StudyRequest =
             serde_json::from_str(&text).map_err(|error| error.to_string())?;
@@ -352,8 +372,7 @@ fn study_run(
         let store = tellegen::study_storage::FileStudyStore::new(&source);
         let mut bundle = store.load()?;
 
-        let deadline = timeout_seconds
-            .map(|seconds| std::time::Instant::now() + std::time::Duration::from_secs_f64(seconds));
+        let deadline = timeout.map(|limit| std::time::Instant::now() + limit);
         let mut checkpoints: Vec<serde_json::Value> = Vec::new();
         let result = tellegen::study_ops::execute_study(&mut bundle, request, || {
             checkpoints.push(serde_json::json!({

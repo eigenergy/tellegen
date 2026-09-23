@@ -1,5 +1,7 @@
 """`python -m tellegen.mcp` — serve the tool surface over stdio."""
 
-from .server import main
+# Resolved through the package's lazy `__getattr__`, so a missing `mcp` extra
+# reports what to install instead of a bare ModuleNotFoundError.
+import tellegen.mcp
 
-main()
+tellegen.mcp.main()

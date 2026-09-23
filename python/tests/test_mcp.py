@@ -261,6 +261,15 @@ def test_an_unknown_section_says_what_the_sections_are(study):
         asyncio.run(server.study_inspect(path=study, section="nope"))
 
 
+def test_an_unknown_or_missing_record_id_is_named(study):
+    """A missing record used to escape as `KeyError`, which the SDK turned into
+    a bare "Error executing tool" with no message."""
+    with pytest.raises(ValueError, match="Unknown experiment 'nope'"):
+        asyncio.run(server.study_inspect(path=study, section="experiment", record_id="nope"))
+    with pytest.raises(ValueError, match="record_id is required"):
+        asyncio.run(server.study_inspect(path=study, section="evidence"))
+
+
 def test_a_study_export_imports_into_a_new_destination(study, allowed_roots):
     exported = asyncio.run(server.study_export(path=study))
     copy = allowed_roots / "copy.study.json"
@@ -299,3 +308,18 @@ def test_a_refusal_reaches_the_model_with_its_remedy(tool, arguments, remedy):
     assert not isinstance(caught.value, UnexpectedToolError), (
         "UnexpectedToolError discards the message before the model sees it"
     )
+
+
+def test_a_bad_timeout_reaches_the_model_as_a_refusal(study):
+    """A negative or non-finite deadline used to panic inside the binding; a
+    `PanicException` is a `BaseException`, so it escaped the tool wrapper."""
+    with pytest.raises(ToolError) as caught:
+        call(
+            "study_run",
+            path=study,
+            expected_revision=0,
+            operation={"kind": "inspect", "state": "s"},
+            timeout_seconds=-1,
+        )
+    assert "timeout_seconds" in str(caught.value)
+    assert not isinstance(caught.value, UnexpectedToolError)

@@ -24,6 +24,19 @@ jobs:
         with:
           persist-credentials: false
 
+      # The wheel's version is read from crates/tellegen-py/Cargo.toml, which
+      # release-plz does not bump (release-plz.toml). Refuse to build a wheel
+      # that claims a different solver version than the engine crate it wraps.
+      - name: Check the wheel version matches the engine crate
+        run: |
+          engine=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/tellegen/Cargo.toml | head -1)
+          wheel=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/tellegen-py/Cargo.toml | head -1)
+          if [ "$engine" != "$wheel" ]; then
+            echo "::error file=crates/tellegen-py/Cargo.toml::tellegen-py is $wheel but crates/tellegen is $engine; bump them together"
+            exit 1
+          fi
+          echo "tellegen and tellegen-py agree on $engine"
+
       - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: ${{ matrix.python }}

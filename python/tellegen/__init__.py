@@ -2,7 +2,7 @@
 
 `load` reads a case file, `Case` holds the solved operating point, and the
 edit methods re-solve it. Results come back as plain dicts, so nothing here
-imports numpy or scipy; `Case.array` reaches for numpy only when asked.
+imports numpy or scipy.
 
     >>> import tellegen
     >>> case = tellegen.load("case30.m")

@@ -89,6 +89,11 @@ def _tool(function):
             # TellegenError and PathNotAllowed both subclass ValueError, so
             # engine refusals and sandbox refusals travel the same path.
             raise ToolError(str(exc)) from exc
+        except (KeyError, TypeError, OSError) as exc:
+            # A missing record, a wrongly typed argument, or a store path that
+            # is not a readable file. Left uncaught, the SDK replaces the text
+            # with a bare "Error executing tool", which tells the model nothing.
+            raise ToolError(f"{type(exc).__name__}: {exc}") from exc
 
     mcp.tool()(registered)
     return function
@@ -264,6 +269,16 @@ async def study_create(
     return study_summary(json.loads(_tellegen.study_create(checked, json.dumps(request))))
 
 
+
+def _record(table: Dict[str, Any], record_id: Optional[str], kind: str) -> Any:
+    """Look a record up by id, naming the ids that exist when it is missing."""
+    if record_id is None:
+        raise ValueError(f"record_id is required for the {kind} section")
+    if record_id not in table:
+        known = ", ".join(sorted(table)) or "none"
+        raise ValueError(f"Unknown {kind} {record_id!r}; known: {known}")
+    return table[record_id]
+
 @_tool
 async def study_inspect(
     path: str,
@@ -286,13 +301,13 @@ async def study_inspect(
     if expected_revision is not None and document["revision"] != expected_revision:
         raise ValueError("Study revision changed; restart the inspection")
     if section == "goal":
-        record = document["goals"][record_id or document["active_goal"]]
+        record = _record(document["goals"], record_id or document["active_goal"], "goal")
     elif section == "states":
         record = document["states"]
     elif section == "experiment":
-        record = document["experiments"][record_id]
+        record = _record(document["experiments"], record_id, "experiment")
     elif section == "evidence":
-        artifact = bundle["artifacts"][record_id]
+        artifact = _record(bundle["artifacts"], record_id, "artifact")
         if artifact["kind"] != "evidence":
             raise ValueError("Requested artifact is not evidence")
         record = artifact["text"]

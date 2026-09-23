@@ -265,3 +265,16 @@ def test_an_unrecognized_message_is_a_generic_engine_failure():
     from tellegen import _tellegen
 
     assert _tellegen._classify("something new went wrong") == "ENGINE.FAILED"
+
+
+@pytest.mark.parametrize("seconds", [-1.0, float("nan"), float("inf"), 1e300])
+def test_a_bad_study_timeout_is_refused_before_any_work(tmp_path, seconds):
+    """`Duration::from_secs_f64` panics on these; the binding must refuse them
+    as input errors instead, and before it touches the store."""
+    from tellegen import TellegenInputError, _tellegen
+
+    missing = str(tmp_path / "absent.study.json")
+    with pytest.raises(TellegenInputError) as caught:
+        _tellegen.study_run(missing, '{"expected_revision": 0, "operation": {"kind": "inspect", "state": "s"}}', seconds)
+    assert caught.value.code == "REQUEST.MALFORMED"
+    assert "timeout_seconds" in str(caught.value)
