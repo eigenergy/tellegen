@@ -111,15 +111,26 @@ fn run(case: &str, input: &str, reference: &str) {
         );
         // Ground reactors remain finite shunts in the circuit, but this oracle
         // comparison excludes their boundary-reaction current convention.
-        // OpenDSS transformer winding vectors include padded/implicit
-        // conductors and a winding convention that is not the canonical
-        // BMOPF port convention. Their solver ports are still required and
-        // checked for finite values; line/load ports use numeric comparison.
-        if expected.name.starts_with("Reactor.") || expected.name.starts_with("Transformer.") {
+        if expected.name.starts_with("Reactor.") {
             assert!(
                 actual_ports_are_finite(&result, short_name),
                 "{case} non-finite {short_name} ports"
             );
+            continue;
+        }
+        // The centre-tap regression intentionally compares physical terminal
+        // current orientation and power, aggregating the two OpenDSS winding
+        // entries at the shared secondary neutral. Older transformer oracles
+        // retain only their convention-independent finite-port check.
+        if expected.name.starts_with("Transformer.") {
+            if case == "pf_center_tap_loaded" {
+                compare_transformer_ports(case, &result, short_name, expected);
+            } else {
+                assert!(
+                    actual_ports_are_finite(&result, short_name),
+                    "{case} non-finite {short_name} ports"
+                );
+            }
             continue;
         }
         let actual_ports: Vec<_> = result
@@ -221,6 +232,70 @@ fn run(case: &str, input: &str, reference: &str) {
     );
 }
 
+fn compare_transformer_ports(
+    case: &str,
+    result: &McPfResult,
+    element: &str,
+    expected: &OracleElement,
+) {
+    let terminal_name = |node: u8| match node {
+        1 => "a",
+        2 => "b",
+        3 => "c",
+        4 | 0 => "n",
+        other => panic!("unsupported oracle conductor node {other}"),
+    };
+    let mut expected_ports: BTreeMap<(&str, &str), (f64, f64, f64, f64)> = BTreeMap::new();
+    for (bus_index, bus) in expected.node_order.iter().enumerate() {
+        for (conductor, node) in bus.nodes.iter().enumerate() {
+            let index = bus_index * expected.num_conductors + conductor;
+            let current = &expected.currents[index];
+            let power = &expected.powers[index];
+            let entry = expected_ports
+                .entry((bus.bus.as_str(), terminal_name(*node)))
+                .or_default();
+            entry.0 += current.re;
+            entry.1 += current.im;
+            entry.2 += power.re;
+            entry.3 += power.im;
+        }
+    }
+    let actual_ports: Vec<_> = result
+        .element_ports
+        .iter()
+        .filter(|port| port.element == element)
+        .collect();
+    assert_eq!(actual_ports.len(), expected_ports.len());
+    for port in actual_ports {
+        let expected = expected_ports
+            .get(&(port.bus.as_str(), port.terminal.as_str()))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{case} unexpected transformer port {}:{}",
+                    port.bus, port.terminal
+                )
+            });
+        let current_error = (port.current_into_element.re - expected.0)
+            .hypot(port.current_into_element.im - expected.1);
+        let current_scale = expected.0.hypot(expected.1);
+        assert!(
+            current_error <= 2e-4 + 2e-6 * current_scale,
+            "{case} {element} {}:{} current error {current_error:.3e} A",
+            port.bus,
+            port.terminal
+        );
+        let power_error = (port.power_into_element.re - expected.2)
+            .hypot(port.power_into_element.im - expected.3);
+        let power_scale = expected.2.hypot(expected.3);
+        assert!(
+            power_error <= 2e-2 + 2e-6 * power_scale,
+            "{case} {element} {}:{} power error {power_error:.3e} VA",
+            port.bus,
+            port.terminal
+        );
+    }
+}
+
 fn actual_ports_are_finite(result: &McPfResult, element: &str) -> bool {
     result
         .element_ports
@@ -266,6 +341,11 @@ oracle_case!(
     pf_3ph_line,
     "data/mc_pf/oracle_inputs/pf_3ph_line.json",
     "data/mc_pf/oracle_refs/pf_3ph_line.json"
+);
+oracle_case!(
+    pf_center_tap_loaded,
+    "data/mc_pf/oracle_inputs/pf_center_tap_loaded.json",
+    "data/mc_pf/oracle_refs/pf_center_tap_loaded.json"
 );
 oracle_case!(
     pf_delta_load,

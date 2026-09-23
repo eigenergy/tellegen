@@ -8,9 +8,9 @@ Geographic GeoJSON can accompany the case or be attached to the selected case la
 
 ## Supported calculations
 
-The solver uses one complex sparse LU factorization and updates compensated load currents until both voltage changes and physical KCL residuals meet their tolerances. Constant-power, constant-current, constant-impedance, ZIP, and exponential loads are included, along with ideal voltage sources, lines, shunts, explicit neutral conductors, and supported two-winding equipment. A two-winding entry expressed using BMOPF's n-winding representation is also supported.
+The solver uses one complex sparse LU factorization and updates compensated load currents until both voltage changes and physical KCL residuals meet their tolerances. Constant-power, constant-current, constant-impedance, ZIP, and exponential loads are included, along with ideal voltage sources, lines, shunts, explicit neutral conductors, and supported winding equipment. Phase-to-phase single-phase transformers, a two-winding entry expressed using BMOPF's n-winding representation, and PowerIO's three-coupled-winding lowering of a BMOPF centre-tap transformer are supported.
 
-Finite source impedance, active device controls, generator/IBR injections, unsupported load models, unsupported per-phase taps, ideal zero-leakage winding models, and more than two windings require additional numerical models. Such data can remain available for inspection, but the calculation reports unsupported physics instead of silently simplifying it. Draft BMOPF 0.2 data remains subject to Task Force review.
+Finite source impedance, active device controls, generator/IBR injections, unsupported load models, unsupported per-phase taps, ideal zero-leakage winding models, and arbitrary multiwinding transformers require additional numerical models. Such data can remain available for inspection, but the calculation reports unsupported physics instead of silently simplifying it. Draft BMOPF 0.2 data remains subject to Task Force review.
 
 A current result belongs to the input that produced it. Cancelling or failing a new calculation retains the preceding result. Numeric columns exported to PowerIO are ordered by bus/terminal and source/terminal identities, with missing or duplicate identities rejected.
 
@@ -44,6 +44,6 @@ An agent can use `inspect_case`, `solve_multiconductor_pf`, and `query_network`.
 
 ## Evidence
 
-The test suite includes analytic resistive feeders and comparisons against OpenDSS reference results for grounded, floating, and impedance-grounded neutrals, three-phase lines, delta loads, and multiple winding connections. The published tolerances distinguish voltage, current, and complex-power comparisons. These fixtures establish the supported calculations; they do not establish universal convergence or multiconductor AC OPF support.
+The test suite includes analytic resistive feeders and comparisons against OpenDSS reference results for grounded, floating, and impedance-grounded neutrals, three-phase lines, delta loads, multiple winding connections, and a loaded split-phase centre-tap transformer. The centre-tap oracle checks voltage plus aggregated physical-terminal current orientation and complex power. The published tolerances distinguish voltage, current, and complex-power comparisons. These fixtures establish the supported calculations; they do not establish universal convergence or multiconductor AC OPF support.
 
 Further tests exercise the real WASM worker, unsupported-data rejection through IR reload, geographic points and multi-point routes after attachment, and unchanged electrical results after geographic edits.

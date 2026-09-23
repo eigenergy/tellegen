@@ -1,0 +1,88 @@
+{
+  "name": "pf_ct_loaded",
+  "meta": {
+    "frequency": 50.0
+  },
+  "terminal_conventions": {
+    "phase": ["a", "b"],
+    "neutral": ["n"],
+    "earth": []
+  },
+  "bus": {
+    "src": {"terminal_names": ["a", "n"]},
+    "hv": {"terminal_names": ["a", "n"]},
+    "lv": {"terminal_names": ["a", "b", "n"]}
+  },
+  "voltage_source": {
+    "source": {
+      "bus": "src",
+      "terminal_map": ["a", "n"],
+      "v_magnitude": [7200.0, 0.0],
+      "v_angle": [0.0, 0.0]
+    }
+  },
+  "linecode": {
+    "sp1w": {
+      "R_series_1_1": 0.0006,
+      "X_series_1_1": 0.0004,
+      "G_from_1_1": 0.0,
+      "B_from_1_1": 0.0,
+      "G_to_1_1": 0.0,
+      "B_to_1_1": 0.0,
+      "i_max": [600.0]
+    }
+  },
+  "line": {
+    "l1": {
+      "bus_from": "src",
+      "bus_to": "hv",
+      "terminal_map_from": ["a"],
+      "terminal_map_to": ["a"],
+      "linecode": "sp1w",
+      "length": 5000.0
+    }
+  },
+  "shunt": {
+    "grnd_src": {"bus": "src", "terminal_map": ["n"], "G_1_1": 1000.0, "B_1_1": 0.0},
+    "grnd_hv": {"bus": "hv", "terminal_map": ["n"], "G_1_1": 1000.0, "B_1_1": 0.0},
+    "grnd_lv": {"bus": "lv", "terminal_map": ["n"], "G_1_1": 1000.0, "B_1_1": 0.0}
+  },
+  "transformer": {
+    "center_tap": {
+      "t1": {
+        "bus_from": "hv",
+        "bus_to": "lv",
+        "terminal_map_from": ["a", "n"],
+        "terminal_map_to": ["a", "n", "b"],
+        "v_nom_from": 7200.0,
+        "v_nom_to": 120.0,
+        "s_rating": 25000.0,
+        "r_series_from": 12.4416,
+        "x_series_from": 28.20096,
+        "r_series_to": 0.006912,
+        "x_series_to": 0.0039168,
+        "no_load_shunt": {"winding": 2, "g": 0.0034722222222222225, "b": 0.0}
+      }
+    }
+  },
+  "load": {
+    "ld1": {
+      "bus": "lv",
+      "terminal_map": ["a", "n"],
+      "configuration": "SINGLE_PHASE",
+      "model": "constant_power",
+      "p_nom": [11000.0],
+      "q_nom": [2000.0],
+      "v_nom": [120.0]
+    },
+    "ld2": {
+      "bus": "lv",
+      "terminal_map": ["n", "b"],
+      "configuration": "SINGLE_PHASE",
+      "model": "constant_power",
+      "p_nom": [8000.0],
+      "q_nom": [1000.0],
+      "v_nom": [120.0]
+    }
+  }
+}

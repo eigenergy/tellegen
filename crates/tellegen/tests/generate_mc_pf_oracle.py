@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate pinned OpenDSSDirect references for the small MC-PF corpus.
 
-The inputs are the nine BMOPFTools comparison snapshots.  This is a
+The inputs are selected BMOPFTools comparison snapshots. This is a
 reproduction aid rather than a runtime dependency: CI consumes the checked-in
 JSON references produced by this script.  OpenDSS is configured as a strict
 constant-power, ideal-source snapshot so that its boundary conditions match
@@ -30,6 +30,7 @@ CASES = [
     "pf_1ph_impedanceneutral",
     "pf_1ph_line",
     "pf_3ph_line",
+    "pf_center_tap_loaded",
     "pf_delta_load",
     "pf_dy_xfmr",
     "pf_dy_xfmr_rneut",

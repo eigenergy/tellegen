@@ -7,11 +7,11 @@
 //! the WYE/DELTA incidence map, so a delta winding is represented by its
 //! actual line-to-line coils rather than by independent phase ratios.
 //!
-//! This module deliberately prepares one finite-leakage two-winding element.
+//! This module deliberately prepares finite-leakage two-winding elements and
+//! the three coupled windings produced by PowerIO for a BMOPF centre tap.
 //! Ideal transformers need voltage constraints and are rejected here; silently
-//! returning a zero admittance would disconnect the network.  Multiwinding
-//! data is also rejected until the corresponding terminal and reader contract
-//! is reviewed.
+//! returning a zero admittance would disconnect the network. Other arbitrary
+//! multiwinding data remains unsupported.
 
 use num_complex::{Complex64, ComplexFloat};
 use powerio::dist::{DistTransformer, DistWinding, DistWindingConn};
@@ -168,8 +168,9 @@ pub fn build_transformer_yprim(
     prepare_transformer(transformer)
 }
 
-/// Prepare one finite-leakage, two-winding transformer from the canonical
-/// PowerIO representation.
+/// Prepare one finite-leakage transformer from the canonical PowerIO
+/// representation. Besides ordinary two-winding units, this accepts only the
+/// three-winding shape tagged by PowerIO as a BMOPF `center_tap` transformer.
 pub fn prepare_transformer(
     transformer: &DistTransformer,
 ) -> Result<TransformerPrimitive, TransformerError> {
@@ -182,46 +183,22 @@ pub fn prepare_transformer(
         return prepare_single_phase_autotransformer(transformer);
     }
     validate_shape(transformer)?;
-    let w1 = &transformer.windings[0];
-    let w2 = &transformer.windings[1];
     let phases = transformer.phases;
     let name = transformer.name.clone();
 
     let direction = delta_direction(transformer);
-    let directions = [
-        delta_direction_for(transformer, 0, direction),
-        delta_direction_for(transformer, 1, direction),
-    ];
-    let vbase = [coil_voltage(w1, phases), coil_voltage(w2, phases)];
-    let zbase = phases as f64 / w1.s_rating;
-
-    // DistWinding::r_pct is percent of the winding's own base. OpenDSS's
-    // ZB relation uses winding 1's common power base, so refer each physical
-    // winding resistance to that base before constructing ZB.
-    // `r_pct` is percent of each winding's own base.  The source's Rpu
-    // values are expressed on winding 1's common power base, therefore the
-    // second winding's value scales by S1/S2.  The voltage ratio belongs to
-    // the later terminal transformation and must not be folded into Rpu.
-    let r_common = [
-        w1.r_pct / 100.0,
-        w2.r_pct / 100.0 * w1.s_rating / w2.s_rating,
-    ];
-    let z12 = Complex64::new(
-        (r_common[0] + r_common[1]) * zbase,
-        transformer.xsc_pct[0] / 100.0 * zbase,
-    );
-    // This is a scalar two-winding leakage impedance.  Do not use an
-    // absolute pivot cutoff here: a valid high-rating transformer can have a
-    // one-volt-base impedance below 1e-14 ohm.  A zero or non-finite scalar
-    // is the only singular case for this primitive.
-    if !z12.re.is_finite() || !z12.im.is_finite() || z12.norm() == 0.0 {
-        return Err(TransformerError::SingularLeakage {
-            transformer: name.clone(),
-        });
-    }
-    let yb = z12.recip();
-    // A = [-1, 1], Y_1Volt = Aᵀ YB A.
-    let y_1volt = vec![vec![yb, -yb], vec![-yb, yb]];
+    let directions: Vec<_> = transformer
+        .windings
+        .iter()
+        .enumerate()
+        .map(|(index, _)| delta_direction_for(transformer, index, direction))
+        .collect();
+    let vbase: Vec<_> = transformer
+        .windings
+        .iter()
+        .map(|winding| coil_voltage(winding, phases))
+        .collect();
+    let y_1volt = winding_admittance(transformer)?;
 
     let mut terminals = Vec::new();
     let mut y_series = Vec::new();
@@ -229,7 +206,7 @@ pub fn prepare_transformer(
     let mut grounded_terminals = Vec::new();
     // Build the unique terminal list once. Coils from all phases then stamp
     // through the same physical neutral column when a neutral is explicit.
-    for winding in [w1, w2] {
+    for winding in &transformer.windings {
         for terminal in winding
             .terminal_map
             .iter()
@@ -260,28 +237,22 @@ pub fn prepare_transformer(
     // The physical terminal matrix is the sum over independent phase
     // copies of Bᵀ Y_1Volt B, where B contains the turns/base factors.
     for phase in 0..phases {
-        let mut b = vec![vec![Complex64::new(0.0, 0.0); nterm]; 2];
-        let (a1, z1) = coil_refs(w1, phase, phases, directions[0], &terminals, &name)?;
-        let (a2, z2) = coil_refs(w2, phase, phases, directions[1], &terminals, &name)?;
-        let k1 = Complex64::new(1.0 / (vbase[0] * checked_tap(w1, &name)?), 0.0);
-        let k2 = Complex64::new(1.0 / (vbase[1] * checked_tap(w2, &name)?), 0.0);
-        if let Some(i) = a1 {
-            b[0][i] += k1;
-        }
-        if let Some(i) = z1 {
-            b[0][i] -= k1;
-        }
-        if let Some(i) = a2 {
-            b[1][i] += k2;
-        }
-        if let Some(i) = z2 {
-            b[1][i] -= k2;
+        let mut b = vec![vec![Complex64::new(0.0, 0.0); nterm]; transformer.windings.len()];
+        for (index, winding) in transformer.windings.iter().enumerate() {
+            let (a, z) = coil_refs(winding, phase, phases, directions[index], &terminals, &name)?;
+            let k = Complex64::new(1.0 / (vbase[index] * checked_tap(winding, &name)?), 0.0);
+            if let Some(i) = a {
+                b[index][i] += k;
+            }
+            if let Some(i) = z {
+                b[index][i] -= k;
+            }
         }
         for i in 0..nterm {
             for j in 0..nterm {
                 let mut value = Complex64::new(0.0, 0.0);
-                for p in 0..2 {
-                    for q in 0..2 {
+                for p in 0..transformer.windings.len() {
+                    for q in 0..transformer.windings.len() {
                         value += b[p][i] * y_1volt[p][q] * b[q][j];
                     }
                 }
@@ -292,7 +263,7 @@ pub fn prepare_transformer(
         // Explicit neutral impedance is one shunt from the physical WYE
         // neutral conductor to ground, shared by all phase coils.
         if phase == 0 {
-            for (idx, winding) in [w1, w2].iter().enumerate() {
+            for (idx, winding) in transformer.windings.iter().enumerate() {
                 if winding.conn == DistWindingConn::Wye
                     && (winding.r_neutral.is_some() || winding.x_neutral.is_some())
                 {
@@ -361,6 +332,111 @@ pub fn prepare_transformer(
         delta_direction: direction,
         y_1volt,
     })
+}
+
+/// Build OpenDSS's winding-domain `Y_1Volt` matrix. Pairwise short-circuit
+/// impedances are first converted to the reduced `ZB` matrix relative to the
+/// final winding, then lifted back through winding-difference incidence. For a
+/// two-winding unit this reduces exactly to `y * [[1,-1],[-1,1]]`.
+fn winding_admittance(t: &DistTransformer) -> Result<ComplexMatrix, TransformerError> {
+    let count = t.windings.len();
+    // `validate_shape` runs first and admits two windings, or three for a
+    // tagged centre tap. Keep that contract local so a new caller cannot
+    // reach the `unreachable!` in `pair_index` by skipping validation.
+    debug_assert!(
+        (2..=3).contains(&count),
+        "winding_admittance expects a validated two- or three-winding transformer"
+    );
+    let reference = count - 1;
+    let zbase = t.phases as f64 / t.windings[0].s_rating;
+    let r_common: Vec<_> = t
+        .windings
+        .iter()
+        .map(|winding| winding.r_pct / 100.0 * t.windings[0].s_rating / winding.s_rating)
+        .collect();
+    let pair_index = |left: usize, right: usize| match (left.min(right), left.max(right)) {
+        (0, 1) => 0,
+        (0, 2) => 1,
+        (1, 2) => 2,
+        _ => unreachable!("shape validation permits at most three windings"),
+    };
+    let pair_impedance = |left: usize, right: usize| {
+        Complex64::new(
+            (r_common[left] + r_common[right]) * zbase,
+            t.xsc_pct[pair_index(left, right)] / 100.0 * zbase,
+        )
+    };
+
+    let mut zb = vec![vec![Complex64::default(); reference]; reference];
+    for (i, row) in zb.iter_mut().enumerate() {
+        for (j, value) in row.iter_mut().enumerate() {
+            let zi_ref = pair_impedance(i, reference);
+            let zj_ref = pair_impedance(j, reference);
+            *value = if i == j {
+                zi_ref
+            } else {
+                (zi_ref + zj_ref - pair_impedance(i, j)) / 2.0
+            };
+        }
+    }
+    let yb = invert_reduced_leakage(&zb, &t.name)?;
+    let mut result = vec![vec![Complex64::default(); count]; count];
+    // A maps winding voltages to differences against the final winding:
+    // row i is `u_i - u_reference`. Y_1Volt = A^T inv(ZB) A.
+    for i in 0..reference {
+        for j in 0..reference {
+            let value = yb[i][j];
+            result[i][j] += value;
+            result[i][reference] -= value;
+            result[reference][j] -= value;
+            result[reference][reference] += value;
+        }
+    }
+    Ok(result)
+}
+
+fn invert_reduced_leakage(
+    matrix: &ComplexMatrix,
+    name: &str,
+) -> Result<ComplexMatrix, TransformerError> {
+    let finite = |value: Complex64| value.re.is_finite() && value.im.is_finite();
+    match matrix.len() {
+        1 if matrix[0].len() == 1 => {
+            let z = matrix[0][0];
+            if !finite(z) || z.norm() == 0.0 {
+                return Err(TransformerError::SingularLeakage {
+                    transformer: name.to_owned(),
+                });
+            }
+            Ok(vec![vec![z.recip()]])
+        }
+        2 if matrix.iter().all(|row| row.len() == 2) => {
+            let determinant = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
+            // Only exact singularity is rejected, matching the two-winding
+            // path: an absolute pivot cutoff would refuse legitimate
+            // high-rating units whose 1 V-base impedances sit far below any
+            // fixed threshold. A nearly singular reduced matrix, such as two
+            // half windings with identical pairwise impedances to the
+            // primary, therefore inverts with reduced accuracy rather than
+            // failing here; the solver's KCL residual check reports it.
+            if matrix.iter().flatten().any(|value| !finite(*value))
+                || !finite(determinant)
+                || determinant.norm() == 0.0
+            {
+                return Err(TransformerError::SingularLeakage {
+                    transformer: name.to_owned(),
+                });
+            }
+            Ok(vec![
+                vec![matrix[1][1] / determinant, -matrix[0][1] / determinant],
+                vec![-matrix[1][0] / determinant, matrix[0][0] / determinant],
+            ])
+        }
+        _ => Err(TransformerError::Unsupported {
+            transformer: name.to_owned(),
+            reason: "only two-winding and BMOPF centre-tap leakage matrices are supported".into(),
+        }),
+    }
 }
 
 /// Prepare the fixed-ratio BMOPF single-phase autotransformer/regulator.
@@ -500,12 +576,28 @@ fn prepare_single_phase_autotransformer(
 
 fn validate_shape(t: &DistTransformer) -> Result<(), TransformerError> {
     let name = t.name.clone();
-    if t.windings.len() != 2 {
+    let center_tap = t.extras.get("bmopf_subtype").and_then(Value::as_str) == Some("center_tap");
+    let expected_windings = if center_tap { 3 } else { 2 };
+    if t.windings.len() != expected_windings {
         return Err(TransformerError::Unsupported {
             transformer: name,
             reason: format!(
-                "{} windings are present; only finite two-winding primitives are supported",
-                t.windings.len()
+                "{} windings are present; expected {expected_windings} for {}",
+                t.windings.len(),
+                if center_tap {
+                    "a BMOPF centre-tap primitive"
+                } else {
+                    "a finite two-winding primitive"
+                }
+            ),
+        });
+    }
+    if center_tap && t.phases != 1 {
+        return Err(TransformerError::Unsupported {
+            transformer: t.name.clone(),
+            reason: format!(
+                "BMOPF centre-tap primitives require one phase; got {}",
+                t.phases
             ),
         });
     }
@@ -518,17 +610,28 @@ fn validate_shape(t: &DistTransformer) -> Result<(), TransformerError> {
             ),
         });
     }
-    if t.xsc_pct.len() != 1 {
+    let expected_xsc = if center_tap { 3 } else { 1 };
+    if t.xsc_pct.len() != expected_xsc {
         return Err(TransformerError::Invalid {
             transformer: t.name.clone(),
             field: "xsc_pct".into(),
-            reason: "two-winding transformers require exactly one XHL value".into(),
+            reason: format!(
+                "{} requires exactly {expected_xsc} pairwise short-circuit values",
+                if center_tap {
+                    "a centre-tap transformer"
+                } else {
+                    "a two-winding transformer"
+                }
+            ),
         });
     }
-    if !t.xsc_pct[0].is_finite() || t.xsc_pct[0] < 0.0 {
+    if t.xsc_pct
+        .iter()
+        .any(|value| !value.is_finite() || *value < 0.0)
+    {
         return Err(TransformerError::Invalid {
             transformer: t.name.clone(),
-            field: "xsc_pct[0]".into(),
+            field: "xsc_pct".into(),
             reason: "must be finite and nonnegative".into(),
         });
     }
@@ -573,7 +676,8 @@ fn validate_shape(t: &DistTransformer) -> Result<(), TransformerError> {
             });
         }
     }
-    let explicit_ideal = t.xsc_pct[0] == 0.0 && t.windings.iter().all(|w| w.r_pct == 0.0);
+    let explicit_ideal =
+        t.xsc_pct.iter().all(|value| *value == 0.0) && t.windings.iter().all(|w| w.r_pct == 0.0);
     if explicit_ideal {
         return Err(TransformerError::Unsupported {
             transformer: t.name.clone(),
@@ -696,11 +800,11 @@ fn add_excitation(
                 reason: "expected one-based integer".into(),
             }
         })?;
-        if winding == 0 || winding > 2 {
+        if winding == 0 || winding as usize > t.windings.len() {
             return Err(TransformerError::Invalid {
                 transformer: name.clone(),
                 field: "no_load_shunt.winding".into(),
-                reason: "must be 1 or 2".into(),
+                reason: format!("must be between 1 and {}", t.windings.len()),
             });
         }
         let g = obj
@@ -735,7 +839,9 @@ fn add_excitation(
         return Ok(());
     }
     if legacy {
-        // The tagged BMOPF fields are from-winding per-coil siemens.
+        // The tagged autotransformer fields are from-winding per-coil
+        // siemens. Other raw BMOPF subtypes require `no_load_shunt` during
+        // preflight, so their placement reaches this function explicitly.
         let g = value_number(&t.extras, "g_no_load").unwrap_or(0.0);
         let b = value_number(&t.extras, "b_no_load").unwrap_or(0.0);
         if !g.is_finite() || g < 0.0 || !b.is_finite() {
@@ -1241,6 +1347,180 @@ mod tests {
         );
         w2.r_pct = 1.0;
         DistTransformer::new("one", vec![w1, w2], vec![0.0], 1)
+    }
+
+    fn center_tap_transformer() -> DistTransformer {
+        let mut primary = DistWinding::new(
+            "mv",
+            vec!["1".into(), "2".into()],
+            DistWindingConn::Wye,
+            11_000.0,
+            25_000.0,
+        );
+        primary.r_pct = 0.5;
+        let mut leg_1 = DistWinding::new(
+            "lv",
+            vec!["1".into(), "4".into()],
+            DistWindingConn::Wye,
+            240.0,
+            25_000.0,
+        );
+        leg_1.r_pct = 0.5;
+        let mut leg_2 = DistWinding::new(
+            "lv",
+            vec!["4".into(), "2".into()],
+            DistWindingConn::Wye,
+            240.0,
+            25_000.0,
+        );
+        leg_2.r_pct = 0.5;
+        let mut transformer =
+            DistTransformer::new("split", vec![primary, leg_1, leg_2], vec![4.0, 4.0, 4.0], 1);
+        transformer
+            .extras
+            .insert("bmopf_subtype".into(), Value::String("center_tap".into()));
+        transformer
+    }
+
+    #[test]
+    fn center_tap_has_five_terminal_coupled_primitive_and_series_aiding_legs() {
+        let p = prepare_transformer(&center_tap_transformer()).unwrap();
+        let terminal_keys: Vec<_> = p
+            .terminals
+            .iter()
+            .map(|terminal| (terminal.bus.as_str(), terminal.terminal.as_str()))
+            .collect();
+        assert_eq!(
+            terminal_keys,
+            vec![
+                ("mv", "1"),
+                ("mv", "2"),
+                ("lv", "1"),
+                ("lv", "4"),
+                ("lv", "2")
+            ]
+        );
+        assert_eq!(p.y_1volt.len(), 3);
+        for row in &p.y_prim {
+            assert!(row.iter().copied().sum::<Complex64>().norm() < 1e-10);
+        }
+
+        // The no-current voltage relationship is +11 kV across the primary,
+        // +240 V from leg 1 to centre, and +240 V from centre to leg 2. Thus
+        // the two outer secondary terminals are 180 degrees apart.
+        let voltage = [
+            Complex64::new(11_000.0, 0.0),
+            Complex64::default(),
+            Complex64::new(240.0, 0.0),
+            Complex64::default(),
+            Complex64::new(-240.0, 0.0),
+        ];
+        for row in &p.y_series {
+            let current: Complex64 = row.iter().zip(voltage).map(|(y, v)| *y * v).sum();
+            assert!(current.norm() < 1e-9, "no-load current {current:?}");
+        }
+    }
+
+    #[test]
+    fn center_tap_supports_fixed_tap_excitation_and_neutral_impedance() {
+        let mut transformer = center_tap_transformer();
+        transformer.windings[0].tap = 1.05;
+        transformer.windings[1].r_neutral = Some(5.0);
+        transformer.windings[1].x_neutral = Some(1.0);
+        transformer.extras.insert(
+            "no_load_shunt".into(),
+            serde_json::json!({"winding": 2, "g": 0.001, "b": -0.002}),
+        );
+        let p = prepare_transformer(&transformer).unwrap();
+        let primary = p
+            .terminals
+            .iter()
+            .position(|terminal| terminal.bus == "mv" && terminal.terminal == "1")
+            .unwrap();
+        let center = p
+            .terminals
+            .iter()
+            .position(|terminal| terminal.bus == "lv" && terminal.terminal == "4")
+            .unwrap();
+        let untapped = prepare_transformer(&center_tap_transformer()).unwrap();
+        assert!((p.y_series[primary][primary] - untapped.y_series[primary][primary]).norm() > 1e-8);
+        let mut ungrounded = transformer.clone();
+        ungrounded.windings[1].r_neutral = None;
+        ungrounded.windings[1].x_neutral = None;
+        let ungrounded = prepare_transformer(&ungrounded).unwrap();
+        assert!(
+            (p.y_series[center][center]
+                - ungrounded.y_series[center][center]
+                - Complex64::new(5.0, 1.0).recip())
+            .norm()
+                < 1e-14
+        );
+        let leg_1 = p
+            .terminals
+            .iter()
+            .position(|terminal| terminal.bus == "lv" && terminal.terminal == "1")
+            .unwrap();
+        assert!((p.y_shunt[leg_1][center] - Complex64::new(-0.001, 0.002)).norm() < 1e-14);
+
+        let floating = prepare_transformer(&center_tap_transformer()).unwrap();
+        assert!(floating.grounded_terminals.is_empty());
+        let mut solid = center_tap_transformer();
+        solid.windings[1].r_neutral = Some(0.0);
+        solid.windings[1].x_neutral = Some(0.0);
+        let solid = prepare_transformer(&solid).unwrap();
+        assert!(solid
+            .grounded_terminals
+            .iter()
+            .any(|terminal| terminal.bus == "lv" && terminal.terminal == "4"));
+    }
+
+    #[test]
+    fn arbitrary_three_winding_transformer_remains_unsupported() {
+        let mut transformer = center_tap_transformer();
+        transformer.extras.clear();
+        assert!(matches!(
+            prepare_transformer(&transformer),
+            Err(TransformerError::Unsupported { .. })
+        ));
+    }
+
+    #[test]
+    fn center_tap_fixed_tap_and_excitation_match_direct_opendss_yprim() {
+        // Frozen from BMOPFTools' transformer_interoperability/center_tap.dss
+        // using OpenDSSDirect.py 0.9.4, with winding-1 tap=1.06,
+        // %noloadloss=.2, %imag=.4, and ppm_antifloat=0. Repeated centre-tap
+        // rows are aggregated into the five physical PowerIO terminals.
+        let mut transformer = center_tap_transformer();
+        transformer.name = "tx".into();
+        transformer.windings[0].bus = "f".into();
+        transformer.windings[0].terminal_map = vec!["1".into(), "4".into()];
+        transformer.windings[0].v_ref = 240.0;
+        transformer.windings[0].s_rating = 10_000.0;
+        transformer.windings[0].r_pct = 1.0;
+        transformer.windings[0].tap = 1.06;
+        for winding in &mut transformer.windings[1..] {
+            winding.bus = "t".into();
+            winding.v_ref = 120.0;
+            winding.s_rating = 10_000.0;
+            winding.r_pct = 1.0;
+        }
+        transformer.xsc_pct = vec![4.0, 4.0, 4.0];
+        transformer.extras.insert(
+            "no_load_shunt".into(),
+            serde_json::json!({
+                "winding": 2,
+                "g": 0.001388888888888889,
+                "b": -0.002777777777777778
+            }),
+        );
+        let p = prepare_transformer(&transformer).unwrap();
+        assert_entry(&p, 0, 0, 2.0601769444774067, -4.1203538889548135);
+        assert_entry(&p, 0, 2, -2.1837875611460507, 4.367575122292101);
+        assert_entry(&p, 0, 4, 2.183787561146052, -4.367575122292104);
+        assert_entry(&p, 2, 2, 9.260648148148144, -18.52129629629629);
+        assert_entry(&p, 2, 3, -13.890277777777772, 27.780555555555544);
+        assert_entry(&p, 3, 3, 27.779166666666658, -55.558333333333316);
+        assert_entry(&p, 4, 4, 9.259259259259258, -18.518518518518515);
     }
 
     #[test]

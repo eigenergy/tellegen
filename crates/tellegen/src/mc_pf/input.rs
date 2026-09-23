@@ -264,11 +264,14 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// PowerIO's typed winding has no separate neutral-terminal field. Its
-/// terminal-map contract is phase coils first, followed by the WYE neutral
-/// when one is explicit. Reject a raw permutation when terminal conventions
-/// identify a neutral/earth elsewhere; otherwise the primitive would silently
-/// use the wrong conductor as the common return.
+/// Validate the terminal-map contract of each transformer subtype before the
+/// permissive PowerIO reader lowers it to windings.
+///
+/// A two-terminal `single_phase` winding is an ordered coil, not necessarily a
+/// WYE phase followed by neutral: both phase-to-phase and phase-to-neutral
+/// connections are valid. A `center_tap` secondary has the distinct ordering
+/// `[leg 1, centre tap, leg 2]`. Only the explicitly WYE three-phase shapes use
+/// PowerIO's phase-first, neutral-last convention.
 fn validate_transformer_terminal_order(
     subtype: &str,
     name: &str,
@@ -287,6 +290,61 @@ fn validate_transformer_terminal_order(
         .map(|phases| phases.len().max(1));
     let mut non_phase = neutral_names;
     non_phase.extend(earth_names);
+    if subtype == "single_phase" {
+        validate_distinct_terminal_map(
+            "transformer",
+            name,
+            "terminal_map_from",
+            record.get("terminal_map_from"),
+            2,
+        )?;
+        validate_distinct_terminal_map(
+            "transformer",
+            name,
+            "terminal_map_to",
+            record.get("terminal_map_to"),
+            2,
+        )?;
+        return Ok(());
+    }
+    if subtype == "center_tap" {
+        validate_distinct_terminal_map(
+            "transformer",
+            name,
+            "terminal_map_from",
+            record.get("terminal_map_from"),
+            2,
+        )?;
+        let secondary = validate_distinct_terminal_map(
+            "transformer",
+            name,
+            "terminal_map_to",
+            record.get("terminal_map_to"),
+            3,
+        )?;
+        if let Some(terminals) = secondary {
+            // The centre tap is identified only through the declared
+            // neutral/earth conventions. Without them the ordering cannot be
+            // checked, and a map such as `[leg 1, leg 2, centre]` would lower
+            // to the wrong pair of half windings while still producing
+            // plausible voltages, so refuse rather than guess.
+            if non_phase.is_empty() {
+                return Err(format!(
+                    "transformer `{name}` field `terminal_map_to` needs `terminal_conventions` to declare a neutral or earth terminal so the centre tap can be identified"
+                ));
+            }
+            let is_non_phase = |terminal: &str| non_phase.iter().any(|n| n == terminal);
+            if !is_non_phase(terminals[1])
+                || is_non_phase(terminals[0])
+                || is_non_phase(terminals[2])
+            {
+                return Err(format!(
+                    "transformer `{name}` field `terminal_map_to` must order the centre-tap neutral/earth between the two secondary legs"
+                ));
+            }
+        }
+        return Ok(());
+    }
     if non_phase.is_empty() {
         return Ok(());
     }
@@ -316,6 +374,7 @@ fn validate_transformer_terminal_order(
         }
         return Ok(());
     }
+
     let from_is_wye = !matches!(subtype, "delta_wye");
     let to_is_wye = !matches!(subtype, "wye_delta");
     if from_is_wye {
@@ -347,6 +406,37 @@ fn validate_transformer_terminal_order(
         )?;
     }
     Ok(())
+}
+
+fn validate_distinct_terminal_map<'a>(
+    kind: &str,
+    name: &str,
+    field: &str,
+    value: Option<&'a Value>,
+    expected: usize,
+) -> Result<Option<Vec<&'a str>>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let Some(map) = value.as_array() else {
+        return Err(format!(
+            "{kind} `{name}` field `{field}` must be an array of {expected} terminal names"
+        ));
+    };
+    let names: Vec<&str> = map.iter().filter_map(Value::as_str).collect();
+    if names.len() != expected {
+        return Err(format!(
+            "{kind} `{name}` field `{field}` must contain exactly {expected} terminal names"
+        ));
+    }
+    for (index, terminal) in names.iter().enumerate() {
+        if terminal.is_empty() || names[..index].contains(terminal) {
+            return Err(format!(
+                "{kind} `{name}` field `{field}` must contain {expected} distinct, non-empty terminal names"
+            ));
+        }
+    }
+    Ok(Some(names))
 }
 
 fn terminal_convention_names(conventions: Option<&Value>, role: &str) -> Vec<String> {
@@ -1016,6 +1106,168 @@ mod tests {
             }}
         });
         validate_bmopf_json(&raw.to_string()).unwrap();
+    }
+
+    #[test]
+    fn accepts_phase_to_phase_single_phase_and_center_tap_primary_maps() {
+        let single_phase = json!({
+            "terminal_conventions": {"phase": ["1", "2", "3"], "neutral": ["4"], "earth": []},
+            "transformer": {"single_phase": {"t": {
+                "terminal_map_from": ["1", "2"],
+                "terminal_map_to": ["2", "4"]
+            }}}
+        });
+        validate_bmopf_json(&single_phase.to_string()).unwrap();
+
+        let center_tap = json!({
+            "terminal_conventions": {"phase": ["1", "2", "3"], "neutral": ["4"], "earth": []},
+            "transformer": {"center_tap": {"t": {
+                "terminal_map_from": ["1", "2"],
+                "terminal_map_to": ["1", "4", "2"]
+            }}}
+        });
+        validate_bmopf_json(&center_tap.to_string()).unwrap();
+    }
+
+    #[test]
+    fn rejects_malformed_center_tap_terminal_maps() {
+        let mut raw = json!({
+            "terminal_conventions": {"phase": ["1", "2", "3"], "neutral": ["4"], "earth": []},
+            "transformer": {"center_tap": {"t": {
+                "terminal_map_from": ["1", "2"],
+                "terminal_map_to": ["1", "2", "4"]
+            }}}
+        });
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("centre-tap neutral/earth"), "{error}");
+
+        raw["transformer"]["center_tap"]["t"]["terminal_map_to"] = json!(["1", "4", "1"]);
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("distinct"), "{error}");
+
+        raw["transformer"]["center_tap"]["t"]["terminal_map_to"] = json!(["1", "4"]);
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("exactly 3"), "{error}");
+
+        // Without a declared neutral or earth the centre tap cannot be
+        // identified, so a well-formed map is refused instead of being
+        // lowered to an unchecked winding orientation.
+        raw["transformer"]["center_tap"]["t"]["terminal_map_to"] = json!(["1", "4", "2"]);
+        raw["terminal_conventions"] =
+            json!({"phase": ["1", "2", "3", "4"], "neutral": [], "earth": []});
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("declare a neutral or earth"), "{error}");
+
+        raw.as_object_mut().unwrap().remove("terminal_conventions");
+        let error = validate_bmopf_json(&raw.to_string()).unwrap_err();
+        assert!(error.contains("declare a neutral or earth"), "{error}");
+    }
+
+    #[test]
+    fn solves_phase_to_phase_center_tap_with_unbalanced_split_phase_loads() {
+        // Adapted from BMOPFTools' split-phase comparison cases. The primary
+        // is connected phase-to-phase and the second load uses the reversed
+        // centre-to-leg-2 orientation of the anti-series half-winding.
+        let raw = json!({
+            "name": "phase-to-phase-center-tap",
+            "terminal_conventions": {"phase": ["1", "2", "3"], "neutral": ["4"], "earth": []},
+            "bus": {
+                "mv": {"terminal_names": ["1", "2"]},
+                "lv": {"terminal_names": ["1", "4", "2"], "perfectly_grounded_terminals": ["4"]}
+            },
+            "voltage_source": {"source": {
+                "bus": "mv", "terminal_map": ["1", "2"],
+                "v_magnitude": [5500.0, 5500.0],
+                "v_angle": [0.0, std::f64::consts::PI]
+            }},
+            "transformer": {"center_tap": {"split": {
+                "bus_from": "mv", "bus_to": "lv",
+                "terminal_map_from": ["1", "2"],
+                "terminal_map_to": ["1", "4", "2"],
+                "v_nom_from": 11000.0, "v_nom_to": 240.0,
+                "s_rating": 25000.0, "tap": 1.03,
+                "r_series_from": 24.2, "x_series_from": 96.8,
+                "r_series_to": 0.01152, "x_series_to": 0.04608,
+                "r_neutral_to": 5.0, "x_neutral_to": 1.0,
+                "no_load_shunt": {"winding": 2, "g": 0.001, "b": -0.002}
+            }}},
+            "load": {
+                "leg-1": {
+                    "bus": "lv", "terminal_map": ["1", "4"],
+                    "configuration": "SINGLE_PHASE", "model": "constant_power",
+                    "p_nom": [5000.0], "q_nom": [1000.0], "v_nom": [240.0]
+                },
+                "leg-2": {
+                    "bus": "lv", "terminal_map": ["4", "2"],
+                    "configuration": "SINGLE_PHASE", "model": "constant_power",
+                    "p_nom": [2500.0], "q_nom": [500.0], "v_nom": [240.0]
+                }
+            }
+        });
+        let output = solve_bmopf_json(&raw.to_string(), &McPfOptions::default()).unwrap();
+        let result: super::super::McPfResult = serde_json::from_str(&output).unwrap();
+        assert!(result.converged);
+        assert_eq!(result.factorization_count, 1);
+        assert!(result.physical_kcl_residual < 1e-6);
+        let voltage = |terminal: &str| {
+            let value = result
+                .terminals
+                .iter()
+                .find(|item| item.bus == "lv" && item.terminal == terminal)
+                .unwrap()
+                .voltage;
+            num_complex::Complex64::new(value.re, value.im)
+        };
+        let leg_1 = voltage("1") - voltage("4");
+        let leg_2 = voltage("4") - voltage("2");
+        assert!(leg_1.re > 0.0 && leg_2.re > 0.0);
+        assert!((voltage("1") + voltage("2") - 2.0 * voltage("4")).norm() > 1e-3);
+    }
+
+    #[test]
+    fn solves_phase_to_phase_single_phase_transformer() {
+        let raw = json!({
+            "name": "phase-to-phase-single-phase-transformer",
+            "terminal_conventions": {"phase": ["1", "2", "3"], "neutral": ["4"], "earth": []},
+            "bus": {
+                "mv": {"terminal_names": ["1", "2"]},
+                "lv": {"terminal_names": ["1", "2"]}
+            },
+            "voltage_source": {"source": {
+                "bus": "mv", "terminal_map": ["1", "2"],
+                "v_magnitude": [5500.0, 5500.0],
+                "v_angle": [0.0, std::f64::consts::PI]
+            }},
+            "transformer": {"single_phase": {"t": {
+                "bus_from": "mv", "bus_to": "lv",
+                "terminal_map_from": ["1", "2"],
+                "terminal_map_to": ["1", "2"],
+                "v_nom_from": 11000.0, "v_nom_to": 240.0,
+                "s_rating": 50000.0,
+                "r_series_from": 24.2, "x_series_from": 96.8,
+                "r_series_to": 0.01152, "x_series_to": 0.04608
+            }}},
+            "load": {"load": {
+                "bus": "lv", "terminal_map": ["1", "2"],
+                "configuration": "SINGLE_PHASE", "model": "constant_power",
+                "p_nom": [10000.0], "q_nom": [2000.0], "v_nom": [240.0]
+            }}
+        });
+        let output = solve_bmopf_json(&raw.to_string(), &McPfOptions::default()).unwrap();
+        let result: super::super::McPfResult = serde_json::from_str(&output).unwrap();
+        assert!(result.converged);
+        assert_eq!(result.factorization_count, 1);
+        let voltage = |terminal: &str| {
+            let value = result
+                .terminals
+                .iter()
+                .find(|item| item.bus == "lv" && item.terminal == terminal)
+                .unwrap()
+                .voltage;
+            num_complex::Complex64::new(value.re, value.im)
+        };
+        let secondary = voltage("1") - voltage("2");
+        assert!(secondary.norm() > 200.0 && secondary.norm() < 240.0);
     }
 
     #[test]
