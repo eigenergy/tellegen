@@ -2363,6 +2363,12 @@ export class Controller {
 			)
 				throw new Error('The case changed while calculating. Run AC power flow again');
 			if (!result.converged) throw new Error('AC power flow did not converge');
+			// A load edit staged against the previous session has nothing to
+			// apply to the fresh operating point; drop its pending flush.
+			if (c.mcEditTimer !== null) {
+				clearTimeout(c.mcEditTimer);
+				c.mcEditTimer = null;
+			}
 			c.mcSession?.free();
 			c.mcSession = nextSession;
 			nextSession = null;
@@ -2461,6 +2467,10 @@ export class Controller {
 		)
 			throw new Error('The selected case changed. Attach the coordinates again');
 		const { graph, ...summary } = payload;
+		if (c.mcEditTimer !== null) {
+			clearTimeout(c.mcEditTimer);
+			c.mcEditTimer = null;
+		}
 		c.mcSession?.free();
 		c.mcSession = null;
 		c.mcLoadBranches = [];
@@ -2523,9 +2533,15 @@ export class Controller {
 	};
 
 	private flushMultiLoadPowers = async (c: MulticonductorCase): Promise<void> => {
+		// A running flush picks the new revision up in its own loop.
 		if (c.mcEditRunning) return;
 		const session = c.mcSession;
-		if (!session || !this.app.multiCases.includes(c)) return;
+		if (!session || !this.app.multiCases.includes(c)) {
+			// `queueMultiLoadPower` marked the case as solving on behalf of
+			// this flush; release it, or Save and Export stay disabled.
+			c.solving = false;
+			return;
+		}
 		c.mcEditRunning = true;
 		c.solving = true;
 		this.app.error = null;
@@ -2549,15 +2565,29 @@ export class Controller {
 			}
 		} catch (error) {
 			if (session === c.mcSession) {
-				c.mcLoadBranches = await session.loadBranches().catch(() => c.mcLoadBranches);
+				try {
+					c.mcLoadBranches = await session.loadBranches();
+				} catch {
+					// The session itself no longer answers (the worker trapped
+					// or the handle is gone). Retrying against it would fail
+					// forever, so drop it and let the next run rebuild the
+					// session against a fresh worker.
+					session.free();
+					c.mcSession = null;
+					c.mcLoadEdits = [];
+				}
 			}
 			this.app.error = errorText(error);
-			this.app.errorRetry = () => void this.flushMultiLoadPowers(c);
+			this.app.errorRetry = c.mcSession
+				? () => void this.flushMultiLoadPowers(c)
+				: () => void this.solveMultiCase(c).catch(() => {});
 		} finally {
-			if (session === c.mcSession) {
-				c.mcEditRunning = false;
-				c.solving = false;
-			}
+			// The running flag belongs to this call regardless of whether the
+			// session was replaced meanwhile; leaving it set would silently
+			// ignore every later edit. The solving flag is shared with an
+			// explicit solve, which clears it itself when it owns it.
+			c.mcEditRunning = false;
+			if (session === c.mcSession || c.mcSession === null) c.solving = false;
 		}
 	};
 

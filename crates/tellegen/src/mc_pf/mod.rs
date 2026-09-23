@@ -363,12 +363,30 @@ impl McPfSession {
         }
 
         let mut network = self.instance.network().clone();
-        for (load, power) in self.prepared.loads.iter().zip(&next_power) {
-            let row = network
-                .loads_mut()
-                .iter_mut()
-                .find(|row| row.name == load.name)
-                .ok_or_else(|| format!("load `{}` is absent from its network", load.name))?;
+        // Index the network rows once. A per-load linear search is quadratic
+        // in the load count, which on a feeder with thousands of loads
+        // dominates the cost of a single-branch edit (#132 tracks removing
+        // the clone itself).
+        let row_index: BTreeMap<&str, usize> = network
+            .loads()
+            .iter()
+            .enumerate()
+            .map(|(index, row)| (row.name.as_str(), index))
+            .collect();
+        let row_positions = self
+            .prepared
+            .loads
+            .iter()
+            .map(|load| {
+                row_index
+                    .get(load.name.as_str())
+                    .copied()
+                    .ok_or_else(|| format!("load `{}` is absent from its network", load.name))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = network.loads_mut();
+        for (position, power) in row_positions.into_iter().zip(&next_power) {
+            let row = &mut rows[position];
             row.p_nom = power.iter().map(|value| value.re).collect();
             row.q_nom = power.iter().map(|value| value.im).collect();
         }

@@ -28,6 +28,14 @@
 	}
 
 	const NEUTRAL_RGBA = [120, 114, 102, 255] as const;
+
+	/** A cleared or unparsable number field is not a request for zero load;
+	 * only a finite value counts as an edit. */
+	function parseLoadInput(raw: string): number | null {
+		if (raw.trim() === '') return null;
+		const value = Number(raw);
+		return Number.isFinite(value) ? value : null;
+	}
 	const ATTACHMENT_LEGEND: DistAttachmentKind[] = ['source', 'generator', 'ibr', 'load', 'shunt'];
 
 	function terminalColor(t: string): string {
@@ -153,14 +161,14 @@
 								type="number"
 								step="any"
 								value={load.p_w / 1000}
-								onchange={(event) =>
-									ctrl.queueMultiLoadPower(
-										mc,
-										load.load,
-										load.branch,
-										Number(event.currentTarget.value) * 1000,
-										load.q_var
-									)}
+								onchange={(event) => {
+									const kw = parseLoadInput(event.currentTarget.value);
+									if (kw === null) {
+										event.currentTarget.value = String(load.p_w / 1000);
+										return;
+									}
+									ctrl.queueMultiLoadPower(mc, load.load, load.branch, kw * 1000, load.q_var);
+								}}
 							/></label
 						>
 						<label
@@ -168,14 +176,14 @@
 								type="number"
 								step="any"
 								value={load.q_var / 1000}
-								onchange={(event) =>
-									ctrl.queueMultiLoadPower(
-										mc,
-										load.load,
-										load.branch,
-										load.p_w,
-										Number(event.currentTarget.value) * 1000
-									)}
+								onchange={(event) => {
+									const kvar = parseLoadInput(event.currentTarget.value);
+									if (kvar === null) {
+										event.currentTarget.value = String(load.q_var / 1000);
+										return;
+									}
+									ctrl.queueMultiLoadPower(mc, load.load, load.branch, load.p_w, kvar * 1000);
+								}}
 							/></label
 						>
 						<button

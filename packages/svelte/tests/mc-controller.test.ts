@@ -168,6 +168,130 @@ describe('multiconductor calculation and coordinates', () => {
 		}
 	});
 
+	it('releases the edit flags when a fresh solve replaces the session mid-flush', async () => {
+		vi.useFakeTimers();
+		try {
+			const { ctrl, c } = host();
+			const loads: McLoadBranchState[] = [
+				{
+					load: 'customer',
+					bus: 'load',
+					branch: 0,
+					p_w: 10_000,
+					q_var: 2_000,
+					base_p_w: 10_000,
+					base_q_var: 2_000
+				}
+			];
+			let finishReplace!: (value: McPfResult) => void;
+			const first = {
+				result: vi.fn(async () => result),
+				loadBranches: vi.fn(async () => loads),
+				replaceLoadPowers: vi.fn(
+					() => new Promise<McPfResult>((resolve) => (finishReplace = resolve))
+				),
+				inputModule: vi.fn(async () => 'input'),
+				snapshot: vi.fn(),
+				free: vi.fn()
+			} as unknown as BrowserMcPfSession;
+			const second = {
+				result: vi.fn(async () => result),
+				loadBranches: vi.fn(async () => loads),
+				replaceLoadPowers: vi.fn(async () => ({ ...result, iterations: 2 })),
+				inputModule: vi.fn(async () => 'input'),
+				snapshot: vi.fn(),
+				free: vi.fn()
+			} as unknown as BrowserMcPfSession;
+			let finishCreate!: (value: BrowserMcPfSession) => void;
+			const create = vi
+				.fn<() => Promise<BrowserMcPfSession>>()
+				.mockResolvedValueOnce(first)
+				.mockImplementationOnce(
+					() => new Promise<BrowserMcPfSession>((resolve) => (finishCreate = resolve))
+				);
+			ctrl.mcTransport.createMcPfSession = create;
+
+			await ctrl.solveMultiCase(c);
+			expect(c.mcSession).toBe(first);
+
+			// An explicit re-solve is in flight while the user edits a load
+			// against the retained session.
+			const resolve = ctrl.solveMultiCase(c);
+			ctrl.queueMultiLoadPower(c, 'customer', 0, 11_000, 2_100);
+			await vi.advanceTimersByTimeAsync(200);
+			expect(first.replaceLoadPowers).toHaveBeenCalledTimes(1);
+			expect(c.mcEditRunning).toBe(true);
+
+			// The solve finishes first and installs a new session; the stale
+			// flush then completes against the replaced one.
+			finishCreate(second);
+			await resolve;
+			expect(c.mcSession).toBe(second);
+			finishReplace(result);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(c.mcEditRunning).toBe(false);
+			expect(c.solving).toBe(false);
+
+			// Later edits still reach the live session.
+			ctrl.queueMultiLoadPower(c, 'customer', 0, 12_000, 2_100);
+			await vi.advanceTimersByTimeAsync(200);
+			expect(second.replaceLoadPowers).toHaveBeenCalledWith([
+				{ load: 'customer', branch: 0, p_w: 12_000, q_var: 2_100 }
+			]);
+			expect(c.mcEditRunning).toBe(false);
+			expect(c.solving).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('drops a session that stops answering and offers a full re-solve', async () => {
+		vi.useFakeTimers();
+		try {
+			const { ctrl, c, app } = host();
+			const loads: McLoadBranchState[] = [
+				{
+					load: 'customer',
+					bus: 'load',
+					branch: 0,
+					p_w: 10_000,
+					q_var: 2_000,
+					base_p_w: 10_000,
+					base_q_var: 2_000
+				}
+			];
+			const dead = new Error('engine worker failed');
+			let alive = true;
+			const session = {
+				result: vi.fn(async () => result),
+				loadBranches: vi.fn(async () => {
+					if (!alive) throw dead;
+					return loads;
+				}),
+				replaceLoadPowers: vi.fn(async () => {
+					alive = false;
+					throw dead;
+				}),
+				inputModule: vi.fn(async () => 'input'),
+				snapshot: vi.fn(),
+				free: vi.fn()
+			} as unknown as BrowserMcPfSession;
+			ctrl.mcTransport.createMcPfSession = vi.fn(async () => session);
+
+			await ctrl.solveMultiCase(c);
+			ctrl.queueMultiLoadPower(c, 'customer', 0, 11_000, 2_100);
+			await vi.advanceTimersByTimeAsync(200);
+			expect(app.error).toBe('engine worker failed');
+			expect(c.mcSession).toBeNull();
+			expect(session.free).toHaveBeenCalled();
+			expect(c.mcEditRunning).toBe(false);
+			expect(c.solving).toBe(false);
+			expect(app.errorRetry).not.toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('records terminal results and rejects concurrent work', async () => {
 		const { ctrl, c, solve } = host();
 		const pending = ctrl.solveMultiCase(c, { tolerance: 1e-8 });
