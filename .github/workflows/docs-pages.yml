@@ -10,7 +10,10 @@ permissions: {}
 
 concurrency:
   group: tellegen-docs-pages-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded pull-request builds only. A cancelled main run can stop
+  # `actions/deploy-pages` mid-deployment and leave the Pages queue stuck,
+  # which is what the retry loop in the deploy job then has to work around.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   MDBOOK_VERSION: v0.5.3

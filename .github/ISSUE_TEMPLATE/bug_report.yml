@@ -1,0 +1,50 @@
+name: Bug report
+description: Something solves wrong, crashes, or does not render.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      multiple: true
+      options:
+        - tellegen.dev (hosted demo)
+        - "@tellegen/svelte"
+        - "@tellegen/engine"
+        - "@tellegen/webmcp"
+        - tellegen crate (Rust)
+        - tellegen-cli or tellegen-server
+        - Python binding
+        - docs
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Package or crate version, or the demo's commit shown in the footer.
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and OS
+      placeholder: Chrome 131 on Windows 11, touchscreen laptop
+  - type: textarea
+    id: case
+    attributes:
+      label: Case file
+      description: >-
+        If a specific case triggers it, attach it or a reduced version. Do not
+        attach confidential or CEII network data; a synthetic reproduction is
+        enough.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output or error text
+      render: text

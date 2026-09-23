@@ -35,7 +35,14 @@ jobs:
       # Call the frontend build directly. `build:web` rebuilds @tellegen/svelte,
       # which `check:web` above already built.
       - run: npm --workspace tellegen-frontend run build
+      # The README presents both examples as working integrations; build them
+      # against the workspace packages so a public API change cannot break
+      # them unnoticed.
+      - run: npm run build:example
       - run: npm run smoke:web
+      # The WebMCP challenge evidence harness (evidence/webmcp) has its own
+      # unit tests and nothing else runs them.
+      - run: npm run test:evidence
       - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
       - name: Build the native Study interface for browser parity
         run: cargo build -p tellegen-cli --features conic
@@ -47,6 +54,7 @@ jobs:
       # results. The line is `high`. Below it sit a SvelteKit request handling
       # advisory and the cookie parser under it, neither of which the shipped
       # artifact runs: apps/web builds static through adapter-static, and
-      # tellegen-server serves the files.
+      # tellegen-server serves the files. The script retries when the audit
+      # endpoint itself fails, which once turned main red without an advisory.
       - if: ${{ !cancelled() }}
-        run: npm audit --audit-level=high
+        run: .github/scripts/npm-audit.sh

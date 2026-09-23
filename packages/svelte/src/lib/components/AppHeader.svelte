@@ -84,16 +84,18 @@
 				>
 			</div>
 		{/each}
-		{#if ctrl.showFileDropUi}
-			<button
-				class="ghost filedrop-ui"
-				title="parsed in your browser; the file never uploads"
-				onclick={() => fileInput?.click()}
+		<button
+			class="ghost filedrop-ui"
+			title="parsed in your browser; the file never uploads"
+			onclick={() => fileInput?.click()}
+		>
+			<span class="cname"
+				><span class="arrow">&#8675;</span>{ctrl.showFileDropUi
+					? 'drop a case file'
+					: 'open a case file'}</span
 			>
-				<span class="cname"><span class="arrow">&#8675;</span>drop a case file</span>
-				<span class="cregion mono">case + geo files</span>
-			</button>
-		{/if}
+			<span class="cregion mono">case + geo files</span>
+		</button>
 	</nav>
 	<span class="kicker mono">
 		<a href={config.orgHref} target="_blank" rel="noreferrer">{config.orgLabel}</a>

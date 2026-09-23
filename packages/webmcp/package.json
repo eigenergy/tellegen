@@ -2,6 +2,16 @@
   "name": "@tellegen/webmcp",
   "version": "0.1.0",
   "description": "WebMCP tools for interactive Tellegen browser hosts.",
+  "keywords": [
+    "webmcp",
+    "mcp",
+    "model-context-protocol",
+    "agents",
+    "power-flow",
+    "optimal-power-flow",
+    "power-systems",
+    "browser"
+  ],
   "license": "MIT",
   "type": "module",
   "repository": {
