@@ -18,6 +18,7 @@
 - [Display Data](display-data.md)
 - [Synthetic Layout](synthetic-layout.md)
 - [Technology choices](technology-evaluation.md)
+- [AC OPF solver decision](acopf-pounce-decision.md)
 - [Architecture](architecture.md)
   - [Release Architecture](release-architecture.md)
   - [Formulations](formulations.md)
