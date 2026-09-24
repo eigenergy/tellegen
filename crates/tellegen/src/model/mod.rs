@@ -22,6 +22,9 @@ use powerio_tx::{IndexedNetwork, NormalizeOptions};
 
 #[cfg(feature = "sensitivity")]
 mod ac;
+#[cfg(feature = "acopf")]
+#[allow(dead_code)] // Private model boundary; solve/emit is added in the next stacked change.
+mod acopf;
 #[cfg(test)]
 mod cases;
 mod dc;
@@ -305,7 +308,7 @@ fn reject_unfiltered_normalized_elements(network: &BalancedNetwork) -> Result<()
     ))
 }
 
-fn reject_unsupported_active_elements(network: &BalancedNetwork) -> Result<(), String> {
+pub(super) fn reject_unsupported_active_elements(network: &BalancedNetwork) -> Result<(), String> {
     let closed_switches = network
         .switches()
         .iter()

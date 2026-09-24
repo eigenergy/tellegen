@@ -53,6 +53,53 @@ contains `AcOpfInstance`, `build_ac_opf_preparation`, and `AcOpfSolution`; the
 model compiler must consume those APIs rather than reinterpret MATPOWER data or
 reuse Tellegen's modified CATS power-flow physics.
 
+## Canonical model boundary
+
+The opt-in feature now also contains a private, backend-neutral polar model
+compiler. It consumes `AcOpfInstance` only through
+`build_ac_opf_preparation`, preserves PowerIO's generator and branch columns
+and source maps, and emits an in-memory POUNCE expression DAG with exact sparse
+derivatives. It is not wired to dispatch, solution emission, capabilities, or
+the browser.
+
+The recorded assembly policy is per-unit values, no zero-impedance skipping,
+no synthesized thermal ratings, and PowerIO's angle-interval correction
+enabled. The preparation, including those choices, and the formulation version
+are hashed into the model fingerprint. Changing any policy is therefore a
+model change rather than a solver tuning option.
+
+The variable map carries bus `Va`/`Vm`, generator-level `Pg`/`Qg`, and one
+epigraph column for each active convex piecewise generator cost. Constraint
+maps retain P/Q balance rows, zero reference angles, selected angle bounds,
+both terminal thermal margins, and exact piecewise segments. Balance rows use
+generation minus branch withdrawals, shunt consumption, and demand equal to
+zero. Thermal and epigraph rows use nonnegative remaining margin. No dual is
+published until these signs and unit conversions are independently validated.
+
+The tests evaluate the full pi model at a non-flat point with taps, phase
+shifts, charging and bus shunts, compare both-end flows and nodal balances to a
+separate numerical calculation, and compare the sparse Jacobian and
+Lagrangian Hessian to finite differences. Unsupported active storage,
+voltage-dependent loads, and remote voltage regulation fail with the source
+element's identity.
+
+An ignored, path-driven `external_model_build_ladder` test makes the standard
+MATPOWER 14/30/300-bus construction check reproducible without vendoring a
+second copy of those fixtures. On 24 September 2026, a local arm64 debug build
+after compilation produced:
+
+| case | variables / rows | nnz Jacobian / Hessian | expression compile | derivative tape | max directional J / H error |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 14 | 38 / 49 | 267 / 127 | 1.849 ms | 3.841 ms | `4.545e-9` / `1.557e-7` |
+| 30 | 72 / 184 | 871 / 260 | 1.016 ms | 12.803 ms | `7.186e-9` / `3.412e-8` |
+| 300 | 738 / 1,012 | 5,433 / 2,605 | 8.380 ms | 70.444 ms | `2.723e-7` / `3.601e-7` |
+
+These are correctness/prototype measurements, not solver performance claims.
+Run the ladder with `TELLEGEN_ACOPF_FIXTURES` pointing to a directory containing
+`case14.m`, `case30.m`, and `case300.m`. Peak RSS was not available inside the
+sandbox used for this run, and frozen-NL parity remains a separate acceptance
+measurement.
+
 ## Browser ABI
 
 POUNCE's proven browser target is a separate `wasm32-wasip1` module with its
@@ -79,10 +126,9 @@ EPL-2.0 obligations, include its license/notices, and provide a reasonable
 corresponding-source location. Until then, the feature remains a development
 probe and `Problem::Acopf` remains unavailable.
 
-## Next gate
+## Remaining model and solve gates
 
-The next branch may build 3-, 14-, and 300-bus expression prototypes only
-after it records model-construction time and memory and compares objective,
-constraints, sparse Jacobian, and Lagrangian Hessian against the frozen
-benchmark and finite differences. A failure of expression-DAG scaling changes
+Before solve/emission is made callable, record native peak memory and compare
+the 14/30/300 expressions against the frozen benchmark values in addition to
+the finite-difference checks above. A failure of expression-DAG scaling changes
 the private solver adapter, not the PowerIO problem or solution contract.
