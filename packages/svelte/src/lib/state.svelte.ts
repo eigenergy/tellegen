@@ -26,7 +26,8 @@ import {
 } from '@tellegen/engine';
 import type { MultiView } from './multiconductor.js';
 
-export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
+export type SolveBackend =
+	'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'pounce-wasi' | 'rust-server';
 /** A map framing request: a case id, 'all', or one branch to center. */
 export type FrameTarget =
 	string | 'all' | { caseId: string; branchId: number } | { caseId: string; busId: number };
@@ -127,6 +128,8 @@ export class LocalCase {
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveBackend = $state<SolveBackend | null>(null);
+	/** Short solver-specific diagnostic shown beside the elapsed time. */
+	solveDetail = $state<string | null>(null);
 	solveFallbackReason = $state<string | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;
@@ -182,6 +185,8 @@ export class CaseState {
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveBackend = $state<SolveBackend | null>(null);
+	/** Short solver-specific diagnostic shown beside the elapsed time. */
+	solveDetail = $state<string | null>(null);
 	solveFallbackReason = $state<string | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;

@@ -33,7 +33,8 @@ invoke the released restoration path explicitly.
 ## Feasibility boundary
 
 The non-default `tellegen/acopf` feature enables `pounce-nl` and `pounce-rs`.
-No adapter forwards it. The native `acopf_hs071_probe` example constructs
+No shipping adapter forwards it; the unpublished development WASI adapter does.
+The native `acopf_hs071_probe` example constructs
 HS071 with `NlProblem::from_expressions`, builds `NlTnlp`, verifies the sparse
 Jacobian and Lagrangian-Hessian structures, solves with exact derivatives, and
 checks the result independently.
@@ -138,7 +139,7 @@ count, solver constraint/KKT residuals, independently checked primal residual,
 and model fingerprint. Failure and cancellation errors include the available
 iteration and residual diagnostics.
 
-## Browser ABI
+## Experimental browser ABI
 
 POUNCE's proven browser target is a separate `wasm32-wasip1` module with its
 WASI clock/random/output shim. A direct `wasm32-unknown-unknown`/wasm-bindgen
@@ -147,6 +148,21 @@ probe compiles and loads but traps when the solver first calls
 `acopf`, and a browser AC OPF solve must use a dedicated, terminable worker with
 a small typed message boundary and one POUNCE memory. There must be no
 synchronous main-thread fallback.
+
+The development integration now implements that boundary as the unpublished
+`tellegen-acopf-wasi` crate. Its raw ABI accepts one PowerIO module and one
+solve request, then returns a length-prefixed `SolveResponse`. The JavaScript
+host instantiates it with a minimal WASI Preview 1 clock/random/output shim in a
+fresh worker for every solve. Cancelling or superseding a solve terminates that
+worker; there is deliberately no synchronous or main-thread fallback.
+
+The hosted UI accepts an optional `PUBLIC_TELLEGEN_ACOPF_WASM_URL`. It probes
+that URL through the worker before enabling the AC OPF selector. Ordinary
+builds leave the variable unset and do not build or copy the EPL-bearing
+asset. CI opts in, builds it with `npm run wasm:acopf`, and runs a three-bus
+browser solve. The current UI path is intentionally base-case only because the
+canonical AC OPF API rejects request edits and sensitivities rather than
+silently dropping them.
 
 A single wasm-bindgen module can be reconsidered after POUNCE has a portable
 clock. That reconsideration must measure artifact size, memory growth, and hard
@@ -167,10 +183,21 @@ default and shipping builds.
 
 ## Remaining release gates
 
-Before distribution, replace the Git pin with a tagged POUNCE release, wire or
-invoke its restoration and second-opinion path explicitly, and add a small
-regression that proves restoration is exercised (`restoration_calls > 0`). Then
-rerun the large PGLib comparison. Also record native peak memory and compare the
-14/30/300 expressions against frozen benchmark values in addition to the
-finite-difference checks above. A failure of expression-DAG scaling changes the
-private solver adapter, not the PowerIO problem or solution contract.
+The draft browser integration is not a distribution approval. Before enabling
+it in a release or deployment, all of these gates remain mandatory:
+
+1. Replace the Git pin with a tagged POUNCE release containing PR #961.
+2. Wire or invoke POUNCE's restoration and second-opinion path from Tellegen,
+   and add a regression proving restoration is exercised (`restoration_calls >
+   0`).
+3. Approve the EPL-2.0 distribution obligations, ship the required POUNCE
+   license/notices, and publish a reasonable corresponding-source location.
+4. Rerun and record the large PGLib/PowerModels.jl comparison for the exact
+   release artifact.
+5. Record native and browser peak memory, artifact size, load time, solve time,
+   cancellation, and repeated-worker isolation on the 14/30/300 ladder.
+6. Compare the 14/30/300 expressions against frozen benchmark values in
+   addition to the finite-difference checks above.
+
+A failure of expression-DAG scaling changes the private solver adapter, not the
+PowerIO problem or solution contract.

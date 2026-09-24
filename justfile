@@ -69,6 +69,11 @@ crate-package:
 wasm:
     npm run wasm
 
+# Build the separate development-only EPL AC OPF reactor. Ordinary web builds
+# do not copy this asset; set PUBLIC_TELLEGEN_ACOPF_WASM_URL explicitly too.
+wasm-acopf:
+    npm run wasm:acopf
+
 # Type-check the engine package.
 engine-check:
     npm run check:engine

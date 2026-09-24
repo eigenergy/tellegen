@@ -35,7 +35,9 @@ interface:
 The non-default native `acopf` feature adds a fifth, development-only path: an
 exact polar AC OPF model solved through POUNCE. It has independent primal
 validation and portable PowerIO solution emission, but no shipping adapter,
-dual/sensitivity contract, or distribution approval.
+dual/sensitivity contract, or distribution approval. A separate unpublished
+WASI adapter and one-shot worker expose the canonical base-case solve for
+development and CI; ordinary browser builds do not contain its POUNCE asset.
 
 The formulations share one result envelope, but they do not claim the same
 quantities. DC power flow returns angles and branch flows without prices,

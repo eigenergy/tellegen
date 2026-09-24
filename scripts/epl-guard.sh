@@ -37,4 +37,5 @@ check_no_pounce tellegen-server -p tellegen-server
 check_no_pounce tellegen-cli -p tellegen-cli
 check_no_pounce tellegen-py -p tellegen-py
 check_has_pounce tellegen-acopf -p tellegen --no-default-features --features acopf
-echo "ok: pounce is confined to the opt-in tellegen/acopf feature"
+check_has_pounce tellegen-acopf-wasi -p tellegen-acopf-wasi
+echo "ok: pounce is confined to the opt-in tellegen/acopf feature and development WASI adapter"

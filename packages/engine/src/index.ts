@@ -3,6 +3,11 @@
  * thread otherwise (see host.ts). Nothing downloads until the first engine
  * call; dropped files are parsed locally and never leave the machine. */
 import { engineHost, isolatedEngineHost, type EngineHost } from "./host.js";
+export {
+  probeAcOpfWorker,
+  solveAcOpfModule,
+  type AcOpfWorkerFactory,
+} from "./acopf.js";
 import { isPermanentWasmLoadFailure } from "./errors.js";
 import {
   assertEngineInputBytes,
@@ -734,7 +739,10 @@ export class BrowserMcPfSession {
     );
   }
 
-  async snapshot(studyId: string, studyTitle: string): Promise<McStudySnapshot> {
+  async snapshot(
+    studyId: string,
+    studyTitle: string,
+  ): Promise<McStudySnapshot> {
     return JSON.parse(
       expectText(
         await this.host.call({
@@ -943,7 +951,8 @@ export type SensTarget = { bus: number } | { branch: number };
  * ∂(price, active) / ∂(demand, active) for a bus target, or ∂(price, active) /
  * ∂(line limit) for a branch target. The *formulation* is no longer fixed here — it is
  * a parameter threaded from the UI's selector through `createStudy` (every formulation the
- * full wasm build carries returns nodal marginal values, so these columns apply to all of them). The
+ * default wasm Study carries returns nodal marginal values, so these columns apply to all of them).
+ * Experimental AC OPF uses the separate one-shot WASI path and requests no sensitivities. The
  * operand/parameters stay centralized so `createStudy` and the Study's `commit`/`preview`
  * requests read one source. */
 const STUDY_CAPABILITY = {
@@ -1082,7 +1091,20 @@ function sensitivityColumn(
   return null;
 }
 
-function solveResponseToSolution(out: StudySolveResponse): Solution {
+export interface SolutionResponseProjection {
+  objective?: number | null;
+  lmp?: { bus: number; value: number }[] | null;
+  vm?: { bus: number; value: number }[] | null;
+  va?: { bus: number; value: number }[] | null;
+  w?: { bus: number; value: number }[] | null;
+  flows?: { branch: number; pf: number; loading: number }[] | null;
+  dispatch?: { gen: number; bus?: number | null; pg: number }[] | null;
+}
+
+/** Project the formulation-agnostic wire response onto the compact map result. */
+export function solveResponseToSolution(
+  out: SolutionResponseProjection,
+): Solution {
   return {
     objective: out.objective ?? null,
     prices: (out.lmp ?? []).map((e) => ({ bus: e.bus, value: e.value })),
@@ -1096,7 +1118,7 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
     })),
     dispatch: (out.dispatch ?? []).map((d) => ({
       gen: d.gen,
-      bus: d.bus,
+      bus: d.bus ?? undefined,
       mw: d.pg,
     })),
   };
@@ -1413,8 +1435,9 @@ export class BrowserStudy {
 }
 
 /** Construct a Study from a retained PowerIO module for `formulation`, parsing its
- * problem instance and solving the base case once. `formulation` is a `Problem` tag (`dcopf`/`acopf`/`socwr`,
- * defaulting to DC OPF); the full wasm build solves every one entirely in the browser.
+ * problem instance and solving the base case once. `formulation` is a browser Study tag
+ * (`dcopf`/`acpf`/`socwr`, defaulting to DC OPF). Experimental `acopf` is deliberately
+ * served by `solveAcOpfModule` in a separate WASI worker, not this retained Study.
  * Throws if the engine module can't load (or the formulation is unknown/not built); the
  * caller must catch and fall back (see `isPermanentEngineFailure`). */
 let studySeq = 0;

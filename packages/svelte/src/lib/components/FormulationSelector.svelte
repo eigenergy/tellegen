@@ -24,7 +24,7 @@
 			>
 				{#each FORMULATIONS as f (f.id)}
 					{@const unavailable =
-						f.disabled ||
+						(f.disabled && !(f.id === 'acopf' && ctrl.acOpfAvailable && !c.perturbed)) ||
 						('declaredFormulation' in c &&
 							c.declaredFormulation != null &&
 							c.declaredFormulation !== f.id)}

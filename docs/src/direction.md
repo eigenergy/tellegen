@@ -61,9 +61,9 @@ numerics are therefore written in Rust and compiled to wasm.
 - **AC OPF (nonconvex): native development capability.** The non-default
   `acopf` feature now compiles and solves PowerIO's exact polar model through
   POUNCE, validates the primal solution independently, and emits a portable
-  solution. It is not enabled by a shipping adapter. Browser delivery still
-  needs a dedicated WASI worker, while native distribution awaits solver,
-  license, and release gates.
+  solution. An opt-in development build now runs it in a dedicated WASI worker
+  with hard cancellation, but no shipping adapter or deployment enables it.
+  Distribution awaits solver, license, benchmark, and release gates.
 
 The browser owns the whole DC pipeline: parse, solve, differentiate, render
 ([issue #2](https://github.com/eigenergy/tellegen/issues/2)).

@@ -33,9 +33,11 @@ export function splitName(name: string): [string, string] {
 type SolveMeta = {
 	iterations?: SolveIteration[];
 	solveBackend: SolveBackend | null;
+	solveDetail?: string | null;
 };
 
 export function solveMetaLabel(c: SolveMeta): string {
+	if (c.solveDetail) return c.solveDetail;
 	if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
 	if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'server price sensitivity';
 	return c.solveBackend === 'rust-server' ? 'server solve' : 'browser solve';

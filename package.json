@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "wasm": "npm --workspace @tellegen/engine run wasm",
+    "wasm:acopf": "bash scripts/build-acopf-wasi.sh",
     "contracts": "npm --workspace @tellegen/engine run contracts",
     "contracts:check": "npm --workspace @tellegen/engine run contracts:check",
     "check:engine": "npm --workspace @tellegen/engine run check",
