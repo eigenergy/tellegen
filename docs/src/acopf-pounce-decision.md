@@ -103,13 +103,15 @@ measurement.
 
 ## Typed native solve boundary
 
-The opt-in native API now exposes `solve_ac_opf_instance_to_solution` for an
-`Arc<AcOpfInstance>`. It runs POUNCE with FERAL, exact Hessians, identity NLP
-and linear-system scaling, a `1e-8` solver/constraint tolerance, `1e-7`
-acceptable tolerance, and a 1,000-iteration ceiling. The returned
-`AcOpfSolution` is scattered through PowerIO's source row/winding maps in
-MW/MVAr and degrees, retains inactive source rows as unavailable values, and
-round-trips through `PioModule`.
+The opt-in native API now exposes `solve_ac_opf_instance` and
+`solve_ac_opf_instance_to_solution` plus cancellable counterparts. The
+cancellable paths poll an atomic flag before model construction and at every
+POUNCE iteration, including restoration iterations. They run POUNCE with
+FERAL, exact Hessians, identity NLP and linear-system scaling, a `1e-8`
+solver/constraint tolerance, `1e-7` acceptable tolerance, and a 1,000-iteration
+ceiling. The returned `AcOpfSolution` is scattered through PowerIO's source
+row/winding maps in MW/MVAr and degrees, retains inactive source rows as
+unavailable values, and round-trips through `PioModule`.
 
 Only `SolveSucceeded` and `SolvedToAcceptableLevel` are candidates for
 emission, and both must pass a separate calculation from the prepared arrays:
@@ -126,7 +128,11 @@ Native `solve_module_json` promotes a balanced network or consumes a stored
 only `vm`, `va`, `injections`, `flows`, and `dispatch`. Request edits currently
 fail with an instruction to amend the canonical instance, rather than being
 silently dropped, and every sensitivity request fails until the NLP KKT
-contract exists.
+contract exists. A successful nonlinear solve is reported as `feasible`, not
+globally `optimal`, and its response includes the POUNCE status, iteration
+count, solver constraint/KKT residuals, independently checked primal residual,
+and model fingerprint. Failure and cancellation errors include the available
+iteration and residual diagnostics.
 
 ## Browser ABI
 

@@ -6,10 +6,15 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use pounce_nl::nl_reader::{BinOp, Expr, NlProblem, NlProblemParts, NlTnlp, UnaryOp};
-use pounce_rs::{ApplicationReturnStatus, IpoptApplication, TNLP};
+use pounce_rs::{
+    ApplicationReturnStatus, BoundsInfo, Index, IpoptApplication, IpoptCq, IpoptData, IterStats,
+    Linearity, MetaData, NlpInfo, Number, ScalingRequest, Solution, SparsityRequest, StartingPoint,
+    TNLP,
+};
 use powerio::LoadVoltageModel;
 use powerio_matrix::{
     build_ac_opf_preparation, AcOpfAssemblyOptions, AcOpfPreparation, PreparedObjective, Units,
@@ -78,7 +83,146 @@ pub(crate) struct AcOpfSolved {
     pub(crate) residuals: AcOpfResidualCheck,
     pub(crate) iterations: i32,
     pub(crate) solver_status: ApplicationReturnStatus,
+    pub(crate) solver_constraint_violation: f64,
+    pub(crate) solver_kkt_error: f64,
     pub(crate) fingerprint: String,
+}
+
+/// Transparent POUNCE model decorator that polls Tellegen's cancellation flag
+/// once per nonlinear-program iteration, including restoration iterations.
+struct CancellableNlTnlp {
+    inner: NlTnlp,
+    cancel: Option<Arc<AtomicBool>>,
+}
+
+impl CancellableNlTnlp {
+    fn new(inner: NlTnlp, cancel: Option<Arc<AtomicBool>>) -> Self {
+        Self { inner, cancel }
+    }
+}
+
+impl TNLP for CancellableNlTnlp {
+    fn get_nlp_info(&mut self) -> Option<NlpInfo> {
+        self.inner.get_nlp_info()
+    }
+
+    fn get_bounds_info(&mut self, bounds: BoundsInfo<'_>) -> bool {
+        self.inner.get_bounds_info(bounds)
+    }
+
+    fn get_starting_point(&mut self, point: StartingPoint<'_>) -> bool {
+        self.inner.get_starting_point(point)
+    }
+
+    fn eval_f(&mut self, x: &[Number], new_x: bool) -> Option<Number> {
+        self.inner.eval_f(x, new_x)
+    }
+
+    fn eval_grad_f(&mut self, x: &[Number], new_x: bool, gradient: &mut [Number]) -> bool {
+        self.inner.eval_grad_f(x, new_x, gradient)
+    }
+
+    fn eval_g(&mut self, x: &[Number], new_x: bool, constraints: &mut [Number]) -> bool {
+        self.inner.eval_g(x, new_x, constraints)
+    }
+
+    fn eval_jac_g(
+        &mut self,
+        x: Option<&[Number]>,
+        new_x: bool,
+        request: SparsityRequest<'_>,
+    ) -> bool {
+        self.inner.eval_jac_g(x, new_x, request)
+    }
+
+    fn eval_h(
+        &mut self,
+        x: Option<&[Number]>,
+        new_x: bool,
+        objective_factor: Number,
+        lambda: Option<&[Number]>,
+        new_lambda: bool,
+        request: SparsityRequest<'_>,
+    ) -> bool {
+        self.inner
+            .eval_h(x, new_x, objective_factor, lambda, new_lambda, request)
+    }
+
+    fn finalize_solution(&mut self, solution: Solution<'_>, data: &IpoptData, cq: &IpoptCq) {
+        self.inner.finalize_solution(solution, data, cq);
+    }
+
+    fn get_var_con_metadata(
+        &mut self,
+        variables: &mut MetaData,
+        constraints: &mut MetaData,
+    ) -> bool {
+        self.inner.get_var_con_metadata(variables, constraints)
+    }
+
+    fn get_scaling_parameters(&mut self, request: ScalingRequest<'_>) -> bool {
+        self.inner.get_scaling_parameters(request)
+    }
+
+    fn get_variables_linearity(&mut self, types: &mut [Linearity]) -> bool {
+        self.inner.get_variables_linearity(types)
+    }
+
+    fn get_objective_variables_linearity(&mut self, types: &mut [Linearity]) -> bool {
+        self.inner.get_objective_variables_linearity(types)
+    }
+
+    fn get_constraints_linearity(&mut self, types: &mut [Linearity]) -> bool {
+        self.inner.get_constraints_linearity(types)
+    }
+
+    fn get_number_of_nonlinear_variables(&mut self) -> Index {
+        self.inner.get_number_of_nonlinear_variables()
+    }
+
+    fn get_list_of_nonlinear_variables(&mut self, variables: &mut [Index]) -> bool {
+        self.inner.get_list_of_nonlinear_variables(variables)
+    }
+
+    fn derivative_proofs(
+        &mut self,
+    ) -> pounce_rs::pounce_nlp::constant_derivatives::DerivativeProofs {
+        self.inner.derivative_proofs()
+    }
+
+    fn intermediate_callback(
+        &mut self,
+        statistics: IterStats,
+        data: &IpoptData,
+        cq: &IpoptCq,
+    ) -> bool {
+        if self
+            .cancel
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+        {
+            return false;
+        }
+        self.inner.intermediate_callback(statistics, data, cq)
+    }
+
+    fn finalize_metadata(&mut self, variables: &MetaData, constraints: &MetaData) {
+        self.inner.finalize_metadata(variables, constraints);
+    }
+
+    fn is_presolve_wrapper(&self) -> bool {
+        self.inner.is_presolve_wrapper()
+    }
+
+    fn scaling_factors(&self) -> Option<Vec<Number>> {
+        self.inner.scaling_factors()
+    }
+
+    fn presolve_infeasibility_proof(
+        &self,
+    ) -> Option<pounce_rs::pounce_nlp::tnlp::InfeasibilityProof> {
+        self.inner.presolve_infeasibility_proof()
+    }
 }
 
 /// The recorded assembly policy for the canonical model.
@@ -134,6 +278,7 @@ pub(super) struct AcOpfRows {
 /// The private exact model plus everything later solve/emission code needs to
 /// map POUNCE vectors back to PowerIO identities.
 #[derive(Clone, Debug)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) struct CanonicalAcOpfModel {
     pub(super) preparation: AcOpfPreparation,
     pub(super) policy: AcOpfAssemblyPolicy,
@@ -148,6 +293,7 @@ impl CanonicalAcOpfModel {
         NlTnlp::try_new(self.problem.clone())
     }
 
+    #[cfg(test)]
     pub(super) fn problem(&self) -> &NlProblem {
         &self.problem
     }
@@ -683,6 +829,8 @@ fn validate_primal(
     solver_objective: f64,
     iterations: i32,
     solver_status: ApplicationReturnStatus,
+    solver_constraint_violation: f64,
+    solver_kkt_error: f64,
 ) -> Result<AcOpfSolved, String> {
     let prep = &model.preparation;
     if x.len() != model.problem.n || x.iter().any(|value| !value.is_finite()) {
@@ -851,16 +999,37 @@ fn validate_primal(
         residuals,
         iterations,
         solver_status,
+        solver_constraint_violation,
+        solver_kkt_error,
         fingerprint: model.fingerprint.clone(),
     })
 }
 
 /// Compile and solve one canonical instance with exact POUNCE derivatives.
-/// A local infeasibility report is returned as a diagnostic error, never
-/// promoted to PowerIO's proof-strength `Termination::Infeasible`.
-pub(crate) fn solve_ac_opf(instance: &AcOpfInstance) -> Result<AcOpfSolved, String> {
+/// The optional atomic flag is polled before model construction and once per
+/// POUNCE iteration. A local infeasibility report is returned as a diagnostic
+/// error, never promoted to PowerIO's proof-strength `Termination::Infeasible`.
+pub(crate) fn solve_ac_opf_cancellable(
+    instance: &AcOpfInstance,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<AcOpfSolved, String> {
+    if cancel
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    {
+        return Err("AC OPF solve cancelled".into());
+    }
     let model = compile_ac_opf_model(instance)?;
-    let tnlp = Rc::new(RefCell::new(model.tnlp()?));
+    if cancel
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    {
+        return Err("AC OPF solve cancelled".into());
+    }
+    let tnlp = Rc::new(RefCell::new(CancellableNlTnlp::new(
+        model.tnlp()?,
+        cancel.clone(),
+    )));
     let mut application = IpoptApplication::new();
     application
         .initialize_with_options_str(POUNCE_OPTIONS)
@@ -870,6 +1039,18 @@ pub(crate) fn solve_ac_opf(instance: &AcOpfInstance) -> Result<AcOpfSolved, Stri
         .map_err(|error| format!("could not initialize POUNCE AC OPF: {error}"))?;
     let status = application.optimize_tnlp(Rc::clone(&tnlp) as Rc<RefCell<dyn TNLP>>);
     let statistics = application.statistics();
+    if status == ApplicationReturnStatus::UserRequestedStop
+        && cancel
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    {
+        return Err(format!(
+            "AC OPF solve cancelled after {} iterations (constraint violation {:.3e}, KKT error {:.3e})",
+            statistics.iteration_count,
+            statistics.final_unscaled_constr_viol,
+            statistics.final_unscaled_kkt_error,
+        ));
+    }
     if !matches!(
         status,
         ApplicationReturnStatus::SolveSucceeded | ApplicationReturnStatus::SolvedToAcceptableLevel
@@ -888,14 +1069,17 @@ pub(crate) fn solve_ac_opf(instance: &AcOpfInstance) -> Result<AcOpfSolved, Stri
     }
     let solved = tnlp.borrow();
     let x = solved
+        .inner
         .final_x()
         .ok_or("POUNCE reported AC OPF convergence without a primal point")?;
     validate_primal(
         &model,
         x,
-        solved.final_obj(),
+        solved.inner.final_obj(),
         statistics.iteration_count,
         status,
+        statistics.final_unscaled_constr_viol,
+        statistics.final_unscaled_kkt_error,
     )
 }
 
@@ -1172,7 +1356,7 @@ mpc.gencost = [
     fn pounce_solution_passes_independent_full_pi_validation() {
         let network = parse_matpower(CASE3_FULL_PI).expect("parse full pi case");
         let instance = AcOpfInstance::from_network(network).expect("full pi AC OPF instance");
-        let solved = solve_ac_opf(&instance).expect("solve full pi AC OPF");
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve full pi AC OPF");
         assert!(matches!(
             solved.solver_status,
             ApplicationReturnStatus::SolveSucceeded
@@ -1182,6 +1366,37 @@ mpc.gencost = [
         assert!(solved.objective.is_finite());
         assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
         assert_eq!(solved.fingerprint.len(), 64);
+    }
+
+    #[test]
+    fn cancellation_decorator_stops_at_an_iteration_boundary() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let inner = case3_model().tnlp().expect("TNLP");
+        let mut cancellable = CancellableNlTnlp::new(inner, Some(Arc::clone(&cancel)));
+        let stats = IterStats {
+            mode: pounce_rs::AlgorithmMode::RegularMode,
+            iter: 0,
+            obj_value: 0.0,
+            inf_pr: 0.0,
+            inf_du: 0.0,
+            mu: 0.0,
+            d_norm: 0.0,
+            regularization_size: 0.0,
+            alpha_du: 0.0,
+            alpha_pr: 0.0,
+            ls_trials: 0,
+        };
+        assert!(cancellable.intermediate_callback(
+            stats,
+            &IpoptData::default(),
+            &IpoptCq::default()
+        ));
+        cancel.store(true, Ordering::Relaxed);
+        assert!(!cancellable.intermediate_callback(
+            stats,
+            &IpoptData::default(),
+            &IpoptCq::default()
+        ));
     }
 
     #[test]
