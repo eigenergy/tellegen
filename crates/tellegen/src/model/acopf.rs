@@ -46,7 +46,7 @@ pub(crate) struct AcOpfResidualCheck {
 }
 
 impl AcOpfResidualCheck {
-    fn max_violation(self) -> f64 {
+    pub(crate) fn max_violation(self) -> f64 {
         self.active_balance
             .max(self.reactive_balance)
             .max(self.variable_bounds)

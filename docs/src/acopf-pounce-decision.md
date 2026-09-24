@@ -16,10 +16,11 @@ The decision follows POUNCE's
 Those results are feasibility and implementation evidence, not general solver
 performance guarantees.
 
-This decision does not relabel the existing SOCWR relaxation as AC OPF and does
-not make `Problem::Acopf` available. Product capability requires the exact
-PowerIO-prepared polar model, independent primal validation, truthful status
-mapping, portable `AcOpfSolution` emission, and the browser worker boundary.
+This decision does not relabel the existing SOCWR relaxation as AC OPF. The
+native opt-in feature now makes `Problem::Acopf` available after adding the
+exact PowerIO-prepared polar model, independent primal validation, truthful
+status mapping, and portable `AcOpfSolution` emission. Product distribution
+still requires the browser worker boundary and release approval below.
 
 The dependency is pinned to POUNCE revision
 `925e75fbd036de309929e398159f946d42d0d94b`, the head of POUNCE PR #961. That
@@ -59,7 +60,8 @@ The opt-in feature now also contains a private, backend-neutral polar model
 compiler. It consumes `AcOpfInstance` only through
 `build_ac_opf_preparation`, preserves PowerIO's generator and branch columns
 and source maps, and emits an in-memory POUNCE expression DAG with exact sparse
-derivatives. It is not wired to module dispatch, capabilities, or the browser.
+derivatives. Native module dispatch and capabilities are feature-gated; no
+shipping adapter or browser package enables them.
 
 The recorded assembly policy is per-unit values, no zero-impedance skipping,
 no synthesized thermal ratings, and PowerIO's angle-interval correction
@@ -119,6 +121,13 @@ than PowerIO's proof-strength `Infeasible`. No LMP or limit multiplier is
 emitted yet; the POUNCE dual arrays stay private pending sign and source-unit
 perturbation tests.
 
+Native `solve_module_json` promotes a balanced network or consumes a stored
+`AcOpfInstance` when the request selects `acopf`, and the capability advertises
+only `vm`, `va`, `injections`, `flows`, and `dispatch`. Request edits currently
+fail with an instruction to amend the canonical instance, rather than being
+silently dropped, and every sensitivity request fails until the NLP KKT
+contract exists.
+
 ## Browser ABI
 
 POUNCE's proven browser target is a separate `wasm32-wasip1` module with its
@@ -142,12 +151,13 @@ default engine and all shipping adapters while present in the opt-in probe.
 That mechanical boundary is not legal approval. Before distributing a native
 binary or WASI asset containing POUNCE, the release owner must approve the
 EPL-2.0 obligations, include its license/notices, and provide a reasonable
-corresponding-source location. Until then, the feature remains a development
-probe and `Problem::Acopf` remains unavailable.
+corresponding-source location. Until then, the feature remains a
+development-only native capability and `Problem::Acopf` remains unavailable in
+default and shipping builds.
 
 ## Remaining model and solve gates
 
-Before solve/emission is made callable, record native peak memory and compare
-the 14/30/300 expressions against the frozen benchmark values in addition to
-the finite-difference checks above. A failure of expression-DAG scaling changes
-the private solver adapter, not the PowerIO problem or solution contract.
+Before distribution, record native peak memory and compare the 14/30/300
+expressions against the frozen benchmark values in addition to the
+finite-difference checks above. A failure of expression-DAG scaling changes the
+private solver adapter, not the PowerIO problem or solution contract.
