@@ -22,10 +22,12 @@ PowerIO-prepared polar model, independent primal validation, truthful status
 mapping, portable `AcOpfSolution` emission, and the browser worker boundary.
 
 The dependency is pinned to POUNCE revision
-`925e75fbd036de309929e398159f946d42d0d94b`. That revision includes the WASI
-restoration/second-opinion driver fix after the large-case experiments. A
-released version containing the required fix should replace the Git pin before
-publishing the Rust crate.
+`925e75fbd036de309929e398159f946d42d0d94b`, the head of POUNCE PR #961. That
+change wires restoration and the second-opinion ladder into POUNCE's WASM
+frontend; it does not retrofit callers that drive a bare `IpoptApplication`.
+A released version containing the change should replace the Git pin before
+publishing the Rust crate, and Tellegen's eventual solve driver must wire or
+invoke the released restoration path explicitly.
 
 ## Feasibility boundary
 

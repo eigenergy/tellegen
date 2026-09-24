@@ -113,6 +113,6 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # PowerIO candidate dependencies use the same repository and immutable revision.
 allow-git = [
     "https://github.com/eigenergy/powerio",
-    # Immutable post-gh#960 POUNCE revision used by the AC OPF feasibility probe.
+    # Immutable POUNCE gh#961 head used by the AC OPF feasibility probe.
     "https://github.com/jkitchin/pounce",
 ]

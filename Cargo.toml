@@ -45,9 +45,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = { version = "1", features = ["derive"] }
 # Canonical nonlinear AC OPF backend. Keep the solver crates pinned together:
-# the post-gh#960 revision restores native/WASI driver parity, while a released
-# POUNCE version containing that fix is not yet available. These dependencies
-# remain optional and are not enabled by any shipping adapter.
+# this revision contains gh#961's pounce-wasm driver fix, while a release that
+# contains it is not yet available. Bare IpoptApplication callers still have to
+# wire restoration explicitly. No shipping adapter enables these dependencies.
 pounce-nl = { version = "0.12.0", git = "https://github.com/jkitchin/pounce", rev = "925e75fbd036de309929e398159f946d42d0d94b" }
 pounce-rs = { version = "0.12.0", git = "https://github.com/jkitchin/pounce", rev = "925e75fbd036de309929e398159f946d42d0d94b" }
 
