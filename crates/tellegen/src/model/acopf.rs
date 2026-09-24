@@ -576,6 +576,8 @@ pub(super) fn compile_ac_opf_model(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use pounce_rs::{SparsityRequest, TNLP};
     use powerio::{BusId, LoadVoltageModel, Storage};
     use powerio_prob::{ActiveConstraints, ConstraintSelection, Objective};
@@ -703,6 +705,112 @@ mpc.gencost = [
                 lambda[usize::try_from(row).expect("Jacobian row")] * value;
         }
         gradient
+    }
+
+    fn directional_derivative_errors(model: &CanonicalAcOpfModel, tnlp: &mut NlTnlp) -> (f64, f64) {
+        let n = model.problem().n;
+        let m = model.problem().m;
+        let x = &model.problem().x0;
+        let direction = (0..n)
+            .map(|column| ((column * 37 % 101) as f64 - 50.0) / 50.0)
+            .collect::<Vec<_>>();
+        let step = 1.0e-6;
+        let plus = x
+            .iter()
+            .zip(&direction)
+            .map(|(&value, &delta)| value + step * delta)
+            .collect::<Vec<_>>();
+        let minus = x
+            .iter()
+            .zip(&direction)
+            .map(|(&value, &delta)| value - step * delta)
+            .collect::<Vec<_>>();
+
+        let (jac_rows, jac_columns) = jacobian_structure(tnlp);
+        let mut jacobian = vec![0.0; jac_rows.len()];
+        assert!(tnlp.eval_jac_g(
+            Some(x),
+            true,
+            SparsityRequest::Values {
+                values: &mut jacobian,
+            },
+        ));
+        let mut exact_constraint_direction = vec![0.0; m];
+        for ((&row, &column), &value) in jac_rows.iter().zip(&jac_columns).zip(&jacobian) {
+            exact_constraint_direction[usize::try_from(row).expect("Jacobian row")] +=
+                value * direction[usize::try_from(column).expect("Jacobian column")];
+        }
+        let mut plus_constraints = vec![0.0; m];
+        let mut minus_constraints = vec![0.0; m];
+        assert!(tnlp.eval_g(&plus, true, &mut plus_constraints));
+        assert!(tnlp.eval_g(&minus, true, &mut minus_constraints));
+        let jacobian_error = exact_constraint_direction
+            .iter()
+            .zip(plus_constraints.iter().zip(&minus_constraints))
+            .map(|(&exact, (&plus, &minus))| (exact - (plus - minus) / (2.0 * step)).abs())
+            .fold(0.0, f64::max);
+
+        let info = tnlp.get_nlp_info().expect("NLP dimensions");
+        let nnz_h = usize::try_from(info.nnz_h_lag).expect("nonnegative Hessian nnz");
+        let mut h_rows = vec![0; nnz_h];
+        let mut h_columns = vec![0; nnz_h];
+        assert!(tnlp.eval_h(
+            None,
+            false,
+            1.0,
+            None,
+            false,
+            SparsityRequest::Structure {
+                irow: &mut h_rows,
+                jcol: &mut h_columns,
+            },
+        ));
+        let lambda = (0..m)
+            .map(|row| 0.001 + (row * 17 % 31) as f64 * 0.0001)
+            .collect::<Vec<_>>();
+        let objective_factor = 0.7;
+        let mut hessian = vec![0.0; nnz_h];
+        assert!(tnlp.eval_h(
+            Some(x),
+            true,
+            objective_factor,
+            Some(&lambda),
+            true,
+            SparsityRequest::Values {
+                values: &mut hessian,
+            },
+        ));
+        let mut exact_lagrangian_direction = vec![0.0; n];
+        for ((&row, &column), &value) in h_rows.iter().zip(&h_columns).zip(&hessian) {
+            let row = usize::try_from(row).expect("Hessian row");
+            let column = usize::try_from(column).expect("Hessian column");
+            exact_lagrangian_direction[row] += value * direction[column];
+            if row != column {
+                exact_lagrangian_direction[column] += value * direction[row];
+            }
+        }
+        let plus_gradient = lagrangian_gradient(
+            tnlp,
+            &plus,
+            objective_factor,
+            &lambda,
+            &jac_rows,
+            &jac_columns,
+        );
+        let minus_gradient = lagrangian_gradient(
+            tnlp,
+            &minus,
+            objective_factor,
+            &lambda,
+            &jac_rows,
+            &jac_columns,
+        );
+        let hessian_error = exact_lagrangian_direction
+            .iter()
+            .zip(plus_gradient.iter().zip(&minus_gradient))
+            .map(|(&exact, (&plus, &minus))| (exact - (plus - minus) / (2.0 * step)).abs())
+            .fold(0.0, f64::max);
+        (jacobian_error, hessian_error)
     }
 
     #[test]
@@ -942,6 +1050,55 @@ mpc.gencost = [
             assert!(
                 (analytic_value - finite).abs() < tolerance,
                 "Hessian ({row}, {column}): analytic={analytic_value} finite={finite} tolerance={tolerance}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "set TELLEGEN_ACOPF_FIXTURES to a directory containing case14.m, case30.m, and case300.m"]
+    fn external_model_build_ladder() {
+        let directory = std::env::var_os("TELLEGEN_ACOPF_FIXTURES")
+            .map(std::path::PathBuf::from)
+            .expect("TELLEGEN_ACOPF_FIXTURES is required for the ignored build ladder");
+        println!("case,buses,generators,branches,variables,constraints,nnz_jacobian,nnz_hessian,compile_ms,tape_ms,jacobian_direction_error,hessian_direction_error");
+        for (filename, expected_buses) in [("case14.m", 14), ("case30.m", 30), ("case300.m", 300)] {
+            let text = std::fs::read_to_string(directory.join(filename))
+                .unwrap_or_else(|error| panic!("read {filename}: {error}"));
+            let network =
+                parse_matpower(&text).unwrap_or_else(|error| panic!("parse {filename}: {error}"));
+            let instance = AcOpfInstance::from_network(network)
+                .unwrap_or_else(|error| panic!("build {filename} instance: {error}"));
+            let compile_started = Instant::now();
+            let model = compile_ac_opf_model(&instance)
+                .unwrap_or_else(|error| panic!("compile {filename}: {error}"));
+            let compile_ms = compile_started.elapsed().as_secs_f64() * 1_000.0;
+            let tape_started = Instant::now();
+            let mut tnlp = model
+                .tnlp()
+                .unwrap_or_else(|error| panic!("build {filename} derivative tape: {error}"));
+            let tape_ms = tape_started.elapsed().as_secs_f64() * 1_000.0;
+            let info = tnlp
+                .get_nlp_info()
+                .unwrap_or_else(|| panic!("read {filename} NLP dimensions"));
+            assert_eq!(model.preparation.n_buses, expected_buses);
+            let (jacobian_error, hessian_error) = directional_derivative_errors(&model, &mut tnlp);
+            assert!(
+                jacobian_error < 2.0e-5,
+                "{filename} Jacobian directional error {jacobian_error}"
+            );
+            assert!(
+                hessian_error < 2.0e-4,
+                "{filename} Hessian directional error {hessian_error}"
+            );
+            println!(
+                "{filename},{},{},{},{},{},{},{},{compile_ms:.3},{tape_ms:.3},{jacobian_error:.3e},{hessian_error:.3e}",
+                model.preparation.n_buses,
+                model.preparation.n_generators(),
+                model.preparation.n_branches(),
+                info.n,
+                info.m,
+                info.nnz_jac_g,
+                info.nnz_h_lag,
             );
         }
     }

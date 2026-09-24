@@ -83,6 +83,23 @@ Lagrangian Hessian to finite differences. Unsupported active storage,
 voltage-dependent loads, and remote voltage regulation fail with the source
 element's identity.
 
+An ignored, path-driven `external_model_build_ladder` test makes the standard
+MATPOWER 14/30/300-bus construction check reproducible without vendoring a
+second copy of those fixtures. On 24 September 2026, a local arm64 debug build
+after compilation produced:
+
+| case | variables / rows | nnz Jacobian / Hessian | expression compile | derivative tape | max directional J / H error |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 14 | 38 / 49 | 267 / 127 | 1.849 ms | 3.841 ms | `4.545e-9` / `1.557e-7` |
+| 30 | 72 / 184 | 871 / 260 | 1.016 ms | 12.803 ms | `7.186e-9` / `3.412e-8` |
+| 300 | 738 / 1,012 | 5,433 / 2,605 | 8.380 ms | 70.444 ms | `2.723e-7` / `3.601e-7` |
+
+These are correctness/prototype measurements, not solver performance claims.
+Run the ladder with `TELLEGEN_ACOPF_FIXTURES` pointing to a directory containing
+`case14.m`, `case30.m`, and `case300.m`. Peak RSS was not available inside the
+sandbox used for this run, and frozen-NL parity remains a separate acceptance
+measurement.
+
 ## Browser ABI
 
 POUNCE's proven browser target is a separate `wasm32-wasip1` module with its
@@ -111,8 +128,7 @@ probe and `Problem::Acopf` remains unavailable.
 
 ## Remaining model and solve gates
 
-Before solve/emission is made callable, extend the expression build and parity
-measurements from the focused three-bus oracle to the 14-, 30-, and 300-bus
-fixtures, recording construction time and memory and comparing against the
-frozen benchmark where available. A failure of expression-DAG scaling changes
+Before solve/emission is made callable, record native peak memory and compare
+the 14/30/300 expressions against the frozen benchmark values in addition to
+the finite-difference checks above. A failure of expression-DAG scaling changes
 the private solver adapter, not the PowerIO problem or solution contract.
