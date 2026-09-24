@@ -25,11 +25,17 @@ powerio owns parsing and the network and display formats; the engine and the app
 
 ## The engine
 
-`crates/tellegen` solves four formulations through one interface:
+Default builds of `crates/tellegen` solve four formulations through one
+interface:
 
 - **DC power flow** and **DC OPF**: a B–θ linear/quadratic program;
 - **AC power flow**: a polar Newton solve; and
 - **SOCWR**: the Jabr second-order cone relaxation of AC OPF, in W-space.
+
+The non-default native `acopf` feature adds a fifth, development-only path: an
+exact polar AC OPF model solved through POUNCE. It has independent primal
+validation and portable PowerIO solution emission, but no shipping adapter,
+dual/sensitivity contract, or distribution approval.
 
 The formulations share one result envelope, but they do not claim the same
 quantities. DC power flow returns angles and branch flows without prices,
@@ -41,11 +47,13 @@ KKT sensitivities defined by the relaxation. Formulations that implement the
 the common driver solves the retained KKT or Newton system for the requested
 forward or adjoint columns.
 
-The engine is Rust and compiles to WebAssembly, so the same code runs natively
-and in the browser. The convex solves use Clarabel; the sensitivities use faer.
-The full nonlinear AC OPF is on the
-[desktop and mobile roadmap](tauri-roadmap.md). Its planned interior point
-solver uses threads; the current browser solver build is single threaded.
+The default engine is Rust and compiles to WebAssembly, so the same code runs
+natively and in the browser. The convex solves use Clarabel; the sensitivities
+use faer. The exact AC OPF backend currently runs only in opt-in native builds.
+Turning it into a shipping native product remains on the
+[desktop and mobile roadmap](tauri-roadmap.md); browser support requires a
+separate WASI worker because the current browser solver build is single
+threaded and uses `wasm32-unknown-unknown`.
 
 ## The two API faces
 
@@ -88,8 +96,8 @@ The Svelte package and the hosted app use `Study` for DC OPF, AC power flow,
 and SOCWR. `preview` returns a first order update for the quantities the chosen
 formulation defines; `commit` performs an exact re-solve and can return the
 displayed sensitivity column. DC power flow uses the stateless solve path, and
-full nonlinear AC OPF is unavailable. Supported solvable case files run in the
-browser and are not uploaded.
+full nonlinear AC OPF is unavailable in the shipping browser package.
+Supported solvable case files run in the browser and are not uploaded.
 
 ## Sources
 

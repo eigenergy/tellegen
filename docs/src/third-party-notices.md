@@ -30,7 +30,7 @@ archives.
 
 ### Optional POUNCE backend
 
-The non-default `tellegen/acopf` feasibility feature depends on
+The non-default native `tellegen/acopf` feature depends on
 [POUNCE](https://github.com/jkitchin/pounce), a pure-Rust nonlinear solver
 licensed under EPL-2.0. It is pinned to revision
 `925e75fbd036de309929e398159f946d42d0d94b`. The default engine and the

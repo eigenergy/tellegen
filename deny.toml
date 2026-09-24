@@ -1,8 +1,8 @@
 # Supply-chain governance for the tellegen workspace.
 #
 # Every crate in the default shipping graph must carry a permissive license.
-# POUNCE is EPL-2.0 and appears only behind the opt-in `tellegen/acopf`
-# feasibility feature. The exceptions below identify that reviewed family;
+# POUNCE is EPL-2.0 and appears only behind the opt-in native `tellegen/acopf`
+# development feature. The exceptions below identify that reviewed family;
 # scripts/epl-guard.sh separately proves it is absent from shipping adapters.
 
 [licenses]

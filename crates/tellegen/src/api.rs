@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-#[cfg(feature = "conic")]
+#[cfg(any(feature = "conic", feature = "acopf"))]
 use powerio::AcOpfInstance;
 #[cfg(feature = "sensitivity")]
 use powerio::AcPfInstance;
@@ -42,9 +42,8 @@ use super::sens::{
 /// so a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a
 /// valid base-case DC OPF request.
 ///
-/// The `"acopf"` tag (full nonlinear AC OPF) is retained for wire-format stability
-/// but is not solved by this build: [`capabilities_json`] reports it unavailable and
-/// requesting it returns a clean `Err`.
+/// The `"acopf"` tag enables full nonlinear AC OPF only when the opt-in `acopf`
+/// feature is built. Shipping adapters do not forward that feature.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
@@ -60,8 +59,7 @@ pub enum Problem {
     AcPf,
     /// SOCWR (Jabr) conic relaxation of AC OPF. Differentiable via the conic KKT.
     Socwr,
-    /// Full nonlinear AC OPF. Not available in this build (the dispatch errors
-    /// cleanly); the tag is kept so the JSON contract stays stable.
+    /// Full nonlinear AC OPF through the opt-in POUNCE backend.
     Acopf,
 }
 
@@ -318,6 +316,16 @@ pub enum Iterations {
     Ipm(Vec<SolveIteration>),
     /// Newton iteration count and final infinity-norm mismatch (acpf).
     Newton { count: usize, residual: f64 },
+    /// Nonlinear-program diagnostics. The primal residual is Tellegen's
+    /// independent source-model check; the other residuals are POUNCE reports.
+    Nlp {
+        nlp_iterations: usize,
+        primal_residual: f64,
+        solver_status: String,
+        solver_constraint_violation: f64,
+        solver_kkt_error: f64,
+        model_fingerprint: String,
+    },
 }
 
 /// A scalar keyed by original bus id (LMP, voltage, angle, squared magnitude).
@@ -485,13 +493,29 @@ pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String
                 let instance = AcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
                 solve_ac_instance(&instance, &req)?
             }
+            #[cfg(feature = "acopf")]
+            Problem::Acopf => {
+                let instance = AcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
+                solve_ac_opf_instance(&instance, &req)?
+            }
             _ => solve_network(&network, &req)?,
         },
         powerio::PioValue::DcOpfInstance(instance) => solve_instance(&instance, &req)?,
         #[cfg(feature = "sensitivity")]
         powerio::PioValue::AcPfInstance(instance) => solve_ac_pf_instance(&instance, &req)?,
-        #[cfg(feature = "conic")]
-        powerio::PioValue::AcOpfInstance(instance) => solve_ac_instance(&instance, &req)?,
+        #[cfg(any(feature = "conic", feature = "acopf"))]
+        powerio::PioValue::AcOpfInstance(instance) => match req.formulation {
+            #[cfg(feature = "conic")]
+            Problem::Socwr => solve_ac_instance(&instance, &req)?,
+            #[cfg(feature = "acopf")]
+            Problem::Acopf => solve_ac_opf_instance(&instance, &req)?,
+            _ => {
+                return Err(format!(
+                    "an ac_opf_instance cannot be solved as {:?}",
+                    req.formulation
+                ));
+            }
+        },
         other => {
             return Err(format!(
                 "PowerIO module holds {}, which this solve entry does not support",
@@ -525,9 +549,13 @@ pub(crate) fn solve_network(
         Problem::Socwr => solve_socwr(net, req),
         #[cfg(not(feature = "conic"))]
         Problem::Socwr => Err("socwr requires the `conic` feature".into()),
+        #[cfg(feature = "acopf")]
         Problem::Acopf => {
-            Err("acopf (full nonlinear AC OPF) is not available in this build".into())
+            let instance = AcOpfInstance::from_network(net.clone()).map_err(|e| e.to_string())?;
+            solve_ac_opf_instance(&instance, req)
         }
+        #[cfg(not(feature = "acopf"))]
+        Problem::Acopf => Err("acopf (full nonlinear AC OPF) requires the `acopf` feature".into()),
     }
 }
 
@@ -594,6 +622,146 @@ pub fn solve_ac_instance(
     validate_canonical_edits(instance.network(), &req.edits)?;
     let (model, solution) = socwr_solved(super::model::AcNetwork::from_instance(instance)?, req)?;
     socwr_assemble(&model, &solution, req)
+}
+
+/// Solve a typed PowerIO AC OPF instance with the exact polar POUNCE model.
+/// Request edits and sensitivities are rejected until their canonical-instance
+/// transformation and NLP dual contract are implemented.
+#[cfg(feature = "acopf")]
+pub fn solve_ac_opf_instance(
+    instance: &AcOpfInstance,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
+    solve_ac_opf_instance_cancellable(instance, req, None)
+}
+
+/// As [`solve_ac_opf_instance`], with cancellation polled before model
+/// construction and once per POUNCE iteration.
+#[cfg(feature = "acopf")]
+pub fn solve_ac_opf_instance_cancellable(
+    instance: &AcOpfInstance,
+    req: &SolveRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<SolveResponse, String> {
+    if req.formulation != Problem::Acopf {
+        return Err(format!(
+            "an ac_opf_instance cannot be solved as {:?}",
+            req.formulation
+        ));
+    }
+    validate_canonical_edits(instance.network(), &req.edits)?;
+    if !req.edits.deltas.is_empty() || !req.edits.rates.is_empty() {
+        return Err(
+            "acopf request edits are not yet supported; amend the canonical AcOpfInstance instead"
+                .into(),
+        );
+    }
+    #[cfg(feature = "sensitivity")]
+    if !req.sensitivities.is_empty() {
+        return Err("acopf sensitivities require a separately validated NLP KKT contract".into());
+    }
+    let solved = super::model::solve_ac_opf_cancellable(instance, cancel)?;
+    ac_opf_assemble(instance.network(), &solved)
+}
+
+#[cfg(feature = "acopf")]
+fn ac_opf_assemble(
+    network: &BalancedNetwork,
+    solved: &super::model::AcOpfSolved,
+) -> Result<SolveResponse, String> {
+    use powerio_matrix::AnalysisBranchSource;
+
+    let prep = &solved.preparation;
+    let base = prep.base_mva;
+    let bus_ids = prep.bus_ids.iter().map(|bus| bus.0).collect::<Vec<_>>();
+    let bus_uids = prep
+        .bus_source_rows
+        .iter()
+        .map(|row| row.and_then(|row| network.buses().get(row)?.uid.clone()))
+        .collect::<Vec<_>>();
+    let injections = bus_ids
+        .iter()
+        .enumerate()
+        .map(|(bus, &id)| BusInjection {
+            bus: id,
+            uid: uid_at(&bus_uids, bus),
+            p: solved.p_injection[bus] * base,
+            q: solved.q_injection[bus] * base,
+        })
+        .collect();
+    let flows = prep
+        .branches
+        .analysis_sources
+        .iter()
+        .enumerate()
+        .filter_map(|(dense, source)| {
+            let AnalysisBranchSource::Branch { row } = *source else {
+                return None;
+            };
+            let rating = prep.branches.s_max[dense];
+            let loading = if rating > 0.0 {
+                solved.p_from[dense]
+                    .hypot(solved.q_from[dense])
+                    .max(solved.p_to[dense].hypot(solved.q_to[dense]))
+                    / rating
+            } else {
+                0.0
+            };
+            Some(BranchFlow {
+                branch: row + 1,
+                uid: network
+                    .branches()
+                    .get(row)
+                    .and_then(|branch| branch.uid.clone()),
+                pf: solved.p_from[dense] * base,
+                loading,
+                qf: Some(solved.q_from[dense] * base),
+                pt: Some(solved.p_to[dense] * base),
+                qt: Some(solved.q_to[dense] * base),
+            })
+        })
+        .collect();
+    let dispatch = prep
+        .generators
+        .source_rows
+        .iter()
+        .enumerate()
+        .filter_map(|(dense, &row)| {
+            Some(GenDispatch {
+                gen: row? + 1,
+                bus: Some(prep.bus_ids[prep.generators.bus_of_gen[dense]].0),
+                pg: solved.pg[dense] * base,
+                qg: Some(solved.qg[dense] * base),
+            })
+        })
+        .collect();
+    Ok(SolveResponse {
+        formulation: Problem::Acopf,
+        // A locally converged nonconvex NLP is independently feasible, but
+        // does not establish global optimality.
+        status: SolveStatus::Feasible,
+        objective: Some(solved.objective),
+        iterations: Some(Iterations::Nlp {
+            nlp_iterations: usize::try_from(solved.iterations).unwrap_or(0),
+            primal_residual: solved.residuals.max_violation(),
+            solver_status: solved.solver_status.upstream_name().to_owned(),
+            solver_constraint_violation: solved.solver_constraint_violation,
+            solver_kkt_error: solved.solver_kkt_error,
+            model_fingerprint: solved.fingerprint.clone(),
+        }),
+        lmp: None,
+        lmp_q: None,
+        vm: Some(zip_bus(&bus_ids, &bus_uids, &solved.vm)),
+        va: Some(zip_bus(&bus_ids, &bus_uids, &solved.va)),
+        w: None,
+        wr: None,
+        wi: None,
+        injections: Some(injections),
+        flows: Some(flows),
+        dispatch: Some(dispatch),
+        #[cfg(feature = "sensitivity")]
+        sensitivities: Vec::new(),
+    })
 }
 
 fn solve_dc_opf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
@@ -947,7 +1115,7 @@ fn rescale_to_served(m: &mut SensitivityMatrix, scale: f64, op: Operand, par: Pa
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ProblemCaps {
     pub formulation: Problem,
-    /// Built in this binary (acopf is always `false`; it is not in this build).
+    /// Built in this binary.
     pub available: bool,
     /// Output blocks this formulation fills, e.g. `["lmp","va","flows","dispatch"]`.
     pub blocks: Vec<String>,
@@ -1099,13 +1267,11 @@ fn formulation_caps() -> Vec<ProblemCaps> {
                 Parameter::ShuntAdmittance(GB::Susceptance),
             ],
         },
-        // Full nonlinear AC OPF: not in this build. The entry is kept (with the same
-        // output blocks it would fill) so the `acopf` tag stays in the matrix and the UI
-        // can grey it out, but `available` is `false` and it offers no sensitivity cells.
+        // Full nonlinear AC OPF remains opt-in and offers no sensitivity cells.
         ProblemCaps {
             formulation: Problem::Acopf,
-            available: false,
-            blocks: ["lmp", "lmp_q", "vm", "va", "flows", "dispatch"]
+            available: cfg!(feature = "acopf"),
+            blocks: ["vm", "va", "injections", "flows", "dispatch"]
                 .map(str::to_owned)
                 .to_vec(),
             #[cfg(feature = "sensitivity")]
@@ -1881,12 +2047,12 @@ mod tests {
             .map(|f| f["formulation"].as_str().unwrap())
             .collect();
         assert_eq!(tags, vec!["dcpf", "dcopf", "acpf", "socwr", "acopf"]);
-        // DC OPF is always built; acopf is not in this build, so it reports unavailable
-        // (the tag stays in the matrix for a stable wire contract).
+        // DC OPF is always built. AC OPF keeps a stable wire-contract entry and
+        // reports availability according to the opt-in feature.
         let dc_opf = arr.iter().find(|f| f["formulation"] == "dcopf").unwrap();
         assert_eq!(dc_opf["available"], true);
         let acopf = arr.iter().find(|f| f["formulation"] == "acopf").unwrap();
-        assert_eq!(acopf["available"], false);
+        assert_eq!(acopf["available"], cfg!(feature = "acopf"));
     }
 
     #[cfg(feature = "sensitivity")]
@@ -2004,12 +2170,109 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "acopf"))]
     #[test]
     fn acopf_is_not_available_in_this_build() {
-        // The full nonlinear AC OPF is not built on this branch; requesting it errors
-        // cleanly rather than degrading silently.
         let err = solve_test_network_json(&case3_json(), r#"{"formulation":"acopf"}"#).unwrap_err();
-        assert!(err.contains("not available in this build"), "got: {err}");
+        assert!(err.contains("requires the `acopf` feature"), "got: {err}");
+    }
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn acopf_is_available_without_prices_or_sensitivities() {
+        let out = solve_test_network_json(&case3_json(), r#"{"formulation":"acopf"}"#)
+            .expect("solve AC OPF");
+        let value: Value = serde_json::from_str(&out).expect("response JSON");
+        assert_eq!(value["formulation"], "acopf");
+        assert_eq!(value["status"], "feasible");
+        assert_eq!(value["vm"].as_array().map(Vec::len), Some(3));
+        assert_eq!(value["va"].as_array().map(Vec::len), Some(3));
+        assert_eq!(value["dispatch"].as_array().map(Vec::len), Some(2));
+        assert_eq!(value["iterations"]["solver_status"], "Solve_Succeeded");
+        assert!(value["iterations"]["primal_residual"]
+            .as_f64()
+            .is_some_and(|residual| residual < 1.0e-6));
+        assert!(value["iterations"]["solver_kkt_error"].is_number());
+        assert_eq!(
+            value["iterations"]["model_fingerprint"]
+                .as_str()
+                .map(str::len),
+            Some(64)
+        );
+        assert!(value.get("lmp").is_none());
+        assert!(value.get("lmp_q").is_none());
+
+        let capabilities: Value = serde_json::from_str(&capabilities_json()).expect("capabilities");
+        let capability = capabilities
+            .as_array()
+            .expect("capability array")
+            .iter()
+            .find(|capability| capability["formulation"] == "acopf")
+            .expect("AC OPF capability");
+        assert_eq!(capability["available"], true);
+        assert_eq!(
+            capability["blocks"],
+            serde_json::json!(["vm", "va", "injections", "flows", "dispatch"])
+        );
+    }
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn typed_ac_opf_module_dispatches_and_request_edits_fail_closed() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = AcOpfInstance::from_network(network).expect("instance");
+        let module = powerio::PioModule::new(powerio::PioValue::AcOpfInstance(instance));
+        let text = crate::ir::serialize_module(&module).expect("module JSON");
+
+        let response =
+            solve_module_json(&text, r#"{"formulation":"acopf"}"#).expect("typed AC OPF solve");
+        let response: Value = serde_json::from_str(&response).expect("response JSON");
+        assert_eq!(response["formulation"], "acopf");
+        assert_eq!(response["status"], "feasible");
+
+        let wrong = solve_module_json(&text, r#"{"formulation":"dcopf"}"#)
+            .expect_err("wrong formulation must reject");
+        assert!(wrong.contains("ac_opf_instance cannot be solved as DcOpf"));
+
+        let edited = solve_module_json(
+            &text,
+            r#"{"formulation":"acopf","edits":{"deltas":{"2":1.0}}}"#,
+        )
+        .expect_err("unapplied edit must reject");
+        assert!(edited.contains("amend the canonical AcOpfInstance"));
+    }
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn ac_opf_cancellation_is_checked_before_model_construction() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = AcOpfInstance::from_network(network).expect("instance");
+        let cancel = Arc::new(AtomicBool::new(true));
+        let error = solve_ac_opf_instance_cancellable(
+            &instance,
+            &SolveRequest {
+                formulation: Problem::Acopf,
+                ..SolveRequest::default()
+            },
+            Some(cancel),
+        )
+        .expect_err("pre-cancelled solve must stop");
+        assert!(error.contains("cancelled"), "got: {error}");
+    }
+
+    #[cfg(all(feature = "acopf", feature = "sensitivity"))]
+    #[test]
+    fn ac_opf_sensitivity_request_fails_closed() {
+        let request = r#"{
+            "formulation":"acopf",
+            "sensitivities":[{
+                "operand":{"Price":"Active"},
+                "parameter":{"Demand":"Active"}
+            }]
+        }"#;
+        let error = solve_test_network_json(&case3_json(), request)
+            .expect_err("unvalidated AC OPF sensitivity must reject");
+        assert!(error.contains("separately validated NLP KKT contract"));
     }
 
     /// Guard against the static capability matrix drifting from the engine: build each

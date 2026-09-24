@@ -4,9 +4,17 @@
 //! Solver status mapping and portable solution emission belong to the next
 //! layer, while all electrical semantics and stable source/index maps live here.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use pounce_nl::nl_reader::{BinOp, Expr, NlProblem, NlProblemParts, NlTnlp, UnaryOp};
+use pounce_rs::{
+    ApplicationReturnStatus, BoundsInfo, Index, IpoptApplication, IpoptCq, IpoptData, IterStats,
+    Linearity, MetaData, NlpInfo, Number, ScalingRequest, Solution, SparsityRequest, StartingPoint,
+    TNLP,
+};
 use powerio::LoadVoltageModel;
 use powerio_matrix::{
     build_ac_opf_preparation, AcOpfAssemblyOptions, AcOpfPreparation, PreparedObjective, Units,
@@ -18,6 +26,204 @@ use super::{reject_unsupported_active_elements, validate_canonical_identity, Pie
 
 const INF: f64 = 1.0e19;
 const FORMULATION_TAG: &[u8] = b"tellegen/acopf/polar-v1";
+const PRIMAL_TOLERANCE: f64 = 1.0e-6;
+const POUNCE_OPTIONS: &str = "linear_solver feral
+hessian_approximation exact
+nlp_scaling_method none
+linear_system_scaling none
+tol 1e-8
+constr_viol_tol 1e-8
+acceptable_tol 1e-7
+max_iter 1000
+print_level 0
+";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct AcOpfResidualCheck {
+    pub(crate) active_balance: f64,
+    pub(crate) reactive_balance: f64,
+    pub(crate) variable_bounds: f64,
+    pub(crate) reference_angles: f64,
+    pub(crate) angle_limits: f64,
+    pub(crate) thermal_limits: f64,
+    pub(crate) piecewise_epigraph: f64,
+    pub(crate) objective: f64,
+}
+
+impl AcOpfResidualCheck {
+    pub(crate) fn max_violation(self) -> f64 {
+        self.active_balance
+            .max(self.reactive_balance)
+            .max(self.variable_bounds)
+            .max(self.reference_angles)
+            .max(self.angle_limits)
+            .max(self.thermal_limits)
+            .max(self.piecewise_epigraph)
+            .max(self.objective)
+    }
+}
+
+/// A converged POUNCE point after an independent calculation from PowerIO's
+/// prepared arrays. Duals intentionally stay private and unpublished until a
+/// perturbation test establishes their sign and source-unit scaling.
+#[derive(Clone, Debug)]
+pub(crate) struct AcOpfSolved {
+    pub(crate) preparation: AcOpfPreparation,
+    pub(crate) va: Vec<f64>,
+    pub(crate) vm: Vec<f64>,
+    pub(crate) pg: Vec<f64>,
+    pub(crate) qg: Vec<f64>,
+    pub(crate) p_injection: Vec<f64>,
+    pub(crate) q_injection: Vec<f64>,
+    pub(crate) p_from: Vec<f64>,
+    pub(crate) q_from: Vec<f64>,
+    pub(crate) p_to: Vec<f64>,
+    pub(crate) q_to: Vec<f64>,
+    pub(crate) objective: f64,
+    pub(crate) residuals: AcOpfResidualCheck,
+    pub(crate) iterations: i32,
+    pub(crate) solver_status: ApplicationReturnStatus,
+    pub(crate) solver_constraint_violation: f64,
+    pub(crate) solver_kkt_error: f64,
+    pub(crate) fingerprint: String,
+}
+
+/// Transparent POUNCE model decorator that polls Tellegen's cancellation flag
+/// from each intermediate callback made by the currently wired solve.
+struct CancellableNlTnlp {
+    inner: NlTnlp,
+    cancel: Option<Arc<AtomicBool>>,
+}
+
+impl CancellableNlTnlp {
+    fn new(inner: NlTnlp, cancel: Option<Arc<AtomicBool>>) -> Self {
+        Self { inner, cancel }
+    }
+}
+
+impl TNLP for CancellableNlTnlp {
+    fn get_nlp_info(&mut self) -> Option<NlpInfo> {
+        self.inner.get_nlp_info()
+    }
+
+    fn get_bounds_info(&mut self, bounds: BoundsInfo<'_>) -> bool {
+        self.inner.get_bounds_info(bounds)
+    }
+
+    fn get_starting_point(&mut self, point: StartingPoint<'_>) -> bool {
+        self.inner.get_starting_point(point)
+    }
+
+    fn eval_f(&mut self, x: &[Number], new_x: bool) -> Option<Number> {
+        self.inner.eval_f(x, new_x)
+    }
+
+    fn eval_grad_f(&mut self, x: &[Number], new_x: bool, gradient: &mut [Number]) -> bool {
+        self.inner.eval_grad_f(x, new_x, gradient)
+    }
+
+    fn eval_g(&mut self, x: &[Number], new_x: bool, constraints: &mut [Number]) -> bool {
+        self.inner.eval_g(x, new_x, constraints)
+    }
+
+    fn eval_jac_g(
+        &mut self,
+        x: Option<&[Number]>,
+        new_x: bool,
+        request: SparsityRequest<'_>,
+    ) -> bool {
+        self.inner.eval_jac_g(x, new_x, request)
+    }
+
+    fn eval_h(
+        &mut self,
+        x: Option<&[Number]>,
+        new_x: bool,
+        objective_factor: Number,
+        lambda: Option<&[Number]>,
+        new_lambda: bool,
+        request: SparsityRequest<'_>,
+    ) -> bool {
+        self.inner
+            .eval_h(x, new_x, objective_factor, lambda, new_lambda, request)
+    }
+
+    fn finalize_solution(&mut self, solution: Solution<'_>, data: &IpoptData, cq: &IpoptCq) {
+        self.inner.finalize_solution(solution, data, cq);
+    }
+
+    fn get_var_con_metadata(
+        &mut self,
+        variables: &mut MetaData,
+        constraints: &mut MetaData,
+    ) -> bool {
+        self.inner.get_var_con_metadata(variables, constraints)
+    }
+
+    fn get_scaling_parameters(&mut self, request: ScalingRequest<'_>) -> bool {
+        self.inner.get_scaling_parameters(request)
+    }
+
+    fn get_variables_linearity(&mut self, types: &mut [Linearity]) -> bool {
+        self.inner.get_variables_linearity(types)
+    }
+
+    fn get_objective_variables_linearity(&mut self, types: &mut [Linearity]) -> bool {
+        self.inner.get_objective_variables_linearity(types)
+    }
+
+    fn get_constraints_linearity(&mut self, types: &mut [Linearity]) -> bool {
+        self.inner.get_constraints_linearity(types)
+    }
+
+    fn get_number_of_nonlinear_variables(&mut self) -> Index {
+        self.inner.get_number_of_nonlinear_variables()
+    }
+
+    fn get_list_of_nonlinear_variables(&mut self, variables: &mut [Index]) -> bool {
+        self.inner.get_list_of_nonlinear_variables(variables)
+    }
+
+    fn derivative_proofs(
+        &mut self,
+    ) -> pounce_rs::pounce_nlp::constant_derivatives::DerivativeProofs {
+        self.inner.derivative_proofs()
+    }
+
+    fn intermediate_callback(
+        &mut self,
+        statistics: IterStats,
+        data: &IpoptData,
+        cq: &IpoptCq,
+    ) -> bool {
+        if self
+            .cancel
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+        {
+            return false;
+        }
+        self.inner.intermediate_callback(statistics, data, cq)
+    }
+
+    fn finalize_metadata(&mut self, variables: &MetaData, constraints: &MetaData) {
+        self.inner.finalize_metadata(variables, constraints);
+    }
+
+    fn is_presolve_wrapper(&self) -> bool {
+        self.inner.is_presolve_wrapper()
+    }
+
+    fn scaling_factors(&self) -> Option<Vec<Number>> {
+        self.inner.scaling_factors()
+    }
+
+    fn presolve_infeasibility_proof(
+        &self,
+    ) -> Option<pounce_rs::pounce_nlp::tnlp::InfeasibilityProof> {
+        self.inner.presolve_infeasibility_proof()
+    }
+}
 
 /// The recorded assembly policy for the canonical model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +278,7 @@ pub(super) struct AcOpfRows {
 /// The private exact model plus everything later solve/emission code needs to
 /// map POUNCE vectors back to PowerIO identities.
 #[derive(Clone, Debug)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) struct CanonicalAcOpfModel {
     pub(super) preparation: AcOpfPreparation,
     pub(super) policy: AcOpfAssemblyPolicy,
@@ -86,6 +293,7 @@ impl CanonicalAcOpfModel {
         NlTnlp::try_new(self.problem.clone())
     }
 
+    #[cfg(test)]
     pub(super) fn problem(&self) -> &NlProblem {
         &self.problem
     }
@@ -574,12 +782,313 @@ pub(super) fn compile_ac_opf_model(
     })
 }
 
+fn numeric_branch_flow(prep: &AcOpfPreparation, va: &[f64], vm: &[f64], branch: usize) -> [f64; 4] {
+    let f = prep.branches.from_bus[branch];
+    let t = prep.branches.to_bus[branch];
+    let delta = va[f] - va[t];
+    let wr = vm[f] * vm[t] * delta.cos();
+    let wi = vm[f] * vm[t] * delta.sin();
+    let g = prep.branches.g[branch];
+    let b = prep.branches.b[branch];
+    let tap = prep.branches.tap[branch];
+    let tr = tap * prep.branches.shift[branch].cos();
+    let ti = tap * prep.branches.shift[branch].sin();
+    let tm2 = tap * tap;
+    let p_from = (g + prep.branches.g_fr[branch]) / tm2 * vm[f].powi(2)
+        + (-g * tr + b * ti) / tm2 * wr
+        + (-b * tr - g * ti) / tm2 * wi;
+    let q_from = -(b + prep.branches.b_fr[branch]) / tm2 * vm[f].powi(2)
+        + (b * tr + g * ti) / tm2 * wr
+        + (-g * tr + b * ti) / tm2 * wi;
+    let p_to = (g + prep.branches.g_to[branch]) * vm[t].powi(2)
+        + (-g * tr - b * ti) / tm2 * wr
+        + (b * tr - g * ti) / tm2 * wi;
+    let q_to = -(b + prep.branches.b_to[branch]) * vm[t].powi(2)
+        + (b * tr - g * ti) / tm2 * wr
+        + (g * tr + b * ti) / tm2 * wi;
+    [p_from, q_from, p_to, q_to]
+}
+
+fn piecewise_value(cost: &powerio_matrix::PiecewiseLinearCost, power: f64) -> f64 {
+    (0..cost.power.len() - 1)
+        .map(|segment| {
+            let slope = (cost.value[segment + 1] - cost.value[segment])
+                / (cost.power[segment + 1] - cost.power[segment]);
+            slope * power + cost.value[segment] - slope * cost.power[segment]
+        })
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
+fn positive_violation(value: f64, lower: f64, upper: f64) -> f64 {
+    (lower - value).max(0.0).max((value - upper).max(0.0))
+}
+
+fn validate_primal(
+    model: &CanonicalAcOpfModel,
+    x: &[f64],
+    solver_objective: f64,
+    iterations: i32,
+    solver_status: ApplicationReturnStatus,
+    solver_constraint_violation: f64,
+    solver_kkt_error: f64,
+) -> Result<AcOpfSolved, String> {
+    let prep = &model.preparation;
+    if x.len() != model.problem.n || x.iter().any(|value| !value.is_finite()) {
+        return Err("POUNCE returned a missing, non-finite, or wrong-length primal point".into());
+    }
+    let va = model
+        .columns
+        .va
+        .iter()
+        .map(|&column| x[column])
+        .collect::<Vec<_>>();
+    let vm = model
+        .columns
+        .vm
+        .iter()
+        .map(|&column| x[column])
+        .collect::<Vec<_>>();
+    let pg = model
+        .columns
+        .pg
+        .iter()
+        .map(|&column| x[column])
+        .collect::<Vec<_>>();
+    let qg = model
+        .columns
+        .qg
+        .iter()
+        .map(|&column| x[column])
+        .collect::<Vec<_>>();
+
+    let flows = (0..prep.n_branches())
+        .map(|branch| numeric_branch_flow(prep, &va, &vm, branch))
+        .collect::<Vec<_>>();
+    let p_from = flows.iter().map(|flow| flow[0]).collect::<Vec<_>>();
+    let q_from = flows.iter().map(|flow| flow[1]).collect::<Vec<_>>();
+    let p_to = flows.iter().map(|flow| flow[2]).collect::<Vec<_>>();
+    let q_to = flows.iter().map(|flow| flow[3]).collect::<Vec<_>>();
+
+    let mut p_injection = (0..prep.n_buses)
+        .map(|bus| -prep.buses.p_d[bus] - prep.buses.g_s[bus] * vm[bus].powi(2))
+        .collect::<Vec<_>>();
+    let mut q_injection = (0..prep.n_buses)
+        .map(|bus| -prep.buses.q_d[bus] + prep.buses.b_s[bus] * vm[bus].powi(2))
+        .collect::<Vec<_>>();
+    for generator in 0..prep.n_generators() {
+        let bus = prep.generators.bus_of_gen[generator];
+        p_injection[bus] += pg[generator];
+        q_injection[bus] += qg[generator];
+    }
+    let mut p_balance = p_injection.clone();
+    let mut q_balance = q_injection.clone();
+    for (branch, flow) in flows.iter().enumerate() {
+        let f = prep.branches.from_bus[branch];
+        let t = prep.branches.to_bus[branch];
+        p_balance[f] -= flow[0];
+        q_balance[f] -= flow[1];
+        p_balance[t] -= flow[2];
+        q_balance[t] -= flow[3];
+    }
+
+    let variable_bounds = x
+        .iter()
+        .zip(&model.problem.x_l)
+        .zip(&model.problem.x_u)
+        .map(|((&value, &lower), &upper)| positive_violation(value, lower, upper))
+        .fold(0.0, f64::max);
+    let reference_angles = prep
+        .reference_buses
+        .iter()
+        .map(|&bus| va[bus].abs())
+        .fold(0.0, f64::max);
+    let angle_limits = (0..prep.n_branches())
+        .filter(|&branch| prep.branches.angle_bound_active[branch])
+        .map(|branch| {
+            let angle = va[prep.branches.from_bus[branch]] - va[prep.branches.to_bus[branch]];
+            positive_violation(
+                angle,
+                prep.branches.angle_min[branch],
+                prep.branches.angle_max[branch],
+            )
+        })
+        .fold(0.0, f64::max);
+    let thermal_limits = flows
+        .iter()
+        .enumerate()
+        .filter(|(branch, _)| {
+            prep.branches.thermal_limit_active[*branch] && prep.branches.s_max[*branch] > 0.0
+        })
+        .map(|(branch, flow)| {
+            (flow[0].hypot(flow[1]).max(flow[2].hypot(flow[3])) - prep.branches.s_max[branch])
+                .max(0.0)
+        })
+        .fold(0.0, f64::max);
+
+    let mut independent_objective = 0.0;
+    let mut piecewise_epigraph: f64 = 0.0;
+    if prep.objective == PreparedObjective::NetworkGeneratorCost {
+        for generator in 0..prep.n_generators() {
+            if let Some(cost) = &prep.generators.piecewise_linear[generator] {
+                let value = piecewise_value(cost, pg[generator]);
+                independent_objective += value;
+                let epigraph = x[model.columns.piecewise_epigraph[generator]
+                    .expect("piecewise objective has an epigraph column")];
+                piecewise_epigraph = piecewise_epigraph.max((value - epigraph).max(0.0));
+            } else {
+                independent_objective += 0.5 * prep.generators.q[generator] * pg[generator].powi(2)
+                    + prep.generators.c[generator] * pg[generator]
+                    + prep.generators.c0[generator];
+            }
+        }
+    }
+    let all_derived_finite = va
+        .iter()
+        .chain(&vm)
+        .chain(&pg)
+        .chain(&qg)
+        .chain(&p_injection)
+        .chain(&q_injection)
+        .chain(&p_from)
+        .chain(&q_from)
+        .chain(&p_to)
+        .chain(&q_to)
+        .all(|value| value.is_finite());
+    if !all_derived_finite || !solver_objective.is_finite() || !independent_objective.is_finite() {
+        return Err(
+            "POUNCE AC OPF point produced a non-finite independently calculated output".into(),
+        );
+    }
+    let objective_scale = independent_objective.abs().max(1.0);
+    let residuals = AcOpfResidualCheck {
+        active_balance: p_balance
+            .iter()
+            .map(|value| value.abs())
+            .fold(0.0, f64::max),
+        reactive_balance: q_balance
+            .iter()
+            .map(|value| value.abs())
+            .fold(0.0, f64::max),
+        variable_bounds,
+        reference_angles,
+        angle_limits,
+        thermal_limits,
+        piecewise_epigraph,
+        objective: (solver_objective - independent_objective).abs() / objective_scale,
+    };
+    if residuals.max_violation() > PRIMAL_TOLERANCE {
+        return Err(format!(
+            "POUNCE returned {solver_status:?}, but independent AC validation failed (max violation {:.3e}; residuals {residuals:?})",
+            residuals.max_violation()
+        ));
+    }
+
+    Ok(AcOpfSolved {
+        preparation: prep.clone(),
+        va,
+        vm,
+        pg,
+        qg,
+        p_injection,
+        q_injection,
+        p_from,
+        q_from,
+        p_to,
+        q_to,
+        objective: independent_objective,
+        residuals,
+        iterations,
+        solver_status,
+        solver_constraint_violation,
+        solver_kkt_error,
+        fingerprint: model.fingerprint.clone(),
+    })
+}
+
+/// Compile and solve one canonical instance with exact POUNCE derivatives.
+/// The optional atomic flag is polled before model construction and once per
+/// POUNCE iteration. A local infeasibility report is returned as a diagnostic
+/// error, never promoted to PowerIO's proof-strength `Termination::Infeasible`.
+pub(crate) fn solve_ac_opf_cancellable(
+    instance: &AcOpfInstance,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<AcOpfSolved, String> {
+    if cancel
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    {
+        return Err("AC OPF solve cancelled".into());
+    }
+    let model = compile_ac_opf_model(instance)?;
+    if cancel
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    {
+        return Err("AC OPF solve cancelled".into());
+    }
+    let tnlp = Rc::new(RefCell::new(CancellableNlTnlp::new(
+        model.tnlp()?,
+        cancel.clone(),
+    )));
+    let mut application = IpoptApplication::new();
+    application
+        .initialize_with_options_str(POUNCE_OPTIONS)
+        .map_err(|error| format!("could not configure POUNCE AC OPF: {error}"))?;
+    application
+        .initialize()
+        .map_err(|error| format!("could not initialize POUNCE AC OPF: {error}"))?;
+    let status = application.optimize_tnlp(Rc::clone(&tnlp) as Rc<RefCell<dyn TNLP>>);
+    let statistics = application.statistics();
+    if status == ApplicationReturnStatus::UserRequestedStop
+        && cancel
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    {
+        return Err(format!(
+            "AC OPF solve cancelled after {} iterations (constraint violation {:.3e}, KKT error {:.3e})",
+            statistics.iteration_count,
+            statistics.final_unscaled_constr_viol,
+            statistics.final_unscaled_kkt_error,
+        ));
+    }
+    if !matches!(
+        status,
+        ApplicationReturnStatus::SolveSucceeded | ApplicationReturnStatus::SolvedToAcceptableLevel
+    ) {
+        let qualification = if status == ApplicationReturnStatus::InfeasibleProblemDetected {
+            "; this local NLP report is not a proof that the canonical problem is infeasible"
+        } else {
+            ""
+        };
+        return Err(format!(
+            "POUNCE AC OPF stopped with {status:?} after {} iterations (constraint violation {:.3e}, KKT error {:.3e}){qualification}",
+            statistics.iteration_count,
+            statistics.final_unscaled_constr_viol,
+            statistics.final_unscaled_kkt_error,
+        ));
+    }
+    let solved = tnlp.borrow();
+    let x = solved
+        .inner
+        .final_x()
+        .ok_or("POUNCE reported AC OPF convergence without a primal point")?;
+    validate_primal(
+        &model,
+        x,
+        solved.inner.final_obj(),
+        statistics.iteration_count,
+        status,
+        statistics.final_unscaled_constr_viol,
+        statistics.final_unscaled_kkt_error,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
 
     use pounce_rs::{SparsityRequest, TNLP};
-    use powerio::{BusId, LoadVoltageModel, Storage};
+    use powerio::{BranchCharging, BusId, LoadVoltageModel, Storage};
     use powerio_prob::{ActiveConstraints, ConstraintSelection, Objective};
 
     use super::*;
@@ -589,6 +1098,46 @@ mod tests {
         let network = parse_matpower(CASE3).expect("parse case3");
         let instance = AcOpfInstance::from_network(network).expect("case3 AC OPF instance");
         compile_ac_opf_model(&instance).expect("compile case3 AC OPF")
+    }
+
+    fn solved_primal(model: &CanonicalAcOpfModel, solved: &AcOpfSolved) -> Vec<f64> {
+        let mut x = model.problem().x0.clone();
+        for (columns, values) in [
+            (&model.columns.va, &solved.va),
+            (&model.columns.vm, &solved.vm),
+            (&model.columns.pg, &solved.pg),
+            (&model.columns.qg, &solved.qg),
+        ] {
+            for (&column, &value) in columns.iter().zip(values) {
+                x[column] = value;
+            }
+        }
+        for (generator, column) in model.columns.piecewise_epigraph.iter().enumerate() {
+            if let Some(column) = column {
+                let cost = model.preparation.generators.piecewise_linear[generator]
+                    .as_ref()
+                    .expect("piecewise epigraph has a prepared cost");
+                x[*column] = piecewise_value(cost, solved.pg[generator]);
+            }
+        }
+        x
+    }
+
+    fn assert_primal_rejected(label: &str, model: &CanonicalAcOpfModel, x: &[f64], objective: f64) {
+        let error = validate_primal(
+            model,
+            x,
+            objective,
+            1,
+            ApplicationReturnStatus::SolveSucceeded,
+            0.0,
+            0.0,
+        )
+        .expect_err(label);
+        assert!(
+            error.contains("independent AC validation failed"),
+            "{label}: {error}"
+        );
     }
 
     const CASE3_FULL_PI: &str = "\
@@ -617,6 +1166,30 @@ mpc.gencost = [
  2 0 0 3 0.12 1.5  5;
  2 0 0 3 0.08 2.5  2;
  2 0 0 3 0.50 9.0 99;
+];
+";
+
+    const CASE4_TWO_ISLANDS: &str = "\
+function mpc = case4twoislands
+mpc.version = '2';
+mpc.baseMVA = 100;
+mpc.bus = [
+ 1 3  0  0 0 0 1 1 0 230 1 1.1 0.9;
+ 2 1 40 12 0 0 1 1 0 230 1 1.1 0.9;
+ 3 3  0  0 0 0 1 1 0 230 1 1.1 0.9;
+ 4 1 35 10 0 0 1 1 0 230 1 1.1 0.9;
+];
+mpc.gen = [
+ 1 40 12 100 -100 1 100 1 100 0 0 0 0 0 0 0 0 0 0 0 0;
+ 3 35 10 100 -100 1 100 1 100 0 0 0 0 0 0 0 0 0 0 0 0;
+];
+mpc.branch = [
+ 1 2 0.02 0.10 0.02 100 100 100 0 0 1 -30 30;
+ 3 4 0.03 0.12 0.03 100 100 100 0 0 1 -30 30;
+];
+mpc.gencost = [
+ 2 0 0 3 0.02 2.0 3;
+ 2 0 0 3 0.03 1.5 4;
 ];
 ";
 
@@ -707,7 +1280,18 @@ mpc.gencost = [
         gradient
     }
 
-    fn directional_derivative_errors(model: &CanonicalAcOpfModel, tnlp: &mut NlTnlp) -> (f64, f64) {
+    #[derive(Clone, Copy, Debug)]
+    struct DirectionalDerivativeErrors {
+        jacobian_absolute: f64,
+        jacobian_scaled: f64,
+        hessian_absolute: f64,
+        hessian_scaled: f64,
+    }
+
+    fn directional_derivative_errors(
+        model: &CanonicalAcOpfModel,
+        tnlp: &mut NlTnlp,
+    ) -> DirectionalDerivativeErrors {
         let n = model.problem().n;
         let m = model.problem().m;
         let x = &model.problem().x0;
@@ -744,11 +1328,17 @@ mpc.gencost = [
         let mut minus_constraints = vec![0.0; m];
         assert!(tnlp.eval_g(&plus, true, &mut plus_constraints));
         assert!(tnlp.eval_g(&minus, true, &mut minus_constraints));
-        let jacobian_error = exact_constraint_direction
+        let (jacobian_absolute, jacobian_scaled) = exact_constraint_direction
             .iter()
             .zip(plus_constraints.iter().zip(&minus_constraints))
-            .map(|(&exact, (&plus, &minus))| (exact - (plus - minus) / (2.0 * step)).abs())
-            .fold(0.0, f64::max);
+            .map(|(&exact, (&plus, &minus))| {
+                let finite = (plus - minus) / (2.0 * step);
+                let absolute = (exact - finite).abs();
+                (absolute, absolute / exact.abs().max(finite.abs()).max(1.0))
+            })
+            .fold((0.0_f64, 0.0_f64), |(max_absolute, max_scaled), error| {
+                (max_absolute.max(error.0), max_scaled.max(error.1))
+            });
 
         let info = tnlp.get_nlp_info().expect("NLP dimensions");
         let nnz_h = usize::try_from(info.nnz_h_lag).expect("nonnegative Hessian nnz");
@@ -805,12 +1395,23 @@ mpc.gencost = [
             &jac_rows,
             &jac_columns,
         );
-        let hessian_error = exact_lagrangian_direction
+        let (hessian_absolute, hessian_scaled) = exact_lagrangian_direction
             .iter()
             .zip(plus_gradient.iter().zip(&minus_gradient))
-            .map(|(&exact, (&plus, &minus))| (exact - (plus - minus) / (2.0 * step)).abs())
-            .fold(0.0, f64::max);
-        (jacobian_error, hessian_error)
+            .map(|(&exact, (&plus, &minus))| {
+                let finite = (plus - minus) / (2.0 * step);
+                let absolute = (exact - finite).abs();
+                (absolute, absolute / exact.abs().max(finite.abs()).max(1.0))
+            })
+            .fold((0.0_f64, 0.0_f64), |(max_absolute, max_scaled), error| {
+                (max_absolute.max(error.0), max_scaled.max(error.1))
+            });
+        DirectionalDerivativeErrors {
+            jacobian_absolute,
+            jacobian_scaled,
+            hessian_absolute,
+            hessian_scaled,
+        }
     }
 
     #[test]
@@ -841,6 +1442,185 @@ mpc.gencost = [
             .all(|((&start, &lower), &upper)| start.is_finite()
                 && start >= lower
                 && start <= upper));
+    }
+
+    #[test]
+    fn pounce_solution_passes_independent_full_pi_validation() {
+        let network = parse_matpower(CASE3_FULL_PI).expect("parse full pi case");
+        let instance = AcOpfInstance::from_network(network).expect("full pi AC OPF instance");
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve full pi AC OPF");
+        assert!(matches!(
+            solved.solver_status,
+            ApplicationReturnStatus::SolveSucceeded
+                | ApplicationReturnStatus::SolvedToAcceptableLevel
+        ));
+        assert!(solved.iterations > 0);
+        assert!(solved.objective.is_finite());
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+        assert_eq!(solved.fingerprint.len(), 64);
+    }
+
+    #[test]
+    fn independent_validation_rejects_each_guarded_residual_family() {
+        let network = parse_matpower(CASE3).expect("parse case3");
+        let instance = AcOpfInstance::from_network(network).expect("case3 AC OPF instance");
+        let model = compile_ac_opf_model(&instance).expect("compile case3");
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve case3");
+        let x = solved_primal(&model, &solved);
+        validate_primal(
+            &model,
+            &x,
+            solved.objective,
+            solved.iterations,
+            solved.solver_status,
+            solved.solver_constraint_violation,
+            solved.solver_kkt_error,
+        )
+        .expect("the reconstructed solver point is valid");
+
+        let mut non_finite = x.clone();
+        non_finite[model.columns.vm[0]] = f64::NAN;
+        let error = validate_primal(
+            &model,
+            &non_finite,
+            solved.objective,
+            1,
+            ApplicationReturnStatus::SolveSucceeded,
+            0.0,
+            0.0,
+        )
+        .expect_err("non-finite primal must fail closed");
+        assert!(error.contains("non-finite"), "{error}");
+
+        assert_primal_rejected(
+            "objective mismatch",
+            &model,
+            &x,
+            solved.objective + solved.objective.abs().max(1.0) * 1.0e-4,
+        );
+
+        // A common angle rotation leaves every branch flow and nodal balance
+        // unchanged, so this isolates the reference-angle guard.
+        let mut bad_reference = x.clone();
+        for &column in &model.columns.va {
+            bad_reference[column] += 1.0e-4;
+        }
+        assert_primal_rejected("reference angle", &model, &bad_reference, solved.objective);
+
+        // Tightening only the validator's copy of a bound preserves the exact
+        // solved point and all electrical equations while exercising bounds.
+        let mut bad_bound_model = model.clone();
+        let vm = model.columns.vm[0];
+        bad_bound_model.problem.x_l[vm] = x[vm] + 1.0e-4;
+        assert_primal_rejected("variable bound", &bad_bound_model, &x, solved.objective);
+
+        let mut bad_active_balance = x.clone();
+        bad_active_balance[model.columns.pg[0]] += 1.0e-4;
+        let objective = model
+            .tnlp()
+            .expect("TNLP")
+            .eval_f(&bad_active_balance, true)
+            .expect("objective");
+        assert_primal_rejected("active balance", &model, &bad_active_balance, objective);
+
+        let mut bad_reactive_balance = x.clone();
+        bad_reactive_balance[model.columns.qg[0]] += 1.0e-4;
+        assert_primal_rejected(
+            "reactive balance",
+            &model,
+            &bad_reactive_balance,
+            solved.objective,
+        );
+
+        let branch = 0;
+        let f = model.preparation.branches.from_bus[branch];
+        let t = model.preparation.branches.to_bus[branch];
+        let angle = solved.va[f] - solved.va[t];
+        let mut bad_angle_model = model.clone();
+        bad_angle_model.preparation.branches.angle_bound_active[branch] = true;
+        bad_angle_model.preparation.branches.angle_min[branch] = angle - 1.0;
+        bad_angle_model.preparation.branches.angle_max[branch] = angle - 1.0e-4;
+        assert_primal_rejected("angle limit", &bad_angle_model, &x, solved.objective);
+
+        let flow = solved.p_from[branch]
+            .hypot(solved.q_from[branch])
+            .max(solved.p_to[branch].hypot(solved.q_to[branch]));
+        let mut bad_thermal_model = model.clone();
+        bad_thermal_model.preparation.branches.thermal_limit_active[branch] = true;
+        bad_thermal_model.preparation.branches.s_max[branch] = flow - 1.0e-4;
+        assert_primal_rejected("thermal limit", &bad_thermal_model, &x, solved.objective);
+    }
+
+    #[test]
+    fn multiple_islands_each_keep_a_reference_angle() {
+        let network = parse_matpower(CASE4_TWO_ISLANDS).expect("parse two-island case");
+        let instance = AcOpfInstance::from_network(network).expect("two-island AC OPF instance");
+        let model = compile_ac_opf_model(&instance).expect("compile two-island AC OPF");
+        assert_eq!(model.preparation.reference_buses.iter().len(), 2);
+        assert_eq!(model.rows.reference_angle.len(), 2);
+
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve two-island AC OPF");
+        for &bus in model.preparation.reference_buses.iter() {
+            assert!(solved.va[bus].abs() < 1.0e-8, "reference bus {bus}");
+        }
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+    }
+
+    #[test]
+    fn asymmetric_terminal_charging_survives_an_end_to_end_solve() {
+        let mut network = parse_matpower(CASE3).expect("parse case3");
+        network.branches_mut()[0].charging = Some(BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        let instance = AcOpfInstance::from_network(network).expect("charged AC OPF instance");
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve charged AC OPF");
+
+        for (actual, expected) in [
+            (solved.preparation.branches.g_fr[0], 0.01),
+            (solved.preparation.branches.b_fr[0], 0.02),
+            (solved.preparation.branches.g_to[0], 0.03),
+            (solved.preparation.branches.b_to[0], 0.04),
+        ] {
+            assert!(
+                (actual - expected).abs() < 1.0e-12,
+                "{actual} != {expected}"
+            );
+        }
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+        assert!(
+            (solved.p_from[0] + solved.p_to[0]).abs() > 1.0e-8
+                || (solved.q_from[0] + solved.q_to[0]).abs() > 1.0e-8,
+            "asymmetric pi-model losses and charging unexpectedly vanished"
+        );
+    }
+
+    #[test]
+    fn cancellation_decorator_stops_at_an_iteration_boundary() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let inner = case3_model().tnlp().expect("TNLP");
+        let mut cancellable = CancellableNlTnlp::new(inner, Some(Arc::clone(&cancel)));
+        let stats = IterStats {
+            mode: pounce_rs::AlgorithmMode::RegularMode,
+            iter: 0,
+            obj_value: 0.0,
+            inf_pr: 0.0,
+            inf_du: 0.0,
+            mu: 0.0,
+            d_norm: 0.0,
+            regularization_size: 0.0,
+            alpha_du: 0.0,
+            alpha_pr: 0.0,
+            ls_trials: 0,
+        };
+        assert!(cancellable.intermediate_callback(
+            stats,
+            &IpoptData::default(),
+            &IpoptCq::default()
+        ));
+        cancel.store(true, Ordering::Relaxed);
+        assert!(!cancellable.intermediate_callback(
+            stats,
+            &IpoptData::default(),
+            &IpoptCq::default()
+        ));
     }
 
     #[test]
@@ -1060,7 +1840,7 @@ mpc.gencost = [
         let directory = std::env::var_os("TELLEGEN_ACOPF_FIXTURES")
             .map(std::path::PathBuf::from)
             .expect("TELLEGEN_ACOPF_FIXTURES is required for the ignored build ladder");
-        println!("case,buses,generators,branches,variables,constraints,nnz_jacobian,nnz_hessian,compile_ms,tape_ms,jacobian_direction_error,hessian_direction_error");
+        println!("case,buses,generators,branches,variables,constraints,nnz_jacobian,nnz_hessian,compile_ms,tape_ms,jacobian_direction_absolute_error,jacobian_direction_scaled_error,hessian_direction_absolute_error,hessian_direction_scaled_error");
         for (filename, expected_buses) in [("case14.m", 14), ("case30.m", 30), ("case300.m", 300)] {
             let text = std::fs::read_to_string(directory.join(filename))
                 .unwrap_or_else(|error| panic!("read {filename}: {error}"));
@@ -1081,17 +1861,17 @@ mpc.gencost = [
                 .get_nlp_info()
                 .unwrap_or_else(|| panic!("read {filename} NLP dimensions"));
             assert_eq!(model.preparation.n_buses, expected_buses);
-            let (jacobian_error, hessian_error) = directional_derivative_errors(&model, &mut tnlp);
+            let errors = directional_derivative_errors(&model, &mut tnlp);
             assert!(
-                jacobian_error < 2.0e-5,
-                "{filename} Jacobian directional error {jacobian_error}"
+                errors.jacobian_scaled < 2.0e-5,
+                "{filename} Jacobian directional errors {errors:?}"
             );
             assert!(
-                hessian_error < 2.0e-4,
-                "{filename} Hessian directional error {hessian_error}"
+                errors.hessian_scaled < 2.0e-4,
+                "{filename} Hessian directional errors {errors:?}"
             );
             println!(
-                "{filename},{},{},{},{},{},{},{},{compile_ms:.3},{tape_ms:.3},{jacobian_error:.3e},{hessian_error:.3e}",
+                "{filename},{},{},{},{},{},{},{},{compile_ms:.3},{tape_ms:.3},{:.3e},{:.3e},{:.3e},{:.3e}",
                 model.preparation.n_buses,
                 model.preparation.n_generators(),
                 model.preparation.n_branches(),
@@ -1099,6 +1879,10 @@ mpc.gencost = [
                 info.m,
                 info.nnz_jac_g,
                 info.nnz_h_lag,
+                errors.jacobian_absolute,
+                errors.jacobian_scaled,
+                errors.hessian_absolute,
+                errors.hessian_scaled,
             );
         }
     }
@@ -1156,6 +1940,55 @@ mpc.gencost = [
             .all(Vec::is_empty));
         let mut tnlp = feasibility.tnlp().expect("build feasibility TNLP");
         assert_eq!(tnlp.eval_f(&feasibility.problem().x0, true), Some(0.0));
+    }
+
+    #[test]
+    fn piecewise_cost_solves_and_the_validator_checks_its_epigraph() {
+        let text = CASE3.replacen("2 0 0 3 0.11  5   0;", "1 0 0 3 0 0 100 500 250 2000;", 1);
+        let network = parse_matpower(&text).expect("parse piecewise case");
+        let instance = AcOpfInstance::from_network(network).expect("piecewise AC OPF instance");
+        let model = compile_ac_opf_model(&instance).expect("compile piecewise AC OPF");
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve piecewise AC OPF");
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+
+        let mut x = solved_primal(&model, &solved);
+        let epigraph = model.columns.piecewise_epigraph[0].expect("piecewise epigraph");
+        x[epigraph] -= 1.0e-4;
+        assert_primal_rejected("piecewise epigraph", &model, &x, solved.objective);
+    }
+
+    #[test]
+    fn objective_forms_are_exact_and_unsupported_curves_fail_closed() {
+        let text = CASE3
+            .replacen("2 0 0 3 0.11  5   0;", "2 0 0 2 5 10;", 1)
+            .replacen("2 0 0 3 0.085 1.2 0;", "2 0 0 1 7;", 1);
+        let network = parse_matpower(&text).expect("parse mixed objective case");
+        let instance = AcOpfInstance::from_network(network).expect("mixed objective instance");
+        let model = compile_ac_opf_model(&instance).expect("compile mixed objective");
+        assert_eq!(model.preparation.generators.q, vec![0.0, 0.0]);
+        assert_eq!(model.preparation.generators.c0, vec![10.0, 7.0]);
+        let p0 = model.problem().x0[model.columns.pg[0]];
+        let expected = model.preparation.generators.c[0] * p0 + 17.0;
+        let objective = model
+            .tnlp()
+            .expect("TNLP")
+            .eval_f(&model.problem().x0, true)
+            .expect("objective");
+        assert!((objective - expected).abs() < 1.0e-10);
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve mixed objective");
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+
+        let cubic = CASE3.replacen("2 0 0 3 0.11  5   0;", "2 0 0 4 1 0.11 5 0;", 1);
+        let network = parse_matpower(&cubic).expect("parse cubic cost");
+        let instance = AcOpfInstance::from_network(network).expect("cubic objective instance");
+        let error = compile_ac_opf_model(&instance).expect_err("reject cubic cost");
+        assert!(error.contains("unsupported cost model"), "{error}");
+
+        let concave = CASE3.replacen("2 0 0 3 0.11  5   0;", "2 0 0 3 -0.11 5 0;", 1);
+        let network = parse_matpower(&concave).expect("parse concave cost");
+        let instance = AcOpfInstance::from_network(network).expect("concave objective instance");
+        let error = compile_ac_opf_model(&instance).expect_err("reject concave cost");
+        assert!(error.contains("concave cost"), "{error}");
     }
 
     #[test]

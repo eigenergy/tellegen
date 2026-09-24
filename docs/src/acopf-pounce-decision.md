@@ -10,16 +10,17 @@ transmission AC OPF. The choice favors an end-to-end Rust implementation and a
 responsive upstream over building two solver adapters in the first cycle. The
 internal model/solver boundary must remain backend-neutral.
 
-The decision follows POUNCE's
+The decision follows POUNCE's WASM-frontend
 [restoration fix](https://github.com/jkitchin/pounce/pull/961) and the
 [AC OPF follow-up experiments](https://github.com/jkitchin/pounce/issues/965).
 Those results are feasibility and implementation evidence, not general solver
 performance guarantees.
 
-This decision does not relabel the existing SOCWR relaxation as AC OPF and does
-not make `Problem::Acopf` available. Product capability requires the exact
-PowerIO-prepared polar model, independent primal validation, truthful status
-mapping, portable `AcOpfSolution` emission, and the browser worker boundary.
+This decision does not relabel the existing SOCWR relaxation as AC OPF. The
+native opt-in feature now makes `Problem::Acopf` available after adding the
+exact PowerIO-prepared polar model, independent primal validation, truthful
+status mapping, and portable `AcOpfSolution` emission. Product distribution
+still requires the browser worker boundary and release approval below.
 
 The dependency is pinned to POUNCE revision
 `925e75fbd036de309929e398159f946d42d0d94b`, the head of POUNCE PR #961. That
@@ -48,10 +49,10 @@ scaling, and `1e-9` solver/constraint tolerances. The acceptance check requires
 the known HS071 objective within `1e-5`, source-equation violation below
 `1e-7`, eight Jacobian nonzeros, and ten lower-triangle Hessian nonzeros.
 
-PowerIO 0.11.3 is the released preparation boundary for the next increment. It
-contains `AcOpfInstance`, `build_ac_opf_preparation`, and `AcOpfSolution`; the
-model compiler must consume those APIs rather than reinterpret MATPOWER data or
-reuse Tellegen's modified CATS power-flow physics.
+PowerIO 0.11.3 provides the released preparation boundary used here. The model
+compiler consumes its `AcOpfInstance`, `build_ac_opf_preparation`, and
+`AcOpfSolution` APIs rather than reinterpreting MATPOWER data or reusing
+Tellegen's modified CATS power-flow physics.
 
 ## Canonical model boundary
 
@@ -59,8 +60,8 @@ The opt-in feature now also contains a private, backend-neutral polar model
 compiler. It consumes `AcOpfInstance` only through
 `build_ac_opf_preparation`, preserves PowerIO's generator and branch columns
 and source maps, and emits an in-memory POUNCE expression DAG with exact sparse
-derivatives. It is not wired to dispatch, solution emission, capabilities, or
-the browser.
+derivatives. Native module dispatch and capabilities are feature-gated; no
+shipping adapter or browser package enables them.
 
 The recorded assembly policy is per-unit values, no zero-impedance skipping,
 no synthesized thermal ratings, and PowerIO's angle-interval correction
@@ -88,7 +89,7 @@ MATPOWER 14/30/300-bus construction check reproducible without vendoring a
 second copy of those fixtures. On 24 September 2026, a local arm64 debug build
 after compilation produced:
 
-| case | variables / rows | nnz Jacobian / Hessian | expression compile | derivative tape | max directional J / H error |
+| case | variables / rows | nnz Jacobian / Hessian | expression compile | derivative tape | max absolute directional J / H error |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 14 | 38 / 49 | 267 / 127 | 1.849 ms | 3.841 ms | `4.545e-9` / `1.557e-7` |
 | 30 | 72 / 184 | 871 / 260 | 1.016 ms | 12.803 ms | `7.186e-9` / `3.412e-8` |
@@ -98,7 +99,44 @@ These are correctness/prototype measurements, not solver performance claims.
 Run the ladder with `TELLEGEN_ACOPF_FIXTURES` pointing to a directory containing
 `case14.m`, `case30.m`, and `case300.m`. Peak RSS was not available inside the
 sandbox used for this run, and frozen-NL parity remains a separate acceptance
-measurement.
+measurement. The regression test now reports both absolute error and error
+scaled by the analytic and finite-difference magnitudes with a floor of one.
+The latest scaled J/H errors were `3.478e-9` / `2.418e-9`, `1.791e-9` /
+`2.239e-10`, and `9.095e-7` / `2.966e-9` for cases 14, 30, and 300
+respectively.
+
+## Typed native solve boundary
+
+The opt-in native API now exposes `solve_ac_opf_instance` and
+`solve_ac_opf_instance_to_solution` plus cancellable counterparts. The
+cancellable paths poll an atomic flag before model construction and at every
+iteration of the currently wired POUNCE solve. They run POUNCE with FERAL,
+exact Hessians, identity NLP and linear-system scaling, a `1e-8`
+solver/constraint tolerance, `1e-7` acceptable tolerance, and a 1,000-iteration
+ceiling. The returned `AcOpfSolution` is scattered through PowerIO's source
+row/winding maps in MW/MVAr and degrees, retains inactive source rows as
+unavailable values, and round-trips through `PioModule`.
+
+Only `SolveSucceeded` and `SolvedToAcceptableLevel` are candidates for
+emission, and both must pass a separate calculation from the prepared arrays:
+P/Q balance, voltage/generator boxes, references, angle and both-end thermal
+limits, exact piecewise epigraphs, finite outputs, and source-cost objective.
+The portable residuals report the independently calculated MW/MVAr balance
+mismatch. A local NLP infeasibility report remains a diagnostic error rather
+than PowerIO's proof-strength `Infeasible`. No LMP or limit multiplier is
+emitted yet; the POUNCE dual arrays stay private pending sign and source-unit
+perturbation tests.
+
+Native `solve_module_json` promotes a balanced network or consumes a stored
+`AcOpfInstance` when the request selects `acopf`, and the capability advertises
+only `vm`, `va`, `injections`, `flows`, and `dispatch`. Request edits currently
+fail with an instruction to amend the canonical instance, rather than being
+silently dropped, and every sensitivity request fails until the NLP KKT
+contract exists. A successful nonlinear solve is reported as `feasible`, not
+globally `optimal`, and its response includes the POUNCE status, iteration
+count, solver constraint/KKT residuals, independently checked primal residual,
+and model fingerprint. Failure and cancellation errors include the available
+iteration and residual diagnostics.
 
 ## Browser ABI
 
@@ -123,12 +161,16 @@ default engine and all shipping adapters while present in the opt-in probe.
 That mechanical boundary is not legal approval. Before distributing a native
 binary or WASI asset containing POUNCE, the release owner must approve the
 EPL-2.0 obligations, include its license/notices, and provide a reasonable
-corresponding-source location. Until then, the feature remains a development
-probe and `Problem::Acopf` remains unavailable.
+corresponding-source location. Until then, the feature remains a
+development-only native capability and `Problem::Acopf` remains unavailable in
+default and shipping builds.
 
-## Remaining model and solve gates
+## Remaining release gates
 
-Before solve/emission is made callable, record native peak memory and compare
-the 14/30/300 expressions against the frozen benchmark values in addition to
-the finite-difference checks above. A failure of expression-DAG scaling changes
-the private solver adapter, not the PowerIO problem or solution contract.
+Before distribution, replace the Git pin with a tagged POUNCE release, wire or
+invoke its restoration and second-opinion path explicitly, and add a small
+regression that proves restoration is exercised (`restoration_calls > 0`). Then
+rerun the large PGLib comparison. Also record native peak memory and compare the
+14/30/300 expressions against frozen benchmark values in addition to the
+finite-difference checks above. A failure of expression-DAG scaling changes the
+private solver adapter, not the PowerIO problem or solution contract.
