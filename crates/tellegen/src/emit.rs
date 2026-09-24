@@ -10,11 +10,17 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "acopf")]
+use powerio::{AcOpfInstance, AcOpfSolution, ThreeWindingTransformerTerminalPower};
 use powerio::{DcOpfInstance, DcOpfSolution, ThreeWindingTransformerTerminalActivePower};
 use powerio_matrix::{AnalysisBranchSource, PreparedObjective};
+#[cfg(feature = "acopf")]
+use powerio_prob::Residuals;
 use powerio_prob::Termination;
 
 use crate::model::DcNetwork;
+#[cfg(feature = "acopf")]
+use crate::model::{solve_ac_opf, AcOpfSolved};
 use crate::problem::{dc_opf_cancellable, DcOpfSolution as SolverSolution};
 
 /// Solve a typed PowerIO DC OPF instance and emit its portable solution. The
@@ -146,6 +152,121 @@ pub fn emit_dc_opf_solution(
     }
 
     Ok(emitted.with_producer(producer.into()))
+}
+
+/// Solve a typed canonical AC OPF instance and emit its portable PowerIO
+/// solution. POUNCE's internal multipliers are deliberately not published.
+#[cfg(feature = "acopf")]
+pub fn solve_ac_opf_instance_to_solution(
+    instance: Arc<AcOpfInstance>,
+    producer: impl Into<String>,
+) -> Result<AcOpfSolution, String> {
+    let solved = solve_ac_opf(&instance)?;
+    emit_ac_opf_solution(instance, &solved, producer)
+}
+
+/// Scatter one independently validated nonlinear solution back through
+/// PowerIO's source maps. Angles become degrees and powers return to the source
+/// MW/MVAr unit; inactive source rows remain explicit `NaN` values.
+#[cfg(feature = "acopf")]
+pub(crate) fn emit_ac_opf_solution(
+    instance: Arc<AcOpfInstance>,
+    solved: &AcOpfSolved,
+    producer: impl Into<String>,
+) -> Result<AcOpfSolution, String> {
+    let network = instance.network();
+    let prep = &solved.preparation;
+    let base = prep.base_mva;
+    let mut bus_voltage_magnitude = vec![f64::NAN; network.buses().len()];
+    let mut bus_voltage_angle = vec![f64::NAN; network.buses().len()];
+    let mut bus_active_injection = vec![f64::NAN; network.buses().len()];
+    let mut bus_reactive_injection = vec![f64::NAN; network.buses().len()];
+    for dense in 0..prep.n_buses {
+        let Some(row) = prep.bus_source_rows[dense] else {
+            continue;
+        };
+        let vm = bus_voltage_magnitude
+            .get_mut(row)
+            .ok_or("AC OPF bus source row is out of range")?;
+        *vm = solved.vm[dense];
+        bus_voltage_angle[row] = solved.va[dense].to_degrees();
+        bus_active_injection[row] = solved.p_injection[dense] * base;
+        bus_reactive_injection[row] = solved.q_injection[dense] * base;
+    }
+
+    let mut branch_from_active_flow = vec![f64::NAN; network.branches().len()];
+    let mut branch_from_reactive_flow = vec![f64::NAN; network.branches().len()];
+    let mut branch_to_active_flow = vec![f64::NAN; network.branches().len()];
+    let mut branch_to_reactive_flow = vec![f64::NAN; network.branches().len()];
+    let mut transformer_terminal_power =
+        vec![ThreeWindingTransformerTerminalPower::default(); network.transformers_3w().len()];
+    for (dense, source) in prep.branches.analysis_sources.iter().enumerate() {
+        match *source {
+            AnalysisBranchSource::Branch { row } => {
+                *branch_from_active_flow
+                    .get_mut(row)
+                    .ok_or("AC OPF branch source row is out of range")? =
+                    solved.p_from[dense] * base;
+                branch_from_reactive_flow[row] = solved.q_from[dense] * base;
+                branch_to_active_flow[row] = solved.p_to[dense] * base;
+                branch_to_reactive_flow[row] = solved.q_to[dense] * base;
+            }
+            AnalysisBranchSource::ThreeWindingTransformerWinding {
+                transformer_row,
+                winding,
+            } => {
+                let terminal = transformer_terminal_power
+                    .get_mut(transformer_row)
+                    .ok_or("AC OPF transformer source row is out of range")?;
+                if winding >= terminal.p_mw.len() {
+                    return Err("AC OPF transformer winding index is out of range".into());
+                }
+                terminal.p_mw[winding] = solved.p_from[dense] * base;
+                terminal.q_mvar[winding] = solved.q_from[dense] * base;
+            }
+            _ => {
+                return Err("AC OPF preparation contains an unknown branch source kind".into());
+            }
+        }
+    }
+
+    let mut generator_active_power = vec![f64::NAN; network.generators().len()];
+    let mut generator_reactive_power = vec![f64::NAN; network.generators().len()];
+    for dense in 0..prep.n_generators() {
+        let Some(row) = prep.generators.source_rows[dense] else {
+            continue;
+        };
+        *generator_active_power
+            .get_mut(row)
+            .ok_or("AC OPF generator source row is out of range")? = solved.pg[dense] * base;
+        generator_reactive_power[row] = solved.qg[dense] * base;
+    }
+
+    let mut residuals = Residuals::default();
+    residuals.max_active_power_mismatch = Some(solved.residuals.active_balance * base);
+    residuals.max_reactive_power_mismatch = Some(solved.residuals.reactive_balance * base);
+    AcOpfSolution::new(
+        instance,
+        Termination::Converged,
+        bus_voltage_magnitude,
+        bus_voltage_angle,
+        bus_active_injection,
+        bus_reactive_injection,
+        branch_from_active_flow,
+        branch_from_reactive_flow,
+        branch_to_active_flow,
+        branch_to_reactive_flow,
+        generator_active_power,
+        generator_reactive_power,
+        solved.objective,
+        transformer_terminal_power,
+    )
+    .map(|solution| {
+        solution
+            .with_residuals(residuals)
+            .with_producer(producer.into())
+    })
+    .map_err(|error| error.to_string())
 }
 
 #[cfg(feature = "sensitivity")]
@@ -293,6 +414,78 @@ mod tests {
     use crate::model::parse_matpower;
     use crate::problem::dc_opf_cancellable;
     use powerio::{PioModule, PioValue};
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn canonical_ac_opf_solution_round_trips_without_unverified_duals() {
+        let network = parse_matpower(crate::model::CASE3).expect("parse");
+        let instance = Arc::new(AcOpfInstance::from_network(network).expect("instance"));
+        let emitted = solve_ac_opf_instance_to_solution(
+            Arc::clone(&instance),
+            format!("tellegen {} (polar-pounce)", env!("CARGO_PKG_VERSION")),
+        )
+        .expect("solve and emit AC OPF");
+
+        assert_eq!(emitted.termination(), &Termination::Converged);
+        assert!(emitted.objective().is_finite());
+        assert!(emitted
+            .bus_voltage_magnitudes()
+            .iter()
+            .all(|value| value.is_finite()));
+        assert!(emitted
+            .bus_voltage_angles()
+            .iter()
+            .all(|value| value.is_finite()));
+        assert!(
+            emitted
+                .residuals()
+                .max_active_power_mismatch
+                .expect("active residual")
+                < 1.0e-4
+        );
+        assert!(
+            emitted
+                .residuals()
+                .max_reactive_power_mismatch
+                .expect("reactive residual")
+                < 1.0e-4
+        );
+        assert!(emitted.bus_active_power_marginals().is_none());
+        assert!(emitted.bus_reactive_power_marginals().is_none());
+        assert!(emitted.branch_from_limit_multipliers().is_none());
+        assert!(emitted.branch_to_limit_multipliers().is_none());
+        for identity in emitted.generator_order() {
+            assert!(emitted
+                .generator_active_power(&identity)
+                .is_some_and(f64::is_finite));
+            assert!(emitted
+                .generator_reactive_power(&identity)
+                .is_some_and(f64::is_finite));
+        }
+
+        let module = PioModule::new(PioValue::AcOpfSolution(emitted));
+        let text = crate::ir::serialize_module(&module).expect("write");
+        let back = crate::ir::deserialize_module(&text).expect("read");
+        let PioValue::AcOpfSolution(back) = back.value() else {
+            panic!("expected ac_opf_solution");
+        };
+        assert_eq!(back.termination(), &Termination::Converged);
+        assert!(back.bus_active_power_marginals().is_none());
+        assert!(back.branch_from_limit_multipliers().is_none());
+        assert_eq!(
+            back.generator_order(),
+            instance
+                .network()
+                .generators()
+                .iter()
+                .enumerate()
+                .map(|(row, generator)| generator
+                    .uid
+                    .clone()
+                    .unwrap_or_else(|| format!("generators:{row}")))
+                .collect::<Vec<_>>()
+        );
+    }
 
     #[test]
     fn the_emitted_solution_round_trips_with_marginals_and_bound_multipliers() {

@@ -31,6 +31,8 @@ mod dc;
 
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
+#[cfg(feature = "acopf")]
+pub(crate) use acopf::{solve_ac_opf, AcOpfSolved};
 pub(crate) use dc::DcNetwork;
 
 #[cfg(all(test, feature = "conic"))]
