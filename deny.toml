@@ -1,9 +1,9 @@
 # Supply-chain governance for the tellegen workspace.
 #
-# Every crate in the resolved graph must carry a permissive license. The list below is
-# the whole allow-set; anything not on it fails the check. This branch ships only the
-# convex/relaxation engine (Clarabel + faer), so the whole tree is Apache-2.0/MIT and
-# compatible permissive licenses — there is no copyleft dependency to carve out.
+# Every crate in the default shipping graph must carry a permissive license.
+# POUNCE is EPL-2.0 and appears only behind the opt-in `tellegen/acopf`
+# feasibility feature. The exceptions below identify that reviewed family;
+# scripts/epl-guard.sh separately proves it is absent from shipping adapters.
 
 [licenses]
 # Anything not listed here is denied. Permissive licenses only; copyleft is excluded
@@ -32,6 +32,64 @@ confidence-threshold = 0.9
 name = "target-lexicon"
 allow = ["Apache-2.0 WITH LLVM-exception"]
 
+# POUNCE is a single EPL-2.0 program split into crates. Keep this list explicit
+# so another copyleft dependency cannot enter under a broad license allowance.
+[[licenses.exceptions]]
+name = "pounce-algorithm"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-common"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-feral"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-l1penalty"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-linalg"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-linsol"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-nl"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-nlp"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-observability"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-presolve"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-qp"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-restoration"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-rs"
+allow = ["EPL-2.0"]
+
+[[licenses.exceptions]]
+name = "pounce-solve-report"
+allow = ["EPL-2.0"]
+
 [advisories]
 # RustSec advisory DB. Security advisories fail the check; add IDs to `ignore` only
 # with a documented rationale.
@@ -53,4 +111,8 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # PowerIO candidate dependencies use the same repository and immutable revision.
-allow-git = ["https://github.com/eigenergy/powerio"]
+allow-git = [
+    "https://github.com/eigenergy/powerio",
+    # Immutable post-gh#960 POUNCE revision used by the AC OPF feasibility probe.
+    "https://github.com/jkitchin/pounce",
+]
