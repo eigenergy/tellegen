@@ -8,6 +8,8 @@ const CONFIG = Symbol('tellegen.config');
 
 export interface TellegenUiConfig {
 	apiBase: string;
+	/** URL of the separately built, development-only AC OPF WASI asset. */
+	acOpfWasmUrl: string | null;
 	loadDefaultCases: boolean;
 	docsHref: string;
 	orgHref: string;
@@ -19,6 +21,7 @@ export type TellegenUiOptions = Partial<TellegenUiConfig>;
 
 export const DEFAULT_TELLEGEN_UI_CONFIG: TellegenUiConfig = {
 	apiBase: '/api',
+	acOpfWasmUrl: null,
 	loadDefaultCases: true,
 	docsHref: 'https://eigenergy.github.io/tellegen/',
 	orgHref: 'https://github.com/eigenergy',
@@ -29,8 +32,8 @@ export const DEFAULT_TELLEGEN_UI_CONFIG: TellegenUiConfig = {
 export function resolveTellegenUiConfig(options: TellegenUiOptions = {}): TellegenUiConfig {
 	return {
 		apiBase: options.apiBase ?? DEFAULT_TELLEGEN_UI_CONFIG.apiBase,
-		loadDefaultCases:
-			options.loadDefaultCases ?? DEFAULT_TELLEGEN_UI_CONFIG.loadDefaultCases,
+		acOpfWasmUrl: options.acOpfWasmUrl ?? DEFAULT_TELLEGEN_UI_CONFIG.acOpfWasmUrl,
+		loadDefaultCases: options.loadDefaultCases ?? DEFAULT_TELLEGEN_UI_CONFIG.loadDefaultCases,
 		docsHref: options.docsHref ?? DEFAULT_TELLEGEN_UI_CONFIG.docsHref,
 		orgHref: options.orgHref ?? DEFAULT_TELLEGEN_UI_CONFIG.orgHref,
 		orgLabel: options.orgLabel ?? DEFAULT_TELLEGEN_UI_CONFIG.orgLabel,
@@ -45,15 +48,13 @@ export const setUiConfig = (config: TellegenUiConfig): TellegenUiConfig =>
 
 export const getAppState = (): AppState => {
 	const app = getContext<AppState | undefined>(APP);
-	if (!app)
-		throw new Error('getAppState() called outside a tellegen provider');
+	if (!app) throw new Error('getAppState() called outside a tellegen provider');
 	return app;
 };
 
 export const getController = (): Controller => {
 	const ctrl = getContext<Controller | undefined>(CTRL);
-	if (!ctrl)
-		throw new Error('getController() called outside a tellegen provider');
+	if (!ctrl) throw new Error('getController() called outside a tellegen provider');
 	return ctrl;
 };
 
