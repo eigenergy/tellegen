@@ -59,8 +59,7 @@ The opt-in feature now also contains a private, backend-neutral polar model
 compiler. It consumes `AcOpfInstance` only through
 `build_ac_opf_preparation`, preserves PowerIO's generator and branch columns
 and source maps, and emits an in-memory POUNCE expression DAG with exact sparse
-derivatives. It is not wired to dispatch, solution emission, capabilities, or
-the browser.
+derivatives. It is not wired to module dispatch, capabilities, or the browser.
 
 The recorded assembly policy is per-unit values, no zero-impedance skipping,
 no synthesized thermal ratings, and PowerIO's angle-interval correction
@@ -99,6 +98,26 @@ Run the ladder with `TELLEGEN_ACOPF_FIXTURES` pointing to a directory containing
 `case14.m`, `case30.m`, and `case300.m`. Peak RSS was not available inside the
 sandbox used for this run, and frozen-NL parity remains a separate acceptance
 measurement.
+
+## Typed native solve boundary
+
+The opt-in native API now exposes `solve_ac_opf_instance_to_solution` for an
+`Arc<AcOpfInstance>`. It runs POUNCE with FERAL, exact Hessians, identity NLP
+and linear-system scaling, a `1e-8` solver/constraint tolerance, `1e-7`
+acceptable tolerance, and a 1,000-iteration ceiling. The returned
+`AcOpfSolution` is scattered through PowerIO's source row/winding maps in
+MW/MVAr and degrees, retains inactive source rows as unavailable values, and
+round-trips through `PioModule`.
+
+Only `SolveSucceeded` and `SolvedToAcceptableLevel` are candidates for
+emission, and both must pass a separate calculation from the prepared arrays:
+P/Q balance, voltage/generator boxes, references, angle and both-end thermal
+limits, exact piecewise epigraphs, finite outputs, and source-cost objective.
+The portable residuals report the independently calculated MW/MVAr balance
+mismatch. A local NLP infeasibility report remains a diagnostic error rather
+than PowerIO's proof-strength `Infeasible`. No LMP or limit multiplier is
+emitted yet; the POUNCE dual arrays stay private pending sign and source-unit
+perturbation tests.
 
 ## Browser ABI
 

@@ -4,9 +4,12 @@
 //! Solver status mapping and portable solution emission belong to the next
 //! layer, while all electrical semantics and stable source/index maps live here.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use pounce_nl::nl_reader::{BinOp, Expr, NlProblem, NlProblemParts, NlTnlp, UnaryOp};
+use pounce_rs::{ApplicationReturnStatus, IpoptApplication, TNLP};
 use powerio::LoadVoltageModel;
 use powerio_matrix::{
     build_ac_opf_preparation, AcOpfAssemblyOptions, AcOpfPreparation, PreparedObjective, Units,
@@ -18,6 +21,65 @@ use super::{reject_unsupported_active_elements, validate_canonical_identity, Pie
 
 const INF: f64 = 1.0e19;
 const FORMULATION_TAG: &[u8] = b"tellegen/acopf/polar-v1";
+const PRIMAL_TOLERANCE: f64 = 1.0e-6;
+const POUNCE_OPTIONS: &str = "linear_solver feral
+hessian_approximation exact
+nlp_scaling_method none
+linear_system_scaling none
+tol 1e-8
+constr_viol_tol 1e-8
+acceptable_tol 1e-7
+max_iter 1000
+print_level 0
+";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct AcOpfResidualCheck {
+    pub(crate) active_balance: f64,
+    pub(crate) reactive_balance: f64,
+    pub(crate) variable_bounds: f64,
+    pub(crate) reference_angles: f64,
+    pub(crate) angle_limits: f64,
+    pub(crate) thermal_limits: f64,
+    pub(crate) piecewise_epigraph: f64,
+    pub(crate) objective: f64,
+}
+
+impl AcOpfResidualCheck {
+    fn max_violation(self) -> f64 {
+        self.active_balance
+            .max(self.reactive_balance)
+            .max(self.variable_bounds)
+            .max(self.reference_angles)
+            .max(self.angle_limits)
+            .max(self.thermal_limits)
+            .max(self.piecewise_epigraph)
+            .max(self.objective)
+    }
+}
+
+/// A converged POUNCE point after an independent calculation from PowerIO's
+/// prepared arrays. Duals intentionally stay private and unpublished until a
+/// perturbation test establishes their sign and source-unit scaling.
+#[derive(Clone, Debug)]
+pub(crate) struct AcOpfSolved {
+    pub(crate) preparation: AcOpfPreparation,
+    pub(crate) va: Vec<f64>,
+    pub(crate) vm: Vec<f64>,
+    pub(crate) pg: Vec<f64>,
+    pub(crate) qg: Vec<f64>,
+    pub(crate) p_injection: Vec<f64>,
+    pub(crate) q_injection: Vec<f64>,
+    pub(crate) p_from: Vec<f64>,
+    pub(crate) q_from: Vec<f64>,
+    pub(crate) p_to: Vec<f64>,
+    pub(crate) q_to: Vec<f64>,
+    pub(crate) objective: f64,
+    pub(crate) residuals: AcOpfResidualCheck,
+    pub(crate) iterations: i32,
+    pub(crate) solver_status: ApplicationReturnStatus,
+    pub(crate) fingerprint: String,
+}
 
 /// The recorded assembly policy for the canonical model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -574,6 +636,269 @@ pub(super) fn compile_ac_opf_model(
     })
 }
 
+fn numeric_branch_flow(prep: &AcOpfPreparation, va: &[f64], vm: &[f64], branch: usize) -> [f64; 4] {
+    let f = prep.branches.from_bus[branch];
+    let t = prep.branches.to_bus[branch];
+    let delta = va[f] - va[t];
+    let wr = vm[f] * vm[t] * delta.cos();
+    let wi = vm[f] * vm[t] * delta.sin();
+    let g = prep.branches.g[branch];
+    let b = prep.branches.b[branch];
+    let tap = prep.branches.tap[branch];
+    let tr = tap * prep.branches.shift[branch].cos();
+    let ti = tap * prep.branches.shift[branch].sin();
+    let tm2 = tap * tap;
+    let p_from = (g + prep.branches.g_fr[branch]) / tm2 * vm[f].powi(2)
+        + (-g * tr + b * ti) / tm2 * wr
+        + (-b * tr - g * ti) / tm2 * wi;
+    let q_from = -(b + prep.branches.b_fr[branch]) / tm2 * vm[f].powi(2)
+        + (b * tr + g * ti) / tm2 * wr
+        + (-g * tr + b * ti) / tm2 * wi;
+    let p_to = (g + prep.branches.g_to[branch]) * vm[t].powi(2)
+        + (-g * tr - b * ti) / tm2 * wr
+        + (b * tr - g * ti) / tm2 * wi;
+    let q_to = -(b + prep.branches.b_to[branch]) * vm[t].powi(2)
+        + (b * tr - g * ti) / tm2 * wr
+        + (g * tr + b * ti) / tm2 * wi;
+    [p_from, q_from, p_to, q_to]
+}
+
+fn piecewise_value(cost: &powerio_matrix::PiecewiseLinearCost, power: f64) -> f64 {
+    (0..cost.power.len() - 1)
+        .map(|segment| {
+            let slope = (cost.value[segment + 1] - cost.value[segment])
+                / (cost.power[segment + 1] - cost.power[segment]);
+            slope * power + cost.value[segment] - slope * cost.power[segment]
+        })
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
+fn positive_violation(value: f64, lower: f64, upper: f64) -> f64 {
+    (lower - value).max(0.0).max((value - upper).max(0.0))
+}
+
+fn validate_primal(
+    model: &CanonicalAcOpfModel,
+    x: &[f64],
+    solver_objective: f64,
+    iterations: i32,
+    solver_status: ApplicationReturnStatus,
+) -> Result<AcOpfSolved, String> {
+    let prep = &model.preparation;
+    if x.len() != model.problem.n || x.iter().any(|value| !value.is_finite()) {
+        return Err("POUNCE returned a missing, non-finite, or wrong-length primal point".into());
+    }
+    let va = model
+        .columns
+        .va
+        .iter()
+        .map(|&column| x[column])
+        .collect::<Vec<_>>();
+    let vm = model
+        .columns
+        .vm
+        .iter()
+        .map(|&column| x[column])
+        .collect::<Vec<_>>();
+    let pg = model
+        .columns
+        .pg
+        .iter()
+        .map(|&column| x[column])
+        .collect::<Vec<_>>();
+    let qg = model
+        .columns
+        .qg
+        .iter()
+        .map(|&column| x[column])
+        .collect::<Vec<_>>();
+
+    let flows = (0..prep.n_branches())
+        .map(|branch| numeric_branch_flow(prep, &va, &vm, branch))
+        .collect::<Vec<_>>();
+    let p_from = flows.iter().map(|flow| flow[0]).collect::<Vec<_>>();
+    let q_from = flows.iter().map(|flow| flow[1]).collect::<Vec<_>>();
+    let p_to = flows.iter().map(|flow| flow[2]).collect::<Vec<_>>();
+    let q_to = flows.iter().map(|flow| flow[3]).collect::<Vec<_>>();
+
+    let mut p_injection = (0..prep.n_buses)
+        .map(|bus| -prep.buses.p_d[bus] - prep.buses.g_s[bus] * vm[bus].powi(2))
+        .collect::<Vec<_>>();
+    let mut q_injection = (0..prep.n_buses)
+        .map(|bus| -prep.buses.q_d[bus] + prep.buses.b_s[bus] * vm[bus].powi(2))
+        .collect::<Vec<_>>();
+    for generator in 0..prep.n_generators() {
+        let bus = prep.generators.bus_of_gen[generator];
+        p_injection[bus] += pg[generator];
+        q_injection[bus] += qg[generator];
+    }
+    let mut p_balance = p_injection.clone();
+    let mut q_balance = q_injection.clone();
+    for (branch, flow) in flows.iter().enumerate() {
+        let f = prep.branches.from_bus[branch];
+        let t = prep.branches.to_bus[branch];
+        p_balance[f] -= flow[0];
+        q_balance[f] -= flow[1];
+        p_balance[t] -= flow[2];
+        q_balance[t] -= flow[3];
+    }
+
+    let variable_bounds = x
+        .iter()
+        .zip(&model.problem.x_l)
+        .zip(&model.problem.x_u)
+        .map(|((&value, &lower), &upper)| positive_violation(value, lower, upper))
+        .fold(0.0, f64::max);
+    let reference_angles = prep
+        .reference_buses
+        .iter()
+        .map(|&bus| va[bus].abs())
+        .fold(0.0, f64::max);
+    let angle_limits = (0..prep.n_branches())
+        .filter(|&branch| prep.branches.angle_bound_active[branch])
+        .map(|branch| {
+            let angle = va[prep.branches.from_bus[branch]] - va[prep.branches.to_bus[branch]];
+            positive_violation(
+                angle,
+                prep.branches.angle_min[branch],
+                prep.branches.angle_max[branch],
+            )
+        })
+        .fold(0.0, f64::max);
+    let thermal_limits = flows
+        .iter()
+        .enumerate()
+        .filter(|(branch, _)| {
+            prep.branches.thermal_limit_active[*branch] && prep.branches.s_max[*branch] > 0.0
+        })
+        .map(|(branch, flow)| {
+            (flow[0].hypot(flow[1]).max(flow[2].hypot(flow[3])) - prep.branches.s_max[branch])
+                .max(0.0)
+        })
+        .fold(0.0, f64::max);
+
+    let mut independent_objective = 0.0;
+    let mut piecewise_epigraph: f64 = 0.0;
+    if prep.objective == PreparedObjective::NetworkGeneratorCost {
+        for generator in 0..prep.n_generators() {
+            if let Some(cost) = &prep.generators.piecewise_linear[generator] {
+                let value = piecewise_value(cost, pg[generator]);
+                independent_objective += value;
+                let epigraph = x[model.columns.piecewise_epigraph[generator]
+                    .expect("piecewise objective has an epigraph column")];
+                piecewise_epigraph = piecewise_epigraph.max((value - epigraph).max(0.0));
+            } else {
+                independent_objective += 0.5 * prep.generators.q[generator] * pg[generator].powi(2)
+                    + prep.generators.c[generator] * pg[generator]
+                    + prep.generators.c0[generator];
+            }
+        }
+    }
+    let all_derived_finite = va
+        .iter()
+        .chain(&vm)
+        .chain(&pg)
+        .chain(&qg)
+        .chain(&p_injection)
+        .chain(&q_injection)
+        .chain(&p_from)
+        .chain(&q_from)
+        .chain(&p_to)
+        .chain(&q_to)
+        .all(|value| value.is_finite());
+    if !all_derived_finite || !solver_objective.is_finite() || !independent_objective.is_finite() {
+        return Err(
+            "POUNCE AC OPF point produced a non-finite independently calculated output".into(),
+        );
+    }
+    let objective_scale = independent_objective.abs().max(1.0);
+    let residuals = AcOpfResidualCheck {
+        active_balance: p_balance
+            .iter()
+            .map(|value| value.abs())
+            .fold(0.0, f64::max),
+        reactive_balance: q_balance
+            .iter()
+            .map(|value| value.abs())
+            .fold(0.0, f64::max),
+        variable_bounds,
+        reference_angles,
+        angle_limits,
+        thermal_limits,
+        piecewise_epigraph,
+        objective: (solver_objective - independent_objective).abs() / objective_scale,
+    };
+    if residuals.max_violation() > PRIMAL_TOLERANCE {
+        return Err(format!(
+            "POUNCE returned {solver_status:?}, but independent AC validation failed (max violation {:.3e}; residuals {residuals:?})",
+            residuals.max_violation()
+        ));
+    }
+
+    Ok(AcOpfSolved {
+        preparation: prep.clone(),
+        va,
+        vm,
+        pg,
+        qg,
+        p_injection,
+        q_injection,
+        p_from,
+        q_from,
+        p_to,
+        q_to,
+        objective: independent_objective,
+        residuals,
+        iterations,
+        solver_status,
+        fingerprint: model.fingerprint.clone(),
+    })
+}
+
+/// Compile and solve one canonical instance with exact POUNCE derivatives.
+/// A local infeasibility report is returned as a diagnostic error, never
+/// promoted to PowerIO's proof-strength `Termination::Infeasible`.
+pub(crate) fn solve_ac_opf(instance: &AcOpfInstance) -> Result<AcOpfSolved, String> {
+    let model = compile_ac_opf_model(instance)?;
+    let tnlp = Rc::new(RefCell::new(model.tnlp()?));
+    let mut application = IpoptApplication::new();
+    application
+        .initialize_with_options_str(POUNCE_OPTIONS)
+        .map_err(|error| format!("could not configure POUNCE AC OPF: {error}"))?;
+    application
+        .initialize()
+        .map_err(|error| format!("could not initialize POUNCE AC OPF: {error}"))?;
+    let status = application.optimize_tnlp(Rc::clone(&tnlp) as Rc<RefCell<dyn TNLP>>);
+    let statistics = application.statistics();
+    if !matches!(
+        status,
+        ApplicationReturnStatus::SolveSucceeded | ApplicationReturnStatus::SolvedToAcceptableLevel
+    ) {
+        let qualification = if status == ApplicationReturnStatus::InfeasibleProblemDetected {
+            "; this local NLP report is not a proof that the canonical problem is infeasible"
+        } else {
+            ""
+        };
+        return Err(format!(
+            "POUNCE AC OPF stopped with {status:?} after {} iterations (constraint violation {:.3e}, KKT error {:.3e}){qualification}",
+            statistics.iteration_count,
+            statistics.final_unscaled_constr_viol,
+            statistics.final_unscaled_kkt_error,
+        ));
+    }
+    let solved = tnlp.borrow();
+    let x = solved
+        .final_x()
+        .ok_or("POUNCE reported AC OPF convergence without a primal point")?;
+    validate_primal(
+        &model,
+        x,
+        solved.final_obj(),
+        statistics.iteration_count,
+        status,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
@@ -841,6 +1166,22 @@ mpc.gencost = [
             .all(|((&start, &lower), &upper)| start.is_finite()
                 && start >= lower
                 && start <= upper));
+    }
+
+    #[test]
+    fn pounce_solution_passes_independent_full_pi_validation() {
+        let network = parse_matpower(CASE3_FULL_PI).expect("parse full pi case");
+        let instance = AcOpfInstance::from_network(network).expect("full pi AC OPF instance");
+        let solved = solve_ac_opf(&instance).expect("solve full pi AC OPF");
+        assert!(matches!(
+            solved.solver_status,
+            ApplicationReturnStatus::SolveSucceeded
+                | ApplicationReturnStatus::SolvedToAcceptableLevel
+        ));
+        assert!(solved.iterations > 0);
+        assert!(solved.objective.is_finite());
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+        assert_eq!(solved.fingerprint.len(), 64);
     }
 
     #[test]

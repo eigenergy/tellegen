@@ -61,6 +61,8 @@ pub use api::{
 };
 #[cfg(feature = "sensitivity")]
 pub use api::{solve_ac_pf_instance, SensRequest};
+#[cfg(feature = "acopf")]
+pub use emit::solve_ac_opf_instance_to_solution;
 pub use emit::solve_dc_opf_instance;
 #[cfg(feature = "mc-pf")]
 pub use mc_pf::{
