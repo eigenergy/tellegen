@@ -1088,7 +1088,7 @@ mod tests {
     use std::time::Instant;
 
     use pounce_rs::{SparsityRequest, TNLP};
-    use powerio::{BusId, LoadVoltageModel, Storage};
+    use powerio::{BranchCharging, BusId, LoadVoltageModel, Storage};
     use powerio_prob::{ActiveConstraints, ConstraintSelection, Objective};
 
     use super::*;
@@ -1098,6 +1098,46 @@ mod tests {
         let network = parse_matpower(CASE3).expect("parse case3");
         let instance = AcOpfInstance::from_network(network).expect("case3 AC OPF instance");
         compile_ac_opf_model(&instance).expect("compile case3 AC OPF")
+    }
+
+    fn solved_primal(model: &CanonicalAcOpfModel, solved: &AcOpfSolved) -> Vec<f64> {
+        let mut x = model.problem().x0.clone();
+        for (columns, values) in [
+            (&model.columns.va, &solved.va),
+            (&model.columns.vm, &solved.vm),
+            (&model.columns.pg, &solved.pg),
+            (&model.columns.qg, &solved.qg),
+        ] {
+            for (&column, &value) in columns.iter().zip(values) {
+                x[column] = value;
+            }
+        }
+        for (generator, column) in model.columns.piecewise_epigraph.iter().enumerate() {
+            if let Some(column) = column {
+                let cost = model.preparation.generators.piecewise_linear[generator]
+                    .as_ref()
+                    .expect("piecewise epigraph has a prepared cost");
+                x[*column] = piecewise_value(cost, solved.pg[generator]);
+            }
+        }
+        x
+    }
+
+    fn assert_primal_rejected(label: &str, model: &CanonicalAcOpfModel, x: &[f64], objective: f64) {
+        let error = validate_primal(
+            model,
+            x,
+            objective,
+            1,
+            ApplicationReturnStatus::SolveSucceeded,
+            0.0,
+            0.0,
+        )
+        .expect_err(label);
+        assert!(
+            error.contains("independent AC validation failed"),
+            "{label}: {error}"
+        );
     }
 
     const CASE3_FULL_PI: &str = "\
@@ -1126,6 +1166,30 @@ mpc.gencost = [
  2 0 0 3 0.12 1.5  5;
  2 0 0 3 0.08 2.5  2;
  2 0 0 3 0.50 9.0 99;
+];
+";
+
+    const CASE4_TWO_ISLANDS: &str = "\
+function mpc = case4twoislands
+mpc.version = '2';
+mpc.baseMVA = 100;
+mpc.bus = [
+ 1 3  0  0 0 0 1 1 0 230 1 1.1 0.9;
+ 2 1 40 12 0 0 1 1 0 230 1 1.1 0.9;
+ 3 3  0  0 0 0 1 1 0 230 1 1.1 0.9;
+ 4 1 35 10 0 0 1 1 0 230 1 1.1 0.9;
+];
+mpc.gen = [
+ 1 40 12 100 -100 1 100 1 100 0 0 0 0 0 0 0 0 0 0 0 0;
+ 3 35 10 100 -100 1 100 1 100 0 0 0 0 0 0 0 0 0 0 0 0;
+];
+mpc.branch = [
+ 1 2 0.02 0.10 0.02 100 100 100 0 0 1 -30 30;
+ 3 4 0.03 0.12 0.03 100 100 100 0 0 1 -30 30;
+];
+mpc.gencost = [
+ 2 0 0 3 0.02 2.0 3;
+ 2 0 0 3 0.03 1.5 4;
 ];
 ";
 
@@ -1216,7 +1280,18 @@ mpc.gencost = [
         gradient
     }
 
-    fn directional_derivative_errors(model: &CanonicalAcOpfModel, tnlp: &mut NlTnlp) -> (f64, f64) {
+    #[derive(Clone, Copy, Debug)]
+    struct DirectionalDerivativeErrors {
+        jacobian_absolute: f64,
+        jacobian_scaled: f64,
+        hessian_absolute: f64,
+        hessian_scaled: f64,
+    }
+
+    fn directional_derivative_errors(
+        model: &CanonicalAcOpfModel,
+        tnlp: &mut NlTnlp,
+    ) -> DirectionalDerivativeErrors {
         let n = model.problem().n;
         let m = model.problem().m;
         let x = &model.problem().x0;
@@ -1253,11 +1328,17 @@ mpc.gencost = [
         let mut minus_constraints = vec![0.0; m];
         assert!(tnlp.eval_g(&plus, true, &mut plus_constraints));
         assert!(tnlp.eval_g(&minus, true, &mut minus_constraints));
-        let jacobian_error = exact_constraint_direction
+        let (jacobian_absolute, jacobian_scaled) = exact_constraint_direction
             .iter()
             .zip(plus_constraints.iter().zip(&minus_constraints))
-            .map(|(&exact, (&plus, &minus))| (exact - (plus - minus) / (2.0 * step)).abs())
-            .fold(0.0, f64::max);
+            .map(|(&exact, (&plus, &minus))| {
+                let finite = (plus - minus) / (2.0 * step);
+                let absolute = (exact - finite).abs();
+                (absolute, absolute / exact.abs().max(finite.abs()).max(1.0))
+            })
+            .fold((0.0_f64, 0.0_f64), |(max_absolute, max_scaled), error| {
+                (max_absolute.max(error.0), max_scaled.max(error.1))
+            });
 
         let info = tnlp.get_nlp_info().expect("NLP dimensions");
         let nnz_h = usize::try_from(info.nnz_h_lag).expect("nonnegative Hessian nnz");
@@ -1314,12 +1395,23 @@ mpc.gencost = [
             &jac_rows,
             &jac_columns,
         );
-        let hessian_error = exact_lagrangian_direction
+        let (hessian_absolute, hessian_scaled) = exact_lagrangian_direction
             .iter()
             .zip(plus_gradient.iter().zip(&minus_gradient))
-            .map(|(&exact, (&plus, &minus))| (exact - (plus - minus) / (2.0 * step)).abs())
-            .fold(0.0, f64::max);
-        (jacobian_error, hessian_error)
+            .map(|(&exact, (&plus, &minus))| {
+                let finite = (plus - minus) / (2.0 * step);
+                let absolute = (exact - finite).abs();
+                (absolute, absolute / exact.abs().max(finite.abs()).max(1.0))
+            })
+            .fold((0.0_f64, 0.0_f64), |(max_absolute, max_scaled), error| {
+                (max_absolute.max(error.0), max_scaled.max(error.1))
+            });
+        DirectionalDerivativeErrors {
+            jacobian_absolute,
+            jacobian_scaled,
+            hessian_absolute,
+            hessian_scaled,
+        }
     }
 
     #[test]
@@ -1366,6 +1458,138 @@ mpc.gencost = [
         assert!(solved.objective.is_finite());
         assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
         assert_eq!(solved.fingerprint.len(), 64);
+    }
+
+    #[test]
+    fn independent_validation_rejects_each_guarded_residual_family() {
+        let network = parse_matpower(CASE3).expect("parse case3");
+        let instance = AcOpfInstance::from_network(network).expect("case3 AC OPF instance");
+        let model = compile_ac_opf_model(&instance).expect("compile case3");
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve case3");
+        let x = solved_primal(&model, &solved);
+        validate_primal(
+            &model,
+            &x,
+            solved.objective,
+            solved.iterations,
+            solved.solver_status,
+            solved.solver_constraint_violation,
+            solved.solver_kkt_error,
+        )
+        .expect("the reconstructed solver point is valid");
+
+        let mut non_finite = x.clone();
+        non_finite[model.columns.vm[0]] = f64::NAN;
+        let error = validate_primal(
+            &model,
+            &non_finite,
+            solved.objective,
+            1,
+            ApplicationReturnStatus::SolveSucceeded,
+            0.0,
+            0.0,
+        )
+        .expect_err("non-finite primal must fail closed");
+        assert!(error.contains("non-finite"), "{error}");
+
+        assert_primal_rejected(
+            "objective mismatch",
+            &model,
+            &x,
+            solved.objective + solved.objective.abs().max(1.0) * 1.0e-4,
+        );
+
+        // A common angle rotation leaves every branch flow and nodal balance
+        // unchanged, so this isolates the reference-angle guard.
+        let mut bad_reference = x.clone();
+        for &column in &model.columns.va {
+            bad_reference[column] += 1.0e-4;
+        }
+        assert_primal_rejected("reference angle", &model, &bad_reference, solved.objective);
+
+        // Tightening only the validator's copy of a bound preserves the exact
+        // solved point and all electrical equations while exercising bounds.
+        let mut bad_bound_model = model.clone();
+        let vm = model.columns.vm[0];
+        bad_bound_model.problem.x_l[vm] = x[vm] + 1.0e-4;
+        assert_primal_rejected("variable bound", &bad_bound_model, &x, solved.objective);
+
+        let mut bad_active_balance = x.clone();
+        bad_active_balance[model.columns.pg[0]] += 1.0e-4;
+        let objective = model
+            .tnlp()
+            .expect("TNLP")
+            .eval_f(&bad_active_balance, true)
+            .expect("objective");
+        assert_primal_rejected("active balance", &model, &bad_active_balance, objective);
+
+        let mut bad_reactive_balance = x.clone();
+        bad_reactive_balance[model.columns.qg[0]] += 1.0e-4;
+        assert_primal_rejected(
+            "reactive balance",
+            &model,
+            &bad_reactive_balance,
+            solved.objective,
+        );
+
+        let branch = 0;
+        let f = model.preparation.branches.from_bus[branch];
+        let t = model.preparation.branches.to_bus[branch];
+        let angle = solved.va[f] - solved.va[t];
+        let mut bad_angle_model = model.clone();
+        bad_angle_model.preparation.branches.angle_bound_active[branch] = true;
+        bad_angle_model.preparation.branches.angle_min[branch] = angle - 1.0;
+        bad_angle_model.preparation.branches.angle_max[branch] = angle - 1.0e-4;
+        assert_primal_rejected("angle limit", &bad_angle_model, &x, solved.objective);
+
+        let flow = solved.p_from[branch]
+            .hypot(solved.q_from[branch])
+            .max(solved.p_to[branch].hypot(solved.q_to[branch]));
+        let mut bad_thermal_model = model.clone();
+        bad_thermal_model.preparation.branches.thermal_limit_active[branch] = true;
+        bad_thermal_model.preparation.branches.s_max[branch] = flow - 1.0e-4;
+        assert_primal_rejected("thermal limit", &bad_thermal_model, &x, solved.objective);
+    }
+
+    #[test]
+    fn multiple_islands_each_keep_a_reference_angle() {
+        let network = parse_matpower(CASE4_TWO_ISLANDS).expect("parse two-island case");
+        let instance = AcOpfInstance::from_network(network).expect("two-island AC OPF instance");
+        let model = compile_ac_opf_model(&instance).expect("compile two-island AC OPF");
+        assert_eq!(model.preparation.reference_buses.iter().len(), 2);
+        assert_eq!(model.rows.reference_angle.len(), 2);
+
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve two-island AC OPF");
+        for &bus in model.preparation.reference_buses.iter() {
+            assert!(solved.va[bus].abs() < 1.0e-8, "reference bus {bus}");
+        }
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+    }
+
+    #[test]
+    fn asymmetric_terminal_charging_survives_an_end_to_end_solve() {
+        let mut network = parse_matpower(CASE3).expect("parse case3");
+        network.branches_mut()[0].charging = Some(BranchCharging::new(0.01, 0.02, 0.03, 0.04));
+        let instance = AcOpfInstance::from_network(network).expect("charged AC OPF instance");
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve charged AC OPF");
+
+        for (actual, expected) in [
+            (solved.preparation.branches.g_fr[0], 0.01),
+            (solved.preparation.branches.b_fr[0], 0.02),
+            (solved.preparation.branches.g_to[0], 0.03),
+            (solved.preparation.branches.b_to[0], 0.04),
+        ] {
+            assert!(
+                (actual - expected).abs() < 1.0e-12,
+                "{actual} != {expected}"
+            );
+        }
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+        assert!(
+            (solved.p_from[0] + solved.p_to[0]).abs() > 1.0e-8
+                || (solved.q_from[0] + solved.q_to[0]).abs() > 1.0e-8,
+            "asymmetric pi-model losses and charging unexpectedly vanished"
+        );
     }
 
     #[test]
@@ -1616,7 +1840,7 @@ mpc.gencost = [
         let directory = std::env::var_os("TELLEGEN_ACOPF_FIXTURES")
             .map(std::path::PathBuf::from)
             .expect("TELLEGEN_ACOPF_FIXTURES is required for the ignored build ladder");
-        println!("case,buses,generators,branches,variables,constraints,nnz_jacobian,nnz_hessian,compile_ms,tape_ms,jacobian_direction_error,hessian_direction_error");
+        println!("case,buses,generators,branches,variables,constraints,nnz_jacobian,nnz_hessian,compile_ms,tape_ms,jacobian_direction_absolute_error,jacobian_direction_scaled_error,hessian_direction_absolute_error,hessian_direction_scaled_error");
         for (filename, expected_buses) in [("case14.m", 14), ("case30.m", 30), ("case300.m", 300)] {
             let text = std::fs::read_to_string(directory.join(filename))
                 .unwrap_or_else(|error| panic!("read {filename}: {error}"));
@@ -1637,17 +1861,17 @@ mpc.gencost = [
                 .get_nlp_info()
                 .unwrap_or_else(|| panic!("read {filename} NLP dimensions"));
             assert_eq!(model.preparation.n_buses, expected_buses);
-            let (jacobian_error, hessian_error) = directional_derivative_errors(&model, &mut tnlp);
+            let errors = directional_derivative_errors(&model, &mut tnlp);
             assert!(
-                jacobian_error < 2.0e-5,
-                "{filename} Jacobian directional error {jacobian_error}"
+                errors.jacobian_scaled < 2.0e-5,
+                "{filename} Jacobian directional errors {errors:?}"
             );
             assert!(
-                hessian_error < 2.0e-4,
-                "{filename} Hessian directional error {hessian_error}"
+                errors.hessian_scaled < 2.0e-4,
+                "{filename} Hessian directional errors {errors:?}"
             );
             println!(
-                "{filename},{},{},{},{},{},{},{},{compile_ms:.3},{tape_ms:.3},{jacobian_error:.3e},{hessian_error:.3e}",
+                "{filename},{},{},{},{},{},{},{},{compile_ms:.3},{tape_ms:.3},{:.3e},{:.3e},{:.3e},{:.3e}",
                 model.preparation.n_buses,
                 model.preparation.n_generators(),
                 model.preparation.n_branches(),
@@ -1655,6 +1879,10 @@ mpc.gencost = [
                 info.m,
                 info.nnz_jac_g,
                 info.nnz_h_lag,
+                errors.jacobian_absolute,
+                errors.jacobian_scaled,
+                errors.hessian_absolute,
+                errors.hessian_scaled,
             );
         }
     }
@@ -1712,6 +1940,55 @@ mpc.gencost = [
             .all(Vec::is_empty));
         let mut tnlp = feasibility.tnlp().expect("build feasibility TNLP");
         assert_eq!(tnlp.eval_f(&feasibility.problem().x0, true), Some(0.0));
+    }
+
+    #[test]
+    fn piecewise_cost_solves_and_the_validator_checks_its_epigraph() {
+        let text = CASE3.replacen("2 0 0 3 0.11  5   0;", "1 0 0 3 0 0 100 500 250 2000;", 1);
+        let network = parse_matpower(&text).expect("parse piecewise case");
+        let instance = AcOpfInstance::from_network(network).expect("piecewise AC OPF instance");
+        let model = compile_ac_opf_model(&instance).expect("compile piecewise AC OPF");
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve piecewise AC OPF");
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+
+        let mut x = solved_primal(&model, &solved);
+        let epigraph = model.columns.piecewise_epigraph[0].expect("piecewise epigraph");
+        x[epigraph] -= 1.0e-4;
+        assert_primal_rejected("piecewise epigraph", &model, &x, solved.objective);
+    }
+
+    #[test]
+    fn objective_forms_are_exact_and_unsupported_curves_fail_closed() {
+        let text = CASE3
+            .replacen("2 0 0 3 0.11  5   0;", "2 0 0 2 5 10;", 1)
+            .replacen("2 0 0 3 0.085 1.2 0;", "2 0 0 1 7;", 1);
+        let network = parse_matpower(&text).expect("parse mixed objective case");
+        let instance = AcOpfInstance::from_network(network).expect("mixed objective instance");
+        let model = compile_ac_opf_model(&instance).expect("compile mixed objective");
+        assert_eq!(model.preparation.generators.q, vec![0.0, 0.0]);
+        assert_eq!(model.preparation.generators.c0, vec![10.0, 7.0]);
+        let p0 = model.problem().x0[model.columns.pg[0]];
+        let expected = model.preparation.generators.c[0] * p0 + 17.0;
+        let objective = model
+            .tnlp()
+            .expect("TNLP")
+            .eval_f(&model.problem().x0, true)
+            .expect("objective");
+        assert!((objective - expected).abs() < 1.0e-10);
+        let solved = solve_ac_opf_cancellable(&instance, None).expect("solve mixed objective");
+        assert!(solved.residuals.max_violation() < PRIMAL_TOLERANCE);
+
+        let cubic = CASE3.replacen("2 0 0 3 0.11  5   0;", "2 0 0 4 1 0.11 5 0;", 1);
+        let network = parse_matpower(&cubic).expect("parse cubic cost");
+        let instance = AcOpfInstance::from_network(network).expect("cubic objective instance");
+        let error = compile_ac_opf_model(&instance).expect_err("reject cubic cost");
+        assert!(error.contains("unsupported cost model"), "{error}");
+
+        let concave = CASE3.replacen("2 0 0 3 0.11  5   0;", "2 0 0 3 -0.11 5 0;", 1);
+        let network = parse_matpower(&concave).expect("parse concave cost");
+        let instance = AcOpfInstance::from_network(network).expect("concave objective instance");
+        let error = compile_ac_opf_model(&instance).expect_err("reject concave cost");
+        assert!(error.contains("concave cost"), "{error}");
     }
 
     #[test]
