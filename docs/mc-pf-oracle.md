@@ -1,17 +1,22 @@
 # Multiconductor PF numerical oracle
 
-The checked-in files under `crates/tellegen/tests/data/mc_pf` are nine small
+The checked-in files under `crates/tellegen/tests/data/mc_pf` are 13 small
 BMOPF snapshots and their OpenDSSDirect references. They cover a coupled
 three-phase line, unbalanced four-wire loads, delta loads, single-phase
 neutral variants, and grounded, floating-neutral, tapped, delta-wye, and
-wye-delta transformers. The Rust integration test checks every bus terminal,
-complex voltage and retained factor count. Line and load terminal currents
+wye-delta transformers. Four centre-tap cases cover unbalanced and balanced
+secondary legs, finite centre-point grounding impedance, and three units on a
+radial phase-to-phase feeder. The Rust integration test checks every bus
+terminal, complex voltage and retained factor count. Line and load terminal currents
 use the actual OpenDSS conductor NodeOrder and are aggregated by conductor
 and compared numerically, along with total absorbed complex power. The test
-also checks total complex source injection against all element absorption. Transformer and reactor ports are required to be
-present and finite; this harness does not claim direct numerical current
-parity for those two classes. Finite grounding reactors remain physical
-shunts, while exact ground constraints require a different reference mapping.
+also checks total complex source injection against all element absorption.
+Centre-tap transformer terminal currents and powers are compared numerically,
+including aggregation of OpenDSS's repeated shared-neutral winding entries.
+Other transformer and reactor ports are required to be present and finite;
+this harness does not claim direct numerical current parity for those classes.
+Finite grounding reactors remain physical shunts, while exact ground constraints
+require a different reference mapping.
 Separate independent transformer primitive and loaded YY/DD evidence is
 recorded in `multiconductor-qc-cases.md` and `evidence/mc-pf-yprim`.
 
@@ -29,8 +34,19 @@ incident current. Loads must carry explicit nominal branch voltages; the
 solver reports an error instead of inferring a low-voltage base from an
 unrelated source or transformer.
 
-To regenerate references, install the pinned Python package and provide the
-upstream comparison directory:
+To regenerate the three checked-in centre-tap additions, install the pinned
+Python package; their DSS sources are retained beside the oracle inputs:
+
+```text
+python -m pip install opendssdirect.py==0.9.4
+python crates/tellegen/tests/generate_mc_pf_oracle.py \
+  --case pf_center_tap_balanced_heavy \
+  --case pf_center_tap_rneut \
+  --case pf_center_tap_multi_feeder
+```
+
+To regenerate the complete corpus, also provide the upstream comparison
+directory:
 
 ```text
 python -m pip install opendssdirect.py==0.9.4
@@ -38,10 +54,9 @@ python crates/tellegen/tests/generate_mc_pf_oracle.py \
   --dss-dir /path/to/BMOPFTools.jl/test/data/pf_comparison
 ```
 
-The generator records input and DSS source SHA-256, source commit, actual backend version, solver configuration,
-and upstream fixture attribution in every reference. The fixture files are
-and upstream fixture attribution in every reference. The exact upstream
-license text is retained with the Rust fixtures at
+The generator records input and DSS source SHA-256, source revision and
+attribution, actual backend version, and solver configuration in every reference.
+The exact upstream license text is retained with the Rust fixtures at
 `crates/tellegen/tests/data/mc_pf/LICENSE.md` and with the browser fixture at
 `apps/web/tests/fixtures/mc-pf-browser/LICENSE.md`; it governs redistribution
 of this test data.

@@ -1,0 +1,183 @@
+{
+  "name": "pf_ct_multi",
+  "meta": {
+    "frequency": 50.0
+  },
+  "terminal_conventions": {
+    "phase": ["a", "b", "c"],
+    "neutral": ["n"],
+    "earth": []
+  },
+  "bus": {
+    "src": {"terminal_names": ["a", "b", "c", "n"]},
+    "mv1": {"terminal_names": ["a", "b", "c"]},
+    "mv2": {"terminal_names": ["a", "b", "c"]},
+    "mv3": {"terminal_names": ["a", "b", "c"]},
+    "lv_ab": {"terminal_names": ["a", "b", "n"]},
+    "lv_bc": {"terminal_names": ["a", "b", "n"]},
+    "lv_ca": {"terminal_names": ["a", "b", "n"]}
+  },
+  "voltage_source": {
+    "source": {
+      "bus": "src",
+      "terminal_map": ["a", "b", "c", "n"],
+      "v_magnitude": [6350.852961085884, 6350.852961085884, 6350.852961085884, 0.0],
+      "v_angle": [0.0, -2.0943951023931953, 2.0943951023931957, 0.0]
+    }
+  },
+  "linecode": {
+    "mv3": {
+      "R_series_1_1": 0.0003,
+      "R_series_1_2": 0.00003,
+      "R_series_1_3": 0.00003,
+      "R_series_2_1": 0.00003,
+      "R_series_2_2": 0.0003,
+      "R_series_2_3": 0.00003,
+      "R_series_3_1": 0.00003,
+      "R_series_3_2": 0.00003,
+      "R_series_3_3": 0.0003,
+      "X_series_1_1": 0.0004,
+      "X_series_1_2": 0.00008,
+      "X_series_1_3": 0.00008,
+      "X_series_2_1": 0.00008,
+      "X_series_2_2": 0.0004,
+      "X_series_2_3": 0.00008,
+      "X_series_3_1": 0.00008,
+      "X_series_3_2": 0.00008,
+      "X_series_3_3": 0.0004,
+      "G_from_1_1": 0.0,
+      "G_from_1_2": 0.0,
+      "G_from_1_3": 0.0,
+      "G_from_2_1": 0.0,
+      "G_from_2_2": 0.0,
+      "G_from_2_3": 0.0,
+      "G_from_3_1": 0.0,
+      "G_from_3_2": 0.0,
+      "G_from_3_3": 0.0,
+      "B_from_1_1": 0.0,
+      "B_from_1_2": 0.0,
+      "B_from_1_3": 0.0,
+      "B_from_2_1": 0.0,
+      "B_from_2_2": 0.0,
+      "B_from_2_3": 0.0,
+      "B_from_3_1": 0.0,
+      "B_from_3_2": 0.0,
+      "B_from_3_3": 0.0,
+      "G_to_1_1": 0.0,
+      "G_to_1_2": 0.0,
+      "G_to_1_3": 0.0,
+      "G_to_2_1": 0.0,
+      "G_to_2_2": 0.0,
+      "G_to_2_3": 0.0,
+      "G_to_3_1": 0.0,
+      "G_to_3_2": 0.0,
+      "G_to_3_3": 0.0,
+      "B_to_1_1": 0.0,
+      "B_to_1_2": 0.0,
+      "B_to_1_3": 0.0,
+      "B_to_2_1": 0.0,
+      "B_to_2_2": 0.0,
+      "B_to_2_3": 0.0,
+      "B_to_3_1": 0.0,
+      "B_to_3_2": 0.0,
+      "B_to_3_3": 0.0,
+      "i_max": [600.0, 600.0, 600.0]
+    }
+  },
+  "line": {
+    "mv_1": {
+      "bus_from": "src",
+      "bus_to": "mv1",
+      "terminal_map_from": ["a", "b", "c"],
+      "terminal_map_to": ["a", "b", "c"],
+      "linecode": "mv3",
+      "length": 1000.0
+    },
+    "mv_2": {
+      "bus_from": "mv1",
+      "bus_to": "mv2",
+      "terminal_map_from": ["a", "b", "c"],
+      "terminal_map_to": ["a", "b", "c"],
+      "linecode": "mv3",
+      "length": 1000.0
+    },
+    "mv_3": {
+      "bus_from": "mv2",
+      "bus_to": "mv3",
+      "terminal_map_from": ["a", "b", "c"],
+      "terminal_map_to": ["a", "b", "c"],
+      "linecode": "mv3",
+      "length": 1000.0
+    }
+  },
+  "shunt": {
+    "grnd_ab": {"bus": "lv_ab", "terminal_map": ["n"], "G_1_1": 100.0, "B_1_1": 0.0},
+    "grnd_bc": {"bus": "lv_bc", "terminal_map": ["n"], "G_1_1": 100.0, "B_1_1": 0.0},
+    "grnd_ca": {"bus": "lv_ca", "terminal_map": ["n"], "G_1_1": 100.0, "B_1_1": 0.0}
+  },
+  "transformer": {
+    "center_tap": {
+      "ct_ab": {
+        "bus_from": "mv1",
+        "bus_to": "lv_ab",
+        "terminal_map_from": ["a", "b"],
+        "terminal_map_to": ["a", "n", "b"],
+        "v_nom_from": 11000.0,
+        "v_nom_to": 240.0,
+        "s_rating": 25000.0,
+        "r_series_from": 29.04,
+        "x_series_from": 65.824,
+        "r_series_to": 0.027648,
+        "x_series_to": 0.0156672
+      },
+      "ct_bc": {
+        "bus_from": "mv2",
+        "bus_to": "lv_bc",
+        "terminal_map_from": ["b", "c"],
+        "terminal_map_to": ["a", "n", "b"],
+        "v_nom_from": 11000.0,
+        "v_nom_to": 240.0,
+        "s_rating": 25000.0,
+        "r_series_from": 29.04,
+        "x_series_from": 65.824,
+        "r_series_to": 0.027648,
+        "x_series_to": 0.0156672
+      },
+      "ct_ca": {
+        "bus_from": "mv3",
+        "bus_to": "lv_ca",
+        "terminal_map_from": ["c", "a"],
+        "terminal_map_to": ["a", "n", "b"],
+        "v_nom_from": 11000.0,
+        "v_nom_to": 240.0,
+        "s_rating": 25000.0,
+        "r_series_from": 29.04,
+        "x_series_from": 65.824,
+        "r_series_to": 0.027648,
+        "x_series_to": 0.0156672
+      }
+    }
+  },
+  "load": {
+    "ab_1": {
+      "bus": "lv_ab", "terminal_map": ["a", "n"], "configuration": "SINGLE_PHASE",
+      "model": "constant_power", "p_nom": [7000.0], "q_nom": [1500.0], "v_nom": [240.0]
+    },
+    "ab_2": {
+      "bus": "lv_ab", "terminal_map": ["n", "b"], "configuration": "SINGLE_PHASE",
+      "model": "constant_power", "p_nom": [7000.0], "q_nom": [1500.0], "v_nom": [240.0]
+    },
+    "bc_1": {
+      "bus": "lv_bc", "terminal_map": ["a", "n"], "configuration": "SINGLE_PHASE",
+      "model": "constant_power", "p_nom": [9000.0], "q_nom": [2000.0], "v_nom": [240.0]
+    },
+    "bc_2": {
+      "bus": "lv_bc", "terminal_map": ["n", "b"], "configuration": "SINGLE_PHASE",
+      "model": "constant_power", "p_nom": [3000.0], "q_nom": [500.0], "v_nom": [240.0]
+    },
+    "ca_12": {
+      "bus": "lv_ca", "terminal_map": ["a", "b"], "configuration": "SINGLE_PHASE",
+      "model": "constant_power", "p_nom": [10000.0], "q_nom": [2000.0], "v_nom": [480.0]
+    }
+  }
+}

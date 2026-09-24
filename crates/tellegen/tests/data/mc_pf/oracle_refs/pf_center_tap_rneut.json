@@ -1,0 +1,304 @@
+{
+  "schema": "tellegen.mc_pf.open_dss_reference.v1",
+  "case": "pf_center_tap_rneut",
+  "provenance": {
+    "backend": "OpenDSSDirect.py 0.9.4; DSS-Python 0.15.7; DSS C-API 0.14.5",
+    "source_bmopftools": "720975f3adf3a78caf8a51157dba48f41bab91cc",
+    "source_fixture": "adapted from BMOPFTools centre-tap and finite-rneut cases",
+    "input_sha256": "4e02513ab2d4e8641bb8512ee7ed60614ed9d2ea5d786d150328b076f654d5aa",
+    "dss_sha256": "521f2602abbbfe7c8d55994a72209c7ec6032a44e5f573805c97663ae2ae2386",
+    "upstream_license_sha256": "331e77cd102c8777902e2785f1fd7809236707e16b79ede4de353ca0e7e0ae24",
+    "configuration": "controlmode=off; algorithm=normal; tolerance=1e-11; maxiterations=1000; load vminpu=0 vmaxpu=2; vsource model=ideal puZideal=[1e-12,0]; transformer ppm_antifloat=0",
+    "license": "BMOPFTools.jl LICENSE.md (copyright 2026 Frederik Geth, permissive BSD-3-Clause-style terms); hash recorded above."
+  },
+  "converged": true,
+  "terminals": [
+    {
+      "bus": "hv",
+      "terminal": "a",
+      "voltage": {
+        "re": 7200.0,
+        "im": 2.433699776e-06
+      }
+    },
+    {
+      "bus": "hv",
+      "terminal": "n",
+      "voltage": {
+        "re": 0.0,
+        "im": 0.0
+      }
+    },
+    {
+      "bus": "lv",
+      "terminal": "a",
+      "voltage": {
+        "re": 129.8219466,
+        "im": 4.010810903
+      }
+    },
+    {
+      "bus": "lv",
+      "terminal": "b",
+      "voltage": {
+        "re": -108.0324168,
+        "im": 5.61086718
+      }
+    },
+    {
+      "bus": "lv",
+      "terminal": "n",
+      "voltage": {
+        "re": 11.08378504,
+        "im": 4.840534123
+      }
+    }
+  ],
+  "elements": [
+    {
+      "name": "Vsource.source",
+      "bus_names": [
+        "hv.1.0",
+        "hv.0"
+      ],
+      "node_order": [
+        {
+          "bus": "hv",
+          "nodes": [
+            1
+          ]
+        },
+        {
+          "bus": "hv",
+          "nodes": [
+            0
+          ]
+        }
+      ],
+      "num_terminals": 2,
+      "num_conductors": 1,
+      "currents": [
+        {
+          "re": -2.0,
+          "im": 0.5717304638
+        },
+        {
+          "re": 2.0,
+          "im": -0.5717304638
+        }
+      ],
+      "powers": [
+        {
+          "re": -14400.0,
+          "im": -4116.459344
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Transformer.t1",
+      "bus_names": [
+        "hv.1.0",
+        "lv.1.4",
+        "lv.4.2"
+      ],
+      "node_order": [
+        {
+          "bus": "hv",
+          "nodes": [
+            1,
+            0
+          ]
+        },
+        {
+          "bus": "lv",
+          "nodes": [
+            1,
+            4
+          ]
+        },
+        {
+          "bus": "lv",
+          "nodes": [
+            4,
+            2
+          ]
+        }
+      ],
+      "num_terminals": 3,
+      "num_conductors": 2,
+      "currents": [
+        {
+          "re": 1.769142561,
+          "im": -0.577205001
+        },
+        {
+          "re": -1.769142561,
+          "im": 0.577205001
+        },
+        {
+          "re": -75.6167852,
+          "im": 25.79407465
+        },
+        {
+          "re": 81.01840604,
+          "im": -26.074618
+        },
+        {
+          "re": -30.53176844,
+          "im": 8.838225416
+        },
+        {
+          "re": 30.53176844,
+          "im": -8.838225416
+        }
+      ],
+      "powers": [
+        {
+          "re": 12737.82644,
+          "im": 4155.876012
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        },
+        {
+          "re": -9713.263094,
+          "im": -3651.921608
+        },
+        {
+          "re": 771.7755187,
+          "im": 681.17782
+        },
+        {
+          "re": -295.6258266,
+          "im": -245.7510577
+        },
+        {
+          "re": -3348.010844,
+          "im": -783.5051546
+        }
+      ]
+    },
+    {
+      "name": "Reactor.leak_b",
+      "bus_names": [
+        "lv.2",
+        "lv.0"
+      ],
+      "node_order": [
+        {
+          "bus": "lv",
+          "nodes": [
+            2
+          ]
+        },
+        {
+          "bus": "lv",
+          "nodes": [
+            0
+          ]
+        }
+      ],
+      "num_terminals": 2,
+      "num_conductors": 1,
+      "currents": [
+        {
+          "re": -5.401620841,
+          "im": 0.280543359
+        },
+        {
+          "re": 5.401620841,
+          "im": -0.280543359
+        }
+      ],
+      "powers": [
+        {
+          "re": 585.1242458,
+          "im": 0.0
+        },
+        {
+          "re": 0.0,
+          "im": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Load.ld1",
+      "bus_names": [
+        "lv.1.4"
+      ],
+      "node_order": [
+        {
+          "bus": "lv",
+          "nodes": [
+            1,
+            4
+          ]
+        }
+      ],
+      "num_terminals": 1,
+      "num_conductors": 2,
+      "currents": [
+        {
+          "re": 75.6167852,
+          "im": -25.79407465
+        },
+        {
+          "re": -75.6167852,
+          "im": 25.79407465
+        }
+      ],
+      "powers": [
+        {
+          "re": 9713.263094,
+          "im": 3651.921608
+        },
+        {
+          "re": -713.2630941,
+          "im": -651.9216077
+        }
+      ]
+    },
+    {
+      "name": "Load.ld2",
+      "bus_names": [
+        "lv.4.2"
+      ],
+      "node_order": [
+        {
+          "bus": "lv",
+          "nodes": [
+            4,
+            2
+          ]
+        }
+      ],
+      "num_terminals": 1,
+      "num_conductors": 2,
+      "currents": [
+        {
+          "re": 25.1301476,
+          "im": -8.557682057
+        },
+        {
+          "re": -25.1301476,
+          "im": 8.557682057
+        }
+      ],
+      "powers": [
+        {
+          "re": 237.1134021,
+          "im": 216.4948454
+        },
+        {
+          "re": 2762.886598,
+          "im": 783.5051546
+        }
+      ]
+    }
+  ]
+}
