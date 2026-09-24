@@ -53,6 +53,8 @@ pub mod study_storage;
 
 #[cfg(feature = "conic")]
 pub use api::solve_ac_instance;
+#[cfg(feature = "acopf")]
+pub use api::solve_ac_opf_instance;
 pub use api::{
     capabilities_json, solve_instance, solve_instance_cancellable, solve_module_json,
     validate_canonical_identity, BranchFlow, BranchScalar, BusInjection, BusScalar, Edits,
