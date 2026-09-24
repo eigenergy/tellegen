@@ -23,7 +23,6 @@ use powerio_tx::{IndexedNetwork, NormalizeOptions};
 #[cfg(feature = "sensitivity")]
 mod ac;
 #[cfg(feature = "acopf")]
-#[allow(dead_code)] // Private model boundary; solve/emit is added in the next stacked change.
 mod acopf;
 #[cfg(test)]
 mod cases;
@@ -32,7 +31,7 @@ mod dc;
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
 #[cfg(feature = "acopf")]
-pub(crate) use acopf::{solve_ac_opf, AcOpfSolved};
+pub(crate) use acopf::{solve_ac_opf_cancellable, AcOpfSolved};
 pub(crate) use dc::DcNetwork;
 
 #[cfg(all(test, feature = "conic"))]

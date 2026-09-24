@@ -53,19 +53,19 @@ pub mod study_storage;
 
 #[cfg(feature = "conic")]
 pub use api::solve_ac_instance;
-#[cfg(feature = "acopf")]
-pub use api::solve_ac_opf_instance;
 pub use api::{
     capabilities_json, solve_instance, solve_instance_cancellable, solve_module_json,
     validate_canonical_identity, BranchFlow, BranchScalar, BusInjection, BusScalar, Edits,
     ElementKey, GenDispatch, Iterations, Problem, ProblemCaps, SolveRequest, SolveResponse,
     SolveStatus,
 };
+#[cfg(feature = "acopf")]
+pub use api::{solve_ac_opf_instance, solve_ac_opf_instance_cancellable};
 #[cfg(feature = "sensitivity")]
 pub use api::{solve_ac_pf_instance, SensRequest};
-#[cfg(feature = "acopf")]
-pub use emit::solve_ac_opf_instance_to_solution;
 pub use emit::solve_dc_opf_instance;
+#[cfg(feature = "acopf")]
+pub use emit::{solve_ac_opf_instance_to_solution, solve_ac_opf_instance_to_solution_cancellable};
 #[cfg(feature = "mc-pf")]
 pub use mc_pf::{
     parse_bmopf_instance, replay_mc_study_json, solve_bmopf_json, solve_mc_ac_pf_instance,

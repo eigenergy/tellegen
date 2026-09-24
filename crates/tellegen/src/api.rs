@@ -316,10 +316,15 @@ pub enum Iterations {
     Ipm(Vec<SolveIteration>),
     /// Newton iteration count and final infinity-norm mismatch (acpf).
     Newton { count: usize, residual: f64 },
-    /// Nonlinear-program iterations and independently checked primal residual.
+    /// Nonlinear-program diagnostics. The primal residual is Tellegen's
+    /// independent source-model check; the other residuals are POUNCE reports.
     Nlp {
         nlp_iterations: usize,
         primal_residual: f64,
+        solver_status: String,
+        solver_constraint_violation: f64,
+        solver_kkt_error: f64,
+        model_fingerprint: String,
     },
 }
 
@@ -627,6 +632,17 @@ pub fn solve_ac_opf_instance(
     instance: &AcOpfInstance,
     req: &SolveRequest,
 ) -> Result<SolveResponse, String> {
+    solve_ac_opf_instance_cancellable(instance, req, None)
+}
+
+/// As [`solve_ac_opf_instance`], with cancellation polled before model
+/// construction and once per POUNCE iteration.
+#[cfg(feature = "acopf")]
+pub fn solve_ac_opf_instance_cancellable(
+    instance: &AcOpfInstance,
+    req: &SolveRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<SolveResponse, String> {
     if req.formulation != Problem::Acopf {
         return Err(format!(
             "an ac_opf_instance cannot be solved as {:?}",
@@ -644,7 +660,7 @@ pub fn solve_ac_opf_instance(
     if !req.sensitivities.is_empty() {
         return Err("acopf sensitivities require a separately validated NLP KKT contract".into());
     }
-    let solved = super::model::solve_ac_opf(instance)?;
+    let solved = super::model::solve_ac_opf_cancellable(instance, cancel)?;
     ac_opf_assemble(instance.network(), &solved)
 }
 
@@ -721,11 +737,17 @@ fn ac_opf_assemble(
         .collect();
     Ok(SolveResponse {
         formulation: Problem::Acopf,
-        status: SolveStatus::Optimal,
+        // A locally converged nonconvex NLP is independently feasible, but
+        // does not establish global optimality.
+        status: SolveStatus::Feasible,
         objective: Some(solved.objective),
         iterations: Some(Iterations::Nlp {
             nlp_iterations: usize::try_from(solved.iterations).unwrap_or(0),
             primal_residual: solved.residuals.max_violation(),
+            solver_status: solved.solver_status.upstream_name().to_owned(),
+            solver_constraint_violation: solved.solver_constraint_violation,
+            solver_kkt_error: solved.solver_kkt_error,
+            model_fingerprint: solved.fingerprint.clone(),
         }),
         lmp: None,
         lmp_q: None,
@@ -2162,10 +2184,21 @@ mod tests {
             .expect("solve AC OPF");
         let value: Value = serde_json::from_str(&out).expect("response JSON");
         assert_eq!(value["formulation"], "acopf");
-        assert_eq!(value["status"], "optimal");
+        assert_eq!(value["status"], "feasible");
         assert_eq!(value["vm"].as_array().map(Vec::len), Some(3));
         assert_eq!(value["va"].as_array().map(Vec::len), Some(3));
         assert_eq!(value["dispatch"].as_array().map(Vec::len), Some(2));
+        assert_eq!(value["iterations"]["solver_status"], "Solve_Succeeded");
+        assert!(value["iterations"]["primal_residual"]
+            .as_f64()
+            .is_some_and(|residual| residual < 1.0e-6));
+        assert!(value["iterations"]["solver_kkt_error"].is_number());
+        assert_eq!(
+            value["iterations"]["model_fingerprint"]
+                .as_str()
+                .map(str::len),
+            Some(64)
+        );
         assert!(value.get("lmp").is_none());
         assert!(value.get("lmp_q").is_none());
 
@@ -2195,7 +2228,7 @@ mod tests {
             solve_module_json(&text, r#"{"formulation":"acopf"}"#).expect("typed AC OPF solve");
         let response: Value = serde_json::from_str(&response).expect("response JSON");
         assert_eq!(response["formulation"], "acopf");
-        assert_eq!(response["status"], "optimal");
+        assert_eq!(response["status"], "feasible");
 
         let wrong = solve_module_json(&text, r#"{"formulation":"dcopf"}"#)
             .expect_err("wrong formulation must reject");
@@ -2207,6 +2240,24 @@ mod tests {
         )
         .expect_err("unapplied edit must reject");
         assert!(edited.contains("amend the canonical AcOpfInstance"));
+    }
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn ac_opf_cancellation_is_checked_before_model_construction() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = AcOpfInstance::from_network(network).expect("instance");
+        let cancel = Arc::new(AtomicBool::new(true));
+        let error = solve_ac_opf_instance_cancellable(
+            &instance,
+            &SolveRequest {
+                formulation: Problem::Acopf,
+                ..SolveRequest::default()
+            },
+            Some(cancel),
+        )
+        .expect_err("pre-cancelled solve must stop");
+        assert!(error.contains("cancelled"), "got: {error}");
     }
 
     #[cfg(all(feature = "acopf", feature = "sensitivity"))]

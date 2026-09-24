@@ -8,6 +8,8 @@
 //! columns and zero in the dual columns, powerio's spelling for a value the
 //! producer cannot state.
 
+#[cfg(feature = "acopf")]
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 #[cfg(feature = "acopf")]
@@ -20,7 +22,7 @@ use powerio_prob::Termination;
 
 use crate::model::DcNetwork;
 #[cfg(feature = "acopf")]
-use crate::model::{solve_ac_opf, AcOpfSolved};
+use crate::model::{solve_ac_opf_cancellable, AcOpfSolved};
 use crate::problem::{dc_opf_cancellable, DcOpfSolution as SolverSolution};
 
 /// Solve a typed PowerIO DC OPF instance and emit its portable solution. The
@@ -161,7 +163,18 @@ pub fn solve_ac_opf_instance_to_solution(
     instance: Arc<AcOpfInstance>,
     producer: impl Into<String>,
 ) -> Result<AcOpfSolution, String> {
-    let solved = solve_ac_opf(&instance)?;
+    solve_ac_opf_instance_to_solution_cancellable(instance, producer, None)
+}
+
+/// As [`solve_ac_opf_instance_to_solution`], with cancellation polled before
+/// model construction and once per POUNCE iteration.
+#[cfg(feature = "acopf")]
+pub fn solve_ac_opf_instance_to_solution_cancellable(
+    instance: Arc<AcOpfInstance>,
+    producer: impl Into<String>,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<AcOpfSolution, String> {
+    let solved = solve_ac_opf_cancellable(&instance, cancel)?;
     emit_ac_opf_solution(instance, &solved, producer)
 }
 
