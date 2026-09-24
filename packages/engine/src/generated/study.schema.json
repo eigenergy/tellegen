@@ -1102,6 +1102,43 @@
             "residual"
           ],
           "type": "object"
+        },
+        {
+          "description": "Nonlinear-program diagnostics. The primal residual is Tellegen's\nindependent source-model check; the other residuals are POUNCE reports.",
+          "properties": {
+            "model_fingerprint": {
+              "type": "string"
+            },
+            "nlp_iterations": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "primal_residual": {
+              "format": "double",
+              "type": "number"
+            },
+            "solver_constraint_violation": {
+              "format": "double",
+              "type": "number"
+            },
+            "solver_kkt_error": {
+              "format": "double",
+              "type": "number"
+            },
+            "solver_status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "nlp_iterations",
+            "primal_residual",
+            "solver_status",
+            "solver_constraint_violation",
+            "solver_kkt_error",
+            "model_fingerprint"
+          ],
+          "type": "object"
         }
       ],
       "description": "The convergence record. OPF paths carry the full interior-point trace (for the\nsolve-card sparkline); the AC power flow carries its Newton count and final\nmismatch. Untagged: the OPF arm serializes to the same bare array the DC OPF\nalways returned."
@@ -1354,7 +1391,7 @@
       "type": "string"
     },
     "Problem": {
-      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag (full nonlinear AC OPF) is retained for wire-format stability\nbut is not solved by this build: [`capabilities_json`] reports it unavailable and\nrequesting it returns a clean `Err`.",
+      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. Shipping adapters do not forward that feature.",
       "oneOf": [
         {
           "const": "dcpf",
@@ -1378,7 +1415,7 @@
         },
         {
           "const": "acopf",
-          "description": "Full nonlinear AC OPF. Not available in this build (the dispatch errors\ncleanly); the tag is kept so the JSON contract stays stable.",
+          "description": "Full nonlinear AC OPF through the opt-in POUNCE backend.",
           "type": "string"
         }
       ]
@@ -2475,5 +2512,5 @@
   ],
   "title": "StudyContract",
   "type": "object",
-  "x-rust-source-sha256": "0873a4e79ae5eede1a044e7ca730d1532eefe9e424c747fffc54c5b8d70b9693"
+  "x-rust-source-sha256": "48e7b3f07f6dc213aa3a725311d2e53aeb2f666a118f0fdb60b619b028cfeac7"
 }
