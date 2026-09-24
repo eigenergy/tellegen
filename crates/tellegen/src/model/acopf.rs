@@ -89,7 +89,7 @@ pub(crate) struct AcOpfSolved {
 }
 
 /// Transparent POUNCE model decorator that polls Tellegen's cancellation flag
-/// once per nonlinear-program iteration, including restoration iterations.
+/// from each intermediate callback made by the currently wired solve.
 struct CancellableNlTnlp {
     inner: NlTnlp,
     cancel: Option<Arc<AtomicBool>>,

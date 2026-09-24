@@ -10,7 +10,7 @@ transmission AC OPF. The choice favors an end-to-end Rust implementation and a
 responsive upstream over building two solver adapters in the first cycle. The
 internal model/solver boundary must remain backend-neutral.
 
-The decision follows POUNCE's
+The decision follows POUNCE's WASM-frontend
 [restoration fix](https://github.com/jkitchin/pounce/pull/961) and the
 [AC OPF follow-up experiments](https://github.com/jkitchin/pounce/issues/965).
 Those results are feasibility and implementation evidence, not general solver
@@ -49,10 +49,10 @@ scaling, and `1e-9` solver/constraint tolerances. The acceptance check requires
 the known HS071 objective within `1e-5`, source-equation violation below
 `1e-7`, eight Jacobian nonzeros, and ten lower-triangle Hessian nonzeros.
 
-PowerIO 0.11.3 is the released preparation boundary for the next increment. It
-contains `AcOpfInstance`, `build_ac_opf_preparation`, and `AcOpfSolution`; the
-model compiler must consume those APIs rather than reinterpret MATPOWER data or
-reuse Tellegen's modified CATS power-flow physics.
+PowerIO 0.11.3 provides the released preparation boundary used here. The model
+compiler consumes its `AcOpfInstance`, `build_ac_opf_preparation`, and
+`AcOpfSolution` APIs rather than reinterpreting MATPOWER data or reusing
+Tellegen's modified CATS power-flow physics.
 
 ## Canonical model boundary
 
@@ -89,7 +89,7 @@ MATPOWER 14/30/300-bus construction check reproducible without vendoring a
 second copy of those fixtures. On 24 September 2026, a local arm64 debug build
 after compilation produced:
 
-| case | variables / rows | nnz Jacobian / Hessian | expression compile | derivative tape | max directional J / H error |
+| case | variables / rows | nnz Jacobian / Hessian | expression compile | derivative tape | max absolute directional J / H error |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 14 | 38 / 49 | 267 / 127 | 1.849 ms | 3.841 ms | `4.545e-9` / `1.557e-7` |
 | 30 | 72 / 184 | 871 / 260 | 1.016 ms | 12.803 ms | `7.186e-9` / `3.412e-8` |
@@ -99,15 +99,19 @@ These are correctness/prototype measurements, not solver performance claims.
 Run the ladder with `TELLEGEN_ACOPF_FIXTURES` pointing to a directory containing
 `case14.m`, `case30.m`, and `case300.m`. Peak RSS was not available inside the
 sandbox used for this run, and frozen-NL parity remains a separate acceptance
-measurement.
+measurement. The regression test now reports both absolute error and error
+scaled by the analytic and finite-difference magnitudes with a floor of one.
+The latest scaled J/H errors were `3.478e-9` / `2.418e-9`, `1.791e-9` /
+`2.239e-10`, and `9.095e-7` / `2.966e-9` for cases 14, 30, and 300
+respectively.
 
 ## Typed native solve boundary
 
 The opt-in native API now exposes `solve_ac_opf_instance` and
 `solve_ac_opf_instance_to_solution` plus cancellable counterparts. The
 cancellable paths poll an atomic flag before model construction and at every
-POUNCE iteration, including restoration iterations. They run POUNCE with
-FERAL, exact Hessians, identity NLP and linear-system scaling, a `1e-8`
+iteration of the currently wired POUNCE solve. They run POUNCE with FERAL,
+exact Hessians, identity NLP and linear-system scaling, a `1e-8`
 solver/constraint tolerance, `1e-7` acceptable tolerance, and a 1,000-iteration
 ceiling. The returned `AcOpfSolution` is scattered through PowerIO's source
 row/winding maps in MW/MVAr and degrees, retains inactive source rows as
@@ -161,9 +165,12 @@ corresponding-source location. Until then, the feature remains a
 development-only native capability and `Problem::Acopf` remains unavailable in
 default and shipping builds.
 
-## Remaining model and solve gates
+## Remaining release gates
 
-Before distribution, record native peak memory and compare the 14/30/300
-expressions against the frozen benchmark values in addition to the
+Before distribution, replace the Git pin with a tagged POUNCE release, wire or
+invoke its restoration and second-opinion path explicitly, and add a small
+regression that proves restoration is exercised (`restoration_calls > 0`). Then
+rerun the large PGLib comparison. Also record native peak memory and compare the
+14/30/300 expressions against frozen benchmark values in addition to the
 finite-difference checks above. A failure of expression-DAG scaling changes the
 private solver adapter, not the PowerIO problem or solution contract.
