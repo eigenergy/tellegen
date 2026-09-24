@@ -1,8 +1,10 @@
 //! tellegen: differentiable optimal power flow and sensitivities.
 //!
 //! Solves PowerIO problem instances and stored modules as DC power flow, DC OPF,
-//! AC power flow, or the SOCWR conic relaxation. Dense solver workspaces are
-//! private implementation details; portable input and persistence use PowerIO.
+//! AC power flow, or the SOCWR conic relaxation. The non-default native `acopf`
+//! feature also provides exact polar AC OPF through POUNCE. Dense solver
+//! workspaces are private implementation details; portable input and persistence
+//! use PowerIO.
 //!
 //! [`solve_instance`] is the typed DC OPF entry. [`Study`] accepts a stored
 //! PowerIO balanced network module for interactive browser work.
