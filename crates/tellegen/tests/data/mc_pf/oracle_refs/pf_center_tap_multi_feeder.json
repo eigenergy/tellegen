@@ -9,7 +9,7 @@
     "dss_sha256": "6429df729f70657bf73805d77062fe71725e4d8b54e51786906f593a4cc3512d",
     "upstream_license_sha256": "331e77cd102c8777902e2785f1fd7809236707e16b79ede4de353ca0e7e0ae24",
     "configuration": "controlmode=off; algorithm=normal; tolerance=1e-11; maxiterations=1000; load vminpu=0 vmaxpu=2; vsource model=ideal puZideal=[1e-12,0]; transformer ppm_antifloat=0",
-    "license": "BMOPFTools.jl LICENSE.md (copyright 2026 Frederik Geth, permissive BSD-3-Clause-style terms); hash recorded above."
+    "license": "Tellegen-authored fixture; the BMOPFTools.jl LICENSE.md (copyright 2026 Frederik Geth, permissive BSD-3-Clause-style terms) covers the centre-tap cases it derives from; hash recorded above."
   },
   "converged": true,
   "terminals": [

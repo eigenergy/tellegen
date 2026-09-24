@@ -5,15 +5,20 @@
 Issue #140 adds three frozen OpenDSS comparisons to the small-system oracle.
 The balanced case applies equal 9+j1.5 kVA loads to the two 120 V legs behind
 a 20 km feeder. The finite-grounding case applies unequal leg loads while the
-only secondary earth path is the transformer's 2+j1 ohm centre-point impedance.
+centre point is earthed only through the transformer's 2+j1 ohm neutral
+impedance; a 20 ohm leg-b leakage path closes the earth loop, so about 5.4 A
+flows through that impedance and lifts the neutral to about 12 V.
 The reduced end-to-end feeder places three centre-tap units on consecutive MV
 buses, exercises AB, BC, and CA primaries, and mixes balanced leg, unbalanced
 leg, and 480 V phase-to-phase loading.
 
 All three converge with one retained factorization. Against the pinned
 OpenDSSDirect.py 0.9.4 references, the maximum complex terminal-voltage errors
-are 2.434e-6 V, 2.434e-6 V, and 2.200e-6 V respectively; returned physical KCL
-residuals are at most 4.54e-9 A. The oracle also compares each centre-tap
+are 2.434e-6 V, 2.434e-6 V, and 2.200e-6 V respectively. These maxima sit on
+the 7.2 kV side (about 3e-10 relative), where the pinned OpenDSS ideal source
+keeps a 1e-12 pu internal impedance; the secondary terminals agree to
+5.98e-8 V, 4.43e-8 V, and 6.07e-8 V. Returned physical KCL residuals are at
+most 4.54e-9 A. The oracle also compares each centre-tap
 transformer's terminal currents and powers after aggregating the two OpenDSS
 winding entries at the shared neutral. The complete frozen corpus passes 13/13.
 

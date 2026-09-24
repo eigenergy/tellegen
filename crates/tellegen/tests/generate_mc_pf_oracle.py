@@ -52,18 +52,30 @@ LOCAL_DSS_DIR = TEST_DIR / "data" / "mc_pf" / "oracle_sources"
 LOCAL_LICENSE = TEST_DIR / "data" / "mc_pf" / "LICENSE.md"
 BMOPFTOOLS_SNAPSHOT = "8ca84ab12c0c91aaa8ad4c9986d6adbeb969ea0b"
 BMOPFTOOLS_CENTRE_TAP_SOURCE = "720975f3adf3a78caf8a51157dba48f41bab91cc"
+BMOPFTOOLS_LICENSE = (
+    "BMOPFTools.jl LICENSE.md (copyright 2026 Frederik Geth, permissive "
+    "BSD-3-Clause-style terms); hash recorded above."
+)
+DERIVED_LICENSE = (
+    "Tellegen-authored fixture; the BMOPFTools.jl LICENSE.md (copyright 2026 "
+    "Frederik Geth, permissive BSD-3-Clause-style terms) covers the centre-tap "
+    "cases it derives from; hash recorded above."
+)
 LOCAL_SOURCE_PROVENANCE = {
     "pf_center_tap_balanced_heavy": {
         "source_bmopftools": BMOPFTOOLS_CENTRE_TAP_SOURCE,
         "source_fixture": "pf_center_tap_balanced_heavy.dss",
+        "license": BMOPFTOOLS_LICENSE,
     },
     "pf_center_tap_rneut": {
         "source_bmopftools": BMOPFTOOLS_CENTRE_TAP_SOURCE,
         "source_fixture": "adapted from BMOPFTools centre-tap and finite-rneut cases",
+        "license": BMOPFTOOLS_LICENSE,
     },
     "pf_center_tap_multi_feeder": {
         "source_tellegen": "synthetic reduced feeder for issue #140",
         "derived_bmopftools": BMOPFTOOLS_CENTRE_TAP_SOURCE,
+        "license": DERIVED_LICENSE,
     },
 }
 
@@ -133,16 +145,19 @@ def equivalent(
     return matches
 
 
-def preserve_noncomparative_elements(case: str, existing: dict, result: dict) -> None:
+def preserve_noncomparative_elements(
+    existing: dict, result: dict, compared_transformers: set[str]
+) -> None:
     """Keep convention-sensitive element records that the oracle does not compare.
 
     OpenDSS source, transformer, and reactor terminal metadata and vectors can
     vary with the backend's winding/pivot convention even when the bus voltages
     and externally observable line/load quantities agree.  The Rust oracle omits
-    source elements and only uses transformer/reactor names while requiring the
-    corresponding solver ports to be finite, so retaining the checked-in evidence
-    prevents harmless backend differences from dirtying a source package on
-    another platform.
+    source elements and, apart from centre-tap transformers (whose terminal
+    currents and powers it compares numerically), only uses transformer/reactor
+    names while requiring the corresponding solver ports to be finite, so
+    retaining the checked-in evidence prevents harmless backend differences from
+    dirtying a source package on another platform.
     """
     previous_by_name = {
         element["name"]: element for element in existing.get("elements", [])
@@ -151,7 +166,7 @@ def preserve_noncomparative_elements(case: str, existing: dict, result: dict) ->
         kind = element.get("name", "").lower()
         if not kind.startswith(("vsource.", "transformer.", "reactor.")):
             continue
-        if kind.startswith("transformer.") and case.startswith("pf_center_tap_"):
+        if kind.startswith("transformer.") and kind.split(".", 1)[1] in compared_transformers:
             continue
         previous = previous_by_name.get(element["name"])
         if previous is None:
@@ -168,10 +183,10 @@ def preserve_noncomparative_elements(case: str, existing: dict, result: dict) ->
                 element[field] = previous[field]
 
 
-def write_reference(case: str, path: Path, result: dict) -> None:
+def write_reference(path: Path, result: dict, compared_transformers: set[str]) -> None:
     if path.exists():
         existing = json.loads(path.read_text())
-        preserve_noncomparative_elements(case, existing, result)
+        preserve_noncomparative_elements(existing, result, compared_transformers)
         if equivalent(existing, result):
             return
     path.write_text(json.dumps(result, indent=2) + "\n")
@@ -192,6 +207,8 @@ def terminal_number(name: str) -> int:
 def source_paths(case: str, dss_dir: Path | None) -> tuple[Path, Path, dict[str, str]]:
     local_dss = LOCAL_DSS_DIR / f"{case}.dss"
     if local_dss.exists():
+        if case not in LOCAL_SOURCE_PROVENANCE:
+            raise RuntimeError(f"{case} has a checked-in DSS source but no recorded provenance")
         return local_dss, LOCAL_LICENSE, LOCAL_SOURCE_PROVENANCE[case]
     if dss_dir is None:
         raise RuntimeError(
@@ -200,7 +217,7 @@ def source_paths(case: str, dss_dir: Path | None) -> tuple[Path, Path, dict[str,
     return (
         dss_dir / f"{case}.dss",
         dss_dir.parent.parent.parent / "LICENSE.md",
-        {"source_bmopftools": BMOPFTOOLS_SNAPSHOT},
+        {"source_bmopftools": BMOPFTOOLS_SNAPSHOT, "license": BMOPFTOOLS_LICENSE},
     )
 
 
@@ -316,19 +333,23 @@ def generate(case: str, dss_dir: Path | None, output_dir: Path) -> None:
         "case": case,
         "provenance": {
             "backend": BACKEND,
-            **source_provenance,
+            **{key: value for key, value in source_provenance.items() if key != "license"},
             "input_sha256": hashlib.sha256(raw).hexdigest(),
             "dss_sha256": hashlib.sha256(dss_raw).hexdigest(),
             "upstream_license_sha256": hashlib.sha256(license_raw).hexdigest(),
             "configuration": "controlmode=off; algorithm=normal; tolerance=1e-11; maxiterations=1000; load vminpu=0 vmaxpu=2; vsource model=ideal puZideal=[1e-12,0]; transformer ppm_antifloat=0",
-            "license": "BMOPFTools.jl LICENSE.md (copyright 2026 Frederik Geth, permissive BSD-3-Clause-style terms); hash recorded above.",
+            "license": source_provenance["license"],
         },
         "converged": True,
         "terminals": terminals,
         "elements": elements,
     }
+    # Mirrors the Rust oracle: centre-tap transformers are compared numerically.
+    compared_transformers = {
+        name.lower() for name in document.get("transformer", {}).get("center_tap", {})
+    }
     output_dir.mkdir(parents=True, exist_ok=True)
-    write_reference(case, output_dir / f"{case}.json", result)
+    write_reference(output_dir / f"{case}.json", result, compared_transformers)
 
 
 def main() -> None:
@@ -346,7 +367,15 @@ def main() -> None:
         default=Path(__file__).resolve().parent / "data" / "mc_pf" / "oracle_refs",
     )
     args = parser.parse_args()
-    for case in args.case or CASES:
+    cases = args.case or CASES
+    if args.dss_dir is None:
+        missing = [case for case in cases if not (LOCAL_DSS_DIR / f"{case}.dss").exists()]
+        if missing:
+            parser.error(
+                "--dss-dir is required for cases without a checked-in DSS source: "
+                + ", ".join(missing)
+            )
+    for case in cases:
         generate(case, args.dss_dir, args.output_dir)
 
 

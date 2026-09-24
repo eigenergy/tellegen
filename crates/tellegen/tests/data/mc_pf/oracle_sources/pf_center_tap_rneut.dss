@@ -1,5 +1,6 @@
-! Centre-tap transformer whose only secondary earth path is the winding-2
-! rneut/xneut branch. Unequal leg loads force current through that finite path.
+! Centre-tap transformer whose centre point is earthed only through the
+! winding-2 rneut/xneut branch. A 20 ohm leg-b leakage path closes an earth loop,
+! so current flows through that finite impedance and lifts the neutral voltage.
 
 Clear
 Set DefaultBaseFreq=50
@@ -13,6 +14,8 @@ New Transformer.t1 phases=1 windings=3
 ~ XHL=2.04 XLT=1.36 XHT=2.04
 ~ %noloadloss=0
 ~ %imag=0
+
+New Reactor.leak_b bus1=lv.2 bus2=lv.0 R=20 X=0 phases=1
 
 New Load.ld1 bus1=lv.1.4 kv=0.120 kw=9 kvar=3 phases=1 model=1 Vminpu=0 Vmaxpu=2
 New Load.ld2 bus1=lv.4.2 kv=0.120 kw=3 kvar=1 phases=1 model=1 Vminpu=0 Vmaxpu=2

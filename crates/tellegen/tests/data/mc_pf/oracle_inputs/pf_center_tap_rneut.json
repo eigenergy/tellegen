@@ -20,6 +20,9 @@
       "v_angle": [0.0, 0.0]
     }
   },
+  "shunt": {
+    "leak_b": {"bus": "lv", "terminal_map": ["b"], "G_1_1": 0.05, "B_1_1": 0.0}
+  },
   "transformer": {
     "center_tap": {
       "t1": {
