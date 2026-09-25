@@ -10,9 +10,14 @@ description = "Development-only WASI adapter for Tellegen's POUNCE AC OPF solver
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Workspace builds must not unify tellegen/acopf into shipping adapters.
+default = []
+acopf = ["dep:tellegen"]
+
 [dependencies]
 serde_json.workspace = true
-tellegen = { path = "../tellegen", default-features = false, features = ["acopf"] }
+tellegen = { path = "../tellegen", optional = true, default-features = false, features = ["acopf"] }
 
 [lints]
 workspace = true

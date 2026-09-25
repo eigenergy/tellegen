@@ -57,12 +57,18 @@ jobs:
         run: cargo test --workspace --exclude tellegen-py
       - name: Test the independent multiconductor feature
         run: cargo test -p tellegen --no-default-features --features mc-pf
-      # The two runs below use non-default features, which the workspace run
+      # The conic runs use non-default features, which the workspace run
       # above does not reach. Keep them separate: `tellegen-wasm` takes
       # `tellegen` with `default-features = false`, so this is the only run that
       # tests the feature set the browser ships.
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
+      # Do not rely on feature unification in the default workspace test.
+      - name: Test and lint the opt-in AC OPF path
+        run: |
+          cargo test -p tellegen --all-features --locked
+          cargo test -p tellegen-acopf-wasi --features acopf --locked
+          cargo clippy -p tellegen -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
       - name: Run the exact-derivative POUNCE feasibility probe
         run: cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
       - name: Reproduce the pinned multiconductor OpenDSS oracle
