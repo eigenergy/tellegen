@@ -5,6 +5,7 @@
 members = [
   "crates/tellegen",
   "crates/tellegen-wasm",
+  "crates/tellegen-acopf-wasi",
   "crates/tellegen-server",
   "crates/tellegen-cli",
   "crates/tellegen-py",

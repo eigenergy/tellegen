@@ -25,6 +25,10 @@ jobs:
       - run: npm run check:webmcp
       - run: npm run pack:webmcp
       - run: npm run wasm
+      - run: rustup target add wasm32-wasip1
+      # Development-only EPL asset: built and exercised in CI, never copied by
+      # an ordinary package or deploy build.
+      - run: npm run wasm:acopf
       - run: npm run check:engine
       - run: npm run build:engine
       - run: npm run test:import
@@ -35,6 +39,8 @@ jobs:
       # Call the frontend build directly. `build:web` rebuilds @tellegen/svelte,
       # which `check:web` above already built.
       - run: npm --workspace tellegen-frontend run build
+      - name: Prove the default app excludes the EPL AC OPF asset
+        run: test ! -e apps/web/build/experimental-acopf/tellegen_acopf_wasi.wasm
       # The README presents both examples as working integrations; build them
       # against the workspace packages so a public API change cannot break
       # them unnoticed.
@@ -43,12 +49,19 @@ jobs:
       # The WebMCP challenge evidence harness (evidence/webmcp) has its own
       # unit tests and nothing else runs them.
       - run: npm run test:evidence
+      - name: Build the opt-in AC OPF browser test app
+        run: npm --workspace tellegen-frontend run build
+        env:
+          PUBLIC_TELLEGEN_ACOPF_WASM_URL: /experimental-acopf/tellegen_acopf_wasi.wasm
+      - name: Check the opt-in app contains the AC OPF asset
+        run: test -e apps/web/build/experimental-acopf/tellegen_acopf_wasi.wasm
       - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
       - name: Build the native Study interface for browser parity
         run: cargo build -p tellegen-cli --features conic
       - run: npm run test:browser
         env:
           TELLEGEN_STUDY_CLI: ${{ github.workspace }}/target/debug/tellegen
+          TELLEGEN_TEST_ACOPF: "1"
       # The npm counterpart of cargo-deny. Keep this mandatory, but run it
       # after deterministic checks: a registry outage must not conceal their
       # results. The line is `high`. Below it sit a SvelteKit request handling

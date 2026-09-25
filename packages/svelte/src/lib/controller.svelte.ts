@@ -45,6 +45,9 @@ import {
 	isPermanentEngineFailure,
 	parseDisplay,
 	parseGeo,
+	probeAcOpfWorker,
+	solveAcOpfModule,
+	solveResponseToSolution,
 	type EngineTransport,
 	type McLoadPowerEdit,
 	type McPfOptions,
@@ -164,6 +167,7 @@ type DemandRangeAnchor = {
 export interface ControllerOptions {
 	api?: TellegenApiClient;
 	apiBase?: string;
+	acOpfWasmUrl?: string;
 	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
 		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession'>>;
 }
@@ -182,6 +186,11 @@ export class Controller {
 	// Latched once any server fallback answers 403: compute is disabled on this
 	// deploy, so later fallbacks show the notice instead of firing doomed requests.
 	serverComputeOff = false;
+	/** The optional EPL-bearing WASI asset is never inferred or bundled. */
+	private readonly acOpfWasmUrl: string | null;
+	private acOpfProbeStarted = false;
+	private readonly acOpfSolves = new WeakMap<SolvableCase, AbortController>();
+	acOpfAvailable = $state(false);
 
 	// Build-once browser Study per case: the retained PowerIO module is parsed and the model built
 	// when the Study is created, so a drag re-solves (commit) and previews without
@@ -258,6 +267,7 @@ export class Controller {
 		this.app = app;
 		this.api = options.api ?? createApiClient({ apiBase: options.apiBase });
 		this.mcTransport = options.mcTransport ?? browserWasmTransport;
+		this.acOpfWasmUrl = options.acOpfWasmUrl ?? null;
 	}
 
 	// ===== helpers =====
@@ -292,6 +302,30 @@ export class Controller {
 
 	isPerturbed(c: SolvableCase | null): boolean {
 		return c?.perturbed ?? false;
+	}
+
+	formulationAvailable(c: SolvableCase, formulation: Formulation): boolean {
+		if (formulation === 'acopf') return this.acOpfAvailable && !c.perturbed;
+		return !FORMULATIONS.find((entry) => entry.id === formulation)?.disabled;
+	}
+
+	probeAcOpf = () => {
+		if (this.acOpfProbeStarted || !this.acOpfWasmUrl) return;
+		this.acOpfProbeStarted = true;
+		void probeAcOpfWorker(this.acOpfWasmUrl).then((available) => {
+			this.acOpfAvailable = available;
+			// A declared instance can be dropped while the optional asset is probing.
+			const c = this.app.activeLocal;
+			if (available && c?.formulation === 'acopf' && !c.solving) {
+				this.maybeStartLocalSolve(c.id);
+			}
+		});
+	};
+
+	caseExportUnavailableReason(c: SolvableCase): string | null {
+		return c.formulation === 'acopf'
+			? 'Saving and exporting AC OPF cases is not supported yet.'
+			: null;
 	}
 
 	bumpRevision(c: SolvableCase): void {
@@ -500,6 +534,8 @@ export class Controller {
 
 	// Release a case's Study (if any) when the case is removed.
 	disposeStudy(c: SolvableCase) {
+		this.acOpfSolves.get(c)?.abort();
+		this.acOpfSolves.delete(c);
 		const cached = this.caseStudies.get(c);
 		if (cached) {
 			cached.study.free();
@@ -696,7 +732,11 @@ export class Controller {
 	);
 	sliderMin = $derived(this.sliderBounds.min);
 	sliderMax = $derived(this.sliderBounds.max);
-	sliderDisabled = $derived(!this.selectedBusData || isDisplayOnlyElement(this.selectedBusData));
+	sliderDisabled = $derived(
+		this.activeFormulation === 'acopf' ||
+			!this.selectedBusData ||
+			isDisplayOnlyElement(this.selectedBusData)
+	);
 
 	committedRating = $derived.by(() =>
 		this.activeSolvable && this.app.selectedBranch !== null
@@ -712,7 +752,8 @@ export class Controller {
 	// to perturb.
 	ratingBounds = $derived.by(() => {
 		const b = this.selectedBranchData;
-		if (!b || isDisplayOnlyElement(b) || b.rate_mw <= 0) return { min: 0, max: 0, disabled: true };
+		if (this.activeFormulation === 'acopf' || !b || isDisplayOnlyElement(b) || b.rate_mw <= 0)
+			return { min: 0, max: 0, disabled: true };
 		const span = Math.min(50, Math.max(5, 0.2 * b.rate_mw));
 		return {
 			min: Math.max(-(b.rate_mw - 1), -span),
@@ -839,6 +880,7 @@ export class Controller {
 		// so two concurrent loads can't double-fetch the case list and double-fit the map.
 		if (this.loading) return this.loading;
 		this.loading = (async () => {
+			this.probeAcOpf();
 			// Learn the deploy's compute gate up front so fallback paths pick honest
 			// copy and skip doomed requests (the SSE stream cannot see a 403). On
 			// failure assume enabled; the 403 latch in fetchServerColumn still
@@ -986,7 +1028,7 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.activeLocalId = c.id;
-		if (c.formulation === 'acpf' && this.app.displayMode === 'price')
+		if ((c.formulation === 'acpf' || c.formulation === 'acopf') && this.app.displayMode === 'price')
 			this.app.displayMode = 'voltage';
 		this.app.placingLocalId = c.coordsKind === 'synthetic_pending' && !c.diagram ? c.id : null;
 		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
@@ -1011,7 +1053,7 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.addLocal(c);
-		if (c.formulation === 'acpf' && this.app.displayMode === 'price')
+		if ((c.formulation === 'acpf' || c.formulation === 'acopf') && this.app.displayMode === 'price')
 			this.app.displayMode = 'voltage';
 		if (c.diagram) this.app.placingLocalId = null;
 		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
@@ -1202,6 +1244,7 @@ export class Controller {
 		copy.iterations = source.iterations;
 		copy.solveMs = source.solveMs;
 		copy.solveBackend = source.solveBackend;
+		copy.solveDetail = source.solveDetail;
 		copy.network = source.network;
 		if (source.network) {
 			copy.view = {
@@ -1275,7 +1318,8 @@ export class Controller {
 			'baseSolution',
 			'iterations',
 			'solveMs',
-			'solveBackend'
+			'solveBackend',
+			'solveDetail'
 		] as const)
 			Object.assign(copy, { [key]: source[key] });
 		const captured = this.detachedCaseCaptures.get(source);
@@ -1435,7 +1479,7 @@ export class Controller {
 				await this.awaitFocus(caseId, target.branch, ac);
 				if (ac.signal.aborted) return;
 			}
-			if (c.formulation === 'acpf') return;
+			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 			try {
 				// The column from the browser Study (under the case's formulation). DC OPF
 				// may reconcile a null column via the server; AC OPF / SOCWR are browser
@@ -1574,7 +1618,7 @@ export class Controller {
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
-			if (c.formulation === 'acpf') return;
+			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
 				bus: busId
 			});
@@ -1642,7 +1686,7 @@ export class Controller {
 				await this.awaitFocus(localId, branchId, ac);
 				if (ac.signal.aborted) return;
 			}
-			if (c.formulation === 'acpf') return;
+			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
 				branch: branchId
 			});
@@ -1702,7 +1746,9 @@ export class Controller {
 	// fall back: the server solves at base ratings, so a Study failure there is
 	// terminal.
 	runSolve = (c: SolvableCase, target: SensTarget | null) => {
-		if (c.formulation === 'acpf') target = null;
+		if (c.formulation === 'acpf' || c.formulation === 'acopf') target = null;
+		this.acOpfSolves.get(c)?.abort();
+		this.acOpfSolves.delete(c);
 		// Cancel this case's own previous server stream, if any (backend only).
 		if (this.isBackendCase(c)) {
 			c.closeStream?.();
@@ -1713,6 +1759,7 @@ export class Controller {
 		this.app.error = null;
 		c.solving = true;
 		c.solveBackend = null;
+		c.solveDetail = null;
 		c.solveFallbackReason = null;
 		c.iterations = [];
 		c.solveMs = null;
@@ -1720,6 +1767,11 @@ export class Controller {
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (!studyInputJson) {
 				c.solveFallbackReason ??= 'PowerIO module unavailable';
+				if (c.formulation !== 'dcopf') {
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} requires its PowerIO module; ${c.solveFallbackReason}`;
+					return;
+				}
 				if (this.hasRatingEdits(c)) {
 					c.solving = false;
 					this.app.error = this.ratingEditsFallbackError(c);
@@ -1731,6 +1783,44 @@ export class Controller {
 				return;
 			}
 			const t0 = performance.now();
+			if (c.formulation === 'acopf') {
+				if (!this.acOpfAvailable || !this.acOpfWasmUrl) {
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: the experimental AC OPF worker is unavailable`;
+					return;
+				}
+				if (c.perturbed) {
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: AC OPF currently solves the canonical base case only; reset demand and rating edits first`;
+					return;
+				}
+				const cancellation = new AbortController();
+				this.acOpfSolves.set(c, cancellation);
+				c.solveBackend = 'pounce-wasi';
+				try {
+					const response = await solveAcOpfModule(
+						this.acOpfWasmUrl,
+						studyInputJson,
+						cancellation.signal
+					);
+					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
+					c.solution = solveResponseToSolution(response);
+					const diagnostics = response.iterations;
+					c.solveDetail =
+						diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
+							? `${diagnostics.nlp_iterations} NLP iterations`
+							: 'POUNCE WASI';
+					c.solveMs = Math.round(performance.now() - t0);
+					this.finishSolve(c, seq, null);
+				} catch (error) {
+					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: AC OPF failed in the isolated browser worker: ${errorText(error)}`;
+				} finally {
+					if (this.acOpfSolves.get(c) === cancellation) this.acOpfSolves.delete(c);
+				}
+				return;
+			}
 			c.solveBackend = 'clarabel-wasm';
 
 			// Build-once Study path: commit the new operating point (no re-parse). The
@@ -1916,9 +2006,9 @@ export class Controller {
 			this.fail('This PowerIO instance requires its declared calculation.');
 			return;
 		}
-		if (FORMULATIONS.find((f) => f.id === next)?.disabled) return;
+		if (!this.formulationAvailable(c, next)) return;
 		c.formulation = next;
-		this.app.displayMode = next === 'acpf' ? 'voltage' : 'price';
+		this.app.displayMode = next === 'acpf' || next === 'acopf' ? 'voltage' : 'price';
 		this.bumpRevision(c);
 		// The committed point carries over (same demand), but the model and its solution do
 		// not; drop the Study and the cached solutions so they rebuild under `next`.
@@ -1927,6 +2017,7 @@ export class Controller {
 		c.solution = null;
 		c.iterations = [];
 		c.solveMs = null;
+		c.solveDetail = null;
 		c.predictedObjective = null;
 		this.app.previewPrices = null;
 		this.previewObjective = null;
@@ -2760,6 +2851,11 @@ export class Controller {
 	 * save or export captures exactly what is on screen. Null (with an error set) when no
 	 * PowerIO module or Study is available. */
 	public syncedStudy = async (c: SolvableCase): Promise<BrowserStudy | null> => {
+		const unavailable = this.caseExportUnavailableReason(c);
+		if (unavailable) {
+			this.app.error = `${this.caseName(c)}: ${unavailable}`;
+			return null;
+		}
 		const studyInputJson = await this.ensureStudyInputJson(c);
 		if (!studyInputJson) {
 			this.app.error = `${this.caseName(c)}: no PowerIO module available to save`;
@@ -2853,7 +2949,7 @@ export class Controller {
 	// can't preview (browser fallback path, server-only cases): the map then
 	// falls back to the JS sensitivity-times-step preview.
 	runPreview = (c: SolvableCase, bus: number, value: number) => {
-		if (c.formulation === 'acpf') return;
+		if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 		// Fast path: the committed price/demand column (already solved at the committed point),
 		// scaled by the demand step, is the same first-order linearization the engine preview
 		// returns — without rebuilding the differentiable KKT every drag frame. That engine
@@ -2968,7 +3064,7 @@ export class Controller {
 	// point (preview is replacement-absolute, so the absolute ratings map is built),
 	// then scaled by the live step; null when no Study slope is available.
 	runRatingPreview = (c: SolvableCase, branch: number, value: number) => {
-		if (c.formulation === 'acpf') return;
+		if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 		const committedAtBranch = this.caseRatings(c)[branch] ?? 0;
 		const step = (Math.abs(value) < 0.25 ? 0 : value) - committedAtBranch;
 		const col = c.sensitivity;

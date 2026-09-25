@@ -61,9 +61,9 @@ numerics are therefore written in Rust and compiled to wasm.
 - **AC OPF (nonconvex): native development capability.** The non-default
   `acopf` feature now compiles and solves PowerIO's exact polar model through
   POUNCE, validates the primal solution independently, and emits a portable
-  solution. It is not enabled by a shipping adapter. Browser delivery still
-  needs a dedicated WASI worker, while native distribution awaits solver,
-  license, and release gates.
+  solution. An opt-in development build now runs it in a dedicated WASI worker
+  with hard cancellation, but no shipping adapter or deployment enables it.
+  Distribution awaits solver, license, benchmark, and release gates.
 
 The browser owns the whole DC pipeline: parse, solve, differentiate, render
 ([issue #2](https://github.com/eigenergy/tellegen/issues/2)).
@@ -91,10 +91,11 @@ deployment the default. The DC pipeline in the browser has landed, including
 the Safari sensitivity gap
 ([issue #8](https://github.com/eigenergy/tellegen/issues/8)).
 
-Long term: graduate the native AC OPF feature after its solver and distribution
-gates, then add browser AC OPF through a dedicated WASI worker with hard
-cancellation. WebGPU follows when deck.gl's backend gains picking and basemap
-support. Synthetic grid generation pairs with in-browser compute.
+Long term: graduate the native AC OPF feature and experimental browser WASI
+worker after their solver, distribution, and benchmark gates. The worker
+already supports hard cancellation. WebGPU follows when deck.gl's backend
+gains picking and basemap support. Synthetic grid generation pairs with
+in-browser compute.
 
 ## Sources
 

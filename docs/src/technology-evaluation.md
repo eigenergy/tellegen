@@ -23,9 +23,12 @@ A local feasibility check instantiated Pounce's published WASM module under Node
 
 The non-default native POUNCE addition now compiles the exact PowerIO-prepared
 model, tests its analytic Jacobian and Hessian, and validates solved electrical
-equations and limits independently of solver-reported residuals. The next
-browser gate is parity with that native path on small power-system cases. A
-dedicated worker provides hard cancellation by terminating the calculation.
+equations and limits independently of solver-reported residuals. An opt-in
+development WASI adapter now exercises parity with that native path on a small
+power-system case. A dedicated one-shot worker provides hard cancellation by
+terminating the calculation; ordinary builds neither enable the selector nor
+contain the EPL-bearing asset. Distribution still depends on the release gates
+in the AC OPF solver decision.
 BMOPF multiconductor AC OPF additionally needs verified winding, neutral,
 device-control, objective, and per-terminal limit equations. The fixed-point AC
 power flow does not claim that support.
