@@ -91,10 +91,11 @@ deployment the default. The DC pipeline in the browser has landed, including
 the Safari sensitivity gap
 ([issue #8](https://github.com/eigenergy/tellegen/issues/8)).
 
-Long term: graduate the native AC OPF feature after its solver and distribution
-gates, then add browser AC OPF through a dedicated WASI worker with hard
-cancellation. WebGPU follows when deck.gl's backend gains picking and basemap
-support. Synthetic grid generation pairs with in-browser compute.
+Long term: graduate the native AC OPF feature and experimental browser WASI
+worker after their solver, distribution, and benchmark gates. The worker
+already supports hard cancellation. WebGPU follows when deck.gl's backend
+gains picking and basemap support. Synthetic grid generation pairs with
+in-browser compute.
 
 ## Sources
 

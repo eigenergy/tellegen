@@ -33,6 +33,9 @@ Every solvable ingest payload includes `module_json`, a generation-2 PowerIO
 IR module. Pass that value to `createStudy`, `solveModule`, and geographic
 transforms. The engine does not expose a second network JSON boundary.
 
+Stored AC OPF instances retain `formulation: "acopf"` and their original
+`module_json`. They use the experimental worker below, not `createStudy`.
+
 `ingestJsonDrop(bytes)` classifies and parses JSON in one call. Its
 `IngestedJsonDrop` result is discriminated by `kind`: PowerIO modules have a
 `null` format; transmission and distribution results carry the selected
@@ -41,6 +44,30 @@ bare model JSON is now `unknown`; regenerate it as `pio-ir` from source data.
 
 Every API that accepts a byte buffer rejects inputs larger than
 `MAX_ENGINE_INPUT_BYTES` (128 MiB) before worker dispatch.
+
+## Experimental AC OPF
+
+The ordinary package contains no POUNCE WASI asset. A development host must
+explicitly build and serve it, then probe it before offering AC OPF:
+
+```ts
+import { probeAcOpfWorker, solveAcOpfModule } from "@tellegen/engine";
+
+const wasmUrl = "/experimental-acopf/tellegen_acopf_wasi.wasm";
+if (!(await probeAcOpfWorker(wasmUrl))) throw new Error("AC OPF unavailable");
+const cancel = new AbortController();
+const result = await solveAcOpfModule(wasmUrl, moduleJson, cancel.signal);
+// Calling cancel.abort() during a solve terminates its dedicated worker.
+```
+
+`moduleJson` must hold a balanced network or canonical `AcOpfInstance`. Each
+call uses a fresh worker and solves the supplied base operating point. Edits,
+sensitivities, LMPs, retained Studies, and browser solution export are not
+supported. There is no server or main-thread fallback. A successful result is
+locally feasible, not a proof of global optimality.
+
+See the [development setup and release gates](../../docs/src/acopf-pounce-decision.md#experimental-browser-abi)
+before building or distributing the separate asset.
 
 ## Migrating To 0.2
 
