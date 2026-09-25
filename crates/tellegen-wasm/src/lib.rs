@@ -86,9 +86,7 @@ fn with_module_json(
     mut payload: serde_json::Value,
     module: powerio::PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
-    if matches!(module.value(), PioValue::AcPfInstance(_)) {
-        payload["formulation"] = serde_json::json!("acpf");
-    }
+    set_declared_formulation(&mut payload, module.value());
     let module_json = serialize_module(&module)?;
     payload
         .as_object_mut()
@@ -100,14 +98,26 @@ fn with_module_json(
     Ok(payload)
 }
 
-/// The balanced network owned by a stored value that can start a browser
-/// Study in this build. The original dynamic module remains the Study input;
-/// this borrow supplies only the render payload.
+fn set_declared_formulation(payload: &mut serde_json::Value, value: &PioValue) {
+    let formulation = match value {
+        PioValue::AcPfInstance(_) => "acpf",
+        // Ingestion does not enable the optional solver. The host must probe
+        // the separate AC OPF worker before solving this retained instance.
+        PioValue::AcOpfInstance(_) => "acopf",
+        _ => return,
+    };
+    payload["formulation"] = serde_json::json!(formulation);
+}
+
+/// The balanced network owned by a viewable input. The original dynamic
+/// module remains the solver input; this borrow supplies only the render
+/// payload, independently of whether the optional solver is available.
 fn balanced_study_network(value: &PioValue) -> Option<&powerio::BalancedNetwork> {
     match value {
         PioValue::BalancedNetwork(network) => Some(network),
         PioValue::DcOpfInstance(instance) => Some(instance.network()),
         PioValue::AcPfInstance(instance) => Some(instance.network()),
+        PioValue::AcOpfInstance(instance) => Some(instance.network()),
         _ => None,
     }
 }
@@ -178,9 +188,7 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
             let diagnostics = module.diagnostics().to_vec();
             let payload = if let Some(network) = balanced_study_network(module.value()) {
                 let mut payload = ingest_value(network, &diagnostics, Vec::new(), None)?;
-                if matches!(module.value(), PioValue::AcPfInstance(_)) {
-                    payload["formulation"] = serde_json::json!("acpf");
-                }
+                set_declared_formulation(&mut payload, module.value());
                 let module_json = std::str::from_utf8(bytes)
                     .map_err(|_| "stored module document is not valid UTF-8".to_owned())?;
                 payload
@@ -1592,13 +1600,20 @@ mpc.gencost = [
         assert_eq!(pf_drop.payload["module_json"], pf_json);
         assert_eq!(pf_drop.payload["n_bus"], 14);
 
-        // An AC OPF input requires an explicit choice of supported calculation.
+        // Preserve the canonical AC OPF input; worker availability is a host
+        // concern and must not require enabling POUNCE in this adapter.
         let opf_json = serialize_module(&powerio::PioModule::new(
             powerio::PioValue::AcOpfInstance(ac_opf),
         ))
         .unwrap();
-        assert!(classify_json_drop_value(opf_json.as_bytes()).is_err());
-        assert!(ingest_json_drop_value(opf_json.as_bytes()).is_err());
+        assert_eq!(
+            classify_json_drop_value(opf_json.as_bytes()).unwrap().kind,
+            "module"
+        );
+        let opf_drop = ingest_json_drop_value(opf_json.as_bytes()).unwrap();
+        assert_eq!(opf_drop.payload["formulation"], "acopf");
+        assert_eq!(opf_drop.payload["module_json"], opf_json);
+        assert_eq!(opf_drop.payload["n_bus"], 14);
 
         // One holding a multiconductor network routes to the dist view.
         let dist_source = Source::from_memory(

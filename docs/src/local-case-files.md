@@ -12,7 +12,10 @@ place it on the map. PowerIO classifies dropped JSON by content. A stored
 generation-2 `pio-ir` document opens by its value type: a balanced network or
 DC OPF instance becomes a case, while supported multiconductor networks,
 instances, and solutions open in the viewer. AC PF and AC OPF instance modules
-remain unopened until the browser exposes those formulation choices.
+retain their declared calculation and original problem definition. AC PF is
+available in the ordinary browser build; AC OPF solving requires the
+[experimental worker](acopf-pounce-decision.md#experimental-browser-abi).
+Without that worker, AC OPF instances can be viewed but cannot be solved.
 Transmission exchange JSON opens as a balanced case, and BMOPF or
 PowerModelsDistribution documents open the multiconductor viewer. The retired
 bare model-JSON shape is unrecognized; regenerate it from source data as

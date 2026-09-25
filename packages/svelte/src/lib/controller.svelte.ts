@@ -314,8 +314,19 @@ export class Controller {
 		this.acOpfProbeStarted = true;
 		void probeAcOpfWorker(this.acOpfWasmUrl).then((available) => {
 			this.acOpfAvailable = available;
+			// A declared instance can be dropped while the optional asset is probing.
+			const c = this.app.activeLocal;
+			if (available && c?.formulation === 'acopf' && !c.solving) {
+				this.maybeStartLocalSolve(c.id);
+			}
 		});
 	};
+
+	caseExportUnavailableReason(c: SolvableCase): string | null {
+		return c.formulation === 'acopf'
+			? 'Saving and exporting AC OPF cases is not supported yet.'
+			: null;
+	}
 
 	bumpRevision(c: SolvableCase): void {
 		c.revisionGeneration += 1;
@@ -1756,6 +1767,11 @@ export class Controller {
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (!studyInputJson) {
 				c.solveFallbackReason ??= 'PowerIO module unavailable';
+				if (c.formulation !== 'dcopf') {
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} requires its PowerIO module; ${c.solveFallbackReason}`;
+					return;
+				}
 				if (this.hasRatingEdits(c)) {
 					c.solving = false;
 					this.app.error = this.ratingEditsFallbackError(c);
@@ -1787,7 +1803,7 @@ export class Controller {
 						studyInputJson,
 						cancellation.signal
 					);
-					if (seq !== (c.solveSeq ?? 0)) return;
+					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
 					c.solution = solveResponseToSolution(response);
 					const diagnostics = response.iterations;
 					c.solveDetail =
@@ -2835,6 +2851,11 @@ export class Controller {
 	 * save or export captures exactly what is on screen. Null (with an error set) when no
 	 * PowerIO module or Study is available. */
 	public syncedStudy = async (c: SolvableCase): Promise<BrowserStudy | null> => {
+		const unavailable = this.caseExportUnavailableReason(c);
+		if (unavailable) {
+			this.app.error = `${this.caseName(c)}: ${unavailable}`;
+			return null;
+		}
 		const studyInputJson = await this.ensureStudyInputJson(c);
 		if (!studyInputJson) {
 			this.app.error = `${this.caseName(c)}: no PowerIO module available to save`;

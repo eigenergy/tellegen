@@ -51,10 +51,11 @@ forward or adjoint columns.
 
 The default engine is Rust and compiles to WebAssembly, so the same code runs
 natively and in the browser. The convex solves use Clarabel; the sensitivities
-use faer. The exact AC OPF backend currently runs only in opt-in native builds.
+use faer. The exact AC OPF backend runs in opt-in native builds and in the
+separately built experimental WASI worker.
 Turning it into a shipping native product remains on the
-[desktop and mobile roadmap](tauri-roadmap.md); browser support requires a
-separate WASI worker because the current browser solver build is single
+[desktop and mobile roadmap](tauri-roadmap.md); browser support uses a
+separate WASI worker because the ordinary browser solver build is single
 threaded and uses `wasm32-unknown-unknown`.
 
 ## The two API faces

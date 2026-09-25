@@ -164,6 +164,41 @@ browser solve. The current UI path is intentionally base-case only because the
 canonical AC OPF API rejects request edits and sensitivities rather than
 silently dropping them.
 
+For a local development preview from the repository root:
+
+```sh
+npm ci
+rustup target add wasm32-unknown-unknown wasm32-wasip1
+npm run wasm
+npm run wasm:acopf
+npm run build:engine
+PUBLIC_TELLEGEN_ACOPF_WASM_URL=/experimental-acopf/tellegen_acopf_wasi.wasm npm run build:web
+npm --workspace tellegen-frontend run preview
+```
+
+The app copies the asset only during an opt-in production build; use the
+preview command above rather than the ordinary Vite development server.
+These commands are for local development and do not authorize distribution.
+
+| Browser operation | Experimental AC OPF support |
+| --- | --- |
+| Balanced network / MATPOWER input | Promoted to a canonical instance for the base solve |
+| Stored `AcOpfInstance` | Imported without replacing its objective or constraints; requires the worker to solve |
+| Geographic sidecars / layout | Supported while retaining the instance |
+| Demand or rating edits | Rejected; reset edits before selecting AC OPF |
+| LMPs / sensitivities | Unavailable |
+| Save case / export committed state | Disabled; the one-shot path has no retained Study |
+| Save exact AC OPF solution in the UI | Unavailable; portable solution emission is currently a native API |
+| Server fallback / WebMCP calculations | Unavailable for AC OPF |
+
+`tellegen-acopf-wasi` requires its own explicit `acopf` feature. Default
+workspace builds leave it inert, so selecting the workspace cannot silently
+enable POUNCE in the CLI or other adapters. The build script enables this
+feature only for the experimental reactor. Do not combine an explicitly
+enabled AC OPF build with a shipping-adapter build in one Cargo invocation:
+Cargo unifies their engine features. The EPL guard checks the default
+workspace graph as well as individual adapters.
+
 A single wasm-bindgen module can be reconsidered after POUNCE has a portable
 clock. That reconsideration must measure artifact size, memory growth, and hard
 worker cancellation in real browsers.
