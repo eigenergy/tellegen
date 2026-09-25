@@ -4,6 +4,8 @@
 //! reactor is built separately for `wasm32-wasip1`, loaded in its own Worker,
 //! and communicates only with length-prefixed UTF-8 JSON buffers.
 
+#![cfg(feature = "acopf")]
+
 use std::alloc::{alloc, dealloc, Layout};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

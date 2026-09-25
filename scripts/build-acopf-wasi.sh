@@ -9,7 +9,8 @@ cargo build \
   --locked \
   --release \
   --target wasm32-wasip1 \
-  -p tellegen-acopf-wasi
+  -p tellegen-acopf-wasi \
+  --features acopf
 
 mkdir -p "$asset_dir"
 install -m 0644 \
