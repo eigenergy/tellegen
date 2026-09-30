@@ -84,3 +84,7 @@ required-features = ["mc-pf"]
 [[example]]
 name = "acopf_hs071_probe"
 required-features = ["acopf"]
+
+[[example]]
+name = "acopf_benchmark"
+required-features = ["acopf"]

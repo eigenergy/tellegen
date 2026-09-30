@@ -2331,4 +2331,24 @@ mod tests {
             check(Problem::Socwr, &sys);
         }
     }
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn ac_opf_invalid_bounds_return_an_error_from_public_api() {
+        let mut network = crate::model::parse_matpower(CASE3).unwrap();
+        network.buses_mut()[0].vmin = 1.1;
+        network.buses_mut()[0].vmax = 0.9;
+        let instance = AcOpfInstance::from_network(network).unwrap();
+        let error = solve_ac_opf_instance(
+            &instance,
+            &SolveRequest {
+                formulation: Problem::Acopf,
+                ..SolveRequest::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("vm[1]") && error.contains("invalid bounds"),
+            "{error}"
+        );
+    }
 }

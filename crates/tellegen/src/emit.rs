@@ -212,7 +212,10 @@ pub(crate) fn emit_ac_opf_solution(
     let mut branch_to_active_flow = vec![f64::NAN; network.branches().len()];
     let mut branch_to_reactive_flow = vec![f64::NAN; network.branches().len()];
     let mut transformer_terminal_power =
-        vec![ThreeWindingTransformerTerminalPower::default(); network.transformers_3w().len()];
+        vec![
+            ThreeWindingTransformerTerminalPower::new([f64::NAN; 3], [f64::NAN; 3]);
+            network.transformers_3w().len()
+        ];
     for (dense, source) in prep.branches.analysis_sources.iter().enumerate() {
         match *source {
             AnalysisBranchSource::Branch { row } => {
@@ -651,5 +654,85 @@ mod tests {
             (dual_derivative - derivative).abs() < 2e-4 * (1.0 + derivative.abs()),
             "emitted derivative {dual_derivative} vs central difference {derivative}"
         );
+    }
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn ac_opf_inactive_loads_and_shunts_do_not_drive_dispatch() {
+        let mut network = parse_matpower(crate::model::CASE3).unwrap();
+        let baseline = solve_ac_opf_instance_to_solution(
+            Arc::new(AcOpfInstance::from_network(network.clone()).unwrap()),
+            "test",
+        )
+        .unwrap();
+        let mut idle_load = network.loads()[0].clone();
+        idle_load.uid = Some("idle-load".into());
+        idle_load.p = 900.0;
+        idle_load.in_service = false;
+        network.loads_mut().push(idle_load);
+        let mut shunt = powerio::Shunt::new(powerio::BusId(2), 50.0, 30.0);
+        shunt.in_service = false;
+        network.shunts_mut().push(shunt);
+        let instance = Arc::new(AcOpfInstance::from_network(network).unwrap());
+        let solved = solve_ac_opf_instance_to_solution(Arc::clone(&instance), "test").unwrap();
+        assert!(baseline.generator_active_powers().iter().sum::<f64>() > 90.0);
+        for (actual, expected) in solved
+            .generator_active_powers()
+            .iter()
+            .zip(baseline.generator_active_powers())
+        {
+            assert!((actual - expected).abs() < 1e-5);
+        }
+        assert_eq!(instance.network().loads()[1].p, 900.0);
+        assert_eq!(instance.network().shunts()[0].g, 50.0);
+    }
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn ac_opf_emission_preserves_inactive_rows_and_transformer_terminals() {
+        let mut network = parse_matpower(crate::model::CASE3).unwrap();
+        let mut idle_branch = network.branches()[0].clone();
+        idle_branch.uid = Some("idle-branch".into());
+        idle_branch.in_service = false;
+        network.branches_mut().insert(0, idle_branch);
+        let mut idle_generator = network.generators()[0].clone();
+        idle_generator.uid = Some("idle-generator".into());
+        idle_generator.in_service = false;
+        network.generators_mut().insert(0, idle_generator);
+        let windings = [1, 2, 3].map(|bus| powerio::Winding::new(powerio::BusId(bus)));
+        let impedance = powerio::Impedance::new(0.02, 0.2, network.base_mva());
+        let mut transformer = powerio::Transformer3W::new(windings, [impedance; 3]);
+        transformer.uid = Some("active-transformer".into());
+        let mut idle_transformer = transformer.clone();
+        idle_transformer.uid = Some("idle-transformer".into());
+        idle_transformer.in_service = false;
+        network
+            .transformers_3w_mut()
+            .extend([idle_transformer, transformer]);
+        let instance = Arc::new(AcOpfInstance::from_network(network).unwrap());
+        let solved = solve_ac_opf_instance_to_solution(instance, "test").unwrap();
+        assert_eq!(solved.bus_voltage_magnitudes().len(), 3);
+        assert_eq!(solved.branch_from_active_flows().len(), 4);
+        assert!(solved.branch_from_active_flows()[0].is_nan());
+        assert!(solved.branch_from_active_flows()[1..]
+            .iter()
+            .all(|v| v.is_finite()));
+        assert_eq!(solved.generator_active_powers().len(), 3);
+        assert!(solved.generator_active_powers()[0].is_nan());
+        assert!(solved.generator_active_powers()[1..]
+            .iter()
+            .all(|v| v.is_finite()));
+        let terminals = solved.three_winding_transformer_terminal_powers();
+        assert_eq!(terminals.len(), 2);
+        assert!(terminals[0].p_mw.iter().all(|v| v.is_nan()));
+        assert!(terminals[1]
+            .p_mw
+            .iter()
+            .chain(&terminals[1].q_mvar)
+            .all(|v| v.is_finite()));
+        assert!(terminals[1].p_mw.iter().any(|v| v.abs() > 1.0));
+        assert!(terminals[1].p_mw.iter().sum::<f64>() >= -1e-5);
+        let module = powerio::PioModule::new(powerio::PioValue::AcOpfSolution(solved));
+        let json = crate::ir::serialize_module(&module).unwrap();
+        crate::ir::deserialize_module(&json).unwrap();
     }
 }

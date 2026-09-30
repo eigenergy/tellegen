@@ -138,6 +138,57 @@ count, solver constraint/KKT residuals, independently checked primal residual,
 and model fingerprint. Failure and cancellation errors include the available
 iteration and residual diagnostics.
 
+### Native API example
+
+With `tellegen` built with `features = ["acopf"]`, a stored canonical instance
+can be solved for either the compact API response or the portable solution:
+
+```rust
+use std::sync::Arc;
+use tellegen::{Problem, SolveRequest};
+
+# fn example(module_json: &str) -> Result<(), String> {
+let module = tellegen::ir::deserialize_module(module_json)?;
+let powerio::PioValue::AcOpfInstance(instance) = module.into_value() else {
+    return Err("expected an ac_opf_instance".into());
+};
+let request = SolveRequest { formulation: Problem::Acopf, ..Default::default() };
+let response = tellegen::solve_ac_opf_instance(&instance, &request)?;
+// Compact response: powers in MW/MVAr, voltage angles in radians.
+assert!(response.lmp.is_none());
+let solution = tellegen::solve_ac_opf_instance_to_solution(Arc::new(instance), "my-app")?;
+// Portable solution: source table order, powers in MW/MVAr, angles in degrees.
+let stored = powerio::PioModule::new(powerio::PioValue::AcOpfSolution(solution));
+let json = tellegen::ir::serialize_module(&stored)?;
+# Ok(())
+# }
+```
+
+These are alternative entry points; calling both performs two solves. Inactive
+source rows, including three-winding transformer terminals, remain unavailable
+(`NaN` in Rust, the PowerIO unavailable representation in serialized modules).
+
+### Reproducible external comparisons
+
+The committed `acopf_benchmark` example accepts MATPOWER files and emits one
+JSONL record per case, including input and executable SHA-256, elapsed time,
+objective, model fingerprint, residuals, solver status, and failures. It exits
+nonzero if any case fails, while continuing through the remaining cases.
+
+```sh
+cargo run -p tellegen --release --example acopf_benchmark --features acopf --locked -- \
+  - /path/to/case14.m /path/to/case30.m /path/to/case300.m > results.jsonl
+```
+
+For an independent objective comparison, replace `-` with a JSON file containing
+`provenance` (corpus revision, reference solver version/options, and result source)
+and `objectives` (a map from exact input SHA-256 to its reference objective).
+Missing checksums fail rather than comparing different case revisions. The
+comparison tolerance is `1e-4 * max(1, abs(reference objective))`. Keep that
+reference file and the corpus provenance alongside the resulting JSONL. This
+runner does not supply or regenerate an independent oracle: the frozen
+14/30/300 references and the large PGLib rerun remain release gates.
+
 ## Browser ABI
 
 POUNCE's proven browser target is a separate `wasm32-wasip1` module with its
