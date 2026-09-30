@@ -1,9 +1,11 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig, searchForWorkspaceRoot } from 'vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 export default defineConfig({
+	plugins: [svelte({ configFile: false })],
 	root: fileURLToPath(new URL('./fixtures/mc-pf-browser/', import.meta.url)),
 	publicDir: fileURLToPath(new URL('./fixtures/mc-pf-browser/public/', import.meta.url)),
 	resolve: {

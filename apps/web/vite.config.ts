@@ -1,11 +1,36 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { defineConfig, searchForWorkspaceRoot } from 'vite';
+import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite';
 
 const configDir = fileURLToPath(new URL('.', import.meta.url));
+const experimentalAcOpfAsset = fileURLToPath(
+	new URL('../../target/experimental-acopf/tellegen_acopf_wasi.wasm', import.meta.url)
+);
+
+function experimentalAcOpf(): Plugin {
+	return {
+		name: 'tellegen-experimental-acopf',
+		apply: 'build' as const,
+		buildStart() {
+			if (!process.env.PUBLIC_TELLEGEN_ACOPF_WASM_URL) return;
+			if (!existsSync(experimentalAcOpfAsset)) {
+				this.error('PUBLIC_TELLEGEN_ACOPF_WASM_URL requires `npm run wasm:acopf` first');
+			}
+		},
+		generateBundle() {
+			if (!process.env.PUBLIC_TELLEGEN_ACOPF_WASM_URL) return;
+			this.emitFile({
+				type: 'asset',
+				fileName: 'experimental-acopf/tellegen_acopf_wasi.wasm',
+				source: readFileSync(experimentalAcOpfAsset)
+			});
+		}
+	};
+}
 
 export default defineConfig({
-	plugins: [sveltekit()],
+	plugins: [sveltekit(), experimentalAcOpf()],
 	build: {
 		// The map is loaded on the client only, but deck.gl/luma.gl are a large
 		// coupled WebGL stack. Keep them together so Rollup does not split

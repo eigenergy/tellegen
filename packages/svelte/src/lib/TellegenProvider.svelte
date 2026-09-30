@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
+	import { onDestroy, untrack, type Snippet } from 'svelte';
 	import {
 		resolveTellegenUiConfig,
 		setAppState,
@@ -16,12 +16,21 @@
 		children?: Snippet;
 	}
 
-	let { apiBase, loadDefaultCases, docsHref, orgHref, orgLabel, showFooter, children }: Props =
-		$props();
+	let {
+		apiBase,
+		acOpfWasmUrl,
+		loadDefaultCases,
+		docsHref,
+		orgHref,
+		orgLabel,
+		showFooter,
+		children
+	}: Props = $props();
 
 	const config = untrack(() =>
 		resolveTellegenUiConfig({
 			apiBase,
+			acOpfWasmUrl,
 			loadDefaultCases,
 			docsHref,
 			orgHref,
@@ -30,7 +39,11 @@
 		})
 	);
 	const app = createAppState();
-	const ctrl = createController(app, { apiBase: config.apiBase });
+	const ctrl = createController(app, {
+		apiBase: config.apiBase,
+		acOpfWasmUrl: config.acOpfWasmUrl ?? undefined
+	});
+	onDestroy(ctrl.dispose);
 
 	setPanelLayout(new PanelLayout());
 	setNoticeCenter(new NoticeCenter());
