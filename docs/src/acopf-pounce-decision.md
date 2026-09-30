@@ -8,7 +8,7 @@ not yet approved. Recorded 24 September 2026.
 Tellegen will use POUNCE as its first nonlinear solver for canonical balanced
 transmission AC OPF. The choice favors an end-to-end Rust implementation and a
 responsive upstream over building two solver adapters in the first cycle. The
-internal model/solver boundary must remain backend-neutral.
+public problem and solution boundary must remain backend-neutral.
 
 The decision follows POUNCE's
 [restoration fix](https://github.com/jkitchin/pounce/pull/961) and the
@@ -55,7 +55,7 @@ reuse Tellegen's modified CATS power-flow physics.
 
 ## Canonical model boundary
 
-The opt-in feature now also contains a private, backend-neutral polar model
+The opt-in feature now also contains a private, POUNCE-specific polar model
 compiler. It consumes `AcOpfInstance` only through
 `build_ac_opf_preparation`, preserves PowerIO's generator and branch columns
 and source maps, and emits an in-memory POUNCE expression DAG with exact sparse
@@ -132,3 +132,14 @@ Before solve/emission is made callable, record native peak memory and compare
 the 14/30/300 expressions against the frozen benchmark values in addition to
 the finite-difference checks above. A failure of expression-DAG scaling changes
 the private solver adapter, not the PowerIO problem or solution contract.
+
+### Input preparation safeguards
+
+PowerIO 0.11.3 aggregates load and shunt injections without checking service
+status. Tellegen therefore masks inactive injections in a private instance copy
+before preparation, retaining all source rows, units, objective, selected
+constraints, and initial-point identities. The caller's instance is unchanged.
+As with the existing models, a network claiming to be normalized while still
+carrying inactive loads/shunts or isolated buses is rejected. Active voltage
+and generator bounds must be finite and ordered; invalid bounds return a
+source-identifying error before starting-point clamping.

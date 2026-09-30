@@ -4,6 +4,7 @@
 //! Solver status mapping and portable solution emission belong to the next
 //! layer, while all electrical semantics and stable source/index maps live here.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use pounce_nl::nl_reader::{BinOp, Expr, NlProblem, NlProblemParts, NlTnlp, UnaryOp};
@@ -17,7 +18,7 @@ use sha2::{Digest, Sha256};
 use super::{reject_unsupported_active_elements, validate_canonical_identity, PiecewiseCost};
 
 const INF: f64 = 1.0e19;
-const FORMULATION_TAG: &[u8] = b"tellegen/acopf/polar-v1";
+const FORMULATION_TAG: &[u8] = b"tellegen/acopf/polar-v2";
 
 /// The recorded assembly policy for the canonical model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -187,7 +188,11 @@ fn element_name(kind: &str, row: usize, uid: Option<&str>) -> String {
 
 fn validate_supported(instance: &AcOpfInstance) -> Result<(), String> {
     let network = instance.network();
+    network.validate().map_err(|error| error.to_string())?;
     validate_canonical_identity(network)?;
+    if network.is_normalized() {
+        super::reject_unfiltered_normalized_elements(network)?;
+    }
 
     if let Some((row, storage)) = network
         .storage()
@@ -232,6 +237,50 @@ fn validate_supported(instance: &AcOpfInstance) -> Result<(), String> {
     }
 
     reject_unsupported_active_elements(network)
+}
+
+/// PowerIO 0.11.3's indexed view sums loads/shunts regardless of service status.
+/// Mask only their injections in a private copy: removing rows or normalizing
+/// the whole instance would change source identities, units, and initial-point
+/// axes. `with_network` retains the objective, selections and initial point.
+fn preparation_instance(instance: &AcOpfInstance) -> Result<Cow<'_, AcOpfInstance>, String> {
+    let source = instance.network();
+    if source.loads().iter().all(|load| load.in_service)
+        && source.shunts().iter().all(|shunt| shunt.in_service)
+    {
+        return Ok(Cow::Borrowed(instance));
+    }
+    let mut network = source.clone();
+    for load in network
+        .loads_mut()
+        .iter_mut()
+        .filter(|load| !load.in_service)
+    {
+        load.p = 0.0;
+        load.q = 0.0;
+    }
+    for shunt in network
+        .shunts_mut()
+        .iter_mut()
+        .filter(|shunt| !shunt.in_service)
+    {
+        shunt.g = 0.0;
+        shunt.b = 0.0;
+    }
+    instance
+        .clone()
+        .with_network(network)
+        .map(Cow::Owned)
+        .map_err(|error| error.to_string())
+}
+
+fn validate_bounds(name: &str, lower: f64, upper: f64) -> Result<(), String> {
+    if !lower.is_finite() || !upper.is_finite() || lower > upper {
+        return Err(format!(
+            "{name} has invalid bounds [{lower}, {upper}]; expected finite lower <= upper"
+        ));
+    }
+    Ok(())
 }
 
 fn branch_flow(prep: &AcOpfPreparation, columns: &AcOpfColumns, branch: usize) -> BranchFlow {
@@ -297,7 +346,8 @@ pub(super) fn compile_ac_opf_model(
 ) -> Result<CanonicalAcOpfModel, String> {
     validate_supported(instance)?;
     let policy = AcOpfAssemblyPolicy::CANONICAL;
-    let prep = build_ac_opf_preparation(instance, &policy.options())
+    let prepared_instance = preparation_instance(instance)?;
+    let prep = build_ac_opf_preparation(&prepared_instance, &policy.options())
         .map_err(|error| format!("{}: {error}", error.code().code))?;
     if let Some(identity) = prep.storage.identities.first() {
         return Err(format!(
@@ -350,6 +400,7 @@ pub(super) fn compile_ac_opf_model(
         if prep.buses.voltage_bound_active[bus] {
             x_l[vm_column] = prep.buses.vm_min[bus];
             x_u[vm_column] = prep.buses.vm_max[bus];
+            validate_bounds(&var_names[vm_column], x_l[vm_column], x_u[vm_column])?;
         }
         x0[vm_column] = clamp_start(vm_start[bus], x_l[vm_column], x_u[vm_column]);
     }
@@ -364,6 +415,8 @@ pub(super) fn compile_ac_opf_model(
             x_u[p_column] = prep.generators.pmax[generator];
             x_l[q_column] = prep.generators.qmin[generator];
             x_u[q_column] = prep.generators.qmax[generator];
+            validate_bounds(&var_names[p_column], x_l[p_column], x_u[p_column])?;
+            validate_bounds(&var_names[q_column], x_l[q_column], x_u[q_column])?;
         }
         x0[p_column] = clamp_start(prep.generators.pg[generator], x_l[p_column], x_u[p_column]);
         x0[q_column] = clamp_start(prep.generators.qg[generator], x_l[q_column], x_u[q_column]);
@@ -1217,5 +1270,138 @@ mpc.gencost = [
         let instance = AcOpfInstance::from_network(network).expect("storage AC OPF instance");
         let error = compile_ac_opf_model(&instance).expect_err("reject storage");
         assert!(error.contains("battery-2") && error.contains("storage behavior"));
+    }
+    #[test]
+    fn inactive_injections_preserve_instance_semantics_and_source_rows() {
+        let mut network = parse_matpower(CASE3).unwrap();
+        network.loads_mut()[0].in_service = false;
+        let mut shunt = powerio::Shunt::new(BusId(2), 12.0, 8.0);
+        shunt.g = 12.0;
+        shunt.b = 8.0;
+        shunt.in_service = false;
+        network.shunts_mut().push(shunt);
+        let point = powerio_prob::BalancedOperatingPointBuilder::for_point(network.clone())
+            .generator_active_powers(vec![37.0, 40.0])
+            .build_point()
+            .unwrap();
+        let mut constraints = ActiveConstraints::default();
+        constraints.voltage_bounds = ConstraintSelection::Only(vec!["2".into()]);
+        constraints.generator_capability =
+            ConstraintSelection::Only(vec![network.generators()[0].uid.clone().unwrap()]);
+        constraints.thermal_limits =
+            ConstraintSelection::Only(vec![network.branches()[1].uid.clone().unwrap()]);
+        constraints.angle_bounds = ConstraintSelection::None;
+        let instance = AcOpfInstance::from_network(network)
+            .unwrap()
+            .with_objective(Objective::none())
+            .with_constraints(constraints)
+            .with_initial_point(point);
+        let original = crate::ir::serialize_module(&powerio::PioModule::new(
+            powerio::PioValue::AcOpfInstance(instance.clone()),
+        ))
+        .unwrap();
+        let model = compile_ac_opf_model(&instance).unwrap();
+        let prep = &model.preparation;
+        assert!(prep
+            .buses
+            .p_d
+            .iter()
+            .chain(&prep.buses.q_d)
+            .chain(&prep.buses.g_s)
+            .chain(&prep.buses.b_s)
+            .all(|v| *v == 0.0));
+        assert_eq!(prep.buses.voltage_bound_active, vec![false, true, false]);
+        assert_eq!(prep.generators.capability_active, vec![true, false]);
+        assert_eq!(
+            model
+                .rows
+                .thermal_from
+                .iter()
+                .map(Option::is_some)
+                .collect::<Vec<_>>(),
+            vec![false, true, false]
+        );
+        assert!(model.rows.angle_difference.iter().all(Option::is_none));
+        assert!((model.problem.x0[model.columns.pg[0]] - 0.37).abs() < 1e-12);
+        assert_eq!(prep.objective, PreparedObjective::Feasibility);
+        assert_eq!(prep.bus_source_rows, vec![Some(0), Some(1), Some(2)]);
+        assert_eq!(prep.generators.source_rows, vec![Some(0), Some(1)]);
+        assert_eq!(
+            crate::ir::serialize_module(&powerio::PioModule::new(
+                powerio::PioValue::AcOpfInstance(instance.clone())
+            ))
+            .unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn invalid_active_bounds_return_source_errors() {
+        for (lower, upper) in [(1.1, 0.9), (f64::NAN, 1.1), (0.9, f64::INFINITY)] {
+            for family in ["vm", "pg", "qg"] {
+                let mut network = parse_matpower(CASE3).unwrap();
+                match family {
+                    "vm" => {
+                        network.buses_mut()[0].vmin = lower;
+                        network.buses_mut()[0].vmax = upper;
+                    }
+                    "pg" => {
+                        network.generators_mut()[0].pmin = lower;
+                        network.generators_mut()[0].pmax = upper;
+                    }
+                    _ => {
+                        network.generators_mut()[0].qmin = lower;
+                        network.generators_mut()[0].qmax = upper;
+                    }
+                }
+                let instance = AcOpfInstance::from_network(network).unwrap();
+                let error = compile_ac_opf_model(&instance).unwrap_err();
+                assert!(
+                    error.contains(family) && error.contains("invalid bounds"),
+                    "{error}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn raw_and_normalized_models_have_equivalent_equations() {
+        let raw = parse_matpower(CASE3_FULL_PI).unwrap();
+        let normalized = raw
+            .to_normalized_with_source_rows(&powerio_tx::NormalizeOptions::default())
+            .unwrap()
+            .0
+            .network;
+        let raw = compile_ac_opf_model(&AcOpfInstance::from_network(raw).unwrap()).unwrap();
+        let normalized =
+            compile_ac_opf_model(&AcOpfInstance::from_network(normalized).unwrap()).unwrap();
+        assert_eq!(raw.columns, normalized.columns);
+        let x = raw.problem.x0.clone();
+        let a = evaluate_constraints(&raw, &x);
+        let b = evaluate_constraints(&normalized, &x);
+        assert_eq!(a.len(), b.len());
+        for (a, b) in a.iter().zip(&b) {
+            assert!((a - b).abs() < 1e-10, "{a} != {b}");
+        }
+        let a = raw.tnlp().unwrap().eval_f(&x, true).unwrap();
+        let b = normalized.tnlp().unwrap().eval_f(&x, true).unwrap();
+        assert!((a - b).abs() < 1e-8);
+    }
+
+    #[test]
+    fn malformed_topology_and_false_normalization_fail_closed() {
+        let mut network = parse_matpower(CASE3).unwrap();
+        network.buses_mut()[1].id = network.buses()[0].id;
+        let instance = AcOpfInstance::from_network(network).unwrap();
+        assert!(compile_ac_opf_model(&instance)
+            .unwrap_err()
+            .contains("duplicate bus"));
+        let mut network = parse_matpower(CASE3).unwrap();
+        *network.source_format_mut() = powerio::SourceFormat::Normalized;
+        network.loads_mut()[0].in_service = false;
+        let instance = AcOpfInstance::from_network(network).unwrap();
+        assert!(compile_ac_opf_model(&instance)
+            .unwrap_err()
+            .contains("out-of-service load"));
     }
 }
