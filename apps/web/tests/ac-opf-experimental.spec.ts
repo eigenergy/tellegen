@@ -99,3 +99,40 @@ test('imports and solves a retained canonical AC OPF instance', async ({ page })
 	await expect(calculation.locator('option[value="dcopf"]')).toHaveJSProperty('disabled', true);
 	await expect(page.locator('.error')).toHaveCount(0);
 });
+
+for (const phase of ['probe', 'solve'] as const) {
+	test(`unmounting the provider terminates a pending ${phase} worker`, async ({ page }) => {
+		const port = Number(
+			process.env.TELLEGEN_MC_PREVIEW_PORT ?? Number(process.env.TELLEGEN_PREVIEW_PORT ?? 4173) + 1
+		);
+		const workers: { closed: boolean }[] = [];
+		page.on('worker', (worker) => {
+			if (!worker.url().includes('acopf-worker')) return;
+			const state = { closed: false };
+			workers.push(state);
+			worker.on('close', () => {
+				state.closed = true;
+			});
+		});
+		let held: Route | undefined;
+		const holdAsset = () =>
+			page.context().route('**/tellegen_acopf_wasi.wasm*', (route) => {
+				if (route.request().resourceType() !== 'fetch') return route.continue();
+				held = route;
+			});
+		if (phase === 'probe') await holdAsset();
+		await page.goto(`http://127.0.0.1:${port}/acopf-lifecycle.html`);
+		await page.waitForFunction(() => !!window.acOpfLifecycle);
+		if (phase === 'solve') {
+			await expect.poll(() => page.evaluate(() => window.acOpfLifecycle.available())).toBe(true);
+			await holdAsset();
+			await page.evaluate((text) => window.acOpfLifecycle.start(text), CASE3_PLANNING);
+		}
+		await expect.poll(() => !!held).toBe(true);
+		await page.evaluate(() => window.unmountAcOpfProvider());
+		await expect.poll(() => workers.length).toBe(phase === 'probe' ? 1 : 2);
+		await expect.poll(() => workers.every((worker) => worker.closed)).toBe(true);
+		await held!.abort();
+		expect(await page.evaluate(() => window.acOpfLifecycle.solved())).toBe(false);
+	});
+}

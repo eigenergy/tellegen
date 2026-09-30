@@ -129,3 +129,8 @@ release. The package ships only `dist`, the README, the MIT license text, and
 package metadata. The packed smoke test installs the generated tarballs into a
 temporary Svelte consumer and builds it so missing exports, styles, or wasm
 assets fail before publish.
+
+Unmounting `TellegenProvider` (including through `TellegenViewer`) disposes its
+controller and terminates pending AC OPF probes and solves, including background
+cases. Custom hosts that construct a `Controller` directly must call
+`controller.dispose()` when their owning view is destroyed.

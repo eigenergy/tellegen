@@ -189,7 +189,9 @@ export class Controller {
 	/** The optional EPL-bearing WASI asset is never inferred or bundled. */
 	private readonly acOpfWasmUrl: string | null;
 	private acOpfProbeStarted = false;
-	private readonly acOpfSolves = new WeakMap<SolvableCase, AbortController>();
+	private readonly acOpfProbeAbort = new AbortController();
+	private readonly acOpfSolves = new Map<SolvableCase, AbortController>();
+	private disposed = false;
 	acOpfAvailable = $state(false);
 
 	// Build-once browser Study per case: the retained PowerIO module is parsed and the model built
@@ -310,16 +312,32 @@ export class Controller {
 	}
 
 	probeAcOpf = () => {
-		if (this.acOpfProbeStarted || !this.acOpfWasmUrl) return;
+		if (this.disposed || this.acOpfProbeStarted || !this.acOpfWasmUrl) return;
 		this.acOpfProbeStarted = true;
-		void probeAcOpfWorker(this.acOpfWasmUrl).then((available) => {
-			this.acOpfAvailable = available;
-			// A declared instance can be dropped while the optional asset is probing.
-			const c = this.app.activeLocal;
-			if (available && c?.formulation === 'acopf' && !c.solving) {
-				this.maybeStartLocalSolve(c.id);
+		void probeAcOpfWorker(this.acOpfWasmUrl, undefined, this.acOpfProbeAbort.signal).then(
+			(available) => {
+				if (this.disposed) return;
+				this.acOpfAvailable = available;
+				// A declared instance can be dropped while the optional asset is probing.
+				const c = this.app.activeLocal;
+				if (available && c?.formulation === 'acopf' && !c.solving) {
+					this.maybeStartLocalSolve(c.id);
+				}
 			}
-		});
+		);
+	};
+
+	/** Release work owned by an embedded provider, including background cases. */
+	dispose = () => {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.acOpfProbeAbort.abort();
+		for (const cancellation of this.acOpfSolves.values()) cancellation.abort();
+		this.acOpfSolves.clear();
+		for (const c of [...this.app.cases, ...this.app.localCases]) {
+			c.solveSeq = (c.solveSeq ?? 0) + 1;
+			this.disposeStudy(c);
+		}
 	};
 
 	caseExportUnavailableReason(c: SolvableCase): string | null {
@@ -1746,6 +1764,7 @@ export class Controller {
 	// fall back: the server solves at base ratings, so a Study failure there is
 	// terminal.
 	runSolve = (c: SolvableCase, target: SensTarget | null) => {
+		if (this.disposed) return;
 		if (c.formulation === 'acpf' || c.formulation === 'acopf') target = null;
 		this.acOpfSolves.get(c)?.abort();
 		this.acOpfSolves.delete(c);
@@ -1764,7 +1783,7 @@ export class Controller {
 		c.iterations = [];
 		c.solveMs = null;
 		this.ensureStudyInputJson(c).then(async (studyInputJson) => {
-			if (seq !== (c.solveSeq ?? 0)) return;
+			if (this.disposed || seq !== (c.solveSeq ?? 0)) return;
 			if (!studyInputJson) {
 				c.solveFallbackReason ??= 'PowerIO module unavailable';
 				if (c.formulation !== 'dcopf') {

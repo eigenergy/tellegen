@@ -81,4 +81,41 @@ describe("experimental AC OPF worker host", () => {
     expect(workers.every((worker) => worker.terminated)).toBe(true);
     expect(index).toBe(2);
   });
+  it("terminates a pending probe when its owner is disposed", async () => {
+    const worker = new FakeWorker();
+    const abort = new AbortController();
+    const pending = probeAcOpfWorker("/acopf.wasm", () => worker, abort.signal);
+    abort.abort();
+    await expect(pending).resolves.toBe(false);
+    expect(worker.terminated).toBe(true);
+    expect(worker.onmessage).toBeNull();
+  });
+
+  it("does not create a worker for an already cancelled probe", async () => {
+    const abort = new AbortController();
+    abort.abort();
+    let created = false;
+    await expect(
+      probeAcOpfWorker(
+        "/acopf.wasm",
+        () => {
+          created = true;
+          return new FakeWorker();
+        },
+        abort.signal,
+      ),
+    ).resolves.toBe(false);
+    expect(created).toBe(false);
+  });
+
+  it("disposes the worker if posting the request throws", async () => {
+    const worker = new FakeWorker();
+    worker.postMessage = () => {
+      throw new Error("post failed");
+    };
+    await expect(
+      solveAcOpfModule("/acopf.wasm", "{}", undefined, () => worker),
+    ).rejects.toThrow("post failed");
+    expect(worker.terminated).toBe(true);
+  });
 });

@@ -39,6 +39,9 @@ function workerCall(
     }
     const finish = () => {
       signal?.removeEventListener("abort", abort);
+      worker.onmessage = null;
+      worker.onerror = null;
+      worker.onmessageerror = null;
       worker.terminate();
     };
     const abort = () => {
@@ -46,6 +49,10 @@ function workerCall(
       reject(new DOMException("AC OPF solve cancelled", "AbortError"));
     };
     signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
     worker.onmessage = ({ data }) => {
       finish();
       if (data.type === "error") reject(new Error(data.message));
@@ -59,7 +66,12 @@ function workerCall(
       finish();
       reject(new Error("AC OPF worker returned an unreadable message"));
     };
-    worker.postMessage(request);
+    try {
+      worker.postMessage(request);
+    } catch (error) {
+      finish();
+      reject(error);
+    }
   });
 }
 
@@ -69,11 +81,12 @@ function workerCall(
 export async function probeAcOpfWorker(
   wasmUrl: string,
   workerFactory?: AcOpfWorkerFactory,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   try {
     const response = await workerCall(
       { type: "probe", wasmUrl },
-      undefined,
+      signal,
       workerFactory,
     );
     return response.type === "ready";

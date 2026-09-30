@@ -177,4 +177,59 @@ describe('AC OPF controller boundary', () => {
 		c.formulation = 'dcopf';
 		expect(ctrl.caseExportUnavailableReason(c)).toBeNull();
 	});
+	it('disposes the probe and ignores late availability', async () => {
+		const { ctrl } = host();
+		ctrl.acOpfAvailable = false;
+		const probe = pending<boolean>();
+		vi.mocked(probeAcOpfWorker).mockReturnValue(probe.promise);
+		const start = vi.spyOn(ctrl, 'maybeStartLocalSolve');
+		ctrl.probeAcOpf();
+		const signal = vi.mocked(probeAcOpfWorker).mock.calls[0][2]!;
+		ctrl.dispose();
+		ctrl.dispose();
+		expect(signal.aborted).toBe(true);
+		probe.resolve(true);
+		await probe.promise;
+		expect(ctrl.acOpfAvailable).toBe(false);
+		expect(start).not.toHaveBeenCalled();
+		ctrl.probeAcOpf();
+		expect(probeAcOpfWorker).toHaveBeenCalledOnce();
+	});
+
+	it('disposes active and background solves and ignores late results', async () => {
+		const { app, ctrl, c } = host();
+		const other = new LocalCase({
+			id: 'background',
+			label: 'Background',
+			fileName: 'case.json',
+			formulation: 'acopf',
+			studyInputJson: '{}'
+		});
+		app.addLocal(other);
+		const solve = pending<SolveResponse>();
+		vi.mocked(solveAcOpfModule).mockReturnValue(solve.promise);
+		ctrl.runSolve(c, null);
+		ctrl.runSolve(other, null);
+		await vi.waitFor(() => expect(solveAcOpfModule).toHaveBeenCalledTimes(2));
+		ctrl.dispose();
+		expect(vi.mocked(solveAcOpfModule).mock.calls.every((call) => call[2]!.aborted)).toBe(true);
+		solve.resolve(response);
+		await solve.promise;
+		expect(c.solution).toBeNull();
+		expect(other.solution).toBeNull();
+		expect(app.error).toBeNull();
+		ctrl.runSolve(c, null);
+		expect(solveAcOpfModule).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not start a worker after disposal while the input is loading', async () => {
+		const { ctrl, c } = host();
+		const input = pending<string>();
+		vi.spyOn(ctrl, 'ensureStudyInputJson').mockReturnValue(input.promise);
+		ctrl.runSolve(c, null);
+		ctrl.dispose();
+		input.resolve('canonical-instance');
+		await input.promise;
+		expect(solveAcOpfModule).not.toHaveBeenCalled();
+	});
 });

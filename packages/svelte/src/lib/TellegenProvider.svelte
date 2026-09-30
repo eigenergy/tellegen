@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
+	import { onDestroy, untrack, type Snippet } from 'svelte';
 	import {
 		resolveTellegenUiConfig,
 		setAppState,
@@ -43,6 +43,7 @@
 		apiBase: config.apiBase,
 		acOpfWasmUrl: config.acOpfWasmUrl ?? undefined
 	});
+	onDestroy(ctrl.dispose);
 
 	setPanelLayout(new PanelLayout());
 	setNoticeCenter(new NoticeCenter());

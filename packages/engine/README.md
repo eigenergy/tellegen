@@ -54,7 +54,9 @@ explicitly build and serve it, then probe it before offering AC OPF:
 import { probeAcOpfWorker, solveAcOpfModule } from "@tellegen/engine";
 
 const wasmUrl = "/experimental-acopf/tellegen_acopf_wasi.wasm";
-if (!(await probeAcOpfWorker(wasmUrl))) throw new Error("AC OPF unavailable");
+const lifetime = new AbortController();
+if (!(await probeAcOpfWorker(wasmUrl, undefined, lifetime.signal)))
+  throw new Error("AC OPF unavailable");
 const cancel = new AbortController();
 const result = await solveAcOpfModule(wasmUrl, moduleJson, cancel.signal);
 // Calling cancel.abort() during a solve terminates its dedicated worker.
@@ -68,6 +70,10 @@ locally feasible, not a proof of global optimality.
 
 See the [development setup and release gates](../../docs/src/acopf-pounce-decision.md#experimental-browser-abi)
 before building or distributing the separate asset.
+
+Probe calls accept an optional third `AbortSignal` argument. Abort it when the
+owning view is disposed; a cancelled probe returns `false` and terminates its
+worker. Solve calls accept their cancellation signal as the third argument.
 
 ## Migrating To 0.2
 
