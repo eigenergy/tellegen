@@ -92,3 +92,24 @@ payload), a feeder-wide 1.05x edit checked against a fresh solve, the
 factorization count, and `input_module_json`/`snapshot` materialization. The
 artifacts record which profile built the binary. Written modules belong under
 the ignored `target/` directory; never commit them.
+
+The opt-in browser counterpart is `apps/web/tests/mc-pf-bench.spec.ts`. Build
+the wasm first (`npm run wasm`), write the modules with `--write-module`, then:
+
+```sh
+TELLEGEN_MC_BENCH=1 \
+TELLEGEN_MC_BENCH_MODULES=$PWD/target/mc-pf-bench/modules/feeder-10k.pio.json \
+  npx --prefix apps/web playwright test --config apps/web/playwright.config.ts mc-pf-bench
+```
+
+The Playwright config also starts the SvelteKit preview server, so build the app
+(`npm run build:web`) or have a server already listening on
+`TELLEGEN_PREVIEW_PORT`; the benchmark itself only uses the multiconductor Vite
+fixture server on `TELLEGEN_MC_PREVIEW_PORT`.
+
+It times the engine path the Svelte controller uses (`createMcPfSession`,
+`replaceLoadPowers`, `loadBranches`, one animation frame) and, through a
+dedicated worker that calls the wasm `McPfSession` directly, the wasm call,
+result size, worker-to-main transfer, and `JSON.parse` separately, plus wasm
+linear memory and CDP heap metrics. Results go to
+`target/mc-pf-bench/browser-<label>.json`.
