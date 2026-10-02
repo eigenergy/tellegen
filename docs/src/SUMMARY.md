@@ -25,6 +25,7 @@
   - [Methodology](methodology.md)
   - [Validation](validation.md)
   - [Benchmark Results](benchmark-results.md)
+  - [Multiconductor PF performance](mc-pf-performance.md)
   - [References](references.md)
 - [PowerIO 0.11 Consumer Review](powerio-011-review.md)
 - [HTTP API](http-api.md)
