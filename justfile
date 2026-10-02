@@ -52,6 +52,11 @@ mc-pf-test:
 conic-test:
     cargo test -p tellegen --features conic
 
+# Feasibility gate for the opt-in EPL-2.0 nonlinear backend. This is HS071,
+# not a claim that Tellegen's canonical AC OPF model exists yet.
+acopf-probe:
+    cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
+
 # CI gate: the crate packages as it would publish. The OpenDSS oracle
 # regeneration stays CI-only (it clones BMOPFTools.jl and runs OpenDSS); the
 # checked-in references are compared by `cargo test --workspace`.
@@ -146,4 +151,4 @@ changeset-status:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
-ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test wasm-adapter-test crate-package web-lint webmcp-check webmcp-pack wasm engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
+ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test acopf-probe wasm-adapter-test crate-package web-lint webmcp-check webmcp-pack wasm engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit

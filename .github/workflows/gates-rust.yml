@@ -63,6 +63,8 @@ jobs:
       # tests the feature set the browser ships.
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
+      - name: Run the exact-derivative POUNCE feasibility probe
+        run: cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
       - name: Reproduce the pinned multiconductor OpenDSS oracle
         run: |
           python3 -m pip install --disable-pip-version-check \

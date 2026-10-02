@@ -28,6 +28,22 @@ The repository does not modify or vendor those dependency sources. License and
 notice files from dependencies are distributed through their normal package
 archives.
 
+### Optional POUNCE backend
+
+The non-default `tellegen/acopf` feasibility feature depends on
+[POUNCE](https://github.com/jkitchin/pounce), a pure-Rust nonlinear solver
+licensed under EPL-2.0. It is pinned to revision
+`925e75fbd036de309929e398159f946d42d0d94b`. The default engine and the
+published WASM, server, CLI, and Python adapters do not enable this feature.
+`scripts/epl-guard.sh` checks that boundary from Cargo's resolved dependency
+trees.
+
+Before any binary containing POUNCE is distributed, the release owner must
+approve the EPL-2.0 obligations, ship the POUNCE license and notices, and state
+where the corresponding POUNCE source can be obtained. This repository does
+not modify POUNCE. The current dependency exception records a review boundary;
+it is not release approval.
+
 ## Demo Case Data
 
 The demo data is staged by the operator and is not vendored in this repository.
