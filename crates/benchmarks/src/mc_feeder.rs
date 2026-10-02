@@ -988,18 +988,35 @@ mod tests {
     fn tiny_solves_with_the_default_options() {
         let instance =
             powerio_prob::McAcPfInstance::from_network(generate(Preset::Tiny)).expect("instance");
-        let session = tellegen::McPfSession::new(instance, tellegen::McPfOptions::default())
+        let mut session = tellegen::McPfSession::new(instance, tellegen::McPfOptions::default())
             .expect("Tiny solves");
-        let result = session.result();
-        assert!(result.converged);
-        assert_eq!(result.factorization_count, 1);
-        assert!(result.matrix_dimension > 0 && result.matrix_dimension < 198);
-        let minimum = result.min_voltage_pu.expect("load branches");
+        let summary = session.summary().clone();
+        assert!(summary.converged);
+        assert_eq!(summary.factorization_count, 1);
+        assert!(summary.matrix_dimension > 0 && summary.matrix_dimension < 198);
+        let minimum = summary.min_voltage_pu.expect("load branches");
         assert!((0.90..=0.97).contains(&minimum), "minimum {minimum}");
         assert!(
-            (4..=30).contains(&result.iterations),
+            (4..=30).contains(&summary.iterations),
             "iterations {}",
-            result.iterations
+            summary.iterations
         );
+        // Every branch edited at once still reuses the factor and builds no
+        // edited network.
+        let edits: Vec<_> = session
+            .load_branches()
+            .into_iter()
+            .map(|branch| tellegen::McLoadPowerEdit {
+                load: branch.load,
+                branch: branch.branch,
+                p_w: branch.base_p_w * 1.05,
+                q_var: branch.base_q_var * 1.05,
+            })
+            .collect();
+        session
+            .replace_load_powers(&edits)
+            .expect("edited Tiny solves");
+        assert_eq!(session.factorization_count(), 1);
+        assert_eq!(session.materialization_count(), 0);
     }
 }

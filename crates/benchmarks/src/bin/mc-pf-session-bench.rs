@@ -2,10 +2,18 @@
 //!
 //! Measures the public `McPfSession` API exactly as the browser engine drives
 //! it: cold creation from a stored PowerIO module, single-branch absolute load
-//! edits (the accumulated edit set the UI sends), the per-edit JSON result
-//! payload the WASM adapter returns, a feeder-wide edit checked against a
-//! fresh solve, and on-demand input/snapshot materialization. A counting
-//! global allocator reports retained and peak heap bytes.
+//! edits (the accumulated edit set the UI sends) with the compact summary each
+//! edit returns and the session's phase profile, a feeder-wide edit checked
+//! against a fresh solve, on-demand detail pages and terminal arrays, the
+//! complete result the interactive path no longer builds per edit, and
+//! on-demand input/snapshot materialization. A counting global allocator
+//! reports retained and peak heap bytes.
+//!
+//! `--check` exits nonzero when a deterministic property fails: warm/fresh
+//! agreement, one factorization, no network materialization during edits,
+//! the summary and detail payload budgets, a flat retained heap across edits,
+//! and (for presets) the generated shape and its calibrated operating range.
+//! Timings are reported but never checked.
 //!
 //! Usage:
 //! ```text
@@ -20,6 +28,7 @@
 //!   --label NAME           artifact label (default: preset or file stem)
 //!   --load-scale X         override the preset load multiplier
 //!   --calibrate X,Y,...    solve the preset at each load multiplier and exit
+//!   --check                fail on a deterministic regression (never on timing)
 //! ```
 //!
 //! Use the `release-py` profile (opt-level 3, thin LTO). The default `release`
@@ -37,7 +46,7 @@ use powerio::{PioModule, PioValue};
 use powerio_dist::MulticonductorNetwork;
 use powerio_prob::McAcPfInstance;
 use serde_json::{json, Value};
-use tellegen::{McLoadPowerEdit, McPfOptions, McPfSession};
+use tellegen::{McLoadPowerEdit, McPfDetailQuery, McPfOptions, McPfProfile, McPfSession};
 
 /// Counts live and peak heap bytes on top of the system allocator.
 struct CountingAllocator;
@@ -135,11 +144,12 @@ struct Args {
     label: Option<String>,
     load_scale: Option<f64>,
     calibrate: Option<Vec<f64>>,
+    check: bool,
 }
 
 const USAGE: &str = "usage: mc-pf-session-bench (--preset NAME | --module PATH | --bmopf PATH) \
 [--edits N] [--seed N] [--write-module PATH] [--out DIR] [--label NAME] [--load-scale X] \
-[--calibrate X,Y,...]\npresets: tiny, feeder-10k, feeder-106k, x300k, x650k";
+[--calibrate X,Y,...] [--check]\npresets: tiny, feeder-10k, feeder-106k, x300k, x650k";
 
 fn parse_args() -> Result<Args, String> {
     let mut input = None;
@@ -150,6 +160,7 @@ fn parse_args() -> Result<Args, String> {
     let mut label = None;
     let mut load_scale = None;
     let mut calibrate = None;
+    let mut check = false;
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let (flag, inline) = match arg.split_once('=') {
@@ -159,6 +170,10 @@ fn parse_args() -> Result<Args, String> {
         if flag == "--help" || flag == "-h" {
             println!("{USAGE}");
             std::process::exit(0);
+        }
+        if flag == "--check" {
+            check = true;
+            continue;
         }
         let mut value = || {
             inline
@@ -211,6 +226,7 @@ fn parse_args() -> Result<Args, String> {
         label,
         load_scale,
         calibrate,
+        check,
     })
 }
 
@@ -255,13 +271,13 @@ fn calibrate(args: &Args, scales: &[f64]) -> Result<(), String> {
         let started = Instant::now();
         match McPfSession::new(instance, McPfOptions::default()) {
             Ok(session) => {
-                let result = session.result();
+                let summary = session.summary();
                 println!(
                     "| {preset} | {scale} | {} | {:.4} | {:.4} | {} | {:.0} |",
-                    result.iterations,
-                    result.min_voltage_pu.unwrap_or(f64::NAN),
-                    result.max_voltage_pu.unwrap_or(f64::NAN),
-                    result.voltage_violations.len(),
+                    summary.iterations,
+                    summary.min_voltage_pu.unwrap_or(f64::NAN),
+                    summary.max_voltage_pu.unwrap_or(f64::NAN),
+                    summary.voltage_violation_count,
                     started.elapsed().as_secs_f64() * 1e3
                 );
             }
@@ -389,12 +405,29 @@ fn edit_sequence(
         .collect()
 }
 
+/// Per-edit payload budget: the summary is constant-size by construction.
+const SUMMARY_BUDGET_BYTES: usize = 2 * 1024;
+/// One detail page (one bus's terminals and 20 equipment ports).
+const DETAIL_PAGE_BUDGET_BYTES: usize = 32 * 1024;
+/// Live heap may differ by at most this much after an edit (allocator
+/// rounding of replaced vectors); a network copy or retained result would be
+/// orders of magnitude larger.
+const EDIT_RETAINED_HEAP_TOLERANCE: i64 = 64 * 1024;
+const WARM_FRESH_VOLTAGE_TOLERANCE_V: f64 = 1e-6;
+const WARM_FRESH_CURRENT_TOLERANCE_A: f64 = 1e-5;
+
+fn profile_json(profile: &McPfProfile) -> Value {
+    serde_json::to_value(profile).unwrap_or(Value::Null)
+}
+
 fn run(args: &Args) -> Result<(), String> {
     let options = McPfOptions::default();
     let mut notes = vec![
-        "replace_load_powers times include today's full MulticonductorNetwork clone, McAcPfInstance rebuild, warm solve, and complete McPfResult construction; they are inseparable through the public API".to_owned(),
-        "result_json_* is serde_json::to_string(&McPfResult), the payload the WASM adapter returns per edit".to_owned(),
+        "replace_load_powers is the complete ordinary edit: validation, prepared-law replacement, warm fixed-point solve, and the compact summary; the network is never copied".to_owned(),
+        "summary_json_* is serde_json::to_string(&McPfSummary), the payload the WASM adapter returns per edit".to_owned(),
+        "legacy_result_* is the complete McPfResult and its JSON, which the pre-#132 session built and returned on every edit; it is measured once, after the edits, for comparison".to_owned(),
     ];
+    let mut failures: Vec<String> = Vec::new();
 
     // Input: a generated preset, a stored module, or a raw BMOPF document.
     let (label, source, generation, network, module_json, serialize) = match &args.input {
@@ -464,6 +497,14 @@ fn run(args: &Args) -> Result<(), String> {
         shape.load_branches,
         mib(module_json.len() as f64)
     );
+    if let (Input::Preset(preset), None) = (&args.input, args.load_scale) {
+        if shape != preset.target_shape() {
+            failures.push(format!(
+                "generated shape {shape:?} differs from the {preset} target {:?}",
+                preset.target_shape()
+            ));
+        }
+    }
 
     // Cold: parse + prepare + factor + solve.
     eprintln!("cold session creation");
@@ -472,31 +513,37 @@ fn run(args: &Args) -> Result<(), String> {
     let cold_peak = created.peak_bytes;
     let cold_retained = created.retained_bytes;
     let mut session = created.value?;
-    let initial = session.result();
-    let initial_json = measure(|| serde_json::to_string(initial).map_err(|e| e.to_string()));
+    let initial = session.summary().clone();
+    let initial_json = measure(|| serde_json::to_string(&initial).map_err(|e| e.to_string()));
     let initial_json_bytes = initial_json.value?.len();
     let branches = measure(|| session.load_branches());
     let branches_json =
         measure(|| serde_json::to_string(&branches.value).map_err(|e| e.to_string()));
     let branches_json_bytes = branches_json.value?.len();
+    let ids_json =
+        measure(|| serde_json::to_string(session.terminal_ids()).map_err(|e| e.to_string()));
+    let ids_json_bytes = ids_json.value?.len();
     let cold = json!({
         "from_module_json_ms": cold_ms,
+        "profile": profile_json(&session.cold_profile()),
         "iterations": initial.iterations,
         "converged": initial.converged,
         "voltage_valid": initial.voltage_valid,
         "min_voltage_pu": initial.min_voltage_pu,
         "max_voltage_pu": initial.max_voltage_pu,
-        "voltage_violations": initial.voltage_violations.len(),
+        "voltage_violations": initial.voltage_violation_count,
         "matrix_dimension": initial.matrix_dimension,
         "matrix_nonzeros": initial.matrix_nonzeros,
         "factorization_count": initial.factorization_count,
         "retained_heap_bytes": cold_retained,
         "peak_heap_bytes": cold_peak,
-        "result_json_ms": initial_json.ms,
-        "result_json_bytes": initial_json_bytes,
+        "summary_json_ms": initial_json.ms,
+        "summary_json_bytes": initial_json_bytes,
         "load_branches_ms": branches.ms,
         "load_branches_json_ms": branches_json.ms,
         "load_branches_json_bytes": branches_json_bytes,
+        "terminal_ids_json_ms": ids_json.ms,
+        "terminal_ids_json_bytes": ids_json_bytes,
     });
     eprintln!(
         "  {:.0} ms, {} iterations, dim {}, nnz {}, min {:.4} pu, retained {}, peak {}",
@@ -508,6 +555,20 @@ fn run(args: &Args) -> Result<(), String> {
         mib(cold_retained as f64),
         mib(cold_peak as f64)
     );
+    if matches!(args.input, Input::Preset(_)) && args.load_scale.is_none() {
+        if !(6..=40).contains(&initial.iterations) {
+            failures.push(format!(
+                "cold solve took {} iterations; the calibrated range is 6-40",
+                initial.iterations
+            ));
+        }
+        let minimum = initial.min_voltage_pu.unwrap_or(f64::NAN);
+        if !(0.90..=0.97).contains(&minimum) {
+            failures.push(format!(
+                "cold minimum load-branch voltage {minimum:.4} pu is outside the calibrated 0.90-0.97 pu"
+            ));
+        }
+    }
     let branches = branches.value;
     if branches.is_empty() {
         return Err("the network has no editable load branches".to_owned());
@@ -536,14 +597,9 @@ fn run(args: &Args) -> Result<(), String> {
     let mut accumulated: Vec<McLoadPowerEdit> = Vec::new();
     let mut position: BTreeMap<(String, usize), usize> = BTreeMap::new();
     let mut per_edit = Vec::new();
-    let (mut replace_ms, mut iterations, mut json_ms, mut json_bytes, mut peak, mut lb_ms) = (
-        Stats::default(),
-        Stats::default(),
-        Stats::default(),
-        Stats::default(),
-        Stats::default(),
-        Stats::default(),
-    );
+    let mut stats: BTreeMap<&str, Stats> = BTreeMap::new();
+    let mut max_summary_bytes = 0usize;
+    let mut max_retained = 0i64;
     for (index, edit) in sequence.iter().enumerate() {
         let key = (edit.load.clone(), edit.branch);
         match position.get(&key) {
@@ -556,30 +612,43 @@ fn run(args: &Args) -> Result<(), String> {
         let replaced = measure(|| {
             session
                 .replace_load_powers(&accumulated)
-                .map(|result| (result.iterations, result.factorization_count))
+                .map(|summary| (summary.iterations, summary.factorization_count))
         });
         let (edit_iterations, factorizations) = replaced
             .value
             .map_err(|e| format!("edit {index} failed: {e}"))?;
+        let profile = session.profile();
         let serialized =
-            measure(|| serde_json::to_string(session.result()).map_err(|e| e.to_string()));
+            measure(|| serde_json::to_string(session.summary()).map_err(|e| e.to_string()));
         let bytes = serialized.value?.len();
-        let listed =
-            measure(|| serde_json::to_string(&session.load_branches()).map_err(|e| e.to_string()));
-        let listed_bytes = listed.value?.len();
-        replace_ms.push(replaced.ms);
-        iterations.push(edit_iterations as f64);
-        json_ms.push(serialized.ms);
-        json_bytes.push(bytes as f64);
-        peak.push(replaced.peak_bytes as f64);
-        lb_ms.push(listed.ms);
+        max_summary_bytes = max_summary_bytes.max(bytes);
+        max_retained = max_retained.max(replaced.retained_bytes.abs());
+        for (name, value) in [
+            ("replace_load_powers_ms", replaced.ms),
+            ("iterations", edit_iterations as f64),
+            ("summary_json_ms", serialized.ms),
+            ("summary_json_bytes", bytes as f64),
+            ("peak_heap_bytes", replaced.peak_bytes as f64),
+            ("retained_heap_bytes", replaced.retained_bytes as f64),
+            ("load_evaluation_ms", profile.load_evaluation_ms),
+            ("kcl_and_matvec_ms", profile.kcl_and_matvec_ms),
+            ("linear_solve_ms", profile.linear_solve_ms),
+            ("summary_ms", profile.summary_ms),
+            ("profile_total_ms", profile.total_ms),
+        ] {
+            stats.entry(name).or_default().push(value);
+        }
         eprintln!(
-            "  edit {index:>2}: {:>8.1} ms, {:>2} iterations, result JSON {:>6.1} ms / {}, peak {}",
+            "  edit {index:>2}: {:>7.2} ms, {:>2} iterations (solve {:.2} ms, load {:.2}, kcl {:.2}, summary {:.2}), summary {} B, peak {}, retained {} B",
             replaced.ms,
             edit_iterations,
-            serialized.ms,
-            mib(bytes as f64),
-            mib(replaced.peak_bytes as f64)
+            profile.linear_solve_ms,
+            profile.load_evaluation_ms,
+            profile.kcl_and_matvec_ms,
+            profile.summary_ms,
+            bytes,
+            mib(replaced.peak_bytes as f64),
+            replaced.retained_bytes
         );
         per_edit.push(json!({
             "index": index,
@@ -590,23 +659,76 @@ fn run(args: &Args) -> Result<(), String> {
             "iterations": edit_iterations,
             "factorization_count": factorizations,
             "peak_heap_bytes": replaced.peak_bytes,
-            "result_json_ms": serialized.ms,
-            "result_json_bytes": bytes,
-            "result_json_peak_heap_bytes": serialized.peak_bytes,
-            "load_branches_json_ms": listed.ms,
-            "load_branches_json_bytes": listed_bytes,
+            "retained_heap_bytes": replaced.retained_bytes,
+            "summary_json_ms": serialized.ms,
+            "summary_json_bytes": bytes,
+            "profile": profile_json(&profile),
         }));
     }
-    let edits = json!({
+    let materializations_after_edits = session.materialization_count();
+    let mut edits = json!({
         "count": sequence.len(),
         "seed": args.seed,
         "per_edit": per_edit,
-        "replace_load_powers_ms": replace_ms.summary(),
-        "iterations": iterations.summary(),
-        "result_json_ms": json_ms.summary(),
-        "result_json_bytes": json_bytes.summary(),
-        "peak_heap_bytes": peak.summary(),
-        "load_branches_json_ms": lb_ms.summary(),
+        "materialization_count": materializations_after_edits,
+    });
+    for (name, values) in &stats {
+        edits[*name] = values.summary();
+    }
+    if max_summary_bytes > SUMMARY_BUDGET_BYTES {
+        failures.push(format!(
+            "summary payload reached {max_summary_bytes} bytes; budget {SUMMARY_BUDGET_BYTES}"
+        ));
+    }
+    if max_retained > EDIT_RETAINED_HEAP_TOLERANCE {
+        failures.push(format!(
+            "an edit changed the live heap by {max_retained} bytes; tolerance {EDIT_RETAINED_HEAP_TOLERANCE}"
+        ));
+    }
+
+    // On-demand detail: a bus page, terminal arrays, and the complete result
+    // the interactive path no longer builds.
+    let sample_bus = session
+        .terminal_ids()
+        .last()
+        .map(|(bus, _)| bus.clone())
+        .unwrap_or_default();
+    let detail = measure(|| {
+        session
+            .detail(&McPfDetailQuery {
+                bus: Some(sample_bus.clone()),
+                ..Default::default()
+            })
+            .and_then(|page| serde_json::to_string(&page).map_err(|e| e.to_string()))
+    });
+    let detail_bytes = detail.value?.len();
+    if detail_bytes > DETAIL_PAGE_BUDGET_BYTES {
+        failures.push(format!(
+            "a detail page reached {detail_bytes} bytes; budget {DETAIL_PAGE_BUDGET_BYTES}"
+        ));
+    }
+    let voltages = measure(|| session.terminal_voltages());
+    let voltage_bytes = voltages.value.len() * std::mem::size_of::<f64>();
+    let currents = measure(|| session.terminal_currents());
+    let current_bytes = currents.value.len() * std::mem::size_of::<f64>();
+    let legacy = measure(|| session.build_result());
+    let legacy_peak = legacy.peak_bytes;
+    let legacy_result = legacy.value?;
+    let legacy_json = measure(|| serde_json::to_string(&legacy_result).map_err(|e| e.to_string()));
+    let legacy_json_bytes = legacy_json.value?.len();
+    drop(legacy_result);
+    let on_demand = json!({
+        "detail_page_ms": detail.ms,
+        "detail_page_bytes": detail_bytes,
+        "terminal_voltages_ms": voltages.ms,
+        "terminal_voltages_bytes": voltage_bytes,
+        "terminal_currents_ms": currents.ms,
+        "terminal_currents_bytes": current_bytes,
+        "legacy_result_build_ms": legacy.ms,
+        "legacy_result_build_peak_heap_bytes": legacy_peak,
+        "legacy_result_json_ms": legacy_json.ms,
+        "legacy_result_json_bytes": legacy_json_bytes,
+        "legacy_result_json_peak_heap_bytes": legacy_json.peak_bytes,
     });
 
     // Feeder-wide 1.05x edit, then agreement with a fresh prepared solve.
@@ -623,13 +745,12 @@ fn run(args: &Args) -> Result<(), String> {
     let wide = measure(|| {
         session
             .replace_load_powers(&scaled)
-            .map(|result| result.iterations)
+            .map(|summary| summary.iterations)
     });
     let wide_iterations = wide
         .value
         .map_err(|e| format!("feeder-wide edit failed: {e}"))?;
-    let wide_json = measure(|| serde_json::to_string(session.result()).map_err(|e| e.to_string()));
-    let wide_json_bytes = wide_json.value?.len();
+    let wide_profile = session.profile();
     let mut fresh_network = network.clone();
     for load in fresh_network.loads_mut() {
         load.p_nom.iter_mut().for_each(|p| *p *= 1.05);
@@ -639,7 +760,7 @@ fn run(args: &Args) -> Result<(), String> {
     drop(network);
     let fresh = measure(|| tellegen::solve_mc_ac_pf_instance(&fresh_instance, &options));
     let fresh_result = fresh.value?;
-    let warm = session.result();
+    let warm = session.build_result()?;
     if warm.terminals.len() != fresh_result.terminals.len() {
         return Err("warm and fresh terminal counts differ".to_owned());
     }
@@ -657,13 +778,24 @@ fn run(args: &Args) -> Result<(), String> {
                 .hypot(w.current_into_network.im - f.current_into_network.im),
         );
     }
+    drop(warm);
+    if max_dv.is_nan() || max_dv > WARM_FRESH_VOLTAGE_TOLERANCE_V {
+        failures.push(format!(
+            "warm and fresh voltages differ by {max_dv:.3e} V; tolerance {WARM_FRESH_VOLTAGE_TOLERANCE_V:e}"
+        ));
+    }
+    if max_di.is_nan() || max_di > WARM_FRESH_CURRENT_TOLERANCE_A {
+        failures.push(format!(
+            "warm and fresh currents differ by {max_di:.3e} A; tolerance {WARM_FRESH_CURRENT_TOLERANCE_A:e}"
+        ));
+    }
     let feeder_wide = json!({
         "edited_branches": scaled.len(),
         "replace_load_powers_ms": wide.ms,
         "iterations": wide_iterations,
         "peak_heap_bytes": wide.peak_bytes,
-        "result_json_ms": wide_json.ms,
-        "result_json_bytes": wide_json_bytes,
+        "retained_heap_bytes": wide.retained_bytes,
+        "profile": profile_json(&wide_profile),
         "fresh_solve_ms": fresh.ms,
         "fresh_iterations": fresh_result.iterations,
         "fresh_peak_heap_bytes": fresh.peak_bytes,
@@ -671,15 +803,21 @@ fn run(args: &Args) -> Result<(), String> {
         "max_abs_current_difference_a": max_di,
     });
     eprintln!(
-        "  {:.0} ms, {} iterations; fresh {:.0} ms; max |dV| {:.3e} V, max |dI| {:.3e} A",
+        "  {:.1} ms, {} iterations; fresh {:.0} ms; max |dV| {:.3e} V, max |dI| {:.3e} A",
         wide.ms, wide_iterations, fresh.ms, max_dv, max_di
     );
     drop(fresh_result);
     drop(fresh_instance);
     let factorization_count = session.factorization_count();
     if factorization_count != 1 {
-        notes.push(format!(
+        failures.push(format!(
             "factorization_count is {factorization_count} after the edits; expected 1"
+        ));
+    }
+    let materializations_before_output = session.materialization_count();
+    if materializations_before_output != 0 {
+        failures.push(format!(
+            "{materializations_before_output} network materializations during ordinary edits; expected 0"
         ));
     }
 
@@ -715,11 +853,12 @@ fn run(args: &Args) -> Result<(), String> {
         "input_module_json_bytes": input_module_bytes,
         "input_module_json_peak_heap_bytes": input_module.peak_bytes,
         "snapshot": snapshot_json,
+        "materialization_count": session.materialization_count(),
     });
 
     let report = json!({
         "schema": "tellegen-mc-pf-session-bench",
-        "version": 1,
+        "version": 2,
         "label": label,
         "source": source,
         "build": {
@@ -739,10 +878,13 @@ fn run(args: &Args) -> Result<(), String> {
         "module": {"bytes": module_json.len(), "serialize": serialize},
         "cold": cold,
         "edits": edits,
+        "on_demand": on_demand,
         "feeder_wide": feeder_wide,
         "factorization_count_after_edits": factorization_count,
+        "materialization_count_after_edits": materializations_before_output,
         "solve_count": session.solve_count(),
         "materialize": materialize,
+        "check": {"requested": args.check, "failures": failures},
         "notes": notes,
     });
     std::fs::create_dir_all(&args.out)
@@ -758,6 +900,16 @@ fn run(args: &Args) -> Result<(), String> {
         .map_err(|e| format!("cannot write {}: {e}", md_path.display()))?;
     eprintln!("wrote {} and {}", json_path.display(), md_path.display());
     print!("{}", markdown(&report));
+    if args.check && !failures.is_empty() {
+        return Err(format!(
+            "{} check(s) failed:\n  {}",
+            failures.len(),
+            failures.join("\n  ")
+        ));
+    }
+    if args.check {
+        eprintln!("all deterministic checks passed");
+    }
     Ok(())
 }
 
@@ -817,8 +969,18 @@ fn markdown(report: &Value) -> String {
             ),
         ),
         (
-            "cold from_module_json ms".into(),
-            ms("/cold/from_module_json_ms"),
+            "cold from_module_json ms (parse / prepare / factor / solve)".into(),
+            format!(
+                "{} ({:.1} / {:.1} / {:.1} / {:.1})",
+                ms("/cold/from_module_json_ms"),
+                num("/cold/profile/parse_ms"),
+                num("/cold/profile/prepare_ms"),
+                num("/cold/profile/factor_ms"),
+                num("/cold/profile/load_evaluation_ms")
+                    + num("/cold/profile/kcl_and_matvec_ms")
+                    + num("/cold/profile/linear_solve_ms")
+                    + num("/cold/profile/summary_ms")
+            ),
         ),
         (
             "cold iterations / matrix dim / nnz".into(),
@@ -846,15 +1008,23 @@ fn markdown(report: &Value) -> String {
             ),
         ),
         (
-            "initial result JSON (ms, size)".into(),
+            "initial summary JSON (ms, bytes)".into(),
             format!(
                 "{}, {}",
-                ms("/cold/result_json_ms"),
-                bytes("/cold/result_json_bytes")
+                ms("/cold/summary_json_ms"),
+                count("/cold/summary_json_bytes")
             ),
         ),
         (
-            "load_branches JSON (ms, size)".into(),
+            "terminal ids JSON, once per session (ms, size)".into(),
+            format!(
+                "{}, {}",
+                ms("/cold/terminal_ids_json_ms"),
+                bytes("/cold/terminal_ids_json_bytes")
+            ),
+        ),
+        (
+            "load_branches JSON, once per session (ms, size)".into(),
             format!(
                 "{}, {}",
                 ms("/cold/load_branches_json_ms"),
@@ -873,7 +1043,7 @@ fn markdown(report: &Value) -> String {
             ),
         )
     };
-    let plain_ms = |value: f64| format!("{value:.1} ms");
+    let plain_ms = |value: f64| format!("{value:.2} ms");
     let plain = |value: f64| format!("{value:.0}");
     let size = |value: f64| mib(value);
     rows.push(("single-branch edits".into(), count("/edits/count")));
@@ -888,14 +1058,34 @@ fn markdown(report: &Value) -> String {
         &plain,
     ));
     rows.push(summary(
-        "result JSON serialize median / p95 / max",
-        "/edits/result_json_ms",
+        "  load evaluation median / p95 / max",
+        "/edits/load_evaluation_ms",
         &plain_ms,
     ));
     rows.push(summary(
-        "result JSON size median / p95 / max",
-        "/edits/result_json_bytes",
-        &size,
+        "  KCL and matvec median / p95 / max",
+        "/edits/kcl_and_matvec_ms",
+        &plain_ms,
+    ));
+    rows.push(summary(
+        "  retained LU solves median / p95 / max",
+        "/edits/linear_solve_ms",
+        &plain_ms,
+    ));
+    rows.push(summary(
+        "  summary median / p95 / max",
+        "/edits/summary_ms",
+        &plain_ms,
+    ));
+    rows.push(summary(
+        "summary JSON serialize median / p95 / max",
+        "/edits/summary_json_ms",
+        &plain_ms,
+    ));
+    rows.push(summary(
+        "summary JSON bytes median / p95 / max",
+        "/edits/summary_json_bytes",
+        &plain,
     ));
     rows.push(summary(
         "edit heap peak median / p95 / max",
@@ -903,9 +1093,45 @@ fn markdown(report: &Value) -> String {
         &size,
     ));
     rows.push(summary(
-        "load_branches + JSON median / p95 / max",
-        "/edits/load_branches_json_ms",
-        &plain_ms,
+        "edit live-heap change (bytes) median / p95 / max",
+        "/edits/retained_heap_bytes",
+        &plain,
+    ));
+    rows.push((
+        "network materializations during edits".into(),
+        count("/materialization_count_after_edits"),
+    ));
+    rows.push((
+        "detail page for one bus + 20 ports (ms, bytes)".into(),
+        format!(
+            "{}, {}",
+            ms("/on_demand/detail_page_ms"),
+            count("/on_demand/detail_page_bytes")
+        ),
+    ));
+    rows.push((
+        "terminal voltages Float64 (ms, size)".into(),
+        format!(
+            "{}, {}",
+            ms("/on_demand/terminal_voltages_ms"),
+            bytes("/on_demand/terminal_voltages_bytes")
+        ),
+    ));
+    rows.push((
+        "legacy full result build (ms, peak)".into(),
+        format!(
+            "{}, {}",
+            ms("/on_demand/legacy_result_build_ms"),
+            bytes("/on_demand/legacy_result_build_peak_heap_bytes")
+        ),
+    ));
+    rows.push((
+        "legacy full result JSON (ms, size)".into(),
+        format!(
+            "{}, {}",
+            ms("/on_demand/legacy_result_json_ms"),
+            bytes("/on_demand/legacy_result_json_bytes")
+        ),
     ));
     rows.push((
         "feeder-wide 1.05x (ms, iterations)".into(),
@@ -968,6 +1194,15 @@ fn markdown(report: &Value) -> String {
             format!("failed: {}", get("/materialize/snapshot/error")),
         ));
     }
+    let failures = get("/check/failures");
+    rows.push((
+        "deterministic checks".into(),
+        match failures.as_array() {
+            Some(list) if list.is_empty() => "pass".to_owned(),
+            Some(list) => format!("{} failed", list.len()),
+            None => "-".to_owned(),
+        },
+    ));
     let mut text = format!(
         "### Native session benchmark: {}\n\n| measurement | value |\n| --- | --- |\n",
         get("/label").as_str().unwrap_or("?")

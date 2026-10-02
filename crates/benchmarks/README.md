@@ -83,15 +83,30 @@ cargo run -p benchmarks --profile release-py --bin mc-pf-session-bench -- --pres
 | `--label NAME` | preset or file stem | artifact label |
 | `--load-scale X` | preset value | override the preset load multiplier |
 | `--calibrate X,Y,...` | — | cold-solve the preset at each multiplier and exit |
+| `--check` | off | exit nonzero on a deterministic regression (never on timing) |
 
 It writes `native-<label>.json` and `native-<label>.md`: generation and module
-serialization, cold `from_module_json` (parse, prepare, factor, solve) with
-retained and peak heap from a counting global allocator, per-edit
-`replace_load_powers` and `serde_json::to_string(result)` (today's WASM per-edit
-payload), a feeder-wide 1.05x edit checked against a fresh solve, the
-factorization count, and `input_module_json`/`snapshot` materialization. The
-artifacts record which profile built the binary. Written modules belong under
-the ignored `target/` directory; never commit them.
+serialization; cold `from_module_json` with its parse, prepare, factor, and
+solve phases and retained and peak heap from a counting global allocator; per
+edit, `replace_load_powers` with the session's phase profile (load evaluation,
+KCL and matvec, retained LU solves, summary), the summary JSON the WASM adapter
+returns, the transient heap peak, and the live-heap change; a detail page, the
+terminal voltage array, and the complete result and its JSON (the pre-#132
+per-edit payload, built once for comparison); a feeder-wide 1.05x edit checked
+against a fresh solve; the factorization and network materialization counts;
+and `input_module_json`/`snapshot` materialization. The artifacts record which
+profile built the binary. Written modules belong under the ignored `target/`
+directory; never commit them.
+
+`--check` fails when warm and fresh voltages differ by more than 1e-6 V (or
+currents by 1e-5 A), the factorization count is not 1, an ordinary edit
+materializes a network, a summary exceeds 2 KiB or a detail page 32 KiB, an
+edit changes the live heap by more than 64 KiB, or (for presets) the generated
+shape or calibrated operating range drifts. CI runs it on `feeder-10k`
+(`just mc-pf-regression`).
+
+The opt-in browser counterpart is `apps/web/tests/mc-pf-bench.spec.ts`; its
+header lists the commands.
 
 The opt-in browser counterpart is `apps/web/tests/mc-pf-bench.spec.ts`. Build
 the wasm first (`npm run wasm`), write the modules with `--write-module`, then:

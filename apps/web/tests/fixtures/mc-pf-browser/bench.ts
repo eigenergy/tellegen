@@ -7,11 +7,13 @@
 
 import {
 	createMcPfSession,
+	engineMemoryStats,
 	preloadEngine,
+	resetEngineMemoryPeak,
 	type BrowserMcPfSession,
 	type McLoadBranchState,
 	type McLoadPowerEdit,
-	type McPfResult
+	type McPfSummary
 } from '@tellegen/engine';
 
 /** The Svelte controller's load-edit debounce, excluded from every timing. */
@@ -91,7 +93,9 @@ interface State {
 	sequence: McLoadPowerEdit[] | null;
 	session: BrowserMcPfSession | null;
 	/** Retained like the controller's `c.result` and `c.mcLoadBranches`. */
-	result: McPfResult | null;
+	result: McPfSummary | null;
+	/** The bus whose detail an open results panel would show. */
+	detailBus: string | null;
 	branches: McLoadBranchState[];
 	e2eEdits: EditSet;
 	breakdownEdits: EditSet;
@@ -104,6 +108,7 @@ const state: State = {
 	sequence: null,
 	session: null,
 	result: null,
+	detailBus: null,
 	branches: [],
 	e2eEdits: new EditSet(),
 	breakdownEdits: new EditSet()
@@ -121,6 +126,8 @@ interface WorkerReply {
 	ok: boolean;
 	error?: string;
 	text?: string;
+	array?: Float64Array;
+	bytes?: number;
 	wasm_ms?: number;
 	post_abs: number;
 	worker_ms: number;
@@ -220,58 +227,84 @@ const bench = {
 		return { fetch_ms, module_chars: state.moduleJson.length, edits_source, engine_preload_ms };
 	},
 
-	/** Cold: exactly the controller's `createMcPfSession` + `result`/`loadBranches`. */
+	/** Cold: exactly the controller's `createMcPfSession` (which returns the
+	 * initial summary) followed by one `loadBranches()`. */
 	async e2eCreate() {
 		if (state.moduleJson === null) throw new Error('load a module first');
+		await resetEngineMemoryPeak();
 		const started = performance.now();
 		const session = await createMcPfSession(state.moduleJson);
 		const created = performance.now();
-		const [result, branches] = await Promise.all([session.result(), session.loadBranches()]);
-		const fetched = performance.now();
+		const branches = await session.loadBranches();
+		const listed = performance.now();
 		await nextFrame();
+		const ui_visible_ms = performance.now() - started;
+		const summary = session.initialSummary;
 		state.session = session;
-		state.result = result;
+		state.result = summary;
 		state.branches = branches;
+		state.detailBus = branches.at(-1)?.bus ?? null;
 		state.e2eEdits = new EditSet();
 		sequence();
 		return {
 			create_ms: created - started,
-			result_and_load_branches_ms: fetched - created,
-			ui_visible_ms: performance.now() - started,
-			iterations: result.iterations,
-			converged: result.converged,
-			factorization_count: result.factorization_count,
-			matrix_dimension: result.matrix_dimension,
-			matrix_nonzeros: result.matrix_nonzeros,
-			min_voltage_pu: result.min_voltage_pu,
-			terminals: result.terminals.length,
-			load_branches: branches.length
+			load_branches_ms: listed - created,
+			ui_visible_ms,
+			iterations: summary.iterations,
+			converged: summary.converged,
+			factorization_count: summary.factorization_count,
+			matrix_dimension: summary.matrix_dimension,
+			matrix_nonzeros: summary.matrix_nonzeros,
+			min_voltage_pu: summary.min_voltage_pu,
+			terminals: summary.terminal_count,
+			load_branches: branches.length,
+			profile: await session.profile(true),
+			engine_memory: await engineMemoryStats()
 		};
 	},
 
-	/** One debounced flush, as `flushMultiLoadPowers` runs it, plus one frame. */
+	/** One debounced flush, as `flushMultiLoadPowers` now runs it (one round
+	 * trip returning the summary), plus one frame. The detail page an open
+	 * results panel requests afterwards is timed separately. */
 	async e2eEdit(index: number) {
 		const session = state.session;
 		if (!session) throw new Error('create the session first');
 		state.e2eEdits.apply(sequence()[index]);
 		const edits = state.e2eEdits.edits.map((edit) => ({ ...edit }));
+		const before = await engineMemoryStats();
+		await resetEngineMemoryPeak();
 		const started = performance.now();
-		const result = await session.replaceLoadPowers(edits);
+		const summary = await session.replaceLoadPowers(edits);
 		const replaced = performance.now();
-		const branches = await session.loadBranches();
-		const listed = performance.now();
-		state.result = result;
-		state.branches = branches;
+		state.result = summary;
 		await nextFrame();
+		const ui_visible_ms = performance.now() - started;
+		const timing = session.lastTiming!;
+		const after = await engineMemoryStats();
+		const detailStart = performance.now();
+		const detail = await session.detail({ bus: state.detailBus, port_limit: 20 });
+		const detail_ms = performance.now() - detailStart;
+		const profile = await session.profile();
 		return {
 			index,
 			accumulated_edits: edits.length,
 			replace_load_powers_ms: replaced - started,
-			load_branches_ms: listed - replaced,
-			frame_ms: performance.now() - listed,
-			ui_visible_ms: performance.now() - started,
-			iterations: result.iterations,
-			factorization_count: result.factorization_count
+			engine_ms: timing.engine_ms,
+			transfer_ms: timing.engine_ms === null ? null : timing.round_trip_ms - timing.engine_ms,
+			parse_ms: timing.parse_ms,
+			payload_chars: timing.payload_chars,
+			frame_ms: ui_visible_ms - (replaced - started),
+			ui_visible_ms,
+			detail_ms,
+			detail_chars: JSON.stringify(detail).length,
+			ui_visible_with_detail_ms: ui_visible_ms + detail_ms,
+			iterations: summary.iterations,
+			factorization_count: summary.factorization_count,
+			profile,
+			engine_heap_live_bytes: after.heap_live_bytes,
+			engine_heap_live_change_bytes: after.heap_live_bytes - before.heap_live_bytes,
+			engine_heap_edit_peak_bytes: after.heap_peak_bytes - before.heap_live_bytes,
+			engine_linear_memory_bytes: after.linear_memory_bytes
 		};
 	},
 
@@ -285,26 +318,26 @@ const bench = {
 			q_var: branch.base_q_var * 1.05
 		}));
 		const started = performance.now();
-		const result = await session.replaceLoadPowers(edits);
+		const summary = await session.replaceLoadPowers(edits);
 		const replaced = performance.now();
-		const branches = await session.loadBranches();
-		const listed = performance.now();
-		state.result = result;
-		state.branches = branches;
+		state.result = summary;
 		await nextFrame();
 		return {
 			edited_branches: edits.length,
 			replace_load_powers_ms: replaced - started,
-			load_branches_ms: listed - replaced,
+			engine_ms: session.lastTiming?.engine_ms ?? null,
 			ui_visible_ms: performance.now() - started,
-			iterations: result.iterations,
-			factorization_count: result.factorization_count
+			iterations: summary.iterations,
+			factorization_count: summary.factorization_count,
+			materialization_count: await session.materializationCount()
 		};
 	},
 
 	async e2eMaterialize() {
 		const session = state.session;
 		if (!session) throw new Error('create the session first');
+		const materializations_before = await session.materializationCount();
+		await resetEngineMemoryPeak();
 		let started = performance.now();
 		const input = await session.inputModule();
 		const input_module_ms = performance.now() - started;
@@ -312,11 +345,14 @@ const bench = {
 		const snapshot = await session.snapshot('mc-pf-bench', 'Browser session benchmark');
 		const snapshot_ms = performance.now() - started;
 		return {
+			materializations_before,
+			materializations_after: await session.materializationCount(),
 			input_module_ms,
 			input_module_chars: input.length,
 			snapshot_ms,
 			snapshot_input_module_chars: snapshot.input_module.length,
-			snapshot_solution_module_chars: snapshot.solution_module.length
+			snapshot_solution_module_chars: snapshot.solution_module.length,
+			engine_memory: await engineMemoryStats()
 		};
 	},
 
@@ -340,17 +376,19 @@ const bench = {
 		const started = performance.now();
 		const reply = await callWorker('create', { url: state.moduleUrl });
 		const created_ms = performance.now() - started;
-		const result = await measuredCall('result');
+		const summary = await measuredCall('summary');
+		const ids = await measuredCall('terminal_ids');
 		const branches = await measuredCall('load_branches');
-		state.result = result.parsed as McPfResult;
+		state.result = summary.parsed as McPfSummary;
 		state.breakdownEdits = new EditSet();
 		return {
 			worker_fetch_ms: reply.fetch_ms,
 			wasm_create_ms: reply.create_ms,
 			create_roundtrip_ms: created_ms,
 			wasm_memory_bytes_after_create: reply.wasm_memory_bytes,
-			result: result.timing,
-			load_branches: branches.timing
+			summary: summary.timing,
+			terminal_ids_once: ids.timing,
+			load_branches_once: branches.timing
 		};
 	},
 
@@ -359,18 +397,46 @@ const bench = {
 		const editsJson = JSON.stringify(state.breakdownEdits.edits);
 		const started = performance.now();
 		const replaced = await measuredCall('edit', { edits: editsJson });
-		const branches = await measuredCall('load_branches');
-		const result = replaced.parsed as McPfResult;
-		state.result = result;
+		const total_ms = performance.now() - started;
+		const summary = replaced.parsed as McPfSummary;
+		state.result = summary;
+		const profile = JSON.parse((await callWorker('profile')).text ?? 'null');
 		return {
 			index,
 			accumulated_edits: state.breakdownEdits.edits.length,
 			edits_json_chars: editsJson.length,
 			replace: replaced.timing,
-			load_branches: branches.timing,
-			total_ms: performance.now() - started,
-			iterations: result.iterations,
-			factorization_count: result.factorization_count
+			total_ms,
+			iterations: summary.iterations,
+			factorization_count: summary.factorization_count,
+			profile
+		};
+	},
+
+	/** On-demand transfers: a detail page, the voltage array (transferred, not
+	 * copied), and the complete result JSON the pre-#132 path sent per edit. */
+	async breakdownOnDemand() {
+		const detail = await measuredCall('detail', {
+			query: JSON.stringify({ bus: state.detailBus, port_limit: 20 })
+		});
+		const started = performance.now();
+		const voltages = await callWorker('voltages');
+		const voltages_total_ms = performance.now() - started;
+		await callWorker('reset_peak');
+		const before = JSON.parse((await callWorker('memory')).text ?? 'null');
+		const legacy = await measuredCall('result');
+		const after = JSON.parse((await callWorker('memory')).text ?? 'null');
+		return {
+			detail: detail.timing,
+			voltages: {
+				wasm_ms: voltages.wasm_ms ?? null,
+				bytes: voltages.bytes ?? null,
+				transfer_ms: voltages.recv_abs - voltages.post_abs,
+				messaging_ms: voltages.recv_abs - voltages.sent_abs - voltages.worker_ms,
+				total_ms: voltages_total_ms
+			},
+			legacy_result: legacy.timing,
+			legacy_result_heap_peak_bytes: after.heap_peak_bytes - before.heap_live_bytes
 		};
 	},
 
@@ -381,6 +447,7 @@ const bench = {
 		return {
 			input_module: input.timing,
 			snapshot: snapshot.timing,
+			engine_memory: JSON.parse(memory.text ?? 'null'),
 			wasm_memory_bytes: memory.wasm_memory_bytes,
 			worker_js_heap_bytes: memory.worker_js_heap_bytes
 		};

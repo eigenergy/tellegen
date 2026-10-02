@@ -171,7 +171,10 @@ test.describe('multiconductor session browser benchmark', () => {
 			const create = await step<Record<string, unknown>>(page, 'e2eCreate');
 			memory.main_after_e2e_create = await mainHeap(cdp);
 			memory.workers_after_e2e_create = await sampleWorkers();
-			const e2eEdits: Array<Record<string, number>> = [];
+			type EditRow = Record<string, number | null> & {
+				profile: Record<string, number>;
+			};
+			const e2eEdits: EditRow[] = [];
 			for (let index = 0; index < editCount; index++) {
 				e2eEdits.push(await step(page, 'e2eEdit', index));
 			}
@@ -188,15 +191,16 @@ test.describe('multiconductor session browser benchmark', () => {
 			memory.workers_after_breakdown_create = await sampleWorkers();
 			const breakdownEdits: Array<{
 				replace: Record<string, number>;
-				load_branches: Record<string, number>;
 				total_ms: number;
 				iterations: number;
+				profile: Record<string, number>;
 			}> = [];
 			for (let index = 0; index < editCount; index++) {
 				breakdownEdits.push(await step(page, 'breakdownEdit', index));
 			}
 			memory.main_after_breakdown_edits = await mainHeap(cdp);
 			memory.workers_after_breakdown_edits = await sampleWorkers();
+			const onDemand = await step<Record<string, unknown>>(page, 'breakdownOnDemand');
 			const breakdownMaterialize = await step<Record<string, unknown>>(
 				page,
 				'breakdownMaterialize'
@@ -210,7 +214,7 @@ test.describe('multiconductor session browser benchmark', () => {
 				: stem;
 			const report = {
 				schema: 'tellegen-mc-pf-browser-bench',
-				version: 1,
+				version: 2,
 				label,
 				module: modulePath,
 				browser: `chromium ${browser.version()}`,
@@ -222,8 +226,12 @@ test.describe('multiconductor session browser benchmark', () => {
 							.controllerDebounceMs
 				),
 				notes: [
-					'ui_visible_ms = await replaceLoadPowers(edits) + await loadBranches() + one requestAnimationFrame, the controller flush path; the 180 ms debounce is excluded',
-					'wasm replace_load_powers time includes the numerical solve, the full network clone and instance rebuild, McPfResult construction, JSON serialization inside wasm, and the UTF-8 decode into a JS string; these are inseparable from JS today',
+					'ui_visible_ms = await replaceLoadPowers(edits) (one round trip returning the summary) + one requestAnimationFrame, the controller flush path; the 180 ms debounce is excluded',
+					'engine_ms is the engine worker time for the edit request (numerical solve plus summary JSON); transfer_ms is the rest of the round trip; parse_ms is the main-thread JSON.parse of the summary',
+					'profile is the Rust phase split of the solve (load evaluation, KCL and matvec, retained LU solves, summary) timed with performance.now inside wasm',
+					'detail_ms is the separate request an open results panel makes for one bus and 20 equipment ports; ui_visible_with_detail_ms adds it',
+					'engine_heap_* come from the counting allocator in the shared engine worker; the edit peak is relative to the live heap before the edit',
+					'legacy_result is the complete McPfResult JSON the pre-#132 session returned on every edit, built on demand once for comparison',
 					'transfer_ms = main-thread receive time minus worker post time, both performance.timeOrigin-aligned; it includes structured-clone serialization and deserialization of the result string, and the alignment error of the two clocks (about a millisecond; small negative values mean below resolution)',
 					'messaging_ms = main-thread round trip minus the worker-clock processing time: the offset-free request plus reply postMessage cost',
 					'chars are JS string lengths; the payloads are ASCII JSON, so chars equal UTF-8 bytes',
@@ -234,9 +242,26 @@ test.describe('multiconductor session browser benchmark', () => {
 					create,
 					edits: e2eEdits,
 					ui_visible_ms: pick(e2eEdits, (row) => row.ui_visible_ms),
+					ui_visible_with_detail_ms: pick(e2eEdits, (row) => row.ui_visible_with_detail_ms),
 					replace_load_powers_ms: pick(e2eEdits, (row) => row.replace_load_powers_ms),
-					load_branches_ms: pick(e2eEdits, (row) => row.load_branches_ms),
+					engine_ms: pick(e2eEdits, (row) => row.engine_ms),
+					transfer_ms: pick(e2eEdits, (row) => row.transfer_ms),
+					parse_ms: pick(e2eEdits, (row) => row.parse_ms),
+					payload_chars: pick(e2eEdits, (row) => row.payload_chars),
+					detail_ms: pick(e2eEdits, (row) => row.detail_ms),
+					detail_chars: pick(e2eEdits, (row) => row.detail_chars),
 					iterations: pick(e2eEdits, (row) => row.iterations),
+					profile_load_evaluation_ms: pick(e2eEdits, (row) => row.profile.load_evaluation_ms),
+					profile_kcl_and_matvec_ms: pick(e2eEdits, (row) => row.profile.kcl_and_matvec_ms),
+					profile_linear_solve_ms: pick(e2eEdits, (row) => row.profile.linear_solve_ms),
+					profile_summary_ms: pick(e2eEdits, (row) => row.profile.summary_ms),
+					profile_total_ms: pick(e2eEdits, (row) => row.profile.total_ms),
+					engine_heap_edit_peak_bytes: pick(e2eEdits, (row) => row.engine_heap_edit_peak_bytes),
+					engine_heap_live_change_bytes: pick(e2eEdits, (row) => row.engine_heap_live_change_bytes),
+					engine_linear_memory_bytes_first_last: [
+						e2eEdits[0]?.engine_linear_memory_bytes ?? null,
+						e2eEdits.at(-1)?.engine_linear_memory_bytes ?? null
+					],
 					feeder_wide: feederWide,
 					materialize: e2eMaterialize
 				},
@@ -245,19 +270,16 @@ test.describe('multiconductor session browser benchmark', () => {
 					create: breakdownCreate,
 					edits: breakdownEdits,
 					wasm_replace_ms: pick(breakdownEdits, (row) => row.replace.wasm_ms),
-					result_chars: pick(breakdownEdits, (row) => row.replace.chars),
-					result_transfer_ms: pick(breakdownEdits, (row) => row.replace.transfer_ms),
-					result_messaging_ms: pick(breakdownEdits, (row) => row.replace.messaging_ms),
-					result_parse_ms: pick(breakdownEdits, (row) => row.replace.parse_ms),
+					summary_chars: pick(breakdownEdits, (row) => row.replace.chars),
+					summary_transfer_ms: pick(breakdownEdits, (row) => row.replace.transfer_ms),
+					summary_messaging_ms: pick(breakdownEdits, (row) => row.replace.messaging_ms),
+					summary_parse_ms: pick(breakdownEdits, (row) => row.replace.parse_ms),
 					edits_request_transfer_ms: pick(breakdownEdits, (row) => row.replace.request_transfer_ms),
-					load_branches_wasm_ms: pick(breakdownEdits, (row) => row.load_branches.wasm_ms),
-					load_branches_chars: pick(breakdownEdits, (row) => row.load_branches.chars),
-					load_branches_transfer_ms: pick(breakdownEdits, (row) => row.load_branches.transfer_ms),
-					load_branches_messaging_ms: pick(breakdownEdits, (row) => row.load_branches.messaging_ms),
-					load_branches_parse_ms: pick(breakdownEdits, (row) => row.load_branches.parse_ms),
 					total_ms: pick(breakdownEdits, (row) => row.total_ms),
-					wasm_memory_bytes_after_edits:
-						breakdownEdits.at(-1)?.load_branches.wasm_memory_bytes ?? null,
+					profile_linear_solve_ms: pick(breakdownEdits, (row) => row.profile.linear_solve_ms),
+					profile_total_ms: pick(breakdownEdits, (row) => row.profile.total_ms),
+					wasm_memory_bytes_after_edits: breakdownEdits.at(-1)?.replace.wasm_memory_bytes ?? null,
+					on_demand: onDemand,
 					materialize: breakdownMaterialize
 				},
 				memory,
