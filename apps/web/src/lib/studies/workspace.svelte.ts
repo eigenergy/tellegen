@@ -1,6 +1,7 @@
 import {
 	IndexedDbStudyStore,
 	replayMcStudy,
+	summarizeMcPfResult,
 	type McStudySnapshot,
 	StudyDocumentController,
 	type CreateStudy,
@@ -96,7 +97,8 @@ export class StudyWorkspace {
 		const c = this.grid.app.activeMulti;
 		if (!c || c === previous) throw new Error('Saved distribution power flow could not be opened');
 		c.mcSnapshot = snapshot;
-		c.result = snapshot.result;
+		c.result = summarizeMcPfResult(snapshot.result);
+		c.mcFullResult = snapshot.result;
 		c.mcSavedAt = new Date().toISOString();
 		c.revisionGeneration++;
 		this.comparison = null;

@@ -664,7 +664,7 @@ async function inspect(
 	return payload;
 }
 
-function queryDistribution(ctrl: Controller, input: QueryNetworkInput): ToolPayload {
+async function queryDistribution(ctrl: Controller, input: QueryNetworkInput): Promise<ToolPayload> {
 	const c = ctrl.app.activeMulti!;
 	if (input.caseId !== c.id)
 		throw new TellegenToolError('STALE_CASE', 'the displayed case changed; call inspect_case');
@@ -687,18 +687,28 @@ function queryDistribution(ctrl: Controller, input: QueryNetworkInput): ToolPayl
 			'Run solve_multiconductor_pf to calculate terminal voltages.'
 		);
 	const values = new Map<string, ToolPayload[]>();
-	for (const terminal of c.result?.terminals ?? []) {
-		const list = values.get(terminal.bus) ?? [];
+	// Terminal values cross the worker boundary as numeric arrays, fetched
+	// only for bus queries.
+	const table = input.elementKind === 'bus' && c.result ? await ctrl.multiTerminalTable(c) : null;
+	if (ctrl.app.activeMulti !== c || ctrl.app.studyView)
+		throw new TellegenToolError('STALE_CASE', 'the displayed case changed; call inspect_case');
+	if (c.result && input.elementKind === 'bus' && !table)
+		throw new TellegenToolError(
+			'STALE_REVISION',
+			'the calculation changed while reading it; call query_network again'
+		);
+	table?.ids.forEach(([bus, terminal], k) => {
+		const [vr, vi] = [table.voltages[2 * k], table.voltages[2 * k + 1]];
+		const [ir, ii] = [table.currents[2 * k], table.currents[2 * k + 1]];
+		const list = values.get(bus) ?? [];
 		list.push({
-			terminal: terminal.terminal,
-			voltage_v: round4(Math.hypot(terminal.voltage.re, terminal.voltage.im)),
-			angle_deg: round4((Math.atan2(terminal.voltage.im, terminal.voltage.re) * 180) / Math.PI),
-			current_a: round4(
-				Math.hypot(terminal.current_into_network.re, terminal.current_into_network.im)
-			)
+			terminal,
+			voltage_v: round4(Math.hypot(vr, vi)),
+			angle_deg: round4((Math.atan2(vi, vr) * 180) / Math.PI),
+			current_a: round4(Math.hypot(ir, ii))
 		});
-		values.set(terminal.bus, list);
-	}
+		values.set(bus, list);
+	});
 	const rows: ToolPayload[] =
 		input.elementKind === 'bus'
 			? graph.buses.map((b) => ({
@@ -754,7 +764,7 @@ function queryDistribution(ctrl: Controller, input: QueryNetworkInput): ToolPayl
 	return result;
 }
 
-function query(ctrl: Controller, input: QueryNetworkInput): ToolPayload {
+function query(ctrl: Controller, input: QueryNetworkInput): ToolPayload | Promise<ToolPayload> {
 	if (ctrl.app.activeMulti && !ctrl.app.studyView) return queryDistribution(ctrl, input);
 	const c = displayedCase(ctrl, input.caseId);
 	const lookup = caseLookup(c);
@@ -1788,7 +1798,7 @@ export function createTellegenWebMcpAdapter(
 					...displayedContext(ctrl),
 					converged: result.converged,
 					iterations: result.iterations,
-					terminal_count: result.terminals.length,
+					terminal_count: result.terminal_count,
 					kcl_residual_a: result.physical_kcl_residual,
 					scaled_kcl_residual: result.scaled_kcl_residual,
 					solve_ms: c.solveMs
