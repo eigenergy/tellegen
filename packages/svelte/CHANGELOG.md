@@ -1,5 +1,26 @@
 # @tellegen/svelte
 
+## 0.4.0
+
+### Minor Changes
+
+- [#154](https://github.com/eigenergy/tellegen/pull/154) [`a3fdbd3`](https://github.com/eigenergy/tellegen/commit/a3fdbd3923b964654582bb384b57bd0b4ab90887) Thanks [@samtalki](https://github.com/samtalki)! - Multiconductor power-flow sessions answer a load edit with a constant-size
+  summary instead of the complete terminal and equipment result, in one worker
+  round trip. `BrowserMcPfSession.replaceLoadPowers` now resolves to
+  `McPfSummary`; session creation returns the initial summary; detail is
+  fetched on demand with `detail()` (one bus and a page of equipment ports) and
+  `terminalVoltages()`/`terminalCurrents()` (transferred `Float64Array`s), and
+  `result()` still returns the full result for export. Sessions report the
+  engine, transfer, and parse time of each edit and the engine's live and peak
+  heap. In `@tellegen/svelte`, `MulticonductorCase.result` is now the summary,
+  `mcFullResult` holds a stored full result when no session does, and
+  `McResults` accepts either with an optional `detail` loader.
+
+### Patch Changes
+
+- Updated dependencies [[`a3fdbd3`](https://github.com/eigenergy/tellegen/commit/a3fdbd3923b964654582bb384b57bd0b4ab90887)]:
+  - @tellegen/engine@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes
