@@ -42,13 +42,15 @@ if (htmlIds.size !== 1)
 	fail(`expected one SvelteKit bootstrap id, found ${[...htmlIds].join(', ')}`);
 const [bootstrapId] = htmlIds;
 
-const jsRefs = new Set();
-for (const file of walk(appDir).filter((path) => path.endsWith('.js'))) {
-	for (const id of svelteKitIds(read(file))) jsRefs.add(id);
+// Kit 3 hands the id to the runtime through `kit.init`, so chunks no longer name it.
+for (const [index, text] of html.entries()) {
+	if (!text.includes(`kit.init(${bootstrapId})`))
+		fail(`${relative(buildDir, htmlFiles[index])} does not pass ${bootstrapId} to kit.init`);
 }
-if (!jsRefs.has(bootstrapId)) fail(`runtime chunks do not reference ${bootstrapId}`);
-for (const id of jsRefs) {
-	if (id !== bootstrapId) fail(`runtime chunk references stale SvelteKit id ${id}`);
+for (const file of walk(appDir).filter((path) => path.endsWith('.js'))) {
+	for (const id of svelteKitIds(read(file))) {
+		if (id !== bootstrapId) fail(`runtime chunk references stale SvelteKit id ${id}`);
+	}
 }
 
 const assetRefs = html
