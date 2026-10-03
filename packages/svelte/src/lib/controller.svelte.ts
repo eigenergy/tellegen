@@ -2462,6 +2462,8 @@ export class Controller {
 		if (!c.result) return null;
 		const session = c.mcSession;
 		if (session && !c.mcFullResult) {
+			// Arrays carry no solve count, and a running flush may discard its solve.
+			if (c.mcEditRunning) return null;
 			const solve = c.result.solve_count;
 			const [ids, voltages, currents] = await Promise.all([
 				session.terminalIds(),
