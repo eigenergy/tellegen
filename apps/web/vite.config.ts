@@ -45,20 +45,14 @@ export default defineConfig({
 		// circular luma.gl modules across chunks, and set the warning threshold
 		// for this known async vendor chunk.
 		chunkSizeWarningLimit: 1200,
-		rollupOptions: {
+		rolldownOptions: {
 			output: {
-				manualChunks(id) {
-					if (
-						id.includes('/node_modules/@deck.gl/') ||
-						id.includes('/node_modules/@luma.gl/') ||
-						id.includes('/node_modules/@math.gl/') ||
-						id.includes('/node_modules/@probe.gl/')
-					) {
-						return 'deck-vendor';
-					}
-					if (id.includes('/node_modules/maplibre-gl/')) {
-						return 'map-vendor';
-					}
+				// Kit 3 sets its own codeSplitting groups, which disables manualChunks.
+				codeSplitting: {
+					groups: [
+						{ name: 'deck-vendor', test: /\/node_modules\/@(deck|luma|math|probe)\.gl\// },
+						{ name: 'map-vendor', test: /\/node_modules\/maplibre-gl\// }
+					]
 				}
 			}
 		}
