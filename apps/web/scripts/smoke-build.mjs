@@ -63,7 +63,7 @@ for (const ref of assetRefs) {
 	if (!existsSync(join(buildDir, path))) fail(`referenced asset is missing: ${path}`);
 }
 
-// The Content-Security-Policy is hash mode (see svelte.config.js): script-src
+// The Content-Security-Policy is hash mode (see vite.config.ts): script-src
 // carries no 'unsafe-inline', so every inline script must appear in the policy
 // as its own sha256. SvelteKit hashes the bootstrap it emits, but a bundler is
 // free to inject an inline script of its own that kit never saw — and that
