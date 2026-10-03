@@ -37,16 +37,22 @@ if (!existsSync(appDir)) fail('_app directory is missing');
 
 const htmlFiles = [fallbackPath, ...(existsSync(indexPath) ? [indexPath] : [])];
 const html = htmlFiles.map(read);
+// Kit 3's bootstrap hands its id to the runtime as `kit.init(<id>)`; chunks no longer name it.
+for (const [index, text] of html.entries()) {
+	const name = relative(buildDir, htmlFiles[index]);
+	const ids = new Set(svelteKitIds(text));
+	if (ids.size !== 1)
+		fail(`${name}: expected one SvelteKit bootstrap id, found ${[...ids].join(', ')}`);
+	const [id] = ids;
+	const inits = [...text.matchAll(/kit\.init\(([^)]*)\)/g)].map((match) => match[1].trim());
+	if (!inits.length || inits.some((arg) => arg !== id))
+		fail(`${name}: expected only kit.init(${id}), found ${inits.join(', ') || 'no call'}`);
+}
 const htmlIds = new Set(html.flatMap(svelteKitIds));
 if (htmlIds.size !== 1)
 	fail(`expected one SvelteKit bootstrap id, found ${[...htmlIds].join(', ')}`);
 const [bootstrapId] = htmlIds;
 
-// Kit 3 hands the id to the runtime through `kit.init`, so chunks no longer name it.
-for (const [index, text] of html.entries()) {
-	if (!text.includes(`kit.init(${bootstrapId})`))
-		fail(`${relative(buildDir, htmlFiles[index])} does not pass ${bootstrapId} to kit.init`);
-}
 for (const file of walk(appDir).filter((path) => path.endsWith('.js'))) {
 	for (const id of svelteKitIds(read(file))) {
 		if (id !== bootstrapId) fail(`runtime chunk references stale SvelteKit id ${id}`);
