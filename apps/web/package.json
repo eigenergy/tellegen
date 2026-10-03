@@ -35,5 +35,8 @@
 		"svelte-check": "^4.7.6",
 		"typescript": "^6.0.3",
 		"vite": "^8.3.1"
+	},
+	"imports": {
+		"#lib/*": "./src/lib/*"
 	}
 }
