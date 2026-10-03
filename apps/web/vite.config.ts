@@ -41,7 +41,7 @@ export default defineConfig({
 	],
 	build: {
 		// The map is loaded on the client only, but deck.gl/luma.gl are a large
-		// coupled WebGL stack. Keep them together so Rollup does not split
+		// coupled WebGL stack. Keep them together so Rolldown does not split
 		// circular luma.gl modules across chunks, and set the warning threshold
 		// for this known async vendor chunk.
 		chunkSizeWarningLimit: 1200,
