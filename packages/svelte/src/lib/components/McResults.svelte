@@ -1,19 +1,43 @@
 <script lang="ts">
-	import type { McPfResult, McComplex, DistGraph } from '@tellegen/engine';
+	import {
+		mcPfResultDetail,
+		summarizeMcPfResult,
+		type DistGraph,
+		type McComplex,
+		type McPfDetail,
+		type McPfDetailQuery,
+		type McPfResult,
+		type McPfSummary
+	} from '@tellegen/engine';
 	import { neutralTerminal } from '../multiconductor.js';
+	import type { McEditTiming } from '../state.svelte.js';
 	let {
 		result,
+		detail,
+		timing = null,
 		elapsedMs,
 		selectedBus,
 		selectedEdge,
 		graph
 	}: {
-		result: McPfResult;
+		/** A live session's summary, or a stored full result. */
+		result: McPfSummary | McPfResult;
+		/** Fetches one bus's terminals and a page of equipment ports. A full
+		 * `result` serves its own pages when this is omitted. */
+		detail?: (query: McPfDetailQuery) => Promise<McPfDetail | null>;
+		timing?: McEditTiming | null;
 		elapsedMs: number | null;
 		selectedBus: string | null;
 		selectedEdge: string | null;
 		graph: DistGraph | null;
 	} = $props();
+	const summary = $derived('terminals' in result ? summarizeMcPfResult(result) : result);
+	const load = $derived.by(() => {
+		if (detail) return detail;
+		if (!('terminals' in result)) return null;
+		const full = result;
+		return (query: McPfDetailQuery) => Promise.resolve(mcPfResultDetail(full, query));
+	});
 	let busChoice = $state('');
 	let edgeChoice = $state('');
 	const busId = $derived(
@@ -23,29 +47,48 @@
 	);
 	const bus = $derived(graph?.buses.find((b) => b.id === busId));
 	const neutralName = $derived(bus ? neutralTerminal(bus.terminals, bus.neutral_terminal) : null);
-	const neutral = $derived(
-		result.terminals.find((t) => t.bus === busId && t.terminal === neutralName)?.voltage
-	);
 	const edgeId = $derived(selectedEdge ?? edgeChoice);
-	const sourcePower = $derived(
-		result.source_reactions.reduce(
-			(sum, port) => ({
-				re: sum.re + port.power_into_network.re,
-				im: sum.im + port.power_into_network.im
-			}),
-			{ re: 0, im: 0 }
-		)
-	);
-	const passiveLoss = $derived(
-		result.element_ports
-			.filter((port) => !['load', 'generator', 'ibr'].includes(port.kind))
-			.reduce((sum, port) => sum + port.power_into_element.re, 0)
-	);
 	let search = $state('');
 	let page = $state(0);
 	const size = 20;
+	let portPage = $state(0);
+	// Only the selected bus and one equipment page are fetched; the previous
+	// rows stay visible until the page for a new operating point arrives.
+	let current = $state.raw<McPfDetail | null>(null);
+	let requested = 0;
+	$effect(() => {
+		const fetchDetail = load;
+		const query: McPfDetailQuery = {
+			bus: busId || null,
+			element: edgeId || null,
+			port_offset: portPage * size,
+			port_limit: size
+		};
+		void result;
+		if (!fetchDetail) {
+			current = null;
+			return;
+		}
+		const seq = ++requested;
+		fetchDetail(query).then(
+			(next) => {
+				if (seq !== requested || !next) return;
+				if (next.element_port_total > 0 && query.port_offset! >= next.element_port_total) {
+					portPage = 0;
+					return;
+				}
+				current = next;
+			},
+			() => {}
+		);
+	});
+	const neutral = $derived(
+		current?.terminals.find((t) => t.bus === busId && t.terminal === neutralName)?.voltage
+	);
+	const sourcePower = $derived(summary.source_power_into_network);
+	const passiveLoss = $derived(summary.passive_loss.re);
 	const terminals = $derived(
-		result.terminals.filter(
+		(current?.terminals ?? []).filter(
 			(row) =>
 				(!busId || row.bus === busId) &&
 				`${row.bus} ${row.terminal}`.toLowerCase().includes(search.toLowerCase())
@@ -54,13 +97,13 @@
 	const pageCount = $derived(Math.max(1, Math.ceil(terminals.length / size)));
 	const currentPage = $derived(Math.min(page, pageCount - 1));
 	const visible = $derived(terminals.slice(currentPage * size, (currentPage + 1) * size));
-	const ports = $derived(result.element_ports.filter((row) => !edgeId || row.element === edgeId));
-	let portPage = $state(0);
-	const portPages = $derived(Math.max(1, Math.ceil(ports.length / size)));
+	const portTotal = $derived(current?.element_port_total ?? 0);
+	const portPages = $derived(Math.max(1, Math.ceil(portTotal / size)));
 	const currentPortPage = $derived(Math.min(portPage, portPages - 1));
-	const visiblePorts = $derived(ports.slice(currentPortPage * size, (currentPortPage + 1) * size));
+	const visiblePorts = $derived(current?.element_ports ?? []);
 	const magnitude = (value: McComplex) => Math.hypot(value.re, value.im);
 	const fixed = (value: number) => (Number.isFinite(value) ? value.toFixed(3) : '-');
+	const ms = (value: number | null) => (value === null ? '-' : `${value.toFixed(1)} ms`);
 	const angle = (value: McComplex) =>
 		magnitude(value) > 1e-12 ? ((Math.atan2(value.im, value.re) * 180) / Math.PI).toFixed(2) : '-';
 </script>
@@ -68,7 +111,7 @@
 <section aria-label="AC power flow results" class="mc-results">
 	<div class="result-heading">
 		<strong>AC power flow</strong><span
-			>{result.iterations} iterations{elapsedMs === null
+			>{summary.iterations} iterations{elapsedMs === null
 				? ''
 				: `, ${Math.round(elapsedMs)} ms`}</span
 		>
@@ -76,15 +119,15 @@
 	<dl class="totals">
 		<div>
 			<dt>Status</dt>
-			<dd>{result.converged ? 'Converged' : 'Not converged'}</dd>
+			<dd>{summary.converged ? 'Converged' : 'Not converged'}</dd>
 		</div>
 		<div>
 			<dt>Voltage band</dt>
-			<dd>{result.voltage_valid ? 'Valid' : `${result.voltage_violations.length} violations`}</dd>
+			<dd>{summary.voltage_valid ? 'Valid' : `${summary.voltage_violation_count} violations`}</dd>
 		</div>
 		<div>
 			<dt>Load voltage range</dt>
-			<dd>{result.min_voltage_pu == null || result.max_voltage_pu == null ? 'n/a' : `${fixed(result.min_voltage_pu)}–${fixed(result.max_voltage_pu)} pu`}</dd>
+			<dd>{summary.min_voltage_pu == null || summary.max_voltage_pu == null ? 'n/a' : `${fixed(summary.min_voltage_pu)}–${fixed(summary.max_voltage_pu)} pu`}</dd>
 		</div>
 		<div>
 			<dt>Source P / Q</dt>
@@ -212,7 +255,7 @@
 			</table>
 		</div>
 		<div class="pagination">
-			<span>{ports.length} connections</span>{#if portPages > 1}<button
+			<span>{portTotal} connections</span>{#if portPages > 1}<button
 					disabled={currentPortPage === 0}
 					onclick={() => (portPage = currentPortPage - 1)}
 					aria-label="Previous currents">Previous</button
@@ -228,28 +271,48 @@
 		<dl>
 			<div>
 				<dt>Maximum KCL residual</dt>
-				<dd>{result.physical_kcl_residual.toExponential(3)} A</dd>
+				<dd>{summary.physical_kcl_residual.toExponential(3)} A</dd>
 			</div>
 			<div>
 				<dt>Scaled KCL residual</dt>
-				<dd>{result.scaled_kcl_residual.toExponential(3)}</dd>
+				<dd>{summary.scaled_kcl_residual.toExponential(3)}</dd>
 			</div>
 			<div>
 				<dt>Voltage change</dt>
-				<dd>{result.voltage_change.toExponential(3)} V</dd>
+				<dd>{summary.voltage_change.toExponential(3)} V</dd>
 			</div>
 			<div>
 				<dt>Matrix size</dt>
-				<dd>{result.matrix_dimension}</dd>
+				<dd>{summary.matrix_dimension}</dd>
 			</div>
 			<div>
 				<dt>Nonzero entries</dt>
-				<dd>{result.matrix_nonzeros}</dd>
+				<dd>{summary.matrix_nonzeros}</dd>
 			</div>
 			<div>
 				<dt>Factorizations</dt>
-				<dd>{result.factorization_count}</dd>
+				<dd>{summary.factorization_count}</dd>
 			</div>
+			{#if timing}
+				<div>
+					<dt>Engine solve</dt>
+					<dd>{ms(timing.engine_ms)}</dd>
+				</div>
+				<div>
+					<dt>Transfer and parse</dt>
+					<dd>
+						{ms(
+							timing.engine_ms === null
+								? null
+								: timing.round_trip_ms - timing.engine_ms + timing.parse_ms
+						)}
+					</dd>
+				</div>
+				<div>
+					<dt>Total update</dt>
+					<dd>{ms(timing.total_ms)}</dd>
+				</div>
+			{/if}
 		</dl>
 		<p>
 			Voltage is measured to ground. Net current is the injection into the network. The calculation

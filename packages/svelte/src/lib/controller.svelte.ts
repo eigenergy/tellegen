@@ -46,9 +46,14 @@ import {
 	parseDisplay,
 	parseGeo,
 	type EngineTransport,
+	mcPfResultDetail,
+	summarizeMcPfResult,
 	type McLoadPowerEdit,
+	type McPfDetail,
+	type McPfDetailQuery,
 	type McPfOptions,
 	type McPfResult,
+	type McPfSummary,
 	type McStudySnapshot,
 	type AppliedGeoCase,
 	type BrowserStudy,
@@ -2309,7 +2314,7 @@ export class Controller {
 		c: MulticonductorCase,
 		options: McPfOptions = {},
 		signal?: AbortSignal
-	): Promise<McPfResult> => {
+	): Promise<McPfSummary> => {
 		if (signal?.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
 		if (c.solving) throw new Error('A calculation is already running for this case');
 		const unavailable = c.mcPfReason;
@@ -2333,14 +2338,15 @@ export class Controller {
 		try {
 			if (retainedAtStart) input = await retainedAtStart.inputModule();
 			let snapshot = null;
-			let result: McPfResult;
+			let result: McPfSummary;
+			let fullResult: McPfResult | null = null;
 			let loadBranches = c.mcLoadBranches;
 			if (this.mcTransport.createMcPfSession) {
+				// The session answers with its summary; terminal and equipment
+				// detail is fetched only when a view asks for it.
 				nextSession = await this.mcTransport.createMcPfSession(input, options, abort.signal);
-				[result, loadBranches] = await Promise.all([
-					nextSession.result(),
-					nextSession.loadBranches()
-				]);
+				result = nextSession.initialSummary;
+				loadBranches = await nextSession.loadBranches();
 			} else {
 				snapshot = this.mcTransport.solveMcStudy
 					? await this.mcTransport.solveMcStudy(
@@ -2351,8 +2357,9 @@ export class Controller {
 							abort.signal
 						)
 					: null;
-				result =
+				fullResult =
 					snapshot?.result ?? (await this.mcTransport.solveMcModule(input, options, abort.signal));
+				result = summarizeMcPfResult(fullResult);
 			}
 			if (abort.signal.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
 			if (
@@ -2376,6 +2383,8 @@ export class Controller {
 			c.mcLoadEdits = [];
 			c.moduleJson = input;
 			c.result = result;
+			c.mcFullResult = fullResult;
+			c.mcTiming = null;
 			c.mcSnapshot = snapshot;
 			c.mcSavedAt = null;
 			c.solveMs = performance.now() - started;
@@ -2419,6 +2428,65 @@ export class Controller {
 			throw new Error('The case changed while preparing its result');
 		c.mcSnapshot = snapshot;
 		return snapshot;
+	};
+
+	/** One bus's terminals and a page of equipment ports for the displayed
+	 * operating point, from the live session or the stored full result. Null
+	 * when the operating point changed before the page arrived. */
+	multiResultDetail = async (
+		c: MulticonductorCase,
+		query: McPfDetailQuery
+	): Promise<McPfDetail | null> => {
+		const summary = c.result;
+		if (!summary) return null;
+		const session = c.mcSession;
+		if (session && !c.mcFullResult) {
+			const detail = await session.detail(query);
+			return session === c.mcSession && c.result?.solve_count === detail.solve_count
+				? detail
+				: null;
+		}
+		const full = c.mcFullResult ?? c.mcSnapshot?.result ?? null;
+		return full ? mcPfResultDetail(full, query, summary.solve_count) : null;
+	};
+
+	/** Every terminal's identity, voltage, and injected current, as numeric
+	 * arrays of interleaved `[re, im]` values. */
+	multiTerminalTable = async (
+		c: MulticonductorCase
+	): Promise<{
+		ids: Array<[string, string]>;
+		voltages: Float64Array;
+		currents: Float64Array;
+	} | null> => {
+		if (!c.result) return null;
+		const session = c.mcSession;
+		if (session && !c.mcFullResult) {
+			const solve = c.result.solve_count;
+			const [ids, voltages, currents] = await Promise.all([
+				session.terminalIds(),
+				session.terminalVoltages(),
+				session.terminalCurrents()
+			]);
+			return session === c.mcSession && c.result?.solve_count === solve
+				? { ids, voltages, currents }
+				: null;
+		}
+		const full = c.mcFullResult ?? c.mcSnapshot?.result ?? null;
+		if (!full) return null;
+		const voltages = new Float64Array(2 * full.terminals.length);
+		const currents = new Float64Array(2 * full.terminals.length);
+		full.terminals.forEach((terminal, k) => {
+			voltages[2 * k] = terminal.voltage.re;
+			voltages[2 * k + 1] = terminal.voltage.im;
+			currents[2 * k] = terminal.current_into_network.re;
+			currents[2 * k + 1] = terminal.current_into_network.im;
+		});
+		return {
+			ids: full.terminals.map((terminal) => [terminal.bus, terminal.terminal]),
+			voltages,
+			currents
+		};
 	};
 
 	/** Apply coordinates atomically to the explicitly selected conductor-resolved case. */
@@ -2473,6 +2541,8 @@ export class Controller {
 		}
 		c.mcSession?.free();
 		c.mcSession = null;
+		// Without a session, result detail comes from the saved result.
+		c.mcFullResult = snapshot?.result ?? c.mcFullResult;
 		c.mcLoadBranches = [];
 		c.mcLoadEdits = [];
 		c.moduleJson = next;
@@ -2550,16 +2620,18 @@ export class Controller {
 				const revision = c.mcEditRevision;
 				const edits = c.mcLoadEdits.map((edit) => ({ ...edit }));
 				const started = performance.now();
-				const result = await session.replaceLoadPowers(edits);
+				const summary = await session.replaceLoadPowers(edits);
 				if (session !== c.mcSession || !this.app.multiCases.includes(c)) return;
 				if (revision !== c.mcEditRevision) continue;
-				const loadBranches = await session.loadBranches();
-				if (revision !== c.mcEditRevision) continue;
-				c.mcLoadBranches = loadBranches;
-				c.result = result;
+				// One round trip: the queued edit already set the branch state
+				// this successful solve confirms. Only a failure refetches it.
+				c.result = summary;
+				c.mcFullResult = null;
 				c.mcSnapshot = null;
 				c.mcSavedAt = null;
-				c.solveMs = performance.now() - started;
+				const total = performance.now() - started;
+				c.solveMs = total;
+				c.mcTiming = session.lastTiming ? { ...session.lastTiming, total_ms: total } : null;
 				c.revisionGeneration++;
 				break;
 			}

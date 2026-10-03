@@ -47,7 +47,7 @@ const handles: EngineHandles = {
 // DOM lib, so DedicatedWorkerGlobalScope is not in scope.
 const scope = globalThis as unknown as {
   onmessage: ((ev: MessageEvent<WorkerRequest>) => void) | null;
-  postMessage(msg: WorkerResponse): void;
+  postMessage(msg: WorkerResponse, transfer?: Transferable[]): void;
   close(): void;
 };
 
@@ -57,8 +57,13 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const req = ev.data;
   if (req.op === "cancel_study_operation") { cancelledOperations.add(req.id); return; }
   try {
-    const value = await runRequest(await wasmModule(), handles, req, () => cancelledOperations.has(req.id));
-    scope.postMessage({ id: req.id, ok: true, value });
+    const mod = await wasmModule();
+    const started = performance.now();
+    const value = await runRequest(mod, handles, req, () => cancelledOperations.has(req.id));
+    const worker_ms = performance.now() - started;
+    // Numeric arrays move to the caller instead of being copied.
+    const transfer = value instanceof Float64Array ? [value.buffer] : [];
+    scope.postMessage({ id: req.id, ok: true, value, worker_ms }, transfer);
   } catch (e) {
     // A Rust panic or a failed allocation is a wasm trap, and a trapped
     // instance is not recoverable: linear memory, the allocator, and every

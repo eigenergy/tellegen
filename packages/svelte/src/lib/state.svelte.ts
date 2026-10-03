@@ -17,7 +17,9 @@ import {
 	type DistGraph,
 	type Formulation,
 	type IngestedDistCase,
+	type McPfCallTiming,
 	type McPfResult,
+	type McPfSummary,
 	type McLoadBranchState,
 	type McLoadPowerEdit,
 	type McStudySnapshot,
@@ -217,6 +219,13 @@ export type MultiCaseSummary = Omit<IngestedDistCase, 'graph'>;
 /** Geographic coordinates use the map; other positions use the diagram canvas. */
 export type MultiCoordsKind = 'geographic' | 'planar' | 'synthetic';
 
+/** Where one interactive load edit spent its time, in milliseconds: engine
+ * (solve and summary), transfer, and parsing as recorded by the session, and
+ * the total from the start of the solve until the result state is updated. */
+export interface McEditTiming extends McPfCallTiming {
+	total_ms: number;
+}
+
 /** A conductor-resolved case with retained electrical inputs and terminal results. */
 export class MulticonductorCase {
 	readonly id: string;
@@ -225,7 +234,14 @@ export class MulticonductorCase {
 	moduleJson: string | null = $state.raw<string | null>(null);
 	geoLayer: string | null = $state.raw<string | null>(null);
 	geoWarnings: string[] = $state.raw<string[]>([]);
-	result: McPfResult | null = $state.raw<McPfResult | null>(null);
+	/** Summary of the displayed operating point: from the live session after
+	 * each solve or load edit, or derived from a stored full result. */
+	result: McPfSummary | null = $state.raw<McPfSummary | null>(null);
+	/** The complete result when no live session holds the operating point: a
+	 * saved Study, a solve without sessions, or after coordinates are attached. */
+	mcFullResult: McPfResult | null = $state.raw<McPfResult | null>(null);
+	/** Latency breakdown of the latest load-edit solve. */
+	mcTiming: McEditTiming | null = $state.raw<McEditTiming | null>(null);
 	mcSnapshot: McStudySnapshot | null = $state.raw<McStudySnapshot | null>(null);
 	mcSession: BrowserMcPfSession | null = $state.raw<BrowserMcPfSession | null>(null);
 	mcLoadBranches: McLoadBranchState[] = $state.raw<McLoadBranchState[]>([]);
