@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import type {
-	AppliedMcGeoCase,
-	BrowserMcPfSession,
-	DistGraph,
-	IngestedDistCase,
-	McLoadBranchState,
-	McPfResult,
-	McStudySnapshot
+import {
+	summarizeMcPfResult,
+	type AppliedMcGeoCase,
+	type BrowserMcPfSession,
+	type DistGraph,
+	type IngestedDistCase,
+	type McLoadBranchState,
+	type McPfDetail,
+	type McPfResult,
+	type McPfSummary,
+	type McStudySnapshot
 } from '@tellegen/engine';
 import { AppState, MulticonductorCase } from '../src/lib/state.svelte.js';
 import { Controller } from '../src/lib/controller.svelte.js';
@@ -36,6 +39,10 @@ const graph: DistGraph = {
 };
 const result: McPfResult = {
 	converged: true,
+	voltage_valid: true,
+	min_voltage_pu: 0.98,
+	max_voltage_pu: 1,
+	voltage_violations: [],
 	iterations: 3,
 	factorization_count: 1,
 	matrix_dimension: 2,
@@ -55,6 +62,12 @@ const result: McPfResult = {
 	element_ports: [],
 	source_reactions: []
 };
+const summary = summarizeMcPfResult(result);
+/** The summary a live session reports after its `solve`-th solve. */
+const live = (solve: number, patch: Partial<McPfSummary> = {}): McPfSummary => ({
+	...summarizeMcPfResult(result, solve),
+	...patch
+});
 function payload(input = 'input'): IngestedDistCase {
 	return {
 		module_json: input,
@@ -121,7 +134,8 @@ describe('multiconductor calculation and coordinates', () => {
 					base_q_var: 2_000
 				}
 			];
-			const edited = { ...result, iterations: 1 };
+			const edited = live(2, { iterations: 1 });
+			const editedFull = { ...result, iterations: 1 };
 			const snapshot = (value: McPfResult): McStudySnapshot => ({
 				schema: 'tellegen-mc-pf-study',
 				version: 1,
@@ -134,13 +148,23 @@ describe('multiconductor calculation and coordinates', () => {
 				result: value
 			});
 			const replaceLoadPowers = vi.fn(async () => edited);
+			const page = (solve_count: number): McPfDetail => ({
+				solve_count,
+				terminals: result.terminals,
+				element_ports: [],
+				element_port_total: 0
+			});
+			const detail = vi.fn(async () => page(2));
 			const session = {
+				initialSummary: live(1),
+				lastTiming: { engine_ms: 3, round_trip_ms: 4, parse_ms: 0.1, payload_chars: 600 },
 				result: vi.fn(async () => result),
 				loadBranches: vi.fn(async () => loads),
 				replaceLoadPowers,
+				detail,
 				inputModule: vi.fn(async () => 'edited-input'),
 				snapshot: vi.fn(async () =>
-					snapshot(replaceLoadPowers.mock.calls.length ? edited : result)
+					snapshot(replaceLoadPowers.mock.calls.length ? editedFull : result)
 				),
 				free: vi.fn()
 			} as unknown as BrowserMcPfSession;
@@ -150,6 +174,9 @@ describe('multiconductor calculation and coordinates', () => {
 			expect(solve).not.toHaveBeenCalled();
 			expect(c.mcSession).toBe(session);
 			expect(c.mcLoadBranches).toEqual(loads);
+			// The session's own summary is the result; nothing else is fetched.
+			expect(c.result).toEqual(live(1));
+			expect(session.result).not.toHaveBeenCalled();
 
 			ctrl.queueMultiLoadPower(c, 'customer', 0, 11_000, 2_100);
 			await vi.advanceTimersByTimeAsync(200);
@@ -157,11 +184,22 @@ describe('multiconductor calculation and coordinates', () => {
 				{ load: 'customer', branch: 0, p_w: 11_000, q_var: 2_100 }
 			]);
 			expect(c.result).toEqual(edited);
+			// One round trip per edit: the queued state already holds the
+			// confirmed branch powers, so they are not fetched again.
+			expect(session.loadBranches).toHaveBeenCalledTimes(1);
+			expect(c.mcLoadBranches[0]).toMatchObject({ p_w: 11_000, q_var: 2_100 });
+			expect(session.result).not.toHaveBeenCalled();
+			expect(c.mcTiming).toMatchObject({ engine_ms: 3, payload_chars: 600 });
 			expect(c.moduleJson).toBe('input');
 			expect(c.mcSnapshot).toBeNull();
 			expect(session.snapshot).not.toHaveBeenCalled();
-			expect(await ctrl.snapshotMultiCase(c)).toEqual(snapshot(edited));
-			expect(c.mcSnapshot).toEqual(snapshot(edited));
+			// Detail pages come from the session and must describe this solve.
+			expect(await ctrl.multiResultDetail(c, { bus: 'load' })).toEqual(page(2));
+			expect(detail).toHaveBeenCalledWith({ bus: 'load' });
+			detail.mockResolvedValueOnce(page(1));
+			expect(await ctrl.multiResultDetail(c, { bus: 'load' })).toBeNull();
+			expect(await ctrl.snapshotMultiCase(c)).toEqual(snapshot(editedFull));
+			expect(c.mcSnapshot).toEqual(snapshot(editedFull));
 			expect(c.solving).toBe(false);
 		} finally {
 			vi.useRealTimers();
@@ -183,21 +221,23 @@ describe('multiconductor calculation and coordinates', () => {
 					base_q_var: 2_000
 				}
 			];
-			let finishReplace!: (value: McPfResult) => void;
+			let finishReplace!: (value: McPfSummary) => void;
 			const first = {
+				initialSummary: live(1),
 				result: vi.fn(async () => result),
 				loadBranches: vi.fn(async () => loads),
 				replaceLoadPowers: vi.fn(
-					() => new Promise<McPfResult>((resolve) => (finishReplace = resolve))
+					() => new Promise<McPfSummary>((resolve) => (finishReplace = resolve))
 				),
 				inputModule: vi.fn(async () => 'input'),
 				snapshot: vi.fn(),
 				free: vi.fn()
 			} as unknown as BrowserMcPfSession;
 			const second = {
+				initialSummary: live(1),
 				result: vi.fn(async () => result),
 				loadBranches: vi.fn(async () => loads),
-				replaceLoadPowers: vi.fn(async () => ({ ...result, iterations: 2 })),
+				replaceLoadPowers: vi.fn(async () => live(2, { iterations: 2 })),
 				inputModule: vi.fn(async () => 'input'),
 				snapshot: vi.fn(),
 				free: vi.fn()
@@ -227,7 +267,7 @@ describe('multiconductor calculation and coordinates', () => {
 			finishCreate(second);
 			await resolve;
 			expect(c.mcSession).toBe(second);
-			finishReplace(result);
+			finishReplace(live(2));
 			await vi.advanceTimersByTimeAsync(0);
 			expect(c.mcEditRunning).toBe(false);
 			expect(c.solving).toBe(false);
@@ -263,6 +303,7 @@ describe('multiconductor calculation and coordinates', () => {
 			const dead = new Error('engine worker failed');
 			let alive = true;
 			const session = {
+				initialSummary: live(1),
 				result: vi.fn(async () => result),
 				loadBranches: vi.fn(async () => {
 					if (!alive) throw dead;
@@ -296,9 +337,15 @@ describe('multiconductor calculation and coordinates', () => {
 		const { ctrl, c, solve } = host();
 		const pending = ctrl.solveMultiCase(c, { tolerance: 1e-8 });
 		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('already running');
-		expect(await pending).toEqual(result);
+		expect(await pending).toEqual(summary);
 		expect(solve).toHaveBeenCalledWith('input', { tolerance: 1e-8 }, expect.any(AbortSignal));
-		expect(c.result).toEqual(result);
+		// Without a session the full result is kept for on-demand detail.
+		expect(c.result).toEqual(summary);
+		expect(c.mcFullResult).toBe(result);
+		expect(await ctrl.multiResultDetail(c, { bus: 'load' })).toMatchObject({
+			terminals: result.terminals,
+			element_port_total: 0
+		});
 		expect(c.revisionGeneration).toBe(1);
 		expect(c.solving).toBe(false);
 	});
@@ -311,7 +358,7 @@ describe('multiconductor calculation and coordinates', () => {
 	});
 	it('keeps prior results without notices on intentional cancellation', async () => {
 		const { app, ctrl, c, solve } = host();
-		c.result = result;
+		c.result = summary;
 		let finish!: (r: McPfResult) => void;
 		solve.mockImplementationOnce(
 			() =>
@@ -324,13 +371,13 @@ describe('multiconductor calculation and coordinates', () => {
 		abort.abort();
 		finish({ ...result, iterations: 6 });
 		await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-		expect(c.result).toEqual(result);
+		expect(c.result).toEqual(summary);
 		expect(c.solving).toBe(false);
 		expect(app.error).toBeNull();
 	});
 	it('does not accept a result computed from a changed input', async () => {
 		const { ctrl, c, solve } = host();
-		c.result = result;
+		c.result = summary;
 		let finish!: (r: McPfResult) => void;
 		solve.mockImplementationOnce(
 			() =>
@@ -342,16 +389,16 @@ describe('multiconductor calculation and coordinates', () => {
 		c.moduleJson = 'changed';
 		finish({ ...result, iterations: 6 });
 		await expect(pending).rejects.toThrow('case changed');
-		expect(c.result).toEqual(result);
+		expect(c.result).toEqual(summary);
 	});
 	it('updates matched coordinates without changing electrical results and refuses a changed selection', async () => {
 		const { app, ctrl, c, apply } = host();
-		c.result = result;
+		c.result = summary;
 		await ctrl.applyMultiGeoLayers(c, [
 			{ name: 'private.geojson', layer: 'layer', diagnostics: [] }
 		]);
 		expect(c.moduleJson).toBe('with-geo');
-		expect(c.result).toEqual(result);
+		expect(c.result).toEqual(summary);
 		expect(c.view!.buses[0].lon).toBe(1000);
 		app.activeMultiId = null;
 		await expect(
@@ -392,8 +439,11 @@ describe('multiconductor calculation and coordinates', () => {
 			solution_module: 'solution-with-geo'
 		}));
 		ctrl.mcTransport.applyMcStudyGeo = applySnapshot;
+		const solved = c.result;
+		expect(solved).toEqual(summary);
 		await ctrl.applyMultiGeoLayers(c, [{ name: 'coordinates', layer: 'layer', diagnostics: [] }]);
-		expect(c.result).toBe(result);
+		expect(c.result).toBe(solved);
+		expect(c.mcFullResult).toBe(result);
 		expect(c.mcSnapshot).toMatchObject({
 			input_module: 'with-geo',
 			solution_module: 'solution-with-geo',
@@ -409,6 +459,42 @@ describe('multiconductor calculation and coordinates', () => {
 		).rejects.toThrow('No coordinates');
 		expect(c.mcSnapshot).toBe(before);
 		expect(c.moduleJson).toBe('with-geo');
+	});
+	it('keeps result detail from the saved snapshot when coordinates replace a live session', async () => {
+		const { ctrl, c } = host();
+		const editedFull = { ...result, iterations: 1 };
+		const saved: McStudySnapshot = {
+			schema: 'tellegen-mc-pf-study',
+			version: 1,
+			id: 'live',
+			title: 'Feeder',
+			formulation: 'mc_ac_pf',
+			input_module: 'edited-input',
+			solution_module: 'solution',
+			options: {},
+			result: editedFull
+		};
+		const session = {
+			initialSummary: live(1),
+			loadBranches: vi.fn(async () => []),
+			detail: vi.fn(),
+			snapshot: vi.fn(async () => saved),
+			free: vi.fn()
+		} as unknown as BrowserMcPfSession;
+		ctrl.mcTransport.createMcPfSession = vi.fn(async () => session);
+		ctrl.mcTransport.applyMcStudyGeo = vi.fn(async (snapshot: McStudySnapshot) => ({
+			...snapshot,
+			input_module: 'with-geo'
+		}));
+		await ctrl.solveMultiCase(c);
+		await ctrl.applyMultiGeoLayers(c, [{ name: 'coordinates', layer: 'layer', diagnostics: [] }]);
+		expect(session.free).toHaveBeenCalled();
+		expect(c.mcSession).toBeNull();
+		expect(c.mcFullResult).toBe(editedFull);
+		expect(await ctrl.multiResultDetail(c, { bus: 'load' })).toMatchObject({
+			terminals: editedFull.terminals
+		});
+		expect(session.detail).not.toHaveBeenCalled();
 	});
 	it('preserves raw drawing positions and full routed paths', () => {
 		const layer = JSON.stringify({

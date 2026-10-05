@@ -78,6 +78,15 @@ jobs:
           cargo test -p tellegen --test mc_load_oracle
       - name: Test the wasm adapter as it ships
         run: cargo test -p tellegen-wasm --features conic
+      # Mirrors `just mc-pf-regression`: the generated ~10,000-bus,
+      # ~32,000-terminal retained-session regression (#132). It fails only on
+      # deterministic properties (warm/fresh agreement, one factorization, no
+      # network materialization during edits, payload budgets, a flat retained
+      # heap, the calibrated shape) and reports timings without gating on them.
+      - name: Generated multiconductor session regression
+        run: |
+          cargo run -p benchmarks --profile release-py --bin mc-pf-session-bench -- \
+            --preset feeder-10k --check --out target/mc-pf-bench
 
       # release-plz's GitHub App token is deliberately absent from pull-request
       # CI. Check generated, same-repository release PRs here so API comparison

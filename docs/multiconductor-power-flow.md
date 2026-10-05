@@ -40,8 +40,10 @@ current-injection problem. Rapid changes are coalesced, and **Reset** removes
 that branch's override. The edited powers and matching result are included in
 subsequent saved snapshots. Large portable input/solution modules are
 materialized only when saving, exporting, attaching geography, or explicitly
-rebuilding the calculation; ordinary edits exchange only the edit set, result,
-and load-branch state with the worker.
+rebuilding the calculation. An ordinary edit sends the edit set to the worker
+and receives a constant-size summary in one round trip; the Studies panel
+fetches the selected bus's terminals and one page of equipment results on
+demand.
 
 The interactive API is a retained `McPfSession` in Rust and
 `createMcPfSession(moduleJson, options)` in TypeScript. A session keeps the
@@ -49,7 +51,22 @@ prepared passive network, compensation matrix, sparse LU factorization, and
 last converged voltage. `replace_load_powers`/`replaceLoadPowers` accepts the
 complete set of absolute load-branch overrides relative to the session's base
 input; an empty set restores the base powers. Failed validation or convergence
-leaves the previous solved operating point intact. Topology, taps, source
+leaves the previous solved operating point intact.
+
+Edits are an overlay on the base input. They replace the prepared load laws
+(physical nominal admittance follows the edit; the compensation reference and
+factor stay frozen) and never copy or rebuild the network. Each solve produces
+an `McPfSummary`, computed from the converged phasors with the same output
+finiteness checks as the complete `McPfResult`, which is built only on request
+(`build_result` in Rust, `result()` in TypeScript). `edited_instance`,
+`input_module_json`, and `snapshot` build the edited network on demand, and
+`materialization_count` counts how often. Detail views use `detail` (one bus
+and a page of equipment ports) and the interleaved terminal voltage and
+current arrays. The session retains the stored module's records rather than
+its JSON text, so portable output needs no re-parse and is byte-identical to
+re-parsing. `profile` and `cold_profile` time load evaluation, KCL and
+matrix-vector work, retained LU solves, and the summary, plus parse, prepare,
+and factor at creation; WASM builds time them with `performance.now`. Topology, taps, source
 voltages, load connection maps, load voltage-model parameters, and solver
 options are structural session data: changing them requires a new session.
 
@@ -63,11 +80,17 @@ cargo run -p tellegen --example mc_pf --features mc-pf -- case.json
 ```
 
 The retained-session example scales every load branch and reports cold/warm
-timings, iteration counts, and the total factorization count:
+timings and phase profiles, iteration counts, and the factorization and
+materialization counts:
 
 ```text
-cargo run --release -p tellegen --example mc_pf_session --features mc-pf -- case.json 1.001
+cargo run --profile release-py -p tellegen --example mc_pf_session --features mc-pf -- case.json 1.001
 ```
+
+The generated feeder benchmark measures latency, payload, and memory at
+32,412 to 676,530 terminals, natively and in the browser, and CI runs its
+~10,000-bus preset as a deterministic regression; see
+`docs/src/mc-pf-performance.md` and `crates/benchmarks/README.md`.
 
 The browser build exposes the same operation as `solve_mc_bmopf(text,
 options_json)`. The TypeScript transport is `solveMcBmopf(text, options)`.

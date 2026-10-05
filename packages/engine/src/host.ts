@@ -10,12 +10,22 @@ import {
   runRequest,
   type EngineHandles,
   type EngineRequest,
+  type EngineValue,
   type WorkerRequest,
   type WorkerResponse,
 } from "./protocol.js";
 
+/** An engine answer with the time the executing thread spent producing it.
+ * `engineMs` is null when the host cannot separate it from transfer time. */
+export interface TimedEngineValue {
+  value: EngineValue;
+  engineMs: number | null;
+}
+
 export interface EngineHost {
-  call(req: EngineRequest): Promise<string | null>;
+  call(req: EngineRequest): Promise<EngineValue>;
+  /** `call`, also reporting engine-side time for latency breakdowns. */
+  callTimed?(req: EngineRequest): Promise<TimedEngineValue>;
   /** Finish the current exact trial, then preserve a cancelled planning record. */
   requestStop?(): void;
   /** Stop this host's current work. Returns false for the direct host, whose
@@ -30,9 +40,32 @@ const directHandles: EngineHandles = {
   mcPfSessions: new Map(),
 };
 
+/** Run a request and report engine time, on any host. */
+export async function callTimed(
+  host: EngineHost,
+  req: EngineRequest,
+): Promise<TimedEngineValue> {
+  if (host.callTimed) return host.callTimed(req);
+  return { value: await host.call(req), engineMs: null };
+}
+
+async function runTimed(
+  handles: EngineHandles,
+  req: EngineRequest,
+  cancelled?: () => boolean,
+): Promise<TimedEngineValue> {
+  const mod = await engineModule();
+  const started = performance.now();
+  const value = await runRequest(mod, handles, req, cancelled);
+  return { value, engineMs: performance.now() - started };
+}
+
 export const directHost: EngineHost = {
   async call(req) {
     return runRequest(await engineModule(), directHandles, req);
+  },
+  callTimed(req) {
+    return runTimed(directHandles, req);
   },
   cancel() {
     return false;
@@ -41,7 +74,7 @@ export const directHost: EngineHost = {
 
 interface PendingCall {
   req: EngineRequest;
-  resolve: (value: string | null) => void;
+  resolve: (value: TimedEngineValue) => void;
   reject: (error: Error) => void;
 }
 
@@ -62,7 +95,11 @@ class WorkerHost implements EngineHost {
       const pending = this.#pending.get(ev.data.id);
       if (pending) {
         this.#pending.delete(ev.data.id);
-        if (ev.data.ok) pending.resolve(ev.data.value);
+        if (ev.data.ok)
+          pending.resolve({
+            value: ev.data.value,
+            engineMs: ev.data.worker_ms ?? null,
+          });
         else pending.reject(new Error(ev.data.error));
       }
       // The worker closes itself after a trap, so no error event follows.
@@ -88,7 +125,7 @@ class WorkerHost implements EngineHost {
       // their study handles stay valid because the caller allocated them.
       this.#failed = { forward: this.fallback, error };
       if (activeHost === this) activeHost = this.fallback;
-      for (const p of pending) this.fallback.call(p.req).then(p.resolve, p.reject);
+      for (const p of pending) callTimed(this.fallback, p.req).then(p.resolve, p.reject);
       return;
     }
     // A crash mid session loses the worker's studies; callers see their next
@@ -98,11 +135,15 @@ class WorkerHost implements EngineHost {
     for (const p of pending) p.reject(error);
   }
 
-  call(req: EngineRequest): Promise<string | null> {
+  async call(req: EngineRequest): Promise<EngineValue> {
+    return (await this.callTimed(req)).value;
+  }
+
+  callTimed(req: EngineRequest): Promise<TimedEngineValue> {
     const failed = this.#failed;
     if (failed) {
       return failed.forward
-        ? failed.forward.call(req)
+        ? callTimed(failed.forward, req)
         : Promise.reject(failed.error);
     }
     return new Promise((resolve, reject) => {
@@ -156,6 +197,7 @@ function isolatedDirectHost(): EngineHost {
   };
   return {
     async call(req) { return runRequest(await engineModule(), handles, req, () => stopped); },
+    callTimed(req) { return runTimed(handles, req, () => stopped); },
     requestStop() { stopped = true; },
     cancel() { stopped = true; return false; },
   };

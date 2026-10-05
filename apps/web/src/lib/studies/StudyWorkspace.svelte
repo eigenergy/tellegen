@@ -457,6 +457,8 @@
 					>{/if}
 				{#if multi.result}<McResults
 						result={multi.result}
+						detail={(query) => ctrl.multiResultDetail(multi, query)}
+						timing={multi.mcTiming}
 						elapsedMs={multi.solveMs}
 						selectedBus={multi.selectedBusId}
 						selectedEdge={multi.selectedEdgeId}
