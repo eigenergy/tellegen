@@ -19,6 +19,7 @@ use tellegen::geo::{
 #[cfg(feature = "sensitivity")]
 use tellegen::SolveResponse;
 
+mod alloc_stats;
 mod dist;
 mod geo;
 
@@ -335,10 +336,29 @@ pub fn solve_mc_study(
 
 /// A retained fixed-point current-injection session. The prepared network,
 /// sparse LU, and last converged voltage remain in this WASM object across
-/// load edits.
+/// load edits. Ordinary edits return the compact summary; detailed terminal
+/// and equipment values are fetched on demand.
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
 pub struct McPfSession(tellegen::McPfSession);
+
+#[cfg(all(feature = "mc-pf", target_arch = "wasm32"))]
+#[wasm_bindgen]
+extern "C" {
+    // A global in both window and worker scopes.
+    #[wasm_bindgen(js_namespace = performance, js_name = now)]
+    fn performance_now() -> f64;
+}
+
+/// Time solve phases with the host's monotonic clock; `Instant` is
+/// unavailable on wasm32-unknown-unknown.
+#[cfg(feature = "mc-pf")]
+fn install_profile_clock() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = tellegen::set_mc_pf_profile_clock(performance_now);
+    }
+}
 
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
@@ -348,6 +368,7 @@ impl McPfSession {
         ensure_input_text(module_json)?;
         ensure_input_text(options_json)?;
         install_panic_hook();
+        install_profile_clock();
         let options = if options_json.trim().is_empty() {
             tellegen::McPfOptions::default()
         } else {
@@ -358,9 +379,15 @@ impl McPfSession {
             .map_err(jserr)
     }
 
-    /// The current complete solver result.
+    /// The compact summary of the current operating point (constant size).
+    pub fn summary(&self) -> Result<String, JsError> {
+        serde_json::to_string(self.0.summary()).map_err(jserr)
+    }
+
+    /// The complete terminal and equipment result, built on demand. Its size
+    /// grows with the network; the interactive path uses `summary`/`detail`.
     pub fn result(&self) -> Result<String, JsError> {
-        serde_json::to_string(self.0.result()).map_err(jserr)
+        serde_json::to_string(&self.0.build_result().map_err(jserr)?).map_err(jserr)
     }
 
     /// Editable load branches with base and current P/Q values.
@@ -368,14 +395,53 @@ impl McPfSession {
         serde_json::to_string(&self.0.load_branches()).map_err(jserr)
     }
 
-    /// Replace the absolute branch-power edit state and solve with the retained
-    /// factorization and previous converged voltage.
+    /// Replace the absolute branch-power edit state, solve with the retained
+    /// factorization and previous converged voltage, and return the summary.
     pub fn replace_load_powers(&mut self, edits_json: &str) -> Result<String, JsError> {
         ensure_input_text(edits_json)?;
         let edits: Vec<tellegen::McLoadPowerEdit> = serde_json::from_str(edits_json)
             .map_err(|error| jserr(format!("bad multiconductor load edits JSON: {error}")))?;
-        let result = self.0.replace_load_powers(&edits).map_err(jserr)?;
-        serde_json::to_string(result).map_err(jserr)
+        let summary = self.0.replace_load_powers(&edits).map_err(jserr)?;
+        serde_json::to_string(summary).map_err(jserr)
+    }
+
+    /// Terminal identities as `[bus, terminal]` pairs in calculation order.
+    /// They never change for a session, so a host fetches them once.
+    pub fn terminal_ids(&self) -> Result<String, JsError> {
+        serde_json::to_string(self.0.terminal_ids()).map_err(jserr)
+    }
+
+    /// Terminal voltages as interleaved `[re, im]` volts (a `Float64Array`).
+    pub fn terminal_voltages(&self) -> Vec<f64> {
+        self.0.terminal_voltages()
+    }
+
+    /// Currents injected into the network as interleaved `[re, im]` amperes.
+    pub fn terminal_currents(&self) -> Vec<f64> {
+        self.0.terminal_currents()
+    }
+
+    /// One bounded page of terminal and equipment values for a bus or element.
+    pub fn detail(&self, query_json: &str) -> Result<String, JsError> {
+        ensure_input_text(query_json)?;
+        let query: tellegen::McPfDetailQuery = serde_json::from_str(query_json)
+            .map_err(|error| jserr(format!("bad multiconductor detail query JSON: {error}")))?;
+        serde_json::to_string(&self.0.detail(&query).map_err(jserr)?).map_err(jserr)
+    }
+
+    /// Phase timings of the most recent solve.
+    pub fn profile(&self) -> Result<String, JsError> {
+        serde_json::to_string(&self.0.profile()).map_err(jserr)
+    }
+
+    /// Phase timings of the session's parse, preparation, factorization, and first solve.
+    pub fn cold_profile(&self) -> Result<String, JsError> {
+        serde_json::to_string(&self.0.cold_profile()).map_err(jserr)
+    }
+
+    /// Edited networks materialized for portable output; ordinary edits build none.
+    pub fn materialization_count(&self) -> usize {
+        self.0.materialization_count()
     }
 
     /// Materialize the current edited input as PowerIO IR.
@@ -393,6 +459,32 @@ impl McPfSession {
         // separate network and would defeat retained-factor interaction.
         serde_json::to_string(&snapshot).map_err(jserr)
     }
+}
+
+#[derive(Serialize)]
+struct MemoryStats {
+    heap_live_bytes: usize,
+    heap_peak_bytes: usize,
+    linear_memory_bytes: usize,
+}
+
+/// Engine heap accounting: live and peak bytes held by the WASM allocator
+/// (peak since the last reset) and the size of linear memory, which only
+/// grows. Native builds report zeros.
+#[wasm_bindgen]
+pub fn memory_stats() -> String {
+    serde_json::to_string(&MemoryStats {
+        heap_live_bytes: alloc_stats::ALLOCATOR.live(),
+        heap_peak_bytes: alloc_stats::ALLOCATOR.peak(),
+        linear_memory_bytes: alloc_stats::linear_memory_bytes(),
+    })
+    .expect("memory stats serialize")
+}
+
+/// Start a new peak-heap window at the current live size.
+#[wasm_bindgen]
+pub fn reset_peak_memory() {
+    alloc_stats::ALLOCATOR.reset_peak();
 }
 
 /// Validate and canonicalize a saved multiconductor Study snapshot without

@@ -42,26 +42,31 @@ impl BusComponents {
 #[derive(Clone, Debug)]
 pub(crate) struct NetworkIndex {
     pub terminal_ids: Vec<(String, String)>,
-    positions: BTreeMap<(String, String), usize>,
+    /// Terminal positions by bus and then terminal name, so a lookup borrows
+    /// both names instead of allocating an owned key.
+    positions: BTreeMap<String, BTreeMap<String, usize>>,
 }
 
 impl NetworkIndex {
     pub(crate) fn new(network: &MulticonductorNetwork) -> Result<Self, String> {
         let mut terminal_ids = Vec::new();
-        let mut positions = BTreeMap::new();
+        let mut positions = BTreeMap::<String, BTreeMap<String, usize>>::new();
         for bus in network.buses() {
             if bus.terminals.is_empty() {
                 return Err(format!("bus `{}` has no terminals", bus.id));
             }
+            let terminals = positions.entry(bus.id.clone()).or_default();
             for terminal in &bus.terminals {
-                let key = (bus.id.clone(), terminal.clone());
-                if positions.insert(key.clone(), terminal_ids.len()).is_some() {
+                if terminals
+                    .insert(terminal.clone(), terminal_ids.len())
+                    .is_some()
+                {
                     return Err(format!("duplicate terminal identity {}:{terminal}", bus.id));
                 }
-                terminal_ids.push(key);
+                terminal_ids.push((bus.id.clone(), terminal.clone()));
             }
             for grounded in &bus.grounded {
-                if !positions.contains_key(&(bus.id.clone(), grounded.clone())) {
+                if !terminals.contains_key(grounded) {
                     return Err(format!(
                         "bus `{}` grounds unknown terminal `{grounded}`",
                         bus.id
@@ -75,14 +80,28 @@ impl NetworkIndex {
         })
     }
 
-    pub(crate) fn resolve(&self, identity: (&String, &str)) -> Result<usize, String> {
+    pub(crate) fn resolve(&self, identity: (&str, &str)) -> Result<usize, String> {
         self.positions
-            .get(&(identity.0.clone(), identity.1.to_owned()))
+            .get(identity.0)
+            .and_then(|terminals| terminals.get(identity.1))
             .copied()
             .ok_or_else(|| format!("unknown terminal identity {}:{}", identity.0, identity.1))
     }
+
+    /// Positions of one bus's terminals in calculation order.
+    pub(crate) fn bus_terminals(&self, bus: &str) -> Vec<usize> {
+        let mut positions: Vec<usize> = self
+            .positions
+            .get(bus)
+            .map(|terminals| terminals.values().copied().collect())
+            .unwrap_or_default();
+        positions.sort_unstable();
+        positions
+    }
 }
 
+/// Admittance accumulator used while stamping. Frozen into [`CsrMatrix`]
+/// once preparation finishes.
 #[derive(Clone, Debug)]
 pub(crate) struct StampedMatrix {
     pub(crate) values: BTreeMap<(usize, usize), Complex64>,
@@ -104,16 +123,53 @@ impl StampedMatrix {
             self.values.remove(&(row, col));
         }
     }
-    pub(crate) fn row_mul(&self, row: usize, vector: &[Complex64]) -> Complex64 {
-        self.values
-            .range((row, 0)..=(row, usize::MAX))
-            .map(|((_, c), value)| *value * vector[*c])
-            .sum()
+}
+
+/// Compressed rows of a stamped admittance. Each row keeps the stamped
+/// matrix's ascending column order, so a row product accumulates in exactly
+/// the order the former `BTreeMap` range walk did.
+#[derive(Clone, Debug)]
+pub(crate) struct CsrMatrix {
+    row_ptr: Vec<usize>,
+    cols: Vec<usize>,
+    values: Vec<Complex64>,
+}
+
+impl CsrMatrix {
+    pub(crate) fn from_stamped(stamped: StampedMatrix, n: usize) -> Self {
+        let mut row_ptr = vec![0; n + 1];
+        let mut cols = Vec::with_capacity(stamped.values.len());
+        let mut values = Vec::with_capacity(stamped.values.len());
+        for ((row, col), value) in stamped.values {
+            row_ptr[row + 1] += 1;
+            cols.push(col);
+            values.push(value);
+        }
+        for row in 0..n {
+            row_ptr[row + 1] += row_ptr[row];
+        }
+        Self {
+            row_ptr,
+            cols,
+            values,
+        }
     }
+
+    fn row(&self, row: usize) -> impl Iterator<Item = (usize, Complex64)> + '_ {
+        let range = self.row_ptr[row]..self.row_ptr[row + 1];
+        self.cols[range.clone()]
+            .iter()
+            .copied()
+            .zip(self.values[range].iter().copied())
+    }
+
+    pub(crate) fn row_mul(&self, row: usize, vector: &[Complex64]) -> Complex64 {
+        self.row(row).map(|(c, value)| value * vector[c]).sum()
+    }
+
     pub(crate) fn row_fixed_mul(&self, row: usize, fixed: &[Option<Complex64>]) -> Complex64 {
-        self.values
-            .range((row, 0)..=(row, usize::MAX))
-            .filter_map(|((_, c), value)| fixed[*c].map(|v| *value * v))
+        self.row(row)
+            .filter_map(|(c, value)| fixed[c].map(|v| value * v))
             .sum()
     }
 }
@@ -157,13 +213,35 @@ impl DenseMatrix {
 #[derive(Debug)]
 pub(crate) struct PreparedNetwork {
     pub(crate) index: NetworkIndex,
-    pub(crate) passive: StampedMatrix,
-    pub(crate) yref: StampedMatrix,
+    pub(crate) passive: CsrMatrix,
+    pub(crate) yref: CsrMatrix,
     pub(crate) fixed: Vec<Option<Complex64>>,
     pub(crate) unknown: Vec<usize>,
+    /// Position of each terminal in `unknown`, or `usize::MAX` when fixed.
+    pub(crate) unknown_pos: Vec<usize>,
+    /// The fixed-terminal elimination RHS. The compensation reference is
+    /// frozen, so this is constant for the life of the factorization.
+    pub(crate) source_rhs: Vec<Complex64>,
+    /// Source reaction terminals in network source and terminal order.
+    pub(crate) source_terminals: Vec<SourceTerminal>,
     pub(crate) loads: Vec<BranchLoad>,
     pub(crate) elements: Vec<PreparedElement>,
     pub(crate) factor: Option<RetainedComplexLu>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SourceTerminal {
+    pub(crate) source: String,
+    pub(crate) terminal: String,
+    pub(crate) index: usize,
+}
+
+/// Wall time spent assembling and factoring a prepared network, in
+/// milliseconds of the profile clock.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct PrepareTiming {
+    pub(crate) assemble_ms: f64,
+    pub(crate) factor_ms: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -176,6 +254,13 @@ pub(crate) struct PreparedElement {
 
 impl PreparedNetwork {
     pub(crate) fn prepare(instance: &McAcPfInstance) -> Result<Self, String> {
+        Self::prepare_timed(instance).map(|(prepared, _)| prepared)
+    }
+
+    pub(crate) fn prepare_timed(
+        instance: &McAcPfInstance,
+    ) -> Result<(Self, PrepareTiming), String> {
+        let started = super::profile_now();
         let network = instance.network();
         if !instance.isolated_terminals().is_empty() {
             return Err(
@@ -197,6 +282,22 @@ impl PreparedNetwork {
         }
         let index = NetworkIndex::new(network)?;
         let n = index.terminal_ids.len();
+        // Name lookups keep the first matching row, exactly as the linear
+        // searches they replace did, without their quadratic cost.
+        let mut source_rows = BTreeMap::<&str, &powerio_dist::VoltageSource>::new();
+        for source in network.sources() {
+            source_rows.entry(source.name.as_str()).or_insert(source);
+        }
+        let mut line_codes = BTreeMap::<String, &DistLineCode>::new();
+        for code in network.line_codes() {
+            line_codes
+                .entry(code.name.to_ascii_lowercase())
+                .or_insert(code);
+        }
+        let mut load_rows = BTreeMap::<&str, &powerio_dist::DistLoad>::new();
+        for load in network.loads() {
+            load_rows.entry(load.name.as_str()).or_insert(load);
+        }
         let mut passive = StampedMatrix::zeros(n);
         let mut yref = StampedMatrix::zeros(n);
         let mut elements = Vec::new();
@@ -231,10 +332,9 @@ impl PreparedNetwork {
                         source.source
                     ));
                 }
-                let source_row = network
-                    .sources()
-                    .iter()
-                    .find(|s| s.name == source.source)
+                let source_row = source_rows
+                    .get(source.source.as_str())
+                    .copied()
                     .ok_or_else(|| {
                         format!(
                             "instance source `{}` is absent from its network",
@@ -273,10 +373,9 @@ impl PreparedNetwork {
         }
 
         for line in network.lines() {
-            let code = network
-                .line_codes()
-                .iter()
-                .find(|c| c.name.eq_ignore_ascii_case(&line.linecode))
+            let code = line_codes
+                .get(&line.linecode.to_ascii_lowercase())
+                .copied()
                 .ok_or_else(|| {
                     format!(
                         "line `{}` references unresolved linecode `{}`",
@@ -453,13 +552,9 @@ impl PreparedNetwork {
             .loads()
             .iter()
             .map(|l| {
-                let source = network
-                    .loads()
-                    .iter()
-                    .find(|x| x.name == l.load)
-                    .ok_or_else(|| {
-                        format!("instance load `{}` is absent from its network", l.load)
-                    })?;
+                let source = load_rows.get(l.load.as_str()).copied().ok_or_else(|| {
+                    format!("instance load `{}` is absent from its network", l.load)
+                })?;
                 let mut effective = source.clone();
                 // The instance is the calculation boundary.  Its prescribed
                 // operating powers may be edited without mutating the network.
@@ -500,27 +595,62 @@ impl PreparedNetwork {
                 (r != usize::MAX && c != usize::MAX && value.norm() > 0.0).then_some((r, c, value))
             })
             .collect::<Vec<_>>();
+        let mut instance_sources = BTreeMap::<&str, &powerio_prob::PrescribedSourceVoltage>::new();
+        for source in instance.sources() {
+            instance_sources
+                .entry(source.source.as_str())
+                .or_insert(source);
+        }
+        let mut source_terminals = Vec::new();
+        for source_row in network.sources() {
+            let source = instance_sources
+                .get(source_row.name.as_str())
+                .ok_or_else(|| {
+                    format!(
+                        "instance source `{}` is absent from its network",
+                        source_row.name
+                    )
+                })?;
+            for terminal in &source.terminals {
+                source_terminals.push(SourceTerminal {
+                    source: source.source.clone(),
+                    terminal: terminal.clone(),
+                    index: index.resolve((&source_row.bus, terminal))?,
+                });
+            }
+        }
+        let assembled = super::profile_now();
         let factor = if unknown.is_empty() {
             None
         } else {
             Some(RetainedComplexLu::factor(unknown.len(), &triplets)?)
         };
-        Ok(Self {
+        let factored = super::profile_now();
+        let mut prepared = Self {
             index,
-            passive,
-            yref,
+            passive: CsrMatrix::from_stamped(passive, n),
+            yref: CsrMatrix::from_stamped(yref, n),
             fixed,
             unknown,
+            unknown_pos: position,
+            source_rhs: Vec::new(),
+            source_terminals,
             loads,
             elements,
             factor,
-        })
+        };
+        prepared.source_rhs = prepared.eliminate_fixed_terminals();
+        let timing = PrepareTiming {
+            assemble_ms: super::elapsed_ms(started, assembled),
+            factor_ms: super::elapsed_ms(assembled, factored),
+        };
+        Ok((prepared, timing))
     }
 
     pub(crate) fn fixed_voltage_vector(&self) -> Vec<Complex64> {
         self.fixed.iter().map(|x| x.unwrap_or_default()).collect()
     }
-    pub(crate) fn source_rhs(&self) -> Vec<Complex64> {
+    fn eliminate_fixed_terminals(&self) -> Vec<Complex64> {
         // The retained matrix is Ypassive + Yref and compensation is evaluated
         // on the full voltage vector.  Eliminate fixed terminals with the full
         // Yuf block so the fixed Yref coupling cancels exactly in the RHS.

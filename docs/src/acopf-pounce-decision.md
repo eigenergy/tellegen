@@ -3,6 +3,30 @@
 Status: accepted for feasibility work; distribution and product capability are
 not yet approved. Recorded 24 September 2026.
 
+## Main integration check — 5 October 2026
+
+The feasibility branch includes main at `0d08c55`, including compact
+multiconductor PF session responses, the generated feeder regression and the
+additional center-tap reference cases. The `just ci` aggregate retains both
+`acopf-probe` and `mc-pf-regression`, matching the Rust workflow. The existing
+multiconductor PF sessions remain independent of this opt-in NLP boundary.
+
+The POUNCE revision and release/restoration/distribution gates are unchanged.
+The latest tagged release checked for this refresh is v0.12.0; the pinned
+revision is 35 commits ahead of that tag. Native AC OPF compilation/solve and
+the unpublished multiconductor IVR work remain separate layers of the stack.
+
+Local validation for this refresh passed the HS071 probe (`17.014017274`,
+maximum source-equation violation `2.484e-8`), PowerIO source check, EPL feature
+isolation and formatting. Workspace tests excluding the Python extension passed
+374 tests (2 existing ignores), the independent `mc-pf` suite passed 160
+(1 ignore), the conic engine suite passed 312 (2 ignores), and the conic WASM
+adapter passed 40. Strict Clippy passed for the shipping Rust adapters plus the
+opt-in probe and separately for Python with `extension-module`. The generated
+`feeder-10k --check` regression passed all deterministic checks; timings are not
+acceptance thresholds. Cross-platform, JavaScript and distribution checks remain
+in the GitHub workflows.
+
 ## Decision
 
 Tellegen will use POUNCE as its first nonlinear solver for canonical balanced

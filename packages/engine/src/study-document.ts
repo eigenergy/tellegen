@@ -18,7 +18,7 @@ async function callIsolated(request: Parameters<EngineHost["call"]>[0], signal?:
   try {
     const result = await host.call(request);
     if (!cooperative) signal?.throwIfAborted();
-    if (result === null) throw new Error("The engine returned no Study result");
+    if (typeof result !== "string") throw new Error("The engine returned no Study result");
     return result;
   } finally {
     signal?.removeEventListener("abort", cancel);

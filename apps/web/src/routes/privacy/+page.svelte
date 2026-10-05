@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import SeoHead from '$lib/components/SeoHead.svelte';
-	import { browserAnalytics } from '$lib/analytics/client.js';
+	import SeoHead from '#lib/components/SeoHead.svelte';
+	import { browserAnalytics } from '#lib/analytics/client.js';
 	let optedOut = $state(true);
 	let browserBlocked = $state(false);
 	let ready = $state(false);
