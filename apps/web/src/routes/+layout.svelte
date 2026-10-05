@@ -7,12 +7,12 @@
 	import '@tellegen/svelte/styles.css';
 	import { TellegenProvider } from '@tellegen/svelte';
 	import Analytics from '#lib/analytics/Analytics.svelte';
-	import { env } from '$env/dynamic/public';
+	import { PUBLIC_TELLEGEN_ACOPF_WASM_URL } from '$app/env/public';
 
 	let { children } = $props();
 </script>
 
 <Analytics />
-<TellegenProvider acOpfWasmUrl={env.PUBLIC_TELLEGEN_ACOPF_WASM_URL || undefined}>
+<TellegenProvider acOpfWasmUrl={PUBLIC_TELLEGEN_ACOPF_WASM_URL}>
 	{@render children()}
 </TellegenProvider>
