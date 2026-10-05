@@ -1,5 +1,5 @@
 // Generated from Rust by study_contract and generate-study-contracts.mjs.
-// Source SHA256: 0873a4e79ae5eede1a044e7ca730d1532eefe9e424c747fffc54c5b8d70b9693
+// Source SHA256: e6aab1a83bc096ec5b80cae83be7a229ad267c564bd1e445bdb5a524aca35ca8
 
 export type ArtifactKind = "powerio_ir" | "geo_layer" | "evidence";
 
@@ -69,7 +69,7 @@ export type GoalRevision = { "anchor_state": string; "decisions": DecisionSpace;
 
 export type Intervention = "branch_rating" | "active_demand";
 
-export type Iterations = (Array<SolveIteration>) | ({ "count": number; "residual": number; });
+export type Iterations = (Array<SolveIteration>) | ({ "count": number; "residual": number; }) | ({ "model_fingerprint": string; "nlp_iterations": number; "primal_residual": number; "solver_constraint_violation": number; "solver_kkt_error": number; "solver_status": string; });
 
 export type ModelDetails = { "approximations": Array<CostApproximation>; "method": CostPreparation; "model": string; "quantity": string; "source": string; "units": string; };
 

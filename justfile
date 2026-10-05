@@ -52,8 +52,8 @@ mc-pf-test:
 conic-test:
     cargo test -p tellegen --features conic
 
-# Feasibility gate for the opt-in EPL-2.0 nonlinear backend. This is HS071,
-# not a claim that Tellegen's canonical AC OPF model exists yet.
+# Low-level smoke test for the opt-in EPL-2.0 nonlinear backend. The canonical
+# AC OPF model and solve path have their own feature-gated regression tests.
 acopf-probe:
     cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
 

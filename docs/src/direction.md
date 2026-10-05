@@ -55,14 +55,15 @@ numerics are therefore written in Rust and compiled to wasm.
 - **DC sensitivities (the dLMP/dd columns): shipped.** One linear solve
   against the KKT factorization at the active set, reimplemented in Rust on
   faer.
-- **AC power flow (Newton with sparse LU): feasible.** faer provides sparse
-  LU under wasm. There is no shipped precedent, and faer's wasm sparse path
-  has an open crash report, so it needs validation on real case matrices
-  first.
-- **AC OPF (nonconvex): the holdout.** There is no Ipopt in wasm. The
-  candidates are a second order cone relaxation through Clarabel (shipped as
-  SOCWR) and a Rust nonlinear solver (thin ground). Until one matures, AC OPF
-  is the reason the backend exists.
+- **AC power flow (Newton with sparse LU): shipped.** The browser package runs
+  the same polar Newton formulation as the native engine and exposes exact
+  commit plus Newton sensitivities.
+- **AC OPF (nonconvex): native development capability.** The non-default
+  `acopf` feature now compiles and solves PowerIO's exact polar model through
+  POUNCE, validates the primal solution independently, and emits a portable
+  solution. It is not enabled by a shipping adapter. Browser delivery still
+  needs a dedicated WASI worker, while native distribution awaits solver,
+  license, and release gates.
 
 The browser owns the whole DC pipeline: parse, solve, differentiate, render
 ([issue #2](https://github.com/eigenergy/tellegen/issues/2)).
@@ -90,11 +91,10 @@ deployment the default. The DC pipeline in the browser has landed, including
 the Safari sensitivity gap
 ([issue #8](https://github.com/eigenergy/tellegen/issues/8)).
 
-Long term: AC power flow in the browser once faer's wasm sparse path is
-validated. AC OPF moves to the browser when a wasm nonlinear or cone path is
-solid, and stays in the backend until then. WebGPU when deck.gl's backend
-gains picking and basemap support. Synthetic grid generation pairs with in
-browser compute.
+Long term: graduate the native AC OPF feature after its solver and distribution
+gates, then add browser AC OPF through a dedicated WASI worker with hard
+cancellation. WebGPU follows when deck.gl's backend gains picking and basemap
+support. Synthetic grid generation pairs with in-browser compute.
 
 ## Sources
 
