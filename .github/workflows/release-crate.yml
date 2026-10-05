@@ -54,6 +54,12 @@ jobs:
         run: release-plz update
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      # release-plz excludes this unpublished adapter. Keep the wheel on the
+      # engine version without re-resolving or updating any dependencies.
+      - name: Synchronize the Python wheel version
+        run: |
+          python3 .github/scripts/sync_python_version.py
+          cargo metadata --locked --format-version 1 > /dev/null
       - name: Validate and seal version patch
         id: patch
         run: |

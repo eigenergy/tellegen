@@ -166,9 +166,9 @@ that moves both publishes the engine first.
 ### Crate
 
 `tellegen` is the only crate that publishes to crates.io. `tellegen-wasm`,
-`tellegen-server`, `tellegen-cli`, and `benchmarks` carry `publish = false`, and
-the release-plz workspace defaults to `release = false`. A new crate needs an
-explicit package opt-in.
+`tellegen-server`, `tellegen-cli`, `tellegen-py`, and `benchmarks` carry
+`publish = false`, and the release-plz workspace defaults to `release = false`.
+A new crate needs an explicit package opt-in.
 
 On a push to `main`, `.github/workflows/release-crate.yml` keeps a pull request
 open that bumps the version. Merge it to run the gates, continue the existing
@@ -180,7 +180,18 @@ commit. release-plz obtains its short-lived crates.io credential directly from
 OIDC.
 
 The crate update uses the same sealed-patch privilege boundary as package
-versioning. Its fixed `release-plz-main` branch is intentional: with
+versioning. After `release-plz update`, an unprivileged synchronization step
+sets the Python wheel's package version and its local `Cargo.lock` entry to the
+engine version, without resolving new dependencies. `cargo metadata --locked`
+then checks the resulting workspace. The patch must contain the engine manifest,
+engine changelog, and lockfile; the only additional permitted path is
+`crates/tellegen-py/Cargo.toml`, and only its package version may change. The
+validator checks that both manifests and both lock entries agree before the
+patch is sealed and again after it is applied, before minting the App token.
+An already aligned wheel needs no manifest edit, and an update with no new
+release stays a no-op. This synchronization does not publish a wheel to PyPI.
+
+Its fixed `release-plz-main` branch is intentional: with
 `release_always = false`, release-plz recognizes a release commit by the
 `release-plz-` head prefix. Merge this generated pull request with a normal
 merge commit, not squash, so its release commit remains unambiguous if another
