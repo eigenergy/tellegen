@@ -423,7 +423,7 @@ fn profile_json(profile: &McPfProfile) -> Value {
 fn run(args: &Args) -> Result<(), String> {
     let options = McPfOptions::default();
     let mut notes = vec![
-        "replace_load_powers is the complete ordinary edit: validation, prepared-law replacement, warm fixed-point solve, and the compact summary; the network is never copied".to_owned(),
+        "replace_load_powers_summary is the complete ordinary edit: validation, prepared-law replacement, warm fixed-point solve, and the compact summary; the network is never copied".to_owned(),
         "summary_json_* is serde_json::to_string(&McPfSummary), the payload the WASM adapter returns per edit".to_owned(),
         "legacy_result_* is the complete McPfResult and its JSON, which the pre-#132 session built and returned on every edit; it is measured once, after the edits, for comparison".to_owned(),
     ];
@@ -1048,7 +1048,7 @@ fn markdown(report: &Value) -> String {
     let size = |value: f64| mib(value);
     rows.push(("single-branch edits".into(), count("/edits/count")));
     rows.push(summary(
-        "replace_load_powers median / p95 / max",
+        "replace_load_powers_summary median / p95 / max",
         "/edits/replace_load_powers_ms",
         &plain_ms,
     ));
