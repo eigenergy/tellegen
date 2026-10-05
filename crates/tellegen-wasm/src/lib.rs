@@ -401,7 +401,7 @@ impl McPfSession {
         ensure_input_text(edits_json)?;
         let edits: Vec<tellegen::McLoadPowerEdit> = serde_json::from_str(edits_json)
             .map_err(|error| jserr(format!("bad multiconductor load edits JSON: {error}")))?;
-        let summary = self.0.replace_load_powers(&edits).map_err(jserr)?;
+        let summary = self.0.replace_load_powers_summary(&edits).map_err(jserr)?;
         serde_json::to_string(summary).map_err(jserr)
     }
 

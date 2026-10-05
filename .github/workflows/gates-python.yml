@@ -25,8 +25,8 @@ jobs:
           persist-credentials: false
 
       # The wheel's version is read from crates/tellegen-py/Cargo.toml, which
-      # release-plz does not bump (release-plz.toml). Refuse to build a wheel
-      # that claims a different solver version than the engine crate it wraps.
+      # the release workflow synchronizes after release-plz updates the engine.
+      # Refuse to build a wheel that claims a different solver version.
       - name: Check the wheel version matches the engine crate
         run: |
           engine=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/tellegen/Cargo.toml | head -1)
