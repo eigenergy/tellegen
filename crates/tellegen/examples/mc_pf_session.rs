@@ -3,13 +3,17 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run --release -p tellegen --example mc_pf_session --features mc-pf -- case.json [scale]
+//! cargo run --profile release-py -p tellegen --example mc_pf_session --features mc-pf -- case.json [scale]
 //! ```
+//!
+//! The generated feeder benchmark (`cargo run -p benchmarks --profile
+//! release-py --bin mc-pf-session-bench`) reports the full latency, payload,
+//! and memory breakdown; this example times one case file.
 
 use std::{env, io::Write, path::PathBuf, process::ExitCode, time::Instant};
 
 use serde::Serialize;
-use tellegen::{parse_bmopf_instance, McLoadPowerEdit, McPfOptions, McPfSession};
+use tellegen::{parse_bmopf_instance, McLoadPowerEdit, McPfOptions, McPfProfile, McPfSession};
 
 #[derive(Serialize)]
 struct SessionTiming {
@@ -18,8 +22,11 @@ struct SessionTiming {
     initial_iterations: usize,
     update_iterations: usize,
     factorization_count: usize,
+    materialization_count: usize,
     initial_ms: f64,
     update_ms: f64,
+    initial_profile: McPfProfile,
+    update_profile: McPfProfile,
 }
 
 fn run(path: PathBuf, scale: f64) -> Result<(), String> {
@@ -32,7 +39,7 @@ fn run(path: PathBuf, scale: f64) -> Result<(), String> {
     let started = Instant::now();
     let mut session = McPfSession::new(instance, McPfOptions::default())?;
     let initial_ms = started.elapsed().as_secs_f64() * 1_000.0;
-    let initial_iterations = session.result().iterations;
+    let initial_iterations = session.summary().iterations;
     let branches = session.load_branches();
     let edits = branches
         .iter()
@@ -53,8 +60,11 @@ fn run(path: PathBuf, scale: f64) -> Result<(), String> {
         initial_iterations,
         update_iterations,
         factorization_count: session.factorization_count(),
+        materialization_count: session.materialization_count(),
         initial_ms,
         update_ms,
+        initial_profile: session.cold_profile(),
+        update_profile: session.profile(),
     };
     let output = serde_json::to_vec_pretty(&timing).map_err(|error| error.to_string())?;
     let mut stdout = std::io::stdout().lock();

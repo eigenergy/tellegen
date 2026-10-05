@@ -78,6 +78,15 @@ jobs:
           cargo test -p tellegen --test mc_load_oracle
       - name: Test the wasm adapter as it ships
         run: cargo test -p tellegen-wasm --features conic
+      # Mirrors `just mc-pf-regression`: the generated ~10,000-bus,
+      # ~32,000-terminal retained-session regression (#132). It fails only on
+      # deterministic properties (warm/fresh agreement, one factorization, no
+      # network materialization during edits, payload budgets, a flat retained
+      # heap, the calibrated shape) and reports timings without gating on them.
+      - name: Generated multiconductor session regression
+        run: |
+          cargo run -p benchmarks --profile release-py --bin mc-pf-session-bench -- \
+            --preset feeder-10k --check --out target/mc-pf-bench
 
       # release-plz's GitHub App token is deliberately absent from pull-request
       # CI. Check generated, same-repository release PRs here so API comparison
@@ -87,7 +96,7 @@ jobs:
           github.event_name == 'pull_request' &&
           startsWith(github.head_ref, 'release-plz-') &&
           github.event.pull_request.head.repo.full_name == github.repository
-        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-semver-checks@0.48
           fallback: none

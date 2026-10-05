@@ -23,8 +23,9 @@ use num_complex::Complex64;
 use powerio_prob::solution::{McAcPfSolution, Residuals, Termination};
 use powerio_prob::McAcPfInstance;
 use serde::{Deserialize, Serialize};
+use std::cell::Cell;
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use network::PreparedNetwork;
 
@@ -68,7 +69,7 @@ impl Default for McPfOptions {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McComplex {
     pub re: f64,
@@ -177,66 +178,256 @@ pub struct McLoadBranchState {
     pub base_q_var: f64,
 }
 
+/// The compact, constant-size view of one converged operating point.
+///
+/// Scalar fields carry the same names and values as [`McPfResult`]; the
+/// aggregates are the sums a results summary displays. It is computed from
+/// the converged phasors without building per-terminal or per-port records,
+/// so its cost and size do not depend on how the network is displayed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct McPfSummary {
+    pub converged: bool,
+    /// Whether every load branch lies inside the configured normal voltage band.
+    pub voltage_valid: bool,
+    pub min_voltage_pu: Option<f64>,
+    pub max_voltage_pu: Option<f64>,
+    /// Number of load branches outside the normal voltage band.
+    pub voltage_violation_count: usize,
+    pub iterations: usize,
+    pub factorization_count: usize,
+    pub matrix_dimension: usize,
+    pub matrix_nonzeros: usize,
+    pub voltage_change: f64,
+    pub physical_kcl_residual: f64,
+    pub scaled_kcl_residual: f64,
+    pub terminal_count: usize,
+    pub element_port_count: usize,
+    /// Sum of every source reaction's `V * conj(I_into_network)`, VA.
+    pub source_power_into_network: McComplex,
+    /// Sum of `V * conj(I_into_element)` over the ports of passive equipment
+    /// (lines, shunts, capacitors, transformers), VA.
+    pub passive_loss: McComplex,
+    /// Solves performed by the producing session; detail views echo it so a
+    /// reader can discard values from an older operating point.
+    pub solve_count: usize,
+}
+
+/// Where one solve spent its time, in milliseconds of the profile clock.
+///
+/// A phase that did not run is zero. `timed` is false when no clock is
+/// available (a WASM build without an injected clock), in which case every
+/// duration is zero.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct McPfProfile {
+    pub timed: bool,
+    /// Parsing the stored module (cold start from a module only).
+    pub parse_ms: f64,
+    /// Terminal indexing, stamping, and load preparation (cold start only).
+    pub prepare_ms: f64,
+    /// Sparse assembly and numeric LU factorization (cold start only).
+    pub factor_ms: f64,
+    /// Load and device current evaluation.
+    pub load_evaluation_ms: f64,
+    /// Compensated right hand sides and KCL residual products.
+    pub kcl_and_matvec_ms: f64,
+    /// Retained sparse LU solves.
+    pub linear_solve_ms: f64,
+    /// Summary aggregation and output finiteness checks.
+    pub summary_ms: f64,
+    pub total_ms: f64,
+    pub iterations: usize,
+    pub linear_solves: usize,
+}
+
+/// A bounded request for the detailed terminal and equipment values of a
+/// session's current operating point.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(default)]
+pub struct McPfDetailQuery {
+    /// Return the terminals of this bus.
+    pub bus: Option<String>,
+    /// Return only the ports of equipment with this name.
+    pub element: Option<String>,
+    /// First equipment port to return, in [`McPfResult::element_ports`] order.
+    pub port_offset: usize,
+    /// Number of equipment ports to return; zero selects the default page.
+    pub port_limit: usize,
+}
+
+impl McPfDetailQuery {
+    pub const DEFAULT_PORT_LIMIT: usize = 20;
+    pub const MAX_PORT_LIMIT: usize = 500;
+}
+
+/// One page of detailed values, in the same records as [`McPfResult`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct McPfDetail {
+    pub solve_count: usize,
+    pub terminals: Vec<McTerminalResult>,
+    pub element_ports: Vec<McElementPort>,
+    /// Ports matching the query before paging.
+    pub element_port_total: usize,
+}
+
+static PROFILE_CLOCK: OnceLock<fn() -> f64> = OnceLock::new();
+
+/// Install the millisecond clock used for solve profiles. Native builds use a
+/// monotonic clock by default; a WASM host injects one (for example
+/// `performance.now`). Returns false if a clock was already installed.
+pub fn set_mc_pf_profile_clock(clock: fn() -> f64) -> bool {
+    PROFILE_CLOCK.set(clock).is_ok()
+}
+
+pub(crate) fn profile_now() -> Option<f64> {
+    match PROFILE_CLOCK.get() {
+        Some(clock) => Some(clock()),
+        None => default_clock(),
+    }
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn default_clock() -> Option<f64> {
+    static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
+    Some(
+        EPOCH
+            .get_or_init(std::time::Instant::now)
+            .elapsed()
+            .as_secs_f64()
+            * 1_000.0,
+    )
+}
+
+// `Instant` panics on wasm32-unknown-unknown; profiles stay untimed there
+// unless the host installs a clock.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn default_clock() -> Option<f64> {
+    None
+}
+
+pub(crate) fn elapsed_ms(start: Option<f64>, end: Option<f64>) -> f64 {
+    match (start, end) {
+        (Some(start), Some(end)) => (end - start).max(0.0),
+        _ => 0.0,
+    }
+}
+
 /// A prepared fixed-point current-injection solve session.
 ///
 /// The passive network, compensation admittance, sparse LU, and last
 /// converged voltage are retained. Replacing load powers changes only the
-/// physical current laws, so subsequent solves reuse the exact same factor.
+/// prepared physical current laws: the base network and instance are never
+/// copied or rebuilt by an ordinary edit, and subsequent solves reuse the
+/// exact same factor. The edited network is materialized only when a
+/// portable input, snapshot, or rebuild is requested.
 #[derive(Debug)]
 pub struct McPfSession {
-    instance: McAcPfInstance,
+    base_instance: McAcPfInstance,
     prepared: PreparedNetwork,
     options: McPfOptions,
-    module_json: Option<String>,
+    /// The stored module's records (descriptors, diagnostics, history) with
+    /// its value detached; the value is supplied again at materialization.
+    module: Option<powerio::PioModule<()>>,
     module_holds_network: bool,
     base_power: Vec<Vec<Complex64>>,
-    voltage: Vec<Complex64>,
-    result: McPfResult,
+    load_index: Result<BTreeMap<String, usize>, String>,
+    state: FixedPoint,
+    summary: McPfSummary,
+    profile: McPfProfile,
+    cold_profile: McPfProfile,
     solve_count: usize,
+    materializations: Cell<usize>,
 }
 
 impl McPfSession {
     /// Prepare, factor, and solve the initial operating point once.
     pub fn new(instance: McAcPfInstance, options: McPfOptions) -> Result<Self, String> {
         validate_options(&options)?;
-        let prepared = PreparedNetwork::prepare(&instance)?;
+        let started = profile_now();
+        let (prepared, timing) = PreparedNetwork::prepare_timed(&instance)?;
         let base_power = prepared
             .loads
             .iter()
             .map(|load| load.power.clone())
             .collect();
-        let (result, voltage) = solve_prepared(&instance, &prepared, &options, None)?;
+        let mut load_index = BTreeMap::new();
+        let mut duplicate = None;
+        for (index, load) in prepared.loads.iter().enumerate() {
+            if load_index.insert(load.name.clone(), index).is_some() && duplicate.is_none() {
+                duplicate = Some(format!("duplicate prepared load identity `{}`", load.name));
+            }
+        }
+        let mut profile = McPfProfile {
+            prepare_ms: timing.assemble_ms,
+            factor_ms: timing.factor_ms,
+            ..McPfProfile::default()
+        };
+        let state = iterate(&prepared, &options, None, &mut profile)?;
+        let summarized = profile_now();
+        let summary = summarize(&prepared, &options, &state, 1)?;
+        let finished = profile_now();
+        profile.summary_ms = elapsed_ms(summarized, finished);
+        profile.total_ms = elapsed_ms(started, finished);
+        profile.timed = started.is_some();
         Ok(Self {
-            instance,
+            base_instance: instance,
             prepared,
             options,
-            module_json: None,
+            module: None,
             module_holds_network: false,
             base_power,
-            voltage,
-            result,
+            load_index: match duplicate {
+                Some(error) => Err(error),
+                None => Ok(load_index),
+            },
+            state,
+            summary,
+            profile,
+            cold_profile: profile,
             solve_count: 1,
+            materializations: Cell::new(0),
         })
     }
 
     /// Parse a stored PowerIO multiconductor module and create a retained session.
     pub fn from_module_json(module_json: &str, options: McPfOptions) -> Result<Self, String> {
-        let module = crate::ir::deserialize_module(module_json)?;
+        let started = profile_now();
+        let mut module = crate::ir::deserialize_module(module_json)?;
         input::validate_mc_module(&module)?;
         let module_holds_network =
             matches!(module.value(), powerio::PioValue::MulticonductorNetwork(_));
-        let mut session = Self::new(input::instance_from_value(module.value())?, options)?;
-        session.module_json = Some(module_json.to_owned());
+        let instance = input::instance_from_value(module.value())?;
+        let parsed = profile_now();
+        let mut session = Self::new(instance, options)?;
+        // Every materialization replaces the value, which releases the
+        // retained source bytes and value source map. Do that once here so
+        // the session does not hold a second copy of the stored document.
+        let _ = module.value_mut();
+        session.module = Some(module.map_value(|_| ()));
         session.module_holds_network = module_holds_network;
+        session.cold_profile.parse_ms = elapsed_ms(started, parsed);
+        session.cold_profile.total_ms += session.cold_profile.parse_ms;
+        session.profile = session.cold_profile;
         Ok(session)
     }
 
-    pub fn result(&self) -> &McPfResult {
-        &self.result
+    /// The compact summary of the current operating point.
+    pub fn summary(&self) -> &McPfSummary {
+        &self.summary
     }
 
-    pub fn instance(&self) -> &McAcPfInstance {
-        &self.instance
+    /// Build the complete terminal and equipment result for the current
+    /// operating point. This is materialized on demand and not retained.
+    pub fn build_result(&self) -> Result<McPfResult, String> {
+        build_result(&self.prepared, &self.options, &self.state)
+    }
+
+    /// The instance this session was prepared from, without load edits.
+    pub fn base_instance(&self) -> &McAcPfInstance {
+        &self.base_instance
     }
 
     pub fn options(&self) -> McPfOptions {
@@ -245,6 +436,22 @@ impl McPfSession {
 
     pub fn solve_count(&self) -> usize {
         self.solve_count
+    }
+
+    /// Phase timings of the most recent solve.
+    pub fn profile(&self) -> McPfProfile {
+        self.profile
+    }
+
+    /// Phase timings of the initial parse, preparation, factorization, and solve.
+    pub fn cold_profile(&self) -> McPfProfile {
+        self.cold_profile
+    }
+
+    /// Edited networks built for portable output since the session started.
+    /// Ordinary load edits never build one.
+    pub fn materialization_count(&self) -> usize {
+        self.materializations.get()
     }
 
     /// Total numeric factorizations performed by this session.
@@ -278,18 +485,163 @@ impl McPfSession {
             .collect()
     }
 
+    /// Terminal identities in calculation order, which is also the order of
+    /// [`McPfResult::terminals`] and of the interleaved terminal arrays.
+    pub fn terminal_ids(&self) -> &[(String, String)] {
+        &self.prepared.index.terminal_ids
+    }
+
+    /// Terminal voltages as interleaved `[re, im]` pairs, volts.
+    pub fn terminal_voltages(&self) -> Vec<f64> {
+        self.state
+            .voltage
+            .iter()
+            .flat_map(|value| [value.re, value.im])
+            .collect()
+    }
+
+    /// Currents injected into the network as interleaved `[re, im]` pairs, amperes.
+    pub fn terminal_currents(&self) -> Vec<f64> {
+        (0..self.state.voltage.len())
+            .flat_map(|row| {
+                let current = passive_current(&self.prepared, &self.state.voltage, row);
+                [current.re, current.im]
+            })
+            .collect()
+    }
+
+    /// One bounded page of terminal and equipment detail.
+    pub fn detail(&self, query: &McPfDetailQuery) -> Result<McPfDetail, String> {
+        let limit = match query.port_limit {
+            0 => McPfDetailQuery::DEFAULT_PORT_LIMIT,
+            limit if limit > McPfDetailQuery::MAX_PORT_LIMIT => {
+                return Err(format!(
+                    "detail pages hold at most {} equipment ports",
+                    McPfDetailQuery::MAX_PORT_LIMIT
+                ))
+            }
+            limit => limit,
+        };
+        let voltage = &self.state.voltage;
+        let prepared = &self.prepared;
+        let terminals = match &query.bus {
+            Some(bus) => prepared
+                .index
+                .bus_terminals(bus)
+                .into_iter()
+                .map(|i| terminal_result(prepared, voltage, i))
+                .collect(),
+            None => Vec::new(),
+        };
+        let wanted = |name: &str| {
+            query
+                .element
+                .as_deref()
+                .is_none_or(|element| element == name)
+        };
+        let end = query.port_offset.saturating_add(limit);
+        let mut total = 0usize;
+        let mut element_ports = Vec::new();
+        for load in &prepared.loads {
+            if !wanted(&load.name) {
+                continue;
+            }
+            let count: usize = load.incidence.iter().map(Vec::len).sum();
+            if total + count > query.port_offset && total < end {
+                let mut position = total;
+                for (branch, incidence) in load.incidence.iter().enumerate() {
+                    let current = load.branch_current(branch, voltage, &self.options)?;
+                    for &(i, c) in incidence {
+                        if (query.port_offset..end).contains(&position) {
+                            element_ports
+                                .push(load_port(prepared, voltage, load, branch, i, c, current));
+                        }
+                        position += 1;
+                    }
+                }
+            }
+            total += count;
+        }
+        for element in &prepared.elements {
+            if !wanted(&element.name) {
+                continue;
+            }
+            let count = element.terminals.len();
+            if total + count > query.port_offset && total < end {
+                for row in 0..count {
+                    if (query.port_offset..end).contains(&(total + row)) {
+                        element_ports.push(passive_port(prepared, voltage, element, row));
+                    }
+                }
+            }
+            total += count;
+        }
+        Ok(McPfDetail {
+            solve_count: self.solve_count,
+            terminals,
+            element_ports,
+            element_port_total: total,
+        })
+    }
+
+    /// Materialize the current edited operating point as a typed instance.
+    ///
+    /// This is the only place an edited network is built. It runs for
+    /// portable output (input module, snapshot) or an explicit rebuild, never
+    /// for an ordinary load edit.
+    pub fn edited_instance(&self) -> Result<McAcPfInstance, String> {
+        let edited = self
+            .prepared
+            .loads
+            .iter()
+            .zip(&self.base_power)
+            .any(|(load, base)| load.power != *base);
+        if !edited {
+            return Ok(self.base_instance.clone());
+        }
+        let mut network = self.base_instance.network().clone();
+        let mut row_index = BTreeMap::new();
+        for (index, row) in network.loads().iter().enumerate() {
+            row_index.entry(row.name.as_str()).or_insert(index);
+        }
+        let row_positions = self
+            .prepared
+            .loads
+            .iter()
+            .map(|load| {
+                row_index
+                    .get(load.name.as_str())
+                    .copied()
+                    .ok_or_else(|| format!("load `{}` is absent from its network", load.name))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = network.loads_mut();
+        for (position, load) in row_positions.into_iter().zip(&self.prepared.loads) {
+            let row = &mut rows[position];
+            row.p_nom = load.power.iter().map(|value| value.re).collect();
+            row.q_nom = load.power.iter().map(|value| value.im).collect();
+        }
+        self.materializations.set(self.materializations.get() + 1);
+        self.base_instance
+            .clone()
+            .with_network(network)
+            .map_err(|e| e.to_string())
+    }
+
     /// Materialize the current edited operating point as portable PowerIO IR.
     pub fn input_module_json(&self) -> Result<String, String> {
-        let mut module = match &self.module_json {
-            Some(text) => crate::ir::deserialize_module(text)?,
-            None => {
-                powerio::PioModule::new(powerio::PioValue::McAcPfInstance(self.instance.clone()))
-            }
-        };
-        *module.value_mut() = if self.module_holds_network {
-            powerio::PioValue::MulticonductorNetwork(self.instance.network().clone())
+        self.module_json_for(self.edited_instance()?)
+    }
+
+    fn module_json_for(&self, instance: McAcPfInstance) -> Result<String, String> {
+        let value = if self.module_holds_network {
+            powerio::PioValue::MulticonductorNetwork(instance.network().clone())
         } else {
-            powerio::PioValue::McAcPfInstance(self.instance.clone())
+            powerio::PioValue::McAcPfInstance(instance)
+        };
+        let module = match &self.module {
+            Some(records) => records.clone().map_value(|()| value),
+            None => powerio::PioModule::new(value),
         };
         crate::ir::serialize_module(&module)
     }
@@ -306,7 +658,11 @@ impl McPfSession {
         if id.trim().is_empty() || title.trim().is_empty() {
             return Err("multiconductor Study snapshot requires an id and title".to_owned());
         }
-        let solution = self.result.to_powerio_solution(&self.instance)?;
+        // The input module and the solution must embed the same edited
+        // instance; replay validation compares them.
+        let instance = self.edited_instance()?;
+        let result = self.build_result()?;
+        let solution = result.to_powerio_solution(&instance)?;
         let solution_module = crate::ir::serialize_module(&powerio::PioModule::new(
             powerio::PioValue::McAcPfSolution(solution),
         ))?;
@@ -316,10 +672,10 @@ impl McPfSession {
             id,
             title,
             formulation: "mc_ac_pf".to_owned(),
-            input_module: self.input_module_json()?,
+            input_module: self.module_json_for(instance)?,
             solution_module,
             options: self.options,
-            result: self.result.clone(),
+            result,
         })
     }
 
@@ -329,13 +685,9 @@ impl McPfSession {
     pub fn replace_load_powers(
         &mut self,
         edits: &[McLoadPowerEdit],
-    ) -> Result<&McPfResult, String> {
-        let mut load_index = BTreeMap::new();
-        for (index, load) in self.prepared.loads.iter().enumerate() {
-            if load_index.insert(load.name.clone(), index).is_some() {
-                return Err(format!("duplicate prepared load identity `{}`", load.name));
-            }
-        }
+    ) -> Result<&McPfSummary, String> {
+        let started = profile_now();
+        let load_index = self.load_index.as_ref().map_err(Clone::clone)?;
         let mut next_power = self.base_power.clone();
         let mut seen = std::collections::BTreeSet::new();
         for edit in edits {
@@ -362,70 +714,56 @@ impl McPfSession {
             next_power[load][edit.branch] = Complex64::new(edit.p_w, edit.q_var);
         }
 
-        let mut network = self.instance.network().clone();
-        // Index the network rows once. A per-load linear search is quadratic
-        // in the load count, which on a feeder with thousands of loads
-        // dominates the cost of a single-branch edit (#132 tracks removing
-        // the clone itself).
-        let row_index: BTreeMap<&str, usize> = network
-            .loads()
-            .iter()
-            .enumerate()
-            .map(|(index, row)| (row.name.as_str(), index))
-            .collect();
-        let row_positions = self
-            .prepared
-            .loads
-            .iter()
-            .map(|load| {
-                row_index
-                    .get(load.name.as_str())
-                    .copied()
-                    .ok_or_else(|| format!("load `{}` is absent from its network", load.name))
+        // Only the prepared current laws change. A load whose power is
+        // unchanged keeps its law (and nominal admittance) exactly.
+        let mut previous = Vec::new();
+        let mut applied = Ok(());
+        for (index, (load, power)) in self.prepared.loads.iter_mut().zip(next_power).enumerate() {
+            if load.power == power {
+                continue;
+            }
+            let old = load.power.clone();
+            if let Err(error) = load.replace_power(power) {
+                applied = Err(error);
+                break;
+            }
+            previous.push((index, old));
+        }
+        let mut profile = McPfProfile::default();
+        let solved = applied
+            .and_then(|()| {
+                iterate(
+                    &self.prepared,
+                    &self.options,
+                    Some(&self.state.voltage),
+                    &mut profile,
+                )
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        let rows = network.loads_mut();
-        for (position, power) in row_positions.into_iter().zip(&next_power) {
-            let row = &mut rows[position];
-            row.p_nom = power.iter().map(|value| value.re).collect();
-            row.q_nom = power.iter().map(|value| value.im).collect();
-        }
-        let next_instance = self
-            .instance
-            .clone()
-            .with_network(network)
-            .map_err(|e| e.to_string())?;
-
-        let previous_power = self
-            .prepared
-            .loads
-            .iter()
-            .map(|load| load.power.clone())
-            .collect::<Vec<_>>();
-        for (load, power) in self.prepared.loads.iter_mut().zip(&next_power) {
-            load.replace_power(power.clone())?;
-        }
-        let solved = solve_prepared(
-            &next_instance,
-            &self.prepared,
-            &self.options,
-            Some(&self.voltage),
-        );
-        let (result, voltage) = match solved {
+            .and_then(|state| {
+                let summarized = profile_now();
+                let summary =
+                    summarize(&self.prepared, &self.options, &state, self.solve_count + 1)?;
+                profile.summary_ms = elapsed_ms(summarized, profile_now());
+                Ok((state, summary))
+            });
+        let (state, summary) = match solved {
             Ok(solved) => solved,
             Err(error) => {
-                for (load, power) in self.prepared.loads.iter_mut().zip(previous_power) {
-                    load.replace_power(power)
+                for (index, power) in previous {
+                    self.prepared.loads[index]
+                        .replace_power(power)
                         .expect("previous prepared load power is valid");
                 }
                 return Err(error);
             }
         };
-        self.instance = next_instance;
-        self.voltage = voltage;
-        self.result = result;
+        self.state = state;
+        self.summary = summary;
         self.solve_count += 1;
-        Ok(&self.result)
+        profile.total_ms = elapsed_ms(started, profile_now());
+        profile.timed = started.is_some();
+        self.profile = profile;
+        Ok(&self.summary)
     }
 }
 
@@ -823,11 +1161,14 @@ fn expected_element_port_keys(
             terminal.to_owned(),
         ));
     };
+    let mut load_rows = BTreeMap::<&str, &powerio_dist::DistLoad>::new();
+    for load in network.loads() {
+        load_rows.entry(load.name.as_str()).or_insert(load);
+    }
     for load_instance in instance.loads() {
-        let load = network
-            .loads()
-            .iter()
-            .find(|load| load.name == load_instance.load)
+        let load = load_rows
+            .get(load_instance.load.as_str())
+            .copied()
             .ok_or_else(|| {
                 format!(
                     "instance load `{}` is absent from its network",
@@ -1079,22 +1420,40 @@ pub fn solve_mc_ac_pf_instance(
 ) -> Result<McPfResult, String> {
     validate_options(options)?;
     let prepared = PreparedNetwork::prepare(instance)?;
-    solve_prepared(instance, &prepared, options, None).map(|(result, _)| result)
+    let state = iterate(&prepared, options, None, &mut McPfProfile::default())?;
+    build_result(&prepared, options, &state)
 }
 
-fn solve_prepared(
-    instance: &McAcPfInstance,
+/// A converged fixed point: the phasors and the convergence evidence that
+/// every output view is derived from.
+#[derive(Clone, Debug)]
+struct FixedPoint {
+    voltage: Vec<Complex64>,
+    load_current: Vec<Complex64>,
+    iterations: usize,
+    voltage_change: f64,
+    physical_kcl_residual: f64,
+    scaled_kcl_residual: f64,
+}
+
+/// Run the fixed-point current-injection iteration on a prepared network.
+///
+/// All iteration buffers are allocated once per call. The final load
+/// currents and KCL metrics are those of the accepting convergence check,
+/// which ran at exactly the returned voltage.
+fn iterate(
     prepared: &PreparedNetwork,
     options: &McPfOptions,
     initial_voltage: Option<&[Complex64]>,
-) -> Result<(McPfResult, Vec<Complex64>), String> {
+    profile: &mut McPfProfile,
+) -> Result<FixedPoint, String> {
     validate_options(options)?;
+    let n = prepared.index.terminal_ids.len();
     let mut voltage = if let Some(initial) = initial_voltage {
-        if initial.len() != prepared.index.terminal_ids.len() {
+        if initial.len() != n {
             return Err(format!(
-                "initial voltage has {} terminals; expected {}",
+                "initial voltage has {} terminals; expected {n}",
                 initial.len(),
-                prepared.index.terminal_ids.len()
             ));
         }
         if initial
@@ -1112,133 +1471,221 @@ fn solve_prepared(
             voltage[i] = *value;
         }
     }
-    let base_rhs = prepared.source_rhs();
-    let mut unknown_pos = vec![usize::MAX; prepared.index.terminal_ids.len()];
-    for (u, &i) in prepared.unknown.iter().enumerate() {
-        unknown_pos[i] = u;
-    }
+    let base_rhs = &prepared.source_rhs;
+    let mut solved = vec![Complex64::default(); prepared.unknown.len()];
     if initial_voltage.is_none() {
         if let Some(factor) = &prepared.factor {
-            let initial = factor.solve(&base_rhs)?;
+            let started = profile_now();
+            factor.solve_into(base_rhs, &mut solved)?;
+            profile.linear_solve_ms += elapsed_ms(started, profile_now());
+            profile.linear_solves += 1;
             for (u, &i) in prepared.unknown.iter().enumerate() {
-                voltage[i] = initial[u];
+                voltage[i] = solved[u];
             }
         }
     }
+    let mut load_current = vec![Complex64::default(); n];
+    let mut compensated = vec![Complex64::default(); prepared.unknown.len()];
+    let mut scratch = KclScratch::new(n);
+    // KCL metrics of `load_current`, when both describe the current voltage.
+    let mut evaluated: Option<(f64, f64)> = None;
     let mut final_change = f64::INFINITY;
     let mut iterations = 0;
     for k in 0..options.max_iterations {
         iterations = k + 1;
-        let load_current = total_load_current(prepared, &voltage, options)?;
-        let compensated = prepared
-            .unknown
-            .iter()
-            .map(|&i| {
-                let yv = prepared.yref.row_mul(i, &voltage);
-                base_rhs[unknown_pos[i]] + yv - load_current[i]
-            })
-            .collect::<Vec<_>>();
-        let solved = prepared
-            .factor
-            .as_ref()
-            .map(|factor| factor.solve(&compensated))
-            .transpose()?
-            .unwrap_or_default();
+        if evaluated.is_none() {
+            let started = profile_now();
+            total_load_current_into(prepared, &voltage, options, &mut load_current)?;
+            profile.load_evaluation_ms += elapsed_ms(started, profile_now());
+        }
+        let started = profile_now();
+        for (u, &i) in prepared.unknown.iter().enumerate() {
+            let yv = prepared.yref.row_mul(i, &voltage);
+            compensated[u] = base_rhs[prepared.unknown_pos[i]] + yv - load_current[i];
+        }
+        profile.kcl_and_matvec_ms += elapsed_ms(started, profile_now());
+        if let Some(factor) = &prepared.factor {
+            let started = profile_now();
+            factor.solve_into(&compensated, &mut solved)?;
+            profile.linear_solve_ms += elapsed_ms(started, profile_now());
+            profile.linear_solves += 1;
+        }
         final_change = 0.0;
         for (u, &i) in prepared.unknown.iter().enumerate() {
             let next = voltage[i] + options.damping * (solved[u] - voltage[i]);
             final_change = final_change.max((next - voltage[i]).norm());
             voltage[i] = next;
         }
+        evaluated = None;
         if final_change <= options.tolerance {
-            let candidate_load = total_load_current(prepared, &voltage, options)?;
-            let (_, candidate_scaled) = kcl_metrics(prepared, &voltage, &candidate_load, options);
-            if candidate_scaled <= 1.0 {
+            let started = profile_now();
+            total_load_current_into(prepared, &voltage, options, &mut load_current)?;
+            let loaded = profile_now();
+            let metrics = kcl_metrics(prepared, &voltage, &load_current, options, &mut scratch);
+            profile.load_evaluation_ms += elapsed_ms(started, loaded);
+            profile.kcl_and_matvec_ms += elapsed_ms(loaded, profile_now());
+            evaluated = Some(metrics);
+            if metrics.1 <= 1.0 {
                 break;
             }
         }
     }
-    let load_current = total_load_current(prepared, &voltage, options)?;
-    let (residual, scaled_residual) = kcl_metrics(prepared, &voltage, &load_current, options);
+    let (residual, scaled_residual) = match evaluated {
+        Some(metrics) => metrics,
+        None => {
+            total_load_current_into(prepared, &voltage, options, &mut load_current)?;
+            kcl_metrics(prepared, &voltage, &load_current, options, &mut scratch)
+        }
+    };
+    profile.iterations = iterations;
     if !final_change.is_finite() || !residual.is_finite() || !scaled_residual.is_finite() {
         return Err("fixed-point iteration produced a non-finite residual".to_owned());
     }
     if final_change > options.tolerance || scaled_residual > 1.0 {
         return Err(format!("multiconductor PF did not converge after {iterations} iterations (voltage change {final_change:.3e}, KCL residual {residual:.3e})"));
     }
-    let mut terminals = Vec::with_capacity(prepared.index.terminal_ids.len());
-    for (i, (bus, terminal)) in prepared.index.terminal_ids.iter().enumerate() {
-        let current = passive_current(prepared, &voltage, i);
-        terminals.push(McTerminalResult {
-            bus: bus.clone(),
-            terminal: terminal.clone(),
-            voltage: voltage[i].into(),
-            power_into_network: (voltage[i] * current.conj()).into(),
-            current_into_network: current.into(),
-        });
+    Ok(FixedPoint {
+        voltage,
+        load_current,
+        iterations,
+        voltage_change: final_change,
+        physical_kcl_residual: residual,
+        scaled_kcl_residual: scaled_residual,
+    })
+}
+
+const NON_FINITE_OUTPUT: &str =
+    "fixed-point PF produced a non-finite voltage, current, or power output";
+
+/// Reduce a converged fixed point to its compact summary.
+///
+/// This applies the same output finiteness gate as [`build_result`] to every
+/// terminal, equipment port, and source reaction, numerically and without
+/// building records, so a session commits an operating point under exactly
+/// the conditions a full solve would accept it.
+fn summarize(
+    prepared: &PreparedNetwork,
+    options: &McPfOptions,
+    state: &FixedPoint,
+    solve_count: usize,
+) -> Result<McPfSummary, String> {
+    let voltage = &state.voltage;
+    let mut finite = true;
+    for (i, &v) in voltage.iter().enumerate() {
+        let current = passive_current(prepared, voltage, i);
+        finite &= phasors_finite(&[v, current, v * current.conj()]);
     }
+    let mut element_port_count = 0usize;
+    for load in &prepared.loads {
+        for (branch, incidence) in load.incidence.iter().enumerate() {
+            let current = load.branch_current(branch, voltage, options)?;
+            for &(i, c) in incidence {
+                let terminal_current = c.conj() * current;
+                finite &= phasors_finite(&[terminal_current, voltage[i] * terminal_current.conj()]);
+                element_port_count += 1;
+            }
+        }
+    }
+    // Summed in port order, matching a sum over `McPfResult::element_ports`.
+    let mut passive_loss = Complex64::default();
+    let mut port_voltages = Vec::new();
+    for element in &prepared.elements {
+        port_voltages.clear();
+        port_voltages.extend(element.terminals.iter().map(|&i| voltage[i]));
+        for (row, &i) in element.terminals.iter().enumerate() {
+            let current = element_port_current(element, row, &port_voltages);
+            let power = voltage[i] * current.conj();
+            finite &= phasors_finite(&[current, power]);
+            passive_loss.re += power.re;
+            passive_loss.im += power.im;
+            element_port_count += 1;
+        }
+    }
+    let mut source_power = Complex64::default();
+    for source in &prepared.source_terminals {
+        let i = source.index;
+        let current = passive_current(prepared, voltage, i) + state.load_current[i];
+        let power = voltage[i] * current.conj();
+        finite &= phasors_finite(&[current, power]);
+        source_power.re += power.re;
+        source_power.im += power.im;
+    }
+    if !finite {
+        return Err(NON_FINITE_OUTPUT.to_owned());
+    }
+    let mut minimum: Option<f64> = None;
+    let mut maximum: Option<f64> = None;
+    let mut violations = 0usize;
+    visit_load_voltages(prepared, voltage, options, |_, _, _, _, pu, bound| {
+        minimum = Some(minimum.map_or(pu, |value| value.min(pu)));
+        maximum = Some(maximum.map_or(pu, |value| value.max(pu)));
+        violations += usize::from(bound.is_some());
+    });
+    Ok(McPfSummary {
+        converged: true,
+        voltage_valid: violations == 0,
+        min_voltage_pu: minimum,
+        max_voltage_pu: maximum,
+        voltage_violation_count: violations,
+        iterations: state.iterations,
+        factorization_count: prepared
+            .factor
+            .as_ref()
+            .map_or(0, |factor| factor.factorization_count()),
+        matrix_dimension: prepared.factor.as_ref().map_or(0, |factor| factor.dim()),
+        matrix_nonzeros: prepared
+            .factor
+            .as_ref()
+            .map_or(0, |factor| factor.nonzeros()),
+        voltage_change: state.voltage_change,
+        physical_kcl_residual: state.physical_kcl_residual,
+        scaled_kcl_residual: state.scaled_kcl_residual,
+        terminal_count: voltage.len(),
+        element_port_count,
+        source_power_into_network: source_power.into(),
+        passive_loss: passive_loss.into(),
+        solve_count,
+    })
+}
+
+/// Build the complete terminal and equipment result for a fixed point.
+fn build_result(
+    prepared: &PreparedNetwork,
+    options: &McPfOptions,
+    state: &FixedPoint,
+) -> Result<McPfResult, String> {
+    let voltage = &state.voltage;
+    let terminals: Vec<_> = (0..prepared.index.terminal_ids.len())
+        .map(|i| terminal_result(prepared, voltage, i))
+        .collect();
     let mut element_ports = Vec::new();
     for load in &prepared.loads {
         for (branch, incidence) in load.incidence.iter().enumerate() {
-            let current = load.branch_current(branch, &voltage, options)?;
+            let current = load.branch_current(branch, voltage, options)?;
             for &(i, c) in incidence {
-                let terminal_current = c.conj() * current;
-                let (bus, terminal) = &prepared.index.terminal_ids[i];
-                element_ports.push(McElementPort {
-                    element: load.name.clone(),
-                    kind: "load".to_owned(),
-                    branch,
-                    bus: bus.clone(),
-                    terminal: terminal.clone(),
-                    current_into_element: terminal_current.into(),
-                    power_into_element: (voltage[i] * terminal_current.conj()).into(),
-                });
+                element_ports.push(load_port(prepared, voltage, load, branch, i, c, current));
             }
         }
     }
     for element in &prepared.elements {
-        let port_voltages: Vec<_> = element.terminals.iter().map(|&i| voltage[i]).collect();
-        for (row, &i) in element.terminals.iter().enumerate() {
-            let current: Complex64 = element.yprim[row]
-                .iter()
-                .zip(&port_voltages)
-                .map(|(&y, &v)| y * v)
-                .sum();
-            let (bus, terminal) = &prepared.index.terminal_ids[i];
-            element_ports.push(McElementPort {
-                element: element.name.clone(),
-                kind: element.kind.clone(),
-                branch: 0,
-                bus: bus.clone(),
-                terminal: terminal.clone(),
-                current_into_element: current.into(),
-                power_into_element: (voltage[i] * current.conj()).into(),
-            });
+        for row in 0..element.terminals.len() {
+            element_ports.push(passive_port(prepared, voltage, element, row));
         }
     }
-    let mut source_reactions = Vec::new();
-    for source_row in instance.network().sources() {
-        let source = instance
-            .sources()
-            .iter()
-            .find(|s| s.source == source_row.name)
-            .ok_or_else(|| {
-                format!(
-                    "instance source `{}` is absent from its network",
-                    source_row.name
-                )
-            })?;
-        for name in &source.terminals {
-            let i = prepared.index.resolve((&source_row.bus, name))?;
-            let current = passive_current(prepared, &voltage, i) + load_current[i];
-            source_reactions.push(McSourceReaction {
+    let source_reactions: Vec<_> = prepared
+        .source_terminals
+        .iter()
+        .map(|source| {
+            let i = source.index;
+            let current = passive_current(prepared, voltage, i) + state.load_current[i];
+            McSourceReaction {
                 source: source.source.clone(),
-                terminal: name.clone(),
+                terminal: source.terminal.clone(),
                 current_into_network: current.into(),
                 power_into_network: (voltage[i] * current.conj()).into(),
-            });
-        }
-    }
+            }
+        })
+        .collect();
     if terminals.iter().any(|t| {
         !complex_finite(t.voltage)
             || !complex_finite(t.current_into_network)
@@ -1250,19 +1697,17 @@ fn solve_prepared(
             !complex_finite(s.current_into_network) || !complex_finite(s.power_into_network)
         })
     {
-        return Err(
-            "fixed-point PF produced a non-finite voltage, current, or power output".to_owned(),
-        );
+        return Err(NON_FINITE_OUTPUT.to_owned());
     }
     let (min_voltage_pu, max_voltage_pu, voltage_violations) =
-        assess_load_voltages(prepared, &voltage, options);
-    let result = McPfResult {
+        assess_load_voltages(prepared, voltage, options);
+    Ok(McPfResult {
         converged: true,
         voltage_valid: voltage_violations.is_empty(),
         min_voltage_pu,
         max_voltage_pu,
         voltage_violations,
-        iterations,
+        iterations: state.iterations,
         factorization_count: prepared
             .factor
             .as_ref()
@@ -1272,14 +1717,90 @@ fn solve_prepared(
             .factor
             .as_ref()
             .map_or(0, |factor| factor.nonzeros()),
-        voltage_change: final_change,
-        physical_kcl_residual: residual,
-        scaled_kcl_residual: scaled_residual,
+        voltage_change: state.voltage_change,
+        physical_kcl_residual: state.physical_kcl_residual,
+        scaled_kcl_residual: state.scaled_kcl_residual,
         terminals,
         element_ports,
         source_reactions,
-    };
-    Ok((result, voltage))
+    })
+}
+
+fn terminal_result(
+    prepared: &PreparedNetwork,
+    voltage: &[Complex64],
+    i: usize,
+) -> McTerminalResult {
+    let current = passive_current(prepared, voltage, i);
+    let (bus, terminal) = &prepared.index.terminal_ids[i];
+    McTerminalResult {
+        bus: bus.clone(),
+        terminal: terminal.clone(),
+        voltage: voltage[i].into(),
+        power_into_network: (voltage[i] * current.conj()).into(),
+        current_into_network: current.into(),
+    }
+}
+
+fn load_port(
+    prepared: &PreparedNetwork,
+    voltage: &[Complex64],
+    load: &loads::BranchLoad,
+    branch: usize,
+    i: usize,
+    c: Complex64,
+    branch_current: Complex64,
+) -> McElementPort {
+    let terminal_current = c.conj() * branch_current;
+    let (bus, terminal) = &prepared.index.terminal_ids[i];
+    McElementPort {
+        element: load.name.clone(),
+        kind: "load".to_owned(),
+        branch,
+        bus: bus.clone(),
+        terminal: terminal.clone(),
+        current_into_element: terminal_current.into(),
+        power_into_element: (voltage[i] * terminal_current.conj()).into(),
+    }
+}
+
+fn passive_port(
+    prepared: &PreparedNetwork,
+    voltage: &[Complex64],
+    element: &network::PreparedElement,
+    row: usize,
+) -> McElementPort {
+    let port_voltages: Vec<_> = element.terminals.iter().map(|&i| voltage[i]).collect();
+    let current = element_port_current(element, row, &port_voltages);
+    let i = element.terminals[row];
+    let (bus, terminal) = &prepared.index.terminal_ids[i];
+    McElementPort {
+        element: element.name.clone(),
+        kind: element.kind.clone(),
+        branch: 0,
+        bus: bus.clone(),
+        terminal: terminal.clone(),
+        current_into_element: current.into(),
+        power_into_element: (voltage[i] * current.conj()).into(),
+    }
+}
+
+fn element_port_current(
+    element: &network::PreparedElement,
+    row: usize,
+    port_voltages: &[Complex64],
+) -> Complex64 {
+    element.yprim[row]
+        .iter()
+        .zip(port_voltages)
+        .map(|(&y, &v)| y * v)
+        .sum()
+}
+
+fn phasors_finite(values: &[Complex64]) -> bool {
+    values
+        .iter()
+        .all(|value| value.re.is_finite() && value.im.is_finite())
 }
 
 fn complex_finite(value: McComplex) -> bool {
@@ -1315,22 +1836,37 @@ fn passive_current(network: &PreparedNetwork, voltage: &[Complex64], row: usize)
     network.passive.row_mul(row, voltage)
 }
 
+/// Buffers reused by every KCL evaluation of one solve.
+struct KclScratch {
+    incident: Vec<f64>,
+    port_voltages: Vec<Complex64>,
+}
+
+impl KclScratch {
+    fn new(n: usize) -> Self {
+        Self {
+            incident: vec![0.0; n],
+            port_voltages: Vec::new(),
+        }
+    }
+}
+
 fn kcl_metrics(
     network: &PreparedNetwork,
     voltage: &[Complex64],
     load: &[Complex64],
     options: &McPfOptions,
+    scratch: &mut KclScratch,
 ) -> (f64, f64) {
-    let mut incident = vec![0.0; voltage.len()];
+    let incident = &mut scratch.incident;
+    incident.fill(0.0);
     for element in &network.elements {
-        let port_voltages: Vec<_> = element.terminals.iter().map(|&i| voltage[i]).collect();
+        scratch.port_voltages.clear();
+        scratch
+            .port_voltages
+            .extend(element.terminals.iter().map(|&i| voltage[i]));
         for (row, &terminal) in element.terminals.iter().enumerate() {
-            let current: Complex64 = element.yprim[row]
-                .iter()
-                .zip(&port_voltages)
-                .map(|(&y, &v)| y * v)
-                .sum();
-            incident[terminal] += current.norm();
+            incident[terminal] += element_port_current(element, row, &scratch.port_voltages).norm();
         }
     }
     for load in &network.loads {
@@ -1357,16 +1893,42 @@ fn kcl_metrics(
     (raw, scaled)
 }
 
-fn total_load_current(
+fn total_load_current_into(
     network: &PreparedNetwork,
     voltage: &[Complex64],
     options: &McPfOptions,
-) -> Result<Vec<Complex64>, String> {
-    let mut current = vec![Complex64::new(0.0, 0.0); voltage.len()];
+    current: &mut [Complex64],
+) -> Result<(), String> {
+    current.fill(Complex64::new(0.0, 0.0));
     for load in &network.loads {
-        load.add_current(voltage, options, &mut current)?;
+        load.add_current(voltage, options, current)?;
     }
-    Ok(current)
+    Ok(())
+}
+
+/// Visit every load branch's voltage-band assessment in load and branch
+/// order. The summary and the full violation list share this arithmetic.
+fn visit_load_voltages(
+    network: &PreparedNetwork,
+    voltage: &[Complex64],
+    options: &McPfOptions,
+    mut visit: impl FnMut(&loads::BranchLoad, usize, f64, f64, f64, Option<&'static str>),
+) {
+    for load in &network.loads {
+        for branch in 0..load.power.len() {
+            let magnitude = load.branch_voltage(branch, voltage).norm();
+            let nominal = load.nominal_voltage[branch];
+            let pu = magnitude / nominal;
+            let bound = if pu < options.v_min_pu {
+                Some("minimum")
+            } else if pu > options.v_max_pu {
+                Some("maximum")
+            } else {
+                None
+            };
+            visit(load, branch, magnitude, nominal, pu, bound);
+        }
+    }
 }
 
 fn assess_load_voltages(
@@ -1377,20 +1939,13 @@ fn assess_load_voltages(
     let mut minimum: Option<f64> = None;
     let mut maximum: Option<f64> = None;
     let mut violations = Vec::new();
-    for load in &network.loads {
-        for branch in 0..load.power.len() {
-            let magnitude = load.branch_voltage(branch, voltage).norm();
-            let nominal = load.nominal_voltage[branch];
-            let pu = magnitude / nominal;
+    visit_load_voltages(
+        network,
+        voltage,
+        options,
+        |load, branch, magnitude, nominal, pu, bound| {
             minimum = Some(minimum.map_or(pu, |value| value.min(pu)));
             maximum = Some(maximum.map_or(pu, |value| value.max(pu)));
-            let bound = if pu < options.v_min_pu {
-                Some("minimum")
-            } else if pu > options.v_max_pu {
-                Some("maximum")
-            } else {
-                None
-            };
             if let Some(bound) = bound {
                 violations.push(McVoltageViolation {
                     load: load.name.clone(),
@@ -1402,8 +1957,8 @@ fn assess_load_voltages(
                     bound: bound.to_owned(),
                 });
             }
-        }
-    }
+        },
+    );
     (minimum, maximum, violations)
 }
 
@@ -1501,7 +2056,7 @@ mod tests {
         let mut session = McPfSession::new(one_phase(1.0), options).unwrap();
         assert_eq!(session.factorization_count(), 1);
         assert_eq!(session.solve_count(), 1);
-        let base_iterations = session.result().iterations;
+        let base_iterations = session.summary().iterations;
 
         let edited = session
             .replace_load_powers(&[McLoadPowerEdit {
@@ -1513,20 +2068,28 @@ mod tests {
             .unwrap()
             .clone();
         let fresh = solve_mc_ac_pf_instance(&one_phase(1.001), &options).unwrap();
-        assert!((load_bus_voltage(&edited) - load_bus_voltage(&fresh)).norm() < 1e-10);
+        let warm = session.build_result().unwrap();
+        assert!((load_bus_voltage(&warm) - load_bus_voltage(&fresh)).norm() < 1e-10);
         assert_eq!(session.factorization_count(), 1);
         assert_eq!(session.solve_count(), 2);
+        assert_eq!(edited.solve_count, 2);
         assert!(
             edited.iterations < base_iterations,
             "warm {} vs cold {base_iterations}",
             edited.iterations
         );
         assert_eq!(session.load_branches()[0].p_w, 1.001);
+        // The edit is an overlay: the base instance is untouched and no
+        // edited network was built.
+        assert_eq!(session.base_instance().loads()[0].p_w, vec![1.0]);
+        assert_eq!(session.materialization_count(), 0);
 
-        let reset = session.replace_load_powers(&[]).unwrap().clone();
+        session.replace_load_powers(&[]).unwrap();
+        let reset = session.build_result().unwrap();
         let fresh_base = solve_mc_ac_pf_instance(&one_phase(1.0), &options).unwrap();
         assert!((load_bus_voltage(&reset) - load_bus_voltage(&fresh_base)).norm() < 1e-10);
         assert_eq!(session.factorization_count(), 1);
+        assert_eq!(session.materialization_count(), 0);
     }
 
     #[test]
@@ -1537,7 +2100,7 @@ mod tests {
             DistLoadVoltageModel::ConstantImpedance { v_nom: vec![10.0] };
         instance = McAcPfInstance::from_network(network).unwrap();
         let mut session = McPfSession::new(instance, McPfOptions::default()).unwrap();
-        let edited = session
+        session
             .replace_load_powers(&[McLoadPowerEdit {
                 load: "pl".into(),
                 branch: 0,
@@ -1546,14 +2109,16 @@ mod tests {
             }])
             .unwrap();
         let expected = 10.0 / (1.0 + 2.0 / 100.0);
-        assert!((load_bus_voltage(edited).re - expected).abs() < 1e-10);
+        let edited = session.build_result().unwrap();
+        assert!((load_bus_voltage(&edited).re - expected).abs() < 1e-10);
         assert_eq!(session.factorization_count(), 1);
     }
 
     #[test]
     fn retained_session_rejects_invalid_edits_without_changing_state() {
         let mut session = McPfSession::new(one_phase(1.0), McPfOptions::default()).unwrap();
-        let before = session.result().clone();
+        let before = session.build_result().unwrap();
+        let summary = session.summary().clone();
         let error = session
             .replace_load_powers(&[McLoadPowerEdit {
                 load: "pl".into(),
@@ -1566,9 +2131,10 @@ mod tests {
         assert_eq!(session.solve_count(), 1);
         assert_eq!(session.load_branches()[0].p_w, 1.0);
         assert_eq!(
-            load_bus_voltage(session.result()),
+            load_bus_voltage(&session.build_result().unwrap()),
             load_bus_voltage(&before)
         );
+        assert_eq!(session.summary(), &summary);
     }
 
     #[test]
@@ -2265,7 +2831,10 @@ mod tests {
             }])
             .unwrap();
 
+        assert_eq!(session.materialization_count(), 0);
         let snapshot = session.snapshot("edited", "Edited feeder").unwrap();
+        // One edited instance feeds both the input module and the solution.
+        assert_eq!(session.materialization_count(), 1);
         let replayed = McStudySnapshot::from_json(&snapshot.to_json().unwrap()).unwrap();
         let module = crate::ir::deserialize_module(&replayed.input_module).unwrap();
         let input = input::instance_from_value(module.value()).unwrap();
@@ -2274,7 +2843,7 @@ mod tests {
         assert_eq!(session.factorization_count(), 1);
         assert_eq!(
             load_bus_voltage(&replayed.result),
-            load_bus_voltage(session.result())
+            load_bus_voltage(&session.build_result().unwrap())
         );
         assert!(session.snapshot("", "Edited feeder").is_err());
     }
@@ -2329,5 +2898,274 @@ mod tests {
         value = serde_json::from_str(&snapshot.to_json().unwrap()).unwrap();
         value["input_module"] = serde_json::Value::String(one_phase_module(2.0));
         assert!(McStudySnapshot::from_json(&value.to_string()).is_err());
+    }
+
+    fn oracle_instance(text: &str) -> McAcPfInstance {
+        parse_bmopf_instance(text).expect("oracle BMOPF input")
+    }
+
+    const ORACLE_INPUTS: [&str; 4] = [
+        include_str!("../../tests/data/mc_pf/oracle_inputs/pf_dy_xfmr.json"),
+        include_str!("../../tests/data/mc_pf/oracle_inputs/pf_delta_load.json"),
+        include_str!("../../tests/data/mc_pf/oracle_inputs/pf_center_tap_multi_feeder.json"),
+        include_str!("../../tests/data/mc_pf/oracle_inputs/pf_3ph_line.json"),
+    ];
+
+    fn assert_summary_matches(summary: &McPfSummary, result: &McPfResult) {
+        assert_eq!(summary.converged, result.converged);
+        assert_eq!(summary.voltage_valid, result.voltage_valid);
+        assert_eq!(summary.min_voltage_pu, result.min_voltage_pu);
+        assert_eq!(summary.max_voltage_pu, result.max_voltage_pu);
+        assert_eq!(
+            summary.voltage_violation_count,
+            result.voltage_violations.len()
+        );
+        assert_eq!(summary.iterations, result.iterations);
+        assert_eq!(summary.factorization_count, result.factorization_count);
+        assert_eq!(summary.matrix_dimension, result.matrix_dimension);
+        assert_eq!(summary.matrix_nonzeros, result.matrix_nonzeros);
+        assert_eq!(summary.voltage_change, result.voltage_change);
+        assert_eq!(summary.physical_kcl_residual, result.physical_kcl_residual);
+        assert_eq!(summary.scaled_kcl_residual, result.scaled_kcl_residual);
+        assert_eq!(summary.terminal_count, result.terminals.len());
+        assert_eq!(summary.element_port_count, result.element_ports.len());
+        // The UI's former aggregation over the full result, summed in the
+        // same order, must reproduce the summary bit for bit.
+        let mut source = McComplex::default();
+        for reaction in &result.source_reactions {
+            source.re += reaction.power_into_network.re;
+            source.im += reaction.power_into_network.im;
+        }
+        assert_eq!(summary.source_power_into_network, source);
+        let mut loss = McComplex::default();
+        for port in result
+            .element_ports
+            .iter()
+            .filter(|port| !["load", "generator", "ibr"].contains(&port.kind.as_str()))
+        {
+            loss.re += port.power_into_element.re;
+            loss.im += port.power_into_element.im;
+        }
+        assert_eq!(summary.passive_loss, loss);
+    }
+
+    #[test]
+    fn session_summary_equals_the_full_result_it_summarizes() {
+        for text in ORACLE_INPUTS {
+            let mut session =
+                McPfSession::new(oracle_instance(text), McPfOptions::default()).unwrap();
+            assert_summary_matches(session.summary(), &session.build_result().unwrap());
+            let edits: Vec<_> = session
+                .load_branches()
+                .into_iter()
+                .map(|branch| McLoadPowerEdit {
+                    load: branch.load,
+                    branch: branch.branch,
+                    p_w: branch.base_p_w * 1.07,
+                    q_var: branch.base_q_var * 0.9,
+                })
+                .collect();
+            let summary = session.replace_load_powers(&edits).unwrap().clone();
+            assert_summary_matches(&summary, &session.build_result().unwrap());
+            assert_eq!(summary.solve_count, 2);
+            assert_eq!(session.materialization_count(), 0);
+        }
+    }
+
+    #[test]
+    fn terminal_arrays_and_detail_pages_match_the_full_result() {
+        let session =
+            McPfSession::new(oracle_instance(ORACLE_INPUTS[2]), McPfOptions::default()).unwrap();
+        let result = session.build_result().unwrap();
+        let voltages = session.terminal_voltages();
+        let currents = session.terminal_currents();
+        assert_eq!(session.terminal_ids().len(), result.terminals.len());
+        for (k, terminal) in result.terminals.iter().enumerate() {
+            assert_eq!(
+                session.terminal_ids()[k],
+                (terminal.bus.clone(), terminal.terminal.clone())
+            );
+            assert_eq!(voltages[2 * k], terminal.voltage.re);
+            assert_eq!(voltages[2 * k + 1], terminal.voltage.im);
+            assert_eq!(currents[2 * k], terminal.current_into_network.re);
+            assert_eq!(currents[2 * k + 1], terminal.current_into_network.im);
+        }
+        let json = |value: &dyn erased::Json| value.json();
+        // Every page of the unfiltered equipment list, then per element.
+        let mut paged = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = session
+                .detail(&McPfDetailQuery {
+                    port_offset: offset,
+                    port_limit: 7,
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(page.element_port_total, result.element_ports.len());
+            assert_eq!(page.solve_count, 1);
+            if page.element_ports.is_empty() {
+                break;
+            }
+            offset += page.element_ports.len();
+            paged.extend(page.element_ports);
+        }
+        assert_eq!(json(&paged), json(&result.element_ports));
+        for element in ["mv_2", "ab_1", "ct_ab", "missing"] {
+            let detail = session
+                .detail(&McPfDetailQuery {
+                    element: Some(element.to_owned()),
+                    port_limit: McPfDetailQuery::MAX_PORT_LIMIT,
+                    ..Default::default()
+                })
+                .unwrap();
+            let expected: Vec<_> = result
+                .element_ports
+                .iter()
+                .filter(|port| port.element == element)
+                .cloned()
+                .collect();
+            assert_eq!(detail.element_port_total, expected.len());
+            assert_eq!(json(&detail.element_ports), json(&expected));
+        }
+        for bus in session
+            .terminal_ids()
+            .iter()
+            .map(|(bus, _)| bus.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            let detail = session
+                .detail(&McPfDetailQuery {
+                    bus: Some(bus.clone()),
+                    ..Default::default()
+                })
+                .unwrap();
+            let expected: Vec<_> = result
+                .terminals
+                .iter()
+                .filter(|terminal| terminal.bus == bus)
+                .cloned()
+                .collect();
+            assert_eq!(json(&detail.terminals), json(&expected));
+        }
+        assert!(session
+            .detail(&McPfDetailQuery {
+                port_limit: McPfDetailQuery::MAX_PORT_LIMIT + 1,
+                ..Default::default()
+            })
+            .is_err());
+    }
+
+    mod erased {
+        pub trait Json {
+            fn json(&self) -> serde_json::Value;
+        }
+        impl<T: serde::Serialize> Json for T {
+            fn json(&self) -> serde_json::Value {
+                serde_json::to_value(self).unwrap()
+            }
+        }
+    }
+
+    #[test]
+    fn module_session_materializes_the_same_bytes_as_reparsing_the_module() {
+        let text = ORACLE_INPUTS[0];
+        let source =
+            powerio::Source::from_memory("case.bmopf.json", text.as_bytes().to_vec()).unwrap();
+        let parsed = powerio::parse_with_options(
+            source,
+            &powerio::ParseOptions::default()
+                .format("bmopf-json")
+                .unwrap(),
+        )
+        .unwrap();
+        let module_json = crate::ir::serialize_module(&parsed).unwrap();
+        // The pre-overlay session re-parsed its stored text for every
+        // materialization and replaced the value in place.
+        let reparsed = |instance: &McAcPfInstance| {
+            let mut module = crate::ir::deserialize_module(&module_json).unwrap();
+            *module.value_mut() =
+                powerio::PioValue::MulticonductorNetwork(instance.network().clone());
+            crate::ir::serialize_module(&module).unwrap()
+        };
+        let mut session =
+            McPfSession::from_module_json(&module_json, McPfOptions::default()).unwrap();
+        assert!(session.cold_profile().parse_ms >= 0.0);
+        assert_eq!(
+            session.input_module_json().unwrap(),
+            reparsed(&session.edited_instance().unwrap())
+        );
+        let branch = session.load_branches()[0].clone();
+        session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: branch.load,
+                branch: branch.branch,
+                p_w: branch.base_p_w * 1.3,
+                q_var: branch.base_q_var,
+            }])
+            .unwrap();
+        assert_eq!(session.materialization_count(), 0);
+        let edited = session.input_module_json().unwrap();
+        assert_eq!(edited, reparsed(&session.edited_instance().unwrap()));
+        assert_eq!(session.materialization_count(), 2);
+    }
+
+    #[test]
+    fn failed_edit_restores_powers_summary_and_profile() {
+        let mut session = McPfSession::new(
+            one_phase(1.0),
+            McPfOptions {
+                max_iterations: 40,
+                voltage_envelope: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let summary = session.summary().clone();
+        let profile = session.profile();
+        let voltages = session.terminal_voltages();
+        let error = session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 0,
+                p_w: 30.0,
+                q_var: 0.0,
+            }])
+            .unwrap_err();
+        assert!(error.contains("did not converge"), "{error}");
+        assert_eq!(session.summary(), &summary);
+        assert_eq!(session.profile(), profile);
+        assert_eq!(session.terminal_voltages(), voltages);
+        assert_eq!(session.solve_count(), 1);
+        assert_eq!(session.load_branches()[0].p_w, 1.0);
+        // The restored law still solves warm with the retained factor.
+        session.replace_load_powers(&[]).unwrap();
+        assert_eq!(session.factorization_count(), 1);
+    }
+
+    #[test]
+    fn native_session_profiles_each_phase() {
+        let mut session =
+            McPfSession::new(oracle_instance(ORACLE_INPUTS[0]), McPfOptions::default()).unwrap();
+        let cold = session.cold_profile();
+        assert!(cold.timed);
+        assert!(cold.iterations > 0);
+        assert!(cold.linear_solves > cold.iterations);
+        assert!(cold.total_ms >= cold.prepare_ms + cold.factor_ms);
+        let branch = session.load_branches()[0].clone();
+        session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: branch.load,
+                branch: branch.branch,
+                p_w: branch.base_p_w * 1.1,
+                q_var: branch.base_q_var,
+            }])
+            .unwrap();
+        let warm = session.profile();
+        assert!(warm.timed);
+        assert_eq!(warm.prepare_ms, 0.0);
+        assert_eq!(warm.factor_ms, 0.0);
+        assert_eq!(warm.linear_solves, warm.iterations);
+        assert_eq!(warm.iterations, session.summary().iterations);
     }
 }
