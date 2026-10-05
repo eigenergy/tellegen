@@ -1,0 +1,257 @@
+{
+  "bus": {
+    "s": {
+      "terminal_names": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ],
+      "perfectly_grounded_terminals": [
+        "n"
+      ]
+    },
+    "b": {
+      "terminal_names": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ],
+      "vpn_min": [
+        200,
+        200,
+        200
+      ],
+      "vpn_max": [
+        250,
+        250,
+        250
+      ],
+      "vn_max": 10
+    }
+  },
+  "linecode": {
+    "c": {
+      "R_series_1_1": 0.1,
+      "R_series_1_2": 0.02,
+      "R_series_1_3": 0.02,
+      "R_series_1_4": 0.02,
+      "R_series_2_1": 0.02,
+      "R_series_2_2": 0.1,
+      "R_series_2_3": 0.02,
+      "R_series_2_4": 0.02,
+      "R_series_3_1": 0.02,
+      "R_series_3_2": 0.02,
+      "R_series_3_3": 0.1,
+      "R_series_3_4": 0.02,
+      "R_series_4_1": 0.02,
+      "R_series_4_2": 0.02,
+      "R_series_4_3": 0.02,
+      "R_series_4_4": 0.1,
+      "X_series_1_1": 0.04,
+      "X_series_1_2": 0.01,
+      "X_series_1_3": 0.01,
+      "X_series_1_4": 0.01,
+      "X_series_2_1": 0.01,
+      "X_series_2_2": 0.04,
+      "X_series_2_3": 0.01,
+      "X_series_2_4": 0.01,
+      "X_series_3_1": 0.01,
+      "X_series_3_2": 0.01,
+      "X_series_3_3": 0.04,
+      "X_series_3_4": 0.01,
+      "X_series_4_1": 0.01,
+      "X_series_4_2": 0.01,
+      "X_series_4_3": 0.01,
+      "X_series_4_4": 0.04,
+      "G_from_1_1": 1e-05,
+      "G_from_1_2": -2e-06,
+      "G_from_1_3": -2e-06,
+      "G_from_1_4": -2e-06,
+      "G_from_2_1": -2e-06,
+      "G_from_2_2": 1e-05,
+      "G_from_2_3": -2e-06,
+      "G_from_2_4": -2e-06,
+      "G_from_3_1": -2e-06,
+      "G_from_3_2": -2e-06,
+      "G_from_3_3": 1e-05,
+      "G_from_3_4": -2e-06,
+      "G_from_4_1": -2e-06,
+      "G_from_4_2": -2e-06,
+      "G_from_4_3": -2e-06,
+      "G_from_4_4": 1e-05,
+      "B_to_1_1": 2e-05,
+      "B_to_1_2": -3e-06,
+      "B_to_1_3": -3e-06,
+      "B_to_1_4": -3e-06,
+      "B_to_2_1": -3e-06,
+      "B_to_2_2": 2e-05,
+      "B_to_2_3": -3e-06,
+      "B_to_2_4": -3e-06,
+      "B_to_3_1": -3e-06,
+      "B_to_3_2": -3e-06,
+      "B_to_3_3": 2e-05,
+      "B_to_3_4": -3e-06,
+      "B_to_4_1": -3e-06,
+      "B_to_4_2": -3e-06,
+      "B_to_4_3": -3e-06,
+      "B_to_4_4": 2e-05,
+      "i_max": [
+        20,
+        20,
+        20,
+        20
+      ],
+      "s_max": [
+        4000,
+        4000,
+        4000,
+        1000
+      ]
+    }
+  },
+  "line": {
+    "l": {
+      "bus_from": "s",
+      "bus_to": "b",
+      "terminal_map_from": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ],
+      "terminal_map_to": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ],
+      "linecode": "c",
+      "length": 1
+    }
+  },
+  "voltage_source": {
+    "grid": {
+      "bus": "s",
+      "terminal_map": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ],
+      "v_magnitude": [
+        230,
+        230,
+        230,
+        0
+      ],
+      "v_angle": [
+        0,
+        -2.0943951023931953,
+        2.0943951023931953,
+        0
+      ],
+      "cost": [
+        0.2,
+        0.2,
+        0.2
+      ]
+    }
+  },
+  "load": {
+    "w": {
+      "bus": "b",
+      "terminal_map": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ],
+      "configuration": "WYE",
+      "model": "constant_power",
+      "p_nom": [
+        100,
+        140,
+        80
+      ],
+      "q_nom": [
+        20,
+        30,
+        10
+      ]
+    },
+    "d": {
+      "bus": "b",
+      "terminal_map": [
+        "a",
+        "b",
+        "c"
+      ],
+      "configuration": "DELTA",
+      "model": "constant_power",
+      "p_nom": [
+        20,
+        30,
+        10
+      ],
+      "q_nom": [
+        4,
+        5,
+        2
+      ]
+    }
+  },
+  "generator": {
+    "g": {
+      "bus": "b",
+      "terminal_map": [
+        "a",
+        "b",
+        "c",
+        "n"
+      ],
+      "configuration": "WYE",
+      "p_min": [
+        0,
+        0,
+        0
+      ],
+      "p_max": [
+        50,
+        50,
+        50
+      ],
+      "q_min": [
+        0,
+        0,
+        0
+      ],
+      "q_max": [
+        0,
+        0,
+        0
+      ],
+      "s_max": [
+        80,
+        80,
+        80
+      ],
+      "i_max": [
+        2,
+        2,
+        2,
+        3
+      ],
+      "cost": [
+        0.05,
+        0.05,
+        0.05
+      ]
+    }
+  },
+  "meta": {
+    "$schema": "https://raw.githubusercontent.com/distribution-system-opt/dsopt-schema/main/schema/bmopf/0.1.0/bmopf.schema.json",
+    "frequency": 60
+  }
+}
