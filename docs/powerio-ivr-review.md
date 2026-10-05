@@ -45,8 +45,8 @@ Validation: 661 tests passed, 2 existing ignored across `powerio-dist` and
 round trips after edits, malformed inputs, zero/two-wire/delta incidence, generated
 names, custom regulator maps, and winding bounds. Independent LinDist3Flow and
 Y-bus witnesses check capacitor consumption downstream. Strict affected-crate
-Clippy and formatting passed; the full feature/binding Clippy matrix is also
-checked on this branch's committed snapshot before publication.
+Clippy and formatting passed. The full feature/binding Clippy matrix also passed
+independently on this branch's committed snapshot.
 
 ## Draft PR 2
 
