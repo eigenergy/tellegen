@@ -4,6 +4,14 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.3.1](https://github.com/eigenergy/tellegen/compare/v0.3.0...v0.3.1) - 2026-10-05
+
+### Other
+
+- Keep multiconductor load edits as a session overlay with on-demand results
+- make the rneut centre-tap case exercise the neutral impedance
+- add centre-tap regression fixtures
+
 ## [0.3.0](https://github.com/eigenergy/tellegen/compare/v0.2.0...v0.3.0) - 2026-09-23
 
 The release that accompanies the DXConf '26 paper *Interactive Optimal Power
