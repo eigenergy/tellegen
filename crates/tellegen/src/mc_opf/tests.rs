@@ -514,3 +514,292 @@ fn constraint_selections_really_remove_limits() {
     let r = solve_mc_ac_opf_instance(Arc::new(i.with_constraints(c)), &Default::default()).unwrap();
     assert!(r.branches[0].current_from_a[0][0] > 0.1);
 }
+
+#[test]
+fn component_jacobians_and_lagrangian_hessians_match_ad_and_differences() {
+    let cases: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/data/mc_opf/components.json")).unwrap();
+    let controls: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/data/mc_opf/controls.json")).unwrap();
+    let bounds: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/data/mc_opf/bounds.json")).unwrap();
+    let cases: serde_json::Map<String, serde_json::Value> = cases
+        .as_object()
+        .unwrap()
+        .iter()
+        .chain(controls.as_object().unwrap())
+        .chain(bounds.as_object().unwrap())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    for name in [
+        "tap_single_phase",
+        "tap_center_tap",
+        "tap_regulator_a",
+        "tap_regulator_b",
+        "tap_delta_wye",
+        "tap_wye_delta",
+        "tap_open_delta_caba",
+        "S1_vpos_max",
+        "S2_vneg_max",
+        "S3_vzero_max",
+        "D1_va_diff",
+        "load_constant_current",
+        "load_constant_impedance",
+        "load_exponential",
+        "load_zip",
+        "ibr_droop_pn_per_phase",
+        "ibr_pf_lag",
+        "transformer_center_tap",
+        "transformer_delta_wye",
+        "transformer_n_winding",
+        "transformer_regulator_a",
+    ] {
+        let module = powerio::parse_with_options(
+            powerio::Source::from_memory(
+                "derivatives.bmopf.json",
+                serde_json::to_vec(&cases[name]).unwrap(),
+            )
+            .unwrap(),
+            &powerio::ParseOptions::default()
+                .format("bmopf-json")
+                .unwrap(),
+        )
+        .unwrap();
+        let powerio::PioValue::MulticonductorNetwork(net) = module.into_value() else {
+            panic!("expected network")
+        };
+        let m = compiled(net);
+        let mut fast = NlTnlp::try_new_with_quadratic(m.problem.clone(), true).unwrap();
+        let mut ad = NlTnlp::try_new_with_quadratic(m.problem.clone(), false).unwrap();
+        assert!(fast.quadratic_objective());
+        if name.contains("transformer")
+            || name.starts_with("tap_")
+            || name.starts_with("S")
+            || name.starts_with("D1")
+            || name == "load_constant_impedance"
+            || name == "ibr_pf_lag"
+        {
+            assert!(
+                (0..m.problem.m).all(|r| fast.quadratic_row(r)),
+                "{name}: polynomial row escaped quadratic path: {:?}",
+                (0..m.problem.m)
+                    .filter(|&r| !fast.quadratic_row(r))
+                    .map(|r| &m.problem.con_names[r])
+                    .collect::<Vec<_>>()
+            );
+        } else {
+            assert!(
+                (0..m.problem.m).any(|r| !fast.quadratic_row(r)),
+                "{name}: expected AD fallback"
+            );
+        }
+        let n = m.problem.n;
+        let dir: Vec<_> = (0..n).map(|k| ((k * 7 + 3) as f64).sin()).collect();
+        for point in 0..3 {
+            let x: Vec<_> = m
+                .problem
+                .x0
+                .iter()
+                .enumerate()
+                .map(|(k, v)| v + 0.1 * ((k + point * 3) as f64).cos())
+                .collect();
+            let lambda: Vec<_> = (0..m.problem.m)
+                .map(|k| ((k + point) as f64).cos())
+                .collect();
+            let sigma = 0.3 + point as f64;
+            let (a, j, h) = derivatives(&mut fast, &x, &lambda, sigma);
+            let (b, jb, hb) = derivatives(&mut ad, &x, &lambda, sigma);
+            for (u, v) in a
+                .iter()
+                .chain(&j)
+                .chain(&h)
+                .zip(b.iter().chain(&jb).chain(&hb))
+            {
+                near(*u, *v, 1e-9 * (1. + u.abs()));
+            }
+            for step in [1e-5, 3e-6, 1e-6] {
+                let xp: Vec<_> = x.iter().zip(&dir).map(|(x, d)| x + step * d).collect();
+                let xm: Vec<_> = x.iter().zip(&dir).map(|(x, d)| x - step * d).collect();
+                let mut gp = vec![0.; lambda.len()];
+                let mut gm = gp.clone();
+                assert!(fast.eval_g(&xp, true, &mut gp));
+                assert!(fast.eval_g(&xm, true, &mut gm));
+                for r in 0..lambda.len() {
+                    let exact: f64 = (0..n).map(|k| j[r * n + k] * dir[k]).sum();
+                    near(
+                        (gp[r] - gm[r]) / (2. * step),
+                        exact,
+                        2e-4 * (1. + exact.abs()),
+                    );
+                }
+                let lp = lag_gradient(&mut fast, &xp, &lambda, sigma);
+                let lm = lag_gradient(&mut fast, &xm, &lambda, sigma);
+                for r in 0..n {
+                    let exact: f64 = (0..n).map(|k| h[r * n + k] * dir[k]).sum();
+                    near(
+                        (lp[r] - lm[r]) / (2. * step),
+                        exact,
+                        2e-4 * (1. + exact.abs()),
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn impedance_load_remains_a_current_law_at_zero_voltage() {
+    let mut n = network();
+    n.sources_mut()[0].v_magnitude[0] = 0.0;
+    n.buses_mut()[1].vpn_min = None;
+    n.buses_mut()[1].vpn_max = None;
+    n.loads_mut()[0].voltage_model =
+        powerio_dist::DistLoadVoltageModel::ConstantImpedance { v_nom: vec![230.0] };
+    let result = solve(n.clone());
+    near(result.solution.objective(), 0.0, 1e-10);
+    let load = result
+        .devices
+        .iter()
+        .find(|d| d.kind == powerio_matrix::McOpfDeviceKind::Load)
+        .unwrap();
+    assert!(load.coil_current_a.iter().flatten().all(|v| v.abs() < 1e-8));
+    // The same zero-voltage network cannot supply a nonzero constant-power load.
+    n.loads_mut()[0].voltage_model =
+        powerio_dist::DistLoadVoltageModel::ConstantPower { v_nom: Vec::new() };
+    assert!(solve_mc_ac_opf_instance(instance(n), &Default::default()).is_err());
+}
+
+#[test]
+fn zero_inverter_ratings_solve_without_duplicate_capability_equalities() {
+    use powerio_dist::{DistIbr, IbrPrimeMover, IbrTopology};
+    for current_zero in [false, true] {
+        let mut n = network();
+        let mut inv = DistIbr::new(
+            "off",
+            "b",
+            names(&["a", "n"]),
+            IbrTopology::SinglePhase,
+            IbrPrimeMover::Pv,
+            vec![if current_zero { 80.0 } else { 0.0 }],
+        );
+        inv.p_min = Some(vec![0.0]);
+        inv.p_max = Some(vec![50.0]);
+        inv.q_min = Some(vec![0.0]);
+        inv.q_max = Some(vec![0.0]);
+        if current_zero {
+            inv.i_max = Some(vec![0.0, 0.0]);
+        }
+        inv.extras.insert("dc_link_coupled".into(), true.into());
+        n.ibrs_mut().push(inv);
+        let result = solve(n);
+        let dev = result.devices.iter().find(|d| d.identity == "off").unwrap();
+        assert!(dev.coil_power_va.iter().flatten().all(|v| v.abs() < 1e-6));
+    }
+}
+
+#[test]
+fn smooth_control_breakpoint_has_exact_first_and_second_derivatives() {
+    use pounce_nl::nl_reader::{Expr, NlProblem, NlProblemParts};
+    let problem = NlProblem::from_expressions(NlProblemParts {
+        minimize: true,
+        objective: model::softplus(Expr::Var(0)),
+        obj_constant: 0.0,
+        constraints: Vec::new(),
+        x_l: vec![f64::NEG_INFINITY],
+        x_u: vec![f64::INFINITY],
+        x0: vec![0.0],
+        g_l: Vec::new(),
+        g_u: Vec::new(),
+        var_names: vec!["z".into()],
+        con_names: Vec::new(),
+    })
+    .unwrap();
+    let mut t = NlTnlp::try_new(problem).unwrap();
+    for (x, value, first, second) in [
+        (0.0, 2.0_f64.ln(), 0.5, 0.25),
+        (-1000.0, 0.0, 0.0, 0.0),
+        (1000.0, 1000.0, 1.0, 0.0),
+    ] {
+        let f = t.eval_f(&[x], true).unwrap();
+        near(f, value, 1e-12);
+        let (gradient, _, hessian) = derivatives(&mut t, &[x], &[], 1.0);
+        near(gradient[0], first, 1e-12);
+        near(hessian[0], second, 1e-12);
+    }
+}
+
+#[test]
+fn independent_validation_detects_transformer_tap_and_inverter_corruption() {
+    for (input, name) in [
+        (
+            include_str!("../../tests/data/mc_opf/components.json"),
+            "transformer_center_tap",
+        ),
+        (
+            include_str!("../../tests/data/mc_opf/controls.json"),
+            "tap_regulator_b",
+        ),
+        (
+            include_str!("../../tests/data/mc_opf/components.json"),
+            "ibr_pf_lag",
+        ),
+    ] {
+        let cases: serde_json::Value = serde_json::from_str(input).unwrap();
+        let module = powerio::parse_with_options(
+            powerio::Source::from_memory(
+                "corruption.bmopf.json",
+                serde_json::to_vec(&cases[name]).unwrap(),
+            )
+            .unwrap(),
+            &powerio::ParseOptions::default()
+                .format("bmopf-json")
+                .unwrap(),
+        )
+        .unwrap();
+        let PioValue::MulticonductorNetwork(net) = module.into_value() else {
+            panic!("network")
+        };
+        let m = compiled(net);
+        let t = Rc::new(RefCell::new(NlTnlp::try_new(m.problem.clone()).unwrap()));
+        let mut app = IpoptApplication::new();
+        app.initialize_with_options_str("linear_solver feral\nprint_level 0\ntol 1e-9\n")
+            .unwrap();
+        app.initialize().unwrap();
+        assert_eq!(
+            app.optimize_tnlp(t.clone()),
+            ApplicationReturnStatus::SolveSucceeded,
+            "{name}"
+        );
+        let t = t.borrow();
+        let x = t.final_x().unwrap();
+        let f = t.final_obj();
+        validate::check(&m, x, f, 1e-6).unwrap();
+        let mut indices: Vec<usize> = m.transformer_tap.iter().flatten().copied().collect();
+        indices.extend(
+            m.transformer_current
+                .iter()
+                .flatten()
+                .flat_map(|pair| pair.iter())
+                .flat_map(|a| a.terms.keys())
+                .copied(),
+        );
+        indices.extend(
+            m.devices
+                .iter()
+                .zip(&m.prep.devices)
+                .filter(|(_, d)| d.kind == powerio_matrix::McOpfDeviceKind::Ibr)
+                .flat_map(|(d, _)| d.power.iter().flatten())
+                .copied(),
+        );
+        assert!(!indices.is_empty());
+        for index in indices {
+            let mut bad = x.to_vec();
+            bad[index] += 0.05;
+            assert!(
+                validate::check(&m, &bad, f, 1e-6).is_err(),
+                "{name}: {}",
+                m.problem.var_names[index]
+            );
+        }
+    }
+}

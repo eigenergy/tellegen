@@ -1,5 +1,5 @@
 //! IVR polynomial construction. Only this layer knows about POUNCE expressions.
-use pounce_nl::nl_reader::{BinOp, Expr, NlProblem, NlProblemParts};
+use pounce_nl::nl_reader::{BinOp, CmpOp, Expr, NlProblem, NlProblemParts, UnaryOp};
 use powerio_matrix::{McAcOpfPreparation, McOpfDeviceKind};
 use std::collections::BTreeMap;
 
@@ -101,6 +101,20 @@ pub(super) fn difference(v: &[Pair], a: usize, b: Option<usize>) -> Pair {
         |b| pair_add(&v[a], &pair_scale(&v[b], -1.0)),
     )
 }
+fn descriptor(row: &powerio_matrix::McOpfComplexRow, voltage: &[Pair], currents: &[Pair]) -> Pair {
+    let mut out = [Affine::default(), Affine::default()];
+    for (terms, values) in [(&row.voltage, voltage), (&row.current, currents)] {
+        for &(k, [r, i]) in terms {
+            out[0] = out[0]
+                .add(&values[k][0].scale(r))
+                .sub(&values[k][1].scale(i));
+            out[1] = out[1]
+                .add(&values[k][1].scale(r))
+                .add(&values[k][0].scale(i));
+        }
+    }
+    out
+}
 fn admittance(v: &[Pair], nodes: &[usize], g: &[Vec<f64>], b: &[Vec<f64>], k: usize) -> Pair {
     let mut out = [Affine::default(), Affine::default()];
     for (j, &node) in nodes.iter().enumerate() {
@@ -126,6 +140,9 @@ pub(super) struct Model {
     /// Per branch, conductor, and end: optional active/reactive lift columns.
     pub branch_power: Vec<Vec<[Option<[usize; 2]>; 2]>>,
     pub devices: Vec<DeviceColumns>,
+    pub transformer_tap: Vec<Option<usize>>,
+    pub transformer_current: Vec<Vec<Pair>>,
+    pub transformer_power: Vec<Vec<Option<[usize; 2]>>>,
     pub problem: NlProblem,
 }
 #[derive(Default)]
@@ -182,6 +199,48 @@ impl Builder {
             );
         }
         Ok(())
+    }
+    fn droop(&mut self, name: &str, voltage: &[Pair], curve: &powerio_matrix::McOpfDroop) -> Expr {
+        let mut magnitudes = Vec::new();
+        for (j, &(p, q)) in curve.monitors.iter().enumerate() {
+            let u = difference(voltage, p, q);
+            let start = u[0].value(&self.start).hypot(u[1].value(&self.start));
+            let m = self.var(format!("{name}:magnitude:{j}"), start);
+            self.row(
+                format!("{name}:magnitude:{j}:nonnegative"),
+                Expr::Var(m),
+                0.0,
+                f64::INFINITY,
+            );
+            self.row(
+                format!("{name}:magnitude:{j}:definition"),
+                sum(vec![
+                    product(&u[0], &u[0]),
+                    product(&u[1], &u[1]),
+                    scale(-1.0, product(&Affine::var(m), &Affine::var(m))),
+                ]),
+                0.0,
+                0.0,
+            );
+            magnitudes.push(Expr::Var(m));
+        }
+        let mean = scale(1.0 / (magnitudes.len() as f64), sum(magnitudes));
+        let mut out = vec![Expr::Const(curve.values[0])];
+        for j in 0..curve.knots.len() - 1 {
+            let slope =
+                (curve.values[j + 1] - curve.values[j]) / (curve.knots[j + 1] - curve.knots[j]);
+            if slope == 0.0 {
+                continue;
+            }
+            for (k, sign) in [(j, 1.0), (j + 1, -1.0)] {
+                let z = scale(
+                    1.0 / curve.epsilon,
+                    bin(BinOp::Sub, mean.clone(), Expr::Const(curve.knots[k])),
+                );
+                out.push(scale(sign * slope * curve.epsilon, softplus(z)));
+            }
+        }
+        sum(out)
     }
     fn power_lift(&mut self, name: &str, v: &Pair, i: &Pair, start: [f64; 2]) -> [usize; 2] {
         let ids = [
@@ -275,6 +334,77 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
         branch_current.push(currents);
         branch_power.push(power_columns);
     }
+    let mut transformer_tap = Vec::new();
+    let mut transformer_current = Vec::new();
+    let mut transformer_power = Vec::new();
+    for tx in &prep.transformers {
+        let tap = tx.tap_bounds.map(|[lo, hi]| {
+            let id = b.var(
+                format!("transformer:{}:tap", tx.identity),
+                1.0_f64.clamp(lo, hi),
+            );
+            b.row(
+                format!("transformer:{}:tap_bounds", tx.identity),
+                Expr::Var(id),
+                lo,
+                hi,
+            );
+            id
+        });
+        transformer_tap.push(tap);
+        let currents: Vec<_> = tx
+            .coils
+            .iter()
+            .enumerate()
+            .map(|(k, _)| b.pair(&format!("transformer:{}:{k}", tx.identity), [0.0, 0.0]))
+            .collect();
+        for (k, row) in tx.equations.iter().enumerate() {
+            let value = descriptor(row, &voltage, &currents);
+            for (j, a) in value.iter().enumerate() {
+                let name = format!("transformer:{}:equation:{k}:{j}", tx.identity);
+                if let Some(tap) = tap {
+                    let dynamic = descriptor(&tx.tap_equations[k], &voltage, &currents);
+                    b.row(
+                        name,
+                        sum(vec![a.expr(), product(&Affine::var(tap), &dynamic[j])]),
+                        0.0,
+                        0.0,
+                    );
+                } else {
+                    b.affine_row(name, a)?;
+                }
+            }
+        }
+        for (coil, i) in tx.coils.iter().zip(&currents) {
+            kcl[coil.positive] = pair_add(&kcl[coil.positive], &pair_scale(i, -1.0));
+            if let Some(n) = coil.negative {
+                kcl[n] = pair_add(&kcl[n], i);
+            }
+        }
+        let mut powers = Vec::new();
+        for port in &tx.ports {
+            let name = format!("transformer:{}:{}", tx.identity, port.name);
+            let i = descriptor(&port.current, &voltage, &currents);
+            let u = difference(&voltage, port.positive, port.negative);
+            if let Some(cap) = port.current_max {
+                b.norm(&format!("{name}:current"), &i, cap)?;
+            }
+            let ids = if let Some(cap) = port.apparent_max {
+                let ids = b.power_lift(&name, &u, &i, [0.0, 0.0]);
+                b.norm(
+                    &format!("{name}:apparent"),
+                    &[Affine::var(ids[0]), Affine::var(ids[1])],
+                    cap,
+                )?;
+                Some(ids)
+            } else {
+                None
+            };
+            powers.push(ids);
+        }
+        transformer_current.push(currents);
+        transformer_power.push(powers);
+    }
     for sh in &prep.shunts {
         for (k, &node) in sh.terminals.iter().enumerate() {
             let i = admittance(&voltage, &sh.terminals, &sh.g, &sh.b, k);
@@ -311,7 +441,79 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
             };
             let i = b.pair(&format!("{name}:current"), i0);
             let pq = b.power_lift(&name, &u, &i, p0);
-            if let Some(pq0) = coil.prescribed {
+            let zero_power = coil.current_max == Some(0.0) || coil.apparent_max == Some(0.0);
+            if let Some(law) = &coil.load_law {
+                let impedance = law.terms.iter().flatten().all(|t| t[1] == 2.0);
+                if impedance {
+                    // Preserve the affine constitutive law even at U = 0.
+                    let g: f64 =
+                        law.terms[0].iter().map(|t| t[0]).sum::<f64>() / law.nominal.powi(2);
+                    let q: f64 =
+                        law.terms[1].iter().map(|t| t[0]).sum::<f64>() / law.nominal.powi(2);
+                    b.affine_row(
+                        format!("{name}:impedance:r"),
+                        &i[0].sub(&u[0].scale(g)).sub(&u[1].scale(q)),
+                    )?;
+                    b.affine_row(
+                        format!("{name}:impedance:i"),
+                        &i[1].sub(&u[1].scale(g)).add(&u[0].scale(q)),
+                    )?;
+                } else if law.terms.iter().flatten().all(|t| t[1] == 0.0) {
+                    for (j, &power_column) in pq.iter().enumerate() {
+                        let target: f64 = law.terms[j].iter().map(|t| t[0]).sum();
+                        b.row(
+                            format!("{name}:constant:{j}"),
+                            Expr::Var(power_column),
+                            target,
+                            target,
+                        );
+                    }
+                } else {
+                    // Log-voltage lift defines the exact positive-voltage domain;
+                    // there is no artificial epsilon floor or fractional power at zero.
+                    if u.iter().all(|a| a.terms.is_empty()) && u2 == 0.0 {
+                        return Err(format!(
+                            "{name}: voltage-dependent law at fixed zero voltage"
+                        ));
+                    }
+                    let ell = b.var(
+                        format!("{name}:log_voltage"),
+                        (u2.sqrt().max(law.nominal * 0.5) / law.nominal).ln(),
+                    );
+                    let exp = |exponent| {
+                        Expr::Unary(UnaryOp::Exp, Box::new(scale(exponent, Expr::Var(ell))))
+                    };
+                    let un = pair_scale(&u, 1.0 / law.nominal);
+                    b.row(
+                        format!("{name}:positive_voltage"),
+                        bin(
+                            BinOp::Sub,
+                            sum(vec![product(&un[0], &un[0]), product(&un[1], &un[1])]),
+                            exp(2.0),
+                        ),
+                        0.0,
+                        0.0,
+                    );
+                    for (j, &power_column) in pq.iter().enumerate() {
+                        let rhs = sum(law.terms[j]
+                            .iter()
+                            .map(|t| {
+                                if t[1] == 0.0 {
+                                    Expr::Const(t[0])
+                                } else {
+                                    scale(t[0], exp(t[1]))
+                                }
+                            })
+                            .collect());
+                        b.row(
+                            format!("{name}:voltage_law:{j}"),
+                            bin(BinOp::Sub, Expr::Var(power_column), rhs),
+                            0.0,
+                            0.0,
+                        );
+                    }
+                }
+            } else if let Some(pq0) = coil.prescribed {
                 for j in 0..2 {
                     b.row(
                         format!("{name}:prescribed:{j}"),
@@ -325,7 +527,11 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                     .into_iter()
                     .enumerate()
                 {
-                    if lo.is_some() || hi.is_some() {
+                    if zero_power {
+                        if lo.is_some_and(|v| v > 0.0) || hi.is_some_and(|v| v < 0.0) {
+                            return Err(format!("{name}: zero rating conflicts with capability"));
+                        }
+                    } else if lo.is_some() || hi.is_some() {
                         b.row(
                             format!("{name}:capability:{j}"),
                             Expr::Var(pq[j]),
@@ -335,10 +541,32 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                     }
                 }
             }
+            if let Some(slope) = coil.reactive_slope.filter(|_| !zero_power) {
+                b.affine_row(
+                    format!("{name}:power_factor"),
+                    &Affine::var(pq[1]).sub(&Affine::var(pq[0]).scale(slope)),
+                )?;
+            }
+            for (family, curve, column, upper) in [
+                ("volt_var", coil.volt_var.as_ref(), pq[1], false),
+                ("volt_watt", coil.volt_watt.as_ref(), pq[0], true),
+            ] {
+                if let Some(curve) =
+                    curve.filter(|c| !zero_power || c.values.iter().any(|v| *v != 0.0))
+                {
+                    let target = b.droop(&format!("{name}:{family}"), &voltage, curve);
+                    b.row(
+                        format!("{name}:{family}"),
+                        bin(BinOp::Sub, Expr::Var(column), target),
+                        if upper { f64::NEG_INFINITY } else { 0.0 },
+                        0.0,
+                    );
+                }
+            }
             if let Some(cap) = coil.current_max {
                 b.norm(&format!("{name}:current_cap"), &i, cap)?;
             }
-            if let Some(cap) = coil.apparent_max {
+            if let Some(cap) = coil.apparent_max.filter(|_| coil.current_max != Some(0.0)) {
                 b.norm(
                     &format!("{name}:apparent_cap"),
                     &[Affine::var(pq[0]), Affine::var(pq[1])],
@@ -354,17 +582,66 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
             cols.current.push(i);
             cols.power.push(pq);
         }
-        if let Some(cap) = dev.neutral_current_max {
+        if let Some(cap) = dev
+            .neutral_current_max
+            .filter(|_| !dev.coils.iter().all(|c| c.current_max == Some(0.0)))
+        {
             b.norm(
                 &format!("{:?}:{}:neutral_cap", dev.kind, dev.identity),
                 &total,
                 cap,
             )?;
         }
+        if let Some([lo, hi]) = dev.net_active_bounds {
+            if dev
+                .coils
+                .iter()
+                .all(|c| c.current_max == Some(0.0) || c.apparent_max == Some(0.0))
+            {
+                if lo > 0.0 || hi < 0.0 {
+                    return Err(format!(
+                        "{}: zero rating conflicts with DC-link power",
+                        dev.identity
+                    ));
+                }
+            } else {
+                b.row(
+                    format!("Ibr:{}:dc_link", dev.identity),
+                    sum(cols.power.iter().map(|pq| Expr::Var(pq[0])).collect()),
+                    lo,
+                    hi,
+                );
+            }
+        }
         devices.push(cols);
     }
     for limit in &prep.voltage_limits {
-        let u = difference(&voltage, limit.positive, limit.negative);
+        let u = if limit.combination.is_empty() {
+            difference(&voltage, limit.positive, limit.negative)
+        } else {
+            let sequence = descriptor(
+                &powerio_matrix::McOpfComplexRow {
+                    voltage: limit.combination.clone(),
+                    current: Vec::new(),
+                },
+                &voltage,
+                &[],
+            );
+            // Lift the sequence voltage before squaring. This avoids cancellation
+            // between expanded Fortescue cross terms in the backend's conservative
+            // quadratic recognizer and keeps the defining rows affine.
+            let lifted = b.pair(
+                &format!("sequence:{}", limit.identity),
+                [sequence[0].value(&b.start), sequence[1].value(&b.start)],
+            );
+            for k in 0..2 {
+                b.affine_row(
+                    format!("sequence:{}:{k}", limit.identity),
+                    &lifted[k].sub(&sequence[k]),
+                )?;
+            }
+            lifted
+        };
         if let Some(cap) = limit.upper {
             b.norm(&format!("voltage:{}:upper", limit.identity), &u, cap)?;
         }
@@ -376,6 +653,54 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                 sum(vec![product(&a, &a), product(&c, &c)]),
                 1.0,
                 f64::INFINITY,
+            );
+        }
+    }
+    for angle in &prep.angle_limits {
+        let first = &voltage[angle.first];
+        let second = &voltage[angle.second];
+        if [first, second]
+            .iter()
+            .any(|u| u.iter().all(|a| a.terms.is_empty() && a.constant == 0.0))
+        {
+            continue;
+        }
+        let rotate = |theta: f64| {
+            [
+                first[0]
+                    .scale(theta.cos())
+                    .add(&first[1].scale(theta.sin())),
+                first[1]
+                    .scale(theta.cos())
+                    .sub(&first[0].scale(theta.sin())),
+            ]
+        };
+        let lower = power(&rotate(angle.offset + angle.lower), second)[1].clone();
+        if angle.lower == angle.upper {
+            b.row(
+                format!("angle:{}:equality", angle.identity),
+                lower,
+                0.0,
+                0.0,
+            );
+            b.row(
+                format!("angle:{}:domain", angle.identity),
+                power(&rotate(angle.offset), second)[0].clone(),
+                0.0,
+                f64::INFINITY,
+            );
+        } else {
+            b.row(
+                format!("angle:{}:lower", angle.identity),
+                lower,
+                0.0,
+                f64::INFINITY,
+            );
+            b.row(
+                format!("angle:{}:upper", angle.identity),
+                power(&rotate(angle.offset + angle.upper), second)[1].clone(),
+                f64::NEG_INFINITY,
+                0.0,
             );
         }
     }
@@ -408,7 +733,41 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
         voltage,
         branch_current,
         branch_power,
+        transformer_tap,
+        transformer_current,
+        transformer_power,
         devices,
         problem,
     })
+}
+
+pub(super) fn softplus(z: Expr) -> Expr {
+    // Stable log(1+exp(z)) = max(z,0)+log(1+exp(-abs(z))).
+    // The branch arguments remain finite even if a tape evaluates both.
+    let abs = Expr::Cond {
+        cond: Box::new(Expr::Compare(
+            CmpOp::Ge,
+            Box::new(z.clone()),
+            Box::new(Expr::Const(0.0)),
+        )),
+        then_: Box::new(z.clone()),
+        else_: Box::new(scale(-1.0, z.clone())),
+    };
+    let positive = Expr::Cond {
+        cond: Box::new(Expr::Compare(
+            CmpOp::Ge,
+            Box::new(z.clone()),
+            Box::new(Expr::Const(0.0)),
+        )),
+        then_: Box::new(z),
+        else_: Box::new(Expr::Const(0.0)),
+    };
+    let smooth = Expr::Unary(
+        UnaryOp::Log,
+        Box::new(sum(vec![
+            Expr::Const(1.0),
+            Expr::Unary(UnaryOp::Exp, Box::new(scale(-1.0, abs))),
+        ])),
+    );
+    sum(vec![positive, smooth])
 }

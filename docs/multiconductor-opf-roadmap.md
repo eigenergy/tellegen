@@ -23,14 +23,20 @@ no additional differentiation package is required.
 
 ## Differentiation decision
 
-For the implemented fixed-equipment profile, every equation is affine or
-quadratic in rectangular voltage, current and auxiliary power variables:
+For the polynomial subset, equations are affine or quadratic in rectangular
+voltage, winding/device current, tap and auxiliary power variables:
 
 - KCL, `V_from - V_to = Z I_series`, fixed shunts and ideal switches are affine.
 - `P = Vr Ir + Vi Ii` and `Q = Vi Ir - Vr Ii` are bilinear.
 - Squared voltage/current bounds are quadratic. Apparent-power bounds are
   quadratic in explicit P/Q auxiliaries, linked to V/I by bilinear rows.
   Substituting V/I into the apparent-power circle would instead make it quartic.
+- Fixed transformer leakage and ampere-turn equations are affine; continuous
+  ordinary/regulator tap coefficients multiply voltage or current, so remain
+  bilinear. The descriptor retains currents at zero leakage and never inverts Z.
+- Constant-impedance loads and fixed-power-factor controls are affine current
+  or power laws. Fortescue sequence voltages use affine auxiliaries before
+  squaring, avoiding cancellation in the backend's quadratic recognizer.
 - Dispatch cost is linear in the P auxiliaries.
 
 Writing a row as `c_i + a_i' x + 1/2 x' Q_i x` gives the exact Jacobian row
@@ -40,12 +46,23 @@ The implementation emits local expanded monomials that POUNCE recognizes,
 then uses POUNCE's existing sparse quadratic evaluator. It does not add a
 symbolic algebra package or maintain a second derivative implementation.
 
-Keep the expression boundary: nonpolynomial load/control laws can use POUNCE's
-existing sparse AD when implemented and domain-tested. AD is also an independent
-comparison path for the polynomial evaluator. Numerical differences are test
-oracles only. There is no need to select one global AD backend before writing
-the fixed-equipment model; do not generalize this polynomial result to all of
-BMOPFTools' devices and controls.
+The expression boundary also handles genuinely nonpolynomial laws. General
+constant-current, ZIP and exponential loads use a log-voltage auxiliary:
+`ell = log(|U| / U_nom)`, `|U/U_nom|² = exp(2 ell)`, and each power term is
+`coefficient * exp(exponent * ell)`. This is an exact positive-voltage domain,
+with no arbitrary epsilon voltage floor. Pure impedance laws instead use
+`I = conj(S_nom) U / U_nom²`, including at zero voltage. Constant-equivalent
+laws reduce to fixed P/Q. A later optimization could recognize more polynomial
+ZIP special cases without changing the public preparation contract.
+
+Volt-var and volt-watt controls use nonnegative magnitude auxiliaries and
+stable softplus curves with BMOPFTools' default smoothing width (0.002 times
+mean physical knot voltage). Matching conditional branches keep value, first
+and second derivatives correct at knots and finite at extreme arguments.
+These rows use POUNCE's existing sparse AD. Forced AD and directional finite
+differences are independent tests of the polynomial evaluator; finite
+differences are never production derivatives. No new AD or symbolic-algebra
+package is introduced.
 
 Derivatives of the *solution* require a separate contract. Later work must map
 physical parameters to rows/columns, transform normalized multipliers back to
@@ -112,42 +129,64 @@ rank deficiency, weak complementarity and direct parameter dependence of outputs
 
 ## Development evidence
 
-As of 2026-10-05, stages 1 and 2 are implemented locally. Stages 3–6 are future
-work, not supported capabilities.
+As of 2026-10-05, stages 1–4 are implemented for the AC profile below.
+Repeated solves/sensitivities and browser integration remain stages 5–6.
 
 - Tellegen branch: `codex/multiconductor-ivr-opf`, based on #145 above.
 - Companion PowerIO branch: `codex/multiconductor-ivr-preparation`, commit
-  `e681e031` (preparation commit `ede42994` plus canonical metadata/role handling),
+  `0dc40abadc1c8a6a356167eb64077575af64d4e3`,
   based on `v0.11.3` to match Tellegen's released lockfile.
 - BMOPFTools oracle: clean commit
   `a8b52e069bfd4a7a57434c91bc0470ac03cfdd55` using its local test environment,
-  JuMP/Ipopt and a 1000 VA working power base.
+  JuMP/Ipopt. Authored fixtures use 1000 VA; imported binding-limit references
+  use BMOPFTools defaults (1 MVA), matching its documented unit-test profile.
 - POUNCE remains pinned to `925e75fbd036de309929e398159f946d42d0d94b` from #145.
 
-Implemented: coupled lines with both end shunts, independent fixed shunts,
-open/closed ideal switches, constant-power WYE/single-phase/delta loads,
-generator P/Q and current/apparent-power limits, grounded ideal voltage
-sources and linear generation/import cost, explicit floating load neutrals,
-terminal/coil result projection, cancellation and canonical module emission.
-Grounded voltage variables and unrestricted ground slack currents are
-eliminated; dropping grounded-terminal KCL is the corresponding exact reduction.
-No line impedance inverse or near-zero impedance regularization is used.
+Implemented AC components and controls:
 
-Preparation rejects unsupported equipment/semantic extras, nonlinear loads,
-sequence/angle limits, floating source neutrals, initial points, conductor
-components without fixed references, ideal cycles and ideal paths between
-multiple fixed references. This is a conservative supported profile: rejection
-does not prove the underlying electrical problem invalid or infeasible. Source
-reference arrays must cover the whole declared terminal map. Generator current
-ratings use the BMOPF phase-coil order with a trailing neutral rating for WYE;
-single-phase outgoing/return ratings collapse to the tighter cap. Missing or
-positive-infinite upper caps are absent; zero caps become component equalities.
+- Coupled lines, both end shunts, standalone shunts, ideal open/closed switches,
+  WYE/delta/two-wire loads (constant P, I, Z, ZIP and exponential), generators,
+  grounded ideal sources, and connection-aware capacitor banks with unequal
+  per-coil ratings.
+- Single-phase, center-tapped, WYE–delta, delta–WYE, arbitrary fixed n-winding
+  transformers, Type A/B autotransformer regulators and ABBC/BCAC/CABA open-delta
+  banks. Coverage includes winding polarity, delta roll, leakage mutual terms,
+  core shunts on explicit windings, neutral impedances/return bonds, coil versus
+  terminal ratings, and continuous taps for the native two-sided subtypes.
+  N-winding mixed connections and two-phase delta incidence have separate
+  external witnesses. Nameplate impedance bases are distinct from coil count.
+- Single-phase, three-leg and four-leg IBRs; explicit P/Q, current, neutral-return
+  and apparent-power limits; signed power factor; PG/PN/PP volt-var and volt-watt
+  controls, per-phase or averaged; and isolated DC-link active-power coupling.
+- PG, PN, PP and neutral voltage limits, positive/negative/zero sequence bounds,
+  and bus/line angle windows strictly inside +/- pi/2. Exact-zero ratings become
+  component equalities, with redundant zero-converter rows removed.
+
+PowerIO preparation preserves source identity and SI/per-unit meaning. It also
+retains BMOPF capacitor coil ratings, n-winding ratings and open-delta maps across
+conversion. Stale capacitor source metadata cannot overwrite an edited canonical
+nameplate. Transformer limit selections use `transformer:<name>` under
+`conductor_limits`; IBR capability selections use `ibr:<name>` under
+`generator_capability`. Droop/PF and DC-link laws remain physical equations when
+capability bounds are deselected.
+
+The supported profile still rejects explicit DC networks, floating source
+neutrals, initial points, unsupported semantic extras, unreferenced conductor
+islands, ideal line/switch cycles and ideal paths between multiple fixed
+references. Negative neutral resistance must be normalized to an explicit open
+branch upstream. Arbitrary IBR control policies (including conflicting PF/droop,
+three-leg droop, non-VA-fraction curves and additional minimum-P policies) are
+rejected rather than skipped. N-winding tap optimization is unsupported by the
+reference engine and this implementation. These restrictions are explicit
+profile boundaries, not proofs of electrical infeasibility.
 
 The native API is `solve_mc_ac_opf_instance[_cancellable]` and
 `solve_mc_ac_opf_module_json`, behind `mc-opf`. The module API accepts an explicit
 `McAcOpfInstance`. `McOpfResult` includes independent residuals and physical
 current/power ledgers; the portable solution retains its original instance and
-uses the canonical terminal axes. Only accepted POUNCE statuses followed by
+uses the canonical terminal axes. Native results add transformer winding/tap
+and IBR coil ledgers; the current portable solution schema retains terminal
+voltages and its existing source/generator dispatch fields. Only accepted POUNCE statuses followed by
 successful physical validation produce a result. Success is local, not a global
 optimality certificate. Model preparation/compilation is repeated for each solve;
 this is not yet a retained session or large-feeder performance claim.
@@ -181,38 +220,54 @@ oracle change:
 julia --project=/path/to/BMOPFTools.jl/test scripts/mc_opf_oracle.jl
 ```
 
-The synthetic fixture and derived results in `crates/tellegen/tests/data/mc_opf`
-are authored for this repository and use its MIT license. They total under
-10 KiB. The reference records the input SHA-256 and oracle commit; ordinary Rust
-tests check the hash and require neither Julia nor a network connection.
+Ordinary Rust tests need neither Julia nor network access. Each frozen bundle
+records the input SHA-256, clean oracle commit, Julia/JuMP/Ipopt versions, units,
+solver options and comparison tolerances. Every fixture file is below 100 KiB.
+The 12 imported `pmd_bounds` fixtures retain their electrical coefficients and
+carry CC BY 4.0 attribution and license text. Other inputs are independently
+authored under Tellegen's MIT license; see `ATTRIBUTION.txt`.
 
-### Validation recorded
+### Numerical acceptance and validation
 
-- PowerIO matrix suite: **242 passed**, including 14 new preparation tests;
-  strict all-target Clippy passed.
-- Tellegen with `mc-opf` and default features: **315 passed**, 3 existing ignored;
-  strict all-target Clippy passed.
-- Tellegen with only `mc-opf`: **104 passed**, 2 existing ignored. The complete
-  committed-snapshot reproduction script passed against the durable companion
-  checkout, including both feature suites and strict Clippy.
-- Unpatched, locked released dependencies: **276 passed** with default features
-  (2 existing ignored), **66 passed** with no default features (1 existing
-  ignored). The default normal dependency graph excludes POUNCE. Both development
-  checkout lockfiles remain unchanged.
-- The IVR suite has 13 unit tests and 2 external/metamorphic tests. It covers
-  exact zero and singular nonzero impedance, complex equation witnesses away
-  from a solution, all-row/objective quadratic recognition, forced AD parity,
-  directional Jacobian and weighted-Hessian differences at four points and
-  three step sizes, corrupted/nonfinite result rejection, optional limits,
-  units, cancellation, terminal projection and portable round trips.
-- The external three-phase unbalanced WYE/delta dispatch witness agrees with
-  BMOPFTools at `1e-7` currency/hour objective, `1e-5` V complex voltage and
-  `1e-5` A both-end current tolerances. The reference objective is
-  `0.053888485005030434` currency/hour. Conductor/matrix permutations and scalar
-  cost broadcasting preserve the physical solution.
-- Changing voltage/power bases exposed an initialization defect, fixed by
-  propagating physical source phasors along conductor components. The regression
-  now checks a different voltage and power base, not just reordered variables.
+The suite follows BMOPFTools `docs/src/validation.md`: feasibility, derivative
+correctness, optimality witnesses and external comparisons are separate checks.
+An objective match alone is insufficient.
+
+- **63 component reference cases:** 31 fixed-component/load/control cases,
+  12 imported active-bound cases, 9 optimized-tap cases and 11 focused winding,
+  neutral/core and binding-IBR cases. The earlier unbalanced feeder oracle is
+  retained, giving 64 frozen solves in total.
+- Imported bounds recompute the active voltage/sequence/angle/current/VA quantity
+  from physical results, compare each generator's total dispatch within 10 W,
+  and compare objective within 0.001 currency/hour. Voltage bounds use 0.01 V,
+  line currents 0.01 A, transformer ratings 0.01 VA and angle 1e-5 rad. These
+  mirror the reference documentation's unit profile. Near-nonunique phase
+  allocations (notably S1) are not locked to one optimizer's individual phasors.
+- Authored cases compare objective within 1e-7 currency/hour and complex bus
+  voltages within 0.0002 V; optimized taps use 0.001 V because some loss objectives
+  are weak in the tap direction. Binding IBR tests additionally check physical
+  phase/return current and apparent power. Native acceptance recomputes physical
+  residuals independently of the expression tree and requires at most 1e-6.
+- Reversing two generators' costs moves dispatch while the transformer rating
+  remains binding. Different working bases and bus/terminal storage orders
+  preserve mapped component physics. PowerIO round trips cover unequal capacitor
+  coils, custom open-delta maps and n-winding ratings.
+- **18 native model unit tests** include exact/zero/singular impedance,
+  independent off-solution equation checks, every tested polynomial row's
+  quadratic classification, forced AD parity and central Jv/Hv checks at multiple
+  points/steps with changing nonzero multipliers. New derivative cases include
+  21 component/control/bound models. Softplus tests lock value/gradient/Hessian
+  at the breakpoint and at +/-1000. Zero-voltage impedance and zero-rated IBR
+  regressions, cancellation, and corrupted current/tap/power/nonfinite results
+  exercise acceptance failures.
+- **PowerIO: 670 tests passed** across `powerio-dist` and `powerio-matrix`, including
+  22 preparation tests and 4 new converter regressions; strict all-target Clippy
+  passed for both crates.
+
+The native feature suites, committed-snapshot reproduction and stock feature
+boundary checks are recorded below after the final local build. No global
+optimality, OpenDSS end-to-end parity, large-feeder performance or solution
+sensitivity claim follows from these small witnesses.
 
 ### Publication gates
 

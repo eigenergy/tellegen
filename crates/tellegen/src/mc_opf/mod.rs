@@ -34,6 +34,8 @@ pub struct McOpfOptions {
     /// Independent maximum normalized residual accepted after a solve.
     pub acceptance_tolerance: f64,
     pub max_iterations: u32,
+    /// Positive numerical objective scaling; reported costs retain physical units.
+    pub objective_scale: f64,
 }
 impl Default for McOpfOptions {
     fn default() -> Self {
@@ -42,6 +44,7 @@ impl Default for McOpfOptions {
             power_base_va: 1000.0,
             acceptance_tolerance: 1e-6,
             max_iterations: 1000,
+            objective_scale: 1.0,
         }
     }
 }
@@ -89,12 +92,22 @@ pub struct McOpfDeviceResult {
     /// and withdrawal for loads. Includes the neutral return contribution.
     pub terminal_power_va: Vec<[f64; 2]>,
 }
+/// Bare winding coil quantities, in winding then coil order. Core/grounding
+/// shunts are separate electrical stamps and are excluded from these currents.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct McOpfTransformerResult {
+    pub identity: String,
+    pub tap: Option<f64>,
+    pub coil_current_a: Vec<[f64; 2]>,
+    pub coil_power_va: Vec<[f64; 2]>,
+}
 #[derive(Clone, Debug)]
 pub struct McOpfResult {
     pub solution: McAcOpfSolution,
     pub residuals: McOpfResiduals,
     pub branches: Vec<McOpfBranchResult>,
     pub devices: Vec<McOpfDeviceResult>,
+    pub transformers: Vec<McOpfTransformerResult>,
     pub iterations: i32,
     pub fingerprint: String,
 }
@@ -123,6 +136,8 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     cancelled(cancel.as_deref())?;
     if !options.acceptance_tolerance.is_finite()
         || options.acceptance_tolerance <= 0.0
+        || !options.objective_scale.is_finite()
+        || options.objective_scale <= 0.0
         || options.max_iterations == 0
         || options.max_iterations > i32::MAX as u32
     {
@@ -138,7 +153,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     .map_err(|e| e.to_string())?;
     let fingerprint = Sha256::digest(
         [
-            b"tellegen/mc-ivr-v1\0".as_slice(),
+            b"tellegen/mc-ivr-v2\0".as_slice(),
             &serde_json::to_vec(&prep).map_err(|e| e.to_string())?,
         ]
         .concat(),
@@ -153,7 +168,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
         cancel.clone(),
     )));
     let mut app = IpoptApplication::new();
-    app.initialize_with_options_str(&format!("linear_solver feral\nhessian_approximation exact\nnlp_scaling_method none\nlinear_system_scaling none\nbound_relax_factor 0\ntol 1e-9\nconstr_viol_tol 1e-9\nacceptable_tol 1e-8\nmax_iter {}\nprint_level 0\n",options.max_iterations)).map_err(|e|e.to_string())?;
+    app.initialize_with_options_str(&format!("linear_solver feral\nhessian_approximation exact\nnlp_scaling_method none\nlinear_system_scaling none\nbound_relax_factor 0\ntol 1e-9\nconstr_viol_tol 1e-9\nacceptable_tol 1e-8\nmax_iter {}\nobj_scaling_factor {}\nprint_level 0\n",options.max_iterations,options.objective_scale)).map_err(|e|e.to_string())?;
     app.initialize().map_err(|e| e.to_string())?;
     let status = app.optimize_tnlp(Rc::clone(&tnlp) as Rc<RefCell<dyn TNLP>>);
     cancelled(cancel.as_deref())?;
@@ -200,6 +215,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
         solution,
         residuals: checked.residuals,
         branches: checked.branches,
+        transformers: checked.transformers,
         devices: checked.devices,
         iterations: app.statistics().iteration_count,
         fingerprint,
