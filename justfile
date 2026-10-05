@@ -164,4 +164,3 @@ changeset-status:
 
 # Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
 ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack wasm engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
-
