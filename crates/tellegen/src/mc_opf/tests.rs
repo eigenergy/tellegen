@@ -838,3 +838,28 @@ fn scalar_bmopf_pv_availability_bounds_reach_the_optimized_dispatch() {
         );
     }
 }
+
+#[test]
+fn opt_in_profiling_preserves_the_solution() {
+    let input = instance(network());
+    let baseline = solve_mc_ac_opf_instance(input.clone(), &McOpfOptions::default()).unwrap();
+    assert!(baseline.profile.is_none());
+    let profiled = solve_mc_ac_opf_instance(
+        input,
+        &McOpfOptions {
+            collect_profile: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    near(
+        baseline.solution.objective(),
+        profiled.solution.objective(),
+        1e-10,
+    );
+    assert_eq!(baseline.iterations, profiled.iterations);
+    let p = profiled.profile.unwrap();
+    assert!(p.stages_s["solve"] > 0.0);
+    assert!(p.solver_s["jacobian"] > 0.0);
+    assert!(p.evaluations["jacobian"] > 0);
+}

@@ -18,11 +18,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     cell::RefCell,
+    collections::BTreeMap,
     rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::Instant,
 };
 
 /// Numerical choices, separate from the declared PowerIO problem.
@@ -36,6 +38,8 @@ pub struct McOpfOptions {
     pub max_iterations: u32,
     /// Positive numerical objective scaling; reported costs retain physical units.
     pub objective_scale: f64,
+    /// Collect stage and detailed solver timings. Off by default: timers add overhead.
+    pub collect_profile: bool,
 }
 impl Default for McOpfOptions {
     fn default() -> Self {
@@ -45,6 +49,7 @@ impl Default for McOpfOptions {
             acceptance_tolerance: 1e-6,
             max_iterations: 1000,
             objective_scale: 1.0,
+            collect_profile: false,
         }
     }
 }
@@ -101,6 +106,33 @@ pub struct McOpfTransformerResult {
     pub coil_current_a: Vec<[f64; 2]>,
     pub coil_power_va: Vec<[f64; 2]>,
 }
+/// Opt-in wall-clock measurements. Solver subsystem timers overlap the stage
+/// timers and each other; they must not be summed as a disjoint breakdown.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct McOpfProfile {
+    pub stages_s: BTreeMap<String, f64>,
+    pub solver_s: BTreeMap<String, f64>,
+    pub evaluations: BTreeMap<String, i32>,
+    pub linear_solver: Option<McOpfLinearProfile>,
+    pub restoration_calls: i32,
+    pub quality_escalations: i32,
+    pub final_unscaled_dual_inf: f64,
+    pub final_unscaled_complementarity: f64,
+}
+/// Backend counters distinguish numeric factor work from regularization retries
+/// and symbolic pattern changes. Missing values mean the backend did not report them.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct McOpfLinearProfile {
+    pub factors: u64,
+    pub pattern_reuses: u64,
+    pub pattern_changes: u64,
+    pub numeric_factor_s: f64,
+    pub delayed_columns: u64,
+    pub last_matrix_nnz: Option<usize>,
+    pub last_factor_nnz: Option<usize>,
+    pub max_fill_ratio: Option<f64>,
+    pub last_ordering: Option<String>,
+}
 #[derive(Clone, Debug)]
 pub struct McOpfResult {
     pub solution: McAcOpfSolution,
@@ -110,6 +142,7 @@ pub struct McOpfResult {
     pub transformers: Vec<McOpfTransformerResult>,
     pub iterations: i32,
     pub fingerprint: String,
+    pub profile: Option<McOpfProfile>,
 }
 fn cancelled(cancel: Option<&AtomicBool>) -> Result<(), String> {
     if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
@@ -143,11 +176,14 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     {
         return Err("invalid multiconductor OPF options".into());
     }
+    let mut profile = options.collect_profile.then(McOpfProfile::default);
+    let mut stage = Instant::now();
     let prep = build_mc_ac_opf_preparation(
         &instance,
         &McAcOpfAssemblyOptions::new(options.voltage_base_v, options.power_base_va),
     )
     .map_err(|e| e.to_string())?;
+    record_stage(&mut profile, &mut stage, "preparation");
     let fingerprint = Sha256::digest(
         [
             b"tellegen/mc-ivr-v2\0".as_slice(),
@@ -158,16 +194,25 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     .iter()
     .map(|b| format!("{b:02x}"))
     .collect();
+    record_stage(&mut profile, &mut stage, "fingerprint");
     let model = model::compile(prep)?;
+    record_stage(&mut profile, &mut stage, "model_compile");
     cancelled(cancel.as_deref())?;
     let tnlp = Rc::new(RefCell::new(CancellableNlTnlp::new(
         NlTnlp::try_new(model.problem.clone())?,
         cancel.clone(),
     )));
+    record_stage(&mut profile, &mut stage, "evaluator_setup");
     let mut app = IpoptApplication::new();
     app.initialize_with_options_str(&format!("linear_solver feral\nhessian_approximation exact\nnlp_scaling_method none\nlinear_system_scaling none\nbound_relax_factor 0\ntol 1e-9\nconstr_viol_tol 1e-9\nacceptable_tol 1e-8\nmax_iter {}\nobj_scaling_factor {}\nprint_level 0\n",options.max_iterations,options.objective_scale)).map_err(|e|e.to_string())?;
+    if options.collect_profile {
+        app.initialize_with_options_str("timing_statistics yes\n")
+            .map_err(|e| e.to_string())?;
+    }
     app.initialize().map_err(|e| e.to_string())?;
+    record_stage(&mut profile, &mut stage, "solver_setup");
     let status = app.optimize_tnlp(Rc::clone(&tnlp) as Rc<RefCell<dyn TNLP>>);
+    record_stage(&mut profile, &mut stage, "solve");
     cancelled(cancel.as_deref())?;
     if !matches!(
         status,
@@ -178,6 +223,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     let t = tnlp.borrow();
     let x = t.inner.final_x().ok_or("solver returned no primal point")?;
     let checked = validate::check(&model, x, t.inner.final_obj(), options.acceptance_tolerance)?;
+    record_stage(&mut profile, &mut stage, "validation");
     let source = checked
         .devices
         .iter()
@@ -208,6 +254,10 @@ pub fn solve_mc_ac_opf_instance_cancellable(
         "tellegen {} mc-ivr-v1 POUNCE local solution",
         crate::VERSION
     ));
+    record_stage(&mut profile, &mut stage, "solution_projection");
+    if let Some(p) = &mut profile {
+        collect_solver_profile(p, &app);
+    }
     Ok(McOpfResult {
         solution,
         residuals: checked.residuals,
@@ -216,6 +266,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
         devices: checked.devices,
         iterations: app.statistics().iteration_count,
         fingerprint,
+        profile,
     })
 }
 /// Solve an explicitly declared MC OPF module and emit a canonical solution module.
@@ -245,4 +296,66 @@ pub fn solve_mc_ac_opf_module_json(input: &str, options: &McOpfOptions) -> Resul
     };
     let result = solve_mc_ac_opf_instance(Arc::new(instance), options)?;
     crate::ir::serialize_module(&PioModule::new(PioValue::McAcOpfSolution(result.solution)))
+}
+
+fn record_stage(profile: &mut Option<McOpfProfile>, stage: &mut Instant, name: &str) {
+    if let Some(p) = profile {
+        let now = Instant::now();
+        p.stages_s
+            .insert(name.into(), now.duration_since(*stage).as_secs_f64());
+        *stage = now;
+    }
+}
+fn collect_solver_profile(profile: &mut McOpfProfile, app: &IpoptApplication) {
+    let t = app.timing_stats();
+    for (name, timer) in [
+        ("overall_algorithm", &t.overall_alg),
+        ("initialize_iterates", &t.initialize_iterates),
+        ("update_hessian", &t.update_hessian),
+        ("barrier_update", &t.update_barrier_parameter),
+        ("search_direction", &t.compute_search_direction),
+        ("line_search", &t.compute_acceptable_trial_point),
+        ("check_convergence", &t.check_convergence),
+        (
+            "symbolic_factorization",
+            &t.linear_system_symbolic_factorization,
+        ),
+        ("factorization", &t.linear_system_factorization),
+        ("back_solve", &t.linear_system_back_solve),
+        ("function_evaluations", &t.total_function_evaluation_time),
+        ("objective", &t.eval_obj),
+        ("objective_gradient", &t.eval_grad_obj),
+        ("constraints", &t.eval_constr),
+        ("jacobian", &t.eval_constr_jac),
+        ("hessian", &t.eval_lag_hess),
+    ] {
+        profile
+            .solver_s
+            .insert(name.into(), timer.total_wallclock_time());
+    }
+    profile.linear_solver = app.linear_solver_summary().map(|s| McOpfLinearProfile {
+        factors: s.n_factors,
+        pattern_reuses: s.n_pattern_reuse,
+        pattern_changes: s.n_pattern_changes,
+        numeric_factor_s: s.total_factor_secs,
+        delayed_columns: s.total_delayed_cols,
+        last_matrix_nnz: s.last_nnz_a,
+        last_factor_nnz: s.last_nnz_l,
+        max_fill_ratio: s.max_fill_ratio,
+        last_ordering: s.last_ordering,
+    });
+    let s = app.statistics();
+    for (name, count) in [
+        ("objective", s.num_obj_evals),
+        ("constraints", s.num_constr_evals),
+        ("objective_gradient", s.num_obj_grad_evals),
+        ("jacobian", s.num_constr_jac_evals),
+        ("hessian", s.num_hess_evals),
+    ] {
+        profile.evaluations.insert(name.into(), count);
+    }
+    profile.restoration_calls = s.restoration_calls;
+    profile.quality_escalations = s.quality_escalations;
+    profile.final_unscaled_dual_inf = s.final_unscaled_dual_inf;
+    profile.final_unscaled_complementarity = s.final_unscaled_compl;
 }

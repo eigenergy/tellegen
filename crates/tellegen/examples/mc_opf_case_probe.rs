@@ -1,5 +1,5 @@
 //! Run an external BMOPF case without vendoring it. Optional arguments: power
-//! base (VA), objective scale, maximum iterations. Emits one JSON result record.
+//! base (VA), objective scale, maximum iterations, profile (true/false). Emits one JSON result record.
 #[cfg(not(feature = "mc-opf"))]
 fn main() {
     eprintln!("enable --features mc-opf");
@@ -21,11 +21,13 @@ fn main() {
         power_base_va: args.get(2).map_or(1000.0, |s| s.parse().unwrap()),
         objective_scale: args.get(3).map_or(1.0, |s| s.parse().unwrap()),
         max_iterations: args.get(4).map_or(500, |s| s.parse().unwrap()),
+        collect_profile: args.get(5).is_some_and(|s| s == "true"),
         ..Default::default()
     };
     let t = Instant::now();
     let mut record = json!({"input":args[1],"sha256":hash,"options":options});
     let run = || -> Result<_, String> {
+        let parse_start = Instant::now();
         let module = powerio::parse_with_options(
             Source::from_memory("external.bmopf.json", input).map_err(|e| e.to_string())?,
             &ParseOptions::default()
@@ -47,10 +49,9 @@ fn main() {
             .iter()
             .map(|b| (b.id.clone(), b.terminals.clone()))
             .collect();
-        let result = tellegen::solve_mc_ac_opf_instance(
-            Arc::new(McAcOpfInstance::from_network(net).map_err(|e| e.to_string())?),
-            &options,
-        )?;
+        let instance = Arc::new(McAcOpfInstance::from_network(net).map_err(|e| e.to_string())?);
+        let parse_s = parse_start.elapsed().as_secs_f64();
+        let result = tellegen::solve_mc_ac_opf_instance(instance, &options)?;
         let mut bus = serde_json::Map::new();
         for (name, terminals) in axes {
             let mut v = serde_json::Map::new();
@@ -65,10 +66,24 @@ fn main() {
             bus.insert(name, json!(v));
         }
         Ok(
-            json!({"status":"accepted","counts":counts,"diagnostics":diagnostics,"objective":result.solution.objective(),"iterations":result.iterations,"residuals":result.residuals,"bus":bus,"devices":result.devices,"branches":result.branches}),
+            json!({"status":"accepted","parse_instance_s":parse_s,"profile":result.profile,"counts":counts,"diagnostics":diagnostics,"objective":result.solution.objective(),"iterations":result.iterations,"residuals":result.residuals,"bus":bus,"devices":result.devices,"branches":result.branches}),
         )
     };
-    match run() {
+    let (outcome, iterations) = if options.collect_profile {
+        pounce_rs::with_iter_capture(run)
+    } else {
+        (run(), Vec::new())
+    };
+    record["iterations"] = json!(iterations
+        .iter()
+        .map(|i| json!({
+            "iter":i.iter,"objective":i.objective,"inf_pr":i.inf_pr,"inf_du":i.inf_du,
+            "mu":i.mu,"d_norm":i.d_norm,"regularization":i.regularization,
+            "alpha_dual":i.alpha_dual,"alpha_primal":i.alpha_primal,
+            "step":i.alpha_primal_char,"ls_trials":i.ls_trials
+        }))
+        .collect::<Vec<_>>());
+    match outcome {
         Ok(v) => record["result"] = v,
         Err(e) => record["result"] = json!({"status":"rejected","error":e}),
     }
