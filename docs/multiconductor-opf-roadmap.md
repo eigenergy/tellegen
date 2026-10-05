@@ -261,13 +261,22 @@ An objective match alone is insufficient.
   regressions, cancellation, and corrupted current/tap/power/nonfinite results
   exercise acceptance failures.
 - **PowerIO: 670 tests passed** across `powerio-dist` and `powerio-matrix`, including
-  22 preparation tests and 4 new converter regressions; strict all-target Clippy
+  22 preparation tests and 4 new converter regressions (2 existing tests ignored);
+  strict all-target Clippy
   passed for both crates.
 
-The native feature suites, committed-snapshot reproduction and stock feature
-boundary checks are recorded below after the final local build. No global
-optimality, OpenDSS end-to-end parity, large-feeder performance or solution
-sensitivity claim follows from these small witnesses.
+- **Committed Tellegen snapshot:** `scripts/check-mc-opf.sh` passed against the
+  committed companion: **385 passed / 3 existing ignored** with defaults plus
+  `mc-opf`, **174 passed / 2 existing ignored** with only `mc-opf`, and strict
+  all-target Clippy passed. This checks committed files through a temporary
+  archive with all six PowerIO crates patched consistently.
+- **Unpatched released dependencies:** locked default build **276 passed / 2
+  existing ignored**; locked no-default build **66 passed / 1 existing ignored**.
+  Both normal dependency graphs exclude POUNCE. Both development lockfiles are
+  unchanged, and the original checkouts and their unrelated edits are preserved.
+
+No global optimality, OpenDSS end-to-end parity, large-feeder performance or
+solution sensitivity claim follows from these small witnesses.
 
 ### Publication gates
 
