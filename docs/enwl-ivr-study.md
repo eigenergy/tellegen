@@ -53,6 +53,10 @@ were relaxed.
 | 538bus_LN_t12_1330 | 68 | 1.762 | -959.812497104 |
 | 538bus_LN_t25_2000 | 11 | 0.400 | 237.388516744 |
 
+The later [controlled performance study](enwl-ivr-performance.md) supersedes
+these single-run timings for speed comparisons. Its repeated runs show that the
+earlier apparent aggregate native speedup does not hold under controlled settings.
+
 Native timing uses `release-py` (optimization level 3, thin LTO) on macOS arm64.
 It includes parse/preparation/model compilation/solve/validation/result projection,
 not the Rust build. These are single observations, not a comparative performance
