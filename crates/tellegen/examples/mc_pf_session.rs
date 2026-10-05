@@ -52,7 +52,7 @@ fn run(path: PathBuf, scale: f64) -> Result<(), String> {
         .collect::<Vec<_>>();
 
     let started = Instant::now();
-    let update_iterations = session.replace_load_powers(&edits)?.iterations;
+    let update_iterations = session.replace_load_powers_summary(&edits)?.iterations;
     let update_ms = started.elapsed().as_secs_f64() * 1_000.0;
     let timing = SessionTiming {
         load_branches: branches.len(),

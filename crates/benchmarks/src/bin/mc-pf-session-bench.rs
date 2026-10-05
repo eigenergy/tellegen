@@ -611,7 +611,7 @@ fn run(args: &Args) -> Result<(), String> {
         }
         let replaced = measure(|| {
             session
-                .replace_load_powers(&accumulated)
+                .replace_load_powers_summary(&accumulated)
                 .map(|summary| (summary.iterations, summary.factorization_count))
         });
         let (edit_iterations, factorizations) = replaced
@@ -744,7 +744,7 @@ fn run(args: &Args) -> Result<(), String> {
         .collect();
     let wide = measure(|| {
         session
-            .replace_load_powers(&scaled)
+            .replace_load_powers_summary(&scaled)
             .map(|summary| summary.iterations)
     });
     let wide_iterations = wide
