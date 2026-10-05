@@ -2,7 +2,7 @@
 
 The native implementation is stacked on Tellegen PR #145, commit
 `231d20e373315a1a431304488c893e8f45d0d86a`, with the refreshed #143/main base
-merged as described below. Neither new implementation branch is to be published
+merged as described below. No new implementation branch is to be published
 and no new pull request opened until the maintainer approves. The existing POUNCE
 release/restoration/distribution gates remain in force.
 
@@ -135,9 +135,13 @@ Repeated solves/sensitivities and browser integration remain stages 5–6.
 
 - Tellegen branch: `codex/multiconductor-ivr-opf`, retaining #145 ancestry and
   incorporating the refreshed #143/main base in merge commit `f02b3a4`.
-- Companion PowerIO branch: `codex/multiconductor-ivr-preparation`, commit
-  `0dc40abadc1c8a6a356167eb64077575af64d4e3`,
-  based on `v0.11.3` to match Tellegen's released lockfile.
+- Companion PowerIO branch: `codex/multiconductor-ivr-api`, commit
+  `e8cdd111a6d93e6ad30e3af4e0ef2fb11522d9e2`, stacked on
+  `codex/bmopf-component-fidelity` at `a107f471a9fbe6a4ecc8476d708af570a1bbafaf`.
+  Both include PowerIO main `c8184eba` (0.11.4). The original 0.11.3-based
+  development branch remains preserved. Tellegen's shipping lockfile remains
+  on released 0.11.3 until the preparation API is released; temporary validation
+  resolves all six companion crates consistently to the local 0.11.4 tree.
 - BMOPFTools oracle: clean commit
   `a8b52e069bfd4a7a57434c91bc0470ac03cfdd55` using its local test environment,
   JuMP/Ipopt. Authored fixtures use 1000 VA; imported binding-limit references
@@ -165,9 +169,11 @@ Implemented AC components and controls:
   component equalities, with redundant zero-converter rows removed.
 
 PowerIO preparation preserves source identity and SI/per-unit meaning. It also
-retains BMOPF capacitor coil ratings, n-winding ratings and open-delta maps across
-conversion. Stale capacitor source metadata cannot overwrite an edited canonical
-nameplate. Transformer limit selections use `transformer:<name>` under
+lowers BMOPF per-coil capacitor arrays to exact canonical terminal shunts, shared
+with Y-bus and LinDist3Flow consumers. Scalar bank capacitors retain their canonical
+nameplate contract. No private capacitor metadata can overwrite an edit. N-winding
+ratings retain their axes; open-delta emission uses retained maps only while they
+agree with current canonical winding maps. Transformer limit selections use `transformer:<name>` under
 `conductor_limits`; IBR capability selections use `ibr:<name>` under
 `generator_capability`. Droop/PF and DC-link laws remain physical equations when
 capability bounds are deselected.
@@ -203,16 +209,17 @@ bash scripts/check-mc-opf.sh /path/to/powerio-with-mc-ivr-preparation
 ```
 
 The script archives committed Tellegen into a temporary directory, patches all
-six PowerIO crates consistently, and runs native tests, the independent optional
-feature suite, and Clippy. It leaves both checkout lockfiles unchanged. Set
+six PowerIO crates consistently, updates their resolution only in that archive,
+and runs native tests, the independent optional feature suite, and Clippy. It leaves both checkout lockfiles unchanged. Set
 `CARGO_NET_OFFLINE=true` when the dependency cache is populated and optionally
 `CARGO_TARGET_DIR` to reuse a build cache.
 
 PowerIO checks, from its companion checkout:
 
 ```sh
-cargo test -p powerio-matrix --offline
-cargo clippy -p powerio-matrix --all-targets --offline -- -D warnings
+cargo test --workspace --exclude powerio-py --locked
+bash scripts/ci-clippy.sh
+RUSTDOCFLAGS="-D warnings" cargo doc -p powerio-matrix --no-deps --locked
 ```
 
 Regenerate the pinned external reference only when intentionally reviewing an
@@ -262,13 +269,16 @@ An objective match alone is insufficient.
   at the breakpoint and at +/-1000. Zero-voltage impedance and zero-rated IBR
   regressions, cancellation, and corrupted current/tap/power/nonfinite results
   exercise acceptance failures.
-- **PowerIO: 670 tests passed** across `powerio-dist` and `powerio-matrix`, including
-  22 preparation tests and 4 new converter regressions (2 existing tests ignored);
-  strict all-target Clippy
-  passed for both crates.
+- **PowerIO current-main stack: 2,267 tests passed / 3 existing ignored** across
+  the Rust workspace excluding the Python extension crate, including C ABI and
+  conversion compatibility tests. The suite includes 24 IVR preparation tests,
+  8 converter contract tests, and a separate capacitor Y-bus witness. The full
+  Clippy feature/binding matrix passed, including the Python extension; rustdoc
+  passed with warnings denied. The standalone converter branch separately passed
+  661 tests / 2 existing ignored across `powerio-dist` and `powerio-matrix`.
 
 - **Committed Tellegen snapshot:** `scripts/check-mc-opf.sh` passed against the
-  committed companion after the main refresh: **393 passed / 3 existing ignored** with defaults plus
+  committed companion after both main refreshes: **393 passed / 3 existing ignored** with defaults plus
   `mc-opf`, **174 passed / 2 existing ignored** with only `mc-opf`, and strict
   all-target Clippy passed. This checks committed files through a temporary
   archive with all six PowerIO crates patched consistently.
@@ -305,12 +315,28 @@ companion preparation API or reference values. Its committed-snapshot check
 passed again, including all 64 frozen BMOPFTools solves, with the updated suite
 counts above. This refresh does not publish either new implementation branch.
 
+### PowerIO review preparation (2026-10-05)
+
+The converter fidelity and IVR API changes are separate local branches based on
+current PowerIO main. The API now documents global terminal, local conductor,
+coil and physical-port axes; explicit per-unit bases; tap multiplier recovery;
+and formulation-specific rejection conditions. Assembly options and output
+records follow the extensible API convention. No optimizer, AD, dependency,
+portable IR type, C ABI symbol or package-version change is introduced.
+
+The downstream integration uses `McAcOpfAssemblyOptions::new` and recognizes only
+the exact capacitor-lowering remark in the capacitor oracle fixtures. All 64
+frozen reference solves passed again with their original numerical tolerances
+and unchanged oracle data. See [the PowerIO review packet](powerio-ivr-review.md)
+for exact branch bases, draft descriptions and the publication sequence.
+
 ### Publication gates
 
-Before publishing, replay/rebase the companion onto the agreed PowerIO target,
-run its required `scripts/ci-clippy.sh` matrix, obtain approval for the companion
-PR, and consume the released preparation API in Tellegen's dependency lockfile.
-Then add the optional MC suite to the backend CI gate and obtain approval for
-the Tellegen PR targeting #145's successor. Browser forwarding, POUNCE release,
-restoration wiring and distribution approval are separate remaining gates.
-Neither branch has been pushed and no PR has been opened.
+Obtain maintainer approval to publish the two prepared PowerIO branches, targeting
+main for converter fidelity and the converter branch for IVR preparation. Retarget
+or replay the second after the first merges. Follow PowerIO's existing reviewed
+release procedure; then consume the released preparation API in Tellegen's
+requirements and lockfile, add the optional MC suite to backend CI, and obtain
+approval for the Tellegen PR targeting #145's successor. Browser forwarding,
+POUNCE release, restoration wiring and distribution approval remain separate gates.
+No new implementation branch has been pushed and no new PR has been opened.
