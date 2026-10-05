@@ -59,9 +59,13 @@
 			</span>
 		{/if}
 	</div>
-{:else}
+{:else if ctrl.activeSolvable?.solving}
 	<p class="dim small blink">
 		Solving {formulationLabel(ctrl.activeFormulation)}&hellip;
+	</p>
+{:else}
+	<p class="dim small">
+		No {formulationLabel(ctrl.activeFormulation)} results available.
 	</p>
 {/if}
 

@@ -126,3 +126,40 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await expect(calculation.locator('option[value="dcopf"]')).toHaveJSProperty('disabled', true);
 	await expect(page.locator('.error')).toHaveCount(0);
 });
+
+test('a rejected AC power flow stops the solving indicator and can recover with DC OPF', async ({
+	page
+}) => {
+	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
+	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+	await page.goto('/');
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	// The same unsupported reference angle that rejects the hosted Texas case,
+	// reproduced with a small deterministic input rather than a remote dataset.
+	const nonzeroReference = CASE3_PLANNING.replace(
+		'1 3 0  0  0 0 1 1 0 230',
+		'1 3 0  0  0 0 1 1 -11.99 230'
+	);
+	await page.locator('input[type="file"][multiple]').setInputFiles([
+		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
+		{ name: 'reference-angle.m', mimeType: 'text/plain', buffer: Buffer.from(nonzeroReference) }
+	]);
+	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
+	await expect(calculation).toBeEnabled();
+	const network = page.getByRole('complementary', { name: 'Network', exact: true });
+	for (let attempt = 0; attempt < 2; attempt++) {
+		await calculation.selectOption('acpf');
+		await expect(calculation).toBeEnabled();
+		await expect(page.getByTestId('notification-toast')).toContainText(
+			'Calculation did not complete'
+		);
+		await expect(network).toContainText('No AC power flow results available.');
+		await expect(network).not.toContainText('Solving AC power flow');
+		await expect(page.locator('.solvecard')).toHaveCount(0);
+		await calculation.selectOption('dcopf');
+		await expect(calculation).toBeEnabled();
+		await expect(page.locator('.solvecard')).toContainText('OPF solve');
+		await expect(network).not.toContainText('results available.');
+	}
+});
