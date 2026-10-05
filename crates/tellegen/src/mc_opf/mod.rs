@@ -145,10 +145,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     }
     let prep = build_mc_ac_opf_preparation(
         &instance,
-        &McAcOpfAssemblyOptions {
-            voltage_base_v: options.voltage_base_v,
-            power_base_va: options.power_base_va,
-        },
+        &McAcOpfAssemblyOptions::new(options.voltage_base_v, options.power_base_va),
     )
     .map_err(|e| e.to_string())?;
     let fingerprint = Sha256::digest(

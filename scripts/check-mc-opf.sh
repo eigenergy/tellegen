@@ -20,6 +20,10 @@ out.write_text('[patch.crates-io]\n' + ''.join(
 PY
 cd "$scratch"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$tellegen_checkout/target/mc-opf-review}"
+# A newer companion version would otherwise leave the older registry lock
+# selected and report its path patches as unused. Update only in this archive.
+cargo update -p powerio -p powerio-core -p powerio-dist -p powerio-prob \
+    -p powerio-matrix -p powerio-tx --config "$scratch/powerio-local.toml"
 cargo test -p tellegen --features mc-opf --config "$scratch/powerio-local.toml"
 cargo test -p tellegen --no-default-features --features mc-opf --config "$scratch/powerio-local.toml"
 cargo clippy -p tellegen --features mc-opf --all-targets --config "$scratch/powerio-local.toml" -- -D warnings
