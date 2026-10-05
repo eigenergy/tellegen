@@ -37,18 +37,26 @@ if (!existsSync(appDir)) fail('_app directory is missing');
 
 const htmlFiles = [fallbackPath, ...(existsSync(indexPath) ? [indexPath] : [])];
 const html = htmlFiles.map(read);
+// Kit 3's bootstrap hands its id to the runtime as `kit.init(<id>)`; chunks no longer name it.
+for (const [index, text] of html.entries()) {
+	const name = relative(buildDir, htmlFiles[index]);
+	const ids = new Set(svelteKitIds(text));
+	if (ids.size !== 1)
+		fail(`${name}: expected one SvelteKit bootstrap id, found ${[...ids].join(', ')}`);
+	const [id] = ids;
+	const inits = [...text.matchAll(/kit\.init\(([^)]*)\)/g)].map((match) => match[1].trim());
+	if (!inits.length || inits.some((arg) => arg !== id))
+		fail(`${name}: expected only kit.init(${id}), found ${inits.join(', ') || 'no call'}`);
+}
 const htmlIds = new Set(html.flatMap(svelteKitIds));
 if (htmlIds.size !== 1)
 	fail(`expected one SvelteKit bootstrap id, found ${[...htmlIds].join(', ')}`);
 const [bootstrapId] = htmlIds;
 
-const jsRefs = new Set();
 for (const file of walk(appDir).filter((path) => path.endsWith('.js'))) {
-	for (const id of svelteKitIds(read(file))) jsRefs.add(id);
-}
-if (!jsRefs.has(bootstrapId)) fail(`runtime chunks do not reference ${bootstrapId}`);
-for (const id of jsRefs) {
-	if (id !== bootstrapId) fail(`runtime chunk references stale SvelteKit id ${id}`);
+	for (const id of svelteKitIds(read(file))) {
+		if (id !== bootstrapId) fail(`runtime chunk references stale SvelteKit id ${id}`);
+	}
 }
 
 const assetRefs = html
@@ -63,7 +71,7 @@ for (const ref of assetRefs) {
 	if (!existsSync(join(buildDir, path))) fail(`referenced asset is missing: ${path}`);
 }
 
-// The Content-Security-Policy is hash mode (see svelte.config.js): script-src
+// The Content-Security-Policy is hash mode (see vite.config.ts): script-src
 // carries no 'unsafe-inline', so every inline script must appear in the policy
 // as its own sha256. SvelteKit hashes the bootstrap it emits, but a bundler is
 // free to inject an inline script of its own that kit never saw — and that

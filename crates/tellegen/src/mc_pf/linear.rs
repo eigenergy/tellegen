@@ -1,19 +1,23 @@
 //! Retained complex sparse linear solves used by the multiconductor PF.
 
+use std::cell::RefCell;
+
 use num_complex::Complex64;
 
-type SolveFn = dyn Fn(&[Complex64]) -> Result<Vec<Complex64>, String>;
+type SparseLu = faer::sparse::linalg::solvers::Lu<usize, Complex64>;
 
 /// A numeric factorization retained for all initial and fixed-point solves.
 ///
-/// The factor itself is kept inside a closure because faer's sparse-LU type is
-/// intentionally not part of Tellegen's public API.  The matrix is assembled
-/// once and the closure only receives new right hand sides.
+/// faer's sparse-LU type stays private to this module. The matrix is
+/// assembled once; each solve copies its right hand side into one retained
+/// column workspace, so repeated solves allocate nothing on this side and
+/// keep faer's aligned column layout (and therefore its exact arithmetic).
 pub(crate) struct RetainedComplexLu {
     dim: usize,
     nonzeros: usize,
     factorization_count: usize,
-    solve: Box<SolveFn>,
+    lu: SparseLu,
+    workspace: RefCell<faer::Mat<Complex64>>,
 }
 
 impl std::fmt::Debug for RetainedComplexLu {
@@ -51,32 +55,12 @@ impl RetainedComplexLu {
         let lu = matrix
             .sp_lu()
             .map_err(|e| format!("complex sparse LU failed: {e:?}"))?;
-        let solve = move |rhs: &[Complex64]| {
-            if rhs.len() != dim {
-                return Err(format!("RHS has {} entries; expected {dim}", rhs.len()));
-            }
-            if rhs.iter().any(|z| !z.re.is_finite() || !z.im.is_finite()) {
-                return Err("linear solve RHS contains a non-finite entry".to_owned());
-            }
-            let mut x = faer::Mat::<Complex64>::zeros(dim, 1);
-            for (i, value) in rhs.iter().enumerate() {
-                x[(i, 0)] = *value;
-            }
-            faer::linalg::solvers::Solve::solve_in_place(&lu, x.as_mut());
-            let result: Vec<_> = (0..dim).map(|i| x[(i, 0)]).collect();
-            if result
-                .iter()
-                .any(|z| !z.re.is_finite() || !z.im.is_finite())
-            {
-                return Err("complex sparse LU returned a non-finite solution".to_owned());
-            }
-            Ok(result)
-        };
         Ok(Self {
             dim,
             nonzeros: triplets.len(),
             factorization_count: 1,
-            solve: Box::new(solve),
+            lu,
+            workspace: RefCell::new(faer::Mat::<Complex64>::zeros(dim, 1)),
         })
     }
 
@@ -89,7 +73,37 @@ impl RetainedComplexLu {
     pub(crate) fn factorization_count(&self) -> usize {
         self.factorization_count
     }
-    pub(crate) fn solve(&self, rhs: &[Complex64]) -> Result<Vec<Complex64>, String> {
-        (self.solve)(rhs)
+
+    /// Solve into a caller-owned buffer of the system dimension.
+    pub(crate) fn solve_into(
+        &self,
+        rhs: &[Complex64],
+        out: &mut [Complex64],
+    ) -> Result<(), String> {
+        let dim = self.dim;
+        if rhs.len() != dim {
+            return Err(format!("RHS has {} entries; expected {dim}", rhs.len()));
+        }
+        if out.len() != dim {
+            return Err(format!(
+                "solution buffer has {} entries; expected {dim}",
+                out.len()
+            ));
+        }
+        if rhs.iter().any(|z| !z.re.is_finite() || !z.im.is_finite()) {
+            return Err("linear solve RHS contains a non-finite entry".to_owned());
+        }
+        let mut x = self.workspace.borrow_mut();
+        for (i, value) in rhs.iter().enumerate() {
+            x[(i, 0)] = *value;
+        }
+        faer::linalg::solvers::Solve::solve_in_place(&self.lu, x.as_mut());
+        for (i, value) in out.iter_mut().enumerate() {
+            *value = x[(i, 0)];
+        }
+        if out.iter().any(|z| !z.re.is_finite() || !z.im.is_finite()) {
+            return Err("complex sparse LU returned a non-finite solution".to_owned());
+        }
+        Ok(())
     }
 }

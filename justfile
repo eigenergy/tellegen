@@ -57,6 +57,18 @@ conic-test:
 acopf-probe:
     cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
 
+# CI gate: the generated ~10,000-bus multiconductor session regression (#132).
+# `--check` fails only on deterministic properties (warm/fresh agreement, one
+# factorization, no network materialization per edit, payload budgets, a flat
+# retained heap, the calibrated shape); timings are reported, never gated.
+mc-pf-regression:
+    cargo run -p benchmarks --profile release-py --bin mc-pf-session-bench -- --preset feeder-10k --check
+
+# Generated multiconductor session benchmark: `just mc-pf-bench feeder-106k`.
+# Presets: tiny, feeder-10k, feeder-106k, x300k, x650k; extra flags pass through.
+mc-pf-bench preset="feeder-10k" *flags="":
+    cargo run -p benchmarks --profile release-py --bin mc-pf-session-bench -- --preset {{preset}} {{flags}}
+
 # CI gate: the crate packages as it would publish. The OpenDSS oracle
 # regeneration stays CI-only (it clones BMOPFTools.jl and runs OpenDSS); the
 # checked-in references are compared by `cargo test --workspace`.
@@ -156,4 +168,4 @@ changeset-status:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
-ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test acopf-probe wasm-adapter-test crate-package web-lint webmcp-check webmcp-pack wasm engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
+ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack wasm engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit

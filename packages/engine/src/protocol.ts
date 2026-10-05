@@ -1,9 +1,10 @@
 /** The engine call protocol: one request shape shared by the worker host
  * (postMessage) and the main-thread host (direct dispatch), so a request built
  * once runs on either side. Payloads are the wasm surface's own JSON strings
- * (or raw display bytes); the typed translation stays in index.ts. Study
- * handles are allocated by the caller, which keeps them valid when pending
- * requests replay against the other host. */
+ * (or raw display bytes, or numeric arrays that cross as transferable
+ * Float64Arrays); the typed translation stays in index.ts. Study handles are
+ * allocated by the caller, which keeps them valid when pending requests replay
+ * against the other host. */
 
 import type { WasmMcPfSession, WasmModule, WasmStudy } from "./module.js";
 
@@ -43,6 +44,13 @@ export type EngineRequest =
       options: string;
     }
   | { op: "mc_pf_session_result"; session: number }
+  | { op: "mc_pf_session_summary"; session: number }
+  | { op: "mc_pf_session_detail"; session: number; query: string }
+  | { op: "mc_pf_session_terminal_ids"; session: number }
+  | { op: "mc_pf_session_terminal_voltages"; session: number }
+  | { op: "mc_pf_session_terminal_currents"; session: number }
+  | { op: "mc_pf_session_profile"; session: number; cold: boolean }
+  | { op: "mc_pf_session_materialization_count"; session: number }
   | { op: "mc_pf_session_load_branches"; session: number }
   | { op: "mc_pf_session_replace_load_powers"; session: number; edits: string }
   | { op: "mc_pf_session_input_module"; session: number }
@@ -53,6 +61,8 @@ export type EngineRequest =
       study_title: string;
     }
   | { op: "mc_pf_session_free"; session: number }
+  | { op: "memory_stats" }
+  | { op: "reset_peak_memory" }
   | {
       op: "study_new";
       study: number;
@@ -79,8 +89,13 @@ export type WorkerRequest =
   | (EngineRequest & { id: number })
   | { op: "cancel_study_operation"; id: number };
 
+/** One engine answer: wasm JSON text, nothing, or a numeric array. */
+export type EngineValue = string | null | Float64Array;
+
 export type WorkerResponse =
-  | { id: number; ok: true; value: string | null }
+  /** `worker_ms` is the time the worker spent running the request, so a
+   * caller can separate engine time from transfer and parsing. */
+  | { id: number; ok: true; value: EngineValue; worker_ms?: number }
   /** `fatal` marks an error the wasm instance cannot be trusted after — a trap
    * leaves linear memory, the allocator, and every live Study undefined. The
    * host tears the worker down rather than serving the next request from it. */
@@ -99,7 +114,7 @@ export function runRequest(
   handles: EngineHandles,
   req: EngineRequest,
   cancelled: () => boolean = () => false,
-): string | null | Promise<string> {
+): EngineValue | Promise<string> {
   const study = (handle: number): WasmStudy => {
     const s = handles.studies.get(handle);
     if (!s) throw new Error(`unknown study handle ${handle}`);
@@ -160,14 +175,29 @@ export function runRequest(
       return mod.replay_mc_study(req.snapshot);
     case "apply_mc_study_geo":
       return mod.apply_mc_study_geo(req.snapshot, req.layer);
-    case "mc_pf_session_new":
-      handles.mcPfSessions.set(
-        req.session,
-        new mod.McPfSession(req.module_json, req.options),
-      );
-      return null;
+    case "mc_pf_session_new": {
+      const session = new mod.McPfSession(req.module_json, req.options);
+      handles.mcPfSessions.set(req.session, session);
+      return session.summary();
+    }
     case "mc_pf_session_result":
       return mcPfSession(req.session).result();
+    case "mc_pf_session_summary":
+      return mcPfSession(req.session).summary();
+    case "mc_pf_session_detail":
+      return mcPfSession(req.session).detail(req.query);
+    case "mc_pf_session_terminal_ids":
+      return mcPfSession(req.session).terminal_ids();
+    case "mc_pf_session_terminal_voltages":
+      return mcPfSession(req.session).terminal_voltages();
+    case "mc_pf_session_terminal_currents":
+      return mcPfSession(req.session).terminal_currents();
+    case "mc_pf_session_profile":
+      return req.cold
+        ? mcPfSession(req.session).cold_profile()
+        : mcPfSession(req.session).profile();
+    case "mc_pf_session_materialization_count":
+      return String(mcPfSession(req.session).materialization_count());
     case "mc_pf_session_load_branches":
       return mcPfSession(req.session).load_branches();
     case "mc_pf_session_replace_load_powers":
@@ -179,6 +209,11 @@ export function runRequest(
     case "mc_pf_session_free":
       handles.mcPfSessions.get(req.session)?.free();
       handles.mcPfSessions.delete(req.session);
+      return null;
+    case "memory_stats":
+      return mod.memory_stats();
+    case "reset_peak_memory":
+      mod.reset_peak_memory();
       return null;
     case "study_new":
       handles.studies.set(req.study, new mod.Study(req.module_json, req.formulation));
