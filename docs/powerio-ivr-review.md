@@ -1,6 +1,6 @@
 # PowerIO IVR review packet
 
-Prepared on 2026-10-05. No branches in this packet have been pushed and no PRs
+Prepared on 2026-10-05; updated after the ENWL study on 2026-10-06. No branches in this packet have been pushed and no PRs
 have been created. Existing Tellegen PR #143 is independent of this publication
 approval. The original PowerIO development commits remain available on
 `codex/multiconductor-ivr-preparation-original`.
@@ -9,8 +9,8 @@ approval. The original PowerIO development commits remain available on
 
 | Change | Branch | Head | Intended PR base |
 | --- | --- | --- | --- |
-| Converter fidelity | `codex/bmopf-component-fidelity` | `a107f471a9fbe6a4ecc8476d708af570a1bbafaf` | PowerIO `main`, prepared at `c8184eba8ab67fa3a5c60cf4c64ccbe878963bfa` |
-| IVR preparation | `codex/multiconductor-ivr-api` | `e8cdd111a6d93e6ad30e3af4e0ef2fb11522d9e2` | `codex/bmopf-component-fidelity` |
+| Converter fidelity | `codex/bmopf-component-fidelity` | `e8dcace9acd24d8db5ba24a1a5c5552d222c9c70` | PowerIO `main`, prepared at `c8184eba8ab67fa3a5c60cf4c64ccbe878963bfa` |
+| IVR preparation | `codex/multiconductor-ivr-api` | `4d00b7696e0863c4a240a1d2f0a3e97ed04c739d` | `codex/bmopf-component-fidelity` |
 
 The active PowerIO checkout is
 `/Users/uqfgeth/.codex/worktrees/multiconductor-ivr-preparation/powerio`.
@@ -39,14 +39,16 @@ Preserve custom open-delta maps on both sides and n-winding apparent-power bound
 Before recombining open-delta legs, verify retained source maps against the current
 canonical windings; edited connections fall back to separately emitted legs with
 a diagnostic. No private capacitor coefficient metadata can override edits.
+Preserve scalar IBR capability bounds as one-entry vectors, including zero PV
+availability; the ENWL snapshots exposed that these were previously dropped.
 
-Validation: 661 tests passed, 2 existing ignored across `powerio-dist` and
-`powerio-matrix`. Eight focused converter tests assert hand-computed coefficients,
+Validation: nine focused converter tests pass and assert hand-computed coefficients,
 round trips after edits, malformed inputs, zero/two-wire/delta incidence, generated
-names, custom regulator maps, and winding bounds. Independent LinDist3Flow and
+names, custom regulator maps, winding bounds, and scalar IBR availability. Independent LinDist3Flow and
 Y-bus witnesses check capacitor consumption downstream. Strict affected-crate
 Clippy and formatting passed. The full feature/binding Clippy matrix also passed
-independently on this branch's committed snapshot.
+independently on this branch's committed snapshot. The combined stack passed
+2,268 Rust workspace tests, 3 existing ignored, after the scalar-bound fix.
 
 ## Draft PR 2
 
@@ -66,14 +68,17 @@ references and angle windows are profile restrictions, not claims that the
 canonical electrical network is infeasible. Nonpolynomial laws remain normalized
 physical data; the consuming solver chooses its derivative implementation.
 
-Validation: 2,267 Rust workspace tests passed, 3 existing ignored (Python extension
+Validation: 2,268 Rust workspace tests passed, 3 existing ignored (Python extension
 excluded from runtime tests), including C ABI and conversion compatibility tests.
 The preparation suite has 24 tests. Full `scripts/ci-clippy.sh` passed all seven
 feature/binding configurations, including the Python extension. Public rustdoc
-passed with warnings denied. Tellegen passed 393 tests / 3 existing ignored with
-defaults plus MC OPF, 174 / 2 with only MC OPF, and strict all-target Clippy against
+passed with warnings denied. Tellegen passed 394 tests / 3 existing ignored with
+defaults plus MC OPF, 175 / 2 with only MC OPF, and strict all-target Clippy against
 this companion. This includes all 64 frozen BMOPFTools reference solves with
 unchanged numerical baselines/tolerances, derivative checks and dispatch witnesses.
+The [ENWL study](enwl-ivr-study.md) additionally passes 18 external snapshots up to
+538 buses against fresh BMOPFTools solves, including original-input bound checks.
+The identical comparator rejects all 18 pre-fix results as a negative control.
 
 These small cases do not establish global optimality, arbitrary profile support,
 large-feeder OPF performance, or solution sensitivities. The new preparation is a

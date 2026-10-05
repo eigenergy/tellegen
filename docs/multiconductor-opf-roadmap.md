@@ -136,8 +136,8 @@ Repeated solves/sensitivities and browser integration remain stages 5–6.
 - Tellegen branch: `codex/multiconductor-ivr-opf`, retaining #145 ancestry and
   incorporating the refreshed #143/main base in merge commit `f02b3a4`.
 - Companion PowerIO branch: `codex/multiconductor-ivr-api`, commit
-  `e8cdd111a6d93e6ad30e3af4e0ef2fb11522d9e2`, stacked on
-  `codex/bmopf-component-fidelity` at `a107f471a9fbe6a4ecc8476d708af570a1bbafaf`.
+  `4d00b7696e0863c4a240a1d2f0a3e97ed04c739d`, stacked on
+  `codex/bmopf-component-fidelity` at `e8dcace9acd24d8db5ba24a1a5c5552d222c9c70`.
   Both include PowerIO main `c8184eba` (0.11.4). The original 0.11.3-based
   development branch remains preserved. Tellegen's shipping lockfile remains
   on released 0.11.3 until the preparation API is released; temporary validation
@@ -261,7 +261,7 @@ An objective match alone is insufficient.
   remains binding. Different working bases and bus/terminal storage orders
   preserve mapped component physics. PowerIO round trips cover unequal capacitor
   coils, custom open-delta maps and n-winding ratings.
-- **18 native model unit tests** include exact/zero/singular impedance,
+- **19 native model unit tests** include exact/zero/singular impedance,
   independent off-solution equation checks, every tested polynomial row's
   quadratic classification, forced AD parity and central Jv/Hv checks at multiple
   points/steps with changing nonzero multipliers. New derivative cases include
@@ -269,17 +269,17 @@ An objective match alone is insufficient.
   at the breakpoint and at +/-1000. Zero-voltage impedance and zero-rated IBR
   regressions, cancellation, and corrupted current/tap/power/nonfinite results
   exercise acceptance failures.
-- **PowerIO current-main stack: 2,267 tests passed / 3 existing ignored** across
+- **PowerIO current-main stack: 2,268 tests passed / 3 existing ignored** across
   the Rust workspace excluding the Python extension crate, including C ABI and
   conversion compatibility tests. The suite includes 24 IVR preparation tests,
-  8 converter contract tests, and a separate capacitor Y-bus witness. The full
+  9 converter contract tests, and a separate capacitor Y-bus witness. The full
   Clippy feature/binding matrix passed, including the Python extension; rustdoc
-  passed with warnings denied. The standalone converter branch separately passed
+  passed with warnings denied. The initial converter revision separately passed
   661 tests / 2 existing ignored across `powerio-dist` and `powerio-matrix`.
 
 - **Committed Tellegen snapshot:** `scripts/check-mc-opf.sh` passed against the
-  committed companion after both main refreshes: **393 passed / 3 existing ignored** with defaults plus
-  `mc-opf`, **174 passed / 2 existing ignored** with only `mc-opf`, and strict
+  committed companion after both main refreshes: **394 passed / 3 existing ignored** with defaults plus
+  `mc-opf`, **175 passed / 2 existing ignored** with only `mc-opf`, and strict
   all-target Clippy passed. This checks committed files through a temporary
   archive with all six PowerIO crates patched consistently.
 - **Before the main refresh, unpatched released dependencies:** locked default
@@ -329,6 +329,17 @@ the exact capacitor-lowering remark in the capacitor oracle fixtures. All 64
 frozen reference solves passed again with their original numerical tolerances
 and unchanged oracle data. See [the PowerIO review packet](powerio-ivr-review.md)
 for exact branch bases, draft descriptions and the publication sequence.
+
+### ENWL external validation (2026-10-06)
+
+Eighteen original ENWL snapshots passed fresh BMOPFTools comparisons, spanning
+30/99/538 buses, both LG/LN control variants, and morning/noon/evening conditions.
+The 538-bus cases include 2,152 terminals and 302 IBRs. This exposed and fixed
+scalar IBR bounds being dropped by the converter. A small analytic dispatch
+regression now locks zero and nonzero availability. The opt-in study independently
+checks original input bounds as well as voltages, currents, powers and objective;
+all 18 pre-fix cases fail that comparator. Numerical evidence and reproduction
+commands are in [the ENWL report](enwl-ivr-study.md). No large input is vendored.
 
 ### Publication gates
 
