@@ -803,3 +803,38 @@ fn independent_validation_detects_transformer_tap_and_inverter_corruption() {
         }
     }
 }
+
+#[test]
+fn scalar_bmopf_pv_availability_bounds_reach_the_optimized_dispatch() {
+    for available in [0.0, 50.0] {
+        let data = serde_json::json!({
+            "bus":{"b":{"terminal_names":["a","n"],"perfectly_grounded_terminals":["n"]}},
+            "voltage_source":{"grid":{"bus":"b","terminal_map":["a","n"],"v_magnitude":[230,0],"v_angle":[0,0],"cost":[1]}},
+            "load":{"d":{"bus":"b","terminal_map":["a","n"],"configuration":"SINGLE_PHASE","p_nom":[100],"q_nom":[0]}},
+            "ibr":{"pv":{"bus":"b","terminal_map":["a","n"],"topology":"SINGLE_PHASE","prime_mover":"PV","s_max":[1000],"p_avail":available,"p_min":0,"p_max":available,"q_min":0,"q_max":0}}
+        });
+        let source = powerio::Source::from_memory(
+            "availability.bmopf.json",
+            serde_json::to_vec(&data).unwrap(),
+        )
+        .unwrap();
+        let parsed = powerio::parse_with_options(
+            source,
+            &powerio::ParseOptions::default()
+                .format("bmopf-json")
+                .unwrap(),
+        )
+        .unwrap();
+        let powerio::PioValue::MulticonductorNetwork(net) = parsed.into_value() else {
+            panic!("network")
+        };
+        let result = solve(net);
+        let inv = result.devices.iter().find(|d| d.identity == "pv").unwrap();
+        near(inv.coil_power_va[0][0], available, 1e-5);
+        near(
+            result.solution.objective(),
+            (100.0 - available) / 1000.0,
+            1e-7,
+        );
+    }
+}
