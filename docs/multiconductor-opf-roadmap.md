@@ -1,8 +1,9 @@
 # Multiconductor IVR OPF implementation roadmap
 
 The native implementation is stacked on Tellegen PR #145, commit
-`231d20e373315a1a431304488c893e8f45d0d86a`. No branch is to be published and no
-pull request opened until the maintainer approves. The existing POUNCE
+`231d20e373315a1a431304488c893e8f45d0d86a`, with the refreshed #143/main base
+merged as described below. Neither new implementation branch is to be published
+and no new pull request opened until the maintainer approves. The existing POUNCE
 release/restoration/distribution gates remain in force.
 
 The reviewed stack is [#143](https://github.com/eigenergy/tellegen/pull/143)
@@ -132,7 +133,8 @@ rank deficiency, weak complementarity and direct parameter dependence of outputs
 As of 2026-10-05, stages 1–4 are implemented for the AC profile below.
 Repeated solves/sensitivities and browser integration remain stages 5–6.
 
-- Tellegen branch: `codex/multiconductor-ivr-opf`, based on #145 above.
+- Tellegen branch: `codex/multiconductor-ivr-opf`, retaining #145 ancestry and
+  incorporating the refreshed #143/main base in merge commit `f02b3a4`.
 - Companion PowerIO branch: `codex/multiconductor-ivr-preparation`, commit
   `0dc40abadc1c8a6a356167eb64077575af64d4e3`,
   based on `v0.11.3` to match Tellegen's released lockfile.
@@ -266,17 +268,42 @@ An objective match alone is insufficient.
   passed for both crates.
 
 - **Committed Tellegen snapshot:** `scripts/check-mc-opf.sh` passed against the
-  committed companion: **385 passed / 3 existing ignored** with defaults plus
+  committed companion after the main refresh: **393 passed / 3 existing ignored** with defaults plus
   `mc-opf`, **174 passed / 2 existing ignored** with only `mc-opf`, and strict
   all-target Clippy passed. This checks committed files through a temporary
   archive with all six PowerIO crates patched consistently.
-- **Unpatched released dependencies:** locked default build **276 passed / 2
+- **Before the main refresh, unpatched released dependencies:** locked default
+  build **276 passed / 2
   existing ignored**; locked no-default build **66 passed / 1 existing ignored**.
-  Both normal dependency graphs exclude POUNCE. Both development lockfiles are
-  unchanged, and the original checkouts and their unrelated edits are preserved.
+  Both normal dependency graphs exclude POUNCE. Local path patches do not alter
+  the committed lockfiles; the main refresh includes only main's lockfile changes.
+  The original checkouts and their unrelated edits are preserved.
 
 No global optimality, OpenDSS end-to-end parity, large-feeder performance or
 solution sensitivity claim follows from these small witnesses.
+
+### Main and backend PR refresh (2026-10-05)
+
+At the maintainer's request, existing draft PR #143 now includes upstream main
+`0d08c55`, preserving its history and the ancestry of #144–146. Its pushed head
+is `ca4d2ac853ca08bc855e132d28f8add06d292a69`. The refresh includes main's compact
+multiconductor PF sessions and center-tap/neutral regression fixtures. Both the
+POUNCE feasibility gate and main's multiconductor PF regression gate remain in
+`just ci` and the CI workflow. The POUNCE pin and release/restoration/distribution
+requirements are unchanged. #144–146 heads were not rewritten or pushed.
+
+PR #143's released-dependency checks passed locally: locked workspace tests
+excluding the Python crate (374 passed, 2 existing ignored), standalone `mc-pf`
+(160 passed, 1 existing ignored), conic (312 passed, 2 existing ignored), WASM
+conic (40 passed), strict native and Python Clippy, formatting, PowerIO pin and
+EPL guards. HS071 returned `SolveSucceeded`, objective 17.014017274 and maximum
+violation 2.484e-8. The new `feeder-10k` PF session benchmark passed its deterministic
+checks. Hosted cross-platform/distribution checks remain separate CI evidence.
+
+The unpublished IVR branch merges this refreshed base without changing the
+companion preparation API or reference values. Its committed-snapshot check
+passed again, including all 64 frozen BMOPFTools solves, with the updated suite
+counts above. This refresh does not publish either new implementation branch.
 
 ### Publication gates
 
