@@ -568,20 +568,19 @@ it('solves the displayed MC case through its controller and queries terminal vol
 			iterations: 3,
 			physical_kcl_residual: 1e-8,
 			scaled_kcl_residual: 0.1,
-			terminals: [
-				{
-					bus: 'src',
-					terminal: 'a',
-					voltage: { re: 230, im: 0 },
-					current_into_network: { re: 1, im: 0 }
-				}
-			]
+			terminal_count: 1
 		};
 		mc.result = result;
 		mc.revisionGeneration++;
 		return result;
 	});
-	Object.assign(ctrl, { solveMultiCase: solve });
+	// Terminal values arrive as interleaved numeric arrays.
+	const terminalTable = vi.fn(async () => ({
+		ids: [['src', 'a']],
+		voltages: Float64Array.of(230, 0),
+		currents: Float64Array.of(1, 0)
+	}));
+	Object.assign(ctrl, { solveMultiCase: solve, multiTerminalTable: terminalTable });
 	const adapter = createTellegenWebMcpAdapter(ctrl);
 	await expect(
 		adapter.solveMulticonductorPowerFlow!(
@@ -601,6 +600,7 @@ it('solves the displayed MC case through its controller and queries terminal vol
 	);
 	expect(solved).toMatchObject({
 		converged: true,
+		terminal_count: 1,
 		revision: 'mc:mc-case:1',
 		units: { voltage: 'V', lmp: null }
 	});

@@ -2,7 +2,13 @@
  * browser allows one — a solve never blocks the page — and on the calling
  * thread otherwise (see host.ts). Nothing downloads until the first engine
  * call; dropped files are parsed locally and never leave the machine. */
-import { engineHost, isolatedEngineHost, type EngineHost } from "./host.js";
+import {
+  callTimed,
+  engineHost,
+  isolatedEngineHost,
+  type EngineHost,
+} from "./host.js";
+import type { EngineValue } from "./protocol.js";
 import { isPermanentWasmLoadFailure } from "./errors.js";
 import {
   assertEngineInputBytes,
@@ -338,9 +344,16 @@ export async function ingestJsonDrop(
   );
 }
 
-/** Asserts a request that must carry a payload actually did. */
-function expectText(value: string | null): string {
-  if (value === null) throw new Error("engine returned no payload");
+/** Asserts a request that must carry a text payload actually did. */
+function expectText(value: EngineValue): string {
+  if (typeof value !== "string") throw new Error("engine returned no text payload");
+  return value;
+}
+
+/** Asserts a request that must carry a numeric array actually did. */
+function expectFloat64(value: EngineValue): Float64Array {
+  if (!(value instanceof Float64Array))
+    throw new Error("engine returned no numeric array");
   return value;
 }
 
@@ -644,15 +657,157 @@ export interface McPfResult {
   voltage_change: number;
   physical_kcl_residual: number;
   scaled_kcl_residual: number;
-  terminals: Array<{
-    bus: string;
-    terminal: string;
-    voltage: McComplex;
-    current_into_network: McComplex;
-    power_into_network: McComplex;
-  }>;
+  terminals: McTerminalResult[];
   element_ports: McElementPort[];
   source_reactions: McSourceReaction[];
+}
+
+export interface McTerminalResult {
+  bus: string;
+  terminal: string;
+  voltage: McComplex;
+  /** Current injected into the network at this terminal, amperes. */
+  current_into_network: McComplex;
+  power_into_network: McComplex;
+}
+
+/** The constant-size view of one converged operating point. Scalar fields
+ * match {@link McPfResult}; the aggregates are what a results summary shows.
+ * Interactive edits return this instead of the full result. */
+export interface McPfSummary {
+  converged: boolean;
+  voltage_valid: boolean;
+  min_voltage_pu: number | null;
+  max_voltage_pu: number | null;
+  voltage_violation_count: number;
+  iterations: number;
+  factorization_count: number;
+  matrix_dimension: number;
+  matrix_nonzeros: number;
+  voltage_change: number;
+  physical_kcl_residual: number;
+  scaled_kcl_residual: number;
+  terminal_count: number;
+  element_port_count: number;
+  /** Sum of the source reactions' `V * conj(I)`, VA. */
+  source_power_into_network: McComplex;
+  /** Sum of `V * conj(I)` over passive equipment ports, VA. */
+  passive_loss: McComplex;
+  /** Solves performed by the producing session (0 for a stored result). */
+  solve_count: number;
+}
+
+/** Where one solve spent its time, in milliseconds. */
+export interface McPfProfile {
+  timed: boolean;
+  parse_ms: number;
+  prepare_ms: number;
+  factor_ms: number;
+  load_evaluation_ms: number;
+  kcl_and_matvec_ms: number;
+  linear_solve_ms: number;
+  summary_ms: number;
+  total_ms: number;
+  iterations: number;
+  linear_solves: number;
+}
+
+/** A bounded request for one bus's terminals and a page of equipment ports. */
+export interface McPfDetailQuery {
+  bus?: string | null;
+  element?: string | null;
+  port_offset?: number;
+  /** At most 500; 0 or omitted selects 20. */
+  port_limit?: number;
+}
+
+export interface McPfDetail {
+  /** The session solve this page describes; compare with the summary. */
+  solve_count: number;
+  terminals: McTerminalResult[];
+  element_ports: McElementPort[];
+  element_port_total: number;
+}
+
+/** Engine heap accounting: live and peak allocator bytes (peak since the last
+ * reset) and the WASM linear memory size, which only grows. */
+export interface EngineMemoryStats {
+  heap_live_bytes: number;
+  heap_peak_bytes: number;
+  linear_memory_bytes: number;
+}
+
+/** Latency breakdown of the most recent session call, milliseconds. */
+export interface McPfCallTiming {
+  /** Time inside the engine thread: solve plus its own serialization. */
+  engine_ms: number | null;
+  /** Request to response on the calling thread, including transfer. */
+  round_trip_ms: number;
+  /** JSON parsing on the calling thread. */
+  parse_ms: number;
+  /** Characters of JSON received. */
+  payload_chars: number;
+}
+
+/** Reduce a stored full result to the summary an interactive edit returns.
+ * Sums run in result order, matching the engine's own aggregation. */
+export function summarizeMcPfResult(
+  result: McPfResult,
+  solveCount = 0,
+): McPfSummary {
+  const sourcePower = { re: 0, im: 0 };
+  for (const reaction of result.source_reactions) {
+    sourcePower.re += reaction.power_into_network.re;
+    sourcePower.im += reaction.power_into_network.im;
+  }
+  const passiveLoss = { re: 0, im: 0 };
+  for (const port of result.element_ports) {
+    if (port.kind === "load" || port.kind === "generator" || port.kind === "ibr")
+      continue;
+    passiveLoss.re += port.power_into_element.re;
+    passiveLoss.im += port.power_into_element.im;
+  }
+  return {
+    converged: result.converged,
+    voltage_valid: result.voltage_valid,
+    min_voltage_pu: result.min_voltage_pu,
+    max_voltage_pu: result.max_voltage_pu,
+    voltage_violation_count: result.voltage_violations.length,
+    iterations: result.iterations,
+    factorization_count: result.factorization_count,
+    matrix_dimension: result.matrix_dimension,
+    matrix_nonzeros: result.matrix_nonzeros,
+    voltage_change: result.voltage_change,
+    physical_kcl_residual: result.physical_kcl_residual,
+    scaled_kcl_residual: result.scaled_kcl_residual,
+    terminal_count: result.terminals.length,
+    element_port_count: result.element_ports.length,
+    source_power_into_network: sourcePower,
+    passive_loss: passiveLoss,
+    solve_count: solveCount,
+  };
+}
+
+/** The detail page {@link BrowserMcPfSession.detail} would return, read from
+ * a stored full result (a saved Study, or a solve without a session). */
+export function mcPfResultDetail(
+  result: McPfResult,
+  query: McPfDetailQuery,
+  solveCount = 0,
+): McPfDetail {
+  const limit = query.port_limit || 20;
+  const offset = query.port_offset ?? 0;
+  const ports = query.element
+    ? result.element_ports.filter((port) => port.element === query.element)
+    : result.element_ports;
+  return {
+    solve_count: solveCount,
+    terminals: query.bus
+      ? result.terminals.filter((terminal) => terminal.bus === query.bus)
+      : [],
+    element_ports: ports.slice(offset, offset + limit),
+    element_port_total: ports.length,
+  };
 }
 
 /** Self-contained saved Study result for a supported distribution AC PF.
@@ -684,13 +839,31 @@ export interface McLoadBranchState extends McLoadPowerEdit {
 }
 
 /** A live fixed-point current-injection solver retained in the shared engine
- * worker. Load edits reuse its sparse LU and previous converged phasors. */
+ * worker. Load edits reuse its sparse LU and previous converged phasors and
+ * answer with the constant-size {@link McPfSummary}; terminal and equipment
+ * detail is fetched on demand, as bounded pages or numeric arrays. */
 export class BrowserMcPfSession {
+  #terminalIds: Promise<Array<[string, string]>> | null = null;
+  /** Breakdown of the most recent {@link replaceLoadPowers} call. */
+  lastTiming: McPfCallTiming | null = null;
+
   constructor(
     private readonly host: EngineHost,
     private readonly handle: number,
+    /** Summary of the operating point solved when the session was created. */
+    readonly initialSummary: McPfSummary,
   ) {}
 
+  async summary(): Promise<McPfSummary> {
+    return JSON.parse(
+      expectText(
+        await this.host.call({ op: "mc_pf_session_summary", session: this.handle }),
+      ),
+    );
+  }
+
+  /** The complete terminal and equipment result. Its size grows with the
+   * network, so interactive views use {@link detail} instead. */
   async result(): Promise<McPfResult> {
     return JSON.parse(
       expectText(
@@ -713,13 +886,89 @@ export class BrowserMcPfSession {
     );
   }
 
-  async replaceLoadPowers(edits: McLoadPowerEdit[]): Promise<McPfResult> {
+  /** Replace the absolute edit set and re-solve warm. Returns the summary
+   * and records its latency breakdown in {@link lastTiming}. */
+  async replaceLoadPowers(edits: McLoadPowerEdit[]): Promise<McPfSummary> {
+    const started = performance.now();
+    const answer = await callTimed(this.host, {
+      op: "mc_pf_session_replace_load_powers",
+      session: this.handle,
+      edits: JSON.stringify(edits),
+    });
+    const received = performance.now();
+    const text = expectText(answer.value);
+    const summary = JSON.parse(text) as McPfSummary;
+    this.lastTiming = {
+      engine_ms: answer.engineMs,
+      round_trip_ms: received - started,
+      parse_ms: performance.now() - received,
+      payload_chars: text.length,
+    };
+    return summary;
+  }
+
+  /** One bus's terminals and a page of equipment ports. */
+  async detail(query: McPfDetailQuery): Promise<McPfDetail> {
     return JSON.parse(
       expectText(
         await this.host.call({
-          op: "mc_pf_session_replace_load_powers",
+          op: "mc_pf_session_detail",
           session: this.handle,
-          edits: JSON.stringify(edits),
+          query: JSON.stringify(query),
+        }),
+      ),
+    );
+  }
+
+  /** `[bus, terminal]` identities in the order of the terminal arrays. They
+   * are fixed for the session, so they are fetched once. */
+  terminalIds(): Promise<Array<[string, string]>> {
+    this.#terminalIds ??= this.host
+      .call({ op: "mc_pf_session_terminal_ids", session: this.handle })
+      .then((value) => JSON.parse(expectText(value)));
+    return this.#terminalIds;
+  }
+
+  /** Terminal voltages as interleaved `[re, im]` volts. */
+  async terminalVoltages(): Promise<Float64Array> {
+    return expectFloat64(
+      await this.host.call({
+        op: "mc_pf_session_terminal_voltages",
+        session: this.handle,
+      }),
+    );
+  }
+
+  /** Currents injected into the network as interleaved `[re, im]` amperes. */
+  async terminalCurrents(): Promise<Float64Array> {
+    return expectFloat64(
+      await this.host.call({
+        op: "mc_pf_session_terminal_currents",
+        session: this.handle,
+      }),
+    );
+  }
+
+  /** Engine phase timings of the latest solve, or of the cold start. */
+  async profile(cold = false): Promise<McPfProfile> {
+    return JSON.parse(
+      expectText(
+        await this.host.call({
+          op: "mc_pf_session_profile",
+          session: this.handle,
+          cold,
+        }),
+      ),
+    );
+  }
+
+  /** Edited networks built for portable output; ordinary edits build none. */
+  async materializationCount(): Promise<number> {
+    return Number(
+      expectText(
+        await this.host.call({
+          op: "mc_pf_session_materialization_count",
+          session: this.handle,
         }),
       ),
     );
@@ -766,18 +1015,32 @@ export async function createMcPfSession(
   signal?.throwIfAborted();
   const host = engineHost();
   const handle = ++mcPfSessionSeq;
-  await host.call({
-    op: "mc_pf_session_new",
-    session: handle,
-    module_json: moduleJson,
-    options: JSON.stringify(options),
-  });
-  const session = new BrowserMcPfSession(host, handle);
+  const summary = JSON.parse(
+    expectText(
+      await host.call({
+        op: "mc_pf_session_new",
+        session: handle,
+        module_json: moduleJson,
+        options: JSON.stringify(options),
+      }),
+    ),
+  ) as McPfSummary;
+  const session = new BrowserMcPfSession(host, handle, summary);
   if (signal?.aborted) {
     session.free();
     signal.throwIfAborted();
   }
   return session;
+}
+
+/** Live and peak heap of the shared engine, with its linear memory size. */
+export async function engineMemoryStats(): Promise<EngineMemoryStats> {
+  return JSON.parse(expectText(await engineHost().call({ op: "memory_stats" })));
+}
+
+/** Start a new peak-heap window in the shared engine. */
+export async function resetEngineMemoryPeak(): Promise<void> {
+  await engineHost().call({ op: "reset_peak_memory" });
 }
 
 /** Parse and solve a raw BMOPF multiconductor case in the wasm module. */
