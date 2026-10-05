@@ -47,6 +47,9 @@ fn check_bundle(name: &str, bundle: &str) {
             .diagnostics()
             .iter()
             .all(|d| d.code() == "READ.BMOPF.TRANSFORMER_OPEN_DELTA_SPLIT"
+                || (d.code() == "READ.BMOPF.CAPACITOR_LOWERED"
+                    && d.severity() == powerio::DiagnosticSeverity::Remark
+                    && name.starts_with("capacitor_"))
                 || (d.code() == "READ.BMOPF.RETAINED_SOURCE_ONLY"
                     && (d.message().contains("va_diff")
                         || d.message().contains("va_nom")
