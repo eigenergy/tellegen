@@ -36,5 +36,10 @@ check_no_pounce tellegen-wasm -p tellegen-wasm --target wasm32-unknown-unknown
 check_no_pounce tellegen-server -p tellegen-server
 check_no_pounce tellegen-cli -p tellegen-cli
 check_no_pounce tellegen-py -p tellegen-py
+# Cargo unifies dependency features across packages selected in one invocation.
+# Checking adapters separately does not protect an ordinary workspace build.
+check_no_pounce workspace-default --workspace
+check_no_pounce cli-with-wasi -p tellegen-cli -p tellegen-acopf-wasi
 check_has_pounce tellegen-acopf -p tellegen --no-default-features --features acopf
-echo "ok: pounce is confined to the opt-in tellegen/acopf feature"
+check_has_pounce tellegen-acopf-wasi -p tellegen-acopf-wasi --features acopf
+echo "ok: default workspace and shipping adapters exclude pounce; explicit AC OPF builds include it"

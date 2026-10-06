@@ -6,12 +6,13 @@
 	import '@fontsource/ibm-plex-mono/500.css';
 	import '@tellegen/svelte/styles.css';
 	import { TellegenProvider } from '@tellegen/svelte';
-	import Analytics from '$lib/analytics/Analytics.svelte';
+	import Analytics from '#lib/analytics/Analytics.svelte';
+	import { PUBLIC_TELLEGEN_ACOPF_WASM_URL } from '$app/env/public';
 
 	let { children } = $props();
 </script>
 
 <Analytics />
-<TellegenProvider>
+<TellegenProvider acOpfWasmUrl={PUBLIC_TELLEGEN_ACOPF_WASM_URL}>
 	{@render children()}
 </TellegenProvider>
