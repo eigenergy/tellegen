@@ -322,5 +322,3 @@ As with the existing models, a network claiming to be normalized while still
 carrying inactive loads/shunts or isolated buses is rejected. Active voltage
 and generator bounds must be finite and ordered; invalid bounds return a
 source-identifying error before starting-point clamping.
-
-
