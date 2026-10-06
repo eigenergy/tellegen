@@ -111,4 +111,6 @@ preparation and open it against the converter branch. Attach each created PR to
 this task. After converter merge, retarget/replay the API branch and rerun its
 checks. Use PowerIO's established reviewed release procedure. Only after an API
 release should Tellegen consume that released version in its requirements and
-lockfile, wire optional MC CI, and publish its separately approved PR.
+lockfile, wire optional MC CI, and publish its separately approved PR. The
+Tellegen integration branch now includes #159 at `8e087c6`; use that branch as
+the intended PR base, or main once the refreshed stack has merged.

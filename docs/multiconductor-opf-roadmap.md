@@ -1,17 +1,21 @@
 # Multiconductor IVR OPF implementation roadmap
 
-The native implementation is stacked on Tellegen PR #145, commit
-`231d20e373315a1a431304488c893e8f45d0d86a`, with the refreshed #143/main base
-merged as described below. No new implementation branch is to be published
-and no new pull request opened until the maintainer approves. The existing POUNCE
+The native implementation now includes [Tellegen PR #159](https://github.com/eigenergy/tellegen/pull/159)
+at `8e087c6d3a7f14ac1c31cf07f24443f80387ff02`, including upstream main
+`fc041430d66abe6ce9b0c64298818204ad930946`, through merge commit `629b947`.
+The original #145 ancestry and all IVR implementation/evidence commits are
+preserved. No new implementation branch is to be published and no new pull
+request opened until the maintainer approves. The existing POUNCE
 release/restoration/distribution gates remain in force.
 
 The reviewed stack is [#143](https://github.com/eigenergy/tellegen/pull/143)
 (optional backend), [#144](https://github.com/eigenergy/tellegen/pull/144)
 (canonical balanced model), [#145](https://github.com/eigenergy/tellegen/pull/145)
-(solve and emission), and [#146](https://github.com/eigenergy/tellegen/pull/146)
-(browser worker). The native IVR work is a sibling of #146: it needs #145's
-backend and portable solve boundary, not the browser transport changes.
+(solve and emission), and [#159](https://github.com/eigenergy/tellegen/pull/159)
+(the current-main browser refresh of [#146](https://github.com/eigenergy/tellegen/pull/146)).
+The IVR branch originally branched from #145 as a sibling of #146. It now stacks
+above #159 for integration with the refreshed native stack and browser baseline;
+MC OPF itself remains native-only and is not forwarded by the browser worker.
 
 ## Ownership
 
@@ -89,7 +93,7 @@ implementation exposes neither prices nor solution sensitivities.
 5. **Repeated solves and sensitivities.** Define parameter identity, cache
    invalidation and structural rebuilds; validate dual signs/scales and local
    KKT regularity before exposing any price or derivative.
-6. **Browser integration.** Extend PR #146's optional worker/reactor path after
+6. **Browser integration.** Extend PR #159's refreshed optional worker/reactor path after
    native correctness, memory, cancellation and artifact-size measurements.
 
 Each implementation commit records supported scope and evidence below. A
@@ -134,7 +138,9 @@ As of 2026-10-05, stages 1–4 are implemented for the AC profile below.
 Repeated solves/sensitivities and browser integration remain stages 5–6.
 
 - Tellegen branch: `codex/multiconductor-ivr-opf`, retaining #145 ancestry and
-  incorporating the refreshed #143/main base in merge commit `f02b3a4`.
+  incorporating the refreshed #143/main base in `f02b3a4` and the #159/current-main
+  stack in `629b947`. The pre-#159 head is preserved on
+  `codex/multiconductor-ivr-before-pr159` at `2e385ee`.
 - Companion PowerIO branch: `codex/multiconductor-ivr-api`, commit
   `4d00b7696e0863c4a240a1d2f0a3e97ed04c739d`, stacked on
   `codex/bmopf-component-fidelity` at `e8dcace9acd24d8db5ba24a1a5c5552d222c9c70`.
@@ -341,6 +347,50 @@ checks original input bounds as well as voltages, currents, powers and objective
 all 18 pre-fix cases fail that comparator. Numerical evidence and reproduction
 commands are in [the ENWL report](enwl-ivr-study.md). No large input is vendored.
 
+### PR #159 integration refresh (2026-10-07)
+
+The remote refresh was checked directly: #159 is an open draft at
+`8e087c6d3a7f14ac1c31cf07f24443f80387ff02`, based on the refreshed #145 branch
+`f1d5b23`. It includes current upstream main `fc041430d66abe6ce9b0c64298818204ad930946`,
+the SvelteKit 3 migration, and the original #146 browser commits. Merge
+`629b947` incorporates that head without conflicts or rewriting either history.
+The IVR compiler, solver, shared TNLP adapter and benchmark scripts are unchanged
+from the pre-refresh branch; its head `2e385ee` is preserved as
+`codex/multiconductor-ivr-before-pr159`.
+
+Integration commit `1b87ace` adjusts the incoming backend CI command from
+`--all-features` to `--features conic,schema,acopf` with defaults enabled. This
+covers every feature supported by the shipping released PowerIO dependency.
+The additional experimental `mc-opf` feature requires the unpublished companion
+preparation API, so its existing separate `scripts/check-mc-opf.sh` path is used
+until that API is released and pinned. This distinction is explicit in the
+workflow rather than leaving the new all-features gate unable to compile.
+POUNCE pins, PowerIO release pins, solver tolerances and electrical equations
+were not changed.
+
+Validation of the merged source, using isolated archives rather than modifying
+shipping lockfiles:
+
+| Configuration | Result |
+| --- | --- |
+| Companion PowerIO, default features + MC OPF | 395 passed; 3 existing ignored |
+| Companion PowerIO, MC OPF only | 176 passed; 2 existing ignored |
+| Released PowerIO, defaults + conic/schema/AC OPF | 336 passed; 3 existing ignored |
+| Opt-in balanced AC OPF WASI adapter | 1 passed |
+| Strict all-target Clippy, companion and released paths | passed |
+| PowerIO source pin, Rust formatting, default-workspace/adapter EPL isolation | passed |
+| Shipping WASM configuration, development build with conic | compiled; fresh bindings generated |
+| Engine JavaScript unit tests and engine TypeScript/contracts build | 28 tests passed; build passed |
+| Svelte/controller unit tests after SvelteKit sync and prerequisite builds | 127 passed |
+
+The browser tests use freshly generated bindings from this merged source, not
+old cached declarations. Production web builds and browser end-to-end tests
+were not rerun in this refresh. Previous ENWL performance measurements retain
+their original source identities; they are not relabelled as new measurements.
+Raw refresh logs are in `/private/tmp/ivr-pr159-validation`. The primary checkout
+and its existing uncommitted work were left untouched. No branch was pushed,
+no new PR was opened, and #159 itself was not modified.
+
 ### Publication gates
 
 Obtain maintainer approval to publish the two prepared PowerIO branches, targeting
@@ -348,6 +398,7 @@ main for converter fidelity and the converter branch for IVR preparation. Retarg
 or replay the second after the first merges. Follow PowerIO's existing reviewed
 release procedure; then consume the released preparation API in Tellegen's
 requirements and lockfile, add the optional MC suite to backend CI, and obtain
-approval for the Tellegen PR targeting #145's successor. Browser forwarding,
+approval for the Tellegen PR targeting #159's branch (or main after it merges).
+Browser forwarding,
 POUNCE release, restoration wiring and distribution approval remain separate gates.
 No new implementation branch has been pushed and no new PR has been opened.
