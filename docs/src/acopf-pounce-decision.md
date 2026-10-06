@@ -278,6 +278,41 @@ A single wasm-bindgen module can be reconsidered after POUNCE has a portable
 clock. That reconsideration must measure artifact size, memory growth, and hard
 worker cancellation in real browsers.
 
+## Experimental native multiconductor IVR OPF
+
+The separate `mc-opf` feature adds native unbalanced current–voltage rectangular
+OPF with explicit terminals and neutrals. The entry points are
+`solve_mc_ac_opf_instance`, `solve_mc_ac_opf_instance_cancellable`, and
+`solve_mc_ac_opf_module_json`; the JSON entry point requires an explicitly
+declared `McAcOpfInstance`. This feature is not enabled by shipping adapters or
+forwarded by the balanced browser worker described above.
+
+PowerIO owns the canonical electrical semantics and solver-independent IVR
+preparation. Tellegen constructs the expressions and independently checks the
+accepted solution's physical equations, limits and objective. Polynomial rows
+use POUNCE's existing exact sparse quadratic evaluator; general load laws and
+smooth inverter controls use its existing sparse AD. No new differentiation
+package is introduced. `McOpfResult` includes terminal voltages and physical
+branch/device/winding ledgers. `McOpfOptions.collect_profile` enables optional
+stage and KKT diagnostics. Prices, solution sensitivities and retained sessions
+are not exposed by this initial implementation.
+
+The feature currently requires the companion PowerIO preparation API, which
+has not been released. The shipping manifest and lockfile continue to use
+released PowerIO, so `--features mc-opf` alone is not yet a supported build from
+that lockfile. For local review with the companion checkout, run:
+
+```sh
+bash scripts/check-mc-opf.sh /path/to/powerio-with-mc-ivr-preparation
+```
+
+That script tests a temporary committed-source archive with consistent path
+patches for all six PowerIO crates; it does not rewrite either checkout's
+lockfile. Ordinary frozen-reference tests need neither Julia nor the large ENWL
+dataset. The detailed ownership, supported component profile, explicit
+rejections and validation records are in `docs/multiconductor-opf-roadmap.md`.
+The existing solver release and distribution gates below also apply to MC OPF.
+
 ## License and release gate
 
 POUNCE is EPL-2.0 while Tellegen is MIT. `deny.toml` admits EPL-2.0 only for the

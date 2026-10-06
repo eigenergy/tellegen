@@ -4,9 +4,10 @@ The native implementation now includes [Tellegen PR #159](https://github.com/eig
 at `8e087c6d3a7f14ac1c31cf07f24443f80387ff02`, including upstream main
 `fc041430d66abe6ce9b0c64298818204ad930946`, through merge commit `629b947`.
 The original #145 ancestry and all IVR implementation/evidence commits are
-preserved. No new implementation branch is to be published and no new pull
-request opened until the maintainer approves. The existing POUNCE
-release/restoration/distribution gates remain in force.
+preserved. The maintainer approved publishing the Tellegen contribution as a
+draft PR on 2026-10-07. The companion PowerIO branches remain separate and
+unpublished; the existing POUNCE release/restoration/distribution gates remain
+in force.
 
 The reviewed stack is [#143](https://github.com/eigenergy/tellegen/pull/143)
 (optional backend), [#144](https://github.com/eigenergy/tellegen/pull/144)
@@ -267,7 +268,7 @@ An objective match alone is insufficient.
   remains binding. Different working bases and bus/terminal storage orders
   preserve mapped component physics. PowerIO round trips cover unequal capacitor
   coils, custom open-delta maps and n-winding ratings.
-- **19 native model unit tests** include exact/zero/singular impedance,
+- **20 native model unit tests** include exact/zero/singular impedance,
   independent off-solution equation checks, every tested polynomial row's
   quadratic classification, forced AD parity and central Jv/Hv checks at multiple
   points/steps with changing nonzero multipliers. New derivative cases include
@@ -401,4 +402,5 @@ requirements and lockfile, add the optional MC suite to backend CI, and obtain
 approval for the Tellegen PR targeting #159's branch (or main after it merges).
 Browser forwarding,
 POUNCE release, restoration wiring and distribution approval remain separate gates.
-No new implementation branch has been pushed and no new PR has been opened.
+The maintainer has now authorized the Tellegen draft PR above #159. This does
+not publish the companion PowerIO branches or authorize release/distribution.

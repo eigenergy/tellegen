@@ -14,7 +14,8 @@ approval. The original PowerIO development commits remain available on
 
 The active PowerIO checkout is
 `/Users/uqfgeth/.codex/worktrees/multiconductor-ivr-preparation/powerio`.
-The unpublished Tellegen consumer is `codex/multiconductor-ivr-opf`, in
+The Tellegen consumer is `codex/multiconductor-ivr-opf`, authorized for draft PR
+publication on 2026-10-07, in
 `/Users/uqfgeth/.codex/worktrees/multiconductor-ivr-opf/tellegen`.
 
 Conversion must preserve the electrical problem before any optimizer sees it.
