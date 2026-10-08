@@ -85,9 +85,26 @@ export interface Edits {
 \trates?: BranchRatingDeltas;
 }
 
+/** Which thermal limits a DC OPF may enforce. Branch keys are element ids or uids. */
+export type ThermalLimits = 'all' | 'rated' | { branches: (number | string)[] };
+
+export interface LazyLimits {
+\tmax_rounds?: number;
+\tnear_binding?: number;
+}
+
+/** Which limits the DC OPF program carries, and whether thermal limits are found lazily. */
+export interface LimitOptions {
+\tangle_difference?: boolean;
+\tthermal?: ThermalLimits;
+\tlazy?: LazyLimits;
+}
+
 export interface SolveRequest {
 \tformulation?: FormulationId;
 \tedits?: Edits;
+\t/** DC OPF only. */
+\tlimits?: LimitOptions;
 \tsensitivities?: SensRequest[];
 }
 
@@ -152,6 +169,17 @@ export interface SensitivityMatrix {
 \tunits: string;
 }
 
+/** One DC OPF solve run under LimitOptions. */
+export interface LimitRound {
+\tenforced: number;
+\tviolated: number;
+\tadded: number;
+\tmax_loading: number;
+\tvariables: number;
+\trows: number;
+\tipm_iterations: number;
+}
+
 export interface SolveResponse {
 \tformulation: FormulationId;
 \tstatus: SolveStatus;
@@ -165,6 +193,7 @@ export interface SolveResponse {
 \tinjections?: BusInjection[];
 \tflows?: BranchFlow[];
 \tdispatch?: GenDispatch[];
+\tlimit_rounds?: LimitRound[];
 \tsensitivities?: SensitivityMatrix[];
 }
 

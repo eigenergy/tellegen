@@ -888,6 +888,7 @@ impl Study {
         let req = SolveRequest {
             formulation: self.formulation,
             edits: fold(log),
+            limits: None,
             sensitivities: sensitivities.to_vec(),
         };
         // Re-solve from a fresh clone of the base (the source of truth), then assemble the

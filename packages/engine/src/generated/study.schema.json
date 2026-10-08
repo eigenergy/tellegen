@@ -1106,6 +1106,61 @@
       ],
       "description": "The convergence record. OPF paths carry the full interior-point trace (for the\nsolve-card sparkline); the AC power flow carries its Newton count and final\nmismatch. Untagged: the OPF arm serializes to the same bare array the DC OPF\nalways returned."
     },
+    "LimitRound": {
+      "description": "One solve of a DC OPF run under [`LimitOptions`]: the program it solved and\nhow the solution met the enforceable thermal limits. A run without lazy\nenforcement has one round.",
+      "properties": {
+        "added": {
+          "description": "Limits added for the next round: the violated ones and the unenforced\nones loaded at or above `near_binding`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "enforced": {
+          "description": "Thermal limits the round's program enforced.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ipm_iterations": {
+          "description": "Interior-point iterations of the round's solve.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_loading": {
+          "description": "The largest loading over the enforceable limits, as a fraction.",
+          "format": "double",
+          "type": "number"
+        },
+        "rows": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "variables": {
+          "description": "Variables and constraint rows of the round's program.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "violated": {
+          "description": "Enforceable limits the round's solution violated; zero on the last round.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "enforced",
+        "violated",
+        "added",
+        "max_loading",
+        "variables",
+        "rows",
+        "ipm_iterations"
+      ],
+      "type": "object"
+    },
     "ModelDetails": {
       "properties": {
         "approximations": {
@@ -1551,6 +1606,16 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "limit_rounds": {
+          "description": "The solves a DC OPF ran under the request's `limits` (dcopf with\n`limits` only).",
+          "items": {
+            "$ref": "#/$defs/LimitRound"
+          },
+          "type": [
+            "array",
+            "null"
           ]
         },
         "lmp": {
@@ -2475,5 +2540,5 @@
   ],
   "title": "StudyContract",
   "type": "object",
-  "x-rust-source-sha256": "0873a4e79ae5eede1a044e7ca730d1532eefe9e424c747fffc54c5b8d70b9693"
+  "x-rust-source-sha256": "a55f09c82d3992ea70ca570c6df2f9e7bbfe3498dd4e9a812046ffcfa123035a"
 }

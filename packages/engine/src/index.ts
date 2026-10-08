@@ -40,6 +40,9 @@ export type {
   BrowserFormulation,
   CaseSummary,
   DemandDeltas,
+  LazyLimits,
+  LimitOptions,
+  LimitRound,
   Network,
   NetworkBranch,
   NetworkBus,
@@ -51,6 +54,7 @@ export type {
   SolveIteration,
   SolveRequest,
   SolveResponse,
+  ThermalLimits,
 } from "./generated/contracts.js";
 
 /** One structured PowerIO finding. */
