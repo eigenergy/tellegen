@@ -35,12 +35,11 @@
 //! profile is opt-level "s" for wasm size; the artifacts record which profile
 //! built the binary.
 
-use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
+use benchmarks::heap::{measure, CountingAllocator};
 use benchmarks::mc_feeder::{self, FeederShape, Preset, SplitMix64};
 use powerio::{PioModule, PioValue};
 use powerio_dist::MulticonductorNetwork;
@@ -48,86 +47,8 @@ use powerio_prob::McAcPfInstance;
 use serde_json::{json, Value};
 use tellegen::{McLoadPowerEdit, McPfDetailQuery, McPfOptions, McPfProfile, McPfSession};
 
-/// Counts live and peak heap bytes on top of the system allocator.
-struct CountingAllocator;
-
-static LIVE: AtomicUsize = AtomicUsize::new(0);
-static PEAK: AtomicUsize = AtomicUsize::new(0);
-
-fn grow(bytes: usize) {
-    let live = LIVE.fetch_add(bytes, Ordering::Relaxed) + bytes;
-    PEAK.fetch_max(live, Ordering::Relaxed);
-}
-
-fn shrink(bytes: usize) {
-    LIVE.fetch_sub(bytes, Ordering::Relaxed);
-}
-
-// SAFETY: every call forwards to `System` with the caller's layout; the
-// counters are side bookkeeping and never affect the returned pointers.
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let pointer = unsafe { System.alloc(layout) };
-        if !pointer.is_null() {
-            grow(layout.size());
-        }
-        pointer
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let pointer = unsafe { System.alloc_zeroed(layout) };
-        if !pointer.is_null() {
-            grow(layout.size());
-        }
-        pointer
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(pointer, layout) };
-        shrink(layout.size());
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let moved = unsafe { System.realloc(pointer, layout, new_size) };
-        if !moved.is_null() {
-            if new_size >= layout.size() {
-                grow(new_size - layout.size());
-            } else {
-                shrink(layout.size() - new_size);
-            }
-        }
-        moved
-    }
-}
-
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
-
-/// One timed region with its heap accounting.
-struct Measured<T> {
-    value: T,
-    ms: f64,
-    /// Highest live heap during the region, above the live heap at its start.
-    peak_bytes: usize,
-    /// Live heap after the region (with `value` still alive) minus before.
-    retained_bytes: i64,
-}
-
-fn measure<T>(region: impl FnOnce() -> T) -> Measured<T> {
-    let before = LIVE.load(Ordering::Relaxed);
-    PEAK.store(before, Ordering::Relaxed);
-    let started = Instant::now();
-    let value = region();
-    let ms = started.elapsed().as_secs_f64() * 1e3;
-    let after = LIVE.load(Ordering::Relaxed);
-    let peak = PEAK.load(Ordering::Relaxed);
-    Measured {
-        value,
-        ms,
-        peak_bytes: peak.saturating_sub(before),
-        retained_bytes: after as i64 - before as i64,
-    }
-}
 
 enum Input {
     Preset(Preset),
