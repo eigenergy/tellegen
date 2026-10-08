@@ -386,6 +386,17 @@ function listCases(ctrl: Controller, input: ListCasesInput): ToolPayload {
 			calculation: 'balanced',
 			selected: !ctrl.app.studyView && ctrl.app.activeCaseId === c.id
 		})),
+		...ctrl.app.hostedDistributionCases
+			.filter((s) => !ctrl.app.multiCases.some((c) => c.hosted && c.id === s.id))
+			.map((c) => ({
+				case_id: c.id,
+				name: clip(c.name, 64),
+				kind: 'server',
+				availability: c.unavailable_reason ? 'unavailable' : 'load_on_selection',
+				...(c.unavailable_reason ? { reason: clip(c.unavailable_reason, 240) } : {}),
+				calculation: 'multiconductor_ac_pf',
+				selected: false
+			})),
 		...ctrl.app.localCases.map((c) => ({
 			case_id: c.id,
 			name: clip(c.label, 64),
@@ -397,7 +408,7 @@ function listCases(ctrl: Controller, input: ListCasesInput): ToolPayload {
 		...ctrl.app.multiCases.map((c) => ({
 			case_id: c.id,
 			name: clip(c.label, 64),
-			kind: 'distribution',
+			kind: c.hosted ? 'server' : 'distribution',
 			availability: c.placed ? 'ready' : 'placement_required',
 			calculation: c.mcPfSupported ? 'multiconductor_ac_pf' : 'display_only',
 			selected: !ctrl.app.studyView && ctrl.app.activeMultiId === c.id
@@ -437,13 +448,17 @@ async function selectCase(
 		);
 	}
 	const backend = ctrl.app.byId(input.caseId);
+	const hosted = ctrl.app.hostedDistributionCases.find((c) => c.id === input.caseId);
 	const local = ctrl.app.localCases.find((c) => c.id === input.caseId);
 	const multi = ctrl.app.multiCases.find((c) => c.id === input.caseId);
-	if (!backend && !local && !multi)
+	if (!backend && !hosted && !local && !multi)
 		throw new TellegenToolError('CASE_NOT_FOUND', 'case ID is not in list_cases');
 	if (backend?.unavailableReason)
 		throw new TellegenToolError('CASE_UNAVAILABLE', clip(backend.unavailableReason, 240));
+	if (hosted?.unavailable_reason)
+		throw new TellegenToolError('CASE_UNAVAILABLE', clip(hosted.unavailable_reason, 240));
 	if (backend) await ctrl.activateCase(backend.id);
+	else if (hosted) await ctrl.activateHostedDistribution(hosted.id);
 	else if (local) ctrl.activateLocal(local);
 	else if (multi) ctrl.activateMulti(multi);
 	await tick();
@@ -1785,7 +1800,7 @@ export function createTellegenWebMcpAdapter(
 					);
 				const result = await ctrl.solveMultiCase(
 					c,
-					{ max_iterations: input.maxIterations },
+					input.maxIterations === undefined ? {} : { max_iterations: input.maxIterations },
 					signal
 				);
 				signal.throwIfAborted();

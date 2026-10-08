@@ -56,6 +56,30 @@
 				>
 			</div>
 		{/each}
+		{#each app.hostedDistributionCases.filter((s) => !app.multiCases.some((c) => c.hosted && c.id === s.id)) as c (c.id)}
+			<div class="case-chip">
+				<button
+					class="case-activate"
+					disabled={!!c.unavailable_reason}
+					title={c.unavailable_reason ?? undefined}
+					onclick={() => ctrl.activateHostedDistribution(c.id)}
+				>
+					<span class="cname">{c.name}</span>
+					<span class="cregion mono"
+						>{c.unavailable_reason
+							? 'Unavailable'
+							: ctrl.loadingHostedDistribution === c.id
+								? 'Loading…'
+								: 'distribution'}</span
+					>
+				</button>
+				<button
+					class="case-remove mono"
+					aria-label="remove {c.name} from this browser"
+					onclick={() => ctrl.removeHostedDistribution(c.id)}>&#10005;</button
+				>
+			</div>
+		{/each}
 		{#each app.localCases as c (c.id)}
 			<div class="case-chip local" class:active={app.activeLocalId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateLocal(c)}>
@@ -71,7 +95,7 @@
 			</div>
 		{/each}
 		{#each app.multiCases as c (c.id)}
-			<div class="case-chip local" class:active={app.activeMultiId === c.id}>
+			<div class="case-chip" class:local={!c.hosted} class:active={app.activeMultiId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateMulti(c)}>
 					<span class="cname">{c.label}</span>
 					<span class="cregion mono">multiconductor</span>

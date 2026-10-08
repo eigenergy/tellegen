@@ -27,7 +27,7 @@ export interface SelectCaseInput {
 export interface SolveMulticonductorInput {
   caseId: string;
   expectedRevision: string;
-  maxIterations: number;
+  maxIterations?: number;
 }
 
 export interface TellegenCaseAdapter {
