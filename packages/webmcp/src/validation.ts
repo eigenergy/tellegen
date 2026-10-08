@@ -168,7 +168,7 @@ export function validateSolveMulticonductor(
     expectedRevision: string(value.expected_revision, "expected_revision"),
     maxIterations:
       value.max_iterations === undefined
-        ? 100
+        ? undefined
         : integer(value.max_iterations, "max_iterations", 1, 10000),
   };
 }

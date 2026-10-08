@@ -47,6 +47,16 @@
 	{@const mc = app.activeMulti}
 	{@const s = mc.summary}
 	<h2>{mc.label} <span class="region mono">via {mc.fileName}</span></h2>
+	{#if mc.distribution}
+		<p class="footnote">
+			{mc.distribution.description ?? ''}
+			{#if mc.distribution.source_url}<a
+					href={mc.distribution.source_url}
+					target="_blank"
+					rel="noreferrer">Dataset and attribution</a
+				>{/if}
+		</p>
+	{/if}
 	{#if s}
 		<p class="tag mono">Multiconductor</p>
 		<details class="case-details">

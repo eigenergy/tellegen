@@ -4,6 +4,7 @@ import type { Controller, Network, SolvableCase, StudyDisplaySnapshot } from '..
 import { LocalCase } from '../src/lib/state.svelte.js';
 import { createTellegenWebMcpAdapter } from '../../../apps/web/src/lib/webmcp/tellegen-adapter.js';
 import type { PlanningActivityStore } from '../../../apps/web/src/lib/webmcp/planning-activity.svelte.js';
+import type { CaseSummary } from '@tellegen/engine';
 
 vi.mock('@tellegen/svelte', async () => ({
 	LocalCase: (await import('../src/lib/state.svelte.js')).LocalCase,
@@ -87,6 +88,7 @@ function host() {
 	const app = {
 		studyView: saved as StudyDisplaySnapshot | null,
 		cases: [live, second],
+		hostedDistributionCases: [] as CaseSummary[],
 		localCases: [],
 		multiCases: [],
 		activeCaseId: live.id,

@@ -640,7 +640,7 @@ it("validates bounded multiconductor solves and forwards cancellation", async ()
   });
   expect(result).toMatchObject({ ok: true });
   expect(solve).toHaveBeenCalledWith(
-    { caseId: "mc", expectedRevision: "mc:1:0", maxIterations: 100 },
+    { caseId: "mc", expectedRevision: "mc:1:0", maxIterations: undefined },
     expect.any(AbortSignal),
   );
 });

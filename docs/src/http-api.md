@@ -9,7 +9,7 @@ endpoints ship disabled and answer 403 unless `TELLEGEN_SERVER_COMPUTE=1`
 - `GET /api/health` — liveness and the served case ids.
 - `GET /api/compute` — `{"enabled": bool}`, whether the compute endpoints are on.
 - `GET /api/cases` — case summaries.
-- `GET /api/cases/{id}/case` — the raw powerio network JSON the browser engine consumes.
+- `GET /api/cases/{id}/case` — the portable PowerIO module the browser engine consumes.
 - `GET /api/cases/{id}/network` — the map view (buses, branches, coordinates).
 - `GET /api/cases/{id}/solution` — the cached base DC OPF solution, computed once at startup.
 
@@ -17,6 +17,16 @@ Case summaries report canonical PowerIO row counts as `n_bus`/`n_branch` and
 rendered, three-winding-lowered counts as
 `n_analysis_bus`/`n_analysis_branch`. Older servers may omit the analysis
 counts.
+
+Summaries include `model: "balanced"` or `"multiconductor"`; an omitted model
+on an older server means balanced. Hosted distribution modules are registered
+through the [distribution manifest](deployment.md#hosted-distribution-cases).
+For them, bus/branch counts describe the distribution graph and the analysis
+counts equal those graph counts. `/case` retains the full module, including
+geometry and diagnostics. The browser builds the distribution view and runs
+supported AC power flow locally. Balanced-only `/network`, `/solution`,
+`/snapshot`, and enabled compute routes return 400 for distribution IDs.
+The global disabled-compute gate still returns 403 when compute is off.
 
 ## Compute
 
@@ -36,3 +46,7 @@ per client: 5 solve and 25 sensitivity requests per 10 seconds by default,
 tuned with `TELLEGEN_RATE_LIMIT_WINDOW_SECS`,
 `TELLEGEN_SOLVE_RATE_LIMIT_EVENTS`, and
 `TELLEGEN_SENSITIVITY_RATE_LIMIT_EVENTS`.
+
+Hosted distribution summaries may include `distribution` metadata: description,
+HTTPS source URL, related transmission case ID, and PF option defaults. The
+`/api/cases/{id}/case` endpoint negotiates gzip for portable module downloads.
