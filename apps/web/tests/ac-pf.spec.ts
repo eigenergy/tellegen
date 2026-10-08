@@ -24,7 +24,10 @@ test('AC power flow shows voltages, supports equipment inspection, and saves its
 	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
 	const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
 	await expect(calculation).toBeEnabled();
-	await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty('disabled', true);
+	await expect(calculation.locator('option[value="acopf"]')).toHaveJSProperty(
+		'disabled',
+		!process.env.TELLEGEN_TEST_ACOPF
+	);
 	await calculation.selectOption('acpf');
 	await expect(page.locator('.solvecard')).toContainText('Power flow');
 	await expect(calculation).toBeEnabled();

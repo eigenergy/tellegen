@@ -432,6 +432,8 @@ mpc.gencost = [
             if let PioValue::AcPfInstance(instance) = module.value() {
                 assert_eq!(stamped["formulation"], "acpf");
                 assert_eq!(instance.specifications(), specifications);
+            } else {
+                assert_eq!(stamped["formulation"], "acopf");
             }
             assert!(extract_geo_impl(updated).unwrap().contains("-84.0"));
         }

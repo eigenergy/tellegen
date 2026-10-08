@@ -41,6 +41,7 @@
 	});
 
 	onMount(() => {
+		ctrl.probeAcOpf();
 		if (config.loadDefaultCases) {
 			if (!ctrl.casesLoaded) void ctrl.load();
 		} else {

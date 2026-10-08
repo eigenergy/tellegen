@@ -73,24 +73,27 @@ const files = () => [
 beforeEach(() => vi.clearAllMocks());
 
 describe('coordinate attachments', () => {
-	it('starts a dropped declared AC PF instance with its declared calculation', async () => {
-		const { app, ctrl } = host();
-		vi.mocked(ingestJsonDrop).mockResolvedValueOnce({
-			kind: 'module',
-			format: null,
-			payload: { ...payload('declared-ac-pf'), formulation: 'acpf' }
-		} as never);
-		await ctrl.ingestFiles([new File(['{}'], 'declared-ac-pf.pio.json')]);
-		expect(app.error).toBeNull();
-		expect(app.activeLocal?.formulation).toBe('acpf');
-		expect(app.activeLocal?.declaredFormulation).toBe('acpf');
-		expect(app.activeLocal?.studyInputJson).toBe('declared-ac-pf');
-		expect(app.displayMode).toBe('voltage');
-		expect(ctrl.maybeStartLocalSolve).toHaveBeenCalledWith(app.activeLocal!.id);
-		ctrl.changeFormulation(app.activeLocal!, 'dcopf');
-		expect(app.activeLocal?.formulation).toBe('acpf');
-		expect(app.error).toContain('declared calculation');
-	});
+	it.each(['acpf', 'acopf'] as const)(
+		'starts a dropped declared %s instance with its declared calculation',
+		async (formulation) => {
+			const { app, ctrl } = host();
+			vi.mocked(ingestJsonDrop).mockResolvedValueOnce({
+				kind: 'module',
+				format: null,
+				payload: { ...payload('declared-ac-instance'), formulation }
+			} as never);
+			await ctrl.ingestFiles([new File(['{}'], 'declared-ac-pf.pio.json')]);
+			expect(app.error).toBeNull();
+			expect(app.activeLocal?.formulation).toBe(formulation);
+			expect(app.activeLocal?.declaredFormulation).toBe(formulation);
+			expect(app.activeLocal?.studyInputJson).toBe('declared-ac-instance');
+			expect(app.displayMode).toBe('voltage');
+			expect(ctrl.maybeStartLocalSolve).toHaveBeenCalledWith(app.activeLocal!.id);
+			ctrl.changeFormulation(app.activeLocal!, 'dcopf');
+			expect(app.activeLocal?.formulation).toBe(formulation);
+			expect(app.error).toContain('declared calculation');
+		}
+	);
 	it('selects AC power flow equipment without requesting LMP derivatives or previews', async () => {
 		const { app, ctrl } = host();
 		const source = new CaseState({

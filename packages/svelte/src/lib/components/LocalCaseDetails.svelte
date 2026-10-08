@@ -128,8 +128,14 @@
 		{/if}
 		<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
 		{#if lc.studyInputJson}
+			{@const exportUnavailable = ctrl.caseExportUnavailableReason(lc)}
 			<div class="case-actions">
-				<button class="reset mono" disabled={busy} onclick={() => saveCase(lc)}>
+				<button
+					class="reset mono"
+					disabled={busy || !!exportUnavailable}
+					title={exportUnavailable ?? undefined}
+					onclick={() => saveCase(lc)}
+				>
 					save PowerIO module (.json)
 				</button>
 				{#if lc.formulation === 'dcopf' && lc.solution}
@@ -140,13 +146,14 @@
 				<div class="export">
 					<button
 						class="reset mono"
-						disabled={busy}
+						disabled={busy || !!exportUnavailable}
+						title={exportUnavailable ?? undefined}
 						aria-expanded={exportOpen}
 						onclick={() => (exportOpen = !exportOpen)}
 					>
 						export committed state…
 					</button>
-					{#if exportOpen}
+					{#if exportOpen && !exportUnavailable}
 						<ul class="export-menu mono">
 							{#each EXPORT_FORMATS as f (f.token)}
 								<li>
@@ -170,6 +177,7 @@
 					</button>
 				{/if}
 			</div>
+			{#if exportUnavailable}<p class="footnote mono">{exportUnavailable}</p>{/if}
 			{#if exportDiagnostics.length > 0}
 				<ul class="warnings mono">
 					{#each exportDiagnostics.slice(0, 4) as diagnostic, i (i)}
