@@ -51,7 +51,9 @@ reader selected for transmission and distribution documents.
 ## Solves And Studies
 
 - `capabilities()`: returns available formulations, operands, and parameters.
-- `solveModule(moduleJson, request)`: stateless solve from a PowerIO module.
+- `solveModule(moduleJson, request)`: stateless solve from a PowerIO module. An
+  `acpf` request may set `start: "case"` to start Newton from the case's stored
+  bus voltages (see [Formulations](formulations.md#ac-power-flow-polar)).
 - `createStudy(moduleJson, formulation)`: builds a browser `Study` from a
   PowerIO module and solves its declared problem instance.
 - `Study` / `BrowserStudy`: browser handle with:
@@ -112,7 +114,7 @@ file.arrayBuffer())` for a browser `File`.
 
 Public types include:
 
-- `SolveRequest`, `SolveResponse`, `ProblemCaps`
+- `SolveRequest`, `SolveResponse`, `ProblemCaps`, `PowerFlowStart`
 - `SensRequest`, `SensitivityMatrix`, `SensitivityColumn`
 - `Network`, `NetworkBus`, `NetworkBranch`
 - `Solution`, `SolveIteration`, `DemandDeltas`

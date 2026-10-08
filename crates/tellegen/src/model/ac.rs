@@ -142,6 +142,16 @@ pub(crate) struct AcNetwork {
     pub vm_set: Vec<f64>,
     /// Reference (slack) bus, dense index.
     pub slack: usize,
+    /// Reference angle (radians). The AC power flow holds the slack bus at this
+    /// angle and reports every other angle against it. Zero unless an AC power
+    /// flow instance states another reference angle.
+    pub(crate) va_slack: f64,
+    /// Stored bus voltage state in dense order, magnitude (per unit) and angle
+    /// (radians): the case's bus values, star buses included where the lowering
+    /// carries them, overridden by an instance's initial point. The AC power flow
+    /// can start here instead of from a flat start.
+    pub(crate) vm_case: Vec<f64>,
+    pub(crate) va_case: Vec<f64>,
     /// Buses whose AC power flow magnitude is prescribed. The reference is
     /// represented separately by `slack`.
     pub(crate) pf_pv: Vec<bool>,
@@ -195,6 +205,15 @@ impl AcNetwork {
                     "synthetic AC preparation bus {source_id} has no source power flow specification"
                 )
             })?;
+            if let Some(point) = instance.initial_point() {
+                let bus = instance.network().buses()[source_row].id;
+                if let Some(vm) = point.bus_voltage_magnitude(bus) {
+                    model.vm_case[dense] = vm;
+                }
+                if let Some(va) = point.bus_voltage_angle(bus) {
+                    model.va_case[dense] = va;
+                }
+            }
             let specification = instance.specifications()[source_row];
             match specification {
                 AcBusSpecification::Pq { p, q } => {
@@ -207,9 +226,9 @@ impl AcNetwork {
                     model.pf_pv[dense] = true;
                 }
                 AcBusSpecification::Reference { vm, va } => {
-                    if va.abs() > 1e-12 {
+                    if !va.is_finite() {
                         return Err(format!(
-                            "AC power flow reference bus {source_id} states angle {va} degrees; Tellegen currently requires zero"
+                            "AC power flow reference bus {source_id} states a non-finite angle"
                         ));
                     }
                     if reference.replace(dense).is_some() {
@@ -218,6 +237,12 @@ impl AcNetwork {
                         );
                     }
                     model.vm_set[dense] = vm;
+                    // The specification carries the network's own angle unit.
+                    model.va_slack = if instance.network().is_normalized() {
+                        va
+                    } else {
+                        va.to_radians()
+                    };
                 }
                 AcBusSpecification::Isolated => {
                     return Err(format!(
@@ -377,6 +402,9 @@ impl AcNetwork {
             vm_max: prep.buses.vm_max.clone(),
             vm_set,
             slack,
+            va_slack: 0.0,
+            vm_case: prep.buses.initial_vm.clone(),
+            va_case: prep.buses.initial_va.clone(),
             pf_pv,
             bus_ids,
             branch_ids,
@@ -507,6 +535,8 @@ impl AcNetwork {
         let bs = buses.b_s;
         let vm_min = buses.vm_min;
         let vm_max = buses.vm_max;
+        let vm_case = buses.initial_vm;
+        let va_case = buses.initial_va;
 
         let br_from = branches.from_bus;
         let br_to = branches.to_bus;
@@ -647,6 +677,9 @@ impl AcNetwork {
             vm_max,
             vm_set,
             slack,
+            va_slack: 0.0,
+            vm_case,
+            va_case,
             pf_pv,
             bus_ids,
             branch_ids,

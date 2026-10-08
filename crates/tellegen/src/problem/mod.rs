@@ -49,10 +49,12 @@ pub(crate) use conic::{build_conic_opf, socwr_opf, SocWrSolution};
 pub(crate) use dc::dc_opf;
 pub(crate) use dc::dc_opf_cancellable;
 pub(crate) use dc::DcOpfSolution;
+#[cfg(all(test, feature = "sensitivity"))]
+pub(crate) use pf_ac::ac_pf;
 #[cfg(feature = "sensitivity")]
 pub(crate) use pf_ac::{ac_injections, ac_jacobian};
 #[cfg(feature = "sensitivity")]
-pub(crate) use pf_ac::{ac_pf, AcPfLayout, AcPfSolution};
+pub(crate) use pf_ac::{ac_pf_with_start, AcPfLayout, AcPfSolution, AcStart};
 #[cfg(feature = "sensitivity")]
 pub(crate) use pf_dc::dc_pf;
 
