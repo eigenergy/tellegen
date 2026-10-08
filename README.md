@@ -105,6 +105,11 @@ surveyed infrastructure:
 | ACTIVSg7000 | Texas            |  6717 |     9140 |
 | CATS        | California       |  8870 |    10823 |
 
+Self-hosted deployments can also register distribution feeders through an
+optional [`distribution-cases.json` manifest](docs/src/deployment.md#hosted-distribution-cases).
+Portable PowerIO multiconductor modules open in the distribution viewer and
+can run supported AC power flow in the browser.
+
 Bus color is locational marginal price. Selecting a bus shows ∂LMP/∂demand at
 that bus; selecting a binding line shows ∂LMP/∂rating. Dragging a slider
 applies the sensitivity column live; releasing it re-solves exactly in
