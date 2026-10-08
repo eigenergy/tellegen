@@ -1,5 +1,5 @@
 // Generated from Rust by study_contract and generate-study-contracts.mjs.
-// Source SHA256: 0873a4e79ae5eede1a044e7ca730d1532eefe9e424c747fffc54c5b8d70b9693
+// Source SHA256: a55f09c82d3992ea70ca570c6df2f9e7bbfe3498dd4e9a812046ffcfa123035a
 
 export type ArtifactKind = "powerio_ir" | "geo_layer" | "evidence";
 
@@ -71,6 +71,8 @@ export type Intervention = "branch_rating" | "active_demand";
 
 export type Iterations = (Array<SolveIteration>) | ({ "count": number; "residual": number; });
 
+export type LimitRound = { "added": number; "enforced": number; "ipm_iterations": number; "max_loading": number; "rows": number; "variables": number; "violated": number; };
+
 export type ModelDetails = { "approximations": Array<CostApproximation>; "method": CostPreparation; "model": string; "quantity": string; "source": string; "units": string; };
 
 export type ObservableWeight = { "element": ElementKey; "weight": number; };
@@ -91,7 +93,7 @@ export type SensitivityMatrix = { "cols": Array<ColMeta>; "rows": Array<RowMeta>
 
 export type SolveIteration = { "inf_du": number; "inf_pr": number; "iter": number; "objective": number; };
 
-export type SolveResponse = { "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
+export type SolveResponse = { "dispatch"?: Array<GenDispatch> | null; "flows"?: Array<BranchFlow> | null; "formulation": Problem; "injections"?: Array<BusInjection> | null; "iterations"?: (Iterations) | (null); "limit_rounds"?: Array<LimitRound> | null; "lmp"?: Array<BusScalar> | null; "lmp_q"?: Array<BusScalar> | null; "objective"?: number | null; "sensitivities"?: Array<SensitivityMatrix>; "status": SolveStatus; "va"?: Array<BusScalar> | null; "vm"?: Array<BusScalar> | null; "w"?: Array<BusScalar> | null; "wi"?: Array<BranchScalar> | null; "wr"?: Array<BranchScalar> | null; };
 
 export type SolveStatus = ("optimal") | ("feasible");
 

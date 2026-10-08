@@ -56,8 +56,8 @@ pub use api::solve_ac_instance;
 pub use api::{
     capabilities_json, solve_instance, solve_instance_cancellable, solve_module_json,
     validate_canonical_identity, BranchFlow, BranchScalar, BusInjection, BusScalar, Edits,
-    ElementKey, GenDispatch, Iterations, Problem, ProblemCaps, SolveRequest, SolveResponse,
-    SolveStatus,
+    ElementKey, GenDispatch, Iterations, LazyLimits, LimitOptions, LimitRound, Problem,
+    ProblemCaps, SolveRequest, SolveResponse, SolveStatus, ThermalLimits,
 };
 #[cfg(feature = "sensitivity")]
 pub use api::{solve_ac_pf_instance, SensRequest};
