@@ -13,6 +13,9 @@ use powerio_matrix::{
 };
 use powerio_prob::DcOpfInstance;
 
+use crate::api::SolveDiagnostic;
+
+use super::islands::{energize, ReferencePolicy};
 use super::{
     branch_ids_for_view_rows, bus_ids_for_source_rows, ids_for_view_rows, normalize_angle_bounds,
     normalize_for_model, project_source_rows, reject_unsupported_active_elements,
@@ -126,8 +129,9 @@ pub(crate) struct DcNetwork {
     pub demand: Vec<f64>,
     /// Per-unit shunt conductance withdrawal per bus.
     pub shunt_conductance: Vec<f64>,
-    /// Reference (slack) bus, dense index.
-    pub ref_bus: usize,
+    /// Reference buses, dense indices: at least one in every island, each
+    /// grounded at angle zero.
+    pub ref_buses: Vec<usize>,
     /// Whether load shedding is permitted. Portable PowerIO instances do not state this
     /// relaxation, so constructed workspaces keep the shedding variables pinned to zero.
     /// Internal numerical tests opt in explicitly when exercising the shedding KKT.
@@ -170,6 +174,8 @@ pub(crate) struct DcNetwork {
     pub branch_uids: Vec<Option<String>>,
     /// System base power (MVA), for recovering served units from per unit results.
     pub base_mva: f64,
+    /// How the model treated the network's islands, reported with the solve.
+    pub(crate) diagnostics: Vec<SolveDiagnostic>,
 }
 
 impl DcNetwork {
@@ -185,7 +191,14 @@ impl DcNetwork {
     /// created by three-winding lowering. PowerIO preserves quadratic and
     /// piecewise linear costs as distinct preparation columns.
     pub fn from_network(raw: &BalancedNetwork) -> Result<DcNetwork, String> {
-        Self::build(raw, BranchSusceptanceFormula::SeriesSusceptance)
+        // This path normalizes first, which keeps only generator-hosted references.
+        let energized = energize(raw, ReferencePolicy::GeneratorHosted);
+        let mut model = Self::build(
+            energized.network(raw),
+            BranchSusceptanceFormula::SeriesSusceptance,
+        )?;
+        model.diagnostics = energized.diagnostics;
+        Ok(model)
     }
 
     /// Build the private solver workspace from a typed PowerIO
@@ -194,8 +207,18 @@ impl DcNetwork {
     /// return its typed preparation error instead of becoming a default problem.
     pub fn from_instance(instance: &DcOpfInstance) -> Result<DcNetwork, String> {
         validate_canonical_identity(instance.network())?;
+        let energized = energize(instance.network(), ReferencePolicy::Stated);
+        let diagnostics = energized.diagnostics.clone();
+        let adjusted = energized
+            .into_network()
+            .map(|network| instance.clone().with_network(network))
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let instance = adjusted.as_ref().unwrap_or(instance);
         reject_unsupported_active_elements(instance.network())?;
-        Self::build_prepared(instance, instance.network(), None)
+        let mut model = Self::build_prepared(instance, instance.network(), None)?;
+        model.diagnostics = diagnostics;
+        Ok(model)
     }
 
     fn build(
@@ -333,12 +356,11 @@ impl DcNetwork {
                 .collect()
         };
 
-        // Per-bus demand and reference, moved straight out of the freshly built,
+        // Per-bus demand and references, moved straight out of the freshly built,
         // locally owned instance: from_network runs per Study commit and preview, so
-        // this stays clone free. `single()` rather than a first element: `DcNetwork`
-        // grounds one bus, so several references means several islands and every island
-        // past the first would stay singular.
-        let ref_bus = prep.reference_buses.single().map_err(|e| e.to_string())?;
+        // this stays clone free. PowerIO has checked that every island holds a
+        // reference; the program grounds each one.
+        let ref_buses: Vec<usize> = prep.reference_buses.iter().copied().collect();
         let flow_offset = prep.calc_branch_flow_offset();
         let demand = prep.p_d.clone();
         let shunt_conductance = prep.g_s.clone();
@@ -434,7 +456,7 @@ impl DcNetwork {
             c_shed,
             demand,
             shunt_conductance,
-            ref_bus,
+            ref_buses,
             allow_shed: false,
             objective: prep.objective,
             generator_capability_active: prep.generators.capability_active,
@@ -453,6 +475,7 @@ impl DcNetwork {
             bus_uids,
             branch_uids,
             base_mva: prep.base_mva,
+            diagnostics: Vec::new(),
         })
     }
 
@@ -682,7 +705,7 @@ mod tests {
         assert_eq!(dc.gen_source_rows, vec![Some(0), Some(1)]);
         approx(dc.base_mva, 100.0);
         // Bus 1 is the MATPOWER slack (type 3) -> dense index 0.
-        assert_eq!(dc.ref_bus, 0);
+        assert_eq!(dc.ref_buses, [0]);
     }
 
     #[test]
@@ -899,7 +922,7 @@ mod tests {
         let dc = DcNetwork::from_network(&net).expect("build DcNetwork from ACTIVSg200");
 
         assert!(dc.n > 0 && dc.m > 0 && dc.k > 0);
-        assert!(dc.ref_bus < dc.n);
+        assert!(dc.ref_buses.iter().all(|&r| r < dc.n));
         assert_eq!(dc.bus_ids.len(), dc.n);
         assert_eq!(dc.demand.len(), dc.n);
         assert_eq!(dc.c_shed.len(), dc.n);

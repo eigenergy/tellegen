@@ -385,6 +385,24 @@ pub struct GenDispatch {
     pub qg: Option<f64>,
 }
 
+/// A finding about how the solve treated the network, such as an island left out
+/// because nothing supplies it. `code` is stable for programs; `message` is for
+/// people. `buses` names the original ids of the buses concerned.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct SolveDiagnostic {
+    /// `island_deenergized`: an island with no in-service generator was left
+    /// out of the solve; its buses carry no results and its load is unserved.
+    /// `island_reference_designated`: a supplied island stated no reference bus,
+    /// so the bus of its largest generator became the island's reference.
+    /// `island_extra_reference`: the AC power flow found several reference
+    /// buses in one island and kept the first as its slack; the others hold
+    /// their voltage magnitude as PV (or PQ) buses.
+    pub code: String,
+    pub message: String,
+    pub buses: Vec<usize>,
+}
+
 /// The formulation-agnostic solve result. A superset: every block is optional, and
 /// each formulation fills what it produces. Powers are MW/MVAr, nodal values are
 /// in objective units per selected power unit, angles radians, `vm` per unit, and
@@ -431,6 +449,10 @@ pub struct SolveResponse {
     pub flows: Option<Vec<BranchFlow>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispatch: Option<Vec<GenDispatch>>,
+    /// How the solve treated the network's islands. Empty, and omitted, when
+    /// every island is supplied and referenced as stated.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub diagnostics: Vec<SolveDiagnostic>,
     /// One self-describing matrix per requested cell, in request order. Each carries
     /// its own row/column element ids and the served-unit label.
     #[cfg(feature = "sensitivity")]
@@ -667,6 +689,7 @@ pub(crate) fn dc_opf_assemble(
             base,
         )),
         dispatch: Some(zip_gen_pg(dc, &sol.pg, base)),
+        diagnostics: dc.diagnostics.clone(),
         #[cfg(feature = "sensitivity")]
         sensitivities,
     })
@@ -723,6 +746,7 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
             base,
         )),
         dispatch: None,
+        diagnostics: dc.diagnostics.clone(),
         sensitivities: Vec::new(),
     })
 }
@@ -794,6 +818,7 @@ pub(crate) fn ac_pf_assemble(
             base,
         )),
         dispatch: None,
+        diagnostics: acnet.diagnostics.clone(),
         sensitivities,
     })
 }
@@ -888,6 +913,7 @@ pub(crate) fn socwr_assemble(
             base,
         )),
         dispatch: Some(zip_gen_pq(acnet, &sol.pg, &sol.qg, base)),
+        diagnostics: acnet.diagnostics.clone(),
         sensitivities,
     })
 }
@@ -2067,5 +2093,199 @@ mod tests {
             let sys = super::super::sens::ConicKkt::new(&ac, &soc).unwrap();
             check(Problem::Socwr, &sys);
         }
+    }
+
+    /// Solve a network as a stored balanced-network module.
+    fn solve_islands(network: &BalancedNetwork, request: &str) -> SolveResponse {
+        let module = powerio::PioModule::new(powerio::PioValue::BalancedNetwork(network.clone()));
+        let module = crate::ir::serialize_module(&module).expect("module JSON");
+        let out = solve_module_json(&module, request).expect("solve");
+        serde_json::from_str(&out).expect("response")
+    }
+
+    fn islands_network() -> BalancedNetwork {
+        crate::model::parse_matpower(crate::model::CASE_ISLANDS).expect("parse")
+    }
+
+    fn by_bus(scalars: &[BusScalar]) -> BTreeMap<usize, f64> {
+        scalars.iter().map(|s| (s.bus, s.value)).collect()
+    }
+
+    fn island_codes(response: &SolveResponse) -> Vec<(&str, Vec<usize>)> {
+        response
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.as_str(), d.buses.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn two_supplied_islands_clear_at_their_own_prices() {
+        let response = solve_islands(&islands_network(), r#"{"formulation":"dcopf"}"#);
+        // Island 1-3 is served by the $10 unit, island 4-6 by the $20 unit; no
+        // network connects them, so each clears at its own unit's cost.
+        let lmp = by_bus(response.lmp.as_ref().expect("prices"));
+        assert_eq!(lmp.keys().copied().collect::<Vec<_>>(), [1, 2, 3, 4, 5, 6]);
+        for bus in [1, 2, 3] {
+            assert!((lmp[&bus] - 10.0).abs() < 1e-6, "bus {bus}: {}", lmp[&bus]);
+        }
+        for bus in [4, 5, 6] {
+            assert!((lmp[&bus] - 20.0).abs() < 1e-6, "bus {bus}: {}", lmp[&bus]);
+        }
+        let dispatch: Vec<f64> = response
+            .dispatch
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|g| g.pg)
+            .collect();
+        assert!((dispatch[0] - 60.0).abs() < 1e-6, "{dispatch:?}");
+        assert!((dispatch[1] - 40.0).abs() < 1e-6, "{dispatch:?}");
+        // Each island's reference holds angle zero.
+        let va = by_bus(response.va.as_ref().unwrap());
+        assert!(va[&1].abs() < 1e-9 && va[&6].abs() < 1e-9, "{va:?}");
+        assert_eq!(
+            island_codes(&response),
+            [
+                ("island_deenergized", vec![7, 8]),
+                ("island_reference_designated", vec![6]),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_load_only_island_is_deenergized_with_a_diagnostic() {
+        let response = solve_islands(&islands_network(), r#"{"formulation":"dcopf"}"#);
+        let deenergized = &response.diagnostics[0];
+        assert_eq!(deenergized.code, "island_deenergized");
+        assert_eq!(deenergized.buses, [7, 8]);
+        assert!(
+            deenergized.message.contains("20.0 MW of load is unserved"),
+            "{}",
+            deenergized.message
+        );
+        // Its buses and its line carry no results.
+        assert!(response.va.as_ref().unwrap().iter().all(|s| s.bus < 7));
+        assert_eq!(response.flows.as_ref().unwrap().len(), 6);
+        // The JSON names the diagnostic block.
+        let json: Value = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["diagnostics"][0]["code"], "island_deenergized");
+
+        // A connected case reports nothing and omits the block.
+        let connected: Value = serde_json::from_str(
+            &solve_module_json(&case3_module_json(), r#"{"formulation":"dcopf"}"#).unwrap(),
+        )
+        .unwrap();
+        assert!(connected.get("diagnostics").is_none());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn dc_power_flow_grounds_every_island() {
+        let response = solve_islands(&islands_network(), r#"{"formulation":"dcpf"}"#);
+        let flows: BTreeMap<usize, f64> = response
+            .flows
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|f| (f.branch, f.pf))
+            .collect();
+        // Generator setpoints are zero, so each island's slack serves its load:
+        // bus 1 sends 60 MW toward bus 2 (40 direct, 20 around), bus 6 sends 40 MW
+        // toward bus 5.
+        assert!((flows[&1] - 40.0).abs() < 1e-6, "{flows:?}");
+        assert!((flows[&6] + 80.0 / 3.0).abs() < 1e-6, "{flows:?}");
+        assert_eq!(
+            island_codes(&response),
+            [
+                ("island_deenergized", vec![7, 8]),
+                ("island_reference_designated", vec![6]),
+            ]
+        );
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn price_sensitivity_stays_inside_each_island() {
+        // A quadratic term on the bus 1 unit makes island 1-3's price move with
+        // its demand.
+        let network = crate::model::parse_matpower(
+            &crate::model::CASE_ISLANDS.replace(" 2 0 0 2 10 0;", " 2 0 0 3 0.05 10 0;"),
+        )
+        .expect("parse");
+        let request = r#"{"formulation":"dcopf","sensitivities":[{"operand":{"Price":"Active"},"parameter":{"Demand":"Active"},"indices":[1]}]}"#;
+        let response = solve_islands(&network, request);
+        let cell = &response.sensitivities[0];
+        let column: Vec<f64> = cell.values.iter().map(|row| row[0]).collect();
+        // d(price)/d(demand at bus 2) = 2 * 0.05 $/MW^2 inside island 1-3 and zero
+        // in island 4-6.
+        for (row, value) in column.iter().enumerate() {
+            let expected = if row < 3 { 0.1 } else { 0.0 };
+            assert!(
+                (value - expected).abs() < 1e-6,
+                "row {row}: {value} vs {expected}"
+            );
+        }
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn ac_power_flow_converges_with_one_slack_per_island() {
+        let response = solve_islands(&islands_network(), r#"{"formulation":"acpf"}"#);
+        let va = by_bus(response.va.as_ref().unwrap());
+        assert_eq!(va.keys().copied().collect::<Vec<_>>(), [1, 2, 3, 4, 5, 6]);
+        assert!(va[&1].abs() < 1e-12 && va[&6].abs() < 1e-12, "{va:?}");
+        let injections: BTreeMap<usize, (f64, f64)> = response
+            .injections
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|i| (i.bus, (i.p, i.q)))
+            .collect();
+        // Load buses draw exactly their load; each slack supplies its own island
+        // plus that island's losses.
+        assert!((injections[&2].0 + 60.0).abs() < 1e-6);
+        assert!((injections[&5].0 + 40.0).abs() < 1e-6);
+        assert!(injections[&1].0 > 60.0 && injections[&1].0 < 61.0);
+        assert!(injections[&6].0 > 40.0 && injections[&6].0 < 41.0);
+        match response.iterations {
+            Some(Iterations::Newton { residual, .. }) => assert!(residual < 1e-8),
+            ref other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            island_codes(&response),
+            [
+                ("island_deenergized", vec![7, 8]),
+                ("island_reference_designated", vec![6]),
+            ]
+        );
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn ac_power_flow_keeps_one_slack_when_an_island_states_two() {
+        let mut network = crate::model::parse_matpower(CASE3).expect("parse");
+        network.buses_mut()[2].kind = powerio::BusType::Ref;
+        let response = solve_islands(&network, r#"{"formulation":"acpf"}"#);
+        assert_eq!(
+            island_codes(&response),
+            [("island_extra_reference", vec![3])]
+        );
+        let vm = by_bus(response.vm.as_ref().unwrap());
+        let va = by_bus(response.va.as_ref().unwrap());
+        // Bus 1 is the slack; bus 3 holds its magnitude with a free angle.
+        assert!(va[&1].abs() < 1e-12);
+        assert!(va[&3].abs() > 1e-6, "{va:?}");
+        assert!((vm[&3] - 1.0).abs() < 1e-9, "{vm:?}");
+    }
+
+    #[cfg(feature = "conic")]
+    #[test]
+    fn socwr_solves_each_supplied_island() {
+        let response = solve_islands(&islands_network(), r#"{"formulation":"socwr"}"#);
+        let lmp = by_bus(response.lmp.as_ref().unwrap());
+        assert!(lmp[&2] < lmp[&5], "{lmp:?}");
+        assert_eq!(response.w.as_ref().unwrap().len(), 6);
+        assert_eq!(response.diagnostics[0].code, "island_deenergized");
     }
 }
