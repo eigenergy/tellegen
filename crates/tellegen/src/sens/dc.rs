@@ -29,6 +29,11 @@ use super::{
 /// Strict-complementarity / structural-zero-shed threshold.
 const SNAP_TOL: f64 = 1e-6;
 
+/// The refusal for a derivative of a DC OPF that carries caller-supplied
+/// linear constraints.
+pub(crate) const LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED: &str =
+    "DC OPF sensitivities are not yet available with caller-supplied linear constraints";
+
 /// Tikhonov perturbation for the derivative factorization only. It does not
 /// alter the primal program or its declared objective.
 const TIKHONOV_EPS: f64 = 1e-10;
@@ -477,6 +482,14 @@ impl Differentiable for DcKkt<'_> {
     /// angle stationarity (and, for switching, the phase-limit rows).
     fn parameter_jacobian(&self, p: Parameter, idx_cols: &[usize]) -> Result<Mat<f64>, SensError> {
         let dc = self.dc;
+        // The KKT layout above mirrors the base program only. Caller-supplied
+        // linear rows would be missing from it, so refuse rather than return
+        // the derivative of a different program.
+        if !dc.linear_rows.is_empty() {
+            return Err(SensError::InvalidInput(
+                LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED.to_owned(),
+            ));
+        }
         if matches!(p, Parameter::Cost(_)) {
             if let Some(&generator) = idx_cols
                 .iter()
