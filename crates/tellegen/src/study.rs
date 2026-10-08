@@ -26,7 +26,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::{
     ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells,
-    validate_canonical_edits, Edits, ElementKey, Problem, SensRequest, SolveRequest, SolveResponse,
+    validate_canonical_edits, Edits, ElementKey, PowerFlowStart, Problem, SensRequest,
+    SolveRequest, SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
@@ -888,6 +889,7 @@ impl Study {
         let req = SolveRequest {
             formulation: self.formulation,
             edits: fold(log),
+            start: PowerFlowStart::Flat,
             sensitivities: sensitivities.to_vec(),
         };
         // Re-solve from a fresh clone of the base (the source of truth), then assemble the

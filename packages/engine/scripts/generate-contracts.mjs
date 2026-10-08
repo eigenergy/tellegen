@@ -85,9 +85,14 @@ export interface Edits {
 \trates?: BranchRatingDeltas;
 }
 
+/** Where the AC power flow starts: the setpoint flat start, or the case's stored bus voltages. */
+export type PowerFlowStart = 'flat' | 'case';
+
 export interface SolveRequest {
 \tformulation?: FormulationId;
 \tedits?: Edits;
+\t/** \`acpf\` only; other formulations refuse \`'case'\`. Defaults to \`'flat'\`. */
+\tstart?: PowerFlowStart;
 \tsensitivities?: SensRequest[];
 }
 
