@@ -168,8 +168,47 @@ pub(crate) struct DcNetwork {
     pub bus_uids: Vec<Option<String>>,
     /// Dense branch index -> powerio row uid; the branch counterpart of `bus_uids`.
     pub branch_uids: Vec<Option<String>>,
+    /// Dense generator index -> powerio row uid; the generator counterpart of
+    /// `bus_uids`.
+    pub(crate) gen_uids: Vec<Option<String>>,
+    /// Caller-supplied linear rows over the flow and dispatch columns, resolved
+    /// from a request's `constraints`. Empty unless a request states some.
+    pub(crate) linear_rows: Vec<LinearRow>,
     /// System base power (MVA), for recovering served units from per unit results.
     pub base_mva: f64,
+}
+
+/// One caller-supplied linear constraint resolved onto the DC OPF columns:
+/// `lower_mw <= base_mva * (sum(flow) + sum(generation)) <= upper_mw`, where
+/// `flow` weights the per unit branch flow columns `f` and `generation` the per
+/// unit dispatch columns `pg`. A bus injection term is already expanded onto the
+/// flows of the branches at the bus, so no row depends on demand. Equal limits
+/// state an equality.
+#[derive(Clone, Debug)]
+pub(crate) struct LinearRow {
+    /// The caller's name for the row.
+    pub(crate) id: String,
+    /// Dense branch index and coefficient, sorted, nonzero.
+    pub(crate) flow: Vec<(usize, f64)>,
+    /// Dense generator index and coefficient, sorted, nonzero.
+    pub(crate) generation: Vec<(usize, f64)>,
+    /// Limits in MW, as stated. The assembly scales them to per unit.
+    pub(crate) lower_mw: Option<f64>,
+    pub(crate) upper_mw: Option<f64>,
+}
+
+impl LinearRow {
+    /// Whether the row is an equality (`lower_mw == upper_mw`).
+    pub(crate) fn is_equality(&self) -> bool {
+        matches!((self.lower_mw, self.upper_mw), (Some(lower), Some(upper)) if lower == upper)
+    }
+
+    /// The row's value `sum(flow) + sum(generation)` at a flow and dispatch point.
+    pub(crate) fn evaluate(&self, f: &[f64], pg: &[f64]) -> f64 {
+        let flow: f64 = self.flow.iter().map(|&(e, c)| c * f[e]).sum();
+        let generation: f64 = self.generation.iter().map(|&(j, c)| c * pg[j]).sum();
+        flow + generation
+    }
 }
 
 impl DcNetwork {
@@ -310,6 +349,12 @@ impl DcNetwork {
             raw.branches(),
             |branch| &branch.uid,
             "branch",
+        )?;
+        let gen_uids = uids_for_source_rows(
+            &gen_source_rows,
+            raw.generators(),
+            |generator| &generator.uid,
+            "generator",
         )?;
         #[cfg(feature = "sensitivity")]
         let branch_identities = if normalized_source_rows.is_none() {
@@ -452,6 +497,8 @@ impl DcNetwork {
             gen_source_rows,
             bus_uids,
             branch_uids,
+            gen_uids,
+            linear_rows: Vec::new(),
             base_mva: prep.base_mva,
         })
     }

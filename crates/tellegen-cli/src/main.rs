@@ -35,7 +35,8 @@ use tellegen::plan::CapacityPlanSpec;
 const USAGE: &str =
     "usage: tellegen [REQUEST_JSON | capabilities | --help]   (PowerIO module on stdin)\n\
      \n\
-     REQUEST_JSON  a solve request; default '{}' is a base-case DC OPF.\n\
+     REQUEST_JSON  a solve request; default '{}' is a base-case DC OPF. A dcopf\n\
+                   request may carry linear constraints (`describe`: solve_request).\n\
      capabilities  print the formulation/operand/parameter capability matrix.\n\
      describe      print supported commands and generated JSON schemas.\n\
      prepare-model\n\
@@ -337,6 +338,10 @@ fn contract_value() -> Result<serde_json::Value, String> {
             "plan_response": serde_json::to_value(schemars::schema_for!(PlanResponse))
                 .map_err(|error| error.to_string())?,
             "solve_response": ir_schema()?,
+            "solve_request": serde_json::to_value(schemars::schema_for!(tellegen::SolveRequest))
+                .map_err(|error| error.to_string())?,
+            "solve_result": serde_json::to_value(schemars::schema_for!(tellegen::SolveResponse))
+                .map_err(|error| error.to_string())?,
             "capabilities_response":
                 serde_json::to_value(schemars::schema_for!(CapabilitiesResponse))
                     .map_err(|error| error.to_string())?,
@@ -534,5 +539,49 @@ mpc.gencost = [
             contract["schemas"]["capabilities_response"]["type"],
             "array"
         );
+    }
+
+    #[test]
+    fn describe_and_capabilities_advertise_linear_constraints() {
+        let contract = contract_value().expect("contract");
+        let request = &contract["schemas"]["solve_request"];
+        assert!(request["properties"]["constraints"].is_object());
+        let term = &request["$defs"]["ConstraintTermKind"];
+        let kinds: Vec<&str> = term["oneOf"]
+            .as_array()
+            .expect("documented term kinds")
+            .iter()
+            .map(|kind| kind["const"].as_str().expect("tag"))
+            .collect();
+        assert_eq!(kinds, ["branch_flow", "bus_injection", "generator"]);
+        assert!(contract["schemas"]["solve_result"]["properties"]["constraints"].is_object());
+
+        let capabilities: CapabilitiesResponse =
+            serde_json::from_str(&tellegen::capabilities_json()).expect("capabilities");
+        let dc_opf = capabilities
+            .iter()
+            .find(|caps| caps.formulation == tellegen::Problem::DcOpf)
+            .expect("dcopf");
+        assert_eq!(dc_opf.constraints.len(), 3);
+
+        // The default command solves a request carrying a constraint. The test
+        // case's one line carries the whole 50 MW load.
+        let request = serde_json::json!({
+            "constraints": [{
+                "id": "line",
+                "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+                "upper": 60.0
+            }]
+        });
+        let response: serde_json::Value = serde_json::from_str(
+            &tellegen::solve_module_json(&test_module_json(), &request.to_string())
+                .expect("constrained solve"),
+        )
+        .expect("response");
+        let row = &response["constraints"][0];
+        assert_eq!(row["id"], "line");
+        assert!((row["value"].as_f64().unwrap() - 50.0).abs() < 1e-5);
+        assert_eq!(row["binding"], false);
+        assert!(row["shadow_price"].as_f64().unwrap().abs() < 1e-6);
     }
 }

@@ -35,6 +35,7 @@ pub use contract::{
     SensitivityMatrix, SolveSpec, TapKind, VoltageKind, GB,
 };
 pub use dc::DcKkt;
+pub(crate) use dc::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED;
 
 pub(crate) use contract::{served_unit_scale, served_units_label};
 
@@ -44,6 +45,7 @@ pub(crate) use contract::{served_unit_scale, served_units_label};
 /// operands are few). [`Auto`](Mode::Auto) picks the smaller dimension and is the api
 /// default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum Mode {
     /// Solve `K X = rhs` once per parameter set, read the operand rows.

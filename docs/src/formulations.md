@@ -30,6 +30,76 @@ value or its derivative need not be unique; the sensitivity API reports the
 local KKT linearization and numerical checks identify stencils that cross a
 different active set.
 
+### Linear constraints
+
+A DC OPF request may add linear constraints over branch flows, bus net
+injections, and generator outputs. This is the usual way to state an interface
+or transfer limit: a bound on a weighted sum of flows across a cut of the
+network.
+
+```json
+{
+  "formulation": "dcopf",
+  "constraints": [
+    {
+      "id": "north-south",
+      "terms": [
+        { "kind": "branch_flow", "element": 3, "coefficient": 1.0 },
+        { "kind": "branch_flow", "element": "branches:7", "coefficient": 1.0 }
+      ],
+      "upper": 400.0
+    }
+  ]
+}
+```
+
+Each constraint states $l \le \sum_t c_t\,q_t \le u$ in MW. Either limit may be
+omitted, but not both; equal limits state an equality. A term's `kind` selects
+its quantity $q_t$:
+
+| `kind`          | quantity                                              | `element`                       |
+| --------------- | ----------------------------------------------------- | ------------------------------- |
+| `branch_flow`   | from-end active flow, positive from `from` to `to`    | 1-based branch position or uid  |
+| `bus_injection` | net injection: generation minus demand and shunt withdrawal | bus id or uid             |
+| `generator`     | active output                                         | 1-based generator position or uid |
+
+Terms naming the same quantity add. An element that is unknown, out of
+service, or synthesized while lowering a three-winding transformer is refused
+by name. A bus injection enters the program as the flow leaving the bus on its
+branches, which equals the net injection by power balance. The constraint rows
+therefore never depend on demand, and the reported LMP stays the marginal cost
+of demand at each bus.
+
+The response adds a `constraints` block in request order with each row's
+`value`, `lower`, `upper`, `binding`, and `shadow_price`. The shadow price is
+$\mu = -\partial(\text{objective})/\partial(\text{limit})$ in the LMP's units:
+positive when the upper limit binds, negative when the lower limit binds, and
+zero when neither does. Prices then decompose against any reference bus $r$:
+
+$$ \lambda_i = \lambda_r - \sum_\ell \mu_\ell \, s_{\ell i}, $$
+
+where $s_{\ell i}$ is the change in constraint $\ell$'s value per MW injected at
+bus $i$ and withdrawn at $r$, and the sum also runs over binding line limits.
+The shadow price is omitted, like the LMP, when the declared objective is a
+feasibility objective.
+
+Linear constraints are a DC OPF feature. DC power flow, AC power flow, and
+SOCWR refuse a request that carries them, and so does a DC OPF request that
+also asks for sensitivities: the KKT system those use does not yet include the
+extra rows. A Rust `Study` carries constraints through every commit with
+`Study::set_constraints`; while it has any, it refuses previews, planning,
+objective gradients, and saving the problem instance or its solution, since the
+PowerIO problem instance has no place for them.
+
+On the command line, the default command takes the request as its argument,
+`tellegen capabilities` lists the accepted term kinds under each formulation's
+`constraints`, and `tellegen describe` includes the `solve_request` and
+`solve_result` schemas:
+
+```sh
+tellegen '{"constraints":[{"id":"north-south","upper":400,"terms":[{"kind":"branch_flow","element":3,"coefficient":1}]}]}' < case.pio.json
+```
+
 Branch angle-difference bounds are enforced in radians after normalization.
 MATPOWER's unconstrained `-360`/`360` spelling and an unset `0`/`0` pair become
 exactly -60/+60 degrees. When a branch has no thermal rating, Tellegen
