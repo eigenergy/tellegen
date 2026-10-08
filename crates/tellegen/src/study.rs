@@ -3061,4 +3061,42 @@ mod tests {
             assert_eq!(analytic.numerics.regularization, 1e-9);
         }
     }
+
+    #[test]
+    fn a_study_over_several_islands_commits_previews_and_saves() {
+        let net =
+            module_json(crate::model::parse_matpower(crate::model::CASE_ISLANDS).expect("parse"));
+        let mut study = Study::new(&net, Problem::DcOpf).expect("study");
+        assert_eq!(study.solution().diagnostics.len(), 2);
+        let edit = [NetworkEdit::AddLoad {
+            bus: 5.into(),
+            p_mw: 10.0,
+        }];
+        let preview = study
+            .preview(&edit, &[Operand::Dispatch(Power::Active)])
+            .expect("preview");
+        let resp = study.commit(&edit).expect("commit");
+        let dispatch: Vec<f64> = resp
+            .dispatch
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|g| g.pg)
+            .collect();
+        // Island 4-6's own unit serves the added load; island 1-3 is untouched.
+        assert!((dispatch[0] - 60.0).abs() < 1e-6, "{dispatch:?}");
+        assert!((dispatch[1] - 50.0).abs() < 1e-6, "{dispatch:?}");
+        let predicted: Vec<f64> = preview.operands[0].values.iter().map(|v| v.value).collect();
+        assert!(predicted[0].abs() < 1e-6 && (predicted[1] - 10.0).abs() < 1e-6);
+        // A load edit on the de-energized island has nothing to land on.
+        let error = study
+            .commit(&[NetworkEdit::AddLoad {
+                bus: 7.into(),
+                p_mw: 1.0,
+            }])
+            .expect_err("bus 7 is out of the solve");
+        assert!(error.contains("bus 7"), "{error}");
+        study.save_module().expect("network module");
+        study.save_solution_module().expect("solution module");
+    }
 }

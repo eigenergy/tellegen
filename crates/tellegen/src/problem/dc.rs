@@ -56,7 +56,8 @@ impl DcOpfSolution {
 /// Row and column offsets of the DC OPF program, derived from the network sizes.
 /// Variables are `x = [va(n), pg(k), f(m), psh(n), t(k_pwl)]`, where `t` holds
 /// one cost epigraph variable for each piecewise generator. Constraint rows are
-/// the equalities first (zero cone: power balance, flow definition, reference),
+/// the equalities first (zero cone: power balance, flow definition, one
+/// reference row per reference bus),
 /// then the inequalities (nonnegative cone: line limits, generator limits,
 /// shedding bounds, phase limits, piecewise cost segments), each block
 /// contiguous. The assembly scatters by these offsets and the readout uses the
@@ -65,6 +66,7 @@ struct OpfLayout {
     n: usize,
     m: usize,
     k: usize,
+    n_ref: usize,
     n_eq: usize,
     n_ineq: usize,
     cost_columns: Vec<Option<usize>>,
@@ -74,7 +76,8 @@ struct OpfLayout {
 impl OpfLayout {
     fn dc(dc: &DcNetwork) -> Self {
         let (n, m, k) = (dc.n, dc.m, dc.k);
-        let n_eq = n + m + 1;
+        let n_ref = dc.ref_buses.len();
+        let n_eq = n + m + n_ref;
         let base_nvar = 2 * n + k + m;
         let base_n_ineq = 4 * m + 2 * k + 2 * n;
         let mut next_column = base_nvar;
@@ -97,6 +100,7 @@ impl OpfLayout {
             n,
             m,
             k,
+            n_ref,
             n_eq,
             n_ineq,
             cost_columns,
@@ -127,8 +131,9 @@ impl OpfLayout {
     fn r_fd(&self, e: usize) -> usize {
         self.n + e
     }
-    fn r_ref(&self) -> usize {
-        self.n + self.m
+    fn r_ref(&self, reference: usize) -> usize {
+        debug_assert!(reference < self.n_ref);
+        self.n + self.m + reference
     }
     fn r_lineub(&self, e: usize) -> usize {
         self.n_eq + e
@@ -233,8 +238,10 @@ impl OpfFormulation for Dc {
                 prog.rhs(lay.r_phaselb(e), 1.0);
             }
         }
-        // Reference bus: theta[ref] = 0
-        prog.a(lay.r_ref(), lay.col_va(dc.ref_bus), 1.0);
+        // Reference buses: theta[ref] = 0 in every island.
+        for (reference, &bus) in dc.ref_buses.iter().enumerate() {
+            prog.a(lay.r_ref(reference), lay.col_va(bus), 1.0);
+        }
         // Generation limits: g <= gmax and -g <= -gmin
         for j in 0..dc.k {
             if dc.generator_capability_active[j] {

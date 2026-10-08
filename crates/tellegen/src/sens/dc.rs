@@ -99,7 +99,7 @@ impl KktIdx {
             .collect();
         let nu_bal = take(n);
         let nu_flow = take(m);
-        let eta = take(1);
+        let eta = take(dc.ref_buses.len());
         KktIdx {
             dim: o,
             va,
@@ -241,8 +241,8 @@ fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, 
         for &(i, val) in &bcols[j] {
             e!(idx.nu_bal + i, col, -val);
         }
-        if j == dc.ref_bus {
-            e!(idx.eta, col, 1.0);
+        if let Some(reference) = dc.ref_buses.iter().position(|&r| r == j) {
+            e!(idx.eta + reference, col, 1.0);
         }
     }
 
@@ -400,8 +400,10 @@ fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, 
         e!(idx.f + e, col, -1.0);
     }
 
-    // eta column: reference indicator.
-    e!(idx.va + dc.ref_bus, idx.eta, 1.0);
+    // eta columns: one reference indicator per reference bus.
+    for (reference, &bus) in dc.ref_buses.iter().enumerate() {
+        e!(idx.va + bus, idx.eta + reference, 1.0);
+    }
 
     t
 }

@@ -32,6 +32,42 @@ mpc.gencost = [
 ];
 ";
 
+/// Two triangles of three buses joined by nothing: buses 1-3 with a
+/// generator at the reference bus 1, buses 4-6 with a generator at bus 6
+/// and no reference, plus a load-only pair 7-8.
+pub(crate) const CASE_ISLANDS: &str = "\
+function mpc = islands
+mpc.version = '2';
+mpc.baseMVA = 100;
+mpc.bus = [
+ 1 3 0  0  0 0 1 1 0 230 1 1.1 0.9;
+ 2 1 60 10 0 0 1 1 0 230 1 1.1 0.9;
+ 3 1 0  0  0 0 1 1 0 230 1 1.1 0.9;
+ 4 1 0  0  0 0 1 1 0 230 1 1.1 0.9;
+ 5 1 40 10 0 0 1 1 0 230 1 1.1 0.9;
+ 6 2 0  0  0 0 1 1 0 230 1 1.1 0.9;
+ 7 1 15 5  0 0 1 1 0 230 1 1.1 0.9;
+ 8 1 5  1  0 0 1 1 0 230 1 1.1 0.9;
+];
+mpc.gen = [
+ 1 0 0 300 -300 1 100 1 250 0 0 0 0 0 0 0 0 0 0 0 0;
+ 6 0 0 300 -300 1 100 1 250 0 0 0 0 0 0 0 0 0 0 0 0;
+];
+mpc.branch = [
+ 1 2 0.01 0.1 0 250 250 250 0 0 1 -360 360;
+ 1 3 0.01 0.1 0 250 250 250 0 0 1 -360 360;
+ 2 3 0.01 0.1 0 250 250 250 0 0 1 -360 360;
+ 4 5 0.01 0.1 0 250 250 250 0 0 1 -360 360;
+ 4 6 0.01 0.1 0 250 250 250 0 0 1 -360 360;
+ 5 6 0.01 0.1 0 250 250 250 0 0 1 -360 360;
+ 7 8 0.01 0.1 0 250 250 250 0 0 1 -360 360;
+];
+mpc.gencost = [
+ 2 0 0 2 10 0;
+ 2 0 0 2 20 0;
+];
+";
+
 /// Parse and build the shared 3-bus fixture.
 pub(crate) fn parse_case3() -> DcNetwork {
     let net = crate::model::parse_matpower(CASE3).expect("parse case3");

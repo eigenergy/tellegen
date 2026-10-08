@@ -36,6 +36,29 @@ exactly -60/+60 degrees. When a branch has no thermal rating, Tellegen
 synthesizes its fallback rating from that same 60 degree window and the terminal
 voltage bands. Explicit tighter source bounds are preserved.
 
+## Islands
+
+A network may hold several islands: sets of buses joined by in-service
+branches and three-winding transformers but not by each other. Every
+formulation solves each supplied island on its own terms. The DC programs fix
+the angle at every reference bus. The AC power flow keeps one slack per island,
+and each island's slack absorbs that island's balance. With nothing to trade
+across islands, each island clears at its own price.
+
+Two kinds of island need a decision first, and the response's `diagnostics`
+block reports each one:
+
+- `island_deenergized`: an island with no in-service generator cannot serve its
+  load, so it is left out of the solve. Its buses carry no results, and the
+  message states the unserved load in MW.
+- `island_reference_designated`: a supplied island that states no reference bus
+  gets one at the bus of its largest generator by `pmax`, the rule PowerIO
+  applies to a network with no reference at all.
+
+The AC power flow also reports `island_extra_reference` when one island states
+several reference buses. The first one is the slack, and the others hold their
+voltage magnitude as PV buses, or as PQ buses when they host no generator.
+
 ## AC power flow (polar)
 
 The nodal power balance in polar coordinates,
