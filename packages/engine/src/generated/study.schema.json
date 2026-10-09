@@ -831,6 +831,21 @@
             "Generator"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A caller-supplied linear constraint, by its position in the request.",
+          "properties": {
+            "Constraint": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "Constraint"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1386,6 +1401,11 @@
         {
           "const": "Switching",
           "description": "Branch switching state `sw` in `[0, 1]`, per branch.",
+          "type": "string"
+        },
+        {
+          "const": "ConstraintLimit",
+          "description": "A shift of both limits of a caller-supplied linear constraint (the\nfixed value of an equality), per constraint in request order.",
           "type": "string"
         }
       ]
@@ -2530,5 +2550,5 @@
   ],
   "title": "StudyContract",
   "type": "object",
-  "x-rust-source-sha256": "469749babb1a96861bd3d80c76bb7df520ee2195b16bc06226062faf9b43b58e"
+  "x-rust-source-sha256": "301d69ffe273771f8f3ae3698fad8de5350491c54c5723aad66a001be1ca86bd"
 }

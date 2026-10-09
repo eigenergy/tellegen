@@ -269,8 +269,9 @@ pub struct SolveRequest {
     #[serde(default)]
     pub edits: Edits,
     /// Caller-supplied linear constraints, enforced by the DC OPF only. Every
-    /// other formulation refuses a request that carries any, and so does a DC
-    /// OPF request that also asks for sensitivity cells.
+    /// other formulation refuses a request that carries any. Sensitivity cells
+    /// differentiate the program with them, and `ConstraintLimit` differentiates
+    /// with respect to their limits.
     #[serde(default)]
     pub constraints: Vec<LinearConstraint>,
     /// Zero or more sensitivity cells, computed against the solved system in request
@@ -708,10 +709,6 @@ pub(crate) fn dc_opf_solved(
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<(DcNetwork, super::problem::DcOpfSolution), String> {
     dc.allow_shed = false;
-    #[cfg(feature = "sensitivity")]
-    if !req.constraints.is_empty() && !req.sensitivities.is_empty() {
-        return Err(super::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED.to_owned());
-    }
     apply_demand_deltas(&mut dc, &req.edits.deltas)?;
     apply_rating_deltas(&mut dc, &req.edits.rates)?;
     apply_linear_constraints(&mut dc, &req.constraints)?;
@@ -1121,6 +1118,7 @@ fn formulation_caps() -> Vec<ProblemCaps> {
                 Parameter::LineLimit,
                 Parameter::SeriesAdmittance(GB::Susceptance),
                 Parameter::Switching,
+                Parameter::ConstraintLimit,
             ],
         },
         ProblemCaps {
@@ -2874,7 +2872,7 @@ mod tests {
 
     #[cfg(feature = "sensitivity")]
     #[test]
-    fn constraints_are_refused_outside_dc_opf_and_with_sensitivities() {
+    fn constraints_are_refused_outside_dc_opf() {
         let constraints = serde_json::json!([{
             "id": "x",
             "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
@@ -2894,47 +2892,51 @@ mod tests {
                 format!("linear constraints are supported only by dcopf, not {formulation}")
             );
         }
-
-        let request = serde_json::json!({
-            "constraints": constraints,
-            "sensitivities": [{ "operand": {"Price":"Active"}, "parameter": {"Demand":"Active"} }]
-        });
-        let error = solve_test_network_json(&case3_json(), &request.to_string())
-            .expect_err("sensitivities with linear constraints are not yet supported");
-        assert_eq!(
-            error,
-            crate::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED
-        );
     }
 
     #[cfg(feature = "sensitivity")]
     #[test]
-    fn the_kkt_refuses_a_model_with_linear_rows() {
-        use super::super::sens::{sensitivity, DcKkt};
-        let mut dc =
-            DcNetwork::from_network(&crate::model::parse_matpower(CASE3).unwrap()).expect("model");
-        let constraints: Vec<LinearConstraint> = serde_json::from_value(serde_json::json!([{
-            "id": "x",
-            "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
-            "upper": 50.0
-        }]))
-        .unwrap();
-        apply_linear_constraints(&mut dc, &constraints).expect("resolve");
-        let sol = super::super::problem::dc_opf(&dc).expect("solve");
-        let error = sensitivity(
-            &DcKkt::new(&dc, &sol),
-            Operand::Price(Power::Active),
-            Parameter::Demand(Power::Active),
-            None,
-            Mode::Auto,
-        )
-        .expect_err("the KKT does not carry the linear rows");
-        assert!(
-            error
-                .to_string()
-                .contains(crate::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED),
-            "{error}"
+    fn constraint_limit_sensitivity_matches_the_hand_computed_prices() {
+        // The 50 MW interface on line 1-2 of the linear-cost case: each MW of limit
+        // moves 3 MW from the $20 unit to the $10 unit (objective -$30, the shadow
+        // price), and every price is piecewise constant in the limit.
+        let request = serde_json::json!({
+            "formulation": "dcopf",
+            "constraints": [{
+                "id": "line 1-2",
+                "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+                "upper": 50.0
+            }],
+            "sensitivities": [
+                { "operand": {"Dispatch":"Active"}, "parameter": "ConstraintLimit" },
+                { "operand": {"Price":"Active"}, "parameter": "ConstraintLimit" },
+                { "operand": {"Price":"Active"}, "parameter": {"Demand":"Active"} }
+            ]
+        });
+        let out = solve_test_network_json(&linear_cost_case3_json(), &request.to_string())
+            .expect("solve");
+        let response: SolveResponse = serde_json::from_str(&out).unwrap();
+        let dispatch = &response.sensitivities[0];
+        assert_eq!(dispatch.units, "(MW)/MW");
+        assert_eq!(
+            dispatch.cols[0].element,
+            crate::sens::ElementId::Constraint(0)
         );
+        // dg1/dlimit = 3, dg3/dlimit = -3.
+        assert!(
+            (dispatch.values[0][0] - 3.0).abs() < 1e-5,
+            "{:?}",
+            dispatch.values
+        );
+        assert!(
+            (dispatch.values[1][0] + 3.0).abs() < 1e-5,
+            "{:?}",
+            dispatch.values
+        );
+        for row in &response.sensitivities[1].values {
+            assert!(row[0].abs() < 1e-5, "{row:?}");
+        }
+        assert_eq!(response.sensitivities[2].units, "(objective_unit/MW)/MW");
     }
 
     #[test]

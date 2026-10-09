@@ -138,6 +138,9 @@ pub enum Parameter {
     Transformer(TapKind),
     /// Branch switching state `sw` in `[0, 1]`, per branch.
     Switching,
+    /// A shift of both limits of a caller-supplied linear constraint (the
+    /// fixed value of an equality), per constraint in request order.
+    ConstraintLimit,
 }
 
 /// The element family an [`Operand`] or [`Parameter`] ranges over, so the driver can
@@ -148,6 +151,8 @@ pub enum Axis {
     Bus,
     Branch,
     Generator,
+    /// A request's caller-supplied linear constraints, in request order.
+    Constraint,
 }
 
 impl Operand {
@@ -175,6 +180,7 @@ impl Parameter {
             | Parameter::SeriesAdmittance(_)
             | Parameter::Transformer(_)
             | Parameter::Switching => Axis::Branch,
+            Parameter::ConstraintLimit => Axis::Constraint,
         }
     }
 }
@@ -188,6 +194,8 @@ pub enum ElementId {
     Bus(usize),
     Branch(usize),
     Generator(usize),
+    /// A caller-supplied linear constraint, by its position in the request.
+    Constraint(usize),
 }
 
 /// The operand selector `S`: each reported row is a linear functional of the KKT
@@ -419,7 +427,10 @@ fn operand_served_scale(o: Operand, base: f64) -> f64 {
 /// W-space voltage bound, the costs, and the admittances keep their per-unit convention.
 fn parameter_served_scale(p: Parameter, base: f64) -> f64 {
     match p {
-        Parameter::Demand(_) | Parameter::LineLimit | Parameter::GenBound { .. } => base,
+        Parameter::Demand(_)
+        | Parameter::LineLimit
+        | Parameter::GenBound { .. }
+        | Parameter::ConstraintLimit => base,
         Parameter::VoltageBound(_)
         | Parameter::Cost(_)
         | Parameter::SeriesAdmittance(_)
@@ -466,7 +477,8 @@ fn parameter_unit(p: Parameter) -> &'static str {
         | Parameter::GenBound {
             power: Power::Active,
             ..
-        } => "MW",
+        }
+        | Parameter::ConstraintLimit => "MW",
         Parameter::Demand(Power::Reactive)
         | Parameter::GenBound {
             power: Power::Reactive,
