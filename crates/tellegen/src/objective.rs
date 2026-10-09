@@ -422,6 +422,8 @@ pub(crate) fn source_element_id(
                     .iter()
                     .position(|g| g.uid.as_deref() == Some(uid))
                     .map(|i| i + 1),
+                // A request's constraints are not network elements.
+                crate::Axis::Constraint => None,
             };
             found.ok_or_else(|| format!("unknown {axis:?} identity {uid}"))
         }

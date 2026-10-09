@@ -204,9 +204,6 @@ impl SolvedState for DcState {
         dc_opf_assemble(&self.net, &self.sol, req)
     }
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
-        if !self.net.linear_rows.is_empty() {
-            return Err(crate::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED.to_owned());
-        }
         f(&DcKkt::new(&self.net, &self.sol))
     }
     fn lmp(&self) -> Option<Vec<f64>> {
@@ -529,6 +526,8 @@ impl Study {
                         ElementId::Bus(value)
                         | ElementId::Branch(value)
                         | ElementId::Generator(value) => value == id,
+                        // Constraint positions name no network element.
+                        ElementId::Constraint(_) => false,
                     })
                     .ok_or_else(|| {
                         format!("{axis:?} {key} is unavailable in the selected formulation")
@@ -550,6 +549,8 @@ impl Study {
                         ElementId::Bus(value)
                         | ElementId::Branch(value)
                         | ElementId::Generator(value) => value == id,
+                        // Constraint positions name no network element.
+                        ElementId::Constraint(_) => false,
                     }
                 });
                 let Some(index) = index else {
@@ -837,11 +838,11 @@ impl Study {
 
     /// Replace the study's caller-supplied linear constraints and exact-re-solve the
     /// committed operating point under them; an empty list removes them. Only a DC
-    /// OPF study accepts constraints. Every later commit enforces the same set. While
-    /// any are present, previews, objective gradients, planning, sensitivity cells, and
-    /// saving the problem instance or its solution are refused: the derivative system
-    /// and the PowerIO problem instance do not yet carry the extra rows. On error the
-    /// study keeps its previous constraints and solution.
+    /// OPF study accepts constraints. Every later commit enforces the same set, and
+    /// previews, objective gradients, planning, and sensitivity cells differentiate
+    /// the program with them. While any are present, saving the problem instance or
+    /// its solution is refused: the PowerIO problem instance has no place for the
+    /// extra rows. On error the study keeps its previous constraints and solution.
     pub fn set_constraints(
         &mut self,
         constraints: Vec<LinearConstraint>,
@@ -1094,7 +1095,6 @@ impl Study {
                 self.formulation
             ));
         };
-        self.reject_constraints("planning")?;
         crate::plan::plan_capacity_from_exact(dc, solution, spec)
     }
 
@@ -3187,38 +3187,64 @@ mod tests {
     }
 
     #[test]
-    fn a_constrained_study_refuses_what_would_drop_its_constraints() {
+    fn a_constrained_study_differentiates_its_constraints_and_refuses_to_drop_them() {
         let mut study = Study::new(&case3_json(), Problem::DcOpf).expect("study");
         study
             .set_constraints(interface_limit(38.0))
             .expect("constrain");
-        let unsupported = crate::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED;
+        let base = study.solution().clone();
 
-        let error = study
-            .preview(
-                &[NetworkEdit::AddLoad {
-                    bus: 2.into(),
-                    p_mw: 1.0,
-                }],
-                &[Operand::Price(Power::Active)],
-            )
-            .expect_err("preview needs the derivative system");
-        assert_eq!(error, unsupported);
-        let error = study
+        // A first-order preview of 1 MW more at bus 2 matches the exact re-solve,
+        // which keeps the interface binding.
+        let edit = [NetworkEdit::AddLoad {
+            bus: 2.into(),
+            p_mw: 1.0,
+        }];
+        let preview = study
+            .preview(&edit, &[Operand::Dispatch(Power::Active)])
+            .expect("preview");
+        let committed = study.commit(&edit).expect("commit");
+        let dispatch = |resp: &SolveResponse| -> Vec<f64> {
+            resp.dispatch
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|g| g.pg)
+                .collect()
+        };
+        let (before, after) = (dispatch(&base), dispatch(&committed));
+        for (column, (b, a)) in preview.operands[0]
+            .values
+            .iter()
+            .zip(before.iter().zip(&after))
+        {
+            assert!(
+                (column.value - (a - b)).abs() < 1e-4,
+                "predicted {} vs exact {}",
+                column.value,
+                a - b
+            );
+        }
+        assert!(committed.constraints.as_ref().unwrap()[0].binding);
+
+        // Sensitivity cells ride along with a commit.
+        let resp = study
             .commit_with(
                 &[],
                 &[SensRequest {
                     operand: Operand::Price(Power::Active),
-                    parameter: Parameter::Demand(Power::Active),
+                    parameter: Parameter::ConstraintLimit,
                     indices: None,
                     mode: Mode::Auto,
                 }],
             )
-            .expect_err("sensitivity cells need the derivative system");
-        assert_eq!(error, unsupported);
+            .expect("sensitivity cells");
+        assert_eq!(resp.sensitivities[0].values.len(), 3);
+
+        // Planning differentiates through the same system.
         let spec: crate::plan::CapacityPlanSpec = serde_json::from_value(serde_json::json!({
             "objective": { "kind": "weighted_lmp", "weights": [{ "bus": 2, "weight": 1.0 }] },
-            "candidates": ["branches:0"],
+            "candidates": ["1-2"],
             "max_increase_per_branch_mw": 5.0,
             "budget_mw": 5.0,
             "increment_mw": 5.0,
@@ -3226,8 +3252,9 @@ mod tests {
             "exact_solve_budget": 1
         }))
         .expect("plan spec");
-        let error = study.plan(&spec).expect_err("planning");
-        assert!(error.starts_with("planning is not available"), "{error}");
+        study.plan(&spec).expect("planning");
+
+        // Saving the problem would drop the constraints PowerIO cannot carry.
         for error in [
             study.save_instance_module().expect_err("instance"),
             study.save_exact_module().expect_err("exact solution"),

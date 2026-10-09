@@ -1,5 +1,5 @@
 // Generated from Rust by study_contract and generate-study-contracts.mjs.
-// Source SHA256: 469749babb1a96861bd3d80c76bb7df520ee2195b16bc06226062faf9b43b58e
+// Source SHA256: 301d69ffe273771f8f3ae3698fad8de5350491c54c5723aad66a001be1ca86bd
 
 export type ArtifactKind = "powerio_ir" | "geo_layer" | "evidence";
 
@@ -49,7 +49,7 @@ export type DiagramCamera = { "center": Array<number>; "scale": number; };
 
 export type DisplayContext = { "camera"?: (Camera) | (null); "case_id": string; "diagram_camera"?: (DiagramCamera) | (null); "geography": string; "layers"?: Array<string>; };
 
-export type ElementId = ({ "Bus": number; }) | ({ "Branch": number; }) | ({ "Generator": number; });
+export type ElementId = ({ "Bus": number; }) | ({ "Branch": number; }) | ({ "Generator": number; }) | ({ "Constraint": number; });
 
 export type ElementKey = (number) | (string);
 
@@ -79,7 +79,7 @@ export type ObservableWeight = { "element": ElementKey; "weight": number; };
 
 export type Operand = ({ "Price": Power; }) | ({ "Dispatch": Power; }) | ({ "Flow": { "end": End; "power": Power; }; }) | ({ "Voltage": VoltageKind; });
 
-export type Parameter = ({ "Demand": Power; }) | ({ "Cost": CostTerm; }) | ("LineLimit") | ({ "SeriesAdmittance": GB; }) | ({ "ShuntAdmittance": GB; }) | ({ "VoltageBound": Bound; }) | ({ "GenBound": { "bound": Bound; "power": Power; }; }) | ({ "Transformer": TapKind; }) | ("Switching");
+export type Parameter = ({ "Demand": Power; }) | ({ "Cost": CostTerm; }) | ("LineLimit") | ({ "SeriesAdmittance": GB; }) | ({ "ShuntAdmittance": GB; }) | ({ "VoltageBound": Bound; }) | ({ "GenBound": { "bound": Bound; "power": Power; }; }) | ({ "Transformer": TapKind; }) | ("Switching") | ("ConstraintLimit");
 
 export type Power = "Active" | "Reactive";
 

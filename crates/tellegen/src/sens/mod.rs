@@ -35,7 +35,6 @@ pub use contract::{
     SensitivityMatrix, SolveSpec, TapKind, VoltageKind, GB,
 };
 pub use dc::DcKkt;
-pub(crate) use dc::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED;
 
 pub(crate) use contract::{served_unit_scale, served_units_label};
 

@@ -14,7 +14,13 @@ from/to, voltage representation):
 
 - `Operand`: `Price`, `Dispatch`, `Flow { power, end }`, `Voltage(kind)`.
 - `Parameter`: `Demand`, `Cost`, `LineLimit`, `SeriesAdmittance`, `ShuntAdmittance`,
-  `VoltageBound`, `GenBound`, `Transformer`, `Switching`.
+  `VoltageBound`, `GenBound`, `Transformer`, `Switching`, `ConstraintLimit`.
+
+`ConstraintLimit` (DC OPF) shifts both limits of a request's linear constraint
+by the same amount, or the fixed value of an equality, in MW. Its columns are
+keyed `ElementId::Constraint(i)` by the constraint's position in the request.
+The DC KKT carries a multiplier for each stated limit of each linear constraint,
+so every other DC cell differentiates the constrained program as well.
 
 Each formulation maps a request to its own KKT rows or reports the combination as
 unsupported.

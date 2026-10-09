@@ -29,11 +29,6 @@ use super::{
 /// Strict-complementarity / structural-zero-shed threshold.
 const SNAP_TOL: f64 = 1e-6;
 
-/// The refusal for a derivative of a DC OPF that carries caller-supplied
-/// linear constraints.
-pub(crate) const LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED: &str =
-    "DC OPF sensitivities are not yet available with caller-supplied linear constraints";
-
 /// Tikhonov perturbation for the derivative factorization only. It does not
 /// alter the primal program or its declared objective.
 const TIKHONOV_EPS: f64 = 1e-10;
@@ -47,9 +42,37 @@ fn is_fixed_zero_shed(dc: &DcNetwork, i: usize) -> bool {
     dc.shed_cap(i) < SNAP_TOL
 }
 
+/// The KKT rows of one caller-supplied linear constraint: a multiplier for each
+/// stated limit of an inequality, or one for an equality.
+#[derive(Clone, Copy, Default)]
+struct LinearKktRows {
+    upper: Option<usize>,
+    lower: Option<usize>,
+    equality: Option<usize>,
+}
+
+/// The snapped multipliers of one caller-supplied linear constraint, matching
+/// [`LinearKktRows`]: the nonnegative upper and lower limit duals of an
+/// inequality, or the free dual of an equality.
+#[derive(Clone, Copy, Default)]
+struct LinearDuals {
+    upper: f64,
+    lower: f64,
+    equality: f64,
+}
+
+impl LinearDuals {
+    /// The signed multiplier the row adds to stationarity: `a` times this.
+    fn signed(&self) -> f64 {
+        self.upper - self.lower + self.equality
+    }
+}
+
 /// Offsets of each block in the flattened KKT variable vector, in the order:
 /// `[va, pg, f, psh, cost_epigraph, lam_lb, lam_ub, gamma_lb, gamma_ub,
-/// rho_lb, rho_ub, mu_lb, mu_ub, cost_segment_dual, nu_bal, nu_flow, eta]`.
+/// rho_lb, rho_ub, mu_lb, mu_ub, cost_segment_dual, xi, nu_bal, nu_flow, eta]`,
+/// where `xi` holds the multipliers of the caller-supplied linear constraints in
+/// request order.
 struct KktIdx {
     dim: usize,
     va: usize,
@@ -66,6 +89,7 @@ struct KktIdx {
     mu_lb: usize,
     mu_ub: usize,
     cost_segment_dual: Vec<Option<usize>>,
+    linear: Vec<LinearKktRows>,
     nu_bal: usize,
     nu_flow: usize,
     eta: usize,
@@ -102,6 +126,24 @@ impl KktIdx {
             .iter()
             .map(|cost| cost.as_ref().map(|cost| take(cost.segment_count())))
             .collect();
+        let linear = dc
+            .linear_rows
+            .iter()
+            .map(|row| {
+                if row.is_equality() {
+                    LinearKktRows {
+                        equality: Some(take(1)),
+                        ..LinearKktRows::default()
+                    }
+                } else {
+                    LinearKktRows {
+                        upper: row.upper_mw.map(|_| take(1)),
+                        lower: row.lower_mw.map(|_| take(1)),
+                        equality: None,
+                    }
+                }
+            })
+            .collect();
         let nu_bal = take(n);
         let nu_flow = take(m);
         let eta = take(1);
@@ -121,11 +163,46 @@ impl KktIdx {
             mu_lb,
             mu_ub,
             cost_segment_dual,
+            linear,
             nu_bal,
             nu_flow,
             eta,
         }
     }
+}
+
+/// Split each caller-supplied linear constraint's signed dual into its
+/// per-limit multipliers and snap them to strict complementarity: an inequality
+/// limit with slack keeps no multiplier, a binding one keeps a nonnegative one.
+fn snap_linear(dc: &DcNetwork, sol: &DcOpfSolution) -> Vec<LinearDuals> {
+    dc.linear_rows
+        .iter()
+        .zip(&sol.linear_duals)
+        .map(|(row, &dual)| {
+            if row.is_equality() {
+                return LinearDuals {
+                    equality: dual,
+                    ..LinearDuals::default()
+                };
+            }
+            let value = row.evaluate(&sol.f, &sol.pg);
+            let base = dc.base_mva;
+            let binds = |slack: Option<f64>| slack.is_some_and(|slack| slack <= SNAP_TOL);
+            LinearDuals {
+                upper: if binds(row.upper_mw.map(|upper| upper / base - value)) {
+                    dual.max(0.0)
+                } else {
+                    0.0
+                },
+                lower: if binds(row.lower_mw.map(|lower| value - lower / base)) {
+                    (-dual).max(0.0)
+                } else {
+                    0.0
+                },
+                equality: 0.0,
+            }
+        })
+        .collect()
 }
 
 /// Snap the solution to strict complementarity before differentiating: zero the
@@ -218,7 +295,12 @@ fn susceptance_cols(dc: &DcNetwork) -> Vec<Vec<(usize, f64)>> {
 
 /// Assemble the KKT Jacobian `dK/dz` as `(row, col, value)` triplets, hand derived
 /// column by column. `s` must already be snapped to strict complementarity.
-fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, usize, f64)> {
+fn kkt_triplets(
+    dc: &DcNetwork,
+    s: &DcOpfSolution,
+    linear: &[LinearDuals],
+    idx: &KktIdx,
+) -> Vec<(usize, usize, f64)> {
     let (n, m, k) = (dc.n, dc.m, dc.k);
     let inc = incidence_by_bus(dc);
     let gens = gens_by_bus(dc);
@@ -408,15 +490,58 @@ fn kkt_triplets(dc: &DcNetwork, s: &DcOpfSolution, idx: &KktIdx) -> Vec<(usize, 
     // eta column: reference indicator.
     e!(idx.va + dc.ref_bus, idx.eta, 1.0);
 
+    // Caller-supplied linear constraints `a'x` over the flow and dispatch
+    // columns. An upper limit enters like a line's upper limit: its multiplier
+    // adds `+a` to stationarity, and its complementarity row `xi (u - a'x)`
+    // differentiates to `-xi a` and the slack. A lower limit mirrors it, and an
+    // equality adds `+a` to stationarity with the primal row `a'x = e`.
+    let base = dc.base_mva;
+    for ((row, rows), duals) in dc.linear_rows.iter().zip(&idx.linear).zip(linear) {
+        let value = row.evaluate(&s.f, &s.pg);
+        let columns = || {
+            row.flow
+                .iter()
+                .map(|&(e, c)| (idx.f + e, c))
+                .chain(row.generation.iter().map(|&(j, c)| (idx.pg + j, c)))
+        };
+        if let (Some(r), Some(upper)) = (rows.upper, row.upper_mw) {
+            for (col, c) in columns() {
+                e!(r, col, -duals.upper * c);
+                e!(col, r, c);
+            }
+            e!(r, r, upper / base - value);
+        }
+        if let (Some(r), Some(lower)) = (rows.lower, row.lower_mw) {
+            for (col, c) in columns() {
+                e!(r, col, duals.lower * c);
+                e!(col, r, -c);
+            }
+            e!(r, r, value - lower / base);
+        }
+        if let Some(r) = rows.equality {
+            for (col, c) in columns() {
+                e!(r, col, c);
+                e!(col, r, c);
+            }
+        }
+    }
+
     t
 }
 
 /// The flow-definition equality dual `nu_flow`, recovered from the `f`
-/// stationarity row `lam_ub - lam_lb - nu_flow = 0`. The solve carries
-/// the inequality duals and the primals but not this equality dual, which the
-/// susceptance and switching Jacobians need.
-fn nu_flow_values(dc: &DcNetwork, s: &DcOpfSolution) -> Vec<f64> {
-    (0..dc.m).map(|e| s.lam_ub[e] - s.lam_lb[e]).collect()
+/// stationarity row `lam_ub - lam_lb + sum_l a_le xi_l - nu_flow = 0`, where
+/// `xi_l` is a caller-supplied linear constraint's signed multiplier. The solve
+/// carries the inequality duals and the primals but not this equality dual,
+/// which the susceptance and switching Jacobians need.
+fn nu_flow_values(dc: &DcNetwork, s: &DcOpfSolution, linear: &[LinearDuals]) -> Vec<f64> {
+    let mut nu_flow: Vec<f64> = (0..dc.m).map(|e| s.lam_ub[e] - s.lam_lb[e]).collect();
+    for (row, duals) in dc.linear_rows.iter().zip(linear) {
+        for &(e, c) in &row.flow {
+            nu_flow[e] += c * duals.signed();
+        }
+    }
+    nu_flow
 }
 
 /// A solved DC OPF as a differentiable KKT system. Snaps to strict complementarity
@@ -428,6 +553,7 @@ pub struct DcKkt<'a> {
     dc: &'a DcNetwork,
     idx: KktIdx,
     snapped: DcOpfSolution,
+    linear: Vec<LinearDuals>,
     nu_flow: Vec<f64>,
 }
 
@@ -436,11 +562,13 @@ impl<'a> DcKkt<'a> {
     pub fn new(dc: &'a DcNetwork, sol: &DcOpfSolution) -> Self {
         let snapped = snap(dc, sol);
         let idx = KktIdx::new(dc);
-        let nu_flow = nu_flow_values(dc, &snapped);
+        let linear = snap_linear(dc, &snapped);
+        let nu_flow = nu_flow_values(dc, &snapped, &linear);
         DcKkt {
             dc,
             idx,
             snapped,
+            linear,
             nu_flow,
         }
     }
@@ -456,7 +584,7 @@ impl Differentiable for DcKkt<'_> {
     }
 
     fn jacobian(&self) -> Vec<(usize, usize, f64)> {
-        kkt_triplets(self.dc, &self.snapped, &self.idx)
+        kkt_triplets(self.dc, &self.snapped, &self.linear, &self.idx)
     }
 
     fn parameter_len(&self, p: Parameter) -> Option<usize> {
@@ -466,6 +594,7 @@ impl Differentiable for DcKkt<'_> {
             Parameter::LineLimit
             | Parameter::SeriesAdmittance(GB::Susceptance)
             | Parameter::Switching => Some(self.dc.m),
+            Parameter::ConstraintLimit => Some(self.dc.linear_rows.len()),
             _ => None,
         }
     }
@@ -482,14 +611,6 @@ impl Differentiable for DcKkt<'_> {
     /// angle stationarity (and, for switching, the phase-limit rows).
     fn parameter_jacobian(&self, p: Parameter, idx_cols: &[usize]) -> Result<Mat<f64>, SensError> {
         let dc = self.dc;
-        // The KKT layout above mirrors the base program only. Caller-supplied
-        // linear rows would be missing from it, so refuse rather than return
-        // the derivative of a different program.
-        if !dc.linear_rows.is_empty() {
-            return Err(SensError::InvalidInput(
-                LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED.to_owned(),
-            ));
-        }
         if matches!(p, Parameter::Cost(_)) {
             if let Some(&generator) = idx_cols
                 .iter()
@@ -528,6 +649,21 @@ impl Differentiable for DcKkt<'_> {
                     // Line complementarity rows: lam_lb (f + fmax), lam_ub (fmax - f).
                     j[(idx.lam_lb + col, c)] = s.lam_lb[col];
                     j[(idx.lam_ub + col, c)] = s.lam_ub[col];
+                }
+                Parameter::ConstraintLimit => {
+                    // Shifting both limits by delta: xi_ub (u + delta - a'x),
+                    // xi_lb (a'x - l - delta), and a'x - e - delta = 0.
+                    let rows = idx.linear[col];
+                    let duals = self.linear[col];
+                    if let Some(r) = rows.upper {
+                        j[(r, c)] = duals.upper;
+                    }
+                    if let Some(r) = rows.lower {
+                        j[(r, c)] = -duals.lower;
+                    }
+                    if let Some(r) = rows.equality {
+                        j[(r, c)] = -1.0;
+                    }
                 }
                 Parameter::SeriesAdmittance(GB::Susceptance) => {
                     let (fb, tb) = (dc.br_from[col], dc.br_to[col]);
@@ -626,6 +762,7 @@ impl Differentiable for DcKkt<'_> {
             Axis::Bus => ElementId::Bus(self.dc.bus_ids[index]),
             Axis::Branch => ElementId::Branch(self.dc.branch_ids[index]),
             Axis::Generator => ElementId::Generator(self.dc.gen_ids[index]),
+            Axis::Constraint => ElementId::Constraint(index),
         }
     }
 
@@ -798,13 +935,14 @@ mod tests {
         },
         Operand::Voltage(VoltageKind::Angle),
     ];
-    const PARAMETERS: [Parameter; 6] = [
+    const PARAMETERS: [Parameter; 7] = [
         Parameter::Demand(Power::Active),
         Parameter::Cost(CostTerm::Quadratic),
         Parameter::Cost(CostTerm::Linear),
         Parameter::LineLimit,
         Parameter::SeriesAdmittance(GB::Susceptance),
         Parameter::Switching,
+        Parameter::ConstraintLimit,
     ];
 
     /// The operand vector read straight from a solved DC OPF, in the per-unit
@@ -829,6 +967,7 @@ mod tests {
             Parameter::Demand(Power::Active) => dc.n,
             Parameter::Cost(_) => dc.k,
             Parameter::LineLimit | Parameter::SeriesAdmittance(_) | Parameter::Switching => dc.m,
+            Parameter::ConstraintLimit => dc.linear_rows.len(),
             other => unreachable!("unsupported DC test parameter {other:?}"),
         }
     }
@@ -846,6 +985,12 @@ mod tests {
                 d.flow_offset[p] += delta * d.shift[p];
             }
             Parameter::Switching => d.sw[p] += delta,
+            Parameter::ConstraintLimit => {
+                let row = &mut d.linear_rows[p];
+                let shift = delta * d.base_mva;
+                row.lower_mw = row.lower_mw.map(|limit| limit + shift);
+                row.upper_mw = row.upper_mw.map(|limit| limit + shift);
+            }
             other => unreachable!("unsupported DC test parameter {other:?}"),
         }
         d
@@ -877,7 +1022,7 @@ mod tests {
         match parameter {
             Parameter::Demand(Power::Active) => 1e-2,
             Parameter::Cost(_) => 1e-1,
-            Parameter::LineLimit => 1e-3,
+            Parameter::LineLimit | Parameter::ConstraintLimit => 1e-3,
             Parameter::SeriesAdmittance(GB::Susceptance) | Parameter::Switching => 1e-4,
             other => unreachable!("unsupported DC test parameter {other:?}"),
         }
@@ -902,6 +1047,9 @@ mod tests {
         for &op in &OPERANDS {
             let floor = 1e-4 * l2(&operand_vec(&sol, op)).max(1.0);
             for &par in &PARAMETERS {
+                if param_count(dc, par) == 0 {
+                    continue;
+                }
                 let m = sensitivity(&sys, op, par, None, Mode::Forward).expect("analytic");
                 let eps = eps_for(par);
                 // `p` is the parameter (column) index into the row-major matrix, also
@@ -936,6 +1084,132 @@ mod tests {
         let mut dc = parse_case3();
         dc.fmax[2] = 0.4;
         dc
+    }
+
+    /// One caller-supplied linear row in per unit terms of the dense columns.
+    fn linear_row(
+        flow: Vec<(usize, f64)>,
+        generation: Vec<(usize, f64)>,
+        lower_mw: Option<f64>,
+        upper_mw: Option<f64>,
+    ) -> crate::model::LinearRow {
+        crate::model::LinearRow {
+            id: "row".to_owned(),
+            flow,
+            generation,
+            lower_mw,
+            upper_mw,
+        }
+    }
+
+    /// case3 with an upper interface limit that binds. Unconstrained, g1 is about
+    /// 29.5 MW, g3 about 60.5 MW, and line 1-2 carries 30 + g1/3, about 39.8 MW.
+    /// The interface holds line 1-2 to 38 MW; a two-sided row on total
+    /// generation sits between its limits.
+    fn constrained_case3() -> DcNetwork {
+        let mut dc = parse_case3();
+        dc.linear_rows = vec![
+            linear_row(vec![(0, 1.0)], vec![], Some(-200.0), Some(38.0)),
+            linear_row(vec![], vec![(0, 1.0), (1, 1.0)], Some(0.0), Some(200.0)),
+        ];
+        dc
+    }
+
+    /// case3 with a lower limit that binds: bus 3's net injection (the flow
+    /// leaving it on lines 1-3 and 2-3, both of which end there) must reach
+    /// 70 MW, above its unconstrained 60.5 MW.
+    fn injection_constrained_case3() -> DcNetwork {
+        let mut dc = parse_case3();
+        dc.linear_rows = vec![linear_row(
+            vec![(1, -1.0), (2, -1.0)],
+            vec![],
+            Some(70.0),
+            None,
+        )];
+        dc
+    }
+
+    /// case3 with an equality row fixing g1 at 35 MW.
+    fn equality_constrained_case3() -> DcNetwork {
+        let mut dc = parse_case3();
+        dc.linear_rows = vec![linear_row(vec![], vec![(0, 1.0)], Some(35.0), Some(35.0))];
+        dc
+    }
+
+    #[test]
+    fn caller_supplied_rows_bind_where_the_fixtures_intend() {
+        let dc = constrained_case3();
+        let sol = dc_opf(&dc).expect("solve");
+        let values: Vec<f64> = sol.linear_values.iter().map(|v| v * dc.base_mva).collect();
+        assert!((values[0] - 38.0).abs() < 1e-5, "{values:?}");
+        assert!(sol.linear_duals[0] > 1e-3, "{:?}", sol.linear_duals);
+        assert!(sol.linear_duals[1].abs() < 1e-6, "{:?}", sol.linear_duals);
+        let dc = injection_constrained_case3();
+        let sol = dc_opf(&dc).expect("solve");
+        assert!((sol.linear_values[0] * dc.base_mva - 70.0).abs() < 1e-5);
+        assert!(sol.linear_duals[0] < -1e-3, "{:?}", sol.linear_duals);
+        let eq = equality_constrained_case3();
+        let sol = dc_opf(&eq).expect("solve");
+        assert!((sol.pg[0] * eq.base_mva - 35.0).abs() < 1e-5);
+        assert!(sol.linear_duals[0].abs() > 1e-3, "{:?}", sol.linear_duals);
+    }
+
+    #[test]
+    fn parity_with_binding_caller_supplied_rows() {
+        check_parity(&constrained_case3(), "interface case3");
+        check_parity(&injection_constrained_case3(), "injection case3");
+    }
+
+    #[test]
+    fn parity_with_an_equality_row() {
+        check_parity(&equality_constrained_case3(), "equality case3");
+    }
+
+    #[test]
+    fn constraint_limit_columns_agree_forward_and_adjoint() {
+        let dc = constrained_case3();
+        let sol = dc_opf(&dc).expect("solve");
+        let sys = DcKkt::new(&dc, &sol);
+        let parameter = Parameter::ConstraintLimit;
+        for operand in OPERANDS {
+            let forward = sensitivity(&sys, operand, parameter, None, Mode::Forward).unwrap();
+            let adjoint = sensitivity(&sys, operand, parameter, None, Mode::Adjoint).unwrap();
+            for (f, a) in forward.values.iter().zip(&adjoint.values) {
+                for (x, y) in f.iter().zip(a) {
+                    assert!(
+                        (x - y).abs() < 1e-8 * x.abs().max(1.0),
+                        "{operand:?}: {x} vs {y}"
+                    );
+                }
+            }
+            assert!(forward
+                .cols
+                .iter()
+                .enumerate()
+                .all(|(i, col)| col.element == ElementId::Constraint(i)));
+        }
+    }
+
+    #[test]
+    fn a_binding_interface_moves_the_flow_one_for_one_with_its_limit() {
+        let dc = constrained_case3();
+        let sol = dc_opf(&dc).expect("solve");
+        let sys = DcKkt::new(&dc, &sol);
+        let flow = Operand::Flow {
+            power: Power::Active,
+            end: End::From,
+        };
+        let m = sensitivity(
+            &sys,
+            flow,
+            Parameter::ConstraintLimit,
+            Some(&[0]),
+            Mode::Auto,
+        )
+        .unwrap();
+        // The interface is line 1-2 alone: raising its limit by a MW raises the flow
+        // by a MW.
+        assert!((m.values[0][0] - 1.0).abs() < 1e-6, "{:?}", m.values);
     }
 
     fn piecewise_congested_case3() -> DcNetwork {

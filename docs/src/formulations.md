@@ -83,13 +83,16 @@ bus $i$ and withdrawn at $r$, and the sum also runs over binding line limits.
 The shadow price is omitted, like the LMP, when the declared objective is a
 feasibility objective.
 
-Linear constraints are a DC OPF feature. DC power flow, AC power flow, and
-SOCWR refuse a request that carries them, and so does a DC OPF request that
-also asks for sensitivities: the KKT system those use does not yet include the
-extra rows. A Rust `Study` carries constraints through every commit with
-`Study::set_constraints`; while it has any, it refuses previews, planning,
-objective gradients, and saving the problem instance or its solution, since the
-PowerIO problem instance has no place for them.
+Linear constraints are a DC OPF feature; DC power flow, AC power flow, and
+SOCWR refuse a request that carries them. The DC KKT system carries a
+multiplier for each stated limit, so sensitivity cells differentiate the
+constrained program. The `ConstraintLimit` parameter differentiates with
+respect to a constraint's limits, shifting both by the same MW. Its columns are
+keyed by the constraint's position in the request. A Rust `Study` carries
+constraints through every commit with `Study::set_constraints`. Previews,
+planning, and objective gradients see them. While it has any, it refuses to save
+the problem instance or its solution, since the PowerIO problem instance has no
+place for them.
 
 On the command line, the default command takes the request as its argument,
 `tellegen capabilities` lists the accepted term kinds under each formulation's
