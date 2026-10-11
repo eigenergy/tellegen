@@ -62,7 +62,7 @@ into this repository or the HTTP document root:
 
 ```sh
 node docs/drafts/diagram-projection/performance/stage-bmopf.mjs /absolute/path/to/BMOPFDraftData/output
-node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs docs/drafts/diagram-projection/performance/schematic.test.mjs docs/drafts/diagram-projection/performance/tidy-tree.test.mjs docs/drafts/diagram-projection/performance/corridor-routing.test.mjs docs/drafts/diagram-projection/performance/circuit-inspection.test.mjs
+node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs docs/drafts/diagram-projection/performance/schematic.test.mjs docs/drafts/diagram-projection/performance/tidy-tree.test.mjs docs/drafts/diagram-projection/performance/corridor-routing.test.mjs docs/drafts/diagram-projection/performance/circuit-inspection.test.mjs docs/drafts/diagram-projection/performance/crossing-order.test.mjs
 node docs/drafts/diagram-projection/performance/verify-bmopf.mjs
 node docs/drafts/diagram-projection/performance/build.mjs
 ```
@@ -228,8 +228,8 @@ Do not interpret a fast frame time as proof that a 100k-bus drawing is useful.
 
 Staging writes `*.schematic.bin` and `*.tidy-tree.bin` beside the ignored coordinate
 geometry and adds `layouts.schematic` and `layouts.tidy-tree` to each local manifest
-entry. Their `-corridor` variants add separate fan-out/corridor geometry files.
-All five geometry variants use the same
+entry. Their `-corridor` and `-crossing-aware` variants add separate corridor geometry files.
+All seven geometry variants use the same
 reference sidecar, bus/branch order, endpoints and state arrays. Layout metadata
 records algorithm/version, spacing, root rule, component roots/counts/bounds,
 non-tree counts and separate placement/routing timings. The source JSON, source
@@ -246,7 +246,7 @@ axis override. Each mode/hash has distinct base GPU layers.
 `schematic.test.mjs` covers coordinate independence, source-root selection,
 multiple sources, cycles, parallel edges, self loops, disabled links, disconnected
 components, transformer associations and a **100,000-bus chain** without recursive
-stack failure. `verify-bmopf.mjs` validates all five geometry variants of all ten staged datasets,
+stack failure. `verify-bmopf.mjs` validates all seven geometry variants of all ten staged datasets,
 including every route's original endpoints and collection isolation. Neither test
 suite claims electrical solvability or crossing-free geometry.
 
@@ -621,3 +621,119 @@ the source-coordinate reference, optional path/dimming controls, distinct fit
 bounds, paper/dark themes, French radial root tracing and the synthetic 100k view.
 No browser warnings or errors were reported. Bridge glyphs, global crossing
 reduction, viewport aggregation and multi-wire inspection are outside this change.
+
+## Crossing-aware lane ordering
+
+**Crossing-aware lanes** is a third routing option, independent of Leaf order /
+Tidy tree placement. Open
+`?dataset=sapn-combined&layout=tidy-tree&routing=crossing-aware` and compare with
+**Fan-out + lanes**. The original corridor option is unchanged. Source-coordinate
+and synthetic views disable all topology-routing controls. The mutable local
+catalog is fetched without caching so reloading after staging discovers new modes.
+The existing circuit inspector works with all schematic routing variants.
+
+`crossing-order.mjs` runs inside corridor preprocessing, after interval colouring
+and before assigning physical lane x coordinates:
+
+1. Keep the exact bus positions, ports, interval-to-lane membership, lane counts,
+   corridor widths and source-panel packing from the corridor baseline.
+2. Build sorted left/right endpoint-row lists and vertical spans for each lane.
+   For each pair of lanes, count strict interior crossings in both possible
+   orders using binary searches over endpoint rows. This includes tree/mesh and
+   mesh/mesh conflicts; touching endpoints and collinear sharing are excluded.
+3. Insert mesh lanes among the existing tree lanes and other mesh lanes. Tree
+   lanes retain their relative order, protecting the tree drawing. Accept only
+   strict crossing reductions, with stable IDs and deterministic tie handling.
+   Alternate mesh traversal direction for at most four passes; stop early if
+   nothing changes. This is a bounded local heuristic, not a global optimum.
+4. Fall back to original corridor ordering when there are more than 32 lanes or
+   a corridor contains a disabled route or exterior escape. Those routes need a
+   different cost model because of gaps and additional bends. Radial corridors
+   need no ordering work. Fallback reasons are recorded, never silently omitted.
+
+Moving a whole interval-coloured lane preserves its non-overlapping vertical
+segments. Horizontal leads are reattached to the same original ports; branch
+ownership, terminal maps, state and source identities never change. No crossing
+introduces a junction. Tree routes may shift sideways along with their lanes;
+their relative order and zero proper crossings are preserved. Only physical lane
+order changes; no electrical or PowerIO API changes are involved.
+
+With the lane cap K = 32, cost construction is O(K I log I) per eligible corridor
+with I intervals, plus O(K²) working storage and O(I) endpoint/span storage. Four
+insertion passes cost O(K²) each. There is no pairwise scan over all network edges,
+no global crossing minimization and no ordering during camera movement. The base
+renderer and circuit overlays consume the same binary schema and layer count.
+
+### Offline comparison
+
+Run after installing the usual local gallery dependencies:
+
+```sh
+node --test docs/drafts/diagram-projection/performance/*.test.mjs
+node docs/drafts/diagram-projection/performance/compare-crossing-order.mjs /external/BMOPFDraftData/output /tmp/crossing-order.json
+node docs/drafts/diagram-projection/performance/stage-bmopf.mjs /external/BMOPFDraftData/output
+node docs/drafts/diagram-projection/performance/verify-bmopf.mjs
+```
+
+[evidence/crossing-order-comparison.json](evidence/crossing-order-comparison.json)
+records one warm-up and five interleaved runs on Node 24.19.0 / Apple M4 Max.
+Tidy-tree placement is used in both modes; decoding, validation and diagnostics
+are outside the timer. The test also asserts identical bus positions, ports,
+busbars, spanning forest, endpoint indices and states between both fixtures.
+
+| Combined SAPN, 98,633 buses | Corridor | Crossing-aware |
+| --- | ---: | ---: |
+| Proper crossings | 7,799 | **5,139** |
+| Tree / tree | 0 | **0** |
+| Tree / non-tree | 7,529 | **4,967** |
+| Non-tree / non-tree | 270 | **172** |
+| Exact collinear overlap pairs | 0 | **0** |
+| Horizontal wire / busbar interior crossings | 0 | **0** |
+| Wire segments | 303,849 | 303,849 |
+| Geometry bytes | 17,080,312 | 17,080,312 |
+| Width × height, diagram units | 85,640 × 123,337 | 85,640 × 123,337 |
+| Total Manhattan route length | 16,807,596.5 | 16,740,700.5 |
+| Median placement + routing + packing | 127.5 ms | 163.2 ms |
+
+The reduction is 2,660 crossings (**34.1%**), with unchanged footprint and geometry
+size. 595 of 775 corridors are eligible; 408 improve after 495 accepted lane moves.
+The remaining 180 are radial; no SAPN corridor hits the lane cap or exterior/gap
+fallback. Peak lane demand stays at 10. The cost-model reduction exactly matches
+the independent geometry sweep. The remaining 5,139 crossings are not claimed
+unavoidable: this experiment fixes port ordering and bus placement, retains tree
+lane order and uses a bounded local search.
+
+The French radial feeder retains byte-identical geometry and zero crossings.
+Its measured median preparation times are 0.70 / 0.79 ms. Tests cover 200 random
+meshed drawings across both placements, deterministic geometry, cost-model versus
+independent sweep agreement, identity/footprint preservation, parallel circuits,
+self-loops, disabled/exterior fallback, a wide-corridor cap and a 100k-bus chain.
+All 70 staged variants (seven per dataset) validate; raw source files remain
+external and all derived fixtures remain ignored by Git. Geometry metrics count
+strict crossing events, not distinct equipment pairs or screen-space readability.
+
+
+### Browser comparison
+
+[evidence/crossing-order-browser-smoke.json](evidence/crossing-order-browser-smoke.json)
+records three interleaved camera runs for each routing option, using combined SAPN
+and Tidy tree. Canvas: 652 × 500 CSS pixels, DPR 2, dark theme, labels/picking off,
+no selection. Both modes use the same six-second camera trajectory.
+
+| Routing | Pan/zoom p95 across three runs | Median p95 |
+| --- | --- | ---: |
+| Fan-out + lanes | 9.4, 8.6, 9.0 ms | 9.0 ms |
+| Crossing-aware lanes | 8.7, 8.9, 8.6 ms | 8.7 ms |
+
+No camera regression was observed; these refresh-rate-limited local measurements
+are not evidence of a speedup or a hardware-independent performance guarantee.
+The browser still submits 303,849 wire segments and 98,633 busbars in the same
+layers, with 19.37 MiB of owned arrays (excluding JS objects, library/GPU copies).
+The added cost is offline preprocessing. Source references are reused on mode
+switches; the recorded load times mix cold fetches and reference-cache hits.
+
+Browser checks verified preservation of the same selected branch and 13-edge
+connecting tree path, both schematic placements, source-coordinate disable/restore,
+French radial geometry and synthetic 100k availability. No console warnings or
+errors were observed. As before, screen-space clarity at 100k buses still needs
+aggregation and local inspection; a lower global crossing count is only one metric.

@@ -1,6 +1,7 @@
 /** Bus-owned fan-out and interval-coloured corridors. No new electrical nodes.
  * Pure preprocessing: O((V+E) log(V+E)) time, O(V+E) storage.
  */
+import {crossingAwareOrder,MAX_ORDERED_LANES,ORDERING_PASSES} from './crossing-order.mjs';
 export const ROUTING_VERSION=1;
 const PORT_GAP=4,LANE_GAP=8,MARGIN=16,BUS_CLEARANCE=12,COMPONENT_GAP=160,PANEL_GAP=320;
 class Heap {
@@ -18,7 +19,7 @@ export function allocateLanes(intervals){
   }
   return count;
 }
-export function corridorRouting({model,positions,depth,component,components,roles}){
+export function corridorRouting({model,positions,depth,component,components,roles,crossingAware=false}){
   const n=model.buses.length,e=model.branches.length,ports=new Float32Array(e*6);
   const offsets=new Float64Array(e*2),halves=new Float64Array(n);
   const incident=Array.from({length:n},()=>[[],[]]);
@@ -103,6 +104,16 @@ export function corridorRouting({model,positions,depth,component,components,role
     }
     corridor.count=offset;maxLanes=Math.max(maxLanes,offset);totalLanes+=offset;
   }
+  let ordering=null;
+  if(crossingAware){
+    const started=performance.now();ordering={algorithm:'bounded-mesh-lane-insertion',version:1,laneCap:MAX_ORDERED_LANES,passes:ORDERING_PASSES,eligible:0,changed:0,moves:0,before:0,after:0,skipped:{}};
+    for(const corridor of corridors.values()){
+      const result=crossingAwareOrder(corridor,{model,ports,depth,external});
+      if(result.skipped)ordering.skipped[result.skipped]=(ordering.skipped[result.skipped]??0)+1;
+      else{ordering.eligible++;ordering.changed+=Number(result.changed);ordering.moves+=result.moves;ordering.before+=result.before;ordering.after+=result.after;}
+    }
+    ordering.totalMs=performance.now()-started;
+  }
   const maxRanks=new Uint32Array(model.sources.length);
   for(let u=0;u<n;u++){const s=model.buses[u].source;maxRanks[s]=Math.max(maxRanks[s],depth[u]);}
   const columns=Array.from(maxRanks,max=>new Float64Array(max+2)),widths=new Float64Array(model.sources.length);
@@ -127,5 +138,5 @@ export function corridorRouting({model,positions,depth,component,components,role
     if(p[1]===q[1]&&p[0]!==q[0])return [p,q];
     return [p,[lane,p[1]],[lane,q[1]],q];
   }
-  return {points,panels,arrays:{branchPorts:ports,busbarSources:barSources,busbarTargets:barTargets},metadata:{algorithm:'bus-fan-out-interval-corridors',version:ROUTING_VERSION,portGap:PORT_GAP,laneGap:LANE_GAP,maxLanes,totalLanes,corridors:corridors.size,externalLinks:external.reduce((a,b)=>a+b,0),componentYScales:[...scales]}};
+  return {points,panels,arrays:{branchPorts:ports,busbarSources:barSources,busbarTargets:barTargets},metadata:{algorithm:crossingAware?'bus-fan-out-crossing-aware-corridors':'bus-fan-out-interval-corridors',...(ordering?{ordering}:{}),version:ROUTING_VERSION,portGap:PORT_GAP,laneGap:LANE_GAP,maxLanes,totalLanes,corridors:corridors.size,externalLinks:external.reduce((a,b)=>a+b,0),componentYScales:[...scales]}};
 }

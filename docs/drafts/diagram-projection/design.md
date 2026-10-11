@@ -1092,3 +1092,32 @@ tree branches. All paths were verified against source endpoint indices and the
 spanning forest. See [inspection implementation and measurements](performance/README.md#non-tree-circuit-inspection)
 for reproducible tests, browser observations and limits. Crossing-aware local lane
 ordering and selected/visible crossing decorations remain separate experiments.
+
+
+## Crossing-aware corridor ordering experiment
+
+The gallery now offers `crossing-aware` beside `current` and `corridor` routing.
+Tellegen preserves the corridor router's bus positions, port identities, source
+panels, lane counts and interval-colouring assignments, then permutes physical
+lanes. Mesh lanes can move between tree lanes; tree lanes retain their relative
+order. This reduces crossings without introducing junctions or changing electrical
+connectivity, terminals, operating state or PowerIO types.
+
+For eligible corridors, sorted endpoint rows provide the exact crossing cost for
+each relative lane order. A deterministic insertion heuristic accepts only strict
+improvements, for at most four alternating passes. A 32-lane cap bounds cost-matrix
+work; disabled/gapped and exterior routes fall back to existing corridor ordering.
+The renderer receives precomputed geometry in the same binary schema, with the
+same segment and layer counts. Circuit inspection remains available in both modes.
+
+Combined SAPN proper crossings fall from 7,799 to 5,139 (34.1%), including tree/mesh
+7,529 to 4,967 and mesh/mesh 270 to 172. Tree/tree crossings, collinear overlaps and
+wire/busbar interior crossings remain zero. Positions, ports, footprint and the
+16.29 MiB geometry size are unchanged. Median placement/routing/packing time rises
+from 127.5 to 163.2 ms in the local five-run comparison; the new work is offline.
+The French radial geometry is byte-identical between these routing modes.
+
+This is a local heuristic with fixed placement and port ordering, not global
+crossing minimization. Remaining crossings still require circuit inspection and
+potential later port-order or escape-track experiments. See the
+[algorithm, fallbacks and measured evidence](performance/README.md#crossing-aware-lane-ordering).

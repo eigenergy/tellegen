@@ -23,8 +23,8 @@ try{
     await writeFile(join(pending,manifest.file),new Uint8Array(buffer));
     await writeFile(join(pending,manifest.refsFile),json);
     manifest.layouts={};
-    for(const [mode,strategy] of [['schematic','leaf-order'],['tidy-tree','tidy-tree']])for(const routing of ['current','corridor']){
-      const key=mode+(routing==='corridor'?'-corridor':'');
+    for(const [mode,strategy] of [['schematic','leaf-order'],['tidy-tree','tidy-tree']])for(const routing of ['current','corridor','crossing-aware']){
+      const key=mode+(routing==='current'?'':'-'+routing);
       const result=makeSchematic(model,{strategy,routing});
       Object.assign(result.manifest,{file:`${id}.${key}.bin`,sha256:hash(new Uint8Array(result.buffer))});
       validateSchematic(decodeFixture(result.manifest,result.buffer));
