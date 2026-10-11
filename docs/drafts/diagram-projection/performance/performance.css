@@ -6,3 +6,5 @@
 .dataset-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:24px 0 8px}.dataset-bar label{font-weight:600}.dataset-bar select{max-width:100%;padding:9px 12px;background:var(--panel);color:var(--ink);border:1px solid var(--line);font:inherit}.dataset-bar small{color:var(--muted)}#selection{overflow-wrap:anywhere}#selection code{font-size:11px}#next-colocated{margin:12px 0;display:block}#next-colocated[hidden]{display:none}.legend-line.transformer{background:rgb(141,124,209)}#source-detail{line-height:1.6;max-width:100%}.sheet-footer{gap:14px;flex-wrap:wrap}
 
 .source-notes{margin:10px 0 18px;color:var(--muted);font-size:12px}.source-notes summary{cursor:pointer}.legend-line.transformer{margin-left:18px}
+
+.layout-bar{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin:14px 0}.layout-bar .view-control{flex:0 0 auto;min-height:40px}.layout-bar .fine{flex:1;min-width:220px}.legend-line.mesh{background:rgb(66,159,181);margin-left:12px}

@@ -691,8 +691,47 @@ JSON. Treat reference parsing, identity indexes and peak heap as separate budget
 from owned typed arrays and GPU drawing. Follow-up experiments should measure
 compact reference columns, lazy equipment details and worker preparation alongside
 chunking and semantic level of detail. Geographic-coordinate density is now tested;
-automatic schematic layout, multi-wire expansion and operating overlays remain
-separate experiments.
+a first source-rooted schematic layout is now available alongside the coordinate
+reference. Multi-wire expansion and operating overlays remain separate experiments.
+
+### Structural schematic experiment
+
+The diagram layer is a parallel structural view of the same electrical model,
+not a replacement or improvement to Tellegen's existing geospatial visualizer.
+The performance gallery now switches a BMOPF dataset between its source-coordinate
+reference and a coordinate-independent schematic, preserving selection identity.
+The first engineering specimen is the 540-bus French feeder; the combined SAPN
+collection tests scaling to 98,633 buses.
+
+Tellegen owns the schematic layout: choose a source-rooted spanning forest,
+place buses by topological depth and subtree leaf order, route orthogonally,
+and classify retained non-tree links explicitly. PowerIO continues to own source
+semantics, conductor/terminal connectivity, grounding and winding relationships.
+Layout parentage must not be interpreted as power-flow direction, energized state
+or interwinding conductor continuity. Components without a declared source have
+explicit fallback roots; multiple source declarations remain available.
+
+The precomputed schematic scene shares its bus/branch indexing and source-reference
+sidecar with the coordinate scene. Additional renderer arrays hold parent bus,
+parent edge, depth, component and route role. There are no synthetic electrical
+nodes, dropped mesh links or source-ID rewrites. Switching projections changes
+geometry and camera state while retaining the inspected equipment. A root-path
+trace is a structural navigation operation over the display tree.
+
+The algorithm is deterministic, iterative and bounded by graph size, apart from
+sorting root candidates. It lays out the inspected SAPN collection in roughly
+47 ms in one warm local Node process, retaining 2,655 non-tree links and generating
+264,100 routed segments. This is a POC observation, not a production target or an
+optimized general graph layout. It does not address crossing minimization, semantic
+symbols/ports, incremental editing, voltage-level grouping or multi-wire expansion.
+
+The scale result identifies the next design question: a full-detail tree with
+thousands of leaves becomes tall even when it computes and draws quickly. Develop
+feeder/transformer-group aggregation and scoped drill-down as distinct structural
+views. Validate comprehension, root-to-equipment paths and non-tree connectivity
+with engineers; use frame rates as a separate constraint. The exact baseline must
+remain available to validate that an aggregate never fabricates connectivity.
+See the [layout contract and tests](performance/README.md#schematic-layout-mode).
 
 ### Renderer and library boundary
 

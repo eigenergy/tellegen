@@ -62,14 +62,15 @@ into this repository or the HTTP document root:
 
 ```sh
 node docs/drafts/diagram-projection/performance/stage-bmopf.mjs /absolute/path/to/BMOPFDraftData/output
-node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs
+node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs docs/drafts/diagram-projection/performance/schematic.test.mjs
 node docs/drafts/diagram-projection/performance/verify-bmopf.mjs
 node docs/drafts/diagram-projection/performance/build.mjs
 ```
 
 The selector offers the three synthetic sizes, five individual SAPN cases,
 three French representatives (smallest, median and largest by bus count), the Texas
-pilot and **SAPN · combined collection**. `?dataset=sapn-combined` opens the collection;
+pilot and **SAPN · combined collection**. `?dataset=french-medium&layout=schematic` opens the French starting case.
+`?dataset=sapn-combined&layout=schematic` opens the collection;
 legacy `?size=100000` links still work. Without local staging the synthetic gallery
 remains available. All configured files must exist for staging to succeed.
 
@@ -115,7 +116,8 @@ Their count includes model legs and is not a count of physical transformers.
 Neutral is not inferred from a terminal number; the source terminal and grounding
 declarations remain authoritative for a later multi-wire projection.
 
-Geographic coordinates are projected into local equirectangular metres, north up.
+In **Source coordinates** mode, geographic coordinates are projected into local
+equirectangular metres, north up.
 Edges connect endpoints with straight display segments; source route polylines are
 not imported. This is a geographic-coordinate stress fixture without a basemap,
 not an automatic schematic layout. The combined SAPN view translates each network
@@ -123,12 +125,13 @@ into a separate panel at the same metre scale. It adds no links, merges no buses
 and makes no assertion that a panel's source network is internally connected.
 The sidecar retains original coordinates, each projection origin and panel offset.
 
-Co-located buses remain separate. Search reaches every source ID, and **Next
+Co-located source buses remain distinct and receive separate schematic positions.
+Search reaches every source ID, and in the coordinate reference **Next
 co-located bus** cycles the IDs at a selected position. Zero-length branches get a
 small selectable display detour, with no invented electrical nodes. Multiple
 coincident branches may still overlap. Line and transformer identity, ordered
 terminal maps, state and detour status appear in the inspector; bus attachments
-are listed there without adding load/source glyphs. Find accepts an exact raw ID
+are listed there without adding load glyphs; schematic mode also marks declared source buses. Find accepts an exact raw ID
 when unique, or `source/URI-encoded-ID`; duplicate raw IDs require qualification.
 Long canvas labels are shortened, while the inspector retains the full ID.
 
@@ -160,6 +163,90 @@ coincident geometry, collection isolation, determinism and explicit input failur
 branch-to-segment routes and collection totals. This validates a rendering projection;
 it does not establish electrical model validity or an operational asset register.
 SAPN cases retain their provisional qualifications, including Norwood's rating hold.
+
+## Schematic layout mode
+
+This experiment adds a **diagram projection parallel to Tellegen's existing
+geospatial visualizer**. Its purpose is to explain electrical structure. Source
+coordinates are a comparison reference, not the feature being improved here.
+Choose **Schematic / Source coordinates** on any staged BMOPF dataset. Selection
+keeps the same source identity across modes, and each mode remembers its camera.
+Use **Trace to layout root** to highlight and frame a bus's tree path; the inspector
+shows its depth, root and path length. **Fit selected source** frames its source panel.
+Mesh line connections are cyan; transformers retain violet family styling and an
+explicit non-tree role in the inspector when applicable. Enabled source buses and
+fallback layout roots receive amber markers. No branch is removed to make a tree.
+
+### First algorithm: source-rooted spanning forest
+
+`schematic.mjs` is independent of source coordinates and of deck.gl:
+
+1. Build adjacency from enabled lines and transformer *associations*, preserving
+   their original direction, family, identity and terminal maps in shared metadata.
+2. Start each enabled connected component at its first enabled voltage-source bus
+   in canonical bus order. Components without such a source use their first
+   canonical bus, explicitly labelled as a layout fallback. Multiple sources in
+   one component remain source markers; one is chosen as the tree root.
+3. Run deterministic BFS to record one parent edge and depth per bus. Canonical
+   adapter ordering breaks ties. This is a display tree, not an energization or
+   power-flow result; transformer associations do not become conductor continuity.
+4. Assign non-overlapping subtree leaf rows and place each bus by depth from the
+   root. Centre parents between their outermost children. Stack disconnected
+   components and pack independent sources in separate panels. Spacing is fixed
+   at 120 diagram units per depth and 24 per leaf row, not geographic metres.
+5. Route tree edges orthogonally. Retain cycles, parallel edges and self loops as
+   separately classified non-tree routes. Disabled links never parent a bus and
+   retain a real gap. Endpoints are authoritative; crossings and shared routing
+   trunks do not introduce electrical buses or junction records.
+
+All traversals are iterative. Placement and routing use O(V + E) storage/work
+apart from sorting the declared source-root candidates. There is no force
+simulation, all-pairs optimization, recursive traversal or browser-time layout.
+This is a replaceable radial-layout baseline, not a general-purpose crossing
+minimizer. It does not aggregate buses, infer voltage levels, expand multi-wire
+connectivity, or optimize transformer symbol/port placement.
+
+The 540-bus French feeder has 539 tree edges, one source-rooted component and no
+non-tree connections. Its schematic contains 1,179 route segments. The combined
+SAPN fixture retains 98,633 buses, 98,628 tree edges, **2,655 non-tree connections**
+and five components. Its schematic has 264,100 segments and a 10.65 MiB geometry
+payload, including parent, depth, component and route-role arrays. The same
+49.25 MiB reference JSON serves both projections. Layout plus routing took roughly
+0.14 ms for the French case and 46.8 ms for SAPN in one warm Node staging process;
+these observations exclude raw-file parsing, reference serialization and browser
+loading and are not repeated performance guarantees.
+
+The scale test exposes a **readability limit before a layout-computation limit**:
+12,706 leaf rows in Golden Grove make its full-detail tree tall. All five sources
+fit and remain searchable, but their overview cannot convey individual equipment.
+Next evaluate feeder/transformer-group aggregation, an explicit overview-to-detail
+navigation model, more compact subtree packing, and collision-aware cross-link
+routing. Preserve an exact drill-down path and identities when adding aggregation.
+Do not interpret a fast frame time as proof that a 100k-bus drawing is useful.
+
+### Storage and validation
+
+Staging writes `*.schematic.bin` beside the ignored coordinate geometry and adds
+`layouts.schematic` to each local manifest entry. Both projections use the same
+reference sidecar, bus/branch order, endpoints and state arrays. Layout metadata
+records algorithm/version, spacing, root rule, component roots/counts/bounds,
+non-tree counts and separate placement/routing timings. The source JSON, source
+coordinates and PowerIO importer are unchanged.
+
+The browser verifies the selected geometry hash and validates parent relationships,
+component consistency, route roles, orthogonal segments and unique bus positions.
+It reuses the current dataset's verified reference metadata when toggling modes;
+exports record `layoutMode`, layout timings and `referenceCacheHit`. Compare cold
+loads separately from mode switches. The camera normalizes deck.gl's per-axis zoom
+into the gallery's scalar zoom so Fit and dataset changes cannot retain a stale
+axis override. Each mode/hash has distinct base GPU layers.
+
+`schematic.test.mjs` covers coordinate independence, source-root selection,
+multiple sources, cycles, parallel edges, self loops, disabled links, disconnected
+components, transformer associations and a **100,000-bus chain** without recursive
+stack failure. `verify-bmopf.mjs` validates both layouts of all ten staged datasets,
+including every route's original endpoints and collection isolation. Neither test
+suite claims electrical solvability or crossing-free geometry.
 
 ## Interaction
 
@@ -210,7 +297,7 @@ aggregation are not implemented. This is intentionally a full-geometry stress
 baseline, not a claim that 100k detailed labels are readable at once. Fixture and theme changes retire the base layers and re-upload their buffers;
 appearance-only GPU patches remain future work. CPU label
 queries use a spatial grid; labels have a budget and remain optional. Adjacency
-and scene preparation are synchronous and timed. No automatic layout is run.
+and scene preparation are synchronous and timed. Schematic placement and routing run offline during staging, separately from drawing.
 
 Next experiments should add viewport chunks and semantic level of detail, compare
 GPU glyph instancing against this simple bus layer, move expensive preparation to
@@ -235,7 +322,7 @@ Functional browser checks also covered bounds-checked search through B100000,
 wire/source selection, both themes, bounded labels, cancelled-run exclusion and
 JSON export. The latest label-spacing and theme-lifecycle refinements preserve
 the baseline geometry; rerun the protocol before treating results as a regression
-baseline. Production automatic layout, total memory, editing, and study updates
+baseline. Production layout quality, total memory, editing, and study updates
 remain unmeasured.
 
 ## BMOPF browser smoke evidence
@@ -254,3 +341,28 @@ search, French line picking, Texas internal-bus cycling and transformer-family
 inspection, both themes, Unicode labels and measurement export. Final diagnostics
 showed no new console errors or missing-glyph warnings after correcting the theme
 handler to listen only on theme buttons and enabling automatic glyph collection.
+
+## Schematic comparison evidence
+
+[evidence/schematic-browser-smoke.json](evidence/schematic-browser-smoke.json)
+records one completed six-second camera run for each combination below, at a
+652 × 500 CSS-pixel canvas, pixel ratio 2, local labels and wire picking off.
+
+| Dataset | Layout | Load → draw | Reference cache | Pan/zoom p95 |
+| --- | --- | ---: | --- | ---: |
+| French, 540 buses | Source coordinates | 21.6 ms | Miss | 9.0 ms |
+| French, 540 buses | Schematic | 22.6 ms | Hit | 9.3 ms |
+| SAPN, 98,633 buses | Source coordinates | 332.5 ms | Hit | 8.8 ms |
+| SAPN, 98,633 buses | Schematic | 365.5 ms | Miss | 9.2 ms |
+
+These are smoke observations, not repeated acceptance results or a fair cold-load
+comparison between modes. The source and schematic camera paths visit different
+geometry; root markers/labels are part of the schematic. Browser scheduling and
+refresh rate limit interpretation of the frame intervals. Layout quality and total
+memory remain separate concerns. Re-run the protocol before comparing regressions,
+particularly older evidence collected before the per-axis camera normalization fix.
+
+Final-build browser checks verified the same French LV bus and terminal declarations
+across modes, positive selection-feedback timing, a framed 32-step root path,
+interactive zoom followed by Fit, and visible geometry in both SAPN projections.
+No browser warnings or errors were reported during those checks.

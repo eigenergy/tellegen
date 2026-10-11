@@ -1,13 +1,15 @@
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
+import {validateSchematic} from './schematic.mjs';
 import {decodeFixture} from './fixture.mjs';
 import {validateReferences} from './bmopf-references.mjs';
 const root=new URL('./local-data/',import.meta.url),catalog=JSON.parse(await readFile(new URL('manifest.json',root)));
 const hash=b=>createHash('sha256').update(b).digest('hex');
-for(const m of catalog){
+for(const dataset of catalog){
+for(const m of [dataset,{...dataset,...dataset.layouts.schematic}]){
   const data=await readFile(new URL(m.file,root)),refs=await readFile(new URL(m.refsFile,root));
   if(data.length!==m.bytes||refs.length!==m.refsBytes||hash(data)!==m.sha256||hash(refs)!==m.refsSha256)throw new Error(`${m.id}: stale hash or size`);
-  const buffer=data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength),f=decodeFixture(m,buffer);f.refs=JSON.parse(refs);validateReferences(f);
+  const buffer=data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength),f=decodeFixture(m,buffer);f.refs=JSON.parse(refs);validateReferences(f);if(m.layoutMode==='schematic')validateSchematic(f);
   let previous=-1;const seen=new Uint8Array(m.branches);
   for(let s=0;s<m.segments;s++){
     const b=f.segmentBranches[s];if(b<previous)throw new Error('Unsorted segment ownership');
@@ -16,7 +18,8 @@ for(const m of catalog){
     previous=b;seen[b]=1;
   }
   if(seen.some(n=>n!==1))throw new Error('Unrendered branch');
-  console.log(`${m.id}: hashes, namespaces, attachments, endpoint routes and ${m.count} buses verified`);
+  console.log(`${m.id} / ${m.layoutMode??'source'}: hashes, namespaces, attachments, endpoint routes and ${m.count} buses verified`);
+}
 }
 const combined=catalog.find(m=>m.id==='sapn-combined'),members=combined.sources.map(s=>catalog.find(m=>m.id===s.id));
 for(const key of ['count','lines','transformers','branches','attachments'])if(combined[key]!==members.reduce((n,m)=>n+m[key],0))throw new Error(`Collection ${key} mismatch`);

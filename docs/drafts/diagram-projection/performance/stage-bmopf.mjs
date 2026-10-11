@@ -4,6 +4,7 @@ import {resolve,dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {adaptBMOPF,combineModels,toFixture,ADAPTER_VERSION} from './bmopf-adapter.mjs';
+import {makeSchematic,validateSchematic} from './schematic.mjs';
 import {decodeFixture} from './fixture.mjs';
 const here=dirname(fileURLToPath(import.meta.url)),root=process.argv[2];
 if(!root)throw new Error('Usage: node stage-bmopf.mjs /absolute/path/to/BMOPFDraftData/output');
@@ -21,8 +22,13 @@ try{
     Object.assign(manifest,{sha256:hash(new Uint8Array(buffer)),refsSha256:hash(json),refsBytes:Buffer.byteLength(json),stagingMs:performance.now()-preparationStart});
     await writeFile(join(pending,manifest.file),new Uint8Array(buffer));
     await writeFile(join(pending,manifest.refsFile),json);
+    const schematic=makeSchematic(model);
+    Object.assign(schematic.manifest,{file:`${id}.schematic.bin`,sha256:hash(new Uint8Array(schematic.buffer))});
+    validateSchematic(decodeFixture(schematic.manifest,schematic.buffer));
+    await writeFile(join(pending,schematic.manifest.file),new Uint8Array(schematic.buffer));
+    manifest.layouts={schematic:schematic.manifest};
     catalog.push(manifest);
-    console.log(`${id}: ${manifest.count} buses, ${manifest.lines} lines, ${manifest.transformers} transformer objects`);
+    console.log(`${id}: ${manifest.count} buses, ${manifest.lines} lines, ${manifest.transformers} transformer objects; schematic ${schematic.manifest.layout.totalMs.toFixed(1)} ms / ${schematic.manifest.segments} segments`);
     return manifest;
   }
   for(const source of config.sources){
@@ -41,7 +47,7 @@ try{
   await writeFile(join(pending,'manifest.json'),JSON.stringify(catalog,null,2)+'\n');
   // All sources must succeed before publishing. The manifest is replaced last.
   await mkdir(out,{recursive:true});
-  for(const m of catalog)for(const file of [m.file,m.refsFile])await rename(join(pending,file),join(out,file));
+  for(const m of catalog)for(const file of [m.file,m.refsFile,m.layouts.schematic.file])await rename(join(pending,file),join(out,file));
   await rename(join(pending,'manifest.json'),join(out,'manifest.json'));
   await writeFile(join(here,'bmopf-inventory.json'),JSON.stringify(inventory,null,2)+'\n');
 }finally{await rm(pending,{recursive:true,force:true});}
