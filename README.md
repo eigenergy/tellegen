@@ -83,7 +83,9 @@ sensitivities. `conic` adds the SOCWR relaxation and its sensitivities.
 on its own.
 
 `tellegen-cli` wraps the same call for scripting: it reads a stored PowerIO
-module on stdin and writes the solve response to stdout. Its `solve-module`
+module on stdin and writes the solve response to stdout. The request is
+the first argument, or `@PATH` to read it from a file when it is larger than
+the operating system's argument limit (about 128 KB on Linux). Its `solve-module`
 command writes an exact PowerIO solution module.
 
 The multiconductor constant-power API, supported transformer profile, units,
