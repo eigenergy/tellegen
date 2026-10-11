@@ -1,0 +1,5 @@
+{
+  "deckVersion": "9.4.0",
+  "renderer": "deck.gl OrthographicView",
+  "build": "local workspace dependencies"
+}
