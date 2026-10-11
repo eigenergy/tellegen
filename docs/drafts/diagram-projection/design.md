@@ -23,7 +23,7 @@ and reconstruction of missing substation detail are outside this proposal.
 | [feeder.ts](feeder.ts) | Complete hand-authored single-line and multi-wire projections of the fixture |
 | [Visual reference gallery](gallery/index.html) | Interactive feeder drawings, paper/dark themes, selection and SVG export |
 | [Gallery guide](gallery/README.md) | How to open, rebuild and verify the local reference gallery |
-| [Performance gallery](performance/index.html) | deck.gl baseline with precomputed 1k, 10k and 100k-bus layouts |
+| [Performance gallery](performance/index.html) | deck.gl baseline with synthetic 1k/10k/100k layouts and external BMOPF cases, including the 98,633-bus SAPN collection |
 | [Performance guide](performance/README.md) | Fixture generation, metrics and benchmark limitations |
 
 The Rust and TypeScript files define contracts, not constructors, validators or
@@ -653,6 +653,46 @@ baseline using deck.gl and precomputed 1k/10k/100k layouts. Its
 [guide](performance/README.md) describes reproducible fixtures and measurements.
 It complements the SVG electrical specimen; it does not replace the semantic
 projection or prove automatic layout at this scale.
+
+### BMOPF dataset experiment
+
+The gallery now has a bounded, rendering-only BMOPF adapter and dataset selector.
+It stages derived buffers and a source-reference sidecar from an external data
+root; raw BMOPF files stay external. Both generated artifacts are ignored by Git.
+The committed catalog/inventory contains relative paths, source qualifications,
+input hashes and counts. See the [adapter contract](performance/README.md#adapter-contract)
+for supported source shapes and explicit rejection rules.
+
+The combined SAPN fixture retains **98,633 buses, 99,822 lines and 1,461 transformer
+objects** across five independent source namespaces. Collection composition never
+merges matching IDs or adds electrical connections. Display panels preserve scale
+but deliberately translate each source separately; original geographic coordinates
+and projection offsets remain available. Three French sizes and the 22,081-bus
+Texas pilot provide small-case, meshed, transformer-leg and internal-bus coverage.
+
+This POC keeps the future PowerIO/Tellegen boundary intact: canonical electrical
+semantics belong in PowerIO; display coordinates, segment packing, indexes and
+panel composition belong in Tellegen. The temporary adapter records source
+terminal maps and grounding explicitly but does not elaborate transformer winding
+internals or claim a general multi-wire conversion. Transformer edges are tagged
+as equipment associations. A later multi-wire view must consume validated
+connectivity/winding semantics, not expand those edges into assumed phase links.
+
+Stable identity is `(source namespace, family, kind, original ID)`, independent of
+buffer offsets and display grouping. Co-located internal buses are retained and
+individually searchable. A display detour makes zero-length equipment associations
+selectable without moving source buses or inventing electrical nodes. Attachments
+remain traceable through the inspector. Loading validates hashes and reference
+integrity before installing geometry; GPU layer identities include dataset IDs and
+hashes, rather than only bus counts.
+
+The initial combined fixture has 4.76 MiB of geometry and 49.25 MiB of reference
+JSON. Treat reference parsing, identity indexes and peak heap as separate budgets
+from owned typed arrays and GPU drawing. Follow-up experiments should measure
+compact reference columns, lazy equipment details and worker preparation alongside
+chunking and semantic level of detail. Geographic-coordinate density is now tested;
+automatic schematic layout, multi-wire expansion and operating overlays remain
+separate experiments.
 
 ### Renderer and library boundary
 

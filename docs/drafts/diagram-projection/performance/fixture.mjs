@@ -49,21 +49,29 @@ export function makeFixture(count) {
   }
   const arrays = {positions, endpoints:new Uint32Array(ends), states:new Uint8Array(status),
     segmentSources:new Float32Array(sources), segmentTargets:new Float32Array(targets), segmentBranches:new Uint32Array(owners)};
-  let bytes=0; const sections={};
-  for(const [name,array] of Object.entries(arrays)) { bytes=Math.ceil(bytes/4)*4;sections[name]={offset:bytes,length:array.length,type:array.constructor.name};bytes+=array.byteLength; }
-  const buffer=new ArrayBuffer(Math.ceil(bytes/4)*4);
-  for(const [name,array] of Object.entries(arrays))new Uint8Array(buffer,sections[name].offset,array.byteLength).set(new Uint8Array(array.buffer));
+  const {buffer,sections}=packArrays(arrays);
   const manifest={version:VERSION,count,regions,columns,regionSize:REGION_SIZE,regionWidth:REGION_WIDTH,regionHeight:REGION_HEIGHT,
     branches:status.length,openTies:regions*10,segments:owners.length,bytes:buffer.byteLength,sections,
     bounds:[0,0,columns*REGION_WIDTH,Math.ceil(regions/columns)*REGION_HEIGHT],file:`feeder-${count}.bin`};
   return {manifest,buffer};
 }
+export function packArrays(arrays) {
+  let bytes=0; const sections={};
+  for(const [name,array] of Object.entries(arrays)) { bytes=Math.ceil(bytes/4)*4;sections[name]={offset:bytes,length:array.length,type:array.constructor.name};bytes+=array.byteLength; }
+  const buffer=new ArrayBuffer(Math.ceil(bytes/4)*4);
+  for(const [name,array] of Object.entries(arrays))new Uint8Array(buffer,sections[name].offset,array.byteLength).set(new Uint8Array(array.buffer));
+  return {buffer,sections};
+}
 export function decodeFixture(manifest,buffer) {
-  if(manifest.version!==VERSION || !SIZES.includes(manifest.count) || buffer.byteLength!==manifest.bytes)throw new Error('Invalid fixture header or length');
+  if(manifest.version!==VERSION || (!Number.isSafeInteger(manifest.count)||manifest.count<1) || buffer.byteLength!==manifest.bytes)throw new Error('Invalid fixture header or length');
   const types={Float32Array,Uint32Array,Uint8Array}, result={manifest,buffer};
   for(const [name,s] of Object.entries(manifest.sections)) {
     const Type=types[s.type]; if(!Type || s.offset<0 || s.length<0 || s.offset+s.length*Type.BYTES_PER_ELEMENT>buffer.byteLength)throw new Error('Invalid fixture section');
     result[name]=new Type(buffer,s.offset,s.length);
   }
+  const expected={positions:manifest.count*3,endpoints:manifest.branches*2,states:manifest.branches,segmentSources:manifest.segments*3,segmentTargets:manifest.segments*3,segmentBranches:manifest.segments};
+  for(const [key,length] of Object.entries(expected))if(result[key]?.length!==length)throw new Error(`Invalid fixture ${key} length`);
+  if(!result.endpoints.every(i=>i<manifest.count)||!result.segmentBranches.every(i=>i<manifest.branches))throw new Error('Invalid fixture reference');
+  for(const key of ['positions','segmentSources','segmentTargets'])if(!result[key].every(Number.isFinite))throw new Error('Non-finite geometry');
   return result;
 }

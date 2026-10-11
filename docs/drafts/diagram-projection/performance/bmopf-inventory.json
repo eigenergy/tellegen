@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "adapterVersion": 1,
+  "sources": [
+    {
+      "id": "sapn-golden-grove",
+      "file": "SAPN/golden-grove--p95-proxy-load-transfer.bmopf.json",
+      "sha256": "250fab83a7eca226cb4d62d0f1c79e086d40870fe456485db8269acbd178516a",
+      "bytes": 80067620,
+      "buses": 25658,
+      "lines": 25634,
+      "transformerObjects": 621,
+      "attachments": 27864
+    },
+    {
+      "id": "sapn-norwood",
+      "file": "SAPN/norwood--p95-lv-proxy-transfer.bmopf.json",
+      "sha256": "1acb0d2fff7053c0a3449e3a927624d86bff37a4c349adf6967c75673bef5f14",
+      "bytes": 82010704,
+      "buses": 25456,
+      "lines": 25679,
+      "transformerObjects": 288,
+      "attachments": 24690
+    },
+    {
+      "id": "sapn-campbelltown",
+      "file": "SAPN/campbelltown--synthetic-20pct.bmopf.json",
+      "sha256": "a0d6c3c648fdfefd9471fe8fbcfabad9373b9c35de25bb99189385d998f33ad5",
+      "bytes": 63279243,
+      "buses": 27239,
+      "lines": 27803,
+      "transformerObjects": 220,
+      "attachments": 14394
+    },
+    {
+      "id": "sapn-hackham",
+      "file": "SAPN/hackham--equal-territory-p95-state-01.bmopf.json",
+      "sha256": "924361b4c385e96ba496197d919d60b5af64b25ad6d413360eb5f3b67748a272",
+      "bytes": 31328788,
+      "buses": 10907,
+      "lines": 11174,
+      "transformerObjects": 215,
+      "attachments": 6628
+    },
+    {
+      "id": "sapn-harrow",
+      "file": "SAPN/harrow--equal-territory-p95-state-01.bmopf.json",
+      "sha256": "dcba4042158923842f368ab7fc25c1cf4dc93f3958f45258cb584da1249147cf",
+      "bytes": 25917098,
+      "buses": 9373,
+      "lines": 9532,
+      "transformerObjects": 117,
+      "attachments": 5086
+    },
+    {
+      "id": "french-small",
+      "file": "FrenchPowerGrids/original/44_MVFeeder2707.bmopf.json",
+      "sha256": "8f404bdc5215e7c58c83693870c339557dfbd082cb0ce54e7c940eaed52384af",
+      "bytes": 31696,
+      "buses": 5,
+      "lines": 4,
+      "transformerObjects": 0,
+      "attachments": 9
+    },
+    {
+      "id": "french-medium",
+      "file": "FrenchPowerGrids/original/75_MVFeeder0100.bmopf.json",
+      "sha256": "49af4133e64fa2d42c79683464b3b31088b18e4912b6d5782b5ba0b3b092d295",
+      "bytes": 1683609,
+      "buses": 540,
+      "lines": 482,
+      "transformerObjects": 57,
+      "attachments": 782
+    },
+    {
+      "id": "french-large",
+      "file": "FrenchPowerGrids/original/53_MVFeeder0641.bmopf.json",
+      "sha256": "8e771f020ddbb776a845e843de3784a64ab8b7d4f04562e378fcff10f1af0edf",
+      "bytes": 4694831,
+      "buses": 1583,
+      "lines": 1433,
+      "transformerObjects": 149,
+      "attachments": 2432
+    },
+    {
+      "id": "texas-pilot",
+      "file": "Texas7kPilot/p1uhs0_1247.bmopf.json",
+      "sha256": "9d6ed48d0734522bc69a62e98f2d5bfc8c79a25f872ac998b7b8b769504c01b5",
+      "bytes": 30032660,
+      "buses": 22081,
+      "lines": 16822,
+      "transformerObjects": 7756,
+      "attachments": 15300
+    }
+  ],
+  "collections": [
+    {
+      "id": "sapn-combined",
+      "members": [
+        "sapn-golden-grove",
+        "sapn-norwood",
+        "sapn-campbelltown",
+        "sapn-hackham",
+        "sapn-harrow"
+      ],
+      "buses": 98633,
+      "lines": 99822,
+      "transformerObjects": 1461,
+      "attachments": 78662
+    }
+  ]
+}

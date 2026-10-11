@@ -1,3 +1,5 @@
 app.bundle.js
 app.bundle.js.map
 fixtures/*.bin
+local-data/
+.bmopf-stage-*/

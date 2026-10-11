@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "sources": [
+    {"id":"sapn-golden-grove","label":"SAPN · Golden Grove","file":"SAPN/golden-grove--p95-proxy-load-transfer.bmopf.json","group":"SAPN","note":"Provisional p95 proxy-load-transfer model; qualified=false."},
+    {"id":"sapn-norwood","label":"SAPN · Norwood","file":"SAPN/norwood--p95-lv-proxy-transfer.bmopf.json","group":"SAPN","note":"Provisional p95 LV proxy-transfer model; qualified=false; transformer-rating hold."},
+    {"id":"sapn-campbelltown","label":"SAPN · Campbelltown","file":"SAPN/campbelltown--synthetic-20pct.bmopf.json","group":"SAPN","note":"Provisional synthetic 20% nameplate scenario; qualified=false."},
+    {"id":"sapn-hackham","label":"SAPN · Hackham","file":"SAPN/hackham--equal-territory-p95-state-01.bmopf.json","group":"SAPN","note":"Provisional equal-territory p95 state; qualified=false."},
+    {"id":"sapn-harrow","label":"SAPN · Harrow","file":"SAPN/harrow--equal-territory-p95-state-01.bmopf.json","group":"SAPN","note":"Provisional equal-territory p95 state; qualified=false."},
+    {"id":"french-small","label":"French · 44_MVFeeder2707","file":"FrenchPowerGrids/original/44_MVFeeder2707.bmopf.json","group":"French","note":"Original feeder, 5-bus small case."},
+    {"id":"french-medium","label":"French · 75_MVFeeder0100","file":"FrenchPowerGrids/original/75_MVFeeder0100.bmopf.json","group":"French","note":"Original feeder, median bus-count representative."},
+    {"id":"french-large","label":"French · 53_MVFeeder0641","file":"FrenchPowerGrids/original/53_MVFeeder0641.bmopf.json","group":"French","note":"Original feeder, largest bus count in the local set."},
+    {"id":"texas-pilot","label":"Texas · p1uhs0_1247","file":"Texas7kPilot/p1uhs0_1247.bmopf.json","group":"Texas","note":"Conversion pilot; source and leakage-star internal buses retained. Transformer objects are not physical asset counts."}
+  ],
+  "collections": [{"id":"sapn-combined","label":"SAPN · combined collection","members":["sapn-golden-grove","sapn-norwood","sapn-campbelltown","sapn-hackham","sapn-harrow"]}]
+}
