@@ -9,7 +9,8 @@
     {"id":"french-small","label":"French · 44_MVFeeder2707","file":"FrenchPowerGrids/original/44_MVFeeder2707.bmopf.json","group":"French","note":"Original feeder, 5-bus small case."},
     {"id":"french-medium","label":"French · 75_MVFeeder0100","file":"FrenchPowerGrids/original/75_MVFeeder0100.bmopf.json","group":"French","note":"Original feeder, median bus-count representative."},
     {"id":"french-large","label":"French · 53_MVFeeder0641","file":"FrenchPowerGrids/original/53_MVFeeder0641.bmopf.json","group":"French","note":"Original feeder, largest bus count in the local set."},
-    {"id":"texas-pilot","label":"Texas · p1uhs0_1247","file":"Texas7kPilot/p1uhs0_1247.bmopf.json","group":"Texas","note":"Conversion pilot; source and leakage-star internal buses retained. Transformer objects are not physical asset counts."}
+    {"id":"texas-pilot","label":"Texas · p1uhs0_1247","file":"Texas7kPilot/p1uhs0_1247.bmopf.json","group":"Texas","note":"Conversion pilot; source and leakage-star internal buses retained. Transformer objects are not physical asset counts."},
+    {"id":"mvlv-meshed","label":"MV/LV meshed","file":"MVLVmeshed/original/MVLVmeshed.json","group":"MVLV","allowMissingCoordinates":true,"switchCommands":"test/data/MVLVmeshed/Master.dss","scenarios":["documented","all-closed"],"note":"Reconstructed Australian MV21 + 33 LV mesh overlay (BMOPFDraftData/test/data/MVLVmeshed, CC BY-NC-SA 4.0); not an authoritative operating state. No source coordinates."}
   ],
   "collections": [{"id":"sapn-combined","label":"SAPN · combined collection","members":["sapn-golden-grove","sapn-norwood","sapn-campbelltown","sapn-hackham","sapn-harrow"]}]
 }

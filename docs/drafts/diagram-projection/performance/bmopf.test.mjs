@@ -37,7 +37,7 @@ test('invalid inputs fail explicitly instead of losing topology or terminal mean
     [r=>r.line.same.terminal_map_to=['1'],/unequal/],
     [r=>r.line.same.status='open',/unsupported status/],
     [r=>r.line.same.enabled=true,/contradictory/],
-    [r=>r.switch={s:{}},/Switch elaboration/],
+    [r=>r.switch={s:{}},/unknown bus/],
     [r=>r.generator={g:{}},/Unsupported BMOPF/],
     [r=>r.transformer.unknown={t:{}},/Unsupported transformer/]
   ]){const r=raw();mutate(r);assert.throws(()=>adaptBMOPF(r,source),pattern);}

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "adapterVersion": 1,
+  "adapterVersion": 2,
   "sources": [
     {
       "id": "sapn-golden-grove",
@@ -10,6 +10,7 @@
       "buses": 25658,
       "lines": 25634,
       "transformerObjects": 621,
+      "switches": 0,
       "attachments": 27864
     },
     {
@@ -20,6 +21,7 @@
       "buses": 25456,
       "lines": 25679,
       "transformerObjects": 288,
+      "switches": 0,
       "attachments": 24690
     },
     {
@@ -30,6 +32,7 @@
       "buses": 27239,
       "lines": 27803,
       "transformerObjects": 220,
+      "switches": 0,
       "attachments": 14394
     },
     {
@@ -40,6 +43,7 @@
       "buses": 10907,
       "lines": 11174,
       "transformerObjects": 215,
+      "switches": 0,
       "attachments": 6628
     },
     {
@@ -50,6 +54,7 @@
       "buses": 9373,
       "lines": 9532,
       "transformerObjects": 117,
+      "switches": 0,
       "attachments": 5086
     },
     {
@@ -60,6 +65,7 @@
       "buses": 5,
       "lines": 4,
       "transformerObjects": 0,
+      "switches": 0,
       "attachments": 9
     },
     {
@@ -70,6 +76,7 @@
       "buses": 540,
       "lines": 482,
       "transformerObjects": 57,
+      "switches": 0,
       "attachments": 782
     },
     {
@@ -80,6 +87,7 @@
       "buses": 1583,
       "lines": 1433,
       "transformerObjects": 149,
+      "switches": 0,
       "attachments": 2432
     },
     {
@@ -90,7 +98,19 @@
       "buses": 22081,
       "lines": 16822,
       "transformerObjects": 7756,
+      "switches": 0,
       "attachments": 15300
+    },
+    {
+      "id": "mvlv-meshed",
+      "file": "MVLVmeshed/original/MVLVmeshed.json",
+      "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a",
+      "bytes": 4065487,
+      "buses": 3409,
+      "lines": 3098,
+      "transformerObjects": 33,
+      "switches": 317,
+      "attachments": 2544
     }
   ],
   "collections": [
@@ -106,6 +126,7 @@
       "buses": 98633,
       "lines": 99822,
       "transformerObjects": 1461,
+      "switches": 0,
       "attachments": 78662
     }
   ]

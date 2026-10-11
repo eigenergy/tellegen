@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "created": "2026-10-11T23:53:09.081Z",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Max"
+  },
+  "methodology": "Tidy-tree; one warm-up per strategy, five interleaved layout/routing/packing runs. Validation and geometry diagnostics outside timers. Proper interior segment crossings exclude endpoint contacts and collinear sharing. Disabled/open routes included in whole-scene diagnostics. No symbol/label or screen-space collision measure. Raw data stays external; source and command hashes identify these reconstructed scenarios.",
+  "sourceHash": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a",
+  "commandHash": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4",
+  "datasets": [
+    {
+      "id": "documented",
+      "buses": 3409,
+      "branches": 3448,
+      "switches": 317,
+      "openSwitches": 34,
+      "scenario": {
+        "id": "documented",
+        "label": "Documented open ties",
+        "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+        "changedFromSource": 34,
+        "commandCount": 34,
+        "commandFile": "test/data/MVLVmeshed/Master.dss",
+        "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+      },
+      "components": 1,
+      "nonTreeConnections": 6,
+      "routing": {
+        "current": {
+          "segments": 8562,
+          "geometryBytes": 369668,
+          "width": 16840,
+          "height": 13168.361328125,
+          "collinearOverlapPairs": 4769,
+          "collinearOverlapLength": 76028.1826171875,
+          "properRouteCrossings": 708,
+          "horizontalWireBusbarInteriorCrossings": 4,
+          "routeLength": 718492.9575195312,
+          "segmentsPerBranch": 2.4831786542923435,
+          "ordering": null,
+          "timingMs": [
+            3.4026250000000005,
+            2.1531669999999963,
+            1.628957999999983,
+            2.902040999999997,
+            1.8089590000000157
+          ],
+          "medianMs": 2.1531669999999963
+        },
+        "corridor": {
+          "segments": 10440,
+          "geometryBytes": 586820,
+          "width": 16840,
+          "height": 15488,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 2089,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 1170500.5,
+          "segmentsPerBranch": 3.02784222737819,
+          "ordering": null,
+          "timingMs": [
+            9.804500000000004,
+            6.03125,
+            5.095957999999996,
+            8.64262500000001,
+            5.6272089999999935
+          ],
+          "medianMs": 6.03125
+        },
+        "crossing-aware": {
+          "segments": 10440,
+          "geometryBytes": 586820,
+          "width": 16840,
+          "height": 15488,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 2077,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 1170276.5,
+          "segmentsPerBranch": 3.02784222737819,
+          "ordering": {
+            "algorithm": "bounded-mesh-lane-insertion",
+            "version": 1,
+            "laneCap": 32,
+            "passes": 4,
+            "eligible": 3,
+            "changed": 2,
+            "moves": 3,
+            "before": 29,
+            "after": 17,
+            "skipped": {
+              "radial": 95,
+              "external-or-disabled": 41
+            },
+            "totalMs": 0.19033300000000963
+          },
+          "timingMs": [
+            7.104542000000009,
+            6.861374999999995,
+            6.823417000000006,
+            6.773375000000016,
+            4.954125000000005
+          ],
+          "medianMs": 6.823417000000006
+        }
+      }
+    },
+    {
+      "id": "all-closed",
+      "buses": 3409,
+      "branches": 3448,
+      "switches": 317,
+      "openSwitches": 0,
+      "scenario": {
+        "id": "all-closed",
+        "label": "All switches closed",
+        "policy": "Force every switch closed; preserve out-of-service status.",
+        "changedFromSource": 0,
+        "commandCount": 0,
+        "commandFile": "test/data/MVLVmeshed/Master.dss",
+        "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+      },
+      "components": 1,
+      "nonTreeConnections": 40,
+      "routing": {
+        "current": {
+          "segments": 8484,
+          "geometryBytes": 367484,
+          "width": 13960,
+          "height": 10691.875,
+          "collinearOverlapPairs": 4747,
+          "collinearOverlapLength": 76472.310546875,
+          "properRouteCrossings": 768,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 656388.9497070312,
+          "segmentsPerBranch": 2.460556844547564,
+          "ordering": null,
+          "timingMs": [
+            1.572917000000018,
+            1.2263749999999618,
+            0.98112500000002,
+            1.3545830000000478,
+            1.231666999999959
+          ],
+          "medianMs": 1.231666999999959
+        },
+        "corridor": {
+          "segments": 10344,
+          "geometryBytes": 584132,
+          "width": 13960,
+          "height": 12439,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 837,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 685915,
+          "segmentsPerBranch": 3,
+          "ordering": null,
+          "timingMs": [
+            5.3777919999999995,
+            5.42433299999999,
+            4.632790999999997,
+            8.007249999999999,
+            7.1034159999999815
+          ],
+          "medianMs": 5.42433299999999
+        },
+        "crossing-aware": {
+          "segments": 10344,
+          "geometryBytes": 584132,
+          "width": 13960,
+          "height": 12439,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 759,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 684763,
+          "segmentsPerBranch": 3,
+          "ordering": {
+            "algorithm": "bounded-mesh-lane-insertion",
+            "version": 1,
+            "laneCap": 32,
+            "passes": 4,
+            "eligible": 28,
+            "changed": 21,
+            "moves": 25,
+            "before": 837,
+            "after": 759,
+            "skipped": {
+              "radial": 87
+            },
+            "totalMs": 0.9745000000000346
+          },
+          "timingMs": [
+            6.380916999999954,
+            6.237374999999986,
+            6.200832999999989,
+            5.982540999999969,
+            8.40912499999996
+          ],
+          "medianMs": 6.237374999999986
+        }
+      }
+    }
+  ]
+}

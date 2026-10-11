@@ -11,7 +11,7 @@ const busName=i=>fixture?.refs?.buses[i].id??('B'+String(i+1).padStart(6,'0'));
 const labelName=i=>busName(i).length>12?busName(i).slice(0,11)+'…':busName(i);
 const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const locationKey=(f,i)=>`${f.positions[i*3]},${f.positions[i*3+1]}`;
-const identity=m=>({id:m.id,layoutMode:m.layoutMode??'synthetic',routingMode:m.routingMode??'current',routing:m.routing??null,layout:m.layout??null,kind:m.kind??'synthetic',count:m.count,sha256:m.sha256,refsSha256:m.refsSha256??null,adapterVersion:m.adapterVersion??null,sources:m.sources??[],placement:m.placement??'synthetic schematic',stagingMs:m.stagingMs??null});
+const identity=m=>({id:m.id,layoutMode:m.layoutMode??'synthetic',routingMode:m.routingMode??'current',routing:m.routing??null,layout:m.layout??null,kind:m.kind??'synthetic',count:m.count,sha256:m.sha256,refsSha256:m.refsSha256??null,adapterVersion:m.adapterVersion??null,scenario:m.scenario??null,sources:m.sources??[],placement:m.placement??'synthetic schematic',stagingMs:m.stagingMs??null});
 const palette={dark:{line:[108,137,150,255],node:[198,207,203,255],open:[229,170,84,255],label:[238,234,225,255],bg:[23/255,27/255,32/255,1]},paper:{line:[108,125,127,255],node:[48,69,78,255],open:[178,94,0,255],label:[32,36,43,255],bg:[252/255,251/255,247/255,1]}};
 let theme='dark', fixture=null, entries=[], deck, ready=false, loading=false, request=0, abort;
 let camera={target:[0,0,0],zoom:0,minZoom:-24,maxZoom:5}, selection=null, labelData=[], run=null;
@@ -31,8 +31,9 @@ function error(message){$('status').hidden=false;$('status').textContent=message
 function controls(){
   for(const el of document.querySelectorAll('button[data-theme], #labels, #edge-picking, #fit, #detail, #benchmark, #bus-id, #search button, #clear, #next-colocated, #trace-root, #focus-source'))el.disabled=loading||!!run||!ready||!fixture;
   for(const el of document.querySelectorAll('[data-size], #dataset'))el.disabled=loading||!!run||!ready;
-  for(const el of document.querySelectorAll('[data-layout]'))el.disabled=loading||!!run||!ready||fixture?.manifest.kind!=='bmopf'||(el.dataset.layout!=='source'&&!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[el.dataset.layout]);
+  for(const el of document.querySelectorAll('[data-layout]'))el.disabled=loading||!!run||!ready||fixture?.manifest.kind!=='bmopf'||(el.dataset.layout==='source'&&fixture?.manifest.sourceCoordinatesAvailable===false)||(el.dataset.layout!=='source'&&!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[el.dataset.layout]);
   for(const el of document.querySelectorAll('[data-routing]'))el.disabled=loading||!!run||!ready||!fixture?.parent||!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[layoutMode+(el.dataset.routing==='current'?'':'-'+el.dataset.routing)];
+  for(const el of document.querySelectorAll('#switch-id, #switch-search button'))el.disabled=loading||!!run||!fixture?.manifest.switches;
   $('trace-root').disabled=loading||!!run||!fixture?.parent||selection?.kind!=='bus';
   $('focus-source').disabled=loading||!!run||!fixture?.refs||selection===null;
   const unavailable=loading||!!run||!fixture?.meshBranches?.length;
@@ -66,6 +67,8 @@ function prepare(f){
   for(let i=0;i<m.count;i++){const key=`${Math.floor(f.positions[i*3]/128)},${Math.floor(f.positions[i*3+1]/128)}`;if(!f.cells.has(key))f.cells.set(key,[]);f.cells.get(key).push(i);}
   f.ownedBytes=f.buffer.byteLength+f.segmentColors.byteLength+f.nodeColors.byteLength+f.offsets.byteLength+f.incidents.byteLength+f.firstSegment.byteLength;
   if(f.refs){
+    f.switchIds=new Map();f.qualifiedSwitchIds=new Map();
+    f.refs.branches.forEach((b,i)=>{if(b.family!=='switch')return;const q=busQuery(f.refs.sources[b.source].id,b.id);f.qualifiedSwitchIds.set(q,i);if(!f.switchIds.has(b.id))f.switchIds.set(b.id,[]);f.switchIds.get(b.id).push(i);});
     f.rawBusIds=new Map();f.qualifiedBusIds=new Map();f.locations=new Map();f.attachmentsByBus=new Map();
     f.refs.buses.forEach((b,i)=>{const q=busQuery(f.refs.sources[b.source].id,b.id);f.qualifiedBusIds.set(q,i);
       if(!f.rawBusIds.has(b.id))f.rawBusIds.set(b.id,[]);f.rawBusIds.get(b.id).push(i);
@@ -76,7 +79,7 @@ function prepare(f){
   f.meshBranches=nonTreeBranches(f);f.ownedBytes+=f.meshBranches.byteLength;
   colour(f);
 }
-function colour(f){const p=palette[theme];for(let s=0;s<f.manifest.segments;s++){const b=f.segmentBranches[s];f.segmentColors.set(f.states[b]?p.open:f.refs?.branches[b].family==='transformer'?[141,124,209,255]:f.branchRoles?.[b]===1?[66,159,181,255]:p.line,s*4);}for(let i=0;i<f.manifest.count;i++)f.nodeColors.set(!f.refs&&i%f.manifest.regionSize===0?p.open:p.node,i*4);}
+function colour(f){const p=palette[theme];for(let s=0;s<f.manifest.segments;s++){const b=f.segmentBranches[s];f.segmentColors.set(f.states[b]?p.open:f.refs?.branches[b].family==='transformer'?[141,124,209,255]:f.refs?.branches[b].family==='switch'?[101,165,132,255]:f.branchRoles?.[b]===1?[66,159,181,255]:p.line,s*4);}for(let i=0;i<f.manifest.count;i++)f.nodeColors.set(!f.refs&&i%f.manifest.regionSize===0?p.open:p.node,i*4);}
 
 function rootPath(index){const edges=[];let u=index;while(fixture.parent&&fixture.parent[u]!==u){edges.push(fixture.parentBranch[u]);u=fixture.parent[u];if(edges.length>fixture.manifest.count)throw new Error('Invalid parent cycle');}return {edges,root:u};}
 function focusSource(){const row=selection.kind==='bus'?fixture.refs.buses[selection.index]:fixture.refs.branches[selection.index],source=row.source;
@@ -184,11 +187,11 @@ function select(kind,index,started=performance.now()){
     if(kind==='bus'){
       if(fixture.parent){const path=rootPath(index),component=fixture.manifest.layout.components[fixture.component[index]];content+=`<p>Depth ${fixture.depth[index]} · layout root ${escape(busName(path.root))}<br>${escape(component.rootReason)} · ${path.edges.length} steps to root${traceRoot?' · root path highlighted':''}</p>`;}
       const members=fixture.locations.get(locationKey(fixture,index));
-      content+=`<p>${fixture.offsets[index+1]-fixture.offsets[index]} incident branches · terminals ${escape(row.terminals.join(', '))}<br>Grounded: ${escape(row.grounded.join(', ')||'none declared')}<br>Longitude / latitude: ${row.coordinates.join(', ')}<br>${members.length} buses at this display position</p><p class="fine">Find: <code>${escape(busQuery(source.id,row.id))}</code></p>`;
+      content+=`<p>${fixture.offsets[index+1]-fixture.offsets[index]} incident branches · terminals ${escape(row.terminals.join(', '))}<br>Grounded: ${escape(row.grounded.join(', ')||'none declared')}<br>Longitude / latitude: ${row.coordinates?.join(', ')??'unavailable in source'}<br>${members.length} buses at this display position</p><p class="fine">Find: <code>${escape(busQuery(source.id,row.id))}</code></p>`;
       const attachments=fixture.attachmentsByBus.get(index)??[];
       content+=`<details><summary>${attachments.length} source attachments</summary>${attachments.slice(0,100).map(a=>`<p>${escape(a.family)} / ${escape(a.id)} · terminals ${escape(a.terminalMap.join(', '))}${a.disabled?' · disabled':''}</p>`).join('')}${attachments.length>100?'<p>First 100 shown; all retained in reference data.</p>':''}</details>`;
       $('next-colocated').hidden=members.length<2;
-    }else content+=`<p>${escape(busName(row.from))} → ${escape(busName(row.to))}<br>Terminal maps: ${escape(row.terminalMapFrom.join(', '))} → ${escape(row.terminalMapTo.join(', '))}<br>${row.disabled?'Disabled · display gap':'Enabled'}${fixture.positions[row.from*3]===fixture.positions[row.to*3]&&fixture.positions[row.from*3+1]===fixture.positions[row.to*3+1]?' · coincident endpoints, display detour':''}${fixture.branchRoles?'<br>Layout role: '+['tree edge','non-tree connection','disabled link'][fixture.branchRoles[index]]:''}</p><p>${row.family==='transformer'?'Equipment association; does not imply interwinding conductor continuity.':'Conductor bundle; terminal order preserved.'}</p>`;
+    }else content+=`<p>${escape(busName(row.from))} → ${escape(busName(row.to))}<br>Terminal maps: ${escape(row.terminalMapFrom.join(', '))} → ${escape(row.terminalMapTo.join(', '))}<br>${row.family==='switch'?`${row.openSwitch?'Open · display gap':'Closed'} · ${row.outOfService?'out of service · display gap':'in service'}<br>Imported state: ${row.sourceOpenSwitch?'open':'closed'} · Scenario: ${escape(fixture.manifest.scenario?.label??'imported state')}`:row.disabled?'Out of service · display gap':'Enabled'}${fixture.positions[row.from*3]===fixture.positions[row.to*3]&&fixture.positions[row.from*3+1]===fixture.positions[row.to*3+1]?' · coincident endpoints, display detour':''}${fixture.branchRoles?'<br>Layout role: '+['tree edge','non-tree connection','inactive link (excluded from display tree)'][fixture.branchRoles[index]]:''}</p><p>${row.family==='transformer'?'Equipment association; does not imply interwinding conductor continuity.':row.family==='switch'?'Switch connection; terminal order preserved. State applies to the whole switch, not individual poles.':'Conductor bundle; terminal order preserved.'}</p>`;
     if(isInspecting())content+=`<div class="circuit-description"><p><strong>A</strong> · ${escape(busName(circuit.endpoints[0]))}<br><strong>B</strong> · ${escape(busName(circuit.endpoints[1]))}</p><p>${circuit.connected?`${circuit.edges.length} tree branches connect the endpoints via common ancestor ${escape(busName(circuit.ancestor))}.`:'Endpoints belong to different display components; no connecting tree path.'}</p><p class="fine">Cyan: selected connection · amber: connecting tree path. This is a circuit in the display spanning forest, not a power-flow or conductor-continuity result. Crossings are not junctions.</p></div>`;
     $('selection').innerHTML=content;
   }else if(kind==='bus'){
@@ -211,7 +214,8 @@ async function load(id,mode=layoutMode,routing=routingMode){
   $('dataset').value=id;const start=performance.now();
   try{
     const entry=entries.find(m=>m.id===id);if(!entry)throw new Error('Dataset unavailable; stage the external sources first');
-    const actualMode=entry.kind==='bmopf'&&entry.layouts?.[mode]?mode:entry.kind==='bmopf'?'source':'synthetic';
+    const actualMode=entry.kind==='bmopf'&&entry.layouts?.[mode]?mode:entry.kind==='bmopf'?(entry.sourceCoordinatesAvailable===false?'tidy-tree':'source'):'synthetic';
+    if(entry.kind==='bmopf')layoutMode=actualMode;
     const variant=actualMode+(routing==='current'?'':'-'+routing);
     const geometry=entry.layouts?.[variant]??entry.layouts?.[actualMode];
     const actualRouting=geometry?(geometry.routingMode??'current'):'unavailable';
@@ -230,10 +234,13 @@ async function load(id,mode=layoutMode,routing=routingMode){
     if(m.coordinateSpace==='schematic')validateSchematic(next);
     const decoded=performance.now();prepare(next);const prepared=performance.now();
     fixture=next;if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,submittedAt:prepared,environment:environment()};
-    $('network-count').textContent=fmt(m.count);$('network-detail').textContent=m.kind==='bmopf'?`${fmt(m.lines)} lines · ${fmt(m.transformers)} transformer objects`:`${fmt(m.branches)} branches · ${fmt(m.openTies)} open ties`;
+    $('network-count').textContent=fmt(m.count);$('network-detail').textContent=m.kind==='bmopf'?`${fmt(m.lines)} lines · ${fmt(m.transformers)} transformer objects${m.switches?' · '+fmt(m.switches)+' switches':''}`:`${fmt(m.branches)} branches · ${fmt(m.openTies)} open ties`;
     $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON; excludes JS objects`;
     $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode)+(actualRouting==='unavailable'?'':' / '+({'corridor':'Fan-out + lanes','crossing-aware':'Crossing-aware lanes','current':'Current routes'}[actualRouting]));$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
     $('layout-summary').textContent=m.layout?`${fmt(m.layout.treeEdges)} tree edges · ${fmt(m.layout.crossLinks)} non-tree connections · ${m.layout.components.length} components · ${ms(m.layout.totalMs)} offline layout + routing.${m.routingMode!=='current'?' '+m.routing.maxLanes+' peak corridor lanes.':''}${m.routing.ordering?' Lane-order crossings '+fmt(m.routing.ordering.before)+' → '+fmt(m.routing.ordering.after)+' in eligible corridors.':''} Roots choose layout direction, not power flow.`:actualMode==='source'?'Source-coordinate reference. Choose Leaf order or Tidy tree to inspect the network structure.':'Precomputed synthetic schematic.';
+    $('scenario-detail').textContent=m.scenario?`${m.scenario.label}: ${m.openSwitches} open / ${m.closedSwitches} closed switches; ${m.outOfServiceSwitches} out of service. ${m.scenario.changedFromSource} states changed from the imported BMOPF. ${m.scenario.policy}${m.sourceCoordinatesAvailable===false?' Source coordinates unavailable; schematic views only.':''}`:'';
+    const firstSwitch=next.refs?.branches.find(b=>b.family==='switch'&&b.openSwitch)??next.refs?.branches.find(b=>b.family==='switch');
+    $('switch-id').value=firstSwitch?.id??'';$('switch-error').textContent='';
     $('bus-id').value=next.refs?busQuery(next.refs.sources[next.refs.buses[keep?.kind==='bus'?keep.index:0].source].id,next.refs.buses[keep?.kind==='bus'?keep.index:0].id):'B000501';$('bus-id').placeholder=next.refs?'Exact source ID or source/id':'B000001';
     const url=new URL(location.href);url.searchParams.delete('size');url.searchParams.set('dataset',id);url.searchParams.set('layout',actualMode==='synthetic'?'schematic':actualMode);url.searchParams.set('routing',routingMode);history.replaceState(null,'',url);
     const restored=viewStates.get(viewKey(m));
@@ -316,6 +323,16 @@ $('search').addEventListener('submit',e=>{e.preventDefault();if(!fixture||run||l
     if(i===undefined){$('search-error').textContent='No exact source bus ID found. Use source/id to qualify an ID.';return;}
   }else{const digits=value.replace(/^B/i,''),id=Number(digits);if(!/^\d+$/.test(digits)||!Number.isSafeInteger(id)||id<1||id>fixture.manifest.count){$('search-error').textContent=`Enter a bus from B000001 to ${busName(fixture.manifest.count-1)}.`;return;}i=id-1;}
   select('bus',i,started);setCamera({...camera,target:[fixture.positions[i*3],fixture.positions[i*3+1],0],zoom:1.5});});
+$('switch-search').addEventListener('submit',e=>{
+  e.preventDefault();if(!fixture?.manifest.switches||run||loading)return;
+  const started=performance.now(),value=$('switch-id').value.trim(),raw=fixture.switchIds.get(value)??[];
+  const i=raw.length===1?raw[0]:raw.length?undefined:fixture.qualifiedSwitchIds.get(value);
+  $('switch-error').textContent=i===undefined?'No unique exact switch ID. Use source/id to qualify an ID.':'';
+  if(i===undefined)return;
+  select('branch',i,started);
+  const b=fixture.refs.branches[i],[x0,y0,x1,y1]=overlayBounds(fixture,[b.from,b.to],overlay),r=$('canvas-wrap').getBoundingClientRect();
+  setCamera({...camera,target:[(x0+x1)/2,(y0+y1)/2,0],zoom:Math.min(1.5,Math.log2(Math.min(Math.max(50,r.width-130)/(x1-x0+50),Math.max(50,r.height-150)/(y1-y0+50))))});
+});
 $('benchmark').addEventListener('click',benchmark);$('stop').addEventListener('click',()=>stopRun());$('export-report').addEventListener('click',exportReport);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopRun('tab hidden');});
 window.addEventListener('resize',()=>{stopRun('viewport resized');scheduleLabels();});

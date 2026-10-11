@@ -101,9 +101,13 @@ This is a rendering-only adapter for the inspected BMOPF shapes, not the canonic
 PowerIO importer or an electrical solver. Keyed buses and lines are supported,
 as are two-endpoint `delta_wye`, `single_phase` and `center_tap` transformer tables
 (the staged cases exercise the first two), and bus-attached loads, shunts and
-voltage sources. Nonempty unknown equipment tables, switches, missing coordinates,
-dangling buses, unknown terminals, unequal line terminal-map lengths and unsupported
-or contradictory enabled/status values fail explicitly. Absent state means enabled.
+voltage sources. Adapter v2 also supports two-endpoint switches with an explicit
+scalar boolean `open_switch`. Nonempty unknown equipment tables, dangling buses,
+unknown terminals, unequal line/switch terminal-map lengths and unsupported or
+contradictory enabled/status values fail explicitly. Absent service status means
+in service; missing switch position never means closed. Coordinates are required
+by default; `allowMissingCoordinates` permits wholly coordinate-free sources for
+schematic layouts only. Partial coordinate coverage fails explicitly.
 Electrical parameters, ratings, results and full source metadata are not copied.
 
 A reference sidecar preserves the **exact original IDs**, original longitude and
@@ -169,7 +173,7 @@ SAPN cases retain their provisional qualifications, including Norwood's rating h
 This experiment adds a **diagram projection parallel to Tellegen's existing
 geospatial visualizer**. Its purpose is to explain electrical structure. Source
 coordinates are a comparison reference, not the feature being improved here.
-Choose **Leaf order / Tidy tree / Source coordinates** on any staged BMOPF dataset. Selection
+Choose **Leaf order / Tidy tree / Source coordinates** on staged BMOPF datasets with coordinates (MVLVmeshed is schematic-only). Selection
 keeps the same source identity across modes, and each mode remembers its camera.
 Use **Trace to layout root** to highlight and frame a bus's tree path; the inspector
 shows its depth, root and path length. **Fit selected source** frames its source panel.
@@ -737,3 +741,124 @@ connecting tree path, both schematic placements, source-coordinate disable/resto
 French radial geometry and synthetic 100k availability. No console warnings or
 errors were observed. As before, screen-space clarity at 100k buses still needs
 aggregation and local inspection; a lower global crossing count is only one metric.
+
+
+## MVLVmeshed switch scenarios
+
+The external `test/data/MVLVmeshed` case restores 38 switches and two lines to the
+radial Australian MV21 + 33 LV feeder collection. The complete export has **3,409
+buses, 3,098 lines, 33 transformer objects and 317 switches**. This reconstructed
+mesh overlay is not an authoritative operating model. Attribution and limitations
+remain in the external README/ANALYSIS and the catalog note (CC BY-NC-SA 4.0).
+
+The pre-existing `output/combined/original/MV_LV_combined.json` is the radial base;
+it is not this case. To export the full mesh using a working BMOPFTools environment:
+
+```sh
+julia --project=/path/to/BMOPFTools.jl --startup-file=no \
+  docs/drafts/diagram-projection/performance/export-mvlv.jl /path/to/BMOPFDraftData
+node docs/drafts/diagram-projection/performance/stage-bmopf.mjs /path/to/BMOPFDraftData/output
+node docs/drafts/diagram-projection/performance/verify-bmopf.mjs
+node docs/drafts/diagram-projection/performance/compare-switch-routing.mjs \
+  /path/to/BMOPFDraftData/output /tmp/switch-routing.json
+```
+
+The exporter writes `output/MVLVmeshed/original/MVLVmeshed.json` externally, checks
+expected equipment counts and records input DSS hashes. PowerIO's case-boundary
+checks reject the nested master's sibling redirects if imported directly. The
+helper creates a temporary include manifest at the common external `test/data`
+root, validates each redirect remains inside it, and deletes that manifest after
+import. Original DSS files stay unchanged. Tested with Julia 1.12.6, the local
+BMOPFTools project and PowerIO 0.11.1; the data repository's older scripts Manifest
+was incompatible with the current BMOPFTools checkout.
+
+This export contains **zero open switches**, despite the master's 34 explicit
+opening commands. The catalog therefore stages two named scenarios from the same
+source bytes and namespace, with separate geometry/reference hashes:
+
+| Scenario | Open / closed switches | Enabled components | Independent cycles |
+|---|---:|---:|---:|
+| Documented open ties | 34 / 283 | 1 | 6 |
+| All switches closed | 0 / 317 | 1 | 40 |
+
+Documented state applies the master's explicit `open line.<id> term=1` commands;
+all other switches retain imported state. All-closed deliberately overrides every
+switch position while retaining service status. Neither scenario infers position
+from `_OPEN` or `_CLOSED` names. The bounded command reader rejects unknown IDs,
+duplicates, ambiguous case-insensitive IDs and unsupported opening/closing forms.
+The command file hash, override policy and count changed from source accompany each
+scenario. These are complete named snapshots, not live switching controls.
+
+Switch references keep `sourceOpenSwitch`, effective `openSwitch`, and
+`outOfService`. The existing binary `states=1` / `disabled=true` means inactive
+for layout: `openSwitch || outOfService`. It does not conflate switch position
+with equipment service status in the inspector. Terminal maps remain ordered,
+paired and attached to the exact BMOPF source IDs. Scalar state applies to the
+whole equipment object; unknown position and independent pole states require the
+future PowerIO semantic projection and fail explicitly in this bounded adapter.
+Open switches have real route gaps and cannot enter the spanning forest or enabled
+non-tree circuit index. They remain discoverable with **Find switch**, including
+qualified `source/id` lookup. Closed switches are green, open/inactive routes amber;
+these are equipment drawing styles, not phase/voltage/result encodings.
+
+No buses in this export have coordinates. References retain `coordinates: null`,
+the geographic projection is marked unavailable, and `toFixture` refuses to
+fabricate a source view. Staging provides an actual tidy-tree base plus all six
+schematic variants. Source coordinates is disabled; an incoming `layout=source`
+URL falls back to Tidy tree. Changing scenario recomputes the forest offline;
+source identities are stable but bus positions and selection may change. Stable
+anchors across switching scenarios remain future work.
+
+### Routing comparison
+
+[evidence/switch-routing-comparison.json](evidence/switch-routing-comparison.json)
+contains source hashes, counts, complete aggregate diagnostics and five interleaved
+timing samples after one warm-up per routing strategy. All use Tidy tree. No raw
+source topology, bus IDs or coordinates are committed in that report.
+
+| Scenario / routes | Overlapping segment pairs | Proper crossings | Median offline ms | Segments |
+|---|---:|---:|---:|---:|
+| Documented / current | 4,769 | 708 | 2.15 | 8,562 |
+| Documented / corridor | 0 | 2,089 | 6.03 | 10,440 |
+| Documented / crossing-aware | 0 | 2,077 | 6.82 | 10,440 |
+| All closed / current | 4,747 | 768 | 1.23 | 8,484 |
+| All closed / corridor | 0 | 837 | 5.42 | 10,344 |
+| All closed / crossing-aware | 0 | 759 | 6.24 | 10,344 |
+
+Crossing counts include open routes. The current routing's lower counts do not
+account for its thousands of shared collinear segments. Both corridor options
+remove those overlaps and wire-through-busbar intersections. Crossing-aware lanes
+preserves corridor bus positions, ports, footprint and segment count, reducing
+all-closed crossings by **9.3%**. The documented scenario improves only **0.6%**:
+41 corridors retain their ordering because of open routes or exterior escapes;
+only three are eligible. This is a useful limit of the current heuristic, not a
+reason to hide open equipment or treat it as conducting. A separate presentation
+layer for inactive ties and stable scenario anchors are the next experiments.
+Geometry remains under 0.57 MiB in both scenarios. Timing is a local CPU sample,
+not an end-to-end latency guarantee.
+
+`switch-scenarios.test.mjs` covers state validation, exact family identities,
+terminal order, real gap geometry, exclusion from trees/circuit paths, service
+status, scenario non-mutation, command ambiguity and missing-coordinate behavior.
+All 41 POC tests passed; all 84 staged variants passed geometry/reference/hash
+verification, including the unchanged combined SAPN collection.
+
+
+Browser smoke evidence is in
+[evidence/switch-browser-smoke.json](evidence/switch-browser-smoke.json). One
+completed six-second camera run per scenario/route produced p95 frame intervals:
+
+| Scenario | Current | Corridor | Crossing-aware |
+|---|---:|---:|---:|
+| Documented open ties | 10.1 ms | 8.9 ms | 9.9 ms |
+| All switches closed | 8.8 ms | 9.6 ms | 9.3 ms |
+
+One interrupted corridor run is retained but excluded. These are local visible-tab
+smoke samples, not statistical throughput claims. Browser checks also covered the
+same source switch across both states, exact-ID lookup, open-switch exclusion from
+circuit inspection, closed non-tree switch endpoint/tree-path highlighting, routing
+selection retention, coordinate-free bus inspection, source-view fallback, and
+restoring the ordinary SAPN dataset controls.
+
+A final 98,633-bus SAPN crossing-aware regression run completed at 9.6 ms p95;
+its source-coordinate option remained available and switch lookup was disabled.

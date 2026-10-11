@@ -14,6 +14,7 @@ export function validateReferences(f){
   r.buses.forEach(b=>check(b,'bus'));
   r.branches.forEach((b,i)=>{
     check(b,b.family);
+    if(b.family==='switch'&&([b.openSwitch,b.sourceOpenSwitch,b.outOfService].some(v=>typeof v!=='boolean')||b.disabled!==(b.openSwitch||b.outOfService)))throw new Error('Invalid switch state reference');
     if(b.from!==f.endpoints[i*2]||b.to!==f.endpoints[i*2+1]||r.buses[b.from]?.source!==b.source||r.buses[b.to]?.source!==b.source||Number(b.disabled)!==f.states[i])throw new Error('Branch references disagree with geometry');
   });
   r.attachments.forEach(a=>{check(a,a.family);if(r.buses[a.bus]?.source!==a.source)throw new Error('Invalid attachment bus');});

@@ -843,7 +843,10 @@ keeps the UI responsive but does not reduce the underlying layout complexity.
 See the [ELK.js documentation](https://github.com/kieler/elkjs).
 
 Stable anchors and region boundaries reduce movement during expansion and edits.
-An operating-value or switch-state update normally changes appearance only.
+An operating-value update normally changes appearance only. Switch position may
+change connectivity: a topology-derived spanning forest must be invalidated or
+explicitly held as a reference layout. The MVLV scenario experiment below rebuilds
+the forest offline and can move buses between states.
 Topology edits invalidate affected projections/routes plus their dependent
 boundary constraints; never assume every edit can be isolated to one region.
 
@@ -1121,3 +1124,49 @@ This is a local heuristic with fixed placement and port ordering, not global
 crossing minimization. Remaining crossings still require circuit inspection and
 potential later port-order or escape-track experiments. See the
 [algorithm, fallbacks and measured evidence](performance/README.md#crossing-aware-lane-ordering).
+
+
+## Switch-state and mixed MV/LV mesh experiment
+
+The gallery now supports scalar BMOPF switches and the external MVLVmeshed case:
+3,409 buses, 3,098 lines, 33 transformer objects and 317 switches. It distinguishes
+imported position, effective scenario position and service status, retaining exact
+source namespaces and ordered terminal maps. Open switches remain physical
+connections in the projection, visible/selectable with a route gap, but never
+contribute to the enabled spanning forest or highlighted tree path. This equipment
+level experiment does not yet elaborate independent poles or conductor continuity.
+
+The exporter currently emits all switches closed. Two explicit snapshots prevent
+that importer behavior from silently defining the experiment: **Documented open
+ties** applies 34 opening commands from the external DSS master (6 independent
+cycles), while **All switches closed** is the intentional stress scenario (40
+cycles). Both remain connected. Raw files, complete provenance and generated
+reference/geometry files stay external or ignored; committed evidence has hashes
+and aggregate measurements. No state is inferred from equipment names. The
+[reproduction guide](performance/README.md#mvlvmeshed-switch-scenarios) records the
+conversion procedure and limitations of the reconstructed source model.
+
+This case has no coordinates. PowerIO should preserve that absence; Tellegen can
+still produce a topology diagram. The adapter requires explicit opt-in for wholly
+coordinate-free intake, preserves null coordinates, and exposes only schematic
+layouts. It rejects mixed/incomplete coverage and never synthesizes geographic
+positions. Both scenarios retain the same source namespace, even though their
+reference buffers and offline layout snapshots differ.
+
+Corridor routing removes thousands of collinear overlaps. Crossing-aware ordering
+reduces all-closed proper crossings from 837 to 759 at about 6.2 ms total offline
+layout/routing/packing. In the documented state, it reduces 2,089 to 2,077 at about
+6.8 ms: open connections trigger conservative ordering fallbacks in 41 corridors.
+These totals include inactive routes. Both corridor geometries remain below
+0.57 MiB. The result suggests a separate inactive-tie presentation policy, evaluated
+without losing discoverability or source identity; it does not justify dropping
+open equipment from the model. Circuit inspection remains useful for individual
+connections. See [aggregate evidence](performance/evidence/switch-routing-comparison.json).
+
+A state change can alter a BFS forest and move many buses. Production should
+separate operating state from layout reference state, offer stable anchors when
+comparing scenarios, and invalidate connectivity/path indexes explicitly. PowerIO
+owns authoritative pole state and connectivity semantics; Tellegen owns scenario
+presentation, drawing policy, cached route geometry and selection reconciliation.
+The gallery's scalar open/closed contract is deliberately narrower than the
+proposed PowerIO per-pole types above.

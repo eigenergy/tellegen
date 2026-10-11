@@ -3,7 +3,8 @@ import {readFile,writeFile,mkdir,rename,rm} from 'node:fs/promises';
 import {resolve,dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
-import {adaptBMOPF,combineModels,toFixture,ADAPTER_VERSION} from './bmopf-adapter.mjs';
+import {adaptBMOPF,combineModels,toFixture,datasetMetadata,referenceData,ADAPTER_VERSION} from './bmopf-adapter.mjs';
+import {parseSwitchCommands,applySwitchScenario} from './switch-scenarios.mjs';
 import {makeSchematic,validateSchematic} from './schematic.mjs';
 import {decodeFixture} from './fixture.mjs';
 const here=dirname(fileURLToPath(import.meta.url)),root=process.argv[2];
@@ -15,7 +16,8 @@ const inventory={version:1,adapterVersion:ADAPTER_VERSION,sources:[],collections
 await mkdir(pending,{recursive:true});
 try{
   async function emit(model,id,label,preparationStart){
-    const {manifest,buffer,refs}=toFixture(model,id,label);
+    const base=model.hasCoordinates===false?makeSchematic(model,{strategy:'tidy-tree'}):toFixture(model,id,label);
+    const {buffer}=base,manifest={...base.manifest,...datasetMetadata(model,id,label)},refs=referenceData(model);
     decodeFixture(manifest,buffer);
     for(const b of refs.branches)if(refs.buses[b.from].source!==b.source||refs.buses[b.to].source!==b.source)throw new Error('Cross-source connection');
     const json=JSON.stringify(refs);
@@ -39,14 +41,23 @@ try{
     const start=performance.now(),path=resolve(root,source.file);
     if(!path.startsWith(resolve(root)+'/'))throw new Error('Source path leaves external root');
     const bytes=await readFile(path),sha256=hash(bytes),model=adaptBMOPF(JSON.parse(bytes),{...source,sha256,bytes:bytes.length});
-    const m=await emit(model,source.id,source.label,start);
-    inventory.sources.push({id:source.id,file:source.file,sha256,bytes:bytes.length,buses:m.count,lines:m.lines,transformerObjects:m.transformers,attachments:m.attachments});
+    let m;
+    if(source.scenarios){
+      const commandPath=resolve(dirname(resolve(root)),source.switchCommands);
+      if(!commandPath.startsWith(dirname(resolve(root))+'/'))throw new Error('Command path leaves external repository');
+      const commandBytes=await readFile(commandPath),commands=parseSwitchCommands(commandBytes.toString(),model);
+      for(const kind of source.scenarios){
+        const scenario=applySwitchScenario(model,kind,commands,{commandFile:source.switchCommands,commandSha256:hash(commandBytes)});
+        m=await emit(scenario,`${source.id}-${kind}`,`${source.label} · ${scenario.scenario.label}`,start);
+      }
+    }else m=await emit(model,source.id,source.label,start);
+    inventory.sources.push({id:source.id,file:source.file,sha256,bytes:bytes.length,buses:m.count,lines:m.lines,transformerObjects:m.transformers,switches:m.switches,attachments:m.attachments});
     if(config.collections.some(c=>c.members.includes(source.id)))models.set(source.id,model);
   }
   for(const collection of config.collections){
     const start=performance.now(),model=combineModels(collection.members.map(id=>{if(!models.has(id))throw new Error(`Missing member ${id}`);return models.get(id);}));
     const m=await emit(model,collection.id,collection.label,start);
-    inventory.collections.push({id:collection.id,members:collection.members,buses:m.count,lines:m.lines,transformerObjects:m.transformers,attachments:m.attachments});
+    inventory.collections.push({id:collection.id,members:collection.members,buses:m.count,lines:m.lines,transformerObjects:m.transformers,switches:m.switches,attachments:m.attachments});
   }
   await writeFile(join(pending,'manifest.json'),JSON.stringify(catalog,null,2)+'\n');
   // All sources must succeed before publishing. The manifest is replaced last.
