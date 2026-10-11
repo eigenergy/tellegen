@@ -14,7 +14,8 @@ const identity=m=>({id:m.id,layoutMode:m.layoutMode??'synthetic',layout:m.layout
 const palette={dark:{line:[108,137,150,255],node:[198,207,203,255],open:[229,170,84,255],label:[238,234,225,255],bg:[23/255,27/255,32/255,1]},paper:{line:[108,125,127,255],node:[48,69,78,255],open:[178,94,0,255],label:[32,36,43,255],bg:[252/255,251/255,247/255,1]}};
 let theme='dark', fixture=null, entries=[], deck, ready=false, loading=false, request=0, abort;
 let camera={target:[0,0,0],zoom:0,minZoom:-24,maxZoom:5}, selection=null, labelData=[], run=null;
-let layoutMode=new URLSearchParams(location.search).get('layout')==='source'?'source':'schematic',traceRoot=false,pendingRestoreSelection=null;
+const requestedLayout=new URLSearchParams(location.search).get('layout');
+let layoutMode=['source','tidy-tree'].includes(requestedLayout)?requestedLayout:'schematic',traceRoot=false,pendingRestoreSelection=null;
 const viewStates=new Map();
 let pendingLoad=null,pendingSelection=null,labelTimer=0,selectionMetric=null;
 const report={version:1,started:new Date().toISOString(),renderer:`deck.gl ${VERSION} / WebGL2 / OrthographicView`,
@@ -24,7 +25,7 @@ function error(message){$('status').hidden=false;$('status').textContent=message
 function controls(){
   for(const el of document.querySelectorAll('button[data-theme], #labels, #edge-picking, #fit, #detail, #benchmark, #bus-id, #search button, #clear, #next-colocated, #trace-root, #focus-source'))el.disabled=loading||!!run||!ready||!fixture;
   for(const el of document.querySelectorAll('[data-size], #dataset'))el.disabled=loading||!!run||!ready;
-  for(const el of document.querySelectorAll('[data-layout]'))el.disabled=loading||!!run||!ready||fixture?.manifest.kind!=='bmopf'||!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.schematic;
+  for(const el of document.querySelectorAll('[data-layout]'))el.disabled=loading||!!run||!ready||fixture?.manifest.kind!=='bmopf'||(el.dataset.layout!=='source'&&!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[el.dataset.layout]);
   $('trace-root').disabled=loading||!!run||!fixture?.parent||selection?.kind!=='bus';
   $('focus-source').disabled=loading||!!run||!fixture?.refs||selection===null;
   $('stop').disabled=!run;
@@ -157,8 +158,8 @@ async function load(id,mode=layoutMode){
   $('dataset').value=id;const start=performance.now();
   try{
     const entry=entries.find(m=>m.id===id);if(!entry)throw new Error('Dataset unavailable; stage the external sources first');
-    const actualMode=entry.kind==='bmopf'&&mode==='schematic'&&entry.layouts?.schematic?'schematic':entry.kind==='bmopf'?'source':'synthetic';
-    const m={...entry,...(actualMode==='schematic'?entry.layouts.schematic:{}),layoutMode:actualMode};
+    const actualMode=entry.kind==='bmopf'&&entry.layouts?.[mode]?mode:entry.kind==='bmopf'?'source':'synthetic';
+    const m={...entry,...(entry.layouts?.[actualMode]??{}),layoutMode:actualMode};
     const reuse=previous?.manifest.id===id&&previous.manifest.refsSha256===m.refsSha256?previous.refs:null;
     for(const b of document.querySelectorAll('[data-layout]'))b.setAttribute('aria-pressed',String(b.dataset.layout===actualMode));
     const base=m.kind==='bmopf'?'local-data/':'fixtures/';
@@ -169,13 +170,13 @@ async function load(id,mode=layoutMode){
     await verify(buffer,m.sha256);if(refBuffer)await verify(refBuffer,m.refsSha256);if(token!==request)return;
     const next=decodeFixture(m,buffer);
     if(refBuffer||reuse){next.refs=reuse??JSON.parse(new TextDecoder().decode(refBuffer));validateReferences(next);}
-    if(m.layoutMode==='schematic')validateSchematic(next);
+    if(m.coordinateSpace==='schematic')validateSchematic(next);
     const decoded=performance.now();prepare(next);const prepared=performance.now();
     fixture=next;pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,submittedAt:prepared,environment:environment()};
     $('network-count').textContent=fmt(m.count);$('network-detail').textContent=m.kind==='bmopf'?`${fmt(m.lines)} lines · ${fmt(m.transformers)} transformer objects`:`${fmt(m.branches)} branches · ${fmt(m.openTies)} open ties`;
     $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON; excludes JS objects`;
-    $('canvas-title').textContent=m.label+' / '+actualMode;$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${actualMode==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
-    $('layout-summary').textContent=m.layout?`${fmt(m.layout.treeEdges)} tree edges · ${fmt(m.layout.crossLinks)} non-tree connections · ${m.layout.components.length} components · ${ms(m.layout.totalMs)} offline layout + routing. Roots choose layout direction, not power flow.`:actualMode==='source'?'Source-coordinate reference. Choose Schematic to inspect the network structure.':'Precomputed synthetic schematic.';
+    $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode);$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
+    $('layout-summary').textContent=m.layout?`${fmt(m.layout.treeEdges)} tree edges · ${fmt(m.layout.crossLinks)} non-tree connections · ${m.layout.components.length} components · ${ms(m.layout.totalMs)} offline layout + routing. Roots choose layout direction, not power flow.`:actualMode==='source'?'Source-coordinate reference. Choose Leaf order or Tidy tree to inspect the network structure.':'Precomputed synthetic schematic.';
     $('bus-id').value=next.refs?busQuery(next.refs.sources[next.refs.buses[keep?.kind==='bus'?keep.index:0].source].id,next.refs.buses[keep?.kind==='bus'?keep.index:0].id):'B000501';$('bus-id').placeholder=next.refs?'Exact source ID or source/id':'B000001';
     const url=new URL(location.href);url.searchParams.delete('size');url.searchParams.set('dataset',id);url.searchParams.set('layout',actualMode==='synthetic'?'schematic':actualMode);history.replaceState(null,'',url);
     const restored=viewStates.get(`${id}/${actualMode}`);

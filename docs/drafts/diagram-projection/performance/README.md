@@ -62,7 +62,7 @@ into this repository or the HTTP document root:
 
 ```sh
 node docs/drafts/diagram-projection/performance/stage-bmopf.mjs /absolute/path/to/BMOPFDraftData/output
-node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs docs/drafts/diagram-projection/performance/schematic.test.mjs
+node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs docs/drafts/diagram-projection/performance/schematic.test.mjs docs/drafts/diagram-projection/performance/tidy-tree.test.mjs
 node docs/drafts/diagram-projection/performance/verify-bmopf.mjs
 node docs/drafts/diagram-projection/performance/build.mjs
 ```
@@ -169,7 +169,7 @@ SAPN cases retain their provisional qualifications, including Norwood's rating h
 This experiment adds a **diagram projection parallel to Tellegen's existing
 geospatial visualizer**. Its purpose is to explain electrical structure. Source
 coordinates are a comparison reference, not the feature being improved here.
-Choose **Schematic / Source coordinates** on any staged BMOPF dataset. Selection
+Choose **Leaf order / Tidy tree / Source coordinates** on any staged BMOPF dataset. Selection
 keeps the same source identity across modes, and each mode remembers its camera.
 Use **Trace to layout root** to highlight and frame a bus's tree path; the inspector
 shows its depth, root and path length. **Fit selected source** frames its source panel.
@@ -226,8 +226,9 @@ Do not interpret a fast frame time as proof that a 100k-bus drawing is useful.
 
 ### Storage and validation
 
-Staging writes `*.schematic.bin` beside the ignored coordinate geometry and adds
-`layouts.schematic` to each local manifest entry. Both projections use the same
+Staging writes `*.schematic.bin` and `*.tidy-tree.bin` beside the ignored coordinate
+geometry and adds `layouts.schematic` and `layouts.tidy-tree` to each local manifest
+entry. All three projections use the same
 reference sidecar, bus/branch order, endpoints and state arrays. Layout metadata
 records algorithm/version, spacing, root rule, component roots/counts/bounds,
 non-tree counts and separate placement/routing timings. The source JSON, source
@@ -244,9 +245,82 @@ axis override. Each mode/hash has distinct base GPU layers.
 `schematic.test.mjs` covers coordinate independence, source-root selection,
 multiple sources, cycles, parallel edges, self loops, disabled links, disconnected
 components, transformer associations and a **100,000-bus chain** without recursive
-stack failure. `verify-bmopf.mjs` validates both layouts of all ten staged datasets,
+stack failure. `verify-bmopf.mjs` validates all three layouts of all ten staged datasets,
 including every route's original endpoints and collection isolation. Neither test
 suite claims electrical solvability or crossing-free geometry.
+
+### Tidy-tree comparison
+
+The **Tidy tree** option (`layout=tidy-tree`) is an independent iterative
+Buchheim-style implementation in `tidy-tree.mjs`, informed by the algorithm study
+of [Numair's DistributionNetworkPlots PR #4](https://github.com/frederikgeth/DistributionNetworkPlots.jl/pull/4).
+No project code or dependency was copied. The original **Leaf order** option keeps
+its `layout=schematic` URL and default behavior.
+
+Both options use exactly the same enabled BFS forest, root selection, child order,
+120-unit depth spacing, 24-unit lane gap, non-tree connections and orthogonal
+routing. Tidy placement compacts adjacent subtree contours independently within
+each component, then packs the existing source panels. It operates on the display
+spanning tree even when the electrical graph is meshed; it does not classify the
+whole collection as radial or remove ties. This deliberately isolates subtree
+placement from graph selection and routing changes.
+
+The spacing fix is in the **first-walk traversal order**: finish a child and
+apportion it against previous siblings **before entering the next sibling**.
+Running all children first and apportioning later can leave a later sibling using
+an obsolete coordinate. A seven-bus regression exercises this exact failure;
+200 deterministic uneven trees check rank separation and parent centering. Dense
+arrays, constant-time ancestor membership and iterative passes keep tidy placement
+O(V) in time and storage. Tests include 100k-bus chains and stars. Geometry uses
+Float64 during placement and Float32 for rendering; comparisons allow 0.01 diagram
+units of rounding in the nominal 24-unit gap.
+
+Reproduce the aggregate comparison without committing raw or derived network data:
+
+```sh
+node docs/drafts/diagram-projection/performance/compare-layouts.mjs /absolute/path/to/BMOPFDraftData/output /tmp/layout-comparison.json
+```
+
+The script performs one warm-up per strategy and five interleaved measured runs,
+checks identical endpoints, states and forest arrays, and records bounds, spacing,
+segment counts and positive-length collinear overlap pairs between distinct
+branches. Decode, validation and metric collection are outside the layout timer.
+The committed [offline evidence](evidence/tidy-tree-comparison.json) contains
+aggregate metrics and source hashes, without bus IDs or source coordinates.
+
+| Dataset / metric | Leaf order | Tidy tree |
+| --- | ---: | ---: |
+| French · 540 buses / Drawing height (diagram units) | 4,612.0 | 2,452.3 |
+| French · 540 buses / Routed segments | 1,179 | 1,171 |
+| French · 540 buses / Collinear overlap pairs | 268 | 261 |
+| French · 540 buses / Median layout + routing + packing (ms) | 0.653 | 0.293 |
+| SAPN combined · 98,633 buses / Drawing height (diagram units) | 433,934.0 | 115,733.6 |
+| SAPN combined · 98,633 buses / Routed segments | 264,100 | 257,138 |
+| SAPN combined · 98,633 buses / Collinear overlap pairs | 98,746 | 93,554 |
+| SAPN combined · 98,633 buses / Median layout + routing + packing (ms) | 25.882 | 36.025 |
+
+Drawing width is unchanged. Height falls **46.8% for the French feeder** and
+**73.3% for combined SAPN**. SAPN geometry falls from 10.65 to 10.47 MiB; reference
+JSON remains 49.25 MiB. The comparison ran on Apple M4 Max / arm64 / Node v24.19.0.
+Times are local five-run observations, sensitive to JIT and garbage collection,
+not acceptance budgets or browser load times.
+
+Positive-length collinear overlaps still include shared trunks, and transverse
+crossings, labels and symbol collisions are not measured by that count. Tidy tree
+improves packing; it does **not** provide collision-free equipment routing. The
+French overview shows more structure, while SAPN still needs aggregation and
+feeder/substation drill-down. A future multi-wire view must reserve terminal and
+conductor widths before routing; this bus placement alone is not a multi-wire
+layout.
+
+The [browser smoke evidence](evidence/tidy-tree-browser-smoke.json) records one
+six-second camera test per dataset/layout at a 652 × 500 CSS-pixel canvas, DPR 2,
+with labels and wire picking off. P95 frame intervals were 8.9/9.2 ms for French
+leaf-order/tidy-tree and 8.9/8.9 ms for SAPN. These refresh-rate-limited observations
+show no obvious interaction regression; they do not establish a renderer speedup.
+The French bus selection and 32-step root path were verified across modes, and
+browser diagnostics reported no warnings or errors. Mixed metadata-cache states
+make the recorded load times unsuitable as a direct cold-load comparison.
 
 ## Interaction
 

@@ -733,6 +733,31 @@ with engineers; use frame rates as a separate constraint. The exact baseline mus
 remain available to validate that an aggregate never fabricates connectivity.
 See the [layout contract and tests](performance/README.md#schematic-layout-mode).
 
+The gallery now offers **Leaf order**, **Tidy tree**, and **Source coordinates**.
+The tidy strategy changes only subtree placement on the same source-rooted BFS
+forest, keeping all original bus/equipment identities, disabled links and non-tree
+connections. Each connected component is packed independently before placing
+source panels. A mesh therefore retains its extra connections while its spanning
+tree supplies the reading structure; this is not electrical radiality analysis.
+
+An independent iterative Buchheim-style implementation separates each finished
+child subtree before starting its next sibling. This fixes the asymmetric-tree
+spacing failure found during the study of Numair's diagram algorithm. Its layout
+arrays and passes remain linear in the tree size. PowerIO supplies connectivity,
+identity and state; strategy, spacing, root selection and geometry stay in Tellegen.
+Neither the geospatial layer nor the electrical import schema changes.
+
+On the 540-bus French feeder and 98,633-bus SAPN collection, tidy packing reduces
+full drawing height by about 47% and 73%, respectively, at unchanged depth spacing.
+The [reproducible comparison](performance/README.md#tidy-tree-comparison) records
+layout timings, bus spacing, geometry size and overlap diagnostics. Parent paths,
+endpoints, states and branch roles are equal across the two schematic strategies.
+The remaining collinear route overlaps and dense SAPN overview make routing and
+semantic aggregation the next experiments. Future multi-wire expansion needs
+measured symbol/terminal footprints and conductor corridors; compact bus placement
+must not be mistaken for completed multi-wire routing.
+
+
 ### Renderer and library boundary
 
 Use a backend-independent scene/glyph contract. Prototype the interactive backend

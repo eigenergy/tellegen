@@ -1,11 +1,13 @@
 /** Deterministic topology layout. Electrical identities and endpoints are untouched. */
+import {tidyTreeLanes} from './tidy-tree.mjs';
 import {packArrays} from './fixture.mjs';
 export const SCHEMATIC_VERSION=1;
 export const NO_BRANCH=0xffffffff;
 export const ROLE={TREE:0,CROSS_LINK:1,DISABLED:2};
 export const SPACING={depth:120,leaf:24,component:160,panel:320};
 
-export function makeSchematic(model){
+export function makeSchematic(model,{strategy='leaf-order'}={}){
+  if(!['leaf-order','tidy-tree'].includes(strategy))throw new Error('Unknown schematic strategy');
   const started=performance.now(),n=model.buses.length,edges=model.branches,e=edges.length;
   const offsets=new Uint32Array(n+1);
   for(const b of edges){
@@ -48,8 +50,13 @@ export function makeSchematic(model){
     c.leaves=leaf;
   }
   for(let i=order.length-1;i>=0;i--){const u=order[i];if(firstChild[u]!==-1)positions[u*3+1]=(positions[firstChild[u]*3+1]+positions[lastChild[u]*3+1])/2;}
+  if(strategy==='tidy-tree'){
+    const {lanes,spans}=tidyTreeLanes({parent,firstChild,nextSibling,lastChild,roots:components.map(c=>c.root)});
+    for(let u=0;u<n;u++)positions[u*3+1]=lanes[u]*SPACING.leaf;
+    components.forEach((c,i)=>c.laneSpan=spans[i]);
+  }
   // Stack disconnected components within their original source, then pack source panels.
-  for(const c of components){const y=sourceHeights[c.source],width=c.maxDepth*SPACING.depth,height=(c.leaves-1)*SPACING.leaf;
+  for(const c of components){const y=sourceHeights[c.source],width=c.maxDepth*SPACING.depth,height=(c.laneSpan??(c.leaves-1))*SPACING.leaf;
     c.bounds=[0,y,width,y+height];sourceHeights[c.source]+=height+SPACING.component;sourceWidths[c.source]=Math.max(sourceWidths[c.source],width);
   }
   const columns=Math.ceil(Math.sqrt(model.sources.length)),panels=[],translations=[];
@@ -81,8 +88,8 @@ export function makeSchematic(model){
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
   for(const a of [positions,ss,tt])for(let i=0;i<a.length;i+=3){x0=Math.min(x0,a[i]);x1=Math.max(x1,a[i]);y0=Math.min(y0,a[i+1]);y1=Math.max(y1,a[i+1]);}
   const treeEdges=roles.reduce((sum,r)=>sum+(r===ROLE.TREE),0),disabledEdges=states.reduce((sum,r)=>sum+r,0);
-  return {buffer,manifest:{version:1,count:n,branches:e,segments:owners.length,bytes:buffer.byteLength,sections,bounds:[x0-80,y0-140,x1+80,y1+80],coordinateSpace:'schematic',placement:'source-rooted spanning forest; orthogonal routing',coincidentBuses:0,coincidentBranches:edges.filter(b=>b.from===b.to).length,
-    layoutMode:'schematic',panels,layout:{algorithm:'source-rooted-bfs-leaf-order',version:SCHEMATIC_VERSION,spacing:SPACING,rootRule:'First enabled voltage-source bus in canonical order per enabled component, then first canonical bus',orientation:'left to right; topological depth, not power flow',components,sourceBuses:[...declaredSources],treeEdges,crossLinks:e-treeEdges-disabledEdges,disabledEdges,maxDepth:components.reduce((max,c)=>Math.max(max,c.maxDepth),0),placementMs:placed-started,routingAndPackingMs:performance.now()-placed,totalMs:performance.now()-started}}};
+  return {buffer,manifest:{version:1,count:n,branches:e,segments:owners.length,bytes:buffer.byteLength,sections,bounds:[x0-80,y0-140,x1+80,y1+80],coordinateSpace:'schematic',placement:`source-rooted ${strategy==='tidy-tree'?'tidy':'leaf-order'} spanning forest; orthogonal routing`,coincidentBuses:0,coincidentBranches:edges.filter(b=>b.from===b.to).length,
+    layoutMode:strategy==='tidy-tree'?'tidy-tree':'schematic',panels,layout:{algorithm:`source-rooted-bfs-${strategy}`,version:SCHEMATIC_VERSION,spacing:SPACING,rootRule:'First enabled voltage-source bus in canonical order per enabled component, then first canonical bus',orientation:'left to right; topological depth, not power flow',components,sourceBuses:[...declaredSources],treeEdges,crossLinks:e-treeEdges-disabledEdges,disabledEdges,maxDepth:components.reduce((max,c)=>Math.max(max,c.maxDepth),0),placementMs:placed-started,routingAndPackingMs:performance.now()-placed,totalMs:performance.now()-started}}};
 }
 
 export function validateSchematic(f){

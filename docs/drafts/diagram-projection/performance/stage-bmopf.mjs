@@ -22,13 +22,16 @@ try{
     Object.assign(manifest,{sha256:hash(new Uint8Array(buffer)),refsSha256:hash(json),refsBytes:Buffer.byteLength(json),stagingMs:performance.now()-preparationStart});
     await writeFile(join(pending,manifest.file),new Uint8Array(buffer));
     await writeFile(join(pending,manifest.refsFile),json);
-    const schematic=makeSchematic(model);
-    Object.assign(schematic.manifest,{file:`${id}.schematic.bin`,sha256:hash(new Uint8Array(schematic.buffer))});
-    validateSchematic(decodeFixture(schematic.manifest,schematic.buffer));
-    await writeFile(join(pending,schematic.manifest.file),new Uint8Array(schematic.buffer));
-    manifest.layouts={schematic:schematic.manifest};
+    manifest.layouts={};
+    for(const [mode,strategy] of [['schematic','leaf-order'],['tidy-tree','tidy-tree']]){
+      const result=makeSchematic(model,{strategy});
+      Object.assign(result.manifest,{file:`${id}.${mode}.bin`,sha256:hash(new Uint8Array(result.buffer))});
+      validateSchematic(decodeFixture(result.manifest,result.buffer));
+      await writeFile(join(pending,result.manifest.file),new Uint8Array(result.buffer));
+      manifest.layouts[mode]=result.manifest;
+      console.log(`${id} / ${mode}: ${manifest.count} buses; ${result.manifest.layout.totalMs.toFixed(1)} ms / ${result.manifest.segments} segments`);
+    }
     catalog.push(manifest);
-    console.log(`${id}: ${manifest.count} buses, ${manifest.lines} lines, ${manifest.transformers} transformer objects; schematic ${schematic.manifest.layout.totalMs.toFixed(1)} ms / ${schematic.manifest.segments} segments`);
     return manifest;
   }
   for(const source of config.sources){
@@ -47,7 +50,7 @@ try{
   await writeFile(join(pending,'manifest.json'),JSON.stringify(catalog,null,2)+'\n');
   // All sources must succeed before publishing. The manifest is replaced last.
   await mkdir(out,{recursive:true});
-  for(const m of catalog)for(const file of [m.file,m.refsFile,m.layouts.schematic.file])await rename(join(pending,file),join(out,file));
+  for(const m of catalog)for(const file of [m.file,m.refsFile,...Object.values(m.layouts).map(l=>l.file)])await rename(join(pending,file),join(out,file));
   await rename(join(pending,'manifest.json'),join(out,'manifest.json'));
   await writeFile(join(here,'bmopf-inventory.json'),JSON.stringify(inventory,null,2)+'\n');
 }finally{await rm(pending,{recursive:true,force:true});}
