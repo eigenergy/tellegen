@@ -1009,6 +1009,35 @@ layout for a fixed input and layout configuration. A small layout prototype must
 verify port constraints and incremental placement before those are promised as
 product features.
 
+## Routing experiment: bus fan-out and corridors
+
+The gallery now separates placement (`schematic` / `tidy-tree`) from routing
+(`current` / `corridor`). Tellegen owns the bus display footprint, branch display
+ports, corridor allocation and geometry. PowerIO remains responsible for original
+bus/equipment identity, connectivity, terminal mappings and state. A display port
+on a busbar is not a new electrical terminal or node.
+
+The corridor strategy reserves space for explicit bus-owned fan-out bars, uses
+separate up/down tree-fan and mesh lane banks, and allocates each tree fan as a
+group to preserve sibling ordering when lanes are reused. Congested corridors
+widen; crowded busbar ranks can expand component height. Non-tree, parallel,
+self-loop and disabled connections retain their endpoint identities. Exterior
+tracks support links spanning components or nonadjacent depth columns.
+
+All geometry is precomputed. Rendering adds one binary busbar layer to the existing
+bus/wire layers, and picking a bar resolves to its original bus. Validation now
+checks branch endpoint ports against their owning bars and enabled-route continuity.
+The original routing remains available for comparison, and source-coordinate
+visualization stays independent.
+
+On the French feeder and combined SAPN collection, the experiment eliminates
+measured exact collinear branch overlap. It does not eliminate mesh crossings:
+SAPN retains 7,799 proper route crossings. Its wire segment count increases 18.2%
+and geometry grows from 10.47 to 16.29 MiB. See the [routing comparison and limits](performance/README.md#fan-out-and-corridor-routing) for reproducible metrics.
+Future multi-wire projection must replace these branch display ports with measured
+terminal/conductor footprints derived from the semantic projection; it must not
+interpret this fan-out as conductor continuity through transformer windings.
+
 ## Implementation sequence
 
 1. Add PowerIO identity and semantic accessor support, including terminal-role

@@ -23,13 +23,14 @@ try{
     await writeFile(join(pending,manifest.file),new Uint8Array(buffer));
     await writeFile(join(pending,manifest.refsFile),json);
     manifest.layouts={};
-    for(const [mode,strategy] of [['schematic','leaf-order'],['tidy-tree','tidy-tree']]){
-      const result=makeSchematic(model,{strategy});
-      Object.assign(result.manifest,{file:`${id}.${mode}.bin`,sha256:hash(new Uint8Array(result.buffer))});
+    for(const [mode,strategy] of [['schematic','leaf-order'],['tidy-tree','tidy-tree']])for(const routing of ['current','corridor']){
+      const key=mode+(routing==='corridor'?'-corridor':'');
+      const result=makeSchematic(model,{strategy,routing});
+      Object.assign(result.manifest,{file:`${id}.${key}.bin`,sha256:hash(new Uint8Array(result.buffer))});
       validateSchematic(decodeFixture(result.manifest,result.buffer));
       await writeFile(join(pending,result.manifest.file),new Uint8Array(result.buffer));
-      manifest.layouts[mode]=result.manifest;
-      console.log(`${id} / ${mode}: ${manifest.count} buses; ${result.manifest.layout.totalMs.toFixed(1)} ms / ${result.manifest.segments} segments`);
+      manifest.layouts[key]=result.manifest;
+      console.log(`${id} / ${key}: ${manifest.count} buses; ${result.manifest.layout.totalMs.toFixed(1)} ms / ${result.manifest.segments} segments`);
     }
     catalog.push(manifest);
     return manifest;

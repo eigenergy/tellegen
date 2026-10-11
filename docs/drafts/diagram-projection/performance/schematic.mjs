@@ -1,4 +1,5 @@
 /** Deterministic topology layout. Electrical identities and endpoints are untouched. */
+import {corridorRouting} from './corridor-routing.mjs';
 import {tidyTreeLanes} from './tidy-tree.mjs';
 import {packArrays} from './fixture.mjs';
 export const SCHEMATIC_VERSION=1;
@@ -6,8 +7,9 @@ export const NO_BRANCH=0xffffffff;
 export const ROLE={TREE:0,CROSS_LINK:1,DISABLED:2};
 export const SPACING={depth:120,leaf:24,component:160,panel:320};
 
-export function makeSchematic(model,{strategy='leaf-order'}={}){
+export function makeSchematic(model,{strategy='leaf-order',routing='current'}={}){
   if(!['leaf-order','tidy-tree'].includes(strategy))throw new Error('Unknown schematic strategy');
+  if(!['current','corridor'].includes(routing))throw new Error('Unknown routing strategy');
   const started=performance.now(),n=model.buses.length,edges=model.branches,e=edges.length;
   const offsets=new Uint32Array(n+1);
   for(const b of edges){
@@ -64,12 +66,16 @@ export function makeSchematic(model,{strategy='leaf-order'}={}){
   for(let s=0;s<model.sources.length;s++){const x=(s%columns)*cellWidth,y=Math.floor(s/columns)*cellHeight;translations.push([x,y]);panels.push({source:s,label:model.sources[s].label,bounds:[x-40,y-60,x+sourceWidths[s]+60,y+Math.max(0,sourceHeights[s]-SPACING.component)+40]});}
   for(let u=0;u<n;u++){const c=components[component[u]],t=translations[c.source];positions[u*3]+=t[0];positions[u*3+1]+=c.bounds[1]+t[1];}
   for(const c of components){const t=translations[c.source];c.bounds=c.bounds.map((v,i)=>v+t[i%2]);}
-  const placed=performance.now(),ss=[],tt=[],owners=[],endpoints=new Uint32Array(e*2),states=new Uint8Array(e);
+  const placed=performance.now();
+  const routed=routing==='corridor'?corridorRouting({model,positions,depth,component,components,roles}):null;
+  if(routed)panels.splice(0,panels.length,...routed.panels);
+  const ss=[],tt=[],owners=[],endpoints=new Uint32Array(e*2),states=new Uint8Array(e);
   function segment(a,b,owner){if(a[0]===b[0]&&a[1]===b[1])return;ss.push(a[0],a[1],0);tt.push(b[0],b[1],0);owners.push(owner);}
   for(let i=0;i<e;i++){
     const b=edges[i],a=[positions[b.from*3],positions[b.from*3+1]],z=[positions[b.to*3],positions[b.to*3+1]];
     endpoints.set([b.from,b.to],i*2);states[i]=Number(b.disabled);let points;
-    if(b.from===b.to)points=[a,[a[0]+24,a[1]],[a[0]+24,a[1]-18],[a[0],a[1]-18],z];
+    if(routed)points=routed.points(i);
+    else if(b.from===b.to)points=[a,[a[0]+24,a[1]],[a[0]+24,a[1]-18],[a[0],a[1]-18],z];
     else if(roles[i]===ROLE.TREE){const mid=(a[0]+z[0])/2;points=a[1]===z[1]?[a,z]:[a,[mid,a[1]],[mid,z[1]],z];}
     else{
       // A separate routing channel makes non-tree links visible; crossings are not junctions.
@@ -84,17 +90,40 @@ export function makeSchematic(model,{strategy='leaf-order'}={}){
       else segment(p,q,i);
     }
   }
-  const {buffer,sections}=packArrays({positions,endpoints,states,segmentSources:new Float32Array(ss),segmentTargets:new Float32Array(tt),segmentBranches:new Uint32Array(owners),parent,parentBranch,depth,component,branchRoles:roles});
+  const {buffer,sections}=packArrays({positions,endpoints,states,segmentSources:new Float32Array(ss),segmentTargets:new Float32Array(tt),segmentBranches:new Uint32Array(owners),parent,parentBranch,depth,component,branchRoles:roles,...(routed?.arrays??{})});
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
-  for(const a of [positions,ss,tt])for(let i=0;i<a.length;i+=3){x0=Math.min(x0,a[i]);x1=Math.max(x1,a[i]);y0=Math.min(y0,a[i+1]);y1=Math.max(y1,a[i+1]);}
+  for(const a of [positions,ss,tt,...(routed?[routed.arrays.busbarSources,routed.arrays.busbarTargets]:[])])for(let i=0;i<a.length;i+=3){x0=Math.min(x0,a[i]);x1=Math.max(x1,a[i]);y0=Math.min(y0,a[i+1]);y1=Math.max(y1,a[i+1]);}
   const treeEdges=roles.reduce((sum,r)=>sum+(r===ROLE.TREE),0),disabledEdges=states.reduce((sum,r)=>sum+r,0);
-  return {buffer,manifest:{version:1,count:n,branches:e,segments:owners.length,bytes:buffer.byteLength,sections,bounds:[x0-80,y0-140,x1+80,y1+80],coordinateSpace:'schematic',placement:`source-rooted ${strategy==='tidy-tree'?'tidy':'leaf-order'} spanning forest; orthogonal routing`,coincidentBuses:0,coincidentBranches:edges.filter(b=>b.from===b.to).length,
-    layoutMode:strategy==='tidy-tree'?'tidy-tree':'schematic',panels,layout:{algorithm:`source-rooted-bfs-${strategy}`,version:SCHEMATIC_VERSION,spacing:SPACING,rootRule:'First enabled voltage-source bus in canonical order per enabled component, then first canonical bus',orientation:'left to right; topological depth, not power flow',components,sourceBuses:[...declaredSources],treeEdges,crossLinks:e-treeEdges-disabledEdges,disabledEdges,maxDepth:components.reduce((max,c)=>Math.max(max,c.maxDepth),0),placementMs:placed-started,routingAndPackingMs:performance.now()-placed,totalMs:performance.now()-started}}};
+  return {buffer,manifest:{version:1,count:n,branches:e,segments:owners.length,bytes:buffer.byteLength,sections,bounds:[x0-80,y0-140,x1+80,y1+80],coordinateSpace:'schematic',placement:`source-rooted ${strategy==='tidy-tree'?'tidy':'leaf-order'} spanning forest; ${routing==='corridor'?'bus fan-out and corridor lanes':'midpoint routes'}`,coincidentBuses:0,coincidentBranches:edges.filter(b=>b.from===b.to).length,
+    routingMode:routing,routing:routed?.metadata??{algorithm:'midpoint-offsets',version:1},layoutMode:strategy==='tidy-tree'?'tidy-tree':'schematic',panels,layout:{algorithm:`source-rooted-bfs-${strategy}`,version:SCHEMATIC_VERSION,spacing:SPACING,rootRule:'First enabled voltage-source bus in canonical order per enabled component, then first canonical bus',orientation:'left to right; topological depth, not power flow',components,sourceBuses:[...declaredSources],treeEdges,crossLinks:e-treeEdges-disabledEdges,disabledEdges,maxDepth:components.reduce((max,c)=>Math.max(max,c.maxDepth),0),placementMs:placed-started,routingAndPackingMs:performance.now()-placed,totalMs:performance.now()-started}}};
 }
 
 export function validateSchematic(f){
   const m=f.manifest,n=m.count,roles=f.branchRoles;
   if(f.parent?.length!==n||f.parentBranch?.length!==n||f.depth?.length!==n||f.component?.length!==n||roles?.length!==m.branches)throw new Error('Invalid schematic arrays');
+  for(let s=0;s<m.segments;s++){const j=s*3;if(f.segmentSources[j]!==f.segmentTargets[j]&&f.segmentSources[j+1]!==f.segmentTargets[j+1])throw new Error('Non-orthogonal route');}
+  if(m.routingMode==='corridor'){
+    if(f.branchPorts?.length!==m.branches*6||f.busbarSources?.length!==n*3||f.busbarTargets?.length!==n*3)throw new Error('Missing fan-out geometry');
+    for(const a of [f.branchPorts,f.busbarSources,f.busbarTargets])if(!a.every(Number.isFinite))throw new Error('Non-finite fan-out geometry');
+    for(let u=0;u<n;u++)if(f.busbarSources[u*3]!==f.positions[u*3]||f.busbarTargets[u*3]!==f.positions[u*3]||f.busbarSources[u*3+2]!==f.positions[u*3+2]||f.busbarTargets[u*3+2]!==f.positions[u*3+2]||f.busbarSources[u*3+1]>f.positions[u*3+1]||f.busbarTargets[u*3+1]<f.positions[u*3+1])throw new Error('Invalid busbar');
+    for(let b=0;b<m.branches;b++)for(let end=0;end<2;end++){
+      const u=f.endpoints[b*2+end],k=b*6+end*3;
+      if(f.branchPorts[k]!==f.positions[u*3]||f.branchPorts[k+2]!==f.positions[u*3+2]||f.branchPorts[k+1]<f.busbarSources[u*3+1]||f.branchPorts[k+1]>f.busbarTargets[u*3+1])throw new Error('Port outside endpoint busbar');
+    }
+  }
+  let previous=-1;const seen=new Uint8Array(m.branches);
+  for(let s=0;s<m.segments;s++){
+    const b=f.segmentBranches[s],first=b!==previous,last=s===m.segments-1||f.segmentBranches[s+1]!==b;
+    if(b<previous)throw new Error('Unsorted route ownership');
+    for(let axis=0;axis<3;axis++){
+      const start=f.branchPorts?f.branchPorts[b*6+axis]:f.positions[f.endpoints[b*2]*3+axis];
+      const end=f.branchPorts?f.branchPorts[b*6+3+axis]:f.positions[f.endpoints[b*2+1]*3+axis];
+      if(first&&f.segmentSources[s*3+axis]!==start||last&&f.segmentTargets[s*3+axis]!==end)throw new Error('Route endpoint mismatch');
+      if(!first&&!f.states[b]&&f.segmentSources[s*3+axis]!==f.segmentTargets[(s-1)*3+axis])throw new Error('Discontinuous enabled route');
+    }
+    seen[b]=1;previous=b;
+  }
+  if(seen.some(x=>!x))throw new Error('Unrendered branch');
   const positions=new Set();let roots=0,trees=0,cross=0,disabled=0;
   for(let u=0;u<n;u++){
     const key=`${f.positions[u*3]},${f.positions[u*3+1]}`;if(positions.has(key))throw new Error('Overlapping schematic buses');positions.add(key);
@@ -104,5 +133,4 @@ export function validateSchematic(f){
   }
   for(let b=0;b<m.branches;b++){if(roles[b]===ROLE.TREE)trees++;else if(roles[b]===ROLE.CROSS_LINK)cross++;else if(roles[b]===ROLE.DISABLED)disabled++;else throw new Error('Unknown route role');if(Boolean(f.states[b])!==(roles[b]===ROLE.DISABLED))throw new Error('Incorrect disabled role');}
   if(trees!==n-roots||roots!==m.layout.components.length||trees!==m.layout.treeEdges||cross!==m.layout.crossLinks||disabled!==m.layout.disabledEdges)throw new Error('Forest counts mismatch');
-  for(let s=0;s<m.segments;s++){const j=s*3;if(f.segmentSources[j]!==f.segmentTargets[j]&&f.segmentSources[j+1]!==f.segmentTargets[j+1])throw new Error('Non-orthogonal route');}
 }

@@ -10,12 +10,14 @@ const busName=i=>fixture?.refs?.buses[i].id??('B'+String(i+1).padStart(6,'0'));
 const labelName=i=>busName(i).length>12?busName(i).slice(0,11)+'…':busName(i);
 const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const locationKey=(f,i)=>`${f.positions[i*3]},${f.positions[i*3+1]}`;
-const identity=m=>({id:m.id,layoutMode:m.layoutMode??'synthetic',layout:m.layout??null,kind:m.kind??'synthetic',count:m.count,sha256:m.sha256,refsSha256:m.refsSha256??null,adapterVersion:m.adapterVersion??null,sources:m.sources??[],placement:m.placement??'synthetic schematic',stagingMs:m.stagingMs??null});
+const identity=m=>({id:m.id,layoutMode:m.layoutMode??'synthetic',routingMode:m.routingMode??'current',routing:m.routing??null,layout:m.layout??null,kind:m.kind??'synthetic',count:m.count,sha256:m.sha256,refsSha256:m.refsSha256??null,adapterVersion:m.adapterVersion??null,sources:m.sources??[],placement:m.placement??'synthetic schematic',stagingMs:m.stagingMs??null});
 const palette={dark:{line:[108,137,150,255],node:[198,207,203,255],open:[229,170,84,255],label:[238,234,225,255],bg:[23/255,27/255,32/255,1]},paper:{line:[108,125,127,255],node:[48,69,78,255],open:[178,94,0,255],label:[32,36,43,255],bg:[252/255,251/255,247/255,1]}};
 let theme='dark', fixture=null, entries=[], deck, ready=false, loading=false, request=0, abort;
 let camera={target:[0,0,0],zoom:0,minZoom:-24,maxZoom:5}, selection=null, labelData=[], run=null;
 const requestedLayout=new URLSearchParams(location.search).get('layout');
 let layoutMode=['source','tidy-tree'].includes(requestedLayout)?requestedLayout:'schematic',traceRoot=false,pendingRestoreSelection=null;
+let routingMode=new URLSearchParams(location.search).get('routing')==='corridor'?'corridor':'current';
+const viewKey=m=>`${m.id}/${m.layoutMode}/${m.routingMode??'current'}`;
 const viewStates=new Map();
 let pendingLoad=null,pendingSelection=null,labelTimer=0,selectionMetric=null;
 const report={version:1,started:new Date().toISOString(),renderer:`deck.gl ${VERSION} / WebGL2 / OrthographicView`,
@@ -26,6 +28,7 @@ function controls(){
   for(const el of document.querySelectorAll('button[data-theme], #labels, #edge-picking, #fit, #detail, #benchmark, #bus-id, #search button, #clear, #next-colocated, #trace-root, #focus-source'))el.disabled=loading||!!run||!ready||!fixture;
   for(const el of document.querySelectorAll('[data-size], #dataset'))el.disabled=loading||!!run||!ready;
   for(const el of document.querySelectorAll('[data-layout]'))el.disabled=loading||!!run||!ready||fixture?.manifest.kind!=='bmopf'||(el.dataset.layout!=='source'&&!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[el.dataset.layout]);
+  for(const el of document.querySelectorAll('[data-routing]'))el.disabled=loading||!!run||!ready||!fixture?.parent||!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[layoutMode+'-corridor'];
   $('trace-root').disabled=loading||!!run||!fixture?.parent||selection?.kind!=='bus';
   $('focus-source').disabled=loading||!!run||!fixture?.refs||selection===null;
   $('stop').disabled=!run;
@@ -36,6 +39,7 @@ function detailCamera(){const m=fixture.manifest,r=Math.floor(m.regions/2),i=m.k
 function setCamera(next,updateLabels=true){camera={target:next.target,zoom:next.zoom,minZoom:-24,maxZoom:5};deck.setProps({viewState:camera});$('zoom-readout').textContent=`${(2**camera.zoom).toPrecision(3)}× · PRECOMPUTED`;if(updateLabels)scheduleLabels();}
 function prepare(f){
   const m=f.manifest;
+  if(f.busbarSources)f.busbarData={length:m.count,attributes:{getSourcePosition:{value:f.busbarSources,size:3},getTargetPosition:{value:f.busbarTargets,size:3}}};
   f.nodeData={length:m.count,attributes:{getPosition:{value:f.positions,size:3}}};
   f.segmentColors=new Uint8Array(m.segments*4); f.nodeColors=new Uint8Array(m.count*4);
   f.lineData={length:m.segments,attributes:{getSourcePosition:{value:f.segmentSources,size:3},getTargetPosition:{value:f.segmentTargets,size:3},getColor:{value:f.segmentColors,size:4,normalized:true}}};
@@ -86,6 +90,7 @@ function layers(){
   return [
     new TextLayer({...common,id:`panel-labels-${fixture.manifest.id}-${theme}`,data:panels.filter(p=>(p.bounds[2]-p.bounds[0])*2**camera.zoom>170),getPosition:s=>[s.bounds[0],s.bounds[1]-30,0],getText:s=>s.label,getColor:p.label,getSize:13,getTextAnchor:'start',getAlignmentBaseline:'bottom',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
     new LineLayer({...common,id:`branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.lineData,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false}),
+    ...(fixture.busbarData?[new LineLayer({...common,id:`busbars-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.busbarData,getColor:p.node,getWidth:2,widthUnits:'pixels',pickable:true})]:[]),
     new ScatterplotLayer({...common,id:`buses-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.nodeData,getRadius:1.9,radiusUnits:'common',radiusMinPixels:.65,radiusMaxPixels:4,pickable:true,stroked:false}),
     new ScatterplotLayer({...common,id:'layout-roots',data:roots,getPosition:d=>d.position,getRadius:4,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
     new TextLayer({...common,id:'root-labels',data:camera.zoom>-2?roots.slice(0,100):[],getPosition:d=>d.position,getText:d=>d.label,getColor:p.open,getSize:11,getPixelOffset:[-8,0],getTextAnchor:'end',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
@@ -119,7 +124,7 @@ function updateLabels(){
       if(!reserve(px,py))continue;labelData.push({position:[px,py,0],text:labelName(i)});if(labelData.length>=200)break;
     }
   }
-  $('draw-count').textContent=`${fmt(fixture.manifest.count)} buses · ${fmt(fixture.manifest.segments)} segments submitted · ${labelData.length} labels`;
+  $('draw-count').textContent=`${fmt(fixture.manifest.count)} buses · ${fmt(fixture.manifest.segments)} wire segments${fixture.busbarData?' + '+fmt(fixture.manifest.count)+' busbars':''} submitted · ${labelData.length} labels`;
   render();
 }
 function select(kind,index,started=performance.now()){
@@ -147,10 +152,10 @@ function select(kind,index,started=performance.now()){
   }
   controls();$('trace-root').textContent=traceRoot?'Show incident branches':'Trace to layout root';updateLabels();
 }
-async function load(id,mode=layoutMode){
+async function load(id,mode=layoutMode,routing=routingMode){
   const previous=fixture,keep=previous?.manifest.id===id&&selection?{...selection}:null;
-  if(previous)viewStates.set(`${previous.manifest.id}/${previous.manifest.layoutMode}`,{...camera,target:[...camera.target]});
-  layoutMode=mode;traceRoot=false;pendingRestoreSelection=keep;
+  if(previous)viewStates.set(viewKey(previous.manifest),{...camera,target:[...camera.target]});
+  layoutMode=mode;routingMode=routing;traceRoot=false;pendingRestoreSelection=keep;
   stopRun('dataset changed');const token=++request;abort?.abort();abort=new AbortController();loading=true;pendingLoad=null;selection=null;labelData=[];pendingSelection=null;selectionMetric=null;clearTimeout(labelTimer);controls();
   fixture=null;render();$('next-colocated').hidden=true;$('search-error').textContent='';
   $('test-status').textContent='Ready';$('status').hidden=false;$('status').textContent='Loading dataset…';$('frame-time').textContent='Not measured';$('frame-detail').textContent='Run the six-second camera test';$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';$('selection-time').textContent='Selection feedback: not measured';
@@ -159,7 +164,11 @@ async function load(id,mode=layoutMode){
   try{
     const entry=entries.find(m=>m.id===id);if(!entry)throw new Error('Dataset unavailable; stage the external sources first');
     const actualMode=entry.kind==='bmopf'&&entry.layouts?.[mode]?mode:entry.kind==='bmopf'?'source':'synthetic';
-    const m={...entry,...(entry.layouts?.[actualMode]??{}),layoutMode:actualMode};
+    const variant=actualMode+(routing==='corridor'?'-corridor':'');
+    const geometry=entry.layouts?.[variant]??entry.layouts?.[actualMode];
+    const actualRouting=geometry?(geometry.routingMode??'current'):'unavailable';
+    const m={...entry,...(geometry??{}),layoutMode:actualMode,routingMode:actualRouting};
+    for(const b of document.querySelectorAll('[data-routing]'))b.setAttribute('aria-pressed',String(b.dataset.routing===actualRouting));
     const reuse=previous?.manifest.id===id&&previous.manifest.refsSha256===m.refsSha256?previous.refs:null;
     for(const b of document.querySelectorAll('[data-layout]'))b.setAttribute('aria-pressed',String(b.dataset.layout===actualMode));
     const base=m.kind==='bmopf'?'local-data/':'fixtures/';
@@ -175,11 +184,11 @@ async function load(id,mode=layoutMode){
     fixture=next;pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,submittedAt:prepared,environment:environment()};
     $('network-count').textContent=fmt(m.count);$('network-detail').textContent=m.kind==='bmopf'?`${fmt(m.lines)} lines · ${fmt(m.transformers)} transformer objects`:`${fmt(m.branches)} branches · ${fmt(m.openTies)} open ties`;
     $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON; excludes JS objects`;
-    $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode);$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
-    $('layout-summary').textContent=m.layout?`${fmt(m.layout.treeEdges)} tree edges · ${fmt(m.layout.crossLinks)} non-tree connections · ${m.layout.components.length} components · ${ms(m.layout.totalMs)} offline layout + routing. Roots choose layout direction, not power flow.`:actualMode==='source'?'Source-coordinate reference. Choose Leaf order or Tidy tree to inspect the network structure.':'Precomputed synthetic schematic.';
+    $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode)+(actualRouting==='unavailable'?'':' / '+(actualRouting==='corridor'?'Fan-out + lanes':'Current routes'));$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
+    $('layout-summary').textContent=m.layout?`${fmt(m.layout.treeEdges)} tree edges · ${fmt(m.layout.crossLinks)} non-tree connections · ${m.layout.components.length} components · ${ms(m.layout.totalMs)} offline layout + routing.${m.routingMode==='corridor'?' '+m.routing.maxLanes+' peak corridor lanes.':''} Roots choose layout direction, not power flow.`:actualMode==='source'?'Source-coordinate reference. Choose Leaf order or Tidy tree to inspect the network structure.':'Precomputed synthetic schematic.';
     $('bus-id').value=next.refs?busQuery(next.refs.sources[next.refs.buses[keep?.kind==='bus'?keep.index:0].source].id,next.refs.buses[keep?.kind==='bus'?keep.index:0].id):'B000501';$('bus-id').placeholder=next.refs?'Exact source ID or source/id':'B000001';
-    const url=new URL(location.href);url.searchParams.delete('size');url.searchParams.set('dataset',id);url.searchParams.set('layout',actualMode==='synthetic'?'schematic':actualMode);history.replaceState(null,'',url);
-    const restored=viewStates.get(`${id}/${actualMode}`);
+    const url=new URL(location.href);url.searchParams.delete('size');url.searchParams.set('dataset',id);url.searchParams.set('layout',actualMode==='synthetic'?'schematic':actualMode);url.searchParams.set('routing',routingMode);history.replaceState(null,'',url);
+    const restored=viewStates.get(viewKey(m));
     let nextCamera=restored??fitCamera();
     if(keep){const i=keep.kind==='bus'?keep.index:next.endpoints[keep.index*2];nextCamera={...nextCamera,target:[next.positions[i*3],next.positions[i*3+1],0],zoom:restored?.zoom??.6};}
     setCamera(nextCamera,false);updateLabels();
@@ -229,6 +238,7 @@ for(const b of document.querySelectorAll('button[data-theme]'))b.addEventListene
   // Theme changes retire base layers in this baseline; production should patch colours.
   fixture.lineData={...fixture.lineData,attributes:{...fixture.lineData.attributes}};fixture.nodeData={...fixture.nodeData,attributes:{...fixture.nodeData.attributes}};render();});
 for(const b of document.querySelectorAll('[data-layout]'))b.addEventListener('click',()=>load(fixture.manifest.id,b.dataset.layout));
+document.querySelectorAll('[data-routing]').forEach(b=>b.addEventListener('click',()=>load(fixture.manifest.id,layoutMode,b.dataset.routing)));
 $('focus-source').addEventListener('click',focusSource);
 $('trace-root').addEventListener('click',()=>{traceRoot=!traceRoot;select('bus',selection.index);
  if(traceRoot){const path=rootPath(selection.index),indices=[selection.index,...path.edges.flatMap(b=>[fixture.endpoints[b*2],fixture.endpoints[b*2+1]])];let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
@@ -262,7 +272,7 @@ async function start(){
   deck=new Deck({canvas:$('network-canvas'),parent:$('canvas-wrap'),width:'100%',height:'100%',deviceProps:{type:'webgl'},useDevicePixels:Math.min(devicePixelRatio,2),
     views:new OrthographicView({id:'schematic',flipY:true}),viewState:camera,controller:{doubleClickZoom:true},layers:[],pickingRadius:5,
     onViewStateChange:({viewState})=>{if(run)stopRun('user interaction');setCamera({...viewState,zoom:viewState.zoomX??viewState.zoom});},
-    onClick:info=>{if(info.index<0||!fixture||loading||run)return;if(info.layer?.id.startsWith('buses-'))select('bus',info.index);else if(info.layer?.id.startsWith('branches-'))select('branch',fixture.segmentBranches[info.index]);},
+    onClick:info=>{if(info.index<0||!fixture||loading||run)return;if(info.layer?.id.startsWith('buses-')||info.layer?.id.startsWith('busbars-'))select('bus',info.index);else if(info.layer?.id.startsWith('branches-'))select('branch',fixture.segmentBranches[info.index]);},
     getCursor:({isDragging})=>isDragging?'grabbing':'crosshair',onAfterRender:afterRender,onError:e=>{stopRun('renderer error');error('Renderer error: '+e.message);},
     onLoad:()=>{ready=true;const params=new URLSearchParams(location.search),requested=params.get('dataset')??`synthetic-${params.get('size')??1000}`;load(entries.some(m=>m.id===requested)?requested:'synthetic-1000');}});
 }

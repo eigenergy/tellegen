@@ -62,7 +62,7 @@ into this repository or the HTTP document root:
 
 ```sh
 node docs/drafts/diagram-projection/performance/stage-bmopf.mjs /absolute/path/to/BMOPFDraftData/output
-node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs docs/drafts/diagram-projection/performance/schematic.test.mjs docs/drafts/diagram-projection/performance/tidy-tree.test.mjs
+node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs docs/drafts/diagram-projection/performance/schematic.test.mjs docs/drafts/diagram-projection/performance/tidy-tree.test.mjs docs/drafts/diagram-projection/performance/corridor-routing.test.mjs
 node docs/drafts/diagram-projection/performance/verify-bmopf.mjs
 node docs/drafts/diagram-projection/performance/build.mjs
 ```
@@ -228,7 +228,8 @@ Do not interpret a fast frame time as proof that a 100k-bus drawing is useful.
 
 Staging writes `*.schematic.bin` and `*.tidy-tree.bin` beside the ignored coordinate
 geometry and adds `layouts.schematic` and `layouts.tidy-tree` to each local manifest
-entry. All three projections use the same
+entry. Their `-corridor` variants add separate fan-out/corridor geometry files.
+All five geometry variants use the same
 reference sidecar, bus/branch order, endpoints and state arrays. Layout metadata
 records algorithm/version, spacing, root rule, component roots/counts/bounds,
 non-tree counts and separate placement/routing timings. The source JSON, source
@@ -245,7 +246,7 @@ axis override. Each mode/hash has distinct base GPU layers.
 `schematic.test.mjs` covers coordinate independence, source-root selection,
 multiple sources, cycles, parallel edges, self loops, disabled links, disconnected
 components, transformer associations and a **100,000-bus chain** without recursive
-stack failure. `verify-bmopf.mjs` validates all three layouts of all ten staged datasets,
+stack failure. `verify-bmopf.mjs` validates all five geometry variants of all ten staged datasets,
 including every route's original endpoints and collection isolation. Neither test
 suite claims electrical solvability or crossing-free geometry.
 
@@ -321,6 +322,99 @@ show no obvious interaction regression; they do not establish a renderer speedup
 The French bus selection and 32-step root path were verified across modes, and
 browser diagnostics reported no warnings or errors. Mixed metadata-cache states
 make the recorded load times unsuitable as a direct cold-load comparison.
+
+## Fan-out and corridor routing
+
+Choose **Current routes / Fan-out + lanes** independently of **Leaf order / Tidy
+tree**. `?dataset=french-medium&layout=tidy-tree&routing=corridor` opens the French
+comparison; use `dataset=sapn-combined` for the collection. The original routing
+remains the default, including for older URLs. Routing controls are unavailable
+for source coordinates and synthetic precomputed fixtures. Selection survives
+switches; each dataset/layout/routing combination retains its own camera.
+
+`corridor-routing.mjs` runs during local staging:
+
+1. Allocate distinct display ports, ordered by the opposite endpoint's position,
+   on the left/right sides of each original bus. A short vertical **bus-owned
+   bar** replaces overlapping branch lead-ins. Every port is part of that bus;
+   no electrical node, terminal, conductor or connection is inferred.
+2. Reserve busbar clearance within each depth rank. When necessary, scale the
+   component's vertical placement uniformly, preserving subtree shape. Round bus
+   centres to whole diagram units, and stagger left/right ports on quarter-unit
+   rows so horizontal leads cannot share the same row from opposing sides.
+3. Allocate vertical lanes in the gaps between depth columns. Upward tree fans,
+   downward tree fans and non-tree links have separate lane banks. Allocate each
+   tree fan atomically in destination order; allocating its edges independently
+   can reverse sibling lanes when tracks are reused. Clear tracks are reused via
+   heaps; corridors expand if the existing depth gap cannot hold their tracks.
+4. Retain parallel circuits and self loops as distinct routes. Long or
+   inter-component links use exterior horizontal tracks plus local escape lanes.
+   Disabled links retain a real display gap and never determine the spanning tree.
+5. Repack source panels around the routed extents. Independent source namespaces
+   remain independent. Branch routes begin/end at their owned busbar ports rather
+   than the bus-centre point; source endpoint indices and terminal maps stay exact.
+
+Preprocessing targets O((V+E) log(V+E)) time and O(V+E) storage. No routing runs in
+the browser frame loop. A third binary LineLayer draws and picks busbars as buses;
+branch segment ownership/picking stays intact. `branchPorts`, `busbarSources` and
+`busbarTargets` are local geometry arrays, not additions to the PowerIO schema.
+Validation checks finite geometry, port membership on the correct endpoint bar,
+route endpoint correspondence and enabled-route continuity. The test suite covers
+parallel circuits, loops, disconnected/disabled links, high-degree buses, a 100k
+chain, 100k concurrent interval requests, and 100 uneven radial fans with no
+measured overlaps or proper crossings.
+
+Reproduce the comparison (raw inputs stay external):
+
+```sh
+node docs/drafts/diagram-projection/performance/compare-routing.mjs /absolute/path/to/BMOPFDraftData/output /tmp/routing-comparison.json
+```
+
+The [offline evidence](evidence/corridor-routing-comparison.json) uses tidy-tree
+placement with both routing strategies, one warm-up and five interleaved measured
+runs on Apple M4 Max / Node v24.19.0. It records complete placement/routing/packing
+time; diagnostics and validation are outside the timer.
+
+| Dataset / metric | Current routes | Fan-out + lanes |
+| --- | ---: | ---: |
+| French · 540 buses / Collinear overlap pairs | 261 | 0 |
+| French · 540 buses / Proper route crossings | 0 | 0 |
+| French · 540 buses / Horizontal wires through busbar interiors | 0 | 0 |
+| French · 540 buses / Wire segments | 1,171 | 1,617 |
+| French · 540 buses / Geometry bytes | 53,300 | 91,684 |
+| French · 540 buses / Median offline preparation (ms) | 0.68 | 1.65 |
+| SAPN · 98,633 buses / Collinear overlap pairs | 93,554 | 0 |
+| SAPN · 98,633 buses / Proper route crossings | 7,803 | 7,799 |
+| SAPN · 98,633 buses / Horizontal wires through busbar interiors | 128 | 0 |
+| SAPN · 98,633 buses / Wire segments | 257,138 | 303,849 |
+| SAPN · 98,633 buses / Geometry bytes | 10,974,420 | 17,080,312 |
+| SAPN · 98,633 buses / Median offline preparation (ms) | 33.73 | 126.41 |
+
+The French drawing has unchanged width and approximately unchanged height. SAPN
+width grows 0.3% and height 6.6%; wire segment count grows 18.2%, and binary geometry
+(including busbars and ports) grows from 10.47 to 16.29 MiB. The shared 49.25 MiB
+reference JSON is unchanged. Peak corridor demand is 7 lanes for French and 10
+for SAPN. Local preparation remains outside interaction, but the additional
+payload and third layer are real memory/upload costs.
+
+Zero collinear overlap does not mean crossing-free or readable at every zoom.
+The diagnostics count positive-length exact collinear sharing, strict-interior
+perpendicular crossings, and horizontal wires through vertical bus footprints
+(current routing uses a two-unit bus-centre footprint). They exclude endpoint
+contacts; the footprints do not model equipment symbols or labels. The French
+radial case has zero measured crossings. SAPN still has 7,799, so mesh selection,
+crossing cues and local route ordering remain useful follow-up experiments.
+Subpixel separation at overview scale still needs semantic aggregation; the
+busbar ports here are branch attachments, not the future multi-wire terminals.
+
+The [browser smoke evidence](evidence/corridor-routing-browser-smoke.json) records
+one six-second camera run per dataset/routing with tidy-tree placement, a 652 × 500
+CSS-pixel canvas, DPR 2, labels off and wire picking off. P95 frame intervals were
+10.0 / 9.1 ms for French current/corridor routing, and 9.9 / 9.8 ms for SAPN.
+The added busbar layer showed no obvious interaction regression in this local,
+refresh-rate-limited run. These are not repeated acceptance benchmarks or proof
+of a speedup. Selection, root tracing, independent layout controls and canvas bus
+picking were checked; diagnostics reported no warnings or errors.
 
 ## Interaction
 

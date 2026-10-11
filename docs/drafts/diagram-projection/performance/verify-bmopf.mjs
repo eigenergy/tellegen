@@ -13,12 +13,12 @@ for(const m of [dataset,...Object.values(dataset.layouts).map(layout=>({...datas
   let previous=-1;const seen=new Uint8Array(m.branches);
   for(let s=0;s<m.segments;s++){
     const b=f.segmentBranches[s];if(b<previous)throw new Error('Unsorted segment ownership');
-    if(b!==previous){const from=f.endpoints[b*2];for(let axis=0;axis<3;axis++)if(f.segmentSources[s*3+axis]!==f.positions[from*3+axis])throw new Error('Route source mismatch');}
-    if(s===m.segments-1||f.segmentBranches[s+1]!==b){const to=f.endpoints[b*2+1];for(let axis=0;axis<3;axis++)if(f.segmentTargets[s*3+axis]!==f.positions[to*3+axis])throw new Error('Route target mismatch');}
+    if(b!==previous){const from=f.endpoints[b*2];for(let axis=0;axis<3;axis++)if(f.segmentSources[s*3+axis]!==(f.branchPorts?f.branchPorts[b*6+axis]:f.positions[from*3+axis]))throw new Error('Route source mismatch');}
+    if(s===m.segments-1||f.segmentBranches[s+1]!==b){const to=f.endpoints[b*2+1];for(let axis=0;axis<3;axis++)if(f.segmentTargets[s*3+axis]!==(f.branchPorts?f.branchPorts[b*6+3+axis]:f.positions[to*3+axis]))throw new Error('Route target mismatch');}
     previous=b;seen[b]=1;
   }
   if(seen.some(n=>n!==1))throw new Error('Unrendered branch');
-  console.log(`${m.id} / ${m.layoutMode??'source'}: hashes, namespaces, attachments, endpoint routes and ${m.count} buses verified`);
+  console.log(`${m.id} / ${m.layoutMode??'source'} / ${m.routingMode??'source'}: hashes, namespaces, attachments, endpoint routes and ${m.count} buses verified`);
 }
 }
 const combined=catalog.find(m=>m.id==='sapn-combined'),members=combined.sources.map(s=>catalog.find(m=>m.id===s.id));
