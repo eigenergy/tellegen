@@ -1,0 +1,505 @@
+{
+  "tolerances": {
+    "objective": 0.0001,
+    "voltage_v": 0.001,
+    "line_current_a": 0.01,
+    "ibr_power_va": 0.1,
+    "original_active_bound_w": 0.0001
+  },
+  "cases": [
+    {
+      "case": "30bus_LG_t01_0800",
+      "sha256": "ea7c05aa866a3f084886df1f9310f31a542aa9963934c216628ad5d10c5b14a1",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 3.375077994860476e-14,
+        "voltage_v": 3.483051210762126e-12,
+        "line_current_a": 1.2104211936482625e-11,
+        "ibr_power_va": 1.3696261331909394e-11,
+        "original_active_bound_w": 4.963083675318166e-20
+      },
+      "objective": 15.243682532390357,
+      "oracle_objective": 15.243682532390324,
+      "maximum_normalized_residual": 7.595287501119798e-16,
+      "iterations": 3,
+      "native_elapsed_s": 0.033575625,
+      "oracle_elapsed_s": 16.760818004608154,
+      "counts": {
+        "buses": 30,
+        "inverters": 28,
+        "lines": 29,
+        "loads": 28,
+        "terminals": 120
+      }
+    },
+    {
+      "case": "30bus_LG_t12_1330",
+      "sha256": "20ea37e94faa7188208aebd8a3ae503d18470b69693e96241826ea00228ebb89",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 4.263256414560601e-14,
+        "voltage_v": 8.987733679556355e-14,
+        "line_current_a": 1.4426817432597938e-13,
+        "ibr_power_va": 6.318574938445751e-12,
+        "original_active_bound_w": 0.0
+      },
+      "objective": -125.66271175820265,
+      "oracle_objective": -125.6627117582026,
+      "maximum_normalized_residual": 9.43689570931383e-15,
+      "iterations": 14,
+      "native_elapsed_s": 0.030408584,
+      "oracle_elapsed_s": 0.05051708221435547,
+      "counts": {
+        "buses": 30,
+        "inverters": 28,
+        "lines": 29,
+        "loads": 28,
+        "terminals": 120
+      }
+    },
+    {
+      "case": "30bus_LG_t25_2000",
+      "sha256": "dea833654a7e2a71e1d1d929c89a9990bdf73e02e4d9a8e7c8b2dec5994db63e",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 3.197442310920451e-14,
+        "voltage_v": 2.85913497229186e-13,
+        "line_current_a": 8.859589753552933e-13,
+        "ibr_power_va": 2.569111887426341e-12,
+        "original_active_bound_w": 5.653944922922455e-17
+      },
+      "objective": 22.08074293578447,
+      "oracle_objective": 22.080742935784503,
+      "maximum_normalized_residual": 8.881784197001252e-16,
+      "iterations": 3,
+      "native_elapsed_s": 0.023450458,
+      "oracle_elapsed_s": 0.0567479133605957,
+      "counts": {
+        "buses": 30,
+        "inverters": 28,
+        "lines": 29,
+        "loads": 28,
+        "terminals": 120
+      }
+    },
+    {
+      "case": "30bus_LN_t01_0800",
+      "sha256": "0f73a3d547765bdd681cb93b07c8f056ba0c7e376063c1d82e1ff2bad228898f",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 1.9539925233402755e-14,
+        "voltage_v": 1.2710574864626038e-13,
+        "line_current_a": 4.188928860381704e-13,
+        "ibr_power_va": 1.2434418722351986e-12,
+        "original_active_bound_w": 1.0164395367051604e-17
+      },
+      "objective": 15.243682174949543,
+      "oracle_objective": 15.243682174949562,
+      "maximum_normalized_residual": 2.5895266468855203e-15,
+      "iterations": 3,
+      "native_elapsed_s": 0.02326175,
+      "oracle_elapsed_s": 0.057058095932006836,
+      "counts": {
+        "buses": 30,
+        "inverters": 28,
+        "lines": 29,
+        "loads": 28,
+        "terminals": 120
+      }
+    },
+    {
+      "case": "30bus_LN_t12_1330",
+      "sha256": "d9991bf4939fd9aa012af71ff828d64a4f4646dd7090d514c3ac4f8e37fd4ce4",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 2.842170943040401e-14,
+        "voltage_v": 9.532931148469529e-14,
+        "line_current_a": 9.681144774731365e-14,
+        "ibr_power_va": 1.000444171950221e-11,
+        "original_active_bound_w": 0.0
+      },
+      "objective": -123.71586130458194,
+      "oracle_objective": -123.71586130458196,
+      "maximum_normalized_residual": 1.687538997430238e-14,
+      "iterations": 14,
+      "native_elapsed_s": 0.02947,
+      "oracle_elapsed_s": 0.046727895736694336,
+      "counts": {
+        "buses": 30,
+        "inverters": 28,
+        "lines": 29,
+        "loads": 28,
+        "terminals": 120
+      }
+    },
+    {
+      "case": "30bus_LN_t25_2000",
+      "sha256": "5fe03e4d02c1e5d86bd70a312e292fcb18e8ef9289fa9f5a0e881b65b79cf130",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 3.698595207879407e-09,
+        "voltage_v": 3.773883408855615e-08,
+        "line_current_a": 6.836578590004982e-09,
+        "ibr_power_va": 2.567007996842253e-07,
+        "original_active_bound_w": 3.5084782301630923e-12
+      },
+      "objective": 22.08056567644946,
+      "oracle_objective": 22.080565680148055,
+      "maximum_normalized_residual": 3.631827961025477e-15,
+      "iterations": 3,
+      "native_elapsed_s": 0.022780708,
+      "oracle_elapsed_s": 0.060790061950683594,
+      "counts": {
+        "buses": 30,
+        "inverters": 28,
+        "lines": 29,
+        "loads": 28,
+        "terminals": 120
+      }
+    },
+    {
+      "case": "99bus_LG_t01_0800",
+      "sha256": "3004f67b1eb6efe61829e732d730a12ed1818ae136ef8eae79cb1d404809bc15",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 2.4868995751603507e-14,
+        "voltage_v": 9.532931148469529e-14,
+        "line_current_a": 1.1506624801925828e-13,
+        "ibr_power_va": 1.2271115405608125e-12,
+        "original_active_bound_w": 9.064152508127471e-15
+      },
+      "objective": 31.390060062036344,
+      "oracle_objective": 31.39006006203637,
+      "maximum_normalized_residual": 1.6534497496617697e-14,
+      "iterations": 3,
+      "native_elapsed_s": 0.041389166,
+      "oracle_elapsed_s": 0.10857701301574707,
+      "counts": {
+        "buses": 99,
+        "inverters": 48,
+        "lines": 98,
+        "loads": 48,
+        "terminals": 396
+      }
+    },
+    {
+      "case": "99bus_LG_t12_1330",
+      "sha256": "ee9a70418d2ff95480a8e596a953e9ca90147b90a5adb45df983a770d8c5d725",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 0.0,
+        "voltage_v": 1.1718571004216928e-13,
+        "line_current_a": 8.644125458514252e-14,
+        "ibr_power_va": 8.640199666842818e-12,
+        "original_active_bound_w": 0.0
+      },
+      "objective": -201.1877983214615,
+      "oracle_objective": -201.1877983214615,
+      "maximum_normalized_residual": 9.992007221626409e-15,
+      "iterations": 18,
+      "native_elapsed_s": 0.092820916,
+      "oracle_elapsed_s": 0.0866389274597168,
+      "counts": {
+        "buses": 99,
+        "inverters": 48,
+        "lines": 98,
+        "loads": 48,
+        "terminals": 396
+      }
+    },
+    {
+      "case": "99bus_LG_t25_2000",
+      "sha256": "d5c4689bd4413a6ed33cb061d5e0b3920b339b49160cdffd613b45cd7a79b139",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 7.349803610168237e-08,
+        "voltage_v": 4.4780209333243226e-07,
+        "line_current_a": 4.411053556291011e-07,
+        "ibr_power_va": 3.5073265558436075e-05,
+        "original_active_bound_w": 3.8513577093127194e-08
+      },
+      "objective": 46.726492083400444,
+      "oracle_objective": 46.72649215689848,
+      "maximum_normalized_residual": 9.114848459335079e-11,
+      "iterations": 3,
+      "native_elapsed_s": 0.041784375,
+      "oracle_elapsed_s": 0.09227299690246582,
+      "counts": {
+        "buses": 99,
+        "inverters": 48,
+        "lines": 98,
+        "loads": 48,
+        "terminals": 396
+      }
+    },
+    {
+      "case": "99bus_LN_t01_0800",
+      "sha256": "afee62f8ecb6e9f6ea63697ecd0bcecb282b414a6d420f7a52222275e11f905f",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 0.0,
+        "voltage_v": 9.532931148469529e-14,
+        "line_current_a": 7.755176040171489e-14,
+        "ibr_power_va": 5.7130647070393876e-12,
+        "original_active_bound_w": 1.0842021724855044e-16
+      },
+      "objective": 31.37622169706814,
+      "oracle_objective": 31.37622169706814,
+      "maximum_normalized_residual": 4.6351811278100286e-15,
+      "iterations": 4,
+      "native_elapsed_s": 0.0446035,
+      "oracle_elapsed_s": 0.09068584442138672,
+      "counts": {
+        "buses": 99,
+        "inverters": 48,
+        "lines": 98,
+        "loads": 48,
+        "terminals": 396
+      }
+    },
+    {
+      "case": "99bus_LN_t12_1330",
+      "sha256": "ab923df80fce726062c91545fd43edaf01deb2ae5154a9e4ce9a7a06f3bc3a04",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 2.842170943040401e-14,
+        "voltage_v": 1.0247593068766006e-13,
+        "line_current_a": 4.1382633578908315e-13,
+        "ibr_power_va": 1.8195314238768077e-11,
+        "original_active_bound_w": 0.0
+      },
+      "objective": -193.94258577905686,
+      "oracle_objective": -193.94258577905688,
+      "maximum_normalized_residual": 7.993605777301127e-15,
+      "iterations": 20,
+      "native_elapsed_s": 0.107474959,
+      "oracle_elapsed_s": 0.1242988109588623,
+      "counts": {
+        "buses": 99,
+        "inverters": 48,
+        "lines": 98,
+        "loads": 48,
+        "terminals": 396
+      }
+    },
+    {
+      "case": "99bus_LN_t25_2000",
+      "sha256": "14beea112fa9618adaee3063c9e61847c90437fa961409b5bd888c0c27e63502",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 1.0623324442349258e-10,
+        "voltage_v": 2.4122176744880826e-10,
+        "line_current_a": 3.4545114564561583e-09,
+        "ibr_power_va": 9.055507826516497e-08,
+        "original_active_bound_w": 9.428951597365703e-09
+      },
+      "objective": 46.54904162873402,
+      "oracle_objective": 46.54904162884025,
+      "maximum_normalized_residual": 9.550804591640372e-11,
+      "iterations": 4,
+      "native_elapsed_s": 0.044755916,
+      "oracle_elapsed_s": 0.09589195251464844,
+      "counts": {
+        "buses": 99,
+        "inverters": 48,
+        "lines": 98,
+        "loads": 48,
+        "terminals": 396
+      }
+    },
+    {
+      "case": "538bus_LG_t01_0800",
+      "sha256": "222c9fcf9cff23e55ffbf37032cfd6288082ca074f95c9a77ff514c5695c2a75",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 3.410605131648481e-12,
+        "voltage_v": 2.4617618298907223e-11,
+        "line_current_a": 2.9436883518471483e-10,
+        "ibr_power_va": 2.016522788342398e-09,
+        "original_active_bound_w": 2.2551405187698492e-13
+      },
+      "objective": 166.15556785050785,
+      "oracle_objective": 166.15556785051126,
+      "maximum_normalized_residual": 1.0048591735576161e-14,
+      "iterations": 5,
+      "native_elapsed_s": 0.247090708,
+      "oracle_elapsed_s": 0.9394590854644775,
+      "counts": {
+        "buses": 538,
+        "inverters": 302,
+        "lines": 537,
+        "loads": 302,
+        "terminals": 2152
+      }
+    },
+    {
+      "case": "538bus_LG_t12_1330",
+      "sha256": "eaae1c8ad6906750deb102bf29e441fdbf664fec0dbdd25285c4d14ba7cc5750",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 4.547473508864641e-13,
+        "voltage_v": 1.449228509952941e-13,
+        "line_current_a": 1.3830600733622803e-12,
+        "ibr_power_va": 2.842807518043225e-11,
+        "original_active_bound_w": 0.0
+      },
+      "objective": -1024.2393456616046,
+      "oracle_objective": -1024.2393456616041,
+      "maximum_normalized_residual": 6.355287432313019e-14,
+      "iterations": 31,
+      "native_elapsed_s": 0.614141709,
+      "oracle_elapsed_s": 0.9899871349334717,
+      "counts": {
+        "buses": 538,
+        "inverters": 302,
+        "lines": 537,
+        "loads": 302,
+        "terminals": 2152
+      }
+    },
+    {
+      "case": "538bus_LG_t25_2000",
+      "sha256": "1b31eb76704c723c3eda4f196b7e62fb733a62cf59d80de89c151109968293ab",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 4.11262135457946e-11,
+        "voltage_v": 8.921613129608273e-11,
+        "line_current_a": 1.158669459387679e-09,
+        "ibr_power_va": 8.814276954132596e-08,
+        "original_active_bound_w": 8.326672684688674e-14
+      },
+      "objective": 237.28286640798012,
+      "oracle_objective": 237.282866407939,
+      "maximum_normalized_residual": 1.4217791915866692e-14,
+      "iterations": 9,
+      "native_elapsed_s": 0.340248375,
+      "oracle_elapsed_s": 1.003148078918457,
+      "counts": {
+        "buses": 538,
+        "inverters": 302,
+        "lines": 537,
+        "loads": 302,
+        "terminals": 2152
+      }
+    },
+    {
+      "case": "538bus_LN_t01_0800",
+      "sha256": "0d79615e4578628ce931caf802fef4924611122f1ec4198e4426bb66babc58fc",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 7.830180948076304e-11,
+        "voltage_v": 2.316558317126367e-10,
+        "line_current_a": 1.9400686059980912e-09,
+        "ibr_power_va": 1.9987245607484947e-08,
+        "original_active_bound_w": 2.5320717744747867e-10
+      },
+      "objective": 165.8825079169233,
+      "oracle_objective": 165.8825079170016,
+      "maximum_normalized_residual": 1.376702918332029e-11,
+      "iterations": 5,
+      "native_elapsed_s": 0.249503875,
+      "oracle_elapsed_s": 0.8685359954833984,
+      "counts": {
+        "buses": 538,
+        "inverters": 302,
+        "lines": 537,
+        "loads": 302,
+        "terminals": 2152
+      }
+    },
+    {
+      "case": "538bus_LN_t12_1330",
+      "sha256": "5a261d91263a2134204329afb3975b876ef08353190b9b5a00d554f2a5553006",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 0.0,
+        "voltage_v": 9.389069257272203e-11,
+        "line_current_a": 2.057971800717043e-09,
+        "ibr_power_va": 3.7534428908472576e-08,
+        "original_active_bound_w": 0.0
+      },
+      "objective": -959.8124971039481,
+      "oracle_objective": -959.8124971039481,
+      "maximum_normalized_residual": 6.355287432313019e-14,
+      "iterations": 68,
+      "native_elapsed_s": 1.7619315,
+      "oracle_elapsed_s": 1.1810801029205322,
+      "counts": {
+        "buses": 538,
+        "inverters": 302,
+        "lines": 537,
+        "loads": 302,
+        "terminals": 2152
+      }
+    },
+    {
+      "case": "538bus_LN_t25_2000",
+      "sha256": "791d2e7c7e314c4d286646f09f0d09ba677354f39c77c252748b198d7d8f45ae",
+      "passed": true,
+      "maximum_errors": {
+        "objective": 1.531930138298776e-11,
+        "voltage_v": 1.451336047535432e-10,
+        "line_current_a": 1.6601442838621864e-09,
+        "ibr_power_va": 8.749248082289793e-08,
+        "original_active_bound_w": 8.326672684688674e-14
+      },
+      "objective": 237.38851674353117,
+      "oracle_objective": 237.38851674351585,
+      "maximum_normalized_residual": 1.5694642960426368e-14,
+      "iterations": 11,
+      "native_elapsed_s": 0.400442541,
+      "oracle_elapsed_s": 0.9084610939025879,
+      "counts": {
+        "buses": 538,
+        "inverters": 302,
+        "lines": 537,
+        "loads": 302,
+        "terminals": 2152
+      }
+    }
+  ],
+  "provenance": {
+    "date": "2026-10-06",
+    "dataset_root": "/Users/uqfgeth/Documents/GitHub/BMOPFDraftData/benchmarks/ENWLsnapshots",
+    "dataset_git_head": "52b8da905bffa41bcae8c1c5c2ce25fc54b2a424",
+    "dataset_note": "Original files read in place; each input SHA-256 is recorded. Existing unrelated untracked files were untouched.",
+    "bmopftools_git_head": "a8b52e069bfd4a7a57434c91bc0470ac03cfdd55",
+    "powerio_api_head": "4d00b7696e0863c4a240a1d2f0a3e97ed04c739d",
+    "powerio_converter_head": "e8dcace9acd24d8db5ba24a1a5c5552d222c9c70",
+    "tellegen_code_base": "cd2caf6",
+    "probe_and_regression_commit": "dda6e3b314abaf7aa92e5ea566a1b061e38ac440",
+    "native_profile": "release-py (opt-level=3, thin LTO), macOS arm64",
+    "native_options": {
+      "acceptance_tolerance": 1e-06,
+      "max_iterations": 500,
+      "objective_scale": 1.0,
+      "power_base_va": 1000.0,
+      "voltage_base_v": 230.0
+    },
+    "oracle_options": {
+      "jump": "1.31.2",
+      "bmopftools_commit": "a8b52e069bfd4a7a57434c91bc0470ac03cfdd55",
+      "ipopt": "1.15.0",
+      "options": {
+        "tol": 1e-09,
+        "bound_relax_factor": 0,
+        "max_iter": 500,
+        "constr_viol_tol": 1e-09,
+        "print_level": 0,
+        "acceptable_iter": 0
+      },
+      "julia": "1.12.6",
+      "s_base": 1000
+    },
+    "objective_units": "currency/hour (input cost in currency/kWh)",
+    "voltage_units": "V",
+    "current_units": "A",
+    "power_units": "W + j var",
+    "timing_note": "One run per case, not a statistical speed benchmark. Native time includes parsing, preparation, expression build, solve, independent acceptance and result projection. Oracle first case includes Julia compilation."
+  },
+  "negative_control": {
+    "pre_fix_cases_rejected": 18,
+    "pre_fix_cases": 18,
+    "reason": "Dropped scalar IBR bounds; comparator checks physical references and original input availability."
+  }
+}
