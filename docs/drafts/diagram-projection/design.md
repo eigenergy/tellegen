@@ -1058,3 +1058,37 @@ interpret this fan-out as conductor continuity through transformer windings.
 The first review gate is semantic: both views must resolve to the same source
 relationships. Layout quality is the next gate, after the projection can show
 the feeder without fabricated wires, terminals or connections.
+
+## Non-tree circuit inspection experiment
+
+Structural readability also needs interaction: rerouting alone does not remove
+all mesh crossings. On combined SAPN the corridor geometry has 7,799 proper route
+crossings: zero tree/tree, 7,529 tree/non-tree and 270 non-tree/non-tree. The gallery
+therefore adds a focused circuit view before attempting global crossing reduction.
+
+Tellegen owns the inspection state, the chosen display spanning forest, the
+endpoint-to-endpoint tree path and its overlays. PowerIO continues to own exact
+source identities, terminal maps and equipment state. A non-tree role is never an
+open/closed or energized/de-energized classification. Transformer associations in
+a highlighted cycle do not assert conductor continuity between windings.
+
+The interaction combines a bounded, searchable non-tree connection selector,
+source-preserving inspector, A/B endpoint markers, a selected-route halo, optional
+connecting tree-path and busbar highlights, context dimming and separate fits for
+the connection or complete circuit. The path stops at the common ancestor and
+does not highlight an unrelated shared route to the root. Source-coordinate views
+have no display-tree inspection; the schematic modes share the same forest and
+retain selected equipment when switching geometry.
+
+All base geometry stays resident. The connection index is prepared once; route
+segments come from the existing branch segment index. Path construction and cached
+overlays cost O(path length), and dimming changes layer opacity. A constant number
+of overlay layers avoids per-equipment layer growth. No layout or global crossing
+computation runs on selection or camera movement. Full-path rendering still scales
+with path length; aggregation of very long selected paths remains future work.
+
+Combined SAPN has 2,655 eligible connections; the longest connecting path has 145
+tree branches. All paths were verified against source endpoint indices and the
+spanning forest. See [inspection implementation and measurements](performance/README.md#non-tree-circuit-inspection)
+for reproducible tests, browser observations and limits. Crossing-aware local lane
+ordering and selected/visible crossing decorations remain separate experiments.

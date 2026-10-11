@@ -8,3 +8,5 @@
 .source-notes{margin:10px 0 18px;color:var(--muted);font-size:12px}.source-notes summary{cursor:pointer}.legend-line.transformer{margin-left:18px}
 
 .layout-bar{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin:14px 0}.layout-bar .view-control{flex:0 0 auto;min-height:40px}.layout-bar .fine{flex:1;min-width:220px}.legend-line.mesh{background:rgb(66,159,181);margin-left:12px}
+
+.circuit-browser{border:1px solid var(--line);border-radius:6px;padding:16px 20px;margin:18px 0;background:var(--paper)}#mesh-search,.circuit-navigation{display:flex;align-items:center;gap:10px;margin:10px 0}#mesh-search label{font-size:12px;white-space:nowrap}#mesh-query,#mesh-results{min-width:0;flex:1;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:9px;font:12px var(--font-mono)}.circuit-browser .actions{margin:12px 0}.circuit-description{border-top:1px solid var(--line);padding-top:12px}@media(max-width:680px){.circuit-navigation{flex-wrap:wrap}#mesh-results{flex-basis:100%;order:-1}.circuit-browser{padding:14px}}

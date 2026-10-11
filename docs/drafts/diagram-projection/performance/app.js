@@ -3,6 +3,7 @@ import {LineLayer,ScatterplotLayer,TextLayer} from '@deck.gl/layers';
 import {decodeFixture} from './fixture.mjs';
 import {busQuery,sourceKey} from './bmopf-adapter.mjs';
 import {validateSchematic,NO_BRANCH} from './schematic.mjs';
+import {nonTreeBranches,inspectCircuit,branchSegments,overlayBounds} from './circuit-inspection.mjs';
 import {validateReferences} from './bmopf-references.mjs';
 
 const $=id=>document.getElementById(id), fmt=n=>n.toLocaleString(), ms=n=>`${n.toFixed(1)} ms`;
@@ -20,9 +21,11 @@ let routingMode=new URLSearchParams(location.search).get('routing')==='corridor'
 const viewKey=m=>`${m.id}/${m.layoutMode}/${m.routingMode??'current'}`;
 const viewStates=new Map();
 let pendingLoad=null,pendingSelection=null,labelTimer=0,selectionMetric=null;
-const report={version:1,started:new Date().toISOString(),renderer:`deck.gl ${VERSION} / WebGL2 / OrthographicView`,
+let circuit=null,overlay=[],pathOverlay=[],pathBars=[],endpointData=[],meshMatches=[],meshCursor=-1;
+const isInspecting=()=>!!circuit&&$('inspect-circuit').checked;
+const report={version:2,started:new Date().toISOString(),renderer:`deck.gl ${VERSION} / WebGL2 / OrthographicView`,
   methodology:'Precomputed synthetic or BMOPF geometry; identity and placement recorded per dataset. No CPU culling or aggregation. Frame intervals from deck.gl onAfterRender; not GPU timer queries. First-draw callback is not a GPU completion fence.',
-  environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemoryGiB:navigator.deviceMemory??null},loads:[],runs:[]};
+  environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemoryGiB:navigator.deviceMemory??null},loads:[],runs:[],selections:[]};
 function error(message){$('status').hidden=false;$('status').textContent=message;loading=false;pendingLoad=null;controls();}
 function controls(){
   for(const el of document.querySelectorAll('button[data-theme], #labels, #edge-picking, #fit, #detail, #benchmark, #bus-id, #search button, #clear, #next-colocated, #trace-root, #focus-source'))el.disabled=loading||!!run||!ready||!fixture;
@@ -31,9 +34,14 @@ function controls(){
   for(const el of document.querySelectorAll('[data-routing]'))el.disabled=loading||!!run||!ready||!fixture?.parent||!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[layoutMode+'-corridor'];
   $('trace-root').disabled=loading||!!run||!fixture?.parent||selection?.kind!=='bus';
   $('focus-source').disabled=loading||!!run||!fixture?.refs||selection===null;
+  const unavailable=loading||!!run||!fixture?.meshBranches?.length;
+  for(const id of ['inspect-circuit','mesh-query','mesh-search-button'])$(id).disabled=unavailable;
+  for(const id of ['mesh-prev','mesh-next','mesh-results'])$(id).disabled=unavailable||!meshMatches.length;
+  for(const id of ['show-tree-path','dim-context','fit-connection','fit-circuit'])$(id).disabled=loading||!!run||!isInspecting();
+  $('fit-circuit').disabled||=!circuit?.connected;
   $('stop').disabled=!run;
 }
-function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme};}
+function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
 function fitCamera(){const b=fixture.manifest.bounds,r=$('canvas-wrap').getBoundingClientRect();return {...camera,target:[(b[0]+b[2])/2,(b[1]+b[3])/2,0],zoom:Math.log2(Math.min((r.width-70)/(b[2]-b[0]),(r.height-95)/(b[3]-b[1])))};}
 function detailCamera(){const m=fixture.manifest,r=Math.floor(m.regions/2),i=m.kind==='bmopf'?Math.floor(m.count/2):r*m.regionSize+2;return {...camera,target:[fixture.positions[i*3]+200,fixture.positions[i*3+1],0],zoom:0.6};}
 function setCamera(next,updateLabels=true){camera={target:next.target,zoom:next.zoom,minZoom:-24,maxZoom:5};deck.setProps({viewState:camera});$('zoom-readout').textContent=`${(2**camera.zoom).toPrecision(3)}× · PRECOMPUTED`;if(updateLabels)scheduleLabels();}
@@ -64,6 +72,7 @@ function prepare(f){
     });
     for(const a of f.refs.attachments){if(!f.attachmentsByBus.has(a.bus))f.attachmentsByBus.set(a.bus,[]);f.attachmentsByBus.get(a.bus).push(a);}
   }
+  f.meshBranches=nonTreeBranches(f);f.ownedBytes+=f.meshBranches.byteLength;
   colour(f);
 }
 function colour(f){const p=palette[theme];for(let s=0;s<f.manifest.segments;s++){const b=f.segmentBranches[s];f.segmentColors.set(f.states[b]?p.open:f.refs?.branches[b].family==='transformer'?[141,124,209,255]:f.branchRoles?.[b]===1?[66,159,181,255]:p.line,s*4);}for(let i=0;i<f.manifest.count;i++)f.nodeColors.set(!f.refs&&i%f.manifest.regionSize===0?p.open:p.node,i*4);}
@@ -73,15 +82,46 @@ function focusSource(){const row=selection.kind==='bus'?fixture.refs.buses[selec
  const b=fixture.manifest.panels?.find(p=>p.source===source)?.bounds??fixture.refs.sources[source].displayBounds??fixture.manifest.bounds,r=$('canvas-wrap').getBoundingClientRect();
  setCamera({...camera,target:[(b[0]+b[2])/2,(b[1]+b[3])/2,0],zoom:Math.log2(Math.min((r.width-70)/(b[2]-b[0]+80),(r.height-95)/(b[3]-b[1]+80)))});
 }
-function selectedSegments(){
-  if(!selection)return [];
+function refreshOverlay(){
+  circuit=null;overlay=[];pathOverlay=[];pathBars=[];endpointData=[];
+  if(!selection)return;
   const branches=selection.kind==='branch'?[selection.index]:traceRoot&&fixture.parent?rootPath(selection.index).edges:fixture.incidents.subarray(fixture.offsets[selection.index],fixture.offsets[selection.index+1]);
-  const segments=[];
-  for(const b of branches)for(let s=fixture.firstSegment[b];s<fixture.firstSegment[b+1];s++)segments.push({source:fixture.segmentSources.subarray(s*3,s*3+3),target:fixture.segmentTargets.subarray(s*3,s*3+3)});
-  return segments;
+  overlay=branchSegments(fixture,branches);
+  if(selection.kind==='branch'&&fixture.parent&&fixture.branchRoles[selection.index]===1&&!fixture.states[selection.index]){
+    circuit=inspectCircuit(fixture,selection.index);
+    pathOverlay=branchSegments(fixture,circuit.edges);
+    if(fixture.busbarSources)pathBars=circuit.nodes.map(i=>({source:fixture.busbarSources.subarray(i*3,i*3+3),target:fixture.busbarTargets.subarray(i*3,i*3+3)}));
+    endpointData=[...new Set(circuit.endpoints)].map((i,j)=>({position:fixture.positions.subarray(i*3,i*3+3),end:j===1,text:`${circuit.endpoints[0]===circuit.endpoints[1]?'A / B':j?'B':'A'} · ${busName(i).length>20?busName(i).slice(0,8)+'…'+busName(i).slice(-6):busName(i)}`}));
+  }
+}
+function fitInspection(includePath){
+  if(!circuit)return;
+  const bounds=overlayBounds(fixture,includePath&&circuit.connected?circuit.nodes:circuit.endpoints,includePath?[...overlay,...pathOverlay]:overlay),[x0,y0,x1,y1]=bounds,r=$('canvas-wrap').getBoundingClientRect();
+  setCamera({...camera,target:[(x0+x1)/2,(y0+y1)/2,0],zoom:Math.min(1.5,Math.log2(Math.min(Math.max(50,r.width-130)/(x1-x0+50),Math.max(50,r.height-150)/(y1-y0+50))))});
+}
+function meshLabel(b){const row=fixture.refs.branches[b];return `${fixture.refs.sources[row.source].label} / ${row.family}${row.kind?' / '+row.kind:''} / ${row.id} · ${busName(row.from)} ↔ ${busName(row.to)}`;}
+function showMeshPage(){
+  const start=Math.max(0,Math.floor(Math.max(0,meshCursor)/40)*40),end=Math.min(meshMatches.length,start+40),select=$('mesh-results');
+  select.replaceChildren();
+  const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a non-tree connection';select.append(placeholder);
+  for(let i=start;i<end;i++){const option=document.createElement('option');option.value=String(i);option.textContent=`${i+1}. ${meshLabel(meshMatches[i])}`;select.append(option);}
+  select.value=meshCursor<0?'':String(meshCursor);
+  $('mesh-count').textContent=!fixture?.parent?'Choose a schematic BMOPF layout to inspect its display tree.':!fixture.meshBranches.length?'This display forest has no enabled non-tree connections.':`${fmt(meshMatches.length)} matching / ${fmt(fixture.meshBranches.length)} non-tree connections · ${meshCursor<0?'none selected':'selected '+(meshCursor+1)} · results ${meshMatches.length?start+1:0}–${end}. Previous / next visits every match.`;
+  controls();
+}
+function filterMesh(){
+  const query=$('mesh-query').value.trim().toLocaleLowerCase();
+  meshMatches=Array.from(fixture?.meshBranches??[]).filter(b=>!query||meshLabel(b).toLocaleLowerCase().includes(query));
+  meshCursor=selection?.kind==='branch'?meshMatches.indexOf(selection.index):-1;showMeshPage();
+}
+function chooseMesh(i){
+  if(!meshMatches.length||loading||run)return;
+  meshCursor=(i+meshMatches.length)%meshMatches.length;$('inspect-circuit').checked=true;
+  select('branch',meshMatches[meshCursor]);fitInspection($('show-tree-path').checked);
 }
 function layers(){
   if(!fixture)return [];
+  const inspecting=isInspecting(),contextOpacity=inspecting&&$('dim-context').checked ? 0.2 : 1;
   const p=palette[theme],common={coordinateSystem:COORDINATE_SYSTEM.CARTESIAN,parameters:{depthCompare:'always'}};
   const nodeSelection=selection?.kind==='bus'?[{position:fixture.positions.subarray(selection.index*3,selection.index*3+3)}]:[];
   const panels=fixture.manifest.panels??(fixture.refs?.sources??[]).filter(s=>s.displayBounds).map(s=>({...s,bounds:s.displayBounds}));
@@ -89,12 +129,17 @@ function layers(){
   const roots=[...new Set([...(layout?.sourceBuses??[]),...(layout?.components??[]).map(c=>c.root)])].map(i=>({position:fixture.positions.subarray(i*3,i*3+3),label:sourceRoots.has(i)?'Source':'Layout root'}));
   return [
     new TextLayer({...common,id:`panel-labels-${fixture.manifest.id}-${theme}`,data:panels.filter(p=>(p.bounds[2]-p.bounds[0])*2**camera.zoom>170),getPosition:s=>[s.bounds[0],s.bounds[1]-30,0],getText:s=>s.label,getColor:p.label,getSize:13,getTextAnchor:'start',getAlignmentBaseline:'bottom',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
-    new LineLayer({...common,id:`branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.lineData,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false}),
-    ...(fixture.busbarData?[new LineLayer({...common,id:`busbars-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.busbarData,getColor:p.node,getWidth:2,widthUnits:'pixels',pickable:true})]:[]),
-    new ScatterplotLayer({...common,id:`buses-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.nodeData,getRadius:1.9,radiusUnits:'common',radiusMinPixels:.65,radiusMaxPixels:4,pickable:true,stroked:false}),
-    new ScatterplotLayer({...common,id:'layout-roots',data:roots,getPosition:d=>d.position,getRadius:4,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
-    new TextLayer({...common,id:'root-labels',data:camera.zoom>-2?roots.slice(0,100):[],getPosition:d=>d.position,getText:d=>d.label,getColor:p.open,getSize:11,getPixelOffset:[-8,0],getTextAnchor:'end',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
-    new LineLayer({...common,id:'selection-lines',data:selectedSegments(),getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.open,getWidth:2.5,pickable:false}),
+    new LineLayer({...common,id:`branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.lineData,opacity:contextOpacity,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false}),
+    ...(fixture.busbarData?[new LineLayer({...common,id:`busbars-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.busbarData,opacity:contextOpacity,getColor:p.node,getWidth:2,widthUnits:'pixels',pickable:true})]:[]),
+    new ScatterplotLayer({...common,id:`buses-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.nodeData,opacity:contextOpacity,getRadius:1.9,radiusUnits:'common',radiusMinPixels:.65,radiusMaxPixels:4,pickable:true,stroked:false}),
+    new ScatterplotLayer({...common,id:'layout-roots',data:roots,opacity:contextOpacity,getPosition:d=>d.position,getRadius:4,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
+    new TextLayer({...common,id:'root-labels',data:!inspecting&&camera.zoom>-2?roots.slice(0,100):[],getPosition:d=>d.position,getText:d=>d.label,getColor:p.open,getSize:11,getPixelOffset:[-8,0],getTextAnchor:'end',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
+    new LineLayer({...common,id:'circuit-tree-path',data:inspecting&&$('show-tree-path').checked?pathOverlay:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.open,getWidth:2.5,pickable:false}),
+    new LineLayer({...common,id:'circuit-tree-bars',data:inspecting&&$('show-tree-path').checked?pathBars:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.open,getWidth:3,pickable:false}),
+    new LineLayer({...common,id:'connection-halo',data:inspecting?overlay:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),getWidth:7,pickable:false}),
+    new LineLayer({...common,id:'selection-lines',data:overlay,getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:inspecting?[66,159,181,255]:p.open,getWidth:inspecting?3:2.5,pickable:false}),
+    new ScatterplotLayer({...common,id:'circuit-endpoints',data:inspecting?endpointData:[],getPosition:d=>d.position,getRadius:6,radiusUnits:'pixels',getFillColor:[66,159,181,255],stroked:true,getLineColor:p.label,lineWidthUnits:'pixels',getLineWidth:1.5,pickable:false}),
+    new TextLayer({...common,id:'circuit-endpoint-labels',data:inspecting?endpointData:[],getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,getPixelOffset:d=>[d.position[0]>camera.target[0]?-10:10,d.end?22:-12],getTextAnchor:d=>d.position[0]>camera.target[0]?'end':'start',getAlignmentBaseline:'bottom',updateTriggers:{getPixelOffset:camera.target[0],getTextAnchor:camera.target[0]},fontFamily:'Plex, monospace',characterSet:'auto',background:true,getBackgroundColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),backgroundPadding:[4,3],pickable:false}),
     new ScatterplotLayer({...common,id:'selection-bus',data:nodeSelection,getPosition:d=>d.position,getRadius:6,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
     new TextLayer({...common,id:'labels',data:labelData,getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,sizeUnits:'pixels',fontFamily:'Plex, monospace',characterSet:'auto',fontSettings:{sdf:true},getTextAnchor:'start',getAlignmentBaseline:'bottom',getPixelOffset:[5,-5],pickable:false})
   ];
@@ -129,6 +174,7 @@ function updateLabels(){
 }
 function select(kind,index,started=performance.now()){
   if(run||loading)return;if(selection?.kind!==kind||selection?.index!==index)traceRoot=false;selection={kind,index};pendingSelection=started;
+  refreshOverlay();meshCursor=circuit?meshMatches.indexOf(index):-1;showMeshPage();
   $('next-colocated').hidden=true;
   if(fixture.refs){
     const refs=fixture.refs,row=kind==='bus'?refs.buses[index]:refs.branches[index],source=refs.sources[row.source];
@@ -142,6 +188,7 @@ function select(kind,index,started=performance.now()){
       content+=`<details><summary>${attachments.length} source attachments</summary>${attachments.slice(0,100).map(a=>`<p>${escape(a.family)} / ${escape(a.id)} · terminals ${escape(a.terminalMap.join(', '))}${a.disabled?' · disabled':''}</p>`).join('')}${attachments.length>100?'<p>First 100 shown; all retained in reference data.</p>':''}</details>`;
       $('next-colocated').hidden=members.length<2;
     }else content+=`<p>${escape(busName(row.from))} → ${escape(busName(row.to))}<br>Terminal maps: ${escape(row.terminalMapFrom.join(', '))} → ${escape(row.terminalMapTo.join(', '))}<br>${row.disabled?'Disabled · display gap':'Enabled'}${fixture.positions[row.from*3]===fixture.positions[row.to*3]&&fixture.positions[row.from*3+1]===fixture.positions[row.to*3+1]?' · coincident endpoints, display detour':''}${fixture.branchRoles?'<br>Layout role: '+['tree edge','non-tree connection','disabled link'][fixture.branchRoles[index]]:''}</p><p>${row.family==='transformer'?'Equipment association; does not imply interwinding conductor continuity.':'Conductor bundle; terminal order preserved.'}</p>`;
+    if(isInspecting())content+=`<div class="circuit-description"><p><strong>A</strong> · ${escape(busName(circuit.endpoints[0]))}<br><strong>B</strong> · ${escape(busName(circuit.endpoints[1]))}</p><p>${circuit.connected?`${circuit.edges.length} tree branches connect the endpoints via common ancestor ${escape(busName(circuit.ancestor))}.`:'Endpoints belong to different display components; no connecting tree path.'}</p><p class="fine">Cyan: selected connection · amber: connecting tree path. This is a circuit in the display spanning forest, not a power-flow or conductor-continuity result. Crossings are not junctions.</p></div>`;
     $('selection').innerHTML=content;
   }else if(kind==='bus'){
     const degree=fixture.offsets[index+1]-fixture.offsets[index];
@@ -156,7 +203,7 @@ async function load(id,mode=layoutMode,routing=routingMode){
   const previous=fixture,keep=previous?.manifest.id===id&&selection?{...selection}:null;
   if(previous)viewStates.set(viewKey(previous.manifest),{...camera,target:[...camera.target]});
   layoutMode=mode;routingMode=routing;traceRoot=false;pendingRestoreSelection=keep;
-  stopRun('dataset changed');const token=++request;abort?.abort();abort=new AbortController();loading=true;pendingLoad=null;selection=null;labelData=[];pendingSelection=null;selectionMetric=null;clearTimeout(labelTimer);controls();
+  stopRun('dataset changed');const token=++request;abort?.abort();abort=new AbortController();loading=true;pendingLoad=null;selection=null;refreshOverlay();meshMatches=[];meshCursor=-1;showMeshPage();labelData=[];pendingSelection=null;selectionMetric=null;clearTimeout(labelTimer);controls();
   fixture=null;render();$('next-colocated').hidden=true;$('search-error').textContent='';
   $('test-status').textContent='Ready';$('status').hidden=false;$('status').textContent='Loading dataset…';$('frame-time').textContent='Not measured';$('frame-detail').textContent='Run the six-second camera test';$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';$('selection-time').textContent='Selection feedback: not measured';
   for(const b of document.querySelectorAll('[data-size]'))b.setAttribute('aria-pressed',String(`synthetic-${b.dataset.size}`===id));
@@ -181,7 +228,7 @@ async function load(id,mode=layoutMode,routing=routingMode){
     if(refBuffer||reuse){next.refs=reuse??JSON.parse(new TextDecoder().decode(refBuffer));validateReferences(next);}
     if(m.coordinateSpace==='schematic')validateSchematic(next);
     const decoded=performance.now();prepare(next);const prepared=performance.now();
-    fixture=next;pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,submittedAt:prepared,environment:environment()};
+    fixture=next;if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,submittedAt:prepared,environment:environment()};
     $('network-count').textContent=fmt(m.count);$('network-detail').textContent=m.kind==='bmopf'?`${fmt(m.lines)} lines · ${fmt(m.transformers)} transformer objects`:`${fmt(m.branches)} branches · ${fmt(m.openTies)} open ties`;
     $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON; excludes JS objects`;
     $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode)+(actualRouting==='unavailable'?'':' / '+(actualRouting==='corridor'?'Fan-out + lanes':'Current routes'));$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
@@ -203,7 +250,7 @@ function afterRender(){
     $('status').hidden=true;loading=false;controls();
     if(pendingRestoreSelection){restore=pendingRestoreSelection;pendingRestoreSelection=null;}
   }
-  if(pendingSelection!==null){selectionMetric=now-pendingSelection;pendingSelection=null;$('selection-time').textContent=`Selection → draw callback: ${ms(selectionMetric)}`;}
+  if(pendingSelection!==null){selectionMetric=now-pendingSelection;pendingSelection=null;report.selections.push({dataset:fixture.manifest.id,layoutMode:fixture.manifest.layoutMode,routingMode:fixture.manifest.routingMode,kind:selection?.kind,index:selection?.index,feedbackMs:selectionMetric,inspection:environment().inspection});$('selection-time').textContent=`Selection → draw callback: ${ms(selectionMetric)}`;}
   if(run){if(run.last!==null)run.intervals.push(now-run.last);run.last=now;}
   if(restore)select(restore.kind,restore.index);
 }
@@ -245,11 +292,22 @@ $('trace-root').addEventListener('click',()=>{traceRoot=!traceRoot;select('bus',
  for(const i of indices){x0=Math.min(x0,fixture.positions[i*3]);x1=Math.max(x1,fixture.positions[i*3]);y0=Math.min(y0,fixture.positions[i*3+1]);y1=Math.max(y1,fixture.positions[i*3+1]);}
  const r=$('canvas-wrap').getBoundingClientRect();setCamera({...camera,target:[(x0+x1)/2,(y0+y1)/2,0],zoom:Math.min(1.5,Math.log2(Math.min((r.width-100)/(x1-x0+100),(r.height-100)/(y1-y0+100))))});}
 });
+$('mesh-search').addEventListener('submit',e=>{e.preventDefault();if(!loading&&!run)filterMesh();});
+$('mesh-results').addEventListener('change',()=>{if($('mesh-results').value!=='')chooseMesh(Number($('mesh-results').value));});
+$('mesh-prev').addEventListener('click',()=>chooseMesh(meshCursor<0?meshMatches.length-1:meshCursor-1));
+$('mesh-next').addEventListener('click',()=>chooseMesh(meshCursor+1));
+$('inspect-circuit').addEventListener('change',()=>{
+  if($('inspect-circuit').checked&&!circuit){chooseMesh(meshCursor<0?0:meshCursor);return;}
+  if(selection)select(selection.kind,selection.index);else {controls();render();}
+});
+for(const id of ['show-tree-path','dim-context'])$(id).addEventListener('change',()=>{pendingSelection=performance.now();render();});
+$('fit-connection').addEventListener('click',()=>fitInspection(false));
+$('fit-circuit').addEventListener('click',()=>fitInspection(true));
 $('dataset').addEventListener('change',()=>load($('dataset').value));
 $('next-colocated').addEventListener('click',()=>{if(selection?.kind!=='bus')return;const members=fixture.locations.get(locationKey(fixture,selection.index));select('bus',members[(members.indexOf(selection.index)+1)%members.length]);});
 $('labels').addEventListener('change',updateLabels);$('edge-picking').addEventListener('change',render);
 $('fit').addEventListener('click',()=>setCamera(fitCamera()));$('detail').addEventListener('click',()=>setCamera(detailCamera()));
-$('clear').addEventListener('click',()=>{selection=null;traceRoot=false;controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';updateLabels();});
+$('clear').addEventListener('click',()=>{selection=null;traceRoot=false;refreshOverlay();meshCursor=-1;showMeshPage();controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';updateLabels();});
 $('search').addEventListener('submit',e=>{e.preventDefault();if(!fixture||run||loading)return;const started=performance.now(),value=$('bus-id').value.trim();$('search-error').textContent='';let i;
   if(fixture.refs){
     const raw=fixture.rawBusIds.get(value)??[];

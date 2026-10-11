@@ -62,7 +62,7 @@ into this repository or the HTTP document root:
 
 ```sh
 node docs/drafts/diagram-projection/performance/stage-bmopf.mjs /absolute/path/to/BMOPFDraftData/output
-node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs docs/drafts/diagram-projection/performance/schematic.test.mjs docs/drafts/diagram-projection/performance/tidy-tree.test.mjs docs/drafts/diagram-projection/performance/corridor-routing.test.mjs
+node --test docs/drafts/diagram-projection/performance/bmopf.test.mjs docs/drafts/diagram-projection/performance/schematic.test.mjs docs/drafts/diagram-projection/performance/tidy-tree.test.mjs docs/drafts/diagram-projection/performance/corridor-routing.test.mjs docs/drafts/diagram-projection/performance/circuit-inspection.test.mjs
 node docs/drafts/diagram-projection/performance/verify-bmopf.mjs
 node docs/drafts/diagram-projection/performance/build.mjs
 ```
@@ -534,3 +534,90 @@ Final-build browser checks verified the same French LV bus and terminal declarat
 across modes, positive selection-feedback timing, a framed 32-step root path,
 interactive zoom followed by Fit, and visible geometry in both SAPN projections.
 No browser warnings or errors were reported during those checks.
+
+## Non-tree circuit inspection
+
+The gallery can inspect each enabled non-tree connection in a schematic BMOPF
+layout. The searchable connection browser preserves the source namespace,
+equipment family/kind and ID, including distinct parallel circuits. Search matches
+source labels, equipment IDs and endpoint IDs; it is a literal, case-insensitive
+substring filter applied on submit. The selector renders at most 40 connections;
+Previous/Next navigates all matches, wrapping at the ends. Source-coordinate and
+synthetic views do not have the required display spanning forest. A radial French
+feeder correctly reports zero eligible connections.
+
+Choose a connection to enable inspection. Cyan highlights its exact stored route
+with a background-coloured halo through crossings. A/B markers identify its buses;
+full IDs and terminal mappings remain in the inspector. The optional amber path
+joins those endpoints through their lowest common ancestor in the display tree,
+including bus-owned fan-out bars. It excludes the common route back to the root.
+Fit connection includes the connection's bends and endpoint bars; Fit circuit also
+includes the entire tree path. Dim context changes base-layer opacity without
+changing geometry or dropping topology. Disabling inspection restores ordinary
+branch selection. Selection identity survives changes of routing and layout.
+
+This is a cycle in an equipment-association display graph, not evidence of
+operating state, energization, power flow, or interwinding conductor continuity.
+Disabled equipment is excluded from the circuit browser but remains in the
+underlying drawing and ordinary inspector. Different display components have no
+connecting tree path; self-loops have a zero-edge path; parallel equipment keeps
+its own branch identity. Crossings never create connectivity.
+
+Implementation: `circuit-inspection.mjs` follows parent/depth links to the common
+ancestor in O(path length), without graph-wide search. Overlay coordinates are
+views into resident geometry, collected through the existing branch-to-segment
+index. Overlays are cached between selection changes, including during pan/zoom.
+There are a constant number of overlay layers; no layer per branch and no global
+crossing decorations. The enabled non-tree index takes O(E) preparation and 4 bytes
+per eligible connection. Search scans only that list, and DOM results are bounded.
+A pathological 100k-deep path remains O(path length), so it can still be expensive
+to display in full; this POC does not aggregate the selected path.
+
+Run the pure topology tests and external-fixture comparison:
+
+```sh
+node --test docs/drafts/diagram-projection/performance/*.test.mjs
+node docs/drafts/diagram-projection/performance/compare-inspection.mjs
+```
+
+The comparison uses already staged local geometry; it does not copy raw data.
+`evidence/circuit-inspection-comparison.json` checks every SAPN non-tree path for
+ordered endpoint continuity, unique tree nodes and enabled tree edges. All 2,655
+connections passed. The longest path has 145 tree branches; the largest overlay
+has 438 wire segments (plus up to 146 busbars and two endpoint markers). The index
+adds 10,620 bytes. Five timed passes after a warm-up measured 0.0065 ms p95 for
+path finding plus wire-overlay construction on Node 24.19.0 / macOS arm64. This
+microbenchmark excludes DOM work, busbar objects, drawing and GPU/library copies.
+
+The browser report schema is now version 2: camera-run environments record
+inspection state and route/path sizes; `selections` records selection-to-draw
+callbacks, including inspection toggles. Those are browser delivery observations,
+not GPU completion measurements. Use matching viewport, labels, picking and theme
+when comparing inspection on/off. The camera trajectory remains unchanged, so
+inspection results can be compared with the baseline; a whole-network camera test
+does not continuously keep the selected circuit in view.
+
+[evidence/circuit-inspection-browser-smoke.json](evidence/circuit-inspection-browser-smoke.json)
+records three interleaved runs per mode on combined SAPN, using Tidy tree and
+Fan-out + lanes, a 652 × 500 CSS-pixel canvas, DPR 2, dark theme, labels and picking
+off. Inspection used the longest circuit (145 tree branches / 438 wire segments).
+
+| Mode | Pan/zoom p95 across three runs | Median p95 |
+| --- | --- | ---: |
+| No selection | 8.9, 9.5, 9.4 ms | 9.4 ms |
+| Circuit and tree path highlighted, context dimmed | 9.0, 9.2, 9.2 ms | 9.2 ms |
+
+Forty-five consecutive connection selections, including a result-page boundary,
+measured 10.9 ms median, 11.8 ms p95 and 14.4 ms maximum selection-to-draw callback.
+No material camera regression appeared in this local smoke comparison; the small
+difference is not evidence of a speedup. Refresh rate limits these observations,
+and GPU/power context was not recorded. The browser's owned-array total increases
+by the 10,620-byte index; selection objects, list strings, deck.gl and GPU copies
+remain excluded. No base fixture bytes or source identities changed.
+
+Functional checks covered page transitions and wraparound, empty results, both
+routing modes and schematic placements, preserving equipment selection through
+the source-coordinate reference, optional path/dimming controls, distinct fit
+bounds, paper/dark themes, French radial root tracing and the synthetic 100k view.
+No browser warnings or errors were reported. Bridge glyphs, global crossing
+reduction, viewport aggregation and multi-wire inspection are outside this change.
