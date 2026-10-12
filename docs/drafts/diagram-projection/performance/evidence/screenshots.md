@@ -10,8 +10,8 @@ switch presentation. They contain rendered views only; raw BMOPF files stay exte
 - [Selected open switch](mvlv-open-switch.png): paper theme, selected
   `switch_1059_open`. Compact mode restores this switch's route and blade gap;
   other open routes remain represented by endpoint annotations. Captured at the
-  current narrow viewport and cropped to the diagram section including its title
-  and legend. The drawing continues off screen.
+  current narrow viewport without cropping, showing the open blade, diagram title,
+  legend and selected equipment ID. The drawing continues off screen.
 
 Screenshots illustrate local readability, not an overview-density or performance
 claim. See the adjacent JSON evidence and the [performance guide](../README.md)
