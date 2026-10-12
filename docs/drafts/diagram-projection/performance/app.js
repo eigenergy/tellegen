@@ -1,5 +1,6 @@
 import {Deck,OrthographicView,COORDINATE_SYSTEM,VERSION} from '@deck.gl/core';
 import {LineLayer,ScatterplotLayer,TextLayer} from '@deck.gl/layers';
+import {prepareEquipment,equipmentRow} from './equipment.mjs';
 import {decodeFixture} from './fixture.mjs';
 import {busQuery,sourceKey} from './bmopf-adapter.mjs';
 import {validateSchematic,NO_BRANCH} from './schematic.mjs';
@@ -12,14 +13,14 @@ const busName=i=>fixture?.refs?.buses[i].id??('B'+String(i+1).padStart(6,'0'));
 const labelName=i=>busName(i).length>12?busName(i).slice(0,11)+'…':busName(i);
 const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const locationKey=(f,i)=>`${f.positions[i*3]},${f.positions[i*3+1]}`;
-const identity=m=>({id:m.id,layoutMode:m.layoutMode??'synthetic',routingMode:m.routingMode??'current',routing:m.routing??null,layout:m.layout??null,kind:m.kind??'synthetic',count:m.count,sha256:m.sha256,refsSha256:m.refsSha256??null,adapterVersion:m.adapterVersion??null,scenario:m.scenario??null,sources:m.sources??[],placement:m.placement??'synthetic schematic',stagingMs:m.stagingMs??null});
+const identity=m=>({id:m.id,layoutMode:m.layoutMode??'synthetic',routingMode:m.routingMode??'current',routing:m.routing??null,equipment:m.equipment??null,layout:m.layout??null,kind:m.kind??'synthetic',count:m.count,sha256:m.sha256,refsSha256:m.refsSha256??null,adapterVersion:m.adapterVersion??null,scenario:m.scenario??null,sources:m.sources??[],placement:m.placement??'synthetic schematic',stagingMs:m.stagingMs??null});
 const palette={dark:{line:[108,137,150,255],node:[198,207,203,255],open:[229,170,84,255],label:[238,234,225,255],bg:[23/255,27/255,32/255,1]},paper:{line:[108,125,127,255],node:[48,69,78,255],open:[178,94,0,255],label:[32,36,43,255],bg:[252/255,251/255,247/255,1]}};
 let theme='dark', fixture=null, entries=[], deck, ready=false, loading=false, request=0, abort;
 let camera={target:[0,0,0],zoom:0,minZoom:-24,maxZoom:5}, selection=null, labelData=[], run=null;
 const requestedLayout=new URLSearchParams(location.search).get('layout');
 let layoutMode=['source','tidy-tree'].includes(requestedLayout)?requestedLayout:'schematic',traceRoot=false,pendingRestoreSelection=null;
 const requestedRouting=new URLSearchParams(location.search).get('routing');
-let routingMode=['corridor','crossing-aware'].includes(requestedRouting)?requestedRouting:'current';
+let routingMode=['corridor','crossing-aware','equipment'].includes(requestedRouting)?requestedRouting:'current';
 let openMode=new URLSearchParams(location.search).get('open')==='full'?'full':'compact',openScope=null,openCursor=-1;
 const compactOpen=()=>openMode==='compact'&&!!fixture?.openTies.compact;
 const openSelected=()=>selection?.kind==='branch'&&fixture?.openTies.branchSet.has(selection.index);
@@ -37,6 +38,7 @@ function controls(){
   for(const el of document.querySelectorAll('[data-size], #dataset'))el.disabled=loading||!!run||!ready;
   for(const el of document.querySelectorAll('[data-layout]'))el.disabled=loading||!!run||!ready||fixture?.manifest.kind!=='bmopf'||(el.dataset.layout==='source'&&fixture?.manifest.sourceCoordinatesAvailable===false)||(el.dataset.layout!=='source'&&!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[el.dataset.layout]);
   for(const el of document.querySelectorAll('[data-routing]'))el.disabled=loading||!!run||!ready||!fixture?.parent||!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[layoutMode+(el.dataset.routing==='current'?'':'-'+el.dataset.routing)];
+  for(const el of document.querySelectorAll('#equipment-id, #equipment-search button'))el.disabled=loading||!!run||!fixture?.equipment;
   for(const el of document.querySelectorAll('#switch-id, #switch-search button'))el.disabled=loading||!!run||!fixture?.manifest.switches;
   $('trace-root').disabled=loading||!!run||!fixture?.parent||selection?.kind!=='bus';
   $('focus-source').disabled=loading||!!run||!fixture?.refs||selection===null;
@@ -50,7 +52,7 @@ function controls(){
   $('open-all').disabled=loading||!!run||openScope===null;
   $('stop').disabled=!run;
 }
-function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,selectedOpenSwitch:!!openSelected(),selectionRouteSegments:overlay.length,openSwitchPresentation:openMode,openSwitches:fixture?.openTies.branchIndices.length??0,openEndpointMarkers:compactOpen()?fixture.openTies.markers.length:0,suppressedRouteSegments:compactOpen()?fixture.openTies.suppressedSegments:0,extraPresentationArrayBytes:fixture?.openArrayBytes??0,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
+function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,equipmentGlyphs:fixture?.manifest.equipment?.glyphs??0,equipmentStrokes:fixture?.manifest.equipment?.strokes??0,equipmentArrayBytes:fixture?.equipment?.arrayBytes??0,selectedOpenSwitch:!!openSelected(),selectionRouteSegments:overlay.length,openSwitchPresentation:openMode,openSwitches:fixture?.openTies.branchIndices.length??0,openEndpointMarkers:compactOpen()?fixture.openTies.markers.length:0,suppressedRouteSegments:compactOpen()?fixture.openTies.suppressedSegments:0,extraPresentationArrayBytes:fixture?.openArrayBytes??0,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
 function fitCamera(){const b=fixture.manifest.bounds,r=$('canvas-wrap').getBoundingClientRect();return {...camera,target:[(b[0]+b[2])/2,(b[1]+b[3])/2,0],zoom:Math.log2(Math.min((r.width-70)/(b[2]-b[0]),(r.height-95)/(b[3]-b[1])))};}
 function detailCamera(){const m=fixture.manifest,r=Math.floor(m.regions/2),i=m.kind==='bmopf'?Math.floor(m.count/2):r*m.regionSize+2;return {...camera,target:[fixture.positions[i*3]+200,fixture.positions[i*3+1],0],zoom:0.6};}
 function setCamera(next,updateLabels=true){camera={target:next.target,zoom:next.zoom,minZoom:-24,maxZoom:5};deck.setProps({viewState:camera});$('zoom-readout').textContent=`${(2**camera.zoom).toPrecision(3)}× · PRECOMPUTED`;if(updateLabels)scheduleLabels();}
@@ -89,19 +91,29 @@ function prepare(f){
     const c=f.openTies.compact;f.compactColors=new Uint8Array(c.segments.length*4);f.openArrayBytes+=f.compactColors.byteLength;
     f.compactLineData={length:c.segments.length,attributes:{getSourcePosition:{value:c.sources,size:3},getTargetPosition:{value:c.targets,size:3},getColor:{value:f.compactColors,size:4,normalized:true}}};
   }
-  f.openPrepareMs=performance.now()-opened;f.ownedBytes+=f.openArrayBytes;
+  f.openPrepareMs=performance.now()-opened;
+  f.equipment=prepareEquipment(f);if(f.equipment){
+    f.ownedBytes+=f.equipment.arrayBytes;f.equipmentIds=new Map();
+    for(const owner of f.equipmentGlyphOwners){const {row}=equipmentRow(f,owner),source=f.refs.sources[row.source];
+      for(const key of new Set([row.id,busQuery(source.id,row.id),sourceKey(source.id,row.family,row.id,row.kind??'')])){
+        if(!f.equipmentIds.has(key))f.equipmentIds.set(key,[]);f.equipmentIds.get(key).push(owner);
+      }
+    }
+  }f.ownedBytes+=f.openArrayBytes;
   colour(f);
 }
-function colour(f){const p=palette[theme];for(let s=0;s<f.manifest.segments;s++){const b=f.segmentBranches[s];f.segmentColors.set(f.states[b]?p.open:f.refs?.branches[b].family==='transformer'?[141,124,209,255]:f.refs?.branches[b].family==='switch'?[101,165,132,255]:f.branchRoles?.[b]===1?[66,159,181,255]:p.line,s*4);}if(f.openTies.compact)for(let i=0;i<f.openTies.compact.segments.length;i++){const s=f.openTies.compact.segments[i];f.compactColors.set(f.segmentColors.subarray(s*4,s*4+4),i*4);}for(let i=0;i<f.manifest.count;i++)f.nodeColors.set(!f.refs&&i%f.manifest.regionSize===0?p.open:p.node,i*4);}
+function colour(f){const p=palette[theme];
+ if(f.equipment)for(const data of new Set([f.equipment.full,f.equipment.compact]))for(let i=0;i<data.owners.length;i++)data.colors.set(equipmentRow(f,data.owners[i]).row.disabled?p.open:p.node,i*4);
+for(let s=0;s<f.manifest.segments;s++){const b=f.segmentBranches[s];f.segmentColors.set(f.states[b]?p.open:f.refs?.branches[b].family==='transformer'?[141,124,209,255]:f.refs?.branches[b].family==='switch'?[101,165,132,255]:f.branchRoles?.[b]===1?[66,159,181,255]:p.line,s*4);}if(f.openTies.compact)for(let i=0;i<f.openTies.compact.segments.length;i++){const s=f.openTies.compact.segments[i];f.compactColors.set(f.segmentColors.subarray(s*4,s*4+4),i*4);}for(let i=0;i<f.manifest.count;i++)f.nodeColors.set(!f.refs&&i%f.manifest.regionSize===0?p.open:p.node,i*4);}
 
 function rootPath(index){const edges=[];let u=index;while(fixture.parent&&fixture.parent[u]!==u){edges.push(fixture.parentBranch[u]);u=fixture.parent[u];if(edges.length>fixture.manifest.count)throw new Error('Invalid parent cycle');}return {edges,root:u};}
-function focusSource(){const row=selection.kind==='bus'?fixture.refs.buses[selection.index]:fixture.refs.branches[selection.index],source=row.source;
+function focusSource(){const row=selection.kind==='bus'?fixture.refs.buses[selection.index]:selection.kind==='attachment'?fixture.refs.attachments[selection.index]:fixture.refs.branches[selection.index],source=row.source;
  const b=fixture.manifest.panels?.find(p=>p.source===source)?.bounds??fixture.refs.sources[source].displayBounds??fixture.manifest.bounds,r=$('canvas-wrap').getBoundingClientRect();
  setCamera({...camera,target:[(b[0]+b[2])/2,(b[1]+b[3])/2,0],zoom:Math.log2(Math.min((r.width-70)/(b[2]-b[0]+80),(r.height-95)/(b[3]-b[1]+80)))});
 }
 function refreshOverlay(){
   circuit=null;overlay=[];pathOverlay=[];pathBars=[];endpointData=[];
-  if(!selection)return;
+  if(!selection||selection.kind==='attachment')return;
   const branches=selection.kind==='branch'?[selection.index]:traceRoot&&fixture.parent?rootPath(selection.index).edges:fixture.incidents.subarray(fixture.offsets[selection.index],fixture.offsets[selection.index+1]);
   overlay=branchSegments(fixture,selection.kind==='bus'?incidentPresentation(branches,fixture.openTies,compactOpen()):branches);
   if(selection.kind==='branch'&&fixture.parent&&fixture.branchRoles[selection.index]===1&&!fixture.states[selection.index]){
@@ -167,6 +179,16 @@ function setOpenMode(mode){
   refreshOverlay();showOpenPage();updateLabels();
   report.presentations.push({dataset:fixture.manifest.id,layoutMode:fixture.manifest.layoutMode,routingMode:fixture.manifest.routingMode,mode,updateMs:performance.now()-started,extraArrayBytes:fixture.openArrayBytes});
 }
+function equipmentLayers(common,p,opacity){
+ if(!fixture.equipment)return [];
+ const eq=fixture.equipment,data=compactOpen()?eq.compact:eq.full;
+ const owner=selection?.kind==='branch'?selection.index:selection?.kind==='attachment'?fixture.manifest.branches+selection.index:null;
+ const range=eq.ranges.get(owner),selected=range?{length:range[1]-range[0],attributes:{getSourcePosition:{value:fixture.equipmentSources.subarray(range[0]*3,range[1]*3),size:3},getTargetPosition:{value:fixture.equipmentTargets.subarray(range[0]*3,range[1]*3),size:3}}}:null;
+ return [new ScatterplotLayer({...common,id:'equipment-junctions',data:{length:fixture.attachmentJunctions.length/3,attributes:{getPosition:{value:fixture.attachmentJunctions,size:3}}},opacity,getRadius:1.3,radiusUnits:'pixels',getFillColor:p.node,pickable:false}),
+  new LineLayer({...common,id:`equipment-strokes-${fixture.manifest.sha256}-${theme}-${openMode}`,data:data.lines,opacity,getWidth:1.5,widthUnits:'pixels',pickable:false}),
+  new ScatterplotLayer({...common,id:`equipment-hit-${fixture.manifest.sha256}-${openMode}`,data:data.hits,getRadius:16,radiusUnits:'common',radiusMinPixels:2,getFillColor:[0,0,0,0],pickable:true}),
+  ...(selected?[new LineLayer({...common,id:'equipment-selection',data:selected,getColor:p.open,getWidth:2.5,pickable:false})]:[])];
+}
 function layers(){
   if(!fixture)return [];
   const inspecting=isInspecting(),openInspection=openSelected(),endpointsVisible=inspecting||openInspection,contextOpacity=inspecting&&$('dim-context').checked ? 0.2 : 1;
@@ -190,8 +212,9 @@ function layers(){
     new LineLayer({...common,id:'selection-lines',data:overlay,getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:inspecting?[66,159,181,255]:p.open,getWidth:inspecting?3:2.5,pickable:false}),
     new ScatterplotLayer({...common,id:'circuit-endpoints',data:endpointsVisible?endpointData:[],getPosition:d=>d.position,getRadius:6,radiusUnits:'pixels',getFillColor:openInspection?p.open:[66,159,181,255],stroked:true,getLineColor:p.label,lineWidthUnits:'pixels',getLineWidth:1.5,pickable:false}),
     new TextLayer({...common,id:'circuit-endpoint-labels',data:endpointsVisible?endpointData:[],getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,getPixelOffset:d=>[d.position[0]>camera.target[0]?-10:10,d.end?22:-12],getTextAnchor:d=>d.position[0]>camera.target[0]?'end':'start',getAlignmentBaseline:'bottom',updateTriggers:{getPixelOffset:camera.target[0],getTextAnchor:camera.target[0]},fontFamily:'Plex, monospace',characterSet:'auto',background:true,getBackgroundColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),backgroundPadding:[4,3],pickable:false}),
+    ...equipmentLayers(common,p,contextOpacity),
     new ScatterplotLayer({...common,id:'selection-bus',data:nodeSelection,getPosition:d=>d.position,getRadius:6,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
-    new TextLayer({...common,id:'labels',data:labelData,getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,sizeUnits:'pixels',fontFamily:'Plex, monospace',characterSet:'auto',fontSettings:{sdf:true},getTextAnchor:'start',getAlignmentBaseline:'bottom',getPixelOffset:[5,-5],pickable:false})
+    new TextLayer({...common,id:'labels',data:labelData,getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,sizeUnits:'pixels',fontFamily:'Plex, monospace',characterSet:'auto',fontSettings:{sdf:true},getTextAnchor:d=>d.anchor??'start',getAlignmentBaseline:'bottom',getPixelOffset:[5,-5],pickable:false})
   ];
 }
 function render(){deck.setProps({layers:layers(),parameters:{clearColor:palette[theme].bg}});}
@@ -200,6 +223,7 @@ function updateLabels(){
   if(!fixture)return;labelData=[];
   // Selection ID remains discoverable even when automatic labels are off.
   const reserved=selection?.kind==='bus'?selection.index:null;
+  if(selection?.kind==='attachment'&&fixture.equipment){const owner=fixture.manifest.branches+selection.index,i=fixture.equipment.glyphIndex.get(owner)??-1;if(i>=0)labelData.push({position:[fixture.equipmentCenters[i*3],fixture.equipmentCenters[i*3+1]-16,0],text:fixture.refs.attachments[selection.index].id,anchor:'middle'});}
   if(reserved!==null)labelData.push({position:fixture.positions.subarray(reserved*3,reserved*3+3),text:labelName(reserved)});
   if($('labels').checked && camera.zoom>=-0.2){
     const r=$('canvas-wrap').getBoundingClientRect(),scale=2**camera.zoom;
@@ -219,7 +243,7 @@ function updateLabels(){
       if(!reserve(px,py))continue;labelData.push({position:[px,py,0],text:labelName(i)});if(labelData.length>=200)break;
     }
   }
-  $('draw-count').textContent=`${fmt(fixture.manifest.count)} buses · ${fmt(compactOpen()?fixture.openTies.compact.segments.length:fixture.manifest.segments)} base wire segments${compactOpen()?' + '+fixture.openTies.markers.length+' open endpoint rings':''} + ${overlay.length} selection segments${fixture.busbarData?' + '+fmt(fixture.manifest.count)+' busbars':''} submitted · ${labelData.length} labels`;
+  $('draw-count').textContent=`${fmt(fixture.manifest.count)} buses · ${fmt(compactOpen()?fixture.openTies.compact.segments.length:fixture.manifest.segments)} base wire segments${compactOpen()?' + '+fixture.openTies.markers.length+' open endpoint rings':''} + ${overlay.length} selection segments${fixture.busbarData?' + '+fmt(fixture.manifest.count)+' busbars':''}${fixture.equipment?' + '+fmt((compactOpen()?fixture.equipment.compact:fixture.equipment.full).owners.length)+' equipment strokes':''} submitted · ${labelData.length} labels`;
   render();
 }
 function select(kind,index,started=performance.now()){
@@ -227,7 +251,7 @@ function select(kind,index,started=performance.now()){
   refreshOverlay();meshCursor=circuit?meshMatches.indexOf(index):-1;showMeshPage();
   $('next-colocated').hidden=true;
   if(fixture.refs){
-    const refs=fixture.refs,row=kind==='bus'?refs.buses[index]:refs.branches[index],source=refs.sources[row.source];
+    const refs=fixture.refs,row=kind==='bus'?refs.buses[index]:kind==='attachment'?refs.attachments[index]:refs.branches[index],source=refs.sources[row.source];
     let content=`<h2>${escape(row.id)}</h2><p>${escape(source.label)} · ${escape(kind==='bus'?'bus':row.family+(row.kind?' / '+row.kind:''))}</p>`;
     content+=`<p class="fine">Source identity: <code>${escape(sourceKey(source.id,kind==='bus'?'bus':row.family,row.id,row.kind??''))}</code></p>`;
     if(kind==='bus'){
@@ -237,7 +261,8 @@ function select(kind,index,started=performance.now()){
       const attachments=fixture.attachmentsByBus.get(index)??[];
       content+=`<details><summary>${attachments.length} source attachments</summary>${attachments.slice(0,100).map(a=>`<p>${escape(a.family)} / ${escape(a.id)} · terminals ${escape(a.terminalMap.join(', '))}${a.disabled?' · disabled':''}</p>`).join('')}${attachments.length>100?'<p>First 100 shown; all retained in reference data.</p>':''}</details>`;
       $('next-colocated').hidden=members.length<2;
-    }else content+=`<p>${escape(busName(row.from))} → ${escape(busName(row.to))}<br>Terminal maps: ${escape(row.terminalMapFrom.join(', '))} → ${escape(row.terminalMapTo.join(', '))}<br>${row.family==='switch'?`${row.openSwitch?'Open · display gap':'Closed'} · ${row.outOfService?'out of service · display gap':'in service'}<br>Imported state: ${row.sourceOpenSwitch?'open':'closed'} · Scenario: ${escape(fixture.manifest.scenario?.label??'imported state')}`:row.disabled?'Out of service · display gap':'Enabled'}${fixture.positions[row.from*3]===fixture.positions[row.to*3]&&fixture.positions[row.from*3+1]===fixture.positions[row.to*3+1]?' · coincident endpoints, display detour':''}${fixture.branchRoles?'<br>Layout role: '+['tree edge','non-tree connection','inactive link (excluded from display tree)'][fixture.branchRoles[index]]:''}</p><p>${row.family==='transformer'?'Equipment association; does not imply interwinding conductor continuity.':row.family==='switch'?'Switch connection; terminal order preserved. State applies to the whole switch, not individual poles.':'Conductor bundle; terminal order preserved.'}</p>`;
+    }else if(kind==='attachment')content+=`<p>Bus: ${escape(busName(row.bus))}<br>Terminal map: ${escape(row.terminalMap.join(', '))}<br>Configuration: ${escape(row.configuration??'not specified')}<br>${row.disabled?'Out of service':'Enabled'}</p><p>Bus-owned equipment attachment; individual conductor connections are not expanded.${row.family==='shunt'?' General shunt symbol: no capacitive subtype or earth bond is inferred.':''}</p>`;
+    else content+=`<p>${escape(busName(row.from))} → ${escape(busName(row.to))}<br>Terminal maps: ${escape(row.terminalMapFrom.join(', '))} → ${escape(row.terminalMapTo.join(', '))}<br>${row.family==='switch'?`${row.openSwitch?'Open · display gap':'Closed'} · ${row.outOfService?'out of service · display gap':'in service'}<br>Imported state: ${row.sourceOpenSwitch?'open':'closed'} · Scenario: ${escape(fixture.manifest.scenario?.label??'imported state')}`:row.disabled?'Out of service · display gap':'Enabled'}${fixture.positions[row.from*3]===fixture.positions[row.to*3]&&fixture.positions[row.from*3+1]===fixture.positions[row.to*3+1]?' · coincident endpoints, display detour':''}${fixture.branchRoles?'<br>Layout role: '+['tree edge','non-tree connection','inactive link (excluded from display tree)'][fixture.branchRoles[index]]:''}</p><p>${row.family==='transformer'?'Equipment association; does not imply interwinding conductor continuity.':row.family==='switch'?'Switch connection; terminal order preserved. State applies to the whole switch, not individual poles.':'Conductor bundle; terminal order preserved.'}</p>`;
     if(openSelected())content+='<p class="fine">A / B mark this open switch’s endpoints. Only its selected route is restored in compact view; the gap remains. It is excluded from the enabled display tree.</p>';
     if(isInspecting())content+=`<div class="circuit-description"><p><strong>A</strong> · ${escape(busName(circuit.endpoints[0]))}<br><strong>B</strong> · ${escape(busName(circuit.endpoints[1]))}</p><p>${circuit.connected?`${circuit.edges.length} tree branches connect the endpoints via common ancestor ${escape(busName(circuit.ancestor))}.`:'Endpoints belong to different display components; no connecting tree path.'}</p><p class="fine">Cyan: selected connection · amber: connecting tree path. This is a circuit in the display spanning forest, not a power-flow or conductor-continuity result. Crossings are not junctions.</p></div>`;
     $('selection').innerHTML=content;
@@ -283,16 +308,18 @@ async function load(id,mode=layoutMode,routing=routingMode){
     fixture=next;openScope=null;showOpenPage();if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,openPresentationPrepareMs:next.openPrepareMs,submittedAt:prepared,environment:environment()};
     $('network-count').textContent=fmt(m.count);$('network-detail').textContent=m.kind==='bmopf'?`${fmt(m.lines)} lines · ${fmt(m.transformers)} transformer objects${m.switches?' · '+fmt(m.switches)+' switches':''}`:`${fmt(m.branches)} branches · ${fmt(m.openTies)} open ties`;
     $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON${next.openArrayBytes?' + '+(next.openArrayBytes/1048576).toFixed(2)+' MiB compact arrays':''}; excludes JS objects`;
-    $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode)+(actualRouting==='unavailable'?'':' / '+({'corridor':'Fan-out + lanes','crossing-aware':'Crossing-aware lanes','current':'Current routes'}[actualRouting]));$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
+    $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode)+(actualRouting==='unavailable'?'':' / '+({'corridor':'Fan-out + lanes','crossing-aware':'Crossing-aware lanes','equipment':'Equipment + clearance','current':'Current routes'}[actualRouting]));$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
     $('layout-summary').textContent=m.layout?`${fmt(m.layout.treeEdges)} tree edges · ${fmt(m.layout.crossLinks)} non-tree connections · ${m.layout.components.length} components · ${ms(m.layout.totalMs)} offline layout + routing.${m.routingMode!=='current'?' '+m.routing.maxLanes+' peak corridor lanes.':''}${m.routing.ordering?' Lane-order crossings '+fmt(m.routing.ordering.before)+' → '+fmt(m.routing.ordering.after)+' in eligible corridors.':''} Roots choose layout direction, not power flow.`:actualMode==='source'?'Source-coordinate reference. Choose Leaf order or Tidy tree to inspect the network structure.':'Precomputed synthetic schematic.';
     $('scenario-detail').textContent=m.scenario?`${m.scenario.label}: ${m.openSwitches} open / ${m.closedSwitches} closed switches; ${m.outOfServiceSwitches} out of service. ${m.scenario.changedFromSource} states changed from the imported BMOPF. ${m.scenario.policy}${m.sourceCoordinatesAvailable===false?' Source coordinates unavailable; schematic views only.':''}`:'';
+    $('equipment-summary').textContent=m.equipment?`${fmt(m.equipment.glyphs)} equipment symbols · ${fmt(m.equipment.strokes)} batched strokes. Inline slots and attachment space reserved before routing. Click a symbol or find its exact source ID. Shunts use a general Y block; lines remain conductor bundles.`:'Choose Equipment + clearance in a schematic layout to show source-owned equipment symbols.';
+    $('equipment-id').value=next.refs?.branches.find(b=>b.family==='transformer')?.id??'';$('equipment-error').textContent='';
     const firstSwitch=next.refs?.branches.find(b=>b.family==='switch'&&b.openSwitch)??next.refs?.branches.find(b=>b.family==='switch');
     $('switch-id').value=firstSwitch?.id??'';$('switch-error').textContent='';
     $('bus-id').value=next.refs?busQuery(next.refs.sources[next.refs.buses[keep?.kind==='bus'?keep.index:0].source].id,next.refs.buses[keep?.kind==='bus'?keep.index:0].id):'B000501';$('bus-id').placeholder=next.refs?'Exact source ID or source/id':'B000001';
     const url=new URL(location.href);url.searchParams.delete('size');url.searchParams.set('dataset',id);url.searchParams.set('layout',actualMode==='synthetic'?'schematic':actualMode);url.searchParams.set('routing',routingMode);url.searchParams.set('open',openMode);history.replaceState(null,'',url);
     const restored=viewStates.get(viewKey(m));
     let nextCamera=restored??fitCamera();
-    if(keep){const i=keep.kind==='bus'?keep.index:next.endpoints[keep.index*2];nextCamera={...nextCamera,target:[next.positions[i*3],next.positions[i*3+1],0],zoom:restored?.zoom??.6};}
+    if(keep){const i=keep.kind==='bus'?keep.index:keep.kind==='attachment'?next.refs.attachments[keep.index].bus:next.endpoints[keep.index*2];nextCamera={...nextCamera,target:[next.positions[i*3],next.positions[i*3+1],0],zoom:restored?.zoom??.6};}
     setCamera(nextCamera,false);updateLabels();
   }catch(e){if(e.name!=='AbortError'&&token===request)error(e.message);}
 }
@@ -338,7 +365,7 @@ function exportReport(){const data={...report,exported:new Date().toISOString(),
 for(const b of document.querySelectorAll('[data-size]'))b.addEventListener('click',()=>load(`synthetic-${b.dataset.size}`));
 for(const b of document.querySelectorAll('button[data-theme]'))b.addEventListener('click',()=>{theme=b.dataset.theme;document.documentElement.dataset.theme=theme;for(const x of document.querySelectorAll('button[data-theme]'))if(x.tagName==='BUTTON')x.setAttribute('aria-pressed',String(x.dataset.theme===theme));colour(fixture);
   // Theme changes retire base layers in this baseline; production should patch colours.
-  if(fixture.compactLineData)fixture.compactLineData={...fixture.compactLineData,attributes:{...fixture.compactLineData.attributes}};fixture.lineData={...fixture.lineData,attributes:{...fixture.lineData.attributes}};fixture.nodeData={...fixture.nodeData,attributes:{...fixture.nodeData.attributes}};render();});
+  if(fixture.compactLineData)fixture.compactLineData={...fixture.compactLineData,attributes:{...fixture.compactLineData.attributes}};fixture.lineData={...fixture.lineData,attributes:{...fixture.lineData.attributes}};fixture.nodeData={...fixture.nodeData,attributes:{...fixture.nodeData.attributes}};if(fixture.equipment)for(const d of new Set([fixture.equipment.full,fixture.equipment.compact]))d.lines={...d.lines,attributes:{...d.lines.attributes}};render();});
 for(const b of document.querySelectorAll('[data-layout]'))b.addEventListener('click',()=>load(fixture.manifest.id,b.dataset.layout));
 document.querySelectorAll('[data-routing]').forEach(b=>b.addEventListener('click',()=>load(fixture.manifest.id,layoutMode,b.dataset.routing)));
 document.querySelectorAll('[data-open-mode]').forEach(b=>b.addEventListener('click',()=>setOpenMode(b.dataset.openMode)));
@@ -384,6 +411,14 @@ $('switch-search').addEventListener('submit',e=>{
   select('branch',i,started);
   openScope=null;showOpenPage();fitSelectedRoute();
 });
+$('equipment-search').addEventListener('submit',e=>{
+ e.preventDefault();if(!fixture?.equipment||run||loading)return;
+ const found=fixture.equipmentIds.get($('equipment-id').value.trim())??[];
+ $('equipment-error').textContent=found.length===1?'':found.length?'Ambiguous ID; use the full source identity shown in the inspector.':'No exact equipment ID found in this view.';
+ if(found.length!==1)return;
+ const owner=found[0],{kind,index}=equipmentRow(fixture,owner),g=fixture.equipment.glyphIndex.get(owner)??-1;
+ select(kind,index);setCamera({...camera,target:Array.from(fixture.equipmentCenters.subarray(g*3,g*3+3)),zoom:2});
+});
 $('benchmark').addEventListener('click',benchmark);$('stop').addEventListener('click',()=>stopRun());$('export-report').addEventListener('click',exportReport);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopRun('tab hidden');});
 window.addEventListener('resize',()=>{stopRun('viewport resized');scheduleLabels();});
@@ -399,7 +434,7 @@ async function start(){
   deck=new Deck({canvas:$('network-canvas'),parent:$('canvas-wrap'),width:'100%',height:'100%',deviceProps:{type:'webgl'},useDevicePixels:Math.min(devicePixelRatio,2),
     views:new OrthographicView({id:'schematic',flipY:true}),viewState:camera,controller:{doubleClickZoom:true},layers:[],pickingRadius:5,
     onViewStateChange:({viewState})=>{if(run)stopRun('user interaction');setCamera({...viewState,zoom:viewState.zoomX??viewState.zoom});},
-    onClick:info=>{if(info.index<0||!fixture||loading||run)return;if(info.layer?.id.startsWith('buses-')||info.layer?.id.startsWith('busbars-'))select('bus',info.index);else if(info.layer?.id.startsWith('open-endpoints-')){openScope=fixture.openTies.markers[info.index].bus;chooseOpen(0,false);}else if(info.layer?.id.startsWith('compact-branches-')){const b=compactBranch(fixture,fixture.openTies,info.index);if(b!==null)select('branch',b);}else if(info.layer?.id.startsWith('branches-'))select('branch',fixture.segmentBranches[info.index]);},
+    onClick:info=>{if(info.index<0||!fixture||loading||run)return;if(info.layer?.id.startsWith('equipment-hit-')){const d=compactOpen()?fixture.equipment.compact:fixture.equipment.full;const {kind,index}=equipmentRow(fixture,d.glyphOwners[info.index]);select(kind,index);}else if(info.layer?.id.startsWith('buses-')||info.layer?.id.startsWith('busbars-'))select('bus',info.index);else if(info.layer?.id.startsWith('open-endpoints-')){openScope=fixture.openTies.markers[info.index].bus;chooseOpen(0,false);}else if(info.layer?.id.startsWith('compact-branches-')){const b=compactBranch(fixture,fixture.openTies,info.index);if(b!==null)select('branch',b);}else if(info.layer?.id.startsWith('branches-'))select('branch',fixture.segmentBranches[info.index]);},
     getTooltip:info=>info.layer?.id.startsWith('open-endpoints-')&&info.object?`${busName(info.object.bus)} · ${info.object.branches.length} open switch${info.object.branches.length===1?'':'es'} · click to inspect`:null,
     getCursor:({isDragging})=>isDragging?'grabbing':'crosshair',onAfterRender:afterRender,onError:e=>{stopRun('renderer error');error('Renderer error: '+e.message);},
     onLoad:()=>{ready=true;const params=new URLSearchParams(location.search),requested=params.get('dataset')??`synthetic-${params.get('size')??1000}`;load(entries.some(m=>m.id===requested)?requested:'synthetic-1000');}});

@@ -61,3 +61,42 @@ export function sheetSVG(mode,palette){
  const rows=specimens.map((s,i)=>{const y=140+i*rowHeight;return `<g data-specimen="${s.id}" transform="translate(28 ${y})"><text x="0" y="0" style="font-size:18px">${s.id} · ${escape(s.title)}</text>${modes.map((m,j)=>`<g transform="translate(${j*432} 22)"><text class="reference-label" x="0" y="14">${m==='equipment'?'EQUIPMENT':'EQUIVALENT CIRCUIT'}</text><g transform="translate(0 20)" data-view="${m}" data-source="${s.id}">${glyph(s,m)}</g></g>`).join('')}<desc>${escape(s.assumption)}</desc></g>`;}).join('');
  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img"><title>Tellegen electrical symbol specimens</title><desc>Illustrative scalar study models. Triangles label model voltage references local to each specimen; small circles mark external ports or switch contacts. No physical earthing arrangement is specified. Not a multi-wire connection diagram or a standards compliance claim. Each specimen description records its assumptions.</desc><style>${svgStyle(palette)}</style><rect width="100%" height="100%" fill="${palette.paper}"/><text x="28" y="35" style="font-size:22px">tellegen. / Symbol specimens</text><text x="28" y="60" class="reference-label">Illustrative scalar models · no solved values</text><text x="28" y="80" class="reference-label">▽ labelled voltage reference · ○ external port/contact</text><text x="28" y="100" class="reference-label">References are local to each specimen; no earth bond implied.</text>${rows}</svg>`;
 }
+
+/** Compact equipment geometry, shared by the specimen sheet and GPU gallery.
+ * Text annotations and long specimen leads are excluded; no circuit model is inferred.
+ */
+export function equipmentTemplate(kind,state='closed') {
+ let primitives,transform,halfWidth;
+ if(kind==='transformer'){primitives=specimens.find(s=>s.id==='T1').equipment.primitives.filter(p=>p.tag==='circle');transform=([x,y])=>[(x-190)*.25,(y-80)*.25];halfWidth=12.5;}
+ else if(kind==='switch'){primitives=specimens.find(s=>s.kind==='switch'&&s.state===state).equipment.primitives.filter(p=>['contact','symbol','unknown'].includes(p.role));transform=([x,y])=>[(x-190)*.3,(y-80)*.3];halfWidth=12.6;}
+ else if(kind==='load'){primitives=specimens.find(s=>s.id==='D1').equipment.primitives.filter(p=>p.role==='symbol');transform=([x,y])=>[-(y-96)*.6,(x-190)*.6];halfWidth=9;}
+ else if(kind==='voltage_source'){primitives=specimens.find(s=>s.id==='S1').equipment.primitives.filter(p=>p.role==='symbol');transform=([x,y])=>[(x-110)*.3,(y-80)*.3];halfWidth=8.1;}
+ else if(kind==='shunt'){
+  // General shunt attachment. BMOPF includes conductive grounding shunts; a
+  // capacitor glyph would assert a subtype that the adapter does not establish.
+  primitives=[rect(-8,-9,16,18),p('M-4 -5L0 0L4 -5 M0 0V5','symbol')];transform=p=>p;halfWidth=8;
+ }else throw new Error('Unsupported equipment symbol: '+kind);
+ return {halfWidth,segments:primitives.flatMap(flattenPrimitive).map(([a,b])=>[transform(a),transform(b)])};
+}
+function flattenPrimitive(shape){
+ const out=[],line=(a,b)=>out.push([a,b]);
+ if(shape.tag==='circle'){
+  for(let i=0;i<20;i++){const at=k=>[shape.cx+shape.r*Math.cos(k*Math.PI/10),shape.cy+shape.r*Math.sin(k*Math.PI/10)];line(at(i),at(i+1));}
+ }else if(shape.tag==='rect'){
+  const {x,y,width:w,height:h}=shape;line([x,y],[x+w,y]);line([x+w,y],[x+w,y+h]);line([x+w,y+h],[x,y+h]);line([x,y+h],[x,y]);
+ }else if(shape.tag==='path'){
+  const tokens=shape.d.match(/[MLHVCSZ]|-?\d*\.?\d+/g);let i=0,point=[0,0],start=point,control=null;
+  const number=()=>Number(tokens[i++]),pair=()=>[number(),number()];
+  while(i<tokens.length){const command=tokens[i++];let target;
+   if(command==='M'){point=pair();start=point;control=null;continue;}
+   if(command==='C'||command==='S'){
+    const a=point,b=command==='C'?pair():control?point.map((v,k)=>2*v-control[k]):point,c=pair(),d=pair();
+    for(let step=1;step<=8;step++){const t=step/8,u=1-t,q=a.map((v,k)=>u*u*u*v+3*u*u*t*b[k]+3*u*t*t*c[k]+t*t*t*d[k]);line(point,q);point=q;}
+    control=c;continue;
+   }
+   if(command==='L')target=pair();else if(command==='H')target=[number(),point[1]];else if(command==='V')target=[point[0],number()];else if(command==='Z')target=start;else throw new Error('Unsupported compact symbol path command: '+command);
+   line(point,target);point=target;control=null;
+  }
+ }else throw new Error('Unsupported compact symbol primitive: '+shape.tag);
+ return out;
+}

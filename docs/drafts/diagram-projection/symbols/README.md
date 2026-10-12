@@ -68,10 +68,12 @@ export. Useful regression checks when editing the registry: stable source/port
 IDs across views; valid SVG without external CSS dependencies; labels and geometry
 within bounds; and unchanged meaning when colour is removed.
 
-The scale experiment remains in `../performance/`. Before integrating symbols
-there, convert approved primitives into batched GPU geometry, reserve symbol and
-label bounds during routing, and expose equivalent detail only within a bounded
-inspection scope. This sheet makes no new performance claim for 100k buses.
+The scale experiment in `../performance/` now uses `equipmentTemplate()` to
+tessellate compact equipment bodies into batched GPU geometry, with routing slots
+and attachment space reserved offline. Shunts there use a general Y block because
+the imported family does not establish a capacitive subtype. Labels are not yet
+reserved. Equivalent-circuit detail remains confined to this specimen sheet. See
+the performance guide for measured MVLV and combined SAPN costs.
 
 ## Reference ambiguity review
 

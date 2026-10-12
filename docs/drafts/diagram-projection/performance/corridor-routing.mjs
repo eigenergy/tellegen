@@ -1,6 +1,7 @@
 /** Bus-owned fan-out and interval-coloured corridors. No new electrical nodes.
  * Pure preprocessing: O((V+E) log(V+E)) time, O(V+E) storage.
  */
+import {EQUIPMENT_CLEARANCE} from './equipment.mjs';
 import {crossingAwareOrder,MAX_ORDERED_LANES,ORDERING_PASSES} from './crossing-order.mjs';
 export const ROUTING_VERSION=1;
 const PORT_GAP=4,LANE_GAP=8,MARGIN=16,BUS_CLEARANCE=12,COMPONENT_GAP=160,PANEL_GAP=320;
@@ -19,7 +20,11 @@ export function allocateLanes(intervals){
   }
   return count;
 }
-export function corridorRouting({model,positions,depth,component,components,roles,crossingAware=false}){
+export function corridorRouting({model,positions,depth,component,components,roles,crossingAware=false,equipment=false}){
+  const PORT_GAP=equipment?EQUIPMENT_CLEARANCE.portGap:4,MARGIN=equipment?EQUIPMENT_CLEARANCE.margin:16;
+  const attachmentCounts=new Uint32Array(model.buses.length);
+  if(equipment)for(const a of model.attachments)attachmentCounts[a.bus]++;
+  const lower=u=>halves[u]+attachmentCounts[u]*EQUIPMENT_CLEARANCE.attachmentGap+(equipment?EQUIPMENT_CLEARANCE.halfBox:0);
   const n=model.buses.length,e=model.branches.length,ports=new Float32Array(e*6);
   const offsets=new Float64Array(e*2),halves=new Float64Array(n);
   const incident=Array.from({length:n},()=>[[],[]]);
@@ -39,18 +44,33 @@ export function corridorRouting({model,positions,depth,component,components,role
     list.forEach((p,i)=>offsets[p.k]=(i-(list.length-1)/2)*PORT_GAP+(side?.25:.75));
     halves[u]=Math.max(halves[u],(list.length-1)*PORT_GAP/2+1,1);
   }
-  // Uniform scaling per component preserves subtree shape and centering while
-  // reserving enough vertical space for neighbouring busbars in each rank.
+  // Baseline routing scales each component uniformly. Equipment routing below
+  // expands only constrained row gaps, retaining ordering and row alignment.
   const ranks=new Map(),scales=new Float64Array(components.length).fill(1);
   for(let u=0;u<n;u++){const key=`${component[u]}/${depth[u]}`;if(!ranks.has(key))ranks.set(key,[]);ranks.get(key).push(u);}
-  for(const nodes of ranks.values()){
+  if(equipment){
+    // A monotone, piecewise expansion preserves row order/alignment across ranks.
+    // Only gaps that need space grow; a tiny original gap cannot magnify a whole feeder.
+    const ordered=Array.from({length:n},(_,u)=>u).sort((a,b)=>component[a]-component[b]||positions[a*3+1]-positions[b*3+1]||a-b);
+    let shift=0,lastComponent=-1;const previous=new Map();
+    for(let i=0;i<ordered.length;){
+      const u=ordered[i],c=component[u],original=positions[u*3+1];
+      if(c!==lastComponent){shift=0;previous.clear();lastComponent=c;}
+      let end=i+1;while(end<ordered.length&&component[ordered[end]]===c&&positions[ordered[end]*3+1]===original)end++;
+      let y=original+shift;
+      for(let j=i;j<end;j++){const v=ordered[j],p=previous.get(depth[v]);if(p!==undefined)y=Math.max(y,positions[p*3+1]+lower(p)+halves[v]+EQUIPMENT_CLEARANCE.halfBox+BUS_CLEARANCE);}
+      shift=y-original;
+      for(let j=i;j<end;j++){const v=ordered[j];positions[v*3+1]=y;previous.set(depth[v],v);}
+      i=end;
+    }
+  }else for(const nodes of ranks.values()){
     nodes.sort((a,b)=>positions[a*3+1]-positions[b*3+1]||a-b);
-    for(let i=1;i<nodes.length;i++){const u=nodes[i-1],v=nodes[i];scales[component[u]]=Math.max(scales[component[u]],(halves[u]+halves[v]+BUS_CLEARANCE)/(positions[v*3+1]-positions[u*3+1]));}
+    for(let i=1;i<nodes.length;i++){const u=nodes[i-1],v=nodes[i];scales[component[u]]=Math.max(scales[component[u]],(lower(u)+halves[v]+BUS_CLEARANCE)/(positions[v*3+1]-positions[u*3+1]));}
   }
   const low=new Float64Array(components.length).fill(Infinity),high=new Float64Array(components.length).fill(-Infinity);
   for(let u=0;u<n;u++){
     const c=component[u],y=Math.round((positions[u*3+1]-components[c].bounds[1])*scales[c]);
-    positions[u*3+1]=y;low[c]=Math.min(low[c],y-halves[u]);high[c]=Math.max(high[c],y+halves[u]);
+    positions[u*3+1]=y;low[c]=Math.min(low[c],y-halves[u]-(equipment?EQUIPMENT_CLEARANCE.halfBox:0));high[c]=Math.max(high[c],y+lower(u));
   }
   const heights=new Float64Array(model.sources.length),componentY=new Float64Array(components.length);
   components.forEach((c,i)=>{componentY[i]=heights[c.source]-low[i];heights[c.source]+=high[i]-low[i]+COMPONENT_GAP;});
@@ -131,12 +151,12 @@ export function corridorRouting({model,positions,depth,component,components,role
   }
   for(let b=0;b<e;b++)for(let end=0;end<2;end++){const u=end?model.branches[b].to:model.branches[b].from;ports[b*6+end*3]=positions[u*3];ports[b*6+end*3+1]=positions[u*3+1]+offsets[b*2+end];}
   components.forEach((c,i)=>{const [x,y]=translations[c.source];c.bounds=[x,componentY[i]+low[i]+y,x+columns[c.source][c.maxDepth],componentY[i]+high[i]+y];});
-  const panels=model.sources.map((s,i)=>{const [x,y]=translations[i];return {source:i,label:s.label,bounds:[x-40,y-MARGIN-(outerCounts[i]+1)*LANE_GAP-40,x+widths[i]+40,y+heights[i]-COMPONENT_GAP+40]};});
+  const panels=model.sources.map((s,i)=>{const [x,y]=translations[i];return {source:i,label:s.label,bounds:[x-(equipment?80:40),y-MARGIN-(outerCounts[i]+1)*LANE_GAP-40,x+widths[i]+40,y+heights[i]-COMPONENT_GAP+40]};});
   function points(b){
     const [tx,ty]=translations[model.branches[b].source],p=[ports[b*6],ports[b*6+1]],q=[ports[b*6+3],ports[b*6+4]],lane=routes[b][0].x+tx;
     if(external[b]){const end=routes[b][1].x+tx,y=outerY[b]+ty;return [p,[lane,p[1]],[lane,y],[end,y],[end,q[1]],q];}
     if(p[1]===q[1]&&p[0]!==q[0])return [p,q];
     return [p,[lane,p[1]],[lane,q[1]],q];
   }
-  return {points,panels,arrays:{branchPorts:ports,busbarSources:barSources,busbarTargets:barTargets},metadata:{algorithm:crossingAware?'bus-fan-out-crossing-aware-corridors':'bus-fan-out-interval-corridors',...(ordering?{ordering}:{}),version:ROUTING_VERSION,portGap:PORT_GAP,laneGap:LANE_GAP,maxLanes,totalLanes,corridors:corridors.size,externalLinks:external.reduce((a,b)=>a+b,0),componentYScales:[...scales]}};
+  return {points,panels,arrays:{branchPorts:ports,busbarSources:barSources,busbarTargets:barTargets},metadata:{equipmentClearance:equipment,verticalSpacing:equipment?'monotone-local-expansion':'uniform-component-scale',algorithm:crossingAware?'bus-fan-out-crossing-aware-corridors':'bus-fan-out-interval-corridors',...(ordering?{ordering}:{}),version:ROUTING_VERSION,portGap:PORT_GAP,laneGap:LANE_GAP,maxLanes,totalLanes,corridors:corridors.size,externalLinks:external.reduce((a,b)=>a+b,0),componentYScales:[...scales]}};
 }

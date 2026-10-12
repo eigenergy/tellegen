@@ -965,3 +965,103 @@ inspection, and disabling the circuit path for open switches.
 
 The final combined SAPN camera run completed at 9.5 ms p95 with zero additional
 presentation arrays; its 98,633-bus geometry and routing were unchanged.
+
+
+## Equipment symbols and reserved routing space
+
+Select **Equipment + clearance** in either schematic placement. Direct comparison:
+`?dataset=mvlv-meshed-documented&layout=tidy-tree&routing=equipment&open=compact`.
+The existing routing modes remain available without symbols. Re-stage external
+BMOPF data and rebuild the gallery to obtain the new variants.
+
+The compact geometry reuses the authored transformer circles, switch contacts and
+blades, supply circle/wave and load triangle from `../symbols/symbols.mjs`.
+A general **Y** block represents shunts: MVLV contains neutral conductance shunts,
+so the capacitive specimen would misstate the imported model. No earth bond,
+constant-power subtype or generator is inferred. Lines remain conductor bundles;
+π equivalents and conductor-level detail are outside this equipment projection.
+
+Transformer/switch bodies occupy real gaps in their branch route, with no opaque
+background masks. Open switches use the actual blade gap; a closed out-of-service
+switch retains a separate service gap. Attachments occupy stacked slots off their
+original busbar, with junction dots and individual source-owned stems. A slot is
+32 × 32 units, inline centres are 34 units from the bus port, ports and attachment
+slots are separated by 40 units, and corridor leads reserve 68 units. A monotone
+piecewise row expansion preserves original row order and alignment while adding
+space only where needed. It avoids magnifying a whole feeder because of one tiny
+row gap. Component and source-panel bounds include equipment extents.
+
+All glyphs are precomputed binary line segments, grouped into one stroke layer,
+one junction layer and one transparent picking layer. A selected glyph has a small
+stroke overlay. No SVG/DOM node is created per device. Numeric owners point into
+the unchanged branch/attachment sidecar; inspection shows original source keys,
+terminal maps and service state. Exact ID, `source/id`, and the full JSON source
+key are supported; ambiguous short IDs fail explicitly. Attachment selection uses
+a cached owner index. Selecting a transformer does not create interwinding
+conductor continuity. Compact open-tie presentation suppresses the open body and
+route together; selecting that switch restores both. Sources with no open switches
+reuse the full glyph buffers without a compact copy.
+
+Reproduce the offline audit after staging:
+
+```sh
+node docs/drafts/diagram-projection/performance/compare-equipment.mjs /tmp/equipment.json
+node --test docs/drafts/diagram-projection/performance/*.test.mjs
+```
+
+[Aggregate evidence](evidence/equipment-comparison.json) contains hashes, five
+samples after one warm-up, source/forest invariants and clearance checks. Layout
+times include routing, glyph tessellation and packing, excluding parsing and
+validation. Preparation covers open-tie and glyph caches, excluding the rest of
+browser preparation. Samples are local diagnostics, not cross-machine budgets.
+
+| Dataset | Routing | Symbols | Layout median ms | Cache median ms | Packed MiB | Bounds width × height |
+|---|---|---:|---:|---:|---:|---:|
+| mvlv-meshed-documented | crossing-aware | 0 | 8.9 | 0.87 | 0.56 | 16840 × 15488 |
+| mvlv-meshed-documented | equipment | 2,894 | 13.8 | 5.08 | 1.58 | 23994 × 66583 |
+| mvlv-meshed-all-closed | crossing-aware | 0 | 5.9 | 0.02 | 0.56 | 13960 × 12439 |
+| mvlv-meshed-all-closed | equipment | 2,894 | 11.2 | 0.45 | 1.58 | 20106 × 53801 |
+| sapn-combined | crossing-aware | 0 | 216.4 | 1.45 | 16.29 | 85640 × 123337 |
+| sapn-combined | equipment | 80,123 | 266.0 | 12.66 | 38.56 | 133786 × 602129 |
+
+Both MVLV scenarios have 350 inline devices and 2,544 attachments (2,894 symbols,
+32,222 strokes). Combined SAPN has 80,123 symbols and 666,147 strokes, alongside
+305,310 wire segments and 98,633 buses. All three equipment fixtures have **zero
+foreign base-route intersections with reserved symbol boxes**. The offline audit
+uses axis sweeps; it excludes text, glyph/stem collisions, screen-space crowding
+and pixel line widths. It is not a claim that the mesh has no route crossings.
+Source reference hashes, endpoints, states, parents and tree roles are unchanged.
+The raw source JSON stays external and generated buffers stay ignored.
+
+The main cost is visual footprint: equipment expands MVLV height about 4.3× and
+combined SAPN height about 4.9× relative to crossing-aware routing. Port spacing is
+conservative even for line-only ports. Adaptive port sizing and equipment/label
+LOD are follow-up work. Every symbol is still submitted at overview; there is no
+CPU viewport culling or aggregation. Packed/owned array totals exclude JS maps,
+label objects, deck.gl copies and GPU allocations. Compact MVLV adds a glyph cache;
+SAPN uses the zero-copy glyph path plus color arrays. Fifty regression tests pass,
+including foreign-route intrusion detection, dense attachments, self-loops,
+parallel circuits, source identity/state preservation and pathological row gaps.
+
+
+[Browser comparison](evidence/equipment-browser-comparison.json) records one
+six-second visible-tab sample per row at 1190 × 560 CSS pixels, DPR 2, dark theme,
+compact open switches, automatic labels and wire picking off. Equipment picking
+remains enabled. All samples completed without backgrounding.
+
+| Dataset | Crossing-aware p95 | Equipment p95 |
+|---|---:|---:|
+| MVLV documented | 10.1 ms | 10.2 ms |
+| MVLV all closed | Not sampled this comparison | 10.3 ms |
+| Combined SAPN | 10.4 ms | 10.6 ms |
+
+These runs support comparable camera interaction on this machine, not a guaranteed
+frame rate or GPU timing result. SAPN equipment owns 44.18 MiB of CPU arrays. Its
+observed load-to-first-draw was 1.17 s, including 263 ms browser preparation;
+loading the baseline with a reused sidecar took 450 ms. Those load paths have
+different cache states and are not a controlled overhead comparison. Full browser
+preparation includes identity/search indexes and colors beyond the offline cache
+benchmark. Visual checks covered dark/paper themes, transformer and supply bodies,
+load and general-shunt attachments, direct glyph picking, exact source identities,
+and restoring an open switch body in compact presentation. Selection IDs sit
+above attachment glyphs; general label collision avoidance remains future work.

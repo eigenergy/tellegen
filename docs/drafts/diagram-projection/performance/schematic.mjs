@@ -1,4 +1,5 @@
 /** Deterministic topology layout. Electrical identities and endpoints are untouched. */
+import {equipmentGeometry,validateEquipment} from './equipment.mjs';
 import {corridorRouting} from './corridor-routing.mjs';
 import {tidyTreeLanes} from './tidy-tree.mjs';
 import {packArrays} from './fixture.mjs';
@@ -9,7 +10,7 @@ export const SPACING={depth:120,leaf:24,component:160,panel:320};
 
 export function makeSchematic(model,{strategy='leaf-order',routing='current'}={}){
   if(!['leaf-order','tidy-tree'].includes(strategy))throw new Error('Unknown schematic strategy');
-  if(!['current','corridor','crossing-aware'].includes(routing))throw new Error('Unknown routing strategy');
+  if(!['current','corridor','crossing-aware','equipment'].includes(routing))throw new Error('Unknown routing strategy');
   const started=performance.now(),n=model.buses.length,edges=model.branches,e=edges.length;
   const offsets=new Uint32Array(n+1);
   for(const b of edges){
@@ -67,7 +68,8 @@ export function makeSchematic(model,{strategy='leaf-order',routing='current'}={}
   for(let u=0;u<n;u++){const c=components[component[u]],t=translations[c.source];positions[u*3]+=t[0];positions[u*3+1]+=c.bounds[1]+t[1];}
   for(const c of components){const t=translations[c.source];c.bounds=c.bounds.map((v,i)=>v+t[i%2]);}
   const placed=performance.now();
-  const routed=routing!=='current'?corridorRouting({model,positions,depth,component,components,roles,crossingAware:routing==='crossing-aware'}):null;
+  const routed=routing!=='current'?corridorRouting({model,positions,depth,component,components,roles,crossingAware:routing==='crossing-aware'||routing==='equipment',equipment:routing==='equipment'}):null;
+  const equipment=routing==='equipment'?equipmentGeometry(model,positions,routed):null;
   if(routed)panels.splice(0,panels.length,...routed.panels);
   const ss=[],tt=[],owners=[],endpoints=new Uint32Array(e*2),states=new Uint8Array(e);
   function segment(a,b,owner){if(a[0]===b[0]&&a[1]===b[1])return;ss.push(a[0],a[1],0);tt.push(b[0],b[1],0);owners.push(owner);}
@@ -83,26 +85,27 @@ export function makeSchematic(model,{strategy='leaf-order',routing='current'}={}
       points=[a,[a[0]+stub,a[1]],[a[0]+stub,a[1]-dy],[lane,a[1]-dy],[lane,z[1]-dy],[z[0]+stub,z[1]-dy],[z[0]+stub,z[1]],z];
     }
     let gapSegment=-1,longest=0;
-    if(b.disabled)for(let j=1;j<points.length;j++){const distance=Math.abs(points[j][0]-points[j-1][0])+Math.abs(points[j][1]-points[j-1][1]);if(distance>longest){longest=distance;gapSegment=j;}}
+    if(b.disabled&&!(equipment&&b.family==='switch'&&b.openSwitch))for(let j=equipment?.gaps.has(i)?2:1;j<points.length;j++){const distance=Math.abs(points[j][0]-points[j-1][0])+Math.abs(points[j][1]-points[j-1][1]);if(distance>longest){longest=distance;gapSegment=j;}}
     for(let j=1;j<points.length;j++){
       const p=points[j-1],q=points[j];
-      if(j===gapSegment){const gap=Math.min(8,longest/4),before=.5-gap/longest/2,after=.5+gap/longest/2;segment(p,p.map((v,k)=>v+(q[k]-v)*before),i);segment(p.map((v,k)=>v+(q[k]-v)*after),q,i);}
+      if(j===1&&equipment?.gaps.has(i)){const [left,right]=equipment.gaps.get(i);segment(p,left,i);segment(right,q,i);}
+      else if(j===gapSegment){const gap=Math.min(8,longest/4),before=.5-gap/longest/2,after=.5+gap/longest/2;segment(p,p.map((v,k)=>v+(q[k]-v)*before),i);segment(p.map((v,k)=>v+(q[k]-v)*after),q,i);}
       else segment(p,q,i);
     }
   }
-  const {buffer,sections}=packArrays({positions,endpoints,states,segmentSources:new Float32Array(ss),segmentTargets:new Float32Array(tt),segmentBranches:new Uint32Array(owners),parent,parentBranch,depth,component,branchRoles:roles,...(routed?.arrays??{})});
+  const {buffer,sections}=packArrays({positions,endpoints,states,segmentSources:new Float32Array(ss),segmentTargets:new Float32Array(tt),segmentBranches:new Uint32Array(owners),parent,parentBranch,depth,component,branchRoles:roles,...(routed?.arrays??{}),...(equipment?.arrays??{})});
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
-  for(const a of [positions,ss,tt,...(routed?[routed.arrays.busbarSources,routed.arrays.busbarTargets]:[])])for(let i=0;i<a.length;i+=3){x0=Math.min(x0,a[i]);x1=Math.max(x1,a[i]);y0=Math.min(y0,a[i+1]);y1=Math.max(y1,a[i+1]);}
+  for(const a of [positions,ss,tt,...(routed?[routed.arrays.busbarSources,routed.arrays.busbarTargets]:[]),...(equipment?[equipment.arrays.equipmentSources,equipment.arrays.equipmentTargets]:[])])for(let i=0;i<a.length;i+=3){x0=Math.min(x0,a[i]);x1=Math.max(x1,a[i]);y0=Math.min(y0,a[i+1]);y1=Math.max(y1,a[i+1]);}
   const treeEdges=roles.reduce((sum,r)=>sum+(r===ROLE.TREE),0),disabledEdges=states.reduce((sum,r)=>sum+r,0);
-  return {buffer,manifest:{version:1,count:n,branches:e,segments:owners.length,bytes:buffer.byteLength,sections,bounds:[x0-80,y0-140,x1+80,y1+80],coordinateSpace:'schematic',placement:`source-rooted ${strategy==='tidy-tree'?'tidy':'leaf-order'} spanning forest; ${routing==='crossing-aware'?'bus fan-out and crossing-aware corridor lanes':routing==='corridor'?'bus fan-out and corridor lanes':'midpoint routes'}`,coincidentBuses:0,coincidentBranches:edges.filter(b=>b.from===b.to).length,
-    routingMode:routing,routing:routed?.metadata??{algorithm:'midpoint-offsets',version:1},layoutMode:strategy==='tidy-tree'?'tidy-tree':'schematic',panels,layout:{algorithm:`source-rooted-bfs-${strategy}`,version:SCHEMATIC_VERSION,spacing:SPACING,rootRule:'First enabled voltage-source bus in canonical order per enabled component, then first canonical bus',orientation:'left to right; topological depth, not power flow',components,sourceBuses:[...declaredSources],treeEdges,crossLinks:e-treeEdges-disabledEdges,disabledEdges,maxDepth:components.reduce((max,c)=>Math.max(max,c.maxDepth),0),placementMs:placed-started,routingAndPackingMs:performance.now()-placed,totalMs:performance.now()-started}}};
+  return {buffer,manifest:{version:1,count:n,branches:e,segments:owners.length,bytes:buffer.byteLength,sections,bounds:[x0-80,y0-140,x1+80,y1+80],coordinateSpace:'schematic',placement:`source-rooted ${strategy==='tidy-tree'?'tidy':'leaf-order'} spanning forest; ${routing==='equipment'?'equipment slots and crossing-aware corridor lanes':routing==='crossing-aware'?'bus fan-out and crossing-aware corridor lanes':routing==='corridor'?'bus fan-out and corridor lanes':'midpoint routes'}`,coincidentBuses:0,coincidentBranches:edges.filter(b=>b.from===b.to).length,
+    equipment:equipment?.metadata??null,routingMode:routing,routing:routed?.metadata??{algorithm:'midpoint-offsets',version:1},layoutMode:strategy==='tidy-tree'?'tidy-tree':'schematic',panels,layout:{algorithm:`source-rooted-bfs-${strategy}`,version:SCHEMATIC_VERSION,spacing:SPACING,rootRule:'First enabled voltage-source bus in canonical order per enabled component, then first canonical bus',orientation:'left to right; topological depth, not power flow',components,sourceBuses:[...declaredSources],treeEdges,crossLinks:e-treeEdges-disabledEdges,disabledEdges,maxDepth:components.reduce((max,c)=>Math.max(max,c.maxDepth),0),placementMs:placed-started,routingAndPackingMs:performance.now()-placed,totalMs:performance.now()-started}}};
 }
 
 export function validateSchematic(f){
-  const m=f.manifest,n=m.count,roles=f.branchRoles;
+  const m=f.manifest,n=m.count,roles=f.branchRoles;validateEquipment(f);
   if(f.parent?.length!==n||f.parentBranch?.length!==n||f.depth?.length!==n||f.component?.length!==n||roles?.length!==m.branches)throw new Error('Invalid schematic arrays');
   for(let s=0;s<m.segments;s++){const j=s*3;if(f.segmentSources[j]!==f.segmentTargets[j]&&f.segmentSources[j+1]!==f.segmentTargets[j+1])throw new Error('Non-orthogonal route');}
-  if(['corridor','crossing-aware'].includes(m.routingMode)){
+  if(['corridor','crossing-aware','equipment'].includes(m.routingMode)){
     if(f.branchPorts?.length!==m.branches*6||f.busbarSources?.length!==n*3||f.busbarTargets?.length!==n*3)throw new Error('Missing fan-out geometry');
     for(const a of [f.branchPorts,f.busbarSources,f.busbarTargets])if(!a.every(Number.isFinite))throw new Error('Non-finite fan-out geometry');
     for(let u=0;u<n;u++)if(f.busbarSources[u*3]!==f.positions[u*3]||f.busbarTargets[u*3]!==f.positions[u*3]||f.busbarSources[u*3+2]!==f.positions[u*3+2]||f.busbarTargets[u*3+2]!==f.positions[u*3+2]||f.busbarSources[u*3+1]>f.positions[u*3+1]||f.busbarTargets[u*3+1]<f.positions[u*3+1])throw new Error('Invalid busbar');
@@ -111,6 +114,8 @@ export function validateSchematic(f){
       if(f.branchPorts[k]!==f.positions[u*3]||f.branchPorts[k+2]!==f.positions[u*3+2]||f.branchPorts[k+1]<f.busbarSources[u*3+1]||f.branchPorts[k+1]>f.busbarTargets[u*3+1])throw new Error('Port outside endpoint busbar');
     }
   }
+  const symbolBranches=new Set(Array.from(f.equipmentGlyphOwners??[]).filter(i=>i<m.branches));
+  const gapsSeen=new Uint8Array(m.branches);
   let previous=-1;const seen=new Uint8Array(m.branches);
   for(let s=0;s<m.segments;s++){
     const b=f.segmentBranches[s],first=b!==previous,last=s===m.segments-1||f.segmentBranches[s+1]!==b;
@@ -119,10 +124,14 @@ export function validateSchematic(f){
       const start=f.branchPorts?f.branchPorts[b*6+axis]:f.positions[f.endpoints[b*2]*3+axis];
       const end=f.branchPorts?f.branchPorts[b*6+3+axis]:f.positions[f.endpoints[b*2+1]*3+axis];
       if(first&&f.segmentSources[s*3+axis]!==start||last&&f.segmentTargets[s*3+axis]!==end)throw new Error('Route endpoint mismatch');
-      if(!first&&!f.states[b]&&f.segmentSources[s*3+axis]!==f.segmentTargets[(s-1)*3+axis])throw new Error('Discontinuous enabled route');
+      if(!first&&f.segmentSources[s*3+axis]!==f.segmentTargets[(s-1)*3+axis]){
+        const symbolGap=symbolBranches.has(b)&&[0,1,2].every(k=>f.segmentTargets[(s-1)*3+k]===f.equipmentInlineGaps[b*6+k]&&f.segmentSources[s*3+k]===f.equipmentInlineGaps[b*6+3+k]);
+        if(symbolGap)gapsSeen[b]=1;else if(!f.states[b])throw new Error('Discontinuous enabled route');
+      }
     }
     seen[b]=1;previous=b;
   }
+  for(const b of symbolBranches)if(!gapsSeen[b])throw new Error('Missing equipment slot gap');
   if(seen.some(x=>!x))throw new Error('Unrendered branch');
   const positions=new Set();let roots=0,trees=0,cross=0,disabled=0;
   for(let u=0;u<n;u++){

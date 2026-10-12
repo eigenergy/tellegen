@@ -1308,3 +1308,76 @@ Remaining limitations are explicit: open-route corridor space is still reserved,
 endpoint annotations may overlap at distant zoom, and changing electrical scenarios
 can still move buses. Those require independent layout-stability and screen-space
 annotation policies, with the source topology and switch browser kept authoritative.
+
+
+## Source-owned equipment symbols in schematic networks
+
+The performance gallery now integrates equipment symbols through a separate
+**Equipment + clearance** routing option, available for both schematic placements.
+It combines crossing-aware corridor ordering with explicit device envelopes and
+bus attachment slots. Current, corridor and crossing-aware routing remain useful
+baselines. Source-coordinate visualization is unchanged.
+
+**Ownership boundary.** PowerIO remains authoritative for equipment identities,
+terminal maps, winding associations, switch state and service status. Tellegen
+owns compact visual templates, glyph bounds, attachment order, route gaps,
+binary draw buffers and picking. The POC changes no PowerIO schema and introduces
+no synthetic electrical buses. Its numeric glyph owner is a branch index or
+`branchCount + attachmentIndex` into the unchanged BMOPF reference sidecar. Public
+selection retains the full source identity, including transformer kind. The future
+production projection should use the proposed stable source references above;
+these packed indices are transport/rendering details scoped to one fixture.
+
+**Visual semantics.** Transformers use separated winding circles; switches use
+contacts with an open/closed blade; loads use an equipment arrow; supplies use a
+circle and wave. General shunts use a Y block. In particular, MVLV neutral
+conductance shunts must not become capacitors just because the specimen sheet has
+a capacitive example. Attachments connect to their owning busbar at equipment
+level; their exact terminal maps remain inspectable. They do not establish an
+implicit neutral or earth. No generator or detailed equivalent is invented from
+an unsupported source table. The π-line specimen remains an inspection model,
+not the default line symbol. A multi-wire projection will require authoritative
+per-terminal connections and coupled models, independently of these glyphs.
+
+**Geometry contract.** Stage 32 × 32-unit device envelopes before allocating
+corridors. Inline transformers and switches reserve 68-unit leads; their wire
+segments stop at actual symbol terminals. Attachments reserve bus-owned vertical
+slots and stems. A monotone local expansion opens only constrained row gaps while
+preserving row order/alignment across depths, then packs component/source panels
+with equipment extents. This avoids the pathological global scaling caused by a
+single very small tidy-tree gap. Geometry is deterministic and preprocessing stays
+O((V + E + A) log(V + E + A)), with bounded glyph tessellation and linear storage;
+A is attachment count. Bus centres move, while electrical endpoints and the
+display forest stay unchanged. Layout should therefore be treated as a separate
+cached variant, not an overlay that can be applied to arbitrary old coordinates.
+
+**Interaction and rendering.** Binary deck.gl layers batch strokes, attachment
+junctions and pick targets. A small selection overlay and exact source-ID search
+cover both inline and attached devices. Compact open-tie mode suppresses each
+open body with its route, retaining endpoint annotations and the switch browser;
+selection restores both. Closed-but-out-of-service devices remain distinguishable.
+No-open datasets reuse full geometry. There is no per-device DOM, per-frame layout
+or global glyph scan for selection labels. Bounds are geometric, not masks that
+hide unrelated routes.
+
+**Evidence and limits.** Both MVLV switch scenarios (2,894 symbols each) and the
+98,633-bus combined SAPN collection (80,123 symbols) pass unchanged source-reference,
+endpoint/state/forest checks and an offline reserved-box clearance audit. The
+measured SAPN geometry increases from 16.3 to 38.6 MiB; median layout/packing is
+about 266 ms versus 216 ms in this local five-sample run. Symbol clearance expands
+SAPN height about 4.9× and MVLV about 4.3×. This is a readable local-detail baseline,
+not the final overview density policy. Symbols are all submitted at every zoom;
+GPU copies, JS object overhead, label collisions and screen-space crowding remain
+outside the packed geometry metric. Future work should evaluate adaptive port
+spacing, glyph/label LOD and bounded equivalent/multi-wire inspection. See the
+[implementation and measurements](performance/README.md#equipment-symbols-and-reserved-routing-space)
+and [reproducible aggregate audit](performance/evidence/equipment-comparison.json).
+
+
+The visible browser comparison measured SAPN p95 camera intervals of 10.6 ms with
+equipment versus 10.4 ms without, and MVLV documented 10.2 versus 10.1 ms. MVLV
+all-closed equipment measured 10.3 ms. These are single six-second samples with
+automatic labels and wire picking off, at DPR 2; equipment picking stays enabled.
+SAPN owned CPU arrays total 44.18 MiB; observed load-to-first-draw was 1.17 s.
+Browser preparation, identity indexes and source parsing remain separate costs
+from offline routing. See [browser evidence](performance/evidence/equipment-browser-comparison.json).
