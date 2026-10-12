@@ -22,6 +22,8 @@ and reconstruction of missing substation detail are outside this proposal.
 | [feeder.connectivity.json](feeder.connectivity.json) | Concrete PowerIO-shaped electrical fixture |
 | [feeder.ts](feeder.ts) | Complete hand-authored single-line and multi-wire projections of the fixture |
 | [Visual reference gallery](gallery/index.html) | Interactive feeder drawings, paper/dark themes, selection and SVG export |
+| [Symbol specimens](symbols/index.html) | Equipment and equivalent-circuit review sheet, paper/dark and monochrome, with SVG export |
+| [Symbol guide](symbols/README.md) | Model boundaries, vector registry and review checklist |
 | [Gallery guide](gallery/README.md) | How to open, rebuild and verify the local reference gallery |
 | [Performance gallery](performance/index.html) | deck.gl baseline with synthetic 1k/10k/100k layouts and external BMOPF cases, including the 98,633-bus SAPN collection |
 | [Performance guide](performance/README.md) | Fixture generation, metrics and benchmark limitations |
@@ -624,6 +626,69 @@ elements use generic two-terminal blocks, not resistor zigzags that would imply
 a resistive load model. A masking stroke separates crossing routes without
 creating a junction; dots identify actual branching connection points.
 
+### Equipment and equivalent-circuit specimens
+
+The [symbol specimen sheet](symbols/index.html), served over HTTP as described in
+its [guide](symbols/README.md), is the next visual review fixture. It provides
+Equipment, Equivalent circuit and side-by-side Compare views, paper and dark
+themes, monochrome in either theme, and portable SVG export. The visual treatment
+shares the feeder gallery's fonts, surfaces, neutral wire strokes and restrained
+amber accents. Shape and text carry all electrical meaning without colour.
+
+Two independent choices govern diagram representation:
+
+1. **Projection:** single-line equipment/bundle structure or multi-wire terminal
+   and conductor structure.
+2. **Detail:** equipment identity or an explicitly declared equivalent model.
+
+Selecting equivalent detail must not silently replace physical terminals, infer
+conductor continuity or synthesize a study model. The specimen sheet chooses
+bounded scalar examples deliberately; it does not yet implement a multi-wire
+symbol registry or derive equivalents from BMOPF datasets.
+
+| Specimen | Equipment view | Declared equivalent and boundary |
+| --- | --- | --- |
+| π line | Connection with π model badge | Series `Zs`, independent `Yf` and `Yt`; no assumed equal `Y/2` split; model reference is not earth |
+| Generator | Circle with `G` | Internal voltage `E` behind `Zg`; chosen example, not a universal generator/inverter model |
+| External supply | AC source circle | Thévenin `Vth` behind `Zth`; no implied slack assignment |
+| Load | Demand arrow | Constant-power `S = P + jQ` block; does not imply a resistor or solved flow direction |
+| Transformer | Two winding circles | Primary-referred leakage `Zℓ` plus ideal `a:1` transformer; magnetizing branch omitted by declaration; separate references, no interwinding conductor |
+| Capacitive shunt | Capacitor plates | `Yc = jωC` with explicit reference terminal; no inferred physical earth connection |
+| Switch, closed/open/unknown | Blade/contact geometry or explicit unknown marker | Ideal closed `ΔV = 0`, open `I = 0`, or unresolved state with no inferred conductive relation; position remains separate from service availability |
+
+The vocabulary is IEC-oriented, pending engineer review, rather than a formal
+standards compliance claim. [IEC's diagram-symbol guidance](https://tc3.iec.ch/tc-activity/graphical-symbols-for-diagrams/)
+provides the standards context. [EPRI's line-model documentation](https://opendss.epri.com/Line.html)
+illustrates why a π symbol alone cannot specify conductor-coupled matrix models.
+
+**Ownership.** PowerIO continues to own equipment identities, terminal membership,
+conductor and winding relations, explicit switch-pole state, and available model
+parameters with provenance. Missing or incompatible model detail remains explicit.
+Tellegen owns symbol selection, primitive geometry, ports, bounds, labels, theme,
+level of detail and interaction. Neither theme nor symbol choice changes electrical
+semantics. Equivalent-model expansion needs its own source mapping for internal
+model elements; visual reference nodes must not become physical network buses.
+No canonical PowerIO schema changes are introduced by this specimen-only step.
+
+**Implementation.** The small local vector registry in `symbols/symbols.mjs`
+contains stable fixture IDs, shared external ports, separate primitive lists for
+equipment and equivalent detail, and per-specimen assumptions. A common renderer
+feeds both HTML SVGs and standalone SVG export. Symbols have fixed local bounds;
+text remains horizontal. Transformer coupling is a non-conductive annotation.
+Export resolves the palette and preserves source/port attributes and assumptions
+in SVG descriptions. The review IDs are fixture identities, not imported network
+references; this registry is not yet the production `DiagramScene` contract.
+
+**Scale and next gate.** Keep equipment symbols compact in the network overview.
+Equivalent-circuit detail belongs in a selected, bounded neighbourhood or inspector,
+with space reserved before routing. Approved vector geometry should feed instanced
+or batched deck.gl primitives, not one DOM element or GPU layer per equipment item.
+Reuse stable geometry across theme changes and keep labels budgeted. This sheet
+adds no work to the 100k-bus render loop and makes no new throughput claim. Before
+integration, review the specimens with power engineers, add unavailable-detail and
+multi-wire examples (including conductor coupling and explicit winding topology),
+and measure glyph/label budgets on the combined SAPN collection.
+
 ### Visual review gate
 
 Review both representations in both themes and in monochrome. A power engineer
@@ -633,8 +698,8 @@ Changing theme, colour mode or selection must leave all source mappings intact.
 Cross-view selection must preserve a conductor or coil selection even when the
 compact view can show only its containing equipment.
 
-Before production integration, add reference specimens for an open switch,
-parallel circuits, a phase permutation, a centre tap, impedance grounding,
+Before production integration, extend the switch specimens to per-pole states and
+add reference specimens for parallel circuits, a phase permutation, a centre tap, impedance grounding,
 unavailable detail and quantitative overlays. Adopt approved specimens as visual
 regression references after engineer review. Automatic layout must preserve the
 same semantic and visual invariants.
