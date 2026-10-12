@@ -43,14 +43,18 @@ the same glyph renderer. Each specimen contains:
 
 The shared local bounds are `380 × 200` drawing units. SVG paths, circles,
 rectangles and text use role-based styles. `data-source` and `data-port` are review
-identities, not imported PowerIO references. Internal model reference nodes are
-local annotations, not additional external terminals or physical earth bonds.
+identities, not imported PowerIO references. Internal model voltage references use labelled triangles, distinct from hollow
+external ports and switch contacts. Repeated IDs within a specimen denote the same
+reference; IDs do not connect separate specimens. Transformer references `0p` and
+`0s` are separate. A reference marker does not assert a physical earth bond. The
+capacitive shunt retains a hollow external return port, with no reference assigned.
 The registry describes a visual specimen; it is not an electrical connectivity
 solver or production TypeScript contract.
 
 ## Engineering review
 
-Check that the π line preserves independent end admittances; generator and supply
+Check that the π line preserves PowerIO’s end admittances, including symmetric
+halves where specified, and terminates both shunts at explicit reference `0`; generator and supply
 remain distinct; the constant-power load is not represented as a resistance;
 transformer primary and secondary have no conductive bridge; and switch position
 is unambiguous without colour. Every equivalent is a declared scalar study model.
@@ -68,3 +72,22 @@ The scale experiment remains in `../performance/`. Before integrating symbols
 there, convert approved primitives into batched GPU geometry, reserve symbol and
 label bounds during routing, and expose equivalent detail only within a bounded
 inspection scope. This sheet makes no new performance claim for 100k buses.
+
+## Reference ambiguity review
+
+- **π line:** remove the lower rail. Each shunt has its own triangle labelled
+  `0 — model reference`. These denote one fixed voltage reference, not a floating
+  internal junction or a second series path between the line ends.
+- **Generator / supply / load:** replace hollow internal reference circles with
+  the same labelled reference marker. Hollow terminals remain external ports.
+- **Transformer:** use separate `0p` and `0s` markers, without an interwinding wire.
+  These establish local voltage measurements, not a shared conductive node.
+- **Capacitive shunt:** retain the two-terminal example. Its lower hollow port is
+  explicitly `return (external)`, not implicitly tied to zero or earth.
+- **Switches:** no reference is needed. Closed continuity, an open gap and the
+  unknown-position marker remain distinct; unknown does not mean open.
+
+The distinction is carried by geometry and labels in both the page and SVG export.
+The PowerIO 0.11.3 distribution model has separate end-shunt matrices; its
+transmission model also resolves legacy total charging to equal halves. The
+renderer must preserve that resolved model rather than impose asymmetry.

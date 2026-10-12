@@ -648,18 +648,55 @@ symbol registry or derive equivalents from BMOPF datasets.
 
 | Specimen | Equipment view | Declared equivalent and boundary |
 | --- | --- | --- |
-| π line | Connection with π model badge | Series `Zs`, independent `Yf` and `Yt`; no assumed equal `Y/2` split; model reference is not earth |
+| π line | Connection with π model badge | Series `Zs` between endpoints; `Yf` and `Yt` each terminate at explicit voltage reference `0`; end values follow PowerIO, including symmetric halves where specified |
 | Generator | Circle with `G` | Internal voltage `E` behind `Zg`; chosen example, not a universal generator/inverter model |
 | External supply | AC source circle | Thévenin `Vth` behind `Zth`; no implied slack assignment |
 | Load | Demand arrow | Constant-power `S = P + jQ` block; does not imply a resistor or solved flow direction |
-| Transformer | Two winding circles | Primary-referred leakage `Zℓ` plus ideal `a:1` transformer; magnetizing branch omitted by declaration; separate references, no interwinding conductor |
-| Capacitive shunt | Capacitor plates | `Yc = jωC` with explicit reference terminal; no inferred physical earth connection |
+| Transformer | Two winding circles | Primary-referred leakage `Zℓ` plus ideal `a:1` transformer; magnetizing branch omitted by declaration; separate labelled references `0p` and `0s`, no interwinding conductor |
+| Capacitive shunt | Capacitor plates | `Yc = jωC` between bus and external return terminal; no implicit fixed reference or earth connection |
 | Switch, closed/open/unknown | Blade/contact geometry or explicit unknown marker | Ideal closed `ΔV = 0`, open `I = 0`, or unresolved state with no inferred conductive relation; position remains separate from service availability |
 
 The vocabulary is IEC-oriented, pending engineer review, rather than a formal
 standards compliance claim. [IEC's diagram-symbol guidance](https://tc3.iec.ch/tc-activity/graphical-symbols-for-diagrams/)
 provides the standards context. [EPRI's line-model documentation](https://opendss.epri.com/Line.html)
 illustrates why a π symbol alone cannot specify conductor-coupled matrix models.
+
+**Reference-node convention and PowerIO alignment.** The π equivalent has no
+horizontal lower rail: each end shunt terminates at an explicit triangle labelled
+`0 — model reference`. The two markers denote the same voltage reference within
+that specimen. They are not floating terminals. With endpoint currents entering
+the line and voltages measured relative to `0`, the scalar equations are:
+
+```text
+If = (Vf − Vt) / Zs + Yf Vf
+It = (Vt − Vf) / Zs + Yt Vt
+```
+
+A floating lower rail would instead introduce a series path through the two shunt
+impedances, in parallel with `Zs`; that is not this model. Reference symbols are
+voltage-reference declarations, not declarations of a physical earth bond. Their
+identifiers are scoped to each specimen, never used to connect unrelated cards.
+
+This was checked against PowerIO **0.11.3**, pinned in this worktree's Cargo.lock.
+`DistLineCode` stores `r_series`/`x_series` and separate
+`g_from`/`b_from`/`g_to`/`b_to` conductor matrices per unit length. Tellegen's
+[multiconductor line stamp](../../../crates/tellegen/src/mc_pf/network.rs)
+multiplies by length and adds end shunts to their respective diagonal blocks.
+Transmission `Branch::calc_terminal_charging()` preserves explicit `BranchCharging`
+values or derives equal `b/2` susceptance halves from legacy total `b`. The renderer
+must use these resolved semantics, not invent either equal or unequal end values.
+Multi-wire equivalents require the full conductor matrices and terminal mapping;
+a scalar drawing cannot convey mutual coupling.
+
+**Equivalent-circuit ambiguity review.** Generator, supply and constant-power load
+now use labelled `0` triangles rather than hollow internal nodes. Transformer
+windings use distinct `0p` and `0s` reference markers; no conductor joins them.
+The capacitive shunt deliberately remains a two-terminal example: its hollow
+`return (external)` port has no assigned reference or grounding connection.
+Closed/open/unknown switch glyphs retain their distinct continuity, gap and
+question-mark geometry. Unknown position has no inferred ideal-switch equation.
+Small hollow circles denote external ports or switch contacts, not fixed reference nodes.
+The convention and labels survive monochrome and standalone SVG export.
 
 **Ownership.** PowerIO continues to own equipment identities, terminal membership,
 conductor and winding relations, explicit switch-pole state, and available model
