@@ -1170,3 +1170,39 @@ owns authoritative pole state and connectivity semantics; Tellegen owns scenario
 presentation, drawing policy, cached route geometry and selection reconciliation.
 The gallery's scalar open/closed contract is deliberately narrower than the
 proposed PowerIO per-pole types above.
+
+
+## Inactive-tie presentation experiment
+
+The performance gallery now separates open-switch visibility from full-route
+visibility. Its default **Endpoint rings** mode replaces long open routes with
+hollow amber endpoint annotations, grouped by actual bus identity. A bounded,
+keyboard-accessible switch browser retains every equipment identity. Selecting a
+tie restores its complete route, existing gap and A / B labels. Selecting an
+endpoint annotation scopes the list to that bus. Full routes remains available at
+the same camera, positions, ports and topology. Open switches never become enabled
+forest edges or circuit paths through this interaction.
+
+This belongs to Tellegen's presentation policy, not PowerIO's electrical model.
+PowerIO still supplies state, endpoints and stable identities. Tellegen derives
+annotation groups, cached draw buffers, pick remapping and selection overlays.
+The gallery operates at equipment-level scalar switch state; a later multi-wire
+view must apply equivalent presentation rules to authoritative per-pole states.
+The policy targets explicitly open switches, retaining closed-but-out-of-service
+and disabled non-switch routes separately.
+
+On MVLVmeshed's documented state, 34 open switches become 68 endpoint annotations.
+With crossing-aware routes, visible route crossings fall from 2,077 to 23 before
+selection; the selected tie restores at most six segments. This removes clutter
+by changing what is drawn, not by improving topology or route ordering. All-closed
+is unchanged. The compact cached arrays add 0.31 MiB; data preparation is measured
+outside interaction, and visibility toggles reuse both resident wire layers.
+No-open scenarios, including combined SAPN, have a zero-copy path. A 100k-bus test
+checks partitioning, bounded storage and original equipment picking indices.
+
+See the [implementation guide](performance/README.md#compact-presentation-of-open-switches)
+and [aggregate comparison](performance/evidence/open-ties-comparison.json).
+Remaining limitations are explicit: open-route corridor space is still reserved,
+endpoint annotations may overlap at distant zoom, and changing electrical scenarios
+can still move buses. Those require independent layout-stability and screen-space
+annotation policies, with the source topology and switch browser kept authoritative.

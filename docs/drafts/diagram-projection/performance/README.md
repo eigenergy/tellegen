@@ -862,3 +862,106 @@ restoring the ordinary SAPN dataset controls.
 
 A final 98,633-bus SAPN crossing-aware regression run completed at 9.6 ms p95;
 its source-coordinate option remained available and switch lookup was disabled.
+
+
+## Compact presentation of open switches
+
+**Endpoint rings** is now the default open-switch presentation. `?open=full` keeps
+the previous full-route view; `?open=compact` selects rings. This is independent of
+layout, routing and electrical state. The toggle retains the camera, selection,
+bus positions, ports and busbars. It never rebuilds the forest or changes a switch.
+
+One hollow amber annotation appears at each bus with an open switch. Several open
+switches sharing an endpoint share a ring; source identities stay separate in the
+browser. Clicking a ring scopes the open-switch list to that bus and selects its
+first tie. **All open switches** removes the scope. The list shows at most 40
+entries at a time; Previous/Next wraps through all matches. Exact **Find switch**
+lookup still reaches every source identity. A self-loop contributes only one ring
+and shows an A / B endpoint label.
+
+Selecting an open switch reveals just its complete original route, with the
+existing gap, a contrasting halo and A / B labels. It never enables circuit/tree
+path inspection for that switch. Selecting a bus in compact mode highlights its
+other incident branches without restoring all incident open routes. Clear removes
+the selected route. Markers are pickable independently of **Pick wires**; ordinary
+wire picking maps compact segment indices back to the original source equipment.
+No branches or endpoints are removed from the source references or topology.
+Closed out-of-service switches and disabled non-switch equipment retain their
+full inactive routes; this presentation targets explicit `openSwitch === true`.
+
+`open-ties.mjs` prepares endpoint groups and a compact copy of the remaining segment
+coordinates and pick-index map once per dataset/geometry load. Work is linear in
+branches, segments and open endpoints. Original geometry remains resident for
+selection and Full routes. Two cached wire layers swap visibility; toggle and
+camera movement do not repartition geometry. Colors are prepared once and updated
+on theme changes. Scenes with no open switches use the original layer and allocate
+no extra presentation arrays. This trades bounded additional memory for predictable
+interaction; it is not viewport culling, routing optimization or network LOD.
+Both wire layers remain in the layer list; `visible` chooses which draws.
+GPU allocations are not instrumented. CPU array accounting includes the compact coordinates, source
+segment indices and colors, but excludes object/Map/Set overhead and GPU copies.
+
+### MVLV comparison at fixed Tidy-tree layouts
+
+[Aggregate evidence](evidence/open-ties-comparison.json) records one warm-up and five
+preparation samples for every MVLV scenario/routing pair plus combined SAPN. Source
+and staged-geometry hashes are checked; source geometry remains byte-identical.
+Raw sources and staged fixtures stay external/ignored. Reproduce with:
+
+```sh
+node docs/drafts/diagram-projection/performance/compare-open-ties.mjs /tmp/open-ties.json
+node --test docs/drafts/diagram-projection/performance/*.test.mjs
+```
+
+| Scenario / routing | Full route crossings | Compact route crossings | Suppressed segments | Endpoint rings |
+|---|---:|---:|---:|---:|
+| Documented / current | 708 | 50 | 272 | 68 |
+| Documented / corridor | 2,089 | 35 | 198 | 68 |
+| Documented / crossing-aware | 2,077 | 23 | 198 | 68 |
+| All closed / current | 768 | 768 | 0 | 0 |
+| All closed / corridor | 837 | 837 | 0 | 0 |
+| All closed / crossing-aware | 759 | 759 | 0 | 0 |
+
+The crossing-aware documented overview shows **98.9% fewer route crossings**, with
+all 34 open switches represented. This measures route geometry before selection,
+not marker/label collisions or a topological/routing improvement. Selecting one tie
+restores at most six segments in corridor modes (eight in current routing), so its
+crossings become visible again. Current routing still has 4,707 overlapping segment
+pairs in compact view; both corridor modes retain zero overlaps.
+
+The crossing-aware compact copy adds **327,744 bytes (0.31 MiB)** of CPU arrays;
+layout and source geometry stay resident and their bounds are unchanged. All-closed
+and SAPN allocate zero extra arrays. Because layout still reserves corridors for
+open routes, compact presentation does not reclaim their whitespace. The sparse
+rings can also coincide on screen at extreme zoom or on co-located source buses;
+the complete keyboard browser remains the unambiguous route to every switch.
+Production work should evaluate screen-space clustering and stable layout anchors
+as separate features rather than silently dropping identities.
+
+Regression coverage includes explicit open versus out-of-service behavior, original
+pick owners and coordinates in all three routing modes, parallel ties, self-loops,
+selected route gap retention, unchanged source bytes/state/forest, all-closed and
+synthetic fast paths, and a 100k-bus partition/remapping test. All 45 POC tests pass.
+
+
+The final offline sample measured median compact preparation of 0.92 ms for
+crossing-aware MVLV, 0.02 ms for all-closed, and 0.62 ms for combined SAPN. Browser
+presentation-toggle updates took 0.6–0.8 ms of JavaScript (not a GPU completion
+measurement). [Browser evidence](evidence/open-ties-browser-smoke.json) records the
+viewport, scenario, routing, presentation, extra array storage, loads, and camera
+runs. One six-second visible-tab sample per scenario/presentation gave:
+
+| Scenario | Full routes p95 | Endpoint rings p95 |
+|---|---:|---:|
+| Documented open ties | 8.9 ms | 9.2 ms |
+| All switches closed | 9.6 ms | 9.5 ms |
+
+A selected open route completed at 9.6 ms p95 in the final telemetry build (an
+initial smoke sample was 9.1 ms). These samples establish comparable interaction
+cost on this machine, not a frame-rate improvement. Verification also covered
+ring picking and bus scope, list wraparound, full/compact selection retention,
+all three routing options, paper/dark themes, original identity and open-state
+inspection, and disabling the circuit path for open switches.
+
+The final combined SAPN camera run completed at 9.5 ms p95 with zero additional
+presentation arrays; its 98,633-bus geometry and routing were unchanged.

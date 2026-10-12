@@ -4,6 +4,7 @@ import {decodeFixture} from './fixture.mjs';
 import {busQuery,sourceKey} from './bmopf-adapter.mjs';
 import {validateSchematic,NO_BRANCH} from './schematic.mjs';
 import {nonTreeBranches,inspectCircuit,branchSegments,overlayBounds} from './circuit-inspection.mjs';
+import {buildOpenTiePresentation,incidentPresentation,compactBranch} from './open-ties.mjs';
 import {validateReferences} from './bmopf-references.mjs';
 
 const $=id=>document.getElementById(id), fmt=n=>n.toLocaleString(), ms=n=>`${n.toFixed(1)} ms`;
@@ -19,14 +20,17 @@ const requestedLayout=new URLSearchParams(location.search).get('layout');
 let layoutMode=['source','tidy-tree'].includes(requestedLayout)?requestedLayout:'schematic',traceRoot=false,pendingRestoreSelection=null;
 const requestedRouting=new URLSearchParams(location.search).get('routing');
 let routingMode=['corridor','crossing-aware'].includes(requestedRouting)?requestedRouting:'current';
+let openMode=new URLSearchParams(location.search).get('open')==='full'?'full':'compact',openScope=null,openCursor=-1;
+const compactOpen=()=>openMode==='compact'&&!!fixture?.openTies.compact;
+const openSelected=()=>selection?.kind==='branch'&&fixture?.openTies.branchSet.has(selection.index);
 const viewKey=m=>`${m.id}/${m.layoutMode}/${m.routingMode??'current'}`;
 const viewStates=new Map();
 let pendingLoad=null,pendingSelection=null,labelTimer=0,selectionMetric=null;
 let circuit=null,overlay=[],pathOverlay=[],pathBars=[],endpointData=[],meshMatches=[],meshCursor=-1;
 const isInspecting=()=>!!circuit&&$('inspect-circuit').checked;
-const report={version:2,started:new Date().toISOString(),renderer:`deck.gl ${VERSION} / WebGL2 / OrthographicView`,
-  methodology:'Precomputed synthetic or BMOPF geometry; identity and placement recorded per dataset. No CPU culling or aggregation. Frame intervals from deck.gl onAfterRender; not GPU timer queries. First-draw callback is not a GPU completion fence.',
-  environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemoryGiB:navigator.deviceMemory??null},loads:[],runs:[],selections:[]};
+const report={version:3,started:new Date().toISOString(),renderer:`deck.gl ${VERSION} / WebGL2 / OrthographicView`,
+  methodology:'Precomputed synthetic or BMOPF geometry; identity and placement recorded per dataset. No viewport culling or network level of detail; optional open-switch presentation is prepared once on load. Frame intervals from deck.gl onAfterRender; not GPU timer queries. First-draw callback is not a GPU completion fence.',
+  environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemoryGiB:navigator.deviceMemory??null},loads:[],runs:[],selections:[],presentations:[]};
 function error(message){$('status').hidden=false;$('status').textContent=message;loading=false;pendingLoad=null;controls();}
 function controls(){
   for(const el of document.querySelectorAll('button[data-theme], #labels, #edge-picking, #fit, #detail, #benchmark, #bus-id, #search button, #clear, #next-colocated, #trace-root, #focus-source'))el.disabled=loading||!!run||!ready||!fixture;
@@ -41,9 +45,12 @@ function controls(){
   for(const id of ['mesh-prev','mesh-next','mesh-results'])$(id).disabled=unavailable||!meshMatches.length;
   for(const id of ['show-tree-path','dim-context','fit-connection','fit-circuit'])$(id).disabled=loading||!!run||!isInspecting();
   $('fit-circuit').disabled||=!circuit?.connected;
+  for(const el of document.querySelectorAll('[data-open-mode]'))el.disabled=loading||!!run||!fixture?.openTies.branchIndices.length;
+  for(const id of ['open-results','open-prev','open-next'])$(id).disabled=loading||!!run||!fixture?.openTies.branchIndices.length;
+  $('open-all').disabled=loading||!!run||openScope===null;
   $('stop').disabled=!run;
 }
-function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
+function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,selectedOpenSwitch:!!openSelected(),selectionRouteSegments:overlay.length,openSwitchPresentation:openMode,openSwitches:fixture?.openTies.branchIndices.length??0,openEndpointMarkers:compactOpen()?fixture.openTies.markers.length:0,suppressedRouteSegments:compactOpen()?fixture.openTies.suppressedSegments:0,extraPresentationArrayBytes:fixture?.openArrayBytes??0,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
 function fitCamera(){const b=fixture.manifest.bounds,r=$('canvas-wrap').getBoundingClientRect();return {...camera,target:[(b[0]+b[2])/2,(b[1]+b[3])/2,0],zoom:Math.log2(Math.min((r.width-70)/(b[2]-b[0]),(r.height-95)/(b[3]-b[1])))};}
 function detailCamera(){const m=fixture.manifest,r=Math.floor(m.regions/2),i=m.kind==='bmopf'?Math.floor(m.count/2):r*m.regionSize+2;return {...camera,target:[fixture.positions[i*3]+200,fixture.positions[i*3+1],0],zoom:0.6};}
 function setCamera(next,updateLabels=true){camera={target:next.target,zoom:next.zoom,minZoom:-24,maxZoom:5};deck.setProps({viewState:camera});$('zoom-readout').textContent=`${(2**camera.zoom).toPrecision(3)}× · PRECOMPUTED`;if(updateLabels)scheduleLabels();}
@@ -77,9 +84,15 @@ function prepare(f){
     for(const a of f.refs.attachments){if(!f.attachmentsByBus.has(a.bus))f.attachmentsByBus.set(a.bus,[]);f.attachmentsByBus.get(a.bus).push(a);}
   }
   f.meshBranches=nonTreeBranches(f);f.ownedBytes+=f.meshBranches.byteLength;
+  const opened=performance.now();f.openTies=buildOpenTiePresentation(f);f.openArrayBytes=f.openTies.arrayBytes;
+  if(f.openTies.compact){
+    const c=f.openTies.compact;f.compactColors=new Uint8Array(c.segments.length*4);f.openArrayBytes+=f.compactColors.byteLength;
+    f.compactLineData={length:c.segments.length,attributes:{getSourcePosition:{value:c.sources,size:3},getTargetPosition:{value:c.targets,size:3},getColor:{value:f.compactColors,size:4,normalized:true}}};
+  }
+  f.openPrepareMs=performance.now()-opened;f.ownedBytes+=f.openArrayBytes;
   colour(f);
 }
-function colour(f){const p=palette[theme];for(let s=0;s<f.manifest.segments;s++){const b=f.segmentBranches[s];f.segmentColors.set(f.states[b]?p.open:f.refs?.branches[b].family==='transformer'?[141,124,209,255]:f.refs?.branches[b].family==='switch'?[101,165,132,255]:f.branchRoles?.[b]===1?[66,159,181,255]:p.line,s*4);}for(let i=0;i<f.manifest.count;i++)f.nodeColors.set(!f.refs&&i%f.manifest.regionSize===0?p.open:p.node,i*4);}
+function colour(f){const p=palette[theme];for(let s=0;s<f.manifest.segments;s++){const b=f.segmentBranches[s];f.segmentColors.set(f.states[b]?p.open:f.refs?.branches[b].family==='transformer'?[141,124,209,255]:f.refs?.branches[b].family==='switch'?[101,165,132,255]:f.branchRoles?.[b]===1?[66,159,181,255]:p.line,s*4);}if(f.openTies.compact)for(let i=0;i<f.openTies.compact.segments.length;i++){const s=f.openTies.compact.segments[i];f.compactColors.set(f.segmentColors.subarray(s*4,s*4+4),i*4);}for(let i=0;i<f.manifest.count;i++)f.nodeColors.set(!f.refs&&i%f.manifest.regionSize===0?p.open:p.node,i*4);}
 
 function rootPath(index){const edges=[];let u=index;while(fixture.parent&&fixture.parent[u]!==u){edges.push(fixture.parentBranch[u]);u=fixture.parent[u];if(edges.length>fixture.manifest.count)throw new Error('Invalid parent cycle');}return {edges,root:u};}
 function focusSource(){const row=selection.kind==='bus'?fixture.refs.buses[selection.index]:fixture.refs.branches[selection.index],source=row.source;
@@ -90,12 +103,15 @@ function refreshOverlay(){
   circuit=null;overlay=[];pathOverlay=[];pathBars=[];endpointData=[];
   if(!selection)return;
   const branches=selection.kind==='branch'?[selection.index]:traceRoot&&fixture.parent?rootPath(selection.index).edges:fixture.incidents.subarray(fixture.offsets[selection.index],fixture.offsets[selection.index+1]);
-  overlay=branchSegments(fixture,branches);
+  overlay=branchSegments(fixture,selection.kind==='bus'?incidentPresentation(branches,fixture.openTies,compactOpen()):branches);
   if(selection.kind==='branch'&&fixture.parent&&fixture.branchRoles[selection.index]===1&&!fixture.states[selection.index]){
     circuit=inspectCircuit(fixture,selection.index);
     pathOverlay=branchSegments(fixture,circuit.edges);
     if(fixture.busbarSources)pathBars=circuit.nodes.map(i=>({source:fixture.busbarSources.subarray(i*3,i*3+3),target:fixture.busbarTargets.subarray(i*3,i*3+3)}));
-    endpointData=[...new Set(circuit.endpoints)].map((i,j)=>({position:fixture.positions.subarray(i*3,i*3+3),end:j===1,text:`${circuit.endpoints[0]===circuit.endpoints[1]?'A / B':j?'B':'A'} · ${busName(i).length>20?busName(i).slice(0,8)+'…'+busName(i).slice(-6):busName(i)}`}));
+  }
+  if(circuit||openSelected()){
+    const ends=circuit?.endpoints??[fixture.endpoints[selection.index*2],fixture.endpoints[selection.index*2+1]];
+    endpointData=[...new Set(ends)].map((i,j)=>({position:fixture.positions.subarray(i*3,i*3+3),end:j===1,text:`${ends[0]===ends[1]?'A / B':j?'B':'A'} · ${busName(i).length>20?busName(i).slice(0,8)+'…'+busName(i).slice(-6):busName(i)}`}));
   }
 }
 function fitInspection(includePath){
@@ -123,9 +139,37 @@ function chooseMesh(i){
   meshCursor=(i+meshMatches.length)%meshMatches.length;$('inspect-circuit').checked=true;
   select('branch',meshMatches[meshCursor]);fitInspection($('show-tree-path').checked);
 }
+function openMatches(){return !fixture?[]:openScope===null?fixture.openTies.branchIndices:fixture.openTies.byBus.get(openScope)??[];}
+function showOpenPage(){
+  const matches=openMatches();openCursor=selection?.kind==='branch'?matches.indexOf(selection.index):-1;
+  const start=Math.max(0,Math.floor(Math.max(0,openCursor)/40)*40),end=Math.min(matches.length,start+40),list=$('open-results');
+  list.replaceChildren();const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose an open switch';list.append(placeholder);
+  for(let i=start;i<end;i++){const option=document.createElement('option');option.value=String(i);option.textContent=`${i+1}. ${meshLabel(matches[i])}`;list.append(option);}
+  list.value=openCursor<0?'':String(openCursor);
+  const ties=fixture?.openTies;
+  $('open-summary').textContent=!ties?.branchIndices.length?'No open switches in this dataset; both presentations are identical.':`${ties.branchIndices.length} open switches at ${ties.markers.length} endpoint buses. ${openMode==='compact'?'Endpoint rings replace '+ties.suppressedSegments+' route segments; selecting one switch reveals its full route.':'All open routes shown.'} ${openScope===null?'All open switches': 'At bus '+busName(openScope)} · ${matches.length?start+1:0}–${end} of ${matches.length}.`;
+  for(const b of document.querySelectorAll('[data-open-mode]'))b.setAttribute('aria-pressed',String(b.dataset.openMode===openMode));
+  controls();
+}
+function fitSelectedRoute(){
+  if(selection?.kind!=='branch')return;
+  const b=fixture.refs.branches[selection.index],[x0,y0,x1,y1]=overlayBounds(fixture,[b.from,b.to],overlay),r=$('canvas-wrap').getBoundingClientRect();
+  setCamera({...camera,target:[(x0+x1)/2,(y0+y1)/2,0],zoom:Math.min(1.5,Math.log2(Math.min(Math.max(50,r.width-130)/(x1-x0+50),Math.max(50,r.height-150)/(y1-y0+50))))});
+}
+function chooseOpen(index,fit=true){
+  const matches=openMatches();if(!matches.length||loading||run)return;
+  const i=(index+matches.length)%matches.length;select('branch',matches[i]);if(fit)fitSelectedRoute();
+}
+function setOpenMode(mode){
+  if(!fixture||loading||run)return;
+  const started=performance.now();openMode=mode;
+  const url=new URL(location.href);url.searchParams.set('open',mode);history.replaceState(null,'',url);
+  refreshOverlay();showOpenPage();updateLabels();
+  report.presentations.push({dataset:fixture.manifest.id,layoutMode:fixture.manifest.layoutMode,routingMode:fixture.manifest.routingMode,mode,updateMs:performance.now()-started,extraArrayBytes:fixture.openArrayBytes});
+}
 function layers(){
   if(!fixture)return [];
-  const inspecting=isInspecting(),contextOpacity=inspecting&&$('dim-context').checked ? 0.2 : 1;
+  const inspecting=isInspecting(),openInspection=openSelected(),endpointsVisible=inspecting||openInspection,contextOpacity=inspecting&&$('dim-context').checked ? 0.2 : 1;
   const p=palette[theme],common={coordinateSystem:COORDINATE_SYSTEM.CARTESIAN,parameters:{depthCompare:'always'}};
   const nodeSelection=selection?.kind==='bus'?[{position:fixture.positions.subarray(selection.index*3,selection.index*3+3)}]:[];
   const panels=fixture.manifest.panels??(fixture.refs?.sources??[]).filter(s=>s.displayBounds).map(s=>({...s,bounds:s.displayBounds}));
@@ -133,17 +177,19 @@ function layers(){
   const roots=[...new Set([...(layout?.sourceBuses??[]),...(layout?.components??[]).map(c=>c.root)])].map(i=>({position:fixture.positions.subarray(i*3,i*3+3),label:sourceRoots.has(i)?'Source':'Layout root'}));
   return [
     new TextLayer({...common,id:`panel-labels-${fixture.manifest.id}-${theme}`,data:panels.filter(p=>(p.bounds[2]-p.bounds[0])*2**camera.zoom>170),getPosition:s=>[s.bounds[0],s.bounds[1]-30,0],getText:s=>s.label,getColor:p.label,getSize:13,getTextAnchor:'start',getAlignmentBaseline:'bottom',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
-    new LineLayer({...common,id:`branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.lineData,opacity:contextOpacity,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false}),
+    new LineLayer({...common,id:`branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.lineData,visible:!compactOpen(),opacity:contextOpacity,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false}),
+    ...(fixture.compactLineData?[new LineLayer({...common,id:`compact-branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.compactLineData,visible:compactOpen(),opacity:contextOpacity,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false})]:[]),
     ...(fixture.busbarData?[new LineLayer({...common,id:`busbars-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.busbarData,opacity:contextOpacity,getColor:p.node,getWidth:2,widthUnits:'pixels',pickable:true})]:[]),
     new ScatterplotLayer({...common,id:`buses-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.nodeData,opacity:contextOpacity,getRadius:1.9,radiusUnits:'common',radiusMinPixels:.65,radiusMaxPixels:4,pickable:true,stroked:false}),
+    new ScatterplotLayer({...common,id:`open-endpoints-${fixture.manifest.id}-${fixture.manifest.sha256}`,data:fixture.openTies.markers,visible:compactOpen(),opacity:contextOpacity,getPosition:d=>d.position,getRadius:7,radiusUnits:'common',radiusMinPixels:2.5,radiusMaxPixels:6,filled:false,stroked:true,getLineColor:p.open,lineWidthUnits:'pixels',getLineWidth:1.5,pickable:true}),
     new ScatterplotLayer({...common,id:'layout-roots',data:roots,opacity:contextOpacity,getPosition:d=>d.position,getRadius:4,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
     new TextLayer({...common,id:'root-labels',data:!inspecting&&camera.zoom>-2?roots.slice(0,100):[],getPosition:d=>d.position,getText:d=>d.label,getColor:p.open,getSize:11,getPixelOffset:[-8,0],getTextAnchor:'end',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
     new LineLayer({...common,id:'circuit-tree-path',data:inspecting&&$('show-tree-path').checked?pathOverlay:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.open,getWidth:2.5,pickable:false}),
     new LineLayer({...common,id:'circuit-tree-bars',data:inspecting&&$('show-tree-path').checked?pathBars:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.open,getWidth:3,pickable:false}),
-    new LineLayer({...common,id:'connection-halo',data:inspecting?overlay:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),getWidth:7,pickable:false}),
+    new LineLayer({...common,id:'connection-halo',data:endpointsVisible?overlay:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),getWidth:7,pickable:false}),
     new LineLayer({...common,id:'selection-lines',data:overlay,getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:inspecting?[66,159,181,255]:p.open,getWidth:inspecting?3:2.5,pickable:false}),
-    new ScatterplotLayer({...common,id:'circuit-endpoints',data:inspecting?endpointData:[],getPosition:d=>d.position,getRadius:6,radiusUnits:'pixels',getFillColor:[66,159,181,255],stroked:true,getLineColor:p.label,lineWidthUnits:'pixels',getLineWidth:1.5,pickable:false}),
-    new TextLayer({...common,id:'circuit-endpoint-labels',data:inspecting?endpointData:[],getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,getPixelOffset:d=>[d.position[0]>camera.target[0]?-10:10,d.end?22:-12],getTextAnchor:d=>d.position[0]>camera.target[0]?'end':'start',getAlignmentBaseline:'bottom',updateTriggers:{getPixelOffset:camera.target[0],getTextAnchor:camera.target[0]},fontFamily:'Plex, monospace',characterSet:'auto',background:true,getBackgroundColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),backgroundPadding:[4,3],pickable:false}),
+    new ScatterplotLayer({...common,id:'circuit-endpoints',data:endpointsVisible?endpointData:[],getPosition:d=>d.position,getRadius:6,radiusUnits:'pixels',getFillColor:openInspection?p.open:[66,159,181,255],stroked:true,getLineColor:p.label,lineWidthUnits:'pixels',getLineWidth:1.5,pickable:false}),
+    new TextLayer({...common,id:'circuit-endpoint-labels',data:endpointsVisible?endpointData:[],getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,getPixelOffset:d=>[d.position[0]>camera.target[0]?-10:10,d.end?22:-12],getTextAnchor:d=>d.position[0]>camera.target[0]?'end':'start',getAlignmentBaseline:'bottom',updateTriggers:{getPixelOffset:camera.target[0],getTextAnchor:camera.target[0]},fontFamily:'Plex, monospace',characterSet:'auto',background:true,getBackgroundColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),backgroundPadding:[4,3],pickable:false}),
     new ScatterplotLayer({...common,id:'selection-bus',data:nodeSelection,getPosition:d=>d.position,getRadius:6,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
     new TextLayer({...common,id:'labels',data:labelData,getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,sizeUnits:'pixels',fontFamily:'Plex, monospace',characterSet:'auto',fontSettings:{sdf:true},getTextAnchor:'start',getAlignmentBaseline:'bottom',getPixelOffset:[5,-5],pickable:false})
   ];
@@ -173,7 +219,7 @@ function updateLabels(){
       if(!reserve(px,py))continue;labelData.push({position:[px,py,0],text:labelName(i)});if(labelData.length>=200)break;
     }
   }
-  $('draw-count').textContent=`${fmt(fixture.manifest.count)} buses · ${fmt(fixture.manifest.segments)} wire segments${fixture.busbarData?' + '+fmt(fixture.manifest.count)+' busbars':''} submitted · ${labelData.length} labels`;
+  $('draw-count').textContent=`${fmt(fixture.manifest.count)} buses · ${fmt(compactOpen()?fixture.openTies.compact.segments.length:fixture.manifest.segments)} base wire segments${compactOpen()?' + '+fixture.openTies.markers.length+' open endpoint rings':''} + ${overlay.length} selection segments${fixture.busbarData?' + '+fmt(fixture.manifest.count)+' busbars':''} submitted · ${labelData.length} labels`;
   render();
 }
 function select(kind,index,started=performance.now()){
@@ -192,6 +238,7 @@ function select(kind,index,started=performance.now()){
       content+=`<details><summary>${attachments.length} source attachments</summary>${attachments.slice(0,100).map(a=>`<p>${escape(a.family)} / ${escape(a.id)} · terminals ${escape(a.terminalMap.join(', '))}${a.disabled?' · disabled':''}</p>`).join('')}${attachments.length>100?'<p>First 100 shown; all retained in reference data.</p>':''}</details>`;
       $('next-colocated').hidden=members.length<2;
     }else content+=`<p>${escape(busName(row.from))} → ${escape(busName(row.to))}<br>Terminal maps: ${escape(row.terminalMapFrom.join(', '))} → ${escape(row.terminalMapTo.join(', '))}<br>${row.family==='switch'?`${row.openSwitch?'Open · display gap':'Closed'} · ${row.outOfService?'out of service · display gap':'in service'}<br>Imported state: ${row.sourceOpenSwitch?'open':'closed'} · Scenario: ${escape(fixture.manifest.scenario?.label??'imported state')}`:row.disabled?'Out of service · display gap':'Enabled'}${fixture.positions[row.from*3]===fixture.positions[row.to*3]&&fixture.positions[row.from*3+1]===fixture.positions[row.to*3+1]?' · coincident endpoints, display detour':''}${fixture.branchRoles?'<br>Layout role: '+['tree edge','non-tree connection','inactive link (excluded from display tree)'][fixture.branchRoles[index]]:''}</p><p>${row.family==='transformer'?'Equipment association; does not imply interwinding conductor continuity.':row.family==='switch'?'Switch connection; terminal order preserved. State applies to the whole switch, not individual poles.':'Conductor bundle; terminal order preserved.'}</p>`;
+    if(openSelected())content+='<p class="fine">A / B mark this open switch’s endpoints. Only its selected route is restored in compact view; the gap remains. It is excluded from the enabled display tree.</p>';
     if(isInspecting())content+=`<div class="circuit-description"><p><strong>A</strong> · ${escape(busName(circuit.endpoints[0]))}<br><strong>B</strong> · ${escape(busName(circuit.endpoints[1]))}</p><p>${circuit.connected?`${circuit.edges.length} tree branches connect the endpoints via common ancestor ${escape(busName(circuit.ancestor))}.`:'Endpoints belong to different display components; no connecting tree path.'}</p><p class="fine">Cyan: selected connection · amber: connecting tree path. This is a circuit in the display spanning forest, not a power-flow or conductor-continuity result. Crossings are not junctions.</p></div>`;
     $('selection').innerHTML=content;
   }else if(kind==='bus'){
@@ -201,7 +248,7 @@ function select(kind,index,started=performance.now()){
     const a=fixture.endpoints[index*2],b=fixture.endpoints[index*2+1];
     $('selection').innerHTML=`<h2>Branch ${index+1}</h2><p>${busName(a)} → ${busName(b)}<br>${fixture.states[index]?'Open tie · explicit gap':'Closed branch'} · source branch/${index+1}</p>`;
   }
-  controls();$('trace-root').textContent=traceRoot?'Show incident branches':'Trace to layout root';updateLabels();
+  showOpenPage();controls();$('trace-root').textContent=traceRoot?'Show incident branches':'Trace to layout root';updateLabels();
 }
 async function load(id,mode=layoutMode,routing=routingMode){
   const previous=fixture,keep=previous?.manifest.id===id&&selection?{...selection}:null;
@@ -233,16 +280,16 @@ async function load(id,mode=layoutMode,routing=routingMode){
     if(refBuffer||reuse){next.refs=reuse??JSON.parse(new TextDecoder().decode(refBuffer));validateReferences(next);}
     if(m.coordinateSpace==='schematic')validateSchematic(next);
     const decoded=performance.now();prepare(next);const prepared=performance.now();
-    fixture=next;if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,submittedAt:prepared,environment:environment()};
+    fixture=next;openScope=null;showOpenPage();if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,openPresentationPrepareMs:next.openPrepareMs,submittedAt:prepared,environment:environment()};
     $('network-count').textContent=fmt(m.count);$('network-detail').textContent=m.kind==='bmopf'?`${fmt(m.lines)} lines · ${fmt(m.transformers)} transformer objects${m.switches?' · '+fmt(m.switches)+' switches':''}`:`${fmt(m.branches)} branches · ${fmt(m.openTies)} open ties`;
-    $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON; excludes JS objects`;
+    $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON${next.openArrayBytes?' + '+(next.openArrayBytes/1048576).toFixed(2)+' MiB compact arrays':''}; excludes JS objects`;
     $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode)+(actualRouting==='unavailable'?'':' / '+({'corridor':'Fan-out + lanes','crossing-aware':'Crossing-aware lanes','current':'Current routes'}[actualRouting]));$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
     $('layout-summary').textContent=m.layout?`${fmt(m.layout.treeEdges)} tree edges · ${fmt(m.layout.crossLinks)} non-tree connections · ${m.layout.components.length} components · ${ms(m.layout.totalMs)} offline layout + routing.${m.routingMode!=='current'?' '+m.routing.maxLanes+' peak corridor lanes.':''}${m.routing.ordering?' Lane-order crossings '+fmt(m.routing.ordering.before)+' → '+fmt(m.routing.ordering.after)+' in eligible corridors.':''} Roots choose layout direction, not power flow.`:actualMode==='source'?'Source-coordinate reference. Choose Leaf order or Tidy tree to inspect the network structure.':'Precomputed synthetic schematic.';
     $('scenario-detail').textContent=m.scenario?`${m.scenario.label}: ${m.openSwitches} open / ${m.closedSwitches} closed switches; ${m.outOfServiceSwitches} out of service. ${m.scenario.changedFromSource} states changed from the imported BMOPF. ${m.scenario.policy}${m.sourceCoordinatesAvailable===false?' Source coordinates unavailable; schematic views only.':''}`:'';
     const firstSwitch=next.refs?.branches.find(b=>b.family==='switch'&&b.openSwitch)??next.refs?.branches.find(b=>b.family==='switch');
     $('switch-id').value=firstSwitch?.id??'';$('switch-error').textContent='';
     $('bus-id').value=next.refs?busQuery(next.refs.sources[next.refs.buses[keep?.kind==='bus'?keep.index:0].source].id,next.refs.buses[keep?.kind==='bus'?keep.index:0].id):'B000501';$('bus-id').placeholder=next.refs?'Exact source ID or source/id':'B000001';
-    const url=new URL(location.href);url.searchParams.delete('size');url.searchParams.set('dataset',id);url.searchParams.set('layout',actualMode==='synthetic'?'schematic':actualMode);url.searchParams.set('routing',routingMode);history.replaceState(null,'',url);
+    const url=new URL(location.href);url.searchParams.delete('size');url.searchParams.set('dataset',id);url.searchParams.set('layout',actualMode==='synthetic'?'schematic':actualMode);url.searchParams.set('routing',routingMode);url.searchParams.set('open',openMode);history.replaceState(null,'',url);
     const restored=viewStates.get(viewKey(m));
     let nextCamera=restored??fitCamera();
     if(keep){const i=keep.kind==='bus'?keep.index:next.endpoints[keep.index*2];nextCamera={...nextCamera,target:[next.positions[i*3],next.positions[i*3+1],0],zoom:restored?.zoom??.6};}
@@ -291,9 +338,14 @@ function exportReport(){const data={...report,exported:new Date().toISOString(),
 for(const b of document.querySelectorAll('[data-size]'))b.addEventListener('click',()=>load(`synthetic-${b.dataset.size}`));
 for(const b of document.querySelectorAll('button[data-theme]'))b.addEventListener('click',()=>{theme=b.dataset.theme;document.documentElement.dataset.theme=theme;for(const x of document.querySelectorAll('button[data-theme]'))if(x.tagName==='BUTTON')x.setAttribute('aria-pressed',String(x.dataset.theme===theme));colour(fixture);
   // Theme changes retire base layers in this baseline; production should patch colours.
-  fixture.lineData={...fixture.lineData,attributes:{...fixture.lineData.attributes}};fixture.nodeData={...fixture.nodeData,attributes:{...fixture.nodeData.attributes}};render();});
+  if(fixture.compactLineData)fixture.compactLineData={...fixture.compactLineData,attributes:{...fixture.compactLineData.attributes}};fixture.lineData={...fixture.lineData,attributes:{...fixture.lineData.attributes}};fixture.nodeData={...fixture.nodeData,attributes:{...fixture.nodeData.attributes}};render();});
 for(const b of document.querySelectorAll('[data-layout]'))b.addEventListener('click',()=>load(fixture.manifest.id,b.dataset.layout));
 document.querySelectorAll('[data-routing]').forEach(b=>b.addEventListener('click',()=>load(fixture.manifest.id,layoutMode,b.dataset.routing)));
+document.querySelectorAll('[data-open-mode]').forEach(b=>b.addEventListener('click',()=>setOpenMode(b.dataset.openMode)));
+$('open-results').addEventListener('change',()=>{if($('open-results').value!=='')chooseOpen(Number($('open-results').value));});
+$('open-prev').addEventListener('click',()=>chooseOpen(openCursor<0?openMatches().length-1:openCursor-1));
+$('open-next').addEventListener('click',()=>chooseOpen(openCursor+1));
+$('open-all').addEventListener('click',()=>{openScope=null;showOpenPage();});
 $('focus-source').addEventListener('click',focusSource);
 $('trace-root').addEventListener('click',()=>{traceRoot=!traceRoot;select('bus',selection.index);
  if(traceRoot){const path=rootPath(selection.index),indices=[selection.index,...path.edges.flatMap(b=>[fixture.endpoints[b*2],fixture.endpoints[b*2+1]])];let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
@@ -315,7 +367,7 @@ $('dataset').addEventListener('change',()=>load($('dataset').value));
 $('next-colocated').addEventListener('click',()=>{if(selection?.kind!=='bus')return;const members=fixture.locations.get(locationKey(fixture,selection.index));select('bus',members[(members.indexOf(selection.index)+1)%members.length]);});
 $('labels').addEventListener('change',updateLabels);$('edge-picking').addEventListener('change',render);
 $('fit').addEventListener('click',()=>setCamera(fitCamera()));$('detail').addEventListener('click',()=>setCamera(detailCamera()));
-$('clear').addEventListener('click',()=>{selection=null;traceRoot=false;refreshOverlay();meshCursor=-1;showMeshPage();controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';updateLabels();});
+$('clear').addEventListener('click',()=>{selection=null;traceRoot=false;refreshOverlay();meshCursor=-1;showMeshPage();openScope=null;showOpenPage();controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';updateLabels();});
 $('search').addEventListener('submit',e=>{e.preventDefault();if(!fixture||run||loading)return;const started=performance.now(),value=$('bus-id').value.trim();$('search-error').textContent='';let i;
   if(fixture.refs){
     const raw=fixture.rawBusIds.get(value)??[];
@@ -330,8 +382,7 @@ $('switch-search').addEventListener('submit',e=>{
   $('switch-error').textContent=i===undefined?'No unique exact switch ID. Use source/id to qualify an ID.':'';
   if(i===undefined)return;
   select('branch',i,started);
-  const b=fixture.refs.branches[i],[x0,y0,x1,y1]=overlayBounds(fixture,[b.from,b.to],overlay),r=$('canvas-wrap').getBoundingClientRect();
-  setCamera({...camera,target:[(x0+x1)/2,(y0+y1)/2,0],zoom:Math.min(1.5,Math.log2(Math.min(Math.max(50,r.width-130)/(x1-x0+50),Math.max(50,r.height-150)/(y1-y0+50))))});
+  openScope=null;showOpenPage();fitSelectedRoute();
 });
 $('benchmark').addEventListener('click',benchmark);$('stop').addEventListener('click',()=>stopRun());$('export-report').addEventListener('click',exportReport);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopRun('tab hidden');});
@@ -348,7 +399,8 @@ async function start(){
   deck=new Deck({canvas:$('network-canvas'),parent:$('canvas-wrap'),width:'100%',height:'100%',deviceProps:{type:'webgl'},useDevicePixels:Math.min(devicePixelRatio,2),
     views:new OrthographicView({id:'schematic',flipY:true}),viewState:camera,controller:{doubleClickZoom:true},layers:[],pickingRadius:5,
     onViewStateChange:({viewState})=>{if(run)stopRun('user interaction');setCamera({...viewState,zoom:viewState.zoomX??viewState.zoom});},
-    onClick:info=>{if(info.index<0||!fixture||loading||run)return;if(info.layer?.id.startsWith('buses-')||info.layer?.id.startsWith('busbars-'))select('bus',info.index);else if(info.layer?.id.startsWith('branches-'))select('branch',fixture.segmentBranches[info.index]);},
+    onClick:info=>{if(info.index<0||!fixture||loading||run)return;if(info.layer?.id.startsWith('buses-')||info.layer?.id.startsWith('busbars-'))select('bus',info.index);else if(info.layer?.id.startsWith('open-endpoints-')){openScope=fixture.openTies.markers[info.index].bus;chooseOpen(0,false);}else if(info.layer?.id.startsWith('compact-branches-')){const b=compactBranch(fixture,fixture.openTies,info.index);if(b!==null)select('branch',b);}else if(info.layer?.id.startsWith('branches-'))select('branch',fixture.segmentBranches[info.index]);},
+    getTooltip:info=>info.layer?.id.startsWith('open-endpoints-')&&info.object?`${busName(info.object.bus)} · ${info.object.branches.length} open switch${info.object.branches.length===1?'':'es'} · click to inspect`:null,
     getCursor:({isDragging})=>isDragging?'grabbing':'crosshair',onAfterRender:afterRender,onError:e=>{stopRun('renderer error');error('Renderer error: '+e.message);},
     onLoad:()=>{ready=true;const params=new URLSearchParams(location.search),requested=params.get('dataset')??`synthetic-${params.get('size')??1000}`;load(entries.some(m=>m.id===requested)?requested:'synthetic-1000');}});
 }
