@@ -26,7 +26,10 @@ counts.
   `status`, `solution`, optional `sensitivity`, and `done`.
 
 The sensitivity and solve endpoints accept `?d=bus:mw,bus:mw`, each value a MW
-delta from the base case.
+delta from the base case. They take no other request fields: linear
+constraints and the rest of the solve request go through the engine's
+`solveModule`, the `tellegen` CLI, or the crate (see
+[Formulations](formulations.md#linear-constraints)).
 
 ## Limits
 

@@ -85,9 +85,31 @@ export interface Edits {
 \trates?: BranchRatingDeltas;
 }
 
+export type ConstraintTermKind = 'branch_flow' | 'bus_injection' | 'generator';
+
+/** \`coefficient\` times the MW quantity \`kind\` names at \`element\` (an element id
+ * or PowerIO row uid). */
+export interface ConstraintTerm {
+\tkind: ConstraintTermKind;
+\telement: number | string;
+\tcoefficient: number;
+}
+
+/** A DC OPF linear constraint, such as an interface or transfer limit:
+ * \`lower <= sum(coefficient * quantity) <= upper\` in MW. Either limit may be
+ * omitted, not both; equal limits state an equality. */
+export interface LinearConstraint {
+\tid: string;
+\tterms: ConstraintTerm[];
+\tlower?: number;
+\tupper?: number;
+}
+
 export interface SolveRequest {
 \tformulation?: FormulationId;
 \tedits?: Edits;
+\t/** Linear constraints, accepted by \`dcopf\` only and not combined with sensitivities. */
+\tconstraints?: LinearConstraint[];
 \tsensitivities?: SensRequest[];
 }
 
@@ -152,6 +174,18 @@ export interface SensitivityMatrix {
 \tunits: string;
 }
 
+/** The solved state of one LinearConstraint. \`shadow_price\` is
+ * \`-d objective / d limit\` in objective units per MW: positive when the upper
+ * limit binds, negative when the lower limit binds. */
+export interface ConstraintResult {
+\tid: string;
+\tvalue: number;
+\tlower?: number;
+\tupper?: number;
+\tshadow_price?: number;
+\tbinding: boolean;
+}
+
 export interface SolveResponse {
 \tformulation: FormulationId;
 \tstatus: SolveStatus;
@@ -165,6 +199,7 @@ export interface SolveResponse {
 \tinjections?: BusInjection[];
 \tflows?: BranchFlow[];
 \tdispatch?: GenDispatch[];
+\tconstraints?: ConstraintResult[];
 \tsensitivities?: SensitivityMatrix[];
 }
 
@@ -172,6 +207,8 @@ export interface ProblemCaps {
 \tformulation: FormulationId;
 \tavailable: boolean;
 \tblocks: string[];
+\t/** Term kinds accepted in SolveRequest.constraints; empty when refused. */
+\tconstraints?: ConstraintTermKind[];
 \toperands?: Operand[];
 \tparameters?: Parameter[];
 }

@@ -13,7 +13,8 @@
 //! term with one epigraph variable `t_g` and one row for each declared segment
 //! line `a_s g + b_s`. The reported objective also includes `sum(cc)` for the
 //! polynomial generators; a constant cannot move the argmin and is left out of
-//! the QP itself.
+//! the QP itself. A request's linear constraints add a row or a pair each over
+//! the flow and dispatch columns, after the piecewise cost rows.
 //!
 //! ```text
 //! min  sum_polynomial(cq g^2 + cl g) + sum_piecewise(t_g) + sum(c_shed psh)
@@ -25,6 +26,7 @@
 //!      0 <= psh <= max(d, 0)               (mu_lb, mu_ub)
 //!      sw .* angmin <= sw .* (A theta) <= sw .* angmax  (gamma_lb, gamma_ub)
 //!      theta[ref] = 0                       (eta_ref)
+//!      l <= a' f + c' g <= u                (linear constraint duals)
 //! ```
 
 use clarabel::algebra::CscMatrix;

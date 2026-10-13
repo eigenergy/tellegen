@@ -155,6 +155,7 @@ impl<'de> Deserialize<'de> for ElementKey {
 /// retune a parameter) can grow without breaking the wire format: a client that
 /// knows only `deltas` keeps working.
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Edits {
     /// Active-power demand delta in MW per bus key.
     #[serde(default)]
@@ -171,6 +172,7 @@ pub struct Edits {
 /// (`{"Price":"Active"}` / `{"Demand":"Active"}`).
 #[cfg(feature = "sensitivity")]
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SensRequest {
     pub operand: Operand,
     pub parameter: Parameter,
@@ -187,9 +189,67 @@ fn default_mode() -> Mode {
     Mode::Auto
 }
 
-/// The one solve request: a formulation, an operating-point edit set, and zero or more
-/// sensitivity cells. A bare `{"formulation":"acpf"}` (or even `{}`,
-/// which defaults to DC OPF) is valid.
+/// The quantity a [`ConstraintTerm`] weights, as the snake_case JSON tags
+/// `"branch_flow"`, `"bus_injection"`, and `"generator"`. Every quantity is
+/// active power in MW.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ConstraintTermKind {
+    /// A branch's from-end active flow, positive from its `from` bus toward its
+    /// `to` bus. Keyed like a rating edit: the 1-based branch position or the
+    /// branch uid.
+    BranchFlow,
+    /// A bus's net active injection: generation minus demand and shunt
+    /// conductance withdrawal, which equals the flow leaving the bus on its
+    /// branches. Keyed like a demand edit: the bus id or the bus uid.
+    BusInjection,
+    /// A generator's active output. Keyed by the 1-based generator position or
+    /// the generator uid.
+    Generator,
+}
+
+/// One weighted term of a [`LinearConstraint`]: `coefficient` times the MW
+/// quantity `kind` names at `element`. Terms naming the same quantity add.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ConstraintTerm {
+    pub kind: ConstraintTermKind,
+    pub element: ElementKey,
+    pub coefficient: f64,
+}
+
+/// A caller-supplied linear constraint on the DC OPF, such as an interface or
+/// transfer limit: `lower <= sum(coefficient * quantity) <= upper`, in MW. Either
+/// limit may be omitted, not both; equal limits state an equality. The row is
+/// enforced alongside the network's own limits, and the response reports its
+/// value and shadow price in [`SolveResponse::constraints`].
+///
+/// ```json
+/// { "id": "north-south", "upper": 400.0,
+///   "terms": [ { "kind": "branch_flow", "element": 3, "coefficient": 1.0 },
+///              { "kind": "branch_flow", "element": 7, "coefficient": -1.0 } ] }
+/// ```
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct LinearConstraint {
+    /// The caller's name for the row, unique within a request and echoed in the
+    /// response.
+    pub id: String,
+    pub terms: Vec<ConstraintTerm>,
+    /// Lower limit in MW.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lower: Option<f64>,
+    /// Upper limit in MW.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upper: Option<f64>,
+}
+
+/// The one solve request: a formulation, an operating-point edit set, zero or more
+/// caller-supplied linear constraints, and zero or more sensitivity cells. A bare
+/// `{"formulation":"acpf"}` (or even `{}`, which defaults to DC OPF) is valid.
 ///
 /// ```json
 /// {
@@ -201,12 +261,18 @@ fn default_mode() -> Mode {
 /// }
 /// ```
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SolveRequest {
     #[serde(default)]
     pub formulation: Problem,
     #[serde(default)]
     pub edits: Edits,
+    /// Caller-supplied linear constraints, enforced by the DC OPF only. Every
+    /// other formulation refuses a request that carries any, and so does a DC
+    /// OPF request that also asks for sensitivity cells.
+    #[serde(default)]
+    pub constraints: Vec<LinearConstraint>,
     /// Zero or more sensitivity cells, computed against the solved system in request
     /// order. Ignored by a build without the `sensitivity` feature.
     #[cfg(feature = "sensitivity")]
@@ -385,6 +451,33 @@ pub struct GenDispatch {
     pub qg: Option<f64>,
 }
 
+/// The solved state of one [`LinearConstraint`], in request order. `value`,
+/// `lower`, and `upper` are MW; `shadow_price` is in objective units per MW, the
+/// same units as `lmp`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ConstraintResult {
+    pub id: String,
+    /// `sum(coefficient * quantity)` at the solution.
+    pub value: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lower: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upper: Option<f64>,
+    /// The objective decrease per MW the binding limit is raised:
+    /// `-d objective / d limit`. Positive when the upper limit binds, negative
+    /// when the lower limit binds, zero when neither does. A bus's price then
+    /// differs from the reference bus's by `-shadow_price` times the change in
+    /// `value` per MW injected at the bus and withdrawn at the reference.
+    /// Absent when the declared objective gives prices no economic meaning, as
+    /// for `lmp`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shadow_price: Option<f64>,
+    /// `value` sits at a limit, within solver tolerance. Always true for an
+    /// equality.
+    pub binding: bool,
+}
+
 /// The formulation-agnostic solve result. A superset: every block is optional, and
 /// each formulation fills what it produces. Powers are MW/MVAr, nodal values are
 /// in objective units per selected power unit, angles radians, `vm` per unit, and
@@ -431,6 +524,10 @@ pub struct SolveResponse {
     pub flows: Option<Vec<BranchFlow>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispatch: Option<Vec<GenDispatch>>,
+    /// The request's linear constraints, in request order (dcopf). Absent when
+    /// the request stated none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub constraints: Option<Vec<ConstraintResult>>,
     /// One self-describing matrix per requested cell, in request order. Each carries
     /// its own row/column element ids and the served-unit label.
     #[cfg(feature = "sensitivity")]
@@ -611,8 +708,13 @@ pub(crate) fn dc_opf_solved(
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<(DcNetwork, super::problem::DcOpfSolution), String> {
     dc.allow_shed = false;
+    #[cfg(feature = "sensitivity")]
+    if !req.constraints.is_empty() && !req.sensitivities.is_empty() {
+        return Err(super::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED.to_owned());
+    }
     apply_demand_deltas(&mut dc, &req.edits.deltas)?;
     apply_rating_deltas(&mut dc, &req.edits.rates)?;
+    apply_linear_constraints(&mut dc, &req.constraints)?;
     let sol = dc_opf_cancellable(&dc, cancel)?;
     Ok((dc, sol))
 }
@@ -640,11 +742,11 @@ pub(crate) fn dc_opf_assemble(
     #[cfg(feature = "sensitivity")]
     let sensitivities = run_cells(&super::sens::DcKkt::new(dc, sol), &req.sensitivities)?;
 
-    let lmp =
-        (dc.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost).then(|| {
-            let values = sol.nodal_marginal_values(base);
-            zip_bus(&dc.bus_ids, &dc.bus_uids, &values)
-        });
+    let lmp_is_economic = dc.objective == powerio_matrix::PreparedObjective::NetworkGeneratorCost;
+    let lmp = lmp_is_economic.then(|| {
+        let values = sol.nodal_marginal_values(base);
+        zip_bus(&dc.bus_ids, &dc.bus_uids, &values)
+    });
 
     Ok(SolveResponse {
         formulation: Problem::DcOpf,
@@ -667,6 +769,8 @@ pub(crate) fn dc_opf_assemble(
             base,
         )),
         dispatch: Some(zip_gen_pg(dc, &sol.pg, base)),
+        constraints: (!dc.linear_rows.is_empty())
+            .then(|| linear_constraint_results(dc, sol, lmp_is_economic)),
         #[cfg(feature = "sensitivity")]
         sensitivities,
     })
@@ -685,8 +789,9 @@ fn dc_opf_response(
 #[cfg(feature = "sensitivity")]
 fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
     // Flow limits do not constrain a power flow, so a rating edit cannot enter
-    // the model.
+    // the model, and neither can a linear constraint.
     reject_rating_deltas(&req.edits.rates, "dcpf")?;
+    reject_linear_constraints(&req.constraints, "dcpf")?;
     let mut dc = DcNetwork::from_network(net)?;
     let base = dc.base_mva;
     apply_demand_deltas(&mut dc, &req.edits.deltas)?;
@@ -723,6 +828,7 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
             base,
         )),
         dispatch: None,
+        constraints: None,
         sensitivities: Vec::new(),
     })
 }
@@ -744,6 +850,7 @@ pub(crate) fn ac_pf_solved(
         return Err("acpf does not yet support a generator regulating a remote bus".into());
     }
     reject_rating_deltas(&req.edits.rates, "acpf")?;
+    reject_linear_constraints(&req.constraints, "acpf")?;
     apply_demand_deltas_ac(&mut acnet, &req.edits.deltas)?;
     let sol = super::problem::ac_pf(&super::formulation::AcPolar::new(), &acnet)?;
     Ok((acnet, sol))
@@ -794,6 +901,7 @@ pub(crate) fn ac_pf_assemble(
             base,
         )),
         dispatch: None,
+        constraints: None,
         sensitivities,
     })
 }
@@ -813,6 +921,7 @@ pub(crate) fn socwr_solved(
     mut acnet: super::model::AcNetwork,
     req: &SolveRequest,
 ) -> Result<(super::model::AcNetwork, super::problem::SocWrSolution), String> {
+    reject_linear_constraints(&req.constraints, "socwr")?;
     apply_demand_deltas_ac(&mut acnet, &req.edits.deltas)?;
     apply_rating_deltas_ac(&mut acnet, &req.edits.rates)?;
     let sol = super::problem::socwr_opf(&acnet)?;
@@ -888,6 +997,7 @@ pub(crate) fn socwr_assemble(
             base,
         )),
         dispatch: Some(zip_gen_pq(acnet, &sol.pg, &sol.qg, base)),
+        constraints: None,
         sensitivities,
     })
 }
@@ -951,6 +1061,10 @@ pub struct ProblemCaps {
     pub available: bool,
     /// Output blocks this formulation fills, e.g. `["lmp","va","flows","dispatch"]`.
     pub blocks: Vec<String>,
+    /// The [`ConstraintTermKind`]s this formulation accepts in
+    /// `SolveRequest.constraints`. Empty when it refuses linear constraints.
+    #[serde(default)]
+    pub constraints: Vec<ConstraintTermKind>,
     #[cfg(feature = "sensitivity")]
     pub operands: Vec<Operand>,
     #[cfg(feature = "sensitivity")]
@@ -972,6 +1086,7 @@ fn formulation_caps() -> Vec<ProblemCaps> {
             formulation: Problem::DcPf,
             available: cfg!(feature = "sensitivity"),
             blocks: ["va", "flows"].map(str::to_owned).to_vec(),
+            constraints: vec![],
             #[cfg(feature = "sensitivity")]
             operands: vec![],
             #[cfg(feature = "sensitivity")]
@@ -983,6 +1098,11 @@ fn formulation_caps() -> Vec<ProblemCaps> {
             blocks: ["lmp", "va", "flows", "dispatch"]
                 .map(str::to_owned)
                 .to_vec(),
+            constraints: vec![
+                ConstraintTermKind::BranchFlow,
+                ConstraintTermKind::BusInjection,
+                ConstraintTermKind::Generator,
+            ],
             #[cfg(feature = "sensitivity")]
             operands: vec![
                 Operand::Price(Power::Active),
@@ -1009,6 +1129,7 @@ fn formulation_caps() -> Vec<ProblemCaps> {
             blocks: ["vm", "va", "injections", "flows"]
                 .map(str::to_owned)
                 .to_vec(),
+            constraints: vec![],
             #[cfg(feature = "sensitivity")]
             operands: vec![
                 Operand::Voltage(VoltageKind::Magnitude),
@@ -1042,6 +1163,7 @@ fn formulation_caps() -> Vec<ProblemCaps> {
             blocks: ["lmp", "lmp_q", "vm", "w", "wr", "wi", "flows", "dispatch"]
                 .map(str::to_owned)
                 .to_vec(),
+            constraints: vec![],
             #[cfg(feature = "sensitivity")]
             operands: vec![
                 Operand::Dispatch(Power::Active),
@@ -1108,6 +1230,7 @@ fn formulation_caps() -> Vec<ProblemCaps> {
             blocks: ["lmp", "lmp_q", "vm", "va", "flows", "dispatch"]
                 .map(str::to_owned)
                 .to_vec(),
+            constraints: vec![],
             #[cfg(feature = "sensitivity")]
             operands: vec![],
             #[cfg(feature = "sensitivity")]
@@ -1150,6 +1273,10 @@ impl<'a> KeyIndex<'a> {
         keys: &HashMap<ElementKey, f64>,
     ) -> KeyIndex<'a> {
         let needs_uids = keys.keys().any(|k| matches!(k, ElementKey::Uid(_)));
+        Self::with_uids(ids, uids, needs_uids)
+    }
+
+    fn with_uids(ids: &[usize], uids: &'a [Option<String>], needs_uids: bool) -> KeyIndex<'a> {
         KeyIndex {
             ids: id_index_map(ids),
             uids: needs_uids.then(|| uid_index_map(uids)),
@@ -1311,6 +1438,199 @@ fn apply_rating_deltas_ac(
         acnet.rate_a[i] += mw / base;
     }
     Ok(())
+}
+
+/// Validate the request's linear constraints and resolve them onto the DC OPF
+/// columns. Every term must name a source element of the solved network: an
+/// unknown, out-of-service, or lowering-synthesized element is refused by name,
+/// as is a constraint with no limit, crossed limits, a non-finite number, or
+/// terms that cancel to nothing. A bus injection term expands onto the flows
+/// of the bus's branches (`+` where the bus is the `from` end, `-` where it is
+/// the `to` end), which equals generation minus demand and shunt withdrawal by
+/// power balance, so the row does not move with demand and `nu_bal` stays the
+/// marginal cost of demand.
+fn apply_linear_constraints(
+    dc: &mut DcNetwork,
+    constraints: &[LinearConstraint],
+) -> Result<(), String> {
+    dc.linear_rows.clear();
+    if constraints.is_empty() {
+        return Ok(());
+    }
+    let needs_uids = constraints
+        .iter()
+        .flat_map(|constraint| &constraint.terms)
+        .any(|term| matches!(term.element, ElementKey::Uid(_)));
+    let buses = KeyIndex::with_uids(&dc.bus_ids, &dc.bus_uids, needs_uids);
+    let branches = KeyIndex::with_uids(&dc.branch_ids, &dc.branch_uids, needs_uids);
+    let generators = KeyIndex::with_uids(&dc.gen_ids, &dc.gen_uids, needs_uids);
+    let mut incident: Option<Vec<Vec<(usize, f64)>>> = None;
+    let mut seen = std::collections::HashSet::new();
+    let mut rows = Vec::with_capacity(constraints.len());
+    for constraint in constraints {
+        let id = &constraint.id;
+        if id.is_empty() {
+            return Err("constraint id must not be empty".into());
+        }
+        if !seen.insert(id.as_str()) {
+            return Err(format!("duplicate constraint id \"{id}\""));
+        }
+        match (constraint.lower, constraint.upper) {
+            (None, None) => {
+                return Err(format!(
+                    "constraint \"{id}\" needs a lower limit, an upper limit, or both"
+                ));
+            }
+            (lower, upper)
+                if lower.is_some_and(|v| !v.is_finite())
+                    || upper.is_some_and(|v| !v.is_finite()) =>
+            {
+                return Err(format!("constraint \"{id}\" limits must be finite"));
+            }
+            (Some(lower), Some(upper)) if lower > upper => {
+                return Err(format!(
+                    "constraint \"{id}\" lower limit {lower} exceeds its upper limit {upper}"
+                ));
+            }
+            _ => {}
+        }
+        if constraint.terms.is_empty() {
+            return Err(format!("constraint \"{id}\" has no terms"));
+        }
+        let mut flow = BTreeMap::<usize, f64>::new();
+        let mut generation = BTreeMap::<usize, f64>::new();
+        for term in &constraint.terms {
+            let key = &term.element;
+            if !term.coefficient.is_finite() {
+                return Err(format!(
+                    "constraint \"{id}\" coefficient for {key} must be finite"
+                ));
+            }
+            match term.kind {
+                ConstraintTermKind::BranchFlow => {
+                    let e = branches
+                        .get(key)
+                        .filter(|&e| dc.branch_source_rows[e].is_some())
+                        .ok_or_else(|| {
+                            format!("constraint \"{id}\": unknown or out-of-service branch {key}")
+                        })?;
+                    *flow.entry(e).or_default() += term.coefficient;
+                }
+                ConstraintTermKind::BusInjection => {
+                    let i = buses
+                        .get(key)
+                        .filter(|&i| dc.bus_source_rows[i].is_some())
+                        .ok_or_else(|| {
+                            format!("constraint \"{id}\": unknown or out-of-service bus {key}")
+                        })?;
+                    let incident = incident.get_or_insert_with(|| {
+                        let mut at = vec![Vec::new(); dc.n];
+                        for e in 0..dc.m {
+                            at[dc.br_from[e]].push((e, 1.0));
+                            at[dc.br_to[e]].push((e, -1.0));
+                        }
+                        at
+                    });
+                    for &(e, sign) in &incident[i] {
+                        *flow.entry(e).or_default() += sign * term.coefficient;
+                    }
+                }
+                ConstraintTermKind::Generator => {
+                    if let ElementKey::Uid(uid) = key {
+                        let named = dc
+                            .gen_uids
+                            .iter()
+                            .filter(|candidate| candidate.as_deref() == Some(uid.as_str()))
+                            .count();
+                        if named > 1 {
+                            return Err(format!(
+                                "constraint \"{id}\": generator uid {key} names {named} generators"
+                            ));
+                        }
+                    }
+                    let j = generators
+                        .get(key)
+                        .filter(|&j| dc.gen_source_rows[j].is_some())
+                        .ok_or_else(|| {
+                            format!(
+                                "constraint \"{id}\": unknown or out-of-service generator {key}"
+                            )
+                        })?;
+                    *generation.entry(j).or_default() += term.coefficient;
+                }
+            }
+        }
+        let nonzero = |terms: BTreeMap<usize, f64>| -> Result<Vec<(usize, f64)>, String> {
+            let terms: Vec<(usize, f64)> = terms.into_iter().filter(|&(_, c)| c != 0.0).collect();
+            if terms.iter().any(|&(_, c)| !c.is_finite()) {
+                return Err(format!(
+                    "constraint \"{id}\" combined coefficients must be finite"
+                ));
+            }
+            Ok(terms)
+        };
+        let flow = nonzero(flow)?;
+        let generation = nonzero(generation)?;
+        if flow.is_empty() && generation.is_empty() {
+            return Err(format!(
+                "constraint \"{id}\" has no nonzero coefficient once its terms are combined"
+            ));
+        }
+        rows.push(super::model::LinearRow {
+            id: id.clone(),
+            flow,
+            generation,
+            lower_mw: constraint.lower,
+            upper_mw: constraint.upper,
+        });
+    }
+    dc.linear_rows = rows;
+    Ok(())
+}
+
+/// The response block for the solved model's linear constraints. `economic`
+/// gates the shadow price exactly as it gates `lmp`.
+fn linear_constraint_results(
+    dc: &DcNetwork,
+    sol: &super::problem::DcOpfSolution,
+    economic: bool,
+) -> Vec<ConstraintResult> {
+    let base = dc.base_mva;
+    dc.linear_rows
+        .iter()
+        .zip(sol.linear_values.iter().zip(&sol.linear_duals))
+        .map(|(row, (&value, &dual))| {
+            let value = value * base;
+            // The interior point solve meets an active limit to about its 1e-9
+            // per unit feasibility tolerance; allow a margin above that.
+            let at = |limit: Option<f64>| {
+                limit.is_some_and(|limit| (value - limit).abs() <= 1e-6 * (1.0 + limit.abs()))
+            };
+            ConstraintResult {
+                id: row.id.clone(),
+                value,
+                lower: row.lower_mw,
+                upper: row.upper_mw,
+                shadow_price: economic.then_some(dual / base),
+                binding: row.is_equality() || at(row.lower_mw) || at(row.upper_mw),
+            }
+        })
+        .collect()
+}
+
+/// Linear constraints are a DC OPF feature; refuse them anywhere else instead
+/// of silently solving without them.
+#[cfg(feature = "sensitivity")]
+fn reject_linear_constraints(
+    constraints: &[LinearConstraint],
+    formulation: &str,
+) -> Result<(), String> {
+    if constraints.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "linear constraints are supported only by dcopf, not {formulation}"
+    ))
 }
 
 /// The AC power flow has no flow limits, so a rating edit cannot enter the model;
@@ -2067,5 +2387,582 @@ mod tests {
             let sys = super::super::sens::ConicKkt::new(&ac, &soc).unwrap();
             check(Problem::Socwr, &sys);
         }
+    }
+
+    /// CASE3 with linear costs ($10/MWh at bus 1, $20/MWh at bus 3) and zero
+    /// minimum output, so every dispatch and dual below is exact by hand. The
+    /// three lines are identical, so a MW injected at one bus and withdrawn at
+    /// another splits 2/3 on the direct line and 1/3 around the other two.
+    fn linear_cost_case3_json() -> String {
+        let text = CASE3
+            .replace(" 1 100 1 250 10 ", " 1 100 1 250 0 ")
+            .replace(" 1 100 1 270 10 ", " 1 100 1 270 0 ")
+            .replace(" 2 0 0 3 0.11  5   0;", " 2 0 0 2 10 0;")
+            .replace(" 2 0 0 3 0.085 1.2 0;", " 2 0 0 2 20 0;");
+        serde_json::to_string(&crate::model::parse_matpower(&text).expect("parse"))
+            .expect("network JSON")
+    }
+
+    fn solve_constrained(network: &str, constraints: Value) -> SolveResponse {
+        let request = serde_json::json!({ "formulation": "dcopf", "constraints": constraints });
+        let out = solve_test_network_json(network, &request.to_string()).expect("solve");
+        serde_json::from_str(&out).expect("response")
+    }
+
+    fn close(actual: f64, expected: f64, what: &str) {
+        assert!(
+            (actual - expected).abs() < 1e-4,
+            "{what}: expected {expected}, got {actual}"
+        );
+    }
+
+    fn prices(response: &SolveResponse) -> Vec<f64> {
+        response
+            .lmp
+            .as_ref()
+            .expect("lmp")
+            .iter()
+            .map(|p| p.value)
+            .collect()
+    }
+
+    fn dispatch(response: &SolveResponse) -> Vec<f64> {
+        response
+            .dispatch
+            .as_ref()
+            .expect("dispatch")
+            .iter()
+            .map(|g| g.pg)
+            .collect()
+    }
+
+    #[test]
+    fn interface_limit_shadow_price_matches_the_hand_computation() {
+        let network = linear_cost_case3_json();
+        // Unconstrained, the $10 unit serves all 90 MW and every price is $10.
+        let free = solve_constrained(&network, serde_json::json!([]));
+        assert!(free.constraints.is_none());
+        for price in prices(&free) {
+            close(price, 10.0, "unconstrained price");
+        }
+
+        // Line 1-2 carries 30 + g1/3 MW, so a 50 MW limit holds g1 to 60 MW and
+        // g3 takes the other 30 MW. Each MW of limit lets 3 MW move from the $20
+        // unit to the $10 unit: the shadow price is $30/MW.
+        let response = solve_constrained(
+            &network,
+            serde_json::json!([{
+                "id": "line 1-2",
+                "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+                "upper": 50.0
+            }]),
+        );
+        let pg = dispatch(&response);
+        close(pg[0], 60.0, "g1");
+        close(pg[1], 30.0, "g3");
+        close(response.objective.unwrap(), 1200.0, "objective");
+        let row = &response.constraints.as_ref().expect("constraints")[0];
+        assert_eq!(row.id, "line 1-2");
+        assert_eq!(row.upper, Some(50.0));
+        assert_eq!(row.lower, None);
+        close(row.value, 50.0, "interface value");
+        close(row.shadow_price.unwrap(), 30.0, "shadow price");
+        assert!(row.binding);
+
+        // Bus 2's price is the cheapest way to serve one more MW there without
+        // loading line 1-2: -1 MW at bus 1 and +2 MW at bus 3, $30.
+        let lmp = prices(&response);
+        close(lmp[0], 10.0, "lmp bus 1");
+        close(lmp[1], 30.0, "lmp bus 2");
+        close(lmp[2], 20.0, "lmp bus 3");
+        // Decomposition against bus 1: a MW injected at bus 2 (bus 3) and
+        // withdrawn at bus 1 changes the line 1-2 flow by -2/3 (-1/3) MW.
+        let shadow = row.shadow_price.unwrap();
+        close(
+            lmp[1],
+            lmp[0] - shadow * (-2.0 / 3.0),
+            "bus 2 decomposition",
+        );
+        close(
+            lmp[2],
+            lmp[0] - shadow * (-1.0 / 3.0),
+            "bus 3 decomposition",
+        );
+    }
+
+    #[test]
+    fn a_slack_constraint_reports_a_zero_shadow_price() {
+        let response = solve_constrained(
+            &linear_cost_case3_json(),
+            serde_json::json!([{
+                "id": "loose",
+                "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+                "lower": -200.0,
+                "upper": 200.0
+            }]),
+        );
+        let row = &response.constraints.unwrap()[0];
+        // g1 = 90 MW puts 30 + 90/3 = 60 MW on line 1-2.
+        close(row.value, 60.0, "value");
+        close(row.shadow_price.unwrap(), 0.0, "shadow price");
+        assert!(!row.binding);
+    }
+
+    #[test]
+    fn one_sided_lower_limit_on_generator_output() {
+        // At least 40 MW from the $20 unit costs $10 per MW of requirement. The
+        // network is uncongested, so every bus keeps the $10 price.
+        let response = solve_constrained(
+            &linear_cost_case3_json(),
+            serde_json::json!([{
+                "id": "bus 3 minimum",
+                "terms": [{ "kind": "generator", "element": 2, "coefficient": 1.0 }],
+                "lower": 40.0
+            }]),
+        );
+        let pg = dispatch(&response);
+        close(pg[0], 50.0, "g1");
+        close(pg[1], 40.0, "g3");
+        let row = &response.constraints.as_ref().unwrap()[0];
+        close(row.value, 40.0, "value");
+        close(row.shadow_price.unwrap(), -10.0, "shadow price");
+        assert!(row.binding);
+        for price in prices(&response) {
+            close(price, 10.0, "price");
+        }
+    }
+
+    #[test]
+    fn two_sided_bus_injection_limit_shifts_its_bus_price_by_coefficient_times_shadow() {
+        let network = linear_cost_case3_json();
+        // Bus 3 has no load, so its net injection is g3. Holding it within
+        // [25, 100] MW binds at the lower limit. A MW injected at bus 3 and
+        // withdrawn at bus 1 moves the row's value by its coefficient, so bus 3's
+        // price sits `-coefficient * shadow` above bus 1's.
+        for coefficient in [1.0, 2.0] {
+            let response = solve_constrained(
+                &network,
+                serde_json::json!([{
+                    "id": "bus 3 band",
+                    "terms": [{
+                        "kind": "bus_injection",
+                        "element": 3,
+                        "coefficient": coefficient
+                    }],
+                    "lower": 25.0 * coefficient,
+                    "upper": 100.0 * coefficient
+                }]),
+            );
+            let pg = dispatch(&response);
+            close(pg[1], 25.0, "g3");
+            let row = &response.constraints.as_ref().unwrap()[0];
+            close(row.value, 25.0 * coefficient, "value");
+            close(
+                row.shadow_price.unwrap(),
+                -10.0 / coefficient,
+                "shadow price",
+            );
+            assert!(row.binding);
+            let lmp = prices(&response);
+            close(lmp[0], 10.0, "lmp bus 1");
+            close(lmp[1], 10.0, "lmp bus 2");
+            close(
+                lmp[2],
+                lmp[0] - coefficient * row.shadow_price.unwrap(),
+                "lmp bus 3",
+            );
+            close(lmp[2], 20.0, "lmp bus 3");
+        }
+
+        // The upper side: bus 1's net injection held to [0, 60] MW. Against bus 2,
+        // bus 1's price sits one shadow price lower.
+        let response = solve_constrained(
+            &network,
+            serde_json::json!([{
+                "id": "bus 1 band",
+                "terms": [{ "kind": "bus_injection", "element": 1, "coefficient": 1.0 }],
+                "lower": 0.0,
+                "upper": 60.0
+            }]),
+        );
+        let row = &response.constraints.as_ref().unwrap()[0];
+        close(row.value, 60.0, "value");
+        close(row.shadow_price.unwrap(), 10.0, "shadow price");
+        let lmp = prices(&response);
+        close(lmp[1], 20.0, "lmp bus 2");
+        close(lmp[2], 20.0, "lmp bus 3");
+        close(lmp[0], lmp[1] - row.shadow_price.unwrap(), "lmp bus 1");
+    }
+
+    #[test]
+    fn equality_constraint_fixes_its_value() {
+        let response = solve_constrained(
+            &linear_cost_case3_json(),
+            serde_json::json!([{
+                "id": "fixed",
+                "terms": [{ "kind": "generator", "element": 2, "coefficient": 1.0 }],
+                "lower": 35.0,
+                "upper": 35.0
+            }]),
+        );
+        let pg = dispatch(&response);
+        close(pg[0], 55.0, "g1");
+        close(pg[1], 35.0, "g3");
+        let row = &response.constraints.as_ref().unwrap()[0];
+        close(row.value, 35.0, "value");
+        close(row.shadow_price.unwrap(), -10.0, "shadow price");
+        assert!(row.binding);
+    }
+
+    #[test]
+    fn several_constraints_report_in_request_order() {
+        let response = solve_constrained(
+            &linear_cost_case3_json(),
+            serde_json::json!([
+                {
+                    "id": "b",
+                    "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+                    "upper": 50.0
+                },
+                {
+                    "id": "a",
+                    "terms": [
+                        { "kind": "generator", "element": 1, "coefficient": 1.0 },
+                        { "kind": "generator", "element": 2, "coefficient": 1.0 }
+                    ],
+                    "lower": 0.0
+                }
+            ]),
+        );
+        let rows = response.constraints.unwrap();
+        let ids: Vec<&str> = rows.iter().map(|row| row.id.as_str()).collect();
+        assert_eq!(ids, ["b", "a"]);
+        close(rows[0].shadow_price.unwrap(), 30.0, "interface");
+        close(rows[1].value, 90.0, "total generation");
+        close(rows[1].shadow_price.unwrap(), 0.0, "slack row");
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn interface_shadow_price_decomposes_the_case9_prices() {
+        let network = serde_json::to_string(
+            &crate::model::parse_matpower(crate::model::CASE9).expect("parse case9"),
+        )
+        .unwrap();
+        // An interface over lines 4-5 and 6-7 (branches 2 and 5), held 15 MW
+        // below its unconstrained value so it binds alone.
+        let terms = serde_json::json!([
+            { "kind": "branch_flow", "element": 2, "coefficient": 1.0 },
+            { "kind": "branch_flow", "element": 5, "coefficient": 1.0 }
+        ]);
+        let base = solve_constrained(
+            &network,
+            serde_json::json!([{ "id": "probe", "terms": terms, "lower": -1.0e4 }]),
+        );
+        let v0 = base.constraints.unwrap()[0].value;
+        let limit = if v0 >= 0.0 {
+            serde_json::json!({ "upper": v0 - 15.0 })
+        } else {
+            serde_json::json!({ "lower": v0 + 15.0 })
+        };
+        let mut constraint = serde_json::json!({ "id": "interface", "terms": terms });
+        constraint
+            .as_object_mut()
+            .unwrap()
+            .extend(limit.as_object().unwrap().clone());
+        let response = solve_constrained(&network, serde_json::json!([constraint]));
+        let row = &response.constraints.as_ref().unwrap()[0];
+        assert!(row.binding);
+        let shadow = row.shadow_price.unwrap();
+        assert!(
+            shadow.abs() > 1e-3,
+            "the interface must bind, shadow {shadow}"
+        );
+        for flow in response.flows.as_ref().unwrap() {
+            assert!(flow.loading < 0.999, "branch {} binds", flow.branch);
+        }
+
+        // Shift factors from DC power flow: a MW of demand at bus i is a MW
+        // withdrawn at i and injected at the slack, bus 1.
+        let flows = |deltas: Value| -> Vec<f64> {
+            let request =
+                serde_json::json!({ "formulation": "dcpf", "edits": { "deltas": deltas } });
+            let out = solve_test_network_json(&network, &request.to_string()).expect("dcpf");
+            let response: SolveResponse = serde_json::from_str(&out).unwrap();
+            response.flows.unwrap().iter().map(|f| f.pf).collect()
+        };
+        let reference = flows(serde_json::json!({}));
+        let lmp = prices(&response);
+        for (i, price) in lmp.iter().enumerate() {
+            let shifted = flows(serde_json::json!({ (i + 1).to_string(): 1.0 }));
+            // Interface value per MW injected at bus i and withdrawn at bus 1.
+            let shift = -((shifted[1] - reference[1]) + (shifted[4] - reference[4]));
+            close(*price, lmp[0] - shadow * shift, &format!("bus {}", i + 1));
+        }
+    }
+
+    #[test]
+    fn uid_keyed_terms_match_id_keyed_terms() {
+        // The row is 30 + g1/3 + 0.5 g3 = 75 - g1/6 MW, so 65 MW requires g1 >= 60
+        // MW against an unconstrained g1 of about 30 MW.
+        let by_id = solve_constrained(
+            &case3_with_uids_json(),
+            serde_json::json!([{
+                "id": "x",
+                "terms": [
+                    { "kind": "branch_flow", "element": 1, "coefficient": 1.0 },
+                    { "kind": "bus_injection", "element": 3, "coefficient": 0.5 }
+                ],
+                "upper": 65.0
+            }]),
+        );
+        let by_uid = solve_constrained(
+            &case3_with_uids_json(),
+            serde_json::json!([{
+                "id": "x",
+                "terms": [
+                    { "kind": "branch_flow", "element": "branches:0", "coefficient": 1.0 },
+                    { "kind": "bus_injection", "element": "buses:2", "coefficient": 0.5 }
+                ],
+                "upper": 65.0
+            }]),
+        );
+        let (a, b) = (
+            &by_id.constraints.unwrap()[0],
+            &by_uid.constraints.unwrap()[0],
+        );
+        assert!(a.binding && a.shadow_price.unwrap() > 1e-3);
+        close(a.value, 65.0, "value");
+        close(a.value, b.value, "value");
+        close(
+            a.shadow_price.unwrap(),
+            b.shadow_price.unwrap(),
+            "shadow price",
+        );
+    }
+
+    #[test]
+    fn feasibility_instance_omits_constraint_shadow_prices() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = DcOpfInstance::from_network(network)
+            .expect("instance")
+            .with_objective(powerio_prob::Objective::none());
+        let request: SolveRequest = serde_json::from_value(serde_json::json!({
+            "constraints": [{
+                "id": "x",
+                "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+                "upper": 40.0
+            }]
+        }))
+        .unwrap();
+        let response = solve_instance(&instance, &request).expect("solve");
+        let row = &response.constraints.unwrap()[0];
+        assert!(row.value <= 40.0 + 1e-6);
+        assert!(row.shadow_price.is_none());
+    }
+
+    #[test]
+    fn unknown_or_unusable_constraint_elements_are_refused() {
+        let network = case3_json();
+        let refused = |term: Value| {
+            let request = serde_json::json!({
+                "constraints": [{ "id": "probe", "terms": [term], "upper": 10.0 }]
+            });
+            solve_test_network_json(&network, &request.to_string())
+                .expect_err("an unknown element must be refused")
+        };
+        for (term, expected) in [
+            (
+                serde_json::json!({ "kind": "branch_flow", "element": 99, "coefficient": 1.0 }),
+                "constraint \"probe\": unknown or out-of-service branch 99",
+            ),
+            (
+                serde_json::json!({ "kind": "bus_injection", "element": 7, "coefficient": 1.0 }),
+                "constraint \"probe\": unknown or out-of-service bus 7",
+            ),
+            (
+                serde_json::json!({ "kind": "generator", "element": 3, "coefficient": 1.0 }),
+                "constraint \"probe\": unknown or out-of-service generator 3",
+            ),
+            (
+                serde_json::json!({ "kind": "branch_flow", "element": "branches:0", "coefficient": 1.0 }),
+                "constraint \"probe\": unknown or out-of-service branch \"branches:0\"",
+            ),
+            (
+                serde_json::json!({ "kind": "generator", "element": -1, "coefficient": 1.0 }),
+                "constraint \"probe\": unknown or out-of-service generator -1",
+            ),
+        ] {
+            assert_eq!(refused(term), expected);
+        }
+
+        // An out-of-service branch and generator are not in the solved network.
+        let outaged = case3_with_outages_json();
+        for term in [
+            serde_json::json!({ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }),
+            serde_json::json!({ "kind": "generator", "element": 1, "coefficient": 1.0 }),
+        ] {
+            let request = serde_json::json!({
+                "constraints": [{ "id": "probe", "terms": [term], "upper": 10.0 }]
+            });
+            let error = solve_test_network_json(&outaged, &request.to_string())
+                .expect_err("an out-of-service element must be refused");
+            assert!(error.contains("unknown or out-of-service"), "{error}");
+        }
+
+        let error = solve_test_network_json(
+            &network,
+            r#"{"constraints":[{"id":"x","terms":[{"kind":"line","element":1,"coefficient":1}],"upper":1}]}"#,
+        )
+        .expect_err("an unknown term kind must be refused");
+        assert!(error.contains("unknown variant `line`"), "{error}");
+    }
+
+    #[test]
+    fn malformed_constraints_are_refused() {
+        let network = case3_json();
+        let term = serde_json::json!({ "kind": "branch_flow", "element": 1, "coefficient": 1.0 });
+        for (constraints, expected) in [
+            (
+                serde_json::json!([{ "id": "x", "terms": [term] }]),
+                "constraint \"x\" needs a lower limit, an upper limit, or both",
+            ),
+            (
+                serde_json::json!([{ "id": "x", "terms": [term], "lower": 5.0, "upper": 1.0 }]),
+                "constraint \"x\" lower limit 5 exceeds its upper limit 1",
+            ),
+            (
+                serde_json::json!([{ "id": "x", "terms": [], "upper": 1.0 }]),
+                "constraint \"x\" has no terms",
+            ),
+            (
+                serde_json::json!([{ "id": "", "terms": [term], "upper": 1.0 }]),
+                "constraint id must not be empty",
+            ),
+            (
+                serde_json::json!([
+                    { "id": "x", "terms": [term], "upper": 1.0 },
+                    { "id": "x", "terms": [term], "upper": 2.0 }
+                ]),
+                "duplicate constraint id \"x\"",
+            ),
+            (
+                serde_json::json!([{
+                    "id": "x",
+                    "terms": [
+                        term,
+                        { "kind": "branch_flow", "element": 1, "coefficient": -1.0 }
+                    ],
+                    "upper": 1.0
+                }]),
+                "constraint \"x\" has no nonzero coefficient once its terms are combined",
+            ),
+        ] {
+            let request = serde_json::json!({ "constraints": constraints });
+            let error = solve_test_network_json(&network, &request.to_string())
+                .expect_err("a malformed constraint must be refused");
+            assert_eq!(error, expected);
+        }
+
+        let error = solve_test_network_json(
+            &network,
+            r#"{"constraints":[{"id":"x","terms":[],"limit":1}]}"#,
+        )
+        .expect_err("an unknown constraint field must be refused");
+        assert!(error.contains("unknown field `limit`"), "{error}");
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn constraints_are_refused_outside_dc_opf_and_with_sensitivities() {
+        let constraints = serde_json::json!([{
+            "id": "x",
+            "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+            "upper": 50.0
+        }]);
+        let mut formulations = vec!["dcpf", "acpf"];
+        if cfg!(feature = "conic") {
+            formulations.push("socwr");
+        }
+        for formulation in formulations {
+            let request =
+                serde_json::json!({ "formulation": formulation, "constraints": constraints });
+            let error = solve_test_network_json(&case3_json(), &request.to_string())
+                .expect_err("only dcopf accepts linear constraints");
+            assert_eq!(
+                error,
+                format!("linear constraints are supported only by dcopf, not {formulation}")
+            );
+        }
+
+        let request = serde_json::json!({
+            "constraints": constraints,
+            "sensitivities": [{ "operand": {"Price":"Active"}, "parameter": {"Demand":"Active"} }]
+        });
+        let error = solve_test_network_json(&case3_json(), &request.to_string())
+            .expect_err("sensitivities with linear constraints are not yet supported");
+        assert_eq!(
+            error,
+            crate::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED
+        );
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn the_kkt_refuses_a_model_with_linear_rows() {
+        use super::super::sens::{sensitivity, DcKkt};
+        let mut dc =
+            DcNetwork::from_network(&crate::model::parse_matpower(CASE3).unwrap()).expect("model");
+        let constraints: Vec<LinearConstraint> = serde_json::from_value(serde_json::json!([{
+            "id": "x",
+            "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+            "upper": 50.0
+        }]))
+        .unwrap();
+        apply_linear_constraints(&mut dc, &constraints).expect("resolve");
+        let sol = super::super::problem::dc_opf(&dc).expect("solve");
+        let error = sensitivity(
+            &DcKkt::new(&dc, &sol),
+            Operand::Price(Power::Active),
+            Parameter::Demand(Power::Active),
+            None,
+            Mode::Auto,
+        )
+        .expect_err("the KKT does not carry the linear rows");
+        assert!(
+            error
+                .to_string()
+                .contains(crate::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn capabilities_list_constraint_term_kinds_for_dc_opf_only() {
+        for caps in formulation_caps() {
+            if caps.formulation == Problem::DcOpf {
+                assert_eq!(
+                    caps.constraints,
+                    vec![
+                        ConstraintTermKind::BranchFlow,
+                        ConstraintTermKind::BusInjection,
+                        ConstraintTermKind::Generator,
+                    ]
+                );
+            } else {
+                assert!(caps.constraints.is_empty(), "{:?}", caps.formulation);
+            }
+        }
+        let v: Value = serde_json::from_str(&capabilities_json()).unwrap();
+        let dc_opf = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["formulation"] == "dcopf")
+            .unwrap();
+        assert_eq!(
+            dc_opf["constraints"],
+            serde_json::json!(["branch_flow", "bus_injection", "generator"])
+        );
     }
 }

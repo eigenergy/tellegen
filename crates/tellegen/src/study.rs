@@ -26,7 +26,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::{
     ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells,
-    validate_canonical_edits, Edits, ElementKey, Problem, SensRequest, SolveRequest, SolveResponse,
+    validate_canonical_edits, Edits, ElementKey, LinearConstraint, Problem, SensRequest,
+    SolveRequest, SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
@@ -203,6 +204,9 @@ impl SolvedState for DcState {
         dc_opf_assemble(&self.net, &self.sol, req)
     }
     fn with_system(&self, f: &mut PreviewFn<'_>) -> Result<Vec<PreviewColumn>, String> {
+        if !self.net.linear_rows.is_empty() {
+            return Err(crate::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED.to_owned());
+        }
         f(&DcKkt::new(&self.net, &self.sol))
     }
     fn lmp(&self) -> Option<Vec<f64>> {
@@ -376,6 +380,9 @@ pub struct Study {
     /// non-decreasing, with `commit_bounds.last() == log.len()`. A study with no edits
     /// has no commits.
     commit_bounds: Vec<usize>,
+    /// Caller-supplied linear constraints enforced at every solve (DC OPF only).
+    /// They are analysis settings, not network data: no saved module carries them.
+    constraints: Vec<LinearConstraint>,
     /// The committed solved state, the sole formulation coupling.
     solved: Box<dyn SolvedState>,
     last: SolveResponse,
@@ -482,6 +489,7 @@ impl Study {
             base_module_json,
             log: Vec::new(),
             commit_bounds: Vec::new(),
+            constraints: Vec::new(),
             solved,
             last,
         })
@@ -647,6 +655,7 @@ impl Study {
             base_module_json: self.base_module_json.clone(),
             log: self.log.clone(),
             commit_bounds: self.commit_bounds.clone(),
+            constraints: self.constraints.clone(),
             solved: self.solved.clone_box(),
             last: self.last.clone(),
         }
@@ -711,6 +720,16 @@ impl Study {
                             slope * sol.pg[g] + intercept,
                         );
                     }
+                }
+            }
+            for (row, &value) in net.linear_rows.iter().zip(&sol.linear_values) {
+                if let Some(limit) = row.lower_mw {
+                    let limit = limit / net.base_mva;
+                    bound(format!("constraint:{}:lower", row.id), value, limit);
+                }
+                if let Some(limit) = row.upper_mw {
+                    let limit = limit / net.base_mva;
+                    bound(format!("constraint:{}:upper", row.id), value, limit);
                 }
             }
             if net.allow_shed {
@@ -811,6 +830,47 @@ impl Study {
         &self.log
     }
 
+    /// The caller-supplied linear constraints every solve of this study enforces.
+    pub fn constraints(&self) -> &[LinearConstraint] {
+        &self.constraints
+    }
+
+    /// Replace the study's caller-supplied linear constraints and exact-re-solve the
+    /// committed operating point under them; an empty list removes them. Only a DC
+    /// OPF study accepts constraints. Every later commit enforces the same set. While
+    /// any are present, previews, objective gradients, planning, sensitivity cells, and
+    /// saving the problem instance or its solution are refused: the derivative system
+    /// and the PowerIO problem instance do not yet carry the extra rows. On error the
+    /// study keeps its previous constraints and solution.
+    pub fn set_constraints(
+        &mut self,
+        constraints: Vec<LinearConstraint>,
+    ) -> Result<SolveResponse, String> {
+        let previous = std::mem::replace(&mut self.constraints, constraints);
+        match self.solve_log(&self.log, &[]) {
+            Ok((solved, resp)) => {
+                self.solved = solved;
+                self.last = resp.clone();
+                Ok(resp)
+            }
+            Err(error) => {
+                self.constraints = previous;
+                Err(error)
+            }
+        }
+    }
+
+    /// Refuse an operation whose output would silently drop the study's
+    /// caller-supplied linear constraints.
+    fn reject_constraints(&self, operation: &str) -> Result<(), String> {
+        if self.constraints.is_empty() {
+            return Ok(());
+        }
+        Err(format!(
+            "{operation} is not available while the study carries caller-supplied linear constraints"
+        ))
+    }
+
     /// Apply `edits` to the committed operating point and exact-re-solve, with no
     /// sensitivity cells. The zero-sensitivity convenience over
     /// [`commit_with`](Study::commit_with).
@@ -888,6 +948,7 @@ impl Study {
         let req = SolveRequest {
             formulation: self.formulation,
             edits: fold(log),
+            constraints: self.constraints.clone(),
             sensitivities: sensitivities.to_vec(),
         };
         // Re-solve from a fresh clone of the base (the source of truth), then assemble the
@@ -1033,6 +1094,7 @@ impl Study {
                 self.formulation
             ));
         };
+        self.reject_constraints("planning")?;
         crate::plan::plan_capacity_from_exact(dc, solution, spec)
     }
 
@@ -1078,6 +1140,7 @@ impl Study {
 
     /// Save the exact problem definition without adding Study history to PowerIO.
     pub fn save_instance_module(&self) -> Result<String, String> {
+        self.reject_constraints("saving the problem instance")?;
         let value = self.materialized_instance()?;
         crate::ir::serialize_module(&self.electrical_module(value)?)
     }
@@ -1143,6 +1206,7 @@ impl Study {
 
     /// Serialize the exact solution without embedding application Study semantics.
     pub fn save_exact_module(&self) -> Result<String, String> {
+        self.reject_constraints("saving the solution")?;
         let producer = format!("tellegen {}", env!("CARGO_PKG_VERSION"));
         let value = match self.materialized_instance()? {
             PioValue::DcOpfInstance(instance) => {
@@ -1192,6 +1256,7 @@ impl Study {
     /// Serialize the committed result as a PowerIO solution module with the
     /// instance and electrical values used by the solve.
     pub fn save_solution_module(&self) -> Result<String, String> {
+        self.reject_constraints("saving the solution")?;
         let Some((model, solution)) = self.solved.dc_exact() else {
             return self.save_exact_module();
         };
@@ -3060,5 +3125,141 @@ mod tests {
             );
             assert_eq!(analytic.numerics.regularization, 1e-9);
         }
+    }
+
+    /// Line 1-2 carries 30 + g1/3 MW in CASE3, about 40 MW unconstrained, so a
+    /// 38 MW limit binds, and still does with 10 MW more load at bus 2.
+    fn interface_limit(upper: f64) -> Vec<LinearConstraint> {
+        serde_json::from_value(serde_json::json!([{
+            "id": "line 1-2",
+            "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+            "upper": upper
+        }]))
+        .expect("constraint")
+    }
+
+    #[test]
+    fn a_study_carries_its_linear_constraints_through_every_commit() {
+        let net = case3_json();
+        let mut study = Study::new(&net, Problem::DcOpf).expect("study");
+        let constraints = interface_limit(38.0);
+        let resp = study
+            .set_constraints(constraints.clone())
+            .expect("constrain");
+        assert_eq!(study.constraints(), constraints.as_slice());
+        let row = &resp.constraints.as_ref().expect("constraint results")[0];
+        assert!(row.binding);
+        assert!(row.shadow_price.unwrap() > 0.0);
+        assert!(study
+            .active_constraints()
+            .contains("constraint:line 1-2:upper"));
+
+        // A commit re-solves under the same constraints and matches the stateless
+        // solve of the same request.
+        let resp = study
+            .commit(&[NetworkEdit::AddLoad {
+                bus: 2.into(),
+                p_mw: 10.0,
+            }])
+            .expect("commit");
+        let stateless = crate::solve_module_json(
+            &net,
+            &serde_json::json!({
+                "formulation": "dcopf",
+                "edits": { "deltas": { "2": 10.0 } },
+                "constraints": constraints,
+            })
+            .to_string(),
+        )
+        .expect("module solve");
+        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+        assert!(study.fork().solution().constraints.is_some());
+
+        // Removing them restores the unconstrained solve.
+        let resp = study.set_constraints(Vec::new()).expect("unconstrain");
+        assert!(resp.constraints.is_none());
+        let stateless = crate::solve_module_json(
+            &net,
+            r#"{"formulation":"dcopf","edits":{"deltas":{"2":10.0}}}"#,
+        )
+        .expect("module solve");
+        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+    }
+
+    #[test]
+    fn a_constrained_study_refuses_what_would_drop_its_constraints() {
+        let mut study = Study::new(&case3_json(), Problem::DcOpf).expect("study");
+        study
+            .set_constraints(interface_limit(38.0))
+            .expect("constrain");
+        let unsupported = crate::sens::LINEAR_CONSTRAINT_SENSITIVITY_UNSUPPORTED;
+
+        let error = study
+            .preview(
+                &[NetworkEdit::AddLoad {
+                    bus: 2.into(),
+                    p_mw: 1.0,
+                }],
+                &[Operand::Price(Power::Active)],
+            )
+            .expect_err("preview needs the derivative system");
+        assert_eq!(error, unsupported);
+        let error = study
+            .commit_with(
+                &[],
+                &[SensRequest {
+                    operand: Operand::Price(Power::Active),
+                    parameter: Parameter::Demand(Power::Active),
+                    indices: None,
+                    mode: Mode::Auto,
+                }],
+            )
+            .expect_err("sensitivity cells need the derivative system");
+        assert_eq!(error, unsupported);
+        let spec: crate::plan::CapacityPlanSpec = serde_json::from_value(serde_json::json!({
+            "objective": { "kind": "weighted_lmp", "weights": [{ "bus": 2, "weight": 1.0 }] },
+            "candidates": ["branches:0"],
+            "max_increase_per_branch_mw": 5.0,
+            "budget_mw": 5.0,
+            "increment_mw": 5.0,
+            "max_changed_lines": 1,
+            "exact_solve_budget": 1
+        }))
+        .expect("plan spec");
+        let error = study.plan(&spec).expect_err("planning");
+        assert!(error.starts_with("planning is not available"), "{error}");
+        for error in [
+            study.save_instance_module().expect_err("instance"),
+            study.save_exact_module().expect_err("exact solution"),
+            study.save_solution_module().expect_err("solution"),
+        ] {
+            assert!(
+                error.ends_with("while the study carries caller-supplied linear constraints"),
+                "{error}"
+            );
+        }
+        // The network itself is not the constraint set, so it still saves.
+        study.save_module().expect("network module");
+
+        // A rejected constraint set keeps the previous one and its solution.
+        let before = serde_json::to_string(study.solution()).unwrap();
+        let mut bad = interface_limit(38.0);
+        bad[0].terms[0].element = 99.into();
+        study.set_constraints(bad).expect_err("unknown branch");
+        assert_eq!(study.constraints(), interface_limit(38.0).as_slice());
+        assert_eq!(serde_json::to_string(study.solution()).unwrap(), before);
+    }
+
+    #[test]
+    fn an_ac_study_refuses_linear_constraints() {
+        let mut study = Study::new(&case3_json(), Problem::AcPf).expect("study");
+        let error = study
+            .set_constraints(interface_limit(38.0))
+            .expect_err("acpf has no linear constraints");
+        assert_eq!(
+            error,
+            "linear constraints are supported only by dcopf, not acpf"
+        );
+        assert!(study.constraints().is_empty());
     }
 }

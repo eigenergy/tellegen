@@ -5,7 +5,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use clarabel::solver::SupportedConeT::{NonnegativeConeT, ZeroConeT};
+use clarabel::solver::SupportedConeT::{self, NonnegativeConeT, ZeroConeT};
 
 use crate::formulation::Dc;
 use crate::model::DcNetwork;
@@ -43,6 +43,13 @@ pub struct DcOpfSolution {
     /// linear objective.
     pub(crate) cost_epigraph: Vec<Option<f64>>,
     pub(crate) cost_segment_duals: Vec<Option<Vec<f64>>>,
+    /// Per unit value of each caller-supplied linear row, aligned with
+    /// `DcNetwork::linear_rows`.
+    pub(crate) linear_values: Vec<f64>,
+    /// Signed dual of each caller-supplied linear row: the upper limit's dual
+    /// minus the lower limit's (the equality dual for an equality row). It is
+    /// `-d objective / d limit` in per unit, positive when the upper limit binds.
+    pub(crate) linear_duals: Vec<f64>,
 }
 
 impl DcOpfSolution {
@@ -59,8 +66,10 @@ impl DcOpfSolution {
 /// the equalities first (zero cone: power balance, flow definition, reference),
 /// then the inequalities (nonnegative cone: line limits, generator limits,
 /// shedding bounds, phase limits, piecewise cost segments), each block
-/// contiguous. The assembly scatters by these offsets and the readout uses the
-/// same layout.
+/// contiguous. Caller-supplied linear rows follow the piecewise cost rows:
+/// their equalities in a second zero cone, then their limits in a second
+/// nonnegative cone, so a request without them keeps the base layout exactly.
+/// The assembly scatters by these offsets and the readout uses the same layout.
 struct OpfLayout {
     n: usize,
     m: usize,
@@ -69,6 +78,18 @@ struct OpfLayout {
     n_ineq: usize,
     cost_columns: Vec<Option<usize>>,
     cost_row_starts: Vec<Option<usize>>,
+    linear_rows: Vec<LinearRowIndex>,
+    n_linear_eq: usize,
+    n_linear_ineq: usize,
+}
+
+/// Program rows of one caller-supplied linear constraint: one equality row, or
+/// an upper and/or a lower inequality row.
+#[derive(Clone, Copy, Default)]
+struct LinearRowIndex {
+    equality: Option<usize>,
+    upper: Option<usize>,
+    lower: Option<usize>,
 }
 
 impl OpfLayout {
@@ -93,6 +114,37 @@ impl OpfLayout {
             }
         }
         let n_ineq = next_cost_row - n_eq;
+        let n_linear_eq = dc
+            .linear_rows
+            .iter()
+            .filter(|row| row.is_equality())
+            .count();
+        let mut next_linear_eq = next_cost_row;
+        let mut next_linear_ineq = next_cost_row + n_linear_eq;
+        let take = |next: &mut usize| {
+            let at = *next;
+            *next += 1;
+            Some(at)
+        };
+        let linear_rows = dc
+            .linear_rows
+            .iter()
+            .map(|row| {
+                if row.is_equality() {
+                    LinearRowIndex {
+                        equality: take(&mut next_linear_eq),
+                        ..LinearRowIndex::default()
+                    }
+                } else {
+                    LinearRowIndex {
+                        equality: None,
+                        upper: row.upper_mw.and_then(|_| take(&mut next_linear_ineq)),
+                        lower: row.lower_mw.and_then(|_| take(&mut next_linear_ineq)),
+                    }
+                }
+            })
+            .collect();
+        let n_linear_ineq = next_linear_ineq - next_cost_row - n_linear_eq;
         OpfLayout {
             n,
             m,
@@ -101,13 +153,28 @@ impl OpfLayout {
             n_ineq,
             cost_columns,
             cost_row_starts,
+            linear_rows,
+            n_linear_eq,
+            n_linear_ineq,
         }
     }
     fn nvar(&self) -> usize {
         2 * self.n + self.k + self.m + self.cost_columns.iter().flatten().count()
     }
     fn ncon(&self) -> usize {
-        self.n_eq + self.n_ineq
+        self.n_eq + self.n_ineq + self.n_linear_eq + self.n_linear_ineq
+    }
+    /// The cone partition in row order. The caller-supplied blocks are left out
+    /// when empty.
+    fn cones(&self) -> Vec<SupportedConeT<f64>> {
+        let mut cones = vec![ZeroConeT(self.n_eq), NonnegativeConeT(self.n_ineq)];
+        if self.n_linear_eq > 0 {
+            cones.push(ZeroConeT(self.n_linear_eq));
+        }
+        if self.n_linear_ineq > 0 {
+            cones.push(NonnegativeConeT(self.n_linear_ineq));
+        }
+        cones
     }
     fn col_va(&self, i: usize) -> usize {
         i
@@ -273,7 +340,31 @@ impl OpfFormulation for Dc {
             }
         }
 
-        prog.finish(vec![ZeroConeT(lay.n_eq), NonnegativeConeT(lay.n_ineq)])
+        // Caller-supplied linear rows over the flow and dispatch columns. An upper
+        // limit is `a'x <= upper`, a lower limit `-a'x <= -lower`, and an equality
+        // `a'x = lower`, each limit in per unit.
+        for (row, index) in dc.linear_rows.iter().zip(&lay.linear_rows) {
+            let mut write = |r: usize, sign: f64, limit_mw: f64| {
+                for &(e, coefficient) in &row.flow {
+                    prog.a(r, lay.col_f(e), sign * coefficient);
+                }
+                for &(j, coefficient) in &row.generation {
+                    prog.a(r, lay.col_pg(j), sign * coefficient);
+                }
+                prog.rhs(r, sign * limit_mw / dc.base_mva);
+            };
+            if let (Some(r), Some(limit)) = (index.equality, row.lower_mw) {
+                write(r, 1.0, limit);
+            }
+            if let (Some(r), Some(limit)) = (index.upper, row.upper_mw) {
+                write(r, 1.0, limit);
+            }
+            if let (Some(r), Some(limit)) = (index.lower, row.lower_mw) {
+                write(r, -1.0, limit);
+            }
+        }
+
+        prog.finish(lay.cones())
     }
 }
 
@@ -282,9 +373,14 @@ impl OpfFormulation for Dc {
 /// Equality duals carry the Clarabel sign flip (`nu = -z`); the non-negative
 /// inequality duals map straight across. The g-stationarity
 /// `2 cq g + cl = G_inc' nu_bal` then makes `nu_bal` the (positive) marginal cost,
-/// i.e. the LMP.
+/// i.e. the LMP. A caller-supplied row's signed dual is `z` of its upper (or
+/// equality) row minus `z` of its lower row: every row reads `A x + s = b`, so
+/// `-z` is the objective's derivative with respect to that row's `b`.
 fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
     let lay = OpfLayout::dc(dc);
+    let pg: Vec<f64> = (0..dc.k).map(|j| raw.x[lay.col_pg(j)]).collect();
+    let f: Vec<f64> = (0..dc.m).map(|e| raw.x[lay.col_f(e)]).collect();
+    let row_dual = |row: Option<usize>| row.map_or(0.0, |r| raw.z[r]);
     let (n, m, k) = (dc.n, dc.m, dc.k);
     let x = &raw.x;
     let z = &raw.z;
@@ -295,10 +391,20 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
         }
         _ => raw.objective,
     };
+    let linear_values = dc
+        .linear_rows
+        .iter()
+        .map(|row| row.evaluate(&f, &pg))
+        .collect();
+    let linear_duals = lay
+        .linear_rows
+        .iter()
+        .map(|index| row_dual(index.equality) + row_dual(index.upper) - row_dual(index.lower))
+        .collect();
     DcOpfSolution {
         va: (0..n).map(|i| x[lay.col_va(i)]).collect(),
-        pg: (0..k).map(|j| x[lay.col_pg(j)]).collect(),
-        f: (0..m).map(|e| x[lay.col_f(e)]).collect(),
+        pg,
+        f,
         psh: (0..n).map(|i| x[lay.col_psh(i)]).collect(),
         nu_bal: (0..n).map(|i| -z[lay.r_pb(i)]).collect(),
         lam_ub: (0..m).map(|e| z[lay.r_lineub(e)]).collect(),
@@ -327,6 +433,8 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
                 })
             })
             .collect(),
+        linear_values,
+        linear_duals,
     }
 }
 

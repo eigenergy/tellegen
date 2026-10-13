@@ -51,7 +51,11 @@ reader selected for transmission and distribution documents.
 ## Solves And Studies
 
 - `capabilities()`: returns available formulations, operands, and parameters.
-- `solveModule(moduleJson, request)`: stateless solve from a PowerIO module.
+- `solveModule(moduleJson, request)`: stateless solve from a PowerIO module. A
+  `dcopf` request may carry `constraints`, linear limits on branch flows, bus
+  net injections, and generator outputs; the response's `constraints` block
+  reports each row's value and shadow price. See
+  [Formulations](formulations.md#linear-constraints).
 - `createStudy(moduleJson, formulation)`: builds a browser `Study` from a
   PowerIO module and solves its declared problem instance.
 - `Study` / `BrowserStudy`: browser handle with:
@@ -113,6 +117,7 @@ file.arrayBuffer())` for a browser `File`.
 Public types include:
 
 - `SolveRequest`, `SolveResponse`, `ProblemCaps`
+- `LinearConstraint`, `ConstraintTerm`, `ConstraintTermKind`, `ConstraintResult`
 - `SensRequest`, `SensitivityMatrix`, `SensitivityColumn`
 - `Network`, `NetworkBus`, `NetworkBranch`
 - `Solution`, `SolveIteration`, `DemandDeltas`
