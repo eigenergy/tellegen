@@ -1,0 +1,977 @@
+{
+  "version": 1,
+  "methodology": "Local visible-tab camera smoke checks. Precomputed Tidy-tree, crossing-aware routing. One complete six-second run per MVLV scenario/presentation in the first session, plus selected-open-route and SAPN regression runs. JS presentation update time excludes GPU completion. First session precedes telemetry-only changes and stable marker insertion ordering; final session includes explicit selectedOpenSwitch/selectionRouteSegments fields. Raw sources, source topology/coordinates, equipment IDs, and per-frame arrays omitted. No statistical performance improvement claimed.",
+  "sessions": [
+    {
+      "version": 3,
+      "started": "2026-10-12T00:08:41.245Z",
+      "exported": "2026-10-12T00:13:07.764Z",
+      "renderer": "deck.gl 9.4.0 / WebGL2 / OrthographicView",
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+        "hardwareConcurrency": 16,
+        "deviceMemoryGiB": 32
+      },
+      "loads": [
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "openSwitchPresentation": "compact",
+            "openSwitches": 34,
+            "openEndpointMarkers": 68,
+            "suppressedRouteSegments": 198,
+            "extraPresentationArrayBytes": 327744,
+            "inspection": null
+          },
+          "bytes": 586820,
+          "refsBytes": 1312241,
+          "referenceCacheHit": false,
+          "fetchMs": 9,
+          "decodeAndValidateMs": 8.5,
+          "prepareMs": 5.299999952316284,
+          "openPresentationPrepareMs": 1.4000000953674316,
+          "firstDrawMs": 76.89999985694885,
+          "submitToDrawMs": 54.09999990463257,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-all-closed",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "a9e70dc84a7ca06f58f95a097d4ea4dc2592fa88fb7fd988811927bb46af1cf9",
+          "refsSha256": "f7ba202541ace6ddb9c5bfd960ddbcaf262acdb70909c0a4dcbf600b86667de4",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "all-closed",
+            "label": "All switches closed",
+            "policy": "Force every switch closed; preserve out-of-service status.",
+            "changedFromSource": 0,
+            "commandCount": 0,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "openSwitchPresentation": "compact",
+            "openSwitches": 0,
+            "openEndpointMarkers": 0,
+            "suppressedRouteSegments": 0,
+            "extraPresentationArrayBytes": 0,
+            "inspection": null
+          },
+          "bytes": 584132,
+          "refsBytes": 1312269,
+          "referenceCacheHit": false,
+          "fetchMs": 7.900000095367432,
+          "decodeAndValidateMs": 8.900000095367432,
+          "prepareMs": 4.299999952316284,
+          "openPresentationPrepareMs": 0.09999990463256836,
+          "firstDrawMs": 39,
+          "submitToDrawMs": 17.899999856948853,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "openSwitchPresentation": "compact",
+            "openSwitches": 34,
+            "openEndpointMarkers": 68,
+            "suppressedRouteSegments": 198,
+            "extraPresentationArrayBytes": 327744,
+            "inspection": null
+          },
+          "bytes": 586820,
+          "refsBytes": 1312241,
+          "referenceCacheHit": false,
+          "fetchMs": 5.900000095367432,
+          "decodeAndValidateMs": 9.400000095367432,
+          "prepareMs": 6.199999809265137,
+          "openPresentationPrepareMs": 1.3999998569488525,
+          "firstDrawMs": 38.80000019073486,
+          "submitToDrawMs": 17.300000190734863,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-all-closed",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "a9e70dc84a7ca06f58f95a097d4ea4dc2592fa88fb7fd988811927bb46af1cf9",
+          "refsSha256": "f7ba202541ace6ddb9c5bfd960ddbcaf262acdb70909c0a4dcbf600b86667de4",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "all-closed",
+            "label": "All switches closed",
+            "policy": "Force every switch closed; preserve out-of-service status.",
+            "changedFromSource": 0,
+            "commandCount": 0,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "openSwitchPresentation": "full",
+            "openSwitches": 0,
+            "openEndpointMarkers": 0,
+            "suppressedRouteSegments": 0,
+            "extraPresentationArrayBytes": 0,
+            "inspection": null
+          },
+          "bytes": 584132,
+          "refsBytes": 1312269,
+          "referenceCacheHit": false,
+          "fetchMs": 5.800000190734863,
+          "decodeAndValidateMs": 5.8999998569488525,
+          "prepareMs": 2.299999952316284,
+          "openPresentationPrepareMs": 0,
+          "firstDrawMs": 26.700000047683716,
+          "submitToDrawMs": 12.700000047683716,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        }
+      ],
+      "runs": [
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "started": "2026-10-12T00:08:47.954Z",
+          "durationMs": 6005.200000047684,
+          "complete": true,
+          "reason": "complete",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "openSwitchPresentation": "full",
+            "openSwitches": 34,
+            "openEndpointMarkers": 0,
+            "suppressedRouteSegments": 0,
+            "extraPresentationArrayBytes": 327744,
+            "inspection": null
+          },
+          "frames": 719,
+          "p50Ms": 8.299999952316284,
+          "p95Ms": 8.900000095367432,
+          "maxMs": 10.300000190734863,
+          "selectionFeedbackMs": null,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "started": "2026-10-12T00:09:25.502Z",
+          "durationMs": 6006.900000095367,
+          "complete": true,
+          "reason": "complete",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "openSwitchPresentation": "compact",
+            "openSwitches": 34,
+            "openEndpointMarkers": 68,
+            "suppressedRouteSegments": 198,
+            "extraPresentationArrayBytes": 327744,
+            "inspection": null
+          },
+          "frames": 721,
+          "p50Ms": 8.299999952316284,
+          "p95Ms": 9.200000047683716,
+          "maxMs": 10.399999856948853,
+          "selectionFeedbackMs": null,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "started": "2026-10-12T00:10:24.196Z",
+          "durationMs": 6003.299999952316,
+          "complete": true,
+          "reason": "complete",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "openSwitchPresentation": "compact",
+            "openSwitches": 34,
+            "openEndpointMarkers": 68,
+            "suppressedRouteSegments": 198,
+            "extraPresentationArrayBytes": 327744,
+            "inspection": null
+          },
+          "frames": 719,
+          "p50Ms": 8.299999952316284,
+          "p95Ms": 9.099999904632568,
+          "maxMs": 10.800000190734863,
+          "selectionFeedbackMs": 10.599999904632568,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-all-closed",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "a9e70dc84a7ca06f58f95a097d4ea4dc2592fa88fb7fd988811927bb46af1cf9",
+          "refsSha256": "f7ba202541ace6ddb9c5bfd960ddbcaf262acdb70909c0a4dcbf600b86667de4",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "all-closed",
+            "label": "All switches closed",
+            "policy": "Force every switch closed; preserve out-of-service status.",
+            "changedFromSource": 0,
+            "commandCount": 0,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "started": "2026-10-12T00:11:44.930Z",
+          "durationMs": 6005.5,
+          "complete": true,
+          "reason": "complete",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "openSwitchPresentation": "compact",
+            "openSwitches": 0,
+            "openEndpointMarkers": 0,
+            "suppressedRouteSegments": 0,
+            "extraPresentationArrayBytes": 0,
+            "inspection": null
+          },
+          "frames": 719,
+          "p50Ms": 8.299999952316284,
+          "p95Ms": 9.5,
+          "maxMs": 10.5,
+          "selectionFeedbackMs": null,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-all-closed",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "a9e70dc84a7ca06f58f95a097d4ea4dc2592fa88fb7fd988811927bb46af1cf9",
+          "refsSha256": "f7ba202541ace6ddb9c5bfd960ddbcaf262acdb70909c0a4dcbf600b86667de4",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "all-closed",
+            "label": "All switches closed",
+            "policy": "Force every switch closed; preserve out-of-service status.",
+            "changedFromSource": 0,
+            "commandCount": 0,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "started": "2026-10-12T00:12:32.826Z",
+          "durationMs": 6005.5,
+          "complete": true,
+          "reason": "complete",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "openSwitchPresentation": "full",
+            "openSwitches": 0,
+            "openEndpointMarkers": 0,
+            "suppressedRouteSegments": 0,
+            "extraPresentationArrayBytes": 0,
+            "inspection": null
+          },
+          "frames": 719,
+          "p50Ms": 8.299999952316284,
+          "p95Ms": 9.600000143051147,
+          "maxMs": 11.5,
+          "selectionFeedbackMs": null,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        }
+      ],
+      "presentations": [
+        {
+          "dataset": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "mode": "full",
+          "updateMs": 0.8000001907348633,
+          "extraArrayBytes": 327744
+        },
+        {
+          "dataset": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "mode": "compact",
+          "updateMs": 0.7999999523162842,
+          "extraArrayBytes": 327744
+        },
+        {
+          "dataset": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "mode": "full",
+          "updateMs": 0.5999999046325684,
+          "extraArrayBytes": 327744
+        },
+        {
+          "dataset": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "mode": "compact",
+          "updateMs": 0.5999999046325684,
+          "extraArrayBytes": 327744
+        },
+        {
+          "dataset": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "mode": "full",
+          "updateMs": 0.7000000476837158,
+          "extraArrayBytes": 327744
+        }
+      ]
+    },
+    {
+      "version": 3,
+      "started": "2026-10-12T00:13:08.054Z",
+      "exported": "2026-10-12T00:15:39.331Z",
+      "renderer": "deck.gl 9.4.0 / WebGL2 / OrthographicView",
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+        "hardwareConcurrency": 16,
+        "deviceMemoryGiB": 32
+      },
+      "loads": [
+        {
+          "id": "mvlv-meshed-all-closed",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "a9e70dc84a7ca06f58f95a097d4ea4dc2592fa88fb7fd988811927bb46af1cf9",
+          "refsSha256": "f7ba202541ace6ddb9c5bfd960ddbcaf262acdb70909c0a4dcbf600b86667de4",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "all-closed",
+            "label": "All switches closed",
+            "policy": "Force every switch closed; preserve out-of-service status.",
+            "changedFromSource": 0,
+            "commandCount": 0,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "selectedOpenSwitch": false,
+            "selectionRouteSegments": 0,
+            "openSwitchPresentation": "full",
+            "openSwitches": 0,
+            "openEndpointMarkers": 0,
+            "suppressedRouteSegments": 0,
+            "extraPresentationArrayBytes": 0,
+            "inspection": null
+          },
+          "bytes": 584132,
+          "refsBytes": 1312269,
+          "referenceCacheHit": false,
+          "fetchMs": 8.200000047683716,
+          "decodeAndValidateMs": 8.899999856948853,
+          "prepareMs": 4.6000001430511475,
+          "openPresentationPrepareMs": 0.10000014305114746,
+          "firstDrawMs": 83.39999985694885,
+          "submitToDrawMs": 61.69999980926514,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "selectedOpenSwitch": false,
+            "selectionRouteSegments": 0,
+            "openSwitchPresentation": "full",
+            "openSwitches": 34,
+            "openEndpointMarkers": 0,
+            "suppressedRouteSegments": 0,
+            "extraPresentationArrayBytes": 327744,
+            "inspection": null
+          },
+          "bytes": 586820,
+          "refsBytes": 1312241,
+          "referenceCacheHit": false,
+          "fetchMs": 4.5,
+          "decodeAndValidateMs": 8.599999904632568,
+          "prepareMs": 5.900000095367432,
+          "openPresentationPrepareMs": 1.3999998569488525,
+          "firstDrawMs": 37.299999952316284,
+          "submitToDrawMs": 18.299999952316284,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "current",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "3d769e8c4de7f1caa5cda3c7b12244b84d79523d0127e2d0c949a87b685e75c6",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; midpoint routes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "paper",
+            "selectedOpenSwitch": false,
+            "selectionRouteSegments": 0,
+            "openSwitchPresentation": "compact",
+            "openSwitches": 34,
+            "openEndpointMarkers": 68,
+            "suppressedRouteSegments": 272,
+            "extraPresentationArrayBytes": 265280,
+            "inspection": null
+          },
+          "bytes": 369668,
+          "refsBytes": 1312241,
+          "referenceCacheHit": true,
+          "fetchMs": 6.299999952316284,
+          "decodeAndValidateMs": 5.400000095367432,
+          "prepareMs": 4.700000047683716,
+          "openPresentationPrepareMs": 1,
+          "firstDrawMs": 30.200000047683716,
+          "submitToDrawMs": 13.799999952316284,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "corridor",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "409582005b7a969b9ab6710667b4e21754ce9d9ca0e8ff4611393d08fe181eae",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and corridor lanes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "paper",
+            "selectedOpenSwitch": false,
+            "selectionRouteSegments": 0,
+            "openSwitchPresentation": "compact",
+            "openSwitches": 34,
+            "openEndpointMarkers": 68,
+            "suppressedRouteSegments": 198,
+            "extraPresentationArrayBytes": 327744,
+            "inspection": null
+          },
+          "bytes": 586820,
+          "refsBytes": 1312241,
+          "referenceCacheHit": true,
+          "fetchMs": 6.3999998569488525,
+          "decodeAndValidateMs": 3.6000001430511475,
+          "prepareMs": 4,
+          "openPresentationPrepareMs": 1.0999999046325684,
+          "firstDrawMs": 27.399999856948853,
+          "submitToDrawMs": 13.399999856948853,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "paper",
+            "selectedOpenSwitch": false,
+            "selectionRouteSegments": 0,
+            "openSwitchPresentation": "compact",
+            "openSwitches": 34,
+            "openEndpointMarkers": 68,
+            "suppressedRouteSegments": 198,
+            "extraPresentationArrayBytes": 327744,
+            "inspection": null
+          },
+          "bytes": 586820,
+          "refsBytes": 1312241,
+          "referenceCacheHit": true,
+          "fetchMs": 5.8999998569488525,
+          "decodeAndValidateMs": 2.9000000953674316,
+          "prepareMs": 3.5,
+          "openPresentationPrepareMs": 1,
+          "firstDrawMs": 24.59999990463257,
+          "submitToDrawMs": 12.299999952316284,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "sapn-combined",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 98633,
+          "sha256": "46f629e153b0e000fdc1e50fb0a17c68b342bbb431ad8430bd29f42343ad4823",
+          "refsSha256": "7a1a8cd91a8853ab7a8b7b8ae20e8db426f682863d2db3680cb0f02d79e0982f",
+          "adapterVersion": 2,
+          "scenario": null,
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "selectedOpenSwitch": false,
+            "selectionRouteSegments": 0,
+            "openSwitchPresentation": "compact",
+            "openSwitches": 0,
+            "openEndpointMarkers": 0,
+            "suppressedRouteSegments": 0,
+            "extraPresentationArrayBytes": 0,
+            "inspection": null
+          },
+          "bytes": 17080312,
+          "refsBytes": 51641485,
+          "referenceCacheHit": false,
+          "fetchMs": 38.200000047683716,
+          "decodeAndValidateMs": 220.59999990463257,
+          "prepareMs": 109.60000014305115,
+          "openPresentationPrepareMs": 0.7999999523162842,
+          "firstDrawMs": 382.40000009536743,
+          "submitToDrawMs": 14,
+          "sources": [
+            {
+              "id": "sapn-golden-grove",
+              "sha256": "250fab83a7eca226cb4d62d0f1c79e086d40870fe456485db8269acbd178516a"
+            },
+            {
+              "id": "sapn-norwood",
+              "sha256": "1acb0d2fff7053c0a3449e3a927624d86bff37a4c349adf6967c75673bef5f14"
+            },
+            {
+              "id": "sapn-campbelltown",
+              "sha256": "a0d6c3c648fdfefd9471fe8fbcfabad9373b9c35de25bb99189385d998f33ad5"
+            },
+            {
+              "id": "sapn-hackham",
+              "sha256": "924361b4c385e96ba496197d919d60b5af64b25ad6d413360eb5f3b67748a272"
+            },
+            {
+              "id": "sapn-harrow",
+              "sha256": "dcba4042158923842f368ab7fc25c1cf4dc93f3958f45258cb584da1249147cf"
+            }
+          ]
+        }
+      ],
+      "runs": [
+        {
+          "id": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 3409,
+          "sha256": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+          "refsSha256": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+          "adapterVersion": 2,
+          "scenario": {
+            "id": "documented",
+            "label": "Documented open ties",
+            "policy": "Explicit Master.dss commands override imported state; all other switches retain imported state.",
+            "changedFromSource": 34,
+            "commandCount": 34,
+            "commandFile": "test/data/MVLVmeshed/Master.dss",
+            "commandSha256": "821bb0acf082ce181499d55a016aef27b0c81a66ab68f22f5c3c15a4713ad2f4"
+          },
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "started": "2026-10-12T00:13:57.800Z",
+          "durationMs": 6006,
+          "complete": true,
+          "reason": "complete",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "selectedOpenSwitch": true,
+            "selectionRouteSegments": 6,
+            "openSwitchPresentation": "compact",
+            "openSwitches": 34,
+            "openEndpointMarkers": 68,
+            "suppressedRouteSegments": 198,
+            "extraPresentationArrayBytes": 327744,
+            "inspection": null
+          },
+          "frames": 719,
+          "p50Ms": 8.299999952316284,
+          "p95Ms": 9.599999904632568,
+          "maxMs": 11.799999952316284,
+          "selectionFeedbackMs": 7.300000190734863,
+          "sources": [
+            {
+              "id": "mvlv-meshed",
+              "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+            }
+          ]
+        },
+        {
+          "id": "sapn-combined",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "kind": "bmopf",
+          "count": 98633,
+          "sha256": "46f629e153b0e000fdc1e50fb0a17c68b342bbb431ad8430bd29f42343ad4823",
+          "refsSha256": "7a1a8cd91a8853ab7a8b7b8ae20e8db426f682863d2db3680cb0f02d79e0982f",
+          "adapterVersion": 2,
+          "scenario": null,
+          "placement": "source-rooted tidy spanning forest; bus fan-out and crossing-aware corridor lanes",
+          "started": "2026-10-12T00:14:45.345Z",
+          "durationMs": 6006,
+          "complete": true,
+          "reason": "complete",
+          "environment": {
+            "width": 568,
+            "height": 440,
+            "devicePixelRatio": 2,
+            "renderPixelRatio": 2,
+            "labels": false,
+            "wirePicking": false,
+            "theme": "dark",
+            "selectedOpenSwitch": false,
+            "selectionRouteSegments": 0,
+            "openSwitchPresentation": "compact",
+            "openSwitches": 0,
+            "openEndpointMarkers": 0,
+            "suppressedRouteSegments": 0,
+            "extraPresentationArrayBytes": 0,
+            "inspection": null
+          },
+          "frames": 719,
+          "p50Ms": 8.299999952316284,
+          "p95Ms": 9.5,
+          "maxMs": 11.5,
+          "selectionFeedbackMs": null,
+          "sources": [
+            {
+              "id": "sapn-golden-grove",
+              "sha256": "250fab83a7eca226cb4d62d0f1c79e086d40870fe456485db8269acbd178516a"
+            },
+            {
+              "id": "sapn-norwood",
+              "sha256": "1acb0d2fff7053c0a3449e3a927624d86bff37a4c349adf6967c75673bef5f14"
+            },
+            {
+              "id": "sapn-campbelltown",
+              "sha256": "a0d6c3c648fdfefd9471fe8fbcfabad9373b9c35de25bb99189385d998f33ad5"
+            },
+            {
+              "id": "sapn-hackham",
+              "sha256": "924361b4c385e96ba496197d919d60b5af64b25ad6d413360eb5f3b67748a272"
+            },
+            {
+              "id": "sapn-harrow",
+              "sha256": "dcba4042158923842f368ab7fc25c1cf4dc93f3958f45258cb584da1249147cf"
+            }
+          ]
+        }
+      ],
+      "presentations": [
+        {
+          "dataset": "mvlv-meshed-documented",
+          "layoutMode": "tidy-tree",
+          "routingMode": "crossing-aware",
+          "mode": "compact",
+          "updateMs": 1,
+          "extraArrayBytes": 327744
+        }
+      ]
+    }
+  ],
+  "uiChecks": [
+    "Endpoint ring picking scoped the browser to its original bus and source switch.",
+    "Open switch list wraps and selection survives full/compact and routing changes.",
+    "Selecting an open switch restores only its original route, gap and A/B endpoints; circuit/tree path stays disabled.",
+    "Paper and dark themes render markers and selected routes.",
+    "All-closed disables open-switch controls and reuses geometry; SAPN uses zero extra arrays."
+  ]
+}

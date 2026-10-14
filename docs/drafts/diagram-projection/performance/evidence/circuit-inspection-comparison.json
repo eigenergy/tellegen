@@ -1,0 +1,40 @@
+{
+  "node": "v24.19.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "methodology": "One warm-up and five passes over every enabled non-tree connection; path + segment-overlay CPU time only, excludes assertions, UI, busbar objects and drawing. Local derived data; no raw payload copied.",
+  "results": [
+    {
+      "id": "french-medium",
+      "buses": 540,
+      "geometrySha256": "73bf363bd7418969d24c9e3987ec54024239b4e18f010d86fdc2fd0bcdf355a5",
+      "nonTreeConnections": 0,
+      "indexBytes": 0,
+      "indexMs": 0.17520899999999884,
+      "maxTreePathEdges": 0,
+      "maxTreePathBranch": null,
+      "maxOverlaySegments": 0,
+      "samples": 0,
+      "p50PathAndOverlayMs": null,
+      "p95PathAndOverlayMs": null,
+      "maxPathAndOverlayMs": null,
+      "allPathsVerified": true
+    },
+    {
+      "id": "sapn-combined",
+      "buses": 98633,
+      "geometrySha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "nonTreeConnections": 2655,
+      "indexBytes": 10620,
+      "indexMs": 0.4147079999999974,
+      "maxTreePathEdges": 145,
+      "maxTreePathBranch": 52606,
+      "maxOverlaySegments": 438,
+      "samples": 13275,
+      "p50PathAndOverlayMs": 0.0008330000000000837,
+      "p95PathAndOverlayMs": 0.006541999999996051,
+      "maxPathAndOverlayMs": 0.1363330000000076,
+      "allPathsVerified": true
+    }
+  ]
+}

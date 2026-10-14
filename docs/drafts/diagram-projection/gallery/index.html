@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" data-theme="paper" data-colour="phases">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Four-wire feeder · Tellegen diagram gallery</title>
+  <link rel="stylesheet" href="gallery.css">
+  <script defer src="gallery-data.js"></script>
+  <script defer src="gallery.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="wordmark" href="#" aria-label="Tellegen diagram gallery">tellegen<span class="brand-dot">.</span></a>
+    <span class="masthead-rule"></span><span class="section-label">DIAGRAM STUDIES</span>
+    <a class="design-link" href="../design.md">Design specification <span aria-hidden="true">↗</span></a>
+  </header>
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <div><div class="eyebrow">REFERENCE 01 <span> / </span> DISTRIBUTION</div><h1 id="page-title">One feeder. Every connection.</h1>
+      <p>A four-wire trunk, an A–N lateral, and a delta–wye transformer.</p></div>
+      <div class="theme-control" role="group" aria-label="Drawing theme">
+        <button type="button" data-theme="paper" aria-pressed="true">Paper</button>
+        <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+      </div>
+    </section>
+    <section class="sheet" aria-label="Interactive diagram reference">
+      <div class="toolbar">
+        <div class="view-control" role="group" aria-label="Diagram representation">
+          <button type="button" data-view="single_line" aria-pressed="true">Single-line</button>
+          <button type="button" data-view="multi_wire" aria-pressed="false">Multi-wire</button>
+        </div>
+        <div class="toolbar-right">
+          <div class="colour-control" role="group" aria-label="Wire colour meaning">
+            <button type="button" data-colour="topology" aria-pressed="false">Topology</button>
+            <button type="button" data-colour="phases" aria-pressed="true">Phases</button>
+          </div>
+          <button type="button" id="export-svg" class="export">Export SVG <span aria-hidden="true">↓</span></button>
+        </div>
+      </div>
+      <div class="drawing-title"><span id="drawing-title">Four-wire feeder / single-line</span><span class="fixture-status">CONNECTIVITY FIXTURE</span></div>
+      <div class="viewport" id="viewport" tabindex="0" aria-label="Diagram canvas. Tab to equipment and conductors; Enter selects. Scroll horizontally on small screens.">
+        <div id="diagram"></div>
+      </div>
+      <div class="sheet-footer">
+        <div class="phase-legend" aria-label="Display phase colours">
+          <span><i class="swatch a"></i>A</span><span><i class="swatch b"></i>B</span>
+          <span><i class="swatch c"></i>C</span><span><i class="swatch n"></i>N</span>
+          <span class="legend-note">Display convention</span>
+        </div>
+        <span id="drawing-note">Bundle labels preserve conductor membership.</span>
+      </div>
+    </section>
+    <section class="inspector" aria-label="Selection details">
+      <div class="inspector-heading"><span class="eyebrow">INSPECT</span><button type="button" id="clear-selection">Clear selection</button></div>
+      <div id="inspector-content" aria-live="polite"></div>
+    </section>
+    <footer class="page-footer"><span>Reference layout · no solved operating values</span><span>Same source identities in both views <span aria-hidden="true">↔</span></span></footer>
+    <p class="model-notice"><a href="../symbols/">Explore equipment and equivalent-circuit symbol specimens ↗</a></p>
+    <details class="reference-notes"><summary>About this reference</summary><p><a href="../performance/">Open the 1k / 10k / 100k performance gallery</a> to explore precomputed layouts and measure GPU rendering.</p><p>These drawings use the design document’s electrical fixture and projections. Layout is manually authored. The source’s internal connections, transformer polarity and individual magnetic leg associations are unspecified. Phase colours are a display convention, not a wiring standard.</p><p>The visual study uses a calm canvas, terminal hierarchy and routed lanes with Tellegen’s typography, paper and amber palette.</p></details>
+  </main>
+</body>
+</html>

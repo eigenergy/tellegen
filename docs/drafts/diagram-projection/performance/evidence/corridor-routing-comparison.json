@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "created": "2026-10-11T21:00:16.104Z",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Max"
+  },
+  "methodology": "One warm-up per routing strategy followed by five interleaved runs. Tidy-tree placement in both; fan-out/corridor mode reserves busbar space and expands corridors. Times cover placement, routing and binary packing; validation and diagnostics outside timer. Exact collinear overlaps exclude endpoint contact; overlap length is the union of portions covered more than once. Proper crossings exclude endpoints and collinear sharing. Busbar-interior crossings count horizontal wires through vertical bus footprints (current mode uses centre +/- 1). Symbol and label collisions and screen-space separability are not measured.",
+  "datasets": [
+    {
+      "id": "french-medium",
+      "buses": 540,
+      "branches": 539,
+      "sourceHashes": [
+        {
+          "id": "french-medium",
+          "sha256": "49af4133e64fa2d42c79683464b3b31088b18e4912b6d5782b5ba0b3b092d295"
+        }
+      ],
+      "routing": {
+        "current": {
+          "segments": 1171,
+          "geometryBytes": 53300,
+          "width": 4840,
+          "height": 2452.345703125,
+          "collinearOverlapPairs": 261,
+          "collinearOverlapLength": 9630.3720703125,
+          "properRouteCrossings": 0,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 82643.84313964844,
+          "segmentsPerBranch": 2.1725417439703154,
+          "corridors": {
+            "algorithm": "midpoint-offsets",
+            "version": 1
+          },
+          "timingMs": [
+            0.8416670000000295,
+            0.26887499999998,
+            0.26670899999999165,
+            0.7015830000000278,
+            0.6798749999999245
+          ],
+          "medianMs": 0.6798749999999245
+        },
+        "corridor": {
+          "segments": 1617,
+          "geometryBytes": 91684,
+          "width": 4840,
+          "height": 2454,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 0,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 81970.5,
+          "segmentsPerBranch": 3,
+          "corridors": {
+            "algorithm": "bus-fan-out-interval-corridors",
+            "version": 1,
+            "portGap": 4,
+            "laneGap": 8,
+            "maxLanes": 7,
+            "totalLanes": 106,
+            "corridors": 39,
+            "externalLinks": 0,
+            "componentYScales": [
+              1
+            ]
+          },
+          "timingMs": [
+            2.3031250000000227,
+            6.229624999999942,
+            1.6518750000000182,
+            1.2138330000000224,
+            1.179416999999944
+          ],
+          "medianMs": 1.6518750000000182
+        }
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "buses": 98633,
+      "branches": 101283,
+      "sourceHashes": [
+        {
+          "id": "sapn-golden-grove",
+          "sha256": "250fab83a7eca226cb4d62d0f1c79e086d40870fe456485db8269acbd178516a"
+        },
+        {
+          "id": "sapn-norwood",
+          "sha256": "1acb0d2fff7053c0a3449e3a927624d86bff37a4c349adf6967c75673bef5f14"
+        },
+        {
+          "id": "sapn-campbelltown",
+          "sha256": "a0d6c3c648fdfefd9471fe8fbcfabad9373b9c35de25bb99189385d998f33ad5"
+        },
+        {
+          "id": "sapn-hackham",
+          "sha256": "924361b4c385e96ba496197d919d60b5af64b25ad6d413360eb5f3b67748a272"
+        },
+        {
+          "id": "sapn-harrow",
+          "sha256": "dcba4042158923842f368ab7fc25c1cf4dc93f3958f45258cb584da1249147cf"
+        }
+      ],
+      "routing": {
+        "current": {
+          "segments": 257138,
+          "geometryBytes": 10974420,
+          "width": 85400,
+          "height": 115733.5546875,
+          "collinearOverlapPairs": 93554,
+          "collinearOverlapLength": 2335110.1076660156,
+          "properRouteCrossings": 7803,
+          "horizontalWireBusbarInteriorCrossings": 128,
+          "routeLength": 16862229.811798096,
+          "segmentsPerBranch": 2.5388071048448406,
+          "corridors": {
+            "algorithm": "midpoint-offsets",
+            "version": 1
+          },
+          "timingMs": [
+            52.51337500000011,
+            36.758124999999836,
+            33.733791999999994,
+            32.04304199999979,
+            33.207792000000154
+          ],
+          "medianMs": 33.733791999999994
+        },
+        "corridor": {
+          "segments": 303849,
+          "geometryBytes": 17080312,
+          "width": 85640,
+          "height": 123337,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 7799,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 16807596.5,
+          "segmentsPerBranch": 3,
+          "corridors": {
+            "algorithm": "bus-fan-out-interval-corridors",
+            "version": 1,
+            "portGap": 4,
+            "laneGap": 8,
+            "maxLanes": 10,
+            "totalLanes": 4483,
+            "corridors": 775,
+            "externalLinks": 0,
+            "componentYScales": [
+              1,
+              1.0833333333333333,
+              1.0833333333333333,
+              1.25,
+              1
+            ]
+          },
+          "timingMs": [
+            157.17754100000002,
+            142.935334,
+            126.40666699999997,
+            108.59845800000016,
+            115.90979100000004
+          ],
+          "medianMs": 126.40666699999997
+        }
+      }
+    }
+  ]
+}

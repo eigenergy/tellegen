@@ -1,0 +1,161 @@
+[
+  {
+    "version": 1,
+    "count": 1000,
+    "regions": 1,
+    "columns": 1,
+    "regionSize": 1000,
+    "regionWidth": 920,
+    "regionHeight": 1120,
+    "branches": 1009,
+    "openTies": 10,
+    "segments": 2017,
+    "bytes": 77560,
+    "sections": {
+      "positions": {
+        "offset": 0,
+        "length": 3000,
+        "type": "Float32Array"
+      },
+      "endpoints": {
+        "offset": 12000,
+        "length": 2018,
+        "type": "Uint32Array"
+      },
+      "states": {
+        "offset": 20072,
+        "length": 1009,
+        "type": "Uint8Array"
+      },
+      "segmentSources": {
+        "offset": 21084,
+        "length": 6051,
+        "type": "Float32Array"
+      },
+      "segmentTargets": {
+        "offset": 45288,
+        "length": 6051,
+        "type": "Float32Array"
+      },
+      "segmentBranches": {
+        "offset": 69492,
+        "length": 2017,
+        "type": "Uint32Array"
+      }
+    },
+    "bounds": [
+      0,
+      0,
+      920,
+      1120
+    ],
+    "file": "feeder-1000.bin",
+    "sha256": "bdb57b8c93d5a46d76b40673c051a95a5cf148275e8b2a3be0292f86613d9b47"
+  },
+  {
+    "version": 1,
+    "count": 10000,
+    "regions": 10,
+    "columns": 4,
+    "regionSize": 1000,
+    "regionWidth": 920,
+    "regionHeight": 1120,
+    "branches": 10099,
+    "openTies": 100,
+    "segments": 20206,
+    "bytes": 776660,
+    "sections": {
+      "positions": {
+        "offset": 0,
+        "length": 30000,
+        "type": "Float32Array"
+      },
+      "endpoints": {
+        "offset": 120000,
+        "length": 20198,
+        "type": "Uint32Array"
+      },
+      "states": {
+        "offset": 200792,
+        "length": 10099,
+        "type": "Uint8Array"
+      },
+      "segmentSources": {
+        "offset": 210892,
+        "length": 60618,
+        "type": "Float32Array"
+      },
+      "segmentTargets": {
+        "offset": 453364,
+        "length": 60618,
+        "type": "Float32Array"
+      },
+      "segmentBranches": {
+        "offset": 695836,
+        "length": 20206,
+        "type": "Uint32Array"
+      }
+    },
+    "bounds": [
+      0,
+      0,
+      3680,
+      3360
+    ],
+    "file": "feeder-10000.bin",
+    "sha256": "e068946d3945b91f144b0b153181acab074e4ebb69c188134d5add6d101b5bc8"
+  },
+  {
+    "version": 1,
+    "count": 100000,
+    "regions": 100,
+    "columns": 10,
+    "regionSize": 1000,
+    "regionWidth": 920,
+    "regionHeight": 1120,
+    "branches": 100999,
+    "openTies": 1000,
+    "segments": 202096,
+    "bytes": 7767680,
+    "sections": {
+      "positions": {
+        "offset": 0,
+        "length": 300000,
+        "type": "Float32Array"
+      },
+      "endpoints": {
+        "offset": 1200000,
+        "length": 201998,
+        "type": "Uint32Array"
+      },
+      "states": {
+        "offset": 2007992,
+        "length": 100999,
+        "type": "Uint8Array"
+      },
+      "segmentSources": {
+        "offset": 2108992,
+        "length": 606288,
+        "type": "Float32Array"
+      },
+      "segmentTargets": {
+        "offset": 4534144,
+        "length": 606288,
+        "type": "Float32Array"
+      },
+      "segmentBranches": {
+        "offset": 6959296,
+        "length": 202096,
+        "type": "Uint32Array"
+      }
+    },
+    "bounds": [
+      0,
+      0,
+      9200,
+      11200
+    ],
+    "file": "feeder-100000.bin",
+    "sha256": "68baeb8851b5551db4f2cff3eab802b64dbf869ff88d6a550ddc4a9075e9c969"
+  }
+]

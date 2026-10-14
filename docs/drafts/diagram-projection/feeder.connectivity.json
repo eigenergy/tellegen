@@ -1,0 +1,1010 @@
+{
+  "schema_version": 1,
+  "model_ref": {
+    "network": "four-wire-feeder",
+    "revision": "fixture-v1"
+  },
+  "buses": [
+    {
+      "id": "H",
+      "label": "H",
+      "points": [
+        "H.A",
+        "H.B",
+        "H.C"
+      ]
+    },
+    {
+      "id": "S",
+      "label": "S",
+      "points": [
+        "S.A",
+        "S.B",
+        "S.C",
+        "S.N"
+      ]
+    },
+    {
+      "id": "F",
+      "label": "F",
+      "points": [
+        "F.A",
+        "F.B",
+        "F.C",
+        "F.N"
+      ]
+    },
+    {
+      "id": "L",
+      "label": "L",
+      "points": [
+        "L.A",
+        "L.N"
+      ]
+    }
+  ],
+  "points": [
+    {
+      "id": "H.A",
+      "owner": {
+        "kind": "bus",
+        "bus": "H"
+      },
+      "label": "A",
+      "role": {
+        "kind": "phase",
+        "designation": "A"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "H",
+          "terminal": "A"
+        }
+      ]
+    },
+    {
+      "id": "H.B",
+      "owner": {
+        "kind": "bus",
+        "bus": "H"
+      },
+      "label": "B",
+      "role": {
+        "kind": "phase",
+        "designation": "B"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "H",
+          "terminal": "B"
+        }
+      ]
+    },
+    {
+      "id": "H.C",
+      "owner": {
+        "kind": "bus",
+        "bus": "H"
+      },
+      "label": "C",
+      "role": {
+        "kind": "phase",
+        "designation": "C"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "H",
+          "terminal": "C"
+        }
+      ]
+    },
+    {
+      "id": "S.A",
+      "owner": {
+        "kind": "bus",
+        "bus": "S"
+      },
+      "label": "A",
+      "role": {
+        "kind": "phase",
+        "designation": "A"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "S",
+          "terminal": "A"
+        }
+      ]
+    },
+    {
+      "id": "S.B",
+      "owner": {
+        "kind": "bus",
+        "bus": "S"
+      },
+      "label": "B",
+      "role": {
+        "kind": "phase",
+        "designation": "B"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "S",
+          "terminal": "B"
+        }
+      ]
+    },
+    {
+      "id": "S.C",
+      "owner": {
+        "kind": "bus",
+        "bus": "S"
+      },
+      "label": "C",
+      "role": {
+        "kind": "phase",
+        "designation": "C"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "S",
+          "terminal": "C"
+        }
+      ]
+    },
+    {
+      "id": "S.N",
+      "owner": {
+        "kind": "bus",
+        "bus": "S"
+      },
+      "label": "N",
+      "role": {
+        "kind": "neutral"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "S",
+          "terminal": "N"
+        }
+      ]
+    },
+    {
+      "id": "F.A",
+      "owner": {
+        "kind": "bus",
+        "bus": "F"
+      },
+      "label": "A",
+      "role": {
+        "kind": "phase",
+        "designation": "A"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "F",
+          "terminal": "A"
+        }
+      ]
+    },
+    {
+      "id": "F.B",
+      "owner": {
+        "kind": "bus",
+        "bus": "F"
+      },
+      "label": "B",
+      "role": {
+        "kind": "phase",
+        "designation": "B"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "F",
+          "terminal": "B"
+        }
+      ]
+    },
+    {
+      "id": "F.C",
+      "owner": {
+        "kind": "bus",
+        "bus": "F"
+      },
+      "label": "C",
+      "role": {
+        "kind": "phase",
+        "designation": "C"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "F",
+          "terminal": "C"
+        }
+      ]
+    },
+    {
+      "id": "F.N",
+      "owner": {
+        "kind": "bus",
+        "bus": "F"
+      },
+      "label": "N",
+      "role": {
+        "kind": "neutral"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "F",
+          "terminal": "N"
+        }
+      ]
+    },
+    {
+      "id": "L.A",
+      "owner": {
+        "kind": "bus",
+        "bus": "L"
+      },
+      "label": "A",
+      "role": {
+        "kind": "phase",
+        "designation": "A"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "L",
+          "terminal": "A"
+        }
+      ]
+    },
+    {
+      "id": "L.N",
+      "owner": {
+        "kind": "bus",
+        "bus": "L"
+      },
+      "label": "N",
+      "role": {
+        "kind": "neutral"
+      },
+      "nature": "explicit_terminal",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "terminal",
+          "bus": "L",
+          "terminal": "N"
+        }
+      ]
+    },
+    {
+      "id": "earth",
+      "owner": {
+        "kind": "reference",
+        "scope": "fixture-earth-reference"
+      },
+      "label": "earth",
+      "role": {
+        "kind": "earth_reference"
+      },
+      "nature": "model_only",
+      "provenance": {
+        "kind": "declared"
+      },
+      "sources": [
+        {
+          "kind": "part",
+          "equipment": {
+            "family": "transformer",
+            "key": "T1"
+          },
+          "part_kind": "grounding",
+          "part": "GS"
+        }
+      ]
+    }
+  ],
+  "equipment": [
+    {
+      "id": {
+        "family": "source",
+        "key": "U"
+      },
+      "label": "U",
+      "availability": "in_service",
+      "pins": [
+        {
+          "id": "A",
+          "binding": {
+            "kind": "connected",
+            "point": "H.A"
+          }
+        },
+        {
+          "id": "B",
+          "binding": {
+            "kind": "connected",
+            "point": "H.B"
+          }
+        },
+        {
+          "id": "C",
+          "binding": {
+            "kind": "connected",
+            "point": "H.C"
+          }
+        }
+      ],
+      "ends": [
+        {
+          "id": "out",
+          "label": "out",
+          "pins": [
+            "A",
+            "B",
+            "C"
+          ]
+        }
+      ],
+      "model": {
+        "kind": "opaque",
+        "reason": "Upstream equivalent internal connections are outside this fixture."
+      },
+      "provenance": {
+        "kind": "declared"
+      }
+    },
+    {
+      "id": {
+        "family": "transformer",
+        "key": "T1"
+      },
+      "label": "T1",
+      "availability": "in_service",
+      "pins": [
+        {
+          "id": "p.A",
+          "binding": {
+            "kind": "connected",
+            "point": "H.A"
+          }
+        },
+        {
+          "id": "p.B",
+          "binding": {
+            "kind": "connected",
+            "point": "H.B"
+          }
+        },
+        {
+          "id": "p.C",
+          "binding": {
+            "kind": "connected",
+            "point": "H.C"
+          }
+        },
+        {
+          "id": "s.A",
+          "binding": {
+            "kind": "connected",
+            "point": "S.A"
+          }
+        },
+        {
+          "id": "s.B",
+          "binding": {
+            "kind": "connected",
+            "point": "S.B"
+          }
+        },
+        {
+          "id": "s.C",
+          "binding": {
+            "kind": "connected",
+            "point": "S.C"
+          }
+        },
+        {
+          "id": "s.N",
+          "binding": {
+            "kind": "connected",
+            "point": "S.N"
+          }
+        }
+      ],
+      "ends": [
+        {
+          "id": "p",
+          "label": "p",
+          "pins": [
+            "p.A",
+            "p.B",
+            "p.C"
+          ]
+        },
+        {
+          "id": "s",
+          "label": "s",
+          "pins": [
+            "s.A",
+            "s.B",
+            "s.C",
+            "s.N"
+          ]
+        }
+      ],
+      "model": {
+        "kind": "transformer",
+        "windings": [
+          {
+            "id": "p",
+            "end": "p",
+            "configuration": "delta",
+            "coils": [
+              {
+                "id": "pAB",
+                "a": {
+                  "kind": "pin",
+                  "pin": "p.A"
+                },
+                "b": {
+                  "kind": "pin",
+                  "pin": "p.B"
+                },
+                "polarity": "unknown"
+              },
+              {
+                "id": "pBC",
+                "a": {
+                  "kind": "pin",
+                  "pin": "p.B"
+                },
+                "b": {
+                  "kind": "pin",
+                  "pin": "p.C"
+                },
+                "polarity": "unknown"
+              },
+              {
+                "id": "pCA",
+                "a": {
+                  "kind": "pin",
+                  "pin": "p.C"
+                },
+                "b": {
+                  "kind": "pin",
+                  "pin": "p.A"
+                },
+                "polarity": "unknown"
+              }
+            ]
+          },
+          {
+            "id": "s",
+            "end": "s",
+            "configuration": "wye",
+            "coils": [
+              {
+                "id": "sAN",
+                "a": {
+                  "kind": "pin",
+                  "pin": "s.A"
+                },
+                "b": {
+                  "kind": "pin",
+                  "pin": "s.N"
+                },
+                "polarity": "unknown"
+              },
+              {
+                "id": "sBN",
+                "a": {
+                  "kind": "pin",
+                  "pin": "s.B"
+                },
+                "b": {
+                  "kind": "pin",
+                  "pin": "s.N"
+                },
+                "polarity": "unknown"
+              },
+              {
+                "id": "sCN",
+                "a": {
+                  "kind": "pin",
+                  "pin": "s.C"
+                },
+                "b": {
+                  "kind": "pin",
+                  "pin": "s.N"
+                },
+                "polarity": "unknown"
+              }
+            ]
+          }
+        ],
+        "magnetic": {
+          "kind": "unspecified"
+        }
+      },
+      "provenance": {
+        "kind": "declared"
+      }
+    },
+    {
+      "id": {
+        "family": "line",
+        "key": "L1"
+      },
+      "label": "L1",
+      "availability": "in_service",
+      "pins": [
+        {
+          "id": "from.A",
+          "binding": {
+            "kind": "connected",
+            "point": "S.A"
+          }
+        },
+        {
+          "id": "from.B",
+          "binding": {
+            "kind": "connected",
+            "point": "S.B"
+          }
+        },
+        {
+          "id": "from.C",
+          "binding": {
+            "kind": "connected",
+            "point": "S.C"
+          }
+        },
+        {
+          "id": "from.N",
+          "binding": {
+            "kind": "connected",
+            "point": "S.N"
+          }
+        },
+        {
+          "id": "to.A",
+          "binding": {
+            "kind": "connected",
+            "point": "F.A"
+          }
+        },
+        {
+          "id": "to.B",
+          "binding": {
+            "kind": "connected",
+            "point": "F.B"
+          }
+        },
+        {
+          "id": "to.C",
+          "binding": {
+            "kind": "connected",
+            "point": "F.C"
+          }
+        },
+        {
+          "id": "to.N",
+          "binding": {
+            "kind": "connected",
+            "point": "F.N"
+          }
+        }
+      ],
+      "ends": [
+        {
+          "id": "from",
+          "label": "from",
+          "pins": [
+            "from.A",
+            "from.B",
+            "from.C",
+            "from.N"
+          ]
+        },
+        {
+          "id": "to",
+          "label": "to",
+          "pins": [
+            "to.A",
+            "to.B",
+            "to.C",
+            "to.N"
+          ]
+        }
+      ],
+      "model": {
+        "kind": "conductor_paths",
+        "paths": [
+          {
+            "id": "A",
+            "from_pin": "from.A",
+            "to_pin": "to.A",
+            "nature": "explicit_conductor",
+            "provenance": {
+              "kind": "declared"
+            }
+          },
+          {
+            "id": "B",
+            "from_pin": "from.B",
+            "to_pin": "to.B",
+            "nature": "explicit_conductor",
+            "provenance": {
+              "kind": "declared"
+            }
+          },
+          {
+            "id": "C",
+            "from_pin": "from.C",
+            "to_pin": "to.C",
+            "nature": "explicit_conductor",
+            "provenance": {
+              "kind": "declared"
+            }
+          },
+          {
+            "id": "N",
+            "from_pin": "from.N",
+            "to_pin": "to.N",
+            "nature": "explicit_conductor",
+            "provenance": {
+              "kind": "declared"
+            }
+          }
+        ]
+      },
+      "provenance": {
+        "kind": "declared"
+      }
+    },
+    {
+      "id": {
+        "family": "line",
+        "key": "L2"
+      },
+      "label": "L2",
+      "availability": "in_service",
+      "pins": [
+        {
+          "id": "from.A",
+          "binding": {
+            "kind": "connected",
+            "point": "F.A"
+          }
+        },
+        {
+          "id": "from.N",
+          "binding": {
+            "kind": "connected",
+            "point": "F.N"
+          }
+        },
+        {
+          "id": "to.A",
+          "binding": {
+            "kind": "connected",
+            "point": "L.A"
+          }
+        },
+        {
+          "id": "to.N",
+          "binding": {
+            "kind": "connected",
+            "point": "L.N"
+          }
+        }
+      ],
+      "ends": [
+        {
+          "id": "from",
+          "label": "from",
+          "pins": [
+            "from.A",
+            "from.N"
+          ]
+        },
+        {
+          "id": "to",
+          "label": "to",
+          "pins": [
+            "to.A",
+            "to.N"
+          ]
+        }
+      ],
+      "model": {
+        "kind": "conductor_paths",
+        "paths": [
+          {
+            "id": "A",
+            "from_pin": "from.A",
+            "to_pin": "to.A",
+            "nature": "explicit_conductor",
+            "provenance": {
+              "kind": "declared"
+            }
+          },
+          {
+            "id": "N",
+            "from_pin": "from.N",
+            "to_pin": "to.N",
+            "nature": "explicit_conductor",
+            "provenance": {
+              "kind": "declared"
+            }
+          }
+        ]
+      },
+      "provenance": {
+        "kind": "declared"
+      }
+    },
+    {
+      "id": {
+        "family": "load",
+        "key": "Q3"
+      },
+      "label": "Q3",
+      "availability": "in_service",
+      "pins": [
+        {
+          "id": "A",
+          "binding": {
+            "kind": "connected",
+            "point": "F.A"
+          }
+        },
+        {
+          "id": "B",
+          "binding": {
+            "kind": "connected",
+            "point": "F.B"
+          }
+        },
+        {
+          "id": "C",
+          "binding": {
+            "kind": "connected",
+            "point": "F.C"
+          }
+        },
+        {
+          "id": "N",
+          "binding": {
+            "kind": "connected",
+            "point": "F.N"
+          }
+        }
+      ],
+      "ends": [
+        {
+          "id": "in",
+          "label": "in",
+          "pins": [
+            "A",
+            "B",
+            "C",
+            "N"
+          ]
+        }
+      ],
+      "model": {
+        "kind": "terminal_device",
+        "configuration": "wye",
+        "elements": [
+          {
+            "id": "AN",
+            "a": {
+              "kind": "pin",
+              "pin": "A"
+            },
+            "b": {
+              "kind": "pin",
+              "pin": "N"
+            }
+          },
+          {
+            "id": "BN",
+            "a": {
+              "kind": "pin",
+              "pin": "B"
+            },
+            "b": {
+              "kind": "pin",
+              "pin": "N"
+            }
+          },
+          {
+            "id": "CN",
+            "a": {
+              "kind": "pin",
+              "pin": "C"
+            },
+            "b": {
+              "kind": "pin",
+              "pin": "N"
+            }
+          }
+        ]
+      },
+      "provenance": {
+        "kind": "declared"
+      }
+    },
+    {
+      "id": {
+        "family": "load",
+        "key": "Q1"
+      },
+      "label": "Q1",
+      "availability": "in_service",
+      "pins": [
+        {
+          "id": "A",
+          "binding": {
+            "kind": "connected",
+            "point": "L.A"
+          }
+        },
+        {
+          "id": "N",
+          "binding": {
+            "kind": "connected",
+            "point": "L.N"
+          }
+        }
+      ],
+      "ends": [
+        {
+          "id": "in",
+          "label": "in",
+          "pins": [
+            "A",
+            "N"
+          ]
+        }
+      ],
+      "model": {
+        "kind": "terminal_device",
+        "configuration": "single_phase",
+        "elements": [
+          {
+            "id": "AN",
+            "a": {
+              "kind": "pin",
+              "pin": "A"
+            },
+            "b": {
+              "kind": "pin",
+              "pin": "N"
+            }
+          }
+        ]
+      },
+      "provenance": {
+        "kind": "declared"
+      }
+    }
+  ],
+  "grounding": [
+    {
+      "id": "GS",
+      "point": "S.N",
+      "reference": "earth",
+      "impedance": {
+        "kind": "ideal"
+      },
+      "sources": [
+        {
+          "kind": "part",
+          "equipment": {
+            "family": "transformer",
+            "key": "T1"
+          },
+          "part_kind": "grounding",
+          "part": "GS"
+        }
+      ],
+      "provenance": {
+        "kind": "declared"
+      }
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "CONNECTIVITY.INTERNAL_DETAIL_UNAVAILABLE",
+      "message": "U has known external pins but no internal connection description.",
+      "sources": [
+        {
+          "kind": "equipment",
+          "equipment": {
+            "family": "source",
+            "key": "U"
+          }
+        }
+      ]
+    },
+    {
+      "code": "CONNECTIVITY.MAGNETIC_DETAIL_UNAVAILABLE",
+      "message": "T1 coil endpoints are known; polarity and individual magnetic associations are unspecified.",
+      "sources": [
+        {
+          "kind": "equipment",
+          "equipment": {
+            "family": "transformer",
+            "key": "T1"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "created": "2026-10-11T11:01:44.407Z",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Max"
+  },
+  "methodology": "One warm-up per strategy followed by five interleaved runs of placement, routing and binary packing. Decode/validation and metrics outside timer. Same forest, root order, spacing and routes; only subtree placement differs. Overlap pairs include shared trunks; transverse crossings, symbol/label collisions and browser frame timing are not measured. Float32 spacing tolerance: 0.01 diagram units.",
+  "datasets": [
+    {
+      "id": "french-medium",
+      "buses": 540,
+      "branches": 539,
+      "sourceHashes": [
+        {
+          "id": "french-medium",
+          "sha256": "49af4133e64fa2d42c79683464b3b31088b18e4912b6d5782b5ba0b3b092d295"
+        }
+      ],
+      "layouts": {
+        "leaf-order": {
+          "bounds": [
+            -80,
+            -140,
+            4760,
+            4472
+          ],
+          "width": 4840,
+          "height": 4612,
+          "minBusGapWithinRank": 24,
+          "collinearSegmentOverlapPairs": 268,
+          "segments": 1179,
+          "geometryBytes": 53524,
+          "panels": [
+            {
+              "source": 0,
+              "width": 4780,
+              "height": 4492
+            }
+          ],
+          "timingMs": [
+            0.6529590000000098,
+            0.7008339999999862,
+            0.6823329999999714,
+            0.21020899999996345,
+            0.18441599999994196
+          ],
+          "medianMs": 0.6529590000000098
+        },
+        "tidy-tree": {
+          "bounds": [
+            -80,
+            -140,
+            4760,
+            2312.345703125
+          ],
+          "width": 4840,
+          "height": 2452.345703125,
+          "minBusGapWithinRank": 24,
+          "collinearSegmentOverlapPairs": 261,
+          "segments": 1171,
+          "geometryBytes": 53300,
+          "panels": [
+            {
+              "source": 0,
+              "width": 4780,
+              "height": 2332.345703125
+            }
+          ],
+          "timingMs": [
+            0.91274999999996,
+            0.9008329999999205,
+            0.27537499999994,
+            0.2487500000000864,
+            0.29283399999997073
+          ],
+          "medianMs": 0.29283399999997073
+        }
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "buses": 98633,
+      "branches": 101283,
+      "sourceHashes": [
+        {
+          "id": "sapn-golden-grove",
+          "sha256": "250fab83a7eca226cb4d62d0f1c79e086d40870fe456485db8269acbd178516a"
+        },
+        {
+          "id": "sapn-norwood",
+          "sha256": "1acb0d2fff7053c0a3449e3a927624d86bff37a4c349adf6967c75673bef5f14"
+        },
+        {
+          "id": "sapn-campbelltown",
+          "sha256": "a0d6c3c648fdfefd9471fe8fbcfabad9373b9c35de25bb99189385d998f33ad5"
+        },
+        {
+          "id": "sapn-hackham",
+          "sha256": "924361b4c385e96ba496197d919d60b5af64b25ad6d413360eb5f3b67748a272"
+        },
+        {
+          "id": "sapn-harrow",
+          "sha256": "dcba4042158923842f368ab7fc25c1cf4dc93f3958f45258cb584da1249147cf"
+        }
+      ],
+      "layouts": {
+        "leaf-order": {
+          "bounds": [
+            -80,
+            -150,
+            85320,
+            433784
+          ],
+          "width": 85400,
+          "height": 433934,
+          "minBusGapWithinRank": 24,
+          "collinearSegmentOverlapPairs": 98746,
+          "segments": 264100,
+          "geometryBytes": 11169356,
+          "panels": [
+            {
+              "source": 0,
+              "width": 19660,
+              "height": 305020
+            },
+            {
+              "source": 1,
+              "width": 17860,
+              "height": 286588
+            },
+            {
+              "source": 2,
+              "width": 28300,
+              "height": 292564
+            },
+            {
+              "source": 3,
+              "width": 12940,
+              "height": 128404
+            },
+            {
+              "source": 4,
+              "width": 14740,
+              "height": 103132
+            }
+          ],
+          "timingMs": [
+            41.325500000000034,
+            26.93745799999988,
+            25.8823339999999,
+            24.829749999999876,
+            25.025917000000163
+          ],
+          "medianMs": 25.8823339999999
+        },
+        "tidy-tree": {
+          "bounds": [
+            -80,
+            -148,
+            85320,
+            115585.5546875
+          ],
+          "width": 85400,
+          "height": 115733.5546875,
+          "minBusGapWithinRank": 23.998046875,
+          "collinearSegmentOverlapPairs": 93554,
+          "segments": 257138,
+          "geometryBytes": 10974420,
+          "panels": [
+            {
+              "source": 0,
+              "width": 19660,
+              "height": 84792.12243452978
+            },
+            {
+              "source": 1,
+              "width": 17860,
+              "height": 65613.7041015625
+            },
+            {
+              "source": 2,
+              "width": 28300,
+              "height": 46704.980194568634
+            },
+            {
+              "source": 3,
+              "width": 12940,
+              "height": 30433.4306640625
+            },
+            {
+              "source": 4,
+              "width": 14740,
+              "height": 26320.375
+            }
+          ],
+          "timingMs": [
+            36.024832999999944,
+            40.624958999999876,
+            38.02925000000005,
+            32.84670899999992,
+            35.32016700000008
+          ],
+          "medianMs": 36.024832999999944
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1435 @@
+{
+  "version": 1,
+  "recorded": "2026-10-11T23:23:08.982Z",
+  "renderer": "deck.gl 9.4.0 / WebGL2 / OrthographicView",
+  "environment": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+    "hardwareConcurrency": 16,
+    "deviceMemoryGiB": 32
+  },
+  "methodology": "Three interleaved six-second camera runs each with no selection and with the longest SAPN circuit (145 tree edges). Identical camera trajectory, labels and picking off. Local browser smoke observations, not GPU timings or an acceptance benchmark; GPU/power context unrecorded. Coordinates and source payloads omitted. Selection timings include route construction, inspector DOM and first draw callback; toggles are included separately in raw observations.",
+  "loads": [
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 98633,
+      "sha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "refsSha256": "67479aa55a4d49496f24c8b6714d503db4927db4eb5a79eb0615a25976f8f27b",
+      "bytes": 17080312,
+      "refsBytes": 51641469,
+      "fetchMs": 33.200000047683716,
+      "decodeAndValidateMs": 209.59999990463257,
+      "prepareMs": 94.5,
+      "firstDrawMs": 387.10000014305115,
+      "submitToDrawMs": 49.80000019073486,
+      "referenceCacheHit": false,
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "current",
+      "count": 98633,
+      "sha256": "314c9973d9d64ca0fbbed9e61c9a4bfa86c92376cbb466798f7e7adc2c666451",
+      "refsSha256": "67479aa55a4d49496f24c8b6714d503db4927db4eb5a79eb0615a25976f8f27b",
+      "bytes": 10974420,
+      "refsBytes": 51641469,
+      "fetchMs": 14.300000190734863,
+      "decodeAndValidateMs": 134.39999985694885,
+      "prepareMs": 123,
+      "firstDrawMs": 285.10000014305115,
+      "submitToDrawMs": 13.400000095367432,
+      "referenceCacheHit": true,
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "schematic",
+      "routingMode": "current",
+      "count": 98633,
+      "sha256": "2a6ca4d23741cafd72bcda22ca85539921067529a953781dcea21ad5610b4bae",
+      "refsSha256": "67479aa55a4d49496f24c8b6714d503db4927db4eb5a79eb0615a25976f8f27b",
+      "bytes": 11169356,
+      "refsBytes": 51641469,
+      "fetchMs": 62.09999990463257,
+      "decodeAndValidateMs": 124.5,
+      "prepareMs": 104.90000009536743,
+      "firstDrawMs": 303.7999999523163,
+      "submitToDrawMs": 12.299999952316284,
+      "referenceCacheHit": true,
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "source",
+      "routingMode": "unavailable",
+      "count": 98633,
+      "sha256": "de2cc38ec746cf47ccf16deed4a8a9446e9d3506d38f5f96113086d735b13238",
+      "refsSha256": "67479aa55a4d49496f24c8b6714d503db4927db4eb5a79eb0615a25976f8f27b",
+      "bytes": 4993340,
+      "refsBytes": 51641469,
+      "fetchMs": 35.299999952316284,
+      "decodeAndValidateMs": 88.20000004768372,
+      "prepareMs": 99.70000004768372,
+      "firstDrawMs": 234.40000009536743,
+      "submitToDrawMs": 11.200000047683716,
+      "referenceCacheHit": true,
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "current",
+      "count": 98633,
+      "sha256": "314c9973d9d64ca0fbbed9e61c9a4bfa86c92376cbb466798f7e7adc2c666451",
+      "refsSha256": "67479aa55a4d49496f24c8b6714d503db4927db4eb5a79eb0615a25976f8f27b",
+      "bytes": 10974420,
+      "refsBytes": 51641469,
+      "fetchMs": 14.899999856948853,
+      "decodeAndValidateMs": 132.90000009536743,
+      "prepareMs": 140.70000004768372,
+      "firstDrawMs": 301.89999985694885,
+      "submitToDrawMs": 13.399999856948853,
+      "referenceCacheHit": true,
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 98633,
+      "sha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "refsSha256": "67479aa55a4d49496f24c8b6714d503db4927db4eb5a79eb0615a25976f8f27b",
+      "bytes": 17080312,
+      "refsBytes": 51641469,
+      "fetchMs": 15.5,
+      "decodeAndValidateMs": 182.40000009536743,
+      "prepareMs": 107.39999985694885,
+      "firstDrawMs": 317.5,
+      "submitToDrawMs": 12.200000047683716,
+      "referenceCacheHit": true,
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      }
+    },
+    {
+      "id": "french-medium",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 540,
+      "sha256": "73bf363bd7418969d24c9e3987ec54024239b4e18f010d86fdc2fd0bcdf355a5",
+      "refsSha256": "e181273c23385590716b00b8f4c2e6be828ebb5954233da491ecb7ac663b5139",
+      "bytes": 91684,
+      "refsBytes": 302045,
+      "fetchMs": 5.3999998569488525,
+      "decodeAndValidateMs": 2.299999952316284,
+      "prepareMs": 0.7000000476837158,
+      "firstDrawMs": 22.899999856948853,
+      "submitToDrawMs": 14.5,
+      "referenceCacheHit": false,
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      }
+    },
+    {
+      "id": "synthetic-100000",
+      "layoutMode": "synthetic",
+      "routingMode": "unavailable",
+      "count": 100000,
+      "sha256": "68baeb8851b5551db4f2cff3eab802b64dbf869ff88d6a550ddc4a9075e9c969",
+      "refsSha256": null,
+      "bytes": 7767680,
+      "refsBytes": 0,
+      "fetchMs": 14.5,
+      "decodeAndValidateMs": 17.100000143051147,
+      "prepareMs": 26.699999809265137,
+      "firstDrawMs": 70.60000014305115,
+      "submitToDrawMs": 12.300000190734863,
+      "referenceCacheHit": false,
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 98633,
+      "sha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "refsSha256": "67479aa55a4d49496f24c8b6714d503db4927db4eb5a79eb0615a25976f8f27b",
+      "bytes": 17080312,
+      "refsBytes": 51641469,
+      "fetchMs": 40,
+      "decodeAndValidateMs": 276.2000000476837,
+      "prepareMs": 129.90000009536743,
+      "firstDrawMs": 458.5,
+      "submitToDrawMs": 12.399999856948853,
+      "referenceCacheHit": false,
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      }
+    }
+  ],
+  "runs": [
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 98633,
+      "sha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "started": "2026-10-11T23:18:43.025Z",
+      "durationMs": 6005.099999904633,
+      "complete": true,
+      "reason": "complete",
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      },
+      "frames": 719,
+      "p50Ms": 8.300000190734863,
+      "p95Ms": 8.900000095367432,
+      "maxMs": 14.5,
+      "selectionFeedbackMs": null
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 98633,
+      "sha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "started": "2026-10-11T23:19:01.455Z",
+      "durationMs": 6003.599999904633,
+      "complete": true,
+      "reason": "complete",
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": {
+          "branch": 52606,
+          "treePath": true,
+          "dimContext": true,
+          "treeEdges": 145,
+          "routeSegments": 3,
+          "pathSegments": 435
+        }
+      },
+      "frames": 719,
+      "p50Ms": 8.299999952316284,
+      "p95Ms": 9,
+      "maxMs": 11.200000047683716,
+      "selectionFeedbackMs": 12.700000047683716
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 98633,
+      "sha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "started": "2026-10-11T23:19:56.830Z",
+      "durationMs": 6011.199999809265,
+      "complete": true,
+      "reason": "complete",
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      },
+      "frames": 719,
+      "p50Ms": 8.299999952316284,
+      "p95Ms": 9.5,
+      "maxMs": 11.900000095367432,
+      "selectionFeedbackMs": 12.700000047683716
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 98633,
+      "sha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "started": "2026-10-11T23:20:19.064Z",
+      "durationMs": 6008.599999904633,
+      "complete": true,
+      "reason": "complete",
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": {
+          "branch": 52606,
+          "treePath": true,
+          "dimContext": true,
+          "treeEdges": 145,
+          "routeSegments": 3,
+          "pathSegments": 435
+        }
+      },
+      "frames": 719,
+      "p50Ms": 8.299999952316284,
+      "p95Ms": 9.199999809265137,
+      "maxMs": 10.299999952316284,
+      "selectionFeedbackMs": 9.600000143051147
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 98633,
+      "sha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "started": "2026-10-11T23:20:43.675Z",
+      "durationMs": 6006.299999952316,
+      "complete": true,
+      "reason": "complete",
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": null
+      },
+      "frames": 719,
+      "p50Ms": 8.299999952316284,
+      "p95Ms": 9.400000095367432,
+      "maxMs": 10.700000047683716,
+      "selectionFeedbackMs": 9.600000143051147
+    },
+    {
+      "id": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "count": 98633,
+      "sha256": "24d5df6ce9eb0f818f936507f77306f09dcbaeb80dff11c06377d4bedb5dc7b2",
+      "started": "2026-10-11T23:21:05.986Z",
+      "durationMs": 6003.600000143051,
+      "complete": true,
+      "reason": "complete",
+      "environment": {
+        "width": 652,
+        "height": 500,
+        "devicePixelRatio": 2,
+        "renderPixelRatio": 2,
+        "labels": false,
+        "wirePicking": false,
+        "theme": "dark",
+        "inspection": {
+          "branch": 52606,
+          "treePath": true,
+          "dimContext": true,
+          "treeEdges": 145,
+          "routeSegments": 3,
+          "pathSegments": 435
+        }
+      },
+      "frames": 719,
+      "p50Ms": 8.300000190734863,
+      "p95Ms": 9.200000047683716,
+      "maxMs": 10.299999952316284,
+      "selectionFeedbackMs": 7.099999904632568
+    }
+  ],
+  "selections": [
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 52606,
+      "feedbackMs": 12.700000047683716,
+      "inspection": {
+        "branch": 52606,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 145,
+        "routeSegments": 3,
+        "pathSegments": 435
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 52606,
+      "feedbackMs": 9.600000143051147,
+      "inspection": {
+        "branch": 52606,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 145,
+        "routeSegments": 3,
+        "pathSegments": 435
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 52606,
+      "feedbackMs": 7.099999904632568,
+      "inspection": {
+        "branch": 52606,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 145,
+        "routeSegments": 3,
+        "pathSegments": 435
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 7,
+      "feedbackMs": 11.799999952316284,
+      "inspection": {
+        "branch": 7,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 36,
+        "routeSegments": 3,
+        "pathSegments": 108
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 26,
+      "feedbackMs": 13.5,
+      "inspection": {
+        "branch": 26,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 29,
+        "routeSegments": 3,
+        "pathSegments": 87
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 43,
+      "feedbackMs": 10.599999904632568,
+      "inspection": {
+        "branch": 43,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 1,
+        "routeSegments": 3,
+        "pathSegments": 3
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 60,
+      "feedbackMs": 10.700000047683716,
+      "inspection": {
+        "branch": 60,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 2,
+        "routeSegments": 3,
+        "pathSegments": 6
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 95,
+      "feedbackMs": 11.200000047683716,
+      "inspection": {
+        "branch": 95,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 3,
+        "routeSegments": 3,
+        "pathSegments": 9
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 143,
+      "feedbackMs": 11,
+      "inspection": {
+        "branch": 143,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 3,
+        "routeSegments": 3,
+        "pathSegments": 9
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 238,
+      "feedbackMs": 10.5,
+      "inspection": {
+        "branch": 238,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 1,
+        "routeSegments": 3,
+        "pathSegments": 3
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 333,
+      "feedbackMs": 11.5,
+      "inspection": {
+        "branch": 333,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 1,
+        "routeSegments": 3,
+        "pathSegments": 3
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 351,
+      "feedbackMs": 10.600000143051147,
+      "inspection": {
+        "branch": 351,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 1,
+        "routeSegments": 3,
+        "pathSegments": 3
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 361,
+      "feedbackMs": 12.200000047683716,
+      "inspection": {
+        "branch": 361,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 21,
+        "routeSegments": 3,
+        "pathSegments": 63
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 403,
+      "feedbackMs": 10.299999952316284,
+      "inspection": {
+        "branch": 403,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 36,
+        "routeSegments": 3,
+        "pathSegments": 108
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 426,
+      "feedbackMs": 10.700000047683716,
+      "inspection": {
+        "branch": 426,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 60,
+        "routeSegments": 3,
+        "pathSegments": 180
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 436,
+      "feedbackMs": 11.299999952316284,
+      "inspection": {
+        "branch": 436,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 32,
+        "routeSegments": 3,
+        "pathSegments": 96
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 450,
+      "feedbackMs": 10.599999904632568,
+      "inspection": {
+        "branch": 450,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 49,
+        "routeSegments": 3,
+        "pathSegments": 147
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 473,
+      "feedbackMs": 11.599999904632568,
+      "inspection": {
+        "branch": 473,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 39,
+        "routeSegments": 3,
+        "pathSegments": 117
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 521,
+      "feedbackMs": 10.099999904632568,
+      "inspection": {
+        "branch": 521,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 52,
+        "routeSegments": 3,
+        "pathSegments": 156
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 593,
+      "feedbackMs": 10.700000047683716,
+      "inspection": {
+        "branch": 593,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 21,
+        "routeSegments": 3,
+        "pathSegments": 63
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 603,
+      "feedbackMs": 10.600000143051147,
+      "inspection": {
+        "branch": 603,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 29,
+        "routeSegments": 3,
+        "pathSegments": 87
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 606,
+      "feedbackMs": 11.600000143051147,
+      "inspection": {
+        "branch": 606,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 82,
+        "routeSegments": 3,
+        "pathSegments": 246
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 659,
+      "feedbackMs": 10.900000095367432,
+      "inspection": {
+        "branch": 659,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 4,
+        "routeSegments": 3,
+        "pathSegments": 12
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 753,
+      "feedbackMs": 10.900000095367432,
+      "inspection": {
+        "branch": 753,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 25,
+        "routeSegments": 3,
+        "pathSegments": 75
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 772,
+      "feedbackMs": 14.400000095367432,
+      "inspection": {
+        "branch": 772,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 59,
+        "routeSegments": 3,
+        "pathSegments": 177
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 906,
+      "feedbackMs": 9.599999904632568,
+      "inspection": {
+        "branch": 906,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 1,
+        "routeSegments": 3,
+        "pathSegments": 3
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1184,
+      "feedbackMs": 10.700000047683716,
+      "inspection": {
+        "branch": 1184,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 4,
+        "routeSegments": 3,
+        "pathSegments": 12
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1215,
+      "feedbackMs": 10.600000143051147,
+      "inspection": {
+        "branch": 1215,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 3,
+        "routeSegments": 3,
+        "pathSegments": 9
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1219,
+      "feedbackMs": 10.599999904632568,
+      "inspection": {
+        "branch": 1219,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 1,
+        "routeSegments": 3,
+        "pathSegments": 3
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1297,
+      "feedbackMs": 11,
+      "inspection": {
+        "branch": 1297,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 2,
+        "routeSegments": 3,
+        "pathSegments": 6
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1397,
+      "feedbackMs": 11,
+      "inspection": {
+        "branch": 1397,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 37,
+        "routeSegments": 3,
+        "pathSegments": 111
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1406,
+      "feedbackMs": 10.400000095367432,
+      "inspection": {
+        "branch": 1406,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 1,
+        "routeSegments": 3,
+        "pathSegments": 3
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1464,
+      "feedbackMs": 11.200000047683716,
+      "inspection": {
+        "branch": 1464,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 56,
+        "routeSegments": 3,
+        "pathSegments": 168
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1657,
+      "feedbackMs": 10.5,
+      "inspection": {
+        "branch": 1657,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 2,
+        "routeSegments": 3,
+        "pathSegments": 6
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1673,
+      "feedbackMs": 10.899999856948853,
+      "inspection": {
+        "branch": 1673,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 2,
+        "routeSegments": 3,
+        "pathSegments": 6
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1676,
+      "feedbackMs": 10.200000047683716,
+      "inspection": {
+        "branch": 1676,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 2,
+        "routeSegments": 3,
+        "pathSegments": 6
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1699,
+      "feedbackMs": 10.900000095367432,
+      "inspection": {
+        "branch": 1699,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 3,
+        "routeSegments": 3,
+        "pathSegments": 9
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1849,
+      "feedbackMs": 10.700000047683716,
+      "inspection": {
+        "branch": 1849,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 3,
+        "routeSegments": 3,
+        "pathSegments": 9
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1877,
+      "feedbackMs": 10.200000047683716,
+      "inspection": {
+        "branch": 1877,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 5,
+        "routeSegments": 3,
+        "pathSegments": 15
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1902,
+      "feedbackMs": 11,
+      "inspection": {
+        "branch": 1902,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 1,
+        "routeSegments": 3,
+        "pathSegments": 3
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1974,
+      "feedbackMs": 10.900000095367432,
+      "inspection": {
+        "branch": 1974,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 1,
+        "routeSegments": 3,
+        "pathSegments": 3
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1985,
+      "feedbackMs": 10.799999952316284,
+      "inspection": {
+        "branch": 1985,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 2,
+        "routeSegments": 3,
+        "pathSegments": 6
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1994,
+      "feedbackMs": 10.699999809265137,
+      "inspection": {
+        "branch": 1994,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 2,
+        "routeSegments": 3,
+        "pathSegments": 6
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 1995,
+      "feedbackMs": 10.899999856948853,
+      "inspection": {
+        "branch": 1995,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 2,
+        "routeSegments": 3,
+        "pathSegments": 6
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 2114,
+      "feedbackMs": 11.299999952316284,
+      "inspection": {
+        "branch": 2114,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 38,
+        "routeSegments": 3,
+        "pathSegments": 114
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 2116,
+      "feedbackMs": 10.700000047683716,
+      "inspection": {
+        "branch": 2116,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 3,
+        "routeSegments": 3,
+        "pathSegments": 9
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 2117,
+      "feedbackMs": 10.899999856948853,
+      "inspection": {
+        "branch": 2117,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 6,
+        "routeSegments": 3,
+        "pathSegments": 18
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 2118,
+      "feedbackMs": 11,
+      "inspection": {
+        "branch": 2118,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 13,
+        "routeSegments": 3,
+        "pathSegments": 39
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "current",
+      "kind": "branch",
+      "index": 2118,
+      "feedbackMs": 4.900000095367432,
+      "inspection": {
+        "branch": 2118,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 13,
+        "routeSegments": 7,
+        "pathSegments": 29
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "schematic",
+      "routingMode": "current",
+      "kind": "branch",
+      "index": 2118,
+      "feedbackMs": 4.3999998569488525,
+      "inspection": {
+        "branch": 2118,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 13,
+        "routeSegments": 7,
+        "pathSegments": 29
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "source",
+      "routingMode": "unavailable",
+      "kind": "branch",
+      "index": 2118,
+      "feedbackMs": 3.6000001430511475,
+      "inspection": null
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "current",
+      "kind": "branch",
+      "index": 2118,
+      "feedbackMs": 5.099999904632568,
+      "inspection": {
+        "branch": 2118,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 13,
+        "routeSegments": 7,
+        "pathSegments": 29
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 2118,
+      "feedbackMs": 4.5,
+      "inspection": {
+        "branch": 2118,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 13,
+        "routeSegments": 3,
+        "pathSegments": 39
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 101152,
+      "feedbackMs": 10.900000095367432,
+      "inspection": {
+        "branch": 101152,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 2,
+        "routeSegments": 3,
+        "pathSegments": 6
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 7,
+      "feedbackMs": 9.099999904632568,
+      "inspection": {
+        "branch": 7,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 36,
+        "routeSegments": 3,
+        "pathSegments": 108
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 52606,
+      "feedbackMs": 11.799999952316284,
+      "inspection": {
+        "branch": 52606,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 145,
+        "routeSegments": 3,
+        "pathSegments": 435
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 52606,
+      "feedbackMs": 10.300000190734863,
+      "inspection": {
+        "branch": 52606,
+        "treePath": false,
+        "dimContext": true,
+        "treeEdges": 145,
+        "routeSegments": 3,
+        "pathSegments": 435
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 52606,
+      "feedbackMs": 9.200000047683716,
+      "inspection": {
+        "branch": 52606,
+        "treePath": false,
+        "dimContext": false,
+        "treeEdges": 145,
+        "routeSegments": 3,
+        "pathSegments": 435
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 52606,
+      "feedbackMs": 9.5,
+      "inspection": {
+        "branch": 52606,
+        "treePath": true,
+        "dimContext": false,
+        "treeEdges": 145,
+        "routeSegments": 3,
+        "pathSegments": 435
+      }
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 52606,
+      "feedbackMs": 9.099999904632568,
+      "inspection": {
+        "branch": 52606,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 145,
+        "routeSegments": 3,
+        "pathSegments": 435
+      }
+    },
+    {
+      "dataset": "french-medium",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "bus",
+      "index": 501,
+      "feedbackMs": 13.600000143051147,
+      "inspection": null
+    },
+    {
+      "dataset": "french-medium",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "bus",
+      "index": 501,
+      "feedbackMs": 10.599999904632568,
+      "inspection": null
+    },
+    {
+      "dataset": "sapn-combined",
+      "layoutMode": "tidy-tree",
+      "routingMode": "corridor",
+      "kind": "branch",
+      "index": 52606,
+      "feedbackMs": 7.3999998569488525,
+      "inspection": {
+        "branch": 52606,
+        "treePath": true,
+        "dimContext": true,
+        "treeEdges": 145,
+        "routeSegments": 3,
+        "pathSegments": 435
+      }
+    }
+  ],
+  "checks": [
+    "All 2655 SAPN non-tree paths verified by compare-inspection.mjs",
+    "French radial no-connections state and 17-step root trace",
+    "Synthetic 100k remains available with circuit controls disabled",
+    "45 next-connection selections cross the 40-result page boundary",
+    "Previous from no selection wraps to last of 2655; next returns to first",
+    "Empty search disables connection navigation",
+    "Equipment identity persists across both routing modes, both schematic placements and source-coordinate reference",
+    "Source view disables inspection; returning to schematic restores selected circuit",
+    "Fit connection and fit circuit produce different bounds; optional tree path and dimming controls work",
+    "Paper and dark themes inspected; endpoint labels remain inside fitted canvas",
+    "No browser warnings or errors observed"
+  ],
+  "navigationSample": {
+    "methodology": "45 successive Next connection selections from the beginning of the unfiltered SAPN list, including crossing the 40-result page boundary; includes first draw callback and inspector DOM.",
+    "count": 45,
+    "p50Ms": 10.899999856948853,
+    "p95Ms": 11.799999952316284,
+    "maxMs": 14.400000095367432
+  }
+}

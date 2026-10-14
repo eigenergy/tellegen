@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "created": "2026-10-11T23:27:57.447Z",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Max"
+  },
+  "methodology": "One warm-up per routing strategy followed by five interleaved runs. Tidy-tree placement in both; Both modes use identical bus positions, ports, lane counts and footprints. Crossing-aware mode only permutes eligible corridor lanes while preserving tree-lane relative order. Times cover placement, routing and binary packing; validation and diagnostics outside timer. Exact collinear overlaps exclude endpoint contact; overlap length is the union of portions covered more than once. Proper crossings exclude endpoints and collinear sharing. Busbar-interior crossings count horizontal wires through vertical bus footprints (current mode uses centre +/- 1). Symbol and label collisions and screen-space separability are not measured.",
+  "datasets": [
+    {
+      "id": "french-medium",
+      "buses": 540,
+      "branches": 539,
+      "sourceHashes": [
+        {
+          "id": "french-medium",
+          "sha256": "49af4133e64fa2d42c79683464b3b31088b18e4912b6d5782b5ba0b3b092d295"
+        }
+      ],
+      "routing": {
+        "corridor": {
+          "segments": 1617,
+          "geometryBytes": 91684,
+          "width": 4840,
+          "height": 2454,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 0,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 81970.5,
+          "segmentsPerBranch": 3,
+          "crossingsByRole": {
+            "treeTree": 0,
+            "meshMesh": 0,
+            "treeMesh": 0
+          },
+          "corridors": {
+            "algorithm": "bus-fan-out-interval-corridors",
+            "version": 1,
+            "portGap": 4,
+            "laneGap": 8,
+            "maxLanes": 7,
+            "totalLanes": 106,
+            "corridors": 39,
+            "externalLinks": 0,
+            "componentYScales": [
+              1
+            ]
+          },
+          "timingMs": [
+            1.988458000000037,
+            0.6951249999999618,
+            0.7195829999999432,
+            0.6699160000000575,
+            0.6176659999999856
+          ],
+          "medianMs": 0.6951249999999618
+        },
+        "crossing-aware": {
+          "segments": 1617,
+          "geometryBytes": 91684,
+          "width": 4840,
+          "height": 2454,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 0,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 81970.5,
+          "segmentsPerBranch": 3,
+          "crossingsByRole": {
+            "treeTree": 0,
+            "meshMesh": 0,
+            "treeMesh": 0
+          },
+          "corridors": {
+            "algorithm": "bus-fan-out-crossing-aware-corridors",
+            "ordering": {
+              "algorithm": "bounded-mesh-lane-insertion",
+              "version": 1,
+              "laneCap": 32,
+              "passes": 4,
+              "eligible": 0,
+              "changed": 0,
+              "moves": 0,
+              "before": 0,
+              "after": 0,
+              "skipped": {
+                "radial": 39
+              },
+              "totalMs": 0.014875000000074579
+            },
+            "version": 1,
+            "portGap": 4,
+            "laneGap": 8,
+            "maxLanes": 7,
+            "totalLanes": 106,
+            "corridors": 39,
+            "externalLinks": 0,
+            "componentYScales": [
+              1
+            ]
+          },
+          "timingMs": [
+            1.6962499999999636,
+            1.6712079999999787,
+            0.7900829999999814,
+            0.6880419999999958,
+            0.6257919999999331
+          ],
+          "medianMs": 0.7900829999999814
+        }
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "buses": 98633,
+      "branches": 101283,
+      "sourceHashes": [
+        {
+          "id": "sapn-golden-grove",
+          "sha256": "250fab83a7eca226cb4d62d0f1c79e086d40870fe456485db8269acbd178516a"
+        },
+        {
+          "id": "sapn-norwood",
+          "sha256": "1acb0d2fff7053c0a3449e3a927624d86bff37a4c349adf6967c75673bef5f14"
+        },
+        {
+          "id": "sapn-campbelltown",
+          "sha256": "a0d6c3c648fdfefd9471fe8fbcfabad9373b9c35de25bb99189385d998f33ad5"
+        },
+        {
+          "id": "sapn-hackham",
+          "sha256": "924361b4c385e96ba496197d919d60b5af64b25ad6d413360eb5f3b67748a272"
+        },
+        {
+          "id": "sapn-harrow",
+          "sha256": "dcba4042158923842f368ab7fc25c1cf4dc93f3958f45258cb584da1249147cf"
+        }
+      ],
+      "routing": {
+        "corridor": {
+          "segments": 303849,
+          "geometryBytes": 17080312,
+          "width": 85640,
+          "height": 123337,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 7799,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 16807596.5,
+          "segmentsPerBranch": 3,
+          "crossingsByRole": {
+            "treeTree": 0,
+            "meshMesh": 270,
+            "treeMesh": 7529
+          },
+          "corridors": {
+            "algorithm": "bus-fan-out-interval-corridors",
+            "version": 1,
+            "portGap": 4,
+            "laneGap": 8,
+            "maxLanes": 10,
+            "totalLanes": 4483,
+            "corridors": 775,
+            "externalLinks": 0,
+            "componentYScales": [
+              1,
+              1.0833333333333333,
+              1.0833333333333333,
+              1.25,
+              1
+            ]
+          },
+          "timingMs": [
+            172.017916,
+            152.65383299999985,
+            127.5034169999999,
+            122.05562499999996,
+            109.42408299999988
+          ],
+          "medianMs": 127.5034169999999
+        },
+        "crossing-aware": {
+          "segments": 303849,
+          "geometryBytes": 17080312,
+          "width": 85640,
+          "height": 123337,
+          "collinearOverlapPairs": 0,
+          "collinearOverlapLength": 0,
+          "properRouteCrossings": 5139,
+          "horizontalWireBusbarInteriorCrossings": 0,
+          "routeLength": 16740700.5,
+          "segmentsPerBranch": 3,
+          "crossingsByRole": {
+            "treeTree": 0,
+            "meshMesh": 172,
+            "treeMesh": 4967
+          },
+          "corridors": {
+            "algorithm": "bus-fan-out-crossing-aware-corridors",
+            "ordering": {
+              "algorithm": "bounded-mesh-lane-insertion",
+              "version": 1,
+              "laneCap": 32,
+              "passes": 4,
+              "eligible": 595,
+              "changed": 408,
+              "moves": 495,
+              "before": 7799,
+              "after": 5139,
+              "skipped": {
+                "radial": 180
+              },
+              "totalMs": 53.38725000000022
+            },
+            "version": 1,
+            "portGap": 4,
+            "laneGap": 8,
+            "maxLanes": 10,
+            "totalLanes": 4483,
+            "corridors": 775,
+            "externalLinks": 0,
+            "componentYScales": [
+              1,
+              1.0833333333333333,
+              1.0833333333333333,
+              1.25,
+              1
+            ]
+          },
+          "timingMs": [
+            191.454291,
+            178.52708299999995,
+            163.15483300000005,
+            159.98066700000027,
+            156.36516600000004
+          ],
+          "medianMs": 163.15483300000005
+        }
+      }
+    }
+  ]
+}

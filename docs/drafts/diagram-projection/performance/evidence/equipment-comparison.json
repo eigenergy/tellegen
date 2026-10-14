@@ -1,0 +1,285 @@
+{
+  "version": 1,
+  "created": "2026-10-12T04:20:17.411Z",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Max"
+  },
+  "methodology": "One warm-up and five layout/preparation samples. Layout includes packing and glyph tessellation, excludes source parsing, validation and diagnostics. Preparation includes open-tie cache and glyph GPU inputs, excludes general fixture/browser preparation and color assignment. Packed bytes exclude JS/Map objects and GPU copies. Clearance audit counts strict-interior foreign base-route/reserved-box intersections; excludes labels, glyph/stem collisions, pixel widths and screen-space crowding. Tidy-tree baseline and equipment share identities, endpoint/state arrays, spanning forest and branch roles. Footprint uses geometry bounds including fixed padding.",
+  "datasets": [
+    {
+      "id": "mvlv-meshed-documented",
+      "routing": "crossing-aware",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "referenceHash": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+      "geometryHash": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+      "packedBytes": 586820,
+      "wireSegments": 10440,
+      "glyphs": 0,
+      "glyphStrokes": 0,
+      "equipmentExtraArrayBytes": 0,
+      "width": 16840,
+      "height": 15488,
+      "layoutMs": [
+        15.448957999999998,
+        10.868291000000013,
+        8.933084000000008,
+        6.584125,
+        6.158625000000001
+      ],
+      "medianLayoutMs": 8.933084000000008,
+      "prepareMs": [
+        1.3439580000000007,
+        1.1100409999999954,
+        0.8739580000000018,
+        0.8068329999999975,
+        0.8181670000000025
+      ],
+      "medianPrepareMs": 0.8739580000000018,
+      "clearance": null
+    },
+    {
+      "id": "mvlv-meshed-documented",
+      "routing": "equipment",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "referenceHash": "1125cda23e5d23030971616d1365a43cc13100e6e226a079ca3c32f96b90e9db",
+      "geometryHash": "336e6c1ff30156affde36d4ad7607445eeaad905a7960ff3ec75f04ee28efc38",
+      "packedBytes": 1657468,
+      "wireSegments": 10756,
+      "glyphs": 2894,
+      "glyphStrokes": 32222,
+      "equipmentExtraArrayBytes": 1161144,
+      "width": 23994.09999847412,
+      "height": 66583,
+      "layoutMs": [
+        13.808375000000012,
+        11.33766700000001,
+        11.912209000000018,
+        16.245625000000018,
+        14.793958000000003
+      ],
+      "medianLayoutMs": 13.808375000000012,
+      "prepareMs": [
+        6.748166000000026,
+        5.080542000000008,
+        4.9960410000000195,
+        5.388334000000015,
+        5.074250000000006
+      ],
+      "medianPrepareMs": 5.080542000000008,
+      "clearance": {
+        "reservedBoxHalfSize": 16,
+        "foreignRouteBoxIntersections": 0,
+        "glyphs": 2894
+      }
+    },
+    {
+      "id": "mvlv-meshed-all-closed",
+      "routing": "crossing-aware",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "referenceHash": "f7ba202541ace6ddb9c5bfd960ddbcaf262acdb70909c0a4dcbf600b86667de4",
+      "geometryHash": "a9e70dc84a7ca06f58f95a097d4ea4dc2592fa88fb7fd988811927bb46af1cf9",
+      "packedBytes": 584132,
+      "wireSegments": 10344,
+      "glyphs": 0,
+      "glyphStrokes": 0,
+      "equipmentExtraArrayBytes": 0,
+      "width": 13960,
+      "height": 12439,
+      "layoutMs": [
+        8.575167000000022,
+        5.687833000000012,
+        6.684792000000016,
+        5.930582999999956,
+        5.4780830000000265
+      ],
+      "medianLayoutMs": 5.930582999999956,
+      "prepareMs": [
+        0.021500000000003183,
+        0.01779199999998582,
+        0.01766600000001972,
+        0.01754199999999173,
+        0.017457999999976437
+      ],
+      "medianPrepareMs": 0.01766600000001972,
+      "clearance": null
+    },
+    {
+      "id": "mvlv-meshed-all-closed",
+      "routing": "equipment",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "referenceHash": "f7ba202541ace6ddb9c5bfd960ddbcaf262acdb70909c0a4dcbf600b86667de4",
+      "geometryHash": "75fe7838a42748635c2934e7f0f52caa984752a00931f9a095fc5569b4454148",
+      "packedBytes": 1655732,
+      "wireSegments": 10694,
+      "glyphs": 2894,
+      "glyphStrokes": 32222,
+      "equipmentExtraArrayBytes": 128888,
+      "width": 20106.09999847412,
+      "height": 53801,
+      "layoutMs": [
+        9.685749999999985,
+        9.257916000000023,
+        15.366084,
+        11.182749999999999,
+        12.635667000000012
+      ],
+      "medianLayoutMs": 11.182749999999999,
+      "prepareMs": [
+        0.4055420000000254,
+        0.5154160000000161,
+        0.45441600000003746,
+        0.4275419999999599,
+        0.4570000000000505
+      ],
+      "medianPrepareMs": 0.45441600000003746,
+      "clearance": {
+        "reservedBoxHalfSize": 16,
+        "foreignRouteBoxIntersections": 0,
+        "glyphs": 2894
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "routing": "crossing-aware",
+      "buses": 98633,
+      "branches": 101283,
+      "sourceHashes": [
+        {
+          "id": "sapn-golden-grove",
+          "sha256": "250fab83a7eca226cb4d62d0f1c79e086d40870fe456485db8269acbd178516a"
+        },
+        {
+          "id": "sapn-norwood",
+          "sha256": "1acb0d2fff7053c0a3449e3a927624d86bff37a4c349adf6967c75673bef5f14"
+        },
+        {
+          "id": "sapn-campbelltown",
+          "sha256": "a0d6c3c648fdfefd9471fe8fbcfabad9373b9c35de25bb99189385d998f33ad5"
+        },
+        {
+          "id": "sapn-hackham",
+          "sha256": "924361b4c385e96ba496197d919d60b5af64b25ad6d413360eb5f3b67748a272"
+        },
+        {
+          "id": "sapn-harrow",
+          "sha256": "dcba4042158923842f368ab7fc25c1cf4dc93f3958f45258cb584da1249147cf"
+        }
+      ],
+      "referenceHash": "7a1a8cd91a8853ab7a8b7b8ae20e8db426f682863d2db3680cb0f02d79e0982f",
+      "geometryHash": "46f629e153b0e000fdc1e50fb0a17c68b342bbb431ad8430bd29f42343ad4823",
+      "packedBytes": 17080312,
+      "wireSegments": 303849,
+      "glyphs": 0,
+      "glyphStrokes": 0,
+      "equipmentExtraArrayBytes": 0,
+      "width": 85640,
+      "height": 123337,
+      "layoutMs": [
+        253.21854200000007,
+        216.4430420000001,
+        224.5872499999998,
+        198.02366700000016,
+        190.1407079999999
+      ],
+      "medianLayoutMs": 216.4430420000001,
+      "prepareMs": [
+        1.1965829999999187,
+        1.0063749999999345,
+        1.859042000000045,
+        1.4905000000003383,
+        1.4469169999997575
+      ],
+      "medianPrepareMs": 1.4469169999997575,
+      "clearance": null
+    },
+    {
+      "id": "sapn-combined",
+      "routing": "equipment",
+      "buses": 98633,
+      "branches": 101283,
+      "sourceHashes": [
+        {
+          "id": "sapn-golden-grove",
+          "sha256": "250fab83a7eca226cb4d62d0f1c79e086d40870fe456485db8269acbd178516a"
+        },
+        {
+          "id": "sapn-norwood",
+          "sha256": "1acb0d2fff7053c0a3449e3a927624d86bff37a4c349adf6967c75673bef5f14"
+        },
+        {
+          "id": "sapn-campbelltown",
+          "sha256": "a0d6c3c648fdfefd9471fe8fbcfabad9373b9c35de25bb99189385d998f33ad5"
+        },
+        {
+          "id": "sapn-hackham",
+          "sha256": "924361b4c385e96ba496197d919d60b5af64b25ad6d413360eb5f3b67748a272"
+        },
+        {
+          "id": "sapn-harrow",
+          "sha256": "dcba4042158923842f368ab7fc25c1cf4dc93f3958f45258cb584da1249147cf"
+        }
+      ],
+      "referenceHash": "7a1a8cd91a8853ab7a8b7b8ae20e8db426f682863d2db3680cb0f02d79e0982f",
+      "geometryHash": "8cef03bf61c94a9dc032ec66bcebcf4714c03c3f2fdf14169d82c2578c50d00a",
+      "packedBytes": 40430040,
+      "wireSegments": 305310,
+      "glyphs": 80123,
+      "glyphStrokes": 666147,
+      "equipmentExtraArrayBytes": 2664588,
+      "width": 133786.09999847412,
+      "height": 602129,
+      "layoutMs": [
+        271.1385,
+        266.0308749999999,
+        268.07937500000025,
+        260.6538330000003,
+        263.791166
+      ],
+      "medianLayoutMs": 266.0308749999999,
+      "prepareMs": [
+        14.943374999999833,
+        12.655125000000226,
+        12.393832999999177,
+        12.363750000000437,
+        15.724083000000064
+      ],
+      "medianPrepareMs": 12.655125000000226,
+      "clearance": {
+        "reservedBoxHalfSize": 16,
+        "foreignRouteBoxIntersections": 0,
+        "glyphs": 80123
+      }
+    }
+  ]
+}

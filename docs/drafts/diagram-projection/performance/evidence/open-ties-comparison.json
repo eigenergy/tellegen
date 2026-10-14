@@ -1,0 +1,379 @@
+{
+  "version": 1,
+  "created": "2026-10-12T00:12:59.260Z",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Max"
+  },
+  "methodology": "Precomputed tidy-tree geometry; one warm-up and five presentation preparation runs per scenario/routing pair. Timers cover open-switch grouping and cached coordinate/pick-index copies, excluding color copies, validation and diagnostics. Compact counts omit suppressed routes; original endpoints, geometry, state and forest are unchanged. Proper segment crossings exclude endpoints/collinear sharing. Endpoint ring screen collisions are not measured. Additional array bytes include browser compact colors; exclude JS objects, GPU copies and library overhead.",
+  "datasets": [
+    {
+      "id": "mvlv-meshed-documented",
+      "routing": "current",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "geometryHash": "3d769e8c4de7f1caa5cda3c7b12244b84d79523d0127e2d0c949a87b685e75c6",
+      "openSwitches": 34,
+      "endpointMarkers": 68,
+      "suppressedSegments": 272,
+      "maximumSelectedRouteSegments": 8,
+      "extraArrayBytes": 265280,
+      "prepareMs": [
+        1.0400840000000002,
+        1.0570409999999981,
+        0.8605410000000049,
+        0.8177080000000032,
+        0.7993749999999977
+      ],
+      "medianPrepareMs": 0.8605410000000049,
+      "full": {
+        "segments": 8562,
+        "geometryBytes": 369668,
+        "width": 16840,
+        "height": 13168.361328125,
+        "collinearOverlapPairs": 4769,
+        "collinearOverlapLength": 76028.1826171875,
+        "properRouteCrossings": 708,
+        "horizontalWireBusbarInteriorCrossings": 4,
+        "routeLength": 718492.9575195312,
+        "segmentsPerBranch": 2.4831786542923435
+      },
+      "compact": {
+        "segments": 8290,
+        "geometryBytes": 369668,
+        "width": 16840,
+        "height": 13168.361328125,
+        "collinearOverlapPairs": 4707,
+        "collinearOverlapLength": 73030.1826171875,
+        "properRouteCrossings": 50,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 559315.1301269531,
+        "segmentsPerBranch": 2.4042923433874708
+      }
+    },
+    {
+      "id": "mvlv-meshed-documented",
+      "routing": "corridor",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "geometryHash": "409582005b7a969b9ab6710667b4e21754ce9d9ca0e8ff4611393d08fe181eae",
+      "openSwitches": 34,
+      "endpointMarkers": 68,
+      "suppressedSegments": 198,
+      "maximumSelectedRouteSegments": 6,
+      "extraArrayBytes": 327744,
+      "prepareMs": [
+        1.3411250000000052,
+        1.109415999999996,
+        1.0810830000000067,
+        1.0683750000000032,
+        1.0938330000000036
+      ],
+      "medianPrepareMs": 1.0938330000000036,
+      "full": {
+        "segments": 10440,
+        "geometryBytes": 586820,
+        "width": 16840,
+        "height": 15488,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 2089,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 1170500.5,
+        "segmentsPerBranch": 3.02784222737819
+      },
+      "compact": {
+        "segments": 10242,
+        "geometryBytes": 586820,
+        "width": 16840,
+        "height": 15488,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 35,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 575074.5,
+        "segmentsPerBranch": 2.9704176334106727
+      }
+    },
+    {
+      "id": "mvlv-meshed-documented",
+      "routing": "crossing-aware",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "geometryHash": "f6364df2c3555947e744b649a3f4f9761c6a58984edcc21caf21ef550f8600a1",
+      "openSwitches": 34,
+      "endpointMarkers": 68,
+      "suppressedSegments": 198,
+      "maximumSelectedRouteSegments": 6,
+      "extraArrayBytes": 327744,
+      "prepareMs": [
+        0.921166999999997,
+        0.9180829999999958,
+        0.9494590000000045,
+        0.8045419999999979,
+        0.8408750000000111
+      ],
+      "medianPrepareMs": 0.9180829999999958,
+      "full": {
+        "segments": 10440,
+        "geometryBytes": 586820,
+        "width": 16840,
+        "height": 15488,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 2077,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 1170276.5,
+        "segmentsPerBranch": 3.02784222737819
+      },
+      "compact": {
+        "segments": 10242,
+        "geometryBytes": 586820,
+        "width": 16840,
+        "height": 15488,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 23,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 574850.5,
+        "segmentsPerBranch": 2.9704176334106727
+      }
+    },
+    {
+      "id": "mvlv-meshed-all-closed",
+      "routing": "current",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "geometryHash": "9e9daeef076c188201d5976c05dc713082b07a6640684ddc6af46603e99085cd",
+      "openSwitches": 0,
+      "endpointMarkers": 0,
+      "suppressedSegments": 0,
+      "maximumSelectedRouteSegments": 0,
+      "extraArrayBytes": 0,
+      "prepareMs": [
+        0.02158299999999258,
+        0.018207999999987123,
+        0.018124999999997726,
+        0.017957999999993035,
+        0.017917000000011285
+      ],
+      "medianPrepareMs": 0.018124999999997726,
+      "full": {
+        "segments": 8484,
+        "geometryBytes": 367484,
+        "width": 13960,
+        "height": 10691.875,
+        "collinearOverlapPairs": 4747,
+        "collinearOverlapLength": 76472.310546875,
+        "properRouteCrossings": 768,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 656388.9497070312,
+        "segmentsPerBranch": 2.460556844547564
+      },
+      "compact": {
+        "segments": 8484,
+        "geometryBytes": 367484,
+        "width": 13960,
+        "height": 10691.875,
+        "collinearOverlapPairs": 4747,
+        "collinearOverlapLength": 76472.310546875,
+        "properRouteCrossings": 768,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 656388.9497070312,
+        "segmentsPerBranch": 2.460556844547564
+      }
+    },
+    {
+      "id": "mvlv-meshed-all-closed",
+      "routing": "corridor",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "geometryHash": "83b23df4ecc6df9c4176f81907d36deb4fb76745f23c286e6522d52675410ca1",
+      "openSwitches": 0,
+      "endpointMarkers": 0,
+      "suppressedSegments": 0,
+      "maximumSelectedRouteSegments": 0,
+      "extraArrayBytes": 0,
+      "prepareMs": [
+        0.01754199999999173,
+        0.017083000000013726,
+        0.017250000000018417,
+        0.01712499999999295,
+        0.0171670000000006
+      ],
+      "medianPrepareMs": 0.0171670000000006,
+      "full": {
+        "segments": 10344,
+        "geometryBytes": 584132,
+        "width": 13960,
+        "height": 12439,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 837,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 685915,
+        "segmentsPerBranch": 3
+      },
+      "compact": {
+        "segments": 10344,
+        "geometryBytes": 584132,
+        "width": 13960,
+        "height": 12439,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 837,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 685915,
+        "segmentsPerBranch": 3
+      }
+    },
+    {
+      "id": "mvlv-meshed-all-closed",
+      "routing": "crossing-aware",
+      "buses": 3409,
+      "branches": 3448,
+      "sourceHashes": [
+        {
+          "id": "mvlv-meshed",
+          "sha256": "12ad4afa30a020fa498b97128bdee6a8528975646dfb98a5fe49bd2b6b45a77a"
+        }
+      ],
+      "geometryHash": "a9e70dc84a7ca06f58f95a097d4ea4dc2592fa88fb7fd988811927bb46af1cf9",
+      "openSwitches": 0,
+      "endpointMarkers": 0,
+      "suppressedSegments": 0,
+      "maximumSelectedRouteSegments": 0,
+      "extraArrayBytes": 0,
+      "prepareMs": [
+        0.017708999999996422,
+        0.01849999999998886,
+        0.01741700000002311,
+        0.017291999999997643,
+        0.017333000000007814
+      ],
+      "medianPrepareMs": 0.01741700000002311,
+      "full": {
+        "segments": 10344,
+        "geometryBytes": 584132,
+        "width": 13960,
+        "height": 12439,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 759,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 684763,
+        "segmentsPerBranch": 3
+      },
+      "compact": {
+        "segments": 10344,
+        "geometryBytes": 584132,
+        "width": 13960,
+        "height": 12439,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 759,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 684763,
+        "segmentsPerBranch": 3
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "routing": "crossing-aware",
+      "buses": 98633,
+      "branches": 101283,
+      "sourceHashes": [
+        {
+          "id": "sapn-golden-grove",
+          "sha256": "250fab83a7eca226cb4d62d0f1c79e086d40870fe456485db8269acbd178516a"
+        },
+        {
+          "id": "sapn-norwood",
+          "sha256": "1acb0d2fff7053c0a3449e3a927624d86bff37a4c349adf6967c75673bef5f14"
+        },
+        {
+          "id": "sapn-campbelltown",
+          "sha256": "a0d6c3c648fdfefd9471fe8fbcfabad9373b9c35de25bb99189385d998f33ad5"
+        },
+        {
+          "id": "sapn-hackham",
+          "sha256": "924361b4c385e96ba496197d919d60b5af64b25ad6d413360eb5f3b67748a272"
+        },
+        {
+          "id": "sapn-harrow",
+          "sha256": "dcba4042158923842f368ab7fc25c1cf4dc93f3958f45258cb584da1249147cf"
+        }
+      ],
+      "geometryHash": "46f629e153b0e000fdc1e50fb0a17c68b342bbb431ad8430bd29f42343ad4823",
+      "openSwitches": 0,
+      "endpointMarkers": 0,
+      "suppressedSegments": 0,
+      "maximumSelectedRouteSegments": 0,
+      "extraArrayBytes": 0,
+      "prepareMs": [
+        0.7330000000000041,
+        0.6262919999999781,
+        0.592583999999988,
+        0.5803750000000036,
+        0.6164590000000203
+      ],
+      "medianPrepareMs": 0.6164590000000203,
+      "full": {
+        "segments": 303849,
+        "geometryBytes": 17080312,
+        "width": 85640,
+        "height": 123337,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 5139,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 16740700.5,
+        "segmentsPerBranch": 3
+      },
+      "compact": {
+        "segments": 303849,
+        "geometryBytes": 17080312,
+        "width": 85640,
+        "height": 123337,
+        "collinearOverlapPairs": 0,
+        "collinearOverlapLength": 0,
+        "properRouteCrossings": 5139,
+        "horizontalWireBusbarInteriorCrossings": 0,
+        "routeLength": 16740700.5,
+        "segmentsPerBranch": 3
+      }
+    }
+  ]
+}
