@@ -1293,9 +1293,9 @@ dependencies = [
 
 [[package]]
 name = "powerio"
-version = "0.11.3"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "008b630a95787a45417ee63035167f82d07c2b7c140043f7a36db04944f157ca"
+checksum = "10be36e4991e54065d9d2a1fc0fae73ad7dab6a8b338b1116b2fdb7d28e4d3ab"
 dependencies = [
  "num-complex",
  "powerio-core",
@@ -1309,9 +1309,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-core"
-version = "0.11.3"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bb971c50ae0e2327b46a127491f0a7a72e4136cae04e5a38535f9e842cd1638"
+checksum = "90746f9cb6a705ec0c5f69e9df1659cf438df357b7a547b12a717f09c57eadda"
 dependencies = [
  "errno",
  "libc",
@@ -1322,9 +1322,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-dist"
-version = "0.11.3"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72f7f4fe9733a6fe3078b89bf8570953bc874b21efcc239bf03b8ee6dfe7f5c7"
+checksum = "0855342d51194c19079fae533547d8cf0fcbddb9e69659c440319818bad63220"
 dependencies = [
  "num-complex",
  "powerio-core",
@@ -1336,9 +1336,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-matrix"
-version = "0.11.3"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5691f3165e002d2e27f0d7e77b27aff08ab9017c4dcb5953c537384947071325"
+checksum = "7198ae2d365f7d1e612aaaa038a002f72e37b1f4fd7c3566983f9082975af655"
 dependencies = [
  "faer",
  "num-complex",
@@ -1358,9 +1358,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-prob"
-version = "0.11.3"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41fe781218603563a2b8888d6f455767b56ad88095379a4f292a5302275a632d"
+checksum = "2f10a2e77356cfd10de34f58add08ce880ee3b3778b9044caa84c01e8f5df984"
 dependencies = [
  "powerio-core",
  "powerio-dist",
@@ -1373,9 +1373,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-tx"
-version = "0.11.3"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c28068bc61d049f228a158841c40747c976e7fd988a7b4498c0259c4412747c2"
+checksum = "6f996e6a206c567f1ec968974817db07bae069f45dbbaff916dfdc148ef79047"
 dependencies = [
  "lexical-core",
  "petgraph",

@@ -266,7 +266,8 @@ pub(super) fn validate_unique_uids<'a>(
 /// Guard the already-normalized fast path. `is_normalized()` reads a self-declared
 /// `source_format` marker that any hand-written model JSON can set, but the element
 /// filtering the marker claims lives in the normalization pass this path skips, and
-/// `IndexedNetwork` sums every load and shunt with no in-service filter. Taking the
+/// before PowerIO 0.11.4 `IndexedNetwork` summed every load and shunt with no
+/// in-service filter (the workspace still admits 0.11.1). Taking the
 /// marker at face value would serve an out-of-service load and price it into every
 /// LMP while reporting `optimal`. Fail closed instead: a network that really is
 /// normalized carries none of these.
