@@ -442,6 +442,10 @@ export class AppState {
 	/** True under `(max-width: 760px)`; the panel renders as a bottom sheet. Set by
 	 * the shell from one media query so panel and map read the same value. */
 	compactLayout = $state(false);
+	/** Zen mode hides the panel toolbar and every panel so only the map and
+	 * header remain. Session only; panel open state is left untouched so
+	 * leaving zen restores the previous view. */
+	zen = $state(false);
 	/** Height in px the bottom sheet covers; 0 when `compactLayout` is false.
 	 * Read by the map's camera padding and by chrome anchored above the sheet. */
 	sheetInset = $state(0);

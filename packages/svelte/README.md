@@ -64,6 +64,37 @@ positions. Focus a heading or resize handle and use arrow keys for keyboard
 control; hold Shift for larger steps. Narrow windows show one active drawer.
 Panel positions are stored in the browser, independently of case and Study data.
 
+## Command palette
+
+Press **Cmd+K** (Ctrl+K on Windows and Linux) to open the command palette. Type
+to filter, use the arrow keys to move, and Enter to run. **Zen mode** hides the
+panel toolbar, every panel, the footer and the zoom buttons so only the map
+and header remain, and the case strip collapses to the active case until you
+hover it. Escape, the **exit zen** link in the header, or running the command
+again brings everything back exactly as it was. Zen mode lasts for the visit
+only.
+
+Components under `TellegenProvider` can add their own commands:
+
+```ts
+import { getCommandRegistry } from "@tellegen/svelte";
+const commands = getCommandRegistry();
+onMount(() =>
+  commands.register({
+    id: "fit-network",
+    title: "Fit network to view",
+    hint: "Reframe the map on the active case",
+    keywords: ["zoom", "frame"],
+    run: () => app.requestFrame("all"),
+  }),
+);
+```
+
+`register` returns an unregister function, and registering the same `id` again
+replaces the earlier command. `title` may be a function when the label depends
+on state.
+
+
 Custom panels can join the same layout inside `TellegenProvider`:
 
 ```svelte

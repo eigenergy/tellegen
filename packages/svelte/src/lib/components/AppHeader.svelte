@@ -33,7 +33,7 @@
 		</svg>
 		<h1>tellegen</h1>
 	</div>
-	<nav class="cases" aria-label="networks">
+	<nav class="cases" class:zen={app.zen} aria-label="networks">
 		{#each app.cases as c (c.id)}
 			{@const [cname, cregion] = splitName(c.name)}
 			<div class="case-chip" class:active={app.activeCaseId === c.id}>
@@ -102,6 +102,14 @@
 		<i class="sep"></i>
 		<a href={config.docsHref} target="_blank" rel="noreferrer">docs</a>
 	</span>
+	{#if app.zen}
+		<button
+			class="zen-exit mono"
+			aria-label="Exit zen mode"
+			title="Exit zen mode (Esc)"
+			onclick={() => (app.zen = false)}>exit zen</button
+		>
+	{/if}
 	<input
 		type="file"
 		accept=".m,.raw,.aux,.epc,.pwb,.dss,.pwd,.csv,.json,.geojson"
@@ -160,6 +168,24 @@
 
 	.cases::-webkit-scrollbar {
 		display: none;
+	}
+
+	/* Zen mode shows only the active case; hover or keyboard focus reveals the
+	   other cases and the file button so they stay reachable. The hidden chips
+	   keep their space so nothing shifts when they fade in and out. */
+	.cases.zen > :not(.active) {
+		visibility: hidden;
+		opacity: 0;
+		transition:
+			opacity var(--dur-fast) var(--ease-out),
+			visibility 0s var(--dur-fast);
+	}
+
+	.cases.zen:hover > :not(.active),
+	.cases.zen:focus-within > :not(.active) {
+		visibility: visible;
+		opacity: 1;
+		transition: opacity var(--dur-fast) var(--ease-out);
 	}
 
 	.cases > button,
@@ -343,6 +369,29 @@
 
 	.kicker a:hover {
 		color: var(--text-accent);
+	}
+
+	/* Sits with the kicker links and stays when they collapse on narrow screens,
+	   since touch devices have no Escape key. */
+	.zen-exit {
+		flex: 0 0 auto;
+		padding: 0;
+		border: 0;
+		background: none;
+		font-size: 11px;
+		text-transform: uppercase;
+		color: var(--text-secondary);
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.zen-exit:hover {
+		color: var(--text-accent);
+	}
+
+	.zen-exit:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 2px;
 	}
 
 	@media (max-width: 760px) {

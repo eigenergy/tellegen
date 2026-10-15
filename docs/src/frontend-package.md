@@ -83,6 +83,42 @@ persistent layout and render the shell on the page:
 <TellegenShell />
 ```
 
+### Command palette and zen mode
+
+Press Cmd+K (Ctrl+K on Windows and Linux) in the shell to open the command
+palette. Type to filter, use the arrow keys to move, and press Enter to run.
+Two commands ship with the shell:
+
+- **Enter zen mode** hides the panel toolbar, every panel, the footer and the
+  zoom buttons so only the map and header remain. The case strip collapses to
+  the active case and reveals the rest on hover or focus, and the map
+  attribution collapses to its (i) button. Escape, the **exit zen** link in
+  the header, or running the command again restores the previous view. Zen
+  mode lasts for the visit only.
+- **Reset panel layout** returns detached or redocked panels to their default
+  docks, the same as the toolbar button.
+
+Components under `TellegenProvider` can add commands:
+
+```ts
+import { getCommandRegistry } from "@tellegen/svelte";
+
+const commands = getCommandRegistry();
+onMount(() =>
+  commands.register({
+    id: "fit-network",
+    title: "Fit network to view",
+    hint: "Reframe the map on the active case",
+    keywords: ["zoom", "frame"],
+    run: () => app.requestFrame("all"),
+  }),
+);
+```
+
+`register` returns an unregister function, and registering the same `id`
+again replaces the earlier command. `title` and `hint` may be functions when
+the label depends on state.
+
 `@tellegen/svelte` also exports lower level pieces for custom shells:
 
 - `TellegenMap`
