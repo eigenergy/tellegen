@@ -986,6 +986,16 @@
 		});
 	}
 
+	// Zen collapses the compact attribution to its (i) button; maplibre opens it
+	// by default on wide maps. The button still expands it on demand. Leaving zen
+	// restores the open state.
+	$effect(() => {
+		const zen = app.zen;
+		const attrib = map?.getContainer().querySelector('.maplibregl-ctrl-attrib');
+		if (!attrib) return;
+		attrib.classList.toggle('maplibregl-compact-show', !zen);
+	});
+
 	function initMap(container: HTMLDivElement) {
 		// Attachments re-run when state they read changes, so reading the
 		// resolved basemap and attribution mode here is what rebuilds the map
@@ -1749,7 +1759,7 @@
 {:else}
 	{#key mapGen}
 		<div class="map-stage">
-			<div class="map" {@attach initMap}></div>
+			<div class="map" class:zen={app.zen} {@attach initMap}></div>
 			{#if selectedBusCue}
 				{#key selectedBusCue.key}
 					<div class="selected-bus-cue" bind:this={selectedCueEl} aria-hidden="true"></div>
@@ -2043,6 +2053,13 @@
 		order: 2;
 	}
 
+	/* Zen mode keeps the basemap attribution (a licensing requirement) and
+	   drops the zoom buttons; wheel, pinch and keyboard zoom still work. The
+	   buttons keep their space so the attribution does not shift. */
+	.map.zen :global(.maplibregl-ctrl-group) {
+		visibility: hidden;
+	}
+
 	.map :global(.maplibregl-ctrl-attrib) {
 		order: 1;
 		position: relative;
@@ -2062,6 +2079,25 @@
 
 	.map :global(.maplibregl-ctrl-attrib a) {
 		color: var(--text-secondary);
+	}
+
+	/* Collapsed and expanded attribution share one explicit height so the (i)
+	   button, which is pinned to the control's top edge, holds still when the
+	   text toggles. maplibre sizes the collapsed state with min-height and
+	   content-box, which the border-box rule above would otherwise shrink. */
+	.map :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
+		height: 24px;
+		min-height: 0;
+		box-sizing: border-box;
+	}
+
+	.map :global(.maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner) {
+		line-height: 20px;
+	}
+
+	.map :global(.maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-button) {
+		width: 24px;
+		height: 24px;
 	}
 
 	@media (hover: none), (pointer: coarse) {

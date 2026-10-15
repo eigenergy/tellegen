@@ -52,6 +52,11 @@
 		Panels share left and right docks. Drag a heading to detach a panel, resize it, or use its menu
 		to redock. <strong>Reset layout</strong> restores the default positions.
 	</p>
+	<h2>Find a command, then focus</h2>
+	<p>
+		Press <strong>Cmd+K</strong> (Ctrl+K on Windows and Linux) for the command palette.
+		<strong>Zen mode</strong> hides the panels so only the map remains; press Escape to bring them back.
+	</p>
 	<h2>Keep maps and drawings</h2>
 	<p>
 		Saved Studies retain equipment positions, line paths and the current view. Geographic data
