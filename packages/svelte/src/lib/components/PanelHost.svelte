@@ -45,7 +45,7 @@
 		});
 	});
 	$effect(() => {
-		app.sheetInset = layout.compact && drawer ? drawerHeight + bottomReserve : 0;
+		app.sheetInset = !app.zen && layout.compact && drawer ? drawerHeight + bottomReserve : 0;
 	});
 </script>
 
@@ -55,58 +55,64 @@
 	onpointerup={() => layout.finishGesture()}
 	onpointercancel={() => layout.finishGesture()}
 />
-<div class="panel-toolbar" style:top="{toolbarTop}px" aria-label="Panels">
-	<div class="panel-buttons">
-		{#each layout.ordered().filter((p) => p.side === 'left') as panel (panel.id)}
+{#if !app.zen}
+	<div class="panel-toolbar" style:top="{toolbarTop}px" aria-label="Panels">
+		<div class="panel-buttons">
+			{#each layout.ordered().filter((p) => p.side === 'left') as panel (panel.id)}
+				<button
+					aria-label={panel.title}
+					aria-pressed={layout.compact ? layout.drawer === panel.id : panel.open}
+					onclick={() => layout.toggle(panel)}>{panel.title}</button
+				>
+			{/each}
+		</div>
+		<div class="panel-buttons right">
+			{#each layout.ordered().filter((p) => p.side === 'right') as panel (panel.id)}
+				<button
+					aria-label={panel.title}
+					aria-pressed={layout.compact ? layout.drawer === panel.id : panel.open}
+					onclick={() => layout.toggle(panel)}>{panel.title}</button
+				>
+			{/each}
 			<button
-				aria-label={panel.title}
-				aria-pressed={layout.compact ? layout.drawer === panel.id : panel.open}
-				onclick={() => layout.toggle(panel)}>{panel.title}</button
+				class="reset-layout"
+				onclick={() => layout.reset()}
+				title="Restore the default panel positions">Reset layout</button
 			>
-		{/each}
+		</div>
 	</div>
-	<div class="panel-buttons right">
-		{#each layout.ordered().filter((p) => p.side === 'right') as panel (panel.id)}
-			<button
-				aria-label={panel.title}
-				aria-pressed={layout.compact ? layout.drawer === panel.id : panel.open}
-				onclick={() => layout.toggle(panel)}>{panel.title}</button
+	{#if layout.storageError}<p class="layout-error" role="status" style:top="{panelTop}px">
+			{layout.storageError}
+		</p>{/if}
+	{#if layout.compact}
+		{#if drawer}<div
+				class="drawer"
+				style:bottom="{bottomReserve}px"
+				style:height="{drawerHeight}px"
 			>
-		{/each}
-		<button
-			class="reset-layout"
-			onclick={() => layout.reset()}
-			title="Restore the default panel positions">Reset layout</button
+				<PanelCard panel={drawer} mobile />
+			</div>{/if}
+	{:else}
+		<div
+			class="dock left"
+			style:bottom="{Math.max(100, bottomReserve)}px"
+			data-panel-dock="left"
+			style:top="{panelTop}px"
+			style:width="{layout.dockWidth('left')}px"
 		>
-	</div>
-</div>
-{#if layout.storageError}<p class="layout-error" role="status" style:top="{panelTop}px">
-		{layout.storageError}
-	</p>{/if}
-{#if layout.compact}
-	{#if drawer}<div class="drawer" style:bottom="{bottomReserve}px" style:height="{drawerHeight}px">
-			<PanelCard panel={drawer} mobile />
-		</div>{/if}
-{:else}
-	<div
-		class="dock left"
-		style:bottom="{Math.max(100, bottomReserve)}px"
-		data-panel-dock="left"
-		style:top="{panelTop}px"
-		style:width="{layout.dockWidth('left')}px"
-	>
-		{#each left as panel (panel.id)}<PanelCard {panel} />{/each}
-	</div>
-	<div
-		class="dock right"
-		style:bottom="{Math.max(100, bottomReserve)}px"
-		data-panel-dock="right"
-		style:top="{panelTop}px"
-		style:width="{layout.dockWidth('right')}px"
-	>
-		{#each right as panel (panel.id)}<PanelCard {panel} />{/each}
-	</div>
-	{#each floating as panel (panel.id)}<PanelCard {panel} floating />{/each}
+			{#each left as panel (panel.id)}<PanelCard {panel} />{/each}
+		</div>
+		<div
+			class="dock right"
+			style:bottom="{Math.max(100, bottomReserve)}px"
+			data-panel-dock="right"
+			style:top="{panelTop}px"
+			style:width="{layout.dockWidth('right')}px"
+		>
+			{#each right as panel (panel.id)}<PanelCard {panel} />{/each}
+		</div>
+		{#each floating as panel (panel.id)}<PanelCard {panel} floating />{/each}
+	{/if}
 {/if}
 
 <style>
