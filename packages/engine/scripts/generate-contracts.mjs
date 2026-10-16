@@ -152,6 +152,15 @@ export interface SensitivityMatrix {
 \tunits: string;
 }
 
+/** How a solve treated the network's islands. \`code\` is
+ * 'island_deenergized', 'island_reference_designated', or
+ * 'island_extra_reference'; \`buses\` are original bus ids. */
+export interface SolveDiagnostic {
+\tcode: string;
+\tmessage: string;
+\tbuses: number[];
+}
+
 export interface SolveResponse {
 \tformulation: FormulationId;
 \tstatus: SolveStatus;
@@ -165,6 +174,7 @@ export interface SolveResponse {
 \tinjections?: BusInjection[];
 \tflows?: BranchFlow[];
 \tdispatch?: GenDispatch[];
+\tdiagnostics?: SolveDiagnostic[];
 \tsensitivities?: SensitivityMatrix[];
 }
 

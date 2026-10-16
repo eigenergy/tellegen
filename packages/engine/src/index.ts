@@ -48,6 +48,7 @@ export type {
   SensitivityColumn,
   SensitivityMatrix,
   Solution,
+  SolveDiagnostic,
   SolveIteration,
   SolveRequest,
   SolveResponse,
