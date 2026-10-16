@@ -38,6 +38,8 @@ serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.11"
 schemars = { workspace = true, optional = true }
+pounce-nl = { workspace = true, optional = true }
+pounce-rs = { workspace = true, optional = true }
 
 [features]
 default = ["sensitivity", "mc-pf"]
@@ -49,6 +51,10 @@ sensitivity = ["dep:faer", "dep:num-complex"]
 # Clarabel's second-order cone support (already linked); the sensitivity reuses the faer
 # paths, so `conic` pulls `sensitivity`. Additive, no new dependency.
 conic = ["sensitivity"]
+# Exact nonlinear AC OPF feasibility path. EPL-2.0 POUNCE stays opt-in and is
+# not forwarded by wasm, CLI, server, or Python adapters. The first increment
+# exposes only the native HS071 API probe; it does not claim AC OPF support.
+acopf = ["dep:pounce-nl", "dep:pounce-rs"]
 # JSON Schema derives used by the headless CLI contract. Kept out of the
 # browser and numerical builds.
 schema = ["dep:schemars", "powerio/schema"]
@@ -75,3 +81,7 @@ required-features = ["mc-pf"]
 [[example]]
 name = "mc_pf_session"
 required-features = ["mc-pf"]
+
+[[example]]
+name = "acopf_hs071_probe"
+required-features = ["acopf"]

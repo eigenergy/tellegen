@@ -52,6 +52,11 @@ mc-pf-test:
 conic-test:
     cargo test -p tellegen --features conic
 
+# Feasibility gate for the opt-in EPL-2.0 nonlinear backend. This is HS071,
+# not a claim that Tellegen's canonical AC OPF model exists yet.
+acopf-probe:
+    cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
+
 # CI gate: the generated ~10,000-bus multiconductor session regression (#132).
 # `--check` fails only on deterministic properties (warm/fresh agreement, one
 # factorization, no network materialization per edit, payload budgets, a flat
@@ -158,4 +163,4 @@ changeset-status:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
-ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack wasm engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
+ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack wasm engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
