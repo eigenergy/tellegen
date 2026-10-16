@@ -238,6 +238,14 @@ export interface SensitivityColumn {
 }
 
 export interface CaseSummary {
+\tdistribution?: {
+\t\tdescription?: string | null;
+\t\tsource_url?: string | null;
+\t\trelated_case_id?: string | null;
+\t\tpf_options?: { tolerance?: number; absolute_kcl_tolerance?: number; max_iterations?: number; voltage_envelope?: boolean };
+\t};
+\t/** Missing on older servers, whose cases are all balanced. */
+\tmodel?: 'balanced' | 'multiconductor';
 \t/** Configured cases remain listed when loading or solving fails. */
 \tunavailable_reason?: string | null;
 \tid: string;

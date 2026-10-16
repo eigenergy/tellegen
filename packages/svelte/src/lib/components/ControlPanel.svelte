@@ -115,14 +115,32 @@
 				{/if}
 				<LocalCaseDetails />
 			{/if}
+			{#each app.hostedDistributionCases.filter((c) => c.distribution?.related_case_id === app.activeCaseId) as related (related.id)}
+				<button
+					class="reset mono"
+					disabled={!!related.unavailable_reason || ctrl.loadingHostedDistribution === related.id}
+					title={related.unavailable_reason ?? related.name}
+					onclick={() => ctrl.activateHostedDistribution(related.id)}
+				>
+					{ctrl.loadingHostedDistribution === related.id
+						? 'Loading distribution…'
+						: 'Explore associated distribution'}
+				</button>
+			{/each}
 			{#if app.activeMulti}
 				<MulticonductorDetails />
 			{/if}
 			{#if !ctrl.networkStats}
 				{#if !app.activeLocal && !app.activeMulti}
-					{#if ctrl.casesLoaded && app.cases.length === 0}
+					{#if ctrl.loadingHostedDistribution}
+						<p class="dim mono blink">loading selected case&hellip;</p>
+					{:else if ctrl.casesLoaded && app.cases.length === 0}
 						<p class="dim mono">
-							{config.loadDefaultCases ? 'no default cases loaded' : 'drop a case file to begin'}
+							{app.hostedDistributionCases.length
+								? 'no distribution case selected'
+								: config.loadDefaultCases
+									? 'no default cases loaded'
+									: 'drop a case file to begin'}
 						</p>
 						{#if config.loadDefaultCases}
 							<button class="reset mono" onclick={ctrl.restoreDefaultCases}

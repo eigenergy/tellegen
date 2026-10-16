@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/frederikgeth/BMOPFDraftData",
+  "revision": "d5ec79b46512a59b56157836a1ceb8459a586d04",
+  "directory": "output/Texas7kPilot",
+  "files": {
+    "p1uhs0_1247.bmopf.json": "9d6ed48d0734522bc69a62e98f2d5bfc8c79a25f872ac998b7b8b769504c01b5",
+    "License.md": "f1dc639fcbd6466b5820f91f6b6262b90652cd856e2535a2d94f48597a0e45fa",
+    "SOURCE_NOTICE.md": "18f348f3c71deb34cf62521620660b311a093e92a3639ebe7949446a455fa422",
+    "tellegen_options.json": "17c91dff45141b48c298f9b35273de6891e21353df19880ef6084cb59cdcf9e9",
+    "README.md": "70166a9858b0d14adfa60336c613d7f12b44f0f74db7df0f608242f6c6b26a47"
+  }
+}

@@ -330,9 +330,9 @@ jobs:
               sleep 10
               continue
             }
-            # Promotion requires every configured public demo to load and solve.
+            # Promotion requires all five public demos to load (distribution PF runs in the browser).
             if jq -e '.status == "ok" and (.unavailable == []) and
-              (.cases | sort == ["case200", "case500", "case7000", "cats"])' \
+              (.cases | sort == ["case200", "case500", "case7000", "cats", "texas7k-p1uhs0_1247"])' \
               <<< "$health" >/dev/null; then
               exit 0
             fi

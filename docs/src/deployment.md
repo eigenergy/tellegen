@@ -54,6 +54,66 @@ Treat every staged case as public. The browser fetches the full staged network
 JSON through `/api/cases/{id}/case` so it can build browser studies and exact
 solves locally.
 
+## Hosted Distribution Cases
+
+Stage portable PowerIO multiconductor modules alongside the balanced demos and
+add `distribution-cases.json` at the root of `TELLEGEN_DATA` (normally `data/`):
+
+```json
+[
+  {
+    "id": "my-feeder",
+    "name": "My distribution feeder",
+    "file": "feeders/my-feeder.pio.json"
+  }
+]
+```
+
+Each `file` is relative to the data directory and must stay inside it, including
+when resolving symlinks. IDs must be unique, use ASCII letters, digits, `-` or
+`_`, and cannot reuse a built-in demo ID or the browser's `local-`/`dist-`
+prefixes. Names must be nonempty. The manifest is optional; omitting it retains
+the existing demo catalogue.
+
+Files must be PowerIO `pio-ir` modules containing a multiconductor network,
+AC PF/OPF instance, or AC PF/OPF solution. Geometry and diagnostics are retained.
+For a feeder already solved in the browser, export its distribution Study and
+extract its portable input module:
+
+```sh
+mkdir -p data/feeders
+jq -r '.input_module' tellegen-study.json > data/feeders/my-feeder.pio.json
+```
+
+Raw OpenDSS, BMOPF, and PMD files must first be imported into a PowerIO module;
+they are not accepted directly by this manifest. A Tellegen Study export is a
+wrapper, so stage its `input_module`, not the entire export.
+
+Rebuild once to install a server/frontend version with distribution hosting.
+Subsequent manifest and case changes need only a server restart and browser
+reload. The normal Docker data mount also serves these files. No frontend
+registration or staging-script change is needed.
+
+The catalogue reports `model: "multiconductor"`. Selecting a feeder fetches
+`/api/cases/{id}/case` and opens the existing distribution viewer. Coordinates
+select the map or diagram view. Supported cases can run AC power flow in browser
+WebAssembly; unsupported electrical models remain viewable with an explanation.
+They also appear in WebMCP `list_cases`/`select_case`. Closing a hosted feeder
+hides it in that browser; Restore defaults brings it back.
+
+Distribution cases do not have server DC OPF solutions, snapshots, or sensitivity
+endpoints. Their health check validates module loading, not AC power-flow
+convergence. Missing or invalid files remain listed as unavailable and make
+`/api/health` return 503; if no case can load, startup fails. A malformed manifest
+or duplicate ID fails startup. All hosted modules are downloadable by clients.
+
+A distribution-only data directory is supported and does not require the four
+balanced demos or `TELLEGEN_ALLOW_FALLBACK`. When balanced demo files are also
+staged, their existing requirement that all configured demos load still applies.
+The public-demo deployment health assertion expects the four transmission cases
+and the Texas7k distribution pilot described below. Custom deployments can use
+their own manifest and catalogue expectations.
+
 ## Server Compute
 
 The compute endpoints (`/api/cases/{id}/solve` over SSE and the
@@ -234,3 +294,70 @@ prebuilt case payloads.
 - Add request body limits before adding any tellegen backend upload endpoint.
 - Current file drop parsing runs in the browser and does not reach the tellegen
   backend.
+
+## Texas7k distribution demo
+
+The public demo also stages `texas7k-p1uhs0_1247`, the six-feeder substation
+associated with Texas7k. The source is pinned in
+`scripts/datasets/texas7k-source.json`. Obtain a BMOPFDraftData checkout with
+that commit, build the browser engine, then prepare the data:
+
+```sh
+npm run wasm
+npm run build:engine
+python3 scripts/datasets/stage-texas7k.py /path/to/BMOPFDraftData data
+```
+
+Alternatively set `TELLEGEN_BMOPF_REPO=/path/to/BMOPFDraftData` when invoking
+`scripts/stage-data.sh`. Staging reads committed source bytes, verifies checksums,
+reduces duplicate representation, converts to portable PowerIO, and compares
+original/reduced geometry and complete WASM PF results. It requires Git, Python
+3 and Node; it does not download data. Electrical equipment is not pruned.
+
+The script preserves other distribution entries and atomically registers an
+immutable bundle under `data/distribution/`. Each bundle contains license and
+source notices, reduction provenance, solver options, source revision/checksums,
+and validation evidence. Copy the complete bundle and manifest to the deployment
+data directory before deploying this version: the public deployment gate expects
+the four transmission cases plus this distribution case. Data is an operator
+staging step; the image deployment workflow does not upload it. Retain the old
+manifest and bundle for data rollback. Restart the server after staging.
+
+The optional manifest `metadata` object supports `description`, an absolute
+HTTPS `source_url`, a built-in transmission `related_case_id`, and `pf_options`.
+Supported option overrides are positive `tolerance`, positive
+`absolute_kcl_tolerance`, positive integer `max_iterations`, and boolean
+`voltage_envelope`. Unknown fields fail manifest parsing; invalid values make
+the case unavailable. Missing values retain engine defaults. Explicit solve
+options override case defaults, and successful solves retain their effective
+options for later runs and Study export/reopen. Hosted distribution cases appear
+in WebMCP with the same solver defaults as the UI.
+
+The pilot uses constant-power loads without the bounded-voltage envelope,
+frozen regulator taps and nominal loads; it has voltage drops and overloads.
+The association is case-level, not a coupled transmission/distribution solve.
+The catalogue link does not assert a specific transmission bus mapping.
+
+The case endpoint negotiates gzip. Measure the served PowerIO payload, not the
+reduced BMOPF file, when estimating downloads. The complete pilot remains a
+large browser workload. Run the opt-in browser check against a server serving
+both the production build and staged data:
+
+```sh
+TELLEGEN_DATA=data TELLEGEN_FRONTEND_BUILD=apps/web/build \
+  TELLEGEN_PORT=4173 cargo run --release --locked -p tellegen-server
+# In another terminal; Playwright reuses the running server on port 4173:
+TELLEGEN_TEXAS7K=1 npm run test:browser -- texas7k-distribution.spec.ts --workers=1
+```
+
+The test checks actual API metadata, geography, UI/WebMCP solves, study round-trip
+options/results, and a load edit. It writes timing, transfer-size and screenshot
+artifacts. Routine browser CI uses small fixtures; run this full-data check
+before changing the pinned source, converter, solver or demo bundle.
+
+The recorded desktop acceptance run loaded in 5.34 s and solved in 1.78 s over
+loopback. Combined Chromium RSS was about 1.65 GB after solving and 4.80 GB after
+the export/reopen/rerun workflow (checkpoint samples, not exclusive allocation
+or a continuous peak). The full pilot is suitable for desktop evaluation;
+low-memory/mobile operation remains unqualified. See
+`evidence/studies/texas7k-reduction/BROWSER.md` for methodology and limits.

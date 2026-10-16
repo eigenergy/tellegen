@@ -11,6 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod distribution;
+
 use axum::{
     extract::{ConnectInfo, Path as AxumPath, Query, Request, State},
     http::{self, header::CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, StatusCode},
@@ -178,6 +180,7 @@ struct FallbackSpec {
 #[derive(Clone)]
 pub struct AppState {
     cases: Arc<BTreeMap<String, Arc<CaseEntry>>>,
+    distribution_cases: Arc<BTreeMap<String, distribution::DistributionCase>>,
     unavailable: Arc<Vec<UnavailableCase>>,
     solver_permits: Arc<Semaphore>,
     solver_timeout: Duration,
@@ -253,6 +256,9 @@ struct SavedCase {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CaseSummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<distribution::Metadata>,
+    pub model: CaseModel,
     pub unavailable_reason: Option<String>,
     pub id: String,
     pub name: String,
@@ -265,8 +271,16 @@ pub struct CaseSummary {
     pub n_gen: usize,
 }
 
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaseModel {
+    Balanced,
+    Multiconductor,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct UnavailableCase {
+    pub model: CaseModel,
     pub id: String,
     pub name: String,
     pub reason: String,
@@ -454,6 +468,7 @@ impl AppState {
     }
 
     pub fn load(data_dir: PathBuf, allow_fallback: bool) -> Result<Self, String> {
+        let (distribution_cases, distribution_unavailable) = distribution::load(&data_dir)?;
         let staged_specs: Vec<_> = CASE_SPECS
             .iter()
             .copied()
@@ -476,6 +491,7 @@ impl AppState {
                     Err(reason) => {
                         tracing::error!(case = spec.id, %reason, "case unavailable");
                         unavailable.push(UnavailableCase {
+                            model: CaseModel::Balanced,
                             id: spec.id.into(),
                             name: spec.name.into(),
                             reason,
@@ -483,7 +499,10 @@ impl AppState {
                     }
                 }
             }
-        } else if allow_fallback {
+        } else if distribution_cases.is_empty()
+            && distribution_unavailable.is_empty()
+            && allow_fallback
+        {
             tracing::warn!(
                 data_dir = %data_dir.display(),
                 "no staged case data; serving embedded pglib fallback cases"
@@ -492,18 +511,20 @@ impl AppState {
                 let entry = build_fallback_entry(spec)?;
                 cases.insert(entry.id.clone(), Arc::new(entry));
             }
-        } else {
+        } else if distribution_cases.is_empty() && distribution_unavailable.is_empty() {
             return Err(format!(
                 "no staged case data under {}. Run scripts/stage-data.sh or set TELLEGEN_ALLOW_FALLBACK=1 for the pglib dev fallback.",
                 data_dir.display()
             ));
         }
 
-        if cases.is_empty() {
+        unavailable.extend(distribution_unavailable);
+        if cases.is_empty() && distribution_cases.is_empty() {
             return Err(format!("no cases loaded from {}", data_dir.display()));
         }
         Ok(Self {
             cases: Arc::new(cases),
+            distribution_cases: Arc::new(distribution_cases),
             unavailable: Arc::new(unavailable),
             solver_permits: Arc::new(Semaphore::new(solver_concurrency())),
             solver_timeout: solver_timeout(),
@@ -520,6 +541,9 @@ impl AppState {
     }
 
     fn case(&self, id: &str) -> ApiResult<Arc<CaseEntry>> {
+        if self.distribution_cases.contains_key(id) {
+            return Err(ApiError::bad_request("distribution cases expose /case; use the browser distribution viewer and AC power flow"));
+        }
         self.cases
             .get(id)
             .cloned()
@@ -527,7 +551,14 @@ impl AppState {
     }
 
     fn case_ids(&self) -> Vec<String> {
-        self.cases.keys().cloned().collect()
+        let mut ids: Vec<_> = self
+            .cases
+            .keys()
+            .chain(self.distribution_cases.keys())
+            .cloned()
+            .collect();
+        ids.sort();
+        ids
     }
 
     fn check_expensive_rate_limit(
@@ -615,7 +646,10 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         .route("/api/health", get(health))
         .route("/api/compute", get(compute_status))
         .route("/api/cases", get(cases))
-        .route("/api/cases/{id}/case", get(case_module_json))
+        .route(
+            "/api/cases/{id}/case",
+            get(case_module_json).layer(tower_http::compression::CompressionLayer::new()),
+        )
         .route("/api/cases/{id}/network", get(network))
         .route("/api/cases/{id}/solution", get(solution))
         .route("/api/cases/{id}/snapshot", get(saved_case))
@@ -711,6 +745,8 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
             .cases
             .values()
             .map(|entry| CaseSummary {
+                distribution: None,
+                model: CaseModel::Balanced,
                 unavailable_reason: None,
                 id: entry.id.clone(),
                 name: entry.name.clone(),
@@ -725,7 +761,15 @@ async fn cases(State(state): State<Arc<AppState>>) -> Json<Vec<CaseSummary>> {
                     .filter(|gen| gen.in_service)
                     .count(),
             })
+            .chain(
+                state
+                    .distribution_cases
+                    .values()
+                    .map(|case| case.summary.clone()),
+            )
             .chain(state.unavailable.iter().map(|case| CaseSummary {
+                distribution: None,
+                model: case.model,
                 id: case.id.clone(),
                 name: case.name.clone(),
                 unavailable_reason: Some(case.reason.clone()),
@@ -750,10 +794,14 @@ async fn case_module_json(
     State(state): State<Arc<AppState>>,
     AxumPath(id): AxumPath<String>,
 ) -> ApiResult<impl IntoResponse> {
-    let entry = state.case(&id)?;
+    let module_json = if let Some(entry) = state.distribution_cases.get(&id) {
+        entry.module_json.clone()
+    } else {
+        state.case(&id)?.module_json.clone()
+    };
     Ok((
         [(CONTENT_TYPE, HeaderValue::from_static("application/json"))],
-        entry.module_json.clone(),
+        module_json,
     ))
 }
 
@@ -1865,6 +1913,191 @@ mod tests {
         }))
     }
 
+    struct DistributionFixture(PathBuf);
+
+    impl DistributionFixture {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let path = env::temp_dir().join(format!(
+                "tellegen-distribution-{}-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&path).unwrap();
+            let source = powerio::Source::from_memory("feeder.dss", b"New Circuit.feeder basekv=12.47 pu=1 phases=3 bus1=source\nNew Line.branch bus1=source.1.2.3 bus2=load.1.2.3 phases=3 r1=0.1 x1=0.2 length=1\nNew Load.customer bus1=load.1.2.3 phases=3 kv=12.47 kw=10 kvar=2\n".to_vec()).unwrap();
+            let module = powerio::parse(source).unwrap();
+            fs::write(
+                path.join("feeder.pio.json"),
+                tellegen::ir::serialize_module(&module).unwrap(),
+            )
+            .unwrap();
+            let fixture = Self(path);
+            fixture.manifest(serde_json::json!([{"id":"feeder", "name":"Hosted feeder", "file":"feeder.pio.json"}]));
+            fixture
+        }
+
+        fn manifest(&self, value: serde_json::Value) {
+            fs::write(self.0.join("distribution-cases.json"), value.to_string()).unwrap();
+        }
+    }
+
+    impl Drop for DistributionFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn hosted_distribution_catalogue_and_module_without_balanced_fallback() {
+        let fixture = DistributionFixture::new();
+        let state = Arc::new(
+            AppState::load(fixture.0.clone(), true)
+                .unwrap()
+                .with_compute(true),
+        );
+        let (status, _, text) =
+            get_raw_with_state(Arc::clone(&state), "/api/health", &next_client()).await;
+        assert_eq!(status, StatusCode::OK);
+        let health: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(health["cases"], serde_json::json!(["feeder"]));
+        let (_, _, text) =
+            get_raw_with_state(Arc::clone(&state), "/api/cases", &next_client()).await;
+        let catalogue: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(catalogue[0]["model"], "multiconductor");
+        assert_eq!(catalogue[0]["name"], "Hosted feeder");
+        assert_eq!(catalogue[0]["n_bus"], 2);
+        let (status, _, text) =
+            get_raw_with_state(Arc::clone(&state), "/api/cases/feeder/case", &next_client()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            text,
+            fs::read_to_string(fixture.0.join("feeder.pio.json")).unwrap()
+        );
+        for endpoint in ["network", "solution", "snapshot", "solve"] {
+            let (status, _, _) = get_raw_with_state(
+                Arc::clone(&state),
+                &format!("/api/cases/feeder/{endpoint}"),
+                &next_client(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{endpoint}");
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_distribution_files_remain_listed_and_degrade_health() {
+        let fixture = DistributionFixture::new();
+        let balanced = parse_balanced(FALLBACK_SPECS[0].text, "case.m", "m").unwrap();
+        fs::write(
+            fixture.0.join("balanced.pio.json"),
+            tellegen::ir::serialize_module(&balanced).unwrap(),
+        )
+        .unwrap();
+        fixture.manifest(serde_json::json!([
+            {"id":"feeder", "name":"Hosted feeder", "file":"feeder.pio.json"},
+            {"id":"missing", "name":"Missing", "file":"missing.pio.json"},
+            {"id":"escape", "name":"Escape", "file":"../feeder.pio.json"},
+            {"id":"balanced", "name":"Wrong family", "file":"balanced.pio.json"}
+        ]));
+        let state = Arc::new(AppState::load(fixture.0.clone(), false).unwrap());
+        let (status, _, _) =
+            get_raw_with_state(Arc::clone(&state), "/api/health", &next_client()).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        let (_, _, text) = get_raw_with_state(state, "/api/cases", &next_client()).await;
+        let cases: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
+        assert_eq!(cases.len(), 4);
+        assert!(cases.iter().all(|c| c["model"] == "multiconductor"));
+        assert_eq!(
+            cases
+                .iter()
+                .filter(|c| c["unavailable_reason"].is_string())
+                .count(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn hosted_module_negotiates_gzip() {
+        let fixture = DistributionFixture::new();
+        let state = Arc::new(AppState::load(fixture.0.clone(), false).unwrap());
+        let response = router(state, None)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/cases/feeder/case")
+                    .header("accept-encoding", "gzip")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-encoding"], "gzip");
+        assert_eq!(response.headers()["vary"], "accept-encoding");
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&bytes[..2], &[0x1f, 0x8b]);
+        assert!(
+            bytes.len()
+                < fs::metadata(fixture.0.join("feeder.pio.json"))
+                    .unwrap()
+                    .len() as usize
+        );
+    }
+
+    #[tokio::test]
+    async fn distribution_metadata_is_validated_and_exposed() {
+        let fixture = DistributionFixture::new();
+        let metadata = serde_json::json!({
+            "description": "Nominal snapshot", "source_url": "https://example.org/source",
+            "related_case_id": "case7000",
+            "pf_options": {"voltage_envelope": false, "max_iterations": 500, "tolerance": 1e-7}
+        });
+        fixture.manifest(serde_json::json!([{"id":"feeder", "name":"Feeder", "file":"feeder.pio.json", "metadata":metadata}]));
+        let state = Arc::new(AppState::load(fixture.0.clone(), false).unwrap());
+        let (_, _, body) = get_raw_with_state(state, "/api/cases", &next_client()).await;
+        let cases: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            cases[0]["distribution"]["pf_options"],
+            metadata["pf_options"]
+        );
+        assert_eq!(cases[0]["distribution"]["related_case_id"], "case7000");
+        for invalid in [
+            serde_json::json!({"pf_options":{"tolerance":0}}),
+            serde_json::json!({"pf_options":{"max_iterations":0}}),
+            serde_json::json!({"pf_options":{"absolute_kcl_tolerance":-1}}),
+            serde_json::json!({"pf_options":{"typo":1}}),
+            serde_json::json!({"source_url":"javascript:alert(1)"}),
+            serde_json::json!({"related_case_id":"unknown"}),
+        ] {
+            fixture.manifest(serde_json::json!([{"id":"feeder", "name":"Feeder", "file":"feeder.pio.json", "metadata":invalid}]));
+            assert!(
+                AppState::load(fixture.0.clone(), false).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn distribution_manifest_rejects_ambiguous_ids_and_malformed_json() {
+        let fixture = DistributionFixture::new();
+        for id in ["case200", "local-1", "dist-1", "a/b", ""] {
+            fixture.manifest(
+                serde_json::json!([{"id":id, "name":"Feeder", "file":"feeder.pio.json"}]),
+            );
+            assert!(AppState::load(fixture.0.clone(), false).is_err(), "{id}");
+        }
+        fixture.manifest(serde_json::json!([
+            {"id":"feeder", "name":"One", "file":"feeder.pio.json"},
+            {"id":"feeder", "name":"Two", "file":"feeder.pio.json"}
+        ]));
+        assert!(AppState::load(fixture.0.clone(), false).is_err());
+        fs::write(fixture.0.join("distribution-cases.json"), "{").unwrap();
+        assert!(AppState::load(fixture.0.clone(), false).is_err());
+    }
+
     /// The default state: compute disabled, as a public deploy ships it.
     fn compute_disabled_state() -> Arc<AppState> {
         static STATE: OnceLock<Arc<AppState>> = OnceLock::new();
@@ -1975,6 +2208,7 @@ mod tests {
     async fn unavailable_cases_remain_listed_and_fail_health() {
         let mut state = (*fallback_state()).clone();
         state.unavailable = Arc::new(vec![UnavailableCase {
+            model: CaseModel::Balanced,
             id: "case7000".into(),
             name: "Texas7k".into(),
             reason: "Case data is not staged on the server".into(),

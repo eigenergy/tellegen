@@ -4,7 +4,7 @@ import type { StudyBundle } from '@tellegen/engine';
 import { expect, test } from './fixtures/page-errors.js';
 import { callTool, installWebMcpHarness, listTools } from './fixtures/planning-case.js';
 
-test.skip(process.env.TELLEGEN_FULL_DATA !== '1', 'Requires the local four-case dataset server');
+test.skip(process.env.TELLEGEN_FULL_DATA !== '1', 'Requires the local public-demo dataset server');
 test.use({ trace: 'off' });
 
 test.beforeEach(async ({ page, request }) => {
@@ -99,7 +99,9 @@ test('all demo cases load and Texas7k saves, queries, differentiates and plans i
 	expect(catalogue.ok, JSON.stringify(catalogue)).toBe(true);
 	if (!catalogue.ok) throw new Error(catalogue.error.message);
 	const cases = catalogue.data.cases as Array<{ case_id: string; availability: string }>;
-	expect(cases.map((c) => c.case_id).sort()).toEqual(['case200', 'case500', 'case7000', 'cats']);
+	expect(cases.map((c) => c.case_id)).toEqual(
+		expect.arrayContaining(['case200', 'case500', 'case7000', 'cats'])
+	);
 	expect(cases.some((c) => c.availability === 'unavailable')).toBe(false);
 	for (const caseId of ['case200', 'case500', 'cats', 'case7000']) {
 		const selected = await callTool(page, 'select_case', { case_id: caseId });

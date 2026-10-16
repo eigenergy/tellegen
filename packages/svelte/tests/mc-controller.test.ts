@@ -13,6 +13,7 @@ import {
 } from '@tellegen/engine';
 import { AppState, MulticonductorCase } from '../src/lib/state.svelte.js';
 import { Controller } from '../src/lib/controller.svelte.js';
+import { createApiClient } from '../src/lib/api.js';
 import { buildDiagramView, buildGeographicView } from '../src/lib/multiconductor.js';
 
 const graph: DistGraph = {
@@ -102,9 +103,16 @@ function host() {
 	const solve = vi.fn(async () => result);
 	const apply = vi.fn(async (): Promise<AppliedMcGeoCase> => ({
 		...payload('with-geo'),
-		report: { matched_buses: 2, matched_branches: 1, unmatched_features: 0, notes: [] }
+		report: {
+			matched_buses: 2,
+			matched_branches: 1,
+			unmatched_features: 0,
+			notes: []
+		}
 	}));
-	const ctrl = new Controller(app, { mcTransport: { solveMcModule: solve, applyMcGeo: apply } });
+	const ctrl = new Controller(app, {
+		mcTransport: { solveMcModule: solve, applyMcGeo: apply }
+	});
 	vi.spyOn(app, 'requestFrame').mockResolvedValue();
 	const c = new MulticonductorCase({
 		id: 'mc',
@@ -118,6 +126,148 @@ function host() {
 	app.addMulti(c);
 	return { app, ctrl, c, solve, apply };
 }
+
+function hosted() {
+	const { app, ctrl, c: local, solve } = host();
+	const summary = {
+		id: 'feeder',
+		name: 'Hosted feeder',
+		model: 'multiconductor' as const,
+		distribution: {
+			pf_options: {
+				voltage_envelope: false,
+				max_iterations: 500,
+				tolerance: 1e-7,
+				absolute_kcl_tolerance: 1e-5
+			}
+		},
+		n_bus: 2,
+		n_branch: 1,
+		n_gen: 0
+	};
+	const getCases = vi.fn(async () => [summary]);
+	const getCaseModuleJson = vi.fn(async () => 'hosted-input');
+	const ingest = vi.fn(async () => payload('hosted-input'));
+	const getNetwork = vi.fn(async () => {
+		throw new Error('Distribution must not fetch balanced endpoints');
+	});
+	ctrl.api = {
+		...createApiClient(),
+		getCases,
+		getCaseModuleJson,
+		getNetwork,
+		getComputeStatus: async () => ({ enabled: false })
+	};
+	ctrl.mcTransport.ingestDistCase = ingest;
+	return {
+		app,
+		ctrl,
+		local,
+		solve,
+		summary,
+		getCases,
+		getCaseModuleJson,
+		ingest,
+		getNetwork
+	};
+}
+
+describe('hosted distribution catalogue', () => {
+	it('opens a distribution-only catalogue and calculates through the existing browser path', async () => {
+		const { app, ctrl, solve, getCaseModuleJson, ingest, getNetwork } = hosted();
+		await ctrl.load();
+		expect(app.cases).toHaveLength(0);
+		expect(app.activeMulti).toMatchObject({
+			id: 'feeder',
+			label: 'Hosted feeder',
+			hosted: true,
+			moduleJson: 'hosted-input'
+		});
+		expect(ingest).toHaveBeenCalledWith('hosted-input', 'pio');
+		expect(getNetwork).not.toHaveBeenCalled();
+		expect(solve).not.toHaveBeenCalled();
+		const feeder = app.activeMulti!;
+		await ctrl.solveMultiCase(feeder);
+		expect(feeder.result).toEqual(summary);
+		expect(solve).toHaveBeenLastCalledWith(
+			'hosted-input',
+			{
+				voltage_envelope: false,
+				max_iterations: 500,
+				tolerance: 1e-7,
+				absolute_kcl_tolerance: 1e-5
+			},
+			expect.any(AbortSignal)
+		);
+		await ctrl.solveMultiCase(feeder, { max_iterations: 600 });
+		expect(feeder.pfOptions).toMatchObject({
+			voltage_envelope: false,
+			max_iterations: 600
+		});
+		await ctrl.solveMultiCase(feeder);
+		expect(solve).toHaveBeenLastCalledWith(
+			'hosted-input',
+			feeder.pfOptions,
+			expect.any(AbortSignal)
+		);
+		await ctrl.activateHostedDistribution('feeder');
+		expect(app.activeMulti).toBe(feeder);
+		expect(getCaseModuleJson).toHaveBeenCalledTimes(1);
+	});
+
+	it('removes hosted feeders from the browser and restores them without duplicating local cases', async () => {
+		const { app, ctrl, local } = hosted();
+		await ctrl.load();
+		await ctrl.removeMultiCase(app.activeMulti!);
+		expect(app.hostedDistributionCases).toHaveLength(0);
+		expect(ctrl.hiddenDefaults.has('feeder')).toBe(true);
+		expect(app.multiCases).toEqual([local]);
+		ctrl.restoreDefaultCases();
+		await ctrl.load();
+		expect(app.multiCases).toHaveLength(2);
+		expect(app.multiCases.filter((c) => c.hosted)).toHaveLength(1);
+		expect(app.multiCases).toContain(local);
+		await ctrl.load();
+		expect(app.multiCases).toHaveLength(2);
+	});
+
+	it('does not steal selection after another case is selected during ingestion', async () => {
+		const { app, ctrl, local, summary, ingest } = hosted();
+		app.hostedDistributionCases = [summary];
+		let complete!: (value: IngestedDistCase) => void;
+		ingest.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					complete = resolve;
+				})
+		);
+		const pending = ctrl.activateHostedDistribution(summary.id);
+		await vi.waitFor(() => expect(ingest).toHaveBeenCalled());
+		ctrl.activateMulti(local);
+		complete(payload());
+		await pending;
+		expect(app.activeMulti).toBe(local);
+		expect(app.multiCases).toEqual([local]);
+		expect(app.error).toBeNull();
+	});
+
+	it('keeps unavailable entries visible and reports browser ingestion failures with retry', async () => {
+		const { app, ctrl, summary, getCases, ingest, getCaseModuleJson } = hosted();
+		getCases.mockResolvedValue([
+			{ ...summary, unavailable_reason: 'Missing file' } as typeof summary
+		]);
+		await ctrl.load();
+		expect(app.hostedDistributionCases[0].unavailable_reason).toBe('Missing file');
+		expect(getCaseModuleJson).not.toHaveBeenCalled();
+		app.hostedDistributionCases = [summary];
+		ingest.mockRejectedValueOnce(new Error('Cannot parse module'));
+		await ctrl.activateHostedDistribution(summary.id);
+		expect(app.error).toContain('Cannot parse module');
+		expect(app.errorRetry).toBeTypeOf('function');
+		await app.errorRetry!();
+		expect(app.activeMulti?.id).toBe(summary.id);
+	});
+});
 describe('multiconductor calculation and coordinates', () => {
 	it('retains a fixed-point session and automatically warm-solves load edits', async () => {
 		vi.useFakeTimers();
@@ -351,7 +501,10 @@ describe('multiconductor calculation and coordinates', () => {
 	});
 	it('rejects unsupported retained physics before calling the engine', async () => {
 		const { app, ctrl, c, solve } = host();
-		c.summary = { ...payload(), mc_pf_unavailable_reason: 'Unsupported load model' };
+		c.summary = {
+			...payload(),
+			mc_pf_unavailable_reason: 'Unsupported load model'
+		};
 		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('Unsupported load model');
 		expect(solve).not.toHaveBeenCalled();
 		expect(app.error).toBe('Unsupported load model');
@@ -523,7 +676,10 @@ describe('multiconductor calculation and coordinates', () => {
 			[1050, 2020]
 		]);
 		expect(buildGeographicView(graph, layer).edges[0].path).toEqual(view.edges[0].path);
-		const parallel = { ...graph, edges: [...graph.edges, { ...graph.edges[0], id: 'parallel' }] };
+		const parallel = {
+			...graph,
+			edges: [...graph.edges, { ...graph.edges[0], id: 'parallel' }]
+		};
 		expect(buildDiagramView(parallel, layer).edges.every((edge) => edge.path.length === 2)).toBe(
 			true
 		);

@@ -205,6 +205,14 @@ export interface SensitivityColumn {
 }
 
 export interface CaseSummary {
+	distribution?: {
+		description?: string | null;
+		source_url?: string | null;
+		related_case_id?: string | null;
+		pf_options?: { tolerance?: number; absolute_kcl_tolerance?: number; max_iterations?: number; voltage_envelope?: boolean };
+	};
+	/** Missing on older servers, whose cases are all balanced. */
+	model?: 'balanced' | 'multiconductor';
 	/** Configured cases remain listed when loading or solving fails. */
 	unavailable_reason?: string | null;
 	id: string;
