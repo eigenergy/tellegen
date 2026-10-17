@@ -6,6 +6,9 @@
 review. As of 2026-10-17, #160 includes Tellegen main
 `192605a66d34be05ce27da651f799092f40f8a48`; both PowerIO branches include main
 `39f94ebf65f35044b7fc5edc5369559831ab2510` (workspace version 0.11.5).
+The PowerIO review stack is now #564 (source references and shared ZIP support)
+→ #569 (converter fidelity) → #570 (IVR preparation). #570 rejects terminal-
+referenced sources through #564's shared guard.
 The #159 review base and all original formulation/evidence commits are preserved.
 The preparation API is still unreleased, and the existing dependency, hosted MC
 CI and POUNCE release/restoration/distribution gates remain in force.
@@ -189,8 +192,8 @@ agree with current canonical winding maps. Transformer limit selections use `tra
 `generator_capability`. Droop/PF and DC-link laws remain physical equations when
 capability bounds are deselected.
 
-The supported profile still rejects explicit DC networks, floating source
-neutrals, initial points, unsupported semantic extras, unreferenced conductor
+The supported profile still rejects explicit DC networks, terminal-referenced
+voltage sources, floating source neutrals, initial points, unsupported semantic extras, unreferenced conductor
 islands, ideal line/switch cycles and ideal paths between multiple fixed
 references. Negative neutral resistance must be normalized to an explicit open
 branch upstream. Arbitrary IBR control policies (including conflicting PF/droop,
@@ -399,8 +402,9 @@ no new PR was opened, and #159 itself was not modified.
 ### Publication and integration gates
 
 The maintainer authorized publication, and PowerIO #569, #570 and Tellegen #160
-are ready for review. Merge converter fidelity first, then retarget the IVR
-preparation PR to main and recheck it. Follow PowerIO's current release
+are ready for review. The prerequisite is now source-reference #564: retarget
+converter #569 to main after #564 merges, then retarget preparation #570 to main
+after #569 merges and recheck it. Follow PowerIO's current release
 procedure after release approval. Consume the released preparation API in
 Tellegen's requirements and lockfile and enable the MC suite in backend CI before
 merging the consumer. Tellegen remains stacked on #159 until that base merges.
@@ -428,3 +432,30 @@ forward. Existing archive bounds and malformed-input rejection remain tested.
 Tellegen's shipping Rust advisory gate needs the patched PowerIO release; its
 released dependency cannot select ZIP 9 through a lockfile-only update. The old
 npm publication gap is resolved, and the hosted packed-consumer test passes.
+
+### Source-reference integration (2026-10-17)
+
+PowerIO #564 now owns the consolidated ZIP 9 adapter and filename/safety
+regressions at `ce0b86c5`. Converter #569 integrates that prerequisite at
+`23e7b877`; its diff against #564 contains no ZIP dependency or adapter changes.
+Both sets of matrix regressions are retained, and the changelog has one ZIP entry.
+Preparation #570 integrates the converter at `63db1dc1` and adds the shared
+source-reference guard and regression at `4d158d15`.
+
+The regression uses Va - Vb = 230 V and Vb = 230 V. Before the guard, preparation
+incorrectly returned Va = Vb = 230 V. The guard explicitly rejects this
+unsupported differential source profile while the earth-referenced control still
+passes. This is a preparation compatibility fix, with no change to derivative
+construction, optimization, frozen BMOPFTools baselines or numerical tolerances.
+No PR is merged, no package is released, and shipping dependency pins remain
+unchanged by this integration.
+
+Validation of the integrated tree passed: 2,361 PowerIO workspace tests with
+three existing ignores, all 25 IVR preparation tests, and all seven Clippy
+configurations separately on each PowerIO branch. The consolidated CGMES suite
+passed 120 tests. The advisory check, all-feature rustdoc with warnings denied,
+mdBook build/tests, terminology and formatting checks passed. Tellegen's pinned
+Rust 1.96 companion gate passed 395 tests (three existing ignores) with defaults
+plus MC OPF, 176 tests (two existing ignores) with MC OPF alone, and strict
+all-target Clippy. The 64 frozen BMOPFTools solves retain their numerical
+baselines and tolerances. The earlier ENWL experiments were not rerun.
