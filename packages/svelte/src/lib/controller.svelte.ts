@@ -1725,6 +1725,13 @@ export class Controller {
 			if (seq !== (c.solveSeq ?? 0)) return;
 			if (!studyInputJson) {
 				c.solveFallbackReason ??= 'PowerIO module unavailable';
+				// The server fallback only implements DC OPF. Preserve the requested
+				// calculation when its browser input cannot be loaded.
+				if (c.formulation !== 'dcopf') {
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} requires its PowerIO module; ${c.solveFallbackReason}`;
+					return;
+				}
 				if (this.hasRatingEdits(c)) {
 					c.solving = false;
 					this.app.error = this.ratingEditsFallbackError(c);
