@@ -36,6 +36,8 @@ const USAGE: &str =
     "usage: tellegen [REQUEST_JSON | capabilities | --help]   (PowerIO module on stdin)\n\
      \n\
      REQUEST_JSON  a solve request; default '{}' is a base-case DC OPF.\n\
+                   '@PATH' reads the request from a file, for requests larger\n\
+                   than the operating system's argument limit.\n\
      capabilities  print the formulation/operand/parameter capability matrix.\n\
      describe      print supported commands and generated JSON schemas.\n\
      prepare-model\n\
@@ -120,11 +122,24 @@ fn main() -> ExitCode {
         _ => {}
     }
 
-    let request = if arg.is_empty() { "{}" } else { arg.as_str() };
     run(|| {
+        let request = request_text(&arg)?;
         let module_json = read_stdin()?;
-        tellegen::solve_module_json(&module_json, request)
+        tellegen::solve_module_json(&module_json, &request)
     })
+}
+
+/// The solve request named by the first argument: `{}` when empty, the
+/// contents of the file when it is `@PATH`, otherwise the argument itself.
+fn request_text(arg: &str) -> Result<String, String> {
+    if arg.is_empty() {
+        return Ok("{}".to_owned());
+    }
+    match arg.strip_prefix('@') {
+        Some(path) => std::fs::read_to_string(path)
+            .map_err(|e| format!("failed to read request file {path}: {e}")),
+        None => Ok(arg.to_owned()),
+    }
 }
 
 fn study_command() -> Result<String, String> {
@@ -413,6 +428,22 @@ mpc.gencost = [
                 "exact_solve_budget": 2
             }
         })
+    }
+
+    #[test]
+    fn request_text_reads_a_file_when_prefixed_with_at() {
+        assert_eq!(request_text("").unwrap(), "{}");
+        assert_eq!(
+            request_text("{\"formulation\":\"dcopf\"}").unwrap(),
+            "{\"formulation\":\"dcopf\"}"
+        );
+        let path =
+            std::env::temp_dir().join(format!("tellegen-request-{}.json", std::process::id()));
+        std::fs::write(&path, "{\"formulation\":\"dcopf\"}").unwrap();
+        let text = request_text(&format!("@{}", path.display())).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(text, "{\"formulation\":\"dcopf\"}");
+        assert!(request_text("@/nonexistent/request.json").is_err());
     }
 
     #[test]
