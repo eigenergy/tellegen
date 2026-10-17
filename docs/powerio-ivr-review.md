@@ -1,22 +1,30 @@
 # PowerIO IVR review packet
 
-Prepared on 2026-10-05; updated after the ENWL study on 2026-10-06. No branches in this packet have been pushed and no PRs
-have been created. Existing Tellegen PR #143 is independent of this publication
-approval. The original PowerIO development commits remain available on
+Updated on 2026-10-17. The companion changes are published and ready for
+review as [PowerIO #569](https://github.com/eigenergy/powerio/pull/569) and
+[#570](https://github.com/eigenergy/powerio/pull/570); the consumer is
+[Tellegen #160](https://github.com/eigenergy/tellegen/pull/160). Review readiness
+and release readiness are separate: the preparation API is still unreleased.
+The original development commits remain on
 `codex/multiconductor-ivr-preparation-original`.
 
 ## Branches and ownership
 
-| Change | Branch | Head | Intended PR base |
+| Change | Branch | Head | PR base |
 | --- | --- | --- | --- |
-| Converter fidelity | `codex/bmopf-component-fidelity` | `e8dcace9acd24d8db5ba24a1a5c5552d222c9c70` | PowerIO `main`, prepared at `c8184eba8ab67fa3a5c60cf4c64ccbe878963bfa` |
-| IVR preparation | `codex/multiconductor-ivr-api` | `4d00b7696e0863c4a240a1d2f0a3e97ed04c739d` | `codex/bmopf-component-fidelity` |
+| Converter fidelity (#569) | `codex/bmopf-component-fidelity` | `47ecbfb744e25747280c1f27f9b29dc41ef99fff` | PowerIO `main` at `39f94ebf65f35044b7fc5edc5369559831ab2510` |
+| IVR preparation (#570) | `codex/multiconductor-ivr-api` | `84d09b10032a94b3a3f923a2a464e885f7a34ad9` | `codex/bmopf-component-fidelity` |
 
-The active PowerIO checkout is
-`/Users/uqfgeth/.codex/worktrees/multiconductor-ivr-preparation/powerio`.
-The Tellegen consumer is `codex/multiconductor-ivr-opf`, authorized for draft PR
-publication on 2026-10-07, in
-`/Users/uqfgeth/.codex/worktrees/multiconductor-ivr-opf/tellegen`.
+Both PowerIO branches include current main, whose workspace version is 0.11.5;
+the 0.11.6 schema snapshot comes from main's upcoming CIM distribution support.
+Tellegen #160 includes main `192605a66d34be05ce27da651f799092f40f8a48`
+and retains #159 (`dot/acopf-browser-refresh`) as its review base.
+Tellegen's shipping dependency remains the released 0.11.3 set. The review script
+below temporarily selects all six companion crates at 0.11.5.
+
+The numerical counts below describe the original October 5–6 test packet.
+Current refresh results and exact CI heads are recorded in the linked PRs;
+ENWL measurements retain their original source identities.
 
 Conversion must preserve the electrical problem before any optimizer sees it.
 The second PR follows PowerIO's existing balanced AC/DC preparation boundary:
@@ -25,7 +33,7 @@ belong to `powerio-matrix`; solver expression construction, differentiation,
 execution and result acceptance belong to Tellegen. No new dependency, optimizer,
 AD package, portable IR type, ABI entry point or package-version change is needed.
 
-## Draft PR 1
+## PowerIO #569
 
 **Title:** Preserve BMOPF coil physics and edited regulator connections
 
@@ -51,7 +59,7 @@ Clippy and formatting passed. The full feature/binding Clippy matrix also passed
 independently on this branch's committed snapshot. The combined stack passed
 2,268 Rust workspace tests, 3 existing ignored, after the scalar-bound fix.
 
-## Draft PR 2
+## PowerIO #570
 
 **Title:** Add solver-independent multiconductor IVR preparation
 
@@ -107,11 +115,9 @@ and updates resolution only in the temporary archive. Neither checkout's lockfil
 acquires path dependencies. Ordinary tests require no Julia or network when the
 locked dependency cache is populated.
 
-After approval, push converter fidelity and open its PR against main; push IVR
-preparation and open it against the converter branch. Attach each created PR to
-this task. After converter merge, retarget/replay the API branch and rerun its
-checks. Use PowerIO's established reviewed release procedure. Only after an API
-release should Tellegen consume that released version in its requirements and
-lockfile, wire optional MC CI, and publish its separately approved PR. The
-Tellegen integration branch now includes #159 at `8e087c6`; use that branch as
-the intended PR base, or main once the refreshed stack has merged.
+Review and merge #569 first, then retarget #570 to main and recheck the combined
+tree. Follow PowerIO's current tag-driven release procedure after maintainer
+release approval. Once the preparation API has a published release, update
+Tellegen's requirements and lockfile and enable hosted MC OPF tests. Tellegen
+#160 stays stacked on #159 until its base stack merges. Its existing POUNCE
+release/restoration/distribution and CI requirements remain merge gates.

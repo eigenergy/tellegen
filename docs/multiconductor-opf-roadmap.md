@@ -1,13 +1,17 @@
 # Multiconductor IVR OPF implementation roadmap
 
-The native implementation now includes [Tellegen PR #159](https://github.com/eigenergy/tellegen/pull/159)
-at `8e087c6d3a7f14ac1c31cf07f24443f80387ff02`, including upstream main
-`fc041430d66abe6ce9b0c64298818204ad930946`, through merge commit `629b947`.
-The original #145 ancestry and all IVR implementation/evidence commits are
-preserved. The maintainer approved publishing the Tellegen contribution as a
-draft PR on 2026-10-07. The companion PowerIO branches remain separate and
-unpublished; the existing POUNCE release/restoration/distribution gates remain
-in force.
+[Tellegen #160](https://github.com/eigenergy/tellegen/pull/160) and its companion
+[PowerIO #569](https://github.com/eigenergy/powerio/pull/569) and
+[#570](https://github.com/eigenergy/powerio/pull/570) are published and ready for
+review. As of 2026-10-17, #160 includes Tellegen main
+`192605a66d34be05ce27da651f799092f40f8a48`; both PowerIO branches include main
+`39f94ebf65f35044b7fc5edc5369559831ab2510` (workspace version 0.11.5).
+The #159 review base and all original formulation/evidence commits are preserved.
+The preparation API is still unreleased, and the existing dependency, hosted MC
+CI and POUNCE release/restoration/distribution gates remain in force.
+See [the review packet](powerio-ivr-review.md) for current companion heads.
+The dated sections below retain the source identities and validation results
+from their respective development stages.
 
 The reviewed stack is [#143](https://github.com/eigenergy/tellegen/pull/143)
 (optional backend), [#144](https://github.com/eigenergy/tellegen/pull/144)
@@ -392,15 +396,27 @@ Raw refresh logs are in `/private/tmp/ivr-pr159-validation`. The primary checkou
 and its existing uncommitted work were left untouched. No branch was pushed,
 no new PR was opened, and #159 itself was not modified.
 
-### Publication gates
+### Publication and integration gates
 
-Obtain maintainer approval to publish the two prepared PowerIO branches, targeting
-main for converter fidelity and the converter branch for IVR preparation. Retarget
-or replay the second after the first merges. Follow PowerIO's existing reviewed
-release procedure; then consume the released preparation API in Tellegen's
-requirements and lockfile, add the optional MC suite to backend CI, and obtain
-approval for the Tellegen PR targeting #159's branch (or main after it merges).
-Browser forwarding,
-POUNCE release, restoration wiring and distribution approval remain separate gates.
-The maintainer has now authorized the Tellegen draft PR above #159. This does
-not publish the companion PowerIO branches or authorize release/distribution.
+The maintainer authorized publication, and PowerIO #569, #570 and Tellegen #160
+are ready for review. Merge converter fidelity first, then retarget the IVR
+preparation PR to main and recheck it. Follow PowerIO's current release
+procedure after release approval. Consume the released preparation API in
+Tellegen's requirements and lockfile and enable the MC suite in backend CI before
+merging the consumer. Tellegen remains stacked on #159 until that base merges.
+Browser forwarding, POUNCE release, restoration wiring and distribution approval
+remain separate gates.
+
+### Main refresh (2026-10-17)
+
+PowerIO #569 merges main `39f94ebf` at `47ecbfb7`; #570 merges the refreshed
+converter base at `84d09b10`. The changelog conflict preserves both the converter
+entry and main's release/CIM entries. Converter physics and IVR coefficient
+preparation code are unchanged by these merges.
+
+Tellegen merges main `192605a` at `4d9c808`, retaining its #159 stack. Main's
+newer JavaScript lock entries win the shell-quote conflict. This imports CLI
+request-file support and the updated chai/std-env dependencies. Tellegen's
+shipping PowerIO and POUNCE pins and its numerical references are unchanged.
+The earlier ENWL studies have not been rerun or relabelled as measurements of
+this source refresh. Current validation is reported on the PRs.
