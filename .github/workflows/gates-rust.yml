@@ -64,9 +64,12 @@ jobs:
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
       # Do not rely on feature unification in the default workspace test.
+      # mc-opf still needs the unreleased companion PowerIO preparation API.
+      # Keep every released feature here; validate MC OPF separately with
+      # scripts/check-mc-opf.sh until that API is released and pinned.
       - name: Test and lint the opt-in AC OPF path
         run: |
-          cargo test -p tellegen --all-features --locked
+          cargo test -p tellegen --features conic,schema,acopf --locked
           cargo test -p tellegen-acopf-wasi --features acopf --locked
           cargo clippy -p tellegen -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
       - name: Run the exact-derivative POUNCE feasibility probe
