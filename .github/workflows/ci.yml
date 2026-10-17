@@ -47,7 +47,9 @@ jobs:
           deploy/test-remote-deploy.sh
           bash deploy/test-registry-auth.sh
       - name: Test generated-version allowlists
-        run: python3 .github/scripts/test-validate-version-changes.py
+        run: |
+          python3 .github/scripts/test-validate-version-changes.py
+          python3 .github/scripts/test-sync-python-version.py
       - name: Test the PowerIO pin guard
         run: python3 .github/scripts/test-powerio-pin.py
       - name: Set up Docker Buildx

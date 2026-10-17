@@ -9,6 +9,16 @@ import stat
 import subprocess
 import sys
 
+from sync_python_version import (
+    ENGINE_MANIFEST,
+    LOCKFILE,
+    PYTHON_MANIFEST,
+    check_lock_versions,
+    package_version,
+    read_regular,
+    replace_manifest_version,
+)
+
 
 def fail(message: str) -> "NoReturn":
     raise SystemExit(message)
@@ -98,15 +108,35 @@ def validate_crate(entries: list[tuple[str, str]]) -> None:
         "crates/tellegen/Cargo.toml",
     }
     actual = {path for _, path in entries}
-    if actual != required:
+    # The wheel may already carry the next engine version. Keep the original
+    # three release outputs mandatory, with this one precisely bounded addition.
+    allowed = required | {str(PYTHON_MANIFEST)}
+    if actual not in (required, allowed):
         fail(
             "crate versioning changed the wrong paths: "
-            f"expected {sorted(required)!r}, got {sorted(actual)!r}"
+            f"expected {sorted(required)!r}, optionally {str(PYTHON_MANIFEST)!r}; "
+            f"got {sorted(actual)!r}"
         )
     for status, path in entries:
         if status not in {" M", "M "}:
             fail(f"unexpected status for generated file {path}: {status!r}")
         require_regular_nonexecutable(path)
+
+    engine_version = package_version(read_regular(ENGINE_MANIFEST), "tellegen")
+    wheel = read_regular(PYTHON_MANIFEST)
+    if package_version(wheel, "tellegen-py") != engine_version:
+        fail("the wheel version does not match the engine")
+    check_lock_versions(read_regular(LOCKFILE), engine_version)
+    if str(PYTHON_MANIFEST) in actual:
+        # A fourth path is not permission to change Python dependencies, build
+        # settings, or comments. Check the exact version-only edit against the
+        # checkout base, both before sealing and after applying the staged patch.
+        original = subprocess.check_output(
+            ["git", "show", f"HEAD:{PYTHON_MANIFEST}"]
+        ).decode("utf-8")
+        package_version(original, "tellegen-py")
+        if wheel != replace_manifest_version(original, engine_version):
+            fail("crate versioning may only synchronize the Python package version")
 
 
 def main() -> None:

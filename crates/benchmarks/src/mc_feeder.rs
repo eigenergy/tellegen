@@ -1014,7 +1014,7 @@ mod tests {
             })
             .collect();
         session
-            .replace_load_powers(&edits)
+            .replace_load_powers_summary(&edits)
             .expect("edited Tiny solves");
         assert_eq!(session.factorization_count(), 1);
         assert_eq!(session.materialization_count(), 0);

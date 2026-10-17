@@ -64,6 +64,17 @@ with tempfile.TemporaryDirectory() as directory:
     ]
     for _, path in crate_entries:
         write(path)
+    Path("crates/tellegen/Cargo.toml").write_text(
+        '[package]\nname = "tellegen"\nversion = "0.3.1"\n'
+    )
+    Path("crates/tellegen-py").mkdir()
+    Path("crates/tellegen-py/Cargo.toml").write_text(
+        '[package]\nname = "tellegen-py"\nversion = "0.3.1"\n'
+    )
+    Path("Cargo.lock").write_text(
+        '[[package]]\nname = "tellegen"\nversion = "0.3.1"\n'
+        '[[package]]\nname = "tellegen-py"\nversion = "0.3.1"\n'
+    )
     validator.validate_crate(crate_entries)
     rejects(lambda: validator.validate_crate(crate_entries[:-1]))
     os.chmod("Cargo.lock", 0o755)

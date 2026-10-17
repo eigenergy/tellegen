@@ -322,7 +322,7 @@ pub(crate) fn elapsed_ms(start: Option<f64>, end: Option<f64>) -> f64 {
 /// prepared physical current laws: the base network and instance are never
 /// copied or rebuilt by an ordinary edit, and subsequent solves reuse the
 /// exact same factor. The edited network is materialized only when a
-/// portable input, snapshot, or rebuild is requested.
+/// portable input, snapshot, compatibility accessor, or rebuild is requested.
 #[derive(Debug)]
 pub struct McPfSession {
     base_instance: McAcPfInstance,
@@ -334,12 +334,18 @@ pub struct McPfSession {
     module_holds_network: bool,
     base_power: Vec<Vec<Complex64>>,
     load_index: Result<BTreeMap<String, usize>, String>,
+    instance_edit_error: Option<String>,
     state: FixedPoint,
     summary: McPfSummary,
     profile: McPfProfile,
     cold_profile: McPfProfile,
     solve_count: usize,
     materializations: Cell<usize>,
+    // The 0.3.0 accessors return borrowed full views. Keep those views lazy so
+    // compact callers never allocate or retain them, and discard them only
+    // after an edit has successfully committed its new operating point.
+    result_cache: OnceLock<McPfResult>,
+    instance_cache: OnceLock<McAcPfInstance>,
 }
 
 impl McPfSession {
@@ -347,6 +353,18 @@ impl McPfSession {
     pub fn new(instance: McAcPfInstance, options: McPfOptions) -> Result<Self, String> {
         validate_options(&options)?;
         let started = profile_now();
+        // Load edits preserve every identity, so an initial point that can
+        // rebind to this network can rebind after any edit. Check once rather
+        // than cloning the network on every compact update. Preserve the
+        // legacy behavior of accepting an unused, incompatible initial point
+        // at construction but rejecting edits that would try to rebind it.
+        let instance_edit_error = instance.initial_point().and_then(|_| {
+            instance
+                .clone()
+                .with_network(instance.network().clone())
+                .err()
+                .map(|error| error.to_string())
+        });
         let (prepared, timing) = PreparedNetwork::prepare_timed(&instance)?;
         let base_power = prepared
             .loads
@@ -383,12 +401,15 @@ impl McPfSession {
                 Some(error) => Err(error),
                 None => Ok(load_index),
             },
+            instance_edit_error,
             state,
             summary,
             profile,
             cold_profile: profile,
             solve_count: 1,
             materializations: Cell::new(0),
+            result_cache: OnceLock::new(),
+            instance_cache: OnceLock::new(),
         })
     }
 
@@ -412,6 +433,34 @@ impl McPfSession {
         session.cold_profile.total_ms += session.cold_profile.parse_ms;
         session.profile = session.cold_profile;
         Ok(session)
+    }
+
+    /// The complete result for the current operating point.
+    ///
+    /// This compatibility view is built on first use and retained until the
+    /// next successful load edit. Use [`Self::summary`] or [`Self::detail`]
+    /// for compact output, or [`Self::build_result`] for an owned full result
+    /// that is not retained by the session.
+    pub fn result(&self) -> &McPfResult {
+        self.result_cache.get_or_init(|| {
+            // `summarize` applies the same output checks before a fixed point
+            // can be committed, and the prepared state cannot change here.
+            self.build_result()
+                .expect("accepted operating point has a valid full result")
+        })
+    }
+
+    /// The current instance, including load edits.
+    ///
+    /// This compatibility view is materialized on first use and retained
+    /// until the next successful load edit. Use [`Self::base_instance`] for
+    /// the unedited input, or [`Self::edited_instance`] for an owned view that
+    /// is not retained by the session.
+    pub fn instance(&self) -> &McAcPfInstance {
+        self.instance_cache.get_or_init(|| {
+            self.edited_instance()
+                .expect("accepted load powers preserve a valid instance")
+        })
     }
 
     /// The compact summary of the current operating point.
@@ -587,7 +636,8 @@ impl McPfSession {
     /// Materialize the current edited operating point as a typed instance.
     ///
     /// This is the only place an edited network is built. It runs for
-    /// portable output (input module, snapshot) or an explicit rebuild, never
+    /// portable output (input module, snapshot), the compatibility instance
+    /// accessor, or an explicit rebuild, never
     /// for an ordinary load edit.
     pub fn edited_instance(&self) -> Result<McAcPfInstance, String> {
         let edited = self
@@ -682,12 +732,32 @@ impl McPfSession {
     /// Replace the absolute edit set, re-solve from the last converged voltage,
     /// and retain the previous operating point if validation or convergence fails.
     /// An empty edit set restores the base load powers.
+    ///
+    /// Returns the complete result, as in 0.3.0. For interactive updates that
+    /// do not materialize a full result, use [`Self::replace_load_powers_summary`].
     pub fn replace_load_powers(
+        &mut self,
+        edits: &[McLoadPowerEdit],
+    ) -> Result<&McPfResult, String> {
+        self.replace_load_powers_summary(edits)?;
+        Ok(self.result())
+    }
+
+    /// Replace the absolute edit set and return a compact summary without
+    /// materializing or retaining a complete result or an edited network.
+    ///
+    /// Re-solves from the last converged voltage and retains the previous
+    /// operating point if validation or convergence fails. An empty edit set
+    /// restores the base load powers.
+    pub fn replace_load_powers_summary(
         &mut self,
         edits: &[McLoadPowerEdit],
     ) -> Result<&McPfSummary, String> {
         let started = profile_now();
         let load_index = self.load_index.as_ref().map_err(Clone::clone)?;
+        if let Some(error) = &self.instance_edit_error {
+            return Err(error.clone());
+        }
         let mut next_power = self.base_power.clone();
         let mut seen = std::collections::BTreeSet::new();
         for edit in edits {
@@ -757,6 +827,8 @@ impl McPfSession {
                 return Err(error);
             }
         };
+        self.result_cache.take();
+        self.instance_cache.take();
         self.state = state;
         self.summary = summary;
         self.solve_count += 1;
@@ -2048,6 +2120,157 @@ mod tests {
     }
 
     #[test]
+    fn legacy_session_accessors_materialize_only_on_request() {
+        let mut session = McPfSession::new(one_phase(1.0), McPfOptions::default()).unwrap();
+        assert!(session.result_cache.get().is_none());
+        assert!(session.instance_cache.get().is_none());
+
+        // Keep the exact 0.3.0 borrowed signatures usable by downstream code.
+        let result: &McPfResult = session.result();
+        assert!(std::ptr::eq(result, session.result()));
+        let instance: &McAcPfInstance = session.instance();
+        assert!(std::ptr::eq(instance, session.instance()));
+        assert_eq!(instance.loads()[0].p_w, vec![1.0]);
+        assert_eq!(session.materialization_count(), 0);
+
+        session
+            .replace_load_powers_summary(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 0,
+                p_w: 1.2,
+                q_var: 0.1,
+            }])
+            .unwrap();
+        assert!(session.result_cache.get().is_none());
+        assert!(session.instance_cache.get().is_none());
+        assert_eq!(session.materialization_count(), 0);
+        assert_eq!(
+            serde_json::to_value(session.result()).unwrap(),
+            serde_json::to_value(session.build_result().unwrap()).unwrap()
+        );
+        assert_eq!(session.instance().loads()[0].p_w, vec![1.2]);
+        assert_eq!(session.instance().loads()[0].q_var, vec![0.1]);
+        assert_eq!(session.materialization_count(), 1);
+        // Repeated borrowed reads use the same edited network.
+        assert!(std::ptr::eq(session.instance(), session.instance()));
+        assert_eq!(session.materialization_count(), 1);
+        assert_eq!(session.base_instance().loads()[0].p_w, vec![1.0]);
+        assert_eq!(session.factorization_count(), 1);
+    }
+
+    #[test]
+    fn legacy_session_updates_return_full_results_and_reset_cached_views() {
+        let mut session = McPfSession::new(one_phase(1.0), McPfOptions::default()).unwrap();
+        let base = session.result().clone();
+        let _ = session.instance();
+        let edited: &McPfResult = session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 0,
+                p_w: 1.2,
+                q_var: 0.1,
+            }])
+            .unwrap();
+        assert_ne!(load_bus_voltage(edited), load_bus_voltage(&base));
+        assert_eq!(edited.terminals.len(), base.terminals.len());
+        assert_summary_matches(session.summary(), session.result());
+        assert_eq!(session.instance().loads()[0].p_w, vec![1.2]);
+        assert_eq!(session.instance().loads()[0].q_var, vec![0.1]);
+
+        let reset: &McPfResult = session.replace_load_powers(&[]).unwrap();
+        assert!((load_bus_voltage(reset) - load_bus_voltage(&base)).norm() < 1e-8);
+        assert_eq!(session.instance().loads()[0].p_w, vec![1.0]);
+        assert_eq!(session.instance().loads()[0].q_var, vec![0.0]);
+        assert_eq!(session.solve_count(), 3);
+        assert_eq!(session.factorization_count(), 1);
+    }
+
+    #[test]
+    fn legacy_session_failed_edits_preserve_cached_views() {
+        let mut session = McPfSession::new(
+            one_phase(1.0),
+            McPfOptions {
+                max_iterations: 40,
+                voltage_envelope: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let result_ptr = session.result() as *const McPfResult;
+        let instance_ptr = session.instance() as *const McAcPfInstance;
+        let before = serde_json::to_value(session.result()).unwrap();
+        for (branch, p_w, expected) in [(1, 2.0, "no branch"), (0, 30.0, "did not converge")] {
+            let error = session
+                .replace_load_powers(&[McLoadPowerEdit {
+                    load: "pl".into(),
+                    branch,
+                    p_w,
+                    q_var: 0.0,
+                }])
+                .unwrap_err();
+            assert!(error.contains(expected), "{error}");
+            assert!(session.result_cache.get().is_some());
+            assert!(session.instance_cache.get().is_some());
+            assert!(std::ptr::eq(result_ptr, session.result()));
+            assert!(std::ptr::eq(instance_ptr, session.instance()));
+            assert_eq!(serde_json::to_value(session.result()).unwrap(), before);
+            assert_eq!(session.instance().loads()[0].p_w, vec![1.0]);
+            assert_eq!(session.solve_count(), 1);
+        }
+    }
+
+    #[test]
+    fn session_edits_preserve_initial_point_rebinding_checks() {
+        use powerio_prob::operating::MulticonductorOperatingPointBuilder;
+
+        let base = one_phase(1.0);
+        let initial = MulticonductorOperatingPointBuilder::for_point(base.network().clone())
+            .terminal_voltage_magnitudes(vec![10.0, 9.9])
+            .build_point()
+            .unwrap();
+        let mut session = McPfSession::new(
+            base.clone().with_initial_point(initial),
+            McPfOptions::default(),
+        )
+        .unwrap();
+        let edits = [McLoadPowerEdit {
+            load: "pl".into(),
+            branch: 0,
+            p_w: 1.2,
+            q_var: 0.0,
+        }];
+        session.replace_load_powers_summary(&edits).unwrap();
+        assert_eq!(session.materialization_count(), 0);
+        let instance = session.instance();
+        assert_eq!(instance.loads()[0].p_w, vec![1.2]);
+        assert_eq!(
+            instance.initial_point().unwrap().network().loads()[0].p_nom,
+            vec![1.2]
+        );
+
+        let mut foreign = base.network().clone();
+        foreign
+            .buses_mut()
+            .push(DistBus::new("foreign", vec!["1".into()]));
+        let incompatible = MulticonductorOperatingPointBuilder::for_point(foreign)
+            .terminal_voltage_magnitudes(vec![10.0, 9.9, 9.8])
+            .build_point()
+            .unwrap();
+        let mut session = McPfSession::new(
+            base.with_initial_point(incompatible),
+            McPfOptions::default(),
+        )
+        .unwrap();
+        let result = serde_json::to_value(session.result()).unwrap();
+        let error = session.replace_load_powers(&edits).unwrap_err();
+        assert!(error.contains("identity order"), "{error}");
+        assert!(session.replace_load_powers_summary(&edits).is_err());
+        assert_eq!(session.instance().loads()[0].p_w, vec![1.0]);
+        assert_eq!(serde_json::to_value(session.result()).unwrap(), result);
+        assert_eq!(session.solve_count(), 1);
+    }
+
+    #[test]
     fn retained_session_warm_starts_load_edits_without_refactorization() {
         let options = McPfOptions {
             tolerance: 1e-10,
@@ -2059,7 +2282,7 @@ mod tests {
         let base_iterations = session.summary().iterations;
 
         let edited = session
-            .replace_load_powers(&[McLoadPowerEdit {
+            .replace_load_powers_summary(&[McLoadPowerEdit {
                 load: "pl".into(),
                 branch: 0,
                 p_w: 1.001,
@@ -2084,7 +2307,7 @@ mod tests {
         assert_eq!(session.base_instance().loads()[0].p_w, vec![1.0]);
         assert_eq!(session.materialization_count(), 0);
 
-        session.replace_load_powers(&[]).unwrap();
+        session.replace_load_powers_summary(&[]).unwrap();
         let reset = session.build_result().unwrap();
         let fresh_base = solve_mc_ac_pf_instance(&one_phase(1.0), &options).unwrap();
         assert!((load_bus_voltage(&reset) - load_bus_voltage(&fresh_base)).norm() < 1e-10);
@@ -2101,7 +2324,7 @@ mod tests {
         instance = McAcPfInstance::from_network(network).unwrap();
         let mut session = McPfSession::new(instance, McPfOptions::default()).unwrap();
         session
-            .replace_load_powers(&[McLoadPowerEdit {
+            .replace_load_powers_summary(&[McLoadPowerEdit {
                 load: "pl".into(),
                 branch: 0,
                 p_w: 2.0,
@@ -2120,7 +2343,7 @@ mod tests {
         let before = session.build_result().unwrap();
         let summary = session.summary().clone();
         let error = session
-            .replace_load_powers(&[McLoadPowerEdit {
+            .replace_load_powers_summary(&[McLoadPowerEdit {
                 load: "pl".into(),
                 branch: 1,
                 p_w: 2.0,
@@ -2823,7 +3046,7 @@ mod tests {
         let mut session =
             McPfSession::from_module_json(&one_phase_module(1.0), McPfOptions::default()).unwrap();
         session
-            .replace_load_powers(&[McLoadPowerEdit {
+            .replace_load_powers_summary(&[McLoadPowerEdit {
                 load: "pl".into(),
                 branch: 0,
                 p_w: 1.2,
@@ -2965,10 +3188,12 @@ mod tests {
                     q_var: branch.base_q_var * 0.9,
                 })
                 .collect();
-            let summary = session.replace_load_powers(&edits).unwrap().clone();
+            let summary = session.replace_load_powers_summary(&edits).unwrap().clone();
             assert_summary_matches(&summary, &session.build_result().unwrap());
             assert_eq!(summary.solve_count, 2);
             assert_eq!(session.materialization_count(), 0);
+            assert!(session.result_cache.get().is_none());
+            assert!(session.instance_cache.get().is_none());
         }
     }
 
@@ -3097,7 +3322,7 @@ mod tests {
         );
         let branch = session.load_branches()[0].clone();
         session
-            .replace_load_powers(&[McLoadPowerEdit {
+            .replace_load_powers_summary(&[McLoadPowerEdit {
                 load: branch.load,
                 branch: branch.branch,
                 p_w: branch.base_p_w * 1.3,
@@ -3125,7 +3350,7 @@ mod tests {
         let profile = session.profile();
         let voltages = session.terminal_voltages();
         let error = session
-            .replace_load_powers(&[McLoadPowerEdit {
+            .replace_load_powers_summary(&[McLoadPowerEdit {
                 load: "pl".into(),
                 branch: 0,
                 p_w: 30.0,
@@ -3139,7 +3364,7 @@ mod tests {
         assert_eq!(session.solve_count(), 1);
         assert_eq!(session.load_branches()[0].p_w, 1.0);
         // The restored law still solves warm with the retained factor.
-        session.replace_load_powers(&[]).unwrap();
+        session.replace_load_powers_summary(&[]).unwrap();
         assert_eq!(session.factorization_count(), 1);
     }
 
@@ -3154,7 +3379,7 @@ mod tests {
         assert!(cold.total_ms >= cold.prepare_ms + cold.factor_ms);
         let branch = session.load_branches()[0].clone();
         session
-            .replace_load_powers(&[McLoadPowerEdit {
+            .replace_load_powers_summary(&[McLoadPowerEdit {
                 load: branch.load,
                 branch: branch.branch,
                 p_w: branch.base_p_w * 1.1,
