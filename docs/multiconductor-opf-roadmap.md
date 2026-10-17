@@ -420,3 +420,11 @@ request-file support and the updated chai/std-env dependencies. Tellegen's
 shipping PowerIO and POUNCE pins and its numerical references are unchanged.
 The earlier ENWL studies have not been rerun or relabelled as measurements of
 this source refresh. Current validation is reported on the PRs.
+
+The refreshed CI exposed RUSTSEC-2026-0367/0368/0369 in main's ZIP 8 dependency.
+Converter follow-up `757f9237` upgrades to ZIP 9.0.4, adapts fallible CGMES entry
+names and adds a UTF-8/CP437 identity regression; API merge `21ebd028` carries it
+forward. Existing archive bounds and malformed-input rejection remain tested.
+Tellegen's shipping Rust advisory gate needs the patched PowerIO release; its
+released dependency cannot select ZIP 9 through a lockfile-only update. The old
+npm publication gap is resolved, and the hosted packed-consumer test passes.

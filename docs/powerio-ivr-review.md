@@ -12,8 +12,8 @@ The original development commits remain on
 
 | Change | Branch | Head | PR base |
 | --- | --- | --- | --- |
-| Converter fidelity (#569) | `codex/bmopf-component-fidelity` | `47ecbfb744e25747280c1f27f9b29dc41ef99fff` | PowerIO `main` at `39f94ebf65f35044b7fc5edc5369559831ab2510` |
-| IVR preparation (#570) | `codex/multiconductor-ivr-api` | `84d09b10032a94b3a3f923a2a464e885f7a34ad9` | `codex/bmopf-component-fidelity` |
+| Converter fidelity (#569) | `codex/bmopf-component-fidelity` | `757f9237f21002daa0fcd3d08c665d756b3576cb` | PowerIO `main` at `39f94ebf65f35044b7fc5edc5369559831ab2510` |
+| IVR preparation (#570) | `codex/multiconductor-ivr-api` | `21ebd02853444136c83f13829c51c7db75bc0868` | `codex/bmopf-component-fidelity` |
 
 Both PowerIO branches include current main, whose workspace version is 0.11.5;
 the 0.11.6 schema snapshot comes from main's upcoming CIM distribution support.
@@ -21,6 +21,14 @@ Tellegen #160 includes main `192605a66d34be05ce27da651f799092f40f8a48`
 and retains #159 (`dot/acopf-browser-refresh`) as its review base.
 Tellegen's shipping dependency remains the released 0.11.3 set. The review script
 below temporarily selects all six companion crates at 0.11.5.
+
+The refresh also updates the internal ZIP reader to 9.0.4 after new advisories
+in main's 8.6 dependency failed CI. CGMES adapts to fallible entry-name decoding
+and preserves UTF-8/CP437 names and all archive limits. The PowerIO advisory
+check passes with that update. Tellegen's released dependency still requires ZIP
+8, so its shipping Rust advisory gate needs a patched PowerIO release and pin.
+The earlier npm publication gap is resolved; the hosted packed-consumer test
+passes with the freshly published worker-utils dependency.
 
 The numerical counts below describe the original October 5–6 test packet.
 Current refresh results and exact CI heads are recorded in the linked PRs;
