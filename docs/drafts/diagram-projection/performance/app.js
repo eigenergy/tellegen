@@ -11,6 +11,9 @@ import {validateSchematic,NO_BRANCH} from './schematic.mjs';
 import {nonTreeBranches,inspectCircuit,branchSegments,overlayBounds} from './circuit-inspection.mjs';
 import {buildOpenTiePresentation,incidentPresentation,compactBranch} from './open-ties.mjs';
 import {validateReferences} from './bmopf-references.mjs';
+import {rankIssues,snapshotSummary} from './workbench-summary.mjs';
+import {buildSearchIndex,search,entityKey,syntheticBus} from './search-index.mjs';
+import {encodeCamera,decodeCamera,withView} from './view-state.mjs';
 
 const $=id=>document.getElementById(id), fmt=n=>n.toLocaleString(), ms=n=>`${n.toFixed(1)} ms`;
 const busName=i=>fixture?.refs?.buses[i].id??('B'+String(i+1).padStart(6,'0'));
@@ -39,6 +42,9 @@ const viewStates=new Map();
 let pendingLoad=null,pendingSelection=null,labelTimer=0,selectionMetric=null;
 let circuit=null,overlay=[],pathOverlay=[],pathBars=[],endpointData=[],meshMatches=[],meshCursor=-1;
 const isInspecting=()=>!!circuit&&$('inspect-circuit').checked;
+// Workbench: one search, a ranked issue list, snapshot KPIs and URL-restorable view state.
+const searchCache=new WeakMap(),syncUrl=state=>history.replaceState(null,'',withView(location.href,state));
+let issueCursor=-1,omniItems=[],omniActive=-1,omniTimer=0,viewTimer=0,initialView={dataset:resultParams.get('dataset'),sel:resultParams.get('sel'),camera:decodeCamera(resultParams.get('view'))};
 const report={version:3,started:new Date().toISOString(),renderer:`deck.gl ${VERSION} / WebGL2 / OrthographicView`,
   methodology:'Precomputed synthetic or BMOPF geometry; identity and placement recorded per dataset. No viewport culling or network level of detail; optional open-switch presentation is prepared once on load. Frame intervals from deck.gl onAfterRender; not GPU timer queries. First-draw callback is not a GPU completion fence.',
   environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemoryGiB:navigator.deviceMemory??null},loads:[],runs:[],selections:[],presentations:[]};
@@ -46,13 +52,11 @@ function error(message){$('status').hidden=false;$('status').textContent=message
 function controls(){
   for(const b of document.querySelectorAll('[data-result-preset]'))b.disabled=loading||!!run||!fixture?.results;
   for(const id of ['profile-bus','profile-prev','profile-next','profile-fit','profile-path'])$(id).disabled=loading||!!run||!profile?.nodes?.length;
-  for(const id of ['result-mode','flow-mode','result-detail','voltage-detail','flow-play','flow-speed','flow-p','flow-q','profile-open'])$(id).disabled=loading||!!run||!fixture?.results;
-  for(const el of document.querySelectorAll('button[data-theme], #labels, #edge-picking, #fit, #detail, #benchmark, #bus-id, #search button, #clear, #next-colocated, #trace-root, #focus-source'))el.disabled=loading||!!run||!ready||!fixture;
+  for(const id of ['result-mode','flow-mode','flow-play','flow-speed','flow-p','flow-q'])$(id).disabled=loading||!!run||!fixture?.results;
+  for(const el of document.querySelectorAll('button[data-theme], #labels, #edge-picking, #fit, #detail, #zoom-in, #zoom-out, #benchmark, #omni, #clear, #next-colocated, #trace-root, #focus-source'))el.disabled=loading||!!run||!ready||!fixture;
   for(const el of document.querySelectorAll('[data-size], #dataset'))el.disabled=loading||!!run||!ready;
   for(const el of document.querySelectorAll('[data-layout]'))el.disabled=loading||!!run||!ready||fixture?.manifest.kind!=='bmopf'||(el.dataset.layout==='source'&&fixture?.manifest.sourceCoordinatesAvailable===false)||(el.dataset.layout!=='source'&&!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[el.dataset.layout]);
   for(const el of document.querySelectorAll('[data-routing]'))el.disabled=loading||!!run||!ready||!fixture?.parent||!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[layoutMode+(el.dataset.routing==='current'?'':'-'+el.dataset.routing)];
-  for(const el of document.querySelectorAll('#equipment-id, #equipment-search button'))el.disabled=loading||!!run||!fixture?.equipment;
-  for(const el of document.querySelectorAll('#switch-id, #switch-search button'))el.disabled=loading||!!run||!fixture?.manifest.switches;
   $('trace-root').disabled=loading||!!run||!fixture?.parent||selection?.kind!=='bus';
   $('focus-source').disabled=loading||!!run||!fixture?.refs||selection===null;
   const unavailable=loading||!!run||!fixture?.meshBranches?.length;
@@ -67,13 +71,11 @@ function controls(){
   $('profile-prev').disabled||=profileIndex<=0;
   $('profile-next').disabled||=profileIndex<0||profileIndex>=profile.shown.length-1;
   $('stop').disabled=!run;
-  $('voltage-detail').disabled||=!fixture?.results?.issues?.voltage.length;
-  $('result-detail').disabled||=!(fixture?.results?.issues?.highest>=0);
 }
 function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,results:fixture?.results?{kind:fixture.results.kind,sha256:fixture.manifest.resultSha256,mode:resultMode,flows:flowMode,playback,channels:{p:$('flow-p').checked,q:$('flow-q').checked},scales:fixture.results.flowScales,profilePoints:profile?.shown?.length??0,scope:'visible endpoint segments at detail zoom',peakFlowGlyphs:flowPeak,lastScope:flowScope.stats,maxScopeMs:scopeMs,arrayBytes:fixture.results.arrayBytes,prepareMs:fixture.results.prepareMs}:null,equipmentGlyphs:fixture?.manifest.equipment?.glyphs??0,equipmentStrokes:fixture?.manifest.equipment?.strokes??0,equipmentArrayBytes:fixture?.equipment?.arrayBytes??0,selectedOpenSwitch:!!openSelected(),selectionRouteSegments:overlay.length,openSwitchPresentation:openMode,openSwitches:fixture?.openTies.branchIndices.length??0,openEndpointMarkers:compactOpen()?fixture.openTies.markers.length:0,suppressedRouteSegments:compactOpen()?fixture.openTies.suppressedSegments:0,extraPresentationArrayBytes:fixture?.openArrayBytes??0,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
 function fitCamera(){const b=fixture.manifest.bounds,r=$('canvas-wrap').getBoundingClientRect();return {...camera,target:[(b[0]+b[2])/2,(b[1]+b[3])/2,0],zoom:Math.log2(Math.min((r.width-70)/(b[2]-b[0]),(r.height-95)/(b[3]-b[1])))};}
 function detailCamera(){const m=fixture.manifest,r=Math.floor(m.regions/2),i=m.kind==='bmopf'?Math.floor(m.count/2):r*m.regionSize+2;return {...camera,target:[fixture.positions[i*3]+200,fixture.positions[i*3+1],0],zoom:0.6};}
-function setCamera(next,updateLabels=true){camera={target:next.target,zoom:next.zoom,minZoom:-24,maxZoom:5};deck.setProps({viewState:camera});refreshResults();$('zoom-readout').textContent=`${(2**camera.zoom).toPrecision(3)}× · PRECOMPUTED`;if(updateLabels)scheduleLabels();}
+function setCamera(next,updateLabels=true){camera={target:next.target,zoom:next.zoom,minZoom:-24,maxZoom:5};deck.setProps({viewState:camera});refreshResults();$('zoom-readout').textContent=`${(2**camera.zoom).toPrecision(3)}× · PRECOMPUTED`;if(updateLabels)scheduleLabels();clearTimeout(viewTimer);if(!run&&fixture)viewTimer=setTimeout(()=>syncUrl({view:encodeCamera(camera)}),300);}
 function prepare(f){
   const m=f.manifest;
   if(f.busbarSources)f.busbarData={length:m.count,attributes:{getSourcePosition:{value:f.busbarSources,size:3},getTargetPosition:{value:f.busbarTargets,size:3}}};
@@ -94,11 +96,8 @@ function prepare(f){
   for(let i=0;i<m.count;i++){const key=`${Math.floor(f.positions[i*3]/128)},${Math.floor(f.positions[i*3+1]/128)}`;if(!f.cells.has(key))f.cells.set(key,[]);f.cells.get(key).push(i);}
   f.ownedBytes=f.buffer.byteLength+f.segmentColors.byteLength+f.nodeColors.byteLength+f.offsets.byteLength+f.incidents.byteLength+f.firstSegment.byteLength;
   if(f.refs){
-    f.switchIds=new Map();f.qualifiedSwitchIds=new Map();
-    f.refs.branches.forEach((b,i)=>{if(b.family!=='switch')return;const q=busQuery(f.refs.sources[b.source].id,b.id);f.qualifiedSwitchIds.set(q,i);if(!f.switchIds.has(b.id))f.switchIds.set(b.id,[]);f.switchIds.get(b.id).push(i);});
-    f.rawBusIds=new Map();f.qualifiedBusIds=new Map();f.locations=new Map();f.attachmentsByBus=new Map();
-    f.refs.buses.forEach((b,i)=>{const q=busQuery(f.refs.sources[b.source].id,b.id);f.qualifiedBusIds.set(q,i);
-      if(!f.rawBusIds.has(b.id))f.rawBusIds.set(b.id,[]);f.rawBusIds.get(b.id).push(i);
+    f.locations=new Map();f.attachmentsByBus=new Map();
+    f.refs.buses.forEach((b,i)=>{
       const k=locationKey(f,i);if(!f.locations.has(k))f.locations.set(k,[]);f.locations.get(k).push(i);
     });
     for(const a of f.refs.attachments){if(!f.attachmentsByBus.has(a.bus))f.attachmentsByBus.set(a.bus,[]);f.attachmentsByBus.get(a.bus).push(a);}
@@ -111,12 +110,7 @@ function prepare(f){
   }
   f.openPrepareMs=performance.now()-opened;
   f.equipment=prepareEquipment(f);if(f.equipment){
-    f.ownedBytes+=f.equipment.arrayBytes;f.equipmentIds=new Map();
-    for(const owner of f.equipmentGlyphOwners){const {row}=equipmentRow(f,owner),source=f.refs.sources[row.source];
-      for(const key of new Set([row.id,busQuery(source.id,row.id),sourceKey(source.id,row.family,row.id,row.kind??'')])){
-        if(!f.equipmentIds.has(key))f.equipmentIds.set(key,[]);f.equipmentIds.get(key).push(owner);
-      }
-    }
+    f.ownedBytes+=f.equipment.arrayBytes;
   }f.ownedBytes+=f.openArrayBytes;
   colour(f);
 }
@@ -193,7 +187,7 @@ function chooseOpen(index,fit=true){
 function setOpenMode(mode){
   if(!fixture||loading||run)return;
   const started=performance.now();openMode=mode;
-  const url=new URL(location.href);url.searchParams.set('open',mode);history.replaceState(null,'',url);
+  syncUrl({open:mode});
   refreshOverlay();showOpenPage();updateLabels();
   report.presentations.push({dataset:fixture.manifest.id,layoutMode:fixture.manifest.layoutMode,routingMode:fixture.manifest.routingMode,mode,updateMs:performance.now()-started,extraArrayBytes:fixture.openArrayBytes});
 }
@@ -276,8 +270,6 @@ function resultStatus(){
  const r=fixture?.results;
  $('flow-play').textContent=flowMode==='motion'?'Pause flows':'Animate flows';$('flow-play').setAttribute('aria-pressed',String(flowMode==='motion'));
  for(const b of document.querySelectorAll('[data-result-preset]'))b.setAttribute('aria-pressed',String(b.dataset.resultPreset===(resultMode==='voltage'?'voltage':resultMode==='loading'?'loading':flowMode==='none'?'topology':'power')));
- $('workflow-summary').textContent=r?`${fmt(fixture.manifest.count)} buses · ${r.issues.voltage.length} voltage-limit buses · maximum loading ${r.issues.highest>=0?r.branches[r.issues.highest].loading.toFixed(2)+'%':'unavailable'}`:'';
- $('voltage-detail').textContent=`Voltage violations (${r?.issues.voltage.length??0})`;
  const scaleText=(label,max,unit)=>max>0?`${label} ${ (max*.25).toLocaleString(undefined,{maximumFractionDigits:2})} / ${max.toLocaleString(undefined,{maximumFractionDigits:2})} ${unit} → 36 / 72 px/s`:`${label}: no nonzero values`;
  $('flow-scale').textContent=r?`Fixed snapshot scales at 1×: ${scaleText('P ▸',r.flowScales.p,'kW')}; ${scaleText('Q ›',r.flowScales.q,'kvar')}. Playback ${playback}×. ${flowMode==='motion'?'Moving':'Paused / off'}.`:'';
  $('result-status').textContent=r?r.label+(r.kind==='solved'?` · ${r.provenance.iterations} iterations · saved ${r.provenance.created}`:' · values are deliberately nonphysical'):fixture?.resultError??'No staged results for this dataset. Run stage-results.mjs for the French feeder and SAPN rendering stress test.';
@@ -342,6 +334,8 @@ function select(kind,index,started=performance.now()){
     const a=fixture.endpoints[index*2],b=fixture.endpoints[index*2+1];
     $('selection').innerHTML=`<h2>Branch ${index+1}</h2><p>${busName(a)} → ${busName(b)}<br>${fixture.states[index]?'Open tie · explicit gap':'Closed branch'} · source branch/${index+1}</p>`;
   }
+  if(fixture.refs)syncUrl({sel:entityKey(fixture.refs,kind,index)});
+  issueCursor=fixture.issueIndex?.get(kind+':'+index)??issueCursor;markIssue();
   if(fixture.results){if(!profileNavigating){profileTarget=selectionBus(fixture,kind,index);profileHover=null;}updateProfile();}resultStatus();refreshResults();showOpenPage();controls();$('trace-root').textContent=traceRoot?'Show incident branches':'Trace to layout root';updateLabels();
 }
 async function load(id,mode=layoutMode,routing=routingMode){
@@ -349,8 +343,8 @@ async function load(id,mode=layoutMode,routing=routingMode){
   if(previous)viewStates.set(viewKey(previous.manifest),{...camera,target:[...camera.target]});
   layoutMode=mode;routingMode=routing;traceRoot=false;pendingRestoreSelection=keep;
   stopRun('dataset changed');const token=++request;abort?.abort();abort=new AbortController();loading=true;pendingLoad=null;selection=null;refreshOverlay();meshMatches=[];meshCursor=-1;showMeshPage();labelData=[];pendingSelection=null;selectionMetric=null;clearTimeout(labelTimer);controls();
-  cancelAnimationFrame(flowRaf);flowStamp=null;flowElapsed=0;profile=null;profileTarget=null;profileSegments=[];profileHover=null;voltageCursor=-1;fixture=null;updateProfile();render();$('next-colocated').hidden=true;$('search-error').textContent='';
-  $('test-status').textContent='Ready';$('status').hidden=false;$('status').textContent='Loading dataset…';$('frame-time').textContent='Not measured';$('frame-detail').textContent='Run the six-second camera test';$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';$('selection-time').textContent='Selection feedback: not measured';
+  cancelAnimationFrame(flowRaf);flowStamp=null;flowElapsed=0;profile=null;profileTarget=null;profileSegments=[];profileHover=null;voltageCursor=-1;fixture=null;updateProfile();render();$('next-colocated').hidden=true;
+  $('test-status').textContent='Ready';$('status').hidden=false;$('status').textContent='Loading dataset…';$('frame-time').textContent='Not measured';$('frame-detail').textContent='Run the six-second camera test';$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select something on the diagram, an issue, or press <kbd>/</kbd> to search.</p>';$('selection-time').textContent='Selection feedback: not measured';
   for(const b of document.querySelectorAll('[data-size]'))b.setAttribute('aria-pressed',String(`synthetic-${b.dataset.size}`===id));
   $('dataset').value=id;const start=performance.now();
   try{
@@ -378,22 +372,23 @@ async function load(id,mode=layoutMode,routing=routingMode){
     const decoded=performance.now();prepare(next);
     if(resultBuffer)try{await verify(resultBuffer,resultMeta.sha256);next.results=prepareResults(next,bindResults(JSON.parse(new TextDecoder().decode(resultBuffer)),next.refs));next.results.issues=resultIssues(next.results);next.ownedBytes+=next.results.arrayBytes;m.resultSha256=resultMeta.sha256;}catch(e){resultError='Results rejected: '+e.message;}
     if(token!==request)return;
+    if(next.refs){if(!searchCache.has(next.refs))searchCache.set(next.refs,buildSearchIndex(next.refs));next.search=searchCache.get(next.refs);}
+    if(next.results){next.issues=rankIssues(next.results);next.summary=snapshotSummary(next.results,next.issues);next.issueIndex=new Map(next.issues.map((x,i)=>[x.target.kind+':'+x.target.index,i]));}
     next.resultError=resultError;const prepared=performance.now();
-    fixture=next;flowPeak=0;scopeMs=0;resultStatus();openScope=null;showOpenPage();if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,resultBytes:resultMeta?.bytes??0,resultError,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,openPresentationPrepareMs:next.openPrepareMs,submittedAt:prepared,environment:environment()};
+    fixture=next;flowPeak=0;scopeMs=0;issueCursor=-1;resultStatus();renderIssues();renderKpis();openScope=null;showOpenPage();if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,resultBytes:resultMeta?.bytes??0,resultError,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,openPresentationPrepareMs:next.openPrepareMs,submittedAt:prepared,environment:environment()};
     $('network-count').textContent=fmt(m.count);$('network-detail').textContent=m.kind==='bmopf'?`${fmt(m.lines)} lines · ${fmt(m.transformers)} transformer objects${m.switches?' · '+fmt(m.switches)+' switches':''}`:`${fmt(m.branches)} branches · ${fmt(m.openTies)} open ties`;
     $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON${next.openArrayBytes?' + '+(next.openArrayBytes/1048576).toFixed(2)+' MiB compact arrays':''}${resultMeta?' + '+(resultMeta.bytes/1048576).toFixed(2)+' MiB result JSON (not included in arrays)':''}; excludes JS objects`;
     $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode)+(actualRouting==='unavailable'?'':' / '+({'corridor':'Fan-out + lanes','crossing-aware':'Crossing-aware lanes','equipment':'Equipment + clearance','current':'Current routes'}[actualRouting]));$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
     $('layout-summary').textContent=m.layout?`${fmt(m.layout.treeEdges)} tree edges · ${fmt(m.layout.crossLinks)} non-tree connections · ${m.layout.components.length} components · ${ms(m.layout.totalMs)} offline layout + routing.${m.routingMode!=='current'?' '+m.routing.maxLanes+' peak corridor lanes.':''}${m.routing.ordering?' Lane-order crossings '+fmt(m.routing.ordering.before)+' → '+fmt(m.routing.ordering.after)+' in eligible corridors.':''} Roots choose layout direction, not power flow.`:actualMode==='source'?'Source-coordinate reference. Choose Leaf order or Tidy tree to inspect the network structure.':'Precomputed synthetic schematic.';
     $('scenario-detail').textContent=m.scenario?`${m.scenario.label}: ${m.openSwitches} open / ${m.closedSwitches} closed switches; ${m.outOfServiceSwitches} out of service. ${m.scenario.changedFromSource} states changed from the imported BMOPF. ${m.scenario.policy}${m.sourceCoordinatesAvailable===false?' Source coordinates unavailable; schematic views only.':''}`:'';
     $('equipment-summary').textContent=m.equipment?`${fmt(m.equipment.glyphs)} equipment symbols · ${fmt(m.equipment.strokes)} batched strokes. Inline slots and attachment space reserved before routing. Click a symbol or find its exact source ID. Shunts use a general Y block; lines remain conductor bundles.`:'Choose Equipment + clearance in a schematic layout to show source-owned equipment symbols.';
-    $('equipment-id').value=next.refs?.branches.find(b=>b.family==='transformer')?.id??'';$('equipment-error').textContent='';
-    const firstSwitch=next.refs?.branches.find(b=>b.family==='switch'&&b.openSwitch)??next.refs?.branches.find(b=>b.family==='switch');
-    $('switch-id').value=firstSwitch?.id??'';$('switch-error').textContent='';
-    $('bus-id').value=next.refs?busQuery(next.refs.sources[next.refs.buses[keep?.kind==='bus'?keep.index:0].source].id,next.refs.buses[keep?.kind==='bus'?keep.index:0].id):'B000501';$('bus-id').placeholder=next.refs?'Exact source ID or source/id':'B000001';
-    const url=new URL(location.href);url.searchParams.delete('size');url.searchParams.set('dataset',id);url.searchParams.set('layout',actualMode==='synthetic'?'schematic':actualMode);url.searchParams.set('routing',routingMode);url.searchParams.set('open',openMode);history.replaceState(null,'',url);
+    syncUrl({size:null,dataset:id,layout:actualMode==='synthetic'?'schematic':actualMode,routing:routingMode,open:openMode,sel:null});
     const restored=viewStates.get(viewKey(m));
-    let nextCamera=restored??fitCamera();
-    if(keep){const i=keep.kind==='bus'?keep.index:keep.kind==='attachment'?next.refs.attachments[keep.index].bus:next.endpoints[keep.index*2];nextCamera={...nextCamera,target:[next.positions[i*3],next.positions[i*3+1],0],zoom:restored?.zoom??.6};}
+    let nextCamera=restored??fitCamera(),target=keep;
+    // A shared URL restores its selection by source identity and its camera once, on the first matching load.
+    if(initialView&&initialView.dataset===id){const entry=next.search?.byKey.get(initialView.sel);if(entry)target=pendingRestoreSelection={kind:entry.kind,index:entry.index};if(initialView.camera)nextCamera={...nextCamera,...initialView.camera};}
+    if(target&&!(initialView?.dataset===id&&initialView.camera)){const i=next.refs?selectionBus(next,target.kind,target.index):target.kind==='bus'?target.index:next.endpoints[target.index*2];nextCamera={...nextCamera,target:[next.positions[i*3],next.positions[i*3+1],0],zoom:restored?.zoom??.6};}
+    initialView=null;
     setCamera(nextCamera,false);updateLabels();
   }catch(e){if(e.name!=='AbortError'&&token===request)error(e.message);}
 }
@@ -438,7 +433,8 @@ function exportReport(){const data={...report,exported:new Date().toISOString(),
   const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='tellegen-diagram-performance.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
 for(const b of document.querySelectorAll('[data-size]'))b.addEventListener('click',()=>load(`synthetic-${b.dataset.size}`));
-for(const b of document.querySelectorAll('button[data-theme]'))b.addEventListener('click',()=>{theme=b.dataset.theme;document.documentElement.dataset.theme=theme;for(const x of document.querySelectorAll('button[data-theme]'))if(x.tagName==='BUTTON')x.setAttribute('aria-pressed',String(x.dataset.theme===theme));colour(fixture);
+function showTheme(){document.documentElement.dataset.theme=theme;for(const x of document.querySelectorAll('button[data-theme]'))x.setAttribute('aria-pressed',String(x.dataset.theme===theme));}
+for(const b of document.querySelectorAll('button[data-theme]'))b.addEventListener('click',()=>{theme=b.dataset.theme;showTheme();syncUrl({theme});colour(fixture);
   // Theme changes retire base layers in this baseline; production should patch colours.
   if(fixture.compactLineData)fixture.compactLineData={...fixture.compactLineData,attributes:{...fixture.compactLineData.attributes}};fixture.lineData={...fixture.lineData,attributes:{...fixture.lineData.attributes}};fixture.nodeData={...fixture.nodeData,attributes:{...fixture.nodeData.attributes}};if(fixture.equipment)for(const d of new Set([fixture.equipment.full,fixture.equipment.compact]))d.lines={...d.lines,attributes:{...d.lines.attributes}};render();});
 for(const b of document.querySelectorAll('[data-layout]'))b.addEventListener('click',()=>load(fixture.manifest.id,b.dataset.layout));
@@ -469,31 +465,8 @@ $('dataset').addEventListener('change',()=>load($('dataset').value));
 $('next-colocated').addEventListener('click',()=>{if(selection?.kind!=='bus')return;const members=fixture.locations.get(locationKey(fixture,selection.index));select('bus',members[(members.indexOf(selection.index)+1)%members.length]);});
 $('labels').addEventListener('change',updateLabels);$('edge-picking').addEventListener('change',render);
 $('fit').addEventListener('click',()=>setCamera(fitCamera()));$('detail').addEventListener('click',()=>setCamera(detailCamera()));
-$('clear').addEventListener('click',()=>{selection=null;traceRoot=false;refreshOverlay();profile=null;profileTarget=null;profileSegments=[];profileHover=null;updateProfile();resultStatus();meshCursor=-1;showMeshPage();openScope=null;showOpenPage();controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';updateLabels();});
-$('search').addEventListener('submit',e=>{e.preventDefault();if(!fixture||run||loading)return;const started=performance.now(),value=$('bus-id').value.trim();$('search-error').textContent='';let i;
-  if(fixture.refs){
-    const raw=fixture.rawBusIds.get(value)??[];
-    if(raw.length===1)i=raw[0];else if(raw.length>1){$('search-error').textContent='Ambiguous source ID. Use '+raw.slice(0,5).map(n=>busQuery(fixture.refs.sources[fixture.refs.buses[n].source].id,value)).join(' or ');return;}else i=fixture.qualifiedBusIds.get(value);
-    if(i===undefined){$('search-error').textContent='No exact source bus ID found. Use source/id to qualify an ID.';return;}
-  }else{const digits=value.replace(/^B/i,''),id=Number(digits);if(!/^\d+$/.test(digits)||!Number.isSafeInteger(id)||id<1||id>fixture.manifest.count){$('search-error').textContent=`Enter a bus from B000001 to ${busName(fixture.manifest.count-1)}.`;return;}i=id-1;}
-  select('bus',i,started);setCamera({...camera,target:[fixture.positions[i*3],fixture.positions[i*3+1],0],zoom:1.5});});
-$('switch-search').addEventListener('submit',e=>{
-  e.preventDefault();if(!fixture?.manifest.switches||run||loading)return;
-  const started=performance.now(),value=$('switch-id').value.trim(),raw=fixture.switchIds.get(value)??[];
-  const i=raw.length===1?raw[0]:raw.length?undefined:fixture.qualifiedSwitchIds.get(value);
-  $('switch-error').textContent=i===undefined?'No unique exact switch ID. Use source/id to qualify an ID.':'';
-  if(i===undefined)return;
-  select('branch',i,started);
-  openScope=null;showOpenPage();fitSelectedRoute();
-});
-$('equipment-search').addEventListener('submit',e=>{
- e.preventDefault();if(!fixture?.equipment||run||loading)return;
- const found=fixture.equipmentIds.get($('equipment-id').value.trim())??[];
- $('equipment-error').textContent=found.length===1?'':found.length?'Ambiguous ID; use the full source identity shown in the inspector.':'No exact equipment ID found in this view.';
- if(found.length!==1)return;
- const owner=found[0],{kind,index}=equipmentRow(fixture,owner),g=fixture.equipment.glyphIndex.get(owner)??-1;
- select(kind,index);setCamera({...camera,target:Array.from(fixture.equipmentCenters.subarray(g*3,g*3+3)),zoom:2});
-});
+$('clear').addEventListener('click',clearSelection);
+function clearSelection(){selection=null;syncUrl({sel:null});issueCursor=-1;markIssue();traceRoot=false;refreshOverlay();profile=null;profileTarget=null;profileSegments=[];profileHover=null;updateProfile();resultStatus();meshCursor=-1;showMeshPage();openScope=null;showOpenPage();controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select something on the diagram, an issue, or press <kbd>/</kbd> to search.</p>';updateLabels();}
 $('benchmark').addEventListener('click',benchmark);$('stop').addEventListener('click',()=>stopRun());$('export-report').addEventListener('click',exportReport);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopRun('tab hidden');refreshResults();});
 window.addEventListener('resize',()=>{stopRun('viewport resized');scheduleLabels();});
@@ -501,7 +474,7 @@ window.addEventListener('pagehide',()=>{abort?.abort();clearTimeout(labelTimer);
 $('network-canvas').addEventListener('pointerdown',()=>{if(run)stopRun('user interaction');});
 function changeResults(mode=resultMode,flows=flowMode){
  flowSeconds();flowStamp=null;resultMode=mode;flowMode=flows;
- const url=new URL(location.href);url.searchParams.set('results',resultMode);url.searchParams.set('flows',flowMode);history.replaceState(null,'',url);
+ syncUrl({results:resultMode,flows:flowMode});
  resultStatus();refreshResults();controls();
 }
 function focusResultBranch(b){
@@ -524,12 +497,9 @@ for(const b of document.querySelectorAll('[data-result-preset]'))b.addEventListe
 $('flow-play').addEventListener('click',()=>changeResults(resultMode,flowMode==='motion'?'static':'motion'));
 $('flow-speed').addEventListener('change',()=>{flowSeconds();playback=Number($('flow-speed').value);flowStamp=null;resultStatus();refreshResults();});
 for(const id of ['flow-p','flow-q'])$(id).addEventListener('change',refreshResults);
-$('result-detail').addEventListener('click',()=>{changeResults('loading',flowMode==='none'?'static':flowMode);focusResultBranch(fixture.results.issues.highest);});
-$('voltage-detail').addEventListener('click',focusVoltage);
-$('profile-open').addEventListener('click',()=>{if(!selection){if(fixture.results.issues.voltage.length)focusVoltage();else focusResultBranch(fixture.results.issues.highest>=0?fixture.results.issues.highest:fixture.results.issues.power);}$('voltage-profile').scrollIntoView({behavior:'smooth',block:'start'});});
 function updateProfile(){
- if(!fixture?.results||profileTarget===null){profile=null;profileSegments=[];$('profile-charts').replaceChildren();$('profile-bus').replaceChildren();$('profile-summary').textContent='Select a bus, line or equipment symbol to follow its root-to-bus display-tree path.';$('profile-readout').textContent='Hover a chart point for values; click or press Enter to locate its bus.';return;}
- profile=voltageProfile(fixture,fixture.results,profileTarget);profileSegments=branchSegments(fixture,profile.edges);
+ if(!fixture?.results||profileTarget===null){profile=null;profileSegments=[];showProfileBody(false);$('profile-charts').replaceChildren();$('profile-bus').replaceChildren();$('profile-summary').textContent='Select a bus, line or equipment symbol to follow its root-to-bus display-tree path.';$('profile-readout').textContent='Hover a chart point for values; click or press Enter to locate its bus.';return;}
+ profile=voltageProfile(fixture,fixture.results,profileTarget);profileSegments=branchSegments(fixture,profile.edges);showProfileBody(!profileClosed);
  $('profile-summary').textContent=(fixture.results.kind==='stress'?'ARTIFICIAL STRESS — NOT A SOLUTION. ':'')+(profile.nodes.length?`${busName(profile.root)} → ${busName(profile.target)} · ${profile.nodes.length} buses. `:'')+profile.notice+' Path uses the display spanning tree; mesh alternatives are not inferred.';
  $('profile-charts').innerHTML=profileMarkup(profile,fixture.refs);
  $('profile-bus').replaceChildren();for(const i of profile.shown??[]){const option=document.createElement('option');option.value=String(i);option.textContent=busName(i);$('profile-bus').append(option);}
@@ -563,7 +533,142 @@ function pickedEquipment(info){
  if(id.startsWith('compact-branches-'))return {kind:'branch',index:compactBranch(fixture,fixture.openTies,info.index)};
  if(id.startsWith('branches-'))return {kind:'branch',index:fixture.segmentBranches[info.index]};return null;
 }
+
+// ---- Workbench: issues, KPIs, omnisearch, keyboard and docks ----
+const volts=v=>Number.isFinite(v)?v.toLocaleString(undefined,{maximumFractionDigits:v>=1000?0:2}):'—';
+const plural=(n,word)=>`${fmt(n)} ${word}${n===1?'':'s'}`;
+/** Compact range for KPI tiles: kV above 1 kV, four significant figures; exact values stay in tooltips and the inspector. */
+const range=(a,b)=>{const k=Math.max(Math.abs(a),Math.abs(b))>=1000,f=v=>Number((k?v/1000:v).toPrecision(4)).toLocaleString();return `${f(a)}–${f(b)} ${k?'kV':'V'}`;};
+const zoneLabel=z=>({'phase–neutral':'V P–N','phase–phase':'V P–P'}[z]??'V '+z);
+const rowOf=(kind,index)=>kind==='bus'?fixture.refs.buses[index]:kind==='branch'?fixture.refs.branches[index]:fixture.refs.attachments[index];
+function issueText(x){
+ const id=fixture.refs?rowOf(x.target.kind,x.target.index).id:busName(x.target.index);
+ if(x.kind==='voltage')return {id,value:`${volts(x.value)} V`,detail:`${x.pair.join('–')} ${x.low?'below':'above'} ${volts(x.limit)} V by ${x.score.toFixed(2)} %`};
+ const row=fixture.refs?.branches[x.target.index];
+ return {id,value:`${x.value.toFixed(1)} %`,detail:`${row?row.family+' · ':''}${x.severity==='violation'?'over rating':'≥ 90 % of rating'}`};
+}
+function renderIssues(){
+ const list=$('issue-list'),issues=fixture?.issues??[],shown=issues.slice(0,100);list.replaceChildren();
+ $('issue-count').textContent=fixture?.results?`${fmt(issues.length)}`:'';
+ if(!fixture?.results){$('issue-more').textContent=fixture?.resultError??'No result snapshot for this dataset.';return;}
+ if(!issues.length){const li=document.createElement('li');li.className='issue-ok';li.textContent='No limit violations or loading warnings in this snapshot.';list.append(li);}
+ shown.forEach((x,i)=>{const t=issueText(x),li=document.createElement('li'),b=document.createElement('button');li.className=x.severity;b.dataset.issue=String(i);
+  b.innerHTML=`<span class="sev" aria-label="${x.severity}">${x.severity==='violation'?'!':'▲'}</span><span class="issue-id">${escape(t.id)}</span><span class="issue-value">${escape(t.value)}</span><span class="issue-detail">${escape(t.detail)}</span>`;
+  li.append(b);list.append(li);});
+ $('issue-more').textContent=(fixture.results.kind==='stress'?'Artificial stress values: these are not real issues. ':'')+(issues.length>shown.length?`Showing the worst ${shown.length} of ${fmt(issues.length)}; N walks all of them.`:'');
+ markIssue();
+}
+function markIssue(){for(const b of $('issue-list').querySelectorAll('button[data-issue]'))b.setAttribute('aria-current',String(Number(b.dataset.issue)===issueCursor));$('issue-list').querySelector('[aria-current=true]')?.scrollIntoView({block:'nearest'});}
+function focusIssue(i){
+ const issues=fixture?.issues;if(!issues?.length||loading||run)return;
+ issueCursor=(i+issues.length)%issues.length;const x=issues[issueCursor];
+ changeResults(x.kind==='voltage'?'voltage':'loading',flowMode);reveal(x.target.kind,x.target.index);
+}
+function kpi({label,value,sub='',cls='',target=null,title=''}){
+ const el=document.createElement(target?'button':'div');el.className=`kpi ${cls}`;if(title)el.title=title;
+ el.innerHTML=`<span class="kpi-label">${escape(label)}</span><span class="kpi-value">${escape(value)}</span>${sub?`<span class="kpi-sub">${escape(sub)}</span>`:''}`;
+ if(target)el.addEventListener('click',target);return el;
+}
+function renderKpis(){
+ const strip=$('kpis');strip.replaceChildren();if(!fixture)return;
+ const r=fixture.results,s=fixture.summary,name=(kind,i)=>fixture.refs?rowOf(kind,i).id:busName(i);
+ if(!r){strip.append(kpi({label:'Snapshot',value:'No results',sub:`${fmt(fixture.manifest.count)} buses · topology only`}));return;}
+ if(r.kind==='stress')strip.append(kpi({label:'Artificial stress',value:'NOT A SOLUTION',sub:'rendering test values',cls:'stress',title:r.label}));
+ const {voltage,overload,warning}=s.counts;
+ strip.append(kpi({label:'Violations',value:voltage+overload?fmt(voltage+overload):'None',sub:warning?`+ ${plural(warning,'warning')}`:'within declared limits',cls:voltage+overload?'violation':warning?'warning':'',target:fixture.issues.length?()=>focusIssue(0):null,title:'Go to the worst issue (N)'}));
+ strip.append(kpi({label:'Losses',value:`${volts(s.loss.p)} kW`,sub:`${volts(s.loss.q)} kvar`,title:'Sum of both into-equipment end powers over active branches'}));
+ for(const z of s.zones){
+  const bad=[z.min,z.max].find(e=>e.severity==='violation'),worst=bad??z.min;
+  strip.append(kpi({label:zoneLabel(z.zone),value:range(z.min.volts,z.max.volts),sub:bad?'limit violated':`${fmt(z.buses)} buses in limits`,cls:bad?'violation':'',target:()=>reveal('bus',worst.bus),title:`Min at ${name('bus',z.min.bus)} (${z.min.pair.join('–')}); max at ${name('bus',z.max.bus)} (${z.max.pair.join('–')}). Click to locate ${bad?'the violation':'the minimum'}.`}));
+ }
+ if(s.loading)strip.append(kpi({label:'Max loading',value:`${s.loading.value.toFixed(1)} %`,sub:name('branch',s.loading.branch),cls:s.loading.value>100?'violation':s.loading.value>=90?'warning':'',target:()=>{changeResults('loading',flowMode);reveal('branch',s.loading.branch);},title:r.branches[s.loading.branch].basis??''}));
+ if(s.unbalance)strip.append(kpi({label:'Max unbalance',value:`${s.unbalance.percent.toFixed(2)} %`,sub:s.unbalance.definition,target:()=>reveal('bus',s.unbalance.bus),title:'Magnitude-only unbalance: max deviation from the mean of three same-reference pair voltages'}));
+}
+/** Select and bring into view without assuming which camera the user wants beyond "visible and legible". */
+function reveal(kind,index){
+ if(!fixture||loading||run)return;select(kind,index);
+ if(kind==='branch'&&fixture.refs){fitSelectedRoute();return;}
+ const g=kind==='attachment'?fixture.equipment?.glyphIndex.get(fixture.manifest.branches+index)??-1:-1;
+ const at=g>=0?fixture.equipmentCenters.subarray(g*3,g*3+3):kind==='branch'?fixture.positions.subarray(fixture.endpoints[index*2]*3,fixture.endpoints[index*2]*3+3):fixture.positions.subarray(selectionBus(fixture,kind,index)*3,selectionBus(fixture,kind,index)*3+3);
+ setCamera({...camera,target:[at[0],at[1],0],zoom:Math.max(camera.zoom,g>=0?2:1.1)});
+}
+function hint(kind,index){
+ const r=fixture.results;if(!r)return {text:'',cls:''};
+ if(kind==='branch'){const b=r.branches[index],st=loadingState(b);return {text:Number.isFinite(b.loading)?`${b.loading.toFixed(1)} %`:'',cls:st};}
+ const bus=r.buses[selectionBus(fixture,kind,index)],st=voltageState(bus);
+ if(st==='missing')return {text:'',cls:''};
+ const worst=bus.pairs.reduce((a,p)=>Math.min(p.volts-p.min,p.max-p.volts)<Math.min(a.volts-a.min,a.max-a.volts)?p:a);
+ return {text:`${st==='violation'?'! ':''}${volts(worst.volts)} V`,cls:st};
+}
+function omniUpdate(){
+ const q=$('omni').value,list=$('omni-results');omniItems=[];list.replaceChildren();
+ if(!fixture){omniClose();return;}
+ const add=(item,label,meta,h={text:'',cls:''})=>{const li=document.createElement('li'),i=omniItems.length;omniItems.push(item);li.id=`omni-${i}`;li.setAttribute('role','option');li.dataset.i=String(i);
+  li.innerHTML=`<span class="omni-kind">${escape(item.kindLabel)}</span><span class="omni-id">${escape(label)}</span><span class="omni-hint ${h.cls}">${escape(h.text)}</span><span class="omni-meta">${escape(meta)}</span>`;list.append(li);};
+ const section=text=>{const li=document.createElement('li');li.className='omni-section';li.setAttribute('role','presentation');li.textContent=text;list.append(li);};
+ let total=0;
+ if(!q.trim()){
+  if(!fixture.issues?.length){omniClose();return;}
+  section('WORST ISSUES');fixture.issues.slice(0,5).forEach((x,i)=>{const t=issueText(x);add({issue:i,kindLabel:x.kind},t.id,t.detail,{text:t.value,cls:x.severity});});
+ }else if(fixture.search){
+  const found=search(fixture.search,q,{limit:12});total=found.total;
+  for(const m of found.matches)add({kind:m.kind,index:m.index,kindLabel:m.kind==='bus'?'bus':m.family.split(' / ')[0]},m.id,`${m.source}${m.kind==='bus'?'':' · '+m.family} · ${m.qualified}`,hint(m.kind,m.index));
+ }else{const i=syntheticBus(q,fixture.manifest.count);if(i!==null){total=1;add({kind:'bus',index:i,kindLabel:'bus'},busName(i),'Synthetic fixture bus',{text:'',cls:''});}}
+ if(!omniItems.length){const li=document.createElement('li');li.className='omni-empty';li.textContent=fixture.search?'No source identity contains that text.':`Synthetic buses are B000001–${busName(fixture.manifest.count-1)}.`;list.append(li);}
+ else if(total>omniItems.length){const li=document.createElement('li');li.className='omni-section';li.textContent=`${fmt(total)} matches · keep typing to narrow`;list.append(li);}
+ $('omni-status').textContent=q.trim()?`${fmt(total)} matches`:'';
+ omniActive=omniItems.length?0:-1;list.hidden=false;$('omni').setAttribute('aria-expanded','true');omniMark();
+}
+function omniMark(){for(const li of $('omni-results').querySelectorAll('[role=option]'))li.setAttribute('aria-selected',String(Number(li.dataset.i)===omniActive));
+ if(omniActive>=0){$('omni').setAttribute('aria-activedescendant',`omni-${omniActive}`);$(`omni-${omniActive}`)?.scrollIntoView({block:'nearest'});}else $('omni').removeAttribute('aria-activedescendant');}
+function omniClose(){$('omni-results').hidden=true;$('omni').setAttribute('aria-expanded','false');omniActive=-1;}
+function omniChoose(i){
+ const item=omniItems[i];if(!item)return;omniClose();$('omni').value='';$('omni').blur();
+ if(item.issue!==undefined)focusIssue(item.issue);else reveal(item.kind,item.index);
+ $('network-canvas').focus({preventScroll:true});
+}
+$('omni').addEventListener('input',()=>{clearTimeout(omniTimer);omniTimer=setTimeout(omniUpdate,fixture?.search?.entries.length>20000?80:0);});
+$('omni').addEventListener('focus',omniUpdate);
+$('omni').addEventListener('blur',()=>setTimeout(omniClose,150));
+$('omni').addEventListener('keydown',e=>{
+ if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(omniItems.length){omniActive=(omniActive+(e.key==='ArrowDown'?1:-1)+omniItems.length)%omniItems.length;omniMark();}}
+ else if(e.key==='Enter'){e.preventDefault();clearTimeout(omniTimer);if(omniTimer)omniUpdate();omniChoose(Math.max(0,omniActive));}
+ else if(e.key==='Escape'){e.preventDefault();if($('omni').value)$('omni').value='',omniUpdate();else{omniClose();$('omni').blur();}}
+});
+$('omni-results').addEventListener('pointerdown',e=>{const li=e.target.closest('[role=option]');if(li){e.preventDefault();omniChoose(Number(li.dataset.i));}});
+$('issue-list').addEventListener('click',e=>{const b=e.target.closest('button[data-issue]');if(b)focusIssue(Number(b.dataset.issue));});
+function setMode(mode){$('shell').dataset.mode=mode;for(const b of document.querySelectorAll('[data-app-mode]'))b.setAttribute('aria-pressed',String(b.dataset.appMode===mode));syncUrl({mode:mode==='lab'?'lab':null});}
+for(const b of document.querySelectorAll('[data-app-mode]'))b.addEventListener('click',()=>setMode(b.dataset.appMode));
+// The profile dock opens with a profile unless the user collapsed it; an empty dock never steals canvas space.
+let profileClosed=false;
+function showProfileBody(open){$('profile-body').hidden=!open;$('profile-toggle').setAttribute('aria-expanded',String(open));}
+function toggleProfile(open=$('profile-body').hidden){profileClosed=!open;showProfileBody(open);}
+$('profile-toggle').addEventListener('click',()=>toggleProfile());
+$('help-open').addEventListener('click',()=>$('help').showModal());$('help-close').addEventListener('click',()=>$('help').close());
+$('help').addEventListener('click',e=>{if(e.target===$('help'))$('help').close();});
+const zoomBy=d=>{if(fixture&&!run)setCamera({...camera,zoom:Math.min(5,Math.max(-24,camera.zoom+d))});};
+$('zoom-in').addEventListener('click',()=>zoomBy(.5));$('zoom-out').addEventListener('click',()=>zoomBy(-.5));
+document.addEventListener('keydown',e=>{
+ const typing=e.target.closest?.('input,select,textarea,[contenteditable=true]');
+ if(e.key==='/'&&!typing&&!$('help').open){e.preventDefault();$('omni').focus();return;}
+ if(typing||e.metaKey||e.ctrlKey||e.altKey||$('help').open||!fixture)return;
+ const click=id=>{if(!$(id).disabled)$(id).click();},preset=['power','voltage','loading','topology'][Number(e.key)-1];
+ if(e.key==='Escape'){if(selection)clearSelection();}
+ else if(e.key==='?'){$('help').showModal();}
+ else if(e.key==='n'||e.key==='N'){focusIssue(issueCursor<0?(e.shiftKey?-1:0):issueCursor+(e.shiftKey?-1:1));}
+ else if(preset){document.querySelector(`[data-result-preset=${preset}]`)?.click();}
+ else if(e.key==='['||e.key===']'){click(e.key==='['?'profile-prev':'profile-next');}
+ else if(e.key==='f'||e.key==='F'){click('fit');}
+ else if(e.key==='+'||e.key==='='){zoomBy(.5);}
+ else if(e.key==='-'||e.key==='_'){zoomBy(-.5);}
+ else if(e.key===' '&&!e.target.closest('button,summary,[role=button]')){click('flow-play');}
+ else if(e.key==='p'||e.key==='P'){toggleProfile();}
+ else return;
+ e.preventDefault();
+});
 async function start(){
+ if(palette[resultParams.get('theme')]){theme=resultParams.get('theme');showTheme();}
+ if(resultParams.get('mode')==='lab')setMode('lab');
  try{const response=await fetch('local-data/results-manifest.json',{cache:'no-store'});if(response.ok)resultCatalog=(await response.json()).datasets;}catch{}
   controls();const res=await fetch('fixtures/manifest.json');if(!res.ok)throw new Error('Missing fixtures: run generate.mjs');entries=(await res.json()).map(m=>({...m,id:`synthetic-${m.count}`,label:`Synthetic · ${fmt(m.count)} buses`}));
   try{const local=await fetch('local-data/manifest.json',{cache:'no-store'});if(local.ok){const catalog=await local.json();entries.push(...catalog);$('dataset-note').textContent='Local BMOPF sources staged · raw files remain external';}else if(local.status!==404)throw new Error(`HTTP ${local.status}`);}catch(e){$('dataset-note').textContent='Local catalog unavailable: '+e.message;}

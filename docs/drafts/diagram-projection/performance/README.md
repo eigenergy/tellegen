@@ -37,22 +37,44 @@ they are not reimplemented here.
 
 With external geometry/results staged, open
 `/performance/?dataset=french-medium&layout=tidy-tree&routing=equipment&results=loading&flows=static&open=compact`.
-The **Results** toolbar is above the diagram; layout and routing choices are under
-**Layout, routing and dataset experiments** below the workbench.
 
-1. Choose **Power flow** to focus a high-flow branch and animate P triangles and Q
-   chevrons. Toggle P/Q independently, pause/resume, or change playback speed.
+The page is a **workbench**: the diagram fills the centre, with docked panels around it.
+
+- **KPI strip** (above the canvas): violations and loading warnings, losses
+  (sum of both into-equipment end powers over active branches), voltage range per
+  declared reference (phase–phase, phase–neutral), maximum loading and maximum
+  magnitude unbalance (IEEE PVUR for phase–neutral, NEMA LVUR for phase–phase).
+  Clicking a tile locates the bus or branch behind it. Artificial stress data gets a
+  hatched NOT A SOLUTION tile.
+- **Issues** (left): voltage-limit violations and loading ≥ 90 % ranked by severity,
+  then by relative exceedance. Click, or press <kbd>N</kbd> / <kbd>Shift</kbd>+<kbd>N</kbd>.
+- **Search** (<kbd>/</kbd>): one box over buses, branches, switches and equipment
+  attachments by source ID or `source/id`, with each result's loading or worst
+  pair voltage. On an empty query it suggests the worst issues.
+- **Inspector** (right) and **voltage profile** (bottom). The profile opens when a
+  selection yields a display-tree path; <kbd>P</kbd> collapses it.
+- **View state in the URL**: dataset, layout, routing, result view, theme, Lab
+  mode, camera (`view=x,y,zoom`) and selection (`sel=bus:source/id`,
+  `sel=branch:line:source/id`) by source identity, never array offset.
+- **Lab** mode (top right) holds dataset sizes, layout and routing experiments,
+  open-switch and non-tree browsers, and the camera benchmark.
+
+Press <kbd>?</kbd> for all shortcuts and conventions. The original walkthrough still
+applies:
+
+1. Choose **Power flow** (<kbd>1</kbd>) to focus a high-flow branch and animate P triangles and Q
+   chevrons. Toggle P/Q independently, pause/resume (<kbd>Space</kbd>), or change playback speed.
    The legend fixes separate P and Q scales to the whole result snapshot. Speed
    uses a square-root magnitude scale, not physical propagation; equal P/Q speeds
    need not mean equal numeric values. Tiny nonzero values have a readability floor.
-2. Choose **Highest loading** and hover a wire to see its source ID, signed powers
+2. Click the **Max loading** tile and hover a wire to see its source ID, signed powers
    at **both** ends, current/rating loading and rating basis. Click to pin details.
    The French worst line is `75_LVBranch0306208`, 94.23642% loading.
-3. Choose **Voltage violations (1)**, then **Voltage profile ↓**. The 30-bus path
+3. Press <kbd>N</kbd> for the worst issue. The 30-bus path
    ends at `75_LVBus0623137`, where 3–n is 207.7769 V below its 207.8461 V limit.
    Separate MV and LV plots prevent mixing phase-phase and phase-neutral values.
 4. Hover or focus a chart point to highlight its bus. Click/Enter centers and pins
-   it; Left/Right and Previous/Next move along the same retained path. **Fit path**
+   it; Left/Right, <kbd>[</kbd> / <kbd>]</kbd> and Previous/Next move along the same retained path. **Fit path**
    frames its highlighted routes. Source-coordinate mode explicitly reports that
    a display-tree profile is unavailable.
 
