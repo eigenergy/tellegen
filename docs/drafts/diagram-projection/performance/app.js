@@ -58,7 +58,7 @@ const searchCache=new WeakMap(),syncUrl=state=>history.replaceState(null,'',with
 let issueCursor=-1,omniItems=[],omniActive=-1,omniTimer=0,viewTimer=0,initialView={dataset:resultParams.get('dataset'),sel:resultParams.get('sel'),camera:decodeCamera(resultParams.get('view'))};
 const report={version:3,started:new Date().toISOString(),renderer:`deck.gl ${VERSION} / WebGL2 / OrthographicView`,
   methodology:'Precomputed synthetic or BMOPF geometry; identity and placement recorded per dataset. No viewport culling or network level of detail; optional open-switch presentation is prepared once on load. Frame intervals from deck.gl onAfterRender; not GPU timer queries. First-draw callback is not a GPU completion fence.',
-  environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemoryGiB:navigator.deviceMemory??null},loads:[],runs:[],selections:[],presentations:[]};
+  environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemoryGiB:navigator.deviceMemory??null},loads:[],runs:[],selections:[],presentations:[],morphs:[]};
 function error(message){$('status').hidden=false;$('status').textContent=message;loading=false;pendingLoad=null;controls();}
 function controls(){
   for(const b of document.querySelectorAll('[data-result-preset]'))b.disabled=loading||!!run||!fixture?.results;
@@ -218,12 +218,12 @@ let morph=null;
 function startMorph(from){
  cancelAnimationFrame(morph?.raf);morph=null;
  // Same reference file means the same bus and branch indices; anything else is a different network.
- if(!from||from.refsSha256!==fixture.manifest.refsSha256||from.positions.length!==fixture.positions.length||fixture.manifest.count>MORPH_MAX_BUSES||run||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+ if(!from||from.refsSha256!==fixture.manifest.refsSha256||from.positions.length!==fixture.positions.length||fixture.manifest.count>MORPH_MAX_BUSES&&resultParams.get('morph')!=='always'||run||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
  const n=fixture.manifest.branches;
- morph={from:screenAnchored(from.positions,from.camera,camera),cur:new Float32Array(fixture.positions.length),s:new Float32Array(n*3),t:new Float32Array(n*3),start:null,raf:0};
- // The clock starts on the first animated frame, so geometry upload for the hidden target layers never reads as a jump.
- const tick=now=>{if(!morph)return;morph.start??=now;const k=ease(Math.min(1,(now-morph.start)/MORPH_MS));lerpInto(morph.cur,morph.from,fixture.positions,k);chordsInto(morph.s,morph.t,fixture.endpoints,morph.cur);
-  if(k<1){render();morph.raf=requestAnimationFrame(tick);}else{morph=null;render();}};
+ morph={from:screenAnchored(from.positions,from.camera,camera),cur:new Float32Array(fixture.positions.length),s:new Float32Array(n*3),t:new Float32Array(n*3),start:null,raf:0,last:null,intervals:[]};
+ // One warm-up frame draws the hidden target layers (their one-time GPU upload) before the clock starts.
+ const tick=now=>{if(!morph)return;if(!morph.warm){morph.warm=true;render();morph.raf=requestAnimationFrame(tick);return;}morph.start??=now;if(morph.last!==null)morph.intervals.push(now-morph.last);morph.last=now;const k=ease(Math.min(1,(now-morph.start)/MORPH_MS));lerpInto(morph.cur,morph.from,fixture.positions,k);chordsInto(morph.s,morph.t,fixture.endpoints,morph.cur);
+  if(k<1){render();morph.raf=requestAnimationFrame(tick);}else{const v=morph.intervals;report.morphs.push({dataset:fixture.manifest.id,layoutMode:fixture.manifest.layoutMode,buses:fixture.manifest.count,frames:v.length,p50Ms:percentile(v,.5),p95Ms:percentile(v,.95),maxMs:v.length?Math.max(...v):null,intervalsMs:v,environment:environment()});morph=null;render();}};
  morph.raf=requestAnimationFrame(tick);
 }
 function morphLayers(p,common){

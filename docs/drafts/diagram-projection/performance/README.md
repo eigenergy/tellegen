@@ -77,8 +77,9 @@ The page is a **workbench**: the diagram fills the centre, with docked panels ar
   the tidy tree animates each bus from where it is on screen to its new position
   (900 ms, straight chords while moving; routed geometry returns at the end; target
   layers stay resident but hidden, so no re-upload at the end). Selection and source
-  identities carry over. Skipped for reduced motion and above 25,000 buses, where the
-  per-frame interpolation and re-upload are not yet measured on a real GPU. Headless
+  identities carry over. Skipped for reduced motion and above 25,000 buses unless the
+  URL has `?morph=always` (a measurement switch); each morph's frame intervals go
+  into the exported Lab report under `morphs`. Headless
   software-GL checks on French ran the morph at 16.7 ms p50/p95 after a one-time
   ~0.5 s layout upload; SAPN cannot be judged in software GL.
 - **Per-phase inspector**: buses show each declared pair on its own band (±25 %
@@ -93,7 +94,9 @@ The page is a **workbench**: the diagram fills the centre, with docked panels ar
   200k segments), both with a title block (dataset, layout, view, camera, result
   hash, timestamp).
 
-Press <kbd>?</kbd> for all shortcuts and conventions. The original walkthrough still
+Press <kbd>?</kbd> for all shortcuts and conventions. Real-GPU measurements of the
+workbench are in [`evidence/workbench-gpu-m0.json`](evidence/workbench-gpu-m0.json);
+the [usability protocol](usability-protocol.md) tests it with engineers. The original walkthrough still
 applies:
 
 1. Choose **Power flow** (<kbd>1</kbd>) to focus a high-flow branch and animate P triangles and Q
