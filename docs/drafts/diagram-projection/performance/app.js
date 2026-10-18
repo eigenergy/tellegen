@@ -642,7 +642,8 @@ function renderIssues(){
  $('issue-more').textContent=(fixture.results.kind==='stress'?'Artificial stress values: these are not real issues. ':'')+(issues.length>shown.length?`Showing the worst ${shown.length} of ${fmt(issues.length)}; N walks all of them.`:'');
  markIssue();
 }
-function markIssue(){for(const b of $('issue-list').querySelectorAll('button[data-issue]'))b.setAttribute('aria-current',String(Number(b.dataset.issue)===issueCursor));$('issue-list').querySelector('[aria-current=true]')?.scrollIntoView({block:'nearest'});}
+function markIssue(){for(const b of $('issue-list').querySelectorAll('button[data-issue]'))b.setAttribute('aria-current',String(Number(b.dataset.issue)===issueCursor));// Scroll only the list: scrollIntoView would also scroll the page on narrow screens.
+ const list=$('issue-list'),b=list.querySelector('[aria-current=true]');if(b){const top=b.offsetTop-list.offsetTop;if(top<list.scrollTop||top+b.offsetHeight>list.scrollTop+list.clientHeight)list.scrollTop=top-list.clientHeight/2;}}
 function focusIssue(i){
  const issues=fixture?.issues;if(!issues?.length||loading||run)return;
  issueCursor=(i+issues.length)%issues.length;const x=issues[issueCursor];
