@@ -58,6 +58,24 @@ The page is a **workbench**: the diagram fills the centre, with docked panels ar
   `sel=branch:line:source/id`) by source identity, never array offset.
 - **Lab** mode (top right) holds dataset sizes, layout and routing experiments,
   open-switch and non-tree browsers, and the camera benchmark.
+- **Colour modes**: threshold views stay the default (neutral drawing, colour only
+  for problems). *Loading (continuous)* uses the application's sequential ramp
+  (`colors.ts`, checked by test) over % of rating. *Voltage within band* uses the
+  diverging ramp over each bus's declared band (worst pair, −1 = min, +1 = max), and
+  colours each branch by its downstream bus. No nominal base is assumed.
+- **Flow encoding**: Power flow shows static P/Q arrows for direction and line
+  width ∝ √|P| (1–6 px on the fixed snapshot scale) for magnitude; animation is
+  opt-in (<kbd>Space</kbd>).
+- **Value labels**: in view and above the label zoom, values for the current family
+  (voltage nearest a limit, loading %, or |P|) are placed selection first, then
+  violations, then magnitude, within a 60-label collision budget.
+- **Results tables** (bottom dock: Buses / Branches): virtualised, sortable,
+  filterable, issues-only, two-way linked to the diagram selection (arrow keys walk
+  rows). CSV export keeps full precision with a provenance header, and neutralises
+  formula-like text.
+- **Export**: PNG of the rendered view, or vector SVG of the visible region (up to
+  200k segments), both with a title block (dataset, layout, view, camera, result
+  hash, timestamp).
 
 Press <kbd>?</kbd> for all shortcuts and conventions. The original walkthrough still
 applies:

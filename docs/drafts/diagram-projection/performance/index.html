@@ -30,9 +30,10 @@
   <div class="dock-heading"><h2 id="view-heading" class="eyebrow">VIEW</h2></div>
   <div class="results-presets" role="group" aria-label="Results view"><button data-result-preset="power" aria-pressed="false" title="Power flow (1)">Power flow</button><button data-result-preset="voltage" aria-pressed="false" title="Voltage (2)">Voltage</button><button data-result-preset="loading" aria-pressed="false" title="Loading (3)">Loading</button><button data-result-preset="topology" aria-pressed="false" title="Topology (4)">Topology</button></div>
   <div class="results-actions"><label class="toggle"><input id="flow-p" type="checkbox" checked> P ▸</label><label class="toggle"><input id="flow-q" type="checkbox" checked> Q ›</label><button id="flow-play" class="action">Animate flows</button><label for="flow-speed" class="visually-hidden">Playback speed</label><select id="flow-speed" title="Playback speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option></select></div>
+  <div class="results-actions"><label class="toggle" title="Line width proportional to √|P| on the snapshot scale"><input type="checkbox" id="flow-width" checked> Width by |P|</label><label class="toggle" title="Values for the current view, most severe first, within a label budget"><input type="checkbox" id="value-labels" checked> Value labels</label></div>
   <div class="results-actions"><label class="toggle"><input type="checkbox" id="labels"> Bus labels</label><label class="toggle"><input type="checkbox" id="edge-picking" checked> Hover / select wires</label></div>
   <p id="flow-hint" class="fine"></p>
-  <details class="result-settings"><summary>Colour, flows &amp; conventions</summary><div class="actions"><label for="result-mode">Colour</label><select id="result-mode"><option value="none">Equipment / topology</option><option value="voltage">Voltage limits</option><option value="loading">Equipment loading</option></select><label for="flow-mode">P / Q</label><select id="flow-mode"><option value="none">Off</option><option value="static">Paused markers</option><option value="motion">Animate magnitude</option></select></div><p id="flow-scale" class="flow-scale"></p><p class="fine">P ▸ teal · Q › violet. Positive end powers enter equipment; ends need not be opposite. Speed represents magnitude on separate fixed snapshot scales (square root, 2–72 CSS px/s at 1×), not physical propagation. Arrow size is constant; tiny nonzero values use a 2 px/s readability floor. Missing and zero flows have no marker. Voltage uses declared terminal-pair limits. Transformer loading is aggregate MVA, not a worst-coil thermal check.</p></details>
+  <details class="result-settings"><summary>Colour, flows &amp; conventions</summary><div class="actions"><label for="result-mode">Colour</label><select id="result-mode"><option value="none">Equipment / topology</option><option value="voltage">Voltage limits</option><option value="voltage-band">Voltage within band</option><option value="loading">Loading thresholds</option><option value="loading-heat">Loading (continuous)</option></select><label for="flow-mode">P / Q</label><select id="flow-mode"><option value="none">Off</option><option value="static">Paused markers</option><option value="motion">Animate magnitude</option></select></div><p id="flow-scale" class="flow-scale"></p><p class="fine">P ▸ teal · Q › violet. Positive end powers enter equipment; ends need not be opposite. Speed represents magnitude on separate fixed snapshot scales (square root, 2–72 CSS px/s at 1×), not physical propagation. Arrow size is constant; tiny nonzero values use a 2 px/s readability floor. Missing and zero flows have no marker. Voltage uses declared terminal-pair limits. Transformer loading is aggregate MVA, not a worst-coil thermal check.</p></details>
   <p id="result-status" class="fine" aria-live="polite"></p>
  </section>
 
@@ -82,7 +83,7 @@
   <div class="canvas-heading"><span id="canvas-title">Loading fixtures…</span><span id="zoom-readout">ORTHOGRAPHIC · PRECOMPUTED</span></div>
   <div id="status" role="status">Loading renderer…</div>
   <div id="result-watermark" class="result-watermark"></div>
-  <div class="canvas-tools" role="group" aria-label="Camera"><button id="zoom-in" class="icon-button" aria-label="Zoom in" title="Zoom in (+)">+</button><button id="zoom-out" class="icon-button" aria-label="Zoom out" title="Zoom out (−)">−</button><button id="fit" class="icon-button" aria-label="Fit network" title="Fit network (F)">⤢</button><button id="detail" class="icon-button lab-only" aria-label="Feeder detail" title="Feeder detail">◎</button></div>
+  <div class="canvas-tools" role="group" aria-label="Camera"><button id="zoom-in" class="icon-button" aria-label="Zoom in" title="Zoom in (+)">+</button><button id="zoom-out" class="icon-button" aria-label="Zoom out" title="Zoom out (−)">−</button><button id="fit" class="icon-button" aria-label="Fit network" title="Fit network (F)">⤢</button><button id="detail" class="icon-button lab-only" aria-label="Feeder detail" title="Feeder detail">◎</button><span class="tool-gap"></span><button id="export-png" class="icon-button text" title="Export PNG of this view with a title block">PNG</button><button id="export-svg" class="icon-button text" title="Export vector SVG of the visible region with a title block">SVG</button></div>
   <div class="canvas-help" title="Drag to pan · scroll to zoom · click to inspect"><kbd>?</kbd> shortcuts</div>
  </div>
  <div class="sheet-footer status-bar"><span id="overlay-legend" hidden></span><span id="topology-legend"><i class="legend-line"></i> Tree / line <i class="legend-line mesh"></i> Non-tree <i class="legend-line transformer"></i> Transformer <i class="legend-line switch"></i> Closed switch <i class="legend-line open"></i> Open / inactive</span><span id="draw-count" class="lab-only">All geometry submitted · no aggregation</span></div>
@@ -99,15 +100,23 @@
  </section>
 </aside>
 
-<section id="voltage-profile" class="dock-bottom profile-panel" aria-label="Linked voltage profile">
- <div class="dock-heading"><button id="profile-toggle" class="link-button" aria-expanded="false" aria-controls="profile-body"><span class="eyebrow">VOLTAGE PROFILE</span> <span aria-hidden="true" class="chevron">▾</span></button><span id="profile-summary" class="fine">Select a bus, line or equipment symbol to follow its root-to-bus display-tree path.</span><div class="actions"><label class="toggle"><input type="checkbox" id="profile-path" checked> Highlight path</label><button id="profile-fit" class="action">Fit path</button></div></div>
+<section id="voltage-profile" class="dock-bottom profile-panel" aria-label="Voltage profile and results table">
+ <div class="dock-heading">
+  <button id="profile-toggle" class="icon-button" aria-expanded="false" aria-controls="profile-body" aria-label="Show or hide the bottom panel (P)" title="Show / hide (P)"><span aria-hidden="true" class="chevron">▾</span></button>
+  <div class="dock-tabs" role="tablist" aria-label="Bottom panel"><button role="tab" data-dock-tab="profile" aria-selected="true">Voltage profile</button><button role="tab" data-dock-tab="bus" aria-selected="false">Buses</button><button role="tab" data-dock-tab="branch" aria-selected="false">Branches</button></div>
+  <span id="profile-summary" class="fine profile-only">Select a bus, line or equipment symbol to follow its root-to-bus display-tree path.</span>
+  <div class="actions profile-only"><label class="toggle"><input type="checkbox" id="profile-path" checked> Highlight path</label><button id="profile-fit" class="action">Fit path</button></div>
+ </div>
  <div id="profile-body" class="profile-body" hidden>
-  <div id="profile-charts"></div>
-  <div class="profile-side">
-   <p class="fine">Volts vs branch steps · <span class="phase-0">● first pair</span> · <span class="phase-1">● second pair</span> · <span class="phase-2">● third pair</span> · dashed declared bounds · ! violation</p>
-   <div class="profile-navigation"><button id="profile-prev" class="action" aria-label="Previous bus" title="Previous path bus ([)">‹</button><label for="profile-bus" class="visually-hidden">Path bus</label><select id="profile-bus"></select><button id="profile-next" class="action" aria-label="Next bus" title="Next path bus (])">›</button></div>
-   <pre id="profile-readout" class="result-inspector" aria-live="polite">Hover a chart point for values; click or press Enter to locate its bus. Arrow keys move along the path.</pre>
+  <div class="profile-pane profile-only">
+   <div id="profile-charts"></div>
+   <div class="profile-side">
+    <p class="fine">Volts vs branch steps · <span class="phase-0">● first pair</span> · <span class="phase-1">● second pair</span> · <span class="phase-2">● third pair</span> · dashed declared bounds · ! violation</p>
+    <div class="profile-navigation"><button id="profile-prev" class="action" aria-label="Previous bus" title="Previous path bus ([)">‹</button><label for="profile-bus" class="visually-hidden">Path bus</label><select id="profile-bus"></select><button id="profile-next" class="action" aria-label="Next bus" title="Next path bus (])">›</button></div>
+    <pre id="profile-readout" class="result-inspector" aria-live="polite">Hover a chart point for values; click or press Enter to locate its bus. Arrow keys move along the path.</pre>
+   </div>
   </div>
+  <div id="table-pane" class="table-pane" hidden></div>
  </div>
 </section>
 </div>
@@ -121,9 +130,11 @@
   <dt><kbd>[</kbd> / <kbd>]</kbd></dt><dd>Walk the voltage-profile path</dd>
   <dt><kbd>F</kbd></dt><dd>Fit network · <kbd>+</kbd>/<kbd>−</kbd> zoom</dd>
   <dt><kbd>Space</kbd></dt><dd>Pause / animate flows</dd>
-  <dt><kbd>P</kbd></dt><dd>Show / hide voltage profile</dd>
+  <dt><kbd>P</kbd></dt><dd>Show / hide the bottom panel (profile and tables)</dd>
+  <dt><kbd>↑</kbd> / <kbd>↓</kbd></dt><dd>In a results table: previous / next row</dd>
   <dt><kbd>Esc</kbd></dt><dd>Clear selection or close</dd>
  </dl>
+ <p class="fine">Colour modes: threshold views (default) keep the drawing neutral and colour only problems; continuous views show loading as % of rating and voltage as position in each bus's declared band (worst pair). Line width in Power flow is proportional to √|P| on the snapshot scale. PNG and SVG exports carry a title block with dataset, view, camera and result hash; SVG is vector and limited to the visible region. Table CSV exports keep full precision and a provenance header.</p>
  <p class="fine">The URL keeps dataset, layout, view, selection and camera: copy it to share exactly what you see.</p>
  <p class="fine">Sign convention: positive end P/Q enters the equipment at that end, so a branch's two end powers sum to what it consumes (its losses). Voltages are magnitudes of declared terminal-pair differences, compared against declared pair limits; no nominal base is inferred. Unbalance uses magnitudes only: IEEE PVUR for phase–neutral, NEMA LVUR for phase–phase. Loading: amber ≥ 90 %, red &gt; 100 % of the declared rating basis. Profiles follow the display spanning tree, not an inferred unique path through a mesh.</p>
 </dialog>
