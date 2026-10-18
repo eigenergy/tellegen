@@ -119,3 +119,33 @@ export interface DiagramScene {
   bounds: Box;
   primitives: ScenePrimitive[];
 }
+
+// Proposed production boundary; gallery JSON uses a narrower fixture adapter.
+export interface DiagramResultSnapshot {
+  schema_version: 1;
+  model_ref: ModelRef; // electrical identity, independent of layout/geometry_key
+  result_key: string; // immutable solver snapshot digest
+  provenance: { solver: string; revision: string; input_hash: string; created_at: string };
+  status: "converged" | "stale" | "unavailable" | "rendering_stress";
+  bus_voltages: {
+    source: SourceRef;
+    pairs: { terminals: [string, string]; magnitude_v: number; min_v?: number; max_v?: number }[];
+  }[];
+  branch_results: {
+    source: SourceRef;
+    // Positive at either end means INTO equipment; never derive one end from the other.
+    ends: [DiagramEndPower | null, DiagramEndPower | null];
+    loading: null | {
+      ratio: number;
+      basis: "max_conductor_current" | "aggregate_end_apparent_power";
+      limiting_terminal?: string;
+      rating_source: SourceRef;
+    };
+  }[];
+}
+export interface DiagramEndPower {
+  p_w: number;
+  q_var: number;
+  // Include neutral; aggregate and individual quantities must remain distinguishable.
+  terminals: { terminal: string; p_w: number; q_var: number; current_a: number }[];
+}

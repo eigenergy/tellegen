@@ -1,5 +1,7 @@
 import {Deck,OrthographicView,COORDINATE_SYSTEM,VERSION} from '@deck.gl/core';
 import {LineLayer,ScatterplotLayer,TextLayer} from '@deck.gl/layers';
+import {bindResults} from './results-adapter.mjs';
+import {prepareResults,visibleAnchors,flowGlyphs,resultDescription,loadingState,voltageState} from './results-overlay.mjs';
 import {prepareEquipment,equipmentRow} from './equipment.mjs';
 import {decodeFixture} from './fixture.mjs';
 import {busQuery,sourceKey} from './bmopf-adapter.mjs';
@@ -15,6 +17,11 @@ const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 const locationKey=(f,i)=>`${f.positions[i*3]},${f.positions[i*3+1]}`;
 const identity=m=>({id:m.id,layoutMode:m.layoutMode??'synthetic',routingMode:m.routingMode??'current',routing:m.routing??null,equipment:m.equipment??null,layout:m.layout??null,kind:m.kind??'synthetic',count:m.count,sha256:m.sha256,refsSha256:m.refsSha256??null,adapterVersion:m.adapterVersion??null,scenario:m.scenario??null,sources:m.sources??[],placement:m.placement??'synthetic schematic',stagingMs:m.stagingMs??null});
 const palette={dark:{line:[108,137,150,255],node:[198,207,203,255],open:[229,170,84,255],label:[238,234,225,255],bg:[23/255,27/255,32/255,1]},paper:{line:[108,125,127,255],node:[48,69,78,255],open:[178,94,0,255],label:[32,36,43,255],bg:[252/255,251/255,247/255,1]}};
+const resultParams=new URLSearchParams(location.search);
+let resultMode=['voltage','loading'].includes(resultParams.get('results'))?resultParams.get('results'):'none';
+let flowMode=['static','motion'].includes(resultParams.get('flows'))?resultParams.get('flows'):'none';
+if(matchMedia('(prefers-reduced-motion: reduce)').matches&&flowMode==='motion')flowMode='static';
+let resultCatalog={},flowScope={anchors:[],stats:{}},flowData=[],flowRaf=0,flowPeak=0,scopeMs=0;
 let theme='dark', fixture=null, entries=[], deck, ready=false, loading=false, request=0, abort;
 let camera={target:[0,0,0],zoom:0,minZoom:-24,maxZoom:5}, selection=null, labelData=[], run=null;
 const requestedLayout=new URLSearchParams(location.search).get('layout');
@@ -34,6 +41,7 @@ const report={version:3,started:new Date().toISOString(),renderer:`deck.gl ${VER
   environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemoryGiB:navigator.deviceMemory??null},loads:[],runs:[],selections:[],presentations:[]};
 function error(message){$('status').hidden=false;$('status').textContent=message;loading=false;pendingLoad=null;controls();}
 function controls(){
+  for(const id of ['result-mode','flow-mode','result-detail','voltage-detail'])$(id).disabled=loading||!!run||!fixture?.results;
   for(const el of document.querySelectorAll('button[data-theme], #labels, #edge-picking, #fit, #detail, #benchmark, #bus-id, #search button, #clear, #next-colocated, #trace-root, #focus-source'))el.disabled=loading||!!run||!ready||!fixture;
   for(const el of document.querySelectorAll('[data-size], #dataset'))el.disabled=loading||!!run||!ready;
   for(const el of document.querySelectorAll('[data-layout]'))el.disabled=loading||!!run||!ready||fixture?.manifest.kind!=='bmopf'||(el.dataset.layout==='source'&&fixture?.manifest.sourceCoordinatesAvailable===false)||(el.dataset.layout!=='source'&&!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[el.dataset.layout]);
@@ -52,10 +60,10 @@ function controls(){
   $('open-all').disabled=loading||!!run||openScope===null;
   $('stop').disabled=!run;
 }
-function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,equipmentGlyphs:fixture?.manifest.equipment?.glyphs??0,equipmentStrokes:fixture?.manifest.equipment?.strokes??0,equipmentArrayBytes:fixture?.equipment?.arrayBytes??0,selectedOpenSwitch:!!openSelected(),selectionRouteSegments:overlay.length,openSwitchPresentation:openMode,openSwitches:fixture?.openTies.branchIndices.length??0,openEndpointMarkers:compactOpen()?fixture.openTies.markers.length:0,suppressedRouteSegments:compactOpen()?fixture.openTies.suppressedSegments:0,extraPresentationArrayBytes:fixture?.openArrayBytes??0,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
+function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,results:fixture?.results?{kind:fixture.results.kind,sha256:fixture.manifest.resultSha256,mode:resultMode,flows:flowMode,scope:'visible endpoint segments at detail zoom',peakFlowGlyphs:flowPeak,lastScope:flowScope.stats,maxScopeMs:scopeMs,arrayBytes:fixture.results.arrayBytes,prepareMs:fixture.results.prepareMs}:null,equipmentGlyphs:fixture?.manifest.equipment?.glyphs??0,equipmentStrokes:fixture?.manifest.equipment?.strokes??0,equipmentArrayBytes:fixture?.equipment?.arrayBytes??0,selectedOpenSwitch:!!openSelected(),selectionRouteSegments:overlay.length,openSwitchPresentation:openMode,openSwitches:fixture?.openTies.branchIndices.length??0,openEndpointMarkers:compactOpen()?fixture.openTies.markers.length:0,suppressedRouteSegments:compactOpen()?fixture.openTies.suppressedSegments:0,extraPresentationArrayBytes:fixture?.openArrayBytes??0,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
 function fitCamera(){const b=fixture.manifest.bounds,r=$('canvas-wrap').getBoundingClientRect();return {...camera,target:[(b[0]+b[2])/2,(b[1]+b[3])/2,0],zoom:Math.log2(Math.min((r.width-70)/(b[2]-b[0]),(r.height-95)/(b[3]-b[1])))};}
 function detailCamera(){const m=fixture.manifest,r=Math.floor(m.regions/2),i=m.kind==='bmopf'?Math.floor(m.count/2):r*m.regionSize+2;return {...camera,target:[fixture.positions[i*3]+200,fixture.positions[i*3+1],0],zoom:0.6};}
-function setCamera(next,updateLabels=true){camera={target:next.target,zoom:next.zoom,minZoom:-24,maxZoom:5};deck.setProps({viewState:camera});$('zoom-readout').textContent=`${(2**camera.zoom).toPrecision(3)}× · PRECOMPUTED`;if(updateLabels)scheduleLabels();}
+function setCamera(next,updateLabels=true){camera={target:next.target,zoom:next.zoom,minZoom:-24,maxZoom:5};deck.setProps({viewState:camera});refreshResults();$('zoom-readout').textContent=`${(2**camera.zoom).toPrecision(3)}× · PRECOMPUTED`;if(updateLabels)scheduleLabels();}
 function prepare(f){
   const m=f.manifest;
   if(f.busbarSources)f.busbarData={length:m.count,attributes:{getSourcePosition:{value:f.busbarSources,size:3},getTargetPosition:{value:f.busbarTargets,size:3}}};
@@ -199,10 +207,10 @@ function layers(){
   const roots=[...new Set([...(layout?.sourceBuses??[]),...(layout?.components??[]).map(c=>c.root)])].map(i=>({position:fixture.positions.subarray(i*3,i*3+3),label:sourceRoots.has(i)?'Source':'Layout root'}));
   return [
     new TextLayer({...common,id:`panel-labels-${fixture.manifest.id}-${theme}`,data:panels.filter(p=>(p.bounds[2]-p.bounds[0])*2**camera.zoom>170),getPosition:s=>[s.bounds[0],s.bounds[1]-30,0],getText:s=>s.label,getColor:p.label,getSize:13,getTextAnchor:'start',getAlignmentBaseline:'bottom',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
-    new LineLayer({...common,id:`branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.lineData,visible:!compactOpen(),opacity:contextOpacity,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false}),
-    ...(fixture.compactLineData?[new LineLayer({...common,id:`compact-branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.compactLineData,visible:compactOpen(),opacity:contextOpacity,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false})]:[]),
+    new LineLayer({...common,id:`branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:resultMode==='loading'&&fixture.results?fixture.results.lineData:fixture.lineData,visible:!compactOpen(),opacity:contextOpacity,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false}),
+    ...(fixture.compactLineData?[new LineLayer({...common,id:`compact-branches-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:resultMode==='loading'&&fixture.results?fixture.results.compactLineData:fixture.compactLineData,visible:compactOpen(),opacity:contextOpacity,getWidth:1,widthUnits:'pixels',pickable:$('edge-picking').checked,autoHighlight:false})]:[]),
     ...(fixture.busbarData?[new LineLayer({...common,id:`busbars-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.busbarData,opacity:contextOpacity,getColor:p.node,getWidth:2,widthUnits:'pixels',pickable:true})]:[]),
-    new ScatterplotLayer({...common,id:`buses-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:fixture.nodeData,opacity:contextOpacity,getRadius:1.9,radiusUnits:'common',radiusMinPixels:.65,radiusMaxPixels:4,pickable:true,stroked:false}),
+    new ScatterplotLayer({...common,id:`buses-${fixture.manifest.id}-${fixture.manifest.sha256}-${theme}`,data:resultMode==='voltage'&&fixture.results?fixture.results.nodeData:fixture.nodeData,opacity:contextOpacity,getRadius:1.9,radiusUnits:'common',radiusMinPixels:.65,radiusMaxPixels:4,pickable:true,stroked:false}),
     new ScatterplotLayer({...common,id:`open-endpoints-${fixture.manifest.id}-${fixture.manifest.sha256}`,data:fixture.openTies.markers,visible:compactOpen(),opacity:contextOpacity,getPosition:d=>d.position,getRadius:7,radiusUnits:'common',radiusMinPixels:2.5,radiusMaxPixels:6,filled:false,stroked:true,getLineColor:p.open,lineWidthUnits:'pixels',getLineWidth:1.5,pickable:true}),
     new ScatterplotLayer({...common,id:'layout-roots',data:roots,opacity:contextOpacity,getPosition:d=>d.position,getRadius:4,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
     new TextLayer({...common,id:'root-labels',data:!inspecting&&camera.zoom>-2?roots.slice(0,100):[],getPosition:d=>d.position,getText:d=>d.label,getColor:p.open,getSize:11,getPixelOffset:[-8,0],getTextAnchor:'end',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
@@ -213,9 +221,45 @@ function layers(){
     new ScatterplotLayer({...common,id:'circuit-endpoints',data:endpointsVisible?endpointData:[],getPosition:d=>d.position,getRadius:6,radiusUnits:'pixels',getFillColor:openInspection?p.open:[66,159,181,255],stroked:true,getLineColor:p.label,lineWidthUnits:'pixels',getLineWidth:1.5,pickable:false}),
     new TextLayer({...common,id:'circuit-endpoint-labels',data:endpointsVisible?endpointData:[],getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,getPixelOffset:d=>[d.position[0]>camera.target[0]?-10:10,d.end?22:-12],getTextAnchor:d=>d.position[0]>camera.target[0]?'end':'start',getAlignmentBaseline:'bottom',updateTriggers:{getPixelOffset:camera.target[0],getTextAnchor:camera.target[0]},fontFamily:'Plex, monospace',characterSet:'auto',background:true,getBackgroundColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),backgroundPadding:[4,3],pickable:false}),
     ...equipmentLayers(common,p,contextOpacity),
+    new TextLayer({...common,id:'result-flows',data:flowData,getPosition:d=>d.position,getText:d=>d.text,getAngle:d=>d.angle,getColor:d=>d.color,getSize:22,fontFamily:'Plex, monospace',characterSet:['▸','›'],getTextAnchor:'middle',getAlignmentBaseline:'center',pickable:false}),
+    new TextLayer({...common,id:'selected-result-labels',data:fixture.results&&selection?.kind==='branch'&&flowMode!=='none'&&camera.zoom>=-.2?flowScope.anchors.filter(a=>a.b===selection.index).map(a=>({position:a.position,text:(a.side?'To':'From')+' '+fixture.results.branches[a.b].ends[a.side].p.toFixed(2)+' kW / '+fixture.results.branches[a.b].ends[a.side].q.toFixed(2)+' kvar'})):[],getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,getPixelOffset:[0,28],getTextAnchor:'middle',background:true,getBackgroundColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),backgroundPadding:[3,3],fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
+    new TextLayer({...common,id:'result-warning-labels',data:resultWarnings(),getPosition:d=>d.position,getText:d=>d.text,getColor:[225,91,88,255],getSize:13,getPixelOffset:[0,-32],fontFamily:'Plex, monospace',characterSet:'auto',getTextAnchor:'middle',pickable:false}),
     new ScatterplotLayer({...common,id:'selection-bus',data:nodeSelection,getPosition:d=>d.position,getRadius:6,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
     new TextLayer({...common,id:'labels',data:labelData,getPosition:d=>d.position,getText:d=>d.text,getColor:p.label,getSize:12,sizeUnits:'pixels',fontFamily:'Plex, monospace',characterSet:'auto',fontSettings:{sdf:true},getTextAnchor:d=>d.anchor??'start',getAlignmentBaseline:'bottom',getPixelOffset:[5,-5],pickable:false})
   ];
+}
+function resultWarnings(){
+ if(!fixture?.results||camera.zoom<-.2||resultMode==='none')return [];
+ if(resultMode==='voltage'){
+  const rect=$('canvas-wrap').getBoundingClientRect(),scale=2**camera.zoom,x0=camera.target[0]-rect.width/2/scale,y0=camera.target[1]-rect.height/2/scale,x1=x0+rect.width/scale,y1=y0+rect.height/scale,data=[];let visited=0;
+  if((Math.floor(x1/128)-Math.floor(x0/128)+1)*(Math.floor(y1/128)-Math.floor(y0/128)+1)>4096)return [];
+  for(let y=Math.floor(y0/128);y<=Math.floor(y1/128);y++)for(let x=Math.floor(x0/128);x<=Math.floor(x1/128);x++)for(const i of fixture.cells.get(`${x},${y}`)??[]){if(++visited>4096||data.length>=24)return data;if(voltageState(fixture.results.buses[i])==='violation')data.push({position:fixture.positions.subarray(i*3,i*3+3),text:'! V'});}
+  return data;
+ }
+ return flowScope.anchors.filter(a=>a.side===0&&loadingState(fixture.results.branches[a.b])==='violation').slice(0,24).map(a=>({position:a.position,text:'! '+fixture.results.branches[a.b].loading.toFixed(1)+'%'}));
+}
+function refreshResults(){
+ cancelAnimationFrame(flowRaf);flowRaf=0;flowData=[];flowScope={anchors:[],stats:{}};
+ if(!fixture?.results)return;
+ const start=performance.now(),rect=$('canvas-wrap').getBoundingClientRect();
+ if(flowMode!=='none'||resultMode==='loading')flowScope=visibleAnchors(fixture.results,camera,rect.width,rect.height);
+ scopeMs=Math.max(scopeMs,performance.now()-start);
+ if(flowMode!=='none')flowData=flowGlyphs(fixture.results,flowScope.anchors,camera.zoom,flowMode==='motion'?performance.now()/1000:.55);
+ flowPeak=Math.max(flowPeak,flowData.length);
+ if(flowMode==='motion'&&flowScope.anchors.length&&!document.hidden){
+  function tick(now){if(!fixture?.results||flowMode!=='motion'||document.hidden)return;flowData=flowGlyphs(fixture.results,flowScope.anchors,camera.zoom,now/1000);flowPeak=Math.max(flowPeak,flowData.length);render();flowRaf=requestAnimationFrame(tick);}
+  flowRaf=requestAnimationFrame(tick);
+ }
+ if(ready)render();
+}
+function resultStatus(){
+ $('topology-legend').hidden=resultMode!=='none'&&!!fixture?.results;$('overlay-legend').hidden=!$('topology-legend').hidden;$('overlay-legend').textContent=resultMode==='loading'?'Loading: neutral normal · amber ≥90% · red ! >100% · missing neutral':'Voltage: neutral within declared limits · red ! outside limits · missing neutral';
+ $('result-mode').value=resultMode;$('flow-mode').value=flowMode;
+ const r=fixture?.results;
+ $('result-status').textContent=r?r.label+(r.kind==='solved'?` · ${r.provenance.iterations} iterations · saved ${r.provenance.created}`:' · values are deliberately nonphysical'):fixture?.resultError??'No staged results for this dataset. Run stage-results.mjs for the French feeder and SAPN rendering stress test.';
+ $('result-status').classList.toggle('stress',r?.kind==='stress');
+ $('result-watermark').textContent=r&&(resultMode!=='none'||flowMode!=='none')?(r.kind==='stress'?'ARTIFICIAL STRESS · NOT A SOLUTION':'SOLVED · Tellegen MC PF')+' · '+(resultMode==='none'?'P/Q flows':resultMode==='loading'?'loading: ≥90% amber · >100% red !':'voltage: declared pair limits · red = violation'):'';
+ $('result-inspector').textContent=selection?resultDescription(r,selection.kind,selection.index):'Select a bus or branch to inspect exact results.';
 }
 function render(){deck.setProps({layers:layers(),parameters:{clearColor:palette[theme].bg}});}
 function scheduleLabels(){clearTimeout(labelTimer);labelTimer=setTimeout(updateLabels,90);}
@@ -273,7 +317,7 @@ function select(kind,index,started=performance.now()){
     const a=fixture.endpoints[index*2],b=fixture.endpoints[index*2+1];
     $('selection').innerHTML=`<h2>Branch ${index+1}</h2><p>${busName(a)} → ${busName(b)}<br>${fixture.states[index]?'Open tie · explicit gap':'Closed branch'} · source branch/${index+1}</p>`;
   }
-  showOpenPage();controls();$('trace-root').textContent=traceRoot?'Show incident branches':'Trace to layout root';updateLabels();
+  resultStatus();refreshResults();showOpenPage();controls();$('trace-root').textContent=traceRoot?'Show incident branches':'Trace to layout root';updateLabels();
 }
 async function load(id,mode=layoutMode,routing=routingMode){
   const previous=fixture,keep=previous?.manifest.id===id&&selection?{...selection}:null;
@@ -297,17 +341,22 @@ async function load(id,mode=layoutMode,routing=routingMode){
     for(const b of document.querySelectorAll('[data-layout]'))b.setAttribute('aria-pressed',String(b.dataset.layout===actualMode));
     const base=m.kind==='bmopf'?'local-data/':'fixtures/';
     async function fetchBytes(file){const r=await fetch(base+file,{signal:abort.signal});if(!r.ok)throw new Error(`Dataset HTTP ${r.status}; regenerate or stage fixtures`);return r.arrayBuffer();}
-    const [buffer,refBuffer]=await Promise.all([fetchBytes(m.file),m.refsFile&&!reuse?fetchBytes(m.refsFile):null]);
+    const resultMeta=resultCatalog[id];
+    let resultError=null;
+    const [buffer,refBuffer,resultBuffer]=await Promise.all([fetchBytes(m.file),m.refsFile&&!reuse?fetchBytes(m.refsFile):null,resultMeta?fetchBytes(resultMeta.file).catch(e=>{resultError='Results unavailable: '+e.message;return null;}):null]);
     const fetched=performance.now();if(token!==request)return;
     async function verify(bytes,expected){const digest=await crypto.subtle.digest('SHA-256',bytes);if(Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('')!==expected)throw new Error('Dataset hash mismatch; finish staging and reload');}
     await verify(buffer,m.sha256);if(refBuffer)await verify(refBuffer,m.refsSha256);if(token!==request)return;
     const next=decodeFixture(m,buffer);
     if(refBuffer||reuse){next.refs=reuse??JSON.parse(new TextDecoder().decode(refBuffer));validateReferences(next);}
     if(m.coordinateSpace==='schematic')validateSchematic(next);
-    const decoded=performance.now();prepare(next);const prepared=performance.now();
-    fixture=next;openScope=null;showOpenPage();if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,openPresentationPrepareMs:next.openPrepareMs,submittedAt:prepared,environment:environment()};
+    const decoded=performance.now();prepare(next);
+    if(resultBuffer)try{await verify(resultBuffer,resultMeta.sha256);next.results=prepareResults(next,bindResults(JSON.parse(new TextDecoder().decode(resultBuffer)),next.refs));next.ownedBytes+=next.results.arrayBytes;m.resultSha256=resultMeta.sha256;}catch(e){resultError='Results rejected: '+e.message;}
+    if(token!==request)return;
+    next.resultError=resultError;const prepared=performance.now();
+    fixture=next;flowPeak=0;scopeMs=0;resultStatus();openScope=null;showOpenPage();if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,resultBytes:resultMeta?.bytes??0,resultError,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,openPresentationPrepareMs:next.openPrepareMs,submittedAt:prepared,environment:environment()};
     $('network-count').textContent=fmt(m.count);$('network-detail').textContent=m.kind==='bmopf'?`${fmt(m.lines)} lines · ${fmt(m.transformers)} transformer objects${m.switches?' · '+fmt(m.switches)+' switches':''}`:`${fmt(m.branches)} branches · ${fmt(m.openTies)} open ties`;
-    $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON${next.openArrayBytes?' + '+(next.openArrayBytes/1048576).toFixed(2)+' MiB compact arrays':''}; excludes JS objects`;
+    $('memory').textContent=`${(fixture.ownedBytes/1048576).toFixed(2)} MiB`;$('memory-detail').textContent=`${(m.bytes/1048576).toFixed(2)} MiB geometry + ${((m.refsBytes??0)/1048576).toFixed(2)} MiB reference JSON${next.openArrayBytes?' + '+(next.openArrayBytes/1048576).toFixed(2)+' MiB compact arrays':''}${resultMeta?' + '+(resultMeta.bytes/1048576).toFixed(2)+' MiB result JSON (not included in arrays)':''}; excludes JS objects`;
     $('canvas-title').textContent=m.label+' / '+({'schematic':'Leaf order','tidy-tree':'Tidy tree','source':'Source coordinates'}[actualMode]??actualMode)+(actualRouting==='unavailable'?'':' / '+({'corridor':'Fan-out + lanes','crossing-aware':'Crossing-aware lanes','equipment':'Equipment + clearance','current':'Current routes'}[actualRouting]));$('source-detail').textContent=m.kind==='bmopf'?`${m.placement}. ${m.coordinateSpace==='schematic'?'Diagram units; coordinates computed from topology, independent of geography.':'Projected geographic coordinates in metres.'} ${fmt(m.coincidentBuses)} additional co-located buses. `+m.sources.map(s=>s.label+': '+s.note).join(' '):'Synthetic schematic geometry; no electrical study data.';
     $('layout-summary').textContent=m.layout?`${fmt(m.layout.treeEdges)} tree edges · ${fmt(m.layout.crossLinks)} non-tree connections · ${m.layout.components.length} components · ${ms(m.layout.totalMs)} offline layout + routing.${m.routingMode!=='current'?' '+m.routing.maxLanes+' peak corridor lanes.':''}${m.routing.ordering?' Lane-order crossings '+fmt(m.routing.ordering.before)+' → '+fmt(m.routing.ordering.after)+' in eligible corridors.':''} Roots choose layout direction, not power flow.`:actualMode==='source'?'Source-coordinate reference. Choose Leaf order or Tidy tree to inspect the network structure.':'Precomputed synthetic schematic.';
     $('scenario-detail').textContent=m.scenario?`${m.scenario.label}: ${m.openSwitches} open / ${m.closedSwitches} closed switches; ${m.outOfServiceSwitches} out of service. ${m.scenario.changedFromSource} states changed from the imported BMOPF. ${m.scenario.policy}${m.sourceCoordinatesAvailable===false?' Source coordinates unavailable; schematic views only.':''}`:'';
@@ -340,7 +389,7 @@ function percentile(values,p){const sorted=[...values].sort((a,b)=>a-b);return s
 function stopRun(reason='cancelled'){
   if(!run)return;const r=run;run=null;cancelAnimationFrame(r.raf);
   const valid=reason==='complete'&&r.intervals.length>=30;
-  const result={...r.dataset,started:r.started,durationMs:performance.now()-r.start,complete:valid,reason,environment:r.environment,frames:r.intervals.length,intervalsMs:r.intervals,
+  const result={...r.dataset,resultsEnd:environment().results,started:r.started,durationMs:performance.now()-r.start,complete:valid,reason,environment:r.environment,frames:r.intervals.length,intervalsMs:r.intervals,
     p50Ms:valid?percentile(r.intervals,.5):null,p95Ms:valid?percentile(r.intervals,.95):null,maxMs:valid?Math.max(...r.intervals):null,selectionFeedbackMs:selectionMetric};
   report.runs.push(result);$('test-status').textContent=valid?'Complete':`Stopped: ${reason}`;
   if(valid){$('frame-time').textContent=ms(result.p95Ms);$('frame-detail').textContent=`p50 ${ms(result.p50Ms)} · max ${ms(result.maxMs)} · ${result.frames} intervals`;}
@@ -348,6 +397,7 @@ function stopRun(reason='cancelled'){
   controls();setCamera(r.original);updateLabels();
 }
 function benchmark(){
+  flowPeak=0;scopeMs=0;
   if(!fixture||loading||run||document.hidden)return;
   const overview=fitCamera(),detail=detailCamera();
   run={dataset:identity(fixture.manifest),start:performance.now(),started:new Date().toISOString(),last:null,intervals:[],original:{...camera,target:[...camera.target]},environment:environment(),raf:0};controls();$('frame-time').textContent='Running…';$('frame-detail').textContent='Measuring camera frame intervals';
@@ -394,7 +444,7 @@ $('dataset').addEventListener('change',()=>load($('dataset').value));
 $('next-colocated').addEventListener('click',()=>{if(selection?.kind!=='bus')return;const members=fixture.locations.get(locationKey(fixture,selection.index));select('bus',members[(members.indexOf(selection.index)+1)%members.length]);});
 $('labels').addEventListener('change',updateLabels);$('edge-picking').addEventListener('change',render);
 $('fit').addEventListener('click',()=>setCamera(fitCamera()));$('detail').addEventListener('click',()=>setCamera(detailCamera()));
-$('clear').addEventListener('click',()=>{selection=null;traceRoot=false;refreshOverlay();meshCursor=-1;showMeshPage();openScope=null;showOpenPage();controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';updateLabels();});
+$('clear').addEventListener('click',()=>{selection=null;traceRoot=false;refreshOverlay();resultStatus();meshCursor=-1;showMeshPage();openScope=null;showOpenPage();controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';updateLabels();});
 $('search').addEventListener('submit',e=>{e.preventDefault();if(!fixture||run||loading)return;const started=performance.now(),value=$('bus-id').value.trim();$('search-error').textContent='';let i;
   if(fixture.refs){
     const raw=fixture.rawBusIds.get(value)??[];
@@ -420,11 +470,27 @@ $('equipment-search').addEventListener('submit',e=>{
  select(kind,index);setCamera({...camera,target:Array.from(fixture.equipmentCenters.subarray(g*3,g*3+3)),zoom:2});
 });
 $('benchmark').addEventListener('click',benchmark);$('stop').addEventListener('click',()=>stopRun());$('export-report').addEventListener('click',exportReport);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)stopRun('tab hidden');});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopRun('tab hidden');refreshResults();});
 window.addEventListener('resize',()=>{stopRun('viewport resized');scheduleLabels();});
-window.addEventListener('pagehide',()=>{abort?.abort();clearTimeout(labelTimer);deck?.finalize();});
+window.addEventListener('pagehide',()=>{abort?.abort();clearTimeout(labelTimer);cancelAnimationFrame(flowRaf);deck?.finalize();});
 $('network-canvas').addEventListener('pointerdown',()=>{if(run)stopRun('user interaction');});
+for(const id of ['result-mode','flow-mode'])$(id).addEventListener('change',()=>{
+ resultMode=$('result-mode').value;flowMode=$('flow-mode').value;
+ const url=new URL(location.href);url.searchParams.set('results',resultMode);url.searchParams.set('flows',flowMode);history.replaceState(null,'',url);
+ resultStatus();refreshResults();
+});
+$('result-detail').addEventListener('click',()=>{
+ const r=fixture.results;let b=0;for(let i=1;i<r.branches.length;i++)if((r.branches[i].loading??-1)>(r.branches[b].loading??-1))b=i;
+ const anchor=r.anchors.find(a=>a.b===b);if(!anchor)return;
+ select('branch',b);setCamera({...camera,target:anchor.position,zoom:1.3});
+});
+$('voltage-detail').addEventListener('click',()=>{
+ const i=fixture.results.buses.findIndex(b=>voltageState(b)==='violation');if(i<0){$('result-inspector').textContent='No declared voltage-limit violations in this snapshot.';return;}
+ $('result-mode').value='voltage';resultMode='voltage';select('bus',i);setCamera({...camera,target:Array.from(fixture.positions.subarray(i*3,i*3+3)),zoom:1.3});
+ const url=new URL(location.href);url.searchParams.set('results',resultMode);history.replaceState(null,'',url);
+});
 async function start(){
+ try{const response=await fetch('local-data/results-manifest.json',{cache:'no-store'});if(response.ok)resultCatalog=(await response.json()).datasets;}catch{}
   controls();const res=await fetch('fixtures/manifest.json');if(!res.ok)throw new Error('Missing fixtures: run generate.mjs');entries=(await res.json()).map(m=>({...m,id:`synthetic-${m.count}`,label:`Synthetic · ${fmt(m.count)} buses`}));
   try{const local=await fetch('local-data/manifest.json',{cache:'no-store'});if(local.ok){const catalog=await local.json();entries.push(...catalog);$('dataset-note').textContent='Local BMOPF sources staged · raw files remain external';}else if(local.status!==404)throw new Error(`HTTP ${local.status}`);}catch(e){$('dataset-note').textContent='Local catalog unavailable: '+e.message;}
   for(const m of entries){const option=document.createElement('option');option.value=m.id;option.textContent=m.label;$('dataset').append(option);}

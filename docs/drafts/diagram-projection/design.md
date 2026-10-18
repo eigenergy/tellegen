@@ -1381,3 +1381,141 @@ automatic labels and wire picking off, at DPR 2; equipment picking stays enabled
 SAPN owned CPU arrays total 44.18 MiB; observed load-to-first-draw was 1.17 s.
 Browser preparation, identity indexes and source parsing remain separate costs
 from offline routing. See [browser evidence](performance/evidence/equipment-browser-comparison.json).
+
+## Results overlays and lessons from the load-flow simulator
+
+The [load-flow simulator](https://tool.adjiebrotots.com/loadflow-simulator/) is a
+useful interaction reference. The inspected public application revision was
+[`3ea48dac`](https://github.com/adjiebrotot/tool/tree/3ea48dac3fd23e8532a0d36b4ef0adb013f55ea5/loadflow-simulator).
+Its custom SVG renderer separates model validation, scene construction and export;
+it is not evidence that an SVG scene or its authored-position routing scales to
+100k automatically laid-out buses. Its UI is declared GPL in the repository
+README; the separately published PSA.js solver has an MIT license. We reuse
+**no application code, assets, styles, solver code or dependencies** from either.
+The experiment below is independently authored over Tellegen's existing deck.gl
+layers and saved Tellegen multiconductor power-flow results.
+
+The lessons we adopt are:
+
+- Separate electrical model identity, layout revision and result revision. A
+  geometry-only change must retain a valid solved snapshot. Electrical changes
+  must invalidate its association, and stale results must never silently remain
+  coloured as current. Hashes of source inputs and result payloads enforce this
+  in the POC; editing and solver sessions remain outside this gallery.
+- Read P and Q independently, including their signs at **both** branch ends.
+  Shape and lane position supplement colour, and static markers remain useful
+  when motion is disabled. Animation is an optional direction cue, not physical
+  propagation, particle speed or a quantitative magnitude encoding.
+- Keep normal operation quiet and make limits explicit. Compare full-precision
+  values before formatting, and retain exact status, units, reference terminals
+  and rating basis in the inspector. A solver's convergence/validity band is not
+  a substitute for the model's declared operating limits.
+- Keep selection and diagram results keyed to the same source identity. Future
+  tables and exports should consume the same validated result projection.
+- Use one scene contract for screen and export, and score label candidates
+  against equipment, routes and other labels. These remain follow-ups: this
+  experiment adds bounded annotations, not a general label-placement optimizer
+  or a full-scene export implementation.
+
+### Electrical boundary and result projection
+
+PowerIO owns typed equipment identities, terminals, parameter/rating semantics
+and portable solutions. Tellegen's solver produces physical terminal voltages,
+port currents and powers. Tellegen's diagram projection binds those values to
+source identities and chooses display aggregation, units, limits, legends and
+annotation budgets. Layout roots and tree directions never determine flow signs.
+No PowerIO schema change or new electrical solve is required for this experiment.
+The [proposed TypeScript contract](tellegen.ts) now includes a separate result
+snapshot; it does not put display colours or arrows in PowerIO.
+
+The French fixture uses the external saved `McPfResult` for
+`75_MVFeeder0100.bmopf.json` (540 buses, 539 branches). Staging verifies the saved
+validation summary's input SHA-256 against both the raw model and staged source
+identity, requires a passed/converged result, and records solver revision,
+options, binary/result hashes, timestamp, iterations and residual. The recorded
+solver build had local changes; its revision alone is not a reproducible build
+identity. Raw models and full solver dumps remain external. Derived result
+sidecars remain ignored local data, just like geometry. Browser binding verifies
+sidecar hashes and source keys; rejected/missing results leave topology usable
+and show an explicit status instead of falling back to invented values.
+
+**P/Q.** Port powers are summed across every terminal at each end, including
+neutral power, and converted from W/var to kW/kvar. Positive means power **into
+the equipment at that end**. A positive `from` value follows source-from →
+source-to route order; a positive `to` value opposes that order. P and Q can point
+in different directions, and end totals need not be negatives because of losses
+and shunts. Zero/absent values and inactive branches have no direction marker.
+The POC uses a filled triangle for P and an open chevron for Q in offset lanes.
+There is no inference of current direction or conductor connectivity from these
+aggregate powers; a multi-wire view must retain per-terminal quantities.
+
+**Voltage.** At explicit-neutral French buses, compute `|V_phase − V_neutral|`
+and compare with the declared `vpn_min/max`. At the three-phase MV buses, compare
+complex phase-to-phase differences against their uniform `vpp_min/max`. A missing
+neutral is not silently replaced by earth. No nominal base is guessed from
+setpoints or limit midpoints. Nonuniform phase-pair bounds require an explicit
+pair-order mapping and are rejected by this narrow fixture adapter. Values are
+shown in V with the terminal pair and bounds. This saved solve converged in 16
+iterations, but one bus violates its declared input voltage limit despite the
+solver's wider validity band passing. The UI can focus that violation directly.
+
+**Loading.** For lines, use the maximum conductor `|I| / i_max` over both ends,
+including the neutral when rated. Missing/invalid ratings produce unavailable
+loading. For transformers, show the maximum end `|sum S| / s_rating`, explicitly
+labelled **aggregate MVA, not worst winding/coil**. This is not a complete
+unbalanced thermal check; per-winding current/coil limits are future work.
+Amber begins at 90%; red means strictly above 100%. Those visual warning choices
+are separate from the input constraints. French maximum line loading is 94.23642%.
+
+### Rendering and scale experiment
+
+The optional controls select topology, voltage-limit or loading colours, plus
+P/Q off, static or moving. Colour arrays are prepared once per result/layout.
+They reuse resident geometry and do not rebuild routing or mutate equipment.
+Result state is independent of paper/dark theme. Selected end values remain
+available in the inspector; local selected-branch labels accompany the arrows.
+Voltage/loading violations also receive bounded `!` annotations at detail zoom.
+
+Flow annotations use a spatial index of source-ordered first/last route segments.
+They are local end indicators, not particles traversing an entire polyline or
+crossing a transformer body. A camera query visits at most 4,096 candidates,
+retains at most 256 end anchors and emits at most 512 P/Q glyphs. Overview zoom
+suppresses them, as do segments shorter than 28 screen pixels. Moving glyphs
+update only this bounded set. Static colours stay resident; animation pauses in
+a hidden tab or when no local markers are visible, and initially respects reduced
+motion. The normal topology, wire picking and source-owned equipment are retained.
+Dense/screen-space label collisions and omitted end markers remain limitations;
+the inspector is authoritative, and overview does not claim complete flow coverage.
+
+There is no saved SAPN solution in the supplied external results. Its scaling
+fixture therefore uses **deliberately artificial values on the real 98,633-bus,
+101,283-branch topology**, with prominent status/watermark/inspector labels. It
+exercises mixed signs and warning/violation paths; it makes no claim about SAPN
+operation, conservation or electrical feasibility. This is a rendering benchmark.
+The French view contains real saved solved values; stress data is never substituted
+for a missing French result.
+
+The [offline measurements](performance/evidence/results-comparison.json) separate
+JSON parsing, identity binding, colour/index preparation, camera queries and
+bounded glyph generation. The [browser comparison](performance/evidence/results-browser-comparison.json)
+records the same camera path with overlays off, static and animated. Resident
+results are retained even for the overlays-off sample: it measures incremental
+drawing overhead, not a memory or cold-start baseline without results.
+
+A production implementation should pack result scalars/indices in typed arrays,
+parse and validate in a worker, fetch snapshots on demand, and query selected
+terminal detail lazily. The SAPN POC sidecar is 34.61 MiB of uncompressed JSON;
+its JS objects and spatial index are a larger concern than its 1.54 MiB of added
+colour buffers. Snapshots are immutable and layout-independent, but this POC
+reparses them on layout reload. Keep binary result streaming, worker preparation,
+cache reuse, screen-space collision scoring and multi-wire result inspection as
+explicit next experiments before application integration.
+
+The matched-viewport browser samples (692 × 500, DPR 2, dark, equipment routing)
+measured French p95 frame intervals of 9.1/9.3/9.1 ms for overlays off, loading with
+static P/Q, and loading with moving P/Q. Combined SAPN measured 10.1/10.4/12.8 ms;
+voltage with static P/Q measured 9.7 ms. These are single local samples, not GPU
+measurements or universal budgets. An early unmatched-viewport baseline is retained
+but excluded from the comparison. Sixty-three POC tests pass. See the performance
+guide for settings, allocation exclusions, selected-source screenshots and
+remaining collision/aggregation limitations.

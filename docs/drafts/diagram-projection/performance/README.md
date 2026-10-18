@@ -1065,3 +1065,106 @@ benchmark. Visual checks covered dark/paper themes, transformer and supply bodie
 load and general-shunt attachments, direct glyph picking, exact source identities,
 and restoring an open switch body in compact presentation. Selection IDs sit
 above attachment glyphs; general label collision avoidance remains future work.
+
+## Results overlay experiment
+
+Stage the optional sidecars **after** staging BMOPF geometry:
+
+```sh
+node docs/drafts/diagram-projection/performance/stage-results.mjs /absolute/path/to/BMOPFDraftData/output
+node docs/drafts/diagram-projection/performance/build.mjs /path/to/installed/tellegen
+node docs/drafts/diagram-projection/performance/measure-results.mjs
+```
+
+`stage-results.mjs` expects the external French validation files at
+`FrenchPowerGrids/validation/tellegen_pf/{summary.json,build_provenance.json,results/}`.
+It verifies the exact input SHA-256, a passed validation record and convergence.
+It publishes content-hashed, derived result sidecars and then a manifest, all under
+ignored `local-data/`. Raw models and solver dumps are never copied into Git.
+Re-stage after changing inputs. Mismatching result identities/hashes are rejected;
+the browser still permits topology inspection with an explicit unavailable status.
+No imported simulator code or new dependency is used.
+
+Open `performance/?dataset=french-medium&layout=tidy-tree&routing=equipment&results=loading&flows=static`.
+The controls offer voltage-limit colours, loading colours and independent P/Q
+markers (off/static/motion). **Focus highest loading** selects a real branch and
+shows its source ID, two end powers and rating basis; **Focus voltage violation**
+selects the first bus outside its declared terminal-pair limits. Static direction
+markers are the default in this link. Theme and routing remain independently
+selectable; use local detail to see markers and exact inspector values.
+
+French `75_MVFeeder0100` uses a saved Tellegen multiconductor solution: 540 buses,
+539 branches, 16 iterations, one bus outside declared voltage limits and maximum
+line loading 94.23642%. End P/Q are signed into equipment, summed over all terminals
+including neutral, and reported in kW/kvar. Voltages use complex phase-neutral or
+phase-phase differences with explicit bounds in V. Line loading is the maximum
+conductor current/rating over both ends. Transformer loading is explicitly an
+aggregate end-MVA/rating measure, **not a worst-phase or winding thermal check**.
+The [design](../design.md#results-overlays-and-lessons-from-the-load-flow-simulator)
+explains sign conventions, references, model boundaries and provenance.
+
+For `dataset=sapn-combined`, results are **artificial rendering stress values** on
+the real topology. There is no saved SAPN solve in this experiment. Banner,
+canvas watermark, inspector and exported measurements carry this distinction.
+Other datasets have no result sidecar; values are never fabricated as a fallback.
+
+At detail zoom a spatial query examines at most 4,096 candidates and emits at most
+256 end anchors / 512 glyphs. P is a filled triangle; Q is a chevron on the other
+side of the route. Motion encodes direction only. No particles cross equipment
+bodies, no layout runs on interaction and static colour buffers stay resident.
+The browser initially respects reduced motion, pauses hidden-tab animation and
+stops animating when there are no visible markers. Local annotations omit short
+segments and overview detail; the inspector remains authoritative. The first/last
+route-segment anchors are a deliberate POC limitation, not full-path animation.
+General screen-space text collision avoidance remains future work.
+
+[CPU evidence](evidence/results-comparison.json) records five parse/bind/prepare
+samples and 1,000 deterministic local/overview queries on both datasets. The SAPN
+sidecar is 34.61 MiB uncompressed; median parsing/binding/preparation in the recorded
+run were approximately 124/97/154 ms. Local query p95 was 0.013 ms and bounded
+glyph generation p95 0.005 ms. Added colour arrays are 1.54 MiB. These exclude
+JSON objects, the 202,566 end-anchor objects, spatial maps, GPU and library copies.
+The 512-glyph dense-case cap is tested separately; the sampled real layouts are
+sparse enough that at most 54 glyphs were emitted by the CPU camera queries.
+Production priorities are packed scalar snapshots, on-demand result fetch/detail,
+worker parsing/preparation and avoiding reparse on layout changes.
+
+[Browser evidence](evidence/results-browser-comparison.json) compares overlays-off,
+static loading/PQ and animated loading/PQ on the same six-second camera path.
+All modes retain the parsed snapshot, so the off sample measures incremental
+rendering cost, not cold-start/memory cost without results. Frame intervals are
+browser draw delivery, not GPU timer queries. Run with the tab visible, keep the
+viewport/settings fixed, then **Export measurements**; reports include result
+hash, solved/stress kind, modes, peak marker count and query timing.
+
+Recorded browser comparison (692 × 500 CSS pixels, DPR 2, dark theme, tidy-tree /
+equipment routing, labels and wire picking off):
+
+| Dataset | Overlays off | Loading + static P/Q | Loading + moving P/Q | Voltage + static P/Q |
+| --- | ---: | ---: | ---: | ---: |
+| French medium (solved) | 9.1 ms | 9.3 ms | 9.1 ms | Not sampled |
+| Combined SAPN (artificial stress) | 10.1 ms | 10.4 ms | 12.8 ms | 9.7 ms |
+
+Values are p95 frame intervals from one completed six-second sample per cell.
+The earlier SAPN baseline used a different viewport; it remains in the raw report
+but is explicitly excluded from the comparison. Timing differences at this scale
+are not evidence that animation or voltage is faster. The camera runs reached
+38 local glyphs on French and 18 on SAPN; the pathological 512-glyph cap is covered
+by a separate CPU test, not claimed as a GPU benchmark. SAPN result preparation
+was about 147 ms in the browser, within 508 ms of total dataset preparation;
+load-to-first-draw was 895 ms with local cached-file conditions. This is not a
+controlled cold-load comparison with older equipment-only measurements.
+
+Sixty-three POC tests pass, including stale/source identity, namespace collisions,
+neutral voltage/power/current semantics, partial ports, missing ratings, independent
+end signs, inactive/zero flows, limit precision and bounded dense annotation work.
+The deterministic synthetic fixture and four-wire projection checks also pass.
+Browser QA covered both themes, voltage violation inspection, loading/PQ inspection,
+source-coordinate ↔ tidy-tree selection/result preservation, and no console errors.
+
+[French loading/PQ detail](evidence/french-flow-overlay.png) and
+[French voltage violation](evidence/french-voltage-overlay.png) are local-detail
+screenshots. The selected route continues off screen; both end totals remain in
+the inspector. The voltage bus is `75_LVBus0623137`, whose `3–n` value is
+207.7769 V against the declared minimum of 207.8461 V. A selected bus/route retains
+its selection accent; the separate red `! V` cue preserves its violation status.

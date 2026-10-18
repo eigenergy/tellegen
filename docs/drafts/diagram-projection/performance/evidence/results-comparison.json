@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "created": "2026-10-18T07:51:08.111Z",
+  "node": "v24.19.0",
+  "platform": "darwin",
+  "method": "Five parse/bind/prepare repetitions, 1,000 deterministic overview/detail spatial queries at 1190×560 and local marker generation. CPU only; not WebGL or browser frame timings. SAPN is explicitly artificial rendering stress on real topology. Arrays exclude JSON, JS maps/anchor objects, GPU/library copies.",
+  "rows": [
+    {
+      "id": "french-medium",
+      "kind": "solved",
+      "buses": 540,
+      "branches": 539,
+      "geometrySha256": "d3670d1eb3bf4b1d1dbaff16de1f7ba254514d35b79a458cba48721a12d3aa84",
+      "refsSha256": "64a7829dd95c13cf33e9b302f38130aed6f53f237ac5bab988f0871d29fc891c",
+      "resultSha256": "7969dfbe8e18bbc61ae83da67a99937de0982d0068c363c786462f357ba1f233",
+      "resultJsonBytes": 511142,
+      "resultColourArrayBytes": 8856,
+      "anchorObjects": 1078,
+      "spatialBuckets": 694,
+      "parseMs": [
+        1.6637079999999997,
+        1.0664999999999978,
+        1.0305,
+        1.0627920000000017,
+        1.0946670000000012
+      ],
+      "bindMs": [
+        0.9222919999999988,
+        0.6003749999999997,
+        0.3958750000000002,
+        0.4520830000000018,
+        0.48337500000000233
+      ],
+      "prepareMs": [
+        1.6450829999999996,
+        1.2352910000000001,
+        1.177624999999999,
+        0.7369169999999983,
+        0.8804160000000039
+      ],
+      "medianParseMs": 1.0664999999999978,
+      "medianBindMs": 0.48337500000000233,
+      "medianPrepareMs": 1.177624999999999,
+      "queries": 1000,
+      "scopeP95Ms": 0.006041000000003294,
+      "glyphGenerationP95Ms": 0.00549999999999784,
+      "peakGlyphs": 54,
+      "peakCandidates": 38,
+      "voltageViolatingBuses": 1,
+      "maxLoadingPercent": 94.23642006921715,
+      "missingBranchResults": 0,
+      "missingLoading": 0,
+      "provenance": {
+        "solver": "Tellegen McPfResult",
+        "revision": "6f0be90f561ad4b67d35848c4c70f98a3154e004",
+        "buildHadLocalChanges": true,
+        "created": "2026-10-01T12:58:48.076562+00:00",
+        "inputSha256": "49af4133e64fa2d42c79683464b3b31088b18e4912b6d5782b5ba0b3b092d295",
+        "resultFile": "results/75_MVFeeder0100.bmopf.pf.json.gz",
+        "resultSha256": "517dc2a68f931ddd66ab460c8675ec9a65655f593e5d94eff063fbcdec633428",
+        "binarySha256": "b6cfdae74560ee7927fb0bab4b16842dce2979097fa4ca03967be5acc8a87b15",
+        "options": {
+          "voltage_envelope": false,
+          "max_iterations": 200
+        },
+        "iterations": 16,
+        "physicalKclResidualA": 2.2195043946743775e-8
+      }
+    },
+    {
+      "id": "sapn-combined",
+      "kind": "stress",
+      "buses": 98633,
+      "branches": 101283,
+      "geometrySha256": "8cef03bf61c94a9dc032ec66bcebcf4714c03c3f2fdf14169d82c2578c50d00a",
+      "refsSha256": "7a1a8cd91a8853ab7a8b7b8ae20e8db426f682863d2db3680cb0f02d79e0982f",
+      "resultSha256": "b61cbdf426d652c05d452c5570a99e18208321a4a5608c933f78f55cd4bbe584",
+      "resultJsonBytes": 36289744,
+      "resultColourArrayBytes": 1615772,
+      "anchorObjects": 202566,
+      "spatialBuckets": 126489,
+      "parseMs": [
+        107.188625,
+        129.73429099999998,
+        134.47683299999994,
+        123.55404199999998,
+        115.70120800000018
+      ],
+      "bindMs": [
+        113.269792,
+        108.16587499999991,
+        91.32958300000018,
+        96.96108299999992,
+        91.36487499999998
+      ],
+      "prepareMs": [
+        154.49450000000002,
+        159.24912500000005,
+        155.71008399999982,
+        150.719916,
+        148.10099999999989
+      ],
+      "medianParseMs": 123.55404199999998,
+      "medianBindMs": 96.96108299999992,
+      "medianPrepareMs": 154.49450000000002,
+      "queries": 1000,
+      "scopeP95Ms": 0.012958000000253378,
+      "glyphGenerationP95Ms": 0.004790999999841006,
+      "peakGlyphs": 54,
+      "peakCandidates": 37,
+      "voltageViolatingBuses": null,
+      "maxLoadingPercent": null,
+      "missingBranchResults": 0,
+      "missingLoading": 0,
+      "provenance": {
+        "generator": "deterministic index pattern v1; no electrical calculation"
+      }
+    }
+  ]
+}
