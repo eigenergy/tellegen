@@ -1,0 +1,51 @@
+{
+  "created": "2026-10-18T08:11:41.677Z",
+  "node": "v24.19.0",
+  "method": "1,000 deterministic selected-bus paths and local-camera queries per dataset. Profile construction and SVG string generation exclude browser DOM insertion, picking and WebGL. SAPN values are artificial stress, not a solution. Snapshot scales are computed once during result preparation.",
+  "rows": [
+    {
+      "id": "french-medium",
+      "buses": 540,
+      "kind": "solved",
+      "resultSha256": "7969dfbe8e18bbc61ae83da67a99937de0982d0068c363c786462f357ba1f233",
+      "geometrySha256": "d3670d1eb3bf4b1d1dbaff16de1f7ba254514d35b79a458cba48721a12d3aa84",
+      "flowScales": {
+        "p": 2359.283786833816,
+        "q": 749.4147215462316
+      },
+      "issueIndexMs": 0.2134580000000028,
+      "voltageIssueCount": 1,
+      "samples": 1000,
+      "profileP95Ms": 0.010333000000002812,
+      "markupP95Ms": 0.1489170000000044,
+      "scopeP95Ms": 0.008707999999998606,
+      "glyphP95Ms": 0.006875000000000853,
+      "maxPath": 40,
+      "maxShown": 40,
+      "maxMarkupBytes": 53190,
+      "peakGlyphs": 36
+    },
+    {
+      "id": "sapn-combined",
+      "buses": 98633,
+      "kind": "stress",
+      "resultSha256": "b61cbdf426d652c05d452c5570a99e18208321a4a5608c933f78f55cd4bbe584",
+      "geometrySha256": "8cef03bf61c94a9dc032ec66bcebcf4714c03c3f2fdf14169d82c2578c50d00a",
+      "flowScales": {
+        "p": 109,
+        "q": 12
+      },
+      "issueIndexMs": 4.951290999999969,
+      "voltageIssueCount": 46966,
+      "samples": 1000,
+      "profileP95Ms": 0.05062499999996817,
+      "markupP95Ms": 0.2468340000000353,
+      "scopeP95Ms": 0.01579099999992195,
+      "glyphP95Ms": 0.005125000000020918,
+      "maxPath": 216,
+      "maxShown": 216,
+      "maxMarkupBytes": 120187,
+      "peakGlyphs": 36
+    }
+  ]
+}

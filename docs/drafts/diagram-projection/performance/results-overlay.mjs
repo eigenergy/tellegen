@@ -1,4 +1,5 @@
 /** Bounded local annotations; resident binary colour buffers change only with the result/mode. */
+import {snapshotFlowScales,flowSpeed} from './engineering-workflow.mjs';
 import {severity,formatValue} from './results-adapter.mjs';
 export const MAX_ANCHORS=256,MAX_CANDIDATES=4096,MIN_ZOOM=-0.2;
 const neutral=[117,142,148,255],warning=[219,158,61,255],violation=[225,91,88,255];
@@ -24,6 +25,7 @@ export function prepareResults(f,result){
    const key=`${Math.floor(anchor.position[0]/128)},${Math.floor(anchor.position[1]/128)}`;if(!r.cells.has(key))r.cells.set(key,[]);r.cells.get(key).push(index);
   }
  }
+ r.flowScales=snapshotFlowScales(result);
  r.arrayBytes=r.nodeColors.byteLength+r.lineColors.byteLength+(r.compactColors?.byteLength??0);r.prepareMs=performance.now()-started;return r;
 }
 export function visibleAnchors(r,camera,width,height,selected=null){
@@ -44,13 +46,15 @@ export function visibleAnchors(r,camera,width,height,selected=null){
 }
 /** Positive end power enters the element. Source-to is reversed relative to route order. */
 export function routeSign(value,side){return !Number.isFinite(value)||Math.abs(value)<1e-9?0:Math.sign(value)*(side?-1:1);}
-export function flowGlyphs(r,anchors,zoom,seconds=0){
+export function flowGlyphs(r,anchors,zoom,seconds=0,channels={p:true,q:true}){
  const data=[],scale=2**zoom;
  for(const a of anchors)for(const [lane,key] of ['p','q'].entries()){
+  if(!channels[key])continue;
   const value=r.branches[a.b].ends[a.side][key],direction=routeSign(value,a.side);if(!direction)continue;
   const dx=(a.z[0]-a.a[0])/a.length,dy=(a.z[1]-a.a[1])/a.length;
-  const phase=((seconds*.45)%1+1)%1,t=(a.side?.65:.15)+.2*(direction>0?phase:1-phase),offset=(lane?7:-7)/scale;
-  data.push({b:a.b,side:a.side,key,value,text:lane?'›':'▸',angle:-Math.atan2(dy*direction,dx*direction)*180/Math.PI,position:[a.a[0]+(a.z[0]-a.a[0])*t-dy*offset,a.a[1]+(a.z[1]-a.a[1])*t+dx*offset,0],color:lane?[176,139,227,255]:[58,168,184,255]});
+  const speed=flowSpeed(value,r.flowScales?.[key]??Math.abs(value)),periodPixels=.2*a.length*scale;
+  const phase=((seconds*speed/periodPixels)%1+1)%1,t=(a.side?.65:.15)+.2*(direction>0?phase:1-phase),offset=(lane?7:-7)/scale;
+  data.push({b:a.b,side:a.side,key,value,speed,text:lane?'›':'▸',angle:-Math.atan2(dy*direction,dx*direction)*180/Math.PI,position:[a.a[0]+(a.z[0]-a.a[0])*t-dy*offset,a.a[1]+(a.z[1]-a.a[1])*t+dx*offset,0],color:lane?[176,139,227,255]:[58,168,184,255]});
  }
  return data;
 }

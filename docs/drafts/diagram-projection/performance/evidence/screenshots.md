@@ -18,3 +18,10 @@ claim. See the adjacent JSON evidence and the [performance guide](../README.md)
 for reproducible measurements and limitations. The original
 [four-wire reference screenshots](../../gallery/reference-images/) illustrate
 both projections with manually authored geometry, independently of BMOPF routing.
+
+## Engineering workflow
+
+- [French Results toolbar and P/Q detail](french-engineering-workflow.png): dark theme, saved solved results, selected line `75_LVBranch0306208`, fixed snapshot speed scales and pause/playback controls. The screenshot frames the Results toolbar and complete canvas; the route continues beyond the local view.
+- [Linked MV/LV profile](french-linked-voltage-profile.png): dark theme, 30-bus path to `75_LVBus0623137`; separate MV phase-pair and LV phase-neutral plots, declared limits, and the phase-3 undervoltage. The path selector and exact values remain visible.
+
+These are verified screenshots of the independently implemented local gallery. Still images show the controls and glyph positions, not the animation speed. Raw models and result sidecars remain external/ignored.

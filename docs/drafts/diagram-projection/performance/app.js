@@ -1,5 +1,7 @@
 import {Deck,OrthographicView,COORDINATE_SYSTEM,VERSION} from '@deck.gl/core';
 import {LineLayer,ScatterplotLayer,TextLayer} from '@deck.gl/layers';
+import {resultIssues,selectionBus,voltageProfile,hoverDescription} from './engineering-workflow.mjs';
+import {profileMarkup} from './voltage-profile-view.mjs';
 import {bindResults} from './results-adapter.mjs';
 import {prepareResults,visibleAnchors,flowGlyphs,resultDescription,loadingState,voltageState} from './results-overlay.mjs';
 import {prepareEquipment,equipmentRow} from './equipment.mjs';
@@ -21,6 +23,7 @@ const resultParams=new URLSearchParams(location.search);
 let resultMode=['voltage','loading'].includes(resultParams.get('results'))?resultParams.get('results'):'none';
 let flowMode=['static','motion'].includes(resultParams.get('flows'))?resultParams.get('flows'):'none';
 if(matchMedia('(prefers-reduced-motion: reduce)').matches&&flowMode==='motion')flowMode='static';
+let flowElapsed=0,flowStamp=null,playback=1,profile=null,profileTarget=null,profileNavigating=false,profileSegments=[],profileHover=null,voltageCursor=-1;
 let resultCatalog={},flowScope={anchors:[],stats:{}},flowData=[],flowRaf=0,flowPeak=0,scopeMs=0;
 let theme='dark', fixture=null, entries=[], deck, ready=false, loading=false, request=0, abort;
 let camera={target:[0,0,0],zoom:0,minZoom:-24,maxZoom:5}, selection=null, labelData=[], run=null;
@@ -41,7 +44,9 @@ const report={version:3,started:new Date().toISOString(),renderer:`deck.gl ${VER
   environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemoryGiB:navigator.deviceMemory??null},loads:[],runs:[],selections:[],presentations:[]};
 function error(message){$('status').hidden=false;$('status').textContent=message;loading=false;pendingLoad=null;controls();}
 function controls(){
-  for(const id of ['result-mode','flow-mode','result-detail','voltage-detail'])$(id).disabled=loading||!!run||!fixture?.results;
+  for(const b of document.querySelectorAll('[data-result-preset]'))b.disabled=loading||!!run||!fixture?.results;
+  for(const id of ['profile-bus','profile-prev','profile-next','profile-fit','profile-path'])$(id).disabled=loading||!!run||!profile?.nodes?.length;
+  for(const id of ['result-mode','flow-mode','result-detail','voltage-detail','flow-play','flow-speed','flow-p','flow-q','profile-open'])$(id).disabled=loading||!!run||!fixture?.results;
   for(const el of document.querySelectorAll('button[data-theme], #labels, #edge-picking, #fit, #detail, #benchmark, #bus-id, #search button, #clear, #next-colocated, #trace-root, #focus-source'))el.disabled=loading||!!run||!ready||!fixture;
   for(const el of document.querySelectorAll('[data-size], #dataset'))el.disabled=loading||!!run||!ready;
   for(const el of document.querySelectorAll('[data-layout]'))el.disabled=loading||!!run||!ready||fixture?.manifest.kind!=='bmopf'||(el.dataset.layout==='source'&&fixture?.manifest.sourceCoordinatesAvailable===false)||(el.dataset.layout!=='source'&&!entries.find(m=>m.id===fixture?.manifest.id)?.layouts?.[el.dataset.layout]);
@@ -58,9 +63,14 @@ function controls(){
   for(const el of document.querySelectorAll('[data-open-mode]'))el.disabled=loading||!!run||!fixture?.openTies.branchIndices.length;
   for(const id of ['open-results','open-prev','open-next'])$(id).disabled=loading||!!run||!fixture?.openTies.branchIndices.length;
   $('open-all').disabled=loading||!!run||openScope===null;
+  const profileIndex=profile?.shown?.indexOf(Number($('profile-bus').value))??-1;
+  $('profile-prev').disabled||=profileIndex<=0;
+  $('profile-next').disabled||=profileIndex<0||profileIndex>=profile.shown.length-1;
   $('stop').disabled=!run;
+  $('voltage-detail').disabled||=!fixture?.results?.issues?.voltage.length;
+  $('result-detail').disabled||=!(fixture?.results?.issues?.highest>=0);
 }
-function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,results:fixture?.results?{kind:fixture.results.kind,sha256:fixture.manifest.resultSha256,mode:resultMode,flows:flowMode,scope:'visible endpoint segments at detail zoom',peakFlowGlyphs:flowPeak,lastScope:flowScope.stats,maxScopeMs:scopeMs,arrayBytes:fixture.results.arrayBytes,prepareMs:fixture.results.prepareMs}:null,equipmentGlyphs:fixture?.manifest.equipment?.glyphs??0,equipmentStrokes:fixture?.manifest.equipment?.strokes??0,equipmentArrayBytes:fixture?.equipment?.arrayBytes??0,selectedOpenSwitch:!!openSelected(),selectionRouteSegments:overlay.length,openSwitchPresentation:openMode,openSwitches:fixture?.openTies.branchIndices.length??0,openEndpointMarkers:compactOpen()?fixture.openTies.markers.length:0,suppressedRouteSegments:compactOpen()?fixture.openTies.suppressedSegments:0,extraPresentationArrayBytes:fixture?.openArrayBytes??0,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
+function environment(){const r=$('canvas-wrap').getBoundingClientRect();return {width:Math.round(r.width),height:Math.round(r.height),devicePixelRatio:devicePixelRatio,renderPixelRatio:Math.min(devicePixelRatio,2),labels:$('labels').checked,wirePicking:$('edge-picking').checked,theme,results:fixture?.results?{kind:fixture.results.kind,sha256:fixture.manifest.resultSha256,mode:resultMode,flows:flowMode,playback,channels:{p:$('flow-p').checked,q:$('flow-q').checked},scales:fixture.results.flowScales,profilePoints:profile?.shown?.length??0,scope:'visible endpoint segments at detail zoom',peakFlowGlyphs:flowPeak,lastScope:flowScope.stats,maxScopeMs:scopeMs,arrayBytes:fixture.results.arrayBytes,prepareMs:fixture.results.prepareMs}:null,equipmentGlyphs:fixture?.manifest.equipment?.glyphs??0,equipmentStrokes:fixture?.manifest.equipment?.strokes??0,equipmentArrayBytes:fixture?.equipment?.arrayBytes??0,selectedOpenSwitch:!!openSelected(),selectionRouteSegments:overlay.length,openSwitchPresentation:openMode,openSwitches:fixture?.openTies.branchIndices.length??0,openEndpointMarkers:compactOpen()?fixture.openTies.markers.length:0,suppressedRouteSegments:compactOpen()?fixture.openTies.suppressedSegments:0,extraPresentationArrayBytes:fixture?.openArrayBytes??0,inspection:isInspecting()?{branch:circuit.branch,treePath:$('show-tree-path').checked,dimContext:$('dim-context').checked,treeEdges:circuit.edges.length,routeSegments:overlay.length,pathSegments:pathOverlay.length}:null};}
 function fitCamera(){const b=fixture.manifest.bounds,r=$('canvas-wrap').getBoundingClientRect();return {...camera,target:[(b[0]+b[2])/2,(b[1]+b[3])/2,0],zoom:Math.log2(Math.min((r.width-70)/(b[2]-b[0]),(r.height-95)/(b[3]-b[1])))};}
 function detailCamera(){const m=fixture.manifest,r=Math.floor(m.regions/2),i=m.kind==='bmopf'?Math.floor(m.count/2):r*m.regionSize+2;return {...camera,target:[fixture.positions[i*3]+200,fixture.positions[i*3+1],0],zoom:0.6};}
 function setCamera(next,updateLabels=true){camera={target:next.target,zoom:next.zoom,minZoom:-24,maxZoom:5};deck.setProps({viewState:camera});refreshResults();$('zoom-readout').textContent=`${(2**camera.zoom).toPrecision(3)}× · PRECOMPUTED`;if(updateLabels)scheduleLabels();}
@@ -214,6 +224,8 @@ function layers(){
     new ScatterplotLayer({...common,id:`open-endpoints-${fixture.manifest.id}-${fixture.manifest.sha256}`,data:fixture.openTies.markers,visible:compactOpen(),opacity:contextOpacity,getPosition:d=>d.position,getRadius:7,radiusUnits:'common',radiusMinPixels:2.5,radiusMaxPixels:6,filled:false,stroked:true,getLineColor:p.open,lineWidthUnits:'pixels',getLineWidth:1.5,pickable:true}),
     new ScatterplotLayer({...common,id:'layout-roots',data:roots,opacity:contextOpacity,getPosition:d=>d.position,getRadius:4,radiusUnits:'pixels',getFillColor:p.open,pickable:false}),
     new TextLayer({...common,id:'root-labels',data:!inspecting&&camera.zoom>-2?roots.slice(0,100):[],getPosition:d=>d.position,getText:d=>d.label,getColor:p.open,getSize:11,getPixelOffset:[-8,0],getTextAnchor:'end',fontFamily:'Plex, monospace',characterSet:'auto',pickable:false}),
+    new LineLayer({...common,id:'profile-path',data:$('profile-path').checked?profileSegments:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:[70,155,185,190],getWidth:3,pickable:false}),
+    new ScatterplotLayer({...common,id:'profile-hover',data:profileHover===null?[]:[fixture.positions.subarray(profileHover*3,profileHover*3+3)],getPosition:d=>d,getRadius:8,radiusUnits:'pixels',filled:false,stroked:true,getLineColor:p.open,getLineWidth:2,lineWidthUnits:'pixels',pickable:false}),
     new LineLayer({...common,id:'circuit-tree-path',data:inspecting&&$('show-tree-path').checked?pathOverlay:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.open,getWidth:2.5,pickable:false}),
     new LineLayer({...common,id:'circuit-tree-bars',data:inspecting&&$('show-tree-path').checked?pathBars:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.open,getWidth:3,pickable:false}),
     new LineLayer({...common,id:'connection-halo',data:endpointsVisible?overlay:[],getSourcePosition:d=>d.source,getTargetPosition:d=>d.target,getColor:p.bg.map((x,i)=>i===3?255:Math.round(x*255)),getWidth:7,pickable:false}),
@@ -238,28 +250,41 @@ function resultWarnings(){
  }
  return flowScope.anchors.filter(a=>a.side===0&&loadingState(fixture.results.branches[a.b])==='violation').slice(0,24).map(a=>({position:a.position,text:'! '+fixture.results.branches[a.b].loading.toFixed(1)+'%'}));
 }
+function flowSeconds(now=performance.now()){
+ if(flowMode==='motion'&&!document.hidden&&flowScope.anchors.length){if(flowStamp!==null)flowElapsed+=(now-flowStamp)/1000*playback;flowStamp=now;}else flowStamp=null;
+ return flowElapsed;
+}
 function refreshResults(){
  cancelAnimationFrame(flowRaf);flowRaf=0;flowData=[];flowScope={anchors:[],stats:{}};
  if(!fixture?.results)return;
  const start=performance.now(),rect=$('canvas-wrap').getBoundingClientRect();
  if(flowMode!=='none'||resultMode==='loading')flowScope=visibleAnchors(fixture.results,camera,rect.width,rect.height);
  scopeMs=Math.max(scopeMs,performance.now()-start);
- if(flowMode!=='none')flowData=flowGlyphs(fixture.results,flowScope.anchors,camera.zoom,flowMode==='motion'?performance.now()/1000:.55);
+ if(flowMode!=='none')flowData=flowGlyphs(fixture.results,flowScope.anchors,camera.zoom,flowSeconds(),{p:$('flow-p').checked,q:$('flow-q').checked});
  flowPeak=Math.max(flowPeak,flowData.length);
- if(flowMode==='motion'&&flowScope.anchors.length&&!document.hidden){
-  function tick(now){if(!fixture?.results||flowMode!=='motion'||document.hidden)return;flowData=flowGlyphs(fixture.results,flowScope.anchors,camera.zoom,now/1000);flowPeak=Math.max(flowPeak,flowData.length);render();flowRaf=requestAnimationFrame(tick);}
+ if(flowMode==='motion'&&flowData.length&&!document.hidden){
+  function tick(now){if(!fixture?.results||flowMode!=='motion'||document.hidden)return;flowData=flowGlyphs(fixture.results,flowScope.anchors,camera.zoom,flowSeconds(now),{p:$('flow-p').checked,q:$('flow-q').checked});flowPeak=Math.max(flowPeak,flowData.length);render();flowRaf=requestAnimationFrame(tick);}
   flowRaf=requestAnimationFrame(tick);
  }
+ if(!flowData.length)flowStamp=null;
+ $('flow-hint').textContent=flowMode==='none'?'Hover for values. Click equipment to pin details and link the voltage profile.':flowData.length?`${flowData.length} local P/Q markers · hover wires for both end values · click to link the voltage profile.`:'Zoom in or choose Power flow / Highest loading to see local P/Q markers. Overview keeps the diagram quiet.';
  if(ready)render();
 }
 function resultStatus(){
  $('topology-legend').hidden=resultMode!=='none'&&!!fixture?.results;$('overlay-legend').hidden=!$('topology-legend').hidden;$('overlay-legend').textContent=resultMode==='loading'?'Loading: neutral normal · amber ≥90% · red ! >100% · missing neutral':'Voltage: neutral within declared limits · red ! outside limits · missing neutral';
  $('result-mode').value=resultMode;$('flow-mode').value=flowMode;
  const r=fixture?.results;
+ $('flow-play').textContent=flowMode==='motion'?'Pause flows':'Animate flows';$('flow-play').setAttribute('aria-pressed',String(flowMode==='motion'));
+ for(const b of document.querySelectorAll('[data-result-preset]'))b.setAttribute('aria-pressed',String(b.dataset.resultPreset===(resultMode==='voltage'?'voltage':resultMode==='loading'?'loading':flowMode==='none'?'topology':'power')));
+ $('workflow-summary').textContent=r?`${fmt(fixture.manifest.count)} buses · ${r.issues.voltage.length} voltage-limit buses · maximum loading ${r.issues.highest>=0?r.branches[r.issues.highest].loading.toFixed(2)+'%':'unavailable'}`:'';
+ $('voltage-detail').textContent=`Voltage violations (${r?.issues.voltage.length??0})`;
+ const scaleText=(label,max,unit)=>max>0?`${label} ${ (max*.25).toLocaleString(undefined,{maximumFractionDigits:2})} / ${max.toLocaleString(undefined,{maximumFractionDigits:2})} ${unit} → 36 / 72 px/s`:`${label}: no nonzero values`;
+ $('flow-scale').textContent=r?`Fixed snapshot scales at 1×: ${scaleText('P ▸',r.flowScales.p,'kW')}; ${scaleText('Q ›',r.flowScales.q,'kvar')}. Playback ${playback}×. ${flowMode==='motion'?'Moving':'Paused / off'}.`:'';
  $('result-status').textContent=r?r.label+(r.kind==='solved'?` · ${r.provenance.iterations} iterations · saved ${r.provenance.created}`:' · values are deliberately nonphysical'):fixture?.resultError??'No staged results for this dataset. Run stage-results.mjs for the French feeder and SAPN rendering stress test.';
  $('result-status').classList.toggle('stress',r?.kind==='stress');
  $('result-watermark').textContent=r&&(resultMode!=='none'||flowMode!=='none')?(r.kind==='stress'?'ARTIFICIAL STRESS · NOT A SOLUTION':'SOLVED · Tellegen MC PF')+' · '+(resultMode==='none'?'P/Q flows':resultMode==='loading'?'loading: ≥90% amber · >100% red !':'voltage: declared pair limits · red = violation'):'';
  $('result-inspector').textContent=selection?resultDescription(r,selection.kind,selection.index):'Select a bus or branch to inspect exact results.';
+ $('pinned-result').textContent=selection&&fixture.refs?hoverDescription(fixture,selection.kind,selection.index):'Click the diagram to pin equipment results.';
 }
 function render(){deck.setProps({layers:layers(),parameters:{clearColor:palette[theme].bg}});}
 function scheduleLabels(){clearTimeout(labelTimer);labelTimer=setTimeout(updateLabels,90);}
@@ -317,14 +342,14 @@ function select(kind,index,started=performance.now()){
     const a=fixture.endpoints[index*2],b=fixture.endpoints[index*2+1];
     $('selection').innerHTML=`<h2>Branch ${index+1}</h2><p>${busName(a)} → ${busName(b)}<br>${fixture.states[index]?'Open tie · explicit gap':'Closed branch'} · source branch/${index+1}</p>`;
   }
-  resultStatus();refreshResults();showOpenPage();controls();$('trace-root').textContent=traceRoot?'Show incident branches':'Trace to layout root';updateLabels();
+  if(fixture.results){if(!profileNavigating){profileTarget=selectionBus(fixture,kind,index);profileHover=null;}updateProfile();}resultStatus();refreshResults();showOpenPage();controls();$('trace-root').textContent=traceRoot?'Show incident branches':'Trace to layout root';updateLabels();
 }
 async function load(id,mode=layoutMode,routing=routingMode){
   const previous=fixture,keep=previous?.manifest.id===id&&selection?{...selection}:null;
   if(previous)viewStates.set(viewKey(previous.manifest),{...camera,target:[...camera.target]});
   layoutMode=mode;routingMode=routing;traceRoot=false;pendingRestoreSelection=keep;
   stopRun('dataset changed');const token=++request;abort?.abort();abort=new AbortController();loading=true;pendingLoad=null;selection=null;refreshOverlay();meshMatches=[];meshCursor=-1;showMeshPage();labelData=[];pendingSelection=null;selectionMetric=null;clearTimeout(labelTimer);controls();
-  fixture=null;render();$('next-colocated').hidden=true;$('search-error').textContent='';
+  cancelAnimationFrame(flowRaf);flowStamp=null;flowElapsed=0;profile=null;profileTarget=null;profileSegments=[];profileHover=null;voltageCursor=-1;fixture=null;updateProfile();render();$('next-colocated').hidden=true;$('search-error').textContent='';
   $('test-status').textContent='Ready';$('status').hidden=false;$('status').textContent='Loading dataset…';$('frame-time').textContent='Not measured';$('frame-detail').textContent='Run the six-second camera test';$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';$('selection-time').textContent='Selection feedback: not measured';
   for(const b of document.querySelectorAll('[data-size]'))b.setAttribute('aria-pressed',String(`synthetic-${b.dataset.size}`===id));
   $('dataset').value=id;const start=performance.now();
@@ -351,7 +376,7 @@ async function load(id,mode=layoutMode,routing=routingMode){
     if(refBuffer||reuse){next.refs=reuse??JSON.parse(new TextDecoder().decode(refBuffer));validateReferences(next);}
     if(m.coordinateSpace==='schematic')validateSchematic(next);
     const decoded=performance.now();prepare(next);
-    if(resultBuffer)try{await verify(resultBuffer,resultMeta.sha256);next.results=prepareResults(next,bindResults(JSON.parse(new TextDecoder().decode(resultBuffer)),next.refs));next.ownedBytes+=next.results.arrayBytes;m.resultSha256=resultMeta.sha256;}catch(e){resultError='Results rejected: '+e.message;}
+    if(resultBuffer)try{await verify(resultBuffer,resultMeta.sha256);next.results=prepareResults(next,bindResults(JSON.parse(new TextDecoder().decode(resultBuffer)),next.refs));next.results.issues=resultIssues(next.results);next.ownedBytes+=next.results.arrayBytes;m.resultSha256=resultMeta.sha256;}catch(e){resultError='Results rejected: '+e.message;}
     if(token!==request)return;
     next.resultError=resultError;const prepared=performance.now();
     fixture=next;flowPeak=0;scopeMs=0;resultStatus();openScope=null;showOpenPage();if(previous?.manifest.id!==id)$('mesh-query').value='';filterMesh();pendingLoad={...identity(m),bytes:m.bytes,refsBytes:m.refsBytes??0,referenceCacheHit:!!reuse,resultBytes:resultMeta?.bytes??0,resultError,start,fetchMs:fetched-start,decodeAndValidateMs:decoded-fetched,prepareMs:prepared-decoded,openPresentationPrepareMs:next.openPrepareMs,submittedAt:prepared,environment:environment()};
@@ -444,7 +469,7 @@ $('dataset').addEventListener('change',()=>load($('dataset').value));
 $('next-colocated').addEventListener('click',()=>{if(selection?.kind!=='bus')return;const members=fixture.locations.get(locationKey(fixture,selection.index));select('bus',members[(members.indexOf(selection.index)+1)%members.length]);});
 $('labels').addEventListener('change',updateLabels);$('edge-picking').addEventListener('change',render);
 $('fit').addEventListener('click',()=>setCamera(fitCamera()));$('detail').addEventListener('click',()=>setCamera(detailCamera()));
-$('clear').addEventListener('click',()=>{selection=null;traceRoot=false;refreshOverlay();resultStatus();meshCursor=-1;showMeshPage();openScope=null;showOpenPage();controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';updateLabels();});
+$('clear').addEventListener('click',()=>{selection=null;traceRoot=false;refreshOverlay();profile=null;profileTarget=null;profileSegments=[];profileHover=null;updateProfile();resultStatus();meshCursor=-1;showMeshPage();openScope=null;showOpenPage();controls();$('next-colocated').hidden=true;$('selection').innerHTML='<h2>Follow a connection.</h2><p>Select a bus or find it by ID.</p>';updateLabels();});
 $('search').addEventListener('submit',e=>{e.preventDefault();if(!fixture||run||loading)return;const started=performance.now(),value=$('bus-id').value.trim();$('search-error').textContent='';let i;
   if(fixture.refs){
     const raw=fixture.rawBusIds.get(value)??[];
@@ -474,21 +499,70 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)stopRun('ta
 window.addEventListener('resize',()=>{stopRun('viewport resized');scheduleLabels();});
 window.addEventListener('pagehide',()=>{abort?.abort();clearTimeout(labelTimer);cancelAnimationFrame(flowRaf);deck?.finalize();});
 $('network-canvas').addEventListener('pointerdown',()=>{if(run)stopRun('user interaction');});
-for(const id of ['result-mode','flow-mode'])$(id).addEventListener('change',()=>{
- resultMode=$('result-mode').value;flowMode=$('flow-mode').value;
+function changeResults(mode=resultMode,flows=flowMode){
+ flowSeconds();flowStamp=null;resultMode=mode;flowMode=flows;
  const url=new URL(location.href);url.searchParams.set('results',resultMode);url.searchParams.set('flows',flowMode);history.replaceState(null,'',url);
- resultStatus();refreshResults();
+ resultStatus();refreshResults();controls();
+}
+function focusResultBranch(b){
+ if(!(b>=0))return;const anchor=fixture.results.anchors.find(a=>a.b===b);if(!anchor)return;
+ select('branch',b);setCamera({...camera,target:anchor.position,zoom:1.1});
+}
+function focusVoltage(){
+ const indices=fixture?.results?.issues.voltage??[];if(!indices.length)return;
+ voltageCursor=(voltageCursor+1)%indices.length;const i=indices[voltageCursor];changeResults('voltage',flowMode==='none'?'static':flowMode);
+ select('bus',i);setCamera({...camera,target:Array.from(fixture.positions.subarray(i*3,i*3+3)),zoom:1.1});
+}
+for(const id of ['result-mode','flow-mode'])$(id).addEventListener('change',()=>changeResults($('result-mode').value,$('flow-mode').value));
+for(const b of document.querySelectorAll('[data-result-preset]'))b.addEventListener('click',()=>{
+ if(!fixture?.results)return;const preset=b.dataset.resultPreset;
+ if(preset==='voltage'){changeResults('voltage','static');if(fixture.results.issues.voltage.length)focusVoltage();}
+ if(preset==='loading'){changeResults('loading','static');focusResultBranch(fixture.results.issues.highest);}
+ if(preset==='power'){changeResults('none',matchMedia('(prefers-reduced-motion: reduce)').matches?'static':'motion');focusResultBranch(fixture.results.issues.power);}
+ if(preset==='topology')changeResults('none','none');
 });
-$('result-detail').addEventListener('click',()=>{
- const r=fixture.results;let b=0;for(let i=1;i<r.branches.length;i++)if((r.branches[i].loading??-1)>(r.branches[b].loading??-1))b=i;
- const anchor=r.anchors.find(a=>a.b===b);if(!anchor)return;
- select('branch',b);setCamera({...camera,target:anchor.position,zoom:1.3});
-});
-$('voltage-detail').addEventListener('click',()=>{
- const i=fixture.results.buses.findIndex(b=>voltageState(b)==='violation');if(i<0){$('result-inspector').textContent='No declared voltage-limit violations in this snapshot.';return;}
- $('result-mode').value='voltage';resultMode='voltage';select('bus',i);setCamera({...camera,target:Array.from(fixture.positions.subarray(i*3,i*3+3)),zoom:1.3});
- const url=new URL(location.href);url.searchParams.set('results',resultMode);history.replaceState(null,'',url);
-});
+$('flow-play').addEventListener('click',()=>changeResults(resultMode,flowMode==='motion'?'static':'motion'));
+$('flow-speed').addEventListener('change',()=>{flowSeconds();playback=Number($('flow-speed').value);flowStamp=null;resultStatus();refreshResults();});
+for(const id of ['flow-p','flow-q'])$(id).addEventListener('change',refreshResults);
+$('result-detail').addEventListener('click',()=>{changeResults('loading',flowMode==='none'?'static':flowMode);focusResultBranch(fixture.results.issues.highest);});
+$('voltage-detail').addEventListener('click',focusVoltage);
+$('profile-open').addEventListener('click',()=>{if(!selection){if(fixture.results.issues.voltage.length)focusVoltage();else focusResultBranch(fixture.results.issues.highest>=0?fixture.results.issues.highest:fixture.results.issues.power);}$('voltage-profile').scrollIntoView({behavior:'smooth',block:'start'});});
+function updateProfile(){
+ if(!fixture?.results||profileTarget===null){profile=null;profileSegments=[];$('profile-charts').replaceChildren();$('profile-bus').replaceChildren();$('profile-summary').textContent='Select a bus, line or equipment symbol to follow its root-to-bus display-tree path.';$('profile-readout').textContent='Hover a chart point for values; click or press Enter to locate its bus.';return;}
+ profile=voltageProfile(fixture,fixture.results,profileTarget);profileSegments=branchSegments(fixture,profile.edges);
+ $('profile-summary').textContent=(fixture.results.kind==='stress'?'ARTIFICIAL STRESS — NOT A SOLUTION. ':'')+(profile.nodes.length?`${busName(profile.root)} → ${busName(profile.target)} · ${profile.nodes.length} buses. `:'')+profile.notice+' Path uses the display spanning tree; mesh alternatives are not inferred.';
+ $('profile-charts').innerHTML=profileMarkup(profile,fixture.refs);
+ $('profile-bus').replaceChildren();for(const i of profile.shown??[]){const option=document.createElement('option');option.value=String(i);option.textContent=busName(i);$('profile-bus').append(option);}
+ const selected=selection?selectionBus(fixture,selection.kind,selection.index):profileTarget;$('profile-bus').value=String(selected);profileCursor(selected,false);
+}
+function profileCursor(bus,hover=true){
+ if(hover)profileHover=bus;
+ for(const p of $('profile-charts').querySelectorAll('[data-profile-bus]'))p.classList.toggle('linked',bus!==null&&Number(p.dataset.profileBus)===bus);
+ if(bus!==null&&fixture?.results)$('profile-readout').textContent=busName(bus)+'\n'+resultDescription(fixture.results,'bus',bus);
+ if(hover)render();
+}
+function navigateProfile(bus,focusPair=null){
+ if(run||loading||!profile?.shown?.includes(bus))return;
+ profileNavigating=true;try{select('bus',bus);}finally{profileNavigating=false;}
+ if(focusPair!==null)($('profile-charts').querySelector(`[data-profile-bus="${bus}"][data-profile-pair="${focusPair}"]`)??$('profile-charts').querySelector(`[data-profile-bus="${bus}"]`))?.focus();
+ setCamera({...camera,target:Array.from(fixture.positions.subarray(bus*3,bus*3+3)),zoom:1.1});
+}
+$('profile-charts').addEventListener('pointerover',e=>{const point=e.target.closest('[data-profile-bus]');if(point)profileCursor(Number(point.dataset.profileBus));});
+$('profile-charts').addEventListener('pointerleave',()=>profileCursor(null));
+$('profile-charts').addEventListener('focusin',e=>{const point=e.target.closest('[data-profile-bus]');if(point)profileCursor(Number(point.dataset.profileBus));});
+$('profile-charts').addEventListener('click',e=>{const point=e.target.closest('[data-profile-bus]');if(point)navigateProfile(Number(point.dataset.profileBus));});
+$('profile-charts').addEventListener('keydown',e=>{const point=e.target.closest('[data-profile-bus]');if(!point)return;const bus=Number(point.dataset.profileBus);if(e.key==='Enter'||e.key===' '){e.preventDefault();navigateProfile(bus,Number(point.dataset.profilePair));}else if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const n=profile.shown.indexOf(bus)+(e.key==='ArrowLeft'?-1:1),next=profile.shown[n];if(next!==undefined){navigateProfile(next,Number(point.dataset.profilePair));}}});
+$('profile-bus').addEventListener('change',()=>navigateProfile(Number($('profile-bus').value)));
+for(const [id,delta] of [['profile-prev',-1],['profile-next',1]])$(id).addEventListener('click',()=>{const i=profile.shown.indexOf(Number($('profile-bus').value)),next=profile.shown[i+delta];if(next!==undefined)navigateProfile(next);});
+$('profile-path').addEventListener('change',render);
+$('profile-fit').addEventListener('click',()=>{if(!profile?.nodes.length)return;const b=overlayBounds(fixture,profile.nodes,profileSegments),rect=$('canvas-wrap').getBoundingClientRect();setCamera({...camera,target:[(b[0]+b[2])/2,(b[1]+b[3])/2,0],zoom:Math.min(1.1,Math.log2(Math.min((rect.width-100)/(b[2]-b[0]+80),(rect.height-100)/(b[3]-b[1]+80))))});});
+function pickedEquipment(info){
+ if(info.index<0||!fixture?.refs)return null;const id=info.layer?.id??'';
+ if(id.startsWith('equipment-hit-')){const d=compactOpen()?fixture.equipment.compact:fixture.equipment.full;return equipmentRow(fixture,d.glyphOwners[info.index]);}
+ if(id.startsWith('buses-')||id.startsWith('busbars-'))return {kind:'bus',index:info.index};
+ if(id.startsWith('compact-branches-'))return {kind:'branch',index:compactBranch(fixture,fixture.openTies,info.index)};
+ if(id.startsWith('branches-'))return {kind:'branch',index:fixture.segmentBranches[info.index]};return null;
+}
 async function start(){
  try{const response=await fetch('local-data/results-manifest.json',{cache:'no-store'});if(response.ok)resultCatalog=(await response.json()).datasets;}catch{}
   controls();const res=await fetch('fixtures/manifest.json');if(!res.ok)throw new Error('Missing fixtures: run generate.mjs');entries=(await res.json()).map(m=>({...m,id:`synthetic-${m.count}`,label:`Synthetic · ${fmt(m.count)} buses`}));
@@ -501,7 +575,8 @@ async function start(){
     views:new OrthographicView({id:'schematic',flipY:true}),viewState:camera,controller:{doubleClickZoom:true},layers:[],pickingRadius:5,
     onViewStateChange:({viewState})=>{if(run)stopRun('user interaction');setCamera({...viewState,zoom:viewState.zoomX??viewState.zoom});},
     onClick:info=>{if(info.index<0||!fixture||loading||run)return;if(info.layer?.id.startsWith('equipment-hit-')){const d=compactOpen()?fixture.equipment.compact:fixture.equipment.full;const {kind,index}=equipmentRow(fixture,d.glyphOwners[info.index]);select(kind,index);}else if(info.layer?.id.startsWith('buses-')||info.layer?.id.startsWith('busbars-'))select('bus',info.index);else if(info.layer?.id.startsWith('open-endpoints-')){openScope=fixture.openTies.markers[info.index].bus;chooseOpen(0,false);}else if(info.layer?.id.startsWith('compact-branches-')){const b=compactBranch(fixture,fixture.openTies,info.index);if(b!==null)select('branch',b);}else if(info.layer?.id.startsWith('branches-'))select('branch',fixture.segmentBranches[info.index]);},
-    getTooltip:info=>info.layer?.id.startsWith('open-endpoints-')&&info.object?`${busName(info.object.bus)} · ${info.object.branches.length} open switch${info.object.branches.length===1?'':'es'} · click to inspect`:null,
+    onHover:info=>{if(loading||run)return;const hit=pickedEquipment(info),bus=hit&&hit.index!==null?selectionBus(fixture,hit.kind,hit.index):null;if(bus!==profileHover&&profile?.shown?.includes(bus))profileCursor(bus);else if(!profile?.shown?.includes(bus)&&profileHover!==null)profileCursor(null);},
+    getTooltip:info=>{if(loading||run)return null;const hit=pickedEquipment(info);if(hit&&hit.index!==null)return {text:hoverDescription(fixture,hit.kind,hit.index),style:{background:theme==='paper'?'#fcfbf7':'#20262d',color:theme==='paper'?'#20242b':'#eeeae1',fontSize:'12px',maxWidth:'min(360px, 80vw)',transform:`translate(${info.x+12}px, ${info.y+12}px) ${info.x>$('canvas-wrap').clientWidth/2?'translateX(calc(-100% - 24px))':''} ${info.y>$('canvas-wrap').clientHeight/2?'translateY(calc(-100% - 24px))':''}`,whiteSpace:'pre-wrap',padding:'12px',border:'1px solid #7d888c',borderRadius:'5px'}};return info.layer?.id.startsWith('open-endpoints-')&&info.object?`${busName(info.object.bus)} · ${info.object.branches.length} open switches · click to inspect`:null;},
     getCursor:({isDragging})=>isDragging?'grabbing':'crosshair',onAfterRender:afterRender,onError:e=>{stopRun('renderer error');error('Renderer error: '+e.message);},
     onLoad:()=>{ready=true;const params=new URLSearchParams(location.search),requested=params.get('dataset')??`synthetic-${params.get('size')??1000}`;load(entries.some(m=>m.id===requested)?requested:'synthetic-1000');}});
 }

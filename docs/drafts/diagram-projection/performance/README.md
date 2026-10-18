@@ -32,6 +32,65 @@ sources, manifest hashes and build instructions are versioned. Rebuild after
 source changes. `THIRD-PARTY-NOTICES.txt` contains the licenses of bundled packages;
 they are not reimplemented here.
 
+
+## Engineering workflow
+
+With external geometry/results staged, open
+`/performance/?dataset=french-medium&layout=tidy-tree&routing=equipment&results=loading&flows=static&open=compact`.
+The **Results** toolbar is above the diagram; layout and routing choices are under
+**Layout, routing and dataset experiments** below the workbench.
+
+1. Choose **Power flow** to focus a high-flow branch and animate P triangles and Q
+   chevrons. Toggle P/Q independently, pause/resume, or change playback speed.
+   The legend fixes separate P and Q scales to the whole result snapshot. Speed
+   uses a square-root magnitude scale, not physical propagation; equal P/Q speeds
+   need not mean equal numeric values. Tiny nonzero values have a readability floor.
+2. Choose **Highest loading** and hover a wire to see its source ID, signed powers
+   at **both** ends, current/rating loading and rating basis. Click to pin details.
+   The French worst line is `75_LVBranch0306208`, 94.23642% loading.
+3. Choose **Voltage violations (1)**, then **Voltage profile ↓**. The 30-bus path
+   ends at `75_LVBus0623137`, where 3–n is 207.7769 V below its 207.8461 V limit.
+   Separate MV and LV plots prevent mixing phase-phase and phase-neutral values.
+4. Hover or focus a chart point to highlight its bus. Click/Enter centers and pins
+   it; Left/Right and Previous/Next move along the same retained path. **Fit path**
+   frames its highlighted routes. Source-coordinate mode explicitly reports that
+   a display-tree profile is unavailable.
+
+The profile shows volts and declared pair bounds versus **branch steps**, not
+kilometres. It follows the display tree, not an inferred unique electrical path
+through meshes. At most 256 path buses are plotted, with explicit truncation;
+paths longer than 4,096 buses are rejected with a notice. The charts preserve
+source IDs and never guess a nominal voltage base or neutral reference.
+
+[Results toolbar and P/Q detail](evidence/french-engineering-workflow.png) and
+[linked MV/LV voltage profile](evidence/french-linked-voltage-profile.png) show the
+saved French solution. Earlier screenshots below document the first overlay experiment.
+
+Reproduce the CPU guardrail with `node docs/drafts/diagram-projection/performance/measure-workflow.mjs`.
+[CPU evidence](evidence/engineering-workflow-cpu.json) samples 1,000 paths and local
+camera queries on both datasets. SAPN path/markup p95 was 0.051/0.247 ms, excluding
+DOM insertion; glyph generation p95 was 0.005 ms. The maximum sampled path contained
+216 buses. Bounded SVG is rebuilt only on selection; animation only updates local
+GPU markers. The snapshot issue list and independent P/Q maxima are prepared once.
+
+[Browser evidence](evidence/engineering-workflow-browser.json) records static and
+animated loading/PQ with a pinned voltage profile on both datasets. Settings:
+692 × 500 CSS canvas, DPR 2, dark theme, equipment routing, local labels off,
+**wire picking on**, profile highlighting on. This differs from the older
+wire-picking-off experiment, so the old numbers are not a controlled regression baseline.
+
+| Dataset | Loading + paused P/Q | Loading + magnitude animation |
+| --- | ---: | ---: |
+| French, 540 buses, 15-bus profile | 9.2 ms p95 | 9.0 ms p95 |
+| SAPN, 98,633 buses, 37-bus profile | 9.1 ms p95 | 9.1 ms p95 |
+
+Each cell is one completed six-second camera sample. These are browser frame
+intervals, not GPU timings or universal budgets. SAPN uses deliberately artificial
+rendering stress values on its 98,633-bus topology; it is not a saved solution.
+The new features are covered by 73 passing POC tests. Browser checks include
+P/Q toggles, playback/pause, exact branch hover, linked keyboard navigation with
+retained path/focus, both themes, and source-layout profile unavailability.
+
 ## Fixtures
 
 | Buses | Branches | Open ties | Routed segments | Binary payload |
@@ -1083,12 +1142,12 @@ It publishes content-hashed, derived result sidecars and then a manifest, all un
 ignored `local-data/`. Raw models and solver dumps are never copied into Git.
 Re-stage after changing inputs. Mismatching result identities/hashes are rejected;
 the browser still permits topology inspection with an explicit unavailable status.
-No imported simulator code or new dependency is used.
+The overlay uses existing Tellegen dependencies.
 
 Open `performance/?dataset=french-medium&layout=tidy-tree&routing=equipment&results=loading&flows=static`.
 The controls offer voltage-limit colours, loading colours and independent P/Q
-markers (off/static/motion). **Focus highest loading** selects a real branch and
-shows its source ID, two end powers and rating basis; **Focus voltage violation**
+markers (off/static/motion). **Highest loading** selects a real branch and
+shows its source ID, two end powers and rating basis; **Voltage violations**
 selects the first bus outside its declared terminal-pair limits. Static direction
 markers are the default in this link. Theme and routing remain independently
 selectable; use local detail to see markers and exact inspector values.
@@ -1100,7 +1159,7 @@ including neutral, and reported in kW/kvar. Voltages use complex phase-neutral o
 phase-phase differences with explicit bounds in V. Line loading is the maximum
 conductor current/rating over both ends. Transformer loading is explicitly an
 aggregate end-MVA/rating measure, **not a worst-phase or winding thermal check**.
-The [design](../design.md#results-overlays-and-lessons-from-the-load-flow-simulator)
+The [design](../design.md#results-overlays)
 explains sign conventions, references, model boundaries and provenance.
 
 For `dataset=sapn-combined`, results are **artificial rendering stress values** on
@@ -1110,7 +1169,7 @@ Other datasets have no result sidecar; values are never fabricated as a fallback
 
 At detail zoom a spatial query examines at most 4,096 candidates and emits at most
 256 end anchors / 512 glyphs. P is a filled triangle; Q is a chevron on the other
-side of the route. Motion encodes direction only. No particles cross equipment
+side of the route. The initial experiment encoded direction only; the engineering workflow above now uses magnitude-dependent speed. No particles cross equipment
 bodies, no layout runs on interaction and static colour buffers stay resident.
 The browser initially respects reduced motion, pauses hidden-tab animation and
 stops animating when there are no visible markers. Local annotations omit short

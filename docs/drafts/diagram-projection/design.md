@@ -1382,20 +1382,10 @@ SAPN owned CPU arrays total 44.18 MiB; observed load-to-first-draw was 1.17 s.
 Browser preparation, identity indexes and source parsing remain separate costs
 from offline routing. See [browser evidence](performance/evidence/equipment-browser-comparison.json).
 
-## Results overlays and lessons from the load-flow simulator
+## Results overlays
 
-The [load-flow simulator](https://tool.adjiebrotots.com/loadflow-simulator/) is a
-useful interaction reference. The inspected public application revision was
-[`3ea48dac`](https://github.com/adjiebrotot/tool/tree/3ea48dac3fd23e8532a0d36b4ef0adb013f55ea5/loadflow-simulator).
-Its custom SVG renderer separates model validation, scene construction and export;
-it is not evidence that an SVG scene or its authored-position routing scales to
-100k automatically laid-out buses. Its UI is declared GPL in the repository
-README; the separately published PSA.js solver has an MIT license. We reuse
-**no application code, assets, styles, solver code or dependencies** from either.
-The experiment below is independently authored over Tellegen's existing deck.gl
-layers and saved Tellegen multiconductor power-flow results.
-
-The lessons we adopt are:
+The result overlay uses Tellegen's existing deck.gl layers and saved Tellegen
+multiconductor power-flow results. Its design follows these requirements:
 
 - Separate electrical model identity, layout revision and result revision. A
   geometry-only change must retain a valid solved snapshot. Electrical changes
@@ -1404,8 +1394,8 @@ The lessons we adopt are:
   in the POC; editing and solver sessions remain outside this gallery.
 - Read P and Q independently, including their signs at **both** branch ends.
   Shape and lane position supplement colour, and static markers remain useful
-  when motion is disabled. Animation is an optional direction cue, not physical
-  propagation, particle speed or a quantitative magnitude encoding.
+  when motion is disabled. Animation is an optional direction and magnitude cue, not physical
+  propagation. The engineering-workflow section below specifies its fixed scales.
 - Keep normal operation quiet and make limits explicit. Compare full-precision
   values before formatting, and retain exact status, units, reference terminals
   and rating basis in the inspector. A solver's convergence/validity band is not
@@ -1519,3 +1509,100 @@ measurements or universal budgets. An early unmatched-viewport baseline is retai
 but excluded from the comparison. Sixty-three POC tests pass. See the performance
 guide for settings, allocation exclusions, selected-source screenshots and
 remaining collision/aggregation limitations.
+
+## Engineering results workflow
+
+The gallery now prioritizes a practical sequence: **follow power → inspect an
+end value → locate a limit violation → trace its feeder profile**. Results presets
+sit immediately above the diagram. Layout/routing experiments and performance
+measurements remain available below the engineering workbench. This supersedes
+the initial direction-only animation experiment described above.
+
+### Discoverable controls and inspection
+
+**Power flow** enables P/Q motion and focuses the largest absolute-P branch.
+**Voltage** focuses a declared voltage-limit violation when one exists;
+**Loading** focuses the highest available loading. **Topology** removes result
+colours and markers. P and Q have independent toggles, an explicit pause/resume
+button, and ½×/1×/2× playback. Display settings expose manual combinations and
+explain conventions. The status retains solver provenance or the artificial-data
+warning. Missing snapshots disable result actions; they never manufacture values.
+
+Wire hover/picking is enabled by default. Tooltips show the source namespace and
+ID, both signed P/Q end totals, loading and its rating basis, or actual bus
+terminal-pair voltages, bounds and violation status. An attachment reports its
+connected bus voltage explicitly; it does not claim that bus values are device
+power. Clicking pins these details and connects the selection to its voltage
+profile. Tooltip placement flips at the viewport edges. Source identity remains
+authoritative through layout changes and chart navigation.
+
+### Magnitude-dependent P/Q motion
+
+P triangles and Q chevrons move in independent offset lanes. The sign at each
+source-ordered end determines direction; the display spanning tree never does.
+Speed now represents magnitude: `max(2, 72 × sqrt(abs(value)/snapshotMaximum))`
+CSS pixels per second at 1×, capped at 72. P and Q each use their own maximum
+absolute end value over the **whole immutable snapshot**, computed once when
+preparing results. The legend shows numeric quarter-maximum and maximum examples
+(36 and 72 px/s). P and Q speeds are not directly comparable across their separate
+scales. The scale does not renormalize with the viewport. The 2 px/s floor keeps
+small nonzero values visible; zero, missing and inactive flows have no marker.
+
+The logical animation clock freezes on pause or in a hidden tab. Playback changes
+alter the clock rate, preserving phase. Speed is invariant to zoom and route
+segment length; markers wrap within their reserved end windows. This is an
+engineering magnitude cue, **not physical propagation or time-varying simulation**.
+Reduced-motion preference initially selects static markers. The user can explicitly
+start motion. The existing 256-anchor / 512-glyph budget remains; no full-network
+per-frame scan, relayout or colour-buffer regeneration is introduced.
+
+### Linked voltage profiles
+
+Select a bus, attachment, or branch to obtain a root-to-bus path in the display
+spanning forest. For a branch, use its deeper tree endpoint (source-to endpoint
+if depths tie). This is a structural inspection path, **not a claim of unique
+power supply through a mesh**. The profile is unavailable in source-coordinate
+mode without a display tree. It never joins independent SAPN source panels.
+
+Plot actual volts against branch steps, with one trace and declared lower/upper
+bounds per explicit terminal pair. Break into separate plots at transformers and
+whenever the terminal-reference set changes. Do not connect MV phase-to-phase and
+LV phase-to-neutral samples, infer a nominal per-unit base, replace neutral with
+earth, or interpolate through unavailable reference data. Full precision determines
+violations; labels show rounded values. The saved French violation is visible on
+phase 3–neutral at `75_LVBus0623137`: 207.7769 V against a 207.8461 V minimum.
+
+Hovering/focusing a profile point highlights its bus in the diagram and shows exact
+values. Clicking or pressing Enter pins and centers that bus while retaining the
+original complete profile. Left/right arrows, a path-bus selector and Previous/Next
+provide keyboard navigation. Diagram hover links back to matching profile points.
+The path overlay is optional; **Fit path** frames the path. Curve points are source
+bus indices bound to validated reference records, not inferred from labels.
+
+Path construction is bounded to 4,096 buses; longer paths receive an explicit
+unavailable notice. Charts show at most the last 256 buses, with an omission notice
+and the full bounded path still highlighted. No downsampling silently removes a
+violation. Small independent SVG charts are built only on selection; deck.gl keeps
+the large scene resident. No chart library or additional dependency is introduced. PowerIO and solver schemas are unchanged: these are Tellegen display
+and interaction policies over the existing validated result snapshot.
+
+### Evidence and remaining scope
+
+The [workflow CPU guardrail](performance/evidence/engineering-workflow-cpu.json)
+samples 1,000 paths/cameras per dataset. On combined SAPN, path preparation p95 was
+0.051 ms and SVG-string generation p95 0.247 ms (excluding DOM insertion). The
+largest sampled path had 216 buses; local glyph generation p95 was 0.005 ms.
+The browser guardrail and reproducible walkthrough are in the
+[performance guide](performance/README.md#engineering-workflow).
+
+The French walkthrough uses saved solved values. SAPN remains explicitly labelled
+**artificial stress, not a power-flow solution**. These are local guardrails, not
+universal performance budgets. Seventy-three tests cover the new speed mappings,
+sign/zoom behavior, profile boundaries, missing references, bounded paths, source
+identity and safe SVG labels, alongside the existing POC tests.
+
+Remaining engineering work includes per-conductor result inspection in the
+multi-wire view, winding/coil thermal limits, coherent scenario/time comparisons,
+full-path flow animation, chart/scene export and general label collision handling.
+The current animated snapshot does not solve or simulate edits. Application
+integration and broader user testing remain separate from this gallery experiment.
