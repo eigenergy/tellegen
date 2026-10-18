@@ -25,3 +25,11 @@ both projections with manually authored geometry, independently of BMOPF routing
 - [Linked MV/LV profile](french-linked-voltage-profile.png): dark theme, 30-bus path to `75_LVBus0623137`; separate MV phase-pair and LV phase-neutral plots, declared limits, and the phase-3 undervoltage. The path selector and exact values remain visible.
 
 These are verified screenshots of the independently implemented local gallery. Still images show the controls and glyph positions, not the animation speed. Raw models and result sidecars remain external/ignored.
+
+## Engineering workbench
+
+Captured at 1440 × 900 (DPR 1) in headless Chromium with software WebGL, dark theme, saved French solution.
+
+- [Worst issue](workbench-worst-issue.png): <kbd>N</kbd> from a fresh load. The KPI strip, ranked issue list, inspector pair bars and linked profile all point at `75_LVBus0623137` (3–n 207.7769 V below its 207.8461 V limit). The profile shades the min–max of all buses at the same depth and reference.
+- [Conductor currents](workbench-conductors.png): line `75_LVBranch0306208` restored from a shared URL (`sel=branch:line:french-medium/75_LVBranch0306208`). Per-conductor |I| at both ends on one scale: 91 / 113 / 176 A on the phases and 72 A (41 %) on the neutral.
+- [Branch table](workbench-branch-table.png): continuous loading colour, Branches table sorted by loading and linked to the diagram selection.

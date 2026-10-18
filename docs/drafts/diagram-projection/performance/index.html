@@ -28,6 +28,7 @@
  </section>
  <section class="dock-section results-browser" aria-labelledby="view-heading">
   <div class="dock-heading"><h2 id="view-heading" class="eyebrow">VIEW</h2></div>
+  <div class="view-control layout-quick" id="layout-quick" role="group" aria-label="Diagram layout" hidden><button data-layout-quick="schematic" aria-pressed="true" title="Schematic (tidy tree from the source)">Schematic</button><button data-layout-quick="source" aria-pressed="false" title="Geographic source coordinates">Geographic</button></div>
   <div class="results-presets" role="group" aria-label="Results view"><button data-result-preset="power" aria-pressed="false" title="Power flow (1)">Power flow</button><button data-result-preset="voltage" aria-pressed="false" title="Voltage (2)">Voltage</button><button data-result-preset="loading" aria-pressed="false" title="Loading (3)">Loading</button><button data-result-preset="topology" aria-pressed="false" title="Topology (4)">Topology</button></div>
   <div class="results-actions"><label class="toggle"><input id="flow-p" type="checkbox" checked> P ▸</label><label class="toggle"><input id="flow-q" type="checkbox" checked> Q ›</label><button id="flow-play" class="action">Animate flows</button><label for="flow-speed" class="visually-hidden">Playback speed</label><select id="flow-speed" title="Playback speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option></select></div>
   <div class="results-actions"><label class="toggle" title="Line width proportional to √|P| on the snapshot scale"><input type="checkbox" id="flow-width" checked> Width by |P|</label><label class="toggle" title="Values for the current view, most severe first, within a label budget"><input type="checkbox" id="value-labels" checked> Value labels</label></div>
@@ -82,6 +83,7 @@
  <div class="canvas-wrap" id="canvas-wrap"><canvas id="network-canvas" tabindex="0" aria-label="Network diagram. Drag to pan, scroll to zoom. Press / to search, N for the next issue."></canvas>
   <div class="canvas-heading"><span id="canvas-title">Loading fixtures…</span><span id="zoom-readout">ORTHOGRAPHIC · PRECOMPUTED</span></div>
   <div id="status" role="status">Loading renderer…</div>
+  <div id="result-banner" class="result-banner" role="alert" hidden></div>
   <div id="result-watermark" class="result-watermark"></div>
   <div class="canvas-tools" role="group" aria-label="Camera"><button id="zoom-in" class="icon-button" aria-label="Zoom in" title="Zoom in (+)">+</button><button id="zoom-out" class="icon-button" aria-label="Zoom out" title="Zoom out (−)">−</button><button id="fit" class="icon-button" aria-label="Fit network" title="Fit network (F)">⤢</button><button id="detail" class="icon-button lab-only" aria-label="Feeder detail" title="Feeder detail">◎</button><span class="tool-gap"></span><button id="export-png" class="icon-button text" title="Export PNG of this view with a title block">PNG</button><button id="export-svg" class="icon-button text" title="Export vector SVG of the visible region with a title block">SVG</button></div>
   <div class="canvas-help" title="Drag to pan · scroll to zoom · click to inspect"><kbd>?</kbd> shortcuts</div>
@@ -93,7 +95,8 @@
  <section class="dock-section inspector">
   <div class="dock-heading"><h2 class="eyebrow">INSPECT</h2><button id="clear" class="link-button" title="Clear selection (Esc)">Clear</button></div>
   <div id="selection" aria-live="polite"><h2>Follow a connection.</h2><p>Select something on the diagram, an issue, or press <kbd>/</kbd> to search.</p></div>
-  <pre id="result-inspector" class="result-inspector"></pre>
+  <div id="mc-inspector" class="mc-inspector"></div>
+  <details class="exact-values"><summary>Exact values</summary><pre id="result-inspector" class="result-inspector"></pre></details>
   <button id="next-colocated" class="action" hidden>Next co-located bus</button>
   <div class="actions"><button id="trace-root" class="action" disabled>Trace to layout root</button><button id="focus-source" class="action" disabled>Fit selected source</button></div>
   <details class="pinned-results"><summary>Hover card for this selection</summary><pre id="pinned-result" class="result-inspector">Click the diagram to pin a result.</pre></details>
@@ -105,13 +108,13 @@
   <button id="profile-toggle" class="icon-button" aria-expanded="false" aria-controls="profile-body" aria-label="Show or hide the bottom panel (P)" title="Show / hide (P)"><span aria-hidden="true" class="chevron">▾</span></button>
   <div class="dock-tabs" role="tablist" aria-label="Bottom panel"><button role="tab" data-dock-tab="profile" aria-selected="true">Voltage profile</button><button role="tab" data-dock-tab="bus" aria-selected="false">Buses</button><button role="tab" data-dock-tab="branch" aria-selected="false">Branches</button></div>
   <span id="profile-summary" class="fine profile-only">Select a bus, line or equipment symbol to follow its root-to-bus display-tree path.</span>
-  <div class="actions profile-only"><label class="toggle"><input type="checkbox" id="profile-path" checked> Highlight path</label><button id="profile-fit" class="action">Fit path</button></div>
+  <div class="actions profile-only"><label class="toggle" title="Shade the min–max of all buses at the same depth and voltage reference"><input type="checkbox" id="profile-envelope" checked> Feeder envelope</label><label class="toggle"><input type="checkbox" id="profile-path" checked> Highlight path</label><button id="profile-fit" class="action">Fit path</button></div>
  </div>
  <div id="profile-body" class="profile-body" hidden>
   <div class="profile-pane profile-only">
    <div id="profile-charts"></div>
    <div class="profile-side">
-    <p class="fine">Volts vs branch steps · <span class="phase-0">● first pair</span> · <span class="phase-1">● second pair</span> · <span class="phase-2">● third pair</span> · dashed declared bounds · ! violation</p>
+    <p class="fine">Volts vs branch steps · <span class="phase-0">● first pair</span> · <span class="phase-1">● second pair</span> · <span class="phase-2">● third pair</span> · dashed declared bounds · shaded: all buses at the same depth and reference · ! violation</p>
     <div class="profile-navigation"><button id="profile-prev" class="action" aria-label="Previous bus" title="Previous path bus ([)">‹</button><label for="profile-bus" class="visually-hidden">Path bus</label><select id="profile-bus"></select><button id="profile-next" class="action" aria-label="Next bus" title="Next path bus (])">›</button></div>
     <pre id="profile-readout" class="result-inspector" aria-live="polite">Hover a chart point for values; click or press Enter to locate its bus. Arrow keys move along the path.</pre>
    </div>

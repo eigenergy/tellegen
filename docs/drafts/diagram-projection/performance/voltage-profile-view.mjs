@@ -1,14 +1,17 @@
 /** Small SVG charts for one selected path, with explicit references and per-pair limits. */
 import {formatValue,severity} from './results-adapter.mjs';
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export function profileMarkup(profile,refs){
+/** `envelopes[zone][row]` (optional) is the min/max of all peers at that depth and reference, drawn behind the path. */
+export function profileMarkup(profile,refs,envelopes=null){
  if(!profile.zones.length)return `<p class="fine">${esc(profile.notice)}</p>`;
  return profile.zones.map((zone,zoneIndex)=>{
-  const rows=zone.rows,all=rows.flatMap(r=>r.pairs.flatMap(p=>[p.volts,p.min,p.max]));
+  const rows=zone.rows,env=envelopes?.[zoneIndex]??null,all=[...rows.flatMap(r=>r.pairs.flatMap(p=>[p.volts,p.min,p.max])),...(env??[]).flatMap(e=>e?[e.min,e.max]:[])];
   if(!all.length)return '<p class="fine">Voltage reference/limits unavailable in this part of the path.</p>';
   const low=Math.min(...all),high=Math.max(...all),pad=Math.max((high-low)*.15,1),lo=low-pad,hi=high+pad;
   const x=i=>rows.length===1?330:58+i*540/(rows.length-1),y=v=>145-(v-lo)/(hi-lo)*112;
   const pairs=rows[0].pairs,marks=[];
+  const band=env?rows.map((r,i)=>env[i]?[x(i),env[i]]:null).filter(Boolean):[];
+  if(band.length>1)marks.push(`<polygon class="envelope" points="${[...band.map(([px,e])=>`${px},${y(e.max)}`),...band.reverse().map(([px,e])=>`${px},${y(e.min)}`)].join(' ')}"><title>Min–max of all buses at the same depth and reference</title></polygon>`);
   pairs.forEach((pair,k)=>{
    const cls=`phase-${k%3}`,points=rows.map((r,i)=>({r,i,p:r.pairs[k]}));
    for(const key of ['min','max','volts'])marks.push(`<polyline class="${cls} ${key==='volts'?'measured':'limit'}" points="${points.map(({i,p})=>`${x(i)},${y(p[key])}`).join(' ')}"/>`);

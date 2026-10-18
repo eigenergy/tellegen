@@ -73,6 +73,22 @@ The page is a **workbench**: the diagram fills the centre, with docked panels ar
   filterable, issues-only, two-way linked to the diagram selection (arrow keys walk
   rows). CSV export keeps full precision with a provenance header, and neutralises
   formula-like text.
+- **Geographic ⇄ Schematic** (View panel): switching between source coordinates and
+  the tidy tree animates each bus from where it is on screen to its new position
+  (900 ms, straight chords while moving; routed geometry returns at the end; target
+  layers stay resident but hidden, so no re-upload at the end). Selection and source
+  identities carry over. Skipped for reduced motion and above 25,000 buses, where the
+  per-frame interpolation and re-upload are not yet measured on a real GPU. Headless
+  software-GL checks on French ran the morph at 16.7 ms p50/p95 after a one-time
+  ~0.5 s layout upload; SAPN cannot be judged in software GL.
+- **Per-phase inspector**: buses show each declared pair on its own band (±25 %
+  track) plus magnitude unbalance; branches show conductor |I| at both ends on one
+  scale, with the neutral called out and its share of the largest phase current.
+- **Feeder envelope** (profile): shaded min–max of all buses at the same display-tree
+  depth, component and voltage reference, behind the selected path. It never mixes
+  phase–phase and phase–neutral values.
+- **Stale results** are announced over the canvas when a result sidecar is rejected
+  (for example a source hash mismatch), instead of only in the side panel.
 - **Export**: PNG of the rendered view, or vector SVG of the visible region (up to
   200k segments), both with a title block (dataset, layout, view, camera, result
   hash, timestamp).
