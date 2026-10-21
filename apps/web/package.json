@@ -23,18 +23,18 @@
 		"@tellegen/webmcp": "^0.1.0"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.63.0",
+		"@playwright/test": "^1.64.1",
 		"@fontsource-variable/bricolage-grotesque": "^5.3.0",
 		"@fontsource/ibm-plex-mono": "^5.3.0",
 		"@sveltejs/adapter-static": "^4.0.0",
-		"@sveltejs/kit": "^3.0.0",
+		"@sveltejs/kit": "^3.1.0",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
-		"prettier": "^3.9.9",
+		"prettier": "^3.9.10",
 		"prettier-plugin-svelte": "^4.1.1",
-		"svelte": "^5.57.1",
-		"svelte-check": "^4.7.6",
+		"svelte": "^5.57.2",
+		"svelte-check": "^4.7.7",
 		"typescript": "^6.0.3",
-		"vite": "^8.3.1"
+		"vite": "^8.3.4"
 	},
 	"imports": {
 		"#lib/*": "./src/lib/*"
