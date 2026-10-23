@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import AgentGuide from './AgentGuide.svelte';
-	import { PanelFrame } from '@tellegen/svelte';
+	import { PanelFrame, getAppState } from '@tellegen/svelte';
 	import type {
 		ExperimentRecord,
 		JsonValue,
@@ -36,6 +36,7 @@
 
 	let open = $state(false);
 	let tab = $state<'activity' | 'connect'>('connect');
+	const app = getAppState();
 	let welcome = $state(false);
 	const welcomeKey = 'tellegen.welcome.studies-v1';
 	onMount(() => {
@@ -328,7 +329,7 @@
 		</div>
 	</div>
 </PanelFrame>
-{#if welcome && !open}<aside class="welcome" aria-label="New to Tellegen">
+{#if welcome && !open && !app.zen}<aside class="welcome" aria-label="New to Tellegen">
 		<a href={resolve('/changelog')}>New: saved studies and agent tools</a>
 		<button aria-label="Dismiss introduction" onclick={dismiss}>Close</button>
 	</aside>{/if}

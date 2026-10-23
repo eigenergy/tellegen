@@ -2,6 +2,8 @@ export { getNoticeCenter, errorNoticeTitle } from './notices.svelte.js';
 export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as PanelFrame } from './components/PanelFrame.svelte';
 export { getPanelLayout } from './panels.svelte.js';
+export { getCommandRegistry, commandTitle, commandHint } from './commands.svelte.js';
+export type { Command } from './commands.svelte.js';
 export type { PanelSide, PanelPosition, PanelBounds } from './panels.svelte.js';
 export { default as TellegenProvider } from './TellegenProvider.svelte';
 export { default as TellegenShell } from './TellegenShell.svelte';

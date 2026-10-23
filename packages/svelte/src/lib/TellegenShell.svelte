@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import AppFooter from './components/AppFooter.svelte';
 	import NotificationCenter from './components/NotificationCenter.svelte';
+	import CommandPalette from './components/CommandPalette.svelte';
 	import AppHeader from './components/AppHeader.svelte';
 	import ControlPanel from './components/ControlPanel.svelte';
 	import DropZone from './components/DropZone.svelte';
@@ -114,7 +115,7 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === 'Escape') ctrl.clearSelection();
+		if (e.key === 'Escape' && !e.defaultPrevented) ctrl.clearSelection();
 	}}
 	ondragenter={onDragEnter}
 	ondragleave={onDragLeave}
@@ -137,14 +138,15 @@
 	<AppHeader />
 	<PanelHost />
 	<NotificationCenter />
+	<CommandPalette />
 	<ControlPanel />
 	<SolveCard />
 	{#if !app.studyView}
 		<DropZone />
 		<PlacementCue />
-		<RestoreDefaultsButton />
+		{#if !app.zen}<RestoreDefaultsButton />{/if}
 	{/if}
-	{#if config.showFooter && !app.compactLayout}
+	{#if config.showFooter && !app.compactLayout && !app.zen}
 		<AppFooter />
 	{/if}
 </main>
