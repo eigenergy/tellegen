@@ -43,7 +43,7 @@ pub(crate) fn parse_case3() -> DcNetwork {
 /// pure reactances (transformers with no off-nominal tap), the rest carry line
 /// charging — a small case that still exercises the full pi-model assembly.
 #[cfg(feature = "sensitivity")]
-const CASE9: &str = "\
+pub(crate) const CASE9: &str = "\
 function mpc = case9
 mpc.version = '2';
 mpc.baseMVA = 100;

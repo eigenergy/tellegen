@@ -47,7 +47,18 @@ $\partial(P, Q)/\partial(\theta, V_m)$. Buses are typed slack / PV / PQ (PV and
 slack buses hold the generator voltage setpoint; PQ buses solve for both angle and
 magnitude), and the solve takes damped steps with a backtracking line search from
 the setpoint start plus a few perturbations, keeping the lowest-residual result.
-Select `acpf` in `solve_module_json`.
+The reference bus holds its stated angle, and every reported angle is measured on
+that reference. Select `acpf` in `solve_module_json`.
+
+`"start": "case"` starts Newton from the case's stored bus voltages instead:
+each bus's stored magnitude, and its stored angle relative to the reference
+bus. Star buses of three-winding transformers start from the transformer's
+stored star voltage, and a typed AC power flow instance's initial point
+overrides the stored values. A bus whose stored magnitude is not positive
+starts at its setpoint, and a stored state that does not converge falls back to
+the flat start. A case saved from a converged solve needs no Newton steps. The
+default is `"start": "flat"`; other formulations refuse `"case"`, since none of
+them iterates from a start.
 
 ## Conic SOCWR (Jabr)
 
