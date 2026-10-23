@@ -43,6 +43,9 @@ pub struct DcOpfSolution {
     /// linear objective.
     pub(crate) cost_epigraph: Vec<Option<f64>>,
     pub(crate) cost_segment_duals: Vec<Option<Vec<f64>>>,
+    /// The solves that produced this solution, when a request's limit options
+    /// asked for them.
+    pub(crate) limit_rounds: Option<Vec<crate::api::LimitRound>>,
 }
 
 impl DcOpfSolution {
@@ -54,31 +57,78 @@ impl DcOpfSolution {
 }
 
 /// Row and column offsets of the DC OPF program, derived from the network sizes.
-/// Variables are `x = [va(n), pg(k), f(m), psh(n), t(k_pwl)]`, where `t` holds
-/// one cost epigraph variable for each piecewise generator. Constraint rows are
-/// the equalities first (zero cone: power balance, flow definition, reference),
-/// then the inequalities (nonnegative cone: line limits, generator limits,
-/// shedding bounds, phase limits, piecewise cost segments), each block
-/// contiguous. The assembly scatters by these offsets and the readout uses the
-/// same layout.
+/// Variables are `x = [va(n), pg(k), f(m), psh(s), t(k_pwl)]`, where `psh` holds a
+/// shedding variable only for a bus whose shedding cap is positive (none unless
+/// shedding is allowed) and `t` one cost epigraph variable for each piecewise
+/// generator. Constraint rows are the equalities first (zero cone: power balance,
+/// flow definition, reference), then the inequalities (nonnegative cone: line
+/// limits, generator limits, shedding bounds, phase limits, piecewise cost
+/// segments), each block contiguous. An inactive limit, and the bounds of a
+/// shedding variable pinned at zero, get no row at all: the readout reports a
+/// zero multiplier for them, which is what the KKT system in [`crate::sens`]
+/// expects of a limit that does not bind. The assembly scatters by these offsets
+/// and the readout uses the same layout.
 struct OpfLayout {
     n: usize,
-    m: usize,
     k: usize,
+    m: usize,
     n_eq: usize,
     n_ineq: usize,
+    /// Upper-limit row of each branch's flow limit; its lower-limit row follows
+    /// `n_line` rows later. `None` for an inactive limit.
+    line_rows: Vec<Option<usize>>,
+    n_line: usize,
+    /// Upper-bound row of each generator's output limits; the lower bound
+    /// follows `n_gen_rows` rows later.
+    gen_rows: Vec<Option<usize>>,
+    n_gen_rows: usize,
+    /// Column and upper-bound row of each bus's shedding variable; the lower
+    /// bound follows `n_shed` rows later. `None` where shedding is pinned at zero.
+    shed_columns: Vec<Option<usize>>,
+    shed_rows: Vec<Option<usize>>,
+    n_shed: usize,
+    /// Upper-limit row of each branch's angle-difference limit; the lower limit
+    /// follows `n_phase` rows later.
+    phase_rows: Vec<Option<usize>>,
+    n_phase: usize,
+    nvar: usize,
     cost_columns: Vec<Option<usize>>,
     cost_row_starts: Vec<Option<usize>>,
+}
+
+/// Number the `true` entries of `mask` from `start`: each gets the next index,
+/// each `false` entry `None`. Returns the numbering and the count numbered.
+fn number_active(mask: impl Iterator<Item = bool>, start: usize) -> (Vec<Option<usize>>, usize) {
+    let mut next = start;
+    let numbered = mask
+        .map(|active| {
+            active.then(|| {
+                next += 1;
+                next - 1
+            })
+        })
+        .collect();
+    (numbered, next - start)
 }
 
 impl OpfLayout {
     fn dc(dc: &DcNetwork) -> Self {
         let (n, m, k) = (dc.n, dc.m, dc.k);
         let n_eq = n + m + 1;
-        let base_nvar = 2 * n + k + m;
-        let base_n_ineq = 4 * m + 2 * k + 2 * n;
-        let mut next_column = base_nvar;
-        let mut next_cost_row = n_eq + base_n_ineq;
+        let (line_rows, n_line) = number_active(dc.thermal_limit_active.iter().copied(), n_eq);
+        let (gen_rows, n_gen_rows) = number_active(
+            dc.generator_capability_active.iter().copied(),
+            n_eq + 2 * n_line,
+        );
+        let sheddable = (0..n).map(|i| dc.shed_cap(i) > 0.0);
+        let (shed_columns, n_shed) = number_active(sheddable.clone(), n + k + m);
+        let (shed_rows, _) = number_active(sheddable, n_eq + 2 * n_line + 2 * n_gen_rows);
+        let (phase_rows, n_phase) = number_active(
+            dc.angle_bound_active.iter().copied(),
+            n_eq + 2 * n_line + 2 * n_gen_rows + 2 * n_shed,
+        );
+        let mut next_column = n + k + m + n_shed;
+        let mut next_cost_row = n_eq + 2 * (n_line + n_gen_rows + n_shed + n_phase);
         let mut cost_columns = Vec::with_capacity(k);
         let mut cost_row_starts = Vec::with_capacity(k);
         for cost in &dc.piecewise_costs {
@@ -92,19 +142,28 @@ impl OpfLayout {
                 cost_row_starts.push(None);
             }
         }
-        let n_ineq = next_cost_row - n_eq;
         OpfLayout {
             n,
-            m,
             k,
+            m,
             n_eq,
-            n_ineq,
+            n_ineq: next_cost_row - n_eq,
+            line_rows,
+            n_line,
+            gen_rows,
+            n_gen_rows,
+            shed_columns,
+            shed_rows,
+            n_shed,
+            phase_rows,
+            n_phase,
+            nvar: next_column,
             cost_columns,
             cost_row_starts,
         }
     }
     fn nvar(&self) -> usize {
-        2 * self.n + self.k + self.m + self.cost_columns.iter().flatten().count()
+        self.nvar
     }
     fn ncon(&self) -> usize {
         self.n_eq + self.n_ineq
@@ -118,8 +177,8 @@ impl OpfLayout {
     fn col_f(&self, e: usize) -> usize {
         self.n + self.k + e
     }
-    fn col_psh(&self, i: usize) -> usize {
-        self.n + self.k + self.m + i
+    fn col_psh(&self, i: usize) -> Option<usize> {
+        self.shed_columns[i]
     }
     fn r_pb(&self, i: usize) -> usize {
         i
@@ -130,29 +189,29 @@ impl OpfLayout {
     fn r_ref(&self) -> usize {
         self.n + self.m
     }
-    fn r_lineub(&self, e: usize) -> usize {
-        self.n_eq + e
+    fn r_lineub(&self, e: usize) -> Option<usize> {
+        self.line_rows[e]
     }
-    fn r_linelb(&self, e: usize) -> usize {
-        self.n_eq + self.m + e
+    fn r_linelb(&self, e: usize) -> Option<usize> {
+        self.line_rows[e].map(|row| row + self.n_line)
     }
-    fn r_genub(&self, j: usize) -> usize {
-        self.n_eq + 2 * self.m + j
+    fn r_genub(&self, j: usize) -> Option<usize> {
+        self.gen_rows[j]
     }
-    fn r_genlb(&self, j: usize) -> usize {
-        self.n_eq + 2 * self.m + self.k + j
+    fn r_genlb(&self, j: usize) -> Option<usize> {
+        self.gen_rows[j].map(|row| row + self.n_gen_rows)
     }
-    fn r_shedub(&self, i: usize) -> usize {
-        self.n_eq + 2 * self.m + 2 * self.k + i
+    fn r_shedub(&self, i: usize) -> Option<usize> {
+        self.shed_rows[i]
     }
-    fn r_shedlb(&self, i: usize) -> usize {
-        self.n_eq + 2 * self.m + 2 * self.k + self.n + i
+    fn r_shedlb(&self, i: usize) -> Option<usize> {
+        self.shed_rows[i].map(|row| row + self.n_shed)
     }
-    fn r_phaseub(&self, e: usize) -> usize {
-        self.n_eq + 2 * self.m + 2 * self.k + 2 * self.n + e
+    fn r_phaseub(&self, e: usize) -> Option<usize> {
+        self.phase_rows[e]
     }
-    fn r_phaselb(&self, e: usize) -> usize {
-        self.n_eq + 2 * self.m + 2 * self.k + 2 * self.n + self.m + e
+    fn r_phaselb(&self, e: usize) -> Option<usize> {
+        self.phase_rows[e].map(|row| row + self.n_phase)
     }
     fn col_cost(&self, generator: usize) -> Option<usize> {
         self.cost_columns[generator]
@@ -160,6 +219,12 @@ impl OpfLayout {
     fn r_cost_segment(&self, generator: usize, segment: usize) -> Option<usize> {
         self.cost_row_starts[generator].map(|start| start + segment)
     }
+}
+
+/// The size of the DC OPF program for `model`: `(variables, constraint rows)`.
+pub(crate) fn dc_opf_size(model: &DcNetwork) -> (usize, usize) {
+    let lay = OpfLayout::dc(model);
+    (lay.nvar(), lay.ncon())
 }
 
 impl OpfFormulation for Dc {
@@ -181,12 +246,16 @@ impl OpfFormulation for Dc {
             }
         }
         for i in 0..dc.n {
-            prog.lin(lay.col_psh(i), dc.c_shed[i]);
+            if let Some(column) = lay.col_psh(i) {
+                prog.lin(column, dc.c_shed[i]);
+            }
         }
 
         // Power balance: G_inc g + psh - B theta = fixed_withdrawal(sw).
         for (i, &withdrawal) in fixed_withdrawal.iter().enumerate() {
-            prog.a(lay.r_pb(i), lay.col_psh(i), 1.0);
+            if let Some(column) = lay.col_psh(i) {
+                prog.a(lay.r_pb(i), column, 1.0);
+            }
             prog.rhs(lay.r_pb(i), withdrawal);
         }
         for j in 0..dc.k {
@@ -208,52 +277,47 @@ impl OpfFormulation for Dc {
             prog.a(lay.r_fd(e), lay.col_va(fb), -w);
             prog.a(lay.r_fd(e), lay.col_va(tb), w);
             prog.rhs(lay.r_fd(e), dc.current_flow_offset(e));
-            // Inactive inequality rows remain strictly slack (`0 <= 1`) so the
-            // fixed KKT layout stays aligned without introducing a multiplier.
-            if dc.thermal_limit_active[e] {
-                prog.a(lay.r_lineub(e), lay.col_f(e), 1.0);
-                prog.rhs(lay.r_lineub(e), dc.fmax[e]);
-                prog.a(lay.r_linelb(e), lay.col_f(e), -1.0);
-                prog.rhs(lay.r_linelb(e), dc.fmax[e]);
-            } else {
-                prog.rhs(lay.r_lineub(e), 1.0);
-                prog.rhs(lay.r_linelb(e), 1.0);
+            // An inactive limit has no row (see `OpfLayout`).
+            if let (Some(ub), Some(lb)) = (lay.r_lineub(e), lay.r_linelb(e)) {
+                prog.a(ub, lay.col_f(e), 1.0);
+                prog.rhs(ub, dc.fmax[e]);
+                prog.a(lb, lay.col_f(e), -1.0);
+                prog.rhs(lb, dc.fmax[e]);
             }
             // Phase angle difference limits: sw (A theta) within sw [angmin, angmax].
             let sw = dc.sw[e];
-            if dc.angle_bound_active[e] {
-                prog.a(lay.r_phaseub(e), lay.col_va(fb), sw);
-                prog.a(lay.r_phaseub(e), lay.col_va(tb), -sw);
-                prog.rhs(lay.r_phaseub(e), sw * dc.angmax[e]);
-                prog.a(lay.r_phaselb(e), lay.col_va(fb), -sw);
-                prog.a(lay.r_phaselb(e), lay.col_va(tb), sw);
-                prog.rhs(lay.r_phaselb(e), -sw * dc.angmin[e]);
-            } else {
-                prog.rhs(lay.r_phaseub(e), 1.0);
-                prog.rhs(lay.r_phaselb(e), 1.0);
+            if let (Some(ub), Some(lb)) = (lay.r_phaseub(e), lay.r_phaselb(e)) {
+                prog.a(ub, lay.col_va(fb), sw);
+                prog.a(ub, lay.col_va(tb), -sw);
+                prog.rhs(ub, sw * dc.angmax[e]);
+                prog.a(lb, lay.col_va(fb), -sw);
+                prog.a(lb, lay.col_va(tb), sw);
+                prog.rhs(lb, -sw * dc.angmin[e]);
             }
         }
         // Reference bus: theta[ref] = 0
         prog.a(lay.r_ref(), lay.col_va(dc.ref_bus), 1.0);
         // Generation limits: g <= gmax and -g <= -gmin
         for j in 0..dc.k {
-            if dc.generator_capability_active[j] {
-                prog.a(lay.r_genub(j), lay.col_pg(j), 1.0);
-                prog.rhs(lay.r_genub(j), dc.gmax[j]);
-                prog.a(lay.r_genlb(j), lay.col_pg(j), -1.0);
-                prog.rhs(lay.r_genlb(j), -dc.gmin[j]);
-            } else {
-                prog.rhs(lay.r_genub(j), 1.0);
-                prog.rhs(lay.r_genlb(j), 1.0);
+            if let (Some(ub), Some(lb)) = (lay.r_genub(j), lay.r_genlb(j)) {
+                prog.a(ub, lay.col_pg(j), 1.0);
+                prog.rhs(ub, dc.gmax[j]);
+                prog.a(lb, lay.col_pg(j), -1.0);
+                prog.rhs(lb, -dc.gmin[j]);
             }
         }
-        // Shedding bounds: 0 <= psh <= max(d, 0) when shedding is allowed, else psh = 0
-        // (pinned), so an unservable case reports infeasible instead of shedding.
+        // Shedding bounds: 0 <= psh <= max(d, 0) when shedding is allowed. A bus
+        // that cannot shed has no variable, so an unservable case reports
+        // infeasible instead of shedding.
         for i in 0..dc.n {
-            prog.a(lay.r_shedub(i), lay.col_psh(i), 1.0);
-            prog.rhs(lay.r_shedub(i), dc.shed_cap(i));
-            prog.a(lay.r_shedlb(i), lay.col_psh(i), -1.0);
-            prog.rhs(lay.r_shedlb(i), 0.0);
+            if let (Some(column), Some(ub), Some(lb)) =
+                (lay.col_psh(i), lay.r_shedub(i), lay.r_shedlb(i))
+            {
+                prog.a(ub, column, 1.0);
+                prog.rhs(ub, dc.shed_cap(i));
+                prog.a(lb, column, -1.0);
+                prog.rhs(lb, 0.0);
+            }
         }
 
         // Convex piecewise linear generator costs. One epigraph variable per
@@ -282,12 +346,17 @@ impl OpfFormulation for Dc {
 /// Equality duals carry the Clarabel sign flip (`nu = -z`); the non-negative
 /// inequality duals map straight across. The g-stationarity
 /// `2 cq g + cl = G_inc' nu_bal` then makes `nu_bal` the (positive) marginal cost,
-/// i.e. the LMP.
+/// i.e. the LMP. A limit without a row reads a zero multiplier. A bus without a
+/// shedding variable reads `psh = 0` and the lower-bound multiplier its
+/// stationarity `c_shed - nu_bal + mu_ub - mu_lb = 0` would carry, the folded
+/// value the KKT snap gives a pinned shedding variable.
 fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
     let lay = OpfLayout::dc(dc);
     let (n, m, k) = (dc.n, dc.m, dc.k);
     let x = &raw.x;
     let z = &raw.z;
+    let dual = |row: Option<usize>| row.map_or(0.0, |r| z[r]);
+    let nu_bal: Vec<f64> = (0..n).map(|i| -z[lay.r_pb(i)]).collect();
     let declared_objective = match dc.objective {
         powerio_matrix::PreparedObjective::Feasibility => 0.0,
         powerio_matrix::PreparedObjective::NetworkGeneratorCost => {
@@ -299,16 +368,23 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
         va: (0..n).map(|i| x[lay.col_va(i)]).collect(),
         pg: (0..k).map(|j| x[lay.col_pg(j)]).collect(),
         f: (0..m).map(|e| x[lay.col_f(e)]).collect(),
-        psh: (0..n).map(|i| x[lay.col_psh(i)]).collect(),
-        nu_bal: (0..n).map(|i| -z[lay.r_pb(i)]).collect(),
-        lam_ub: (0..m).map(|e| z[lay.r_lineub(e)]).collect(),
-        lam_lb: (0..m).map(|e| z[lay.r_linelb(e)]).collect(),
-        rho_ub: (0..k).map(|j| z[lay.r_genub(j)]).collect(),
-        rho_lb: (0..k).map(|j| z[lay.r_genlb(j)]).collect(),
-        mu_ub: (0..n).map(|i| z[lay.r_shedub(i)]).collect(),
-        mu_lb: (0..n).map(|i| z[lay.r_shedlb(i)]).collect(),
-        gamma_ub: (0..m).map(|e| z[lay.r_phaseub(e)]).collect(),
-        gamma_lb: (0..m).map(|e| z[lay.r_phaselb(e)]).collect(),
+        psh: (0..n)
+            .map(|i| lay.col_psh(i).map_or(0.0, |column| x[column]))
+            .collect(),
+        lam_ub: (0..m).map(|e| dual(lay.r_lineub(e))).collect(),
+        lam_lb: (0..m).map(|e| dual(lay.r_linelb(e))).collect(),
+        rho_ub: (0..k).map(|j| dual(lay.r_genub(j))).collect(),
+        rho_lb: (0..k).map(|j| dual(lay.r_genlb(j))).collect(),
+        mu_ub: (0..n).map(|i| dual(lay.r_shedub(i))).collect(),
+        mu_lb: (0..n)
+            .map(|i| match lay.r_shedlb(i) {
+                Some(row) => z[row],
+                None => dc.c_shed[i] - nu_bal[i],
+            })
+            .collect(),
+        gamma_ub: (0..m).map(|e| dual(lay.r_phaseub(e))).collect(),
+        gamma_lb: (0..m).map(|e| dual(lay.r_phaselb(e))).collect(),
+        nu_bal,
         objective: declared_objective,
         iterations: raw.iterations.clone(),
         cost_epigraph: (0..k)
@@ -327,6 +403,7 @@ fn read_dc_solution(dc: &DcNetwork, raw: &RawSolution) -> DcOpfSolution {
                 })
             })
             .collect(),
+        limit_rounds: None,
     }
 }
 
@@ -468,6 +545,28 @@ mod tests {
                 "generator {generator}: segment dual sum {dual_sum}"
             );
         }
+    }
+
+    #[test]
+    fn inactive_limits_and_pinned_shedding_take_no_rows() {
+        let mut dc = parse_case3();
+        let (n, m, k) = (dc.n, dc.m, dc.k);
+        // Every limit active and shedding pinned: no shedding columns or rows.
+        let (variables, rows) = dc_opf_size(&dc);
+        assert_eq!(variables, n + k + m);
+        assert_eq!(rows, (n + m + 1) + 2 * m + 2 * k + 2 * m);
+        // Inactive limits drop their row pairs; allowed shedding adds a column
+        // and a row pair at the one bus with load.
+        dc.thermal_limit_active[0] = false;
+        dc.angle_bound_active.fill(false);
+        dc.allow_shed = true;
+        let (variables, rows) = dc_opf_size(&dc);
+        assert_eq!(variables, n + k + m + 1);
+        assert_eq!(rows, (n + m + 1) + 2 * (m - 1) + 2 * k + 2);
+        let sol = dc_opf(&dc).expect("solve");
+        assert_eq!(sol.lam_ub[0], 0.0);
+        assert_eq!(sol.gamma_lb, vec![0.0; m]);
+        assert_eq!(sol.psh[0], 0.0);
     }
 
     #[test]

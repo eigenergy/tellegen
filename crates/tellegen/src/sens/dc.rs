@@ -1097,7 +1097,11 @@ mod tests {
         let mut minus = dc.clone();
         minus.fmax[branch] -= h;
         let finite_difference = (objective(&plus) - objective(&minus)) / (2.0 * h);
-        let tolerance = 1e-5_f64.max(1e-3 * finite_difference.abs());
+        // The price is piecewise constant in the rating here, so both values are
+        // near zero and the difference quotient is interior-point noise: each
+        // solve meets this $87.5 price to a few 1e-9, which the 2h = 2e-4 stencil
+        // turns into a few 1e-5.
+        let tolerance = 5e-5_f64.max(1e-3 * finite_difference.abs());
         assert!(
             (analytic - finite_difference).abs() < tolerance,
             "analytic {analytic}, finite difference {finite_difference}, tolerance {tolerance}"

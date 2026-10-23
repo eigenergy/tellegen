@@ -138,6 +138,9 @@ pub(crate) struct DcNetwork {
     pub(crate) generator_capability_active: Vec<bool>,
     pub(crate) thermal_limit_active: Vec<bool>,
     pub(crate) angle_bound_active: Vec<bool>,
+    /// Whether each branch's thermal limit comes from a stated rating rather
+    /// than one synthesized for an unrated branch.
+    pub(crate) thermal_rated: Vec<bool>,
     /// Dense bus index -> original source bus id.
     pub bus_ids: Vec<usize>,
     /// Dense bus column to the star-lowered analysis row and source bus row.
@@ -235,6 +238,22 @@ impl DcNetwork {
         assembly.synthesize_unrated_limits = true;
         let prep = build_dc_opf_preparation(instance, &assembly)
             .map_err(|e| format!("{}: {e}", e.code().code))?;
+        // The analysis sources index the network the preparation read.
+        let prepared = instance.network();
+        let thermal_rated = prep
+            .branches
+            .analysis_sources
+            .iter()
+            .map(|source| match *source {
+                AnalysisBranchSource::Branch { row } => prepared.branches()[row].rate_a > 0.0,
+                AnalysisBranchSource::ThreeWindingTransformerWinding {
+                    transformer_row,
+                    winding,
+                } => prepared.transformers_3w()[transformer_row].windings[winding].rate_a > 0.0,
+                // A source kind this build does not know keeps its limit.
+                _ => true,
+            })
+            .collect();
 
         let n = prep.n_buses;
         let m = prep.n_branches();
@@ -439,6 +458,7 @@ impl DcNetwork {
             objective: prep.objective,
             generator_capability_active: prep.generators.capability_active,
             thermal_limit_active: prep.branches.thermal_limit_active,
+            thermal_rated,
             angle_bound_active: prep.branches.angle_bound_active,
             bus_ids,
             bus_analysis_rows: prep.bus_analysis_rows,

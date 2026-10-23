@@ -128,3 +128,28 @@ dedicated worker that calls the wasm `McPfSession` directly, the wasm call,
 result size, worker-to-main transfer, and `JSON.parse` separately, plus wasm
 linear memory and CDP heap metrics. Results go to
 `target/mc-pf-bench/browser-<label>.json`.
+
+## DC OPF scale benchmark (`dcopf-scale-bench`)
+
+Time and heap for reading, building, and solving a DC OPF at interconnection
+scale through `solve_instance`, under each of several requests. The input is a
+case file PowerIO reads (PGLib `case78484_epigrids`, the largest case in v23.07)
+or a synthetic meshed grid from `benchmarks::meshed_grid`. The grid is a
+`rows x cols` lattice with a cheap west and an expensive east, so the eastward
+transfer binds thermal limits, and a fifth of its branches are unrated.
+
+```sh
+cargo run -p benchmarks --profile release-py --bin dcopf-scale-bench -- \
+  --case ~/Datasets/pglib-opf/pglib_opf_case78484_epigrids.m
+cargo run -p benchmarks --profile release-py --bin dcopf-scale-bench -- --grid 316x316
+```
+
+| flag | default | effect |
+| --- | --- | --- |
+| `--case PATH` / `--grid ROWSxCOLS` | `--grid 316x316` | case file or synthetic grid (99,856 buses) |
+| `--request NAME=JSON` | `full`, `no-angle-rows`, `lazy` | a solve request to time; repeatable |
+
+Each stage prints one JSON line with its wall time and peak heap. A solve also
+prints its objective, interior point iterations, and the `limit_rounds` the
+request's `limits` produced: program size, enforced limits, and violations per
+round.

@@ -30,6 +30,40 @@ value or its derivative need not be unique; the sensitivity API reports the
 local KKT linearization and numerical checks identify stencils that cross a
 different active set.
 
+### Limits at scale
+
+The program has no row for a limit it does not enforce, and no shedding
+variable for a bus that cannot shed. A portable solve never sheds, so that
+removes a column and a row pair per bus. These pinned pairs have no interior,
+and on PGLib's 78,484-bus case they kept the interior point solve from
+converging at all.
+
+A DC OPF request may also choose which limits the program carries:
+
+```json
+{ "formulation": "dcopf",
+  "limits": { "angle_difference": false, "thermal": "rated", "lazy": {} } }
+```
+
+- `angle_difference: false` drops the angle-difference rows, two per branch.
+- `thermal` keeps `all` declared thermal limits (the default), only the `rated`
+  ones (an unrated branch's synthesized limit is dropped), or the limits of a
+  list of `branches`.
+- `lazy` solves with no thermal limit enforced, adds every enforceable limit
+  the flows violate together with those loaded at or above `near_binding`
+  (default 0.98), and solves again until none is violated, for at most
+  `max_rounds` (default 20) solves. A solution that violates none of the limits
+  it was not held to is optimal for the program with all of them, so prices
+  and dispatch match the full solve.
+
+With `limits`, the response's `limit_rounds` reports each solve: the limits it
+enforced, the violations it found, the limits it added, its program size, and
+its interior point iterations. Keep the angle-difference rows with `lazy` when
+every generator cost is linear. Without them, the first round bounds no angle
+or flow, which can stall the interior point method on a degenerate linear
+program. The `dcopf-scale-bench` binary in `crates/benchmarks` measures each
+option on PGLib's `case78484` and on a synthetic 100k-bus mesh.
+
 Branch angle-difference bounds are enforced in radians after normalization.
 MATPOWER's unconstrained `-360`/`360` spelling and an unset `0`/`0` pair become
 exactly -60/+60 degrees. When a branch has no thermal rating, Tellegen
