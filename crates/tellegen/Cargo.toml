@@ -54,7 +54,7 @@ conic = ["sensitivity"]
 # Exact nonlinear AC OPF feasibility path. EPL-2.0 POUNCE stays opt-in and is
 # not forwarded by wasm, CLI, server, or Python adapters. The first increment
 # exposes only the native HS071 API probe; it does not claim AC OPF support.
-acopf = ["dep:pounce-nl", "dep:pounce-rs"]
+acopf = ["dep:pounce-nl", "dep:pounce-rs", "dep:num-complex"]
 # JSON Schema derives used by the headless CLI contract. Kept out of the
 # browser and numerical builds.
 schema = ["dep:schemars", "powerio/schema"]
