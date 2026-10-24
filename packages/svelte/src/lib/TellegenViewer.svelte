@@ -5,6 +5,7 @@
 
 	let {
 		apiBase,
+		acOpfWasmUrl,
 		loadDefaultCases,
 		docsHref,
 		orgHref,
@@ -17,6 +18,7 @@
 
 <TellegenProvider
 	{apiBase}
+	{acOpfWasmUrl}
 	{loadDefaultCases}
 	{docsHref}
 	{orgHref}

@@ -1,0 +1,23 @@
+[package]
+name = "tellegen-acopf-wasi"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Development-only WASI adapter for Tellegen's POUNCE AC OPF solver."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Workspace builds must not unify tellegen/acopf into shipping adapters.
+default = []
+acopf = ["dep:tellegen"]
+
+[dependencies]
+serde_json.workspace = true
+tellegen = { path = "../tellegen", optional = true, default-features = false, features = ["acopf"] }
+
+[lints]
+workspace = true

@@ -40,6 +40,7 @@
 	});
 
 	onMount(() => {
+		ctrl.probeAcOpf();
 		// The provider already marked the shell loaded when default cases are
 		// off, and load() itself is gated; this only frames whatever is there.
 		if (config.loadDefaultCases) {
