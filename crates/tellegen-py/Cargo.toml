@@ -1,8 +1,8 @@
 [package]
 name = "tellegen-py"
 # Tracks the engine crate so `pip install tellegen==X` and `cargo add tellegen@X`
-# mean the same solver. Bumped with `crates/tellegen`, by hand: release-plz does
-# not touch this crate (see release-plz.toml).
+# mean the same solver. The release workflow synchronizes this version and its
+# lock entry after release-plz updates the engine (see release-plz.toml).
 version = "0.3.0"
 edition.workspace = true
 license.workspace = true
@@ -22,10 +22,9 @@ default = []
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-# No `version` field, deliberately: `.github/scripts/validate-version-changes.py`
-# requires a release-plz version bump to touch exactly Cargo.lock and
-# crates/tellegen/{Cargo.toml,CHANGELOG.md}. A version here would make
-# release-plz rewrite this manifest too and the gate would fail closed.
+# No `version` field, deliberately: this unpublished adapter uses the workspace
+# engine directly. The release workflow only synchronizes this package's own
+# version; its sealed-patch validator rejects any other change to this manifest.
 #
 # `conic` implies `sensitivity`, which carries DC PF, DC OPF, AC PF and the KKT
 # sensitivities. `mc-pf` is deliberately absent: multiconductor power flow is
