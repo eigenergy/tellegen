@@ -272,6 +272,21 @@ export class MulticonductorCase {
 	/** The selected edge id, whose conductor pairing expands in the panel;
 	 * mutually exclusive with selectedBusId. */
 	selectedEdgeId = $state<string | null>(null);
+	/** What the pointer is over in any linked view (schematic, profile, tables); highlighted in
+	 * the others. Transient: never saved or put in links. */
+	hovered = $state<{ kind: 'bus' | 'branch'; id: string } | null>(null);
+	/** Bumped to ask the views to bring the current selection into view again (an issue clicked
+	 * that is already selected). */
+	revealSeq = $state(0);
+	/** The full operating point read for whole-network views (overview, schematic); null until read,
+	 * and cleared when a large case's operating point changes. */
+	overviewResult: McPfResult | null = $state.raw<McPfResult | null>(null);
+	overviewLoading = $state(false);
+	/** Show this case as a schematic instead of the map. */
+	schematic = $state(false);
+	/** The diagram's last geographic view as a map camera, for the map to continue from when the
+	 * diagram closes. Plain, not reactive: it is read once, on close. */
+	lastGeoView: CameraSnapshot | null = null;
 
 	constructor(init: {
 		id: string;
@@ -339,6 +354,9 @@ export interface StudyDisplaySnapshot {
 
 export class AppState {
 	camera: CameraSnapshot | null = $state.raw<CameraSnapshot | null>(null);
+	/** Set when a view hands its camera to the map it returns to (the diagram closing from
+	 * geographic positions): the re-created map starts at `camera` instead of framing the case. */
+	cameraHandoff = false;
 	cameraRequest: CameraSnapshot | null = $state.raw<CameraSnapshot | null>(null);
 	cameraSeq = $state(0);
 	diagramCamera: DiagramCameraSnapshot | null = $state.raw<DiagramCameraSnapshot | null>(null);

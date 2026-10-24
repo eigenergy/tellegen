@@ -165,6 +165,31 @@ export interface DistGraphAttachment {
   id: string;
 }
 
+/** How a load or generator is connected; an IBR's inverter topology. */
+export type DistConnection =
+  | "wye"
+  | "delta"
+  | "single_phase"
+  | "three_leg"
+  | "four_leg"
+  | "other";
+
+/** An attachment with its terminals in its own order and, where the model states it, its
+ * connection. */
+export interface DistAttachmentDetail extends DistGraphAttachment {
+  terminals: string[];
+  connection?: DistConnection;
+}
+
+/** One transformer winding: its bus, wye or delta, its terminals, rated volts and volt-amperes. */
+export interface DistWindingDetail {
+  bus: string;
+  connection: "wye" | "delta" | "other";
+  terminals: string[];
+  v_ref: number;
+  s_rating: number;
+}
+
 /** One bus node in the collapsed distribution graph. `xy` is present when the
  * source carried a position (`[x, y]`, longitude/latitude when the case is
  * geographic); `terminal_attachments` maps each terminal name to the elements
@@ -180,6 +205,30 @@ export interface DistGraphBus {
   gen_kw: number;
   has_source: boolean;
   terminal_attachments?: Record<string, DistGraphAttachment[]>;
+  /** Declared voltage magnitude bounds in volts, present only when the model declares them.
+   * Phase–neutral bounds list one value per phase terminal; phase–phase bounds one per pair. */
+  voltage_limits?: DistVoltageLimits;
+  /** Declared rated voltage in volts where a transformer winding or a source connects: a
+   * polyphase winding's line-to-line rating, a single-phase winding's own, a polyphase source's
+   * line-to-line magnitude. For telling voltage levels apart, not a base for calculation. */
+  nominal_voltage?: number;
+  /** The bus's attachments with their terminals and connections. */
+  attachments?: DistAttachmentDetail[];
+}
+
+export interface DistVoltageLimits {
+  vpn_min?: number[];
+  vpn_max?: number[];
+  vpp_min?: number[];
+  vpp_max?: number[];
+}
+
+/** A declared branch rating: per-conductor ampacity in conductor order for lines and switches, or
+ * for a transformer the largest winding apparent-power rating (volt-amperes) at each bus it
+ * connects, keyed by graph bus id. Every edge of a multi-winding transformer carries the same one. */
+export interface DistEdgeRating {
+  i_max?: number[];
+  s_rating_by_bus?: Record<string, number>;
 }
 
 /** One edge in the collapsed distribution graph. `conductors` pairs the
@@ -193,6 +242,10 @@ export interface DistGraphEdge {
   conductors: [string, string][];
   closed: boolean;
   n_phases: number;
+  /** Present only when the model declares a rating. */
+  rating?: DistEdgeRating;
+  /** For a transformer: all its windings. Every winding-pair edge of it carries the same list. */
+  windings?: DistWindingDetail[];
 }
 
 /** The render-ready bus/terminal projection of a distribution network. */
@@ -561,6 +614,60 @@ export async function extractGeo(moduleJson: string): Promise<string> {
   assertEngineInputLength(moduleJson.length);
   return expectText(
     await engineHost().call({ op: "extract_geo", module_json: moduleJson }),
+  );
+}
+
+export type SchematicStrategy = "tidy" | "leaf-order";
+
+export interface SchematicOptions {
+  /** `tidy` packs subtrees by their per-depth contours; `leaf-order` gives every leaf a row. */
+  strategy?: SchematicStrategy;
+  /** Horizontal distance per branch step. */
+  dx?: number;
+  /** Minimum vertical distance between rows. */
+  dy?: number;
+  /** Vertical room reserved below a bus per kind of attached equipment; 0 disables. */
+  attachment_gap?: number;
+}
+
+/** Columnar schematic geometry in graph order; y grows downwards. Edge roles: 0 tree route,
+ * 1 closed branch outside the display tree (a loop), 2 open or unreachable. */
+export interface SchematicLayout {
+  version: number;
+  strategy: SchematicStrategy;
+  /** `x, y` per bus. */
+  positions: number[];
+  /** `x0, y0, x1, y1` per segment; a routed edge has several. */
+  segments: number[];
+  segment_edge: number[];
+  role: number[];
+  parent: number[];
+  parent_edge: number[];
+  depth: number[];
+  roots: number[];
+  bounds: [number, number, number, number];
+  /** Attachment symbol `i` of a bus sits `(i + 1) * attachment_gap` below it. */
+  attachment_gap: number;
+  /** Distinct attachment kinds per bus: the reserved symbol slots. */
+  attachment_slots: number[];
+}
+
+/** Lay out a multiconductor graph as a schematic in the engine: a breadth-first forest from the
+ * source buses (matching the browser's display tree), with right-angled tree routes. */
+export async function mcSchematicLayout(
+  graph: DistGraph,
+  options: SchematicOptions = {},
+): Promise<SchematicLayout> {
+  const graphJson = JSON.stringify(graph);
+  assertEngineInputLength(graphJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "mc_schematic_layout",
+        graph_json: graphJson,
+        options_json: JSON.stringify(options),
+      }),
+    ),
   );
 }
 
@@ -2116,6 +2223,7 @@ export interface EngineTransport {
     kind: "synthetic" | "manual",
   ): Promise<StampedLayoutCase>;
   extractGeo(moduleJson: string): Promise<string>;
+  mcSchematicLayout(graph: DistGraph, options?: SchematicOptions): Promise<SchematicLayout>;
   applyDisplayGeo(
     moduleJson: string,
     bytes: Uint8Array,
@@ -2178,6 +2286,7 @@ export const browserWasmTransport: EngineTransport = {
   applyMcGeo,
   applyLayout,
   extractGeo,
+  mcSchematicLayout,
   applyDisplayGeo,
   capabilities,
   solveModule,

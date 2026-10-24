@@ -1,0 +1,66 @@
+{
+  "buses": 100000,
+  "branches": 99999,
+  "runs": 5,
+  "warmupRuns": 1,
+  "node": "v24.19.0",
+  "platform": "darwin arm64",
+  "perSolveMedianMs": 218.53,
+  "steps": [
+    {
+      "step": "graphInputs",
+      "medianMs": 36.71,
+      "maxMs": 51.28
+    },
+    {
+      "step": "snapshotFromMcPf",
+      "medianMs": 191.96,
+      "maxMs": 212
+    },
+    {
+      "step": "rankIssues",
+      "medianMs": 9.93,
+      "maxMs": 13.25
+    },
+    {
+      "step": "snapshotSummary",
+      "medianMs": 16.64,
+      "maxMs": 18.46
+    },
+    {
+      "step": "displayTree",
+      "medianMs": 23.06,
+      "maxMs": 220.93
+    },
+    {
+      "step": "feederEnvelope",
+      "medianMs": 37.9,
+      "maxMs": 43.78
+    },
+    {
+      "step": "voltageProfile (deepest bus)",
+      "medianMs": 0.83,
+      "maxMs": 0.99
+    },
+    {
+      "step": "buildSearchIndex",
+      "medianMs": 30.65,
+      "maxMs": 34.74
+    },
+    {
+      "step": "search",
+      "medianMs": 5.95,
+      "maxMs": 11.42
+    },
+    {
+      "step": "branch table sorted by loading",
+      "medianMs": 81.15,
+      "maxMs": 85.3
+    },
+    {
+      "step": "bus CSV, all rows",
+      "medianMs": 135.81,
+      "maxMs": 139.18
+    }
+  ]
+}

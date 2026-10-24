@@ -251,6 +251,13 @@
 		</span>
 	</div>
 
+	{#if mc.graph}<button
+			class="reset mono"
+			aria-pressed={mc.schematic}
+			title="The diagram: symbols, LV networks and the engine's schematic. Results appear once the power flow solves."
+			onclick={() => (mc.schematic = !mc.schematic)}
+			>{mc.schematic ? 'Show map' : 'Show diagram'}</button
+		>{/if}
 	<button class="reset mono" onclick={() => app.requestFrame(mc.id)}>Fit case</button>
 	<button class="reset mono" onclick={() => ctrl.removeMultiCase(mc)}>remove</button>
 {/if}

@@ -22,3 +22,4 @@ export { default as TopMovers } from './components/TopMovers.svelte';
 export { default as Sparkline } from './Sparkline.svelte';
 
 export { default as McResults } from './components/McResults.svelte';
+export { default as McWorkbench } from './components/McWorkbench.svelte';

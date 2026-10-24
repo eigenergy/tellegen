@@ -7,3 +7,4 @@ playwright-report/
 test-results/
 tests/fixtures/mc-pf-browser/LICENSE.md
 static/examples/four-wire.LICENSE.md
+tests/fixtures/four-wire-limits.LICENSE.md

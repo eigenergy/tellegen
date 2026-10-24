@@ -1,10 +1,14 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import {
 		getController,
+		getPanelLayout,
 		PanelFrame,
 		ModelDetails,
 		McResults,
+		McWorkbench,
 		getNoticeCenter,
 		errorNoticeTitle
 	} from '@tellegen/svelte';
@@ -167,8 +171,76 @@
 			.slice(0, 10);
 	});
 
+	// A saved distribution study is addressable: `?study=<id>&sel=bus:<id>|branch:<id>&view=schematic`
+	// reopens it in any browser that holds the study (saved here, or imported from an export).
+	const panels = getPanelLayout();
+	// Read the link before anything rewrites the URL, and write the URL only once it is handled.
+	const linkParams =
+		typeof window === 'undefined' ? null : new URL(window.location.href).searchParams;
+	let linkHandled = $state(false);
+	async function openLinkedStudy() {
+		try {
+			await openLinkedStudyFrom(linkParams);
+		} finally {
+			linkHandled = true;
+		}
+	}
+	async function openLinkedStudyFrom(params: URLSearchParams | null) {
+		const id = params?.get('study');
+		if (!params || !id || !workspace.mcSaved.some((s) => s.id === id)) return;
+		await attempt(() => workspace.openMulti(id));
+		const c = ctrl.app.activeMulti;
+		if (!c || c.mcSnapshot?.id !== id) return;
+		const sel = params.get('sel') ?? '';
+		const split = sel.indexOf(':');
+		const [kind, target] = split > 0 ? [sel.slice(0, split), sel.slice(split + 1)] : ['', ''];
+		if (kind === 'bus' && c.graph?.buses.some((b) => b.id === target))
+			ctrl.selectMultiBus(c.id, target);
+		if (kind === 'branch' && c.graph?.edges.some((e) => e.id === target))
+			ctrl.selectMultiEdge(c.id, target);
+		c.schematic = params.get('view') === 'schematic';
+		const studies = panels.panels.find((p) => p.id === 'studies');
+		if (studies) {
+			studies.setOpen(true);
+			panels.activate(studies);
+			if (panels.compact) panels.drawer = studies.id;
+		}
+	}
+	const linkable = $derived(
+		multi?.mcSnapshot && multi.mcSavedAt ? { id: multi.mcSnapshot.id, case: multi } : null
+	);
+	$effect(() => {
+		const c = linkable?.case;
+		const sel = c?.selectedBusId
+			? `bus:${c.selectedBusId}`
+			: c?.selectedEdgeId
+				? `branch:${c.selectedEdgeId}`
+				: null;
+		const state = { study: linkable?.id ?? null, sel, view: c?.schematic ? 'schematic' : null };
+		if (!linkHandled) return;
+		untrack(() => {
+			const url = new URL(window.location.href);
+			for (const [k, v] of Object.entries(state)) {
+				if (v) url.searchParams.set(k, v);
+				else url.searchParams.delete(k);
+			}
+			if (url.href === window.location.href) return;
+			try {
+				replaceState(url, page.state);
+			} catch {
+				// The router is not ready during the first render; the next change writes the URL.
+			}
+		});
+	});
+	let linkCopied = $state(false);
+	async function copyLink() {
+		await navigator.clipboard.writeText(window.location.href);
+		linkCopied = true;
+		setTimeout(() => (linkCopied = false), 2000);
+	}
+
 	onMount(() => {
-		void workspace.initialize();
+		void workspace.initialize().then(openLinkedStudy);
 		return () => workspace.dispose();
 	});
 	async function attempt(run: () => Promise<unknown>) {
@@ -445,6 +517,11 @@
 						disabled={!multi.result || multi.solving || workspace.busy || !!multi.mcSavedAt}
 						onclick={() => void attempt(() => workspace.saveMulti())}>Save result</button
 					>
+					{#if linkable}<button
+							title="A link back to this saved study, its selection and view. It opens only in a browser that holds the study, saved there or imported from an export; it does not carry the data."
+							onclick={() => void attempt(copyLink)}
+							>{linkCopied ? 'Link copied' : 'Copy view link'}</button
+						>{/if}
 				</div>
 				{#if !multi.mcPfSupported}<button
 						class="text-button"
@@ -455,6 +532,22 @@
 								details: multi.mcPfReason ?? 'This case cannot run AC power flow'
 							})}>Why unavailable</button
 					>{/if}
+				{#if multi.result && multi.graph}<McWorkbench
+						result={multi.overviewResult}
+						graph={multi.graph}
+						loading={multi.overviewLoading}
+						selectedBus={multi.selectedBusId}
+						selectedEdge={multi.selectedEdgeId}
+						onselectbus={(id) => ctrl.selectMultiBus(multi.id, id)}
+						onselectedge={(id) => ctrl.selectMultiEdge(multi.id, id)}
+						label={multi.label}
+						schematic={multi.schematic}
+						onschematic={(show) => (multi.schematic = show)}
+						hovered={multi.hovered}
+						onhover={(h) => (multi.hovered = h)}
+						onreveal={() => multi.revealSeq++}
+						onanalyse={ctrl.overviewOnRequest(multi) ? () => ctrl.readOverview(multi) : undefined}
+					/>{/if}
 				{#if multi.result}<McResults
 						result={multi.result}
 						detail={(query) => ctrl.multiResultDetail(multi, query)}

@@ -151,7 +151,10 @@ fn ingest_dist_value(
     diagnostics: &[powerio::Diagnostic],
 ) -> Result<serde_json::Value, String> {
     let graph = net.to_graph();
-    let graph_value = graph_with_neutral_metadata(net, &graph)?;
+    let mut graph_value = graph_with_neutral_metadata(net, &graph)?;
+    add_limits_and_ratings(net, &mut graph_value);
+    add_nominal_voltages(net, &mut graph_value);
+    add_connections(net, &mut graph_value);
 
     let mut n_line = 0usize;
     let mut n_switch = 0usize;
@@ -250,6 +253,270 @@ fn graph_with_neutral_metadata(
         }
     }
     Ok(value)
+}
+
+/// Add declared bus voltage limits and branch ratings, which PowerIO's graph projection leaves out,
+/// so the frontend can rank limit violations and loading against what the model declares. Values
+/// keep PowerIO's names and units (volts, amperes, volt-amperes); nothing absent is invented.
+fn add_limits_and_ratings(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
+    use serde_json::{json, Map, Value};
+    let buses: std::collections::BTreeMap<_, _> = net
+        .buses()
+        .iter()
+        .map(|bus| (bus.id.to_ascii_lowercase(), bus))
+        .collect();
+    if let Some(graph_buses) = graph.get_mut("buses").and_then(Value::as_array_mut) {
+        for graph_bus in graph_buses {
+            let Some(bus) = graph_bus
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| buses.get(&id.to_ascii_lowercase()))
+            else {
+                continue;
+            };
+            let mut limits = Map::new();
+            for (name, value) in [
+                ("vpn_min", &bus.vpn_min),
+                ("vpn_max", &bus.vpn_max),
+                ("vpp_min", &bus.vpp_min),
+                ("vpp_max", &bus.vpp_max),
+            ] {
+                if let Some(values) = value {
+                    limits.insert(name.to_owned(), json!(values));
+                }
+            }
+            if !limits.is_empty() {
+                graph_bus["voltage_limits"] = Value::Object(limits);
+            }
+        }
+    }
+    // Index each element family once by name; `first` keeps the first of any duplicate names, as a
+    // linear search would.
+    fn first<T>(items: &[T], name: impl Fn(&T) -> &str) -> std::collections::HashMap<String, &T> {
+        let mut index = std::collections::HashMap::with_capacity(items.len());
+        for item in items {
+            index.entry(name(item).to_ascii_lowercase()).or_insert(item);
+        }
+        index
+    }
+    let lines = first(net.lines(), |line| &line.name);
+    let switches = first(net.switches(), |switch| &switch.name);
+    let transformers = first(net.transformers(), |t| &t.name);
+    let graph_bus_ids: std::collections::HashMap<String, String> = graph
+        .get("buses")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|bus| bus.get("id").and_then(Value::as_str))
+        .map(|id| (id.to_ascii_lowercase(), id.to_owned()))
+        .collect();
+    let line_rating = |line: &&powerio_dist::DistLine| {
+        line.i_max.clone().or_else(|| {
+            net.linecode(&line.linecode)
+                .and_then(|code| code.i_max.clone())
+        })
+    };
+    let Some(edges) = graph.get_mut("edges").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for edge in edges {
+        let (Some(kind), Some(id)) = (
+            edge.get("kind").and_then(Value::as_str),
+            edge.get("id")
+                .and_then(Value::as_str)
+                .map(str::to_ascii_lowercase),
+        ) else {
+            continue;
+        };
+        let rating = match kind {
+            "line" => lines
+                .get(&id)
+                .and_then(line_rating)
+                .map(|amps| json!({ "i_max": amps })),
+            "switch" => switches
+                .get(&id)
+                .and_then(|switch| switch.i_max.clone())
+                .map(|amps| json!({ "i_max": amps })),
+            // A transformer projects to one edge per winding pair, so its rating is stated for the
+            // whole transformer: the largest winding rating at each bus it connects, and every edge
+            // of the transformer carries the same one. Windings that share a bus (the two halves of
+            // a centre tap) are each declared at the full nameplate, so they are not summed.
+            "transformer" => transformers.get(&id).and_then(|t| {
+                let mut by_bus = Map::new();
+                for winding in &t.windings {
+                    if winding.s_rating <= 0.0 {
+                        continue;
+                    }
+                    let lower = winding.bus.to_ascii_lowercase();
+                    let bus = graph_bus_ids.get(&lower).cloned().unwrap_or(lower);
+                    let largest = by_bus.get(&bus).and_then(Value::as_f64).unwrap_or(0.0);
+                    by_bus.insert(bus, json!(largest.max(winding.s_rating)));
+                }
+                (!by_bus.is_empty()).then(|| json!({ "s_rating_by_bus": by_bus }))
+            }),
+            _ => None,
+        };
+        if let Some(rating) = rating {
+            edge["rating"] = rating;
+        }
+    }
+}
+
+/// Add the declared rated voltage at each bus a transformer winding or a source connects to, so
+/// the frontend can tell voltage levels apart before any solve. A polyphase winding states its
+/// line-to-line rating, a single-phase winding its own; a source with two or more energised
+/// terminals counts as line-to-line from its phase magnitudes (times the square root of three).
+/// A level for display and grouping, not a base for calculation; the largest value at a bus wins.
+fn add_nominal_voltages(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
+    use serde_json::{json, Value};
+    let mut nominal: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut note = |bus: &str, volts: f64| {
+        if volts.is_finite() && volts > 0.0 {
+            let entry = nominal.entry(bus.to_ascii_lowercase()).or_insert(0.0);
+            *entry = entry.max(volts);
+        }
+    };
+    for t in net.transformers() {
+        for w in &t.windings {
+            note(&w.bus, w.v_ref);
+        }
+    }
+    for vs in net.sources() {
+        let energised: Vec<f64> = vs
+            .v_magnitude
+            .iter()
+            .copied()
+            .filter(|&v| v > 0.0)
+            .collect();
+        let largest = energised.iter().copied().fold(0.0, f64::max);
+        note(
+            &vs.bus,
+            if energised.len() >= 2 {
+                largest * 3f64.sqrt()
+            } else {
+                largest
+            },
+        );
+    }
+    let Some(buses) = graph.get_mut("buses").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for bus in buses {
+        let volts = bus
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|id| nominal.get(&id.to_ascii_lowercase()).copied());
+        if let Some(volts) = volts {
+            bus["nominal_voltage"] = json!(volts);
+        }
+    }
+}
+
+/// Add how equipment connects, which PowerIO's graph projection reduces to which terminals an
+/// attachment touches: each attachment's terminals in its own order and its connection (wye, delta
+/// or single-phase; an IBR's topology), and each transformer's windings (bus, wye or delta,
+/// terminals, rating). Every edge of a multi-winding transformer carries all its windings.
+fn add_connections(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
+    use powerio_dist::{Configuration, DistWindingConn, IbrTopology};
+    use serde_json::{json, Value};
+    let configuration = |c: &Configuration| match c {
+        Configuration::Wye => "wye",
+        Configuration::Delta => "delta",
+        Configuration::SinglePhase => "single_phase",
+        _ => "other",
+    };
+    let mut by_bus: std::collections::HashMap<String, Vec<Value>> =
+        std::collections::HashMap::new();
+    let mut add = |bus: &str, item: Value| {
+        by_bus
+            .entry(bus.to_ascii_lowercase())
+            .or_default()
+            .push(item);
+    };
+    for l in net.loads() {
+        add(
+            &l.bus,
+            json!({ "kind": "load", "id": l.name, "terminals": l.terminal_map,
+                    "connection": configuration(&l.configuration) }),
+        );
+    }
+    for g in net.generators() {
+        add(
+            &g.bus,
+            json!({ "kind": "generator", "id": g.name, "terminals": g.terminal_map,
+                    "connection": configuration(&g.configuration) }),
+        );
+    }
+    for i in net.ibrs() {
+        let topology = match i.topology {
+            IbrTopology::SinglePhase => "single_phase",
+            IbrTopology::ThreeLeg => "three_leg",
+            IbrTopology::FourLeg => "four_leg",
+            _ => "other",
+        };
+        add(
+            &i.bus,
+            json!({ "kind": "ibr", "id": i.name, "terminals": i.terminal_map,
+                    "connection": topology }),
+        );
+    }
+    for sh in net.shunts() {
+        add(
+            &sh.bus,
+            json!({ "kind": "shunt", "id": sh.name, "terminals": sh.terminal_map }),
+        );
+    }
+    for vs in net.sources() {
+        add(
+            &vs.bus,
+            json!({ "kind": "source", "id": vs.name, "terminals": vs.terminal_map }),
+        );
+    }
+    if let Some(buses) = graph.get_mut("buses").and_then(Value::as_array_mut) {
+        for bus in buses {
+            let items = bus
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| by_bus.remove(&id.to_ascii_lowercase()));
+            if let Some(items) = items {
+                bus["attachments"] = Value::Array(items);
+            }
+        }
+    }
+    let mut windings: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+    for t in net.transformers() {
+        let list: Vec<Value> = t
+            .windings
+            .iter()
+            .map(|w| {
+                json!({
+                    "bus": w.bus,
+                    "connection": match w.conn { DistWindingConn::Wye => "wye", DistWindingConn::Delta => "delta", _ => "other" },
+                    "terminals": w.terminal_map,
+                    "v_ref": w.v_ref,
+                    "s_rating": w.s_rating,
+                })
+            })
+            .collect();
+        windings
+            .entry(t.name.to_ascii_lowercase())
+            .or_insert(Value::Array(list));
+    }
+    if let Some(edges) = graph.get_mut("edges").and_then(Value::as_array_mut) {
+        for edge in edges {
+            if edge.get("kind").and_then(Value::as_str) != Some("transformer") {
+                continue;
+            }
+            let list = edge
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| windings.get(&id.to_ascii_lowercase()))
+                .cloned();
+            if let Some(list) = list {
+                edge["windings"] = list;
+            }
+        }
+    }
 }
 
 fn neutral_terminal(
@@ -562,6 +829,130 @@ mod tests {
         assert_eq!(v["mc_pf_supported"], false);
         assert!(tellegen::validate_mc_module_json(v["module_json"].as_str().unwrap()).is_err());
         assert!(v["mc_pf_reason"].as_str().unwrap().contains("model"));
+    }
+
+    #[test]
+    fn graph_carries_declared_voltage_limits_and_ratings_only_when_present() {
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).expect("fixture JSON");
+        raw["bus"]["load_bus"]["vpn_min"] = serde_json::json!([207.0, 207.0, 207.0]);
+        raw["bus"]["load_bus"]["vpn_max"] = serde_json::json!([253.0, 253.0, 253.0]);
+        raw["line"]["l1"]["i_max"] = serde_json::json!([200.0, 200.0, 200.0]);
+        let value = parse(&ingest_dist(&raw.to_string(), "bmopf").expect("limits"));
+        let bus = |id: &str| {
+            value["graph"]["buses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|b| b["id"].as_str().unwrap().eq_ignore_ascii_case(id))
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(
+            bus("load_bus")["voltage_limits"]["vpn_min"],
+            serde_json::json!([207.0, 207.0, 207.0])
+        );
+        assert_eq!(bus("load_bus")["voltage_limits"]["vpn_max"][2], 253.0);
+        assert!(bus("src").get("voltage_limits").is_none());
+        let line = value["graph"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["kind"] == "line")
+            .unwrap();
+        assert_eq!(
+            line["rating"]["i_max"],
+            serde_json::json!([200.0, 200.0, 200.0])
+        );
+
+        let plain = parse(&ingest_dist(MICRO_BMOPF, "bmopf").expect("plain"));
+        assert!(plain["graph"]["edges"][0].get("rating").is_none());
+    }
+
+    #[test]
+    fn transformer_ratings_are_stated_per_bus_for_the_whole_transformer() {
+        // A centre-tap transformer projects to three winding-pair edges, two of them between the
+        // same buses and one from the low-voltage bus to itself.
+        let raw =
+            include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_center_tap_loaded.json");
+        let value = parse(&ingest_dist(raw, "bmopf").expect("centre tap"));
+        let edges: Vec<&Value> = value["graph"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"] == "transformer")
+            .collect();
+        assert_eq!(edges.len(), 3);
+        for edge in &edges {
+            assert_eq!(
+                edge["rating"],
+                serde_json::json!({ "s_rating_by_bus": { "hv": 25000.0, "lv": 25000.0 } })
+            );
+        }
+    }
+
+    #[test]
+    fn graph_carries_declared_nominal_voltages_at_windings_and_sources() {
+        let raw =
+            include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_center_tap_loaded.json");
+        let value = parse(&ingest_dist(raw, "bmopf").expect("centre tap"));
+        let nominal = |id: &str| {
+            value["graph"]["buses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|b| b["id"].as_str().unwrap().eq_ignore_ascii_case(id))
+                .unwrap()["nominal_voltage"]
+                .clone()
+        };
+        // Single-phase windings state their own rating; the source has one energised terminal.
+        assert_eq!(nominal("hv"), serde_json::json!(7200.0));
+        assert_eq!(nominal("lv"), serde_json::json!(120.0));
+        assert!(nominal("src").as_f64().unwrap() > 0.0);
+    }
+
+    #[test]
+    fn graph_carries_attachment_connections_and_transformer_windings() {
+        let raw =
+            include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_center_tap_loaded.json");
+        let value = parse(&ingest_dist(raw, "bmopf").expect("centre tap"));
+        let lv = value["graph"]["buses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["id"].as_str().unwrap().eq_ignore_ascii_case("lv"))
+            .unwrap()
+            .clone();
+        let loads: Vec<&Value> = lv["attachments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["kind"] == "load")
+            .collect();
+        assert!(!loads.is_empty());
+        assert!(loads
+            .iter()
+            .all(|l| l["terminals"].as_array().unwrap().len() >= 2));
+        assert!(loads.iter().all(|l| l["connection"].is_string()));
+        let edge = value["graph"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["kind"] == "transformer")
+            .unwrap()
+            .clone();
+        // A centre tap: three windings, two of them on the low-voltage bus.
+        let windings = edge["windings"].as_array().unwrap();
+        assert_eq!(windings.len(), 3);
+        assert_eq!(
+            windings
+                .iter()
+                .filter(|w| w["bus"].as_str().unwrap().eq_ignore_ascii_case("lv"))
+                .count(),
+            2
+        );
+        assert!(windings
+            .iter()
+            .all(|w| w["connection"] == "wye" || w["connection"] == "delta"));
     }
 
     #[test]

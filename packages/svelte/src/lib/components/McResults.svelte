@@ -40,6 +40,17 @@
 	});
 	let busChoice = $state('');
 	let edgeChoice = $state('');
+	/** One entry per equipment id. A multi-winding transformer projects to several graph edges
+	 * that share its id (one per winding pair), so the edges are grouped by id. */
+	const equipmentOptions = $derived.by(() => {
+		const byId = new Map<string, string[]>();
+		for (const edge of graph?.edges ?? []) {
+			const ends = byId.get(edge.id) ?? [];
+			ends.push(`${edge.from} - ${edge.to}`);
+			byId.set(edge.id, ends);
+		}
+		return [...byId].map(([id, ends]) => ({ id, label: `${ends.join(', ')}, ${id}` }));
+	});
 	const busId = $derived(
 		selectedBus ??
 			(graph?.buses.some((b) => b.id === busChoice) ? busChoice : graph?.buses[0]?.id) ??
@@ -127,7 +138,11 @@
 		</div>
 		<div>
 			<dt>Load voltage range</dt>
-			<dd>{summary.min_voltage_pu == null || summary.max_voltage_pu == null ? 'n/a' : `${fixed(summary.min_voltage_pu)}–${fixed(summary.max_voltage_pu)} pu`}</dd>
+			<dd>
+				{summary.min_voltage_pu == null || summary.max_voltage_pu == null
+					? 'n/a'
+					: `${fixed(summary.min_voltage_pu)}–${fixed(summary.max_voltage_pu)} pu`}
+			</dd>
 		</div>
 		<div>
 			<dt>Source P / Q</dt>
@@ -228,8 +243,8 @@
 					selectedEdge = null;
 					portPage = 0;
 				}}
-				><option value="">All equipment</option>{#each graph?.edges ?? [] as edge (edge.id)}<option
-						value={edge.id}>{edge.from} - {edge.to}, {edge.id}</option
+				><option value="">All equipment</option>{#each equipmentOptions as option, i (i)}<option
+						value={option.id}>{option.label}</option
 					>{/each}</select
 			></label
 		>
