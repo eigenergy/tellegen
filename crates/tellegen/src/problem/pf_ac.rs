@@ -61,9 +61,10 @@ pub struct AcPfLayout {
     dim: usize,
 }
 
-/// The default bus typing for `net`: the reference is the slack, every bus with an
-/// in-service generator is PV, the rest PQ. The starting point for the Q-limit outer
-/// loop, which converts PV buses to PQ as their generators hit their reactive limits.
+/// The default bus typing for `net`: each island's reference is its slack, every bus
+/// with an in-service generator is PV, the rest PQ. The starting point for the Q-limit
+/// outer loop, which converts PV buses to PQ as their generators hit their reactive
+/// limits.
 pub(crate) fn default_kinds(net: &AcNetwork) -> Vec<BusKind> {
     let mut kind = vec![BusKind::Pq; net.n];
     for (bus, &is_pv) in net.pf_pv.iter().enumerate() {
@@ -71,7 +72,9 @@ pub(crate) fn default_kinds(net: &AcNetwork) -> Vec<BusKind> {
             kind[bus] = BusKind::Pv;
         }
     }
-    kind[net.slack] = BusKind::Slack;
+    for &slack in &net.slacks {
+        kind[slack] = BusKind::Slack;
+    }
     kind
 }
 
@@ -272,7 +275,7 @@ pub(crate) fn ac_jacobian(
 pub struct AcPfSolution {
     /// Bus voltage magnitudes (per unit). PV and slack buses hold their setpoints.
     pub vm: Vec<f64>,
-    /// Bus voltage angles (radians); `va[slack] = 0`.
+    /// Bus voltage angles (radians); zero at every slack bus.
     pub va: Vec<f64>,
     /// Net real power injection per bus (per unit), `S_i = V_i conj((Y V)_i)`.
     /// At the slack bus this is the recovered slack power.
@@ -561,7 +564,7 @@ fn solve_qlim<F: AcPfFormulation>(
         let (_, q_calc, _) = f.injections(ybus, &vm, &va);
         let mut changed = false;
         for b in 0..net.n {
-            if b == net.slack || !has_gen[b] {
+            if kinds[b] == BusKind::Slack || !has_gen[b] {
                 continue;
             }
             if kinds[b] == BusKind::Pv {
@@ -631,7 +634,8 @@ fn mix(a: u64, b: u64) -> f64 {
 /// deterministic perturbations of it, and keep the lowest-residual converged result. Each
 /// start runs the Q-limit outer loop ([`solve_qlim`]), so a generator that would exceed its
 /// reactive limit is backed off to the limit and its bus released to PQ. Slack and
-/// still-regulating PV magnitudes hold their setpoints; the reference angle stays at zero.
+/// still-regulating PV magnitudes hold their setpoints; each island's slack angle stays
+/// at zero.
 /// Generic over the formulation, like [`dc_pf`](super::dc_pf).
 pub fn ac_pf<F: AcPfFormulation>(f: &F, net: &AcNetwork) -> Result<AcPfSolution, String> {
     let ybus = net.ybus();
@@ -650,7 +654,7 @@ pub fn ac_pf<F: AcPfFormulation>(f: &F, net: &AcNetwork) -> Result<AcPfSolution,
             let mut vm = flat_vm.clone();
             let mut va = flat_va.clone();
             for b in 0..net.n {
-                if b != net.slack {
+                if !net.slacks.contains(&b) {
                     va[b] = 0.10 * mix(b as u64, restart as u64);
                     vm[b] = flat_vm[b] * (1.0 + 0.03 * mix(b as u64, restart as u64 + 1_000));
                 }
@@ -730,8 +734,8 @@ mpc.gencost = [
         let sol = ac_pf(&AcPolar::new(), &net).expect("ac power flow");
         assert!(sol.residual < 1e-8, "Newton residual {}", sol.residual);
         // Slack pinned at 1∠0.
-        approx(sol.vm[net.slack], 1.0, 1e-9, "slack vm");
-        approx(sol.va[net.slack], 0.0, 1e-12, "slack va");
+        approx(sol.vm[net.slacks[0]], 1.0, 1e-9, "slack vm");
+        approx(sol.va[net.slacks[0]], 0.0, 1e-12, "slack va");
 
         // Independent Gauss-Seidel for the single PQ bus (no shunt, no charging,
         // so Y22 = y and Y21 = -y). A different algorithm than Newton, so agreement
@@ -795,14 +799,14 @@ mpc.gencost = [
             "case9 took {} Newton iters",
             sol.iterations
         );
-        approx(sol.va[net.slack], 0.0, 1e-12, "slack angle pinned");
+        approx(sol.va[net.slacks[0]], 0.0, 1e-12, "slack angle pinned");
 
         let layout = AcPfLayout::new(&net);
         // case9's voltage-regulating generators hold the slack at vg = 1.04 and the two PV
         // buses at vg = 1.025. Asserting the literal setpoints — not just self-consistency
         // with vm_set — catches a regression to regulating at the flat bus.vm = 1.0.
         approx(
-            sol.vm[net.slack],
+            sol.vm[net.slacks[0]],
             1.04,
             1e-9,
             "slack regulated to gen vg 1.04",
@@ -819,7 +823,7 @@ mpc.gencost = [
                 }
             }
             // Active balance holds at every non-slack bus (PV included).
-            if i != net.slack {
+            if !net.slacks.contains(&i) {
                 approx(sol.p[i], net.pg[i] - net.pd[i], 1e-7, "P balance");
             }
             // Voltages stay physical.
@@ -900,7 +904,7 @@ mpc.gencost = [
         );
         // Active balance still holds everywhere off the slack.
         for i in 0..net.n {
-            if i != net.slack {
+            if !net.slacks.contains(&i) {
                 approx(sol.p[i], net.pg[i] - net.pd[i], 1e-7, "active balance");
             }
         }
