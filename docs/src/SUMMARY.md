@@ -19,6 +19,7 @@
 - [Synthetic Layout](synthetic-layout.md)
 - [Synthetic Grid Generation](synthetic-generation.md)
 - [Technology choices](technology-evaluation.md)
+- [AC OPF solver decision](acopf-pounce-decision.md)
 - [Architecture](architecture.md)
   - [Release Architecture](release-architecture.md)
   - [Formulations](formulations.md)

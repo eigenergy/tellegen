@@ -3,6 +3,13 @@ import type { Locator, Page } from '@playwright/test';
 
 import { expect, test } from './fixtures/page-errors.js';
 
+// These are local browser/WASM tests. Make startup deterministic and wait for
+// hydration before dispatching file-input events, including under parallel CI.
+test.beforeEach(async ({ page }) => {
+	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
+	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+});
+
 const typedCase = 'tests/fixtures/mc-pf-browser/public/mc-pf-three-phase.pio.json';
 const loadModelsCase = 'tests/fixtures/mc-pf-browser/public/mc-pf-load-models.bmopf.json';
 
@@ -134,6 +141,7 @@ function expectedLoadPower(spec: LoadModelSpec, ratio: number) {
 test('typed distribution case runs inside Studies and survives saved reopen', async ({ page }) => {
 	test.setTimeout(120_000);
 	await page.goto('/');
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
 	const headerFileInput = page.locator('header input[type="file"][accept*=".dss"]');
 	await expect(headerFileInput).toHaveCount(1);
 	await headerFileInput.setInputFiles(typedCase);
@@ -212,6 +220,7 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	// Reload before creating the second case: ephemeral case counters restart,
 	// so durable MC snapshot ids must still remain distinct.
 	await page.reload();
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
 	await expect(page.locator('header input[type="file"][accept*=".dss"]')).toHaveCount(1);
 	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles(typedCase);
 	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible({
@@ -235,6 +244,7 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	expect(savedValues).toContain(firstSavedValue);
 
 	await page.reload();
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const reopened = page.getByRole('region', { name: 'Study workspace' });
 	const reopenedSaved = page.getByLabel('Saved study');
@@ -250,6 +260,7 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 }) => {
 	test.setTimeout(120_000);
 	await page.goto('/');
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const demoStudy = page.getByRole('region', { name: 'Study workspace' });
 	await demoStudy.getByRole('button', { name: 'Load 4-conductor example' }).click();
@@ -263,6 +274,7 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 	await expect(demoStudy.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
 
 	await page.reload();
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
 	const noNeutral = await noNeutralTypedCase();
 	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles({
 		name: 'three-wire-no-neutral.pio.json',
@@ -315,6 +327,7 @@ for (const nominalVoltage of [200, 240]) {
 		}
 
 		await page.goto('/');
+		await expect(page.getByText('no default cases loaded')).toBeVisible();
 		const headerFileInput = page.locator('header input[type="file"][accept*=".dss"]');
 		await expect(headerFileInput).toHaveCount(1);
 		await headerFileInput.setInputFiles({
@@ -428,6 +441,7 @@ for (const nominalVoltage of [200, 240]) {
 		).toHaveText(modelLoss);
 
 		await page.reload();
+		await expect(page.getByText('no default cases loaded')).toBeVisible();
 		await page.getByRole('button', { name: 'Studies', exact: true }).click();
 		const reopened = page.getByRole('region', { name: 'Study workspace' });
 		await page.getByLabel('Saved study').selectOption({ index: 1 });
@@ -440,6 +454,7 @@ for (const nominalVoltage of [200, 240]) {
 		).toHaveText(modelLoss);
 
 		await page.reload();
+		await expect(page.getByText('no default cases loaded')).toBeVisible();
 		await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles({
 			name: 'mc-pf-load-models-constant-power.bmopf.json',
 			mimeType: 'application/json',
