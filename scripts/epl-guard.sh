@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Match package names, not paths (a checkout may itself be named pounce).
 check_no_pounce() {
 	local label="$1"
 	shift

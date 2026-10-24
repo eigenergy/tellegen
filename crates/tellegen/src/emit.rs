@@ -187,6 +187,20 @@ pub(crate) fn emit_ac_opf_solution(
     solved: &AcOpfSolved,
     producer: impl Into<String>,
 ) -> Result<AcOpfSolution, String> {
+    let mut producer = format!(
+        "{}; POUNCE {}",
+        producer.into(),
+        solved.solver_status.upstream_name()
+    );
+    if let Some(rung) = &solved.recovery.promoted_by {
+        producer.push_str(&format!(
+            "; recovered from {} via {} (base restoration calls {}, selected restoration calls {})",
+            solved.recovery.base_status,
+            rung,
+            solved.recovery.base_restoration_calls,
+            solved.recovery.restoration_calls
+        ));
+    }
     let network = instance.network();
     let prep = &solved.preparation;
     let base = prep.base_mva;
@@ -277,13 +291,7 @@ pub(crate) fn emit_ac_opf_solution(
         solved.objective,
         transformer_terminal_power,
     )
-    .map(|solution| {
-        solution.with_residuals(residuals).with_producer(format!(
-            "{}; POUNCE {}",
-            producer.into(),
-            solved.solver_status.upstream_name()
-        ))
-    })
+    .map(|solution| solution.with_residuals(residuals).with_producer(producer))
     .map_err(|error| error.to_string())
 }
 
@@ -441,11 +449,19 @@ mod tests {
         );
         let mut solved = crate::model::solve_ac_opf_cancellable(&instance, None).unwrap();
         solved.solver_status = pounce_rs::ApplicationReturnStatus::SolvedToAcceptableLevel;
-        let emitted = emit_ac_opf_solution(instance, &solved, "caller").unwrap();
+        let emitted = emit_ac_opf_solution(Arc::clone(&instance), &solved, "caller").unwrap();
         assert_eq!(
             emitted.producer(),
             Some("caller; POUNCE Solved_To_Acceptable_Level")
         );
+        solved.recovery.base_status = "Restoration_Failed".into();
+        solved.recovery.promoted_by = Some("displaced-start".into());
+        solved.recovery.base_restoration_calls = 3;
+        solved.recovery.restoration_calls = 0;
+        let emitted = emit_ac_opf_solution(instance, &solved, "caller").unwrap();
+        let producer = emitted.producer().unwrap();
+        assert!(producer.contains("recovered from Restoration_Failed via displaced-start"));
+        assert!(producer.contains("base restoration calls 3, selected restoration calls 0"));
     }
 
     #[cfg(feature = "acopf")]

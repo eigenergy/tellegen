@@ -3,6 +3,84 @@
 Status: accepted for feasibility work; distribution and product capability are
 not yet approved. Recorded 24 September 2026.
 
+## Released backend integration — 22 October 2026
+
+The native and dedicated WASI paths now use the published, checksummed
+`pounce-nl = pounce-rs = 0.13.0` release (FERAL 0.21.0). Both exact dependency
+pins and every transitive POUNCE lockfile entry are checked by
+`scripts/acopf-release.py`, also invoked by the build and EPL isolation gate.
+The former Git-source exception has been removed.
+
+Tellegen installs POUNCE's multi-pass restoration factory and invokes the
+released second-opinion ladder on the same cancellable TNLP. Failed retries
+cannot overwrite the selected point. Every emitted result still passes the
+independent physical validator; a retry does not weaken acceptance or turn a
+local infeasibility report into a proof. Cancellation is checked before rescue
+attempts, by callbacks during them, and after the ladder regardless of the
+selected status. POUNCE 0.13.0 may still visit later retry rungs after
+`UserRequestedStop`; the TNLP refuses their initialization once cancelled,
+before they can rebuild or evaluate the model. Browser cancellation terminates
+the entire worker.
+
+Responses retain the selected solve's iteration count and residuals, and add
+`base_solver_status`, `total_nlp_iterations`, `base_restoration_calls`, `restoration_calls`,
+`recovery_attempts`, and `recovered_by`. The restoration count belongs to the
+selected solve; the total iteration count includes rejected attempts. The solve
+card uses that total and marks recovered solves. Older responses remain
+readable. The engine's TypeScript contract now includes the NLP diagnostic
+variant, which previously existed only in the Rust and Study schemas. Each
+attempt uses the configured POUNCE iteration limit; the total across retries
+can exceed that per-attempt limit.
+
+A canonical full-pi regression forces entry into restoration, requires
+`restoration_calls > 0`, and checks electrical feasibility and objective
+agreement. A genuinely unserviceable instance exercises the retry ladder and
+must still return an error. Small exact-expression regressions additionally
+prove that a failed base solve can be rescued, rejected retries retain the
+base point and verdict, total work includes every attempt, and cancellation
+during the ladder returns a cancellation error. Existing finite-difference,
+corrupt-result, portable-emission, cancellation and worker-lifecycle checks
+remain in place.
+
+The opt-in build now places `POUNCE-EPL-2.0.txt`, `POUNCE-NOTICE.txt` and
+`POUNCE-SOURCE.json` beside the WASM asset. The manifest records its SHA-256,
+size, lockfile hash, Tellegen revision/dirty state, and all 14 POUNCE source
+archive URLs and checksums. Only opt-in app builds copy these files. These
+materials prepare review; they do not approve public distribution. Python
+3.11+ is required for the release guard (`PYTHON` can select an interpreter).
+
+Local validation at commit `c721344` used Rust 1.96.0 on macOS arm64 and Chromium
+with the release WASI artifact SHA-256
+`e6bf0775a90dec4fc8658c0559fadfed97545870adaae41152afb8ba8c12f5de`
+(10,463,176 bytes). The four browser UI/import/disposal checks and the four
+external PGLib corpus checks all passed. Each corpus test hashes the served
+artifact and input, requires independently checked primal violation below
+`1e-6`, compares the objective to the checksum-keyed oracle, and verifies that
+the worker terminates. These are single-run correctness checks, not a
+performance or peak-memory characterization.
+
+The external corpus was PGLib-OPF revision
+`dc6be4b2f85ca0e776952ec22cbd4c22396ea5a3`. Its published TYP baseline uses
+PowerModels.jl 0.19.9 and Ipopt.jl 1.4.1 / Ipopt 3.14.4. The rounded baseline
+values below are compared with relative tolerance `1e-4`; they are not
+full-precision solution or expression-graph oracles. The same cases passed
+the native benchmark:
+
+| PGLib case | Published objective | Native objective | Native iterations | Native restoration entries | Browser oracle check |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 14_ieee | 2,178.1 | 2,178.0804107 | 14 | 0 | passed |
+| 30_ieee | 8,208.5 | 8,208.5154410 | 21 | 0 | passed |
+| 300_ieee | 565,220 | 565,219.9746588 | 113 | 0 | passed |
+| 6468_rte | 2,069,700 | 2,069,730.1566176 | 678 | 14 | passed |
+
+Case6468 returned `Solved_To_Acceptable_Level`; its independently checked
+maximum physical violation was below `1e-8`. No case needed a second-opinion
+promotion. The small forced-restoration and impossible-generation regressions
+separately exercise the restoration and retry-driver paths.
+
+The dated sections below retain the earlier feasibility evidence; their Git
+pin and old release observations describe those historical runs.
+
 ## Main integration check — 5 October 2026
 
 The feasibility branch includes main at `0d08c55`, including compact
@@ -46,13 +124,9 @@ exact PowerIO-prepared polar model, independent primal validation, truthful
 status mapping, and portable `AcOpfSolution` emission. Product distribution
 still requires the browser worker boundary and release approval below.
 
-The dependency is pinned to POUNCE revision
-`925e75fbd036de309929e398159f946d42d0d94b`, the head of POUNCE PR #961. That
-change wires restoration and the second-opinion ladder into POUNCE's WASM
-frontend; it does not retrofit callers that drive a bare `IpoptApplication`.
-A released version containing the change should replace the Git pin before
-publishing the Rust crate, and Tellegen's eventual solve driver must wire or
-invoke the released restoration path explicitly.
+POUNCE 0.13.0 replaces the original PR #961 Git pin. The upstream WASM fix
+does not retrofit callers of a bare `IpoptApplication`; Tellegen now explicitly
+installs the restoration factory and calls the released recovery driver.
 
 ## Feasibility boundary
 
@@ -135,7 +209,7 @@ respectively.
 The opt-in native API now exposes `solve_ac_opf_instance` and
 `solve_ac_opf_instance_to_solution` plus cancellable counterparts. The
 cancellable paths poll an atomic flag before model construction and at every
-iteration of the currently wired POUNCE solve. They run POUNCE with FERAL,
+iteration of the base solve and recovery attempts. They run POUNCE with FERAL,
 exact Hessians, identity NLP and linear-system scaling, a `1e-8`
 solver/constraint tolerance, `1e-7` acceptable tolerance, and a 1,000-iteration
 ceiling. The returned `AcOpfSolution` is scattered through PowerIO's source
@@ -211,8 +285,9 @@ and `objectives` (a map from exact input SHA-256 to its reference objective).
 Missing checksums fail rather than comparing different case revisions. The
 comparison tolerance is `1e-4 * max(1, abs(reference objective))`. Keep that
 reference file and the corpus provenance alongside the resulting JSONL. This
-runner does not supply or regenerate an independent oracle: the frozen
-14/30/300 references and the large PGLib rerun remain release gates.
+runner does not supply or regenerate an independent oracle. The published
+PGLib baseline comparison above does not replace frozen expression parity or
+validation on the final release artifact.
 
 ## Experimental browser ABI
 
@@ -293,21 +368,39 @@ default and shipping builds.
 
 ## Remaining release gates
 
-The draft browser integration is not a distribution approval. Before enabling
-it in a release or deployment, all of these gates remain mandatory:
+The released dependency and restoration-driver gates are implemented. This
+draft is not a distribution approval. Before public enablement, the remaining
+gates are:
 
-1. Replace the Git pin with a tagged POUNCE release containing PR #961.
-2. Wire or invoke POUNCE's restoration and second-opinion path from Tellegen,
-   and add a regression proving restoration is exercised (`restoration_calls >
-   0`).
-3. Approve the EPL-2.0 distribution obligations, ship the required POUNCE
-   license/notices, and publish a reasonable corresponding-source location.
-4. Rerun and record the large PGLib/PowerModels.jl comparison for the exact
-   release artifact.
-5. Record native and browser peak memory, artifact size, load time, solve time,
-   cancellation, and repeated-worker isolation on the 14/30/300 ladder.
-6. Compare the 14/30/300 expressions against frozen benchmark values in
-   addition to the finite-difference checks above.
+1. Release-owner approval of EPL-2.0 distribution obligations. The opt-in build
+   now includes the license, notice and checksummed source locations.
+2. Resolve the inherited PowerIO → ZIP advisory failures using a reviewed,
+   patched PowerIO release; no advisory exception is added here.
+3. Repeat the independent corpus check on the final Tellegen release artifact
+   and intended browser/platform matrix. The draft's local validation is not
+   a certificate for a different artifact.
+4. Complete repeated performance and peak-memory measurements, including
+   stressed starts, beyond the correctness and lifecycle checks recorded here.
+5. Compare the 14/30/300 expressions against independently frozen benchmark
+   values in addition to the physical validator and finite-difference checks.
+
+The optional browser corpus regression uses the production importer and worker,
+checks the served WASM hash against its manifest, and requires checksum-keyed
+independent objectives. For example, after an opt-in build:
+
+```sh
+TELLEGEN_TEST_ACOPF=1 \
+TELLEGEN_ACOPF_CORPUS=/path/to/pglib-opf \
+TELLEGEN_ACOPF_REFERENCE=/path/to/reference.json \
+TELLEGEN_ACOPF_CASES=pglib_opf_case14_ieee,pglib_opf_case30_ieee,pglib_opf_case300_ieee,pglib_opf_case6468_rte \
+PLAYWRIGHT_JSON_OUTPUT_NAME=/path/to/browser-results.json \
+npm --workspace tellegen-frontend exec -- playwright test ac-opf-experimental.spec.ts --workers=1 --reporter=list,json
+```
+
+The reference JSON has the same `provenance` and SHA-256-keyed `objectives`
+format as `acopf_benchmark`. Each test attaches the full response, input hash,
+artifact manifest and elapsed time. External corpus tests skip explicitly when
+these paths are absent; the four ordinary UI/lifecycle tests still run in CI.
 
 A failure of expression-DAG scaling changes the private solver adapter, not the
 PowerIO problem or solution contract.
@@ -339,3 +432,14 @@ artifact hashes, `parse_ms`, `solve_ms`, and `total_elapsed_ms`. Solve timing
 includes model construction and independent validation but excludes parsing,
 file hashing and JSON serialization. Earlier `elapsed_ms` records measured the
 full input/JSON/solve path and must not be compared directly with `solve_ms`.
+
+The base restoration count survives retry promotion; `restoration_calls` remains
+the selected attempt's count. Neither field claims to total all retries.
+Portable producer metadata appends the base verdict, promotion label and both
+counts when recovery succeeds. Tests separately cover cancellation before retry
+initialization and cancellation from an in-flight retry's iteration callback.
+
+The EPL dependency-leak guard does not need Python. The separate release-pin
+verification remains mandatory in Rust CI and the WASI build, requires Python
+3.11+, and reports that requirement explicitly on older interpreters. Set
+`PYTHON` for the WASI build when the system `python3` is older.

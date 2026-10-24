@@ -1893,7 +1893,7 @@ export class Controller {
 					const diagnostics = response.iterations;
 					c.solveDetail =
 						diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
-							? `${diagnostics.nlp_iterations} NLP iterations`
+							? `${diagnostics.total_nlp_iterations ?? diagnostics.nlp_iterations} NLP iterations${diagnostics.recovered_by ? ' (recovered)' : ''}`
 							: 'POUNCE WASI';
 					c.solveMs = Math.round(performance.now() - t0);
 					this.finishSolve(c, seq, null);

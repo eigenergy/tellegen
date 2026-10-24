@@ -40,7 +40,7 @@ jobs:
       # which `check:web` above already built.
       - run: npm --workspace tellegen-frontend run build
       - name: Prove the default app excludes the EPL AC OPF asset
-        run: test ! -e apps/web/build/experimental-acopf/tellegen_acopf_wasi.wasm
+        run: test ! -e apps/web/build/experimental-acopf
       # The README presents both examples as working integrations; build them
       # against the workspace packages so a public API change cannot break
       # them unnoticed.
@@ -53,8 +53,11 @@ jobs:
         run: npm --workspace tellegen-frontend run build
         env:
           PUBLIC_TELLEGEN_ACOPF_WASM_URL: /experimental-acopf/tellegen_acopf_wasi.wasm
-      - name: Check the opt-in app contains the AC OPF asset
-        run: test -e apps/web/build/experimental-acopf/tellegen_acopf_wasi.wasm
+      - name: Check the opt-in app contains the AC OPF asset and source notices
+        run: |
+          for file in tellegen_acopf_wasi.wasm POUNCE-EPL-2.0.txt POUNCE-NOTICE.txt POUNCE-SOURCE.json; do
+            test -s "apps/web/build/experimental-acopf/$file"
+          done
       - run: npm --workspace tellegen-frontend exec playwright install --with-deps chromium
       - name: Build the native Study interface for browser parity
         run: cargo build -p tellegen-cli --features conic

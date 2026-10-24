@@ -1,5 +1,5 @@
 // Generated from Rust by study_contract and generate-study-contracts.mjs.
-// Source SHA256: 1306906de5fcd1aba6b963113fcc2b007a4efbf1966ed0fed29925ade8be54e5
+// Source SHA256: 2445ee86c5fe959b091a3460e78d1c7260627f8f062bd38391530091b8458891
 
 export type AcOpfResiduals = { "active_balance_mw": number; "active_generation_bounds_mw": number; "angle_limits_rad": number; "objective_relative_error": number; "piecewise_epigraph_cost": number; "reactive_balance_mvar": number; "reactive_generation_bounds_mvar": number; "reference_angles_rad": number; "thermal_limits_mva": number; "voltage_bounds_pu": number; };
 
@@ -71,7 +71,7 @@ export type GoalRevision = { "anchor_state": string; "decisions": DecisionSpace;
 
 export type Intervention = "branch_rating" | "active_demand";
 
-export type Iterations = (Array<SolveIteration>) | ({ "count": number; "residual": number; }) | ({ "model_fingerprint": string; "nlp_iterations": number; "primal_residual": number; "residuals"?: (AcOpfResiduals) | (null); "solver_constraint_violation": number; "solver_kkt_error": number; "solver_status": string; });
+export type Iterations = (Array<SolveIteration>) | ({ "count": number; "residual": number; }) | ({ "base_restoration_calls"?: number | null; "base_solver_status"?: string | null; "model_fingerprint": string; "nlp_iterations": number; "primal_residual": number; "recovered_by"?: string | null; "recovery_attempts"?: Array<string>; "residuals"?: (AcOpfResiduals) | (null); "restoration_calls"?: number | null; "solver_constraint_violation": number; "solver_kkt_error": number; "solver_status": string; "total_nlp_iterations"?: number | null; });
 
 export type ModelDetails = { "approximations": Array<CostApproximation>; "method": CostPreparation; "model": string; "quantity": string; "source": string; "units": string; };
 

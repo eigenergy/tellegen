@@ -1,8 +1,9 @@
-import { createStudy, ingestCase } from '@tellegen/engine';
+import { createStudy, ingestCase, solveAcOpfModule, type SolveResponse } from '@tellegen/engine';
 
 declare global {
 	interface Window {
 		prepareAcOpfInstance(text: string): Promise<string>;
+		solveAcOpfCase(text: string, wasmUrl: string): Promise<SolveResponse>;
 	}
 }
 
@@ -16,4 +17,10 @@ window.prepareAcOpfInstance = async (text) => {
 	} finally {
 		study.free();
 	}
+};
+
+// The external corpus exercises the production importer and disposable worker.
+window.solveAcOpfCase = async (text, wasmUrl) => {
+	const input = await ingestCase(new TextEncoder().encode(text), 'matpower');
+	return solveAcOpfModule(wasmUrl, input.module_json);
 };

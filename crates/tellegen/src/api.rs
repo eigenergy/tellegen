@@ -323,11 +323,27 @@ pub enum Iterations {
         nlp_iterations: usize,
         primal_residual: f64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        residuals: Option<AcOpfResiduals>,
+        residuals: Option<Box<AcOpfResiduals>>,
         solver_status: String,
         solver_constraint_violation: f64,
         solver_kkt_error: f64,
         model_fingerprint: String,
+        /// Status before recovery; absent in older responses.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base_solver_status: Option<String>,
+        /// Base plus every retry, including rejected attempts.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total_nlp_iterations: Option<usize>,
+        /// Restoration entries in the selected solve (not the whole ladder).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        restoration_calls: Option<usize>,
+        /// Restoration entries in the original solve, even when a retry wins.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base_restoration_calls: Option<usize>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        recovery_attempts: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recovered_by: Option<String>,
     },
 }
 
@@ -767,7 +783,7 @@ fn ac_opf_assemble(
                 .active_balance
                 .max(solved.residuals.reactive_balance)
                 * base,
-            residuals: Some(AcOpfResiduals {
+            residuals: Some(Box::new(AcOpfResiduals {
                 active_balance_mw: solved.residuals.active_balance * base,
                 reactive_balance_mvar: solved.residuals.reactive_balance * base,
                 voltage_bounds_pu: bound_violation(
@@ -793,11 +809,17 @@ fn ac_opf_assemble(
                 thermal_limits_mva: solved.residuals.thermal_limits * base,
                 piecewise_epigraph_cost: solved.residuals.piecewise_epigraph,
                 objective_relative_error: solved.residuals.objective,
-            }),
+            })),
             solver_status: solved.solver_status.upstream_name().to_owned(),
             solver_constraint_violation: solved.solver_constraint_violation,
             solver_kkt_error: solved.solver_kkt_error,
             model_fingerprint: solved.fingerprint.clone(),
+            base_solver_status: Some(solved.recovery.base_status.clone()),
+            total_nlp_iterations: Some(solved.recovery.total_iterations),
+            restoration_calls: Some(solved.recovery.restoration_calls),
+            base_restoration_calls: Some(solved.recovery.base_restoration_calls),
+            recovery_attempts: solved.recovery.attempts.clone(),
+            recovered_by: solved.recovery.promoted_by.clone(),
         }),
         lmp: None,
         lmp_q: None,

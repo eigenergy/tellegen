@@ -45,6 +45,9 @@ jobs:
 
       # Mirrors `just epl-guard`. The EPL-2.0 `pounce` backend must not enter a
       # shipped build.
+      - name: Verify the published POUNCE release pin
+        run: python3 scripts/acopf-release.py
+
       - name: EPL guard
         run: scripts/epl-guard.sh
 

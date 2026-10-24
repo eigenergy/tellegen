@@ -121,6 +121,15 @@ export interface NlpIterations {
 \tsolver_constraint_violation: number;
 \tsolver_kkt_error: number;
 \tmodel_fingerprint: string;
+\t/** Base verdict and work across all attempts (older assets omit these). */
+\tbase_solver_status?: string;
+\ttotal_nlp_iterations?: number;
+\t/** Restoration entries in the selected solve. */
+\trestoration_calls?: number;
+\t/** Restoration entries in the original solve. */
+\tbase_restoration_calls?: number;
+\trecovery_attempts?: string[];
+\trecovered_by?: string;
 }
 export type Iterations = SolveIteration[] | NewtonIterations | NlpIterations;
 

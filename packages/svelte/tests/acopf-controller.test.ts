@@ -109,6 +109,37 @@ describe('AC OPF controller boundary', () => {
 		expect(c.solveBackend).toBe('pounce-wasi');
 	});
 
+	it.each([
+		{
+			name: 'recovered solve',
+			recovery: { total_nlp_iterations: 46, recovered_by: 'feral-scaling' },
+			expected: '46 NLP iterations (recovered)'
+		},
+		{
+			name: 'legacy solve without recovery diagnostics',
+			recovery: {},
+			expected: '12 NLP iterations'
+		}
+	])('reports the complete iteration cost for a $name', async ({ recovery, expected }) => {
+		const { ctrl, c } = host();
+		vi.mocked(solveAcOpfModule).mockResolvedValue({
+			...response,
+			iterations: {
+				nlp_iterations: 12,
+				primal_residual: 1e-9,
+				solver_status: 'Solve_Succeeded',
+				solver_constraint_violation: 1e-9,
+				solver_kkt_error: 1e-9,
+				model_fingerprint: 'canonical-model',
+				...recovery
+			}
+		});
+		ctrl.runSolve(c, null);
+		await vi.waitFor(() => expect(c.solving).toBe(false));
+		expect(c.solveDetail).toBe(expected);
+		expect(c.solution?.objective).toBe(42);
+	});
+
 	it('aborts a superseded solve and ignores its late result', async () => {
 		const { ctrl, c } = host();
 		const first = pending<SolveResponse>();

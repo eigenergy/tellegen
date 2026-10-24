@@ -3,6 +3,7 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite';
 
 const configDir = fileURLToPath(new URL('.', import.meta.url));
@@ -22,11 +23,18 @@ function experimentalAcOpf(): Plugin {
 		},
 		generateBundle() {
 			if (!process.env.PUBLIC_TELLEGEN_ACOPF_WASM_URL) return;
-			this.emitFile({
-				type: 'asset',
-				fileName: 'experimental-acopf/tellegen_acopf_wasi.wasm',
-				source: readFileSync(experimentalAcOpfAsset)
-			});
+			for (const name of [
+				'tellegen_acopf_wasi.wasm',
+				'POUNCE-EPL-2.0.txt',
+				'POUNCE-NOTICE.txt',
+				'POUNCE-SOURCE.json'
+			]) {
+				this.emitFile({
+					type: 'asset',
+					fileName: `experimental-acopf/${name}`,
+					source: readFileSync(join(dirname(experimentalAcOpfAsset), name))
+				});
+			}
 		}
 	};
 }

@@ -1164,6 +1164,22 @@
         {
           "description": "Nonlinear-program diagnostics. The primal residual is Tellegen's\nindependent maximum P/Q balance mismatch in MW/MVAr; other residuals\nare separated by family below or reported by POUNCE.",
           "properties": {
+            "base_restoration_calls": {
+              "description": "Restoration entries in the original solve, even when a retry wins.",
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "base_solver_status": {
+              "description": "Status before recovery; absent in older responses.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "model_fingerprint": {
               "type": "string"
             },
@@ -1176,6 +1192,18 @@
               "format": "double",
               "type": "number"
             },
+            "recovered_by": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "recovery_attempts": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "residuals": {
               "anyOf": [
                 {
@@ -1184,6 +1212,15 @@
                 {
                   "type": "null"
                 }
+              ]
+            },
+            "restoration_calls": {
+              "description": "Restoration entries in the selected solve (not the whole ladder).",
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
               ]
             },
             "solver_constraint_violation": {
@@ -1196,6 +1233,15 @@
             },
             "solver_status": {
               "type": "string"
+            },
+            "total_nlp_iterations": {
+              "description": "Base plus every retry, including rejected attempts.",
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
             }
           },
           "required": [
@@ -2580,5 +2626,5 @@
   ],
   "title": "StudyContract",
   "type": "object",
-  "x-rust-source-sha256": "1306906de5fcd1aba6b963113fcc2b007a4efbf1966ed0fed29925ade8be54e5"
+  "x-rust-source-sha256": "2445ee86c5fe959b091a3460e78d1c7260627f8f062bd38391530091b8458891"
 }
