@@ -37,7 +37,7 @@ tellegen = { path = "../tellegen", default-features = false, features = ["conic"
 powerio.workspace = true
 # abi3 gives one wheel per platform for CPython 3.9 and newer, which is what
 # keeps PowerMCP from needing a per-version support gate (as surge-py does).
-pyo3 = { version = "0.29", features = ["abi3-py39"] }
+pyo3 = { version = "0.30", features = ["abi3-py39"] }
 serde_json.workspace = true
 
 [lints]
