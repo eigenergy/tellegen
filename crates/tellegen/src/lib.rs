@@ -1,8 +1,10 @@
 //! tellegen: differentiable optimal power flow and sensitivities.
 //!
 //! Solves PowerIO problem instances and stored modules as DC power flow, DC OPF,
-//! AC power flow, or the SOCWR conic relaxation. Dense solver workspaces are
-//! private implementation details; portable input and persistence use PowerIO.
+//! AC power flow, or the SOCWR conic relaxation. The non-default native `acopf`
+//! feature also provides exact polar AC OPF through POUNCE. Dense solver
+//! workspaces are private implementation details; portable input and persistence
+//! use PowerIO.
 //!
 //! [`solve_instance`] is the typed DC OPF entry. [`Study`] accepts a stored
 //! PowerIO balanced network module for interactive browser work.
@@ -55,13 +57,17 @@ pub mod study_storage;
 pub use api::solve_ac_instance;
 pub use api::{
     capabilities_json, solve_instance, solve_instance_cancellable, solve_module_json,
-    validate_canonical_identity, BranchFlow, BranchScalar, BusInjection, BusScalar, Edits,
-    ElementKey, GenDispatch, Iterations, Problem, ProblemCaps, SolveRequest, SolveResponse,
+    validate_canonical_identity, AcOpfResiduals, BranchFlow, BranchScalar, BusInjection, BusScalar,
+    Edits, ElementKey, GenDispatch, Iterations, Problem, ProblemCaps, SolveRequest, SolveResponse,
     SolveStatus,
 };
+#[cfg(feature = "acopf")]
+pub use api::{solve_ac_opf_instance, solve_ac_opf_instance_cancellable};
 #[cfg(feature = "sensitivity")]
 pub use api::{solve_ac_pf_instance, SensRequest};
 pub use emit::solve_dc_opf_instance;
+#[cfg(feature = "acopf")]
+pub use emit::{solve_ac_opf_instance_to_solution, solve_ac_opf_instance_to_solution_cancellable};
 #[cfg(feature = "mc-pf")]
 pub use mc_pf::{
     parse_bmopf_instance, replay_mc_study_json, set_mc_pf_profile_clock, solve_bmopf_json,

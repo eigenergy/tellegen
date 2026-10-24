@@ -1,5 +1,63 @@
 {
   "$defs": {
+    "AcOpfResiduals": {
+      "description": "Independent AC OPF checks, with units stated per family. Objective agreement\nis separate from primal feasibility. Bounds are evaluated only when selected.",
+      "properties": {
+        "active_balance_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "active_generation_bounds_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "angle_limits_rad": {
+          "format": "double",
+          "type": "number"
+        },
+        "objective_relative_error": {
+          "format": "double",
+          "type": "number"
+        },
+        "piecewise_epigraph_cost": {
+          "format": "double",
+          "type": "number"
+        },
+        "reactive_balance_mvar": {
+          "format": "double",
+          "type": "number"
+        },
+        "reactive_generation_bounds_mvar": {
+          "format": "double",
+          "type": "number"
+        },
+        "reference_angles_rad": {
+          "format": "double",
+          "type": "number"
+        },
+        "thermal_limits_mva": {
+          "format": "double",
+          "type": "number"
+        },
+        "voltage_bounds_pu": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "active_balance_mw",
+        "reactive_balance_mvar",
+        "voltage_bounds_pu",
+        "active_generation_bounds_mw",
+        "reactive_generation_bounds_mvar",
+        "reference_angles_rad",
+        "angle_limits_rad",
+        "thermal_limits_mva",
+        "piecewise_epigraph_cost",
+        "objective_relative_error"
+      ],
+      "type": "object"
+    },
     "ArtifactKind": {
       "enum": [
         "powerio_ir",
@@ -1102,6 +1160,53 @@
             "residual"
           ],
           "type": "object"
+        },
+        {
+          "description": "Nonlinear-program diagnostics. The primal residual is Tellegen's\nindependent maximum P/Q balance mismatch in MW/MVAr; other residuals\nare separated by family below or reported by POUNCE.",
+          "properties": {
+            "model_fingerprint": {
+              "type": "string"
+            },
+            "nlp_iterations": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "primal_residual": {
+              "format": "double",
+              "type": "number"
+            },
+            "residuals": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AcOpfResiduals"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "solver_constraint_violation": {
+              "format": "double",
+              "type": "number"
+            },
+            "solver_kkt_error": {
+              "format": "double",
+              "type": "number"
+            },
+            "solver_status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "nlp_iterations",
+            "primal_residual",
+            "solver_status",
+            "solver_constraint_violation",
+            "solver_kkt_error",
+            "model_fingerprint"
+          ],
+          "type": "object"
         }
       ],
       "description": "The convergence record. OPF paths carry the full interior-point trace (for the\nsolve-card sparkline); the AC power flow carries its Newton count and final\nmismatch. Untagged: the OPF arm serializes to the same bare array the DC OPF\nalways returned."
@@ -1354,7 +1459,7 @@
       "type": "string"
     },
     "Problem": {
-      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag (full nonlinear AC OPF) is retained for wire-format stability\nbut is not solved by this build: [`capabilities_json`] reports it unavailable and\nrequesting it returns a clean `Err`.",
+      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. Shipping adapters do not forward that feature.",
       "oneOf": [
         {
           "const": "dcpf",
@@ -1378,7 +1483,7 @@
         },
         {
           "const": "acopf",
-          "description": "Full nonlinear AC OPF. Not available in this build (the dispatch errors\ncleanly); the tag is kept so the JSON contract stays stable.",
+          "description": "Full nonlinear AC OPF through the opt-in POUNCE backend.",
           "type": "string"
         }
       ]
@@ -1656,7 +1761,7 @@
         },
         {
           "const": "feasible",
-          "description": "A power flow converged to a feasible point.",
+          "description": "A power flow or local AC OPF solve reached a validated feasible point.",
           "type": "string"
         }
       ]
@@ -2475,5 +2580,5 @@
   ],
   "title": "StudyContract",
   "type": "object",
-  "x-rust-source-sha256": "0873a4e79ae5eede1a044e7ca730d1532eefe9e424c747fffc54c5b8d70b9693"
+  "x-rust-source-sha256": "1306906de5fcd1aba6b963113fcc2b007a4efbf1966ed0fed29925ade8be54e5"
 }

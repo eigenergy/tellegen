@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-#[cfg(feature = "conic")]
+#[cfg(any(feature = "conic", feature = "acopf"))]
 use powerio::AcOpfInstance;
 #[cfg(feature = "sensitivity")]
 use powerio::AcPfInstance;
@@ -42,9 +42,8 @@ use super::sens::{
 /// so a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a
 /// valid base-case DC OPF request.
 ///
-/// The `"acopf"` tag (full nonlinear AC OPF) is retained for wire-format stability
-/// but is not solved by this build: [`capabilities_json`] reports it unavailable and
-/// requesting it returns a clean `Err`.
+/// The `"acopf"` tag enables full nonlinear AC OPF only when the opt-in `acopf`
+/// feature is built. Shipping adapters do not forward that feature.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
@@ -60,8 +59,7 @@ pub enum Problem {
     AcPf,
     /// SOCWR (Jabr) conic relaxation of AC OPF. Differentiable via the conic KKT.
     Socwr,
-    /// Full nonlinear AC OPF. Not available in this build (the dispatch errors
-    /// cleanly); the tag is kept so the JSON contract stays stable.
+    /// Full nonlinear AC OPF through the opt-in POUNCE backend.
     Acopf,
 }
 
@@ -302,7 +300,7 @@ pub fn validate_canonical_identity(net: &BalancedNetwork) -> Result<(), String> 
 pub enum SolveStatus {
     /// An OPF reached optimality.
     Optimal,
-    /// A power flow converged to a feasible point.
+    /// A power flow or local AC OPF solve reached a validated feasible point.
     Feasible,
 }
 
@@ -318,6 +316,36 @@ pub enum Iterations {
     Ipm(Vec<SolveIteration>),
     /// Newton iteration count and final infinity-norm mismatch (acpf).
     Newton { count: usize, residual: f64 },
+    /// Nonlinear-program diagnostics. The primal residual is Tellegen's
+    /// independent maximum P/Q balance mismatch in MW/MVAr; other residuals
+    /// are separated by family below or reported by POUNCE.
+    Nlp {
+        nlp_iterations: usize,
+        primal_residual: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        residuals: Option<AcOpfResiduals>,
+        solver_status: String,
+        solver_constraint_violation: f64,
+        solver_kkt_error: f64,
+        model_fingerprint: String,
+    },
+}
+
+/// Independent AC OPF checks, with units stated per family. Objective agreement
+/// is separate from primal feasibility. Bounds are evaluated only when selected.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AcOpfResiduals {
+    pub active_balance_mw: f64,
+    pub reactive_balance_mvar: f64,
+    pub voltage_bounds_pu: f64,
+    pub active_generation_bounds_mw: f64,
+    pub reactive_generation_bounds_mvar: f64,
+    pub reference_angles_rad: f64,
+    pub angle_limits_rad: f64,
+    pub thermal_limits_mva: f64,
+    pub piecewise_epigraph_cost: f64,
+    pub objective_relative_error: f64,
 }
 
 /// A scalar keyed by original bus id (LMP, voltage, angle, squared magnitude).
@@ -485,13 +513,29 @@ pub fn solve_module_json(module_json: &str, request_json: &str) -> Result<String
                 let instance = AcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
                 solve_ac_instance(&instance, &req)?
             }
+            #[cfg(feature = "acopf")]
+            Problem::Acopf => {
+                let instance = AcOpfInstance::from_network(network).map_err(|e| e.to_string())?;
+                solve_ac_opf_instance(&instance, &req)?
+            }
             _ => solve_network(&network, &req)?,
         },
         powerio::PioValue::DcOpfInstance(instance) => solve_instance(&instance, &req)?,
         #[cfg(feature = "sensitivity")]
         powerio::PioValue::AcPfInstance(instance) => solve_ac_pf_instance(&instance, &req)?,
-        #[cfg(feature = "conic")]
-        powerio::PioValue::AcOpfInstance(instance) => solve_ac_instance(&instance, &req)?,
+        #[cfg(any(feature = "conic", feature = "acopf"))]
+        powerio::PioValue::AcOpfInstance(instance) => match req.formulation {
+            #[cfg(feature = "conic")]
+            Problem::Socwr => solve_ac_instance(&instance, &req)?,
+            #[cfg(feature = "acopf")]
+            Problem::Acopf => solve_ac_opf_instance(&instance, &req)?,
+            _ => {
+                return Err(format!(
+                    "an ac_opf_instance cannot be solved as {:?}",
+                    req.formulation
+                ));
+            }
+        },
         other => {
             return Err(format!(
                 "PowerIO module holds {}, which this solve entry does not support",
@@ -525,9 +569,13 @@ pub(crate) fn solve_network(
         Problem::Socwr => solve_socwr(net, req),
         #[cfg(not(feature = "conic"))]
         Problem::Socwr => Err("socwr requires the `conic` feature".into()),
+        #[cfg(feature = "acopf")]
         Problem::Acopf => {
-            Err("acopf (full nonlinear AC OPF) is not available in this build".into())
+            let instance = AcOpfInstance::from_network(net.clone()).map_err(|e| e.to_string())?;
+            solve_ac_opf_instance(&instance, req)
         }
+        #[cfg(not(feature = "acopf"))]
+        Problem::Acopf => Err("acopf (full nonlinear AC OPF) requires the `acopf` feature".into()),
     }
 }
 
@@ -594,6 +642,176 @@ pub fn solve_ac_instance(
     validate_canonical_edits(instance.network(), &req.edits)?;
     let (model, solution) = socwr_solved(super::model::AcNetwork::from_instance(instance)?, req)?;
     socwr_assemble(&model, &solution, req)
+}
+
+/// Solve a typed PowerIO AC OPF instance with the exact polar POUNCE model.
+/// Request edits and sensitivities are rejected until their canonical-instance
+/// transformation and NLP dual contract are implemented.
+#[cfg(feature = "acopf")]
+pub fn solve_ac_opf_instance(
+    instance: &AcOpfInstance,
+    req: &SolveRequest,
+) -> Result<SolveResponse, String> {
+    solve_ac_opf_instance_cancellable(instance, req, None)
+}
+
+/// As [`solve_ac_opf_instance`], with cancellation polled before model
+/// construction and once per POUNCE iteration.
+#[cfg(feature = "acopf")]
+pub fn solve_ac_opf_instance_cancellable(
+    instance: &AcOpfInstance,
+    req: &SolveRequest,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<SolveResponse, String> {
+    if req.formulation != Problem::Acopf {
+        return Err(format!(
+            "an ac_opf_instance cannot be solved as {:?}",
+            req.formulation
+        ));
+    }
+    validate_canonical_edits(instance.network(), &req.edits)?;
+    if !req.edits.deltas.is_empty() || !req.edits.rates.is_empty() {
+        return Err(
+            "acopf request edits are not yet supported; amend the canonical AcOpfInstance instead"
+                .into(),
+        );
+    }
+    #[cfg(feature = "sensitivity")]
+    if !req.sensitivities.is_empty() {
+        return Err("acopf sensitivities require a separately validated NLP KKT contract".into());
+    }
+    let solved = super::model::solve_ac_opf_cancellable(instance, cancel)?;
+    ac_opf_assemble(instance.network(), &solved)
+}
+
+#[cfg(feature = "acopf")]
+fn bound_violation(values: &[f64], lower: &[f64], upper: &[f64], active: &[bool]) -> f64 {
+    values
+        .iter()
+        .zip(lower)
+        .zip(upper)
+        .zip(active)
+        .filter(|(_, active)| **active)
+        .map(|(((&value, &lower), &upper), _)| (lower - value).max(value - upper).max(0.0))
+        .fold(0.0, f64::max)
+}
+
+#[cfg(feature = "acopf")]
+fn ac_opf_assemble(
+    network: &BalancedNetwork,
+    solved: &super::model::AcOpfSolved,
+) -> Result<SolveResponse, String> {
+    use super::model::{stable_source_ids, uids_for_source_rows};
+    let prep = &solved.preparation;
+    let base = prep.base_mva;
+    let bus_ids = prep.bus_ids.iter().map(|bus| bus.0).collect::<Vec<_>>();
+    let bus_uids = uids_for_source_rows(&prep.bus_source_rows, network.buses(), |b| &b.uid, "bus")?;
+    let injections = zip_injections(
+        &bus_ids,
+        &bus_uids,
+        &solved.p_injection,
+        &solved.q_injection,
+        base,
+    );
+    let branch_source_rows = prep
+        .branches
+        .analysis_sources
+        .iter()
+        .map(|source| match source {
+            powerio_matrix::AnalysisBranchSource::Branch { row } => Ok(Some(*row)),
+            powerio_matrix::AnalysisBranchSource::ThreeWindingTransformerWinding { .. } => Ok(None),
+            _ => Err("unknown AC OPF branch source kind".to_owned()),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let branch_ids = stable_source_ids(&branch_source_rows, network.branches().len(), "branch")?;
+    let branch_uids = uids_for_source_rows(
+        &branch_source_rows,
+        network.branches(),
+        |b| &b.uid,
+        "branch",
+    )?;
+    let flows = ac_branch_flows(
+        &branch_ids,
+        &branch_uids,
+        &solved.p_from,
+        &solved.q_from,
+        &solved.p_to,
+        &solved.q_to,
+        &prep.branches.s_max,
+        base,
+    );
+    let dispatch = prep
+        .generators
+        .source_rows
+        .iter()
+        .enumerate()
+        .filter_map(|(dense, &row)| {
+            Some(GenDispatch {
+                gen: row? + 1,
+                bus: Some(prep.bus_ids[prep.generators.bus_of_gen[dense]].0),
+                pg: solved.pg[dense] * base,
+                qg: Some(solved.qg[dense] * base),
+            })
+        })
+        .collect();
+    Ok(SolveResponse {
+        formulation: Problem::Acopf,
+        // A locally converged nonconvex NLP is independently feasible, but
+        // does not establish global optimality.
+        status: SolveStatus::Feasible,
+        objective: Some(solved.objective),
+        iterations: Some(Iterations::Nlp {
+            nlp_iterations: usize::try_from(solved.iterations).unwrap_or(0),
+            primal_residual: solved
+                .residuals
+                .active_balance
+                .max(solved.residuals.reactive_balance)
+                * base,
+            residuals: Some(AcOpfResiduals {
+                active_balance_mw: solved.residuals.active_balance * base,
+                reactive_balance_mvar: solved.residuals.reactive_balance * base,
+                voltage_bounds_pu: bound_violation(
+                    &solved.vm,
+                    &prep.buses.vm_min,
+                    &prep.buses.vm_max,
+                    &prep.buses.voltage_bound_active,
+                ),
+                active_generation_bounds_mw: bound_violation(
+                    &solved.pg,
+                    &prep.generators.pmin,
+                    &prep.generators.pmax,
+                    &prep.generators.capability_active,
+                ) * base,
+                reactive_generation_bounds_mvar: bound_violation(
+                    &solved.qg,
+                    &prep.generators.qmin,
+                    &prep.generators.qmax,
+                    &prep.generators.capability_active,
+                ) * base,
+                reference_angles_rad: solved.residuals.reference_angles,
+                angle_limits_rad: solved.residuals.angle_limits,
+                thermal_limits_mva: solved.residuals.thermal_limits * base,
+                piecewise_epigraph_cost: solved.residuals.piecewise_epigraph,
+                objective_relative_error: solved.residuals.objective,
+            }),
+            solver_status: solved.solver_status.upstream_name().to_owned(),
+            solver_constraint_violation: solved.solver_constraint_violation,
+            solver_kkt_error: solved.solver_kkt_error,
+            model_fingerprint: solved.fingerprint.clone(),
+        }),
+        lmp: None,
+        lmp_q: None,
+        vm: Some(zip_bus(&bus_ids, &bus_uids, &solved.vm)),
+        va: Some(zip_bus(&bus_ids, &bus_uids, &solved.va)),
+        w: None,
+        wr: None,
+        wi: None,
+        injections: Some(injections),
+        flows: Some(flows),
+        dispatch: Some(dispatch),
+        #[cfg(feature = "sensitivity")]
+        sensitivities: Vec::new(),
+    })
 }
 
 fn solve_dc_opf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveResponse, String> {
@@ -947,7 +1165,7 @@ fn rescale_to_served(m: &mut SensitivityMatrix, scale: f64, op: Operand, par: Pa
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ProblemCaps {
     pub formulation: Problem,
-    /// Built in this binary (acopf is always `false`; it is not in this build).
+    /// Built in this binary.
     pub available: bool,
     /// Output blocks this formulation fills, e.g. `["lmp","va","flows","dispatch"]`.
     pub blocks: Vec<String>,
@@ -1099,13 +1317,11 @@ fn formulation_caps() -> Vec<ProblemCaps> {
                 Parameter::ShuntAdmittance(GB::Susceptance),
             ],
         },
-        // Full nonlinear AC OPF: not in this build. The entry is kept (with the same
-        // output blocks it would fill) so the `acopf` tag stays in the matrix and the UI
-        // can grey it out, but `available` is `false` and it offers no sensitivity cells.
+        // Full nonlinear AC OPF remains opt-in and offers no sensitivity cells.
         ProblemCaps {
             formulation: Problem::Acopf,
-            available: false,
-            blocks: ["lmp", "lmp_q", "vm", "va", "flows", "dispatch"]
+            available: cfg!(feature = "acopf"),
+            blocks: ["vm", "va", "injections", "flows", "dispatch"]
                 .map(str::to_owned)
                 .to_vec(),
             #[cfg(feature = "sensitivity")]
@@ -1390,7 +1606,7 @@ fn zip_gen_pq(
         .collect()
 }
 
-#[cfg(feature = "sensitivity")]
+#[cfg(any(feature = "sensitivity", feature = "acopf"))]
 fn zip_injections(
     bus_ids: &[usize],
     bus_uids: &[Option<String>],
@@ -1443,7 +1659,7 @@ fn dc_branch_flows(
 
 /// AC/conic branch flows: all four legs (MW/MVAr) and loading as the larger end's
 /// apparent power over the rating (both per unit, dimensionless).
-#[cfg(feature = "sensitivity")]
+#[cfg(any(feature = "sensitivity", feature = "acopf"))]
 #[allow(clippy::too_many_arguments)]
 fn ac_branch_flows(
     branch_ids: &[usize],
@@ -1881,12 +2097,12 @@ mod tests {
             .map(|f| f["formulation"].as_str().unwrap())
             .collect();
         assert_eq!(tags, vec!["dcpf", "dcopf", "acpf", "socwr", "acopf"]);
-        // DC OPF is always built; acopf is not in this build, so it reports unavailable
-        // (the tag stays in the matrix for a stable wire contract).
+        // DC OPF is always built. AC OPF keeps a stable wire-contract entry and
+        // reports availability according to the opt-in feature.
         let dc_opf = arr.iter().find(|f| f["formulation"] == "dcopf").unwrap();
         assert_eq!(dc_opf["available"], true);
         let acopf = arr.iter().find(|f| f["formulation"] == "acopf").unwrap();
-        assert_eq!(acopf["available"], false);
+        assert_eq!(acopf["available"], cfg!(feature = "acopf"));
     }
 
     #[cfg(feature = "sensitivity")]
@@ -2004,12 +2220,134 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "acopf"))]
     #[test]
     fn acopf_is_not_available_in_this_build() {
-        // The full nonlinear AC OPF is not built on this branch; requesting it errors
-        // cleanly rather than degrading silently.
         let err = solve_test_network_json(&case3_json(), r#"{"formulation":"acopf"}"#).unwrap_err();
-        assert!(err.contains("not available in this build"), "got: {err}");
+        assert!(err.contains("requires the `acopf` feature"), "got: {err}");
+    }
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn acopf_residuals_keep_units_and_objective_error_separate() {
+        let network = crate::model::parse_matpower(CASE3).unwrap();
+        let instance = AcOpfInstance::from_network(network.clone()).unwrap();
+        let mut solved = crate::model::solve_ac_opf_cancellable(&instance, None).unwrap();
+        solved.residuals.active_balance = 1e-7;
+        solved.residuals.reactive_balance = 2e-7;
+        solved.residuals.objective = 0.25;
+        let value = serde_json::to_value(ac_opf_assemble(&network, &solved).unwrap()).unwrap();
+        let diagnostics = &value["iterations"];
+        assert!((diagnostics["primal_residual"].as_f64().unwrap() - 2e-5).abs() < 1e-12);
+        assert!(
+            (diagnostics["residuals"]["active_balance_mw"]
+                .as_f64()
+                .unwrap()
+                - 1e-5)
+                .abs()
+                < 1e-12
+        );
+        assert_eq!(diagnostics["residuals"]["objective_relative_error"], 0.25);
+    }
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn acopf_is_available_without_prices_or_sensitivities() {
+        let out = solve_test_network_json(&case3_json(), r#"{"formulation":"acopf"}"#)
+            .expect("solve AC OPF");
+        let value: Value = serde_json::from_str(&out).expect("response JSON");
+        assert_eq!(value["formulation"], "acopf");
+        assert_eq!(value["status"], "feasible");
+        assert_eq!(value["vm"].as_array().map(Vec::len), Some(3));
+        assert_eq!(value["va"].as_array().map(Vec::len), Some(3));
+        assert_eq!(value["dispatch"].as_array().map(Vec::len), Some(2));
+        assert_eq!(value["injections"].as_array().map(Vec::len), Some(3));
+        assert_eq!(value["flows"].as_array().map(Vec::len), Some(3));
+        assert_eq!(value["iterations"]["solver_status"], "Solve_Succeeded");
+        assert!(value["iterations"]["primal_residual"]
+            .as_f64()
+            .is_some_and(|residual| residual < 1.0e-6));
+        assert!(value["iterations"]["solver_kkt_error"].is_number());
+        assert_eq!(
+            value["iterations"]["model_fingerprint"]
+                .as_str()
+                .map(str::len),
+            Some(64)
+        );
+        assert!(value.get("lmp").is_none());
+        assert!(value.get("lmp_q").is_none());
+
+        let capabilities: Value = serde_json::from_str(&capabilities_json()).expect("capabilities");
+        let capability = capabilities
+            .as_array()
+            .expect("capability array")
+            .iter()
+            .find(|capability| capability["formulation"] == "acopf")
+            .expect("AC OPF capability");
+        assert_eq!(capability["available"], true);
+        assert_eq!(
+            capability["blocks"],
+            serde_json::json!(["vm", "va", "injections", "flows", "dispatch"])
+        );
+    }
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn typed_ac_opf_module_dispatches_and_request_edits_fail_closed() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = AcOpfInstance::from_network(network).expect("instance");
+        let module = powerio::PioModule::new(powerio::PioValue::AcOpfInstance(instance));
+        let text = crate::ir::serialize_module(&module).expect("module JSON");
+
+        let response =
+            solve_module_json(&text, r#"{"formulation":"acopf"}"#).expect("typed AC OPF solve");
+        let response: Value = serde_json::from_str(&response).expect("response JSON");
+        assert_eq!(response["formulation"], "acopf");
+        assert_eq!(response["status"], "feasible");
+
+        let wrong = solve_module_json(&text, r#"{"formulation":"dcopf"}"#)
+            .expect_err("wrong formulation must reject");
+        assert!(wrong.contains("ac_opf_instance cannot be solved as DcOpf"));
+
+        let edited = solve_module_json(
+            &text,
+            r#"{"formulation":"acopf","edits":{"deltas":{"2":1.0}}}"#,
+        )
+        .expect_err("unapplied edit must reject");
+        assert!(edited.contains("amend the canonical AcOpfInstance"));
+    }
+
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn ac_opf_cancellation_is_checked_before_model_construction() {
+        let network = crate::model::parse_matpower(CASE3).expect("parse");
+        let instance = AcOpfInstance::from_network(network).expect("instance");
+        let cancel = Arc::new(AtomicBool::new(true));
+        let error = solve_ac_opf_instance_cancellable(
+            &instance,
+            &SolveRequest {
+                formulation: Problem::Acopf,
+                ..SolveRequest::default()
+            },
+            Some(cancel),
+        )
+        .expect_err("pre-cancelled solve must stop");
+        assert!(error.contains("cancelled"), "got: {error}");
+    }
+
+    #[cfg(all(feature = "acopf", feature = "sensitivity"))]
+    #[test]
+    fn ac_opf_sensitivity_request_fails_closed() {
+        let request = r#"{
+            "formulation":"acopf",
+            "sensitivities":[{
+                "operand":{"Price":"Active"},
+                "parameter":{"Demand":"Active"}
+            }]
+        }"#;
+        let error = solve_test_network_json(&case3_json(), request)
+            .expect_err("unvalidated AC OPF sensitivity must reject");
+        assert!(error.contains("separately validated NLP KKT contract"));
     }
 
     /// Guard against the static capability matrix drifting from the engine: build each
@@ -2067,5 +2405,25 @@ mod tests {
             let sys = super::super::sens::ConicKkt::new(&ac, &soc).unwrap();
             check(Problem::Socwr, &sys);
         }
+    }
+    #[cfg(feature = "acopf")]
+    #[test]
+    fn ac_opf_invalid_bounds_return_an_error_from_public_api() {
+        let mut network = crate::model::parse_matpower(CASE3).unwrap();
+        network.buses_mut()[0].vmin = 1.1;
+        network.buses_mut()[0].vmax = 0.9;
+        let instance = AcOpfInstance::from_network(network).unwrap();
+        let error = solve_ac_opf_instance(
+            &instance,
+            &SolveRequest {
+                formulation: Problem::Acopf,
+                ..SolveRequest::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("vm[1]") && error.contains("invalid bounds"),
+            "{error}"
+        );
     }
 }

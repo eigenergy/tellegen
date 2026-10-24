@@ -17,38 +17,12 @@ use powerio_prob::{AcBusSpecification, AcOpfInstance, AcPfInstance};
 
 #[cfg(feature = "conic")]
 use super::{
-    normalize_angle_bounds, reject_unsupported_active_elements, uids_for_source_rows,
-    validate_canonical_identity, PiecewiseCost,
+    normalize_angle_bounds, reject_unsupported_active_elements, stable_source_ids,
+    uids_for_source_rows, validate_canonical_identity, PiecewiseCost,
 };
 use super::{normalize_for_model, reconstruct_ids, Ids};
 
 const NEAR_ZERO_IMPEDANCE_SQUARED: f64 = 1.0e-10;
-
-#[cfg(feature = "conic")]
-fn stable_source_ids(
-    source_rows: &[Option<usize>],
-    source_len: usize,
-    family: &str,
-) -> Result<Vec<usize>, String> {
-    let mut next_synthetic = source_len
-        .checked_add(1)
-        .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
-    source_rows
-        .iter()
-        .map(|row| match row {
-            Some(row) => row
-                .checked_add(1)
-                .ok_or_else(|| format!("{family} id space exhausted")),
-            None => {
-                let id = next_synthetic;
-                next_synthetic = next_synthetic
-                    .checked_add(1)
-                    .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
-                Ok(id)
-            }
-        })
-        .collect()
-}
 
 /// AC network data in the vectorized pi-model admittance form.
 ///
