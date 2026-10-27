@@ -371,6 +371,10 @@ package is introduced. `McOpfResult` includes terminal voltages and physical
 branch/device/winding/shunt ledgers with explicit terminal and coil identities.
 Canonical JSON exports retain the full report in a versioned PowerIO module
 extension; the MC APIs expose typed `McOpfError` diagnostics.
+Explicit canonical initial points and the `mc_opf_initial_point_from_pf` helper
+seed numerical variables without changing the declared physical problem; see
+[initial points](formulations.md#explicit-initial-points) for supported fields
+and projection rules.
 `McOpfOptions.collect_profile` enables optional
 stage and KKT diagnostics. Prices, solution sensitivities and retained sessions
 are not exposed by this initial implementation.

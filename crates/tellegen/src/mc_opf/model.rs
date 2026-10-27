@@ -132,8 +132,18 @@ pub(super) struct DeviceColumns {
     pub current: Vec<Pair>,
     pub power: Vec<[usize; 2]>,
 }
+/// Definitions needed to rebuild lifted starting values without changing rows.
+#[derive(Clone, Debug)]
+pub(super) enum StartLift {
+    Power([usize; 2], Pair, Pair),
+    Magnitude(usize, Pair),
+    LogVoltage(usize, Pair, f64),
+    Voltage(Pair, Pair),
+}
 #[derive(Clone, Debug)]
 pub(super) struct Model {
+    pub start_lifts: Vec<StartLift>,
+    pub zero_columns: Vec<usize>,
     pub prep: McAcOpfPreparation,
     pub voltage: Vec<Pair>,
     pub branch_current: Vec<Vec<Pair>>,
@@ -147,6 +157,8 @@ pub(super) struct Model {
 }
 #[derive(Default)]
 struct Builder {
+    start_lifts: Vec<StartLift>,
+    zero_columns: Vec<usize>,
     start: Vec<f64>,
     names: Vec<String>,
     rows: Vec<Expr>,
@@ -231,6 +243,7 @@ impl Builder {
             self.row(name, row, lo, hi);
         }
         for i in zero {
+            self.zero_columns.push(i);
             self.start[i] = 0.0;
             self.row(
                 format!("{}:fixed_zero", self.names[i]),
@@ -291,6 +304,7 @@ impl Builder {
             let u = difference(voltage, p, q);
             let start = u[0].value(&self.start).hypot(u[1].value(&self.start));
             let m = self.var(format!("{name}:magnitude:{j}"), start);
+            self.start_lifts.push(StartLift::Magnitude(m, u.clone()));
             self.row(
                 format!("{name}:magnitude:{j}:nonnegative"),
                 Expr::Var(m),
@@ -332,6 +346,8 @@ impl Builder {
             self.var(format!("{name}:p"), start[0]),
             self.var(format!("{name}:q"), start[1]),
         ];
+        self.start_lifts
+            .push(StartLift::Power(ids, v.clone(), i.clone()));
         for (k, expr) in power(v, i).into_iter().enumerate() {
             self.row(
                 format!("{name}:power:{k}"),
@@ -578,6 +594,8 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                         format!("{name}:log_voltage"),
                         (u2.sqrt().max(law.nominal * 0.5) / law.nominal).ln(),
                     );
+                    b.start_lifts
+                        .push(StartLift::LogVoltage(ell, u.clone(), law.nominal));
                     let exp = |exponent| {
                         Expr::Unary(UnaryOp::Exp, Box::new(scale(exponent, Expr::Var(ell))))
                     };
@@ -727,6 +745,8 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                 &format!("sequence:{}", limit.identity),
                 [sequence[0].value(&b.start), sequence[1].value(&b.start)],
             );
+            b.start_lifts
+                .push(StartLift::Voltage(lifted.clone(), sequence.clone()));
             for k in 0..2 {
                 b.affine_row(
                     format!("sequence:{}:{k}", limit.identity),
@@ -830,6 +850,8 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
         con_names: b.row_names,
     })?;
     Ok(Model {
+        start_lifts: b.start_lifts,
+        zero_columns: b.zero_columns,
         prep,
         voltage,
         branch_current,
