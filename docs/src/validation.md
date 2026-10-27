@@ -39,3 +39,56 @@ All three variants are exercised: typical, congested (API), and small-angle (SAD
 tellegen's `AcNetwork` carries the angle difference limits and the SOCWR enforces
 them in W-space, so the SAD relaxation tracks the published SAD SOC. Where a case
 shows a large SOC gap, that measures relaxation quality, not a failure.
+
+## Multiconductor IVR OPF
+
+The experimental native [IVR formulation](formulations.md#experimental-native-multiconductor-ivr-opf)
+requires both a successful solver status and an independent physical acceptance
+check. Tellegen recomputes KCL, KVL, device power links, load/control laws,
+selected limits and the objective from the solution and prepared electrical data.
+The default maximum normalized residual tolerance is `1e-6` in the model's
+working units. Nonfinite values fail acceptance. Local numerical success does
+not establish global optimality.
+
+This check is independent of the solver expression graph but shares PowerIO's
+preparation. It cannot detect a physical constraint discarded before preparation.
+The module-JSON entry point and external-case probe therefore use the same
+`validate_mc_opf_input_diagnostics` guard: error diagnostics and codes containing
+`UNSUPPORTED`, `MALFORMED`, `FIELD_DROPPED` or `RECORD_DROPPED` reject the input.
+Lossless representation-change remarks, such as capacitor-to-shunt lowering,
+are permitted. External comparisons also inspect original input bounds, including
+scalar inverter availability and zero available active power.
+
+Regression coverage combines:
+
+- Hand-computed off-solution KCL/KVL/device-law witnesses, mutual coupling,
+  unequal end shunts, and zero/singular branch impedances.
+- Quadratic-row classification and forced sparse-AD comparisons, directional
+  Jacobian/Hessian checks at multiple points with nonzero multipliers and
+  objective factors, and control derivatives at knots and softplus extremes.
+- Base/order invariance, cost-driven dispatch, constraint selection, cancellation,
+  and deliberately corrupted results including NaN and infinity.
+- Feasible and infeasible zero current/apparent-power ratings, partial conductor
+  limits, rotated source phasors and both-end shunts. A grounded terminal may
+  carry nonzero current under a zero apparent-power limit; fixed nonzero voltage
+  makes that same rating require zero current.
+- Frozen BMOPFTools component and unbalanced-network solves, comparing objectives
+  and complex physical voltages, currents, powers and taps with explicit
+  per-fixture tolerances.
+
+The inputs, reference JSON, attribution and license files in
+`crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance
+records input SHA-256 hashes, oracle revision, units and numerical tolerances;
+the component bundles also record Julia/JuMP/Ipopt versions and solver options.
+Ordinary Rust tests consume the frozen results without Julia, network access
+or an external feeder dataset. Intentional regeneration uses:
+
+```sh
+julia --project=/path/to/BMOPFTools.jl/test scripts/mc_opf_oracle.jl
+```
+
+The script requires a clean BMOPFTools checkout at
+`a8b52e069bfd4a7a57434c91bc0470ac03cfdd55`. Review changed inputs, hashes and
+reference values together; do not relax tolerances to hide a changed electrical
+problem. The [external study protocol](methodology.md#external-multiconductor-ivr-studies)
+adds larger-feeder comparisons without vendoring the dataset.

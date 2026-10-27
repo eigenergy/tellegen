@@ -372,20 +372,26 @@ branch/device/winding ledgers. `McOpfOptions.collect_profile` enables optional
 stage and KKT diagnostics. Prices, solution sensitivities and retained sessions
 are not exposed by this initial implementation.
 
-The feature currently requires the companion PowerIO preparation API, which
-has not been released. The shipping manifest and lockfile continue to use
-released PowerIO, so `--features mc-opf` alone is not yet a supported build from
-that lockfile. For local review with the companion checkout, run:
+The feature builds against the published PowerIO and POUNCE versions in the
+shipping lockfile. Build and test the native feature from the repository root:
 
 ```sh
-bash scripts/check-mc-opf.sh /path/to/powerio-with-mc-ivr-preparation
+cargo build -p tellegen --no-default-features --features mc-opf --locked
+cargo test -p tellegen --no-default-features --features mc-opf --locked
 ```
 
-That script tests a temporary committed-source archive with consistent path
-patches for all six PowerIO crates; it does not rewrite either checkout's
-lockfile. Ordinary frozen-reference tests need neither Julia nor the large ENWL
-dataset. The detailed ownership, supported component profile, explicit
-rejections and validation records are in `docs/multiconductor-opf-roadmap.md`.
+`bash scripts/check-mc-opf.sh` tests a temporary archive of committed source with
+all features, MC OPF alone, and strict all-target Clippy using locked published
+dependencies. Its optional PowerIO checkout argument is for companion development:
+it patches all seven PowerIO crates only in the temporary archive and does not
+rewrite either checkout's lockfile. A companion checkout is not required.
+
+See [Formulations](formulations.md#experimental-native-multiconductor-ivr-opf)
+for the electrical profile and derivative strategy,
+[Validation](validation.md#multiconductor-ivr-opf) for acceptance and regression
+coverage, and [Methodology](methodology.md#external-multiconductor-ivr-studies)
+for optional external studies. Ordinary frozen-reference tests need neither
+Julia nor the large ENWL dataset.
 The existing solver release and distribution gates below also apply to MC OPF.
 
 ## License and release gate
