@@ -31,9 +31,15 @@ where
 
 /// The module a PowerIO IR document describes.
 pub fn deserialize_module(text: &str) -> Result<PioModule<PioValue>, String> {
-    let source =
-        Source::from_memory(IR_FILE_NAME, text.as_bytes().to_vec()).map_err(|e| e.to_string())?;
-    powerio::deserialize(source).map_err(|e| e.to_string())
+    deserialize_module_with_diagnostics(text).map_err(|e| e.to_string())
+}
+
+/// Preserve structured PowerIO findings for callers with a typed error contract.
+pub(crate) fn deserialize_module_with_diagnostics(
+    text: &str,
+) -> Result<PioModule<PioValue>, powerio::Error> {
+    let source = Source::from_memory(IR_FILE_NAME, text.as_bytes().to_vec())?;
+    powerio::deserialize(source)
 }
 
 /// Narrow a module to its balanced network, keeping every module record.

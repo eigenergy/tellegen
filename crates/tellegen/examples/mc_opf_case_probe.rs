@@ -1,15 +1,18 @@
 //! Run an external BMOPF case without vendoring it. Optional arguments: power
 //! base (VA), objective scale, maximum iterations, profile (true/false). Emits one JSON result record.
 #[cfg(feature = "mc-opf")]
-fn parse_case(input: Vec<u8>) -> Result<powerio::PioModule<powerio::PioValue>, String> {
+fn parse_case(
+    input: Vec<u8>,
+) -> Result<powerio::PioModule<powerio::PioValue>, tellegen::McOpfError> {
     use powerio::{ParseOptions, Source};
     let module = powerio::parse_with_options(
-        Source::from_memory("external.bmopf.json", input).map_err(|e| e.to_string())?,
+        Source::from_memory("external.bmopf.json", input)
+            .map_err(|e| tellegen::McOpfError::from_powerio(tellegen::McOpfStage::Input, e))?,
         &ParseOptions::default()
             .format("bmopf-json")
-            .map_err(|e| e.to_string())?,
+            .map_err(|e| tellegen::McOpfError::from_powerio(tellegen::McOpfStage::Input, e))?,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| tellegen::McOpfError::from_powerio(tellegen::McOpfStage::Input, e))?;
     tellegen::mc_opf::validate_mc_opf_input_diagnostics(&module)?;
     Ok(module)
 }
@@ -40,7 +43,7 @@ fn main() {
     };
     let t = Instant::now();
     let mut record = json!({"input":args[1],"sha256":hash,"options":options});
-    let run = || -> Result<_, String> {
+    let run = || -> Result<_, tellegen::McOpfError> {
         let parse_start = Instant::now();
         let module = parse_case(input)?;
         let diagnostics: Vec<_> = module
@@ -49,7 +52,11 @@ fn main() {
             .map(|d| json!({"code":d.code(),"message":d.message()}))
             .collect();
         let PioValue::MulticonductorNetwork(net) = module.into_value() else {
-            return Err("not multiconductor".into());
+            return Err(tellegen::McOpfError::new(
+                tellegen::McOpfErrorKind::InvalidInput,
+                tellegen::McOpfStage::Input,
+                "not multiconductor",
+            ));
         };
         let counts = json!({"buses":net.buses().len(),"terminals":net.buses().iter().map(|b| b.terminals.len()).sum::<usize>(),"lines":net.lines().len(),"loads":net.loads().len(),"inverters":net.ibrs().len()});
         let axes: Vec<_> = net
@@ -57,7 +64,10 @@ fn main() {
             .iter()
             .map(|b| (b.id.clone(), b.terminals.clone()))
             .collect();
-        let instance = Arc::new(McAcOpfInstance::from_network(net).map_err(|e| e.to_string())?);
+        let instance = Arc::new(
+            McAcOpfInstance::from_network(net)
+                .map_err(|e| tellegen::McOpfError::from_powerio(tellegen::McOpfStage::Input, e))?,
+        );
         let parse_s = parse_start.elapsed().as_secs_f64();
         let result = tellegen::solve_mc_ac_opf_instance(instance, &options)?;
         let mut bus = serde_json::Map::new();
@@ -74,7 +84,7 @@ fn main() {
             bus.insert(name, json!(v));
         }
         Ok(
-            json!({"status":"accepted","parse_instance_s":parse_s,"profile":result.profile,"counts":counts,"diagnostics":diagnostics,"objective":result.solution.objective(),"iterations":result.iterations,"residuals":result.residuals,"bus":bus,"devices":result.devices,"branches":result.branches}),
+            json!({"status":"accepted","parse_instance_s":parse_s,"profile":result.profile,"counts":counts,"diagnostics":diagnostics,"objective":result.solution.objective(),"iterations":result.iterations,"residuals":result.residuals,"bus":bus,"devices":result.devices,"branches":result.branches,"transformers":result.transformers,"shunts":result.shunts,"terminals":result.terminals}),
         )
     };
     let (outcome, iterations) = if options.collect_profile {
@@ -110,8 +120,14 @@ mod tests {
         let mut case: serde_json::Value = serde_json::from_slice(input).unwrap();
         case["bus"]["s"]["vsym_min"] = serde_json::json!([100, 0, 100]);
         let error = parse_case(serde_json::to_vec(&case).unwrap()).unwrap_err();
-        assert!(error.contains("READ.BMOPF.FIELD_DROPPED"), "{error}");
-        assert!(error.contains("sequence lower bounds"), "{error}");
+        assert!(
+            error.to_string().contains("READ.BMOPF.FIELD_DROPPED"),
+            "{error}"
+        );
+        assert!(
+            error.to_string().contains("sequence lower bounds"),
+            "{error}"
+        );
     }
 
     #[test]

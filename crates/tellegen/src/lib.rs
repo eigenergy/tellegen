@@ -42,7 +42,7 @@ pub mod mc_pf;
 #[cfg(feature = "mc-opf")]
 pub use mc_opf::{
     solve_mc_ac_opf_instance, solve_mc_ac_opf_instance_cancellable, solve_mc_ac_opf_module_json,
-    McOpfOptions, McOpfProfile, McOpfResult,
+    McOpfError, McOpfErrorKind, McOpfOptions, McOpfProfile, McOpfResult, McOpfStage,
 };
 mod model;
 #[cfg(feature = "acopf")]

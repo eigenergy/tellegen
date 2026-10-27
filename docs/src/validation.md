@@ -59,6 +59,20 @@ Lossless representation-change remarks, such as capacitor-to-shunt lowering,
 are permitted. External comparisons also inspect original input bounds, including
 scalar inverter availability and zero available active power.
 
+The experimental MC solve APIs return `McOpfError`, which implements
+`std::error::Error` and serializes to JSON. Callers match `kind` and `stage`
+rather than parsing its display message. Kinds distinguish invalid input,
+unsupported input, cancellation, numerical failure, physical-validation failure
+and serialization failure. Upstream findings retain their codes, severities,
+messages and targets. Numerical failures include the solver status when one is
+available; they are not infeasibility certificates.
+
+Physical-validation errors include the finite residual summary and the worst
+failing witness in each residual family, with component and axis identities.
+A witness whose residual cannot be represented as a finite number uses `null`.
+No failure contains an accepted solution. The external-case probe uses the same
+structured error object in its `error` field.
+
 Regression coverage combines:
 
 - Hand-computed off-solution KCL/KVL/device-law witnesses, mutual coupling,
@@ -75,6 +89,10 @@ Regression coverage combines:
 - Frozen BMOPFTools component and unbalanced-network solves, comparing objectives
   and complex physical voltages, currents, powers and taps with explicit
   per-fixture tolerances.
+- Complete result export/import across delta devices, neutral returns,
+  transformer rating ports, mixed windings, shunts and optimized taps. Tests
+  reconstruct KCL and complex power from public result identities, preserve
+  diagnostic/provenance records, and reject incomplete or mismatched reports.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance
