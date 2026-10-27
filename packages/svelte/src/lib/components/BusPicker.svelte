@@ -89,14 +89,14 @@
 			if (!e.currentTarget.contains(e.relatedTarget as Node | null)) open = false;
 		}}
 	>
-		<label class="mono dim" for="bus-lookup-input">bus lookup</label>
+		<label class="dim" for="bus-lookup-input">Bus lookup</label>
 		<input
 			id="bus-lookup-input"
 			class="mono"
 			type="text"
 			inputmode="numeric"
 			autocomplete="off"
-			placeholder="bus id"
+			placeholder="Bus ID"
 			role="combobox"
 			aria-keyshortcuts="/"
 			aria-expanded={open}
@@ -114,7 +114,7 @@
 			onkeydown={onKeydown}
 		/>
 		{#if open && results.length > 0}
-			<ul class="mono" id="bus-lookup-listbox" role="listbox" aria-label="matching buses">
+			<ul id="bus-lookup-listbox" role="listbox" aria-label="Matching buses">
 				{#each results as bus, i (bus.id)}
 					<li
 						id="bus-lookup-opt-{bus.id}"
@@ -126,12 +126,12 @@
 							commit(bus.id);
 						}}
 					>
-						bus {bus.id}
+						Bus <span class="mono">{bus.id}</span>
 					</li>
 				{/each}
 			</ul>
 		{:else if open && query.trim() !== ''}
-			<p class="mono dim empty">no bus matches "{query.trim()}"</p>
+			<p class="dim empty">No matching bus</p>
 		{/if}
 	</div>
 {/if}
@@ -155,8 +155,7 @@
 
 	label {
 		display: block;
-		font-size: 10px;
-		text-transform: uppercase;
+		font-size: 12px;
 		margin-bottom: 3px;
 	}
 
@@ -220,7 +219,7 @@
 		background: var(--panel);
 		border: 1px solid var(--line);
 		border-radius: var(--radius-xs, 2px);
-		box-shadow: 0 4px 18px rgba(32, 36, 43, 0.14);
+		box-shadow: var(--elev-menu);
 	}
 
 	li {
@@ -244,7 +243,7 @@
 		border: 1px solid var(--line);
 		border-radius: var(--radius-xs, 2px);
 		box-shadow: var(--elev-1);
-		font-size: 10.5px;
+		font-size: 12.5px;
 		margin: 4px 0 0;
 	}
 

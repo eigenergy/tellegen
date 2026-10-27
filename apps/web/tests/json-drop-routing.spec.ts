@@ -123,9 +123,7 @@ test('a balanced JSON case consumes a co-dropped geographic sidecar', async ({ p
 	await expect(page.getByRole('heading', { name: /json-sidecar/i })).toBeVisible({
 		timeout: 30_000
 	});
-	await expect(
-		page.getByText('coordinates: geographic file data from json-sidecar-coords.csv')
-	).toBeVisible();
-	await expect(page.getByText('click the map to place the topology layout')).toHaveCount(0);
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.getByText('From json-sidecar-coords.csv', { exact: true })).toBeVisible();
+	await expect(page.getByText('Click the map to place the topology layout')).toHaveCount(0);
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 });

@@ -4,7 +4,14 @@
 	import type { Network, NetworkBus } from '../api.js';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
-	import { branchColor, busNeutral, busRadius, priceColor, scalarDomain } from '../colors.js';
+	import {
+		branchColor,
+		busNeutral,
+		busRadiusFor,
+		demandColor,
+		priceColor,
+		scalarDomain
+	} from '../colors.js';
 	import { rgbaCss } from '../format.js';
 	import type { MulticonductorCase } from '../state.svelte.js';
 	import { edgeColor, attachmentColor } from '../multiconductor.js';
@@ -66,6 +73,8 @@
 		if (multiconductor) return [];
 		if (!app.studyView) return ctrl.activeDisplay?.values ?? [];
 		const solution = app.studyView.solution;
+		if (app.displayMode === 'demand')
+			return app.studyView.network.buses.map((bus) => ({ bus: bus.id, value: bus.demand_mw }));
 		if (app.displayMode === 'angle') return solution?.va ?? [];
 		if (app.displayMode === 'voltage')
 			return (
@@ -107,7 +116,9 @@
 		return rgbaCss(
 			value === undefined
 				? busNeutral
-				: priceColor((value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12))
+				: (displayMode === 'demand' ? demandColor : priceColor)(
+						(value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
+					)
 		);
 	}
 	function branchLabel(id: number) {
@@ -348,9 +359,10 @@
 						<circle
 							cx={bus.lon}
 							cy={bus.lat}
-							r={Math.max(5, busRadius(Math.max(bus.demand_mw, bus.gen_mw))) / scale}
+							r={Math.max(5, busRadiusFor(app.busSizing, Math.max(bus.demand_mw, bus.gen_mw))) /
+								scale}
 							fill={color(bus)}
-							stroke={selectedBus === bus.id ? '#2f6fbb' : '#756a5b'}
+							style:stroke={selectedBus === bus.id ? '#2f6fbb' : 'var(--diagram-bus-stroke)'}
 							stroke-width={selectedBus === bus.id ? 3 : 1}
 							vector-effect="non-scaling-stroke"
 						/>
@@ -364,7 +376,7 @@
 							>Bus {multiconductor ? bus.uid : bus.id}{!multiconductor && bus.name
 								? `, ${bus.name}`
 								: ''}, {(bus.demand_mw * (multiconductor ? 1000 : 1)).toFixed(1)}
-							{multiconductor ? 'kW' : 'MW'} demand{values.has(bus.id)
+							{multiconductor ? 'kW' : 'MW'} demand{displayMode !== 'demand' && values.has(bus.id)
 								? `, ${values.get(bus.id)!.toFixed(4)} ${displayMode === 'price' ? 'objective units/MW LMP' : displayMode === 'voltage' ? 'pu voltage' : 'rad voltage angle'}`
 								: ''}</title
 						>

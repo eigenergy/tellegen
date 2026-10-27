@@ -1,0 +1,13 @@
+This optional Tellegen AC OPF artifact includes POUNCE 0.13.0.
+POUNCE is licensed under the Eclipse Public License 2.0. The license is included in
+POUNCE-EPL-2.0.txt. Tellegen's own code is licensed under MIT.
+
+POUNCE source: https://github.com/jkitchin/pounce/tree/v0.13.0
+The POUNCE crates are used without source modifications. POUNCE-SOURCE.json
+lists their exact published source archives and SHA-256 checksums, the
+Tellegen source revision, and the WASI artifact's SHA-256. A dirty-worktree
+manifest denotes a development build rather than a reproducible release.
+
+This development integration does not authorize public distribution.
+Release owners must complete the repository's distribution review before
+publishing the optional asset.

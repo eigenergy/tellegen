@@ -19,6 +19,9 @@ git-repository-url = "https://github.com/eigenergy/tellegen"
 preferred-dark-theme = "navy"
 site-url = "/tellegen/"
 
+[output.html.redirect]
+"/sensitivity-contract.html" = "sensitivity-interface.html"
+
 [output.html.search]
 enable = true
 limit-results = 30

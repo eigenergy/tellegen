@@ -1,7 +1,7 @@
 """The Tellegen MCP server, over the in-process engine.
 
 The tool names, signatures and return shapes are PowerMCP #67's, deliberately
-and exactly: that surface is the contract `docs/src/studies.md` published and
+and exactly: that surface is the one `docs/src/studies.md` published and
 the one agents are already prompted against. Only the transport changes. Where
 #67 spawns the native CLI once per call, this calls the engine through the
 compiled extension, which removes the Rust-toolchain prerequisite and the

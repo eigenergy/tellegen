@@ -5,7 +5,7 @@
   TypeScript types.
 - `svelte/` is `@tellegen/svelte`, the Svelte component package for the map,
   panels, local file flow, and solve card.
-- `webmcp/` is `@tellegen/webmcp`, the WebMCP contract, tool definitions,
+- `webmcp/` is `@tellegen/webmcp`, the WebMCP tool definitions,
   registration lifecycle, and test surface without a UI framework dependency.
 
 `apps/web`, `examples/browser-minimal`, and `examples/svelte-minimal` are npm

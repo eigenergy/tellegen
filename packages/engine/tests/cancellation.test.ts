@@ -30,6 +30,7 @@ describe("isolated study cancellation", () => {
       return true;
     });
     const isolatedHost: EngineHost = {
+      kind: "worker",
       call: (request) => {
         if (request.op === "study_new" || request.op === "study_free") {
           return Promise.resolve(null);
@@ -64,6 +65,7 @@ describe("isolated study cancellation", () => {
       return Promise.reject(new Error(`unexpected shared call ${request.op}`));
     });
     const sharedHost: EngineHost = {
+      kind: "worker",
       call: sharedCall,
       cancel: sharedCancel,
     };
@@ -82,7 +84,7 @@ describe("isolated study cancellation", () => {
 
   it("does not dispatch when the signal is already aborted", async () => {
     const call = vi.fn<EngineHost["call"]>();
-    const study = new BrowserStudy({ call }, 1);
+    const study = new BrowserStudy({ kind: "worker", call }, 1);
     const controller = new AbortController();
     controller.abort();
 

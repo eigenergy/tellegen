@@ -130,7 +130,7 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 
 	const inspected = await callTool(page, 'inspect_case', {});
 	expect(inspected.ok).toBe(true);
@@ -363,7 +363,7 @@ test('inspect_case refuses a snapshot whose revision changes while its source is
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 
 	const raced = await page.evaluate(async () => {
 		const harness = (
@@ -409,7 +409,7 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 			buffer: Buffer.from(CASE14)
 		}
 	]);
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'error');
 	await page.getByRole('button', { name: 'Agent', exact: true }).click();

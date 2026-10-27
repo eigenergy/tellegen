@@ -67,13 +67,20 @@ into the current build.
 The 0.3 release uses PowerIO 0.11 typed problem instances and generation-2
 `pio-ir` documents. Rust consumers must use the matching PowerIO types when
 calling `solve_instance`, `solve_ac_pf_instance`, or `solve_ac_instance`.
-The module JSON entry points require the same generation-2 input contract.
+The module JSON entry points require the same generation-2 input format.
 These input changes require migration from the 0.2 API and are released as a
 new minor version, rather than a compatible patch to 0.2.
 
+0.4 makes a multiconductor session edit constant-size: `McPfSession::
+replace_load_powers` returns the `McPfSummary` of the new operating point
+instead of the full result. `McPfSession::result` and `McPfSession::instance`
+are gone; call `build_result()` for the full terminal and equipment result,
+`detail()` for one bus and a page of equipment ports, and `base_instance()` or
+`edited_instance()` for the instance.
+
 Persistent investigations use `document::StudyDocument` and the operations in
 `study_ops`, with immutable states, goal revisions and explicit application.
-The document's schema version identifies its storage contract separately from
+The document's schema version identifies its storage format separately from
 the crate version and PowerIO IR generation.
 
 ## Build
@@ -83,7 +90,16 @@ cargo test                          # native, with sensitivities (default featur
 cargo build --no-default-features   # solve only, no faer (smaller wasm core)
 ```
 
+## Citing
+
+If you use this crate in published work, please cite the tellegen paper:
+Samuel Talkington, Frederik Geth, Qian Zhang, Le Xie, and Skyler Liu. 2026.
+*Interactive Power Flow in the Browser*. The Inaugural ACM Conference on Digital
+Transformation (ACM DXConf 2026), Ann Arbor, MI, USA.
+[doi:10.1145/3847238.3849038](https://doi.org/10.1145/3847238.3849038). The
+[repository README](https://github.com/eigenergy/tellegen#citing) has the BibTeX
+entry.
+
 ## License
 
-Dual-licensed under either Apache-2.0 or MIT, at your option. See LICENSE-APACHE,
-LICENSE-MIT, and NOTICE.
+MIT. See LICENSE.

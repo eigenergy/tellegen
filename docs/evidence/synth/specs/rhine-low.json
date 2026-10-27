@@ -1,0 +1,46 @@
+{
+  "id": "rhine-low",
+  "description": "The Rhine corridor at low density: about 1.3 GW per bus, the heavy aggregation the corridor plan has to carry.",
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "request": {
+    "region": {
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.0,
+              48.5
+            ],
+            [
+              10.0,
+              48.5
+            ],
+            [
+              10.0,
+              52.0
+            ],
+            [
+              4.0,
+              52.0
+            ],
+            [
+              4.0,
+              48.5
+            ]
+          ]
+        ]
+      },
+      "label": "rhine-low"
+    },
+    "density": "low",
+    "voltage_levels_kv": [
+      500.0,
+      230.0
+    ]
+  }
+}

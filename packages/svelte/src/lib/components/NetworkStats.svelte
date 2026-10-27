@@ -11,34 +11,32 @@
 	{@const [cname, cregion] = splitName(app.active?.name ?? '')}
 	{@const deltaObjective = stats.deltaObjective}
 	<h2>{cname} <span class="region mono">{cregion}</span></h2>
-	<dl class="mono">
+	<dl>
 		<div>
-			<dt>buses</dt>
-			<dd>{stats.buses}</dd>
+			<dt>Buses</dt>
+			<dd class="mono">{stats.buses}</dd>
 		</div>
 		<div>
-			<dt>lines</dt>
-			<dd>{stats.branches}</dd>
+			<dt>Lines</dt>
+			<dd class="mono">{stats.branches}</dd>
 		</div>
 		{#if ctrl.activeFormulation !== 'acpf'}
 			<div>
-				<dt>binding lines</dt>
-				<dd>{stats.binding ?? '...'}</dd>
+				<dt>Binding lines</dt>
+				<dd class="mono">{stats.binding ?? '…'}</dd>
 			</div>
 			<div>
 				<dt>OPF objective</dt>
-				<dd>
-					{#if stats.objective === null}
-						<span class="blink">solving...</span>
-					{:else}
-						{fmt.format(stats.objective)}
-					{/if}
-				</dd>
+				{#if stats.objective === null}
+					<dd class="blink">Solving&hellip;</dd>
+				{:else}
+					<dd class="mono">{fmt.format(stats.objective)}</dd>
+				{/if}
 			</div>
 			{#if ctrl.isPerturbed(ctrl.activeSolvable) && deltaObjective !== null}
 				<div class="delta">
-					<dt>vs base</dt>
-					<dd>{signed(deltaObjective)}</dd>
+					<dt>Change from base</dt>
+					<dd class="mono">{signed(deltaObjective)}</dd>
 				</div>
 			{/if}
 		{/if}

@@ -1,12 +1,17 @@
 /** The engine call protocol: one request shape shared by the worker host
  * (postMessage) and the main-thread host (direct dispatch), so a request built
  * once runs on either side. Payloads are the wasm surface's own JSON strings
- * (or raw display bytes, or numeric arrays that cross as transferable
- * Float64Arrays); the typed translation stays in index.ts. Study handles are
- * allocated by the caller, which keeps them valid when pending requests replay
- * against the other host. */
+ * (or raw display bytes, or numeric arrays and synthetic previews that cross
+ * as transferable typed arrays); the typed translation stays in index.ts.
+ * Study and session handles are allocated by the caller, which keeps them
+ * valid when pending requests replay against the other host. */
 
-import type { WasmMcPfSession, WasmModule, WasmStudy } from "./module.js";
+import type {
+  WasmMcPfSession,
+  WasmModule,
+  WasmStudy,
+  WasmSynthSession,
+} from "./module.js";
 
 export type EngineRequest =
   | { op: "preload" }
@@ -83,14 +88,62 @@ export type EngineRequest =
   | { op: "study_save_solution_module"; study: number }
   | { op: "study_export"; study: number; format: string }
   | { op: "study_apply_geo"; study: number; layer: string }
-  | { op: "study_free"; study: number };
+  | { op: "study_free"; study: number }
+  | { op: "synth_load_places"; bytes: Uint8Array }
+  | { op: "synth_overpass_queries"; request: string }
+  | {
+      op: "synth_session_new";
+      session: number;
+      request: string;
+      osm: string | null;
+    }
+  | { op: "synth_session_advance"; session: number }
+  | { op: "synth_session_preview"; session: number }
+  | { op: "synth_session_report"; session: number }
+  | { op: "synth_session_module"; session: number }
+  | { op: "synth_session_ingest"; session: number }
+  | { op: "synth_session_export_gridfm"; session: number }
+  | { op: "synth_session_free"; session: number }
+  | { op: "synth_generate"; request: string; osm: string | null };
 
 export type WorkerRequest =
   | (EngineRequest & { id: number })
   | { op: "cancel_study_operation"; id: number };
 
-/** One engine answer: wasm JSON text, nothing, or a numeric array. */
-export type EngineValue = string | null | Float64Array;
+/** A synthetic generation preview as flat arrays for binary map layers: bus
+ * `[lon, lat]` pairs, kinds (0 load, 1 substation, 2 generator, 3 converter)
+ * and kV in bus order (bus id = index + 1); concatenated branch route points,
+ * the point index where each route starts (one entry more than there are
+ * branches), and branch kV. */
+export interface SynthPreviewValue {
+  kind: "synth_preview";
+  busPositions: Float64Array;
+  busKinds: Uint8Array;
+  busKv: Float32Array;
+  branchPositions: Float64Array;
+  branchStartIndices: Uint32Array;
+  branchKv: Float32Array;
+}
+
+/** One engine answer: wasm JSON text, nothing, a numeric array, or a
+ * synthetic preview. */
+export type EngineValue = string | null | Float64Array | SynthPreviewValue;
+
+/** The buffers an answer moves to the caller instead of copying. */
+export function transferables(value: EngineValue): Transferable[] {
+  if (value instanceof Float64Array) return [value.buffer];
+  if (value !== null && typeof value === "object" && value.kind === "synth_preview") {
+    return [
+      value.busPositions.buffer,
+      value.busKinds.buffer,
+      value.busKv.buffer,
+      value.branchPositions.buffer,
+      value.branchStartIndices.buffer,
+      value.branchKv.buffer,
+    ];
+  }
+  return [];
+}
 
 export type WorkerResponse =
   /** `worker_ms` is the time the worker spent running the request, so a
@@ -104,6 +157,12 @@ export type WorkerResponse =
 export interface EngineHandles {
   studies: Map<number, WasmStudy>;
   mcPfSessions: Map<number, WasmMcPfSession>;
+  synthSessions: Map<number, WasmSynthSession>;
+}
+
+/** An empty handle table for one side of the boundary. */
+export function emptyHandles(): EngineHandles {
+  return { studies: new Map(), mcPfSessions: new Map(), synthSessions: new Map() };
 }
 
 /** Run one request against a loaded wasm module. `studies` maps caller
@@ -123,6 +182,11 @@ export function runRequest(
   const mcPfSession = (handle: number): WasmMcPfSession => {
     const session = handles.mcPfSessions.get(handle);
     if (!session) throw new Error(`unknown multiconductor PF session handle ${handle}`);
+    return session;
+  };
+  const synthSession = (handle: number): WasmSynthSession => {
+    const session = handles.synthSessions.get(handle);
+    if (!session) throw new Error(`unknown synthetic generation session handle ${handle}`);
     return session;
   };
   switch (req.op) {
@@ -240,5 +304,47 @@ export function runRequest(
       handles.studies.get(req.study)?.free();
       handles.studies.delete(req.study);
       return null;
+    case "synth_load_places":
+      return mod.synth_load_places(req.bytes);
+    case "synth_overpass_queries":
+      return mod.synth_overpass_queries(req.request);
+    case "synth_session_new":
+      handles.synthSessions.set(
+        req.session,
+        new mod.SynthSession(req.request, req.osm ?? undefined),
+      );
+      return null;
+    case "synth_session_advance":
+      return synthSession(req.session).advance();
+    case "synth_session_preview": {
+      const buffers = synthSession(req.session).preview_buffers();
+      try {
+        return {
+          kind: "synth_preview",
+          busPositions: buffers.bus_positions(),
+          busKinds: buffers.bus_kinds(),
+          busKv: buffers.bus_kv(),
+          branchPositions: buffers.branch_positions(),
+          branchStartIndices: buffers.branch_start_indices(),
+          branchKv: buffers.branch_kv(),
+        };
+      } finally {
+        buffers.free();
+      }
+    }
+    case "synth_session_report":
+      return synthSession(req.session).report();
+    case "synth_session_module":
+      return synthSession(req.session).module();
+    case "synth_session_ingest":
+      return synthSession(req.session).ingest();
+    case "synth_session_export_gridfm":
+      return synthSession(req.session).export_gridfm();
+    case "synth_session_free":
+      handles.synthSessions.get(req.session)?.free();
+      handles.synthSessions.delete(req.session);
+      return null;
+    case "synth_generate":
+      return mod.synth_generate(req.request, req.osm ?? undefined);
   }
 }

@@ -34,7 +34,7 @@ sensitivity). Solves run on one thread for clean timing.
    verdict (see [Validation](validation.md)).
 2. **Sensitivity parity**: adjoint equals forward, and central finite differences
    against the analytic columns, classified per parity class (see
-   [the sensitivity contract](sensitivity-contract.md)).
+   [the sensitivity interface](sensitivity-interface.md)).
 3. **Feasibility / convergence**: per-case status, interior-point iterations,
    residuals.
 4. **Performance**: wall time per stage, and a scaling curve against bus count.

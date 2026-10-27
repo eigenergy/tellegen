@@ -1,9 +1,10 @@
 [package]
 name = "tellegen-py"
 # Tracks the engine crate so `pip install tellegen==X` and `cargo add tellegen@X`
-# mean the same solver. Bumped with `crates/tellegen`, by hand: release-plz does
-# not touch this crate (see release-plz.toml).
-version = "0.3.0"
+# mean the same solver. release-plz does not touch this crate; the crate release
+# workflow sets this version and its Cargo.lock entry to the engine's after
+# release-plz updates it (.github/scripts/sync_python_version.py).
+version = "0.4.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -22,10 +23,10 @@ default = []
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-# No `version` field, deliberately: `.github/scripts/validate-version-changes.py`
-# requires a release-plz version bump to touch exactly Cargo.lock and
-# crates/tellegen/{Cargo.toml,CHANGELOG.md}. A version here would make
-# release-plz rewrite this manifest too and the gate would fail closed.
+# No `version` field, deliberately: this unpublished adapter uses the workspace
+# engine directly. The release workflow changes only this package's own
+# version, and `.github/scripts/validate-version-changes.py` rejects any other
+# change to this manifest in a release patch.
 #
 # `conic` implies `sensitivity`, which carries DC PF, DC OPF, AC PF and the KKT
 # sensitivities. `mc-pf` is deliberately absent: multiconductor power flow is
@@ -37,7 +38,7 @@ tellegen = { path = "../tellegen", default-features = false, features = ["conic"
 powerio.workspace = true
 # abi3 gives one wheel per platform for CPython 3.9 and newer, which is what
 # keeps PowerMCP from needing a per-version support gate (as surge-py does).
-pyo3 = { version = "0.29", features = ["abi3-py39"] }
+pyo3 = { version = "0.30", features = ["abi3-py39"] }
 serde_json.workspace = true
 
 [lints]

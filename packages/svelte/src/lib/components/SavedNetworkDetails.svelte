@@ -140,7 +140,7 @@
 	.state-label span {
 		flex: none;
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 13px;
 	}
 	dl {
 		margin: 0;
@@ -163,7 +163,7 @@
 	}
 	small {
 		display: block;
-		font-size: 10px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 	.live {
@@ -208,7 +208,7 @@
 		display: block;
 		margin-top: 3px;
 		color: var(--text-secondary);
-		font-size: 11px;
+		font-size: 13px;
 		font-weight: 400;
 	}
 </style>

@@ -48,7 +48,7 @@ test('New England PWB geography and PWD drawing remain distinct through saving a
 	await expect(page.getByRole('button', { name: 'Diagram', exact: true })).toBeVisible();
 	await expect(page.locator('.maplibregl-canvas')).toBeVisible();
 	const pwb = await settledCase(page);
-	const geographyText = await downloadLayer(page, 'Download geography (.geo.json)');
+	const geographyText = await downloadLayer(page, 'Save geography');
 	const geography = JSON.parse(geographyText);
 	const points = geography.features.filter(
 		(feature: { geometry: { type: string } }) => feature.geometry.type === 'Point'
@@ -70,7 +70,7 @@ test('New England PWB geography and PWD drawing remain distinct through saving a
 	await expect(canvas).toBeVisible();
 	await expect(page.locator('.maplibregl-canvas')).toHaveCount(0);
 	await expect(page.locator('.maplibregl-ctrl-attrib')).toHaveCount(0);
-	const drawingText = await downloadLayer(page, 'Download drawing (.geo.json)');
+	const drawingText = await downloadLayer(page, 'Save drawing');
 	const drawing = JSON.parse(drawingText);
 	expect(drawing.powerio_geo.space).toBe('diagram');
 	expect(
@@ -142,7 +142,7 @@ test('New England PWB geography and PWD drawing remain distinct through saving a
 	await expect(page.locator('.maplibregl-canvas')).toBeVisible();
 	const raw = await settledCase(page);
 	expect(raw.case_id).not.toBe(selected.case_id);
-	const rawGeography = JSON.parse(await downloadLayer(page, 'Download geography (.geo.json)'));
+	const rawGeography = JSON.parse(await downloadLayer(page, 'Save geography'));
 	const rawPoints = rawGeography.features.filter(
 		(feature: { geometry: { type: string } }) => feature.geometry.type === 'Point'
 	);
@@ -151,7 +151,7 @@ test('New England PWB geography and PWD drawing remain distinct through saving a
 	);
 	await page.getByRole('button', { name: 'Diagram', exact: true }).click();
 	await expect(canvas).toBeVisible();
-	expect(JSON.parse(await downloadLayer(page, 'Download drawing (.geo.json)'))).toEqual(drawing);
+	expect(JSON.parse(await downloadLayer(page, 'Save drawing'))).toEqual(drawing);
 	const evidence = JSON.stringify(
 		{
 			version: JSON.parse(

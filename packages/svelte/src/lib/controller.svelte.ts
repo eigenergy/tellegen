@@ -46,6 +46,9 @@ import {
 	isPermanentEngineFailure,
 	parseDisplay,
 	parseGeo,
+	probeAcOpfWorker,
+	solveAcOpfModule,
+	solveResponseToSolution,
 	type EngineTransport,
 	mcPfResultDetail,
 	summarizeMcPfResult,
@@ -65,7 +68,8 @@ import {
 	type PowerIoDiagnostic,
 	type SensTarget
 } from '@tellegen/engine';
-import { errorText, extent, formulationLabel, rgbaCss } from './format.js';
+import { browserSolveFailure, errorText, extent, formulationLabel, rgbaCss } from './format.js';
+import { DEAD_ZONE_MW } from './slider.js';
 
 const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
@@ -79,6 +83,13 @@ type GeoLayerFile = {
 	layer: string;
 	diagnostics: PowerIoDiagnostic[];
 };
+
+/** Whether a local case renders or will render a bus with this id. */
+function localHasBus(c: LocalCase, busId: number): boolean {
+	const buses = c.view?.buses ?? c.diagram?.view.buses ?? c.topology?.buses ?? [];
+	return buses.some((b) => b.id === busId);
+}
+
 type SavedCaseCapture = {
 	input: string;
 	solution?: string;
@@ -107,12 +118,11 @@ type JsonDropRoute =
 
 /** Terminal copy when nothing can solve. Two facts decide the wording: whether
  * this browser's engine failure is known permanent, and that the server
- * declines compute. Server compute exists in the codebase but ships disabled;
- * interest routes to email until it is offered. */
+ * declines compute. */
 const WASM_REQUIRED_NOTICE =
-	'this browser cannot run the WebAssembly engine that solves locally, and server side compute is disabled in this demo. it may be offered later; to express interest, email Samuel Talkington at talks@umich.edu';
+	'This browser cannot run the WebAssembly engine, and server compute is disabled';
 const COMPUTE_OFF_NOTICE =
-	'solving in this browser did not complete, and server side compute is disabled in this demo. retry to run the browser engine again, or email Samuel Talkington at talks@umich.edu to express interest in server compute';
+	'The browser solve did not complete, and server compute is disabled. Retry to run it again';
 
 /** Upper bound on waiting for a camera fly-to before the sensitivity solve
  * starts anyway: a missing map or a cue that never appears must not stall the
@@ -173,7 +183,13 @@ type DemandRangeAnchor = {
 
 export interface ControllerOptions {
 	api?: TellegenApiClient;
-	apiBase?: string;
+	/** Backend base path. `null` means there is no backend: no client is
+	 * created and nothing is ever fetched. */
+	apiBase?: string | null;
+	/** Whether `load()` fetches the bundled cases. Default `true`. With
+	 * `false`, `load()` only marks the shell loaded and frames the map. */
+	loadDefaultCases?: boolean;
+	acOpfWasmUrl?: string;
 	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
 		Partial<
 			Pick<
@@ -183,9 +199,33 @@ export interface ControllerOptions {
 		>;
 }
 
+/** Input to `Controller.openBalancedModule` and `replaceLocalCase`: a
+ * balanced (transmission) powerio module, either as its JSON text or as the
+ * payload the engine's `ingestCase` already produced for it. */
+export interface OpenBalancedModuleInput {
+	/** Case label; also the stem of the `.pio.json` file name the shell shows. */
+	name: string;
+	/** Module JSON, ingested through the engine. Ignored when `payload` is set. */
+	moduleJson?: string;
+	/** An already ingested balanced payload; skips the engine round trip. */
+	payload?: IngestedCase;
+	/** A `.geo.json` layer document, for a module that carries no coordinates. */
+	geoLayer?: string;
+	/** Overrides the formulation the module declares. */
+	formulation?: Formulation;
+	/** Default `true`: add the case, make it active, and start its browser
+	 * solve. With `false` the prepared case is returned and not added. */
+	activate?: boolean;
+	/** Default `true`: fly the map to the case when it is activated. */
+	frame?: boolean;
+}
+
 export class Controller {
 	app: AppState;
-	api: TellegenApiClient;
+	/** `null` when the controller was created with `apiBase: null`; every
+	 * server path then reports "compute off" instead of fetching. */
+	api: TellegenApiClient | null;
+	readonly loadDefaultCases: boolean;
 	mcTransport: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
 		Partial<
 			Pick<
@@ -204,6 +244,12 @@ export class Controller {
 	// Latched once any server fallback answers 403: compute is disabled on this
 	// deploy, so later fallbacks show the notice instead of firing doomed requests.
 	serverComputeOff = false;
+	/** The optional EPL-bearing WASI asset is never inferred or bundled. */
+	private readonly acOpfWasmUrl: string | null;
+	private acOpfProbeStarted = false;
+	private readonly acOpfProbeAbort = new AbortController();
+	private readonly acOpfSolves = new Map<SolvableCase, AbortController>();
+	acOpfAvailable = $state(false);
 
 	// Build-once browser Study per case: the retained PowerIO module is parsed and the model built
 	// when the Study is created, so a drag re-solves (commit) and previews without
@@ -252,6 +298,8 @@ export class Controller {
 	// File reads and worker messages retain whole buffers. Admit one validated
 	// batch at a time so repeated drops cannot multiply the aggregate byte cap.
 	private readonly dropBatchGate = new DropBatchGate();
+	// Set by dispose(). Not $state; nothing renders it.
+	disposed = false;
 
 	nearbyRangeAnchor = $state<DemandRangeAnchor | null>(null);
 	// Default cases the user has closed; drives the restore affordance. Seeded in load().
@@ -279,7 +327,9 @@ export class Controller {
 	constructor(app: AppState, options: ControllerOptions = {}) {
 		this.app = app;
 		this.api = options.api ?? createApiClient({ apiBase: options.apiBase });
+		this.loadDefaultCases = options.loadDefaultCases ?? true;
 		this.mcTransport = options.mcTransport ?? browserWasmTransport;
+		this.acOpfWasmUrl = options.acOpfWasmUrl ?? null;
 	}
 
 	// ===== helpers =====
@@ -314,6 +364,33 @@ export class Controller {
 
 	isPerturbed(c: SolvableCase | null): boolean {
 		return c?.perturbed ?? false;
+	}
+
+	formulationAvailable(c: SolvableCase, formulation: Formulation): boolean {
+		if (formulation === 'acopf') return this.acOpfAvailable && !c.perturbed;
+		return !FORMULATIONS.find((entry) => entry.id === formulation)?.disabled;
+	}
+
+	probeAcOpf = () => {
+		if (this.disposed || this.acOpfProbeStarted || !this.acOpfWasmUrl) return;
+		this.acOpfProbeStarted = true;
+		void probeAcOpfWorker(this.acOpfWasmUrl, undefined, this.acOpfProbeAbort.signal).then(
+			(available) => {
+				if (this.disposed) return;
+				this.acOpfAvailable = available;
+				// A declared instance can be dropped while the optional asset is probing.
+				const c = this.app.activeLocal;
+				if (available && c?.formulation === 'acopf' && !c.solving) {
+					this.maybeStartLocalSolve(c.id);
+				}
+			}
+		);
+	};
+
+	caseExportUnavailableReason(c: SolvableCase): string | null {
+		return c.formulation === 'acopf'
+			? 'Saving and exporting AC OPF cases is not supported yet.'
+			: null;
 	}
 
 	bumpRevision(c: SolvableCase): void {
@@ -436,6 +513,8 @@ export class Controller {
 	// under that formulation. Returns null when the sens module can't load; the caller then
 	// falls back to the server, surfacing solveFallbackReason.
 	async getStudy(c: SolvableCase, studyInputJson: string): Promise<BrowserStudy | null> {
+		// A disposed controller builds nothing that would outlive it.
+		if (this.disposed) return null;
 		const latched = this.studyUnavailable.get(c);
 		if (latched) {
 			c.solveFallbackReason ??= latched;
@@ -520,8 +599,39 @@ export class Controller {
 		return study ? study.sensitivity(c.id, this.caseDeltas(c), this.caseRatings(c), target) : null;
 	}
 
+	/** Release every engine handle this controller holds: each case's browser
+	 * Study, including one still being built, its AC OPF solve, each
+	 * multiconductor session, with their pending edits and in-flight requests,
+	 * and the AC OPF asset probe. `TellegenProvider` calls it when it unmounts;
+	 * the controller builds no Study and keeps no new session afterwards. */
+	dispose() {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.hostedLoadAbort?.abort();
+		this.hostedLoadAbort = null;
+		this.loadingHostedDistribution = null;
+		this.abort?.abort();
+		this.abort = null;
+		this.acOpfProbeAbort.abort();
+		for (const cancellation of this.acOpfSolves.values()) cancellation.abort();
+		this.acOpfSolves.clear();
+		for (const c of [...this.app.cases, ...this.app.localCases]) {
+			c.solveSeq = (c.solveSeq ?? 0) + 1;
+			this.disposeStudy(c);
+		}
+		for (const c of this.app.multiCases) {
+			c.solveAbort?.abort();
+			if (c.mcEditTimer !== null) clearTimeout(c.mcEditTimer);
+			c.mcEditTimer = null;
+			c.mcSession?.free();
+			c.mcSession = null;
+		}
+	}
+
 	// Release a case's Study (if any) when the case is removed.
 	disposeStudy(c: SolvableCase) {
+		this.acOpfSolves.get(c)?.abort();
+		this.acOpfSolves.delete(c);
 		const cached = this.caseStudies.get(c);
 		if (cached) {
 			cached.study.free();
@@ -574,8 +684,13 @@ export class Controller {
 	async ensureStudyInputJson(c: SolvableCase): Promise<string | null> {
 		if (c.studyInputJson) return c.studyInputJson;
 		if (!this.isBackendCase(c)) return null;
+		const api = this.api;
+		if (!api) {
+			c.solveFallbackReason = 'no API configured';
+			return null;
+		}
 		try {
-			const moduleJson = await this.api.getCaseModuleJson(c.id);
+			const moduleJson = await api.getCaseModuleJson(c.id);
 			c.studyInputJson = moduleJson;
 			return moduleJson;
 		} catch (e) {
@@ -589,7 +704,7 @@ export class Controller {
 	// reads as "no change at this bus".
 	previewDeltas(c: SolvableCase, bus: number, value: number) {
 		const deltas = { ...this.caseDeltas(c) };
-		if (Math.abs(value) < 0.25) delete deltas[bus];
+		if (Math.abs(value) < DEAD_ZONE_MW) delete deltas[bus];
 		else deltas[bus] = value;
 		return deltas;
 	}
@@ -666,7 +781,8 @@ export class Controller {
 		if (values.length === 0) return null;
 		const domain = scalarDomain(this.activeDisplay.mode, values);
 		const { min, max } = extent(values);
-		const flatThreshold = this.activeDisplay.mode === 'price' ? 1 : 1e-5;
+		const flatThreshold =
+			this.activeDisplay.mode === 'price' || this.activeDisplay.mode === 'demand' ? 1 : 1e-5;
 		return {
 			lo: { value: domain.lo, clamped: min < domain.lo - flatThreshold / 20 },
 			hi: { value: domain.hi, clamped: max > domain.hi + flatThreshold / 20 },
@@ -718,7 +834,11 @@ export class Controller {
 	);
 	sliderMin = $derived(this.sliderBounds.min);
 	sliderMax = $derived(this.sliderBounds.max);
-	sliderDisabled = $derived(!this.selectedBusData || isDisplayOnlyElement(this.selectedBusData));
+	sliderDisabled = $derived(
+		this.activeFormulation === 'acopf' ||
+			!this.selectedBusData ||
+			isDisplayOnlyElement(this.selectedBusData)
+	);
 
 	committedRating = $derived.by(() =>
 		this.activeSolvable && this.app.selectedBranch !== null
@@ -734,7 +854,8 @@ export class Controller {
 	// to perturb.
 	ratingBounds = $derived.by(() => {
 		const b = this.selectedBranchData;
-		if (!b || isDisplayOnlyElement(b) || b.rate_mw <= 0) return { min: 0, max: 0, disabled: true };
+		if (this.activeFormulation === 'acopf' || !b || isDisplayOnlyElement(b) || b.rate_mw <= 0)
+			return { min: 0, max: 0, disabled: true };
 		const span = Math.min(50, Math.max(5, 0.2 * b.rate_mw));
 		return {
 			min: Math.max(-(b.rate_mw - 1), -span),
@@ -848,32 +969,42 @@ export class Controller {
 			this.activeSolvable?.solving ||
 			this.app.previewActive ||
 			(this.app.previewDeltaMw !== null &&
-				Math.abs(this.sliderValue - this.committedDelta) >= 0.25) ||
+				Math.abs(this.sliderValue - this.committedDelta) >= DEAD_ZONE_MW) ||
 			(this.app.previewRatingMw !== null &&
-				Math.abs(this.ratingSliderValue - this.committedRating) >= 0.25)
+				Math.abs(this.ratingSliderValue - this.committedRating) >= DEAD_ZONE_MW)
 		)
 	);
 
 	// ===== actions =====
 
 	load = (): Promise<void> => {
+		// Default cases off, or no backend at all: nothing to fetch. The shell
+		// still needs its loaded state and a framed map, and a host that opens
+		// its own cases must never see a request go out.
+		const api = this.api;
+		if (!this.loadDefaultCases || api === null) {
+			this.casesLoaded = true;
+			void this.app.requestFrame('all');
+			return Promise.resolve();
+		}
 		// A remount can call load() again before the first getCases() resolves; dedupe
 		// so two concurrent loads can't double-fetch the case list and double-fit the map.
 		if (this.loading) return this.loading;
 		this.loading = (async () => {
 			this.hostedLoadAbort?.abort();
+			this.probeAcOpf();
 			// Learn the deploy's compute gate up front so fallback paths pick honest
 			// copy and skip doomed requests (the SSE stream cannot see a 403). On
 			// failure assume enabled; the 403 latch in fetchServerColumn still
 			// catches a disabled deploy.
-			void this.api
+			void api
 				.getComputeStatus()
 				.then((s) => {
 					this.serverComputeOff = !s.enabled;
 				})
 				.catch(() => {});
 			try {
-				const summaries = await this.api.getCases();
+				const summaries = await api.getCases();
 				const hidden = this.readHiddenDefaultCases();
 				this.hiddenDefaults = new Set(hidden);
 				// Tear down the cases being replaced so their wasm Studies are freed and any
@@ -932,15 +1063,20 @@ export class Controller {
 			if (frame && this.app.activeCaseId === c.id) this.app.requestFrame(c.id);
 			return;
 		}
+		const api = this.api;
+		if (!api) {
+			this.fail(`${c.name}: no API configured`);
+			return;
+		}
 		this.loadingBackendCase = c.id;
 		const requestedFormulation = c.formulation;
 		try {
 			const [network, dcBaseSolution] = await Promise.all([
-				c.network ? Promise.resolve(c.network) : this.api.getNetwork(c.id),
+				c.network ? Promise.resolve(c.network) : api.getNetwork(c.id),
 				// The server caches only the DC OPF base solution. Other formulations
 				// must hydrate from the browser Study so their objective, nodal values, flows, and
 				// voltage fields all come from the selected formulation.
-				requestedFormulation === 'dcopf' ? this.api.getSolution(c.id) : Promise.resolve(null)
+				requestedFormulation === 'dcopf' ? api.getSolution(c.id) : Promise.resolve(null)
 			]);
 			if (!this.app.byId(c.id)) return;
 			c.network = network;
@@ -1030,7 +1166,7 @@ export class Controller {
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.activeLocalId = c.id;
-		if (c.formulation === 'acpf' && this.app.displayMode === 'price')
+		if ((c.formulation === 'acpf' || c.formulation === 'acopf') && this.app.displayMode === 'price')
 			this.app.displayMode = 'voltage';
 		this.app.placingLocalId = c.coordsKind === 'synthetic_pending' && !c.diagram ? c.id : null;
 		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
@@ -1049,16 +1185,19 @@ export class Controller {
 		await this.hydrateFallback(this.app.removeLocal(c.id));
 	};
 
-	addAndActivateLocal = (c: LocalCase) => {
+	/** Add a prepared local case, make it active, frame it (unless `frame` is
+	 * false) and start its browser solve. */
+	addAndActivateLocal = (c: LocalCase, options: { frame?: boolean } = {}) => {
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.activeCaseId = null;
 		this.leaveMulti();
 		this.app.addLocal(c);
-		if (c.formulation === 'acpf' && this.app.displayMode === 'price')
+		if ((c.formulation === 'acpf' || c.formulation === 'acopf') && this.app.displayMode === 'price')
 			this.app.displayMode = 'voltage';
 		if (c.diagram) this.app.placingLocalId = null;
-		if (c.view || c.diagram || c.substations) this.app.requestFrame(c.id);
+		if ((options.frame ?? true) && (c.view || c.diagram || c.substations))
+			this.app.requestFrame(c.id);
 		this.maybeStartLocalSolve(c.id);
 	};
 
@@ -1246,6 +1385,7 @@ export class Controller {
 		copy.iterations = source.iterations;
 		copy.solveMs = source.solveMs;
 		copy.solveBackend = source.solveBackend;
+		copy.solveDetail = source.solveDetail;
 		copy.network = source.network;
 		if (source.network) {
 			copy.view = {
@@ -1319,7 +1459,8 @@ export class Controller {
 			'baseSolution',
 			'iterations',
 			'solveMs',
-			'solveBackend'
+			'solveBackend',
+			'solveDetail'
 		] as const)
 			Object.assign(copy, { [key]: source[key] });
 		const captured = this.detachedCaseCaptures.get(source);
@@ -1479,7 +1620,7 @@ export class Controller {
 				await this.awaitFocus(caseId, target.branch, ac);
 				if (ac.signal.aborted) return;
 			}
-			if (c.formulation === 'acpf') return;
+			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 			try {
 				// The column from the browser Study (under the case's formulation). DC OPF
 				// may reconcile a null column via the server; AC OPF / SOCWR are browser
@@ -1552,7 +1693,8 @@ export class Controller {
 			'bus' in target
 				? () => this.selectBus(c.id, target.bus)
 				: () => this.selectBranch(c.id, target.branch);
-		if (this.serverComputeOff) {
+		const api = this.api;
+		if (this.serverComputeOff || !api) {
 			this.fail(this.computeOffNotice(c), retryOp);
 			return;
 		}
@@ -1563,8 +1705,8 @@ export class Controller {
 		try {
 			const col =
 				'bus' in target
-					? await this.api.getSensitivity(c.id, target.bus, c.deltas, ac.signal)
-					: await this.api.getBranchSensitivity(c.id, target.branch, c.deltas, ac.signal);
+					? await api.getSensitivity(c.id, target.bus, c.deltas, ac.signal)
+					: await api.getBranchSensitivity(c.id, target.branch, c.deltas, ac.signal);
 			if (!ac.signal.aborted) {
 				// The solution on screen came from the browser or the served base
 				// solve; the column came from the server. Label the mix.
@@ -1618,7 +1760,7 @@ export class Controller {
 		this.app.placingLocalId = null;
 		const { ac, sensitivitySeq } = this.beginBusSelection(c, busId);
 		try {
-			if (c.formulation === 'acpf') return;
+			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
 				bus: busId
 			});
@@ -1686,7 +1828,7 @@ export class Controller {
 				await this.awaitFocus(localId, branchId, ac);
 				if (ac.signal.aborted) return;
 			}
-			if (c.formulation === 'acpf') return;
+			if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 			const sensitivity = await this.browserSensitivity(c, c.studyInputJson, {
 				branch: branchId
 			});
@@ -1746,7 +1888,10 @@ export class Controller {
 	// fall back: the server solves at base ratings, so a Study failure there is
 	// terminal.
 	runSolve = (c: SolvableCase, target: SensTarget | null) => {
-		if (c.formulation === 'acpf') target = null;
+		if (this.disposed) return;
+		if (c.formulation === 'acpf' || c.formulation === 'acopf') target = null;
+		this.acOpfSolves.get(c)?.abort();
+		this.acOpfSolves.delete(c);
 		// Cancel this case's own previous server stream, if any (backend only).
 		if (this.isBackendCase(c)) {
 			c.closeStream?.();
@@ -1757,13 +1902,21 @@ export class Controller {
 		this.app.error = null;
 		c.solving = true;
 		c.solveBackend = null;
+		c.solveDetail = null;
 		c.solveFallbackReason = null;
 		c.iterations = [];
 		c.solveMs = null;
 		this.ensureStudyInputJson(c).then(async (studyInputJson) => {
-			if (seq !== (c.solveSeq ?? 0)) return;
+			if (this.disposed || seq !== (c.solveSeq ?? 0)) return;
 			if (!studyInputJson) {
 				c.solveFallbackReason ??= 'PowerIO module unavailable';
+				// The server fallback only implements DC OPF. Preserve the requested
+				// calculation when its browser input cannot be loaded.
+				if (c.formulation !== 'dcopf') {
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: ${formulationLabel(c.formulation)} requires its PowerIO module; ${c.solveFallbackReason}`;
+					return;
+				}
 				if (this.hasRatingEdits(c)) {
 					c.solving = false;
 					this.app.error = this.ratingEditsFallbackError(c);
@@ -1775,6 +1928,44 @@ export class Controller {
 				return;
 			}
 			const t0 = performance.now();
+			if (c.formulation === 'acopf') {
+				if (!this.acOpfAvailable || !this.acOpfWasmUrl) {
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: the experimental AC OPF worker is unavailable`;
+					return;
+				}
+				if (c.perturbed) {
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: AC OPF currently solves the canonical base case only; reset demand and rating edits first`;
+					return;
+				}
+				const cancellation = new AbortController();
+				this.acOpfSolves.set(c, cancellation);
+				c.solveBackend = 'pounce-wasi';
+				try {
+					const response = await solveAcOpfModule(
+						this.acOpfWasmUrl,
+						studyInputJson,
+						cancellation.signal
+					);
+					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
+					c.solution = solveResponseToSolution(response);
+					const diagnostics = response.iterations;
+					c.solveDetail =
+						diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
+							? `${diagnostics.total_nlp_iterations ?? diagnostics.nlp_iterations} NLP iterations${diagnostics.recovered_by ? ' (recovered)' : ''}`
+							: 'POUNCE WASI';
+					c.solveMs = Math.round(performance.now() - t0);
+					this.finishSolve(c, seq, null);
+				} catch (error) {
+					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
+					c.solving = false;
+					this.app.error = `${this.caseName(c)}: AC OPF failed in the isolated browser worker: ${errorText(error)}`;
+				} finally {
+					if (this.acOpfSolves.get(c) === cancellation) this.acOpfSolves.delete(c);
+				}
+				return;
+			}
 			c.solveBackend = 'clarabel-wasm';
 
 			// Build-once Study path: commit the new operating point (no re-parse). The
@@ -1854,16 +2045,18 @@ export class Controller {
 				return;
 			}
 			c.solving = false;
-			this.app.error = `${c.label}: browser solve unavailable${
-				c.solveFallbackReason ? `: ${c.solveFallbackReason}` : ''
-			}`;
+			const failure = browserSolveFailure(c.label, c.solveFallbackReason);
+			this.app.error = failure.message;
+			this.app.errorDetail = failure.detail;
 		});
 	};
 
 	serverSolve = (c: CaseState, target: SensTarget | null, seq = c.solveSeq) => {
-		// Known-disabled server compute: show the notice instead of opening a
-		// stream that answers 403 without a readable body (EventSource hides it).
-		if (this.serverComputeOff) {
+		// Known-disabled server compute (or no backend at all): show the notice
+		// instead of opening a stream that answers 403 without a readable body
+		// (EventSource hides it).
+		const api = this.api;
+		if (this.serverComputeOff || !api) {
 			if (seq !== c.solveSeq) return;
 			c.solving = false;
 			if (this.isActiveSolveCase(c)) {
@@ -1878,7 +2071,7 @@ export class Controller {
 		c.solveFallbackReason ??= 'browser solve unavailable';
 		// The server computes bus columns only; a branch target streams no sensitivity.
 		const sensBus = target && 'bus' in target ? target.bus : null;
-		c.closeStream = this.api.openSolveStream(c.id, c.deltas, sensBus, {
+		c.closeStream = api.openSolveStream(c.id, c.deltas, sensBus, {
 			onsolution: (sol) => {
 				if (seq !== c.solveSeq) return;
 				c.solution = sol;
@@ -1926,7 +2119,7 @@ export class Controller {
 
 	finishDemandInput = (value: number) => {
 		if (this.sliderDisabled) return;
-		if (Math.abs(value - this.committedDelta) < 0.25) {
+		if (Math.abs(value - this.committedDelta) < DEAD_ZONE_MW) {
 			if (!this.activeSolvable?.solving) {
 				this.app.previewActive = false;
 				this.app.previewDeltaMw = null;
@@ -1960,9 +2153,11 @@ export class Controller {
 			this.fail('This PowerIO instance requires its declared calculation.');
 			return;
 		}
-		if (FORMULATIONS.find((f) => f.id === next)?.disabled) return;
+		if (!this.formulationAvailable(c, next)) return;
 		c.formulation = next;
-		this.app.displayMode = next === 'acpf' ? 'voltage' : 'price';
+		// Demand does not depend on the calculation, so a demand colouring stays.
+		if (this.app.displayMode !== 'demand')
+			this.app.displayMode = next === 'acpf' || next === 'acopf' ? 'voltage' : 'price';
 		this.bumpRevision(c);
 		// The committed point carries over (same demand), but the model and its solution do
 		// not; drop the Study and the cached solutions so they rebuild under `next`.
@@ -1971,6 +2166,7 @@ export class Controller {
 		c.solution = null;
 		c.iterations = [];
 		c.solveMs = null;
+		c.solveDetail = null;
 		c.predictedObjective = null;
 		this.app.previewPrices = null;
 		this.previewObjective = null;
@@ -2193,42 +2389,47 @@ export class Controller {
 		if (local.studyInputJson && displays.length > 0) {
 			await this.fillFromDisplaySibling(local, displays);
 		}
-		if (!local.view && !local.diagram && local.topology) {
-			const view = {
-				...placeSyntheticTopology(local.topology, { lon: 0, lat: 0 }),
-				coordinate_space: 'diagram' as const
-			};
-			const layer = JSON.stringify({
-				type: 'FeatureCollection',
-				powerio_geo: { space: 'diagram', kind: 'synthetic' },
-				features: [
-					...view.buses.map((b) => ({
-						type: 'Feature',
-						properties: { target: 'bus', id: String(b.id) },
-						geometry: { type: 'Point', coordinates: [b.lon, b.lat] }
-					})),
-					...view.branches.map((b) => ({
-						type: 'Feature',
-						properties: {
-							target: 'branch',
-							branch_id: String(b.id),
-							from: String(b.from),
-							to: String(b.to)
-						},
-						geometry: { type: 'LineString', coordinates: b.path }
-					}))
-				]
-			});
-			local.diagram = {
-				view,
-				layer,
-				name: 'Network diagram',
-				warnings: ['No geographic coordinates; positions follow network connectivity.']
-			};
-			local.displayMode = 'diagram';
-		}
+		this.placeTopologyAsDiagram(local);
 		return { geoLayersConsumed, error };
 	};
+
+	/** A case that still has no geometry gets a connectivity layout as its
+	 * diagram, so it can render and solve without a placement step. */
+	private placeTopologyAsDiagram(local: LocalCase) {
+		if (local.view || local.diagram || !local.topology) return;
+		const view = {
+			...placeSyntheticTopology(local.topology, { lon: 0, lat: 0 }),
+			coordinate_space: 'diagram' as const
+		};
+		const layer = JSON.stringify({
+			type: 'FeatureCollection',
+			powerio_geo: { space: 'diagram', kind: 'synthetic' },
+			features: [
+				...view.buses.map((b) => ({
+					type: 'Feature',
+					properties: { target: 'bus', id: String(b.id) },
+					geometry: { type: 'Point', coordinates: [b.lon, b.lat] }
+				})),
+				...view.branches.map((b) => ({
+					type: 'Feature',
+					properties: {
+						target: 'branch',
+						branch_id: String(b.id),
+						from: String(b.from),
+						to: String(b.to)
+					},
+					geometry: { type: 'LineString', coordinates: b.path }
+				}))
+			]
+		});
+		local.diagram = {
+			view,
+			layer,
+			name: 'Network diagram',
+			warnings: ['No geographic coordinates; positions follow network connectivity.']
+		};
+		local.displayMode = 'diagram';
+	}
 
 	/** Retain diagram geometry separately from the electrical case's geographic data. */
 	private fillFromDisplaySibling = async (c: LocalCase, displays: DisplayFile[]) => {
@@ -2367,7 +2568,8 @@ export class Controller {
 		signal?: AbortSignal
 	): Promise<McPfSummary> => {
 		options = { ...c.pfOptions, ...options };
-		if (signal?.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
+		if (signal?.aborted || this.disposed)
+			throw new DOMException('Calculation cancelled', 'AbortError');
 		if (c.solving) throw new Error('A calculation is already running for this case');
 		const unavailable = c.mcPfReason;
 		if (unavailable) {
@@ -2413,7 +2615,9 @@ export class Controller {
 					snapshot?.result ?? (await this.mcTransport.solveMcModule(input, options, abort.signal));
 				result = summarizeMcPfResult(fullResult);
 			}
-			if (abort.signal.aborted) throw new DOMException('Calculation cancelled', 'AbortError');
+			// dispose() aborts too; a session that arrives after it is freed below.
+			if (abort.signal.aborted || this.disposed)
+				throw new DOMException('Calculation cancelled', 'AbortError');
 			if (
 				seq !== c.solveSeq ||
 				(retainedAtStart ? retainedAtStart !== c.mcSession : input !== c.moduleJson) ||
@@ -2801,6 +3005,7 @@ export class Controller {
 
 	/** Hosted feeders use the same typed-module ingest and calculation path as local feeders. */
 	activateHostedDistribution = async (id: string) => {
+		if (this.disposed) return;
 		const summary = this.app.hostedDistributionCases.find((s) => s.id === id);
 		if (!summary || summary.unavailable_reason) return;
 		const existing = this.app.multiCases.find((c) => c.hosted && c.id === id);
@@ -2808,12 +3013,17 @@ export class Controller {
 			this.activateMulti(existing);
 			return;
 		}
+		const api = this.api;
+		if (!api) {
+			this.fail(`${summary.name}: no API configured`);
+			return;
+		}
 		this.hostedLoadAbort?.abort();
 		const abort = new AbortController();
 		this.hostedLoadAbort = abort;
 		this.loadingHostedDistribution = id;
 		try {
-			const text = await this.api.getCaseModuleJson(id, abort.signal);
+			const text = await api.getCaseModuleJson(id, abort.signal);
 			abort.signal.throwIfAborted();
 			const payload = await (this.mcTransport.ingestDistCase ?? ingestDistCase)(text, 'pio');
 			abort.signal.throwIfAborted();
@@ -2902,13 +3112,9 @@ export class Controller {
 				'The displayed edits have no matching saved result. Finish solving before saving them.'
 			);
 		}
-		if (
-			c instanceof CaseState &&
-			c.solution &&
-			c.formulation === 'dcopf' &&
-			this.api.getSavedCase
-		) {
-			const snapshot = await this.api.getSavedCase(c.id);
+		const api = this.api;
+		if (c instanceof CaseState && c.solution && c.formulation === 'dcopf' && api?.getSavedCase) {
+			const snapshot = await api.getSavedCase(c.id);
 			if (
 				snapshot.base_input !== base ||
 				JSON.stringify(snapshot.display_solution) !== JSON.stringify(c.solution)
@@ -2943,10 +3149,95 @@ export class Controller {
 		});
 	};
 
+	/** Ingest module text through the engine and require a balanced network. */
+	private async ingestBalancedModule(name: string, moduleJson: string | undefined) {
+		if (moduleJson === undefined)
+			throw new Error(`${name}: openBalancedModule needs moduleJson or payload`);
+		const result = await ingestJsonDrop(new TextEncoder().encode(moduleJson));
+		if (result.kind === 'transmission') return result.payload;
+		if (result.kind === 'module' && !('model' in result.payload)) return result.payload;
+		throw new Error(`${name}: not a balanced network module (${result.kind})`);
+	}
+
+	/** Open a balanced powerio module from memory, the programmatic twin of
+	 * dropping a `.pio.json` file: ingest (unless `payload` is given), apply an
+	 * optional geographic layer, lay out a module without coordinates as a
+	 * diagram, then add and activate it. Resolves to the new case; throws when
+	 * the module is not a balanced network or the geographic layer matches
+	 * nothing. */
+	openBalancedModule = async (input: OpenBalancedModuleInput): Promise<LocalCase> => {
+		this.app.parsingFile = true;
+		try {
+			const payload =
+				input.payload ?? (await this.ingestBalancedModule(input.name, input.moduleJson));
+			const local = this.localFromBalancedPayload(`${input.name}.pio.json`, {
+				...payload,
+				name: input.name
+			});
+			if (input.formulation) local.formulation = input.formulation;
+			if (input.geoLayer) {
+				await this.applyGeoLayers(local, [
+					{
+						name: `${input.name}.geo.json`,
+						layer: input.geoLayer,
+						diagnostics: []
+					}
+				]);
+			}
+			this.placeTopologyAsDiagram(local);
+			if (input.activate !== false) this.addAndActivateLocal(local, { frame: input.frame });
+			return local;
+		} finally {
+			this.app.parsingFile = false;
+		}
+	};
+
+	/** Swap a local case for a new module in place: same slot in the case list,
+	 * same formulation unless `input.formulation` says otherwise, same display
+	 * mode when the new case supports it, and the selected bus kept when the
+	 * new case has it. The previous case's Study is freed. */
+	replaceLocalCase = async (
+		previous: LocalCase,
+		input: OpenBalancedModuleInput
+	): Promise<LocalCase> => {
+		const wasActive = this.app.activeLocalId === previous.id;
+		const selectedBus = wasActive ? this.app.selectedBus : null;
+		const displayMode = previous.displayMode;
+		const next = await this.openBalancedModule({
+			...input,
+			formulation: input.formulation ?? previous.formulation,
+			activate: false
+		});
+		if (displayMode === 'diagram' ? next.diagram : next.view) next.displayMode = displayMode;
+		const slot = this.app.localCases.findIndex((c) => c.id === previous.id);
+		// A seq bump invalidates any in-flight browser solve of the old case.
+		previous.solveSeq = (previous.solveSeq ?? 0) + 1;
+		this.disposeStudy(previous);
+		if (wasActive) {
+			this.addAndActivateLocal(next, { frame: input.frame });
+		} else {
+			this.app.localCases = [...this.app.localCases, next];
+			this.maybeStartLocalSolve(next.id);
+		}
+		const cases = this.app.localCases.filter((c) => c.id !== previous.id && c.id !== next.id);
+		cases.splice(slot < 0 ? cases.length : slot, 0, next);
+		this.app.localCases = cases;
+		if (this.app.placingLocalId === previous.id) this.app.placingLocalId = null;
+		if (selectedBus !== null && localHasBus(next, selectedBus)) {
+			void this.selectLocalBus(next.id, selectedBus);
+		}
+		return next;
+	};
+
 	/** Build (or reuse) the case's Study and commit it at the current edit state, so a
 	 * save or export captures exactly what is on screen. Null (with an error set) when no
 	 * PowerIO module or Study is available. */
 	public syncedStudy = async (c: SolvableCase): Promise<BrowserStudy | null> => {
+		const unavailable = this.caseExportUnavailableReason(c);
+		if (unavailable) {
+			this.app.error = `${this.caseName(c)}: ${unavailable}`;
+			return null;
+		}
 		const studyInputJson = await this.ensureStudyInputJson(c);
 		if (!studyInputJson) {
 			this.app.error = `${this.caseName(c)}: no PowerIO module available to save`;
@@ -3040,7 +3331,7 @@ export class Controller {
 	// can't preview (browser fallback path, server-only cases): the map then
 	// falls back to the JS sensitivity-times-step preview.
 	runPreview = (c: SolvableCase, bus: number, value: number) => {
-		if (c.formulation === 'acpf') return;
+		if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 		// Fast path: the committed price/demand column (already solved at the committed point),
 		// scaled by the demand step, is the same first-order linearization the engine preview
 		// returns — without rebuilding the differentiable KKT every drag frame. That engine
@@ -3049,7 +3340,7 @@ export class Controller {
 		const col = c.sensitivity;
 		if (col && col.bus === bus) {
 			const committedAtBus = this.caseDeltas(c)[bus] ?? 0;
-			const step = (Math.abs(value) < 0.25 ? 0 : value) - committedAtBus;
+			const step = (Math.abs(value) < DEAD_ZONE_MW ? 0 : value) - committedAtBus;
 			const delta = new Map<number, number>();
 			for (const v of col.values) delta.set(v.bus, v.value * step);
 			this.app.previewPrices = {
@@ -3143,7 +3434,7 @@ export class Controller {
 	// tiny nudge reads as "no change at this line".
 	previewRatings(c: SolvableCase, branch: number, value: number): BranchRatingDeltas {
 		const ratings = { ...this.caseRatings(c) };
-		if (Math.abs(value) < 0.25) delete ratings[branch];
+		if (Math.abs(value) < DEAD_ZONE_MW) delete ratings[branch];
 		else ratings[branch] = value;
 		return ratings;
 	}
@@ -3155,9 +3446,9 @@ export class Controller {
 	// point (preview is replacement-absolute, so the absolute ratings map is built),
 	// then scaled by the live step; null when no Study slope is available.
 	runRatingPreview = (c: SolvableCase, branch: number, value: number) => {
-		if (c.formulation === 'acpf') return;
+		if (c.formulation === 'acpf' || c.formulation === 'acopf') return;
 		const committedAtBranch = this.caseRatings(c)[branch] ?? 0;
-		const step = (Math.abs(value) < 0.25 ? 0 : value) - committedAtBranch;
+		const step = (Math.abs(value) < DEAD_ZONE_MW ? 0 : value) - committedAtBranch;
 		const col = c.sensitivity;
 		if (col && col.branch === branch) {
 			const delta = new Map<number, number>();
@@ -3258,7 +3549,7 @@ export class Controller {
 	};
 
 	finishRatingInput = (value: number) => {
-		if (Math.abs(value - this.committedRating) < 0.25) {
+		if (Math.abs(value - this.committedRating) < DEAD_ZONE_MW) {
 			if (!this.activeSolvable?.solving) {
 				this.app.previewActive = false;
 				this.app.previewRatingMw = null;
@@ -3269,6 +3560,7 @@ export class Controller {
 	};
 
 	restoreDefaultCases = () => {
+		if (!this.loadDefaultCases) return;
 		try {
 			if (typeof localStorage !== 'undefined') localStorage.removeItem(HIDDEN_DEFAULT_CASES_KEY);
 		} catch {

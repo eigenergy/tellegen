@@ -29,7 +29,8 @@ import {
 } from '@tellegen/engine';
 import type { MultiView } from './multiconductor.js';
 
-export type SolveBackend = 'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'rust-server';
+export type SolveBackend =
+	'clarabel-wasm' | 'clarabel-wasm-server-sensitivity' | 'pounce-wasi' | 'rust-server';
 /** A map framing request: a case id, 'all', or one branch to center. */
 export type FrameTarget =
 	string | 'all' | { caseId: string; branchId: number } | { caseId: string; busId: number };
@@ -46,7 +47,11 @@ export interface DiagramCameraSnapshot {
 }
 
 export type DemandRangeMode = 'local' | 'full';
-export type DisplayMode = 'price' | 'angle' | 'voltage';
+export type DisplayMode = 'price' | 'angle' | 'voltage' | 'demand';
+/** How bus markers are sized on the map: by the larger of demand and generation
+ * (`power`), or all at one size (`uniform`) so dense networks keep their lines
+ * readable and colour carries the variable. */
+export type BusSizing = 'power' | 'uniform';
 
 /** The case a removal promoted to active, so the caller can hydrate it: a backend
  * case needs its network/solution loaded, a local needs a browser solve, and
@@ -134,6 +139,8 @@ export class LocalCase {
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveBackend = $state<SolveBackend | null>(null);
+	/** Short solver-specific diagnostic shown beside the elapsed time. */
+	solveDetail = $state<string | null>(null);
 	solveFallbackReason = $state<string | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;
@@ -189,6 +196,8 @@ export class CaseState {
 	solving = $state(false);
 	solveMs = $state<number | null>(null);
 	solveBackend = $state<SolveBackend | null>(null);
+	/** Short solver-specific diagnostic shown beside the elapsed time. */
+	solveDetail = $state<string | null>(null);
 	solveFallbackReason = $state<string | null>(null);
 	/** Monotone token: only the latest solve may write this case. */
 	solveSeq = 0;
@@ -422,12 +431,17 @@ export class AppState {
 	} | null>(null);
 	demandRangeMode = $state<DemandRangeMode>('local');
 	displayMode = $state<DisplayMode>('price');
+	busSizing = $state<BusSizing>('power');
 	sensitivityLoading = $state(false);
 	#error = $state<string | null>(null);
 	errorRevision = $state(0);
 	/** Re-runs the operation behind the current `error`, when one applies. Every
 	 * write to `error` clears it, so a retry op can never outlive its message. */
 	errorRetry: (() => void) | null = $state.raw<(() => void) | null>(null);
+	/** Technical detail behind the current `error`, when the message itself is
+	 * written for people; notices keep it in their disclosure. Every write to
+	 * `error` clears it, as it clears `errorRetry`. */
+	errorDetail = $state<string | null>(null);
 
 	get error(): string | null {
 		return this.#error;
@@ -437,6 +451,7 @@ export class AppState {
 		this.#error = message;
 		if (message) this.errorRevision++;
 		this.errorRetry = null;
+		this.errorDetail = null;
 	}
 
 	/** Case files parsed in the browser via the powerio wasm module. */

@@ -1,6 +1,5 @@
-import type { SolveIteration } from './api.js';
 import type { RGBA } from './colors.js';
-import type { DisplayMode, SolveBackend } from './state.svelte.js';
+import type { DisplayMode } from './state.svelte.js';
 import { FORMULATIONS, type Formulation } from '@tellegen/engine';
 
 // errorText is defined once in wasm.ts (its first consumer) and surfaced here so UI
@@ -16,29 +15,27 @@ export function formulationHint(id: Formulation): string {
 	return FORMULATIONS.find((f) => f.id === id)?.hint ?? id;
 }
 
-export function priceCopy(id: Formulation): string {
-	const definition =
-		'Locational marginal price (LMP): the change in the OPF objective for an additional MW at a bus, in objective units/MW.';
-	return id === 'socwr'
-		? `${definition} Prices come from the SOCWR relaxation. Select a bus to see their sensitivity.`
-		: `${definition} Select a bus to see its demand sensitivity.`;
-}
-
 export function splitName(name: string): [string, string] {
 	const m = name.match(/^(.*?)\s*\((.*)\)$/);
 	return m ? [m[1], m[2]] : [name, ''];
 }
 
-/** Structural shape `solveMetaLabel` needs, satisfied by `CaseState` and `LocalCase`. */
-type SolveMeta = {
-	iterations?: SolveIteration[];
-	solveBackend: SolveBackend | null;
-};
+export const INFEASIBLE_DISPATCH =
+	'No feasible dispatch: demand cannot be served within line and generator limits';
 
-export function solveMetaLabel(c: SolveMeta): string {
-	if ((c.iterations ?? []).length > 1) return `${c.iterations?.length} iterations`;
-	if (c.solveBackend === 'clarabel-wasm-server-sensitivity') return 'server price sensitivity';
-	return c.solveBackend === 'rust-server' ? 'server solve' : 'browser solve';
+/** The message for a local case whose browser solve failed, and the
+ * technical detail to disclose behind it. An infeasible DC OPF means the
+ * network cannot carry the demand, which deserves plain words. The engine
+ * spells it `DC OPF solve infeasible`, and an unbounded one as `unbounded`. */
+export function browserSolveFailure(
+	label: string,
+	reason: string | null
+): { message: string; detail: string | null } {
+	const technical = `${label}: browser solve unavailable${reason ? `: ${reason}` : ''}`;
+	if (reason && /\binfeasible\b/i.test(reason)) {
+		return { message: INFEASIBLE_DISPATCH, detail: technical };
+	}
+	return { message: technical, detail: null };
 }
 
 export function rgbaCss([r, g, b, a]: RGBA): string {
@@ -63,4 +60,4 @@ export const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 export const signed = (v: number) => `${v < 0 ? '−' : '+'}${fmt.format(Math.abs(v))}`;
 export const signedExp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toExponential(2)}`;
 export const displayFmt = (mode: DisplayMode, value: number) =>
-	mode === 'price' ? fmt.format(value) : value.toFixed(3);
+	mode === 'price' || mode === 'demand' ? fmt.format(value) : value.toFixed(3);

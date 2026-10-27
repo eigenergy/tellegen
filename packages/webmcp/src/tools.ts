@@ -946,7 +946,7 @@ export function createTellegenPlanningTools(
   };
 }
 
-/** Persistent Study tools use host schemas generated from the numerical contracts. */
+/** Persistent Study tools use host schemas generated from the Rust numerical types. */
 export function createTellegenStudyTools(
   adapter: TellegenStudyAdapter,
   options: CreateTellegenToolsOptions = {},

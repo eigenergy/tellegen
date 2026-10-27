@@ -154,7 +154,7 @@ export async function congestCase(page: Page): Promise<{
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3planning.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_PLANNING) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 
 	// Propose follows the case; apply needs a staged proposal.
 	await expect.poll(() => listTools(page)).toEqual(PLANNING_TOOLS);

@@ -92,7 +92,7 @@ it("returns the summary from an edit and records its latency breakdown", async (
     });
     return { value: JSON.stringify(summary), engineMs: 4.5 };
   });
-  const session = new BrowserMcPfSession({ call, callTimed }, 7, summarizeMcPfResult(result, 1));
+  const session = new BrowserMcPfSession({ kind: "worker", call, callTimed }, 7, summarizeMcPfResult(result, 1));
   await expect(
     session.replaceLoadPowers([{ load: "ld", branch: 0, p_w: 900, q_var: 100 }]),
   ).resolves.toEqual(summary);
@@ -122,7 +122,7 @@ it("fetches terminal identities once and terminal arrays on demand", async () =>
         throw new Error(`unexpected operation ${request.op}`);
     }
   });
-  const session = new BrowserMcPfSession({ call }, 3, summarizeMcPfResult(result, 1));
+  const session = new BrowserMcPfSession({ kind: "worker", call }, 3, summarizeMcPfResult(result, 1));
   const [first, second] = await Promise.all([session.terminalIds(), session.terminalIds()]);
   expect(first).toBe(second);
   expect(call.mock.calls.filter(([request]) => request.op === "mc_pf_session_terminal_ids")).toHaveLength(1);

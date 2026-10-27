@@ -8,6 +8,9 @@
     "moduleDetection": "force",
     "moduleResolution": "bundler",
     "noEmit": true,
+    "paths": {
+      "@tellegen/svelte/maplibre-worker": ["./src/lib/maplibre-worker.ts"]
+    },
     "skipLibCheck": true,
     "strict": true,
     "target": "ES2022",

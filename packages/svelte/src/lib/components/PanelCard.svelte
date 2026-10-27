@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { getPanelLayout, type PanelRegistration, type PanelSide } from '../panels.svelte.js';
+	import {
+		focusFirst,
+		getPanelLayout,
+		type PanelRegistration,
+		type PanelSide
+	} from '../panels.svelte.js';
 	let {
 		panel,
 		floating = false,
@@ -12,6 +17,7 @@
 	} = $props();
 	const layout = getPanelLayout();
 	let menu = $state(false);
+	let menuAnchor: HTMLDivElement | undefined = $state();
 	let card: HTMLElement;
 	const bounds = $derived(layout.bounds(panel));
 	const preferred = $derived(!floating && !mobile && layout.preferred(panel));
@@ -86,17 +92,49 @@
 	}
 	async function close() {
 		const title = panel.title;
+		const position = layout.position(panel);
+		const dock = position === 'floating' ? panel.side : position;
+		const opener = layout.opener(panel);
 		layout.close(panel);
 		await tick();
-		document
-			.querySelector<HTMLElement>(`.panel-toolbar button[aria-label="${CSS.escape(title)}"]`)
-			?.focus();
+		// The toolbar button for the panel; a host without the toolbar gets the
+		// control that opened it, else the panel's dock (the drawer when narrow).
+		focusFirst([
+			document.querySelector<HTMLElement>(
+				`.panel-toolbar button[aria-label="${CSS.escape(title)}"]`
+			),
+			opener,
+			document.querySelector<HTMLElement>(`[data-panel-dock="${dock}"], [data-panel-drawer]`)
+		]);
+	}
+	// Keyboard users can scroll an overflowing panel only through focus, so the
+	// content becomes a labelled, focusable region exactly while it overflows.
+	let overflowing = $state(false);
+	function trackOverflow(content: HTMLElement) {
+		const sync = () => (overflowing = content.scrollHeight > content.clientHeight + 1);
+		const resize = new ResizeObserver(sync);
+		const observe = () => {
+			resize.disconnect();
+			resize.observe(content);
+			for (const child of content.children) resize.observe(child);
+			sync();
+		};
+		const children = new MutationObserver(observe);
+		children.observe(content, { childList: true });
+		observe();
+		return () => {
+			resize.disconnect();
+			children.disconnect();
+		};
 	}
 </script>
 
 <svelte:window
 	onkeydown={(event) => {
 		if (event.key === 'Escape') menu = false;
+	}}
+	onpointerdown={(event) => {
+		if (menu && !menuAnchor?.contains(event.target as Node)) menu = false;
 	}}
 />
 <aside
@@ -120,14 +158,14 @@
 			<button
 				class="title"
 				aria-label={`Move ${panel.title} panel`}
-				title="Click to expand. Drag or use arrow keys to move. Open panel options to dock."
+				title="Drag or use arrow keys to move"
 				onpointerdown={(event) => start(event, 'move')}
 				onkeydown={key}
 				onclick={() => layout.activate(panel)}>{panel.title}</button
 			>
 		{/if}
 		<div class="header-actions">{@render panel.headerActions?.()}</div>
-		{#if !mobile}<div class="menu-anchor">
+		{#if !mobile}<div class="menu-anchor" bind:this={menuAnchor}>
 				<button
 					class="icon"
 					aria-label={`${panel.title} panel options`}
@@ -150,7 +188,7 @@
 					</div>{/if}
 			</div>{/if}
 		<button
-			class="icon"
+			class="icon close"
 			aria-label={`Close ${panel.title.toLowerCase()} panel`}
 			title="Close panel"
 			onclick={close}
@@ -160,7 +198,18 @@
 			>
 		</button>
 	</header>
-	<div class="panel-content">{@render panel.children()}</div>
+	<!-- A scroll container must take focus for keyboard scrolling, and this one
+		 takes it only while it overflows. -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+	<div
+		class="panel-content"
+		{@attach trackOverflow}
+		tabindex={overflowing ? 0 : undefined}
+		role={overflowing ? 'region' : undefined}
+		aria-label={overflowing ? `${panel.title} panel content` : undefined}
+	>
+		{@render panel.children()}
+	</div>
 	{#if floating}<button
 			class="resize"
 			aria-label={`Resize ${panel.title} panel`}
@@ -238,6 +287,19 @@
 	.icon svg {
 		fill: currentColor;
 	}
+	/* Coarse pointers: a 44px hit area around the 26x28 close button. The
+	   pseudo-element reaches into the header padding and the gap, so nothing
+	   moves. */
+	@media (pointer: coarse) {
+		.close {
+			position: relative;
+		}
+		.close::after {
+			content: '';
+			position: absolute;
+			inset: -8px -10px -8px -8px;
+		}
+	}
 	.header-actions {
 		display: flex;
 		align-items: center;
@@ -257,6 +319,9 @@
 		display: flex;
 		flex-direction: column;
 		border-radius: 0 0 5px 5px;
+	}
+	.panel-content:focus-visible {
+		outline-offset: -2px;
 	}
 	.menu-anchor {
 		position: relative;

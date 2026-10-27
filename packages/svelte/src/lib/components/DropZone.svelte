@@ -1,5 +1,9 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { getAppState } from '../context.svelte.js';
+
+	/** Optional host content rendered under the drop prompt. */
+	let { children }: { children?: Snippet } = $props();
 
 	const app = getAppState();
 </script>
@@ -7,8 +11,8 @@
 {#if app.dragOver}
 	<div class="dropzone" aria-hidden="true">
 		<div class="dropframe">
-			<p class="mono">drop to parse: case files or geographic files</p>
-			<p class="mono hint">parsed in your browser; the file never uploads</p>
+			<p>Drop case or geographic files</p>
+			{#if children}<div class="note">{@render children()}</div>{/if}
 		</div>
 	</div>
 {/if}
@@ -19,7 +23,7 @@
 		inset: 0;
 		z-index: 20;
 		pointer-events: none;
-		background: rgba(236, 233, 226, 0.75);
+		background: rgb(var(--bg-rgb) / 0.75);
 	}
 
 	.dropframe {
@@ -39,7 +43,7 @@
 		font-size: 13px;
 	}
 
-	.dropframe .hint {
+	.note {
 		font-size: 11px;
 		color: var(--text-secondary);
 	}

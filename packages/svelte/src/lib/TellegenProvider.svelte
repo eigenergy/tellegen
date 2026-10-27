@@ -1,10 +1,13 @@
 <script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
+	import { onDestroy, untrack, type Snippet } from 'svelte';
 	import {
+		resolveCartoApiKey,
 		resolveTellegenUiConfig,
+		resolveTheme,
 		setAppState,
 		setController,
 		setUiConfig,
+		type TellegenUiConfig,
 		type TellegenUiOptions
 	} from './context.svelte.js';
 	import { createController } from './controller.svelte.js';
@@ -16,27 +19,75 @@
 		children?: Snippet;
 	}
 
-	let { apiBase, loadDefaultCases, docsHref, orgHref, orgLabel, showFooter, children }: Props =
-		$props();
+	let {
+		apiBase,
+		acOpfWasmUrl,
+		loadDefaultCases,
+		docsHref,
+		orgHref,
+		orgLabel,
+		showFooter,
+		theme,
+		cartoApiKey,
+		children
+	}: Props = $props();
 
-	const config = untrack(() =>
-		resolveTellegenUiConfig({
-			apiBase,
-			loadDefaultCases,
-			docsHref,
-			orgHref,
-			orgLabel,
-			showFooter
-		})
-	);
+	// Read once, at mount: `apiBase`, `acOpfWasmUrl` and `loadDefaultCases`
+	// configure the controller this provider owns, and the links and footer are
+	// fixed copy. `theme` and `cartoApiKey` stay live, so a host can switch them
+	// and the root attribute and the default shell's map follow.
+	const config: TellegenUiConfig = {
+		...untrack(() =>
+			resolveTellegenUiConfig({
+				apiBase,
+				acOpfWasmUrl,
+				loadDefaultCases,
+				docsHref,
+				orgHref,
+				orgLabel,
+				showFooter
+			})
+		),
+		get theme() {
+			return resolveTheme(theme);
+		},
+		get cartoApiKey() {
+			return resolveCartoApiKey(cartoApiKey);
+		}
+	};
 	const app = createAppState();
-	const ctrl = createController(app, { apiBase: config.apiBase });
+	const ctrl = createController(app, {
+		apiBase: config.apiBase,
+		acOpfWasmUrl: config.acOpfWasmUrl ?? undefined,
+		loadDefaultCases: config.loadDefaultCases
+	});
+	// A host that opens its own cases never calls load(), so the shell must not
+	// sit in its loading state waiting for a fetch that will not come.
+	if (!config.loadDefaultCases) ctrl.casesLoaded = true;
 
 	setPanelLayout(new PanelLayout());
 	setNoticeCenter(new NoticeCenter());
 	setUiConfig(config);
 	setAppState(app);
 	setController(ctrl);
+	// The controller's Studies and multiconductor sessions live in the engine
+	// worker; release them with the provider.
+	onDestroy(() => ctrl.dispose());
+
+	// The dark tokens in styles.css hang off `:root[data-theme='dark']`. Set it
+	// only for dark, and only while mounted, so a light host is untouched. A
+	// server-rendered host that wants no light flash can also put the
+	// attribute in its app template.
+	$effect(() => {
+		if (config.theme !== 'dark') return;
+		const root = document.documentElement;
+		const previous = root.dataset.theme;
+		root.dataset.theme = 'dark';
+		return () => {
+			if (previous === undefined) delete root.dataset.theme;
+			else root.dataset.theme = previous;
+		};
+	});
 </script>
 
 {@render children?.()}

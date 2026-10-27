@@ -1,5 +1,63 @@
 {
   "$defs": {
+    "AcOpfResiduals": {
+      "description": "Independent AC OPF checks, with units stated per family. Objective agreement\nis separate from primal feasibility. Bounds are evaluated only when selected.",
+      "properties": {
+        "active_balance_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "active_generation_bounds_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "angle_limits_rad": {
+          "format": "double",
+          "type": "number"
+        },
+        "objective_relative_error": {
+          "format": "double",
+          "type": "number"
+        },
+        "piecewise_epigraph_cost": {
+          "format": "double",
+          "type": "number"
+        },
+        "reactive_balance_mvar": {
+          "format": "double",
+          "type": "number"
+        },
+        "reactive_generation_bounds_mvar": {
+          "format": "double",
+          "type": "number"
+        },
+        "reference_angles_rad": {
+          "format": "double",
+          "type": "number"
+        },
+        "thermal_limits_mva": {
+          "format": "double",
+          "type": "number"
+        },
+        "voltage_bounds_pu": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "active_balance_mw",
+        "reactive_balance_mvar",
+        "voltage_bounds_pu",
+        "active_generation_bounds_mw",
+        "reactive_generation_bounds_mvar",
+        "reference_angles_rad",
+        "angle_limits_rad",
+        "thermal_limits_mva",
+        "piecewise_epigraph_cost",
+        "objective_relative_error"
+      ],
+      "type": "object"
+    },
     "ArtifactKind": {
       "enum": [
         "powerio_ir",
@@ -257,6 +315,51 @@
       "required": [
         "left",
         "right"
+      ],
+      "type": "object"
+    },
+    "ConstraintResult": {
+      "description": "The solved state of one [`LinearConstraint`], in request order. `value`,\n`lower`, and `upper` are MW; `shadow_price` is in objective units per MW, the\nsame units as `lmp`.",
+      "properties": {
+        "binding": {
+          "description": "`value` sits at a limit, within solver tolerance. Always true for an\nequality.",
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lower": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shadow_price": {
+          "description": "The objective decrease per MW the binding limit is raised:\n`-d objective / d limit`. Positive when the upper limit binds, negative\nwhen the lower limit binds, zero when neither does. A bus's price then\ndiffers from its island's reference bus's by `-shadow_price` times the\nchange in `value` per MW injected at the bus and withdrawn at that reference.\nAbsent when the declared objective gives prices no economic meaning, as\nfor `lmp`.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "upper": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "`sum(coefficient * quantity)` at the solution.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "value",
+        "binding"
       ],
       "type": "object"
     },
@@ -786,6 +889,21 @@
             "Generator"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A caller-supplied linear constraint, by its position in the request.",
+          "properties": {
+            "Constraint": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "Constraint"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1102,9 +1220,157 @@
             "residual"
           ],
           "type": "object"
+        },
+        {
+          "description": "Nonlinear-program diagnostics. The primal residual is Tellegen's\nindependent maximum P/Q balance mismatch in MW/MVAr; other residuals\nare separated by family below or reported by POUNCE.",
+          "properties": {
+            "base_restoration_calls": {
+              "description": "Restoration entries in the original solve, even when a retry wins.",
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "base_solver_status": {
+              "description": "Status before recovery; absent in older responses.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model_fingerprint": {
+              "type": "string"
+            },
+            "nlp_iterations": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "primal_residual": {
+              "format": "double",
+              "type": "number"
+            },
+            "recovered_by": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "recovery_attempts": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "residuals": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AcOpfResiduals"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "restoration_calls": {
+              "description": "Restoration entries in the selected solve (not the whole ladder).",
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "solver_constraint_violation": {
+              "format": "double",
+              "type": "number"
+            },
+            "solver_kkt_error": {
+              "format": "double",
+              "type": "number"
+            },
+            "solver_status": {
+              "type": "string"
+            },
+            "total_nlp_iterations": {
+              "description": "Base plus every retry, including rejected attempts.",
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "nlp_iterations",
+            "primal_residual",
+            "solver_status",
+            "solver_constraint_violation",
+            "solver_kkt_error",
+            "model_fingerprint"
+          ],
+          "type": "object"
         }
       ],
       "description": "The convergence record. OPF paths carry the full interior-point trace (for the\nsolve-card sparkline); the AC power flow carries its Newton count and final\nmismatch. Untagged: the OPF arm serializes to the same bare array the DC OPF\nalways returned."
+    },
+    "LimitRound": {
+      "description": "One solve of a DC OPF run under [`LimitOptions`]: the program it solved and\nhow the solution met the enforceable thermal limits. A run without lazy\nenforcement has one round.",
+      "properties": {
+        "added": {
+          "description": "Limits added for the next round: the unenforced ones the flows violate\nor meet, and those loaded at or above `near_binding`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "enforced": {
+          "description": "Thermal limits the round's program enforced.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ipm_iterations": {
+          "description": "Interior-point iterations of the round's solve.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_loading": {
+          "description": "The largest loading over the enforceable limits, as a fraction.",
+          "format": "double",
+          "type": "number"
+        },
+        "rows": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "variables": {
+          "description": "Variables and constraint rows of the round's program.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "violated": {
+          "description": "Enforceable limits the round's solution violated; zero on the last round.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "enforced",
+        "violated",
+        "added",
+        "max_loading",
+        "variables",
+        "rows",
+        "ipm_iterations"
+      ],
+      "type": "object"
     },
     "ModelDetails": {
       "properties": {
@@ -1342,6 +1608,11 @@
           "const": "Switching",
           "description": "Branch switching state `sw` in `[0, 1]`, per branch.",
           "type": "string"
+        },
+        {
+          "const": "ConstraintLimit",
+          "description": "A shift of both limits of a caller-supplied linear constraint (the\nfixed value of an equality), per constraint in request order.",
+          "type": "string"
         }
       ]
     },
@@ -1354,7 +1625,7 @@
       "type": "string"
     },
     "Problem": {
-      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag (full nonlinear AC OPF) is retained for wire-format stability\nbut is not solved by this build: [`capabilities_json`] reports it unavailable and\nrequesting it returns a clean `Err`.",
+      "description": "Which problem to solve. The convex/power flow solve paths, as the lowercase JSON\ntags `\"dcpf\"`/`\"dcopf\"`/`\"acpf\"`/`\"socwr\"`. A plain (not internally tagged) enum\nso a request that omits it defaults to [`DcOpf`](Problem::DcOpf), and `{}` is a\nvalid base-case DC OPF request.\n\nThe `\"acopf\"` tag enables full nonlinear AC OPF only when the opt-in `acopf`\nfeature is built. Shipping adapters do not forward that feature.",
       "oneOf": [
         {
           "const": "dcpf",
@@ -1378,7 +1649,7 @@
         },
         {
           "const": "acopf",
-          "description": "Full nonlinear AC OPF. Not available in this build (the dispatch errors\ncleanly); the tag is kept so the JSON contract stays stable.",
+          "description": "Full nonlinear AC OPF through the opt-in POUNCE backend.",
           "type": "string"
         }
       ]
@@ -1479,6 +1750,32 @@
       ],
       "type": "object"
     },
+    "SolveDiagnostic": {
+      "description": "A finding about how the solve treated the network, such as an island left out\nbecause nothing supplies it. `code` is stable for programs; `message` is for\npeople. `buses` names the original ids of the buses concerned.",
+      "properties": {
+        "buses": {
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "code": {
+          "description": "`island_deenergized`: an island with no in-service generator was left\nout of the solve; its buses carry no results and its load is unserved.\n`island_reference_designated`: a supplied island stated no reference bus,\nso the bus of its largest generator became the island's reference.\n`island_extra_reference`: the AC power flow found several reference\nbuses in one island and kept the first as its slack; the others hold\ntheir voltage magnitude as PV (or PQ) buses.",
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "buses"
+      ],
+      "type": "object"
+    },
     "SolveIteration": {
       "description": "One interior-point iterate: the iteration index, the primal objective, and\nthe primal and dual residuals. Collected once per Clarabel iteration to draw\nthe convergence plot. Shape matches the frontend `SolveIteration`.",
       "properties": {
@@ -1511,6 +1808,23 @@
     "SolveResponse": {
       "description": "The formulation-agnostic solve result. A superset: every block is optional, and\neach formulation fills what it produces. Powers are MW/MVAr, nodal values are\nin objective units per selected power unit, angles radians, `vm` per unit, and\n`w = |V|^2` per unit squared. Element ids\nare the original bus/branch/generator ids, so the frontend joins straight onto\nits case.",
       "properties": {
+        "constraints": {
+          "description": "The request's linear constraints, in request order (dcopf). Absent when\nthe request stated none.",
+          "items": {
+            "$ref": "#/$defs/ConstraintResult"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "diagnostics": {
+          "description": "How the solve treated the network's islands. Empty, and omitted, when\nevery island is supplied and referenced as stated.",
+          "items": {
+            "$ref": "#/$defs/SolveDiagnostic"
+          },
+          "type": "array"
+        },
         "dispatch": {
           "items": {
             "$ref": "#/$defs/GenDispatch"
@@ -1551,6 +1865,16 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "limit_rounds": {
+          "description": "The solves a DC OPF ran under the request's `limits` (dcopf with\n`limits` only).",
+          "items": {
+            "$ref": "#/$defs/LimitRound"
+          },
+          "type": [
+            "array",
+            "null"
           ]
         },
         "lmp": {
@@ -1656,7 +1980,7 @@
         },
         {
           "const": "feasible",
-          "description": "A power flow converged to a feasible point.",
+          "description": "A power flow or local AC OPF solve reached a validated feasible point.",
           "type": "string"
         }
       ]
@@ -2473,7 +2797,7 @@
     "request",
     "response"
   ],
-  "title": "StudyContract",
+  "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "0873a4e79ae5eede1a044e7ca730d1532eefe9e424c747fffc54c5b8d70b9693"
+  "x-rust-source-sha256": "0f183bfc85f4fefb746b2630bdc4c12e5a9f2f285c5a8047b4668fa378e1b83e"
 }

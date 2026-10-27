@@ -83,9 +83,13 @@ export function getNoticeCenter(): NoticeCenter {
 }
 export function errorNoticeTitle(details: string): string {
 	if (/rate limit/i.test(details)) return 'Too many requests';
+	// MapLibre's WebGL failure includes "Read more"; classify our map errors
+	// before the generic file/read fallback so it does not blame a case file.
+	if (/^map failed to load:|^the map lost its graphics context/i.test(details))
+		return 'Map unavailable';
 	if (/storage|quota|space|indexeddb/i.test(details)) return 'Could not save locally';
 	if (/sensitivity|derivative|singular/i.test(details)) return 'Sensitivity unavailable';
-	if (/infeasib|converg|solver|solving|calculation|compute|webassembly/i.test(details))
+	if (/infeasib|converg|solver|solving|calculation|compute|webassembly|power flow/i.test(details))
 		return 'Calculation did not complete';
 	if (/parse|read|file|format/i.test(details)) return 'Could not read this file';
 	return 'Operation did not complete';

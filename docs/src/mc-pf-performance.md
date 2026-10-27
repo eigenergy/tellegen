@@ -178,9 +178,10 @@ spec writes `browser-<label>.json`, under `target/mc-pf-bench/`.
   the 676,530-terminal point is native only. A saved Study embeds its input,
   its PowerIO solution, and the full result; at 106,038 terminals that is
   about 138 MiB, beyond the same boundary. Reading back a stored solution with
-  more than 65,536 terminal values needs a PowerIO release with
-  [eigenergy/powerio#550](https://github.com/eigenergy/powerio/pull/550); the
-  document-size contract is tracked in
+  more than 65,536 terminal values needs PowerIO 0.11.4
+  ([eigenergy/powerio#550](https://github.com/eigenergy/powerio/pull/550)),
+  which reads up to 4,194,304 per vector; the
+  document-size limit is tracked in
   [eigenergy/powerio#544](https://github.com/eigenergy/powerio/issues/544).
 - With copying and result construction removed, the retained LU solves are
   the largest share of a large edit. Backend speed, conditioning, and the

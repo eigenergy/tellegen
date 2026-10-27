@@ -21,7 +21,17 @@ A useful next graphics measurement separates parsing, numerical solving, moving 
 
 A local feasibility check instantiated Pounce's published WASM module under Node with its browser WASI implementation. The two-variable nonlinear test `nonconvex_qcqp.nl` returned `SolveSucceeded`, objective approximately -2, in 59 iterations. This verifies execution of the published module, not an AC OPF implementation or a build from that source revision. The evidence packet records the downloaded module's hash and the input revision.
 
-A Pounce AC OPF addition should first use the existing native model implementation with its analytic Jacobian and Hessian tests. Then compare native and browser results on small power-system cases, checking the original electrical equations and limits independently of solver-reported residuals. A dedicated worker allows cancellation by terminating the calculation. BMOPF multiconductor AC OPF additionally needs verified winding, neutral, device-control, objective, and per-terminal limit equations. The fixed-point AC power flow does not claim that support.
+The non-default native POUNCE addition now compiles the exact PowerIO-prepared
+model, tests its analytic Jacobian and Hessian, and validates solved electrical
+equations and limits independently of solver-reported residuals. An opt-in
+development WASI adapter now exercises parity with that native path on a small
+power-system case. A dedicated one-shot worker provides hard cancellation by
+terminating the calculation; ordinary builds neither enable the selector nor
+contain the EPL-bearing asset. Distribution still depends on the release gates
+in the AC OPF solver decision.
+BMOPF multiconductor AC OPF additionally needs verified winding, neutral,
+device-control, objective, and per-terminal limit equations. The fixed-point AC
+power flow does not claim that support.
 
 ## PowerIO and geographic data
 

@@ -27,7 +27,7 @@ The hosted demo also uses HTTP for bundled case metadata and native server fallb
 
 An HTTP transport can implement the same shape as `EngineTransport`: parse or
 fetch a PowerIO module, call a native module solve endpoint, keep a server side
-study handle, and return the same generated TypeScript contract shapes.
+study handle, and return the same generated TypeScript types.
 
 That transport is optional for apps that need server sized cases, audit logs, or native deployment.
 
@@ -35,4 +35,4 @@ That transport is optional for apps that need server sized cases, audit logs, or
 
 The desktop and mobile path can use the same transport contract with a Tauri command layer. The UI keeps the `Study` workflow; only the call boundary changes from browser wasm to native commands.
 
-The Rust contract stays the source of truth. New transports should return the generated `SolveResponse`, `ProblemCaps`, and sensitivity matrix shapes instead of defining parallel types.
+The Rust types stay the source of truth. New transports should return the generated `SolveResponse`, `ProblemCaps`, and sensitivity matrix shapes instead of defining parallel types.

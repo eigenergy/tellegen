@@ -1,0 +1,68 @@
+{
+  "id": "fiji-seam",
+  "description": "Fiji across the antimeridian: a region split at \u00b1180\u00b0 that must stay one continuous frame.",
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "request": {
+    "region": {
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                176.0,
+                -19.5
+              ],
+              [
+                180,
+                -19.5
+              ],
+              [
+                180,
+                -15.5
+              ],
+              [
+                176.0,
+                -15.5
+              ],
+              [
+                176.0,
+                -19.5
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -180,
+                -19.5
+              ],
+              [
+                -178.0,
+                -19.5
+              ],
+              [
+                -178.0,
+                -15.5
+              ],
+              [
+                -180,
+                -15.5
+              ],
+              [
+                -180,
+                -19.5
+              ]
+            ]
+          ]
+        ]
+      },
+      "label": "fiji-seam"
+    },
+    "density": "high"
+  }
+}

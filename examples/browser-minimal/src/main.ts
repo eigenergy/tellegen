@@ -1,5 +1,5 @@
 import {
-  CONTRACT_VERSION,
+  ENGINE_VERSION,
   browserWasmTransport,
   formatOf,
   type DemandDeltas,
@@ -61,7 +61,7 @@ async function main() {
       <section class="shell">
         <header>
           <div>
-            <p class="label">contract ${CONTRACT_VERSION}</p>
+            <p class="label">engine ${ENGINE_VERSION}</p>
             <h1>${parsed.name}</h1>
           </div>
           <p class="status ok">browser wasm</p>

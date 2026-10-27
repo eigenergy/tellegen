@@ -1,5 +1,9 @@
 # Hosted pilot browser acceptance
 
+The measurements below are the original pilot qualification, recorded before
+the 2026-10-27 main refresh. The full six-feeder pilot was not rerun during that
+refresh; current small-case browser and package checks are reported on #169.
+
 The full six-feeder pilot passed the production browser path on local macOS
 ARM64 with Chromium 153.0.8010.12. `browser-validation.json` records the run.
 The browser test is opt-in: `apps/web/tests/texas7k-distribution.spec.ts`.
@@ -41,7 +45,7 @@ versus approximately 159 MB when indented. Compact output fits the engine's
 128 MiB replay limit. Export is disabled while solving. This does not guarantee
 that arbitrary larger or edited studies will fit; the engine limit is unchanged.
 
-All changes remain local until reviewed. Production deployment additionally
+Source changes are proposed in Tellegen #169 and have not been deployed. Production deployment additionally
 requires staging the bundle and manifest on the host; image deployment alone
 will not install this data. The Texas7k link is case-level; a specific
 transmission bus mapping and coupled T&D calculation are outside this change.

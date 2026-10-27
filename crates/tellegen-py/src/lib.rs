@@ -132,7 +132,7 @@ fn solve_module(py: Python<'_>, module_json: &str, request_json: &str) -> PyResu
 /// The formulation, operand and parameter support matrix of this build, as JSON.
 ///
 /// Static: it takes no network and cannot fail. `acopf` reports
-/// `available: false` by contract.
+/// `available: false`.
 #[pyfunction]
 fn capabilities_json() -> String {
     tellegen::capabilities_json()
@@ -173,7 +173,7 @@ fn resolve_format(token: &str) -> Option<String> {
 // Stored-module solving, planning, and Studies.
 //
 // These mirror `crates/tellegen-cli/src/main.rs` rather than inventing a second
-// contract: the CLI is the reference implementation of the headless surface and
+// interface: the CLI is the reference implementation of the headless surface and
 // PowerMCP #67 already speaks it. The glue below — narrowing a module to a DC
 // OPF instance, and re-emitting the solution as a stored module — is copied
 // from there, because both hosts must produce byte-identical artifacts.
@@ -327,7 +327,7 @@ fn study_import(py: Python<'_>, path: &str, bundle_json: &str) -> PyResult<Strin
 /// Returns `{"result": StudyOperationResult, "progress": [...]}`. The progress
 /// entries carry the same `{"event": "study_checkpoint", "index": n}` shape the
 /// CLI prints on stderr under `--progress`, so a caller reading either host
-/// sees one contract.
+/// sees one format.
 ///
 /// `timeout_seconds` is how cancellation works here. The CLI cancels on SIGTERM
 /// through `ctrlc::set_handler`, which this binding must not reuse: it would

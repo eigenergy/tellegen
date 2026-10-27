@@ -35,20 +35,20 @@
 		viewBox="0 0 {W} {H}"
 		preserveAspectRatio="none"
 		role="img"
-		aria-label="residual by solver iteration"
+		aria-label="Residual by solver iteration"
 	>
 		<line class="axis" x1={L} y1={T} x2={L} y2={H - B} />
 		<line class="axis" x1={L} y1={H - B} x2={W - R} y2={H - B} />
 		<text
 			class="axis-label y-label"
 			x={-(T + PLOT_H / 2)}
-			y="8"
+			y="11"
 			text-anchor="middle"
 			transform="rotate(-90)"
 		>
-			residual
+			Residual
 		</text>
-		<text class="axis-label x-label" x={W - R} y={H - 4} text-anchor="end">iterations</text>
+		<text class="axis-label x-label" x={W - R} y={H - 4} text-anchor="end">Iterations</text>
 		<polyline {points} pathLength="1" />
 	</svg>
 {/if}
@@ -69,8 +69,8 @@
 
 	.axis-label {
 		fill: var(--text-tertiary);
-		font-family: var(--font-mono);
-		font-size: 9px;
+		font-family: var(--font-display);
+		font-size: 12px;
 		letter-spacing: 0;
 	}
 

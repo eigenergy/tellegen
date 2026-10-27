@@ -3,7 +3,7 @@ import { expect, test } from './fixtures/page-errors.js';
 import { lookupBus, mockDataRoutes } from './fixtures/backend-case';
 
 // With server compute disabled, a selection that cannot solve in the browser
-// shows the compute-off notice with the contact address. Detection has two
+// shows the compute-off notice. Detection has two
 // paths: /api/compute reports the gate up front (no doomed request is ever
 // made), and when that endpoint is unavailable the first 403 latches it.
 
@@ -25,8 +25,7 @@ test('compute reported off up front: notice shown, no server sensitivity request
 
 	await lookupBus(page, 1);
 	const error = await noticeDetails(page);
-	await expect(error).toContainText('server side compute is disabled');
-	await expect(error).toContainText('talks@umich.edu');
+	await expect(error).toContainText('and server compute is disabled');
 	expect(sensitivityFetches).toBe(0);
 });
 
@@ -46,12 +45,11 @@ test('compute status unavailable: first 403 shows the notice and latches', async
 
 	await lookupBus(page, 1);
 	const error = await noticeDetails(page);
-	await expect(error).toContainText('server side compute is disabled');
-	await expect(error).toContainText('talks@umich.edu');
+	await expect(error).toContainText('and server compute is disabled');
 	expect(sensitivityFetches).toBe(1);
 
 	// Latched: the next selection shows the notice without touching the server.
 	await lookupBus(page, 2);
-	await expect(error).toContainText('server side compute is disabled');
+	await expect(error).toContainText('and server compute is disabled');
 	expect(sensitivityFetches).toBe(1);
 });

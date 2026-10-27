@@ -113,7 +113,7 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 	listed = await callTool(page, 'list_cases', {});
 	if (!listed.ok) throw new Error(listed.error.message);
 	expect(listed.data.cases).toHaveLength(2);
-	await page.getByRole('button', { name: 'remove Hosted feeder-b', exact: true }).click();
+	await page.getByRole('button', { name: 'Remove Hosted feeder-b', exact: true }).click();
 	await page.reload();
 	await expect(
 		page.getByRole('button', { name: 'Solve AC power flow', exact: true })
@@ -121,7 +121,7 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 	await expect(page.locator('.case-activate').filter({ hasText: 'Hosted feeder-b' })).toHaveCount(
 		0
 	);
-	await page.getByRole('button', { name: /restore default cases/ }).click();
+	await page.getByRole('button', { name: 'Restore default cases', exact: true }).click();
 	await expect(page.locator('.case-activate').filter({ hasText: 'Hosted feeder-b' })).toHaveCount(
 		1
 	);

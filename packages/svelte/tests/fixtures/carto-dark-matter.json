@@ -1,0 +1,172 @@
+{
+	"version": 8,
+	"sources": {
+		"protomaps": {
+			"type": "vector",
+			"tiles": [
+				"https://tiles.basemaps.cartocdn.com/v/20261001-03/vectortiles/carto.streets/v2/{z}/{x}/{y}.mvt"
+			]
+		}
+	},
+	"layers": [
+		{
+			"id": "background",
+			"type": "background",
+			"paint": {
+				"background-color": "#0e0e0e",
+				"background-opacity": 1
+			}
+		},
+		{
+			"id": "waterway",
+			"type": "line",
+			"source": "protomaps",
+			"source-layer": "water",
+			"paint": {
+				"line-color": "rgba(63, 90, 109, 1)",
+				"line-width": {
+					"stops": [
+						[
+							8,
+							0.5
+						],
+						[
+							9,
+							1
+						],
+						[
+							15,
+							2
+						],
+						[
+							16,
+							3
+						]
+					]
+				}
+			}
+		},
+		{
+			"id": "water",
+			"type": "fill",
+			"source": "protomaps",
+			"source-layer": "water",
+			"minzoom": 0,
+			"maxzoom": 24,
+			"paint": {
+				"fill-color": "#2C353C",
+				"fill-antialias": true,
+				"fill-translate-anchor": "map",
+				"fill-opacity": 1
+			}
+		},
+		{
+			"id": "water_shadow",
+			"type": "fill",
+			"source": "protomaps",
+			"source-layer": "water",
+			"minzoom": 0,
+			"paint": {
+				"fill-color": "transparent",
+				"fill-antialias": true,
+				"fill-translate-anchor": "map",
+				"fill-opacity": 1,
+				"fill-translate": {
+					"stops": [
+						[
+							0,
+							[
+								0,
+								2
+							]
+						],
+						[
+							6,
+							[
+								0,
+								1
+							]
+						],
+						[
+							14,
+							[
+								0,
+								1
+							]
+						],
+						[
+							17,
+							[
+								0,
+								2
+							]
+						]
+					]
+				}
+			}
+		},
+		{
+			"id": "waterway_label",
+			"type": "symbol",
+			"source": "protomaps",
+			"source-layer": "water",
+			"paint": {
+				"text-color": "rgba(164, 164, 164, 1)",
+				"text-halo-color": "#181818",
+				"text-halo-width": 1
+			}
+		},
+		{
+			"id": "watername_ocean",
+			"type": "symbol",
+			"source": "protomaps",
+			"source-layer": "water",
+			"minzoom": 0,
+			"maxzoom": 5,
+			"paint": {
+				"text-color": "rgba(109, 123, 129, 1)",
+				"text-halo-color": "rgba(0,0,0,0.7)",
+				"text-halo-width": 1,
+				"text-halo-blur": 0
+			}
+		},
+		{
+			"id": "watername_sea",
+			"type": "symbol",
+			"source": "protomaps",
+			"source-layer": "water",
+			"minzoom": 5,
+			"paint": {
+				"text-color": "#3c3c3c",
+				"text-halo-color": "rgba(0,0,0,0.7)",
+				"text-halo-width": 1,
+				"text-halo-blur": 0
+			}
+		},
+		{
+			"id": "watername_lake",
+			"type": "symbol",
+			"source": "protomaps",
+			"source-layer": "water",
+			"minzoom": 4,
+			"paint": {
+				"text-color": "rgba(155, 155, 155, 1)",
+				"text-halo-color": "#181818",
+				"text-halo-width": 1,
+				"text-halo-blur": 1
+			}
+		},
+		{
+			"id": "watername_lake_line",
+			"type": "symbol",
+			"source": "protomaps",
+			"source-layer": "water",
+			"paint": {
+				"text-color": "#444",
+				"text-halo-color": "#181818",
+				"text-halo-width": 1,
+				"text-halo-blur": 1
+			}
+		}
+	]
+}

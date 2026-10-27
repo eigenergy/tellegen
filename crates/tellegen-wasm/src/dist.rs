@@ -623,7 +623,7 @@ mod tests {
 
     #[test]
     fn oversized_dss_input_rejects_without_panicking() {
-        // The DSS reader tolerates junk (unknown commands warn), so the contract
+        // The DSS reader tolerates junk (unknown commands warn), so the requirement
         // is no panic, not necessarily an error. A giant blob must terminate.
         let big = "New Line.".repeat(200_000);
         let _ = ingest_dist(&big, "dss");

@@ -16,6 +16,7 @@ POWERIO_CRATES = (
     "powerio-dist",
     "powerio-matrix",
     "powerio-prob",
+    "powerio-tnd",
     "powerio-tx",
 )
 REVISION = re.compile(r"[0-9a-f]{40}")

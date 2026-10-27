@@ -22,6 +22,8 @@ use tellegen::SolveResponse;
 mod alloc_stats;
 mod dist;
 mod geo;
+#[cfg(feature = "synth")]
+mod synth;
 
 const MAX_INPUT_BYTES: usize = 128 * 1024 * 1024;
 const INPUT_TOO_LARGE: &str = "input exceeds 128 MiB limit";
@@ -87,9 +89,8 @@ fn with_module_json(
     mut payload: serde_json::Value,
     module: powerio::PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
-    if matches!(module.value(), PioValue::AcPfInstance(_)) {
-        payload["formulation"] = serde_json::json!("acpf");
-    }
+    mark_generated_coords(&mut payload, &module);
+    set_declared_formulation(&mut payload, module.value());
     let module_json = serialize_module(&module)?;
     payload
         .as_object_mut()
@@ -101,6 +102,35 @@ fn with_module_json(
     Ok(payload)
 }
 
+fn set_declared_formulation(payload: &mut serde_json::Value, value: &PioValue) {
+    let formulation = match value {
+        PioValue::AcPfInstance(_) => "acpf",
+        // Ingestion does not enable the optional solver. The host must probe
+        // the separate AC OPF worker before solving this retained instance.
+        PioValue::AcOpfInstance(_) => "acopf",
+        _ => return,
+    };
+    payload["formulation"] = serde_json::json!(formulation);
+}
+
+/// History entry a tellegen-synth module records (`tellegen_synth::HISTORY_NAME`).
+const SYNTH_HISTORY_NAME: &str = "tellegen-synth.generate";
+
+/// Add `coords_method: "generated"` to a payload whose `synthetic`
+/// coordinates a generator sited on real geography, as the module's history
+/// records, so the panel does not call them a topology layout. Tellegen's own
+/// stamped layouts record no such step.
+fn mark_generated_coords<T>(payload: &mut serde_json::Value, module: &powerio::PioModule<T>) {
+    if payload["coords_kind"] == "synthetic"
+        && module
+            .history()
+            .iter()
+            .any(|entry| entry.name() == SYNTH_HISTORY_NAME)
+    {
+        payload["coords_method"] = serde_json::json!("generated");
+    }
+}
+
 /// The balanced network owned by a stored value that can start a browser
 /// Study in this build. The original dynamic module remains the Study input;
 /// this borrow supplies only the render payload.
@@ -109,6 +139,7 @@ fn balanced_study_network(value: &PioValue) -> Option<&powerio::BalancedNetwork>
         PioValue::BalancedNetwork(network) => Some(network),
         PioValue::DcOpfInstance(instance) => Some(instance.network()),
         PioValue::AcPfInstance(instance) => Some(instance.network()),
+        PioValue::AcOpfInstance(instance) => Some(instance.network()),
         _ => None,
     }
 }
@@ -179,9 +210,8 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
             let diagnostics = module.diagnostics().to_vec();
             let payload = if let Some(network) = balanced_study_network(module.value()) {
                 let mut payload = ingest_value(network, &diagnostics, Vec::new(), None)?;
-                if matches!(module.value(), PioValue::AcPfInstance(_)) {
-                    payload["formulation"] = serde_json::json!("acpf");
-                }
+                mark_generated_coords(&mut payload, &module);
+                set_declared_formulation(&mut payload, module.value());
                 let module_json = std::str::from_utf8(bytes)
                     .map_err(|_| "stored module document is not valid UTF-8".to_owned())?;
                 payload
@@ -1206,6 +1236,160 @@ fn coords_kind_token(net: &powerio::BalancedNetwork, has_view: bool) -> &'static
     }
 }
 
+/// Error text of a synthetic generation call: the generator's `{code,
+/// message, buses?, branches?}` payload as JSON.
+#[cfg(feature = "synth")]
+fn synth_err(payload: String) -> JsError {
+    JsError::new(&payload)
+}
+
+/// Load the populated places table every synthetic session of this instance
+/// reads (the engine package's `data/populated_places.json`, or any table of
+/// `{n, lo, la, p, c}` rows). Returns `{count, sha256}`.
+#[cfg(feature = "synth")]
+#[wasm_bindgen]
+pub fn synth_load_places(bytes: &[u8]) -> Result<String, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    synth::load_places_impl(bytes).map_err(synth_err)
+}
+
+/// The Overpass QL queries for a synthetic request's region: a JSON array, two
+/// entries when the region crosses the antimeridian.
+#[cfg(feature = "synth")]
+#[wasm_bindgen]
+pub fn synth_overpass_queries(request_json: &str) -> Result<String, JsError> {
+    ensure_input_text(request_json)?;
+    install_panic_hook();
+    synth::overpass_queries_impl(request_json).map_err(synth_err)
+}
+
+/// Run every stage of a synthetic generation: `{module_json, report, ingest}`.
+#[cfg(feature = "synth")]
+#[wasm_bindgen]
+pub fn synth_generate(request_json: &str, osm_json: Option<String>) -> Result<String, JsError> {
+    ensure_input_text(request_json)?;
+    if let Some(osm) = &osm_json {
+        ensure_input_text(osm)?;
+    }
+    install_panic_hook();
+    synth::generate_impl(request_json, osm_json).map_err(synth_err)
+}
+
+/// Milliseconds from the host clock, for stage timings.
+#[cfg(all(feature = "synth", target_arch = "wasm32"))]
+fn synth_clock() -> f64 {
+    js_sys::Date::now()
+}
+
+/// A staged synthetic generation: one bounded stage per `advance`, a map
+/// preview between stages, and the module, the report and the drop-panel
+/// payload once it is done.
+#[cfg(feature = "synth")]
+#[wasm_bindgen]
+pub struct SynthSession(tellegen_synth::Generator);
+
+#[cfg(feature = "synth")]
+#[wasm_bindgen]
+impl SynthSession {
+    /// Open a session at the `context` stage. `osm_json` is the Overpass
+    /// document (one, or a JSON array of documents) for `source: "osm"`.
+    #[wasm_bindgen(constructor)]
+    pub fn new(request_json: &str, osm_json: Option<String>) -> Result<SynthSession, JsError> {
+        ensure_input_text(request_json)?;
+        if let Some(osm) = &osm_json {
+            ensure_input_text(osm)?;
+        }
+        install_panic_hook();
+        #[allow(unused_mut)]
+        let mut generator = synth::session_new_impl(request_json, osm_json).map_err(synth_err)?;
+        #[cfg(target_arch = "wasm32")]
+        generator.set_clock(synth_clock);
+        Ok(SynthSession(generator))
+    }
+
+    /// Run one stage (one calibration iteration for `calibrate`); returns the
+    /// `StepOutcome` JSON.
+    pub fn advance(&mut self) -> Result<String, JsError> {
+        synth::advance_impl(&mut self.0).map_err(synth_err)
+    }
+
+    /// The stage the next `advance` runs.
+    pub fn stage(&self) -> String {
+        self.0.stage().as_str().to_owned()
+    }
+
+    /// The map preview as `Preview` JSON records.
+    pub fn preview(&self) -> Result<String, JsError> {
+        synth::preview_impl(&self.0).map_err(synth_err)
+    }
+
+    /// The map preview as flat arrays for binary map attributes, computed
+    /// once; read each array, then `free()` the buffers.
+    pub fn preview_buffers(&self) -> SynthPreviewBuffers {
+        SynthPreviewBuffers(self.0.preview_arrays())
+    }
+
+    /// The `GenerationReport` JSON, partial until the session is done.
+    pub fn report(&self) -> Result<String, JsError> {
+        synth::report_impl(&self.0).map_err(synth_err)
+    }
+
+    /// The module as generation 2 PowerIO IR text, with bus locations and
+    /// branch routes, from `electrify` on.
+    pub fn module(&self) -> Result<String, JsError> {
+        synth::module_impl(&self.0).map_err(synth_err)
+    }
+
+    /// The drop-panel payload of the module (the `ingest_case` shape with
+    /// `module_json`).
+    pub fn ingest(&self) -> Result<String, JsError> {
+        synth::ingest_impl(&self.0).map_err(synth_err)
+    }
+
+    /// The network as GridFM graphkit JSON (per-unit feature matrices on a
+    /// 0-based bus index), from `electrify` on.
+    pub fn export_gridfm(&self) -> Result<String, JsError> {
+        synth::export_gridfm_impl(&self.0).map_err(synth_err)
+    }
+}
+
+/// A synthetic preview as flat arrays: bus `[lon, lat]` pairs, kinds (0 load,
+/// 1 substation, 2 generator, 3 converter) and kV in bus order, branch route
+/// points, the index where each route starts (one entry more than there are
+/// branches) and branch kV.
+#[cfg(feature = "synth")]
+#[wasm_bindgen]
+pub struct SynthPreviewBuffers(tellegen_synth::PreviewArrays);
+
+#[cfg(feature = "synth")]
+#[wasm_bindgen]
+impl SynthPreviewBuffers {
+    pub fn bus_positions(&self) -> Vec<f64> {
+        self.0.bus_positions.clone()
+    }
+
+    pub fn bus_kinds(&self) -> Vec<u8> {
+        self.0.bus_kinds.clone()
+    }
+
+    pub fn bus_kv(&self) -> Vec<f32> {
+        self.0.bus_kv.clone()
+    }
+
+    pub fn branch_positions(&self) -> Vec<f64> {
+        self.0.branch_positions.clone()
+    }
+
+    pub fn branch_start_indices(&self) -> Vec<u32> {
+        self.0.branch_start_indices.clone()
+    }
+
+    pub fn branch_kv(&self) -> Vec<f32> {
+        self.0.branch_kv.clone()
+    }
+}
+
 /// Decode a PowerWorld drawing as a canonical PowerIO GeoLayer in diagram units.
 #[wasm_bindgen]
 pub fn parse_display(bytes: &[u8], format: &str) -> Result<String, JsError> {
@@ -1684,13 +1868,20 @@ mpc.gencost = [
         assert_eq!(pf_drop.payload["module_json"], pf_json);
         assert_eq!(pf_drop.payload["n_bus"], 14);
 
-        // An AC OPF input requires an explicit choice of supported calculation.
+        // Preserve the canonical AC OPF input; worker availability is a host
+        // concern and must not require enabling POUNCE in this adapter.
         let opf_json = serialize_module(&powerio::PioModule::new(
             powerio::PioValue::AcOpfInstance(ac_opf),
         ))
         .unwrap();
-        assert!(classify_json_drop_value(opf_json.as_bytes()).is_err());
-        assert!(ingest_json_drop_value(opf_json.as_bytes()).is_err());
+        assert_eq!(
+            classify_json_drop_value(opf_json.as_bytes()).unwrap().kind,
+            "module"
+        );
+        let opf_drop = ingest_json_drop_value(opf_json.as_bytes()).unwrap();
+        assert_eq!(opf_drop.payload["formulation"], "acopf");
+        assert_eq!(opf_drop.payload["module_json"], opf_json);
+        assert_eq!(opf_drop.payload["n_bus"], 14);
 
         // One holding a multiconductor network routes to the dist view.
         let dist_source = Source::from_memory(

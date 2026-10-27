@@ -25,8 +25,9 @@ jobs:
           persist-credentials: false
 
       # The wheel's version is read from crates/tellegen-py/Cargo.toml, which
-      # release-plz does not bump (release-plz.toml). Refuse to build a wheel
-      # that claims a different solver version than the engine crate it wraps.
+      # the crate release workflow synchronizes after release-plz updates the
+      # engine. Refuse to build a wheel that claims a different solver version
+      # than the engine crate it wraps.
       - name: Check the wheel version matches the engine crate
         run: |
           engine=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/tellegen/Cargo.toml | head -1)
@@ -37,11 +38,11 @@ jobs:
           fi
           echo "tellegen and tellegen-py agree on $engine"
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Install build and lint tooling
         run: python -m pip install --upgrade "maturin>=1.7,<2.0" pytest ruff mypy
@@ -141,7 +142,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
 
@@ -162,7 +163,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install --force-reinstall dist/*.whl
-          cp evidence/studies/case3.m "${RUNNER_TEMP}/case3.m"
+          cp docs/evidence/studies/case3.m "${RUNNER_TEMP}/case3.m"
           cd "${RUNNER_TEMP}"
           python - <<'PY'
           import tellegen
@@ -175,7 +176,7 @@ jobs:
           print("ok", tellegen.versions(), "objective", round(solution["objective"], 4))
           PY
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wheel-${{ matrix.leg.os }}-${{ matrix.leg.target }}
           path: dist/*.whl
@@ -199,7 +200,7 @@ jobs:
           args: --out dist
       - name: List what the sdist carries
         run: tar -tzf dist/*.tar.gz | sed 's|^[^/]*/||' | sort | head -60
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdist
           path: dist/*.tar.gz

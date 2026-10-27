@@ -1,0 +1,43 @@
+{
+  "id": "gulf-of-guinea",
+  "description": "The Ghana and Togo coast at medium density, low fidelity: loads spread with a floor and wider parameter spreads.",
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "request": {
+    "region": {
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -2.0,
+              5.0
+            ],
+            [
+              1.0,
+              5.0
+            ],
+            [
+              1.0,
+              8.0
+            ],
+            [
+              -2.0,
+              8.0
+            ],
+            [
+              -2.0,
+              5.0
+            ]
+          ]
+        ]
+      },
+      "label": "gulf-of-guinea"
+    },
+    "density": "medium",
+    "fidelity": "low"
+  }
+}

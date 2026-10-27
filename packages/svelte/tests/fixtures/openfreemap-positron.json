@@ -1,0 +1,462 @@
+{
+	"version": 8,
+	"sources": {
+		"ne2_shaded": {
+			"type": "raster",
+			"tiles": [
+				"https://tiles.openfreemap.org/natural_earth/ne2sr/{z}/{x}/{y}.png"
+			]
+		},
+		"openmaptiles": {
+			"type": "vector",
+			"url": "https://tiles.openfreemap.org/planet"
+		}
+	},
+	"layers": [
+		{
+			"id": "background",
+			"type": "background",
+			"paint": {
+				"background-color": "rgb(242,243,240)"
+			}
+		},
+		{
+			"id": "park",
+			"type": "fill",
+			"source": "openmaptiles",
+			"source-layer": "park",
+			"paint": {
+				"fill-color": "rgb(230, 233, 229)"
+			}
+		},
+		{
+			"id": "water",
+			"type": "fill",
+			"source": "openmaptiles",
+			"source-layer": "water",
+			"paint": {
+				"fill-antialias": true,
+				"fill-color": "rgb(194, 200, 202)"
+			}
+		},
+		{
+			"id": "landcover_ice_shelf",
+			"type": "fill",
+			"source": "openmaptiles",
+			"source-layer": "landcover",
+			"maxzoom": 8,
+			"paint": {
+				"fill-color": "hsl(0,0%,98%)",
+				"fill-opacity": 0.7
+			}
+		},
+		{
+			"id": "landcover_glacier",
+			"type": "fill",
+			"source": "openmaptiles",
+			"source-layer": "landcover",
+			"maxzoom": 8,
+			"paint": {
+				"fill-color": "hsl(0,0%,98%)",
+				"fill-opacity": [
+					"interpolate",
+					[
+						"linear"
+					],
+					[
+						"zoom"
+					],
+					0,
+					1,
+					8,
+					0.5
+				]
+			}
+		},
+		{
+			"id": "landuse_residential",
+			"type": "fill",
+			"source": "openmaptiles",
+			"source-layer": "landuse",
+			"maxzoom": 16,
+			"paint": {
+				"fill-color": "rgb(234, 234, 230)",
+				"fill-opacity": [
+					"interpolate",
+					[
+						"exponential",
+						0.6
+					],
+					[
+						"zoom"
+					],
+					8,
+					0.8,
+					9,
+					0.6
+				]
+			}
+		},
+		{
+			"id": "landcover_wood",
+			"type": "fill",
+			"source": "openmaptiles",
+			"source-layer": "landcover",
+			"minzoom": 10,
+			"paint": {
+				"fill-color": "rgb(220,224,220)",
+				"fill-opacity": [
+					"interpolate",
+					[
+						"linear"
+					],
+					[
+						"zoom"
+					],
+					8,
+					0,
+					12,
+					1
+				]
+			}
+		},
+		{
+			"id": "waterway",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "waterway",
+			"paint": {
+				"line-color": "hsl(195,17%,78%)"
+			}
+		},
+		{
+			"id": "building",
+			"type": "fill",
+			"source": "openmaptiles",
+			"source-layer": "building",
+			"minzoom": 12
+		},
+		{
+			"id": "tunnel_motorway_casing",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 6
+		},
+		{
+			"id": "tunnel_motorway_inner",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 6
+		},
+		{
+			"id": "aeroway-taxiway",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "aeroway",
+			"minzoom": 12
+		},
+		{
+			"id": "aeroway-runway-casing",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "aeroway",
+			"minzoom": 11
+		},
+		{
+			"id": "aeroway-area",
+			"type": "fill",
+			"source": "openmaptiles",
+			"source-layer": "aeroway",
+			"minzoom": 4
+		},
+		{
+			"id": "aeroway-runway",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "aeroway",
+			"minzoom": 11
+		},
+		{
+			"id": "road_area_pier",
+			"type": "fill",
+			"source": "openmaptiles",
+			"source-layer": "transportation"
+		},
+		{
+			"id": "road_pier",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation"
+		},
+		{
+			"id": "highway_path",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation"
+		},
+		{
+			"id": "highway_minor",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 8
+		},
+		{
+			"id": "highway_major_casing",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 11
+		},
+		{
+			"id": "highway_major_inner",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 11
+		},
+		{
+			"id": "highway_major_subtle",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"maxzoom": 11
+		},
+		{
+			"id": "highway_motorway_casing",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 6
+		},
+		{
+			"id": "highway_motorway_inner",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 6
+		},
+		{
+			"id": "highway_motorway_subtle",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"maxzoom": 6
+		},
+		{
+			"id": "railway_transit",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 16
+		},
+		{
+			"id": "railway_transit_dashline",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 16
+		},
+		{
+			"id": "railway_service",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 16
+		},
+		{
+			"id": "railway_service_dashline",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 16
+		},
+		{
+			"id": "railway",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 13
+		},
+		{
+			"id": "railway_dashline",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 13
+		},
+		{
+			"id": "highway_motorway_bridge_casing",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 6
+		},
+		{
+			"id": "highway_motorway_bridge_inner",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "transportation",
+			"minzoom": 6
+		},
+		{
+			"id": "boundary_3",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "boundary",
+			"minzoom": 8
+		},
+		{
+			"id": "boundary_2",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "boundary"
+		},
+		{
+			"id": "boundary_disputed",
+			"type": "line",
+			"source": "openmaptiles",
+			"source-layer": "boundary"
+		},
+		{
+			"id": "waterway_line_label",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "waterway",
+			"minzoom": 10,
+			"paint": {
+				"text-color": "hsl(0,0%,66%)",
+				"text-halo-color": "rgba(255,255,255,0.7)",
+				"text-halo-width": 1.5
+			}
+		},
+		{
+			"id": "water_name_point_label",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "water_name"
+		},
+		{
+			"id": "water_name_line_label",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "water_name"
+		},
+		{
+			"id": "highway-name-path",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "transportation_name",
+			"minzoom": 15.5
+		},
+		{
+			"id": "highway-name-minor",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "transportation_name",
+			"minzoom": 15
+		},
+		{
+			"id": "highway-name-major",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "transportation_name",
+			"minzoom": 12.2
+		},
+		{
+			"id": "highway-shield-non-us",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "transportation_name",
+			"minzoom": 11
+		},
+		{
+			"id": "highway-shield-us-interstate",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "transportation_name",
+			"minzoom": 11
+		},
+		{
+			"id": "road_shield_us",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "transportation_name",
+			"minzoom": 12
+		},
+		{
+			"id": "airport",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "aerodrome_label",
+			"minzoom": 11
+		},
+		{
+			"id": "label_other",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "place",
+			"minzoom": 8
+		},
+		{
+			"id": "label_village",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "place",
+			"minzoom": 9
+		},
+		{
+			"id": "label_town",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "place",
+			"minzoom": 6
+		},
+		{
+			"id": "label_state",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "place",
+			"minzoom": 5,
+			"maxzoom": 8
+		},
+		{
+			"id": "label_city",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "place",
+			"minzoom": 3
+		},
+		{
+			"id": "label_city_capital",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "place",
+			"minzoom": 3
+		},
+		{
+			"id": "label_country_3",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "place",
+			"minzoom": 2,
+			"maxzoom": 9
+		},
+		{
+			"id": "label_country_2",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "place",
+			"maxzoom": 9
+		},
+		{
+			"id": "label_country_1",
+			"type": "symbol",
+			"source": "openmaptiles",
+			"source-layer": "place",
+			"maxzoom": 9
+		}
+	]
+}

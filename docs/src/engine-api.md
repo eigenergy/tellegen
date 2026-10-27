@@ -4,8 +4,8 @@
 
 ## Constants
 
-- `CONTRACT_VERSION`: the public TypeScript contract version. It matches the package version.
-- `CONTRACT_SOURCE_SHA256`: the `crates/tellegen/src/api.rs` hash used to generate the TypeScript contracts.
+- `ENGINE_VERSION`: the `@tellegen/engine` package version.
+- `API_SOURCE_SHA256`: the `crates/tellegen/src/api.rs` hash the generated TypeScript types were built from.
 - `FORMULATION_IDS` and `SOLVE_STATUSES`: generated enum tags from the Rust API layer.
 - `FORMULATIONS` and `DEFAULT_FORMULATION`: browser UI formulation list and default formulation.
 
@@ -14,6 +14,12 @@
 - `browserWasmTransport`: object facade for the browser wasm transport.
 - `createBrowserWasmTransport()`: returns the browser wasm transport facade.
 - `preloadEngine()`: initializes the wasm package.
+
+The package also exports its two large assets as files, so a host can preload
+or budget them without a path into `dist`: `@tellegen/engine/wasm` is the
+WebAssembly binary and `@tellegen/engine/places` the populated places table.
+Vite imports them as URLs with `?url`
+(`import engineWasmUrl from "@tellegen/engine/wasm?url"`).
 
 The facade has the same methods as the direct exports:
 
@@ -51,7 +57,13 @@ reader selected for transmission and distribution documents.
 ## Solves And Studies
 
 - `capabilities()`: returns available formulations, operands, and parameters.
-- `solveModule(moduleJson, request)`: stateless solve from a PowerIO module.
+- `solveModule(moduleJson, request)`: stateless solve from a PowerIO module. A
+  `dcopf` request may carry `constraints`, linear limits on branch flows, bus
+  net injections, and generator outputs; the response's `constraints` block
+  reports each row's value and shadow price. See
+  [Formulations](formulations.md#linear-constraints).
+  An `acpf` request may set `start: "case"` to start Newton from the case's
+  stored bus voltages (see [Formulations](formulations.md#ac-power-flow-polar)).
 - `createStudy(moduleJson, formulation)`: builds a browser `Study` from a
   PowerIO module and solves its declared problem instance.
 - `Study` / `BrowserStudy`: browser handle with:
@@ -93,6 +105,39 @@ PowerIO module onto a disposable host, so the returned
 `CapacityPlanOutcomeJson` is an unapplied proposal and cancellation does not
 invalidate the retained interactive Study.
 
+## Synthetic Grid Generation
+
+- `createSynthSession(request, { osm?, places?, signal? })`: opens a staged
+  generation on a dedicated synthetic worker and
+  returns a `BrowserSynthSession`:
+  - `advance({ withPreview? })` runs one stage (`context`, `site_buses`,
+    `topology`, `electrify`, `dc_opf`, `calibrate` once per iteration,
+    `ac_pf`, `finalize`) and returns its `StepOutcome`;
+  - `run(onStep?, signal?)` loops it and resolves to the `GenerationReport`;
+  - `preview()` returns transferred typed arrays for binary map layers;
+  - `report()`, `takeModule()` (pio-ir with bus locations and branch routes),
+    `ingest()` (the `IngestedCase` a dropped `.pio.json` of that module
+    produces; `coords_method: "generated"` marks its synthetic
+    coordinates as sites on real geography), and `exportGridfm()`;
+  - `cancel(reason?)` terminates the synthetic worker (interactive studies
+    are untouched), and `free()` releases the session;
+  - `hostKind` is `"worker"`, or `"direct"` when the page runs it.
+- `generateSynthetic(request, options?)`: every stage in one request; returns
+  `{ moduleJson, report, ingest }`.
+- `syntheticOverpassQueries(request)`: the Overpass QL for a region, one query
+  per bounding box. Pass the fetched documents as the `osm` option with
+  `source: "osm"`.
+- `loadSyntheticPlaces(bytes)`, `fetchSyntheticPlaces()`, `syntheticPlacesUrl()`:
+  the Natural Earth places table shipped as `data/populated_places.json`;
+  sessions load it on first use.
+- Refusals reject with `SynthEngineError`, whose `code` is one of
+  `invalid_request`, `region`, `places`, `osm`, `osm_insufficient` (with bus
+  and branch counts), `build`, `engine`, `state`, `cancelled`.
+- `@tellegen/engine/synth` exports the generated request and report types,
+  and `synthSchema` validates a pasted request at run time.
+
+See [Synthetic Grid Generation](synthetic-generation.md) for the pipeline.
+
 ## Migrating To 0.2
 
 - `ingestCase` now takes `Uint8Array`, not a string. Encode an in-memory string
@@ -112,7 +157,8 @@ file.arrayBuffer())` for a browser `File`.
 
 Public types include:
 
-- `SolveRequest`, `SolveResponse`, `ProblemCaps`
+- `SolveRequest`, `SolveResponse`, `ProblemCaps`, `PowerFlowStart`, `SolveDiagnostic`
+- `LinearConstraint`, `ConstraintTerm`, `ConstraintTermKind`, `ConstraintResult`
 - `SensRequest`, `SensitivityMatrix`, `SensitivityColumn`
 - `Network`, `NetworkBus`, `NetworkBranch`
 - `Solution`, `SolveIteration`, `DemandDeltas`
@@ -120,4 +166,4 @@ Public types include:
 - `IngestedJsonDrop`, `JsonDropClassification`, `JsonDropKind`
 - `BrowserFormulation`, `FormulationId`, `SolveStatus`
 
-The generated file is committed at `packages/engine/src/generated/contracts.ts` and checked in CI.
+The generated file is committed at `packages/engine/src/generated/api-types.ts` and checked in CI.

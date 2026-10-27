@@ -223,7 +223,7 @@ impl Differentiable for ConicKkt<'_> {
             // Per generator: the output bounds and the cost coefficients.
             Parameter::GenBound { .. } | Parameter::Cost(_) => Some(self.lay.k),
             // The transformer tap / phase shift is deferred to C6.
-            Parameter::Transformer(_) | Parameter::Switching => None,
+            Parameter::Transformer(_) | Parameter::Switching | Parameter::ConstraintLimit => None,
         }
     }
 
@@ -377,7 +377,7 @@ impl Differentiable for ConicKkt<'_> {
                     }
                 }
             }
-            Parameter::Transformer(_) | Parameter::Switching => {
+            Parameter::Transformer(_) | Parameter::Switching | Parameter::ConstraintLimit => {
                 return Err(SensError::InvalidInput(format!(
                     "socwr does not support parameter {p:?}"
                 )))
@@ -460,6 +460,7 @@ impl Differentiable for ConicKkt<'_> {
             Axis::Bus => ElementId::Bus(self.net.bus_ids[index]),
             Axis::Branch => ElementId::Branch(self.net.branch_ids[index]),
             Axis::Generator => ElementId::Generator(self.net.gen_ids[index]),
+            Axis::Constraint => ElementId::Constraint(index),
         }
     }
 
@@ -871,7 +872,7 @@ mod tests {
     fn conic_tier1_slack_columns_vanish() {
         // On the loose base case these constraints are slack (or carry zero dual, like
         // the costless reactive bounds), so their columns are identically zero and
-        // finite — the norm-floor case of the parity contract.
+        // finite — the norm-floor case of the parity check.
         let net = parse_case9_ac();
         let sol = socwr_opf(&net).expect("socwr");
         let sys = ConicKkt::new(&net, &sol).expect("kkt");

@@ -11,7 +11,8 @@
 //! Each Newton step factorizes the reduced polar Jacobian with the faer sparse LU from
 //! [`crate::solve`] and backtracks on the mismatch ∞-norm so a poor iterate cannot
 //! overshoot; if a flat start does not converge it is retried from a few deterministic
-//! perturbations and the best result is kept. Gated behind `sensitivity` with the faer
+//! perturbations and the best result is kept. A caller may ask to start from the stored
+//! case state first ([`AcStart::Case`]). Gated behind `sensitivity` with the faer
 //! paths.
 //!
 //! The polar power injection at bus i is `S_i = V_i conj((Y V)_i)`, `V_i = vm_i
@@ -23,6 +24,7 @@
 use num_complex::Complex;
 
 use crate::formulation::{AcPolar, Formulation};
+use crate::model::islands::dense_islands;
 use crate::model::AcNetwork;
 use crate::solve::solve_sparse;
 
@@ -34,6 +36,18 @@ const TOL: f64 = 1e-8;
 const MAX_ITERS: usize = 50;
 /// Perturbed restarts attempted after the flat start fails to converge.
 const RESTARTS: usize = 4;
+
+/// Where the Newton iteration starts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum AcStart {
+    /// Setpoint magnitudes and every angle at its island's reference angle.
+    #[default]
+    Flat,
+    /// The stored case state ([`AcNetwork::vm_case`], [`AcNetwork::va_case`]), with
+    /// each island's angles shifted so its slack sits at its reference angle. A start that
+    /// does not converge falls back to the flat start and its perturbations.
+    Case,
+}
 
 /// Bus role in the power flow: the reference slack, a voltage-regulating generator bus
 /// (PV), or a load bus (PQ).
@@ -61,9 +75,10 @@ pub struct AcPfLayout {
     dim: usize,
 }
 
-/// The default bus typing for `net`: the reference is the slack, every bus with an
-/// in-service generator is PV, the rest PQ. The starting point for the Q-limit outer
-/// loop, which converts PV buses to PQ as their generators hit their reactive limits.
+/// The default bus typing for `net`: each island's reference is its slack, every bus
+/// with an in-service generator is PV, the rest PQ. The starting point for the Q-limit
+/// outer loop, which converts PV buses to PQ as their generators hit their reactive
+/// limits.
 pub(crate) fn default_kinds(net: &AcNetwork) -> Vec<BusKind> {
     let mut kind = vec![BusKind::Pq; net.n];
     for (bus, &is_pv) in net.pf_pv.iter().enumerate() {
@@ -71,7 +86,9 @@ pub(crate) fn default_kinds(net: &AcNetwork) -> Vec<BusKind> {
             kind[bus] = BusKind::Pv;
         }
     }
-    kind[net.slack] = BusKind::Slack;
+    for &slack in &net.slacks {
+        kind[slack] = BusKind::Slack;
+    }
     kind
 }
 
@@ -84,7 +101,7 @@ impl AcPfLayout {
     }
 
     /// Build the layout for `net` under an explicit bus typing. The Q-limit outer loop in
-    /// [`ac_pf`] rebuilds the layout each round as it converts PV buses to PQ; the AC
+    /// [`ac_pf_with_start`] rebuilds the layout each round as it converts PV buses to PQ; the AC
     /// sensitivity ([`crate::AcNewton`]) rebuilds it from the converged solution's typing so
     /// the differentiated system matches the active constraint set.
     pub(crate) fn with_kinds(net: &AcNetwork, kind: &[BusKind]) -> Self {
@@ -272,7 +289,7 @@ pub(crate) fn ac_jacobian(
 pub struct AcPfSolution {
     /// Bus voltage magnitudes (per unit). PV and slack buses hold their setpoints.
     pub vm: Vec<f64>,
-    /// Bus voltage angles (radians); `va[slack] = 0`.
+    /// Bus voltage angles (radians); each slack bus holds its island's reference angle.
     pub va: Vec<f64>,
     /// Net real power injection per bus (per unit), `S_i = V_i conj((Y V)_i)`.
     /// At the slack bus this is the recovered slack power.
@@ -294,7 +311,7 @@ pub struct AcPfSolution {
 impl AcPfSolution {
     /// Bundle the converged voltages, injections, the final bus typing, and convergence
     /// diagnostics. Crate-internal: the typing carries [`BusKind`], and a solution is only
-    /// produced by [`ac_pf`].
+    /// produced by [`ac_pf_with_start`].
     pub(crate) fn new(
         vm: Vec<f64>,
         va: Vec<f64>,
@@ -317,7 +334,7 @@ impl AcPfSolution {
 }
 
 /// A formulation that can drive a Newton AC power flow — the dispatch point the
-/// generic [`ac_pf`] calls, the AC analogue of
+/// generic [`ac_pf_with_start`] calls, the AC analogue of
 /// [`DcPfFormulation`](super::DcPfFormulation). The two methods are the polar physics:
 /// the bus injections and the Newton Jacobian. Not sealed.
 pub trait AcPfFormulation: Formulation {
@@ -561,7 +578,7 @@ fn solve_qlim<F: AcPfFormulation>(
         let (_, q_calc, _) = f.injections(ybus, &vm, &va);
         let mut changed = false;
         for b in 0..net.n {
-            if b == net.slack || !has_gen[b] {
+            if kinds[b] == BusKind::Slack || !has_gen[b] {
                 continue;
             }
             if kinds[b] == BusKind::Pv {
@@ -627,36 +644,96 @@ fn mix(a: u64, b: u64) -> f64 {
     (x as f64 / u64::MAX as f64) * 2.0 - 1.0
 }
 
-/// Solve the AC power flow for `net` under formulation `f`: try a flat start, then a few
-/// deterministic perturbations of it, and keep the lowest-residual converged result. Each
-/// start runs the Q-limit outer loop ([`solve_qlim`]), so a generator that would exceed its
-/// reactive limit is backed off to the limit and its bus released to PQ. Slack and
-/// still-regulating PV magnitudes hold their setpoints; the reference angle stays at zero.
-/// Generic over the formulation, like [`dc_pf`](super::dc_pf).
-pub fn ac_pf<F: AcPfFormulation>(f: &F, net: &AcNetwork) -> Result<AcPfSolution, String> {
+/// Each bus's island slack and that slack's reference angle, in dense order. A bus in
+/// an island without a slack reads none and a zero reference; the preparation grounds
+/// every island, so none should occur.
+fn island_references(net: &AcNetwork) -> Vec<(Option<usize>, f64)> {
+    let island = dense_islands(net.n, &net.br_from, &net.br_to);
+    let count = island.iter().max().map_or(0, |&last| last + 1);
+    let mut reference = vec![(None, 0.0); count];
+    for (&slack, &va) in net.slacks.iter().zip(&net.va_slacks) {
+        reference[island[slack]] = (Some(slack), va);
+    }
+    island.iter().map(|&label| reference[label]).collect()
+}
+
+/// The stored case state as a Newton start: each bus's stored magnitude (the setpoint
+/// where the stored value is not a positive finite number) and its stored angle
+/// relative to its island slack's, shifted to that slack's reference angle.
+fn case_start(net: &AcNetwork) -> (Vec<f64>, Vec<f64>) {
+    let finite_or = |value: f64, fallback: f64| if value.is_finite() { value } else { fallback };
+    let vm = (0..net.n)
+        .map(|b| {
+            let stored = net.vm_case[b];
+            if stored.is_finite() && stored > 0.0 {
+                stored
+            } else {
+                net.vm_set[b]
+            }
+        })
+        .collect();
+    let va = island_references(net)
+        .into_iter()
+        .enumerate()
+        .map(|(b, (slack, reference))| {
+            let slack_va = slack.map_or(0.0, |slack| finite_or(net.va_case[slack], 0.0));
+            reference + finite_or(net.va_case[b] - slack_va, 0.0)
+        })
+        .collect();
+    (vm, va)
+}
+
+/// Solve the AC power flow for `net` under formulation `f` from a flat start. This
+/// convenience entry exists for numerical tests; product paths use
+/// [`ac_pf_with_start`].
+#[cfg(test)]
+pub(crate) fn ac_pf<F: AcPfFormulation>(f: &F, net: &AcNetwork) -> Result<AcPfSolution, String> {
+    ac_pf_with_start(f, net, AcStart::Flat)
+}
+
+/// Solve the AC power flow for `net` under formulation `f`: try the requested start (the
+/// stored case state for [`AcStart::Case`]), then a flat start and a few deterministic
+/// perturbations of it, and keep the lowest-residual converged result. Each start runs
+/// the Q-limit outer loop ([`solve_qlim`]), so a generator that would exceed its reactive
+/// limit is backed off to the limit and its bus released to PQ. Slack and
+/// still-regulating PV magnitudes hold their setpoints; each island's slack angle holds
+/// its reference angle. Generic over the formulation, like [`dc_pf`](super::dc_pf).
+pub(crate) fn ac_pf_with_start<F: AcPfFormulation>(
+    f: &F,
+    net: &AcNetwork,
+    start: AcStart,
+) -> Result<AcPfSolution, String> {
     let ybus = net.ybus();
     let (qmin_bus, qmax_bus, has_gen) = aggregate_q(net);
     let vm_hold = net.vm_set.clone();
     let flat_vm = net.vm_set.clone();
-    let flat_va = vec![0.0; net.n];
+    let flat_va: Vec<f64> = island_references(net)
+        .into_iter()
+        .map(|(_, reference)| reference)
+        .collect();
+
+    let mut starts = Vec::with_capacity(RESTARTS + 2);
+    if start == AcStart::Case {
+        starts.push(case_start(net));
+    }
+    starts.push((flat_vm.clone(), flat_va.clone()));
+    for restart in 1..=RESTARTS {
+        // Perturb the free unknowns: ±0.1 rad on non-slack angles, ±3% on non-slack
+        // magnitudes (released PV buses get a magnitude start too).
+        let mut vm = flat_vm.clone();
+        let mut va = flat_va.clone();
+        for b in 0..net.n {
+            if !net.slacks.contains(&b) {
+                va[b] += 0.10 * mix(b as u64, restart as u64);
+                vm[b] = flat_vm[b] * (1.0 + 0.03 * mix(b as u64, restart as u64 + 1_000));
+            }
+        }
+        starts.push((vm, va));
+    }
+    let start_count = starts.len();
 
     let mut best: Option<QlimSolve> = None;
-    for restart in 0..=RESTARTS {
-        let (vm0, va0) = if restart == 0 {
-            (flat_vm.clone(), flat_va.clone())
-        } else {
-            // Perturb the free unknowns: ±0.1 rad on non-slack angles, ±3% on non-slack
-            // magnitudes (released PV buses get a magnitude start too).
-            let mut vm = flat_vm.clone();
-            let mut va = flat_va.clone();
-            for b in 0..net.n {
-                if b != net.slack {
-                    va[b] = 0.10 * mix(b as u64, restart as u64);
-                    vm[b] = flat_vm[b] * (1.0 + 0.03 * mix(b as u64, restart as u64 + 1_000));
-                }
-            }
-            (vm, va)
-        };
+    for (vm0, va0) in starts {
         let res = solve_qlim(
             f, net, &ybus, &net.pg, &net.qg, &qmin_bus, &qmax_bus, &has_gen, &vm_hold, vm0, va0,
         );
@@ -679,8 +756,7 @@ pub fn ac_pf<F: AcPfFormulation>(f: &F, net: &AcNetwork) -> Result<AcPfSolution,
     // best built from an all-NaN restart set would otherwise fall through as converged.
     if residual.is_nan() || residual >= TOL {
         return Err(format!(
-            "AC power flow did not converge: best mismatch {residual:.3e} over {} starts",
-            RESTARTS + 1
+            "AC power flow did not converge: best mismatch {residual:.3e} over {start_count} starts"
         ));
     }
     let (p, q, _) = f.injections(&ybus, &vm, &va);
@@ -730,8 +806,8 @@ mpc.gencost = [
         let sol = ac_pf(&AcPolar::new(), &net).expect("ac power flow");
         assert!(sol.residual < 1e-8, "Newton residual {}", sol.residual);
         // Slack pinned at 1∠0.
-        approx(sol.vm[net.slack], 1.0, 1e-9, "slack vm");
-        approx(sol.va[net.slack], 0.0, 1e-12, "slack va");
+        approx(sol.vm[net.slacks[0]], 1.0, 1e-9, "slack vm");
+        approx(sol.va[net.slacks[0]], 0.0, 1e-12, "slack va");
 
         // Independent Gauss-Seidel for the single PQ bus (no shunt, no charging,
         // so Y22 = y and Y21 = -y). A different algorithm than Newton, so agreement
@@ -795,14 +871,14 @@ mpc.gencost = [
             "case9 took {} Newton iters",
             sol.iterations
         );
-        approx(sol.va[net.slack], 0.0, 1e-12, "slack angle pinned");
+        approx(sol.va[net.slacks[0]], 0.0, 1e-12, "slack angle pinned");
 
         let layout = AcPfLayout::new(&net);
         // case9's voltage-regulating generators hold the slack at vg = 1.04 and the two PV
         // buses at vg = 1.025. Asserting the literal setpoints — not just self-consistency
         // with vm_set — catches a regression to regulating at the flat bus.vm = 1.0.
         approx(
-            sol.vm[net.slack],
+            sol.vm[net.slacks[0]],
             1.04,
             1e-9,
             "slack regulated to gen vg 1.04",
@@ -819,7 +895,7 @@ mpc.gencost = [
                 }
             }
             // Active balance holds at every non-slack bus (PV included).
-            if i != net.slack {
+            if !net.slacks.contains(&i) {
                 approx(sol.p[i], net.pg[i] - net.pd[i], 1e-7, "P balance");
             }
             // Voltages stay physical.
@@ -900,7 +976,7 @@ mpc.gencost = [
         );
         // Active balance still holds everywhere off the slack.
         for i in 0..net.n {
-            if i != net.slack {
+            if !net.slacks.contains(&i) {
                 approx(sol.p[i], net.pg[i] - net.pd[i], 1e-7, "active balance");
             }
         }
@@ -920,5 +996,54 @@ mpc.gencost = [
             1e-6,
             "wide-limit PV holds its setpoint",
         );
+    }
+
+    /// Star buses synthesized for a three-winding transformer start from the
+    /// transformer's stored star voltage, and every stored angle is taken
+    /// relative to the reference bus.
+    #[test]
+    fn case_start_carries_stored_star_bus_voltages() {
+        let mut net = crate::model::parse_matpower(crate::model::CASE3).expect("parse");
+        net.buses_mut()[0].va = 5.0;
+        net.buses_mut()[1].va = 2.0;
+        let windings = [1, 2, 3].map(|bus| powerio::Winding::new(powerio::BusId(bus)));
+        let impedance = powerio::Impedance::new(0.02, 0.2, net.base_mva());
+        let mut transformer = powerio::Transformer3W::new(windings, [impedance; 3]);
+        transformer.star_vm = 0.98;
+        transformer.star_va = -1.5;
+        net.transformers_3w_mut().push(transformer);
+        let model = AcNetwork::from_network(&net).expect("model");
+
+        let star = (0..model.n)
+            .find(|&b| model.bus_source_rows[b].is_none())
+            .expect("star bus");
+        approx(model.vm_case[star], 0.98, 1e-12, "star magnitude");
+        approx(
+            model.va_case[star],
+            (-1.5_f64).to_radians(),
+            1e-12,
+            "star angle",
+        );
+
+        let (vm, va) = case_start(&model);
+        approx(vm[star], 0.98, 1e-12, "star start magnitude");
+        // The legacy model's reference angle is zero, so stored angles are read
+        // against the stored slack angle of 5 degrees.
+        approx(va[model.slacks[0]], 0.0, 1e-12, "slack start angle");
+        approx(va[star], (-6.5_f64).to_radians(), 1e-12, "star start angle");
+        let bus2 = model.bus_ids.iter().position(|&id| id == 2).expect("bus 2");
+        approx(
+            va[bus2],
+            (-3.0_f64).to_radians(),
+            1e-12,
+            "bus 2 start angle",
+        );
+
+        let sol = ac_pf_with_start(&AcPolar::new(), &model, AcStart::Case).expect("solve");
+        let flat = ac_pf(&AcPolar::new(), &model).expect("flat solve");
+        for b in 0..model.n {
+            approx(sol.vm[b], flat.vm[b], 1e-8, "same vm");
+            approx(sol.va[b], flat.va[b], 1e-8, "same va");
+        }
     }
 }

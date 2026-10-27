@@ -47,7 +47,7 @@ wrong trade for a native solver.
 
 `pip install "tellegen[mcp]"` adds the `mcp` SDK and the `powerio` wheel, and
 needs Python 3.10 or newer. It exposes the same capability, solve, plan, and
-Study tools as the CLI contract in [Persistent Studies](studies.md), in
+Study tools as the CLI interface in [Persistent Studies](studies.md), in
 process:
 
 ```sh

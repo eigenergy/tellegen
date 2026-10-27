@@ -7,8 +7,8 @@
 //! Nonnegative (voltage and generator bounds), and SecondOrderCone blocks (one Jabr
 //! cone and two apparent-power limits per branch). Gated behind the additive `conic`
 //! feature; the conic KKT sensitivity is in [`crate::sens`], which reads this
-//! program and [`SocWrLayout`] directly, so the variable/constraint/cone layout here
-//! is its contract.
+//! program and [`SocWrLayout`] directly, so it depends on the variable/constraint/cone
+//! layout here.
 //!
 //! Variables begin with
 //! `x = [pg(k), qg(k), w(n), wr(m), wi(m), pf(m), pt(m), qf(m), qt(m)]`.

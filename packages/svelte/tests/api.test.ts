@@ -84,7 +84,7 @@ describe('checkedFetch error mapping', () => {
 });
 
 describe('solution wire', () => {
-	it('reads convention-neutral prices from the server contract', async () => {
+	it('reads convention-neutral prices from the server response', async () => {
 		const client = clientWith(
 			async () =>
 				new Response(

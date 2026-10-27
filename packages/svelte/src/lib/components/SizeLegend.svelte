@@ -19,7 +19,7 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		font-size: 10px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 
@@ -38,7 +38,7 @@
 
 	.caption {
 		margin-left: auto;
-		font-size: 9.5px;
+		font-size: 12px;
 	}
 
 	@media (max-width: 760px) {

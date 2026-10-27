@@ -1,5 +1,14 @@
 # References
 
+## Citing tellegen
+
+- S. Talkington, F. Geth, Q. Zhang, L. Xie, and S. Liu, *Interactive Power Flow
+  in the Browser*, The Inaugural ACM Conference on Digital Transformation (ACM
+  DXConf 2026), Ann Arbor, MI, USA, October 2026. ACM, New York, NY, USA, 9 pages.
+  [doi:10.1145/3847238.3849038](https://doi.org/10.1145/3847238.3849038),
+  [arXiv:2610.01922](https://arxiv.org/abs/2610.01922). The repository's
+  `CITATION.cff` and README carry the BibTeX entry.
+
 ## PGLib-OPF
 
 The benchmark corpus and the reference solves.

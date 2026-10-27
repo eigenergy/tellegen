@@ -37,26 +37,56 @@ pub(crate) struct RawSolution {
     pub iterations: Vec<SolveIteration>,
 }
 
+/// Clarabel's default static regularization, and the stronger one a solve
+/// retries with when the first factorization fails. A large linear program with
+/// many unbounded, cost-free columns (every angle and flow when neither thermal
+/// nor angle limits are in the program) can leave the KKT factorization at the
+/// default too close to singular to take a first step.
+const STATIC_REGULARIZATION: f64 = 1e-8;
+const STATIC_REGULARIZATION_RETRY: f64 = 1e-7;
+
 /// Solve `prog` with Clarabel and return the raw primal/dual vectors.
 ///
 /// `cancel` (when present) is polled once per interior-point iteration through
 /// Clarabel's termination callback; flipping it true halts the solve at the next
 /// iteration and returns `Err`. Tolerances are tightened past Clarabel's 1e-8
-/// defaults so the dual recovery the sensitivity column needs is accurate.
+/// defaults so the dual recovery the sensitivity column needs is accurate. A
+/// solve that ends in a numerical error runs once more with stronger static
+/// regularization; iterative refinement keeps its answer to the same tolerances.
 pub(crate) fn run(
     prog: &OpfProgram,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<RawSolution, String> {
+    match run_with(prog, cancel.clone(), STATIC_REGULARIZATION) {
+        Err(Retry) => run_with(prog, cancel, STATIC_REGULARIZATION_RETRY)
+            .map_err(|Retry| "DC OPF solve did not converge: NumericalError".to_owned())?,
+        Ok(result) => result,
+    }
+}
+
+/// A solve that ended in a numerical error and may succeed with stronger
+/// regularization.
+struct Retry;
+
+fn run_with(
+    prog: &OpfProgram,
+    cancel: Option<Arc<AtomicBool>>,
+    static_regularization_constant: f64,
+) -> Result<Result<RawSolution, String>, Retry> {
     let settings: DefaultSettings<f64> = DefaultSettings {
         verbose: false,
         tol_gap_abs: 1e-9,
         tol_gap_rel: 1e-9,
         tol_feas: 1e-9,
+        static_regularization_constant,
         ..DefaultSettings::default()
     };
 
-    let mut solver = DefaultSolver::new(&prog.p, &prog.q, &prog.a, &prog.b, &prog.cones, settings)
-        .map_err(|e| format!("Clarabel setup failed: {e:?}"))?;
+    let mut solver =
+        match DefaultSolver::new(&prog.p, &prog.q, &prog.a, &prog.b, &prog.cones, settings) {
+            Ok(solver) => solver,
+            Err(e) => return Ok(Err(format!("Clarabel setup failed: {e:?}"))),
+        };
     // Record every interior-point iterate for the convergence plot, and (when a
     // cancel flag is present) stop the solve at the next iteration if it flips.
     let trace: Arc<Mutex<Vec<SolveIteration>>> = Arc::new(Mutex::new(Vec::new()));
@@ -76,7 +106,10 @@ pub(crate) fn run(
 
     let status = solver.solution.status;
     if matches!(status, SolverStatus::CallbackTerminated) {
-        return Err("DC OPF solve cancelled".into());
+        return Ok(Err("DC OPF solve cancelled".into()));
+    }
+    if matches!(status, SolverStatus::NumericalError) {
+        return Err(Retry);
     }
     // Classify the solver status ourselves so the message carries a stable keyword
     // regardless of how Clarabel spells the enum — callers (and the benchmark harness,
@@ -86,22 +119,22 @@ pub(crate) fn run(
     // unservable case), so give it a distinct word the harness will not fold into the
     // "infeasible" bucket and silently count as agreement with the reference.
     if matches!(status, SolverStatus::PrimalInfeasible) {
-        return Err(format!("DC OPF solve infeasible: {status:?}"));
+        return Ok(Err(format!("DC OPF solve infeasible: {status:?}")));
     }
     if matches!(status, SolverStatus::DualInfeasible) {
-        return Err(format!("DC OPF solve unbounded: {status:?}"));
+        return Ok(Err(format!("DC OPF solve unbounded: {status:?}")));
     }
     if !matches!(status, SolverStatus::Solved | SolverStatus::AlmostSolved) {
-        return Err(format!("DC OPF solve did not converge: {status:?}"));
+        return Ok(Err(format!("DC OPF solve did not converge: {status:?}")));
     }
     let iterations = std::mem::take(&mut *trace.lock().unwrap());
 
-    Ok(RawSolution {
+    Ok(Ok(RawSolution {
         x: solver.solution.x.clone(),
         z: solver.solution.z.clone(),
         objective: solver.solution.obj_val,
         iterations,
-    })
+    }))
 }
 
 /// faer sparse-LU driver for square linear systems — the non-optimization solve

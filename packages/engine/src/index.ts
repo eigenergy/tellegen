@@ -6,9 +6,15 @@ import {
   callTimed,
   engineHost,
   isolatedEngineHost,
+  synthEngineHost,
   type EngineHost,
 } from "./host.js";
-import type { EngineValue } from "./protocol.js";
+import type { EngineRequest, EngineValue } from "./protocol.js";
+export {
+  probeAcOpfWorker,
+  solveAcOpfModule,
+  type AcOpfWorkerFactory,
+} from "./acopf.js";
 import { isPermanentWasmLoadFailure } from "./errors.js";
 import {
   assertEngineInputBytes,
@@ -26,32 +32,49 @@ import type {
   SolveRequest,
   SolveResponse,
   SolveIteration,
-} from "./generated/contracts.js";
+} from "./generated/api-types.js";
+import type {
+  ErrorPayload as SynthErrorPayload,
+  GenerationReport,
+  Stage as SynthStage,
+  StepOutcome,
+  SynthRequest,
+} from "./generated/synth-types.js";
 export {
-  CONTRACT_SOURCE_SHA256,
-  CONTRACT_VERSION,
+  API_SOURCE_SHA256,
+  ENGINE_VERSION,
   FORMULATION_IDS,
   SOLVE_STATUSES,
-} from "./generated/contracts.js";
+} from "./generated/api-types.js";
 export { MAX_ENGINE_INPUT_BYTES } from "./input-limit.js";
 
 export type {
   BranchRatingDeltas,
   BrowserFormulation,
   CaseSummary,
+  ConstraintResult,
+  ConstraintTerm,
+  ConstraintTermKind,
   DemandDeltas,
+  LazyLimits,
+  LimitOptions,
+  LimitRound,
+  LinearConstraint,
   Network,
   NetworkBranch,
   NetworkBus,
+  PowerFlowStart,
   ProblemCaps,
   SensRequest,
   SensitivityColumn,
   SensitivityMatrix,
   Solution,
+  SolveDiagnostic,
   SolveIteration,
   SolveRequest,
   SolveResponse,
-} from "./generated/contracts.js";
+  ThermalLimits,
+} from "./generated/api-types.js";
 
 /** One structured PowerIO finding. */
 export interface PowerIoDiagnostic {
@@ -91,6 +114,11 @@ export interface CaseFileSummary {
    * package echoes the kind it was saved with), `synthetic_pending` when the
    * case awaits placement. */
   coords_kind: "file" | "synthetic_pending" | "synthetic" | "manual";
+  /** How `synthetic` coordinates were made, when the module records it:
+   * `generated` for a grid a generator sited on real geography (the module's
+   * history holds `tellegen-synth.generate`). Absent for a stamped topology
+   * layout. */
+  coords_method?: "generated";
   /** Findings produced while PowerIO parsed the retained module. */
   diagnostics: PowerIoDiagnostic[];
   /** Tellegen display notes, such as omitted unlocated analysis rows. */
@@ -983,7 +1011,10 @@ export class BrowserMcPfSession {
     );
   }
 
-  async snapshot(studyId: string, studyTitle: string): Promise<McStudySnapshot> {
+  async snapshot(
+    studyId: string,
+    studyTitle: string,
+  ): Promise<McStudySnapshot> {
     return JSON.parse(
       expectText(
         await this.host.call({
@@ -1206,7 +1237,8 @@ export type SensTarget = { bus: number } | { branch: number };
  * ∂(price, active) / ∂(demand, active) for a bus target, or ∂(price, active) /
  * ∂(line limit) for a branch target. The *formulation* is no longer fixed here — it is
  * a parameter threaded from the UI's selector through `createStudy` (every formulation the
- * full wasm build carries returns nodal marginal values, so these columns apply to all of them). The
+ * default wasm Study carries returns nodal marginal values, so these columns apply to all of them).
+ * Experimental AC OPF uses the separate one-shot WASI path and requests no sensitivities. The
  * operand/parameters stay centralized so `createStudy` and the Study's `commit`/`preview`
  * requests read one source. */
 const STUDY_CAPABILITY = {
@@ -1345,7 +1377,20 @@ function sensitivityColumn(
   return null;
 }
 
-function solveResponseToSolution(out: StudySolveResponse): Solution {
+export interface SolutionResponseProjection {
+  objective?: number | null;
+  lmp?: { bus: number; value: number }[] | null;
+  vm?: { bus: number; value: number }[] | null;
+  va?: { bus: number; value: number }[] | null;
+  w?: { bus: number; value: number }[] | null;
+  flows?: { branch: number; pf: number; loading: number }[] | null;
+  dispatch?: { gen: number; bus?: number | null; pg: number }[] | null;
+}
+
+/** Project the formulation-agnostic wire response onto the compact map result. */
+export function solveResponseToSolution(
+  out: SolutionResponseProjection,
+): Solution {
   return {
     objective: out.objective ?? null,
     prices: (out.lmp ?? []).map((e) => ({ bus: e.bus, value: e.value })),
@@ -1359,7 +1404,7 @@ function solveResponseToSolution(out: StudySolveResponse): Solution {
     })),
     dispatch: (out.dispatch ?? []).map((d) => ({
       gen: d.gen,
-      bus: d.bus,
+      bus: d.bus ?? undefined,
       mw: d.pg,
     })),
   };
@@ -1539,7 +1584,7 @@ export class BrowserStudy {
   /** The Study's current exact solution. Called immediately after Study creation
    * to cache the base point for formulation comparisons. */
   async currentView(): Promise<
-    import("./generated/study-contracts.js").SolveResponse
+    import("./generated/study-types.js").SolveResponse
   > {
     return JSON.parse(
       expectText(
@@ -1676,8 +1721,9 @@ export class BrowserStudy {
 }
 
 /** Construct a Study from a retained PowerIO module for `formulation`, parsing its
- * problem instance and solving the base case once. `formulation` is a `Problem` tag (`dcopf`/`acopf`/`socwr`,
- * defaulting to DC OPF); the full wasm build solves every one entirely in the browser.
+ * problem instance and solving the base case once. `formulation` is a browser Study tag
+ * (`dcopf`/`acpf`/`socwr`, defaulting to DC OPF). Experimental `acopf` is deliberately
+ * served by `solveAcOpfModule` in a separate WASI worker, not this retained Study.
  * Throws if the engine module can't load (or the formulation is unknown/not built); the
  * caller must catch and fall back (see `isPermanentEngineFailure`). */
 let studySeq = 0;
@@ -1720,6 +1766,367 @@ async function createStudyOnHost(
     signal?.removeEventListener("abort", cancel);
   }
   return new BrowserStudy(host, handle, formulation);
+}
+
+// ---- Synthetic grid generation --------------------------------------------
+
+export type {
+  GenerationReport,
+  StepOutcome,
+  SynthRequest,
+  SynthStage,
+  SynthErrorPayload,
+};
+
+/** One `advance()`: the stage that ran, the next one, progress, warnings,
+ * and whether the preview changed. */
+export type SynthAdvance = StepOutcome;
+
+/** A synthetic generation preview, ready for binary map attributes: bus
+ * `[lon, lat]` pairs, kinds (0 load, 1 substation, 2 generator, 3 converter)
+ * and kV in bus order (bus id = index + 1); concatenated branch route points,
+ * the point index where each route starts (one entry more than there are
+ * branches, the path layer's binary layout), and branch kV. */
+export interface SynthPreview {
+  busPositions: Float64Array;
+  busKinds: Uint8Array;
+  busKv: Float32Array;
+  branchPositions: Float64Array;
+  branchStartIndices: Uint32Array;
+  branchKv: Float32Array;
+}
+
+/** Summary of a loaded places table. */
+export interface SynthPlacesInfo {
+  count: number;
+  sha256: string;
+}
+
+/** A refusal from the generator, with the code a caller switches on:
+ * `invalid_request`, `region`, `places`, `osm`, `osm_insufficient` (an
+ * Overpass document too thin to build from, with its bus and branch counts),
+ * `build`, `engine`, `state`, `cancelled`. */
+export class SynthEngineError extends Error {
+  readonly code: string;
+  readonly buses?: number;
+  readonly branches?: number;
+
+  constructor(payload: SynthErrorPayload) {
+    super(payload.message);
+    this.name = "SynthEngineError";
+    this.code = payload.code;
+    if (payload.buses != null) this.buses = payload.buses;
+    if (payload.branches != null) this.branches = payload.branches;
+  }
+}
+
+/** The engine reports generator refusals as their JSON payload. */
+function synthError(error: unknown): unknown {
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    const payload = JSON.parse(message) as Partial<SynthErrorPayload>;
+    if (typeof payload?.code === "string" && typeof payload.message === "string") {
+      return new SynthEngineError(payload as SynthErrorPayload);
+    }
+  } catch {
+    // Not a generator payload: a host or transport failure.
+  }
+  return error;
+}
+
+async function callSynth(host: EngineHost, req: EngineRequest): Promise<EngineValue> {
+  try {
+    return await host.call(req);
+  } catch (error) {
+    throw synthError(error);
+  }
+}
+
+/** URL of the places table shipped beside this module (Natural Earth
+ * populated places, public domain). Resolved on use, like the wasm asset. */
+export function syntheticPlacesUrl(): string {
+  return new URL("./data/populated_places.json", import.meta.url).href;
+}
+
+let placesBytes: Promise<Uint8Array> | null = null;
+
+/** Fetch the shipped places table, once per page. */
+export function fetchSyntheticPlaces(): Promise<Uint8Array> {
+  placesBytes ??= fetch(syntheticPlacesUrl())
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`places table: HTTP ${response.status}`);
+      return new Uint8Array(await response.arrayBuffer());
+    })
+    .catch((error) => {
+      // A failed fetch must not disable generation for the whole session.
+      placesBytes = null;
+      throw error;
+    });
+  return placesBytes;
+}
+
+/** Hosts holding a places table, with the thread kind they loaded it on (a
+ * worker that fell back to the page needs it loaded again there). */
+const placesLoaded = new WeakMap<EngineHost, EngineHost["kind"]>();
+
+async function loadPlacesOn(host: EngineHost, bytes: Uint8Array): Promise<SynthPlacesInfo> {
+  assertEngineInputBytes(bytes);
+  const info = JSON.parse(
+    expectText(await callSynth(host, { op: "synth_load_places", bytes })),
+  ) as SynthPlacesInfo;
+  placesLoaded.set(host, host.kind);
+  return info;
+}
+
+/** Load a places table onto the synthetic generation host. Sessions load the
+ * shipped table on their own; call this to warm the host up or to use
+ * another table of `{n, lo, la, p, c}` rows. */
+export async function loadSyntheticPlaces(bytes: Uint8Array): Promise<SynthPlacesInfo> {
+  return loadPlacesOn(synthEngineHost(), bytes);
+}
+
+/** The Overpass QL queries for a request's region, one per bounding box (two
+ * when it crosses the antimeridian). The caller fetches them and passes the
+ * documents as the `osm` option. */
+export async function syntheticOverpassQueries(request: SynthRequest): Promise<string[]> {
+  const text = JSON.stringify(request);
+  assertEngineInputLength(text.length);
+  return JSON.parse(
+    expectText(await callSynth(synthEngineHost(), { op: "synth_overpass_queries", request: text })),
+  ) as string[];
+}
+
+function expectSynthPreview(value: EngineValue): SynthPreview {
+  if (value === null || typeof value !== "object" || value instanceof Float64Array || value.kind !== "synth_preview") {
+    throw new Error("engine returned no synthetic preview");
+  }
+  return {
+    busPositions: value.busPositions,
+    busKinds: value.busKinds,
+    busKv: value.busKv,
+    branchPositions: value.branchPositions,
+    branchStartIndices: value.branchStartIndices,
+    branchKv: value.branchKv,
+  };
+}
+
+/** A staged synthetic grid generation on the dedicated synthetic host. Each
+ * `advance()` runs one bounded stage (`context`, `site_buses`, `topology`,
+ * `electrify`, `dc_opf`, `calibrate` once per iteration, `ac_pf`, `finalize`),
+ * so a caller can show progress and a map preview between stages. */
+export class BrowserSynthSession {
+  #done = false;
+  #freed = false;
+  #stopped: unknown = null;
+
+  constructor(
+    private readonly host: EngineHost,
+    private readonly handle: number,
+  ) {}
+
+  /** Where the session runs: `"direct"` means the page's own thread, which
+   * can pause while a stage runs. */
+  get hostKind(): "worker" | "direct" {
+    return this.host.kind;
+  }
+
+  /** True once `finalize` has run. */
+  get done(): boolean {
+    return this.#done;
+  }
+
+  #check(): void {
+    if (this.#stopped !== null) throw this.#stopped;
+    if (this.#freed) throw new Error("synthetic generation session is freed");
+  }
+
+  /** Run one stage. With `withPreview`, a stage that changed the preview
+   * also returns it. */
+  async advance(
+    options: { withPreview?: boolean } = {},
+  ): Promise<SynthAdvance & { preview?: SynthPreview }> {
+    this.#check();
+    const outcome = JSON.parse(
+      expectText(await callSynth(this.host, { op: "synth_session_advance", session: this.handle })),
+    ) as SynthAdvance;
+    this.#done = outcome.done;
+    if (options.withPreview && outcome.preview_changed) {
+      return { ...outcome, preview: await this.preview() };
+    }
+    return outcome;
+  }
+
+  /** Advance to the end, calling `onStep` after each stage (with the preview
+   * when it changed). An abort cancels the session; the promise rejects with
+   * the abort reason. */
+  async run(
+    onStep?: (outcome: SynthAdvance, preview?: SynthPreview) => void,
+    signal?: AbortSignal,
+  ): Promise<GenerationReport> {
+    signal?.throwIfAborted();
+    const abort = () => this.cancel(signal?.reason);
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      while (!this.#done) {
+        const { preview, ...outcome } = await this.advance({ withPreview: onStep !== undefined });
+        signal?.throwIfAborted();
+        onStep?.(outcome, preview);
+      }
+      return await this.report();
+    } catch (error) {
+      signal?.throwIfAborted();
+      throw error;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+    }
+  }
+
+  async preview(): Promise<SynthPreview> {
+    this.#check();
+    return expectSynthPreview(
+      await callSynth(this.host, { op: "synth_session_preview", session: this.handle }),
+    );
+  }
+
+  /** The generation report, partial until the session is done. */
+  async report(): Promise<GenerationReport> {
+    this.#check();
+    return JSON.parse(
+      expectText(await callSynth(this.host, { op: "synth_session_report", session: this.handle })),
+    ) as GenerationReport;
+  }
+
+  /** The module as generation 2 PowerIO IR text, with bus locations and
+   * branch routes. Available from `electrify` on; does not free the session. */
+  async takeModule(): Promise<string> {
+    this.#check();
+    return expectText(
+      await callSynth(this.host, { op: "synth_session_module", session: this.handle }),
+    );
+  }
+
+  /** The module's drop-panel payload, the same {@link IngestedCase} a
+   * dropped `.pio.json` produces, so it opens without a second parse. */
+  async ingest(): Promise<IngestedCase> {
+    this.#check();
+    return JSON.parse(
+      expectText(await callSynth(this.host, { op: "synth_session_ingest", session: this.handle })),
+    ) as IngestedCase;
+  }
+
+  /** The network as GridFM graphkit JSON: per-unit bus, branch and
+   * generator feature matrices on a 0-based bus index, with the edge index
+   * in both directions. Available from `electrify` on. */
+  async exportGridfm(): Promise<string> {
+    this.#check();
+    return expectText(
+      await callSynth(this.host, { op: "synth_session_export_gridfm", session: this.handle }),
+    );
+  }
+
+  /** Stop the generation. On a worker host this terminates the synthetic
+   * generation worker: interactive studies live on another worker and are
+   * untouched, and the next session starts a fresh one. On the page's own
+   * thread it takes effect before the next stage. Later calls reject with
+   * `reason`. */
+  cancel(reason: unknown = new DOMException("synthetic generation cancelled", "AbortError")): void {
+    if (this.#stopped !== null || this.#freed) return;
+    this.#stopped = reason;
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    if (this.host.cancel?.(error)) {
+      this.#freed = true; // the worker and its sessions are gone
+    } else {
+      this.free();
+    }
+  }
+
+  /** Release the session's engine state. */
+  free(): void {
+    if (this.#freed) return;
+    this.#freed = true;
+    void this.host
+      .call({ op: "synth_session_free", session: this.handle })
+      .catch(() => {});
+  }
+}
+
+let synthSessionSeq = 0;
+
+export interface SynthSessionOptions {
+  /** Overpass document(s) for `source: "osm"`: JSON text, or the parsed
+   * document or array of documents. Kept out of the request, which is hashed
+   * for provenance. */
+  osm?: string | object;
+  /** A places table to use instead of the shipped one. */
+  places?: Uint8Array;
+  signal?: AbortSignal;
+}
+
+function osmText(osm: SynthSessionOptions["osm"]): string | null {
+  if (osm === undefined) return null;
+  const text = typeof osm === "string" ? osm : JSON.stringify(osm);
+  assertEngineInputLength(text.length);
+  return text;
+}
+
+/** Open a staged generation on the synthetic host, loading the places table
+ * there first when the host has none. */
+export async function createSynthSession(
+  request: SynthRequest,
+  options: SynthSessionOptions = {},
+): Promise<BrowserSynthSession> {
+  const { signal } = options;
+  signal?.throwIfAborted();
+  const requestText = JSON.stringify(request);
+  assertEngineInputLength(requestText.length);
+  const osm = osmText(options.osm);
+  const host = synthEngineHost();
+  if (options.places) await loadPlacesOn(host, options.places);
+  else if (placesLoaded.get(host) !== host.kind) await loadPlacesOn(host, await fetchSyntheticPlaces());
+  signal?.throwIfAborted();
+  // Handles are allocated here, so a pending request replayed onto the
+  // fallback host keeps naming the same session.
+  const handle = ++synthSessionSeq;
+  await callSynth(host, { op: "synth_session_new", session: handle, request: requestText, osm });
+  const session = new BrowserSynthSession(host, handle);
+  if (signal?.aborted) {
+    session.free();
+    signal.throwIfAborted();
+  }
+  return session;
+}
+
+/** Run every stage in one engine request and return the module, the report
+ * and the drop-panel payload. An abort cancels the run. */
+export async function generateSynthetic(
+  request: SynthRequest,
+  options: SynthSessionOptions = {},
+): Promise<{ moduleJson: string; report: GenerationReport; ingest: IngestedCase }> {
+  const { signal } = options;
+  signal?.throwIfAborted();
+  const requestText = JSON.stringify(request);
+  assertEngineInputLength(requestText.length);
+  const osm = osmText(options.osm);
+  const host = synthEngineHost();
+  if (options.places) await loadPlacesOn(host, options.places);
+  else if (placesLoaded.get(host) !== host.kind) await loadPlacesOn(host, await fetchSyntheticPlaces());
+  signal?.throwIfAborted();
+  const cancel = () => {
+    host.cancel?.(new DOMException("synthetic generation cancelled", "AbortError"));
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    const out = JSON.parse(
+      expectText(await callSynth(host, { op: "synth_generate", request: requestText, osm })),
+    ) as { module_json: string; report: GenerationReport; ingest: IngestedCase };
+    signal?.throwIfAborted();
+    return { moduleJson: out.module_json, report: out.report, ingest: out.ingest };
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+  }
 }
 
 export interface EngineTransport {
@@ -1779,6 +2186,16 @@ export interface EngineTransport {
     formulation?: Formulation,
     options?: { isolated?: boolean; signal?: AbortSignal },
   ): Promise<BrowserStudy>;
+  loadSyntheticPlaces?(bytes: Uint8Array): Promise<SynthPlacesInfo>;
+  syntheticOverpassQueries?(request: SynthRequest): Promise<string[]>;
+  createSynthSession?(
+    request: SynthRequest,
+    options?: SynthSessionOptions,
+  ): Promise<BrowserSynthSession>;
+  generateSynthetic?(
+    request: SynthRequest,
+    options?: SynthSessionOptions,
+  ): Promise<{ moduleJson: string; report: GenerationReport; ingest: IngestedCase }>;
 }
 
 export const browserWasmTransport: EngineTransport = {
@@ -1804,6 +2221,10 @@ export const browserWasmTransport: EngineTransport = {
   replayMcStudy,
   applyMcStudyGeo,
   createStudy,
+  loadSyntheticPlaces,
+  syntheticOverpassQueries,
+  createSynthSession,
+  generateSynthetic,
 };
 
 export function createBrowserWasmTransport(): EngineTransport {
@@ -1830,12 +2251,13 @@ export type {
   StudyObjective,
   StateNode,
   Comparison,
-} from "./generated/study-contracts.js";
+} from "./generated/study-types.js";
 
 export type {
   ModelDetails,
   SolveResponse as StudyView,
   SearchOptions,
   StudySummary,
-} from "./generated/study-contracts.js";
+} from "./generated/study-types.js";
 export { studySchema } from "./generated/study-schema.js";
+export { synthSchema } from "./generated/synth-schema.js";

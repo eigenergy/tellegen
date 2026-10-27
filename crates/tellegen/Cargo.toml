@@ -1,6 +1,6 @@
 [package]
 name = "tellegen"
-version = "0.3.0"
+version = "0.4.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -38,6 +38,8 @@ serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.11"
 schemars = { workspace = true, optional = true }
+pounce-nl = { workspace = true, optional = true }
+pounce-rs = { workspace = true, optional = true }
 
 [features]
 default = ["sensitivity", "mc-pf"]
@@ -49,7 +51,10 @@ sensitivity = ["dep:faer", "dep:num-complex"]
 # Clarabel's second-order cone support (already linked); the sensitivity reuses the faer
 # paths, so `conic` pulls `sensitivity`. Additive, no new dependency.
 conic = ["sensitivity"]
-# JSON Schema derives used by the headless CLI contract. Kept out of the
+# Exact nonlinear AC OPF path. EPL-2.0 POUNCE stays opt-in and is not forwarded
+# by wasm, CLI, server, or Python adapters; distribution remains unapproved.
+acopf = ["dep:pounce-nl", "dep:pounce-rs", "dep:num-complex"]
+# JSON Schema derives for the CLI's `describe` output. Kept out of the
 # browser and numerical builds.
 schema = ["dep:schemars", "powerio/schema"]
 
@@ -57,7 +62,7 @@ schema = ["dep:schemars", "powerio/schema"]
 workspace = true
 
 [[example]]
-name = "study_contract"
+name = "study_schema"
 required-features = ["schema"]
 
 [[example]]
@@ -75,3 +80,11 @@ required-features = ["mc-pf"]
 [[example]]
 name = "mc_pf_session"
 required-features = ["mc-pf"]
+
+[[example]]
+name = "acopf_hs071_probe"
+required-features = ["acopf"]
+
+[[example]]
+name = "acopf_benchmark"
+required-features = ["acopf"]

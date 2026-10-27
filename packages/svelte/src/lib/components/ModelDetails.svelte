@@ -138,7 +138,7 @@
     display: grid;
     gap: 6px;
     margin: 12px 0;
-    font-size: 11px;
+    font-size: 13px;
   }
   input {
     min-width: 0;
@@ -158,7 +158,7 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 10px;
+    font-size: 12px;
   }
   caption {
     text-align: left;
@@ -194,7 +194,7 @@
     justify-content: space-between;
     gap: 8px;
     margin: 10px 0;
-    font-size: 10px;
+    font-size: 12px;
     color: var(--text-secondary);
   }
   button {
@@ -218,13 +218,13 @@
   }
   .references {
     margin-top: 12px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .references dl > div {
     grid-template-columns: 42px minmax(0, 1fr);
   }
   code {
     overflow-wrap: anywhere;
-    font: 10px/1.5 var(--font-mono);
+    font: 12px/1.5 var(--font-mono);
   }
 </style>

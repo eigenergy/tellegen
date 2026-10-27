@@ -1,0 +1,133 @@
+{
+  "schema": "tellegen.synth-peak-references/1",
+  "note": "Official national (or system) peak demand for the country-scale sweep. The latest complete year is used: 2025 where the operator published it, else 2024, as `year` states. `comparable` is `yes` where the reference's scope matches the generated region closely enough to score within ±25%, `flag` where the figure is shown but not scored, and `no` where it measures something else. Figures from time series (GB, ERCOT, Brazil) are maxima of the operator's published data.",
+  "tolerance": 0.25,
+  "regions": {
+    "prt": {
+      "reference_mw": 9395, "year": 2025, "comparable": "yes",
+      "scope": "Mainland public-grid demand, 15-minute (REN); excludes the Azores and Madeira and behind-the-meter self-consumption",
+      "model_scope": "Mainland Portugal; the Azores and Madeira are cut as far islands or left out as too small for a bus",
+      "source": "REN, Dados Técnicos 2025",
+      "urls": ["https://www.ren.pt/media/2cbfm5p4/ren-dados-te-cnicos-2025.pdf"]
+    },
+    "esp": {
+      "reference_mw": 39957, "year": 2025, "comparable": "yes",
+      "scope": "Peninsular hourly demand at power-station busbars (REE); excludes the Balearic and Canary Islands",
+      "model_scope": "Peninsular Spain and the Balearic Islands; the Canaries are cut as far islands",
+      "source": "REE, annual maximums",
+      "urls": ["https://www.sistemaelectrico-ree.es/en/spanish-electricity-system/demand/annual-maximums"]
+    },
+    "deu": {
+      "reference_mw": 75635, "year": 2025, "comparable": "yes",
+      "scope": "Country hourly total load (ENTSO-E, the SMARD Netzlast series)",
+      "model_scope": "Germany",
+      "source": "ENTSO-E Statistical Factsheet 2025",
+      "urls": ["https://eepublicdownloads.entsoe.eu/clean-documents/Publications/Statistics/Factsheet/entsoe_sfs2025_web.pdf"]
+    },
+    "fra": {
+      "reference_mw": 88000, "year": 2025, "comparable": "yes",
+      "scope": "National gross consumption, consolidated (RTE); metropolitan France",
+      "model_scope": "Metropolitan France with Corsica; the overseas departments are cut as far islands",
+      "source": "RTE, annual peak of gross consumption (data.gouv.fr)",
+      "urls": ["https://www.data.gouv.fr/datasets/pic-annuel-de-la-consommation-brute-delectricite-2001-a-2021/"]
+    },
+    "gbr": {
+      "reference_mw": 48141, "year": 2025, "comparable": "yes",
+      "scope": "Great Britain: transmission National Demand plus NESO's estimates of embedded wind and solar, half-hourly maximum (9 Jan 2025); Northern Ireland, about 1.8 GW, is not included",
+      "model_scope": "The United Kingdom polygon, Northern Ireland included",
+      "source": "NESO historic demand data",
+      "urls": ["https://www.neso.energy/data-portal/historic-demand-data"]
+    },
+    "texas-box": {
+      "reference_mw": 83679, "year": 2025, "comparable": "no",
+      "scope": "ERCOT region hourly integrated native load",
+      "model_scope": "A bounding box around Texas that also takes in parts of Mexico, New Mexico, Oklahoma and Louisiana, and El Paso, which is outside ERCOT",
+      "source": "ERCOT hourly load archive",
+      "urls": ["https://www.ercot.com/gridinfo/load/load_hist"]
+    },
+    "usa": {
+      "reference_mw": 759180, "year": 2025, "comparable": "yes",
+      "scope": "Lower-48 coincident hourly demand over the balancing authorities (EIA-930); 2025 value preliminary",
+      "model_scope": "The United States after the far-island policy (Alaska and Hawaii cut)",
+      "source": "EIA, Today in Energy",
+      "urls": ["https://www.eia.gov/todayinenergy/detail.php?id=65864"]
+    },
+    "ind": {
+      "reference_mw": 249854, "year": 2024, "comparable": "yes",
+      "scope": "All-India peak demand met (30 May 2024). No 2025 annual figure is published; ministerial statements put 2025 near 241-243 GW",
+      "model_scope": "India",
+      "source": "Ministry of Power via PIB",
+      "urls": ["https://www.pib.gov.in/PressReleaseIframePage.aspx?PRID=2022257"]
+    },
+    "chn": {
+      "reference_mw": 1508000, "year": 2025, "comparable": "yes",
+      "scope": "National total maximum load, all grids (NEA, 17 Jul 2025)",
+      "model_scope": "China (Natural Earth's CHN polygon, which leaves out Taiwan, Hong Kong and Macao)",
+      "source": "National Energy Administration, as reported",
+      "urls": ["https://news.10jqka.com.cn/20260711/c678109972.shtml", "https://www.stdaily.com/web/gdxw/2025-07/06/content_365859.html"]
+    },
+    "rus": {
+      "reference_mw": 166155, "year": 2025, "comparable": "yes",
+      "scope": "UES of Russia; excludes the technologically isolated systems",
+      "model_scope": "Russia with its isolated eastern systems; one far polygon is cut",
+      "source": "SO UPS, 2025 operating report",
+      "urls": ["https://www.so-ups.ru/fileadmin/files/company/reports/disclosure/2026/ups_rep2025.pdf"]
+    },
+    "bra": {
+      "reference_mw": 106532, "year": 2025, "comparable": "yes",
+      "scope": "SIN instantaneous load (ONS), including estimated behind-the-meter distributed generation",
+      "model_scope": "Brazil",
+      "source": "ONS via eixos.com.br",
+      "urls": ["https://eixos.com.br/energia-eletrica/consumo-de-energia-no-brasil-bate-setimo-recorde-do-ano-atingindo-106-532-mw/"]
+    },
+    "jpn": {
+      "reference_mw": 162600, "year": 2025, "comparable": "yes",
+      "scope": "National coincident peak of the 10 areas, hourly, sending end (OCCTO draft verification report, 22 Oct 2025)",
+      "model_scope": "Japan",
+      "source": "OCCTO",
+      "urls": ["https://www.occto.or.jp/iinkai/chouseiryoku/2025/files/chousei_112_02.pdf"]
+    },
+    "aus": {
+      "reference_mw": 37949, "year": 2024, "comparable": "flag",
+      "scope": "No national figure exists. NEM operational demand 33,716 MW (16 Dec 2024) plus WEM 4,233 MW (18 Feb 2024): a non-coincident sum that leaves out rooftop PV and the off-grid systems",
+      "model_scope": "Australia with Tasmania as one AC island; the NEM and Western Australia are joined",
+      "source": "AEMO Quarterly Energy Dynamics Q4 2024 and Q1 2024",
+      "urls": ["https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q4-2024.pdf", "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q1-2024.pdf"]
+    },
+    "zaf": {
+      "reference_mw": 33485, "year": 2024, "comparable": "yes",
+      "scope": "Eskom total peak demand on the integrated power system, financial year April 2024 to March 2025; no 2025 figure is published",
+      "model_scope": "South Africa",
+      "source": "Eskom Integrated Report 2025",
+      "urls": ["https://www.eskom.co.za/wp-content/uploads/2025/10/Eskom-integrated-report-2025.pdf"]
+    },
+    "nga": {
+      "reference_mw": 5802, "year": 2025, "comparable": "no",
+      "scope": "National grid peak generation (4 Mar 2025): supply-limited, not demand",
+      "model_scope": "Nigeria",
+      "source": "TCN via Nairametrics",
+      "urls": ["https://nairametrics.com/2025/03/06/nigerias-power-generation-hits-record-5801-84mw-tcn/"]
+    },
+    "egy": {
+      "reference_mw": 39800, "year": 2025, "comparable": "yes",
+      "scope": "Unified national grid peak load (13 Aug 2025)",
+      "model_scope": "Egypt",
+      "source": "Ministry of Electricity via Amwal Al Ghad",
+      "urls": ["https://en.amwalalghad.com/?p=214097"]
+    },
+    "chl": {
+      "reference_mw": 13093.1, "year": 2025, "comparable": "yes",
+      "scope": "SEN gross hourly demand (CEN, 29 Dec 2025)",
+      "model_scope": "Chile; small islands are left out",
+      "source": "Coordinador Eléctrico Nacional, Reporte Energético enero 2026",
+      "urls": ["https://www.coordinador.cl/wp-content/uploads/2026/01/CEN_Reporte_Energetico_SEN_Ene26.pdf"]
+    },
+    "idn": {
+      "reference_mw": 61287.8, "year": 2024, "comparable": "flag",
+      "scope": "Sum of the individual PLN system peaks, not coincident (Java-Bali alone 42,636 MW); no 2025 figure was retrievable",
+      "model_scope": "Indonesia as one AC island over 26 landmasses; one far polygon is cut",
+      "source": "PLN Statistik 2024",
+      "urls": ["https://www.pln.co.id/webapi/media/file/webkorp/asset/Statistik2024.pdf"]
+    }
+  }
+}

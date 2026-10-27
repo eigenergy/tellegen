@@ -12,7 +12,6 @@ examples/svelte-minimal/dist
 packages/engine/node_modules
 packages/engine/dist
 packages/engine/src/wasm-pkg
-packages/engine/src/wasm-sens-pkg
 packages/svelte/.svelte-kit
 packages/svelte/dist
 packages/webmcp/node_modules

@@ -30,22 +30,17 @@
 
 {#if bindingLines.length > 0}
 	<div class="binding-lines">
-		<p
-			class="mono dim head"
-			title="lines loaded to their thermal rating; select one to see LMP sensitivity to the rating"
-		>
-			binding lines
-		</p>
-		<ul class="mono">
+		<p class="dim head" title="Lines loaded to their thermal rating">Binding lines</p>
+		<ul>
 			{#each bindingLines as { branch, loading } (branch.id)}
 				<li>
 					<button
-						class="mono"
 						class:selected={app.selectedBranch === branch.id}
 						aria-pressed={app.selectedBranch === branch.id}
 						onclick={() => select(branch.id)}
 					>
-						line {branch.from}&#8201;&ndash;&#8201;{branch.to}, {Math.round(loading * 100)}%
+						Line <span class="mono">{branch.from}&#8201;&ndash;&#8201;{branch.to}</span>
+						<span class="mono load">{Math.round(loading * 100)}%</span>
 					</button>
 				</li>
 			{/each}
@@ -59,7 +54,7 @@
 	}
 
 	.head {
-		font-size: 10.5px;
+		font-size: 12.5px;
 		margin: 0 0 4px;
 	}
 
@@ -72,6 +67,8 @@
 	}
 
 	li button {
+		display: flex;
+		gap: 4px;
 		width: 100%;
 		padding: 3px 6px 3px 8px;
 		text-align: left;
@@ -82,6 +79,10 @@
 		border-top: 1px solid var(--line);
 		border-radius: 0;
 		cursor: pointer;
+	}
+
+	.load {
+		margin-left: auto;
 	}
 
 	li button:hover {

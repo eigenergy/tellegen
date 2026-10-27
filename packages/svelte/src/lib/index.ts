@@ -19,6 +19,17 @@ export {
 	setUiConfig
 } from './context.svelte.js';
 export { ApiError, createApiClient } from './api.js';
+export {
+	CARTO_STYLES,
+	OPENFREEMAP_STYLES,
+	attachBasemapFallback,
+	cartoStyleUrl,
+	defaultBasemap,
+	isOpenFreeMapStyle,
+	openFreeMapEdits,
+	resolveBasemap
+} from './basemap.js';
+export { MAP_PALETTE } from './colors.js';
 export { Controller, createController } from './controller.svelte.js';
 export {
 	AppState,
@@ -73,9 +84,25 @@ export type {
 	TellegenApiClientOptions
 } from './api.js';
 export type { TellegenUiConfig, TellegenUiOptions } from './context.svelte.js';
-export type { ControllerOptions } from './controller.svelte.js';
+export type { ControllerOptions, OpenBalancedModuleInput } from './controller.svelte.js';
+export type {
+	BasemapFallbackReason,
+	BasemapMapLike,
+	BasemapProvider,
+	BasemapSpec,
+	BasemapStyle,
+	BasemapSwitch,
+	BasemapTheme,
+	DefaultBasemap,
+	MapProjection,
+	MapTheme,
+	ResolvedBasemap,
+	StyleEdit
+} from './basemap.js';
+export type { MapPalette } from './colors.js';
 export type { DisplayOption } from './display.js';
 export type {
+	BusSizing,
 	CameraSnapshot,
 	DiagramCameraSnapshot,
 	DemandRangeMode,

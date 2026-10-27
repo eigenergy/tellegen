@@ -3,17 +3,29 @@
 	import TellegenShell from './TellegenShell.svelte';
 	import type { TellegenUiOptions } from './context.svelte.js';
 
-	let { apiBase, loadDefaultCases, docsHref, orgHref, orgLabel, showFooter }: TellegenUiOptions =
-		$props();
+	let {
+		apiBase,
+		acOpfWasmUrl,
+		loadDefaultCases,
+		docsHref,
+		orgHref,
+		orgLabel,
+		showFooter,
+		theme,
+		cartoApiKey
+	}: TellegenUiOptions = $props();
 </script>
 
 <TellegenProvider
 	{apiBase}
+	{acOpfWasmUrl}
 	{loadDefaultCases}
 	{docsHref}
 	{orgHref}
 	{orgLabel}
 	{showFooter}
+	{theme}
+	{cartoApiKey}
 >
 	<TellegenShell />
 </TellegenProvider>

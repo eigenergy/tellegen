@@ -11,8 +11,9 @@
 import { errorText, isPermanentWasmLoadFailure } from "./errors.js";
 import type { WasmModule } from "./module.js";
 import {
+  emptyHandles,
   runRequest,
-  type EngineHandles,
+  transferables,
   type WorkerRequest,
   type WorkerResponse,
 } from "./protocol.js";
@@ -38,10 +39,7 @@ function wasmModule(): Promise<WasmModule> {
   return wasmReady;
 }
 
-const handles: EngineHandles = {
-  studies: new Map(),
-  mcPfSessions: new Map(),
-};
+const handles = emptyHandles();
 
 // Typed view of the dedicated worker global; the package compiles against the
 // DOM lib, so DedicatedWorkerGlobalScope is not in scope.
@@ -61,9 +59,9 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const started = performance.now();
     const value = await runRequest(mod, handles, req, () => cancelledOperations.has(req.id));
     const worker_ms = performance.now() - started;
-    // Numeric arrays move to the caller instead of being copied.
-    const transfer = value instanceof Float64Array ? [value.buffer] : [];
-    scope.postMessage({ id: req.id, ok: true, value, worker_ms }, transfer);
+    // Numeric arrays and every preview buffer move to the caller instead of
+    // being copied.
+    scope.postMessage({ id: req.id, ok: true, value, worker_ms }, transferables(value));
   } catch (e) {
     // A Rust panic or a failed allocation is a wasm trap, and a trapped
     // instance is not recoverable: linear memory, the allocator, and every
@@ -76,6 +74,7 @@ scope.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     if (fatal) {
       handles.studies.clear();
       handles.mcPfSessions.clear();
+      handles.synthSessions.clear();
       wasmReady = null;
       scope.close();
     }

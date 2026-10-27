@@ -267,6 +267,39 @@ describe('hosted distribution catalogue', () => {
 		await app.errorRetry!();
 		expect(app.activeMulti?.id).toBe(summary.id);
 	});
+
+	it('discards an in-flight hosted ingest when its controller is disposed', async () => {
+		const { app, ctrl, local, summary, ingest, getCaseModuleJson } = hosted();
+		app.hostedDistributionCases = [summary];
+		let complete!: (value: IngestedDistCase) => void;
+		ingest.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					complete = resolve;
+				})
+		);
+		const pending = ctrl.activateHostedDistribution(summary.id);
+		await vi.waitFor(() => expect(ingest).toHaveBeenCalled());
+		ctrl.dispose();
+		complete(payload());
+		await pending;
+		expect(app.multiCases).toEqual([local]);
+		expect(ctrl.loadingHostedDistribution).toBeNull();
+		expect(app.error).toBeNull();
+		await ctrl.activateHostedDistribution(summary.id);
+		expect(getCaseModuleJson).toHaveBeenCalledTimes(1);
+	});
+
+	it('reports a missing backend without starting a hosted request', async () => {
+		const { app, ctrl, local, summary, ingest, getCaseModuleJson } = hosted();
+		app.hostedDistributionCases = [summary];
+		ctrl.api = null;
+		await ctrl.activateHostedDistribution(summary.id);
+		expect(app.error).toContain('no API configured');
+		expect(app.multiCases).toEqual([local]);
+		expect(getCaseModuleJson).not.toHaveBeenCalled();
+		expect(ingest).not.toHaveBeenCalled();
+	});
 });
 describe('multiconductor calculation and coordinates', () => {
 	it('retains a fixed-point session and automatically warm-solves load edits', async () => {
@@ -307,7 +340,12 @@ describe('multiconductor calculation and coordinates', () => {
 			const detail = vi.fn(async () => page(2));
 			const session = {
 				initialSummary: live(1),
-				lastTiming: { engine_ms: 3, round_trip_ms: 4, parse_ms: 0.1, payload_chars: 600 },
+				lastTiming: {
+					engine_ms: 3,
+					round_trip_ms: 4,
+					parse_ms: 0.1,
+					payload_chars: 600
+				},
 				result: vi.fn(async () => result),
 				loadBranches: vi.fn(async () => loads),
 				replaceLoadPowers,

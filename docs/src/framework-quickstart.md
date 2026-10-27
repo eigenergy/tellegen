@@ -7,10 +7,10 @@ There are two integration references:
 
 ## Install
 
-For a Svelte app:
+For a Svelte app, with the map libraries it takes as peer dependencies:
 
 ```sh
-npm install @tellegen/svelte
+npm install @tellegen/svelte maplibre-gl @deck.gl/core @deck.gl/layers @deck.gl/maplibre
 ```
 
 For a custom UI:

@@ -1,8 +1,12 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { fmt } from '../format.js';
 	import type { LocalCase } from '../state.svelte.js';
 	import { formatPowerIoDiagnostic, type PowerIoDiagnostic } from '@tellegen/engine';
+
+	/** Optional host content rendered under the case stats. */
+	let { note }: { note?: Snippet<[LocalCase]> } = $props();
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -11,6 +15,7 @@
 	const EXPORT_FORMATS = [
 		{ token: 'matpower', label: 'MATPOWER (.m)' },
 		{ token: 'psse', label: 'PSS/E (.raw)' },
+		{ token: 'psse35', label: 'PSS/E v35 (.raw)' },
 		{ token: 'powerworld', label: 'PowerWorld (.aux)' },
 		{ token: 'pslf', label: 'PSLF (.epc)' },
 		{ token: 'powermodels-json', label: 'PowerModels (.json)' },
@@ -20,6 +25,23 @@
 	let busy = $state(false);
 	let exportOpen = $state(false);
 	let exportDiagnostics = $state<PowerIoDiagnostic[]>([]);
+
+	/** Where the map coordinates came from. */
+	function coordinateSource(lc: LocalCase): string {
+		if (!lc.view) return 'None';
+		switch (lc.coordsKind) {
+			case 'file':
+				return 'From file';
+			case 'geofile':
+				return lc.geoSource ? `From ${lc.geoSource}` : 'From geographic file';
+			case 'manual':
+				return 'Manual layout';
+			case 'synthetic':
+				return lc.summary?.coords_method === 'generated' ? 'Generated' : 'Synthetic layout';
+			default:
+				return 'None';
+		}
+	}
 
 	async function saveCase(lc: LocalCase) {
 		busy = true;
@@ -63,135 +85,137 @@
 
 {#if app.activeLocal}
 	{@const lc = app.activeLocal}
-	<h2>{lc.label} <span class="region mono">via {lc.fileName}</span></h2>
+	<h2>{lc.label}</h2>
 	{#if lc.substations}
-		<dl class="mono">
+		<dl>
 			<div>
-				<dt>substations</dt>
-				<dd>{lc.substations.points.length}</dd>
+				<dt>Substations</dt>
+				<dd class="mono">{lc.substations.points.length}</dd>
+			</div>
+			<div>
+				<dt>Positions</dt>
+				<dd>Inferred from diagram</dd>
+			</div>
+			<div>
+				<dt>File</dt>
+				<dd class="mono">{lc.fileName}</dd>
 			</div>
 		</dl>
-		<p class="footnote mono">
-			display only: positions inferred from the PowerWorld diagram, not surveyed latitude and
-			longitude
-		</p>
-		<p class="footnote mono">decoded in your browser by powerio (wasm); never uploaded</p>
 	{:else if lc.summary}
-		<dl class="mono">
+		<dl>
 			<div>
-				<dt>buses</dt>
-				<dd>{lc.summary.n_bus}</dd>
+				<dt>Buses</dt>
+				<dd class="mono">{lc.summary.n_bus}</dd>
 			</div>
 			<div>
-				<dt>branches</dt>
-				<dd>{lc.summary.n_branch}</dd>
+				<dt>Branches</dt>
+				<dd class="mono">{lc.summary.n_branch}</dd>
 			</div>
 			<div>
-				<dt>generators</dt>
-				<dd>{lc.summary.n_gen}</dd>
+				<dt>Generators</dt>
+				<dd class="mono">{lc.summary.n_gen}</dd>
 			</div>
 			<div>
-				<dt>load</dt>
-				<dd>{fmt.format(lc.summary.load_mw)} MW</dd>
+				<dt>Load</dt>
+				<dd class="mono">{fmt.format(lc.summary.load_mw)} MW</dd>
 			</div>
 			<div>
-				<dt>gen capacity</dt>
-				<dd>{fmt.format(lc.summary.gen_mw)} MW</dd>
+				<dt>Generation capacity</dt>
+				<dd class="mono">{fmt.format(lc.summary.gen_mw)} MW</dd>
 			</div>
 			<div>
-				<dt>base MVA</dt>
-				<dd>{fmt.format(lc.summary.base_mva)}</dd>
+				<dt>Base MVA</dt>
+				<dd class="mono">{fmt.format(lc.summary.base_mva)}</dd>
+			</div>
+			{#if lc.displayMode === 'diagram' && lc.diagram}
+				<div>
+					<dt>Drawing</dt>
+					<dd>{lc.diagram.name}</dd>
+				</div>
+			{:else}
+				<div>
+					<dt>Coordinates</dt>
+					<dd>{coordinateSource(lc)}</dd>
+				</div>
+			{/if}
+			<div>
+				<dt>File</dt>
+				<dd class="mono">{lc.fileName}</dd>
 			</div>
 		</dl>
-		{#if lc.displayMode === 'diagram' && lc.diagram}
-			<p class="footnote mono">Drawing: {lc.diagram.name}</p>
-			{#if lc.diagram.warnings.length}
-				<details>
-					<summary>Drawing details</summary>
-					<ul class="warnings mono">
-						{#each lc.diagram.warnings as warning, i (i)}<li>{warning}</li>{/each}
-					</ul>
-				</details>
-			{/if}
-		{:else if !lc.view}
-			<p class="footnote mono">
-				no coordinates in this file: click the map or drop a geographic file
-			</p>
-		{:else if lc.coordsKind === 'synthetic' || lc.coordsKind === 'manual'}
-			<p class="footnote mono">
-				coordinates: {lc.coordsKind} topology layout centered where it was placed
-			</p>
-		{:else if lc.coordsKind === 'geofile'}
-			<p class="footnote mono">
-				coordinates: geographic file data from {lc.geoSource}
-			</p>
-		{/if}
-		<p class="footnote mono">parsed in your browser by powerio (wasm); never uploaded</p>
-		{#if lc.studyInputJson}
-			<div class="case-actions">
-				<button class="reset mono" disabled={busy} onclick={() => saveCase(lc)}>
-					save PowerIO module (.json)
-				</button>
-				{#if lc.formulation === 'dcopf' && lc.solution}
-					<button class="reset mono" disabled={busy} onclick={() => saveSolution(lc)}>
-						save exact solution (.json)
-					</button>
-				{/if}
-				<div class="export">
-					<button
-						class="reset mono"
-						disabled={busy}
-						aria-expanded={exportOpen}
-						onclick={() => (exportOpen = !exportOpen)}
-					>
-						export committed state…
-					</button>
-					{#if exportOpen}
-						<ul class="export-menu mono">
-							{#each EXPORT_FORMATS as f (f.token)}
-								<li>
-									<button
-										class="reset mono"
-										disabled={busy}
-										onclick={() => exportCase(lc, f.token)}
-									>
-										{f.label}
-									</button>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</div>
-				{#if lc.view || lc.diagram}
-					<button class="reset mono" disabled={busy} onclick={() => downloadLayout(lc)}>
-						{lc.displayMode === 'diagram'
-							? 'Download drawing (.geo.json)'
-							: 'Download geography (.geo.json)'}
-					</button>
-				{/if}
-			</div>
-			{#if exportDiagnostics.length > 0}
-				<ul class="warnings mono">
-					{#each exportDiagnostics.slice(0, 4) as diagnostic, i (i)}
-						<li>{formatPowerIoDiagnostic(diagnostic)}</li>
-					{/each}
-					{#if exportDiagnostics.length > 4}
-						<li>+{exportDiagnostics.length - 4} more</li>
-					{/if}
+		{#if lc.displayMode === 'diagram' && lc.diagram?.warnings.length}
+			<details>
+				<summary>Drawing details</summary>
+				<ul class="warnings">
+					{#each lc.diagram.warnings as warning, i (i)}<li>{warning}</li>{/each}
 				</ul>
+			</details>
+		{/if}
+	{/if}
+	{@render note?.(lc)}
+	{#if lc.summary && lc.studyInputJson}
+		{@const exportUnavailable = ctrl.caseExportUnavailableReason(lc)}
+		<div class="case-actions">
+			<button
+				class="reset"
+				disabled={busy || !!exportUnavailable}
+				title={exportUnavailable ?? undefined}
+				onclick={() => saveCase(lc)}>Save case</button
+			>
+			{#if lc.formulation === 'dcopf' && lc.solution}
+				<button class="reset" disabled={busy} onclick={() => saveSolution(lc)}>Save solution</button
+				>
 			{/if}
+			<button
+				class="reset"
+				disabled={busy || !!exportUnavailable}
+				title={exportUnavailable ?? undefined}
+				aria-expanded={exportOpen}
+				aria-controls="case-export-formats"
+				onclick={() => (exportOpen = !exportOpen)}
+			>
+				Export as
+			</button>
+			{#if lc.view || lc.diagram}
+				<button class="reset" disabled={busy} onclick={() => downloadLayout(lc)}>
+					{lc.displayMode === 'diagram' ? 'Save drawing' : 'Save geography'}
+				</button>
+			{/if}
+		</div>
+		{#if exportUnavailable}
+			<p class="unavailable">{exportUnavailable}</p>
+		{:else if exportOpen}
+			<ul class="case-actions" id="case-export-formats" aria-label="Export formats">
+				{#each EXPORT_FORMATS as f (f.token)}
+					<li>
+						<button class="reset" disabled={busy} onclick={() => exportCase(lc, f.token)}>
+							{f.label}
+						</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+		{#if exportDiagnostics.length > 0}
+			<ul class="warnings">
+				{#each exportDiagnostics.slice(0, 4) as diagnostic, i (i)}
+					<li>{formatPowerIoDiagnostic(diagnostic)}</li>
+				{/each}
+				{#if exportDiagnostics.length > 4}
+					<li>+{exportDiagnostics.length - 4} more</li>
+				{/if}
+			</ul>
 		{/if}
 	{/if}
 	{#if lc.displayMode !== 'diagram' && lc.topology && lc.coordsKind !== 'file'}
-		<button class="reset mono" onclick={() => ctrl.moveLocalCase(lc)}>
+		<button class="reset" onclick={() => ctrl.moveLocalCase(lc)}>
 			{lc.coordsKind === 'synthetic_pending'
-				? 'place on map'
+				? 'Place on map'
 				: lc.coordsKind === 'geofile'
-					? 'place manually'
-					: 'move layout'}
+					? 'Place manually'
+					: 'Move layout'}
 		</button>
 	{/if}
-	<button class="reset mono" onclick={() => ctrl.removeLocalCase(lc)}>remove</button>
+	<button class="reset" onclick={() => ctrl.removeLocalCase(lc)}>Remove</button>
 {/if}
 
 <style>
@@ -209,29 +233,32 @@
 	dl div {
 		display: flex;
 		justify-content: space-between;
+		gap: 12px;
 		padding: 3px 0;
 	}
 
 	dt {
+		flex: none;
 		color: var(--text-secondary);
 	}
 
 	dd {
+		min-width: 0;
 		margin: 0;
+		text-align: right;
+		overflow-wrap: anywhere;
 	}
 
-	.footnote {
-		margin: 8px 0 0;
-		font-size: 10px;
-		color: var(--text-tertiary);
-		letter-spacing: 0;
+	details {
+		margin-top: 8px;
+		font-size: 12px;
 	}
 
 	.warnings {
 		margin: 8px 0 0;
 		padding: 0;
 		list-style: none;
-		font-size: 10.5px;
+		font-size: 12.5px;
 		line-height: 1.5;
 		color: var(--text-accent);
 	}
@@ -240,27 +267,18 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;
-		margin-top: 10px;
-	}
-
-	.export {
-		position: relative;
-	}
-
-	.export-menu {
-		position: absolute;
-		z-index: 1;
-		margin: 4px 0 0;
-		padding: 4px;
+		margin: 10px 0 0;
+		padding: 0;
 		list-style: none;
-		min-width: 100%;
-		background: var(--surface, #fff);
-		border: 1px solid var(--border, rgba(0, 0, 0, 0.15));
-		border-radius: 6px;
-		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
 	}
 
-	.export-menu li {
-		white-space: nowrap;
+	.case-actions .reset {
+		margin-top: 0;
+	}
+
+	.unavailable {
+		margin: 8px 0 0;
+		font-size: 12px;
+		color: var(--text-secondary);
 	}
 </style>

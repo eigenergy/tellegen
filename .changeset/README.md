@@ -29,3 +29,47 @@ export GITHUB_TOKEN="$(gh auth token)"
 
 Otherwise use a short-lived fine-grained token limited to this repository with
 read-only pull-request access; repository metadata read access is implicit.
+
+## Prereleases
+
+While `.changeset/pre.json` exists, the repository is in Changesets pre mode.
+The 0.4.0 cycle entered pre mode with the `next` tag so that MapToGrid could
+build against `@tellegen/engine` and `@tellegen/svelte` from npm before the
+stable release, and left it before any prerelease was published.
+
+Changesets work as usual in pre mode. The version pull request differs in three
+ways:
+
+- A bumped package gets a prerelease version. A minor changeset on 0.3.0 gives
+  `0.4.0-next.0`, and the next version pull request gives `0.4.0-next.1`.
+- Each consumed changeset moves into `.changeset/pre/` instead of being
+  deleted, so the stable release can still read it. `pre.json` stays as it is.
+- Merging it publishes under the `next` dist-tag, and `latest` stays on the
+  last stable version. The publish plan takes the dist-tag from `pre.json`. It
+  switches a package to `latest` only when every version the package has
+  published is a `next` prerelease. All three packages have stable releases,
+  so this does not apply to them.
+
+To enter pre mode, run the command below and commit the `.changeset/pre.json`
+it writes:
+
+```sh
+npx changeset pre enter next
+```
+
+### Exiting before the stable release
+
+Exit pre mode before 0.4.0 is released:
+
+```sh
+npx changeset pre exit
+```
+
+This sets `"mode": "exit"` in `.changeset/pre.json`; merge that change in its
+own pull request. The next version pull request does three things:
+
+- It versions the packages as stable (0.4.0).
+- It writes their changelog from every changeset in `.changeset/pre/`.
+- It deletes those files and `pre.json`.
+
+Merging it publishes to `latest`.

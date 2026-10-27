@@ -14,15 +14,15 @@
 
 <div class="movers-block">
 	{#if !ctrl.previewing && ctrl.topMovers.length > 0}
-		<table class="mono">
-			<caption class="mono dim" title={unitTitle}>
-				largest LMP response <span class="unit">{units}</span>
+		<table>
+			<caption class="dim" title={unitTitle}>
+				Largest LMP response <span class="mono unit">{units}</span>
 			</caption>
 			<tbody>
 				{#each ctrl.topMovers as mover (mover.bus)}
 					<tr>
-						<td>bus {mover.bus}</td>
-						<td class:pos={mover.value > 0} class:neg={mover.value < 0}>
+						<td>Bus <span class="mono">{mover.bus}</span></td>
+						<td class="mono" class:pos={mover.value > 0} class:neg={mover.value < 0}>
 							{signedExp(mover.value)}
 						</td>
 					</tr>
@@ -46,7 +46,7 @@
 
 	caption {
 		text-align: left;
-		font-size: 10.5px;
+		font-size: 12.5px;
 		margin-bottom: 4px;
 	}
 

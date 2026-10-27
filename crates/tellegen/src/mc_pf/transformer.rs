@@ -341,7 +341,7 @@ pub fn prepare_transformer(
 fn winding_admittance(t: &DistTransformer) -> Result<ComplexMatrix, TransformerError> {
     let count = t.windings.len();
     // `validate_shape` runs first and admits two windings, or three for a
-    // tagged centre tap. Keep that contract local so a new caller cannot
+    // tagged centre tap. Check that bound here too so a new caller cannot
     // reach the `unreachable!` in `pair_index` by skipping validation.
     debug_assert!(
         (2..=3).contains(&count),
@@ -445,7 +445,7 @@ fn invert_reduced_leakage(
 /// referred ohms and its ratio as regulated/source voltage.  Its winding
 /// primitive is therefore `y * [1, -n; -n, n^2]`, where `n = 1/a` for the
 /// default ANSI Type B connection and `n = a` for Type A.  This matches the
-/// BMOPFTools calculation contract and the equivalent fixed-tap OpenDSS
+/// BMOPFTools calculation and the equivalent fixed-tap OpenDSS
 /// two-winding regulator.
 fn prepare_single_phase_autotransformer(
     transformer: &DistTransformer,
@@ -904,7 +904,7 @@ fn delta_direction(t: &DistTransformer) -> i8 {
     let a = &t.windings[0];
     let b = &t.windings[1];
     // BMOPF's conventional three-phase subtypes carry the physical phase
-    // orientation explicitly.  Preserve that producer contract when it is
+    // orientation explicitly.  Preserve the producer's orientation when it is
     // present; a raw DSS DistTransformer falls through to OpenDSS's
     // high-voltage/HVLeadsLV rule below.
     if let Some(subtype) = t.extras.get("bmopf_subtype").and_then(Value::as_str) {

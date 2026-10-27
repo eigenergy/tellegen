@@ -46,7 +46,7 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 		{ name: 'case3congested.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3) }
 	]);
 	await page.getByRole('button', { name: 'Solver', exact: true }).click();
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 	await page.getByRole('button', { name: 'Network', exact: true }).click();
 
 	// Compact panels share one drawer.
@@ -100,7 +100,7 @@ test('compact sheet: attribution stays clear and a selection leads the body', as
 
 	// The demand control is the next thing a reader wants, so it comes before the
 	// rule that separates the selection from the case stats below it.
-	const sliderBox = (await page.getByLabel('demand delta at selected bus').boundingBox())!;
+	const sliderBox = (await page.getByLabel('Demand delta at selected bus').boundingBox())!;
 	const ruleTop = await page
 		.locator('.panel-body hr')
 		.first()

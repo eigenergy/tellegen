@@ -36,7 +36,7 @@ test('public-host action analytics use only approved fields and honor opt-out', 
 		{ name: 'PRIVATE_SECRET.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) },
 		{ name: 'PRIVATE_SECRET.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 	await expect.poll(() => collected.map((event) => event.payload.name)).toContain('case.select');
 	await expect
 		.poll(() => collected.map((event) => event.payload.name))
