@@ -274,6 +274,19 @@ pub fn solve_mc_ac_opf_instance_cancellable(
 /// A bare network is refused, so no objective or constraint selection is invented.
 pub fn solve_mc_ac_opf_module_json(input: &str, options: &McOpfOptions) -> Result<String, String> {
     let module = crate::ir::deserialize_module(input)?;
+    validate_mc_opf_input_diagnostics(&module)?;
+    let PioValue::McAcOpfInstance(instance) = module.into_value() else {
+        return Err("expected a PowerIO McAcOpfInstance module".into());
+    };
+    let result = solve_mc_ac_opf_instance(Arc::new(instance), options)?;
+    crate::ir::serialize_module(&PioModule::new(PioValue::McAcOpfSolution(result.solution)))
+}
+
+/// Reject conversion errors and dropped or unsupported physical data before
+/// extracting a network or instance from its module. Typed-instance callers
+/// importing external data must retain and check these module diagnostics:
+/// physical validation cannot recover constraints already lost during parsing.
+pub fn validate_mc_opf_input_diagnostics<T>(module: &PioModule<T>) -> Result<(), String> {
     for diagnostic in module.diagnostics() {
         if diagnostic.severity() == powerio::DiagnosticSeverity::Error
             || [
@@ -292,11 +305,7 @@ pub fn solve_mc_ac_opf_module_json(input: &str, options: &McOpfOptions) -> Resul
             ));
         }
     }
-    let PioValue::McAcOpfInstance(instance) = module.into_value() else {
-        return Err("expected a PowerIO McAcOpfInstance module".into());
-    };
-    let result = solve_mc_ac_opf_instance(Arc::new(instance), options)?;
-    crate::ir::serialize_module(&PioModule::new(PioValue::McAcOpfSolution(result.solution)))
+    Ok(())
 }
 
 fn record_stage(profile: &mut Option<McOpfProfile>, stage: &mut Instant, name: &str) {

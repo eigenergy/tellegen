@@ -1,5 +1,19 @@
 //! Run an external BMOPF case without vendoring it. Optional arguments: power
 //! base (VA), objective scale, maximum iterations, profile (true/false). Emits one JSON result record.
+#[cfg(feature = "mc-opf")]
+fn parse_case(input: Vec<u8>) -> Result<powerio::PioModule<powerio::PioValue>, String> {
+    use powerio::{ParseOptions, Source};
+    let module = powerio::parse_with_options(
+        Source::from_memory("external.bmopf.json", input).map_err(|e| e.to_string())?,
+        &ParseOptions::default()
+            .format("bmopf-json")
+            .map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    tellegen::mc_opf::validate_mc_opf_input_diagnostics(&module)?;
+    Ok(module)
+}
+
 #[cfg(not(feature = "mc-opf"))]
 fn main() {
     eprintln!("enable --features mc-opf");
@@ -7,7 +21,7 @@ fn main() {
 }
 #[cfg(feature = "mc-opf")]
 fn main() {
-    use powerio::{McAcOpfInstance, ParseOptions, PioValue, Source};
+    use powerio::{McAcOpfInstance, PioValue};
     use serde_json::json;
     use sha2::{Digest, Sha256};
     use std::{sync::Arc, time::Instant};
@@ -28,13 +42,7 @@ fn main() {
     let mut record = json!({"input":args[1],"sha256":hash,"options":options});
     let run = || -> Result<_, String> {
         let parse_start = Instant::now();
-        let module = powerio::parse_with_options(
-            Source::from_memory("external.bmopf.json", input).map_err(|e| e.to_string())?,
-            &ParseOptions::default()
-                .format("bmopf-json")
-                .map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
+        let module = parse_case(input)?;
         let diagnostics: Vec<_> = module
             .diagnostics()
             .iter()
@@ -89,4 +97,31 @@ fn main() {
     }
     record["elapsed_s"] = json!(t.elapsed().as_secs_f64());
     println!("{}", serde_json::to_string(&record).unwrap());
+}
+
+#[cfg(all(test, feature = "mc-opf"))]
+mod tests {
+    use super::parse_case;
+
+    #[test]
+    fn probe_rejects_dropped_sequence_voltage_bounds() {
+        let input = include_bytes!("../tests/data/mc_opf/unbalanced.json");
+        assert!(parse_case(input.to_vec()).is_ok());
+        let mut case: serde_json::Value = serde_json::from_slice(input).unwrap();
+        case["bus"]["s"]["vsym_min"] = serde_json::json!([100, 0, 100]);
+        let error = parse_case(serde_json::to_vec(&case).unwrap()).unwrap_err();
+        assert!(error.contains("READ.BMOPF.FIELD_DROPPED"), "{error}");
+        assert!(error.contains("sequence lower bounds"), "{error}");
+    }
+
+    #[test]
+    fn probe_accepts_lossless_converter_remarks() {
+        let cases: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/data/mc_opf/components.json")).unwrap();
+        let module = parse_case(serde_json::to_vec(&cases["capacitor_wye"]).unwrap()).unwrap();
+        assert!(module
+            .diagnostics()
+            .iter()
+            .any(|d| d.code() == "READ.BMOPF.CAPACITOR_LOWERED"));
+    }
 }
