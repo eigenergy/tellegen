@@ -8,6 +8,8 @@
 //! tellegen '{"formulation":"socwr"}' < case.pio.json
 //! tellegen solve-module < case.pio.json       # stored module in, solution module out
 //! tellegen plan < plan-request.json          # capacity planning proposal
+//! tellegen generate --request req.json --out DIR   # a synthetic grid and its report
+//! tellegen stats < case.pio.json              # structural statistics of a case
 //! ```
 //!
 //! `solve-module` and `plan` accept a stored
@@ -32,10 +34,13 @@ use tellegen::ir::{balanced_module, deserialize_module, serialize_module};
 
 use tellegen::plan::CapacityPlanSpec;
 
+mod synth;
+
 const USAGE: &str =
     "usage: tellegen [REQUEST_JSON | capabilities | --help]   (PowerIO module on stdin)\n\
      \n\
-     REQUEST_JSON  a solve request; default '{}' is a base-case DC OPF.\n\
+     REQUEST_JSON  a solve request; default '{}' is a base-case DC OPF. A dcopf\n\
+                   request may carry linear constraints (`describe`: solve_request).\n\
                    '@PATH' reads the request from a file, for requests larger\n\
                    than the operating system's argument limit.\n\
      capabilities  print the formulation/operand/parameter capability matrix.\n\
@@ -53,7 +58,14 @@ const USAGE: &str =
                    create, inspect, continue or move a durable Study.\n\
      plan\n\
                    read {\"module\": POWERIO_MODULE, \"spec\": CAPACITY_PLAN_SPEC}\n\
-                   from stdin and print the proposal and exact proposed solution.";
+                   from stdin and print the proposal and exact proposed solution.\n\
+     generate --request PATH --out DIR [--places PATH] [--osm PATH]\n\
+              [--export FORMAT[,FORMAT...]] [--gridfm]\n\
+                   generate a synthetic grid for a region; write the module,\n\
+                   its report, a GeoJSON layer and the requested exports.\n\
+     stats [--case PATH] [--targets PATH]\n\
+                   print the structural statistics of a case file, or of the\n\
+                   module on stdin.";
 
 fn main() -> ExitCode {
     let arg = std::env::args().nth(1).unwrap_or_default();
@@ -73,7 +85,8 @@ fn main() -> ExitCode {
                 serde_json::to_string(&serde_json::json!({"input": serialize_module(&PioModule::new(PioValue::BalancedNetwork(model)))?, "model_details": details})).map_err(|e| e.to_string())
             })
         }
-        "describe" | "contract" => return run(contract_json),
+        // `contract` is the command's earlier name, kept for existing callers.
+        "describe" | "contract" => return run(describe_json),
         "study" => return run(study_command),
         "-h" | "--help" => {
             println!("{USAGE}");
@@ -109,6 +122,29 @@ fn main() -> ExitCode {
                     tellegen::solve_bmopf_json(&input, &options)
                 } else {
                     tellegen::solve_mc_module_json(&input, &options)
+                }
+            });
+        }
+        "generate" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            return run(|| {
+                let parsed = synth::parse_generate_args(&args)?;
+                synth::generate_command(&parsed, Some(&synth::ctrlc_cancel))
+            });
+        }
+        "stats" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            return run(|| {
+                let (case, targets) = synth::parse_stats_args(&args)?;
+                let targets = targets
+                    .map(|path| {
+                        std::fs::read_to_string(&path)
+                            .map_err(|e| format!("cannot read {}: {e}", path.display()))
+                    })
+                    .transpose()?;
+                match case {
+                    Some(path) => synth::stats_case(&path, targets.as_deref()),
+                    None => synth::stats_text(&read_stdin()?, targets.as_deref()),
                 }
             });
         }
@@ -273,7 +309,7 @@ fn solve_module_text(text: &str) -> Result<String, String> {
 }
 
 /// A PowerIO IR document, carried as JSON and described by PowerIO's own
-/// schema in the contract.
+/// schema in the `describe` output.
 type PowerIoModule = serde_json::Value;
 type CapabilitiesResponse = Vec<tellegen::ProblemCaps>;
 
@@ -321,7 +357,7 @@ fn plan_from_text(text: &str) -> Result<String, String> {
     serde_json::to_string(&out).map_err(|e| e.to_string())
 }
 
-const CONTRACT_ID: &str = "tellegen.cli/1";
+const DESCRIBE_FORMAT: &str = "tellegen.cli/1";
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -331,9 +367,9 @@ struct PlanResponse {
     solution_module: PowerIoModule,
 }
 
-fn contract_value() -> Result<serde_json::Value, String> {
+fn describe_value() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
-        "contract": CONTRACT_ID,
+        "format": DESCRIBE_FORMAT,
         "tellegen_version": tellegen::VERSION,
         "powerio_version": env!("TELLEGEN_POWERIO_VERSION"),
         "schemas": {
@@ -352,6 +388,10 @@ fn contract_value() -> Result<serde_json::Value, String> {
             "plan_response": serde_json::to_value(schemars::schema_for!(PlanResponse))
                 .map_err(|error| error.to_string())?,
             "solve_response": ir_schema()?,
+            "solve_request": serde_json::to_value(schemars::schema_for!(tellegen::SolveRequest))
+                .map_err(|error| error.to_string())?,
+            "solve_result": serde_json::to_value(schemars::schema_for!(tellegen::SolveResponse))
+                .map_err(|error| error.to_string())?,
             "capabilities_response":
                 serde_json::to_value(schemars::schema_for!(CapabilitiesResponse))
                     .map_err(|error| error.to_string())?,
@@ -359,8 +399,8 @@ fn contract_value() -> Result<serde_json::Value, String> {
     }))
 }
 
-fn contract_json() -> Result<String, String> {
-    serde_json::to_string(&contract_value()?).map_err(|error| error.to_string())
+fn describe_json() -> Result<String, String> {
+    serde_json::to_string(&describe_value()?).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -464,7 +504,7 @@ mpc.gencost = [
     }
 
     #[test]
-    fn runtime_outputs_match_each_named_contract_type() {
+    fn runtime_outputs_match_each_named_schema() {
         let module_json = test_module_json();
         let module: PowerIoModule =
             serde_json::from_str(&module_json).expect("powerio_module runtime value");
@@ -510,16 +550,16 @@ mpc.gencost = [
     }
 
     #[test]
-    fn contract_schema_matches_the_runtime_plan_envelope() {
-        let contract = contract_value().expect("contract");
-        assert_eq!(contract["contract"], CONTRACT_ID);
-        assert_eq!(contract["tellegen_version"], tellegen::VERSION);
+    fn describe_schemas_match_the_runtime_plan_envelope() {
+        let description = describe_value().expect("describe output");
+        assert_eq!(description["format"], DESCRIBE_FORMAT);
+        assert_eq!(description["tellegen_version"], tellegen::VERSION);
         assert_eq!(
-            contract["powerio_version"],
+            description["powerio_version"],
             env!("TELLEGEN_POWERIO_VERSION")
         );
 
-        let spec_properties = contract["schemas"]["capacity_plan_spec"]["properties"]
+        let spec_properties = description["schemas"]["capacity_plan_spec"]["properties"]
             .as_object()
             .expect("CapacityPlanSpec properties");
         let expected_spec = [
@@ -536,21 +576,21 @@ mpc.gencost = [
             assert!(spec_properties.contains_key(field), "missing {field}");
         }
 
-        let module_properties = contract["schemas"]["powerio_module"]["properties"]
+        let module_properties = description["schemas"]["powerio_module"]["properties"]
             .as_object()
             .expect("IR document properties");
         for field in ["schema", "version", "producer", "value"] {
             assert!(module_properties.contains_key(field), "missing {field}");
         }
 
-        let request_properties = contract["schemas"]["plan_request"]["properties"]
+        let request_properties = description["schemas"]["plan_request"]["properties"]
             .as_object()
             .expect("PlanRequest properties");
         assert_eq!(request_properties.len(), 2);
         assert!(request_properties.contains_key("module"));
         assert!(request_properties.contains_key("spec"));
 
-        let response_properties = contract["schemas"]["plan_response"]["properties"]
+        let response_properties = description["schemas"]["plan_response"]["properties"]
             .as_object()
             .expect("PlanResponse properties");
         assert_eq!(response_properties.len(), 2);
@@ -558,12 +598,56 @@ mpc.gencost = [
         assert!(response_properties.contains_key("solution_module"));
 
         assert_eq!(
-            contract["schemas"]["solve_response"],
-            contract["schemas"]["powerio_module"]
+            description["schemas"]["solve_response"],
+            description["schemas"]["powerio_module"]
         );
         assert_eq!(
-            contract["schemas"]["capabilities_response"]["type"],
+            description["schemas"]["capabilities_response"]["type"],
             "array"
         );
+    }
+
+    #[test]
+    fn describe_and_capabilities_advertise_linear_constraints() {
+        let description = describe_value().expect("describe output");
+        let request = &description["schemas"]["solve_request"];
+        assert!(request["properties"]["constraints"].is_object());
+        let term = &request["$defs"]["ConstraintTermKind"];
+        let kinds: Vec<&str> = term["oneOf"]
+            .as_array()
+            .expect("documented term kinds")
+            .iter()
+            .map(|kind| kind["const"].as_str().expect("tag"))
+            .collect();
+        assert_eq!(kinds, ["branch_flow", "bus_injection", "generator"]);
+        assert!(description["schemas"]["solve_result"]["properties"]["constraints"].is_object());
+
+        let capabilities: CapabilitiesResponse =
+            serde_json::from_str(&tellegen::capabilities_json()).expect("capabilities");
+        let dc_opf = capabilities
+            .iter()
+            .find(|caps| caps.formulation == tellegen::Problem::DcOpf)
+            .expect("dcopf");
+        assert_eq!(dc_opf.constraints.len(), 3);
+
+        // The default command solves a request carrying a constraint. The test
+        // case's one line carries the whole 50 MW load.
+        let request = serde_json::json!({
+            "constraints": [{
+                "id": "line",
+                "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+                "upper": 60.0
+            }]
+        });
+        let response: serde_json::Value = serde_json::from_str(
+            &tellegen::solve_module_json(&test_module_json(), &request.to_string())
+                .expect("constrained solve"),
+        )
+        .expect("response");
+        let row = &response["constraints"][0];
+        assert_eq!(row["id"], "line");
+        assert!((row["value"].as_f64().unwrap() - 50.0).abs() < 1e-5);
+        assert_eq!(row["binding"], false);
+        assert!(row["shadow_price"].as_f64().unwrap().abs() < 1e-6);
     }
 }

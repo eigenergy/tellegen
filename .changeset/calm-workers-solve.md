@@ -1,6 +1,6 @@
 ---
-"@tellegen/engine": minor
-"@tellegen/svelte": minor
+"@tellegen/engine": patch
+"@tellegen/svelte": patch
 ---
 
 Add an opt-in, capability-gated browser AC OPF client backed by a separate

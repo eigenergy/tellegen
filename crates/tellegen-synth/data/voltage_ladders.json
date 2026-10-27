@@ -1,0 +1,314 @@
+{
+ "schema": "tellegen.synth-voltage-ladders/1",
+ "version": "2026-10-23",
+ "note": "National AC transmission ladders, highest first: the levels a national model uses (levels_kv) and any higher AC level in service (above_kv), which the corridor plan may raise buses to. Lines built for a higher voltage but operated lower do not count. Gathered for tellegen-synth; quotes are transliterated to ASCII.",
+ "regional": {
+  "name": "ENTSO-E",
+  "members": [
+   "ALB",
+   "AUT",
+   "BEL",
+   "BGR",
+   "BIH",
+   "CHE",
+   "CYP",
+   "CZE",
+   "DEU",
+   "DNK",
+   "ESP",
+   "EST",
+   "FIN",
+   "FRA",
+   "GRC",
+   "HRV",
+   "HUN",
+   "IRL",
+   "ISL",
+   "ITA",
+   "LTU",
+   "LUX",
+   "LVA",
+   "MKD",
+   "MNE",
+   "NLD",
+   "NOR",
+   "POL",
+   "PRT",
+   "ROU",
+   "SRB",
+   "SVK",
+   "SVN",
+   "SWE",
+   "UKR"
+  ],
+  "levels_kv": [
+   400,
+   220
+  ],
+  "sources": [
+   "ENTSO-E members, https://www.entsoe.eu/about/inside-entsoe/members/: \"40 Members from 36 countries\"; Great Britain is not a member after Brexit, only Northern Ireland's SONI (NESO, 17 July 2025, https://www.neso.energy/news/new-pact-bolster-electricity-security-through-european-cooperation)",
+   "The members' grids run mainly at 400 and 220 kV (380 kV in Germany and Italy); the Baltic states run mainly at 330 kV"
+  ]
+ },
+ "standard": {
+  "name": "IEC 60038",
+  "levels_kv": [
+   400,
+   220
+  ],
+  "sources": [
+   "IEC 60038:2009, Table 4 (highest voltage for equipment 245 kV, nominal 220 kV) and Table 5 (highest voltage for equipment 420 kV; the nominal 400 kV is the usual pairing, which the table does not print)"
+  ]
+ },
+ "countries": {
+  "AUS": {
+   "levels_kv": [
+    330,
+    275,
+    220
+   ],
+   "above_kv": [
+    500
+   ],
+   "sources": [
+    "Transgrid, Transmission Annual Planning Report 2023, p. 21, https://www.transgrid.com.au/media/zfcmn02k/tapr_2023_v9_final.pdf: \"The 500 kV network infrastructure between Bayswater and Mt Piper forms the 500 kV backbone of the NSW shared network\"",
+    "Energy Safe Victoria, Electricity Safety Performance Report 2017, p. 13, https://www.energysafe.vic.gov.au/sites/default/files/2022-12/ESV_2017ElectricitySafetyPerformanceReport_WEB.pdf: \"500kV AC and 220kV AC transmission across Victoria ... 330kV AC on interconnector to New South Wales ... 275kV AC on interconnector to South Australia\"",
+    "Powerlink Queensland, Annual Report 2024/25, p. 41, https://www.powerlink.com.au/sites/default/files/2025-09/Powerlink%20Queensland%20Annual%20Report%20and%20Financial%20Statements%202024-25_0.pdf: substations at 330, 275, 132 and 110 kV, none at 500 kV"
+   ],
+   "note": "500 kV in New South Wales and Victoria only; Queensland 330/275, South Australia 275, Tasmania 220."
+  },
+  "BRA": {
+   "levels_kv": [
+    500,
+    230
+   ],
+   "above_kv": [
+    765
+   ],
+   "sources": [
+    "ONS, open data, transmission lines, https://dados.ons.org.br/dataset/linha-transmissao: active circuit-km by voltage include 765 kV 2,706 (Foz do Iguacu-Ivaipora-Itabera-Tijuco Preto, 1989-2001), 525 and 500 kV 82,283, 440 kV 7,072, 345 kV 11,149, 230 kV 70,774 (aggregated from LINHA_TRANSMISSAO.csv)"
+   ],
+   "note": "440 kV in Sao Paulo and 345 kV regionally; 525 kV is the southern 500 kV class."
+  },
+  "CHL": {
+   "levels_kv": [
+    500,
+    220
+   ],
+   "above_kv": [],
+   "sources": [
+    "Coordinador Electrico Nacional, Informe Anual del Grado de Cumplimiento de Coordinados (Art. 1-14 NTSyCS) 2024, March 2025, p. 5, https://www.coordinador.cl/wp-content/uploads/2025/04/Inf-Art-1-14-NTSyCS-2024-Definitivo-Ver20250331.pdf: \"1.176 lineas electricas en el rango 23 kV hasta 500 kV\"; \"el sistema de 500 kV del Norte ... el sistema de 220 kV del Sur\""
+   ],
+   "note": "154, 110 and 66 kV regionally; 345 kV only on the InterAndes tie."
+  },
+  "CHN": {
+   "levels_kv": [
+    500,
+    220
+   ],
+   "above_kv": [
+    1000
+   ],
+   "sources": [
+    "Xinhua, 9 January 2025, https://www.news.cn/photo/20250109/5ad92dfec95142abbadeaaaf02e767e7/c.html: the Sichuan-Chongqing 1000 kV UHV AC project entered service on 27 December 2024, raising the south-west grid's backbone from 500 kV to 1000 kV",
+    "Science and Technology Daily, 24 December 2025, https://www.stdaily.com/web/gdxw/2025-12/24/content_451995.html: the north-west 750 kV grid covers 100 substations and more than 36,000 km of lines"
+   ],
+   "note": "Secondary sources (state media); 750/330 kV in the north-west."
+  },
+  "DEU": {
+   "levels_kv": [
+    380,
+    220
+   ],
+   "above_kv": [],
+   "sources": [
+    "Umweltbundesamt, Netzausbau, https://www.umweltbundesamt.de/themen/klima-energie/energieversorgung/netzausbau: \"aus dem Hoechstspannungsnetz (220 und 380 kV), dem Uebertragungsnetz\""
+   ],
+   "note": "525 kV corridors are HVDC."
+  },
+  "EGY": {
+   "levels_kv": [
+    500,
+    220
+   ],
+   "above_kv": [],
+   "sources": [
+    "EEHC, Annual Report 2023/2024, p. 40, https://eehc.gov.eg/CMSEehc/Files/AnnualReport2024En.pdf: circuit-km 2023/24 at 400-500 kV 8,688.1, 220 kV 22,691.4, 132 kV 2,559.2, 66 kV 21,930.8"
+   ],
+   "note": "The Saudi link is HVDC."
+  },
+  "ESP": {
+   "levels_kv": [
+    400,
+    220
+   ],
+   "above_kv": [],
+   "sources": [
+    "REE, Transmission grid, https://www.ree.es/en/transmission/transmission-grid: \"operates mainly at 400 kilovolts (kV) and 220 kV on the peninsula\"; \"in the Balearics and Canary Islands it runs at 220 kV, 132 kV, and 66 kV\""
+   ]
+  },
+  "FRA": {
+   "levels_kv": [
+    400,
+    225
+   ],
+   "above_kv": [],
+   "sources": [
+    "RTE, https://assets.rte-france.com/prod/public/2020-06/mesure_cem.pdf, p. 2: \"lignes tres haute tension (THT) en 400 000 et 225 000 volts et haute tension (HT) en 90 000 et 63 000 volts\""
+   ]
+  },
+  "GBR": {
+   "levels_kv": [
+    400,
+    275
+   ],
+   "above_kv": [],
+   "sources": [
+    "NESO, Electricity Ten Year Statement, https://www.neso.energy/publications/electricity-ten-year-statement-etys/our-etys-analysis: the transmission system operates \"at 132 kV, 275 kV and 400 kV voltage levels\"; distribution is \"below 275 kV in England and Wales and below 132 kV in Scotland\""
+   ],
+   "note": "132 kV is transmission only in Scotland and offshore."
+  },
+  "GHA": {
+   "levels_kv": [
+    330,
+    161
+   ],
+   "above_kv": [],
+   "sources": [
+    "GRIDCo, Annual Report 2020, https://gridcogh.com/wp-content/uploads/2025/06/2020-Annual-Report-02-09-2022.pdf: \"6,472.2 circuit kilometers ... 1191.7 km of 330kV; 92.2 km of 225kV; 4,975.5 km of 161kV and 212.8 Km of 69kV\"",
+    "GRIDCo, Annual Report 2023, p. 5, https://gridcogh.com/wp-content/uploads/2025/01/GRIDCo_2023_Annual_Report_Final_5-12-24.pdf: lines \"operated at various voltages (i.e. 330 kV, 225 kV, 161 kV and 69 kV\""
+   ],
+   "note": "225 kV only on the ties to Cote d'Ivoire and Burkina Faso."
+  },
+  "IDN": {
+   "levels_kv": [
+    500,
+    150
+   ],
+   "above_kv": [],
+   "sources": [
+    "ESDM, Statistik Ketenagalistrikan 2021, Tables 13 and 14, https://gatrik.esdm.go.id/assets/uploads/download_index/files/c4764-6e4c6-statistik-2021-rev-2-.pdf (Wayback copy): 500 kV 6,445 km (Java only), 275 kV 3,648 km (Sumatra, West Kalimantan), 150 kV 48,734 km"
+   ],
+   "note": "275/150 kV in Sumatra and Kalimantan."
+  },
+  "IND": {
+   "levels_kv": [
+    400,
+    220
+   ],
+   "above_kv": [
+    765
+   ],
+   "sources": [
+    "POWERGRID, https://www.powergrid.in/en (as on 30/09/2026): circuit-km 765 kV 41,522; 400 kV 115,832; 220 kV 10,719; 132 kV 3,500",
+    "CEA, Transmission Lines Completed During FY 2025-26, as on 30 September 2025, https://npp.gov.in/public-reports/cea/monthly/transmission/tl/2025/SEP/trans2-2025-09.pdf: 765, 400 and 220 kV sections"
+   ],
+   "note": "The 1200 kV-design Wardha-Aurangabad line runs at 400 kV and does not count."
+  },
+  "IRQ": {
+   "levels_kv": [
+    400,
+    132
+   ],
+   "above_kv": [],
+   "sources": [
+    "JICA with UNDP, Baseline Survey for Supporting Electric Power Sector in Republic of Iraq, Summary Report, July 2004, p. 6, https://openjicareport.jica.go.jp/pdf/11769411.pdf: \"The transmission network covers over the country, which voltage is 400kV and 132 kV\""
+   ],
+   "note": "Dated, and excludes the Kurdistan region; no current inventory was found."
+  },
+  "ITA": {
+   "levels_kv": [
+    380,
+    220
+   ],
+   "above_kv": [],
+   "sources": [
+    "Terna data in the Regione Valle d'Aosta statistical yearbook 2025, Tavola 12.17 (31 December 2023), https://www.regione.vda.it/statistica/pubblicazioni/annuari/annuario2025/SITE/12/17.PDF: Italy 380 kV 11,350 and 220 kV 10,864 circuit-km; 150-120 kV national transmission lines 45,772 km"
+   ]
+  },
+  "JPN": {
+   "levels_kv": [
+    500,
+    275
+   ],
+   "above_kv": [],
+   "sources": [
+    "OCCTO, Annual Report FY2024, Table 4-8, p. 129, https://www.occto.or.jp/en/information_disclosure/annual_report/files/2024_annualreport_241210.pdf: classes 500, 275, 220, 187 and 154 kV",
+    "Agency for Cultural Affairs, https://www.bunka.go.jp/kindai/kenzoubutsu/research_doboku/denryoku/soudensisetsu/t001/index.html: 1000 kV-design lines are operated at 500 kV"
+   ],
+   "note": "220, 187 and 154 kV regionally; no AC level above 500 kV is in service."
+  },
+  "NGA": {
+   "levels_kv": [
+    330,
+    132
+   ],
+   "above_kv": [],
+   "sources": [
+    "TCN, Transmission News, December 2023, p. 28, https://www.tcn.org.ng/repository/newsletters/Oiplr_15_02_2024-Newsletter.pdf: \"TCN has about 8,937.59KM of 330kV lines nationwide and 7908.37KM of 132kV transmission lines\""
+   ]
+  },
+  "PRT": {
+   "levels_kv": [
+    400,
+    220,
+    150
+   ],
+   "above_kv": [],
+   "sources": [
+    "REN Datahub, electrical grid, https://datahub.ren.pt/en/networks/electrical-grid/: length of lines 2025, 400 kV 3,465 km, 220 kV 3,916 km, 150 kV 2,514 km"
+   ]
+  },
+  "RUS": {
+   "levels_kv": [
+    500,
+    220
+   ],
+   "above_kv": [
+    750
+   ],
+   "sources": [
+    "SO UES, development plan of the UES of Russia 2025-2030, Tables 1, 10 and 11, https://so-ups.ru/fileadmin/files/company/future_plan/public_discussion/2025-30_final/sipr_ups_2025-30_fin.pdf: 750 kV lines (Smolenskaya NPP-Belorusskaya) and transformers in service; additions by class 750/500/330/220 kV"
+   ],
+   "note": "330 kV in the north-west, west and North Caucasus; the 1150 kV-design line runs at 500 kV and does not count."
+  },
+  "UKR": {
+   "levels_kv": [
+    750,
+    330,
+    220
+   ],
+   "above_kv": [],
+   "sources": [
+    "Ukrenergo, trunk and interstate grid as of 1 January 2020, https://ua.energy/transmission-and-dispatching/networks/ (Wayback copy https://web.archive.org/web/20220225075501/https://ua.energy/transmission-and-dispatching/networks/): route-km 750 kV 4,403; 330 kV 12,980; 220 kV 3,019"
+   ],
+   "note": "Pre-war data."
+  },
+  "USA": {
+   "levels_kv": [
+    500,
+    345,
+    230
+   ],
+   "above_kv": [
+    765
+   ],
+   "sources": [
+    "HIFLD, U.S. Electric Power Transmission Lines, https://services2.arcgis.com/FiaPA4ga0iQKduv3/arcgis/rest/services/US_Electric_Power_Transmission_Lines/FeatureServer/0: AC line records 230 kV 7,205; 345 kV 2,600; 500 kV 813; 765 kV 46",
+    "AEP, 26 September 2025, https://www.aep.com/news/stories/view/10458/: \"AEP operates more than 2,200 miles of 765 kV transmission lines\""
+   ]
+  },
+  "ZAF": {
+   "levels_kv": [
+    400,
+    275
+   ],
+   "above_kv": [
+    765
+   ],
+   "sources": [
+    "NTCSA (Eskom), Transmission Development Plan 2024 Rev 2, p. 107, https://www.ntcsa.co.za/wp-content/uploads/2025/02/TDP-2024-Public-Report_Rev2.pdf: \"The supply to the Cape corridor is via the Alpha and Zeus 400/765 kV substations\"; p. 65: \"The Free State comprises of 275 kV, 400 kV and 765 kV lines\""
+   ]
+  }
+ }
+}

@@ -1,0 +1,4240 @@
+{
+  "schema": "tellegen.synth-sweep/2",
+  "outline": "the MapToGrid app's 1:110m layer (regions.py --outline app-110m), the app's default request",
+  "tellegen_sha256": "sha256:96c4c913912a75bfa11512a717b69e9b403e9d156c23220da1db814bcc783da1",
+  "peak_references_sha256": "sha256:8aec1e501fbb3e25ee8973b8a4eaae259e9dfdae5bb4ea3c1191c25abd1fd2b2",
+  "seeds": [
+    1,
+    7,
+    2026
+  ],
+  "tolerance": 0.25,
+  "specs": {
+    "prt": "sha256:2c9cf72b575dcdd8c67177d925af6bbf5da22c2997908beef96731d44454bb25",
+    "esp": "sha256:892d9483b87c6eea237535e4a7e207a6952b1b9aa5df652f1459a8387caad8ab",
+    "deu": "sha256:490119cc6d6aee6061249e734033186c55f26e4adc95d3f2625ba16deee61fde",
+    "gbr": "sha256:16d8304caec6f1f6f6879d4df95be7a39a68a6bab82f5fbcc8dc9249c791e3f7",
+    "texas-box": "sha256:f9806c8fd9fb5a9a6ca98ac04f81253ae49624244bb2a87ced157facd1722dce",
+    "usa": "sha256:10342ca41e771655acf2d7f12b5e5755d30f7e6cd636fe7c6abeaef63f390954",
+    "ind": "sha256:b0162d09e0877e3780773692495ef0c5633cc61e03342d5fb840bd44051c0f21",
+    "chn": "sha256:0ab06ab133e8741c98e206cd9cda665b40e5382d74d508ef436543ba94b3d4a6",
+    "rus": "sha256:1db91adf1209bdc396a12ead5b52af6de727b01afa62fd1777eed970783d225e",
+    "bra": "sha256:79ea098d70d3a18646a6b03c7bd89fab49ee9fc96641694895a43a01ad1469fb",
+    "jpn": "sha256:f1033c20e184354c9d441d76cec7fd50d287c68fa249a5fe50bea7423a5849c5",
+    "aus": "sha256:03d7b8cc32972cba63417f4edbb39353e74bed616882b13913bc77f39f44ab3d",
+    "zaf": "sha256:df47bb7ad6a64cb2d8792c4031d6d1c9ebd3d54a566c47083371bba4e2e5a536",
+    "nga": "sha256:3c6c224f448f5ab6166c13ead6048a38a01f7efa2e56a0cd06326405d6c78d27",
+    "egy": "sha256:338b7ddc06c979a48b5d1a989aba5037c10a558d4bfa6ab3c9d923e3d827bbe1",
+    "chl": "sha256:149e848d006a07f9751d0d1c1794d7fc2c998d85d1c835b04c0dc20428508b29",
+    "idn": "sha256:86bf56274248d70ddccaf297d72e09c133defc5a5093a82b857a297238690454"
+  },
+  "missing": [
+    "fra"
+  ],
+  "rows": [
+    {
+      "region": "prt",
+      "label": "Portugal",
+      "request_sha256": "98b301abbbf394e39ba9be71496a62b81b9deeb6f4e4275db388c26dcee38287",
+      "buses": 95,
+      "branches": 143,
+      "branch_bus_ratio": 1.5052631578947369,
+      "max_parallel_circuits": 2,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 43.455484341705876,
+      "max_angle_difference_deg": 7.4270815185302625,
+      "voltage_basis": "country",
+      "voltage_country": "PRT",
+      "voltage_levels_kv": [
+        400.0,
+        220.0,
+        150.0
+      ],
+      "peak_mw": 8162.277648621098,
+      "demand_basis": "national",
+      "places_in_region": 20,
+      "places_snapped": 0,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 9395,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Mainland public-grid demand, 15-minute (REN); excludes the Azores and Madeira and behind-the-meter self-consumption",
+        "model_scope": "Mainland Portugal; the Azores and Madeira are cut as far islands or left out as too small for a bus",
+        "source": "REN, Dados T\u00e9cnicos 2025",
+        "urls": [
+          "https://www.ren.pt/media/2cbfm5p4/ren-dados-te-cnicos-2025.pdf"
+        ]
+      },
+      "peak_ratio": 0.8687895315190098,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0104579056255436,
+        1.0328625826345639
+      ],
+      "valid": true,
+      "engine_ms": 9.733334000000003,
+      "generation_ms": 4.280751,
+      "stage_ms": {
+        "context": 1.245417,
+        "site_buses": 0.2148340000000002,
+        "topology": 0.28441700000000014,
+        "electrify": 2.5360830000000005,
+        "dc_opf": 3.831625,
+        "calibrate": 0.08525000000000027,
+        "ac_pf": 1.5227909999999998,
+        "finalize": 0.012917000000001622
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "prt",
+      "label": "Portugal",
+      "request_sha256": "6b0c28514c29abd6cca44e45766caaea10ce83476280ddf7cb8942aeeb017fb2",
+      "buses": 95,
+      "branches": 144,
+      "branch_bus_ratio": 1.5157894736842106,
+      "max_parallel_circuits": 2,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 44.28663129848752,
+      "max_angle_difference_deg": 8.593434867983328,
+      "voltage_basis": "country",
+      "voltage_country": "PRT",
+      "voltage_levels_kv": [
+        400.0,
+        220.0,
+        150.0
+      ],
+      "peak_mw": 8162.277648621098,
+      "demand_basis": "national",
+      "places_in_region": 20,
+      "places_snapped": 0,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 9395,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Mainland public-grid demand, 15-minute (REN); excludes the Azores and Madeira and behind-the-meter self-consumption",
+        "model_scope": "Mainland Portugal; the Azores and Madeira are cut as far islands or left out as too small for a bus",
+        "source": "REN, Dados T\u00e9cnicos 2025",
+        "urls": [
+          "https://www.ren.pt/media/2cbfm5p4/ren-dados-te-cnicos-2025.pdf"
+        ]
+      },
+      "peak_ratio": 0.8687895315190098,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0073523216480906,
+        1.0234119091956635
+      ],
+      "valid": true,
+      "engine_ms": 7.457416000000001,
+      "generation_ms": 3.025792,
+      "stage_ms": {
+        "context": 0.628833,
+        "site_buses": 0.13866699999999998,
+        "topology": 0.25954200000000016,
+        "electrify": 1.9987499999999998,
+        "dc_opf": 3.1106250000000006,
+        "calibrate": 0.04220800000000047,
+        "ac_pf": 1.2730829999999997,
+        "finalize": 0.005708000000000268
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "prt",
+      "label": "Portugal",
+      "request_sha256": "7e56de19d16e9d6630a46c0181b36240cc08aa1e9e6551d8ddbc6bcaa1dc898b",
+      "buses": 95,
+      "branches": 142,
+      "branch_bus_ratio": 1.4947368421052631,
+      "max_parallel_circuits": 2,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 24.488880295742067,
+      "max_angle_difference_deg": 12.514987997320139,
+      "voltage_basis": "country",
+      "voltage_country": "PRT",
+      "voltage_levels_kv": [
+        400.0,
+        220.0,
+        150.0
+      ],
+      "peak_mw": 8162.277648621098,
+      "demand_basis": "national",
+      "places_in_region": 20,
+      "places_snapped": 0,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 9395,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Mainland public-grid demand, 15-minute (REN); excludes the Azores and Madeira and behind-the-meter self-consumption",
+        "model_scope": "Mainland Portugal; the Azores and Madeira are cut as far islands or left out as too small for a bus",
+        "source": "REN, Dados T\u00e9cnicos 2025",
+        "urls": [
+          "https://www.ren.pt/media/2cbfm5p4/ren-dados-te-cnicos-2025.pdf"
+        ]
+      },
+      "peak_ratio": 0.8687895315190098,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        0.9920518740841814,
+        1.0247670877970794
+      ],
+      "valid": true,
+      "engine_ms": 6.446166999999998,
+      "generation_ms": 2.6435,
+      "stage_ms": {
+        "context": 0.6396660000000001,
+        "site_buses": 0.11070900000000006,
+        "topology": 0.20499999999999996,
+        "electrify": 1.6881249999999999,
+        "dc_opf": 2.683,
+        "calibrate": 0.03654099999999971,
+        "ac_pf": 1.079166999999999,
+        "finalize": 0.003959000000000046
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "esp",
+      "label": "Spain",
+      "request_sha256": "c495e92204ba0327e64377c131880675f4d4443aa4e04e0b4eb66cb8f94d18e7",
+      "buses": 254,
+      "branches": 406,
+      "branch_bus_ratio": 1.5984251968503937,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 99.90084689696872,
+      "max_angle_difference_deg": 21.241463579803742,
+      "voltage_basis": "country",
+      "voltage_country": "ESP",
+      "voltage_levels_kv": [
+        400.0,
+        220.0
+      ],
+      "peak_mw": 37988.325570987334,
+      "demand_basis": "national",
+      "places_in_region": 45,
+      "places_snapped": 1,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 39957,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Peninsular hourly demand at power-station busbars (REE); excludes the Balearic and Canary Islands",
+        "model_scope": "Peninsular Spain and the Balearic Islands; the Canaries are cut as far islands",
+        "source": "REE, annual maximums",
+        "urls": [
+          "https://www.sistemaelectrico-ree.es/en/spanish-electricity-system/demand/annual-maximums"
+        ]
+      },
+      "peak_ratio": 0.9507301742119612,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0183469853174214,
+        1.025811585984674
+      ],
+      "valid": true,
+      "engine_ms": 23.097419000000002,
+      "generation_ms": 12.394709,
+      "stage_ms": {
+        "context": 0.8906670000000001,
+        "site_buses": 0.28495799999999993,
+        "topology": 0.5303339999999999,
+        "electrify": 10.68875,
+        "dc_opf": 7.631583999999998,
+        "calibrate": 0.0778749999999988,
+        "ac_pf": 2.989167000000002,
+        "finalize": 0.004084000000002419
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "esp",
+      "label": "Spain",
+      "request_sha256": "7b8c4ea26a9fd469956b61b93d4003494af5efac56ff4e51f97f0c1b92bbcab5",
+      "buses": 254,
+      "branches": 425,
+      "branch_bus_ratio": 1.6732283464566928,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 88.54249089378526,
+      "max_angle_difference_deg": 16.92344422620215,
+      "voltage_basis": "country",
+      "voltage_country": "ESP",
+      "voltage_levels_kv": [
+        400.0,
+        220.0
+      ],
+      "peak_mw": 37988.325570987334,
+      "demand_basis": "national",
+      "places_in_region": 45,
+      "places_snapped": 1,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 39957,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Peninsular hourly demand at power-station busbars (REE); excludes the Balearic and Canary Islands",
+        "model_scope": "Peninsular Spain and the Balearic Islands; the Canaries are cut as far islands",
+        "source": "REE, annual maximums",
+        "urls": [
+          "https://www.sistemaelectrico-ree.es/en/spanish-electricity-system/demand/annual-maximums"
+        ]
+      },
+      "peak_ratio": 0.9507301742119612,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0177060316143267,
+        1.0224937619855607
+      ],
+      "valid": true,
+      "engine_ms": 19.699124000000005,
+      "generation_ms": 10.075708,
+      "stage_ms": {
+        "context": 0.761375,
+        "site_buses": 0.2505830000000001,
+        "topology": 0.4701249999999997,
+        "electrify": 8.593625000000001,
+        "dc_opf": 6.981749999999996,
+        "calibrate": 0.07070800000000332,
+        "ac_pf": 2.567458000000002,
+        "finalize": 0.003500000000002501
+      },
+      "warnings": [
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "esp",
+      "label": "Spain",
+      "request_sha256": "813b0880ece27e19465082d9a95c6739c8cf0089bc5817a93d3baf1235612de6",
+      "buses": 254,
+      "branches": 407,
+      "branch_bus_ratio": 1.6023622047244095,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 53.37047026701623,
+      "max_angle_difference_deg": 14.912527064366996,
+      "voltage_basis": "country",
+      "voltage_country": "ESP",
+      "voltage_levels_kv": [
+        400.0,
+        220.0
+      ],
+      "peak_mw": 37988.325570987334,
+      "demand_basis": "national",
+      "places_in_region": 45,
+      "places_snapped": 1,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 39957,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Peninsular hourly demand at power-station busbars (REE); excludes the Balearic and Canary Islands",
+        "model_scope": "Peninsular Spain and the Balearic Islands; the Canaries are cut as far islands",
+        "source": "REE, annual maximums",
+        "urls": [
+          "https://www.sistemaelectrico-ree.es/en/spanish-electricity-system/demand/annual-maximums"
+        ]
+      },
+      "peak_ratio": 0.9507301742119612,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0153092267508252,
+        1.0282518170292334
+      ],
+      "valid": true,
+      "engine_ms": 19.32862499999999,
+      "generation_ms": 9.740083,
+      "stage_ms": {
+        "context": 0.709292,
+        "site_buses": 0.24529099999999993,
+        "topology": 0.4481249999999999,
+        "electrify": 8.337375,
+        "dc_opf": 6.6399589999999975,
+        "calibrate": 0.09020800000000051,
+        "ac_pf": 2.8519999999999968,
+        "finalize": 0.006374999999998465
+      },
+      "warnings": [
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "deu",
+      "label": "Germany",
+      "request_sha256": "189e0f84cd959103e95c59b2338a4d0abe489c7eafdceedc2ebe978a0492e8d8",
+      "buses": 524,
+      "branches": 809,
+      "branch_bus_ratio": 1.5438931297709924,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 43.310102027343135,
+      "max_angle_difference_deg": 13.466047551053009,
+      "voltage_basis": "country",
+      "voltage_country": "DEU",
+      "voltage_levels_kv": [
+        380.0,
+        220.0
+      ],
+      "peak_mw": 78507.53424657535,
+      "demand_basis": "national",
+      "places_in_region": 61,
+      "places_snapped": 4,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 75635,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Country hourly total load (ENTSO-E, the SMARD Netzlast series)",
+        "model_scope": "Germany",
+        "source": "ENTSO-E Statistical Factsheet 2025",
+        "urls": [
+          "https://eepublicdownloads.entsoe.eu/clean-documents/Publications/Statistics/Factsheet/entsoe_sfs2025_web.pdf"
+        ]
+      },
+      "peak_ratio": 1.037978901918098,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        0.9937111550888639,
+        1.02114737977634
+      ],
+      "valid": true,
+      "engine_ms": 45.494207,
+      "generation_ms": 25.639874000000002,
+      "stage_ms": {
+        "context": 0.8837919999999999,
+        "site_buses": 0.5392910000000001,
+        "topology": 0.962791,
+        "electrify": 23.254,
+        "dc_opf": 14.058541999999996,
+        "calibrate": 0.19479100000000216,
+        "ac_pf": 5.595375000000004,
+        "finalize": 0.0056250000000019895
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "deu",
+      "label": "Germany",
+      "request_sha256": "25e0c0e8818b0d9412d99ebcc1ccd56912af368871488dad3f2c7853ea4260b7",
+      "buses": 524,
+      "branches": 840,
+      "branch_bus_ratio": 1.6030534351145038,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 68.88198303803833,
+      "max_angle_difference_deg": 12.617041407275302,
+      "voltage_basis": "country",
+      "voltage_country": "DEU",
+      "voltage_levels_kv": [
+        380.0,
+        220.0
+      ],
+      "peak_mw": 78507.53424657535,
+      "demand_basis": "national",
+      "places_in_region": 61,
+      "places_snapped": 4,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 75635,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Country hourly total load (ENTSO-E, the SMARD Netzlast series)",
+        "model_scope": "Germany",
+        "source": "ENTSO-E Statistical Factsheet 2025",
+        "urls": [
+          "https://eepublicdownloads.entsoe.eu/clean-documents/Publications/Statistics/Factsheet/entsoe_sfs2025_web.pdf"
+        ]
+      },
+      "peak_ratio": 1.037978901918098,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.000073812541127,
+        1.0237936241640033
+      ],
+      "valid": true,
+      "engine_ms": 48.213708000000004,
+      "generation_ms": 27.469916,
+      "stage_ms": {
+        "context": 0.843833,
+        "site_buses": 0.507666,
+        "topology": 0.961042,
+        "electrify": 25.157375000000002,
+        "dc_opf": 14.907,
+        "calibrate": 0.19866700000000037,
+        "ac_pf": 5.632417000000004,
+        "finalize": 0.005707999999998492
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "deu",
+      "label": "Germany",
+      "request_sha256": "a9690c96b0ffc37d99d9d533d4c2e3259178a8fd3520f04ba9e310f5990a30a4",
+      "buses": 524,
+      "branches": 801,
+      "branch_bus_ratio": 1.5286259541984732,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 43.011622088738456,
+      "max_angle_difference_deg": 8.824915109576942,
+      "voltage_basis": "country",
+      "voltage_country": "DEU",
+      "voltage_levels_kv": [
+        380.0,
+        220.0
+      ],
+      "peak_mw": 78507.53424657535,
+      "demand_basis": "national",
+      "places_in_region": 61,
+      "places_snapped": 4,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 75635,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Country hourly total load (ENTSO-E, the SMARD Netzlast series)",
+        "model_scope": "Germany",
+        "source": "ENTSO-E Statistical Factsheet 2025",
+        "urls": [
+          "https://eepublicdownloads.entsoe.eu/clean-documents/Publications/Statistics/Factsheet/entsoe_sfs2025_web.pdf"
+        ]
+      },
+      "peak_ratio": 1.037978901918098,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        0.9797988463671343,
+        1.0214592501339497
+      ],
+      "valid": true,
+      "engine_ms": 43.048418000000005,
+      "generation_ms": 24.409418000000002,
+      "stage_ms": {
+        "context": 0.873292,
+        "site_buses": 0.5209170000000001,
+        "topology": 0.9664590000000004,
+        "electrify": 22.048750000000002,
+        "dc_opf": 13.159416999999998,
+        "calibrate": 0.1321670000000026,
+        "ac_pf": 5.342666000000001,
+        "finalize": 0.004750000000001364
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "gbr",
+      "label": "United Kingdom",
+      "request_sha256": "b2e7a6524670e12832e47a41842ac985a50dc4fe706be7d987a4fc8dc698e275",
+      "buses": 315,
+      "branches": 501,
+      "branch_bus_ratio": 1.5904761904761904,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 44.13686119319077,
+      "max_angle_difference_deg": 8.414970159196702,
+      "voltage_basis": "country",
+      "voltage_country": "GBR",
+      "voltage_levels_kv": [
+        400.0,
+        275.0
+      ],
+      "peak_mw": 47218.82148876903,
+      "demand_basis": "national",
+      "places_in_region": 57,
+      "places_snapped": 4,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 48141,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Great Britain: transmission National Demand plus NESO's estimates of embedded wind and solar, half-hourly maximum (9 Jan 2025); Northern Ireland, about 1.8 GW, is not included",
+        "model_scope": "The United Kingdom polygon, Northern Ireland included",
+        "source": "NESO historic demand data",
+        "urls": [
+          "https://www.neso.energy/data-portal/historic-demand-data"
+        ]
+      },
+      "peak_ratio": 0.9808442177929213,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0193012362904417,
+        1.0536798069004467
+      ],
+      "valid": true,
+      "engine_ms": 26.847292000000003,
+      "generation_ms": 15.673626000000002,
+      "stage_ms": {
+        "context": 0.854292,
+        "site_buses": 0.31262500000000015,
+        "topology": 0.534875,
+        "electrify": 13.971834000000001,
+        "dc_opf": 7.862708000000003,
+        "calibrate": 0.09179100000000062,
+        "ac_pf": 3.212291999999998,
+        "finalize": 0.006875000000000853
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "gbr",
+      "label": "United Kingdom",
+      "request_sha256": "939877b47c546b4a6b8fd9f27480b59198a65176a3c2444878d13a4974129708",
+      "buses": 315,
+      "branches": 497,
+      "branch_bus_ratio": 1.5777777777777777,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 44.35383825183099,
+      "max_angle_difference_deg": 9.958329860735523,
+      "voltage_basis": "country",
+      "voltage_country": "GBR",
+      "voltage_levels_kv": [
+        400.0,
+        275.0
+      ],
+      "peak_mw": 47218.82148876903,
+      "demand_basis": "national",
+      "places_in_region": 57,
+      "places_snapped": 4,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 48141,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Great Britain: transmission National Demand plus NESO's estimates of embedded wind and solar, half-hourly maximum (9 Jan 2025); Northern Ireland, about 1.8 GW, is not included",
+        "model_scope": "The United Kingdom polygon, Northern Ireland included",
+        "source": "NESO historic demand data",
+        "urls": [
+          "https://www.neso.energy/data-portal/historic-demand-data"
+        ]
+      },
+      "peak_ratio": 0.9808442177929213,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.015167169392894,
+        1.0261222367255118
+      ],
+      "valid": true,
+      "engine_ms": 24.72574999999999,
+      "generation_ms": 14.095415999999998,
+      "stage_ms": {
+        "context": 0.8155410000000001,
+        "site_buses": 0.3161250000000001,
+        "topology": 0.5551250000000001,
+        "electrify": 12.408624999999999,
+        "dc_opf": 7.618415999999998,
+        "calibrate": 0.08358399999999833,
+        "ac_pf": 2.924583999999996,
+        "finalize": 0.003750000000000142
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "gbr",
+      "label": "United Kingdom",
+      "request_sha256": "cdeaf46b48aecda350a979bae17cbe400fc00aa889940b2616424c254b58759f",
+      "buses": 315,
+      "branches": 472,
+      "branch_bus_ratio": 1.4984126984126984,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 25.397800453072037,
+      "max_angle_difference_deg": 10.133563044303848,
+      "voltage_basis": "country",
+      "voltage_country": "GBR",
+      "voltage_levels_kv": [
+        400.0,
+        275.0
+      ],
+      "peak_mw": 47218.82148876903,
+      "demand_basis": "national",
+      "places_in_region": 57,
+      "places_snapped": 4,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 48141,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Great Britain: transmission National Demand plus NESO's estimates of embedded wind and solar, half-hourly maximum (9 Jan 2025); Northern Ireland, about 1.8 GW, is not included",
+        "model_scope": "The United Kingdom polygon, Northern Ireland included",
+        "source": "NESO historic demand data",
+        "urls": [
+          "https://www.neso.energy/data-portal/historic-demand-data"
+        ]
+      },
+      "peak_ratio": 0.9808442177929213,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.010754718963507,
+        1.0248883995740334
+      ],
+      "valid": true,
+      "engine_ms": 19.52674899999999,
+      "generation_ms": 9.123624,
+      "stage_ms": {
+        "context": 0.824042,
+        "site_buses": 0.3193330000000001,
+        "topology": 0.5426660000000001,
+        "electrify": 7.437582999999999,
+        "dc_opf": 7.223750000000001,
+        "calibrate": 0.09345799999999471,
+        "ac_pf": 3.081749999999996,
+        "finalize": 0.004166999999998922
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "texas-box",
+      "label": "Texas box",
+      "request_sha256": "605d5163ae8cc96070f7fc0d4e2d2c9c01c7fa737076f2c4f25162c65c373a66",
+      "buses": 462,
+      "branches": 739,
+      "branch_bus_ratio": 1.5995670995670996,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": true,
+      "angle_spread_deg": 41.93542913358838,
+      "max_angle_difference_deg": 10.125117778553182,
+      "voltage_basis": "country",
+      "voltage_country": "USA",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        345.0,
+        230.0
+      ],
+      "peak_mw": 69265.50224076449,
+      "demand_basis": "national",
+      "places_in_region": 104,
+      "places_snapped": 0,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 83679,
+        "year": 2025,
+        "comparable": "no",
+        "scope": "ERCOT region hourly integrated native load",
+        "model_scope": "A bounding box around Texas that also takes in parts of Mexico, New Mexico, Oklahoma and Louisiana, and El Paso, which is outside ERCOT",
+        "source": "ERCOT hourly load archive",
+        "urls": [
+          "https://www.ercot.com/gridinfo/load/load_hist"
+        ]
+      },
+      "peak_ratio": 0.8277525094798515,
+      "peak_verdict": "not comparable",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0130937918538623,
+        1.0272722286955593
+      ],
+      "valid": true,
+      "engine_ms": 60.10912600000001,
+      "generation_ms": 42.628793,
+      "stage_ms": {
+        "context": 1.077709,
+        "site_buses": 0.2530000000000001,
+        "topology": 0.5065,
+        "electrify": 40.791584,
+        "dc_opf": 12.010958000000002,
+        "calibrate": 0.1389170000000064,
+        "ac_pf": 5.325916999999997,
+        "finalize": 0.004541000000003237
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "voltage_level_added"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "texas-box",
+      "label": "Texas box",
+      "request_sha256": "793197b8c6afb8cfd70ee4f1c7b4ced164a919e93576a89e76ee2a21db2ef331",
+      "buses": 462,
+      "branches": 740,
+      "branch_bus_ratio": 1.6017316017316017,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 44.73510720085333,
+      "max_angle_difference_deg": 10.659473424506059,
+      "voltage_basis": "country",
+      "voltage_country": "USA",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        345.0,
+        230.0
+      ],
+      "peak_mw": 69265.50224076449,
+      "demand_basis": "national",
+      "places_in_region": 104,
+      "places_snapped": 0,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 83679,
+        "year": 2025,
+        "comparable": "no",
+        "scope": "ERCOT region hourly integrated native load",
+        "model_scope": "A bounding box around Texas that also takes in parts of Mexico, New Mexico, Oklahoma and Louisiana, and El Paso, which is outside ERCOT",
+        "source": "ERCOT hourly load archive",
+        "urls": [
+          "https://www.ercot.com/gridinfo/load/load_hist"
+        ]
+      },
+      "peak_ratio": 0.8277525094798515,
+      "peak_verdict": "not comparable",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0013810365896936,
+        1.0463239186964577
+      ],
+      "valid": true,
+      "engine_ms": 67.64883499999999,
+      "generation_ms": 49.979209,
+      "stage_ms": {
+        "context": 1.0637919999999998,
+        "site_buses": 0.2730830000000002,
+        "topology": 0.49662499999999987,
+        "electrify": 48.145709,
+        "dc_opf": 12.087209000000001,
+        "calibrate": 0.12283299999999997,
+        "ac_pf": 5.454000000000001,
+        "finalize": 0.005583999999998923
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "texas-box",
+      "label": "Texas box",
+      "request_sha256": "d6294f01a5eec784a97960fa119ba1a8f05b04e3b68ea443dc7ac8d1394f5a27",
+      "buses": 462,
+      "branches": 739,
+      "branch_bus_ratio": 1.5995670995670996,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": true,
+      "angle_spread_deg": 43.9273365467903,
+      "max_angle_difference_deg": 12.62712750807885,
+      "voltage_basis": "country",
+      "voltage_country": "USA",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        345.0,
+        230.0
+      ],
+      "peak_mw": 69265.50224076449,
+      "demand_basis": "national",
+      "places_in_region": 104,
+      "places_snapped": 0,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 83679,
+        "year": 2025,
+        "comparable": "no",
+        "scope": "ERCOT region hourly integrated native load",
+        "model_scope": "A bounding box around Texas that also takes in parts of Mexico, New Mexico, Oklahoma and Louisiana, and El Paso, which is outside ERCOT",
+        "source": "ERCOT hourly load archive",
+        "urls": [
+          "https://www.ercot.com/gridinfo/load/load_hist"
+        ]
+      },
+      "peak_ratio": 0.8277525094798515,
+      "peak_verdict": "not comparable",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0089332104553423,
+        1.0252305044563643
+      ],
+      "valid": true,
+      "engine_ms": 63.459082,
+      "generation_ms": 44.638374,
+      "stage_ms": {
+        "context": 1.133541,
+        "site_buses": 0.27891699999999964,
+        "topology": 0.49587499999999984,
+        "electrify": 42.730041,
+        "dc_opf": 12.897833000000006,
+        "calibrate": 0.16075000000000017,
+        "ac_pf": 5.756875000000001,
+        "finalize": 0.005249999999996646
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "voltage_level_added"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "usa",
+      "label": "United States of America",
+      "request_sha256": "10fab62d32976ecfbdaf12f36737ad9100393a0ba58c6487951b507fc64b74be",
+      "buses": 3000,
+      "branches": 4810,
+      "branch_bus_ratio": 1.6033333333333333,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 199.02561686383814,
+      "max_angle_difference_deg": 15.838450810003149,
+      "voltage_basis": "country",
+      "voltage_country": "USA",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        345.0,
+        230.0
+      ],
+      "peak_mw": 649905.7369180825,
+      "demand_basis": "national",
+      "places_in_region": 679,
+      "places_snapped": 9,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 759180,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Lower-48 coincident hourly demand over the balancing authorities (EIA-930); 2025 value preliminary",
+        "model_scope": "The United States after the far-island policy (Alaska and Hawaii cut)",
+        "source": "EIA, Today in Energy",
+        "urls": [
+          "https://www.eia.gov/todayinenergy/detail.php?id=65864"
+        ]
+      },
+      "peak_ratio": 0.8560627742012203,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "not_converged",
+      "ac_message": "AC power flow did not converge: best mismatch 1.316e-2 over 5 starts",
+      "vm": [
+        null,
+        null
+      ],
+      "valid": false,
+      "engine_ms": 1454.436251,
+      "generation_ms": 709.462751,
+      "stage_ms": {
+        "context": 8.0315,
+        "site_buses": 7.627792000000001,
+        "topology": 12.922499999999998,
+        "electrify": 680.8809590000001,
+        "dc_opf": 114.48337500000014,
+        "calibrate": 1.0801669999999604,
+        "ac_pf": 629.3962080000001,
+        "finalize": 0.013749999999845386
+      },
+      "warnings": [
+        "bus_count_capped",
+        "small_islands_skipped",
+        "islands_cut",
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added",
+        "ac_pf_not_converged"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "usa",
+      "label": "United States of America",
+      "request_sha256": "b4e056abd639725ab05aaec1f6b80829b5ba1fed5157534cbcc485404ec03bf8",
+      "buses": 3000,
+      "branches": 4832,
+      "branch_bus_ratio": 1.6106666666666667,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 4,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 262.7087126788156,
+      "max_angle_difference_deg": 15.91823935912878,
+      "voltage_basis": "country",
+      "voltage_country": "USA",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        345.0,
+        230.0
+      ],
+      "peak_mw": 649905.7369180825,
+      "demand_basis": "national",
+      "places_in_region": 679,
+      "places_snapped": 9,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 759180,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Lower-48 coincident hourly demand over the balancing authorities (EIA-930); 2025 value preliminary",
+        "model_scope": "The United States after the far-island policy (Alaska and Hawaii cut)",
+        "source": "EIA, Today in Energy",
+        "urls": [
+          "https://www.eia.gov/todayinenergy/detail.php?id=65864"
+        ]
+      },
+      "peak_ratio": 0.8560627742012203,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "not_converged",
+      "ac_message": "AC power flow did not converge: best mismatch 1.979e-2 over 5 starts",
+      "vm": [
+        null,
+        null
+      ],
+      "valid": false,
+      "engine_ms": 1379.9031679999998,
+      "generation_ms": 772.909918,
+      "stage_ms": {
+        "context": 8.040375000000001,
+        "site_buses": 7.563333999999999,
+        "topology": 13.046792,
+        "electrify": 744.259417,
+        "dc_opf": 111.232125,
+        "calibrate": 116.10058299999992,
+        "ac_pf": 379.6462919999999,
+        "finalize": 0.014250000000174623
+      },
+      "warnings": [
+        "bus_count_capped",
+        "small_islands_skipped",
+        "islands_cut",
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added",
+        "ac_pf_not_converged"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "usa",
+      "label": "United States of America",
+      "request_sha256": "3766348a46c2360a11e94eea5a1b49063945818d89ea002ea61a84175f4511ef",
+      "buses": 3000,
+      "branches": 4823,
+      "branch_bus_ratio": 1.6076666666666666,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 173.9215528450084,
+      "max_angle_difference_deg": 14.81014073843704,
+      "voltage_basis": "country",
+      "voltage_country": "USA",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        345.0,
+        230.0
+      ],
+      "peak_mw": 649905.7369180825,
+      "demand_basis": "national",
+      "places_in_region": 679,
+      "places_snapped": 9,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 759180,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Lower-48 coincident hourly demand over the balancing authorities (EIA-930); 2025 value preliminary",
+        "model_scope": "The United States after the far-island policy (Alaska and Hawaii cut)",
+        "source": "EIA, Today in Energy",
+        "urls": [
+          "https://www.eia.gov/todayinenergy/detail.php?id=65864"
+        ]
+      },
+      "peak_ratio": 0.8560627742012203,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "not_converged",
+      "ac_message": "AC power flow did not converge: best mismatch 7.670e-1 over 5 starts",
+      "vm": [
+        null,
+        null
+      ],
+      "valid": false,
+      "engine_ms": 1565.188584,
+      "generation_ms": 703.6827499999999,
+      "stage_ms": {
+        "context": 8.184875000000002,
+        "site_buses": 7.497791999999999,
+        "topology": 13.048374999999998,
+        "electrify": 674.9517079999999,
+        "dc_opf": 113.35383300000001,
+        "calibrate": 1.1364589999999453,
+        "ac_pf": 747.00025,
+        "finalize": 0.015292000000044936
+      },
+      "warnings": [
+        "bus_count_capped",
+        "small_islands_skipped",
+        "islands_cut",
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added",
+        "ac_pf_not_converged"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "ind",
+      "label": "India",
+      "request_sha256": "2187b50d72195c0769e61de5b3e7efa3e53e57584ea81f5eb3c1fb8353dbdcf5",
+      "buses": 2014,
+      "branches": 3225,
+      "branch_bus_ratio": 1.6012909632571997,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 72.95829012553932,
+      "max_angle_difference_deg": 16.118644196677526,
+      "voltage_basis": "country",
+      "voltage_country": "IND",
+      "voltage_levels_kv": [
+        765.0,
+        400.0,
+        220.0
+      ],
+      "peak_mw": 302003.5719536117,
+      "demand_basis": "national",
+      "places_in_region": 215,
+      "places_snapped": 11,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 249854,
+        "year": 2024,
+        "comparable": "yes",
+        "scope": "All-India peak demand met (30 May 2024). No 2025 annual figure is published; ministerial statements put 2025 near 241-243 GW",
+        "model_scope": "India",
+        "source": "Ministry of Power via PIB",
+        "urls": [
+          "https://www.pib.gov.in/PressReleaseIframePage.aspx?PRID=2022257"
+        ]
+      },
+      "peak_ratio": 1.2087201803998002,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0169953829349327,
+        1.0237016459314416
+      ],
+      "valid": true,
+      "engine_ms": 507.88662500000015,
+      "generation_ms": 413.66958400000004,
+      "stage_ms": {
+        "context": 2.8062080000000003,
+        "site_buses": 3.7563340000000007,
+        "topology": 6.10025,
+        "electrify": 401.006792,
+        "dc_opf": 61.059833000000026,
+        "calibrate": 0.5426669999999945,
+        "ac_pf": 32.60458300000005,
+        "finalize": 0.009958000000040101
+      },
+      "warnings": [
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "ind",
+      "label": "India",
+      "request_sha256": "a264ea82a3e971303258a7d1494a5ff8dc3fb240f8eb6c61f715d1dcb496630c",
+      "buses": 2014,
+      "branches": 3230,
+      "branch_bus_ratio": 1.6037735849056605,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 80.56374015205773,
+      "max_angle_difference_deg": 15.662926555731282,
+      "voltage_basis": "country",
+      "voltage_country": "IND",
+      "voltage_levels_kv": [
+        765.0,
+        400.0,
+        220.0
+      ],
+      "peak_mw": 302003.5719536117,
+      "demand_basis": "national",
+      "places_in_region": 215,
+      "places_snapped": 11,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 249854,
+        "year": 2024,
+        "comparable": "yes",
+        "scope": "All-India peak demand met (30 May 2024). No 2025 annual figure is published; ministerial statements put 2025 near 241-243 GW",
+        "model_scope": "India",
+        "source": "Ministry of Power via PIB",
+        "urls": [
+          "https://www.pib.gov.in/PressReleaseIframePage.aspx?PRID=2022257"
+        ]
+      },
+      "peak_ratio": 1.2087201803998002,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0130850733879253,
+        1.021667287467763
+      ],
+      "valid": true,
+      "engine_ms": 485.97895600000004,
+      "generation_ms": 385.454749,
+      "stage_ms": {
+        "context": 2.783625,
+        "site_buses": 3.960041,
+        "topology": 6.031208000000001,
+        "electrify": 372.679875,
+        "dc_opf": 66.78004100000004,
+        "calibrate": 0.7642500000000041,
+        "ac_pf": 32.962875,
+        "finalize": 0.01704100000000608
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "ind",
+      "label": "India",
+      "request_sha256": "d06c4f8b45b4063ed08c394e8df9a1cdc211af38ecbe1059e17752201befefb5",
+      "buses": 2014,
+      "branches": 3233,
+      "branch_bus_ratio": 1.605263157894737,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 61.631323261371186,
+      "max_angle_difference_deg": 11.762965903248793,
+      "voltage_basis": "country",
+      "voltage_country": "IND",
+      "voltage_levels_kv": [
+        765.0,
+        400.0,
+        220.0
+      ],
+      "peak_mw": 302003.5719536117,
+      "demand_basis": "national",
+      "places_in_region": 215,
+      "places_snapped": 11,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 249854,
+        "year": 2024,
+        "comparable": "yes",
+        "scope": "All-India peak demand met (30 May 2024). No 2025 annual figure is published; ministerial statements put 2025 near 241-243 GW",
+        "model_scope": "India",
+        "source": "Ministry of Power via PIB",
+        "urls": [
+          "https://www.pib.gov.in/PressReleaseIframePage.aspx?PRID=2022257"
+        ]
+      },
+      "peak_ratio": 1.2087201803998002,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0081529880693654,
+        1.0221655666850085
+      ],
+      "valid": true,
+      "engine_ms": 463.283958,
+      "generation_ms": 364.19324900000004,
+      "stage_ms": {
+        "context": 2.7965,
+        "site_buses": 3.7549580000000002,
+        "topology": 6.1257079999999995,
+        "electrify": 351.51608300000004,
+        "dc_opf": 65.72987499999999,
+        "calibrate": 0.5660839999999894,
+        "ac_pf": 32.78429199999999,
+        "finalize": 0.010457999999971435
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "chn",
+      "label": "People's Republic of China",
+      "request_sha256": "23a4c18c7eb0138fb197000e74a5ff6e26e07a9df16af974a557a9f1a1674f3f",
+      "buses": 3000,
+      "branches": 4921,
+      "branch_bus_ratio": 1.6403333333333334,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 1000.0,
+      "plan_converged": false,
+      "angle_spread_deg": 203.2054378577245,
+      "max_angle_difference_deg": 30.609881593613636,
+      "voltage_basis": "country",
+      "voltage_country": "CHN",
+      "voltage_levels_kv": [
+        1000.0,
+        500.0,
+        220.0
+      ],
+      "peak_mw": 1501471.7197227369,
+      "demand_basis": "national",
+      "places_in_region": 402,
+      "places_snapped": 4,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 1508000,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "National total maximum load, all grids (NEA, 17 Jul 2025)",
+        "model_scope": "China (Natural Earth's CHN polygon, which leaves out Taiwan, Hong Kong and Macao)",
+        "source": "National Energy Administration, as reported",
+        "urls": [
+          "https://news.10jqka.com.cn/20260711/c678109972.shtml",
+          "https://www.stdaily.com/web/gdxw/2025-07/06/content_365859.html"
+        ]
+      },
+      "peak_ratio": 0.9956709016729024,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0191694181532374,
+        1.0791004934271804
+      ],
+      "valid": true,
+      "engine_ms": 999.734668,
+      "generation_ms": 811.2854590000001,
+      "stage_ms": {
+        "context": 4.673333999999999,
+        "site_buses": 7.221707999999999,
+        "topology": 13.011167000000002,
+        "electrify": 786.3792500000001,
+        "dc_opf": 124.74687500000005,
+        "calibrate": 1.1874589999999898,
+        "ac_pf": 62.50170800000001,
+        "finalize": 0.013166999999953077
+      },
+      "warnings": [
+        "bus_count_capped",
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "chn",
+      "label": "People's Republic of China",
+      "request_sha256": "ec32ab1482ef216a3b2a0f57874388c34ee31b448bb9470bd38300b630ce438a",
+      "buses": 3000,
+      "branches": 5021,
+      "branch_bus_ratio": 1.6736666666666666,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 1000.0,
+      "plan_converged": false,
+      "angle_spread_deg": 290.5598923538906,
+      "max_angle_difference_deg": 27.445627291115088,
+      "voltage_basis": "country",
+      "voltage_country": "CHN",
+      "voltage_levels_kv": [
+        1000.0,
+        500.0,
+        220.0
+      ],
+      "peak_mw": 1501471.7197227369,
+      "demand_basis": "national",
+      "places_in_region": 402,
+      "places_snapped": 4,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 1508000,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "National total maximum load, all grids (NEA, 17 Jul 2025)",
+        "model_scope": "China (Natural Earth's CHN polygon, which leaves out Taiwan, Hong Kong and Macao)",
+        "source": "National Energy Administration, as reported",
+        "urls": [
+          "https://news.10jqka.com.cn/20260711/c678109972.shtml",
+          "https://www.stdaily.com/web/gdxw/2025-07/06/content_365859.html"
+        ]
+      },
+      "peak_ratio": 0.9956709016729024,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0193096051007664,
+        1.021070927410859
+      ],
+      "valid": true,
+      "engine_ms": 873.2772909999999,
+      "generation_ms": 703.340875,
+      "stage_ms": {
+        "context": 4.764583999999999,
+        "site_buses": 7.001667,
+        "topology": 12.908166000000001,
+        "electrify": 678.666458,
+        "dc_opf": 117.21841599999993,
+        "calibrate": 1.1800419999999576,
+        "ac_pf": 51.52445799999998,
+        "finalize": 0.013500000000021828
+      },
+      "warnings": [
+        "bus_count_capped",
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "chn",
+      "label": "People's Republic of China",
+      "request_sha256": "abf9d1959f6edc85cfc15a27ffcd4960b44decc5623e17a486bd5a96dda1d6ad",
+      "buses": 3000,
+      "branches": 4980,
+      "branch_bus_ratio": 1.66,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 2,
+      "added_level_kv": 1000.0,
+      "plan_converged": false,
+      "angle_spread_deg": 222.8719546383334,
+      "max_angle_difference_deg": 27.225090934545246,
+      "voltage_basis": "country",
+      "voltage_country": "CHN",
+      "voltage_levels_kv": [
+        1000.0,
+        500.0,
+        220.0
+      ],
+      "peak_mw": 1501471.7197227369,
+      "demand_basis": "national",
+      "places_in_region": 402,
+      "places_snapped": 4,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 1508000,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "National total maximum load, all grids (NEA, 17 Jul 2025)",
+        "model_scope": "China (Natural Earth's CHN polygon, which leaves out Taiwan, Hong Kong and Macao)",
+        "source": "National Energy Administration, as reported",
+        "urls": [
+          "https://news.10jqka.com.cn/20260711/c678109972.shtml",
+          "https://www.stdaily.com/web/gdxw/2025-07/06/content_365859.html"
+        ]
+      },
+      "peak_ratio": 0.9956709016729024,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.01840915808542,
+        1.021603302907598
+      ],
+      "valid": true,
+      "engine_ms": 1089.592833,
+      "generation_ms": 707.2812920000001,
+      "stage_ms": {
+        "context": 4.778499999999999,
+        "site_buses": 7.022209000000001,
+        "topology": 12.977500000000003,
+        "electrify": 682.5030830000001,
+        "dc_opf": 114.05104200000005,
+        "calibrate": 219.63854099999992,
+        "ac_pf": 48.60929199999987,
+        "finalize": 0.012666000000081112
+      },
+      "warnings": [
+        "bus_count_capped",
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "rus",
+      "label": "Russia",
+      "request_sha256": "04a1e6a636ae7337c86aeea1476d9aa9d342a61db8a45139df0e24ef19c32ea8",
+      "buses": 1181,
+      "branches": 1890,
+      "branch_bus_ratio": 1.6003386960203219,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 750.0,
+      "plan_converged": false,
+      "angle_spread_deg": 67.35069669756403,
+      "max_angle_difference_deg": 14.494725665313144,
+      "voltage_basis": "country",
+      "voltage_country": "RUS",
+      "voltage_levels_kv": [
+        750.0,
+        500.0,
+        220.0
+      ],
+      "peak_mw": 175954.23642969254,
+      "demand_basis": "national",
+      "places_in_region": 578,
+      "places_snapped": 26,
+      "landmasses": 8,
+      "reference": {
+        "reference_mw": 166155,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "UES of Russia; excludes the technologically isolated systems",
+        "model_scope": "Russia with its isolated eastern systems; one far polygon is cut",
+        "source": "SO UPS, 2025 operating report",
+        "urls": [
+          "https://www.so-ups.ru/fileadmin/files/company/reports/disclosure/2026/ups_rep2025.pdf"
+        ]
+      },
+      "peak_ratio": 1.0589764763605822,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0102024816754152,
+        1.0403001275071309
+      ],
+      "valid": true,
+      "engine_ms": 276.1631679999999,
+      "generation_ms": 223.68545799999998,
+      "stage_ms": {
+        "context": 8.057125,
+        "site_buses": 2.581583,
+        "topology": 8.299542,
+        "electrify": 204.74720799999997,
+        "dc_opf": 37.247000000000014,
+        "calibrate": 0.4317919999999731,
+        "ac_pf": 14.789833999999985,
+        "finalize": 0.009083999999973003
+      },
+      "warnings": [
+        "small_islands_skipped",
+        "islands_cut",
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "rus",
+      "label": "Russia",
+      "request_sha256": "586cc70bc7c909d06445b55d8e3454f6917a6d49aeec8bb1a3ebf19da58837d1",
+      "buses": 1181,
+      "branches": 1890,
+      "branch_bus_ratio": 1.6003386960203219,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 750.0,
+      "plan_converged": false,
+      "angle_spread_deg": 123.65757246918486,
+      "max_angle_difference_deg": 17.6556397899698,
+      "voltage_basis": "country",
+      "voltage_country": "RUS",
+      "voltage_levels_kv": [
+        750.0,
+        500.0,
+        220.0
+      ],
+      "peak_mw": 175954.23642969254,
+      "demand_basis": "national",
+      "places_in_region": 578,
+      "places_snapped": 26,
+      "landmasses": 8,
+      "reference": {
+        "reference_mw": 166155,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "UES of Russia; excludes the technologically isolated systems",
+        "model_scope": "Russia with its isolated eastern systems; one far polygon is cut",
+        "source": "SO UPS, 2025 operating report",
+        "urls": [
+          "https://www.so-ups.ru/fileadmin/files/company/reports/disclosure/2026/ups_rep2025.pdf"
+        ]
+      },
+      "peak_ratio": 1.0589764763605822,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0083701225710022,
+        1.0580236020592342
+      ],
+      "valid": true,
+      "engine_ms": 268.388084,
+      "generation_ms": 214.160667,
+      "stage_ms": {
+        "context": 8.102459000000001,
+        "site_buses": 2.523916,
+        "topology": 8.376916999999997,
+        "electrify": 195.157375,
+        "dc_opf": 37.745292000000006,
+        "calibrate": 0.4332080000000076,
+        "ac_pf": 16.041750000000008,
+        "finalize": 0.007166999999981272
+      },
+      "warnings": [
+        "small_islands_skipped",
+        "islands_cut",
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "rus",
+      "label": "Russia",
+      "request_sha256": "1218519e9f0e249fae983e24b668a0e9dee65149642a441424e5877f3dee99d2",
+      "buses": 1181,
+      "branches": 1891,
+      "branch_bus_ratio": 1.6011854360711262,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 750.0,
+      "plan_converged": false,
+      "angle_spread_deg": 128.65119063384807,
+      "max_angle_difference_deg": 17.711797039219302,
+      "voltage_basis": "country",
+      "voltage_country": "RUS",
+      "voltage_levels_kv": [
+        750.0,
+        500.0,
+        220.0
+      ],
+      "peak_mw": 175954.23642969254,
+      "demand_basis": "national",
+      "places_in_region": 578,
+      "places_snapped": 26,
+      "landmasses": 8,
+      "reference": {
+        "reference_mw": 166155,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "UES of Russia; excludes the technologically isolated systems",
+        "model_scope": "Russia with its isolated eastern systems; one far polygon is cut",
+        "source": "SO UPS, 2025 operating report",
+        "urls": [
+          "https://www.so-ups.ru/fileadmin/files/company/reports/disclosure/2026/ups_rep2025.pdf"
+        ]
+      },
+      "peak_ratio": 1.0589764763605822,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.008793982212318,
+        1.0439747964388568
+      ],
+      "valid": true,
+      "engine_ms": 289.4801649999999,
+      "generation_ms": 239.26158199999998,
+      "stage_ms": {
+        "context": 8.066125,
+        "site_buses": 2.4996659999999995,
+        "topology": 8.308166000000002,
+        "electrify": 220.38762499999999,
+        "dc_opf": 35.777208,
+        "calibrate": 0.42149999999998045,
+        "ac_pf": 14.011957999999993,
+        "finalize": 0.007916999999963537
+      },
+      "warnings": [
+        "small_islands_skipped",
+        "islands_cut",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "bra",
+      "label": "Brazil",
+      "request_sha256": "27b06c05cb80ec2b92be3997373013f8348fc42c0199526959b54b84506e5e0d",
+      "buses": 750,
+      "branches": 1200,
+      "branch_bus_ratio": 1.6,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 75.95275589613176,
+      "max_angle_difference_deg": 12.450770184409507,
+      "voltage_basis": "country",
+      "voltage_country": "BRA",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        230.0
+      ],
+      "peak_mw": 112433.42152731915,
+      "demand_basis": "national",
+      "places_in_region": 395,
+      "places_snapped": 11,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 106532,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "SIN instantaneous load (ONS), including estimated behind-the-meter distributed generation",
+        "model_scope": "Brazil",
+        "source": "ONS via eixos.com.br",
+        "urls": [
+          "https://eixos.com.br/energia-eletrica/consumo-de-energia-no-brasil-bate-setimo-recorde-do-ano-atingindo-106-532-mw/"
+        ]
+      },
+      "peak_ratio": 1.05539576397063,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0177328573305655,
+        1.0370224851069625
+      ],
+      "valid": true,
+      "engine_ms": 132.504957,
+      "generation_ms": 103.05949899999999,
+      "stage_ms": {
+        "context": 4.545708,
+        "site_buses": 0.9840000000000009,
+        "topology": 2.8260829999999997,
+        "electrify": 94.70370799999999,
+        "dc_opf": 20.12162500000001,
+        "calibrate": 0.24420800000000042,
+        "ac_pf": 9.070667,
+        "finalize": 0.008958000000006905
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "bra",
+      "label": "Brazil",
+      "request_sha256": "a8b50b09efa57a7b0b2c995b9a93383082605a47504ec002553a958b3b7971e9",
+      "buses": 750,
+      "branches": 1202,
+      "branch_bus_ratio": 1.6026666666666667,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 56.504197974992756,
+      "max_angle_difference_deg": 14.21902338757495,
+      "voltage_basis": "country",
+      "voltage_country": "BRA",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        230.0
+      ],
+      "peak_mw": 112433.42152731915,
+      "demand_basis": "national",
+      "places_in_region": 395,
+      "places_snapped": 11,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 106532,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "SIN instantaneous load (ONS), including estimated behind-the-meter distributed generation",
+        "model_scope": "Brazil",
+        "source": "ONS via eixos.com.br",
+        "urls": [
+          "https://eixos.com.br/energia-eletrica/consumo-de-energia-no-brasil-bate-setimo-recorde-do-ano-atingindo-106-532-mw/"
+        ]
+      },
+      "peak_ratio": 1.05539576397063,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0155113015982846,
+        1.0341350733000276
+      ],
+      "valid": true,
+      "engine_ms": 147.22883299999995,
+      "generation_ms": 116.761125,
+      "stage_ms": {
+        "context": 4.604291,
+        "site_buses": 0.9295,
+        "topology": 2.861709000000001,
+        "electrify": 108.36562500000001,
+        "dc_opf": 21.231832999999995,
+        "calibrate": 0.245207999999991,
+        "ac_pf": 8.98362499999999,
+        "finalize": 0.0070419999999842275
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "bra",
+      "label": "Brazil",
+      "request_sha256": "a7991cadad7e8a2ad6af75151b4b27748ce7cf59b53982a31cb2740cae8ef5a1",
+      "buses": 750,
+      "branches": 1203,
+      "branch_bus_ratio": 1.604,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": false,
+      "angle_spread_deg": 49.609048047566816,
+      "max_angle_difference_deg": 18.389702242635963,
+      "voltage_basis": "country",
+      "voltage_country": "BRA",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        230.0
+      ],
+      "peak_mw": 112433.42152731915,
+      "demand_basis": "national",
+      "places_in_region": 395,
+      "places_snapped": 11,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 106532,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "SIN instantaneous load (ONS), including estimated behind-the-meter distributed generation",
+        "model_scope": "Brazil",
+        "source": "ONS via eixos.com.br",
+        "urls": [
+          "https://eixos.com.br/energia-eletrica/consumo-de-energia-no-brasil-bate-setimo-recorde-do-ano-atingindo-106-532-mw/"
+        ]
+      },
+      "peak_ratio": 1.05539576397063,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0126499818253478,
+        1.029785598147069
+      ],
+      "valid": true,
+      "engine_ms": 145.89546000000004,
+      "generation_ms": 114.44350100000001,
+      "stage_ms": {
+        "context": 4.538167,
+        "site_buses": 0.9946669999999989,
+        "topology": 2.852583,
+        "electrify": 106.05808400000001,
+        "dc_opf": 21.80250000000001,
+        "calibrate": 0.2513749999999959,
+        "ac_pf": 9.389542000000006,
+        "finalize": 0.0085420000000056
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "jpn",
+      "label": "Japan",
+      "request_sha256": "76040215c925f265123c0ecfb167b7ac10d388a574172988cde97e24acb1213b",
+      "buses": 996,
+      "branches": 1595,
+      "branch_bus_ratio": 1.6014056224899598,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 3,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 41.63470836025487,
+      "max_angle_difference_deg": 7.915991440640211,
+      "voltage_basis": "country",
+      "voltage_country": "JPN",
+      "voltage_levels_kv": [
+        500.0,
+        275.0
+      ],
+      "peak_mw": 149312.152325794,
+      "demand_basis": "national",
+      "places_in_region": 68,
+      "places_snapped": 2,
+      "landmasses": 3,
+      "reference": {
+        "reference_mw": 162600,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "National coincident peak of the 10 areas, hourly, sending end (OCCTO draft verification report, 22 Oct 2025)",
+        "model_scope": "Japan",
+        "source": "OCCTO",
+        "urls": [
+          "https://www.occto.or.jp/iinkai/chouseiryoku/2025/files/chousei_112_02.pdf"
+        ]
+      },
+      "peak_ratio": 0.9182789195928291,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0159247898144377,
+        1.0368246137518997
+      ],
+      "valid": true,
+      "engine_ms": 182.494625,
+      "generation_ms": 86.118207,
+      "stage_ms": {
+        "context": 0.970125,
+        "site_buses": 1.082583,
+        "topology": 1.5367080000000004,
+        "electrify": 82.528791,
+        "dc_opf": 30.166667000000004,
+        "calibrate": 55.389084000000025,
+        "ac_pf": 10.81325000000001,
+        "finalize": 0.00741699999997536
+      },
+      "warnings": [
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "jpn",
+      "label": "Japan",
+      "request_sha256": "0b65d64343c2d7dca506735656ee8f55dc0ffbf10820cf46563e3813f47f6010",
+      "buses": 996,
+      "branches": 1606,
+      "branch_bus_ratio": 1.6124497991967872,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 87.83497663227719,
+      "max_angle_difference_deg": 7.532532438288904,
+      "voltage_basis": "country",
+      "voltage_country": "JPN",
+      "voltage_levels_kv": [
+        500.0,
+        275.0
+      ],
+      "peak_mw": 149312.152325794,
+      "demand_basis": "national",
+      "places_in_region": 68,
+      "places_snapped": 2,
+      "landmasses": 3,
+      "reference": {
+        "reference_mw": 162600,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "National coincident peak of the 10 areas, hourly, sending end (OCCTO draft verification report, 22 Oct 2025)",
+        "model_scope": "Japan",
+        "source": "OCCTO",
+        "urls": [
+          "https://www.occto.or.jp/iinkai/chouseiryoku/2025/files/chousei_112_02.pdf"
+        ]
+      },
+      "peak_ratio": 0.9182789195928291,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0161467543564005,
+        1.0239488670535652
+      ],
+      "valid": true,
+      "engine_ms": 154.44554299999996,
+      "generation_ms": 107.26179300000001,
+      "stage_ms": {
+        "context": 0.999917,
+        "site_buses": 1.1162499999999997,
+        "topology": 1.5157089999999993,
+        "electrify": 103.629917,
+        "dc_opf": 33.866333,
+        "calibrate": 0.34250000000000114,
+        "ac_pf": 12.967791999999974,
+        "finalize": 0.007124999999973625
+      },
+      "warnings": [
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "jpn",
+      "label": "Japan",
+      "request_sha256": "0ba719fe511113e9fa6ce7a2f932a42de2009ed2f17af5b944f8b2709c5ff561",
+      "buses": 996,
+      "branches": 1595,
+      "branch_bus_ratio": 1.6014056224899598,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 61.96593647509548,
+      "max_angle_difference_deg": 8.187718555526752,
+      "voltage_basis": "country",
+      "voltage_country": "JPN",
+      "voltage_levels_kv": [
+        500.0,
+        275.0
+      ],
+      "peak_mw": 149312.152325794,
+      "demand_basis": "national",
+      "places_in_region": 68,
+      "places_snapped": 2,
+      "landmasses": 3,
+      "reference": {
+        "reference_mw": 162600,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "National coincident peak of the 10 areas, hourly, sending end (OCCTO draft verification report, 22 Oct 2025)",
+        "model_scope": "Japan",
+        "source": "OCCTO",
+        "urls": [
+          "https://www.occto.or.jp/iinkai/chouseiryoku/2025/files/chousei_112_02.pdf"
+        ]
+      },
+      "peak_ratio": 0.9182789195928291,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0165930725798722,
+        1.0325122772682453
+      ],
+      "valid": true,
+      "engine_ms": 144.54537699999995,
+      "generation_ms": 103.353335,
+      "stage_ms": {
+        "context": 1.000875,
+        "site_buses": 1.1234589999999998,
+        "topology": 1.5354169999999998,
+        "electrify": 99.693584,
+        "dc_opf": 27.621082999999985,
+        "calibrate": 0.3372919999999908,
+        "ac_pf": 13.226791999999989,
+        "finalize": 0.006874999999979536
+      },
+      "warnings": [
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "aus",
+      "label": "Australia",
+      "request_sha256": "c7c01133ca4df23be814c4382379a5a6bdb089a8f803a644d9785a534387e0c1",
+      "buses": 312,
+      "branches": 500,
+      "branch_bus_ratio": 1.6025641025641026,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 500.0,
+      "plan_converged": false,
+      "angle_spread_deg": 99.40197877324817,
+      "max_angle_difference_deg": 1175.8713021317876,
+      "voltage_basis": "country",
+      "voltage_country": "AUS",
+      "voltage_levels_kv": [
+        500.0,
+        330.0,
+        275.0,
+        220.0
+      ],
+      "peak_mw": 41795.89041095895,
+      "demand_basis": "national",
+      "places_in_region": 224,
+      "places_snapped": 15,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 37949,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "No national figure exists. NEM operational demand 33,716 MW (16 Dec 2024) plus WEM 4,233 MW (18 Feb 2024): a non-coincident sum that leaves out rooftop PV and the off-grid systems",
+        "model_scope": "Australia with Tasmania as one AC island; the NEM and Western Australia are joined",
+        "source": "AEMO Quarterly Energy Dynamics Q4 2024 and Q1 2024",
+        "urls": [
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q4-2024.pdf",
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q1-2024.pdf"
+        ]
+      },
+      "peak_ratio": 1.101370007403593,
+      "peak_verdict": "flagged",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "not_converged",
+      "ac_message": "AC power flow did not converge: best mismatch 5.248e0 over 5 starts",
+      "vm": [
+        null,
+        null
+      ],
+      "valid": false,
+      "engine_ms": 61.04587499999998,
+      "generation_ms": 38.908625,
+      "stage_ms": {
+        "context": 2.6853749999999996,
+        "site_buses": 0.35787499999999994,
+        "topology": 1.2035,
+        "electrify": 34.661875,
+        "dc_opf": 8.595915999999995,
+        "calibrate": 0.0972499999999954,
+        "ac_pf": 13.438541999999991,
+        "finalize": 0.0055419999999983816
+      },
+      "warnings": [
+        "reactive_plan_unconverged",
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added",
+        "ac_pf_not_converged"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "aus",
+      "label": "Australia",
+      "request_sha256": "0020c268aaaf34996e4b361526b117be0ef95a76d51f31d97b07eec32575a641",
+      "buses": 312,
+      "branches": 499,
+      "branch_bus_ratio": 1.5993589743589745,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 500.0,
+      "plan_converged": false,
+      "angle_spread_deg": 65.58644036847818,
+      "max_angle_difference_deg": 20.082930929196714,
+      "voltage_basis": "country",
+      "voltage_country": "AUS",
+      "voltage_levels_kv": [
+        500.0,
+        330.0,
+        275.0,
+        220.0
+      ],
+      "peak_mw": 41795.89041095895,
+      "demand_basis": "national",
+      "places_in_region": 224,
+      "places_snapped": 15,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 37949,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "No national figure exists. NEM operational demand 33,716 MW (16 Dec 2024) plus WEM 4,233 MW (18 Feb 2024): a non-coincident sum that leaves out rooftop PV and the off-grid systems",
+        "model_scope": "Australia with Tasmania as one AC island; the NEM and Western Australia are joined",
+        "source": "AEMO Quarterly Energy Dynamics Q4 2024 and Q1 2024",
+        "urls": [
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q4-2024.pdf",
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q1-2024.pdf"
+        ]
+      },
+      "peak_ratio": 1.101370007403593,
+      "peak_verdict": "flagged",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.008281266570577,
+        1.0269454813503152
+      ],
+      "valid": true,
+      "engine_ms": 40.477999999999994,
+      "generation_ms": 28.590708,
+      "stage_ms": {
+        "context": 2.761583,
+        "site_buses": 0.369208,
+        "topology": 1.2122500000000005,
+        "electrify": 24.247667,
+        "dc_opf": 8.213874999999998,
+        "calibrate": 0.0972500000000025,
+        "ac_pf": 3.5718749999999986,
+        "finalize": 0.004291999999999518
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "aus",
+      "label": "Australia",
+      "request_sha256": "5090a8002f512c48cdc41735b8b5d56df9548b15fa2b03d38cbd144ef5f2d5cd",
+      "buses": 312,
+      "branches": 499,
+      "branch_bus_ratio": 1.5993589743589745,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 500.0,
+      "plan_converged": false,
+      "angle_spread_deg": 84.57130074095711,
+      "max_angle_difference_deg": 29.908185924327448,
+      "voltage_basis": "country",
+      "voltage_country": "AUS",
+      "voltage_levels_kv": [
+        500.0,
+        330.0,
+        275.0,
+        220.0
+      ],
+      "peak_mw": 41795.89041095895,
+      "demand_basis": "national",
+      "places_in_region": 224,
+      "places_snapped": 15,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 37949,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "No national figure exists. NEM operational demand 33,716 MW (16 Dec 2024) plus WEM 4,233 MW (18 Feb 2024): a non-coincident sum that leaves out rooftop PV and the off-grid systems",
+        "model_scope": "Australia with Tasmania as one AC island; the NEM and Western Australia are joined",
+        "source": "AEMO Quarterly Energy Dynamics Q4 2024 and Q1 2024",
+        "urls": [
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q4-2024.pdf",
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q1-2024.pdf"
+        ]
+      },
+      "peak_ratio": 1.101370007403593,
+      "peak_verdict": "flagged",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0095141856288194,
+        1.0245486550480558
+      ],
+      "valid": true,
+      "engine_ms": 39.18691599999999,
+      "generation_ms": 28.307791,
+      "stage_ms": {
+        "context": 2.7411250000000003,
+        "site_buses": 0.3674170000000001,
+        "topology": 1.2245410000000003,
+        "electrify": 23.974708,
+        "dc_opf": 7.7607919999999915,
+        "calibrate": 0.1024579999999986,
+        "ac_pf": 3.011499999999998,
+        "finalize": 0.004375000000003126
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete",
+        "voltage_level_added"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "zaf",
+      "label": "South Africa",
+      "request_sha256": "cc3cf12218e0a3951ca5255b995a442f15ead2bcae8acb7bad8d25337edbdd4c",
+      "buses": 312,
+      "branches": 499,
+      "branch_bus_ratio": 1.5993589743589745,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": true,
+      "angle_spread_deg": 43.146858505403685,
+      "max_angle_difference_deg": 6.888072940184505,
+      "voltage_basis": "country",
+      "voltage_country": "ZAF",
+      "voltage_levels_kv": [
+        765.0,
+        400.0,
+        275.0
+      ],
+      "peak_mw": 36390.274364896715,
+      "demand_basis": "national",
+      "places_in_region": 73,
+      "places_snapped": 7,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 33485,
+        "year": 2024,
+        "comparable": "yes",
+        "scope": "Eskom total peak demand on the integrated power system, financial year April 2024 to March 2025; no 2025 figure is published",
+        "model_scope": "South Africa",
+        "source": "Eskom Integrated Report 2025",
+        "urls": [
+          "https://www.eskom.co.za/wp-content/uploads/2025/10/Eskom-integrated-report-2025.pdf"
+        ]
+      },
+      "peak_ratio": 1.086763457216566,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0115131391603671,
+        1.0260866019867012
+      ],
+      "valid": true,
+      "engine_ms": 29.732626,
+      "generation_ms": 18.84675,
+      "stage_ms": {
+        "context": 1.1494589999999998,
+        "site_buses": 0.32416599999999995,
+        "topology": 0.7187080000000001,
+        "electrify": 16.654417000000002,
+        "dc_opf": 7.598334000000001,
+        "calibrate": 0.08004199999999884,
+        "ac_pf": 3.203333999999998,
+        "finalize": 0.004166000000001446
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "voltage_level_added"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "zaf",
+      "label": "South Africa",
+      "request_sha256": "730804d0504ee8834b7e8b7103285c1e5b320b146acc22914bb9f320e531d7ef",
+      "buses": 312,
+      "branches": 500,
+      "branch_bus_ratio": 1.6025641025641026,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": true,
+      "angle_spread_deg": 44.422343326094335,
+      "max_angle_difference_deg": 9.50381754731891,
+      "voltage_basis": "country",
+      "voltage_country": "ZAF",
+      "voltage_levels_kv": [
+        765.0,
+        400.0,
+        275.0
+      ],
+      "peak_mw": 36390.274364896715,
+      "demand_basis": "national",
+      "places_in_region": 73,
+      "places_snapped": 7,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 33485,
+        "year": 2024,
+        "comparable": "yes",
+        "scope": "Eskom total peak demand on the integrated power system, financial year April 2024 to March 2025; no 2025 figure is published",
+        "model_scope": "South Africa",
+        "source": "Eskom Integrated Report 2025",
+        "urls": [
+          "https://www.eskom.co.za/wp-content/uploads/2025/10/Eskom-integrated-report-2025.pdf"
+        ]
+      },
+      "peak_ratio": 1.086763457216566,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0132400099964733,
+        1.0386003094922924
+      ],
+      "valid": true,
+      "engine_ms": 35.67195800000001,
+      "generation_ms": 24.184499000000002,
+      "stage_ms": {
+        "context": 1.150375,
+        "site_buses": 0.3304579999999999,
+        "topology": 0.7154159999999998,
+        "electrify": 21.98825,
+        "dc_opf": 7.581292000000005,
+        "calibrate": 0.10583300000000051,
+        "ac_pf": 3.792875000000002,
+        "finalize": 0.007459000000004323
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "voltage_level_added"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "zaf",
+      "label": "South Africa",
+      "request_sha256": "675e783268e4404c3d4d6037ab3f4b2f9fdd4749ac1ca0376b79e284464d33f8",
+      "buses": 312,
+      "branches": 500,
+      "branch_bus_ratio": 1.6025641025641026,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": 765.0,
+      "plan_converged": true,
+      "angle_spread_deg": 44.3210843797552,
+      "max_angle_difference_deg": 11.11070350786516,
+      "voltage_basis": "country",
+      "voltage_country": "ZAF",
+      "voltage_levels_kv": [
+        765.0,
+        400.0,
+        275.0
+      ],
+      "peak_mw": 36390.274364896715,
+      "demand_basis": "national",
+      "places_in_region": 73,
+      "places_snapped": 7,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 33485,
+        "year": 2024,
+        "comparable": "yes",
+        "scope": "Eskom total peak demand on the integrated power system, financial year April 2024 to March 2025; no 2025 figure is published",
+        "model_scope": "South Africa",
+        "source": "Eskom Integrated Report 2025",
+        "urls": [
+          "https://www.eskom.co.za/wp-content/uploads/2025/10/Eskom-integrated-report-2025.pdf"
+        ]
+      },
+      "peak_ratio": 1.086763457216566,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0143770063866155,
+        1.0287884964024272
+      ],
+      "valid": true,
+      "engine_ms": 29.841084000000002,
+      "generation_ms": 18.505001,
+      "stage_ms": {
+        "context": 1.094417,
+        "site_buses": 0.3122499999999997,
+        "topology": 0.7161669999999998,
+        "electrify": 16.382167,
+        "dc_opf": 8.238125000000004,
+        "calibrate": 0.10645799999999994,
+        "ac_pf": 2.9872499999999995,
+        "finalize": 0.004249999999998977
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "voltage_level_added"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "nga",
+      "label": "Nigeria",
+      "request_sha256": "28c6d9228543c1c8ab40adf07dcbff5947645e9b8c6fc46827fc82af6c360d6b",
+      "buses": 174,
+      "branches": 278,
+      "branch_bus_ratio": 1.5977011494252873,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 76.023226016834,
+      "max_angle_difference_deg": 15.399168064242447,
+      "voltage_basis": "country",
+      "voltage_country": "NGA",
+      "voltage_levels_kv": [
+        330.0,
+        132.0
+      ],
+      "peak_mw": 5236.179035396076,
+      "demand_basis": "national",
+      "places_in_region": 69,
+      "places_snapped": 0,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 5802,
+        "year": 2025,
+        "comparable": "no",
+        "scope": "National grid peak generation (4 Mar 2025): supply-limited, not demand",
+        "model_scope": "Nigeria",
+        "source": "TCN via Nairametrics",
+        "urls": [
+          "https://nairametrics.com/2025/03/06/nigerias-power-generation-hits-record-5801-84mw-tcn/"
+        ]
+      },
+      "peak_ratio": 0.9024782894512368,
+      "peak_verdict": "not comparable",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        0.9646330124267634,
+        1.0243134542081171
+      ],
+      "valid": true,
+      "engine_ms": 12.428122999999998,
+      "generation_ms": 6.327541,
+      "stage_ms": {
+        "context": 0.947166,
+        "site_buses": 0.13979200000000003,
+        "topology": 0.319458,
+        "electrify": 4.921125,
+        "dc_opf": 4.347875,
+        "calibrate": 0.05487499999999912,
+        "ac_pf": 1.6944159999999986,
+        "finalize": 0.0034159999999996415
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "nga",
+      "label": "Nigeria",
+      "request_sha256": "98b5f9378732a9c362d205618123f2790ffea793b7604b2ae303eaf4115e0cf9",
+      "buses": 174,
+      "branches": 278,
+      "branch_bus_ratio": 1.5977011494252873,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 45.39952480004643,
+      "max_angle_difference_deg": 11.920755551734661,
+      "voltage_basis": "country",
+      "voltage_country": "NGA",
+      "voltage_levels_kv": [
+        330.0,
+        132.0
+      ],
+      "peak_mw": 5236.179035396076,
+      "demand_basis": "national",
+      "places_in_region": 69,
+      "places_snapped": 0,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 5802,
+        "year": 2025,
+        "comparable": "no",
+        "scope": "National grid peak generation (4 Mar 2025): supply-limited, not demand",
+        "model_scope": "Nigeria",
+        "source": "TCN via Nairametrics",
+        "urls": [
+          "https://nairametrics.com/2025/03/06/nigerias-power-generation-hits-record-5801-84mw-tcn/"
+        ]
+      },
+      "peak_ratio": 0.9024782894512368,
+      "peak_verdict": "not comparable",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        0.9561236744406393,
+        1.0339284483385476
+      ],
+      "valid": true,
+      "engine_ms": 12.480958999999997,
+      "generation_ms": 6.327458,
+      "stage_ms": {
+        "context": 0.912583,
+        "site_buses": 0.12524999999999997,
+        "topology": 0.32225000000000015,
+        "electrify": 4.967375,
+        "dc_opf": 4.536208000000001,
+        "calibrate": 0.05008399999999824,
+        "ac_pf": 1.5642089999999982,
+        "finalize": 0.0029999999999983373
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "nga",
+      "label": "Nigeria",
+      "request_sha256": "73e48c8c1ecd41ff37474c84e61a48163da3b4ecd940d0300ec644a450cede13",
+      "buses": 174,
+      "branches": 278,
+      "branch_bus_ratio": 1.5977011494252873,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 44.04255360033787,
+      "max_angle_difference_deg": 13.29024522111086,
+      "voltage_basis": "country",
+      "voltage_country": "NGA",
+      "voltage_levels_kv": [
+        330.0,
+        132.0
+      ],
+      "peak_mw": 5236.179035396076,
+      "demand_basis": "national",
+      "places_in_region": 69,
+      "places_snapped": 0,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 5802,
+        "year": 2025,
+        "comparable": "no",
+        "scope": "National grid peak generation (4 Mar 2025): supply-limited, not demand",
+        "model_scope": "Nigeria",
+        "source": "TCN via Nairametrics",
+        "urls": [
+          "https://nairametrics.com/2025/03/06/nigerias-power-generation-hits-record-5801-84mw-tcn/"
+        ]
+      },
+      "peak_ratio": 0.9024782894512368,
+      "peak_verdict": "not comparable",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        0.9915853755351746,
+        1.028097978217282
+      ],
+      "valid": true,
+      "engine_ms": 12.657290999999999,
+      "generation_ms": 6.721666,
+      "stage_ms": {
+        "context": 0.9305410000000001,
+        "site_buses": 0.14024999999999999,
+        "topology": 0.3195000000000001,
+        "electrify": 5.3313749999999995,
+        "dc_opf": 4.2001669999999995,
+        "calibrate": 0.04899999999999949,
+        "ac_pf": 1.6832919999999998,
+        "finalize": 0.003166000000000224
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "egy",
+      "label": "Egypt",
+      "request_sha256": "047529a4ebcdecacac4a4363d878abcccc601c56fb94f826a02c246009c5d15e",
+      "buses": 312,
+      "branches": 499,
+      "branch_bus_ratio": 1.5993589743589745,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 42.33293771399536,
+      "max_angle_difference_deg": 12.136026586418838,
+      "voltage_basis": "country",
+      "voltage_country": "EGY",
+      "voltage_levels_kv": [
+        500.0,
+        220.0
+      ],
+      "peak_mw": 34827.84889622083,
+      "demand_basis": "national",
+      "places_in_region": 41,
+      "places_snapped": 6,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 39800,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Unified national grid peak load (13 Aug 2025)",
+        "model_scope": "Egypt",
+        "source": "Ministry of Electricity via Amwal Al Ghad",
+        "urls": [
+          "https://en.amwalalghad.com/?p=214097"
+        ]
+      },
+      "peak_ratio": 0.875071580307056,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0149693736336047,
+        1.020349384563662
+      ],
+      "valid": true,
+      "engine_ms": 28.843208,
+      "generation_ms": 14.779042,
+      "stage_ms": {
+        "context": 0.665667,
+        "site_buses": 0.234417,
+        "topology": 0.5232910000000002,
+        "electrify": 13.355667,
+        "dc_opf": 8.688999999999998,
+        "calibrate": 0.1014160000000004,
+        "ac_pf": 5.269750000000002,
+        "finalize": 0.004000000000001336
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "egy",
+      "label": "Egypt",
+      "request_sha256": "451b598186afc5206447defb439ee18c1ca31071bbb6d18ee700758cdff630db",
+      "buses": 312,
+      "branches": 499,
+      "branch_bus_ratio": 1.5993589743589745,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 48.08554204041192,
+      "max_angle_difference_deg": 10.884727353239544,
+      "voltage_basis": "country",
+      "voltage_country": "EGY",
+      "voltage_levels_kv": [
+        500.0,
+        220.0
+      ],
+      "peak_mw": 34827.84889622083,
+      "demand_basis": "national",
+      "places_in_region": 41,
+      "places_snapped": 6,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 39800,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Unified national grid peak load (13 Aug 2025)",
+        "model_scope": "Egypt",
+        "source": "Ministry of Electricity via Amwal Al Ghad",
+        "urls": [
+          "https://en.amwalalghad.com/?p=214097"
+        ]
+      },
+      "peak_ratio": 0.875071580307056,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.014558357511424,
+        1.0206285280843137
+      ],
+      "valid": true,
+      "engine_ms": 27.997249999999998,
+      "generation_ms": 16.370083,
+      "stage_ms": {
+        "context": 0.6235,
+        "site_buses": 0.2291249999999999,
+        "topology": 0.507,
+        "electrify": 15.010458000000002,
+        "dc_opf": 8.391124999999999,
+        "calibrate": 0.10241699999999909,
+        "ac_pf": 3.128292000000002,
+        "finalize": 0.0053329999999967015
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "egy",
+      "label": "Egypt",
+      "request_sha256": "9b9cd78aef4f1bf79d8e942695dc5e11be4923c0179b67f1d642e55a403f2275",
+      "buses": 312,
+      "branches": 510,
+      "branch_bus_ratio": 1.6346153846153846,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 63.396649338515985,
+      "max_angle_difference_deg": 13.16040803049539,
+      "voltage_basis": "country",
+      "voltage_country": "EGY",
+      "voltage_levels_kv": [
+        500.0,
+        220.0
+      ],
+      "peak_mw": 34827.84889622083,
+      "demand_basis": "national",
+      "places_in_region": 41,
+      "places_snapped": 6,
+      "landmasses": 1,
+      "reference": {
+        "reference_mw": 39800,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Unified national grid peak load (13 Aug 2025)",
+        "model_scope": "Egypt",
+        "source": "Ministry of Electricity via Amwal Al Ghad",
+        "urls": [
+          "https://en.amwalalghad.com/?p=214097"
+        ]
+      },
+      "peak_ratio": 0.875071580307056,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0165286686955997,
+        1.020499167084735
+      ],
+      "valid": true,
+      "engine_ms": 27.798580000000005,
+      "generation_ms": 16.005373,
+      "stage_ms": {
+        "context": 0.6206659999999999,
+        "site_buses": 0.2185410000000001,
+        "topology": 0.5111659999999999,
+        "electrify": 14.655,
+        "dc_opf": 8.077458,
+        "calibrate": 0.09641600000000139,
+        "ac_pf": 3.614583000000003,
+        "finalize": 0.004750000000001364
+      },
+      "warnings": [
+        "generation_spread",
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "chl",
+      "label": "Chile",
+      "request_sha256": "9230bb97b05faef4cdc44384abc10068713907abd8b611e06b63367b9fccb16a",
+      "buses": 282,
+      "branches": 451,
+      "branch_bus_ratio": 1.599290780141844,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 149.6558843154777,
+      "max_angle_difference_deg": 13.515584537098176,
+      "voltage_basis": "country",
+      "voltage_country": "CHL",
+      "voltage_levels_kv": [
+        500.0,
+        220.0
+      ],
+      "peak_mw": 13155.867787076213,
+      "demand_basis": "national",
+      "places_in_region": 85,
+      "places_snapped": 7,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 13093.1,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "SEN gross hourly demand (CEN, 29 Dec 2025)",
+        "model_scope": "Chile; small islands are left out",
+        "source": "Coordinador El\u00e9ctrico Nacional, Reporte Energ\u00e9tico enero 2026",
+        "urls": [
+          "https://www.coordinador.cl/wp-content/uploads/2026/01/CEN_Reporte_Energetico_SEN_Ene26.pdf"
+        ]
+      },
+      "peak_ratio": 1.0047939591904296,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0199709227237364,
+        1.0365034458140252
+      ],
+      "valid": true,
+      "engine_ms": 25.586457999999997,
+      "generation_ms": 15.144250000000001,
+      "stage_ms": {
+        "context": 1.5362090000000002,
+        "site_buses": 0.36854200000000015,
+        "topology": 0.6602080000000001,
+        "electrify": 12.579291000000001,
+        "dc_opf": 7.500499999999999,
+        "calibrate": 0.09129199999999926,
+        "ac_pf": 2.8459999999999965,
+        "finalize": 0.004415999999999087
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "chl",
+      "label": "Chile",
+      "request_sha256": "817a2341ff6a6dffab0d052677b3aaf6d88ad0a46108e9cd2ed4ed9abc16f4b5",
+      "buses": 282,
+      "branches": 451,
+      "branch_bus_ratio": 1.599290780141844,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 62.273906598991566,
+      "max_angle_difference_deg": 13.759050147780002,
+      "voltage_basis": "country",
+      "voltage_country": "CHL",
+      "voltage_levels_kv": [
+        500.0,
+        220.0
+      ],
+      "peak_mw": 13155.867787076213,
+      "demand_basis": "national",
+      "places_in_region": 85,
+      "places_snapped": 7,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 13093.1,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "SEN gross hourly demand (CEN, 29 Dec 2025)",
+        "model_scope": "Chile; small islands are left out",
+        "source": "Coordinador El\u00e9ctrico Nacional, Reporte Energ\u00e9tico enero 2026",
+        "urls": [
+          "https://www.coordinador.cl/wp-content/uploads/2026/01/CEN_Reporte_Energetico_SEN_Ene26.pdf"
+        ]
+      },
+      "peak_ratio": 1.0047939591904296,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0192557393513302,
+        1.0321310524072627
+      ],
+      "valid": true,
+      "engine_ms": 24.622375999999996,
+      "generation_ms": 13.998334,
+      "stage_ms": {
+        "context": 1.570875,
+        "site_buses": 0.3865829999999999,
+        "topology": 0.6695840000000002,
+        "electrify": 11.371291999999999,
+        "dc_opf": 7.742583,
+        "calibrate": 0.08249999999999957,
+        "ac_pf": 2.792125000000002,
+        "finalize": 0.006833999999994234
+      },
+      "warnings": [
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "chl",
+      "label": "Chile",
+      "request_sha256": "89b572c1ae073d17dc2a6c3b055e33e2b609b0ec92cc11c8f5cd227d721c8237",
+      "buses": 282,
+      "branches": 451,
+      "branch_bus_ratio": 1.599290780141844,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 44.077785522897905,
+      "max_angle_difference_deg": 14.638738591297308,
+      "voltage_basis": "country",
+      "voltage_country": "CHL",
+      "voltage_levels_kv": [
+        500.0,
+        220.0
+      ],
+      "peak_mw": 13155.867787076213,
+      "demand_basis": "national",
+      "places_in_region": 85,
+      "places_snapped": 7,
+      "landmasses": 2,
+      "reference": {
+        "reference_mw": 13093.1,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "SEN gross hourly demand (CEN, 29 Dec 2025)",
+        "model_scope": "Chile; small islands are left out",
+        "source": "Coordinador El\u00e9ctrico Nacional, Reporte Energ\u00e9tico enero 2026",
+        "urls": [
+          "https://www.coordinador.cl/wp-content/uploads/2026/01/CEN_Reporte_Energetico_SEN_Ene26.pdf"
+        ]
+      },
+      "peak_ratio": 1.0047939591904296,
+      "peak_verdict": "within",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0199836429085236,
+        1.0321418114194598
+      ],
+      "valid": true,
+      "engine_ms": 21.869998,
+      "generation_ms": 11.324499,
+      "stage_ms": {
+        "context": 1.571291,
+        "site_buses": 0.3527499999999999,
+        "topology": 0.6587499999999995,
+        "electrify": 8.741708,
+        "dc_opf": 7.121125000000003,
+        "calibrate": 0.09279099999999829,
+        "ac_pf": 3.327416999999997,
+        "finalize": 0.004166000000001446
+      },
+      "warnings": [
+        "branch_target_exceeded"
+      ],
+      "seed": 2026
+    },
+    {
+      "region": "idn",
+      "label": "Indonesia",
+      "request_sha256": "acdac2a663ac80782b02148bda641e3ed7cdfedfa06faa04984506885daebcad",
+      "buses": 356,
+      "branches": 570,
+      "branch_bus_ratio": 1.601123595505618,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 70.70302781810982,
+      "max_angle_difference_deg": 16.1739572926657,
+      "voltage_basis": "country",
+      "voltage_country": "IDN",
+      "voltage_levels_kv": [
+        500.0,
+        150.0
+      ],
+      "peak_mw": 44809.9493652708,
+      "demand_basis": "national",
+      "places_in_region": 61,
+      "places_snapped": 6,
+      "landmasses": 6,
+      "reference": {
+        "reference_mw": 61287.8,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "Sum of the individual PLN system peaks, not coincident (Java-Bali alone 42,636 MW); no 2025 figure was retrievable",
+        "model_scope": "Indonesia as one AC island over 26 landmasses; one far polygon is cut",
+        "source": "PLN Statistik 2024",
+        "urls": [
+          "https://www.pln.co.id/webapi/media/file/webkorp/asset/Statistik2024.pdf"
+        ]
+      },
+      "peak_ratio": 0.731139792344819,
+      "peak_verdict": "flagged",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0152776977287137,
+        1.0225999866323356
+      ],
+      "valid": true,
+      "engine_ms": 37.876499,
+      "generation_ms": 24.300541999999997,
+      "stage_ms": {
+        "context": 1.1039999999999999,
+        "site_buses": 5.841167,
+        "topology": 0.719125,
+        "electrify": 16.636249999999997,
+        "dc_opf": 9.605708,
+        "calibrate": 0.10412500000000335,
+        "ac_pf": 3.8617910000000037,
+        "finalize": 0.004332999999995479
+      },
+      "warnings": [
+        "islands_cut",
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 1
+    },
+    {
+      "region": "idn",
+      "label": "Indonesia",
+      "request_sha256": "74bb61e9b562a100c4fb8a49c54aa0b4f601d2c5b3ee3d9deb8c2084edd51298",
+      "buses": 356,
+      "branches": 558,
+      "branch_bus_ratio": 1.5674157303370786,
+      "max_parallel_circuits": 3,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": true,
+      "angle_spread_deg": 43.743992698068446,
+      "max_angle_difference_deg": 19.315282413304796,
+      "voltage_basis": "country",
+      "voltage_country": "IDN",
+      "voltage_levels_kv": [
+        500.0,
+        150.0
+      ],
+      "peak_mw": 44809.9493652708,
+      "demand_basis": "national",
+      "places_in_region": 61,
+      "places_snapped": 6,
+      "landmasses": 6,
+      "reference": {
+        "reference_mw": 61287.8,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "Sum of the individual PLN system peaks, not coincident (Java-Bali alone 42,636 MW); no 2025 figure was retrievable",
+        "model_scope": "Indonesia as one AC island over 26 landmasses; one far polygon is cut",
+        "source": "PLN Statistik 2024",
+        "urls": [
+          "https://www.pln.co.id/webapi/media/file/webkorp/asset/Statistik2024.pdf"
+        ]
+      },
+      "peak_ratio": 0.731139792344819,
+      "peak_verdict": "flagged",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0188297868217586,
+        1.0227022162854702
+      ],
+      "valid": true,
+      "engine_ms": 37.421873999999995,
+      "generation_ms": 23.647583,
+      "stage_ms": {
+        "context": 1.0948749999999998,
+        "site_buses": 5.863583,
+        "topology": 0.7389999999999999,
+        "electrify": 15.950125,
+        "dc_opf": 9.475375000000003,
+        "calibrate": 0.10958300000000065,
+        "ac_pf": 4.1841249999999945,
+        "finalize": 0.005207999999996105
+      },
+      "warnings": [
+        "islands_cut",
+        "branch_target_exceeded"
+      ],
+      "seed": 7
+    },
+    {
+      "region": "idn",
+      "label": "Indonesia",
+      "request_sha256": "0b7d3e70a98893b689dc907a0aa2be1a0aa3b462a42ef57e51c8e09ac0a3d61a",
+      "buses": 356,
+      "branches": 569,
+      "branch_bus_ratio": 1.598314606741573,
+      "max_parallel_circuits": 4,
+      "capped_corridors": 0,
+      "added_level_kv": null,
+      "plan_converged": false,
+      "angle_spread_deg": 45.744767575895644,
+      "max_angle_difference_deg": 15.127172839049445,
+      "voltage_basis": "country",
+      "voltage_country": "IDN",
+      "voltage_levels_kv": [
+        500.0,
+        150.0
+      ],
+      "peak_mw": 44809.9493652708,
+      "demand_basis": "national",
+      "places_in_region": 61,
+      "places_snapped": 6,
+      "landmasses": 6,
+      "reference": {
+        "reference_mw": 61287.8,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "Sum of the individual PLN system peaks, not coincident (Java-Bali alone 42,636 MW); no 2025 figure was retrievable",
+        "model_scope": "Indonesia as one AC island over 26 landmasses; one far polygon is cut",
+        "source": "PLN Statistik 2024",
+        "urls": [
+          "https://www.pln.co.id/webapi/media/file/webkorp/asset/Statistik2024.pdf"
+        ]
+      },
+      "peak_ratio": 0.731139792344819,
+      "peak_verdict": "flagged",
+      "dc_opf": "optimal",
+      "dc_message": null,
+      "ac_pf": "converged",
+      "ac_message": null,
+      "vm": [
+        1.0184496341976947,
+        1.024683047124705
+      ],
+      "valid": true,
+      "engine_ms": 38.19204,
+      "generation_ms": 24.993042,
+      "stage_ms": {
+        "context": 1.093708,
+        "site_buses": 5.759666999999999,
+        "topology": 0.7334170000000002,
+        "electrify": 17.40625,
+        "dc_opf": 9.024875000000002,
+        "calibrate": 0.11341600000000085,
+        "ac_pf": 4.055916000000003,
+        "finalize": 0.004790999999997325
+      },
+      "warnings": [
+        "islands_cut",
+        "branch_target_exceeded",
+        "planning_incomplete"
+      ],
+      "seed": 2026
+    }
+  ],
+  "regions": [
+    {
+      "region": "prt",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        400.0,
+        220.0,
+        150.0
+      ],
+      "added_level_kv": null,
+      "buses": 95,
+      "peak_mw": 8162.277648621098,
+      "reference": {
+        "reference_mw": 9395,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Mainland public-grid demand, 15-minute (REN); excludes the Azores and Madeira and behind-the-meter self-consumption",
+        "model_scope": "Mainland Portugal; the Azores and Madeira are cut as far islands or left out as too small for a bus",
+        "source": "REN, Dados T\u00e9cnicos 2025",
+        "urls": [
+          "https://www.ren.pt/media/2cbfm5p4/ren-dados-te-cnicos-2025.pdf"
+        ]
+      },
+      "peak_ratio": 0.8687895315190098,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.4947368421052631,
+        1.5157894736842106
+      ],
+      "max_parallel_circuits": 2,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        0.9920518740841814,
+        1.0328625826345639
+      ],
+      "plans_incomplete": 0,
+      "engine_ms_median": 7.457416000000001,
+      "engine_ms_max": 9.733334000000003,
+      "failures": []
+    },
+    {
+      "region": "esp",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        400.0,
+        220.0
+      ],
+      "added_level_kv": null,
+      "buses": 254,
+      "peak_mw": 37988.325570987334,
+      "reference": {
+        "reference_mw": 39957,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Peninsular hourly demand at power-station busbars (REE); excludes the Balearic and Canary Islands",
+        "model_scope": "Peninsular Spain and the Balearic Islands; the Canaries are cut as far islands",
+        "source": "REE, annual maximums",
+        "urls": [
+          "https://www.sistemaelectrico-ree.es/en/spanish-electricity-system/demand/annual-maximums"
+        ]
+      },
+      "peak_ratio": 0.9507301742119612,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.5984251968503937,
+        1.6732283464566928
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.0153092267508252,
+        1.0282518170292334
+      ],
+      "plans_incomplete": 3,
+      "engine_ms_median": 19.699124000000005,
+      "engine_ms_max": 23.097419000000002,
+      "failures": []
+    },
+    {
+      "region": "deu",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        380.0,
+        220.0
+      ],
+      "added_level_kv": null,
+      "buses": 524,
+      "peak_mw": 78507.53424657535,
+      "reference": {
+        "reference_mw": 75635,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Country hourly total load (ENTSO-E, the SMARD Netzlast series)",
+        "model_scope": "Germany",
+        "source": "ENTSO-E Statistical Factsheet 2025",
+        "urls": [
+          "https://eepublicdownloads.entsoe.eu/clean-documents/Publications/Statistics/Factsheet/entsoe_sfs2025_web.pdf"
+        ]
+      },
+      "peak_ratio": 1.037978901918098,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.5286259541984732,
+        1.6030534351145038
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        0.9797988463671343,
+        1.0237936241640033
+      ],
+      "plans_incomplete": 1,
+      "engine_ms_median": 45.494207,
+      "engine_ms_max": 48.213708000000004,
+      "failures": []
+    },
+    {
+      "region": "gbr",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        400.0,
+        275.0
+      ],
+      "added_level_kv": null,
+      "buses": 315,
+      "peak_mw": 47218.82148876903,
+      "reference": {
+        "reference_mw": 48141,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Great Britain: transmission National Demand plus NESO's estimates of embedded wind and solar, half-hourly maximum (9 Jan 2025); Northern Ireland, about 1.8 GW, is not included",
+        "model_scope": "The United Kingdom polygon, Northern Ireland included",
+        "source": "NESO historic demand data",
+        "urls": [
+          "https://www.neso.energy/data-portal/historic-demand-data"
+        ]
+      },
+      "peak_ratio": 0.9808442177929213,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.4984126984126984,
+        1.5904761904761904
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.010754718963507,
+        1.0536798069004467
+      ],
+      "plans_incomplete": 0,
+      "engine_ms_median": 24.72574999999999,
+      "engine_ms_max": 26.847292000000003,
+      "failures": []
+    },
+    {
+      "region": "texas-box",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        345.0,
+        230.0
+      ],
+      "added_level_kv": 765.0,
+      "buses": 462,
+      "peak_mw": 69265.50224076449,
+      "reference": {
+        "reference_mw": 83679,
+        "year": 2025,
+        "comparable": "no",
+        "scope": "ERCOT region hourly integrated native load",
+        "model_scope": "A bounding box around Texas that also takes in parts of Mexico, New Mexico, Oklahoma and Louisiana, and El Paso, which is outside ERCOT",
+        "source": "ERCOT hourly load archive",
+        "urls": [
+          "https://www.ercot.com/gridinfo/load/load_hist"
+        ]
+      },
+      "peak_ratio": 0.8277525094798515,
+      "peak_verdict": "not comparable",
+      "branch_bus_ratio": [
+        1.5995670995670996,
+        1.6017316017316017
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.0013810365896936,
+        1.0463239186964577
+      ],
+      "plans_incomplete": 1,
+      "engine_ms_median": 63.459082,
+      "engine_ms_max": 67.64883499999999,
+      "failures": []
+    },
+    {
+      "region": "usa",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        345.0,
+        230.0
+      ],
+      "added_level_kv": 765.0,
+      "buses": 3000,
+      "peak_mw": 649905.7369180825,
+      "reference": {
+        "reference_mw": 759180,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Lower-48 coincident hourly demand over the balancing authorities (EIA-930); 2025 value preliminary",
+        "model_scope": "The United States after the far-island policy (Alaska and Hawaii cut)",
+        "source": "EIA, Today in Energy",
+        "urls": [
+          "https://www.eia.gov/todayinenergy/detail.php?id=65864"
+        ]
+      },
+      "peak_ratio": 0.8560627742012203,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.6033333333333333,
+        1.6106666666666667
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 0,
+      "ac_pass": 0,
+      "vm": [
+        null,
+        null
+      ],
+      "plans_incomplete": 3,
+      "engine_ms_median": 1454.436251,
+      "engine_ms_max": 1565.188584,
+      "failures": [
+        {
+          "seed": 1,
+          "dc_opf": "optimal",
+          "ac_pf": "not_converged",
+          "vm": [
+            null,
+            null
+          ],
+          "message": "AC power flow did not converge: best mismatch 1.316e-2 over 5 starts"
+        },
+        {
+          "seed": 7,
+          "dc_opf": "optimal",
+          "ac_pf": "not_converged",
+          "vm": [
+            null,
+            null
+          ],
+          "message": "AC power flow did not converge: best mismatch 1.979e-2 over 5 starts"
+        },
+        {
+          "seed": 2026,
+          "dc_opf": "optimal",
+          "ac_pf": "not_converged",
+          "vm": [
+            null,
+            null
+          ],
+          "message": "AC power flow did not converge: best mismatch 7.670e-1 over 5 starts"
+        }
+      ]
+    },
+    {
+      "region": "ind",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        765.0,
+        400.0,
+        220.0
+      ],
+      "added_level_kv": 765.0,
+      "buses": 2014,
+      "peak_mw": 302003.5719536117,
+      "reference": {
+        "reference_mw": 249854,
+        "year": 2024,
+        "comparable": "yes",
+        "scope": "All-India peak demand met (30 May 2024). No 2025 annual figure is published; ministerial statements put 2025 near 241-243 GW",
+        "model_scope": "India",
+        "source": "Ministry of Power via PIB",
+        "urls": [
+          "https://www.pib.gov.in/PressReleaseIframePage.aspx?PRID=2022257"
+        ]
+      },
+      "peak_ratio": 1.2087201803998002,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.6012909632571997,
+        1.605263157894737
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.0081529880693654,
+        1.0237016459314416
+      ],
+      "plans_incomplete": 3,
+      "engine_ms_median": 485.97895600000004,
+      "engine_ms_max": 507.88662500000015,
+      "failures": []
+    },
+    {
+      "region": "chn",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        1000.0,
+        500.0,
+        220.0
+      ],
+      "added_level_kv": 1000.0,
+      "buses": 3000,
+      "peak_mw": 1501471.7197227369,
+      "reference": {
+        "reference_mw": 1508000,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "National total maximum load, all grids (NEA, 17 Jul 2025)",
+        "model_scope": "China (Natural Earth's CHN polygon, which leaves out Taiwan, Hong Kong and Macao)",
+        "source": "National Energy Administration, as reported",
+        "urls": [
+          "https://news.10jqka.com.cn/20260711/c678109972.shtml",
+          "https://www.stdaily.com/web/gdxw/2025-07/06/content_365859.html"
+        ]
+      },
+      "peak_ratio": 0.9956709016729024,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.6403333333333334,
+        1.6736666666666666
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.01840915808542,
+        1.0791004934271804
+      ],
+      "plans_incomplete": 3,
+      "engine_ms_median": 999.734668,
+      "engine_ms_max": 1089.592833,
+      "failures": []
+    },
+    {
+      "region": "rus",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        750.0,
+        500.0,
+        220.0
+      ],
+      "added_level_kv": 750.0,
+      "buses": 1181,
+      "peak_mw": 175954.23642969254,
+      "reference": {
+        "reference_mw": 166155,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "UES of Russia; excludes the technologically isolated systems",
+        "model_scope": "Russia with its isolated eastern systems; one far polygon is cut",
+        "source": "SO UPS, 2025 operating report",
+        "urls": [
+          "https://www.so-ups.ru/fileadmin/files/company/reports/disclosure/2026/ups_rep2025.pdf"
+        ]
+      },
+      "peak_ratio": 1.0589764763605822,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.6003386960203219,
+        1.6011854360711262
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.0083701225710022,
+        1.0580236020592342
+      ],
+      "plans_incomplete": 3,
+      "engine_ms_median": 276.1631679999999,
+      "engine_ms_max": 289.4801649999999,
+      "failures": []
+    },
+    {
+      "region": "bra",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        765.0,
+        500.0,
+        230.0
+      ],
+      "added_level_kv": 765.0,
+      "buses": 750,
+      "peak_mw": 112433.42152731915,
+      "reference": {
+        "reference_mw": 106532,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "SIN instantaneous load (ONS), including estimated behind-the-meter distributed generation",
+        "model_scope": "Brazil",
+        "source": "ONS via eixos.com.br",
+        "urls": [
+          "https://eixos.com.br/energia-eletrica/consumo-de-energia-no-brasil-bate-setimo-recorde-do-ano-atingindo-106-532-mw/"
+        ]
+      },
+      "peak_ratio": 1.05539576397063,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.6,
+        1.604
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.0126499818253478,
+        1.0370224851069625
+      ],
+      "plans_incomplete": 3,
+      "engine_ms_median": 145.89546000000004,
+      "engine_ms_max": 147.22883299999995,
+      "failures": []
+    },
+    {
+      "region": "jpn",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        500.0,
+        275.0
+      ],
+      "added_level_kv": null,
+      "buses": 996,
+      "peak_mw": 149312.152325794,
+      "reference": {
+        "reference_mw": 162600,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "National coincident peak of the 10 areas, hourly, sending end (OCCTO draft verification report, 22 Oct 2025)",
+        "model_scope": "Japan",
+        "source": "OCCTO",
+        "urls": [
+          "https://www.occto.or.jp/iinkai/chouseiryoku/2025/files/chousei_112_02.pdf"
+        ]
+      },
+      "peak_ratio": 0.9182789195928291,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.6014056224899598,
+        1.6124497991967872
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.0159247898144377,
+        1.0368246137518997
+      ],
+      "plans_incomplete": 3,
+      "engine_ms_median": 154.44554299999996,
+      "engine_ms_max": 182.494625,
+      "failures": []
+    },
+    {
+      "region": "aus",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        500.0,
+        330.0,
+        275.0,
+        220.0
+      ],
+      "added_level_kv": 500.0,
+      "buses": 312,
+      "peak_mw": 41795.89041095895,
+      "reference": {
+        "reference_mw": 37949,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "No national figure exists. NEM operational demand 33,716 MW (16 Dec 2024) plus WEM 4,233 MW (18 Feb 2024): a non-coincident sum that leaves out rooftop PV and the off-grid systems",
+        "model_scope": "Australia with Tasmania as one AC island; the NEM and Western Australia are joined",
+        "source": "AEMO Quarterly Energy Dynamics Q4 2024 and Q1 2024",
+        "urls": [
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q4-2024.pdf",
+          "https://aemo.com.au/-/media/files/major-publications/qed/2024/qed-q1-2024.pdf"
+        ]
+      },
+      "peak_ratio": 1.101370007403593,
+      "peak_verdict": "flagged",
+      "branch_bus_ratio": [
+        1.5993589743589745,
+        1.6025641025641026
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 2,
+      "ac_pass": 2,
+      "vm": [
+        1.008281266570577,
+        1.0269454813503152
+      ],
+      "plans_incomplete": 3,
+      "engine_ms_median": 40.477999999999994,
+      "engine_ms_max": 61.04587499999998,
+      "failures": [
+        {
+          "seed": 1,
+          "dc_opf": "optimal",
+          "ac_pf": "not_converged",
+          "vm": [
+            null,
+            null
+          ],
+          "message": "AC power flow did not converge: best mismatch 5.248e0 over 5 starts"
+        }
+      ]
+    },
+    {
+      "region": "zaf",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        765.0,
+        400.0,
+        275.0
+      ],
+      "added_level_kv": 765.0,
+      "buses": 312,
+      "peak_mw": 36390.274364896715,
+      "reference": {
+        "reference_mw": 33485,
+        "year": 2024,
+        "comparable": "yes",
+        "scope": "Eskom total peak demand on the integrated power system, financial year April 2024 to March 2025; no 2025 figure is published",
+        "model_scope": "South Africa",
+        "source": "Eskom Integrated Report 2025",
+        "urls": [
+          "https://www.eskom.co.za/wp-content/uploads/2025/10/Eskom-integrated-report-2025.pdf"
+        ]
+      },
+      "peak_ratio": 1.086763457216566,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.5993589743589745,
+        1.6025641025641026
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.0115131391603671,
+        1.0386003094922924
+      ],
+      "plans_incomplete": 0,
+      "engine_ms_median": 29.841084000000002,
+      "engine_ms_max": 35.67195800000001,
+      "failures": []
+    },
+    {
+      "region": "nga",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        330.0,
+        132.0
+      ],
+      "added_level_kv": null,
+      "buses": 174,
+      "peak_mw": 5236.179035396076,
+      "reference": {
+        "reference_mw": 5802,
+        "year": 2025,
+        "comparable": "no",
+        "scope": "National grid peak generation (4 Mar 2025): supply-limited, not demand",
+        "model_scope": "Nigeria",
+        "source": "TCN via Nairametrics",
+        "urls": [
+          "https://nairametrics.com/2025/03/06/nigerias-power-generation-hits-record-5801-84mw-tcn/"
+        ]
+      },
+      "peak_ratio": 0.9024782894512368,
+      "peak_verdict": "not comparable",
+      "branch_bus_ratio": [
+        1.5977011494252873,
+        1.5977011494252873
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        0.9561236744406393,
+        1.0339284483385476
+      ],
+      "plans_incomplete": 2,
+      "engine_ms_median": 12.480958999999997,
+      "engine_ms_max": 12.657290999999999,
+      "failures": []
+    },
+    {
+      "region": "egy",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        500.0,
+        220.0
+      ],
+      "added_level_kv": null,
+      "buses": 312,
+      "peak_mw": 34827.84889622083,
+      "reference": {
+        "reference_mw": 39800,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "Unified national grid peak load (13 Aug 2025)",
+        "model_scope": "Egypt",
+        "source": "Ministry of Electricity via Amwal Al Ghad",
+        "urls": [
+          "https://en.amwalalghad.com/?p=214097"
+        ]
+      },
+      "peak_ratio": 0.875071580307056,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.5993589743589745,
+        1.6346153846153846
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.014558357511424,
+        1.0206285280843137
+      ],
+      "plans_incomplete": 2,
+      "engine_ms_median": 27.997249999999998,
+      "engine_ms_max": 28.843208,
+      "failures": []
+    },
+    {
+      "region": "chl",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        500.0,
+        220.0
+      ],
+      "added_level_kv": null,
+      "buses": 282,
+      "peak_mw": 13155.867787076213,
+      "reference": {
+        "reference_mw": 13093.1,
+        "year": 2025,
+        "comparable": "yes",
+        "scope": "SEN gross hourly demand (CEN, 29 Dec 2025)",
+        "model_scope": "Chile; small islands are left out",
+        "source": "Coordinador El\u00e9ctrico Nacional, Reporte Energ\u00e9tico enero 2026",
+        "urls": [
+          "https://www.coordinador.cl/wp-content/uploads/2026/01/CEN_Reporte_Energetico_SEN_Ene26.pdf"
+        ]
+      },
+      "peak_ratio": 1.0047939591904296,
+      "peak_verdict": "within",
+      "branch_bus_ratio": [
+        1.599290780141844,
+        1.599290780141844
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.0192557393513302,
+        1.0365034458140252
+      ],
+      "plans_incomplete": 2,
+      "engine_ms_median": 24.622375999999996,
+      "engine_ms_max": 25.586457999999997,
+      "failures": []
+    },
+    {
+      "region": "idn",
+      "seeds": [
+        1,
+        7,
+        2026
+      ],
+      "runs": 3,
+      "voltage_basis": "country",
+      "voltage_levels_kv": [
+        500.0,
+        150.0
+      ],
+      "added_level_kv": null,
+      "buses": 356,
+      "peak_mw": 44809.9493652708,
+      "reference": {
+        "reference_mw": 61287.8,
+        "year": 2024,
+        "comparable": "flag",
+        "scope": "Sum of the individual PLN system peaks, not coincident (Java-Bali alone 42,636 MW); no 2025 figure was retrievable",
+        "model_scope": "Indonesia as one AC island over 26 landmasses; one far polygon is cut",
+        "source": "PLN Statistik 2024",
+        "urls": [
+          "https://www.pln.co.id/webapi/media/file/webkorp/asset/Statistik2024.pdf"
+        ]
+      },
+      "peak_ratio": 0.731139792344819,
+      "peak_verdict": "flagged",
+      "branch_bus_ratio": [
+        1.5674157303370786,
+        1.601123595505618
+      ],
+      "max_parallel_circuits": 4,
+      "dc_pass": 3,
+      "ac_converged": 3,
+      "ac_pass": 3,
+      "vm": [
+        1.0152776977287137,
+        1.024683047124705
+      ],
+      "plans_incomplete": 2,
+      "engine_ms_median": 37.876499,
+      "engine_ms_max": 38.19204,
+      "failures": []
+    }
+  ],
+  "summary": {
+    "regions": 17,
+    "runs": 51,
+    "dc_pass": 51,
+    "ac_converged": 47,
+    "ac_pass": 47,
+    "regions_all_valid": 15,
+    "peak_within": 13,
+    "peak_scored": 13
+  }
+}

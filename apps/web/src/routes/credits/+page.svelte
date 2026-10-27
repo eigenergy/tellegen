@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PUBLIC_CARTO_BASEMAP_KEY } from '$app/env/public';
 	import SeoHead from '#lib/components/SeoHead.svelte';
 </script>
 
@@ -74,12 +75,67 @@
 				provides the solver, sensitivity, and visualization framework.
 			</li>
 			<li>
-				Map tiles and attribution are provided by
-				<a href="https://carto.com/" target="_blank" rel="noreferrer">CARTO</a>
-				and
-				<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer"
-					>OpenStreetMap contributors</a
+				{#if PUBLIC_CARTO_BASEMAP_KEY}
+					The basemap is
+					<a href="https://carto.com/" target="_blank" rel="noreferrer">CARTO</a>'s, with data from
+					<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer"
+						>OpenStreetMap contributors</a
+					>. When that style cannot be loaded the map falls back to
+					<a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a>, which
+					uses the
+					<a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a>
+					schema.
+				{:else}
+					The basemap is served by
+					<a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a>, using
+					the <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a>
+					schema and data from
+					<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer"
+						>OpenStreetMap contributors</a
+					>. When that style cannot be loaded the map falls back to
+					<a href="https://carto.com/" target="_blank" rel="noreferrer">CARTO</a>.
+				{/if}
+				The app adjusts OpenFreeMap's styles: roads start at zoom 8, and in the dark theme water and land
+				are recoloured. Your browser requests tiles directly from the provider on screen; the attribution
+				control names it.
+			</li>
+		</ul>
+	</section>
+
+	<section>
+		<h2>Synthetic Grid Data</h2>
+		<p>
+			The engine's synthetic grid generator is compiled into this site's WebAssembly with these
+			tables:
+		</p>
+		<ul>
+			<li>
+				National electricity demand from Ember's
+				<a
+					href="https://ember-energy.org/data/yearly-electricity-data/"
+					target="_blank"
+					rel="noreferrer">Yearly Electricity Data</a
+				>, through Our World in Data's
+				<a href="https://github.com/owid/energy-data" target="_blank" rel="noreferrer"
+					>energy dataset</a
+				>, under
+				<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer"
+					>CC BY 4.0</a
+				>. The table keeps each country's latest year. Its population column is Our World in Data's
+				series, compiled from the
+				<a href="https://ourworldindata.org/population-sources" target="_blank" rel="noreferrer"
+					>sources it lists</a
 				>.
+			</li>
+			<li>
+				Populated places and country areas from
+				<a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer"
+					>Natural Earth</a
+				>, in the public domain.
+			</li>
+			<li>
+				National transmission voltage levels, compiled from the operator, regulator and standards
+				documents each entry cites.
 			</li>
 		</ul>
 	</section>

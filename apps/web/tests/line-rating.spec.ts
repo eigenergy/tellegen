@@ -50,12 +50,12 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 		{ name: 'case3-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE3_COORDS) },
 		{ name: 'case3congested.m', mimeType: 'text/plain', buffer: Buffer.from(CASE3_CONGESTED) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 
 	// The tightened line binds, so the panel lists it as the selection target.
 	const bindingLine = page.locator('.binding-lines button');
 	await expect(bindingLine).toHaveCount(1);
-	await expect(bindingLine).toContainText('line 2');
+	await expect(bindingLine).toContainText('Line 2');
 	await expect(bindingLine).toContainText('100%');
 
 	const mapCanvas = page.locator('.map canvas').first();
@@ -105,11 +105,11 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	await expect(page.getByText(/LMP response to the rating on line/)).toBeVisible();
 	// A binding line's column is structured, not the flat/uniform tint.
 	const labels = page.locator('.sensitivity-readout .legend-labels');
-	await expect(labels).not.toContainText('uniform');
+	await expect(labels).not.toContainText('Uniform');
 	await expect(labels).toContainText(/[+−-]\d\.\de[+-]\d+/);
 
 	// Relax the rating to the slider max and commit (change fires the exact solve).
-	const slider = page.getByLabel('rating delta at selected line');
+	const slider = page.getByLabel('Rating delta at selected line');
 	await slider.evaluate((el) => {
 		const input = el as HTMLInputElement;
 		input.value = input.max;
@@ -122,7 +122,7 @@ test('binding line: select from the list, non-flat column, rating commit lowers 
 	// value comes from the re-solve (a local case has no server fallback).
 	const panel = page.getByRole('complementary', { name: 'Network', exact: true });
 	await expect(panel).toContainText('+8 MW', { timeout: 30_000 });
-	await expect(panel).toContainText(/gradient −[\d.,]+, exact −[\d.,]+/, {
+	await expect(panel).toContainText(/Gradient −[\d.,]+, exact −[\d.,]+/, {
 		timeout: 30_000
 	});
 });

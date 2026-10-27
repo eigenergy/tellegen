@@ -2,7 +2,7 @@
 
 Planning baseline: 7 September 2026. This document is the historical planning
 baseline and proposed quality gates. The current implementation and supported
-raw-input contract are documented in
+raw-input format are documented in
 [`multiconductor-power-flow.md`](multiconductor-power-flow.md), with numerical
 cases in [`multiconductor-qc-cases.md`](multiconductor-qc-cases.md) and reader
 loss findings in [`multiconductor-semantic-audit.md`](multiconductor-semantic-audit.md).
@@ -42,7 +42,7 @@ Fixed passive shunts needed by supported lines and transformers remain in scope.
 After this profile, extend compatibility through separately reviewed milestones:
 general fixed shunts and fixed switches, ZIP loads, supported fixed generators,
 then additional winding counts. Controls are a final optional outer-loop project;
-each changed electrical snapshot requires its own factorization contract.
+each changed electrical snapshot requires its own factorization.
 
 ## 2. Evidence and reference discipline
 
@@ -99,7 +99,7 @@ Local [PF comparison tests](/Users/uqfgeth/Documents/GitHub/BMOPFTools.jl/test/p
 and [admittance tests](/Users/uqfgeth/Documents/GitHub/BMOPFTools.jl/test/admittance_tests.jl)
 provide fixture context; their assertions remain subject to the QC caveats above.
 
-## 3. Numerical contract and signs
+## 3. Numerical conventions and signs
 
 Use physical complex voltages, currents, admittances, and powers internally for
 the first implementation, or introduce an explicitly documented diagonal scaling.
@@ -143,7 +143,7 @@ line and transformer primitives are separate preparation operations and excluded
 from the global factorization count; report those categories unambiguously.
 Changes to topology, impedances, grounding, tap positions, load Yref, or source
 impedance invalidate the prepared snapshot. RHS-only source changes may reuse it
-only where the preparation contract proves the matrix unchanged.
+only where the preparation step proves the matrix unchanged.
 
 ## 4. Primitive preparation and transformers
 
@@ -243,7 +243,7 @@ semantics, not only whether tests written by the implementer pass.
 1. **Corpus and semantic inventory.** Pin readers/references; inventory the
    selected MV and ENWL DSS corpora below and reproducibly export candidate
    BMOPF JSON/DSS pairs; list every active component and parameter. Produce a support
-   matrix, units contract, provenance manifest, and explicit unsupported cases.
+   matrix, units conventions, provenance manifest, and explicit unsupported cases.
    Exit: Astra agrees the selected cases are fully representable and in scope.
 2. **Indexing and retained linear solve.** Add terminal/ground/fixed-source maps,
    deterministic assembly, reusable complex factorization, and feature wiring.

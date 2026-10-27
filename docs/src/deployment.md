@@ -201,7 +201,25 @@ not mutate proxy config files.
 The sample route sets HSTS, CSP, permissions policy, referrer policy, frame
 ancestor denial, and content type sniffing protection. The CSP allows the
 current SvelteKit bootstrap, WebAssembly compilation, MapLibre blob workers, and
-CARTO tile images.
+the basemap hosts: `https://tiles.openfreemap.org` (the OpenFreeMap style,
+vector tiles, fonts and sprites, all fetched, so `connect-src` must carry it)
+and `https://*.cartocdn.com` (CARTO, the primary with a basemap key and the
+fallback without one), in both `img-src` and
+`connect-src`. The policy that ships with the build lives in
+`apps/web/vite.config.ts`; a proxy policy must list the same hosts or the map
+stays blank behind it. A deployment that points `TellegenMap` at another style
+adds that host in both places.
+
+To lead with CARTO's basemap, set the repository variable
+`CARTO_BASEMAP_KEY` to a CARTO basemap key from
+[carto.com/basemaps/apikey](https://carto.com/basemaps/apikey). Keys are free
+for non-commercial use, and no account is needed. The deploy workflow passes
+the key to the frontend build as `PUBLIC_CARTO_BASEMAP_KEY`; a local build
+reads the same variable from the environment. The key ships in the page and
+is sent with every tile request, so it is public by design: keep it in a
+repository variable, not a secret, and restrict it to the deployment's hosts
+in CARTO's key dashboard. Without the variable, the build has no key:
+OpenFreeMap leads and CARTO is the fallback. The CSP is the same either way.
 
 A Caddy image with `github.com/mholt/caddy-ratelimit` is needed for the sample
 rate limits; stock Caddy does not include that module. The tellegen backend also

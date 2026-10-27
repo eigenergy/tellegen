@@ -26,7 +26,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::{
     ac_pf_assemble, ac_pf_solved, dc_opf_assemble, dc_opf_solved, run_cells,
-    validate_canonical_edits, Edits, ElementKey, Problem, SensRequest, SolveRequest, SolveResponse,
+    validate_canonical_edits, Edits, ElementKey, LinearConstraint, PowerFlowStart, Problem,
+    SensRequest, SolveRequest, SolveResponse,
 };
 use crate::model::{AcNetwork, DcNetwork};
 use crate::problem::AcPfSolution;
@@ -376,6 +377,9 @@ pub struct Study {
     /// non-decreasing, with `commit_bounds.last() == log.len()`. A study with no edits
     /// has no commits.
     commit_bounds: Vec<usize>,
+    /// Caller-supplied linear constraints enforced at every solve (DC OPF only).
+    /// They are analysis settings, not network data: no saved module carries them.
+    constraints: Vec<LinearConstraint>,
     /// The committed solved state, the sole formulation coupling.
     solved: Box<dyn SolvedState>,
     last: SolveResponse,
@@ -482,6 +486,7 @@ impl Study {
             base_module_json,
             log: Vec::new(),
             commit_bounds: Vec::new(),
+            constraints: Vec::new(),
             solved,
             last,
         })
@@ -521,6 +526,8 @@ impl Study {
                         ElementId::Bus(value)
                         | ElementId::Branch(value)
                         | ElementId::Generator(value) => value == id,
+                        // Constraint positions name no network element.
+                        ElementId::Constraint(_) => false,
                     })
                     .ok_or_else(|| {
                         format!("{axis:?} {key} is unavailable in the selected formulation")
@@ -542,6 +549,8 @@ impl Study {
                         ElementId::Bus(value)
                         | ElementId::Branch(value)
                         | ElementId::Generator(value) => value == id,
+                        // Constraint positions name no network element.
+                        ElementId::Constraint(_) => false,
                     }
                 });
                 let Some(index) = index else {
@@ -647,6 +656,7 @@ impl Study {
             base_module_json: self.base_module_json.clone(),
             log: self.log.clone(),
             commit_bounds: self.commit_bounds.clone(),
+            constraints: self.constraints.clone(),
             solved: self.solved.clone_box(),
             last: self.last.clone(),
         }
@@ -711,6 +721,16 @@ impl Study {
                             slope * sol.pg[g] + intercept,
                         );
                     }
+                }
+            }
+            for (row, &value) in net.linear_rows.iter().zip(&sol.linear_values) {
+                if let Some(limit) = row.lower_mw {
+                    let limit = limit / net.base_mva;
+                    bound(format!("constraint:{}:lower", row.id), value, limit);
+                }
+                if let Some(limit) = row.upper_mw {
+                    let limit = limit / net.base_mva;
+                    bound(format!("constraint:{}:upper", row.id), value, limit);
                 }
             }
             if net.allow_shed {
@@ -811,6 +831,47 @@ impl Study {
         &self.log
     }
 
+    /// The caller-supplied linear constraints every solve of this study enforces.
+    pub fn constraints(&self) -> &[LinearConstraint] {
+        &self.constraints
+    }
+
+    /// Replace the study's caller-supplied linear constraints and exact-re-solve the
+    /// committed operating point under them; an empty list removes them. Only a DC
+    /// OPF study accepts constraints. Every later commit enforces the same set, and
+    /// previews, objective gradients, planning, and sensitivity cells differentiate
+    /// the program with them. While any are present, saving the problem instance or
+    /// its solution is refused: the PowerIO problem instance has no place for the
+    /// extra rows. On error the study keeps its previous constraints and solution.
+    pub fn set_constraints(
+        &mut self,
+        constraints: Vec<LinearConstraint>,
+    ) -> Result<SolveResponse, String> {
+        let previous = std::mem::replace(&mut self.constraints, constraints);
+        match self.solve_log(&self.log, &[]) {
+            Ok((solved, resp)) => {
+                self.solved = solved;
+                self.last = resp.clone();
+                Ok(resp)
+            }
+            Err(error) => {
+                self.constraints = previous;
+                Err(error)
+            }
+        }
+    }
+
+    /// Refuse an operation whose output would silently drop the study's
+    /// caller-supplied linear constraints.
+    fn reject_constraints(&self, operation: &str) -> Result<(), String> {
+        if self.constraints.is_empty() {
+            return Ok(());
+        }
+        Err(format!(
+            "{operation} is not available while the study carries caller-supplied linear constraints"
+        ))
+    }
+
     /// Apply `edits` to the committed operating point and exact-re-solve, with no
     /// sensitivity cells. The zero-sensitivity convenience over
     /// [`commit_with`](Study::commit_with).
@@ -888,6 +949,9 @@ impl Study {
         let req = SolveRequest {
             formulation: self.formulation,
             edits: fold(log),
+            start: PowerFlowStart::Flat,
+            constraints: self.constraints.clone(),
+            limits: None,
             sensitivities: sensitivities.to_vec(),
         };
         // Re-solve from a fresh clone of the base (the source of truth), then assemble the
@@ -1078,6 +1142,7 @@ impl Study {
 
     /// Save the exact problem definition without adding Study history to PowerIO.
     pub fn save_instance_module(&self) -> Result<String, String> {
+        self.reject_constraints("saving the problem instance")?;
         let value = self.materialized_instance()?;
         crate::ir::serialize_module(&self.electrical_module(value)?)
     }
@@ -1143,6 +1208,7 @@ impl Study {
 
     /// Serialize the exact solution without embedding application Study semantics.
     pub fn save_exact_module(&self) -> Result<String, String> {
+        self.reject_constraints("saving the solution")?;
         let producer = format!("tellegen {}", env!("CARGO_PKG_VERSION"));
         let value = match self.materialized_instance()? {
             PioValue::DcOpfInstance(instance) => {
@@ -1192,6 +1258,7 @@ impl Study {
     /// Serialize the committed result as a PowerIO solution module with the
     /// instance and electrical values used by the solve.
     pub fn save_solution_module(&self) -> Result<String, String> {
+        self.reject_constraints("saving the solution")?;
         let Some((model, solution)) = self.solved.dc_exact() else {
             return self.save_exact_module();
         };
@@ -2695,7 +2762,15 @@ mod tests {
         let network: BalancedNetwork = serde_json::from_value(net).unwrap();
         let s = Study::new(&module_json(network), Problem::DcOpf).unwrap();
 
-        for format in ["matpower", "psse", "pslf", "powerworld"] {
+        for format in [
+            "matpower",
+            "psse",
+            "psse35",
+            "pslf",
+            "powerworld",
+            "powermodels-json",
+            "pandapower-json",
+        ] {
             let exported = s.export(format).expect(format);
             assert!(
                 !exported.text.contains("\n 999,"),
@@ -3060,5 +3135,206 @@ mod tests {
             );
             assert_eq!(analytic.numerics.regularization, 1e-9);
         }
+    }
+
+    /// Line 1-2 carries 30 + g1/3 MW in CASE3, about 40 MW unconstrained, so a
+    /// 38 MW limit binds, and still does with 10 MW more load at bus 2.
+    fn interface_limit(upper: f64) -> Vec<LinearConstraint> {
+        serde_json::from_value(serde_json::json!([{
+            "id": "line 1-2",
+            "terms": [{ "kind": "branch_flow", "element": 1, "coefficient": 1.0 }],
+            "upper": upper
+        }]))
+        .expect("constraint")
+    }
+
+    #[test]
+    fn a_study_carries_its_linear_constraints_through_every_commit() {
+        let net = case3_json();
+        let mut study = Study::new(&net, Problem::DcOpf).expect("study");
+        let constraints = interface_limit(38.0);
+        let resp = study
+            .set_constraints(constraints.clone())
+            .expect("constrain");
+        assert_eq!(study.constraints(), constraints.as_slice());
+        let row = &resp.constraints.as_ref().expect("constraint results")[0];
+        assert!(row.binding);
+        assert!(row.shadow_price.unwrap() > 0.0);
+        assert!(study
+            .active_constraints()
+            .contains("constraint:line 1-2:upper"));
+
+        // A commit re-solves under the same constraints and matches the stateless
+        // solve of the same request.
+        let resp = study
+            .commit(&[NetworkEdit::AddLoad {
+                bus: 2.into(),
+                p_mw: 10.0,
+            }])
+            .expect("commit");
+        let stateless = crate::solve_module_json(
+            &net,
+            &serde_json::json!({
+                "formulation": "dcopf",
+                "edits": { "deltas": { "2": 10.0 } },
+                "constraints": constraints,
+            })
+            .to_string(),
+        )
+        .expect("module solve");
+        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+        assert!(study.fork().solution().constraints.is_some());
+
+        // Removing them restores the unconstrained solve.
+        let resp = study.set_constraints(Vec::new()).expect("unconstrain");
+        assert!(resp.constraints.is_none());
+        let stateless = crate::solve_module_json(
+            &net,
+            r#"{"formulation":"dcopf","edits":{"deltas":{"2":10.0}}}"#,
+        )
+        .expect("module solve");
+        assert_eq!(serde_json::to_string(&resp).unwrap(), stateless);
+    }
+
+    #[test]
+    fn a_constrained_study_differentiates_its_constraints_and_refuses_to_drop_them() {
+        let mut study = Study::new(&case3_json(), Problem::DcOpf).expect("study");
+        study
+            .set_constraints(interface_limit(38.0))
+            .expect("constrain");
+        let base = study.solution().clone();
+
+        // A first-order preview of 1 MW more at bus 2 matches the exact re-solve,
+        // which keeps the interface binding.
+        let edit = [NetworkEdit::AddLoad {
+            bus: 2.into(),
+            p_mw: 1.0,
+        }];
+        let preview = study
+            .preview(&edit, &[Operand::Dispatch(Power::Active)])
+            .expect("preview");
+        let committed = study.commit(&edit).expect("commit");
+        let dispatch = |resp: &SolveResponse| -> Vec<f64> {
+            resp.dispatch
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|g| g.pg)
+                .collect()
+        };
+        let (before, after) = (dispatch(&base), dispatch(&committed));
+        for (column, (b, a)) in preview.operands[0]
+            .values
+            .iter()
+            .zip(before.iter().zip(&after))
+        {
+            assert!(
+                (column.value - (a - b)).abs() < 1e-4,
+                "predicted {} vs exact {}",
+                column.value,
+                a - b
+            );
+        }
+        assert!(committed.constraints.as_ref().unwrap()[0].binding);
+
+        // Sensitivity cells ride along with a commit.
+        let resp = study
+            .commit_with(
+                &[],
+                &[SensRequest {
+                    operand: Operand::Price(Power::Active),
+                    parameter: Parameter::ConstraintLimit,
+                    indices: None,
+                    mode: Mode::Auto,
+                }],
+            )
+            .expect("sensitivity cells");
+        assert_eq!(resp.sensitivities[0].values.len(), 3);
+
+        // Planning differentiates through the same system.
+        let spec: crate::plan::CapacityPlanSpec = serde_json::from_value(serde_json::json!({
+            "objective": { "kind": "weighted_lmp", "weights": [{ "bus": 2, "weight": 1.0 }] },
+            "candidates": ["1-2"],
+            "max_increase_per_branch_mw": 5.0,
+            "budget_mw": 5.0,
+            "increment_mw": 5.0,
+            "max_changed_lines": 1,
+            "exact_solve_budget": 1
+        }))
+        .expect("plan spec");
+        study.plan(&spec).expect("planning");
+
+        // Saving the problem would drop the constraints PowerIO cannot carry.
+        for error in [
+            study.save_instance_module().expect_err("instance"),
+            study.save_exact_module().expect_err("exact solution"),
+            study.save_solution_module().expect_err("solution"),
+        ] {
+            assert!(
+                error.ends_with("while the study carries caller-supplied linear constraints"),
+                "{error}"
+            );
+        }
+        // The network itself is not the constraint set, so it still saves.
+        study.save_module().expect("network module");
+
+        // A rejected constraint set keeps the previous one and its solution.
+        let before = serde_json::to_string(study.solution()).unwrap();
+        let mut bad = interface_limit(38.0);
+        bad[0].terms[0].element = 99.into();
+        study.set_constraints(bad).expect_err("unknown branch");
+        assert_eq!(study.constraints(), interface_limit(38.0).as_slice());
+        assert_eq!(serde_json::to_string(study.solution()).unwrap(), before);
+    }
+
+    #[test]
+    fn an_ac_study_refuses_linear_constraints() {
+        let mut study = Study::new(&case3_json(), Problem::AcPf).expect("study");
+        let error = study
+            .set_constraints(interface_limit(38.0))
+            .expect_err("acpf has no linear constraints");
+        assert_eq!(
+            error,
+            "linear constraints are supported only by dcopf, not acpf"
+        );
+        assert!(study.constraints().is_empty());
+    }
+
+    #[test]
+    fn a_study_over_several_islands_commits_previews_and_saves() {
+        let net =
+            module_json(crate::model::parse_matpower(crate::model::CASE_ISLANDS).expect("parse"));
+        let mut study = Study::new(&net, Problem::DcOpf).expect("study");
+        assert_eq!(study.solution().diagnostics.len(), 2);
+        let edit = [NetworkEdit::AddLoad {
+            bus: 5.into(),
+            p_mw: 10.0,
+        }];
+        let preview = study
+            .preview(&edit, &[Operand::Dispatch(Power::Active)])
+            .expect("preview");
+        let resp = study.commit(&edit).expect("commit");
+        let dispatch: Vec<f64> = resp
+            .dispatch
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|g| g.pg)
+            .collect();
+        // Island 4-6's own unit serves the added load; island 1-3 is untouched.
+        assert!((dispatch[0] - 60.0).abs() < 1e-6, "{dispatch:?}");
+        assert!((dispatch[1] - 50.0).abs() < 1e-6, "{dispatch:?}");
+        let predicted: Vec<f64> = preview.operands[0].values.iter().map(|v| v.value).collect();
+        assert!(predicted[0].abs() < 1e-6 && (predicted[1] - 10.0).abs() < 1e-6);
+        // A load edit on the de-energized island has nothing to land on.
+        let error = study
+            .commit(&[NetworkEdit::AddLoad {
+                bus: 7.into(),
+                p_mw: 1.0,
+            }])
+            .expect_err("bus 7 is out of the solve");
+        assert!(error.contains("bus 7"), "{error}");
+        study.save_module().expect("network module");
+        study.save_solution_module().expect("solution module");
     }
 }

@@ -18,6 +18,11 @@ path = "src/main.rs"
 name = "mc-pf-session-bench"
 path = "src/bin/mc-pf-session-bench.rs"
 
+# DC OPF time and heap on a 78k-bus case or a synthetic ~100k-bus mesh.
+[[bin]]
+name = "dcopf-scale-bench"
+path = "src/bin/dcopf-scale-bench.rs"
+
 [dependencies]
 # The engine, with the conic (SOCWR) relaxation on for parity coverage alongside the
 # DC and AC power flow paths. The shared workspace lockfile unifies powerio across the

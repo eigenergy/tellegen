@@ -12,6 +12,7 @@ export type {
 export type { DisplayOption } from './display.js';
 export type { PlacedNetwork, PlacementCenter } from './synthetic-layout.js';
 export type {
+	BusSizing,
 	DemandRangeMode,
 	DisplayMode,
 	FallbackTarget,

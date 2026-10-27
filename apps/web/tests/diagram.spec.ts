@@ -71,7 +71,7 @@ test('drawing coordinates remain separate from geography and support navigation'
 	await expect(drawingGroup).toHaveAttribute('transform', initial!);
 	await page.screenshot({ path: testInfo.outputPath('diagram-desktop.png') });
 	const downloadPending = page.waitForEvent('download');
-	await page.getByRole('button', { name: 'Download drawing (.geo.json)', exact: true }).click();
+	await page.getByRole('button', { name: 'Save drawing', exact: true }).click();
 	const downloaded = JSON.parse(await readFile((await (await downloadPending).path())!, 'utf8'));
 	expect(downloaded.powerio_geo.space).toBe('diagram');
 	expect(downloaded.features[0].geometry.coordinates).toEqual([1200, 2500]);

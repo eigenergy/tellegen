@@ -32,29 +32,30 @@ impl DcPfSystem {
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct DcPfSolution {
-    /// Bus voltage angles (radians); `va[ref] = 0` by the grounding.
+    /// Bus voltage angles (radians); zero at every reference bus by the grounding.
     pub va: Vec<f64>,
     /// Branch active-power flows (per unit),
     /// `f[e] = -b[e] sw[e] (va_from - va_to) + sw[e] flow_offset[e]`, the same
     /// affine flow definition the OPF uses.
     pub f: Vec<f64>,
-    /// Recovered reference-bus net injection (per unit): the slack power that
-    /// closes the balance, `(B va + shunt + phase_shift)[ref]`. The injection
-    /// passed for the reference bus is ignored, so this is computed, not echoed.
+    /// Recovered net injection at each reference bus (per unit), in the order of
+    /// [`DcNetwork::ref_buses`]: the slack power that closes its island's
+    /// balance, `(B va + shunt + phase_shift)[ref]`. The injection passed for a
+    /// reference bus is ignored, so this is computed, not echoed.
     #[cfg(test)]
-    pub ref_injection: f64,
+    pub ref_injections: Vec<f64>,
 }
 
 impl DcPfSolution {
-    /// Bundle the angles, flows, and recovered slack injection.
-    pub(crate) fn new(va: Vec<f64>, f: Vec<f64>, ref_injection: f64) -> Self {
+    /// Bundle the angles, flows, and recovered slack injections.
+    pub(crate) fn new(va: Vec<f64>, f: Vec<f64>, ref_injections: Vec<f64>) -> Self {
         #[cfg(not(test))]
-        let _ = ref_injection;
+        let _ = ref_injections;
         DcPfSolution {
             va,
             f,
             #[cfg(test)]
-            ref_injection,
+            ref_injections,
         }
     }
 }
@@ -66,7 +67,8 @@ pub trait DcPfFormulation: Formulation {
     /// Assemble the power flow system for `model` at the given bus injections.
     /// `injection[i]` is the net per-unit real-power injection at dense bus `i`
     /// (generation minus load); it must have length `model.n`. The reference-bus
-    /// entry is ignored — the slack bus absorbs whatever closes the balance.
+    /// entries are ignored — each island's slack bus absorbs whatever closes its
+    /// balance.
     fn assemble_pf(&self, model: &DcNetwork, injection: &[f64]) -> DcPfSystem;
 }
 
@@ -80,34 +82,42 @@ pub fn build_dc_pf<F: DcPfFormulation>(f: &F, model: &DcNetwork, injection: &[f6
 impl DcPfFormulation for Dc {
     fn assemble_pf(&self, dc: &DcNetwork, injection: &[f64]) -> DcPfSystem {
         let n = dc.n;
-        let r = dc.ref_bus;
+        let mut reference = vec![false; n];
+        for &r in &dc.ref_buses {
+            reference[r] = true;
+        }
         // There is no `DcPfLayout`: rows and columns are the dense bus angle
-        // indices, with the reference bus kept as an identity row.
-        // Ground the singular susceptance Laplacian: drop the reference row and
-        // column and put a 1 on the reference diagonal, so the system enforces
+        // indices, with each reference bus kept as an identity row.
+        // Ground the singular susceptance Laplacian at every reference: drop its
+        // row and column and put a 1 on its diagonal, so the system enforces
         // `theta[ref] = 0` and the reduced Laplacian carries the rest. `B[i,ref]`
         // multiplies `theta[ref] = 0`, so dropping the column changes nothing.
+        // One reference per island leaves every island's block nonsingular.
         let mut triplets: Vec<(usize, usize, f64)> = Vec::new();
         for (row, col, v) in dc.susceptance_coo() {
-            if row == r || col == r {
+            if reference[row] || reference[col] {
                 continue;
             }
             triplets.push((row, col, v));
         }
-        triplets.push((r, r, 1.0));
+        for &r in &dc.ref_buses {
+            triplets.push((r, r, 1.0));
+        }
         // The caller's injection is generation minus load. Constant shunt and
         // phase shift withdrawals sit on the other side of the Laplacian.
         let phase = dc.phase_withdrawal();
         let mut rhs: Vec<f64> = (0..n)
             .map(|i| injection[i] - dc.shunt_conductance[i] - phase[i])
             .collect();
-        rhs[r] = 0.0;
+        for &r in &dc.ref_buses {
+            rhs[r] = 0.0;
+        }
         DcPfSystem::new(n, triplets, rhs)
     }
 }
 
 /// Read the solved angles back into branch flows and the recovered slack
-/// injection. Flows use the same affine definition as the OPF; the slack
+/// injections. Flows use the same affine definition as the OPF; each slack
 /// injection is `(B theta + shunt + phase_shift)[ref]`.
 fn read_dc_pf(dc: &DcNetwork, theta: &[f64]) -> DcPfSolution {
     let f: Vec<f64> = (0..dc.m)
@@ -116,15 +126,15 @@ fn read_dc_pf(dc: &DcNetwork, theta: &[f64]) -> DcPfSolution {
             w * (theta[dc.br_from[e]] - theta[dc.br_to[e]]) + dc.current_flow_offset(e)
         })
         .collect();
-    let r = dc.ref_bus;
-    let mut ref_injection = 0.0;
+    let phase = dc.phase_withdrawal();
+    let mut injection: Vec<f64> = (0..dc.n)
+        .map(|i| dc.shunt_conductance[i] + phase[i])
+        .collect();
     for (row, col, v) in dc.susceptance_coo() {
-        if row == r {
-            ref_injection += v * theta[col];
-        }
+        injection[row] += v * theta[col];
     }
-    ref_injection += dc.shunt_conductance[r] + dc.phase_withdrawal()[r];
-    DcPfSolution::new(theta.to_vec(), f, ref_injection)
+    let ref_injections = dc.ref_buses.iter().map(|&r| injection[r]).collect();
+    DcPfSolution::new(theta.to_vec(), f, ref_injections)
 }
 
 /// Solve the DC power flow for `model` at `injection`: build the grounded system
@@ -174,7 +184,7 @@ mod tests {
         approx(sol.f[1], -1.0 / 3.0, 1e-9, "f[1] (1->3)");
         approx(sol.f[2], 1.0 / 3.0, 1e-9, "f[2] (2->3)");
 
-        approx(sol.ref_injection, -1.0, 1e-9, "slack injection");
+        approx(sol.ref_injections[0], -1.0, 1e-9, "slack injection");
 
         // Kirchhoff at every bus: net injection = sum of outgoing branch flows.
         let mut net = vec![0.0; dc.n];
@@ -223,7 +233,12 @@ mod tests {
         approx(sol.f[0], -1.0, 1e-9, "1-2 line carries the full injection");
         approx(sol.f[1], 0.0, 1e-9, "1-3 line feeds a dead leaf");
         approx(sol.f[2], 0.0, 1e-9, "open 2-3 line carries no flow");
-        approx(sol.ref_injection, -1.0, 1e-9, "slack absorbs the injection");
+        approx(
+            sol.ref_injections[0],
+            -1.0,
+            1e-9,
+            "slack absorbs the injection",
+        );
     }
 
     #[test]

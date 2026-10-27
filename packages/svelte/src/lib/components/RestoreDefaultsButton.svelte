@@ -6,9 +6,7 @@
 </script>
 
 {#if config.loadDefaultCases && ctrl.casesLoaded && ctrl.hiddenDefaults.size > 0}
-	<button class="restore-defaults mono" onclick={ctrl.restoreDefaultCases}>
-		&#8634; restore default cases
-	</button>
+	<button class="restore-defaults" onclick={ctrl.restoreDefaultCases}>Restore default cases</button>
 {/if}
 
 <style>
@@ -22,9 +20,10 @@
 		border: 1px solid var(--line);
 		border-radius: 3px;
 		color: var(--text-secondary);
+		font-family: inherit;
 		font-size: 11px;
 		cursor: pointer;
-		box-shadow: 0 2px 10px rgba(32, 36, 43, 0.1);
+		box-shadow: var(--elev-1);
 	}
 
 	.restore-defaults:hover {

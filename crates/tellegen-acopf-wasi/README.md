@@ -12,3 +12,10 @@ across packages selected in the same invocation.
 
 The asset contains EPL-2.0 POUNCE code. Do not distribute it until all release
 gates in `docs/src/acopf-pounce-decision.md` are complete.
+
+The opt-in build also emits the POUNCE EPL-2.0 license, a notice, and a
+`POUNCE-SOURCE.json` manifest beside the WASM. The manifest identifies the
+checksummed 0.13.0 crate sources and the built artifact. These accompany the
+asset in opt-in app builds; public distribution still needs release-owner
+approval. The build/source guard requires Python 3.11+ (select it with `PYTHON`
+if the system `python3` is older).

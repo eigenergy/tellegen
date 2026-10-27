@@ -19,10 +19,14 @@ RUN curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15
 COPY Cargo.toml Cargo.lock /build/
 COPY crates /build/crates
 # The one wasm module: the `conic` feature carries the whole engine (DC optimal
-# power flow, AC power flow, the SOCWR relaxation, the Study) with sensitivities.
-# It stays off relaxed SIMD at the default wasm target, so it validates on Safari.
-# Mirrors the `wasm` script in packages/engine/package.json.
-RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --features conic
+# power flow, AC power flow, the SOCWR relaxation, the Study) with sensitivities,
+# and `synth` adds synthetic grid generation sessions. It stays off relaxed SIMD
+# at the default wasm target, so it validates on Safari. Mirrors the `wasm`
+# script in packages/engine/package.json, including the places table the
+# generator reads beside the module.
+RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm-pkg --out-name tellegen -- --features conic,synth \
+    && mkdir -p /out/data \
+    && cp /build/crates/tellegen-synth/data/populated_places.json /out/data/
 
 # ---- frontend build ----
 FROM node:22-slim AS frontend
@@ -41,8 +45,16 @@ COPY packages/svelte packages/svelte
 COPY packages/webmcp packages/webmcp
 COPY examples/browser-minimal examples/browser-minimal
 COPY examples/svelte-minimal examples/svelte-minimal
+# `types:check` (run by build:engine) reads the Rust records the generated
+# TypeScript mirrors: tellegen's api.rs and the synth request/report/error.
 COPY crates/tellegen/src crates/tellegen/src
+COPY crates/tellegen-synth/src crates/tellegen-synth/src
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
+COPY --from=wasm /out/data ./packages/engine/src/data
+# Optional CARTO basemap key. It is public by design, because the browser
+# sends it with every tile request, so restrict it to the deployment's hosts
+# on CARTO's side. Empty leaves OpenFreeMap as the primary basemap.
+ARG PUBLIC_CARTO_BASEMAP_KEY=""
 RUN npm run build:engine && npm run build:web && npm run smoke:web
 
 # ---- tellegen backend (cargo-chef: dependency compile is a cacheable layer) ----

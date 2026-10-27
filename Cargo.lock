@@ -397,6 +397,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "930c7171c8df9fb1782bdf9b918ed9ed2d33d1d22300abb754f9085bc48bf8e8"
 
 [[package]]
+name = "delaunator"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e1ee323c1275374f7e612d3724d12707079fb6a2117349fe144def656f5a880"
+dependencies = [
+ "robust",
+]
+
+[[package]]
 name = "derive_builder"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -602,9 +611,9 @@ dependencies = [
 
 [[package]]
 name = "feral"
-version = "0.18.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd7d420f8760cef3be020a81f68630a4cee9443da9e616b7c2b1a566b63c0916"
+checksum = "52a5d10907e7891a65325ff1ae839b4dc0b01a79f7415ee200c0e850651cd491"
 dependencies = [
  "feral-amd",
  "feral-amf",
@@ -1445,8 +1454,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-algorithm"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d167547821e25d84b458aa38af8fd44669e09faed3e9adb60b6503851412fe3e"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1467,8 +1477,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-common"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "819e72bd9f5627799007a4feb603d0ef399376d90f79b07e9e246cd0be388495"
 dependencies = [
  "anstyle",
  "anstyle-query",
@@ -1477,8 +1488,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-feral"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b31ce9e3281335cadf47ca9c12638526dccac33bcfe4d273e858e130f8398a7"
 dependencies = [
  "feral",
  "pounce-common",
@@ -1489,8 +1501,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-l1penalty"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fea53dc78b24fd6b859bb47abb23f5519d9172febbf662fd810ed4e292d9519"
 dependencies = [
  "pounce-common",
  "pounce-nlp",
@@ -1498,16 +1511,18 @@ dependencies = [
 
 [[package]]
 name = "pounce-linalg"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d68ccbbff801b3fc93b8bc7ad0ba2c917c044527ab9e1144e3b5b47e9e7a55d"
 dependencies = [
  "pounce-common",
 ]
 
 [[package]]
 name = "pounce-linsol"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39481cd17276dd26e9743267f1e806225d23a60b61e3f7e8ff327b51c78d8b1b"
 dependencies = [
  "pounce-common",
  "pounce-linalg",
@@ -1516,8 +1531,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-nl"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0573f3735389534ce7dbbf93cc0e29678bebe4c6a9ae4a8df8aa6b1c58a96d99"
 dependencies = [
  "libloading",
  "libm",
@@ -1529,8 +1545,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-nlp"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a52b54fd46eea961e27c9624fe4444b1cd0f37c7ec58d272541b3d684d72fdb"
 dependencies = [
  "pounce-common",
  "pounce-linalg",
@@ -1539,8 +1556,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-observability"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fd5f1f28e5aa76752959f9eb2679988e73b80f71e3c07557cffa64e6b393976"
 dependencies = [
  "anstyle",
  "anstyle-query",
@@ -1553,8 +1571,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-presolve"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95ad0f05c10ee21978da3407732a799500d175cdee2b04edafc364bc15535205"
 dependencies = [
  "pounce-common",
  "pounce-nlp",
@@ -1563,8 +1582,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-qp"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adf819e0117e16635f04d7a166ba35022f73d95f2ab1a4c71cd373bbf1970ced"
 dependencies = [
  "pounce-common",
  "pounce-linalg",
@@ -1573,8 +1593,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-restoration"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d319819e34ea438778617c2e7cfff7db8cf61edad732e7f25248231fc7362c0"
 dependencies = [
  "pounce-algorithm",
  "pounce-common",
@@ -1586,8 +1607,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-rs"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55918eb950a3927123224f83687db5e70d48a02fa6ea57a0a127ed48184bcdcf"
 dependencies = [
  "pounce-algorithm",
  "pounce-common",
@@ -1599,8 +1621,9 @@ dependencies = [
 
 [[package]]
 name = "pounce-solve-report"
-version = "0.12.0"
-source = "git+https://github.com/jkitchin/pounce?rev=925e75fbd036de309929e398159f946d42d0d94b#925e75fbd036de309929e398159f946d42d0d94b"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "864f6c6674706c1054487abdcb5b453e3a903f56e8d1b858e63393413a51b486"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1613,14 +1636,15 @@ dependencies = [
 
 [[package]]
 name = "powerio"
-version = "0.11.3"
+version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "008b630a95787a45417ee63035167f82d07c2b7c140043f7a36db04944f157ca"
+checksum = "1c248cd67235f98bafdd2fc575d8ae0cbde1845cb505e4c9c6de0a9d15bbc461"
 dependencies = [
  "num-complex",
  "powerio-core",
  "powerio-dist",
  "powerio-prob",
+ "powerio-tnd",
  "powerio-tx",
  "schemars",
  "serde",
@@ -1629,9 +1653,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-core"
-version = "0.11.3"
+version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bb971c50ae0e2327b46a127491f0a7a72e4136cae04e5a38535f9e842cd1638"
+checksum = "2b9c40c8403e8ec2770f02d4af61290e114d313971aba5868b675c3c93bfbc40"
 dependencies = [
  "errno",
  "libc",
@@ -1642,23 +1666,26 @@ dependencies = [
 
 [[package]]
 name = "powerio-dist"
-version = "0.11.3"
+version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72f7f4fe9733a6fe3078b89bf8570953bc874b21efcc239bf03b8ee6dfe7f5c7"
+checksum = "12bd6ad1814877fec6ebee338a958f398d29bb1334c5656ba2b8a897ad732c54"
 dependencies = [
+ "memchr",
  "num-complex",
  "powerio-core",
+ "quick-xml",
  "schemars",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]
 name = "powerio-matrix"
-version = "0.11.3"
+version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5691f3165e002d2e27f0d7e77b27aff08ab9017c4dcb5953c537384947071325"
+checksum = "59145ea129e0cddfca2f8518c97c3b70f31486feccb929db768ec93dd8f3071e"
 dependencies = [
  "faer",
  "num-complex",
@@ -1678,9 +1705,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-prob"
-version = "0.11.3"
+version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41fe781218603563a2b8888d6f455767b56ad88095379a4f292a5302275a632d"
+checksum = "88daa842edd21385ade7087d0693f033517a71b7d89c422f4361f7d3b6a12de9"
 dependencies = [
  "powerio-core",
  "powerio-dist",
@@ -1692,12 +1719,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "powerio-tx"
-version = "0.11.3"
+name = "powerio-tnd"
+version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c28068bc61d049f228a158841c40747c976e7fd988a7b4498c0259c4412747c2"
+checksum = "21870b68b08554883197ecb5d849814f0830d1dbfc96999574300a3f8075aafb"
+dependencies = [
+ "num-complex",
+ "powerio-core",
+ "powerio-dist",
+ "powerio-tx",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "powerio-tx"
+version = "0.11.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7924816e537a4321b6eb11a7a85c97499cacaa618b2c2a972995235830ee2cf8"
 dependencies = [
  "lexical-core",
+ "memchr",
  "petgraph",
  "powerio-core",
  "quick-xml",
@@ -1764,9 +1807,9 @@ checksum = "1d8f70e07b9c3962945a74e59ca1c511bba65b6419468acc217c457d93f3c740"
 
 [[package]]
 name = "pyo3"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4688ddedf473e32662b9b067670129a8afb8c18e351482c70d62ba4a88171e8b"
+checksum = "229ca13b8a15bb0d1487b81ab975bfcd97513416499a8312011b6036e42e0de4"
 dependencies = [
  "libc",
  "once_cell",
@@ -1778,18 +1821,18 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f41027e41b4bd03f6e60f9f417fe24a6341a6bb744edd62b6f709f2a52ea30e9"
+checksum = "70130e2b6dd1ee589a8788026a429561ca5c40fa7a2fa7914c2282eddae24700"
 dependencies = [
  "target-lexicon",
 ]
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e591a95526fead067432c3b3a33fc74770b87b1e04e73671090d9c2055a2b327"
+checksum = "5e7ff73c555c286d212d4ce7e5fbda845a973c4f61bd5f160f5f2c3c2a04d1c4"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -1797,26 +1840,26 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73225868fc1cd84eef2c3c230ddb91273bf1de46aeb8a4248da76d32a0924a1c"
+checksum = "c46d2e5862c7bb8207e3b639f713dda3c499933444784154c11d013c5a691b60"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
  "quote",
- "syn 2.0.118",
+ "syn 3.0.3",
 ]
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "571575aa3749fa6216757dd47d2a3e7ef360f329a40f0666a9fbd14889024952"
+checksum = "38b89f066f2ae72a2aef52d1537ca2fcd104440ebfadee06e97aa90738a25b9b"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.118",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -1961,6 +2004,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "robust"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e27ee8bb91ca0adcf0ecb116293afa12d393f9c2b9b9cd54d33e8078fe19839"
+
+[[package]]
 name = "rustc-hash"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2070,9 +2119,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.151"
+version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
  "itoa",
  "memchr",
@@ -2112,9 +2161,9 @@ checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
 
 [[package]]
 name = "sha2"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -2231,7 +2280,7 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tellegen"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clarabel",
  "faer",
@@ -2267,11 +2316,12 @@ dependencies = [
  "serde",
  "serde_json",
  "tellegen",
+ "tellegen-synth",
 ]
 
 [[package]]
 name = "tellegen-py"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "powerio",
  "pyo3",
@@ -2298,6 +2348,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "tellegen-synth"
+version = "0.1.0"
+dependencies = [
+ "delaunator",
+ "num-complex",
+ "powerio",
+ "powerio-prob",
+ "powerio-tx",
+ "rand",
+ "rand_chacha",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tellegen",
+]
+
+[[package]]
 name = "tellegen-wasm"
 version = "0.1.1"
 dependencies = [
@@ -2309,6 +2377,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tellegen",
+ "tellegen-synth",
  "wasm-bindgen",
  "wasm-bindgen-futures",
 ]
@@ -2364,9 +2433,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.53.1"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",
@@ -2720,14 +2789,15 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.6.0"
+version = "9.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
 dependencies = [
  "crc32fast",
  "flate2",
  "indexmap",
  "memchr",
+ "nix",
  "typed-path",
 ]
 

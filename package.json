@@ -16,8 +16,8 @@
   "scripts": {
     "wasm": "npm --workspace @tellegen/engine run wasm",
     "wasm:acopf": "bash scripts/build-acopf-wasi.sh",
-    "contracts": "npm --workspace @tellegen/engine run contracts",
-    "contracts:check": "npm --workspace @tellegen/engine run contracts:check",
+    "types": "npm --workspace @tellegen/engine run types",
+    "types:check": "npm --workspace @tellegen/engine run types:check",
     "check:engine": "npm --workspace @tellegen/engine run check",
     "build:engine": "npm --workspace @tellegen/engine run build",
     "pack:engine": "npm --workspace @tellegen/engine pack --dry-run",
@@ -38,14 +38,14 @@
     "build:web": "npm run build:webmcp && npm run build:svelte && npm --workspace tellegen-frontend run build",
     "smoke:web": "npm --workspace tellegen-frontend run smoke:build",
     "test:browser": "npm --workspace tellegen-frontend run test:browser",
-    "test:evidence": "node --test evidence/webmcp/run.test.mjs",
+    "test:evidence": "node --test docs/evidence/webmcp/run.test.mjs",
     "lint": "npm run lint:web",
     "check": "npm run check:engine && npm run check:webmcp && npm run check:svelte && npm run check:web",
     "build": "npm run build:engine && npm run build:webmcp && npm run build:svelte && npm run build:example && npm --workspace tellegen-frontend run build",
     "test:downstream": "npm run test:import && npm run test:svelte-packed",
     "ci:js": "npm run check && npm run build && npm run pack:webmcp && npm run pack:svelte && npm run smoke:web && npm run test:downstream && npm run test:evidence",
     "changeset": "changeset",
-    "version:packages": "changeset version && npm run contracts && npm install --package-lock-only --ignore-scripts"
+    "version:packages": "changeset version && npm run types && npm install --package-lock-only --ignore-scripts"
   },
   "devDependencies": {
     "@changesets/changelog-github": "1.0.1",

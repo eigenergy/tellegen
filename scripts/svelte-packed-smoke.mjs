@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   lstat,
   mkdir,
@@ -8,6 +8,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -137,6 +138,13 @@ async function writeConsumer(engineTarball, svelteTarball) {
       "vite",
     ].map((name) => [name, sveltePackage.devDependencies[name]]),
   );
+  // The map libraries are peers the host installs: the install below passes
+  // `--legacy-peer-deps`, so nothing else would bring them in.
+  const mapPeers = Object.fromEntries(
+    Object.entries(sveltePackage.peerDependencies).filter(
+      ([name]) => name !== "svelte",
+    ),
+  );
 
   await mkdir(join(consumerDir, "src"), { recursive: true });
   await writeFile(
@@ -152,6 +160,7 @@ async function writeConsumer(engineTarball, svelteTarball) {
         dependencies: {
           "@tellegen/engine": packageFileSpec(engineTarball),
           "@tellegen/svelte": packageFileSpec(svelteTarball),
+          ...mapPeers,
         },
         devDependencies,
       },
@@ -263,10 +272,16 @@ export default defineConfig({
     join(consumerDir, "src/main.ts"),
     `import { mount } from "svelte";
 import { AppFooter } from "@tellegen/svelte/components";
+import engineWasmUrl from "@tellegen/engine/wasm?url";
+import placesUrl from "@tellegen/engine/places?url";
 import App from "./App.svelte";
 import "@tellegen/svelte/styles.css";
 
 void AppFooter;
+// A host that preloads the engine's assets names them by export, not by path.
+for (const url of [engineWasmUrl, placesUrl]) {
+  if (typeof url !== "string") throw new Error("asset export is not a URL");
+}
 
 mount(App, {
   target: document.getElementById("app")!
@@ -292,6 +307,20 @@ async function assertTarballInstall() {
       throw new Error(`${path} is a symlink, not an installed package tarball`);
     }
   }
+  // The map shares MapLibre and deck.gl with the host (`extraLayers`,
+  // `onMapReady`), so the package must not bring copies of its own.
+  for (const name of [
+    "maplibre-gl",
+    "@deck.gl/core",
+    "@deck.gl/layers",
+    "@deck.gl/maplibre",
+  ]) {
+    const nested = join(svelteInstall, "node_modules", name);
+    if (await lstat(nested).catch(() => null)) {
+      throw new Error(`@tellegen/svelte installed its own copy of ${name}`);
+    }
+    await lstat(join(consumerDir, "node_modules", name));
+  }
 }
 
 async function assertBuildOutput() {
@@ -307,6 +336,9 @@ async function assertBuildOutput() {
   if (!wasmFiles.some((file) => /tellegen_bg.*\.wasm$/.test(file))) {
     throw new Error("consumer build did not emit the engine wasm asset");
   }
+  if (!files.some((file) => /populated_places.*\.json$/.test(file))) {
+    throw new Error("consumer build did not emit the places table");
+  }
   if (!files.some((file) => /worker/.test(file) && file.endsWith(".js"))) {
     throw new Error("consumer build did not emit the engine worker chunk");
   }
@@ -317,6 +349,95 @@ async function assertBuildOutput() {
   }
 
   console.log(`packed Svelte consumer emitted ${wasmFiles.length} wasm assets`);
+}
+
+async function freePort() {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
+async function fetchText(url) {
+  const response = await fetch(url);
+  if (!response.ok)
+    throw new Error(`dev server answered ${response.status} for ${url}`);
+  return response.text();
+}
+
+// The dev server pre-bundles this package. Rolldown cannot pre-bundle the map's
+// `?worker&url` import of MapLibre's worker, so the package's
+// `./maplibre-worker` export resolves to a module that imports it at run time,
+// outside the pre-bundle, under the `development` condition. Follow that chain
+// the way the browser would: pre-bundled package, its worker URL module, then
+// the worker. A regression stops the dev server at startup or breaks a link.
+async function assertDevServer() {
+  const port = await freePort();
+  const base = `http://127.0.0.1:${port}`;
+  const server = spawn(
+    join(consumerDir, "node_modules/.bin/vite"),
+    ["--host", "127.0.0.1", "--port", String(port), "--strictPort", "--force"],
+    { cwd: consumerDir, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  let output = "";
+  server.stdout.on("data", (chunk) => (output += chunk));
+  server.stderr.on("data", (chunk) => (output += chunk));
+  const exited = new Promise((resolve) => server.on("exit", resolve));
+  try {
+    const deadline = Date.now() + 60_000;
+    // Vite colours its banner when the environment forces colour.
+    while (!output.replace(/\x1b\[[0-9;]*m/g, "").includes(base)) {
+      if (server.exitCode !== null || Date.now() > deadline) {
+        throw new Error(`consumer dev server did not start:\n${output}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    const app = await fetchText(`${base}/src/App.svelte`);
+    const packagePath = app.match(
+      /\/node_modules\/\.vite\/deps\/@tellegen_svelte\.js\?v=[\w]+/,
+    )?.[0];
+    if (!packagePath) {
+      throw new Error("the dev server did not pre-bundle @tellegen/svelte");
+    }
+    const packageUrl = new URL(packagePath, base);
+    const bundled = await fetchText(packageUrl);
+    const chunkPath = bundled.match(
+      /["']([^"']*maplibre-worker\.dev[^"']*)["']/,
+    )?.[1];
+    if (!chunkPath) {
+      throw new Error("the pre-bundle does not load maplibre-worker.dev");
+    }
+    const chunkUrl = new URL(chunkPath, packageUrl);
+    const chunk = await fetchText(chunkUrl);
+    const modulePath = chunk.match(
+      /new URL\(\s*["']([^"']*maplibre-worker\.js)["']/,
+    )?.[1];
+    if (!modulePath) {
+      throw new Error(
+        "maplibre-worker.dev does not point at maplibre-worker.js",
+      );
+    }
+    const workerModule = await fetchText(new URL(modulePath, chunkUrl));
+    const urlModulePath = workerModule.match(
+      /["']([^"']*maplibre-gl-worker\.mjs\?worker&url)["']/,
+    )?.[1];
+    if (!urlModulePath) {
+      throw new Error("maplibre-worker.js does not import the worker URL");
+    }
+    const urlModule = await fetchText(new URL(urlModulePath, base));
+    const workerPath = urlModule.match(
+      /["']([^"']*worker_file[^"']*)["']/,
+    )?.[1];
+    if (!workerPath) {
+      throw new Error("the dev server did not resolve the MapLibre worker URL");
+    }
+    await fetchText(new URL(workerPath, base));
+    console.log("packed Svelte consumer dev server serves the MapLibre worker");
+  } finally {
+    server.kill();
+    await exited;
+  }
 }
 
 try {
@@ -341,6 +462,7 @@ try {
   await assertTarballInstall();
   run("npm", ["run", "build"], { cwd: consumerDir });
   await assertBuildOutput();
+  await assertDevServer();
 } finally {
   if (keepTmp) {
     console.log(`kept smoke test workspace at ${tmpRoot}`);

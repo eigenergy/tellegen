@@ -1,6 +1,6 @@
 {
   "name": "@tellegen/engine",
-  "version": "0.3.0",
+  "version": "0.4.2",
   "description": "Browser engine for case parsing, solves, Study previews and commits, and sensitivities.",
   "keywords": [
     "power-flow",
@@ -43,17 +43,23 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./contracts": {
-      "types": "./dist/generated/contracts.d.ts",
-      "default": "./dist/generated/contracts.js"
-    }
+    "./types": {
+      "types": "./dist/generated/api-types.d.ts",
+      "default": "./dist/generated/api-types.js"
+    },
+    "./synth": {
+      "types": "./dist/generated/synth-types.d.ts",
+      "default": "./dist/generated/synth-types.js"
+    },
+    "./wasm": "./dist/wasm-pkg/tellegen_bg.wasm",
+    "./places": "./dist/data/populated_places.json"
   },
   "scripts": {
-    "contracts": "node scripts/generate-contracts.mjs",
-    "contracts:check": "node scripts/generate-contracts.mjs --check",
-    "build": "npm run contracts:check && tsc -p tsconfig.json && node scripts/copy-wasm-assets.mjs",
-    "wasm": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --features conic",
-    "check": "npm run contracts:check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm test",
+    "types": "node scripts/generate-types.mjs",
+    "types:check": "node scripts/generate-types.mjs --check",
+    "build": "npm run types:check && tsc -p tsconfig.json && node scripts/copy-wasm-assets.mjs",
+    "wasm": "wasm-pack build ../../crates/tellegen-wasm --target web --out-dir ../../packages/engine/src/wasm-pkg --out-name tellegen -- --features conic,synth && node scripts/copy-synth-places.mjs",
+    "check": "npm run types:check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm test",
     "test": "vitest run",
     "test:import": "node scripts/import-smoke.mjs",
     "pack:dry-run": "npm pack --dry-run"

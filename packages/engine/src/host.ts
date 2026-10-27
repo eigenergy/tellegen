@@ -7,6 +7,7 @@
 
 import { engineModule } from "./module.js";
 import {
+  emptyHandles,
   runRequest,
   type EngineHandles,
   type EngineRequest,
@@ -23,6 +24,10 @@ export interface TimedEngineValue {
 }
 
 export interface EngineHost {
+  /** Where requests execute: a dedicated worker, or the calling thread. A
+   * worker host that had to fall back to the calling thread reports
+   * `"direct"` from then on, so a caller can say the page may pause. */
+  readonly kind: "worker" | "direct";
   call(req: EngineRequest): Promise<EngineValue>;
   /** `call`, also reporting engine-side time for latency breakdowns. */
   callTimed?(req: EngineRequest): Promise<TimedEngineValue>;
@@ -35,10 +40,7 @@ export interface EngineHost {
   cancel?(reason: Error): boolean;
 }
 
-const directHandles: EngineHandles = {
-  studies: new Map(),
-  mcPfSessions: new Map(),
-};
+const directHandles = emptyHandles();
 
 /** Run a request and report engine time, on any host. */
 export async function callTimed(
@@ -61,6 +63,7 @@ async function runTimed(
 }
 
 export const directHost: EngineHost = {
+  kind: "direct",
   async call(req) {
     return runRequest(await engineModule(), directHandles, req);
   },
@@ -78,6 +81,10 @@ interface PendingCall {
   reject: (error: Error) => void;
 }
 
+/** Called when a worker host stops serving: `replacement` is the host its
+ * requests moved to, or null when callers should build a fresh one. */
+type Retire = (host: EngineHost, replacement: EngineHost | null) => void;
+
 class WorkerHost implements EngineHost {
   #worker: Worker;
   #seq = 0;
@@ -88,7 +95,11 @@ class WorkerHost implements EngineHost {
    * session (requests reject; the next engineHost() spawns a fresh worker). */
   #failed: { forward: EngineHost | null; error: Error } | null = null;
 
-  constructor(worker: Worker, private readonly fallback: EngineHost = directHost) {
+  constructor(
+    worker: Worker,
+    private readonly fallback: EngineHost = directHost,
+    private readonly retire: Retire = retireShared,
+  ) {
     this.#worker = worker;
     worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
       this.#answered = true;
@@ -114,6 +125,10 @@ class WorkerHost implements EngineHost {
       this.#fail(new Error("engine worker message failed"));
   }
 
+  get kind(): "worker" | "direct" {
+    return this.#failed?.forward?.kind ?? "worker";
+  }
+
   #fail(error: Error) {
     if (this.#failed) return;
     const pending = [...this.#pending.values()];
@@ -124,14 +139,14 @@ class WorkerHost implements EngineHost {
       // everything moves to the main thread, including the pending requests —
       // their study handles stay valid because the caller allocated them.
       this.#failed = { forward: this.fallback, error };
-      if (activeHost === this) activeHost = this.fallback;
+      this.retire(this, this.fallback);
       for (const p of pending) callTimed(this.fallback, p.req).then(p.resolve, p.reject);
       return;
     }
     // A crash mid session loses the worker's studies; callers see their next
     // call fail, drop the study handle, and rebuild against a fresh worker.
     this.#failed = { forward: null, error };
-    if (activeHost === this) activeHost = null;
+    this.retire(this, null);
     for (const p of pending) p.reject(error);
   }
 
@@ -167,13 +182,17 @@ class WorkerHost implements EngineHost {
     this.#pending.clear();
     this.#worker.terminate();
     this.#failed = { forward: null, error: reason };
-    if (activeHost === this) activeHost = null;
+    this.retire(this, null);
     for (const call of pending) call.reject(reason);
     return true;
   }
 }
 
 let activeHost: EngineHost | null = null;
+
+function retireShared(host: EngineHost, replacement: EngineHost | null): void {
+  if (activeHost === host) activeHost = replacement;
+}
 
 export function engineHost(): EngineHost {
   activeHost ??= createHost();
@@ -189,13 +208,26 @@ export function isolatedEngineHost(): EngineHost {
   return createHost(fallback);
 }
 
+let activeSynthHost: EngineHost | null = null;
+
+/** The long-lived host for synthetic grid generation: a third worker, so
+ * cancelling a generation (which terminates it) never touches the studies of
+ * the interactive host, and the places table loads once per worker rather
+ * than once per run. Created on first use, dropped by `cancel` or a crash,
+ * and created again for the next session. Without Worker support it runs on
+ * the calling thread, where a stop takes effect between stages. */
+export function synthEngineHost(): EngineHost {
+  activeSynthHost ??= createHost(isolatedDirectHost(), (host, replacement) => {
+    if (activeSynthHost === host) activeSynthHost = replacement;
+  });
+  return activeSynthHost;
+}
+
 function isolatedDirectHost(): EngineHost {
   let stopped = false;
-  const handles: EngineHandles = {
-    studies: new Map(),
-    mcPfSessions: new Map(),
-  };
+  const handles: EngineHandles = emptyHandles();
   return {
+    kind: "direct",
     async call(req) { return runRequest(await engineModule(), handles, req, () => stopped); },
     callTimed(req) { return runTimed(handles, req, () => stopped); },
     requestStop() { stopped = true; },
@@ -203,12 +235,16 @@ function isolatedDirectHost(): EngineHost {
   };
 }
 
-function createHost(fallback: EngineHost = directHost): EngineHost {
+function createHost(
+  fallback: EngineHost = directHost,
+  retire: Retire = retireShared,
+): EngineHost {
   if (typeof Worker === "undefined") return fallback;
   try {
     return new WorkerHost(
       new Worker(new URL("./worker.js", import.meta.url), { type: "module" }),
       fallback,
+      retire,
     );
   } catch {
     return fallback;

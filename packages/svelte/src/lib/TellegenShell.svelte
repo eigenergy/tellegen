@@ -9,22 +9,21 @@
 	import RestoreDefaultsButton from './components/RestoreDefaultsButton.svelte';
 	import SolveCard from './components/SolveCard.svelte';
 	import PanelHost from './components/PanelHost.svelte';
-	import { PANEL_COMPACT_QUERY } from './panels.svelte.js';
+	import ShellEnvironment from './components/ShellEnvironment.svelte';
 	import { getAppState, getController, getUiConfig } from './context.svelte.js';
 	import TellegenMap from './TellegenMap.svelte';
-
-	// Gates the drag-and-drop affordance only. The upload button in the header
-	// is always rendered: a file picker works on every device, and the plain
-	// `hover`/`pointer` queries resolve false on a touchscreen laptop that also
-	// has a mouse, which hid the whole file flow there (#110). `any-*` match
-	// when at least one attached input can hover and point precisely.
-	const FILE_DROP_QUERY = '(any-hover: hover) and (any-pointer: fine)';
 
 	const app = getAppState();
 	const ctrl = getController();
 	const config = getUiConfig();
 
 	let dragDepth = 0;
+
+	// ShellEnvironment drops the affordance when no fine pointer is attached;
+	// forget any drag that was in flight so the next one counts from zero.
+	$effect(() => {
+		if (!ctrl.showFileDropUi) dragDepth = 0;
+	});
 
 	$effect(() => {
 		if (app.studyView) return;
@@ -42,44 +41,13 @@
 
 	onMount(() => {
 		ctrl.probeAcOpf();
+		// The provider already marked the shell loaded when default cases are
+		// off, and load() itself is gated; this only frames whatever is there.
 		if (config.loadDefaultCases) {
 			if (!ctrl.casesLoaded) void ctrl.load();
 		} else {
-			ctrl.casesLoaded = true;
-			app.requestFrame('all');
+			void app.requestFrame('all');
 		}
-
-		const query = window.matchMedia(FILE_DROP_QUERY);
-		const syncFileDropUi = () => {
-			ctrl.showFileDropUi = query.matches;
-			if (!ctrl.showFileDropUi) {
-				dragDepth = 0;
-				app.dragOver = false;
-			}
-		};
-		syncFileDropUi();
-		query.addEventListener('change', syncFileDropUi);
-
-		const compact = window.matchMedia(PANEL_COMPACT_QUERY);
-		const syncCompact = () => {
-			app.compactLayout = compact.matches;
-			if (!compact.matches) app.sheetInset = 0;
-		};
-		syncCompact();
-		compact.addEventListener('change', syncCompact);
-
-		// Shared viewport measurements keep panel and map framing dimensions aligned.
-		const syncViewport = () => (app.viewportHeight = window.innerHeight);
-		syncViewport();
-		window.addEventListener('resize', syncViewport);
-		window.addEventListener('orientationchange', syncViewport);
-
-		return () => {
-			query.removeEventListener('change', syncFileDropUi);
-			compact.removeEventListener('change', syncCompact);
-			window.removeEventListener('resize', syncViewport);
-			window.removeEventListener('orientationchange', syncViewport);
-		};
 	});
 
 	function dragHasFiles(e: DragEvent): boolean {
@@ -123,6 +91,8 @@
 	ondrop={onDrop}
 />
 
+<ShellEnvironment />
+
 <main>
 	<TellegenMap
 		onbusclick={ctrl.selectBus}
@@ -133,6 +103,8 @@
 		onmultiedgeclick={ctrl.selectMultiEdge}
 		onplacecase={ctrl.placeCase}
 		onmapclick={ctrl.clearSelection}
+		theme={config.theme}
+		cartoApiKey={config.cartoApiKey || undefined}
 	/>
 
 	<AppHeader />

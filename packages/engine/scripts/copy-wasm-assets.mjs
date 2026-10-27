@@ -14,3 +14,6 @@ writeFileSync(
   join(targetDir, ".npmignore"),
   "# Include wasm-pack output in the @tellegen/engine tarball.\n",
 );
+
+// The synthetic generator's places table, fetched beside the module.
+cpSync(join(sourceDir, "data"), join(distDir, "data"), { recursive: true });

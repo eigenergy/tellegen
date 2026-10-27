@@ -94,8 +94,8 @@ the Safari sensitivity gap
 Long term: graduate the native AC OPF feature and experimental browser WASI
 worker after their solver, distribution, and benchmark gates. The worker
 already supports hard cancellation. WebGPU follows when deck.gl's backend
-gains picking and basemap support. Synthetic grid generation pairs with
-in-browser compute.
+gains picking and basemap support. Synthetic grid generation already runs in the browser through `tellegen-synth`
+([Synthetic Grid Generation](synthetic-generation.md)).
 
 ## Sources
 

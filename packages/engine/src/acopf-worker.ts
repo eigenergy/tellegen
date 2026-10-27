@@ -4,7 +4,7 @@ import type {
   AcOpfWorkerResponse,
 } from "./acopf-protocol.js";
 import { createAcOpfWasi } from "./acopf-wasi.js";
-import type { SolveResponse } from "./generated/contracts.js";
+import type { SolveResponse } from "./generated/api-types.js";
 
 interface AcOpfExports extends WebAssembly.Exports {
   memory: WebAssembly.Memory;

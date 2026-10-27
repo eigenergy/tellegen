@@ -58,17 +58,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .ok_or("input checksum missing from reference")
                 })
                 .transpose()?;
+            let parse_started = Instant::now();
             let module = powerio::parse(powerio::Source::from_memory("case.m", bytes)?)?;
-            let module = tellegen::ir::serialize_module(&module)?;
-            let response: serde_json::Value = serde_json::from_str(&tellegen::solve_module_json(
-                &module,
-                r#"{"formulation":"acopf"}"#,
-            )?)?;
-            record["response"] = response;
+            let network = tellegen::ir::balanced_module(module)?;
+            let instance = powerio_prob::AcOpfInstance::from_network(network.value().clone())?;
+            record["parse_ms"] = (parse_started.elapsed().as_secs_f64() * 1000.0).into();
+            let solve_started = Instant::now();
+            let result = tellegen::solve_ac_opf_instance(
+                &instance,
+                &tellegen::SolveRequest {
+                    formulation: tellegen::Problem::Acopf,
+                    ..Default::default()
+                },
+            );
+            // Includes model construction and independent validation, excludes input parsing/JSON.
+            record["solve_ms"] = (solve_started.elapsed().as_secs_f64() * 1000.0).into();
+            let response = result?;
+            record["objective"] = serde_json::to_value(response.objective)?;
+            record["status"] = serde_json::to_value(response.status)?;
+            record["iterations"] = serde_json::to_value(response.iterations)?;
             if let Some(expected) = expected {
-                let actual = record["response"]["objective"]
-                    .as_f64()
-                    .ok_or("missing objective")?;
+                let actual = record["objective"].as_f64().ok_or("missing objective")?;
                 let relative_error = (actual - expected).abs() / expected.abs().max(1.0);
                 record["reference_objective"] = expected.into();
                 record["relative_objective_error"] = relative_error.into();
@@ -80,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Ok(())
         })();
-        record["elapsed_ms"] = (started.elapsed().as_secs_f64() * 1000.0).into();
+        record["total_elapsed_ms"] = (started.elapsed().as_secs_f64() * 1000.0).into();
         if let Err(error) = result {
             failed = true;
             record["error"] = error.to_string().into();

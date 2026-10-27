@@ -46,51 +46,60 @@
 {#if app.activeMulti}
 	{@const mc = app.activeMulti}
 	{@const s = mc.summary}
-	<h2>{mc.label} <span class="region mono">via {mc.fileName}</span></h2>
+	<h2>{mc.label}</h2>
 	{#if s}
-		<p class="tag mono">Multiconductor</p>
+		<p class="tag">Multiconductor</p>
 		<details class="case-details">
 			<summary>{s.n_bus} buses, {s.n_edge} {s.n_edge === 1 ? 'branch' : 'branches'}</summary>
-			<dl class="mono">
+			<dl>
 				<div>
-					<dt>buses</dt>
-					<dd>{s.n_bus}</dd>
+					<dt>Buses</dt>
+					<dd class="mono">{s.n_bus}</dd>
 				</div>
 				<div>
 					<dt>Lines / switches / transformers</dt>
-					<dd>{s.n_line} / {s.n_switch} / {s.n_transformer}</dd>
+					<dd class="mono">{s.n_line} / {s.n_switch} / {s.n_transformer}</dd>
 				</div>
 				<div>
-					<dt>load</dt>
-					<dd>{fmt.format(s.load_kw)} kW</dd>
+					<dt>Load</dt>
+					<dd class="mono">{fmt.format(s.load_kw)} kW</dd>
 				</div>
 				<div>
 					<dt>Generation capacity</dt>
-					<dd>{fmt.format(s.gen_kw)} kW</dd>
+					<dd class="mono">{fmt.format(s.gen_kw)} kW</dd>
 				</div>
 				<div>
-					<dt>sources / loads / gens</dt>
-					<dd>{s.n_source} / {s.n_load} / {s.n_generator}</dd>
+					<dt>Sources / loads / generators</dt>
+					<dd class="mono">{s.n_source} / {s.n_load} / {s.n_generator}</dd>
 				</div>
 				{#if s.n_ibr > 0 || s.n_shunt > 0 || (s.n_capacitor ?? 0) > 0}
 					<div>
-						<dt>IBRs / shunts / caps</dt>
-						<dd>{s.n_ibr} / {s.n_shunt} / {s.n_capacitor ?? 0}</dd>
+						<dt>IBRs / shunts / capacitors</dt>
+						<dd class="mono">{s.n_ibr} / {s.n_shunt} / {s.n_capacitor ?? 0}</dd>
 					</div>
 				{/if}
+				<div>
+					<dt>File</dt>
+					<dd class="mono">{mc.fileName}</dd>
+				</div>
 			</dl>
 		</details>
 
-		<p class="footnote mono">
-			{mc.coordsKind === 'geographic'
-				? 'Geographic coordinates'
-				: mc.coordsKind === 'planar'
-					? 'Drawing coordinates'
-					: 'Generated diagram'}
-		</p>
+		<dl>
+			<div>
+				<dt>Coordinates</dt>
+				<dd>
+					{mc.coordsKind === 'geographic'
+						? 'Geographic'
+						: mc.coordsKind === 'planar'
+							? 'Drawing'
+							: 'Generated diagram'}
+				</dd>
+			</div>
+		</dl>
 		<div class="calculation-actions">
 			{#if mc.solving}
-				<span role="status">Calculating...</span>{#if mc.solveAbort}<button
+				<span role="status">Calculating&hellip;</span>{#if mc.solveAbort}<button
 						onclick={() => mc.solveAbort?.abort()}>Cancel</button
 					>{/if}
 			{:else}
@@ -110,27 +119,27 @@
 							notices.push({
 								kind: 'warning',
 								title: 'AC power flow unavailable',
-								details: mc.mcPfReason ?? 'This case cannot run AC power flow in this browser'
+								details: mc.mcPfReason ?? 'AC power flow does not support this case'
 							})}>Why unavailable</button
 					>
 				{/if}
 			{/if}
 		</div>
 		{#if mc.result}<p class="footnote">Converged, {mc.result.iterations} iterations</p>
-			<button class="reset mono" onclick={openResults}>View results in Studies</button>{/if}
+			<button class="reset" onclick={openResults}>View results in Studies</button>{/if}
 	{/if}
 
 	{#if mc.selectedBus}
 		{@const b = mc.selectedBus}
 		<hr />
-		<h3 class="mono">bus {b.id}</h3>
+		<h3>Bus <span class="mono">{b.id}</span></h3>
 		<div class="terminals">
 			{#each b.terminals as t (t)}
 				<span
 					class="term"
 					class:grounded={b.grounded.includes(t)}
 					style={`--tc:${terminalColor(t)}`}
-					title={b.grounded.includes(t) ? `terminal ${t} (grounded)` : `terminal ${t}`}
+					title={b.grounded.includes(t) ? `Terminal ${t}, grounded` : `Terminal ${t}`}
 				>
 					{t}{#if b.grounded.includes(t)}<span class="gnd" aria-hidden="true">&#9178;</span>{/if}
 				</span>
@@ -145,7 +154,7 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="footnote mono">no attachments on this bus</p>
+			<p class="footnote">No attachments</p>
 		{/if}
 		{@const loadBranches = mc.mcLoadBranches.filter((load) => load.bus === b.id)}
 		{#if loadBranches.length > 0}
@@ -154,7 +163,7 @@
 				{#each loadBranches as load (`${load.load}:${load.branch}`)}
 					<div class="load-row">
 						<span class="mono"
-							>{load.load}{loadBranches.length > 1 ? ` · ${load.branch + 1}` : ''}</span
+							>{load.load}{loadBranches.length > 1 ? ` (${load.branch + 1})` : ''}</span
 						>
 						<label
 							>P kW<input
@@ -200,7 +209,7 @@
 						>
 					</div>
 				{/each}
-				<p class="footnote">Changes re-solve automatically using the retained factorization.</p>
+				<p class="footnote">Changes solve automatically.</p>
 			</div>
 		{/if}
 	{:else if mc.selectedEdge}
@@ -211,15 +220,19 @@
 			{e.kind}
 			{e.from}&#8201;&ndash;&#8201;{e.to}
 		</h3>
-		<dl class="mono">
+		<dl>
 			<div>
-				<dt>phases</dt>
-				<dd>{e.n_phases}&#966; , {e.conductors.length} conductors</dd>
+				<dt>Phases</dt>
+				<dd class="mono">{e.n_phases}</dd>
+			</div>
+			<div>
+				<dt>Conductors</dt>
+				<dd class="mono">{e.conductors.length}</dd>
 			</div>
 			{#if e.kind === 'switch'}
 				<div>
-					<dt>state</dt>
-					<dd>{e.closed ? 'closed' : 'open'}</dd>
+					<dt>State</dt>
+					<dd>{e.closed ? 'Closed' : 'Open'}</dd>
 				</div>
 			{/if}
 		</dl>
@@ -232,8 +245,6 @@
 				</span>
 			{/each}
 		</div>
-	{:else if mc.placed}
-		<p class="footnote mono">select a bus or a line to expand its detail</p>
 	{/if}
 
 	<div class="mc-legend mono">
@@ -251,8 +262,8 @@
 		</span>
 	</div>
 
-	<button class="reset mono" onclick={() => app.requestFrame(mc.id)}>Fit case</button>
-	<button class="reset mono" onclick={() => ctrl.removeMultiCase(mc)}>remove</button>
+	<button class="reset" onclick={() => app.requestFrame(mc.id)}>Fit case</button>
+	<button class="reset" onclick={() => ctrl.removeMultiCase(mc)}>Remove</button>
 {/if}
 
 <style>
@@ -306,10 +317,9 @@
 
 	.tag {
 		margin: 0 0 10px;
-		font-size: 10px;
+		font-size: 12px;
 		color: var(--text-secondary);
 		letter-spacing: 0;
-		text-transform: uppercase;
 	}
 
 	dl {
@@ -353,7 +363,7 @@
 		background: color-mix(in srgb, var(--tc) 26%, transparent);
 		color: var(--ink);
 		font-family: var(--font-mono);
-		font-size: 11px;
+		font-size: 13px;
 	}
 
 	.term.grounded {
@@ -377,7 +387,7 @@
 		border-radius: 3px;
 		background: var(--bc);
 		color: #fff;
-		font-size: 10px;
+		font-size: 12px;
 		letter-spacing: 0;
 	}
 
@@ -389,7 +399,7 @@
 
 	.load-editor h4 {
 		margin: 0 0 8px;
-		font-size: 11px;
+		font-size: 13px;
 	}
 
 	.load-row {
@@ -404,7 +414,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		font-size: 9px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 
@@ -412,11 +422,11 @@
 		min-width: 0;
 		width: 100%;
 		box-sizing: border-box;
-		font: 10px var(--font-mono);
+		font: 12px var(--font-mono);
 	}
 
 	.load-row button {
-		font-size: 9px;
+		font-size: 12px;
 	}
 
 	/* The global stylesheet's .legend is the 6px color-ramp strip; its height
@@ -426,7 +436,7 @@
 		flex-direction: column;
 		gap: 4px;
 		margin-top: 12px;
-		font-size: 10px;
+		font-size: 12px;
 		color: var(--text-secondary);
 	}
 
@@ -469,7 +479,7 @@
 
 	.footnote {
 		margin: 8px 0 0;
-		font-size: 10px;
+		font-size: 12px;
 		color: var(--text-tertiary);
 		letter-spacing: 0;
 	}

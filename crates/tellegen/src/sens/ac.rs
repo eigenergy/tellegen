@@ -244,6 +244,7 @@ impl Differentiable for AcNewton<'_> {
             Axis::Bus => ElementId::Bus(self.net.bus_ids[index]),
             Axis::Branch => ElementId::Branch(self.net.branch_ids[index]),
             Axis::Generator => ElementId::Generator(self.net.gen_ids[index]),
+            Axis::Constraint => ElementId::Constraint(index),
         }
     }
 

@@ -14,6 +14,19 @@ if (
 ) {
 	throw new Error('TELLEGEN_MC_PREVIEW_PORT must be a distinct port from 1 to 65535');
 }
+// The app again, served by the dev server with a CARTO key, so the map
+// background spec can check the keyed basemap order. The preview build has
+// no key.
+const keyedPort = Number(process.env.TELLEGEN_KEYED_PORT ?? previewPort + 2);
+if (
+	!Number.isInteger(keyedPort) ||
+	keyedPort < 1 ||
+	keyedPort > 65535 ||
+	keyedPort === previewPort ||
+	keyedPort === mcPreviewPort
+) {
+	throw new Error('TELLEGEN_KEYED_PORT must be a distinct port from 1 to 65535');
+}
 
 export default defineConfig({
 	testDir: './tests',
@@ -34,6 +47,13 @@ export default defineConfig({
 		{
 			command: `npx vite --config tests/mc-pf-vite.config.ts --host 127.0.0.1 --port ${mcPreviewPort} --strictPort`,
 			url: `http://127.0.0.1:${mcPreviewPort}`,
+			reuseExistingServer: !process.env.CI,
+			timeout: 120_000
+		},
+		{
+			command: `npx vite dev --host 127.0.0.1 --port ${keyedPort} --strictPort`,
+			env: { PUBLIC_CARTO_BASEMAP_KEY: 'e2e-key' },
+			url: `http://127.0.0.1:${keyedPort}`,
 			reuseExistingServer: !process.env.CI,
 			timeout: 120_000
 		}

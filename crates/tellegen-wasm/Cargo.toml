@@ -25,6 +25,8 @@ serde_json.workspace = true
 # Forwards Rust panics to a readable console.error with a JS stack, instead of the bare
 # `unreachable` trap a wasm panic otherwise surfaces. Installed once per entry point.
 console_error_panic_hook = "0.1"
+# Geographic synthetic grid generation (the `synth` feature).
+tellegen-synth = { path = "../tellegen-synth", optional = true }
 
 [features]
 default = []
@@ -35,6 +37,9 @@ sensitivity = ["tellegen/sensitivity"]
 # The SOCWR (Jabr) conic relaxation. Pulls `sensitivity` so the Study export stays
 # present, mirroring the engine's `conic = ["sensitivity"]`.
 conic = ["sensitivity", "mc-pf", "tellegen/conic"]
+# Synthetic grid generation sessions. The generator validates with the DC OPF
+# and the AC power flow, so it needs `sensitivity`.
+synth = ["sensitivity", "dep:tellegen-synth"]
 
 [lints]
 workspace = true

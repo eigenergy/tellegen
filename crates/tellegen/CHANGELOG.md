@@ -4,10 +4,41 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.4.0](https://github.com/eigenergy/tellegen/compare/v0.3.0...v0.4.0) - 2026-10-24
+
+Released with `@tellegen/engine` and `@tellegen/svelte` 0.4.0.
+
+### Changed
+
+- [**breaking**] A multiconductor session edit is constant-size.
+  `McPfSession::replace_load_powers` returns the `McPfSummary` of the new
+  operating point instead of the full result, and `McPfSession::result` and
+  `McPfSession::instance` are removed. Call `build_result()` for the full
+  terminal and equipment result, `detail()` for one bus and a page of
+  equipment ports, and `base_instance()` or `edited_instance()` for the
+  instance. ([#154](https://github.com/eigenergy/tellegen/pull/154))
+- Built against PowerIO 0.11.6 (0.3.0 used 0.11.1), with PowerIO's `sincal`
+  feature off, so no bundled SQLite reaches the build. PSS/E cases read
+  closer to how PSS/E defines them: the load `YQ` sign and distributed
+  generation, the two-winding magnetizing admittance at bus I, impedance
+  scaling for a winding 2 ratio other than one, per-winding three-winding
+  status and ratings, and switched shunt `MODSW`. MATPOWER cases that convert
+  units after their literal data read with the converted values. Solves of
+  such cases change. ([#195](https://github.com/eigenergy/tellegen/pull/195),
+  [#203](https://github.com/eigenergy/tellegen/pull/203))
+
+### Other
+
+- Centre-tap transformer regression fixtures against OpenDSS, including a
+  case that exercises the neutral impedance.
+  ([#142](https://github.com/eigenergy/tellegen/pull/142))
+- The README cites the ACM DXConf 2026 paper by its published title and
+  states the MIT license.
+
 ## [0.3.0](https://github.com/eigenergy/tellegen/compare/v0.2.0...v0.3.0) - 2026-09-23
 
-The release that accompanies the DXConf '26 paper *Interactive Optimal Power
-Flow Compiled to the Browser*.
+The release that accompanies the ACM DXConf 2026 paper *Interactive Power Flow
+in the Browser* ([doi:10.1145/3847238.3849038](https://doi.org/10.1145/3847238.3849038)).
 
 ### Added
 

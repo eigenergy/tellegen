@@ -73,7 +73,7 @@
 	h3 span {
 		display: block;
 		margin-top: 3px;
-		font-size: 11px;
+		font-size: 13px;
 		font-weight: 400;
 		color: var(--text-secondary);
 	}

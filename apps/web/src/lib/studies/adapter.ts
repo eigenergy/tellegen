@@ -81,7 +81,7 @@ function inputSchema(name: StudyToolName): Schema {
 			[]
 		);
 	const operation = operationVariants.find((v) => v.properties.kind.const === kinds[name]);
-	if (!operation) throw new Error(`Missing Rust contract for ${name}`);
+	if (!operation) throw new Error(`Missing Rust schema for ${name}`);
 	return withDefinitions(object({ study_id: string, expected_revision: revision, operation }));
 }
 function text(input: Record<string, unknown>, field: string): string {

@@ -1,6 +1,6 @@
 {
   "name": "@tellegen/svelte",
-  "version": "0.3.0",
+  "version": "0.4.3",
   "description": "Svelte components for tellegen power system maps, local case files, and browser solves.",
   "keywords": [
     "svelte",
@@ -53,6 +53,11 @@
       "svelte": "./dist/map.js",
       "default": "./dist/map.js"
     },
+    "./maplibre-worker": {
+      "types": "./dist/maplibre-worker.d.ts",
+      "development": "./dist/maplibre-worker.dev.js",
+      "default": "./dist/maplibre-worker.js"
+    },
     "./styles.css": "./dist/styles.css"
   },
   "scripts": {
@@ -62,20 +67,24 @@
     "pack:dry-run": "npm pack --dry-run --cache ../../node_modules/.cache/npm-pack"
   },
   "dependencies": {
+    "@tellegen/engine": "^0.4.1"
+  },
+  "peerDependencies": {
     "@deck.gl/core": "^9.4.0",
     "@deck.gl/layers": "^9.4.0",
     "@deck.gl/maplibre": "^9.4.0",
-    "@tellegen/engine": "^0.3.0",
-    "maplibre-gl": "^6.11.2"
-  },
-  "peerDependencies": {
+    "maplibre-gl": "^6.15.0",
     "svelte": ">=5.30 <6"
   },
   "devDependencies": {
-    "@sveltejs/package": "^2.3.0",
+    "@deck.gl/core": "^9.4.0",
+    "@deck.gl/layers": "^9.4.0",
+    "@deck.gl/maplibre": "^9.4.0",
+    "@sveltejs/package": "^3.0.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
-    "svelte": "^5.57.1",
-    "svelte-check": "^4.7.6",
+    "maplibre-gl": "^6.15.0",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
     "vitest": "^5.0.2"

@@ -19,7 +19,7 @@ it("keeps AC power-flow voltages and omits price requests for selected equipment
     }
     throw new Error(`unexpected operation ${request.op}`);
   });
-  const study = new BrowserStudy({ call }, 1, "acpf");
+  const study = new BrowserStudy({ kind: "worker", call }, 1, "acpf");
   await expect(study.currentSolution()).resolves.toMatchObject({
     objective: null,
     prices: [],

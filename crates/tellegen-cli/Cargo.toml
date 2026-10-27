@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Command line interface for PowerIO module solves and capacity planning."
+description = "Command line interface for PowerIO module solves, capacity planning and synthetic grid generation."
 
 [[bin]]
 name = "tellegen"
@@ -18,6 +18,9 @@ tellegen = { path = "../tellegen", features = ["schema"] }
 # case module, narrow to the typed instance, write the solution module.
 powerio.workspace = true
 schemars.workspace = true
+# Synthetic grid generation (`tellegen generate`, `tellegen stats`), with the
+# bundled populated places table.
+tellegen-synth = { path = "../tellegen-synth", features = ["embedded-places"] }
 serde.workspace = true
 serde_json.workspace = true
 ctrlc = { version = "3.4", features = ["termination"] }

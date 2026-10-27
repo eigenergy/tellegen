@@ -6,6 +6,7 @@
 	import '@fontsource/ibm-plex-mono/500.css';
 	import '@tellegen/svelte/styles.css';
 	import { TellegenProvider } from '@tellegen/svelte';
+	import { PUBLIC_CARTO_BASEMAP_KEY } from '$app/env/public';
 	import Analytics from '#lib/analytics/Analytics.svelte';
 	import { PUBLIC_TELLEGEN_ACOPF_WASM_URL } from '$app/env/public';
 
@@ -13,6 +14,9 @@
 </script>
 
 <Analytics />
-<TellegenProvider acOpfWasmUrl={PUBLIC_TELLEGEN_ACOPF_WASM_URL}>
+<TellegenProvider
+	acOpfWasmUrl={PUBLIC_TELLEGEN_ACOPF_WASM_URL}
+	cartoApiKey={PUBLIC_CARTO_BASEMAP_KEY}
+>
 	{@render children()}
 </TellegenProvider>

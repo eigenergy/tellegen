@@ -12,14 +12,16 @@
 	const observed = new WeakSet<object>();
 	$effect(() => {
 		const message = app.error;
+		const detail = app.errorDetail;
 		const revision = app.errorRevision;
 		const retry = app.errorRetry;
 		if (message)
 			untrack(() =>
 				notices.push({
 					kind: 'error',
-					title: errorNoticeTitle(message),
-					details: message,
+					// A message with its own detail is already written for people.
+					title: detail ? message : errorNoticeTitle(message),
+					details: detail ?? message,
 					retry: () => ctrl.retryError(),
 					canRetry: () =>
 						app.errorRevision === revision && app.error === message && app.errorRetry === retry

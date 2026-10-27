@@ -14,7 +14,7 @@ A Cargo workspace and a web app, side by side.
 - `crates/tellegen-server`: a native HTTP server that serves the bundled cases and the static app.
 - `crates/tellegen-cli`: a command line front end over the engine's JSON API.
 - `crates/benchmarks`: a private harness that runs the PGLib-OPF corpus for validation and timing.
-- `packages/engine`: the public browser engine package, generated TypeScript contracts, and browser wasm transport.
+- `packages/engine`: the public browser engine package, TypeScript types generated from Rust, and browser wasm transport.
 - `packages/svelte`: the public Svelte component package for maps, panels, local case files, and browser solves.
 - `packages/webmcp`: WebMCP tool definitions, validation, and registration lifecycle.
 - `apps/web`: the private SvelteKit hosted demo that consumes `@tellegen/svelte`.
@@ -45,7 +45,7 @@ optimized dispatch, or sensitivities. DC OPF adds dispatch, objective value,
 LMPs, and KKT sensitivities. AC power flow returns voltages and nodal
 injections with Newton sensitivities. SOCWR exposes the quantities and conic
 KKT sensitivities defined by the relaxation. Formulations that implement the
-`Differentiable` contract accept an output `Operand` and input `Parameter`;
+`Differentiable` trait accept an output `Operand` and input `Parameter`;
 the common driver solves the retained KKT or Newton system for the requested
 forward or adjoint columns.
 
@@ -73,8 +73,8 @@ One numerical core, two faces that share a driver and a result type:
 
 ## Browser packages
 
-`packages/engine` is the reusable package surface. It exports generated
-contracts, case and display parsing helpers, module based solves, capabilities,
+`packages/engine` is the reusable package surface. It exports the generated
+types, case and display parsing helpers, module based solves, capabilities,
 the browser `Study`, and the browser wasm transport. It has no SvelteKit
 dependency.
 

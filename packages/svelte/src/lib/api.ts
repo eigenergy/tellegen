@@ -22,7 +22,9 @@ export type {
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface TellegenApiClientOptions {
-	apiBase?: string;
+	/** Backend base path, default `/api`. `null` means no backend: the
+	 * factory returns `null` instead of a client. */
+	apiBase?: string | null;
 	fetch?: FetchLike;
 	EventSource?: typeof EventSource;
 }
@@ -147,7 +149,13 @@ export interface SolveStreamHandlers {
 	ondone?: () => void;
 }
 
-export function createApiClient(options: TellegenApiClientOptions = {}): TellegenApiClient {
+export function createApiClient(options: TellegenApiClientOptions & { apiBase: null }): null;
+export function createApiClient(
+	options?: TellegenApiClientOptions & { apiBase?: string }
+): TellegenApiClient;
+export function createApiClient(options?: TellegenApiClientOptions): TellegenApiClient | null;
+export function createApiClient(options: TellegenApiClientOptions = {}): TellegenApiClient | null {
+	if (options.apiBase === null) return null;
 	const apiBase = options.apiBase ?? '/api';
 	const fetchImpl = options.fetch ?? defaultFetch();
 

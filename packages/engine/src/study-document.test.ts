@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { StudyDocumentController, type StudyBackend, type StudyStore } from "./study-document.js";
-import type { CreateStudy, StudyBundle, StudyOperationResult } from "./generated/study-contracts.js";
+import type { CreateStudy, StudyBundle, StudyOperationResult } from "./generated/study-types.js";
 
 const input: CreateStudy = { id: "s", title: "Study", input: "", formulation: "dcopf", request: "Lower prices", interpretation: "Weighted prices",
   objective: { kind: "weighted_observable", operand: { Price: "Active" }, weights: [{ element: 2, weight: 1 }] },

@@ -1,0 +1,135 @@
+{
+  "schema": "tellegen.synth-reference-stats/1",
+  "command": "tellegen stats --case PATH",
+  "note": "MATPOWER cases carry no coordinates, so the length based statistics (line lengths, minimum spanning tree ratio, Delaunay fraction) are zero for them and are not compared.",
+  "published": {
+    "set_id": "birchfield-2017-published",
+    "source": "Birchfield et al., IEEE TPWRS 32(4) 2017, Table II",
+    "avg_degree": [
+      2.2,
+      3.0
+    ],
+    "hv_share": [
+      0.08,
+      0.35
+    ]
+  },
+  "cases": [
+    {
+      "id": "pglib_opf_case200_activ",
+      "source": "crates/tellegen-server/fixtures/pglib/pglib_opf_case200_activ.m",
+      "source_sha256": "sha256:5f386b9521f8d4bd120cfe1cf46c5877fd16b463cf0b3b63babbd91edf8a34c8",
+      "stats": {
+        "n_buses": 200,
+        "n_branches": 245,
+        "n_generators": 38,
+        "n_loads": 108,
+        "n_transformers": 66,
+        "n_hvdc": 0,
+        "connected_components": 1,
+        "algebraic_connectivity": 0.03652,
+        "algebraic_connectivity_converged": false,
+        "degree_histogram": [
+          0,
+          72,
+          55,
+          31,
+          20,
+          11,
+          5,
+          3,
+          1,
+          0,
+          1,
+          1
+        ],
+        "avg_degree": 2.45,
+        "max_degree": 11,
+        "clustering_coefficient": 0.05817775974025974,
+        "branch_bus_ratio": 1.225,
+        "line_length_km": {
+          "min": 0.0,
+          "p10": 0.0,
+          "p50": 0.0,
+          "mean": 0.0,
+          "p90": 0.0,
+          "max": 0.0
+        },
+        "total_line_length_km": -0.0,
+        "mst_length_ratio": 0.0,
+        "delaunay_edge_fraction": 0.0,
+        "parallel_corridors": 0,
+        "parallel_branches": 0,
+        "voltage_counts": {
+          "115": 134,
+          "13.8": 49,
+          "230": 17
+        },
+        "hv_share": 0.085,
+        "total_load_mw": 1475.6899999999998,
+        "total_generation_capacity_mw": 2997.49,
+        "gen_load_margin": 2.0312463999891577
+      }
+    },
+    {
+      "id": "pglib_opf_case500_goc",
+      "source": "crates/tellegen-server/fixtures/pglib/pglib_opf_case500_goc.m",
+      "source_sha256": "sha256:f4b51abf6d43371d5bd0a16981905aa8c156e97818b3d7efc3ac4c3a86f92f73",
+      "stats": {
+        "n_buses": 500,
+        "n_branches": 728,
+        "n_generators": 171,
+        "n_loads": 281,
+        "n_transformers": 192,
+        "n_hvdc": 0,
+        "connected_components": 1,
+        "algebraic_connectivity": 0.009393,
+        "algebraic_connectivity_converged": false,
+        "degree_histogram": [
+          0,
+          137,
+          153,
+          114,
+          40,
+          26,
+          11,
+          5,
+          6,
+          4,
+          4
+        ],
+        "avg_degree": 2.6,
+        "max_degree": 10,
+        "clustering_coefficient": 0.08400892037255672,
+        "branch_bus_ratio": 1.456,
+        "line_length_km": {
+          "min": 0.0,
+          "p10": 0.0,
+          "p50": 0.0,
+          "mean": 0.0,
+          "p90": 0.0,
+          "max": 0.0
+        },
+        "total_line_length_km": -0.0,
+        "mst_length_ratio": 0.0,
+        "delaunay_edge_fraction": 0.0,
+        "parallel_corridors": 55,
+        "parallel_branches": 78,
+        "voltage_counts": {
+          "13.2": 1,
+          "13.8": 63,
+          "138": 328,
+          "18": 28,
+          "20": 7,
+          "22": 7,
+          "24": 6,
+          "345": 60
+        },
+        "hv_share": 0.12,
+        "total_load_mw": 17772.920733832005,
+        "total_generation_capacity_mw": 23303.998000000014,
+        "gen_load_margin": 1.311208120994948
+      }
+    }
+  ]
+}

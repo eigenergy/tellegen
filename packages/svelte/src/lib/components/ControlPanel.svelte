@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
 	import { getAppState, getController, getUiConfig } from '../context.svelte.js';
+	import type { LocalCase } from '../state.svelte.js';
 	import PanelFrame from './PanelFrame.svelte';
 	import SavedNetworkDetails from './SavedNetworkDetails.svelte';
 	import ModelDetails from './ModelDetails.svelte';
@@ -19,6 +20,9 @@
 	import SensitivityReadout from './SensitivityReadout.svelte';
 	import SizeLegend from './SizeLegend.svelte';
 	import TopMovers from './TopMovers.svelte';
+
+	/** Optional host content rendered under a local case's stats. */
+	let { caseNote }: { caseNote?: Snippet<[LocalCase]> } = $props();
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -90,7 +94,7 @@
 			<SavedNetworkDetails />
 		{:else}
 			{#if app.parsingFile}
-				<p class="dim mono blink">parsing&hellip;</p>
+				<p class="dim blink">Parsing&hellip;</p>
 			{/if}
 
 			<!-- Selected equipment leads on narrow screens. -->
@@ -113,7 +117,7 @@
 						>
 					</div>
 				{/if}
-				<LocalCaseDetails />
+				<LocalCaseDetails note={caseNote} />
 			{/if}
 			{#if app.activeMulti}
 				<MulticonductorDetails />
@@ -121,18 +125,17 @@
 			{#if !ctrl.networkStats}
 				{#if !app.activeLocal && !app.activeMulti}
 					{#if ctrl.casesLoaded && app.cases.length === 0}
-						<p class="dim mono">
-							{config.loadDefaultCases ? 'no default cases loaded' : 'drop a case file to begin'}
+						<p class="dim">
+							{config.loadDefaultCases ? 'No default cases loaded' : 'Drop a case file to begin'}
 						</p>
 						{#if config.loadDefaultCases}
-							<button class="reset mono" onclick={ctrl.restoreDefaultCases}
-								>restore default cases</button
+							<button class="reset" onclick={ctrl.restoreDefaultCases}>Restore default cases</button
 							>
 						{/if}
 					{:else if ctrl.loadingBackendCase}
-						<p class="dim mono blink">loading selected case&hellip;</p>
+						<p class="dim blink">Loading case&hellip;</p>
 					{:else}
-						<p class="dim mono blink">loading cases&hellip;</p>
+						<p class="dim blink">Loading cases&hellip;</p>
 					{/if}
 				{/if}
 			{:else}
@@ -157,9 +160,11 @@
 					{@render selectionBlock()}
 				{/if}
 
-				<hr />
+				{#if app.busSizing === 'power'}
+					<hr />
 
-				<SizeLegend />
+					<SizeLegend />
+				{/if}
 			{/if}
 		{/if}
 		{#if app.compactLayout && config.showFooter}

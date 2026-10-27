@@ -316,7 +316,7 @@ pub struct NetworkBranch {
     pub path: Vec<[f64; 2]>,
 }
 
-/// The served DC value shapes (the HTTP/JSON contract). The engine returns the
+/// The served DC value shapes (the HTTP JSON format). The engine returns the
 /// common `BusScalar` / `BranchFlow` / `GenDispatch`; the server maps
 /// those to the DC-specific field names the frontend reads.
 #[derive(Clone, Copy, Debug, Serialize)]

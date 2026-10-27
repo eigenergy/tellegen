@@ -11,6 +11,21 @@ dependencies_update = false
 
 [changelog]
 protect_breaking_commits = true
+# Skip merge commits: their changes arrive with the commits they merge, which
+# have entries of their own. Setting `commit_parsers` replaces release-plz's
+# defaults rather than adding to them, so its Keep a Changelog groups are
+# restated after the skip; a lone catch-all would file every `feat:` under
+# Other.
+commit_parsers = [
+  { message = "^Merge ", skip = true },
+  { message = "^feat", group = "added" },
+  { message = "^changed", group = "changed" },
+  { message = "^deprecated", group = "deprecated" },
+  { message = "^removed", group = "removed" },
+  { message = "^fix", group = "fixed" },
+  { message = "^security", group = "security" },
+  { message = ".*", group = "other" },
+]
 # release-plz rewrites this header on every run and inserts releases below it,
 # so prose kept here stays at the top. Prose left in the file itself would be
 # pushed under the newest release and sink further with each one.
@@ -46,9 +61,10 @@ release = false
 publish = false
 
 [[package]]
-# The PyO3 extension. Never released by release-plz: its version tracks the
-# engine crate and is bumped by hand, and the wheel ships through PyPI, not
-# crates.io.
+# The PyO3 extension. Never released by release-plz: after release-plz updates
+# the engine, the crate release workflow sets this package's version and its
+# Cargo.lock entry to the engine's (.github/scripts/sync_python_version.py).
+# The wheel ships through PyPI, not crates.io.
 name = "tellegen-py"
 release = false
 publish = false

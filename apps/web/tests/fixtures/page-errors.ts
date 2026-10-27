@@ -11,28 +11,52 @@ import { test as base } from '@playwright/test';
 // and the browser logs those as console errors, which says nothing about
 // whether the page still works.
 //
+// A Content Security Policy violation fails the same quiet way: the browser
+// blocks the request, the caller logs and carries on, and whatever it loaded is
+// missing. The transformer symbol went like that when deck.gl fetched it from
+// a `data:` URL that connect-src does not allow. So fail a spec on any
+// violation the document reports, too.
+//
 // Import `test` and `expect` from here rather than from `@playwright/test` and
-// the check applies automatically.
+// the checks apply automatically.
 
 export const test = base.extend<{ failOnPageError: void }>({
 	failOnPageError: [
 		async ({ page }, use) => {
 			const errors: Error[] = [];
 			page.on('pageerror', (error) => errors.push(error));
+			const violations: string[] = [];
+			await page.exposeFunction('__cspViolation', (violation: string) =>
+				violations.push(violation)
+			);
+			await page.addInitScript(() => {
+				document.addEventListener('securitypolicyviolation', (event) =>
+					(window as unknown as { __cspViolation(violation: string): void }).__cspViolation(
+						`${event.effectiveDirective} blocked ${event.blockedURI} (${event.sourceFile})`
+					)
+				);
+			});
 			await use();
-			if (errors.length === 0) return;
-			// Repeats are one fault per frame, so report the shapes and the count
-			// rather than several hundred identical stacks.
-			const byMessage = new Map<string, { count: number; stack: string }>();
-			for (const error of errors) {
-				const seen = byMessage.get(error.message);
-				if (seen) seen.count += 1;
-				else byMessage.set(error.message, { count: 1, stack: error.stack ?? error.message });
+			const reports: string[] = [];
+			if (errors.length > 0) {
+				// Repeats are one fault per frame, so report the shapes and the count
+				// rather than several hundred identical stacks.
+				const byMessage = new Map<string, { count: number; stack: string }>();
+				for (const error of errors) {
+					const seen = byMessage.get(error.message);
+					if (seen) seen.count += 1;
+					else byMessage.set(error.message, { count: 1, stack: error.stack ?? error.message });
+				}
+				const detail = [...byMessage.values()]
+					.map(({ count, stack }) => `  (x${count}) ${stack}`)
+					.join('\n');
+				reports.push(`page threw ${errors.length} uncaught error(s):\n${detail}`);
 			}
-			const detail = [...byMessage.values()]
-				.map(({ count, stack }) => `  (x${count}) ${stack}`)
-				.join('\n');
-			throw new Error(`page threw ${errors.length} uncaught error(s):\n${detail}`);
+			if (violations.length > 0) {
+				const detail = [...new Set(violations)].map((violation) => `  ${violation}`).join('\n');
+				reports.push(`page reported ${violations.length} CSP violation(s):\n${detail}`);
+			}
+			if (reports.length > 0) throw new Error(reports.join('\n'));
 		},
 		{ auto: true }
 	]

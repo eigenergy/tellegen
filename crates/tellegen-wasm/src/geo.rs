@@ -350,6 +350,14 @@ mpc.gencost = [
         assert_eq!(stamped["view"]["buses"].as_array().unwrap().len(), 3);
         let stamped_module = stamped["module_json"].as_str().unwrap();
         assert!(stamped_module.contains("\"location\""));
+        // A stamped topology layout is not generated geography, on either route.
+        assert!(stamped.get("coords_method").is_none());
+        #[cfg(feature = "sensitivity")]
+        {
+            let dropped = crate::ingest_json_drop_value(stamped_module.as_bytes()).expect("drop");
+            assert_eq!(dropped.payload["coords_kind"], "synthetic");
+            assert!(dropped.payload.get("coords_method").is_none());
+        }
 
         // The returned layer is the canonical document; extraction agrees.
         let layer = stamped["layer"].as_str().unwrap();

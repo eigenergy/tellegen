@@ -1,0 +1,52 @@
+[package]
+name = "tellegen-synth"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Geo-referenced synthetic transmission grid generator producing PowerIO networks, validated and calibrated with the tellegen engine."
+readme = "README.md"
+keywords = ["synthetic-grid", "power-systems", "opf", "powerio", "geospatial"]
+categories = ["science", "simulation"]
+
+[dependencies]
+# PioModule / PioValue, Producer, HistoryEntry, and the format facade.
+powerio.workspace = true
+# BalancedNetwork rows (Bus, Branch, Generator, Load, Hvdc, GenCost) and the
+# geographic types (Location, GeoMeta, CoordsKind, GeoLayer) the generator writes.
+powerio-tx.workspace = true
+# Typed DC OPF and AC power flow instances handed to the engine.
+powerio-prob.workspace = true
+# The engine: DC OPF (core) and AC power flow (`sensitivity`) for validation and
+# calibration. No `mc-pf`, no `conic`: the generator needs neither.
+tellegen = { path = "../tellegen", default-features = false, features = ["sensitivity"] }
+serde.workspace = true
+serde_json.workspace = true
+# Request hashing for provenance (already in the graph through `tellegen`).
+sha2 = "0.11"
+# Deterministic, wasm-safe randomness: ChaCha8 seeded from the request seed.
+# Default features off keeps `getrandom` (and its wasm cfg) out of the build.
+rand = { version = "0.10", default-features = false }
+rand_chacha = { version = "0.10", default-features = false }
+# Pure Rust O(n log n) Delaunay triangulation with robust orientation predicates;
+# the minimum spanning tree and the Gabriel mesh are both derived from it.
+delaunator = "1.1"
+# Complex arithmetic for the GridFM π-model admittances (already in the graph
+# through `tellegen`'s `sensitivity` feature).
+num-complex = { version = "0.4", default-features = false }
+schemars = { workspace = true, optional = true }
+
+[features]
+default = []
+# JSON Schema derives for the generated `@tellegen/engine/synth` types.
+schema = ["dep:schemars", "tellegen/schema", "powerio/schema"]
+# `include_bytes!` of data/populated_places.json for the CLI and offline tests.
+# Never enabled in the wasm build, which fetches the file beside the binary.
+embedded-places = []
+
+[lints]
+workspace = true
+
+[[example]]
+name = "synth_schema"
+required-features = ["schema"]

@@ -3,7 +3,7 @@
 WebMCP tools for interactive Tellegen cases that do not depend on a UI
 framework. The package owns tool descriptors, JSON Schemas, runtime validation,
 security annotations, bounded responses, registration lifecycle, and an
-adapter contract. It has no dependency on Svelte or `@tellegen/engine`.
+adapter interface. It has no dependency on Svelte or `@tellegen/engine`.
 
 ```sh
 npm install @tellegen/webmcp
@@ -72,4 +72,14 @@ PowerIO v0.11 generation-2 `pio-ir` modules, typed state selection, and
 calculation instances behind that interface.
 
 See the [WebMCP guide](https://eigenergy.github.io/tellegen/webmcp.html) for the
-tool contract, security model, and test workflow.
+tool definitions, security model, and test workflow.
+
+## Citing
+
+If you use this package in published work, please cite the tellegen paper:
+Samuel Talkington, Frederik Geth, Qian Zhang, Le Xie, and Skyler Liu. 2026.
+*Interactive Power Flow in the Browser*. The Inaugural ACM Conference on Digital
+Transformation (ACM DXConf 2026), Ann Arbor, MI, USA.
+[doi:10.1145/3847238.3849038](https://doi.org/10.1145/3847238.3849038). The
+[repository README](https://github.com/eigenergy/tellegen#citing) has the BibTeX
+entry.

@@ -15,10 +15,10 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) },
 		{ name: 'case14synthetic.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) }
 	]);
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 
 	const downloadPromise = page.waitForEvent('download');
-	await page.getByRole('button', { name: /save PowerIO module/i }).click();
+	await page.getByRole('button', { name: 'Save case', exact: true }).click();
 	const download = await downloadPromise;
 	expect(download.suggestedFilename()).toMatch(/\.pio\.json$/);
 	const text = readFileSync(await download.path(), 'utf8');
@@ -29,7 +29,7 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 	expect(text).not.toContain('tellegen.study');
 
 	const solutionDownloadPromise = page.waitForEvent('download');
-	await page.getByRole('button', { name: /save exact solution/i }).click();
+	await page.getByRole('button', { name: 'Save solution', exact: true }).click();
 	const solutionDownload = await solutionDownloadPromise;
 	expect(solutionDownload.suggestedFilename()).toMatch(/\.solution\.pio\.json$/);
 	const solutionText = readFileSync(await solutionDownload.path(), 'utf8');
@@ -48,7 +48,7 @@ test('a materialized PowerIO module downloads and loads as a fresh case', async 
 		.setInputFiles([
 			{ name: 'saved.pio.json', mimeType: 'application/json', buffer: Buffer.from(text) }
 		]);
-	await expect(page.locator('.solvecard')).toContainText('OPF solve', { timeout: 60_000 });
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 	await expect(page.locator('p.error')).toHaveCount(0);
 });
 

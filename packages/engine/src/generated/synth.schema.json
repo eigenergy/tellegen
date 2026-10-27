@@ -1,0 +1,2796 @@
+{
+  "$defs": {
+    "AcPfOutcome": {
+      "enum": [
+        "converged",
+        "not_converged",
+        "skipped"
+      ],
+      "type": "string"
+    },
+    "AcPfReport": {
+      "description": "The AC power flow verdict from the tellegen engine.",
+      "properties": {
+        "buses_outside_emergency_band": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "buses_outside_planning_band": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "islands": {
+          "items": {
+            "$ref": "#/$defs/IslandOutcome"
+          },
+          "type": "array"
+        },
+        "losses_mw": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "newton_iterations": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "residual": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "solve_ms": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/AcPfOutcome"
+        },
+        "vm_max": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "vm_min": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "buses_outside_planning_band",
+        "buses_outside_emergency_band",
+        "islands"
+      ],
+      "type": "object"
+    },
+    "BBox": {
+      "description": "A longitude/latitude box; `east` may exceed 180 for a seam-crossing frame.",
+      "properties": {
+        "east": {
+          "format": "double",
+          "type": "number"
+        },
+        "north": {
+          "format": "double",
+          "type": "number"
+        },
+        "south": {
+          "format": "double",
+          "type": "number"
+        },
+        "west": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "west",
+        "south",
+        "east",
+        "north"
+      ],
+      "type": "object"
+    },
+    "BranchAnnotation": {
+      "properties": {
+        "boundary_role": {
+          "description": "`internal`, `tie_line` (leaves the region), `interconnect`, `transformer`.",
+          "type": "string"
+        },
+        "circuit_index": {
+          "description": "1-based position of this branch among its corridor's circuits\n(`1..=circuits`); 1 for an HVDC link.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "circuits": {
+          "description": "Parallel circuits in this branch's corridor, this branch included;\nevery branch of a corridor carries the same count. It is the corridor\nplan's count for a synthetic corridor and for the transformers and\nconnections OpenStreetMap mode adds, and the summed `circuits` tags\n(else `cables / 3`) of the joined ways for a mapped OpenStreetMap\ncorridor. An HVDC link is one row for all of its circuits.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "class_kv": {
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "description": "1-based branch position.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "is_hvdc": {
+          "type": "boolean"
+        },
+        "is_transformer": {
+          "type": "boolean"
+        },
+        "length_km": {
+          "format": "double",
+          "type": "number"
+        },
+        "osm_ids": {
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "rating_basis": {
+          "description": "`thermal`, `loadability` (St. Clair), `transformer`, `calibrated`.",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/ElementSource"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "uid",
+        "class_kv",
+        "length_km",
+        "boundary_role",
+        "is_transformer",
+        "is_hvdc",
+        "source",
+        "circuits",
+        "circuit_index",
+        "rating_basis"
+      ],
+      "type": "object"
+    },
+    "BusAnnotation": {
+      "properties": {
+        "base_kv": {
+          "format": "double",
+          "type": "number"
+        },
+        "confidence": {
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "island": {
+          "description": "Index of the electrical island (0 = largest).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/BusKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "place": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "population_weight": {
+          "format": "double",
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/$defs/ElementSource"
+        },
+        "tier": {
+          "description": "0 = highest voltage level.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "uid",
+        "name",
+        "kind",
+        "base_kv",
+        "tier",
+        "confidence",
+        "source",
+        "population_weight",
+        "island"
+      ],
+      "type": "object"
+    },
+    "BusKind": {
+      "description": "What a bus is for, as the map shows it.",
+      "enum": [
+        "load",
+        "substation",
+        "generator",
+        "converter"
+      ],
+      "type": "string"
+    },
+    "CalibrationOptions": {
+      "additionalProperties": false,
+      "description": "OPF-in-the-loop calibration controls.",
+      "properties": {
+        "allow_load_scale": {
+          "default": false,
+          "description": "Allow the loop to scale total load (off: load is data, not a knob).",
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "max_iterations": {
+          "default": 6,
+          "description": "Each iteration is one declared parameter step with an exact DC OPF re-solve.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "targets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CalibrationTargets"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Override the reference targets."
+        }
+      },
+      "type": "object"
+    },
+    "CalibrationParameters": {
+      "description": "The declared parameter set and its current values.",
+      "properties": {
+        "branch_rating_notches": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "Branches moved up one rating notch, by uid.",
+          "type": "object"
+        },
+        "gen_capacity_scale": {
+          "additionalProperties": false,
+          "description": "Capacity multiplier per fuel, bounds `[0.8, 1.5]`.",
+          "properties": {
+            "coal": {
+              "format": "double",
+              "type": "number"
+            },
+            "gas": {
+              "format": "double",
+              "type": "number"
+            },
+            "hydro": {
+              "format": "double",
+              "type": "number"
+            },
+            "nuclear": {
+              "format": "double",
+              "type": "number"
+            },
+            "other": {
+              "format": "double",
+              "type": "number"
+            },
+            "solar": {
+              "format": "double",
+              "type": "number"
+            },
+            "storage": {
+              "format": "double",
+              "type": "number"
+            },
+            "wind": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "load_scale": {
+          "description": "Load multiplier; 1.0 unless `allow_load_scale`.",
+          "format": "double",
+          "type": "number"
+        },
+        "rating_scale": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "description": "Rating multiplier per line class (key = class kV), bounds `[0.8, 1.5]`.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "rating_scale",
+        "gen_capacity_scale",
+        "load_scale",
+        "branch_rating_notches"
+      ],
+      "type": "object"
+    },
+    "CalibrationReport": {
+      "description": "The calibration record.",
+      "properties": {
+        "final_objective": {
+          "format": "double",
+          "type": "number"
+        },
+        "initial_objective": {
+          "format": "double",
+          "type": "number"
+        },
+        "iterations": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "parameters": {
+          "$ref": "#/$defs/CalibrationParameters"
+        },
+        "status": {
+          "$ref": "#/$defs/CalibrationStatus"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/CalibrationStep"
+          },
+          "type": "array"
+        },
+        "targets": {
+          "$ref": "#/$defs/CalibrationTargets"
+        },
+        "terms_final": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "terms_initial": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "weights": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "description": "Objective weights, declared up front.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "status",
+        "iterations",
+        "initial_objective",
+        "final_objective",
+        "terms_initial",
+        "terms_final",
+        "weights",
+        "parameters",
+        "steps",
+        "targets"
+      ],
+      "type": "object"
+    },
+    "CalibrationStatus": {
+      "oneOf": [
+        {
+          "const": "converged",
+          "description": "Every objective term is within tolerance.",
+          "type": "string"
+        },
+        {
+          "const": "improved",
+          "description": "The objective decreased but a term is still outside tolerance.",
+          "type": "string"
+        },
+        {
+          "const": "unchanged",
+          "description": "No step improved the objective; `final_objective == initial_objective`.",
+          "type": "string"
+        },
+        {
+          "const": "infeasible",
+          "description": "The DC OPF stayed infeasible through every step.",
+          "type": "string"
+        },
+        {
+          "const": "disabled",
+          "description": "Calibration was disabled or had no DC OPF to work with.",
+          "type": "string"
+        }
+      ]
+    },
+    "CalibrationStep": {
+      "description": "One recorded calibration step.",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        },
+        "after": {
+          "format": "double",
+          "type": "number"
+        },
+        "before": {
+          "format": "double",
+          "type": "number"
+        },
+        "dc_status": {
+          "$ref": "#/$defs/SolveOutcome"
+        },
+        "iteration": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "objective_after": {
+          "format": "double",
+          "type": "number"
+        },
+        "objective_before": {
+          "format": "double",
+          "type": "number"
+        },
+        "parameter": {
+          "description": "The parameter changed (`rating_scale[230]`, `gen_capacity_scale[gas]`,\n`branch_rating_notch[branches:12]`, `load_scale`).",
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "iteration",
+        "parameter",
+        "before",
+        "after",
+        "reason",
+        "objective_before",
+        "objective_after",
+        "dc_status",
+        "accepted"
+      ],
+      "type": "object"
+    },
+    "CalibrationTargets": {
+      "additionalProperties": false,
+      "description": "Reference ranges the calibration objective measures against. Each range is\n`[low, high]` of the published or measured statistic.",
+      "properties": {
+        "avg_degree": {
+          "description": "Mean nodal degree range.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "binding_fraction": {
+          "description": "Fraction of branches at or above the loading target in the DC OPF.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "hv_share": {
+          "description": "Fraction of buses at the highest voltage level.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "loading_p90_min": {
+          "description": "90th percentile branch loading floor (under-utilisation guard).",
+          "format": "double",
+          "type": "number"
+        },
+        "loading_target": {
+          "description": "Branch loading the calibration keeps the worst branch under.",
+          "format": "double",
+          "type": "number"
+        },
+        "set_id": {
+          "description": "Identifier of the reference set (`reference_stats.json` entry).",
+          "type": "string"
+        },
+        "source": {
+          "description": "Where the numbers come from.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "set_id",
+        "source",
+        "avg_degree",
+        "hv_share",
+        "binding_fraction",
+        "loading_p90_min",
+        "loading_target"
+      ],
+      "type": "object"
+    },
+    "CostCoefficients": {
+      "properties": {
+        "c0": {
+          "format": "double",
+          "type": "number"
+        },
+        "c1": {
+          "format": "double",
+          "type": "number"
+        },
+        "c2": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "c2",
+        "c1",
+        "c0"
+      ],
+      "type": "object"
+    },
+    "CountryDemand": {
+      "description": "One country's part of a region's demand under the national basis.",
+      "properties": {
+        "area_share": {
+          "description": "Share of the country's area the region covers (each part of the region\ncounted to the country of its nearest place); absent without an area.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "code": {
+          "description": "Country code of the places table (Natural Earth `adm0_a3`).",
+          "type": "string"
+        },
+        "listed_share": {
+          "description": "Population of the country's listed places over its national\npopulation, at most 1: the share of its peak that follows its places.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "national_peak_mw": {
+          "description": "The country's national peak (annual average load × peak factor), MW;\n`peak_mw` equals it when the region holds every place and at least 95%\nof the area of the country. Absent for the world fallback.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_mw": {
+          "description": "Peak demand of those places, MW.",
+          "format": "double",
+          "type": "number"
+        },
+        "places": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "population": {
+          "description": "Sum of `pop_max` over those places.",
+          "format": "double",
+          "type": "number"
+        },
+        "unlisted_peak_mw": {
+          "description": "Of `peak_mw`, the part of the country's unlisted demand the region\ntakes: in proportion to the area it covers, never beyond its share of\nthe country's listed population, MW.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "year": {
+          "description": "Year of the national figure; absent when the country has no entry and\nits places drew the world average.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "places",
+        "population",
+        "peak_mw"
+      ],
+      "type": "object"
+    },
+    "DcOpfReport": {
+      "description": "The DC OPF verdict from the tellegen engine.",
+      "properties": {
+        "binding_branches": {
+          "description": "Branch uids with loading ≥ 0.999.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "binding_fraction": {
+          "format": "double",
+          "type": "number"
+        },
+        "branch_loading": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "default": {},
+          "description": "Per branch loading keyed by branch uid (the module's identity).",
+          "type": "object"
+        },
+        "dispatch_by_fuel_mw": {
+          "additionalProperties": false,
+          "properties": {
+            "coal": {
+              "format": "double",
+              "type": "number"
+            },
+            "gas": {
+              "format": "double",
+              "type": "number"
+            },
+            "hydro": {
+              "format": "double",
+              "type": "number"
+            },
+            "nuclear": {
+              "format": "double",
+              "type": "number"
+            },
+            "other": {
+              "format": "double",
+              "type": "number"
+            },
+            "solar": {
+              "format": "double",
+              "type": "number"
+            },
+            "storage": {
+              "format": "double",
+              "type": "number"
+            },
+            "wind": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "hvdc_as_fixed_transfer": {
+          "description": "HVDC rows replaced by a fixed transfer on the validation copy.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "islands": {
+          "items": {
+            "$ref": "#/$defs/IslandOutcome"
+          },
+          "type": "array"
+        },
+        "iterations": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lmp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LmpSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loading_histogram": {
+          "description": "Ten bins of width 0.1 from 0; the last bin holds loadings ≥ 0.9.",
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "loading_mean": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "loading_p90": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_loading": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "objective": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "solve_ms": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/SolveOutcome"
+        },
+        "unserved_mw": {
+          "description": "0 when optimal, absent when infeasible (nothing is invented).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "loading_histogram",
+        "binding_branches",
+        "binding_fraction",
+        "dispatch_by_fuel_mw",
+        "islands",
+        "hvdc_as_fixed_transfer"
+      ],
+      "type": "object"
+    },
+    "DemandBasis": {
+      "description": "How the demand figure was obtained.",
+      "oneOf": [
+        {
+          "const": "national",
+          "description": "Each place draws its country's peak per head of the places table, from\nthe national demand table (`RegionContext::demand_by_country`,\n`Provenance::demand_table`).",
+          "type": "string"
+        },
+        {
+          "const": "population",
+          "description": "Population of the places inside the region × the stated per-capita\ndraw × peak factor.",
+          "type": "string"
+        },
+        {
+          "const": "total_mw",
+          "description": "The request stated the peak MW.",
+          "type": "string"
+        },
+        {
+          "const": "default_per_bus",
+          "description": "No place fell inside the region: a per-bus default was used.",
+          "type": "string"
+        }
+      ]
+    },
+    "DemandSpec": {
+      "description": "Peak demand of the region.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Peak MW from the population of the places inside the region. Each place\ndraws its country's average load per head of the places table (the\nnational demand table, [`crate::demand::NationalDemand`]) times\n`peak_factor`, so a whole country reproduces its national peak; a place\nwhose country has no entry draws the world average per person. With\n`per_capita_kw`, every person of every place draws that average load\ninstead.",
+          "properties": {
+            "kind": {
+              "const": "population",
+              "type": "string"
+            },
+            "peak_factor": {
+              "default": 1.3,
+              "format": "double",
+              "type": "number"
+            },
+            "per_capita_kw": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A stated peak demand in MW.",
+          "properties": {
+            "kind": {
+              "const": "total_mw",
+              "type": "string"
+            },
+            "mw": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "mw"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DemandTableProvenance": {
+      "description": "The national demand table behind a national demand basis.",
+      "properties": {
+        "areas_sha256": {
+          "description": "SHA-256 of the bundled country area table the unlisted demand spreads\nover.",
+          "type": "string"
+        },
+        "areas_source_sha256": {
+          "description": "SHA-256 of the admin-0 file the areas were derived from.",
+          "type": "string"
+        },
+        "licence": {
+          "type": "string"
+        },
+        "peak_factor": {
+          "description": "Peak demand as a multiple of the annual average load.",
+          "format": "double",
+          "type": "number"
+        },
+        "schema": {
+          "type": "string"
+        },
+        "sha256": {
+          "description": "SHA-256 of the bundled table.",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "source_sha256": {
+          "description": "SHA-256 of the dataset the table was derived from.",
+          "type": "string"
+        },
+        "year": {
+          "description": "The year most entries report.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema",
+        "year",
+        "source",
+        "licence",
+        "sha256",
+        "source_sha256",
+        "peak_factor",
+        "areas_sha256",
+        "areas_source_sha256"
+      ],
+      "type": "object"
+    },
+    "Density": {
+      "description": "Bus count per unit area when `target_bus_count` is not given.",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "type": "string"
+    },
+    "ElementAnnotations": {
+      "description": "Per element annotations keyed by the same ids and uids the ingest view uses.",
+      "properties": {
+        "branches": {
+          "items": {
+            "$ref": "#/$defs/BranchAnnotation"
+          },
+          "type": "array"
+        },
+        "buses": {
+          "items": {
+            "$ref": "#/$defs/BusAnnotation"
+          },
+          "type": "array"
+        },
+        "generators": {
+          "items": {
+            "$ref": "#/$defs/GeneratorAnnotation"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "buses",
+        "branches",
+        "generators"
+      ],
+      "type": "object"
+    },
+    "ElementSource": {
+      "description": "Where an element came from.",
+      "oneOf": [
+        {
+          "enum": [
+            "synthetic",
+            "osm"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "makeup",
+          "description": "Generation added so an island or the system meets its reserve margin.",
+          "type": "string"
+        },
+        {
+          "const": "interconnect",
+          "description": "A tie added to join components.",
+          "type": "string"
+        }
+      ]
+    },
+    "ErrorPayload": {
+      "description": "The error as the wasm edge and the CLI serialize it.",
+      "properties": {
+        "branches": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "buses": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "FallbackFrom": {
+      "additionalProperties": false,
+      "description": "Why a caller reran an OSM request as a synthetic one. Written by the\ncaller, never read by the generator, excluded from the request hash, and\nechoed in the report's provenance.",
+      "properties": {
+        "branches": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "buses": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/FallbackReason"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      },
+      "required": [
+        "source",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "FallbackReason": {
+      "enum": [
+        "osm_insufficient",
+        "overpass_failed"
+      ],
+      "type": "string"
+    },
+    "FarIslandPolicy": {
+      "description": "What to do with landmasses that the topology cannot join.",
+      "oneOf": [
+        {
+          "const": "cut",
+          "description": "Drop the buses of a landmass farther than `max_interconnect_km` from\nthe connected system (the group of landmasses whose places hold the\nmost people) and say so in a warning. The default: the result is one\nelectrical island the engine can solve as a whole.",
+          "type": "string"
+        },
+        {
+          "const": "keep",
+          "description": "Keep the landmass as its own electrical island with its own reference\nbus and generation. Validation runs per island.",
+          "type": "string"
+        }
+      ]
+    },
+    "Fidelity": {
+      "description": "How closely the electrical model follows the region's data: `High` uses\npopulation weighted loads and tight parameter spreads; `Low` spreads load\nwith a floor plus a random weight and widens the parameter spreads.",
+      "enum": [
+        "low",
+        "high"
+      ],
+      "type": "string"
+    },
+    "Fuel": {
+      "description": "Generator fuel families carried by the report and the fuel mix.",
+      "enum": [
+        "gas",
+        "coal",
+        "nuclear",
+        "hydro",
+        "wind",
+        "solar",
+        "storage",
+        "other"
+      ],
+      "type": "string"
+    },
+    "GenerationReport": {
+      "description": "The full report. Blocks are `None` until their stage has run, so a report\nread mid-session is partial but never invented.",
+      "properties": {
+        "ac_pf": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AcPfReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calibration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CalibrationReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RegionContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dc_opf": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DcOpfReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elements": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementAnnotations"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "planning": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanningReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "request": {
+          "$ref": "#/$defs/SynthRequest"
+        },
+        "schema": {
+          "type": "string"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/StageRecord"
+          },
+          "type": "array"
+        },
+        "stats": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TopologyStats"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/Warning"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema",
+        "request",
+        "stages",
+        "provenance",
+        "warnings"
+      ],
+      "type": "object"
+    },
+    "GeneratorAnnotation": {
+      "properties": {
+        "bus": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "condenser": {
+          "default": false,
+          "description": "A synchronous condenser the plan placed for voltage support in a\nremote pocket: no active power, reactive range only.",
+          "type": "boolean"
+        },
+        "cost": {
+          "$ref": "#/$defs/CostCoefficients"
+        },
+        "fuel": {
+          "$ref": "#/$defs/Fuel"
+        },
+        "makeup": {
+          "type": "boolean"
+        },
+        "pmax_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "slack": {
+          "type": "boolean"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uid",
+        "bus",
+        "fuel",
+        "pmax_mw",
+        "cost",
+        "makeup",
+        "slack"
+      ],
+      "type": "object"
+    },
+    "IslandOptions": {
+      "additionalProperties": false,
+      "description": "Island handling for synthetic generation.",
+      "properties": {
+        "beyond": {
+          "$ref": "#/$defs/FarIslandPolicy",
+          "default": "cut"
+        },
+        "max_interconnect_km": {
+          "default": 250.0,
+          "description": "Landmasses whose nearest buses are closer than this are joined by an\ninterconnect corridor (submarine or overhead), like Sicily or the Danish\nislands. source: typical AC/HVDC interconnector lengths, ENTSO-E grid map.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "IslandOutcome": {
+      "description": "One electrical island's verdict.",
+      "properties": {
+        "branches": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "buses": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "generators": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "index": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "load_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "buses",
+        "branches",
+        "generators",
+        "load_mw",
+        "status"
+      ],
+      "type": "object"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "description": "Caps that keep a request inside what a browser session can afford.",
+      "properties": {
+        "max_area_km2": {
+          "default": 40000000.0,
+          "description": "Spherical area cap of the region, km²; positive and finite.",
+          "format": "double",
+          "type": "number"
+        },
+        "max_branch_factor": {
+          "default": 4.0,
+          "description": "Upper bound of `branch_factor`; finite and at least 1.",
+          "format": "double",
+          "type": "number"
+        },
+        "max_bus_count": {
+          "default": 3000,
+          "description": "Bus cap. A synthetic grid's count is held at it (`bus_count_capped`);\nan OpenStreetMap grid drops its lowest voltage levels until it fits\n(`osm_bus_count_capped`) and is refused when its highest level alone\nexceeds it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "LmpSummary": {
+      "properties": {
+        "max": {
+          "format": "double",
+          "type": "number"
+        },
+        "mean": {
+          "format": "double",
+          "type": "number"
+        },
+        "min": {
+          "format": "double",
+          "type": "number"
+        },
+        "spread": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min",
+        "mean",
+        "max",
+        "spread"
+      ],
+      "type": "object"
+    },
+    "OsmIslands": {
+      "description": "Island handling for the OSM path, where real data leaves isolated\nsubstations.",
+      "oneOf": [
+        {
+          "const": "connect",
+          "description": "Join every component with the shortest same-voltage tie lines, tagged\n`interconnect`.",
+          "type": "string"
+        },
+        {
+          "const": "cut",
+          "description": "Drop islands without generation and report them.",
+          "type": "string"
+        },
+        {
+          "const": "keep",
+          "description": "Leave islands alone; validation runs per island.",
+          "type": "string"
+        }
+      ]
+    },
+    "OsmOptions": {
+      "additionalProperties": false,
+      "description": "Thresholds for mapping an Overpass document onto a grid.",
+      "properties": {
+        "clip_buffer_km": {
+          "default": 5.0,
+          "description": "Infrastructure this far outside the region polygon is still kept.",
+          "format": "double",
+          "type": "number"
+        },
+        "cluster_radius_m": {
+          "default": 500.0,
+          "description": "Substation and converter elements within this radius collapse into one site.",
+          "format": "double",
+          "type": "number"
+        },
+        "hvdc_snap_km": {
+          "default": 25.0,
+          "description": "A DC line end within this distance of a converter snaps to it.",
+          "format": "double",
+          "type": "number"
+        },
+        "islands": {
+          "$ref": "#/$defs/OsmIslands",
+          "default": "connect"
+        },
+        "min_branches": {
+          "default": 2,
+          "description": "Fewer branches than this is `OsmInsufficient`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_buses": {
+          "default": 3,
+          "description": "Fewer buses than this is `OsmInsufficient`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "plant_snap_km": {
+          "default": 10.0,
+          "description": "A plant within this distance of a site connects there.",
+          "format": "double",
+          "type": "number"
+        },
+        "snap_km": {
+          "default": 2.0,
+          "description": "A line end within this distance of a site snaps to it.",
+          "format": "double",
+          "type": "number"
+        },
+        "voltage_floor_kv": {
+          "default": 110.0,
+          "description": "Lines and substations below this nominal voltage are distribution and\nare dropped.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "OsmProvenance": {
+      "properties": {
+        "copyright": {
+          "description": "The Overpass answer's `osm3s.copyright` notice: the licence (ODbL) the\ndata was served under.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "counts": {
+          "additionalProperties": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "document_sha256": {
+          "type": "string"
+        },
+        "elements": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "generator": {
+          "type": "string"
+        },
+        "timestamp_osm_base": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "generator",
+        "document_sha256",
+        "elements",
+        "counts"
+      ],
+      "type": "object"
+    },
+    "PlacesProvenance": {
+      "description": "The populated places table behind the run.",
+      "properties": {
+        "count": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sha256": {
+          "description": "SHA-256 of the table as loaded.",
+          "type": "string"
+        },
+        "source": {
+          "description": "The dataset the table was derived from (the bundled table names\nNatural Earth's release); absent for a bare array of rows.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_sha256": {
+          "description": "SHA-256 of that dataset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "count",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "PlanningReport": {
+      "description": "The corridor and reactive plan the electrify stage made before any\nvalidation ran: what the corridors were sized for and what was installed.",
+      "properties": {
+        "added_level_kv": {
+          "description": "The highest level the plan added above the modelled ones (one of\n`RegionContext::promotion_levels_kv`) because corridors at the highest\nmodelled level needed more than two circuits; absent when the modelled\nlevels sufficed or the region has no higher level in service.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "angle_spread_deg": {
+          "description": "Widest island angle spread of the planning case (DC), degrees.",
+          "format": "double",
+          "type": "number"
+        },
+        "branch_target": {
+          "description": "Branches the requested branch factor asks for.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "branches": {
+          "description": "Branches in the network.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "capacitor_banks": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "capacitor_mvar": {
+          "description": "Total capacitor rating, MVAr at 1 pu.",
+          "format": "double",
+          "type": "number"
+        },
+        "capacity_circuits": {
+          "description": "Circuits added beyond one per corridor because the planning flow\nneeded them.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "capped_corridors": {
+          "description": "Corridors at the cap whose planning flow still needs more circuits.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "circuit_cap": {
+          "description": "Parallel circuits one corridor may hold.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "converged": {
+          "description": "False when the plan stopped at its round or circuit cap.",
+          "type": "boolean"
+        },
+        "dispatch": {
+          "description": "The planning case: `economic_dispatch_at_peak`, the least-cost\ndispatch of the generators serving peak load on a lossless network\nwith no limits.",
+          "type": "string"
+        },
+        "filler_circuits": {
+          "description": "Circuits added, heaviest planned loading first, to reach the target.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_angle_difference_deg": {
+          "description": "Largest angle difference across one branch in the AC solution of the\nplanning case at the planned voltage profile, degrees.",
+          "format": "double",
+          "type": "number"
+        },
+        "max_parallel_circuits": {
+          "description": "Most parallel circuits on one corridor.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_planning_loading": {
+          "description": "Highest circuit loading in the planning case.",
+          "format": "double",
+          "type": "number"
+        },
+        "overloaded_corridors": {
+          "description": "Corridors still above their rating in the planning case.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "promoted_buses": {
+          "description": "Buses raised to the next voltage level because an incident corridor\nwould have needed more than two circuits at the lower one.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reactor_banks": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reactor_mvar": {
+          "description": "Total shunt reactor rating, MVAr at 1 pu.",
+          "format": "double",
+          "type": "number"
+        },
+        "rounds": {
+          "description": "Capacity and stiffening rounds the corridor plan ran (each one DC\npower flow).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stiffening_circuits": {
+          "description": "Circuits added to hold each island's angle spread within the St.\nClair stability margin (44.4°).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "upsized_transformers": {
+          "description": "Transformer corridors whose bank the plan enlarged (up to the rating of\nthe line it terminates) before adding circuits.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "utilisation_target": {
+          "description": "Share of its rating no circuit may exceed in the planning case.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dispatch",
+        "utilisation_target",
+        "rounds",
+        "converged",
+        "promoted_buses",
+        "max_parallel_circuits",
+        "circuit_cap",
+        "capped_corridors",
+        "branch_target",
+        "branches",
+        "capacity_circuits",
+        "upsized_transformers",
+        "stiffening_circuits",
+        "angle_spread_deg",
+        "filler_circuits",
+        "max_planning_loading",
+        "overloaded_corridors",
+        "capacitor_banks",
+        "capacitor_mvar",
+        "reactor_banks",
+        "reactor_mvar",
+        "max_angle_difference_deg"
+      ],
+      "type": "object"
+    },
+    "Preview": {
+      "description": "The map preview: valid from `SiteBuses` on, branches from `Topology` on.",
+      "properties": {
+        "branches": {
+          "items": {
+            "$ref": "#/$defs/PreviewBranch"
+          },
+          "type": "array"
+        },
+        "buses": {
+          "items": {
+            "$ref": "#/$defs/PreviewBus"
+          },
+          "type": "array"
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage"
+        }
+      },
+      "required": [
+        "stage",
+        "buses",
+        "branches"
+      ],
+      "type": "object"
+    },
+    "PreviewBranch": {
+      "properties": {
+        "base_kv": {
+          "format": "double",
+          "type": "number"
+        },
+        "from": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "route": {
+          "description": "Longitude/latitude polyline.",
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "to": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "base_kv",
+        "route"
+      ],
+      "type": "object"
+    },
+    "PreviewBus": {
+      "properties": {
+        "base_kv": {
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/BusKind"
+        },
+        "lat": {
+          "format": "double",
+          "type": "number"
+        },
+        "lon": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "lon",
+        "lat",
+        "base_kv",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "Provenance": {
+      "description": "Everything needed to reproduce or audit the run.",
+      "properties": {
+        "demand_table": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DemandTableProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fallback_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FallbackFrom"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generator": {
+          "type": "string"
+        },
+        "osm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OsmProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameter_table_version": {
+          "type": "string"
+        },
+        "places": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlacesProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "powerio_version": {
+          "type": "string"
+        },
+        "request_sha256": {
+          "type": "string"
+        },
+        "seed": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spread_sigma": {
+          "description": "Log-normal spread applied to per-branch reactance.",
+          "format": "double",
+          "type": "number"
+        },
+        "tellegen_synth_version": {
+          "type": "string"
+        },
+        "tellegen_version": {
+          "type": "string"
+        },
+        "voltage_table": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VoltageTableProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "generator",
+        "seed",
+        "request_sha256",
+        "tellegen_synth_version",
+        "tellegen_version",
+        "powerio_version",
+        "parameter_table_version",
+        "spread_sigma"
+      ],
+      "type": "object"
+    },
+    "Quantiles": {
+      "description": "Summary quantiles of a sample.",
+      "properties": {
+        "max": {
+          "format": "double",
+          "type": "number"
+        },
+        "mean": {
+          "format": "double",
+          "type": "number"
+        },
+        "min": {
+          "format": "double",
+          "type": "number"
+        },
+        "p10": {
+          "format": "double",
+          "type": "number"
+        },
+        "p50": {
+          "format": "double",
+          "type": "number"
+        },
+        "p90": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min",
+        "p10",
+        "p50",
+        "mean",
+        "p90",
+        "max"
+      ],
+      "type": "object"
+    },
+    "ReferenceComparison": {
+      "description": "One statistic beside its reference range.",
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "reference_range": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "value": {
+          "format": "double",
+          "type": "number"
+        },
+        "within": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "metric",
+        "value",
+        "reference_range",
+        "within"
+      ],
+      "type": "object"
+    },
+    "Region": {
+      "additionalProperties": false,
+      "description": "A region to generate in: a GeoJSON `Polygon` or `MultiPolygon` geometry\n(longitude, latitude pairs; the first ring of each polygon is the outer\nring, later rings are holes) and a label for reports and bus names.",
+      "properties": {
+        "geometry": {
+          "description": "GeoJSON geometry object (`{\"type\":\"Polygon\",\"coordinates\":[...]}`)."
+        },
+        "label": {
+          "default": "Selected region",
+          "type": "string"
+        }
+      },
+      "required": [
+        "geometry"
+      ],
+      "type": "object"
+    },
+    "RegionContext": {
+      "description": "The region as the generator resolved it.",
+      "properties": {
+        "area_km2": {
+          "description": "Spherical area of the region polygons, km².",
+          "format": "double",
+          "type": "number"
+        },
+        "branch_factor": {
+          "description": "Branches per bus the topology aims at.",
+          "format": "double",
+          "type": "number"
+        },
+        "center_lat": {
+          "format": "double",
+          "type": "number"
+        },
+        "center_lon": {
+          "format": "double",
+          "type": "number"
+        },
+        "crosses_antimeridian": {
+          "type": "boolean"
+        },
+        "demand_basis": {
+          "$ref": "#/$defs/DemandBasis"
+        },
+        "demand_by_country": {
+          "description": "The countries behind the demand, largest peak first (national basis\nonly).",
+          "items": {
+            "$ref": "#/$defs/CountryDemand"
+          },
+          "type": "array"
+        },
+        "frame": {
+          "$ref": "#/$defs/BBox",
+          "description": "Continuous longitude frame of the region."
+        },
+        "fuel_mix": {
+          "additionalProperties": false,
+          "properties": {
+            "coal": {
+              "format": "double",
+              "type": "number"
+            },
+            "gas": {
+              "format": "double",
+              "type": "number"
+            },
+            "hydro": {
+              "format": "double",
+              "type": "number"
+            },
+            "nuclear": {
+              "format": "double",
+              "type": "number"
+            },
+            "other": {
+              "format": "double",
+              "type": "number"
+            },
+            "solar": {
+              "format": "double",
+              "type": "number"
+            },
+            "storage": {
+              "format": "double",
+              "type": "number"
+            },
+            "wind": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "label": {
+          "type": "string"
+        },
+        "landmasses": {
+          "description": "Polygons with usable area.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "peak_demand_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "places_in_region": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "places_snapped": {
+          "description": "Places counted in the region although just outside its polygons:\nwithin 15 km of its edge, of a country whose place population it\nholds at least half of, and moved onto that edge (harbours and\nestuaries the polygons leave out).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "population_in_region": {
+          "description": "Sum of `pop_max` over the populated places inside the region.",
+          "format": "double",
+          "type": "number"
+        },
+        "promotion_levels_kv": {
+          "description": "Higher AC levels the corridor plan may raise buses to, kV, highest\nfirst: the country's levels in service above its ladder, or 765 kV\nabove stated levels. Empty when there is none, as in most of Europe.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "target_bus_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "voltage_basis": {
+          "$ref": "#/$defs/VoltageBasis",
+          "description": "Where the levels came from."
+        },
+        "voltage_classes_kv": {
+          "description": "The line class each level takes its per-km parameters from.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "voltage_country": {
+          "description": "The country whose ladder the levels are (table code), or whose missing\nentry the fallback stands in for; absent for stated levels or a region\nwithout places.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "voltage_levels_kv": {
+          "description": "Nominal levels, highest first; a level the corridor plan added above\nthem (`PlanningReport::added_level_kv`) comes first once it ran.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "label",
+        "area_km2",
+        "center_lon",
+        "center_lat",
+        "frame",
+        "crosses_antimeridian",
+        "landmasses",
+        "population_in_region",
+        "places_in_region",
+        "places_snapped",
+        "target_bus_count",
+        "peak_demand_mw",
+        "demand_basis",
+        "fuel_mix",
+        "branch_factor",
+        "voltage_levels_kv",
+        "voltage_classes_kv",
+        "voltage_basis"
+      ],
+      "type": "object"
+    },
+    "SolveOutcome": {
+      "enum": [
+        "optimal",
+        "infeasible",
+        "skipped"
+      ],
+      "type": "string"
+    },
+    "Source": {
+      "description": "Where the grid comes from.",
+      "oneOf": [
+        {
+          "const": "synthetic",
+          "description": "Deterministic generation from the region, its population and the seed.",
+          "type": "string"
+        },
+        {
+          "const": "osm",
+          "description": "A grid mapped from an Overpass (OpenStreetMap) document passed beside the\nrequest; electrical parameters are modelled, not surveyed.",
+          "type": "string"
+        }
+      ]
+    },
+    "Stage": {
+      "description": "Generation stages, in order. `Calibrate` repeats once per iteration.",
+      "enum": [
+        "context",
+        "site_buses",
+        "topology",
+        "electrify",
+        "dc_opf",
+        "calibrate",
+        "ac_pf",
+        "finalize",
+        "done"
+      ],
+      "type": "string"
+    },
+    "StageRecord": {
+      "description": "One completed stage.",
+      "properties": {
+        "counts": {
+          "additionalProperties": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "Element counts and other integers the stage produced.",
+          "type": "object"
+        },
+        "elapsed_ms": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "iteration": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage"
+        }
+      },
+      "required": [
+        "stage",
+        "counts"
+      ],
+      "type": "object"
+    },
+    "StepOutcome": {
+      "description": "The outcome of one `step()`.",
+      "properties": {
+        "done": {
+          "type": "boolean"
+        },
+        "elapsed_ms": {
+          "description": "Stage wall time when the host supplied a clock.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "iteration": {
+          "description": "Calibration iteration (1-based) when `stage == Calibrate`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The stage the next `step()` runs; `None` after `Done`."
+        },
+        "preview_changed": {
+          "description": "True when `preview()` would return something new.",
+          "type": "boolean"
+        },
+        "progress": {
+          "description": "Progress in `[0, 1]`.",
+          "format": "double",
+          "type": "number"
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage",
+          "description": "The stage that just ran."
+        },
+        "warnings": {
+          "description": "Warnings raised by this stage.",
+          "items": {
+            "$ref": "#/$defs/Warning"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "stage",
+        "progress",
+        "done",
+        "warnings",
+        "preview_changed"
+      ],
+      "type": "object"
+    },
+    "SynthRequest": {
+      "additionalProperties": false,
+      "description": "The one generation request. Unknown keys are refused here and in every\nnested option, so a misspelt option fails instead of taking its default.",
+      "properties": {
+        "branch_factor": {
+          "default": null,
+          "description": "Branches per bus, `1.0..=limits.max_branch_factor`; otherwise by density.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "calibration": {
+          "$ref": "#/$defs/CalibrationOptions",
+          "default": {
+            "allow_load_scale": false,
+            "enabled": true,
+            "max_iterations": 6,
+            "targets": null
+          }
+        },
+        "demand": {
+          "$ref": "#/$defs/DemandSpec",
+          "default": {
+            "kind": "population",
+            "peak_factor": 1.3
+          }
+        },
+        "density": {
+          "$ref": "#/$defs/Density",
+          "default": "high"
+        },
+        "fallback_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FallbackFrom"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fidelity": {
+          "$ref": "#/$defs/Fidelity",
+          "default": "high"
+        },
+        "fuel_mix": {
+          "additionalProperties": false,
+          "default": {},
+          "description": "Capacity shares by fuel; normalised. Empty means the default mix.",
+          "properties": {
+            "coal": {
+              "format": "double",
+              "type": "number"
+            },
+            "gas": {
+              "format": "double",
+              "type": "number"
+            },
+            "hydro": {
+              "format": "double",
+              "type": "number"
+            },
+            "nuclear": {
+              "format": "double",
+              "type": "number"
+            },
+            "other": {
+              "format": "double",
+              "type": "number"
+            },
+            "solar": {
+              "format": "double",
+              "type": "number"
+            },
+            "storage": {
+              "format": "double",
+              "type": "number"
+            },
+            "wind": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "generator_count": {
+          "default": null,
+          "description": "Number of generating units; otherwise 16% of the buses (at least 3).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "islands": {
+          "$ref": "#/$defs/IslandOptions",
+          "default": {
+            "beyond": "cut",
+            "max_interconnect_km": 250.0
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/Limits",
+          "default": {
+            "max_area_km2": 40000000.0,
+            "max_branch_factor": 4.0,
+            "max_bus_count": 3000
+          }
+        },
+        "osm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OsmOptions"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "power_factor": {
+          "default": 0.95,
+          "description": "Load power factor; `q = p · tan(acos pf)`.",
+          "format": "double",
+          "type": "number"
+        },
+        "region": {
+          "$ref": "#/$defs/Region"
+        },
+        "reserve_margin": {
+          "default": 0.18,
+          "description": "Installed capacity ≥ (1 + margin) × peak load.",
+          "format": "double",
+          "type": "number"
+        },
+        "seed": {
+          "default": 2026,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/Source",
+          "default": "synthetic"
+        },
+        "target_bus_count": {
+          "default": null,
+          "description": "Exact bus count; otherwise `density` × area decides.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "validation": {
+          "$ref": "#/$defs/ValidationOptions",
+          "default": {
+            "emergency_band": [
+              0.9,
+              1.1
+            ],
+            "run_ac_pf": true,
+            "run_dc_opf": true,
+            "voltage_band": [
+              0.95,
+              1.05
+            ]
+          }
+        },
+        "voltage_levels_kv": {
+          "description": "Nominal voltage levels, kV, highest first after resolution. Each level\nkeeps its own kV for the per-unit base and takes the per-km parameters\nof the nearest line class. Empty (the default) takes the national\nladder of the region's dominant country by demand\n([`crate::voltage::VoltageLadders`]); a stated list is used as given,\nand the corridor plan may then add 765 kV above it.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "region"
+      ],
+      "type": "object"
+    },
+    "TopologyStats": {
+      "description": "Structural statistics of the generated graph (and of a reference case when\nmeasured with the CLI).",
+      "properties": {
+        "algebraic_connectivity": {
+          "description": "Second smallest Laplacian eigenvalue, by sparse power iteration; `None`\nabove the size cap or for an empty graph.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "algebraic_connectivity_converged": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "avg_degree": {
+          "format": "double",
+          "type": "number"
+        },
+        "branch_bus_ratio": {
+          "format": "double",
+          "type": "number"
+        },
+        "clustering_coefficient": {
+          "format": "double",
+          "type": "number"
+        },
+        "connected_components": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "degree_histogram": {
+          "description": "`degree_histogram[d]` = number of buses with degree `d`.",
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "delaunay_edge_fraction": {
+          "description": "Fraction of distinct corridors that are Delaunay edges of the bus points.",
+          "format": "double",
+          "type": "number"
+        },
+        "gen_load_margin": {
+          "format": "double",
+          "type": "number"
+        },
+        "hv_share": {
+          "description": "Fraction of buses at the highest voltage level.",
+          "format": "double",
+          "type": "number"
+        },
+        "line_length_km": {
+          "$ref": "#/$defs/Quantiles"
+        },
+        "max_degree": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_line_loading": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mst_length_ratio": {
+          "description": "Total corridor length over the Euclidean minimum spanning tree length.",
+          "format": "double",
+          "type": "number"
+        },
+        "n_branches": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_buses": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_generators": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_hvdc": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_loads": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n_transformers": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "parallel_branches": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "parallel_corridors": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reference": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ReferenceComparison"
+          },
+          "type": "array"
+        },
+        "total_generation_capacity_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "total_line_length_km": {
+          "format": "double",
+          "type": "number"
+        },
+        "total_load_mw": {
+          "format": "double",
+          "type": "number"
+        },
+        "voltage_counts": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "Buses per nominal voltage (key = kV).",
+          "type": "object"
+        }
+      },
+      "required": [
+        "n_buses",
+        "n_branches",
+        "n_generators",
+        "n_loads",
+        "n_transformers",
+        "n_hvdc",
+        "connected_components",
+        "degree_histogram",
+        "avg_degree",
+        "max_degree",
+        "clustering_coefficient",
+        "branch_bus_ratio",
+        "line_length_km",
+        "total_line_length_km",
+        "mst_length_ratio",
+        "delaunay_edge_fraction",
+        "parallel_corridors",
+        "parallel_branches",
+        "voltage_counts",
+        "hv_share",
+        "total_load_mw",
+        "total_generation_capacity_mw",
+        "gen_load_margin"
+      ],
+      "type": "object"
+    },
+    "ValidationOptions": {
+      "additionalProperties": false,
+      "description": "Validation controls.",
+      "properties": {
+        "emergency_band": {
+          "default": [
+            0.9,
+            1.1
+          ],
+          "description": "Emergency voltage band, per unit.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "run_ac_pf": {
+          "default": true,
+          "type": "boolean"
+        },
+        "run_dc_opf": {
+          "default": true,
+          "type": "boolean"
+        },
+        "voltage_band": {
+          "default": [
+            0.95,
+            1.05
+          ],
+          "description": "Planning voltage band, per unit.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "VoltageBasis": {
+      "description": "Where a region's voltage levels came from.",
+      "oneOf": [
+        {
+          "const": "request",
+          "description": "The request stated the levels.",
+          "type": "string"
+        },
+        {
+          "const": "country",
+          "description": "The national ladder of the region's dominant country\n(`RegionContext::voltage_country`, `Provenance::voltage_table`).",
+          "type": "string"
+        },
+        {
+          "const": "fallback",
+          "description": "The dominant country has no ladder in the table: the ENTSO-E members'\nladder for a member, else IEC 60038's standard levels (warning\n`voltage_fallback`).",
+          "type": "string"
+        }
+      ]
+    },
+    "VoltageTableProvenance": {
+      "description": "The voltage ladder table behind a country or fallback voltage basis.",
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "sha256": {
+          "description": "SHA-256 of the bundled table.",
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "Warning": {
+      "description": "A non-fatal condition the caller should show.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "error": {
+      "$ref": "#/$defs/ErrorPayload"
+    },
+    "preview": {
+      "$ref": "#/$defs/Preview"
+    },
+    "report": {
+      "$ref": "#/$defs/GenerationReport"
+    },
+    "request": {
+      "$ref": "#/$defs/SynthRequest"
+    },
+    "step": {
+      "$ref": "#/$defs/StepOutcome"
+    }
+  },
+  "required": [
+    "request",
+    "report",
+    "step",
+    "preview",
+    "error"
+  ],
+  "title": "SynthSchema",
+  "type": "object",
+  "x-rust-source-sha256": "ac27816de6e30174f5a8569aeb41d6fea7ec6384580019d5a6ff84d6b913e4a1"
+}

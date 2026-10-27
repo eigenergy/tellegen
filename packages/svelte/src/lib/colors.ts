@@ -1,5 +1,5 @@
 import { extent } from './format.js';
-import type { DisplayMode } from './state.svelte.js';
+import type { BusSizing, DisplayMode } from './state.svelte.js';
 
 export type RGBA = [number, number, number, number];
 
@@ -50,6 +50,29 @@ const PRICE_STOPS: RGBA[] = [
 export const priceColor = (t: number): RGBA => ramp(PRICE_STOPS, t);
 export const priceGradient = cssGradient(PRICE_STOPS);
 
+/** Sequential demand ramp: the upper three quarters of viridis, slate blue
+ * through teal and green to yellow. Lightness rises monotonically, the dimmest
+ * stop still reads on a dark basemap, and the cool hues cannot be mistaken for
+ * the warm nodal value ramp. */
+const DEMAND_STOPS: RGBA[] = [
+	[59, 82, 139, 235],
+	[44, 114, 142, 235],
+	[33, 145, 140, 240],
+	[94, 201, 98, 245],
+	[253, 231, 37, 250]
+];
+
+/** Demand colour for a fraction `t` of the demand domain, on a square-root
+ * scale: bus demand is heavy tailed (a few large cities, many small towns),
+ * and a linear scale would paint everything but the largest buses one hue. */
+export const demandColor = (t: number): RGBA => ramp(DEMAND_STOPS, Math.sqrt(Math.max(0, t)));
+/** The demand ramp as a CSS gradient whose stops sit where the square-root
+ * scale puts them, so a legend bar reads linearly from its low to high label. */
+export const demandGradient = `linear-gradient(90deg, ${DEMAND_STOPS.map(
+	(s, i) =>
+		`rgb(${s[0]} ${s[1]} ${s[2]}) ${((i / (DEMAND_STOPS.length - 1)) ** 2 * 100).toFixed(2)}%`
+).join(', ')})`;
+
 /** Trimmed nodal value color domain: 5th to 95th percentile, with a one-unit
  * minimum span. Nodal values are heavy tailed when one binding line pins a
  * handful of buses far from the pack) so min-max scaling compresses the pack
@@ -67,11 +90,23 @@ export function priceDomain(values: number[]): { lo: number; hi: number } {
 	return { lo: mid - span / 2, hi: mid + span / 2 };
 }
 
+/** Demand colour domain: zero to the 98th percentile, at least 1 MW. Zero
+ * anchors the scale so a bus without load reads as none; the percentile keeps
+ * one metropolis from washing out every other bus, and the few above it clamp
+ * to the top of the ramp. */
+export function demandDomain(values: number[]): { lo: number; hi: number } {
+	if (values.length === 0) return { lo: 0, hi: 1 };
+	const sorted = [...values].sort((a, b) => a - b);
+	const hi = sorted[Math.min(sorted.length - 1, Math.floor(0.98 * sorted.length))];
+	return { lo: 0, hi: Math.max(hi, 1) };
+}
+
 /** Center a scalar display variable (bus voltage angle, |V|) on a symmetric domain
  * with a per-mode minimum span; nodal values keep their own robust quantile domain. Shared by
  * the control panel readout and the map color scale. */
 export function scalarDomain(mode: DisplayMode, values: number[]): { lo: number; hi: number } {
 	if (mode === 'price') return priceDomain(values);
+	if (mode === 'demand') return demandDomain(values);
 	if (values.length === 0) return { lo: 0, hi: 1 };
 	const { min: rawLo, max: rawHi } = extent(values);
 	const minSpan = mode === 'voltage' ? 0.02 : 0.04;
@@ -97,6 +132,51 @@ export const sensColor = (t: number): RGBA => ramp(SENS_STOPS, (t + 1) / 2);
 export const sensGradient = cssGradient(SENS_STOPS);
 export const sensNeutral: RGBA = SENS_STOPS[2];
 export const busNeutral: RGBA = [180, 175, 165, 200];
+
+/** Overlay colours that depend on the basemap's lightness: bus outlines,
+ * hover highlights, the selected outline, the "not yet solved" grey, and
+ * the `.pwd` substation marker. The selection blue is the same in both. */
+export interface MapPalette {
+	outline: RGBA;
+	/** The multiconductor view's bus outline, a shade stronger. */
+	outlineStrong: RGBA;
+	highlight: RGBA;
+	highlightSoft: RGBA;
+	selected: RGBA;
+	grey: RGBA;
+	greyLine: RGBA;
+	substation: RGBA;
+	substationLine: RGBA;
+	/** Fill of a neutral (non-phase) terminal in the multiconductor detail. */
+	neutral: RGBA;
+}
+
+export const MAP_PALETTE: Record<'light' | 'dark', MapPalette> = {
+	light: {
+		outline: [46, 42, 34, 110],
+		outlineStrong: [46, 42, 34, 120],
+		highlight: [32, 36, 43, 90],
+		highlightSoft: [32, 36, 43, 70],
+		selected: [32, 36, 43, 255],
+		grey: [110, 115, 120, 200],
+		greyLine: [138, 131, 117, 150],
+		substation: [70, 92, 124, 190],
+		substationLine: [38, 52, 78, 220],
+		neutral: [120, 114, 102, 255]
+	},
+	dark: {
+		outline: [232, 238, 244, 120],
+		outlineStrong: [232, 238, 244, 130],
+		highlight: [232, 238, 244, 90],
+		highlightSoft: [232, 238, 244, 70],
+		selected: [255, 255, 255, 255],
+		grey: [150, 160, 170, 200],
+		greyLine: [150, 160, 170, 150],
+		substation: [120, 150, 200, 190],
+		substationLine: [180, 205, 235, 220],
+		neutral: [150, 160, 170, 255]
+	}
+};
 
 const FLAT_SENSITIVITY_TINT = 0.55;
 
@@ -162,4 +242,44 @@ export function branchWidth(loading: number): number {
  * both read at a glance. Shared by the map layers and the size legend. */
 export function busRadius(maxMw: number): number {
 	return 3.2 + 0.45 * Math.sqrt(Math.max(maxMw, 1));
+}
+
+/** Radius in px of every bus marker under `uniform` sizing, and the most a
+ * uniform marker grows to on the map. */
+export const UNIFORM_BUS_RADIUS = 4.5;
+/** The least a uniform marker shrinks to on the map, in px. */
+export const UNIFORM_BUS_MIN_RADIUS = 2;
+/** The ground radius of a uniform marker on the map, in metres. */
+export const UNIFORM_BUS_GROUND_RADIUS = 9000;
+
+/** Bus radius in px under a sizing choice: `power` scales with max(load, gen)
+ * through `busRadius`, `uniform` draws every bus alike. */
+export function busRadiusFor(sizing: BusSizing, maxMw: number): number {
+	return sizing === 'uniform' ? UNIFORM_BUS_RADIUS : busRadius(maxMw);
+}
+
+/** Radius settings for the map's bus markers under a sizing choice. `power`
+ * sizes in pixels through `busRadius`. `uniform` gives every bus one ground
+ * radius, drawn between `UNIFORM_BUS_MIN_RADIUS` and `UNIFORM_BUS_RADIUS`
+ * pixels, so a whole country reads as a mesh of dots with its lines showing
+ * and a closer view as distinct buses. */
+export function busMarkerRadius(sizing: BusSizing): {
+	radius: (maxMw: number) => number;
+	radiusUnits: 'meters' | 'pixels';
+	radiusMinPixels: number;
+	radiusMaxPixels: number;
+} {
+	return sizing === 'uniform'
+		? {
+				radius: () => UNIFORM_BUS_GROUND_RADIUS,
+				radiusUnits: 'meters',
+				radiusMinPixels: UNIFORM_BUS_MIN_RADIUS,
+				radiusMaxPixels: UNIFORM_BUS_RADIUS
+			}
+		: {
+				radius: busRadius,
+				radiusUnits: 'pixels',
+				radiusMinPixels: 0,
+				radiusMaxPixels: Number.MAX_SAFE_INTEGER
+			};
 }

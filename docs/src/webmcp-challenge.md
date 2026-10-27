@@ -23,7 +23,7 @@ The browser controls and WebMCP call the same Study controller. Both can create 
 Study, inspect its history, revise a goal, branch from a saved state, compare
 candidates, propose interventions and attach evidence. Capacity-tool compatibility
 adapters create the same persistent Studies. Native Rust and CLI operations use
-the same generated contracts; PowerMCP's `tellegen` server invokes the CLI
+the same generated types; PowerMCP's `tellegen` server invokes the CLI
 directly and exchanges PowerIO IR with it.
 
 Three pointers keep navigation clear: the inspected state, the recommended state
@@ -103,7 +103,7 @@ point remain distinct.
 
 ## References
 
-- [WebMCP tool contract](webmcp.md)
+- [WebMCP tools](webmcp.md)
 - [WebMCP specification](https://github.com/webmachinelearning/webmcp)
 - [Chrome WebMCP documentation](https://developer.chrome.com/docs/ai/webmcp)
 - [Chrome WebMCP evaluations](https://developer.chrome.com/docs/ai/webmcp/evals)

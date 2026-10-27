@@ -11,17 +11,11 @@
 			'objective units'
 		)
 	);
-	const busUnitTitle = $derived(
-		`LMP response to active demand, in ${reportedUnits}. The response is small while the active set stays unchanged.`
-	);
-	const branchUnitTitle = $derived(
-		`LMP response to the thermal rating, in ${reportedUnits}. The column is zero when the limit is inactive.`
-	);
+	const unitTitle = $derived(`Units: ${reportedUnits}`);
 
 	// Branch mode: the selection is a line and the column is price/rating; the
 	// legend and preview pipeline are identical (both columns are bus-keyed).
 	const branchMode = $derived(app.selectedBranch !== null);
-	const unitTitle = $derived(branchMode ? branchUnitTitle : busUnitTitle);
 	const previewUnits = $derived(app.previewPrices?.units ?? 'objective units/MW');
 
 	const previewStep = $derived(
@@ -42,25 +36,22 @@
 	<span class="chip">
 		{ctrl.previewing ? 'LMP preview' : branchMode ? '∂LMP/∂rating' : '∂LMP/∂d'}
 	</span>
-	<span class="mono dim">
-		{#if branchMode}line {branchLabel}{:else}bus {app.selectedBus}{/if}
+	<span class="dim">
+		{#if branchMode}Line <span class="mono">{branchLabel}</span>{:else}Bus
+			<span class="mono">{app.selectedBus}</span>{/if}
 	</span>
-	<button class="mono" onclick={ctrl.clearSelection}
-		><span class="key-hint">esc&nbsp;</span>clear</button
-	>
+	<button onclick={ctrl.clearSelection} aria-keyshortcuts="Escape" title="Esc">Clear</button>
 </div>
 <div class="sensitivity-readout" aria-live="polite">
 	{#if ctrl.previewing}
 		<p class="dim small">
-			{ctrl.activeSolvable?.solving
-				? 'Exact solve running; the map keeps the LMP preview.'
-				: 'First order LMP preview. Release for the exact solve.'}
+			{ctrl.activeSolvable?.solving ? 'Solving…' : 'First-order preview. Release to solve.'}
 		</p>
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels mono single">
 				<span
-					>uniform {signedExp(ctrl.sensSummary.mean * previewStep)}
+					>Uniform {signedExp(ctrl.sensSummary.mean * previewStep)}
 					{previewUnits}</span
 				>
 			</div>
@@ -88,7 +79,7 @@
 		{#if ctrl.sensSummary?.flat}
 			<div class="legend flat" style:background={ctrl.flatSensBackground}></div>
 			<div class="legend-labels mono single">
-				<span>uniform {signedExp(ctrl.sensSummary.mean)} {reportedUnits}</span>
+				<span>Uniform {signedExp(ctrl.sensSummary.mean)} {reportedUnits}</span>
 			</div>
 		{:else if ctrl.sensSummary}
 			<div class="legend" style:background={sensGradient}></div>
@@ -100,9 +91,7 @@
 		{:else if app.sensitivityLoading}
 			<div class="legend" style:background="var(--line)" style:opacity="0.4"></div>
 			<div class="legend-labels mono single">
-				<span class="blink">
-					computing {#if branchMode}&part;value/&part;fmax{:else}&part;value/&part;d{/if}&hellip;
-				</span>
+				<span class="blink">Computing&hellip;</span>
 			</div>
 		{/if}
 	{/if}
@@ -111,7 +100,7 @@
 <style>
 	.chip {
 		font-family: var(--font-mono);
-		font-size: 11px;
+		font-size: 13px;
 		padding: 2px 8px;
 		border: 1px solid var(--accent);
 		color: var(--text-accent);
@@ -129,15 +118,8 @@
 	}
 
 	.sensitivity-copy {
-		font-size: 11.5px;
+		font-size: 13.5px;
 		line-height: 1.35;
 		white-space: nowrap;
-	}
-
-	/* No Esc key to name on a touch device. */
-	@media (hover: none), (pointer: coarse) {
-		.key-hint {
-			display: none;
-		}
 	}
 </style>

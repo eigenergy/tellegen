@@ -10,12 +10,24 @@ does not upload those files to the tellegen backend.
 - The browser uses local file contents to draw the map and run DC solves.
 - The tellegen backend receives ordinary page and API requests for the bundled
   demo cases.
-- There is no analytics product wired to uploaded case contents.
-- The map basemap comes from CARTO (`*.basemaps.cartocdn.com`). Your browser
-  requests those tiles directly, so CARTO receives your IP address, your user
-  agent, and the map area you view. Your case file is never sent, but the map
-  area shows where a locally parsed case sits. Nothing else on the page loads
-  from a third party.
+- The public site (tellegen.dev and www.tellegen.dev) loads
+  [Umami Cloud](https://umami.is/privacy) for aggregate usage analytics: page
+  visits, actions, completion status, counts, calculation timings and page
+  speed. Analytics exclude uploaded filenames and contents, study names and
+  goals, equipment identities, coordinates, electrical values, agent prompts
+  and error text, and page addresses are reduced to fixed public pages. Do
+  Not Track and Global Privacy Control are respected, local and preview
+  addresses load no analytics, and the in-app privacy page has a switch to
+  turn them off in your browser.
+- The map basemap comes from CARTO (`*.basemaps.cartocdn.com`) when the
+  deployment has a CARTO basemap key, with OpenFreeMap
+  (`tiles.openfreemap.org`) as the fallback. Without a key, OpenFreeMap leads
+  and CARTO is the fallback. Your browser requests the style, tiles, fonts
+  and sprites directly from whichever provider is on screen, so that provider
+  receives your IP address, your user agent, and the map area you view. Your
+  case file is never sent, but the map area shows where a locally parsed case
+  sits. Apart from the analytics above, nothing else on the page loads from a
+  third party.
 
 ## Future Opt In Sharing
 

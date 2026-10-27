@@ -264,7 +264,7 @@ pub fn validate_bmopf_json(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validate the terminal-map contract of each transformer subtype before the
+/// Validate the terminal-map rules of each transformer subtype before the
 /// permissive PowerIO reader lowers it to windings.
 ///
 /// A two-terminal `single_phase` winding is an ordered coil, not necessarily a

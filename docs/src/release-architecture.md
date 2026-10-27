@@ -37,7 +37,8 @@ npm ci
 
 Root scripts define the package order:
 
-- `npm run wasm` builds both wasm packages into `packages/engine`;
+- `npm run wasm` builds the one wasm module (features `conic` and `synth`) into
+  `packages/engine`;
 - `npm run build:engine` builds `@tellegen/engine`;
 - `npm run build:webmcp` builds `@tellegen/webmcp`;
 - `npm run build:svelte` builds `@tellegen/svelte`;
@@ -147,7 +148,7 @@ and commit the file it writes. See `.changeset/README.md`.
 
 On a push to `main`, `.github/workflows/release-npm.yml` keeps a "Release
 packages" pull request open. That pull request applies every pending changeset:
-version bumps, changelog entries, the engine `CONTRACT_VERSION`, and the
+version bumps, changelog entries, the engine `ENGINE_VERSION`, and the
 lockfile. Merge it to run the gates and publish. Tags take the form
 `@tellegen/<name>@X.Y.Z`.
 
@@ -166,9 +167,9 @@ that moves both publishes the engine first.
 ### Crate
 
 `tellegen` is the only crate that publishes to crates.io. `tellegen-wasm`,
-`tellegen-server`, `tellegen-cli`, and `benchmarks` carry `publish = false`, and
-the release-plz workspace defaults to `release = false`. A new crate needs an
-explicit package opt-in.
+`tellegen-server`, `tellegen-cli`, `tellegen-py`, and `benchmarks` carry
+`publish = false`, and the release-plz workspace defaults to `release = false`.
+A new crate needs an explicit package opt-in.
 
 On a push to `main`, `.github/workflows/release-crate.yml` keeps a pull request
 open that bumps the version. Merge it to run the gates, continue the existing
@@ -180,7 +181,20 @@ commit. release-plz obtains its short-lived crates.io credential directly from
 OIDC.
 
 The crate update uses the same sealed-patch privilege boundary as package
-versioning. Its fixed `release-plz-main` branch is intentional: with
+versioning. After `release-plz update`, an unprivileged step
+(`.github/scripts/sync_python_version.py`) sets the Python wheel's package
+version and its `Cargo.lock` entry to the engine's, without resolving or
+updating any dependency, and `cargo metadata --locked` checks the result. The
+patch then holds one of three path sets: the engine changelog alone (a version
+already raised by hand on `main`); the engine manifest, its changelog, and the
+lockfile; or those three and `crates/tellegen-py/Cargo.toml`, in which only the
+package version may differ from the checkout. In every case the validator
+requires both manifests and both lock entries to carry the engine's version,
+before the patch is sealed and again after it is applied, before the App token
+is minted. A wheel already on the new version needs no edit, and an update with
+no release stays a no-op. Nothing here publishes a wheel to PyPI.
+
+Its fixed `release-plz-main` branch is intentional: with
 `release_always = false`, release-plz recognizes a release commit by the
 `release-plz-` head prefix. Merge this generated pull request with a normal
 merge commit, not squash, so its release commit remains unambiguous if another
@@ -204,6 +218,11 @@ Each surface keeps its own generated changelog:
 `CHANGELOG.md` is the curated view across all four and the only record for
 releases before the split.
 
+release-plz writes the crate changelog from commit messages. The
+`commit_parsers` in `release-plz.toml` skip merge commits, whose changes
+arrive with the commits they merge, and then restate release-plz's default
+groups, because setting the list replaces the defaults.
+
 ## CI Gates
 
 `.github/workflows/gates-rust.yml` and `.github/workflows/gates-js.yml` define
@@ -213,7 +232,7 @@ to a caller.
 
 The Rust gates are `cargo fmt --check`, clippy with warnings denied on the
 shipping crates, `cargo-deny`, the EPL guard, the workspace tests, the engine's
-`conic` path, `tellegen-wasm` built with `conic`, and `cargo package --locked`
+`conic` path, `tellegen-wasm` built with `conic` and `synth`, and `cargo package --locked`
 for the published crate. The wasm test matters
 because `tellegen-wasm` declares `default = []`, so the workspace run skips the
 tests that assert an untrusted package or case rejects rather than panicking.

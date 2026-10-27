@@ -1,7 +1,7 @@
 import { isolatedEngineHost, type EngineHost } from "./host.js";
-import type { CreateStudy, StudyBundle, StudyRequest, StudyOperationResult } from "./generated/study-contracts.js";
+import type { CreateStudy, StudyBundle, StudyRequest, StudyOperationResult } from "./generated/study-types.js";
 
-export type { CreateStudy, StudyBundle, StudyDocument, StudyRequest, StudyOperation, StudyOperationResult, GoalRevision, DecisionSpace, StudyObjective, StateNode, Comparison } from "./generated/study-contracts.js";
+export type { CreateStudy, StudyBundle, StudyDocument, StudyRequest, StudyOperation, StudyOperationResult, GoalRevision, DecisionSpace, StudyObjective, StateNode, Comparison } from "./generated/study-types.js";
 
 export interface StudyBackend {
   create(request: CreateStudy, signal?: AbortSignal): Promise<StudyBundle>;

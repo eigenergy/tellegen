@@ -1,16 +1,19 @@
 <script lang="ts">
 	import 'maplibre-gl/dist/maplibre-gl.css';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import type { Layer, PickingInfo } from '@deck.gl/core';
-	import type { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+	import type { IconLayer, IconLayerProps, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 	import type { MapLibreOverlay } from '@deck.gl/maplibre';
 	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
 	import type { NetworkBranch, NetworkBus } from './api.js';
 	import {
+		MAP_PALETTE,
 		branchColor,
 		branchWidth,
+		busMarkerRadius,
 		busNeutral,
-		busRadius,
+		busRadiusFor,
+		demandColor,
 		priceColor,
 		scalarDomain,
 		sensColor,
@@ -18,8 +21,23 @@
 		sensitivityDomain,
 		type SensitivityDomain
 	} from './colors.js';
+	import {
+		attachBasemapFallback,
+		isOpenFreeMapStyle,
+		openFreeMapEdits,
+		resolveBasemap,
+		type BasemapFallbackReason,
+		type BasemapStyle,
+		type MapProjection,
+		type MapTheme
+	} from './basemap.js';
 	import { caseDeltas, caseRatings, displayMetaFor, displaySeriesFor } from './display.js';
-	import { CaseState, type DisplayMode, type LocalCase } from './state.svelte.js';
+	import {
+		type CaseState,
+		type CameraSnapshot,
+		type DisplayMode,
+		type LocalCase
+	} from './state.svelte.js';
 	import {
 		attachmentColor,
 		edgeColor,
@@ -32,13 +50,19 @@
 		type TransformerMark,
 		multiDiagramNetwork
 	} from './multiconductor.js';
-	import { transformerIcon } from './transformer-icon.js';
+	import {
+		TRANSFORMER_ICON,
+		transformerIconAtlas,
+		transformerIconMapping
+	} from './transformer-icon.js';
 	import { foldMapBounds } from './map-bounds.js';
 	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
 	import type { RGBA } from './colors.js';
 	import DiagramCanvas from './components/DiagramCanvas.svelte';
+
+	const DEFAULT_CAMERA: CameraSnapshot = { center: [-85, 36], zoom: 4.5, bearing: 0, pitch: 0 };
 
 	let {
 		onbusclick,
@@ -48,7 +72,19 @@
 		onmultibusclick,
 		onmultiedgeclick,
 		onplacecase,
-		onmapclick
+		onmapclick,
+		mapStyle,
+		fallbackMapStyle,
+		theme = 'light',
+		projection = 'mercator',
+		initialCamera = DEFAULT_CAMERA,
+		hideBasemapLabels = true,
+		cartoApiKey,
+		extraLayers = [],
+		attribution = 'compact',
+		onMapReady,
+		onBasemapFallback,
+		onBasemapError
 	}: {
 		onbusclick: (caseId: string, busId: number) => void;
 		onlocalbusclick: (caseId: string, busId: number) => void;
@@ -58,6 +94,46 @@
 		onmultiedgeclick?: (caseId: string, edgeId: string) => void;
 		onplacecase: (lon: number, lat: number) => void;
 		onmapclick: () => void;
+		/** Primary basemap: a style URL or inline style. Default: the CARTO style
+		 * for `theme` when `cartoApiKey` is set, else the OpenFreeMap style.
+		 * Changing it (or `fallbackMapStyle`, `theme`, `hideBasemapLabels`,
+		 * `cartoApiKey`, `attribution`) rebuilds the map in place and keeps the
+		 * camera. */
+		mapStyle?: BasemapStyle;
+		/** Basemap used when the primary cannot be shown; `null` disables the
+		 * switch. Default: whichever of the CARTO and OpenFreeMap styles is not
+		 * the default primary. */
+		fallbackMapStyle?: BasemapStyle | null;
+		/** Picks the default basemaps and the overlay palette (bus outlines,
+		 * hover highlight, unsolved grey). */
+		theme?: MapTheme;
+		/** Re-applied after every `style.load`, so a basemap switch keeps it. */
+		projection?: MapProjection;
+		/** Camera for the first paint; read once per mount. */
+		initialCamera?: CameraSnapshot;
+		/** Hide the basemap's `symbol` layers after every `style.load`. */
+		hideBasemapLabels?: boolean;
+		/** CARTO basemap key (free for non-commercial use from
+		 * carto.com/basemaps/apikey; restrict it to your hosts). With one, the
+		 * CARTO style leads and OpenFreeMap is the fallback; without one, the
+		 * order flips. Trimmed; a blank key counts as none. */
+		cartoApiKey?: string;
+		/** deck.gl layers drawn after tellegen's own, in the same overlay. */
+		extraLayers?: Layer[];
+		/** Attribution control mode. There is no off switch: tile licences
+		 * require the credit on screen. */
+		attribution?: 'compact' | 'full';
+		/** Called once the map and overlay exist, with an optional cleanup. It
+		 * fires again after a context-loss or basemap remount, after the previous
+		 * cleanup ran. */
+		onMapReady?: (map: MapLibreMap, overlay: MapLibreOverlay) => void | (() => void);
+		/** The primary basemap failed and the fallback was requested. The
+		 * reason's `from` and `to` name the providers (`'carto'`,
+		 * `'openfreemap'` or `'custom'`). */
+		onBasemapFallback?: (reason: BasemapFallbackReason) => void;
+		/** No basemap can be shown; the network layers still draw. The reason's
+		 * `from` names the provider that failed last, and `to` is `null`. */
+		onBasemapError?: (reason: BasemapFallbackReason) => void;
 	} = $props();
 
 	const app = getAppState();
@@ -104,7 +180,20 @@
 		else onbranchclick?.(diagramCaseId, branchId);
 	}
 
-	const STYLE = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json';
+	const basemap = $derived(
+		resolveBasemap({ mapStyle, fallbackMapStyle, theme, hideBasemapLabels, cartoApiKey })
+	);
+	// Read as separate values, not one object, so a theme change that resolves
+	// to the same styles does not rebuild the map.
+	const basemapPrimary = $derived(basemap.primary);
+	const basemapFallback = $derived(basemap.fallback);
+	const basemapHideLabels = $derived(basemap.hideLabels);
+	const basemapPrimaryProvider = $derived(basemap.primaryProvider);
+	const basemapFallbackProvider = $derived(basemap.fallbackProvider);
+	const palette = $derived(MAP_PALETTE[theme]);
+	// Set once a map has existed in this component instance: a rebuild (context
+	// loss or basemap change) restores the camera instead of reframing.
+	let hadMap = false;
 	const CUE_MARGIN_PX = 64;
 	const BRANCH_FOCUS_MS = 850;
 	const BRANCH_FOCUS_MAX_ZOOM = 9.5;
@@ -308,6 +397,8 @@
 				if (d.previewDomain.flat) return sensFlatColor(d.previewDomain);
 				return sensColor((d.preview.get(bus.id) ?? 0) / d.previewDomain.scale);
 			}
+			if (d.scalarMode === 'demand')
+				return demandColor(((d.scalar.get(bus.id) ?? 0) - d.scalarLo) / (d.scalarHi - d.scalarLo));
 			const mid = (d.scalarLo + d.scalarHi) / 2;
 			return priceColor(((d.scalar.get(bus.id) ?? mid) - d.scalarLo) / (d.scalarHi - d.scalarLo));
 		};
@@ -508,9 +599,9 @@
 		terminals.forEach((t, k) => {
 			const cy = top + k * STACK_DY;
 			const grounded = bus.grounded.includes(t);
-			const fill = isPhaseTerminal(t) ? col(phaseColor(t)) : col([120, 114, 102, 255]);
+			const fill = isPhaseTerminal(t) ? col(phaseColor(t)) : col(palette.neutral);
 			if (grounded) stack += groundGlyph(sx - 14, cy);
-			stack += `<circle cx="${sx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6" fill="${fill}" stroke="#20242b" stroke-width="1.2"/>`;
+			stack += `<circle class="mc-terminal" cx="${sx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6" fill="${fill}"/>`;
 			stack += `<text class="mc-term" x="${(sx + 11).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${esc(t)}</text>`;
 			// Attachment squares for elements landing on this terminal.
 			const kinds = [...new Set((bus.terminalAttachments[t] ?? []).map((a) => a.kind))];
@@ -623,13 +714,13 @@
 			if (info.layer.id === 'study-branches') {
 				const flow = view?.flows?.find((f) => f.branch === id);
 				return {
-					html: `<b>branch ${id}</b><br>saved state: ${esc(app.studyView.label)}${flow ? `<br>P from ${flow.pf.toFixed(3)} MW, loading ${(100 * flow.loading).toFixed(1)}%` : ''}`
+					html: `<b>Branch ${id}</b><br>Saved state: ${esc(app.studyView.label)}${flow ? `<br>P from ${flow.pf.toFixed(3)} MW<br>Loading ${(100 * flow.loading).toFixed(1)}%` : ''}`
 				};
 			}
 			const p = view?.lmp?.find((v) => v.bus === id),
 				v = view?.vm?.find((v) => v.bus === id);
 			return {
-				html: `<b>bus ${id}</b><br>saved state: ${esc(app.studyView.label)}${p ? `<br>LMP ${p.value.toFixed(4)}` : ''}${v ? `<br>voltage ${v.value.toFixed(5)} pu` : ''}`
+				html: `<b>Bus ${id}</b><br>Saved state: ${esc(app.studyView.label)}${p ? `<br>LMP ${p.value.toFixed(4)}` : ''}${v ? `<br>Voltage ${v.value.toFixed(5)} pu` : ''}`
 			};
 		}
 		if (info.layer?.id.startsWith('local-subs-')) {
@@ -639,25 +730,22 @@
 			const s = object as { number: number; name: string };
 			const named = s.name ? ` ${esc(s.name)}` : '';
 			return {
-				html: `<div class="tt"><b>substation ${Number(s.number)}</b>${named}<br><span style="opacity:0.6">.pwd diagram, approximate position</span></div>`
+				html: `<div class="tt"><b>Substation ${Number(s.number)}</b>${named}<br>Approximate position</div>`
 			};
 		}
 		const layerId = info.layer?.id;
 		if (layerId?.startsWith('multi-edges-')) {
 			const e = object as PlacedMultiEdge;
-			const state = e.kind === 'switch' ? (e.closed ? ' &#8901; closed' : ' &#8901; open') : '';
+			const state = e.kind === 'switch' ? (e.closed ? '<br>Closed' : '<br>Open') : '';
 			return {
-				html: `<div class="tt"><b>${esc(e.kind)} ${esc(e.from)}&#8201;&ndash;&#8201;${esc(e.to)}</b> ${e.n_phases}&#8202;&phi;${state}</div>`
+				html: `<div class="tt"><b>${esc(e.kind)} ${esc(e.from)}&#8201;&ndash;&#8201;${esc(e.to)}</b><br>${e.n_phases}&#8202;&phi;${state}</div>`
 			};
 		}
 		if (layerId?.startsWith('multi-buses-')) {
 			const b = object as PlacedMultiBus;
-			const roles = b.attachmentKinds.length ? b.attachmentKinds.join(', ') : 'none';
+			const roles = b.attachmentKinds.length ? b.attachmentKinds.join(', ') : 'None';
 			return {
-				html: `<div class="tt"><b>bus ${esc(b.id)}</b>
-					${b.terminals.length} terminals${b.grounded.length ? ` &#8901; ${b.grounded.length} grounded` : ''}<br>
-					load ${b.load_kw.toFixed(0)} kW &#8901; gen ${b.gen_kw.toFixed(0)} kW<br>
-					<span style="opacity:0.6">${esc(roles)}</span></div>`
+				html: `<div class="tt"><b>Bus ${esc(b.id)}</b><br>${b.terminals.length} terminals${b.grounded.length ? `, ${b.grounded.length} grounded` : ''}<br>Load ${b.load_kw.toFixed(0)} kW<br>Generation ${b.gen_kw.toFixed(0)} kW<br>Attachments: ${esc(roles)}</div>`
 			};
 		}
 		const c = caseOf(info);
@@ -666,17 +754,15 @@
 			const b = object as NetworkBranch;
 			const flow = d
 				? `${((d.loading.get(b.id) ?? 0) * 100).toFixed(0)}% of ${b.rate_mw.toFixed(0)} MW`
-				: `rate ${b.rate_mw.toFixed(0)} MW`;
+				: `Rating ${b.rate_mw.toFixed(0)} MW`;
 			return {
-				html: `<div class="tt"><b>line ${b.from}&#8201;&ndash;&#8201;${b.to}</b> ${flow}</div>`
+				html: `<div class="tt"><b>Line ${b.from}&#8201;&ndash;&#8201;${b.to}</b><br>${flow}</div>`
 			};
 		}
 		const bus = object as NetworkBus;
 		if (!c) {
 			return {
-				html: `<div class="tt"><b>bus ${bus.id}</b>
-					load ${bus.demand_mw.toFixed(0)} MW &#8901; gen ${bus.gen_mw.toFixed(0)} MW<br>
-					<span style="opacity:0.6">local file</span></div>`
+				html: `<div class="tt"><b>Bus ${bus.id}</b><br>Load ${bus.demand_mw.toFixed(0)} MW<br>Generation ${bus.gen_mw.toFixed(0)} MW</div>`
 			};
 		}
 		const price = d?.prices.get(bus.id);
@@ -686,8 +772,8 @@
 		const delta = caseDeltas(c)[bus.id] ?? 0;
 		const loadRow =
 			delta === 0
-				? `load ${bus.demand_mw.toFixed(0)} MW`
-				: `load ${(bus.demand_mw + delta).toFixed(0)} MW (${delta > 0 ? '+' : ''}${delta.toFixed(0)})`;
+				? `Load ${bus.demand_mw.toFixed(0)} MW`
+				: `Load ${(bus.demand_mw + delta).toFixed(0)} MW (${delta > 0 ? '+' : ''}${delta.toFixed(0)})`;
 		const sensRow =
 			sens === undefined
 				? ''
@@ -696,30 +782,30 @@
 			preview === undefined
 				? ''
 				: `<br>&Delta; LMP ${preview >= 0 ? '+' : ''}${preview.toExponential(2)} objective units/MW`;
-		const localRow =
-			c instanceof CaseState ? '' : '<br><span style="opacity:0.6">local file</span>';
+		// Demand already has its own row below, so the demand colouring shows LMP here alone.
 		const scalarRow =
-			!d || d.scalarMode === 'price'
+			!d || d.scalarMode === 'price' || d.scalarMode === 'demand'
 				? `LMP ${price === undefined ? '&mdash;' : fmt.format(price)} objective units/MW`
 				: `${d.scalarLabel} ${
 						scalar === undefined ? '&mdash;' : displayFmt(d.scalarMode, scalar)
 					} ${d.scalarUnit}<br>LMP ${price === undefined ? '&mdash;' : fmt.format(price)} objective units/MW`;
 		return {
-			html: `<div class="tt"><b>bus ${bus.id}</b>
-				${scalarRow}<br>
-				${loadRow} &#8901; gen ${bus.gen_mw.toFixed(0)} MW${sensRow}${previewRow}${localRow}</div>`
+			html: `<div class="tt"><b>Bus ${bus.id}</b><br>${scalarRow}<br>${loadRow}<br>Generation ${bus.gen_mw.toFixed(0)} MW${sensRow}${previewRow}</div>`
 		};
 	}
 
 	async function loadMapModules() {
-		const [maplibre, deckMap, layers, worker] = await Promise.all([
+		const [maplibre, deckMap, layers, workerUrl] = await Promise.all([
 			import('maplibre-gl'),
 			import('@deck.gl/maplibre'),
 			import('@deck.gl/layers'),
-			import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url')
+			// A package export, not a relative import: its `development`
+			// condition keeps the worker's `?worker&url` import out of the dev
+			// server's pre-bundle (see maplibre-worker.dev.ts).
+			import('@tellegen/svelte/maplibre-worker').then((m) => m.maplibreWorkerUrl())
 		]);
 		// Bundle the worker with its shared imports and configure it before creating a map.
-		maplibre.setWorkerUrl(worker.default);
+		maplibre.setWorkerUrl(workerUrl);
 		return {
 			maplibregl: maplibre,
 			MapLibreOverlay: deckMap.MapLibreOverlay,
@@ -759,6 +845,20 @@
 	}
 
 	function initMap(container: HTMLDivElement) {
+		// Attachments re-run when state they read changes, so reading the
+		// resolved basemap and attribution mode here is what rebuilds the map
+		// when those props change. The camera is read once: it is initial.
+		const spec = {
+			primary: basemapPrimary,
+			fallback: basemapFallback,
+			hideLabels: basemapHideLabels,
+			primaryProvider: basemapPrimaryProvider,
+			fallbackProvider: basemapFallbackProvider
+		};
+		const compactAttribution = attribution === 'compact';
+		const camera = untrack(() => initialCamera);
+		const restoreCamera = hadMap;
+		hadMap = true;
 		let cleanup = () => {};
 		let cancelled = false;
 		void loadMapModules()
@@ -767,11 +867,40 @@
 				layerCtors = { PathLayer, ScatterplotLayer, IconLayer };
 				const m = new maplibregl.Map({
 					container,
-					style: STYLE,
-					center: [-85, 36],
-					zoom: 4.5,
+					style: spec.primary,
+					center: camera.center,
+					zoom: camera.zoom,
+					bearing: camera.bearing,
+					pitch: camera.pitch,
 					canvasContextAttributes: { antialias: true },
-					attributionControl: { compact: true }
+					attributionControl: { compact: compactAttribution }
+				});
+				// `setStyle` (the fallback path included) drops the projection and
+				// shows every layer again, so both are re-applied on each load.
+				const applyStyleExtras = () => {
+					m.setProjection({ type: untrack(() => projection) });
+					const style = m.getStyle();
+					if (spec.hideLabels) {
+						for (const layer of style.layers) {
+							if (layer.type === 'symbol') m.setLayoutProperty(layer.id, 'visibility', 'none');
+						}
+					}
+					// OpenFreeMap renders as the primary or as the fallback; either
+					// way it is tuned towards CARTO's quieter look.
+					if (!isOpenFreeMapStyle(style)) return;
+					const edits = openFreeMapEdits(
+						style,
+						untrack(() => theme)
+					);
+					for (const edit of edits) {
+						if (edit.kind === 'paint') m.setPaintProperty(edit.layer, edit.property, edit.value);
+						else m.setLayerZoomRange(edit.layer, edit.minzoom, edit.maxzoom);
+					}
+				};
+				m.on('style.load', applyStyleExtras);
+				const detachFallback = attachBasemapFallback(m, spec, {
+					onFallback: (reason) => onBasemapFallback?.(reason),
+					onFailure: (reason) => onBasemapError?.(reason)
 				});
 				const o = buildOverlay(MapLibreOverlay);
 				m.addControl(o);
@@ -858,11 +987,33 @@
 
 				map = m;
 				overlay = o;
+				// Assign the teardown before host code runs: if onMapReady throws,
+				// the map and its window and document listeners are still released.
+				let detachReady: void | (() => void);
+				cleanup = () => {
+					clearRebuild();
+					clearStabilize();
+					document.removeEventListener('visibilitychange', onVisible);
+					window.removeEventListener('focus', repaint);
+					window.removeEventListener('pageshow', repaint);
+					m.off('load', syncCues);
+					m.off('move', syncCues);
+					m.off('resize', syncCues);
+					m.off('style.load', applyStyleExtras);
+					detachFallback();
+					detachReady?.();
+					app.settleFrame();
+					m.remove();
+					map = null;
+					overlay = null;
+				};
+				detachReady = onMapReady?.(m, o);
 				// Frame the active grid once the map is ready. The initial frame request
 				// (from the case load) can fire before the async map import finishes and
 				// be lost; re-issuing it here ensures the first view is the active case,
-				// not the default world view. A remount opens at the default view too.
-				if (mapGen > 0 && app.camera) m.jumpTo(app.camera);
+				// not the default world view. A rebuilt map opens at the default view
+				// too, so it restores the camera the last map saved.
+				if (restoreCamera && app.camera) m.jumpTo(app.camera);
 				else if (app.cameraSeq === handledCameraSeq)
 					app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
 				if (mapGen > 0) {
@@ -874,21 +1025,6 @@
 						stabilizeTimer = null;
 					}, 10000);
 				}
-
-				cleanup = () => {
-					clearRebuild();
-					clearStabilize();
-					document.removeEventListener('visibilitychange', onVisible);
-					window.removeEventListener('focus', repaint);
-					window.removeEventListener('pageshow', repaint);
-					m.off('load', syncCues);
-					m.off('move', syncCues);
-					m.off('resize', syncCues);
-					app.settleFrame();
-					m.remove();
-					map = null;
-					overlay = null;
-				};
 			})
 			.catch((e) => {
 				if (!cancelled) app.error = `map failed to load: ${e instanceof Error ? e.message : e}`;
@@ -899,26 +1035,44 @@
 		};
 	}
 
+	// A projection change applies at once when the style is ready. While a
+	// style is still loading (the first paint, or just after a basemap switch)
+	// MapLibre throws, and the `style.load` handler above applies it instead.
+	$effect(() => {
+		const type = projection;
+		const m = map;
+		if (!m) return;
+		try {
+			m.setProjection({ type });
+		} catch {
+			// style not loaded yet; applyStyleExtras runs on style.load
+		}
+	});
+
 	// Sync deck.gl layers with app state. New layer instances diff cheaply;
-	// updateTriggers tell deck.gl when accessor outputs changed.
+	// updateTriggers tell deck.gl when accessor outputs changed. Host layers
+	// (`extraLayers`) draw after tellegen's own at both exits.
 	$effect(() => {
 		if (!overlay || !layerCtors) return;
 		const { PathLayer, ScatterplotLayer, IconLayer } = layerCtors;
 		const layers: Layer[] = [];
+		const marker = busMarkerRadius(app.busSizing);
 		const study = app.studyView;
 		if (study) {
 			const s = study.solution;
 			const mode = app.displayMode;
 			const series =
-				mode === 'angle'
-					? (s?.va ?? [])
-					: mode === 'voltage'
-						? (s?.vm ??
-							(s?.w ?? []).map((v) => ({
-								...v,
-								value: Math.sqrt(Math.max(0, v.value))
-							})))
-						: (s?.lmp ?? []);
+				mode === 'demand'
+					? study.network.buses.map((b) => ({ bus: b.id, value: b.demand_mw }))
+					: mode === 'angle'
+						? (s?.va ?? [])
+						: mode === 'voltage'
+							? (s?.vm ??
+								(s?.w ?? []).map((v) => ({
+									...v,
+									value: Math.sqrt(Math.max(0, v.value))
+								})))
+							: (s?.lmp ?? []);
 			const values = new Map(series.map((v) => [v.bus, v.value]));
 			const domain = scalarDomain(
 				mode,
@@ -948,17 +1102,21 @@
 					id: 'study-buses',
 					data: study.network.buses,
 					getPosition: (b) => [b.lon, b.lat],
-					getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
-					radiusUnits: 'pixels',
+					getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
+					radiusUnits: marker.radiusUnits,
+					radiusMinPixels: marker.radiusMinPixels,
+					radiusMaxPixels: marker.radiusMaxPixels,
 					getFillColor: (b) => {
 						const value = values.get(b.id);
 						return value === undefined
-							? [110, 115, 120, 200]
-							: priceColor((value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12));
+							? palette.grey
+							: (mode === 'demand' ? demandColor : priceColor)(
+									(value - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
+								);
 					},
 					pickable: true,
 					stroked: true,
-					getLineColor: [46, 42, 34, 110],
+					getLineColor: palette.outline,
 					lineWidthUnits: 'pixels',
 					onClick: (info: PickingInfo) => {
 						const bus = info.object as NetworkBus | undefined;
@@ -967,10 +1125,10 @@
 						app.selectedBus = bus.id;
 						return true;
 					},
-					updateTriggers: { getFillColor: [study, mode] }
+					updateTriggers: { getFillColor: [study, mode, theme], getRadius: [app.busSizing] }
 				})
 			);
-			overlay.setProps({ layers });
+			overlay.setProps({ layers: [...layers, ...extraLayers] });
 			return;
 		}
 		for (const c of app.cases) {
@@ -998,7 +1156,7 @@
 					miterLimit: 2,
 					pickable: true,
 					autoHighlight: true,
-					highlightColor: [32, 36, 43, 90],
+					highlightColor: palette.highlight,
 					onClick: (info: PickingInfo) => {
 						const branch = info.object as NetworkBranch | undefined;
 						if (!branch || !onbranchclick) return false;
@@ -1014,20 +1172,22 @@
 					id: `buses-${c.id}`,
 					data: c.network.buses,
 					getPosition: (b) => [b.lon, b.lat],
-					getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
-					radiusUnits: 'pixels',
+					getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
+					radiusUnits: marker.radiusUnits,
+					radiusMinPixels: marker.radiusMinPixels,
+					radiusMaxPixels: marker.radiusMaxPixels,
 					getFillColor: busFill(c.id),
 					stroked: true,
 					billboard: true,
 					getLineColor: (b) =>
 						c.id === app.activeCaseId && b.id === app.selectedBus
-							? [32, 36, 43, 255]
-							: [46, 42, 34, 110],
+							? palette.selected
+							: palette.outline,
 					getLineWidth: (b) => (c.id === app.activeCaseId && b.id === app.selectedBus ? 2.5 : 1),
 					lineWidthUnits: 'pixels',
 					pickable: true,
 					autoHighlight: true,
-					highlightColor: [32, 36, 43, 70],
+					highlightColor: palette.highlightSoft,
 					onClick: (info: PickingInfo) => {
 						const bus = info.object as NetworkBus | undefined;
 						if (!bus) return false;
@@ -1035,8 +1195,9 @@
 						return true;
 					},
 					updateTriggers: {
+						getRadius: [app.busSizing],
 						getFillColor: [display],
-						getLineColor: [app.selectedBus, app.activeCaseId],
+						getLineColor: [app.selectedBus, app.activeCaseId, theme],
 						getLineWidth: [app.selectedBus, app.activeCaseId]
 					}
 				})
@@ -1058,7 +1219,7 @@
 								? [47, 111, 187, 255]
 								: d
 									? branchColor(d.loading.get(b.id) ?? 0, b.status === 1)
-									: [138, 131, 117, 150],
+									: palette.greyLine,
 						getWidth: (b) =>
 							c.id === app.activeLocalId && b.id === app.selectedBranch
 								? Math.max((d ? branchWidth(d.loading.get(b.id) ?? 0) : 1.5) + 2, 4.5)
@@ -1072,7 +1233,7 @@
 						miterLimit: 2,
 						pickable: true,
 						autoHighlight: true,
-						highlightColor: [32, 36, 43, 90],
+						highlightColor: palette.highlight,
 						onClick: (info: PickingInfo) => {
 							const branch = info.object as NetworkBranch | undefined;
 							if (!branch || !onlocalbranchclick) return false;
@@ -1080,7 +1241,7 @@
 							return true;
 						},
 						updateTriggers: {
-							getColor: [display, app.selectedBranch, app.activeLocalId],
+							getColor: [display, app.selectedBranch, app.activeLocalId, theme],
 							getWidth: [display, app.selectedBranch, app.activeLocalId]
 						}
 					}),
@@ -1088,20 +1249,22 @@
 						id: `local-buses-${c.id}`,
 						data: c.view.buses,
 						getPosition: (b) => [b.lon, b.lat],
-						getRadius: (b) => busRadius(Math.max(b.demand_mw, b.gen_mw)),
-						radiusUnits: 'pixels',
-						getFillColor: d ? busFill(c.id) : [110, 115, 120, 200],
+						getRadius: (b) => marker.radius(Math.max(b.demand_mw, b.gen_mw)),
+						radiusUnits: marker.radiusUnits,
+						radiusMinPixels: marker.radiusMinPixels,
+						radiusMaxPixels: marker.radiusMaxPixels,
+						getFillColor: d ? busFill(c.id) : palette.grey,
 						stroked: true,
 						billboard: true,
 						getLineColor: (b) =>
 							c.id === app.activeLocalId && b.id === app.selectedBus
-								? [32, 36, 43, 255]
-								: [46, 42, 34, 110],
+								? palette.selected
+								: palette.outline,
 						getLineWidth: (b) => (c.id === app.activeLocalId && b.id === app.selectedBus ? 2.5 : 1),
 						lineWidthUnits: 'pixels',
 						pickable: true,
 						autoHighlight: true,
-						highlightColor: [32, 36, 43, 70],
+						highlightColor: palette.highlightSoft,
 						onClick: (info: PickingInfo) => {
 							const bus = info.object as NetworkBus | undefined;
 							if (!bus) return false;
@@ -1109,8 +1272,9 @@
 							return true;
 						},
 						updateTriggers: {
+							getRadius: [app.busSizing],
 							getFillColor: [display],
-							getLineColor: [app.selectedBus, app.activeLocalId],
+							getLineColor: [app.selectedBus, app.activeLocalId, theme],
 							getLineWidth: [app.selectedBus, app.activeLocalId]
 						}
 					})
@@ -1130,15 +1294,15 @@
 						getRadius: 5,
 						radiusUnits: 'pixels',
 						radiusMinPixels: 3,
-						getFillColor: [70, 92, 124, 190],
+						getFillColor: palette.substation,
 						stroked: true,
 						billboard: true,
-						getLineColor: [38, 52, 78, 220],
+						getLineColor: palette.substationLine,
 						getLineWidth: 1,
 						lineWidthUnits: 'pixels',
 						pickable: true,
 						autoHighlight: true,
-						highlightColor: [32, 36, 43, 70]
+						highlightColor: palette.highlightSoft
 					})
 				);
 			}
@@ -1167,7 +1331,7 @@
 					miterLimit: 2,
 					pickable: true,
 					autoHighlight: true,
-					highlightColor: [32, 36, 43, 90],
+					highlightColor: palette.highlight,
 					onClick: (info: PickingInfo) => {
 						const e = info.object as PlacedMultiEdge | undefined;
 						if (!e || !onmultiedgeclick) return false;
@@ -1185,7 +1349,11 @@
 				new IconLayer<TransformerMark>({
 					id: `multi-xfmr-${c.id}`,
 					data: transformerMarks(c.view.edges),
-					getIcon: () => transformerIcon(),
+					// deck.gl makes a texture from any image, canvas included, but types
+					// iconAtlas as a URL or a Texture.
+					iconAtlas: transformerIconAtlas() as unknown as IconLayerProps['iconAtlas'],
+					iconMapping: transformerIconMapping,
+					getIcon: () => TRANSFORMER_ICON,
 					getPosition: (m) => m.position,
 					getAngle: (m) => m.angle,
 					billboard: false,
@@ -1202,7 +1370,7 @@
 					id: `multi-buses-${c.id}`,
 					data: c.view.buses,
 					getPosition: (b) => [b.lon, b.lat],
-					getRadius: (b) => busRadius(Math.max(b.load_kw, b.gen_kw)),
+					getRadius: (b) => busRadiusFor(app.busSizing, Math.max(b.load_kw, b.gen_kw)),
 					radiusUnits: 'pixels',
 					radiusMinPixels: 3,
 					getFillColor: (b) => multiBusFill(b),
@@ -1210,15 +1378,15 @@
 					billboard: true,
 					getLineColor: (b) =>
 						selectedId === b.id
-							? [32, 36, 43, 255]
+							? palette.selected
 							: b.has_source
 								? [63, 111, 187, 220]
-								: [46, 42, 34, 120],
+								: palette.outlineStrong,
 					getLineWidth: (b) => (selectedId === b.id ? 2.5 : b.has_source ? 2 : 1),
 					lineWidthUnits: 'pixels',
 					pickable: true,
 					autoHighlight: true,
-					highlightColor: [32, 36, 43, 70],
+					highlightColor: palette.highlightSoft,
 					onClick: (info: PickingInfo) => {
 						const bus = info.object as PlacedMultiBus | undefined;
 						if (!bus) return false;
@@ -1226,13 +1394,14 @@
 						return true;
 					},
 					updateTriggers: {
-						getLineColor: [selectedId],
+						getRadius: [app.busSizing],
+						getLineColor: [selectedId, theme],
 						getLineWidth: [selectedId]
 					}
 				})
 			);
 		}
-		overlay.setProps({ layers });
+		overlay.setProps({ layers: [...layers, ...extraLayers] });
 	});
 
 	$effect(() => {
@@ -1374,14 +1543,14 @@
 {#if app.placingId && map}
 	<button
 		type="button"
-		class="place-at-center mono"
+		class="place-at-center"
 		onclick={() => {
 			if (!map) return;
 			const center = map.getCenter();
 			onplacecase(center.lng, center.lat);
 		}}
 	>
-		place at map center
+		Place at map center
 	</button>
 {/if}
 
@@ -1438,14 +1607,19 @@
 	}
 
 	.multi-detail :global(.mc-leader) {
-		stroke: rgba(32, 36, 43, 0.35);
+		stroke: rgb(var(--ink-rgb) / 0.35);
 		stroke-width: 1;
 		stroke-dasharray: 2 2;
 	}
 
 	.multi-detail :global(.mc-ground line) {
-		stroke: #3a3a3a;
+		stroke: var(--mc-ground-stroke);
 		stroke-width: 1.3;
+	}
+
+	.multi-detail :global(.mc-terminal) {
+		stroke: var(--ink);
+		stroke-width: 1.2;
 	}
 
 	.multi-detail :global(.mc-term) {
@@ -1566,9 +1740,10 @@
 		border: 1px solid var(--accent);
 		border-radius: 3px;
 		color: var(--text-accent);
+		font-family: inherit;
 		font-size: 11px;
 		cursor: pointer;
-		box-shadow: 0 4px 18px rgba(32, 36, 43, 0.1);
+		box-shadow: var(--elev-cue);
 	}
 
 	@media (max-width: 420px) {
@@ -1607,7 +1782,7 @@
 		min-width: 0;
 		max-width: calc(100vw - 96px);
 		box-sizing: border-box;
-		background: rgba(252, 251, 247, 0.75);
+		background: rgb(var(--paper-rgb) / 0.75);
 		font-family: var(--font-mono);
 		font-size: 10px;
 		white-space: nowrap;
@@ -1643,12 +1818,13 @@
 		background: var(--panel) !important;
 		border: 1px solid var(--line);
 		color: var(--ink) !important;
-		font-family: var(--font-mono);
-		font-size: 11px;
+		font-family: var(--font-display);
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
 		line-height: 1.5;
 		padding: 8px 10px !important;
 		border-radius: 2px;
-		box-shadow: 0 2px 10px rgba(32, 36, 43, 0.12);
+		box-shadow: var(--elev-tooltip);
 	}
 
 	@media (max-width: 760px) {

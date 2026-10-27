@@ -24,8 +24,10 @@ Live demo: [tellegen.dev](https://tellegen.dev). Documentation:
 
 ```sh
 npm install @tellegen/engine   # case parsing and wasm solves, framework agnostic
-npm install @tellegen/svelte   # map, panels, and solve card as Svelte components
-npm install @tellegen/webmcp   # WebMCP tools and host adapter contract
+npm install @tellegen/webmcp   # WebMCP tools and host adapter
+# map, panels, and solve card as Svelte components, with the map libraries
+# they take as peer dependencies
+npm install @tellegen/svelte maplibre-gl @deck.gl/core @deck.gl/layers @deck.gl/maplibre
 ```
 
 `@tellegen/engine` exports case parsing, browser solving, the `Study` preview
@@ -153,13 +155,14 @@ stages the complete cases into `data/`; the server serves whatever is staged.
 
 ## Repository layout
 
-- `crates/`: Rust workspace — `tellegen` (engine), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
+- `crates/`: Rust workspace — `tellegen` (engine), `tellegen-synth` (geographic synthetic grids), `tellegen-wasm` (WebAssembly), `tellegen-server` (HTTP), `tellegen-cli`, `benchmarks`
 - `packages/engine/`: `@tellegen/engine` browser package
 - `packages/svelte/`: `@tellegen/svelte` component package
 - `packages/webmcp/`: reusable WebMCP tools, validation, and registration
 - `apps/web/`: the hosted demo, a SvelteKit consumer of the Svelte package
 - `examples/`: minimal Vite and Svelte integrations of each package
 - `docs/src/`: mdBook source; `scripts/build-docs.sh` builds it
+- `docs/evidence/`: checked-in measurement records (generator sweeps, WebMCP challenge runs, studies, multiconductor references) and the scripts that reproduce them
 
 The [HTTP API](https://eigenergy.github.io/tellegen/http-api.html),
 [deployment](https://eigenergy.github.io/tellegen/deployment.html), and
@@ -168,26 +171,40 @@ server surface, hosting, and where the project is going.
 
 ## Citing
 
-tellegen is described in a paper at the 1st ACM Conference on Digital
-Transformation (DXConf '26, Ann Arbor, October 2026). Please cite it, and the
+tellegen is described in *Interactive Power Flow in the Browser*, presented at
+the Inaugural ACM Conference on Digital Transformation (ACM DXConf 2026, Ann
+Arbor, October 2026; [doi:10.1145/3847238.3849038](https://doi.org/10.1145/3847238.3849038),
+[arXiv:2610.01922](https://arxiv.org/abs/2610.01922)). Please cite it, and the
 software release you used; GitHub's "Cite this repository" button reads
 [`CITATION.cff`](CITATION.cff).
 
+> Samuel Talkington, Frederik Geth, Qian Zhang, Le Xie, and Skyler Liu. 2026.
+> Interactive Power Flow in the Browser. In *The Inaugural ACM Conference on
+> Digital Transformation (ACM DXConf 2026), October 29–30, 2026, Ann Arbor, MI,
+> USA.* ACM, New York, NY, USA, 9 pages. https://doi.org/10.1145/3847238.3849038
+
 ```bibtex
 @inproceedings{talkington2026tellegen,
-  title     = {Interactive Optimal Power Flow Compiled to the Browser},
+  title     = {Interactive Power Flow in the Browser},
   author    = {Talkington, Samuel and Geth, Frederik and Zhang, Qian and Xie, Le and Liu, Skyler},
-  booktitle = {DXConf '26: Proceedings of the 1st ACM Conference on Digital Transformation},
+  booktitle = {The Inaugural ACM Conference on Digital Transformation (ACM DXConf 2026)},
   year      = {2026},
-  address   = {Ann Arbor, MI, USA},
-  publisher = {Association for Computing Machinery}
+  month     = oct,
+  location  = {Ann Arbor, MI, USA},
+  publisher = {Association for Computing Machinery},
+  address   = {New York, NY, USA},
+  numpages  = {9},
+  isbn      = {979-8-4007-3028-3},
+  doi       = {10.1145/3847238.3849038},
+  eprint    = {2610.01922},
+  archivePrefix = {arXiv}
 }
 
 @software{tellegen2026software,
   title     = {tellegen: interactive power flow and optimal power flow in the browser},
   author    = {Talkington, Samuel and Geth, Frederik and Zhang, Qian and Xie, Le and Liu, Skyler},
   year      = {2026},
-  version   = {0.3.0},
+  version   = {0.4.0},
   url       = {https://github.com/eigenergy/tellegen},
   license   = {MIT}
 }

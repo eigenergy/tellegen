@@ -1,4 +1,4 @@
-import type { SolveResponse } from "./generated/contracts.js";
+import type { SolveResponse } from "./generated/api-types.js";
 
 export type AcOpfWorkerRequest =
   | { type: "probe"; wasmUrl: string }

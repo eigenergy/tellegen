@@ -25,7 +25,7 @@ fmt-check:
 
 # CI gate: clippy with warnings denied on the shipping crates.
 clippy:
-    cargo clippy -p tellegen -p tellegen-wasm -p tellegen-server -p tellegen-cli --all-targets -- -D warnings
+    cargo clippy -p tellegen -p tellegen-synth -p tellegen-wasm -p tellegen-server -p tellegen-cli --all-targets -- -D warnings
     cargo clippy -p tellegen-py --no-deps --features extension-module -- -D warnings
 
 # CI gate: licenses, advisories, bans, sources.
@@ -34,7 +34,7 @@ deny:
 
 # CI gate: test the wasm adapter as it ships (`default = []`, so `test` skips it).
 wasm-adapter-test:
-    cargo test -p tellegen-wasm --features conic
+    cargo test -p tellegen-wasm --features conic,synth
 
 # CI gate: the EPL-2.0 pounce backend must never enter a shipped (wasm/server/cli) build.
 epl-guard:
@@ -154,6 +154,18 @@ web-smoke:
 # CI gate: browser coverage for the hosted demo local file flow.
 web-browser:
     npm run test:browser
+
+# Build wasm, the engine and the Svelte package, then `npm pack` both into
+# `dest` for a downstream app to install from tarballs (`npm install
+# ./dest/*.tgz`). Tarballs, not `npm link`: a linked Svelte 5 package resolves
+# a second copy of svelte and deck.gl in the consumer and the map stays blank.
+pack-local dest:
+    npm run wasm
+    npm run build:engine
+    npm run build:svelte
+    mkdir -p {{dest}}
+    npm --workspace @tellegen/engine pack --pack-destination {{dest}}
+    npm --workspace @tellegen/svelte pack --pack-destination {{dest}}
 
 # ---- release ----
 

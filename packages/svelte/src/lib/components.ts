@@ -1,5 +1,8 @@
 export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as AppFooter } from './components/AppFooter.svelte';
+export { default as NotificationCenter } from './components/NotificationCenter.svelte';
+export { default as PanelHost } from './components/PanelHost.svelte';
+export { default as ShellEnvironment } from './components/ShellEnvironment.svelte';
 export { default as AppHeader } from './components/AppHeader.svelte';
 export { default as BusPicker } from './components/BusPicker.svelte';
 export { default as ControlPanel } from './components/ControlPanel.svelte';

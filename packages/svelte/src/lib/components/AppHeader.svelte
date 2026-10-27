@@ -26,14 +26,14 @@
 <header bind:this={headerEl}>
 	<div class="brand">
 		<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-			<path d="M4 18 L12 6 L20 18" stroke="#b25e00" stroke-width="1.6" fill="none" />
-			<circle cx="4" cy="18" r="2.4" fill="#b25e00" />
-			<circle cx="12" cy="6" r="2.4" fill="#20242b" />
-			<circle cx="20" cy="18" r="2.4" fill="#b25e00" />
+			<path class="brand-accent-stroke" d="M4 18 L12 6 L20 18" stroke-width="1.6" fill="none" />
+			<circle class="brand-accent" cx="4" cy="18" r="2.4" />
+			<circle class="brand-ink" cx="12" cy="6" r="2.4" />
+			<circle class="brand-accent" cx="20" cy="18" r="2.4" />
 		</svg>
 		<h1>tellegen</h1>
 	</div>
-	<nav class="cases" aria-label="networks">
+	<nav class="cases" aria-label="Networks">
 		{#each app.cases as c (c.id)}
 			{@const [cname, cregion] = splitName(c.name)}
 			<div class="case-chip" class:active={app.activeCaseId === c.id}>
@@ -44,14 +44,14 @@
 					onclick={() => ctrl.activateCase(c.id)}
 				>
 					<span class="cname"
-						>{cname}{#if c.perturbed}<i class="mark" title="demand perturbed"></i>{/if}</span
+						>{cname}{#if c.perturbed}<i class="mark" title="Demand changed"></i>{/if}</span
 					>
 					<span class="cregion mono">{c.unavailableReason ? 'Unavailable' : cregion}</span>
 				</button>
 				<button
 					class="case-remove mono"
-					aria-label="remove {c.name} from this browser"
-					title="remove {c.name} from this browser"
+					aria-label="Remove {c.name}"
+					title="Remove {c.name}"
 					onclick={(e) => ctrl.removeBackendCase(c, e)}>&#10005;</button
 				>
 			</div>
@@ -60,12 +60,12 @@
 			<div class="case-chip local" class:active={app.activeLocalId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateLocal(c)}>
 					<span class="cname">{c.label}</span>
-					<span class="cregion mono">local</span>
+					<span class="cregion mono">Local</span>
 				</button>
 				<button
 					class="case-remove mono"
-					aria-label="remove {c.label}"
-					title="remove {c.label}"
+					aria-label="Remove {c.label}"
+					title="Remove {c.label}"
 					onclick={(e) => ctrl.removeLocalCase(c, e)}>&#10005;</button
 				>
 			</div>
@@ -74,33 +74,29 @@
 			<div class="case-chip local" class:active={app.activeMultiId === c.id}>
 				<button class="case-activate" onclick={() => ctrl.activateMulti(c)}>
 					<span class="cname">{c.label}</span>
-					<span class="cregion mono">multiconductor</span>
+					<span class="cregion mono">Multiconductor</span>
 				</button>
 				<button
 					class="case-remove mono"
-					aria-label="remove {c.label}"
-					title="remove {c.label}"
+					aria-label="Remove {c.label}"
+					title="Remove {c.label}"
 					onclick={(e) => ctrl.removeMultiCase(c, e)}>&#10005;</button
 				>
 			</div>
 		{/each}
-		<button
-			class="ghost filedrop-ui"
-			title="parsed in your browser; the file never uploads"
-			onclick={() => fileInput?.click()}
-		>
+		<button class="ghost filedrop-ui" onclick={() => fileInput?.click()}>
 			<span class="cname"
 				><span class="arrow">&#8675;</span>{ctrl.showFileDropUi
-					? 'drop a case file'
-					: 'open a case file'}</span
+					? 'Drop a case file'
+					: 'Open a case file'}</span
 			>
-			<span class="cregion mono">case + geo files</span>
+			<span class="cregion mono">Case or geo files</span>
 		</button>
 	</nav>
 	<span class="kicker mono">
 		<a href={config.orgHref} target="_blank" rel="noreferrer">{config.orgLabel}</a>
 		<i class="sep"></i>
-		<a href={config.docsHref} target="_blank" rel="noreferrer">docs</a>
+		<a href={config.docsHref} target="_blank" rel="noreferrer">Docs</a>
 	</span>
 	<input
 		type="file"
@@ -130,7 +126,7 @@
 		justify-content: space-between;
 		gap: 16px;
 		padding: 10px 20px;
-		background: linear-gradient(rgba(236, 233, 226, 0.95), rgba(236, 233, 226, 0));
+		background: linear-gradient(rgb(var(--bg-rgb) / 0.95), rgb(var(--bg-rgb) / 0));
 		animation: drop 0.5s ease-out both;
 	}
 
@@ -139,6 +135,19 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
+	}
+
+	/* The brand mark follows the theme: accent legs, ink apex. */
+	.brand-accent {
+		fill: var(--accent);
+	}
+
+	.brand-accent-stroke {
+		stroke: var(--accent);
+	}
+
+	.brand-ink {
+		fill: var(--ink);
 	}
 
 	h1 {
@@ -305,8 +314,8 @@
 
 	/* Ghost chip: standing invitation to drop or pick a case file. */
 	.cases > button.ghost {
-		background: rgba(252, 251, 247, 0.36);
-		border: 1px dashed rgba(178, 94, 0, 0.55);
+		background: rgb(var(--paper-rgb) / 0.36);
+		border: 1px dashed rgb(var(--accent-rgb) / 0.55);
 		color: var(--text-secondary);
 		box-shadow: inset 0 0 0 1px rgba(212, 116, 34, 0.08);
 	}
@@ -351,7 +360,7 @@
 			flex-wrap: wrap;
 			gap: 8px;
 			padding: 8px 10px 12px;
-			background: linear-gradient(rgba(236, 233, 226, 0.97), rgba(236, 233, 226, 0.72));
+			background: linear-gradient(rgb(var(--bg-rgb) / 0.97), rgb(var(--bg-rgb) / 0.72));
 		}
 
 		.brand {

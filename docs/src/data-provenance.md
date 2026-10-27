@@ -62,3 +62,14 @@ report RMS and maximum errors at the source breakpoints.
 
 All four configured cases must load and solve for the deployment health check
 to pass. Unavailable cases remain in the catalogue with an explanation.
+
+## Synthetic generation inputs
+
+Generated grids read the Natural Earth populated places table shipped with
+`tellegen-synth`: 7342 places with name, position, `pop_max` and country. Bus
+anchors come from the most populous places in a region, and peak demand from
+their population. Generated buses are labelled with coordinate provenance
+`synthetic`. OpenStreetMap mode reads the Overpass answer the caller fetched
+and labels its buses `source`. Its electrical parameters and loads are
+modelled, so its buses and lines are mapped, not surveyed. See
+[Synthetic Grid Generation](synthetic-generation.md).

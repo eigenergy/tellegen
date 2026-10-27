@@ -1,4 +1,4 @@
-import type { SolveResponse } from "./generated/contracts.js";
+import type { SolveResponse } from "./generated/api-types.js";
 import type {
   AcOpfWorkerRequest,
   AcOpfWorkerResponse,

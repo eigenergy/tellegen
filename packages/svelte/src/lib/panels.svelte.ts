@@ -47,6 +47,7 @@ export class PanelLayout {
 	bottom = $state(88);
 	storageError = $state<string | null>(null);
 	#storage: Storage | undefined;
+	#openers = new Map<string, HTMLElement | SVGElement>();
 	#gesture: {
 		panel: PanelRegistration;
 		kind: 'move' | 'resize';
@@ -106,6 +107,7 @@ export class PanelLayout {
 			return;
 		this.panels = this.panels.map((p) => (p.id === id ? { ...p, open, title, width } : p));
 		if (open && !previous.open) {
+			this.#rememberOpener(id);
 			this.activate(previous);
 			if (this.compact) this.drawer = id;
 		}
@@ -134,15 +136,31 @@ export class PanelLayout {
 		if (this.compact) {
 			this.drawer = this.drawer === panel.id ? null : panel.id;
 			if (this.drawer === panel.id) {
+				this.#rememberOpener(panel.id);
 				this.activate(panel);
 				panel.setOpen(true);
 				panel.onopen?.();
 			}
 		} else {
-			if (!panel.open) this.activate(panel);
+			if (!panel.open) {
+				this.#rememberOpener(panel.id);
+				this.activate(panel);
+			}
 			panel.setOpen(!panel.open);
 			if (!panel.open) panel.onopen?.();
 		}
+	}
+	/** The control that had focus when the panel last opened, while it is still
+	 * in the document: where focus returns when the panel closes. */
+	opener(panel: PanelRegistration): HTMLElement | SVGElement | null {
+		const element = this.#openers.get(panel.id);
+		return element?.isConnected ? element : null;
+	}
+	#rememberOpener(id: string) {
+		const active = typeof document === 'undefined' ? null : document.activeElement;
+		if ((active instanceof HTMLElement || active instanceof SVGElement) && active !== document.body)
+			this.#openers.set(id, active);
+		else this.#openers.delete(id);
 	}
 	close(panel: PanelRegistration) {
 		panel.setOpen(false);
@@ -247,6 +265,19 @@ export class PanelLayout {
 			this.storageError = 'Panel layout could not be saved. Changes last for this visit.';
 		}
 	}
+}
+
+/** Focus the first candidate that takes focus. A detached or hidden element
+ * does not, so the next one gets its turn. */
+export function focusFirst(
+	candidates: Array<HTMLElement | SVGElement | null | undefined>
+): HTMLElement | SVGElement | null {
+	for (const candidate of candidates) {
+		if (!candidate?.isConnected) continue;
+		candidate.focus();
+		if (candidate.ownerDocument.activeElement === candidate) return candidate;
+	}
+	return null;
 }
 
 export const setPanelLayout = (layout: PanelLayout): PanelLayout => setContext(KEY, layout);

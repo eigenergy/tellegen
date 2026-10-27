@@ -27,19 +27,20 @@ mod acopf;
 #[cfg(test)]
 mod cases;
 mod dc;
+pub(crate) mod islands;
 
 #[cfg(feature = "sensitivity")]
 pub(crate) use ac::AcNetwork;
 #[cfg(feature = "acopf")]
 pub(crate) use acopf::{solve_ac_opf_cancellable, AcOpfSolved};
-pub(crate) use dc::DcNetwork;
+pub(crate) use dc::{DcNetwork, LinearRow};
 
 #[cfg(all(test, feature = "conic"))]
 pub(crate) use cases::parse_case3_ac;
-#[cfg(all(test, feature = "sensitivity"))]
-pub(crate) use cases::parse_case9_ac;
 #[cfg(test)]
-pub(crate) use cases::{parse_case3, CASE3};
+pub(crate) use cases::{parse_case3, CASE3, CASE3_TWIN, CASE_ISLANDS};
+#[cfg(all(test, feature = "sensitivity"))]
+pub(crate) use cases::{parse_case9_ac, CASE9};
 
 /// One convex piecewise linear objective term as the line equations used by
 /// the solver epigraph. PowerIO has already validated the breakpoint order and
@@ -269,11 +270,11 @@ pub(super) fn validate_unique_uids<'a>(
 /// their topology or injections. Inactive/open records remain lossless metadata.
 /// Guard the already-normalized fast path. `is_normalized()` reads a self-declared
 /// `source_format` marker that any hand-written model JSON can set, but the element
-/// filtering the marker claims lives in the normalization pass this path skips, and
-/// `IndexedNetwork` sums every load and shunt with no in-service filter. Taking the
-/// marker at face value would serve an out-of-service load and price it into every
-/// LMP while reporting `optimal`. Fail closed instead: a network that really is
-/// normalized carries none of these.
+/// filtering the marker claims lives in the normalization pass this path skips (and
+/// before PowerIO 0.11.4 `IndexedNetwork` summed every load and shunt with no
+/// in-service filter). Taking the marker at face value would serve an out-of-service
+/// load and price it into every LMP while reporting `optimal`. Fail closed instead: a
+/// network that really is normalized carries none of these.
 fn reject_unfiltered_normalized_elements(network: &BalancedNetwork) -> Result<(), String> {
     let idle_loads = network
         .loads()
@@ -548,6 +549,32 @@ pub(super) fn branch_ids_for_view_rows(
                     provenance.len()
                 )
             })
+        })
+        .collect()
+}
+
+#[cfg(any(feature = "conic", feature = "acopf"))]
+pub(super) fn stable_source_ids(
+    source_rows: &[Option<usize>],
+    source_len: usize,
+    family: &str,
+) -> Result<Vec<usize>, String> {
+    let mut next_synthetic = source_len
+        .checked_add(1)
+        .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
+    source_rows
+        .iter()
+        .map(|row| match row {
+            Some(row) => row
+                .checked_add(1)
+                .ok_or_else(|| format!("{family} id space exhausted")),
+            None => {
+                let id = next_synthetic;
+                next_synthetic = next_synthetic
+                    .checked_add(1)
+                    .ok_or_else(|| format!("{family} synthetic id space exhausted"))?;
+                Ok(id)
+            }
         })
         .collect()
 }

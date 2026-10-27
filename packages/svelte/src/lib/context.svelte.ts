@@ -1,4 +1,5 @@
 import { getContext, setContext } from 'svelte';
+import { normalizeCartoApiKey } from './basemap.js';
 import type { AppState } from './state.svelte.js';
 import type { Controller } from './controller.svelte.js';
 
@@ -7,7 +8,8 @@ const CTRL = Symbol('tellegen.controller');
 const CONFIG = Symbol('tellegen.config');
 
 export interface TellegenUiConfig {
-	apiBase: string;
+	/** Backend base path; `null` for a host with no backend at all. */
+	apiBase: string | null;
 	/** URL of the separately built, development-only AC OPF WASI asset. */
 	acOpfWasmUrl: string | null;
 	loadDefaultCases: boolean;
@@ -15,6 +17,14 @@ export interface TellegenUiConfig {
 	orgHref: string;
 	orgLabel: string;
 	showFooter: boolean;
+	/** `'dark'` sets `data-theme="dark"` on the document root while the
+	 * provider is mounted, which switches the `styles.css` tokens. The
+	 * provider keeps it in step with its prop. */
+	theme: 'light' | 'dark';
+	/** CARTO basemap key for the default shell's map, trimmed; empty for
+	 * none. See `TellegenMap`'s `cartoApiKey`. The provider keeps it in step
+	 * with its prop. */
+	cartoApiKey: string;
 }
 
 export type TellegenUiOptions = Partial<TellegenUiConfig>;
@@ -26,20 +36,31 @@ export const DEFAULT_TELLEGEN_UI_CONFIG: TellegenUiConfig = {
 	docsHref: 'https://eigenergy.github.io/tellegen/',
 	orgHref: 'https://github.com/eigenergy',
 	orgLabel: 'eigenergy group @ michigan ece',
-	showFooter: true
+	showFooter: true,
+	theme: 'light',
+	cartoApiKey: ''
 };
 
 export function resolveTellegenUiConfig(options: TellegenUiOptions = {}): TellegenUiConfig {
 	return {
-		apiBase: options.apiBase ?? DEFAULT_TELLEGEN_UI_CONFIG.apiBase,
+		apiBase: options.apiBase === undefined ? DEFAULT_TELLEGEN_UI_CONFIG.apiBase : options.apiBase,
+		loadDefaultCases:
+			options.loadDefaultCases ?? DEFAULT_TELLEGEN_UI_CONFIG.loadDefaultCases,
 		acOpfWasmUrl: options.acOpfWasmUrl ?? DEFAULT_TELLEGEN_UI_CONFIG.acOpfWasmUrl,
-		loadDefaultCases: options.loadDefaultCases ?? DEFAULT_TELLEGEN_UI_CONFIG.loadDefaultCases,
 		docsHref: options.docsHref ?? DEFAULT_TELLEGEN_UI_CONFIG.docsHref,
 		orgHref: options.orgHref ?? DEFAULT_TELLEGEN_UI_CONFIG.orgHref,
 		orgLabel: options.orgLabel ?? DEFAULT_TELLEGEN_UI_CONFIG.orgLabel,
-		showFooter: options.showFooter ?? DEFAULT_TELLEGEN_UI_CONFIG.showFooter
+		showFooter: options.showFooter ?? DEFAULT_TELLEGEN_UI_CONFIG.showFooter,
+		theme: resolveTheme(options.theme),
+		cartoApiKey: resolveCartoApiKey(options.cartoApiKey)
 	};
 }
+
+export const resolveTheme = (theme: TellegenUiOptions['theme']): TellegenUiConfig['theme'] =>
+	theme ?? DEFAULT_TELLEGEN_UI_CONFIG.theme;
+
+export const resolveCartoApiKey = (key: TellegenUiOptions['cartoApiKey']): string =>
+	normalizeCartoApiKey(key) ?? DEFAULT_TELLEGEN_UI_CONFIG.cartoApiKey;
 
 export const setAppState = (a: AppState): AppState => setContext(APP, a);
 export const setController = (c: Controller): Controller => setContext(CTRL, c);
