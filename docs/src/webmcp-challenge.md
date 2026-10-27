@@ -49,8 +49,10 @@ validates identities, hashes and references, and restores no approvals.
 8. Export, reload and resume the Study with another agent.
 
 A small AC power-flow example instead minimizes squared voltage-target error
-through demand transfers. This uses the existing AC power-flow solver. Nonlinear
-AC OPF and multiconductor solving are outside Tellegen's supported calculations.
+through demand transfers. This uses the existing AC power-flow solver.
+Nonlinear AC OPF and multiconductor solving are outside the shipping WebMCP
+calculations; AC OPF exists only behind a non-default native development
+feature.
 
 ## Reproducible evidence
 

@@ -1,5 +1,7 @@
 // Generated from Rust by study_schema and generate-study-types.mjs.
-// Source SHA256: 8367802fb3705b500789689bcdae441abd9ee1e2e5acb5ba353ee52298e97807
+// Source SHA256: 6d25a972d621aec9483c3d5c94a3294e4baffe1ed4b76b2338225fb91d65897e
+
+export type AcOpfResiduals = { "active_balance_mw": number; "active_generation_bounds_mw": number; "angle_limits_rad": number; "objective_relative_error": number; "piecewise_epigraph_cost": number; "reactive_balance_mvar": number; "reactive_generation_bounds_mvar": number; "reference_angles_rad": number; "thermal_limits_mva": number; "voltage_bounds_pu": number; };
 
 export type ArtifactKind = "powerio_ir" | "geo_layer" | "evidence";
 
@@ -69,7 +71,7 @@ export type GoalRevision = { "anchor_state": string; "decisions": DecisionSpace;
 
 export type Intervention = "branch_rating" | "active_demand";
 
-export type Iterations = (Array<SolveIteration>) | ({ "count": number; "residual": number; });
+export type Iterations = (Array<SolveIteration>) | ({ "count": number; "residual": number; }) | ({ "model_fingerprint": string; "nlp_iterations": number; "primal_residual": number; "residuals"?: (AcOpfResiduals) | (null); "solver_constraint_violation": number; "solver_kkt_error": number; "solver_status": string; });
 
 export type ModelDetails = { "approximations": Array<CostApproximation>; "method": CostPreparation; "model": string; "quantity": string; "source": string; "units": string; };
 
