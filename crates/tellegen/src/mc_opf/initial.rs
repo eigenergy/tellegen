@@ -417,19 +417,27 @@ pub(super) fn apply(
             }
         }
     }
+    refresh(model, &mut x)?;
+    model.problem.x0 = x;
+    Ok(diagnostics)
+}
+
+/// Rebuild dependent coordinates after a session carries independent primals
+/// into a newly compiled problem. Zero reductions always take precedence.
+pub(super) fn refresh(model: &Model, x: &mut [f64]) -> Result<(), McOpfError> {
     for &id in &model.zero_columns {
         x[id] = 0.0;
     }
     for lift in &model.start_lifts {
         match lift {
             StartLift::Power(ids, u, i) => {
-                let p = value(u, &x) * value(i, &x).conj();
+                let p = value(u, x) * value(i, x).conj();
                 x[ids[0]] = p.re;
                 x[ids[1]] = p.im;
             }
-            StartLift::Magnitude(id, u) => x[*id] = value(u, &x).norm(),
+            StartLift::Magnitude(id, u) => x[*id] = value(u, x).norm(),
             StartLift::LogVoltage(id, u, nominal) => {
-                let ratio = value(u, &x).norm() / nominal;
+                let ratio = value(u, x).norm() / nominal;
                 if ratio <= 0.0 {
                     return Err(invalid(
                         &model.problem.var_names[*id],
@@ -439,8 +447,8 @@ pub(super) fn apply(
                 x[*id] = ratio.ln();
             }
             StartLift::Voltage(to, from) => {
-                let v = value(from, &x);
-                set(to, v, &mut x);
+                let v = value(from, x);
+                set(to, v, x);
             }
         }
     }
@@ -453,8 +461,7 @@ pub(super) fn apply(
             "projected starting value is not finite",
         ));
     }
-    model.problem.x0 = x;
-    Ok(diagnostics)
+    Ok(())
 }
 
 fn complex_row(coefficients: &[C], rhs: C, rows: &mut Vec<Vec<f64>>, values: &mut Vec<f64>) {
