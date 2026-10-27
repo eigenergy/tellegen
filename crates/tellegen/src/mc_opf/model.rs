@@ -155,6 +155,91 @@ struct Builder {
     hi: Vec<f64>,
 }
 impl Builder {
+    /// Substitute variables proved zero by homogeneous singleton equalities.
+    /// Keep one defining row per variable, so primal columns and physical result
+    /// maps stay unchanged. In particular, zero branch ratings propagate through
+    /// KCL and power links instead of leaving duplicate zero-flow equalities.
+    fn propagate_zeros(&mut self) {
+        use pounce_nl::nl_quadratic::recognize_expr;
+        let mut zero = std::collections::BTreeSet::new();
+        loop {
+            let previous = zero.len();
+            for row in 0..self.rows.len() {
+                let Some(q) = recognize_expr(&self.rows[row]).filter(|q| !q.lost_terms()) else {
+                    continue;
+                };
+                if q.linear().keys().any(|i| zero.contains(i))
+                    || q.quadratic()
+                        .keys()
+                        .any(|(i, j)| zero.contains(i) || zero.contains(j))
+                {
+                    self.rows[row] = sum(std::iter::once(Expr::Const(q.constant()))
+                        .chain(
+                            q.linear()
+                                .iter()
+                                .filter(|(i, _)| !zero.contains(*i))
+                                .map(|(&i, &c)| scale(c, Expr::Var(i))),
+                        )
+                        .chain(
+                            q.quadratic()
+                                .iter()
+                                .filter(|((i, j), _)| !zero.contains(i) && !zero.contains(j))
+                                .map(|(&(i, j), &c)| {
+                                    scale(c, bin(BinOp::Mul, Expr::Var(i), Expr::Var(j)))
+                                }),
+                        )
+                        .collect());
+                }
+                let Some(q) = recognize_expr(&self.rows[row]).filter(|q| !q.lost_terms()) else {
+                    continue;
+                };
+                if self.lo[row] == 0.0
+                    && self.hi[row] == 0.0
+                    && q.constant() == 0.0
+                    && q.quadratic().is_empty()
+                    && q.linear().len() == 1
+                {
+                    let (&i, &coefficient) = q.linear().first_key_value().unwrap();
+                    if coefficient.is_finite() && coefficient != 0.0 {
+                        zero.insert(i);
+                        self.rows[row] = Expr::Const(0.0);
+                    }
+                }
+            }
+            if zero.len() == previous {
+                break;
+            }
+        }
+        // Drop only identically zero rows whose original bounds include zero.
+        // Inconsistent rows remain for the solver and independent acceptance gate.
+        let rows = std::mem::take(&mut self.rows);
+        let names = std::mem::take(&mut self.row_names);
+        let lower = std::mem::take(&mut self.lo);
+        let upper = std::mem::take(&mut self.hi);
+        for (((row, name), lo), hi) in rows.into_iter().zip(names).zip(lower).zip(upper) {
+            if lo <= 0.0
+                && hi >= 0.0
+                && recognize_expr(&row).is_some_and(|q| {
+                    !q.lost_terms()
+                        && q.constant() == 0.0
+                        && q.linear().is_empty()
+                        && q.quadratic().is_empty()
+                })
+            {
+                continue;
+            }
+            self.row(name, row, lo, hi);
+        }
+        for i in zero {
+            self.start[i] = 0.0;
+            self.row(
+                format!("{}:fixed_zero", self.names[i]),
+                Expr::Var(i),
+                0.0,
+                0.0,
+            );
+        }
+    }
     fn var(&mut self, name: String, start: f64) -> usize {
         let i = self.start.len();
         self.start.push(start);
@@ -315,6 +400,19 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                         b.norm(&format!("{}:{end}:{k}:current", br.identity), &i, cap)?;
                     }
                     if let Some(cap) = br.apparent_max[k] {
+                        if cap == 0.0 && voltage[node].iter().all(|a| a.terms.is_empty()) {
+                            // At a prescribed nonzero phasor, S = V conj(I) = 0
+                            // is exactly I = 0, regardless of the reference angle.
+                            // At fixed zero voltage it imposes no current bound.
+                            if voltage[node].iter().any(|a| a.constant != 0.0) {
+                                b.norm(
+                                    &format!("{}:{end}:{k}:zero_power_current", br.identity),
+                                    &i,
+                                    0.0,
+                                )?;
+                            }
+                            continue;
+                        }
                         let ids = b.power_lift(
                             &format!("{}:{end}:{k}", br.identity),
                             &voltage[node],
@@ -707,6 +805,14 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
         }
     }
     let n = b.start.len();
+    if prep.branches.iter().any(|br| {
+        br.current_max
+            .iter()
+            .chain(&br.apparent_max)
+            .any(|cap| *cap == Some(0.0))
+    }) {
+        b.propagate_zeros();
+    }
     if n == 0 {
         return Err("IVR model has no decision variables".into());
     }

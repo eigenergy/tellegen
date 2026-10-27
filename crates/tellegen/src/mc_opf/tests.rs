@@ -332,7 +332,7 @@ fn quadratic_classification_exact_derivatives_and_weighted_hessian() {
     }
 }
 #[test]
-fn zero_caps_compile_to_components_and_open_switch_has_no_variables() {
+fn open_switch_has_no_variables_with_zero_branch_ratings() {
     let mut n = network();
     n.lines_mut()[0].i_max = Some(vec![0., 0.]);
     n.switches_mut().push(DistSwitch::new(
@@ -344,17 +344,85 @@ fn zero_caps_compile_to_components_and_open_switch_has_no_variables() {
         true,
     ));
     let m = compiled(n);
-    assert!(m
-        .problem
-        .con_names
-        .iter()
-        .any(|s| s.contains("current:0:zero")));
     assert!(!m
         .problem
         .var_names
         .iter()
         .any(|s| s.contains("switch:open")));
 }
+#[test]
+fn zero_line_ratings_accept_zero_flow_and_reject_required_flow() {
+    for apparent in [false, true] {
+        for caps in [vec![0.0, 0.0], vec![0.0, 10.0]] {
+            let mut n = network();
+            if apparent {
+                n.lines_mut()[0].s_max = Some(caps);
+            } else {
+                n.lines_mut()[0].i_max = Some(caps);
+            }
+            assert!(solve_mc_ac_opf_instance(instance(n.clone()), &Default::default()).is_err());
+            n.loads_mut()[0].p_nom = vec![0.0];
+            let r = solve(n);
+            assert!(r.residuals.maximum() < 1e-8);
+            for currents in [&r.branches[0].current_from_a, &r.branches[0].current_to_a] {
+                assert!(currents.iter().flatten().all(|v| v.abs() < 1e-8));
+            }
+        }
+    }
+}
+
+#[test]
+fn zero_line_ratings_preserve_both_end_shunts() {
+    for apparent in [false, true] {
+        for from in [false, true] {
+            let mut n = network();
+            n.loads_mut()[0].p_nom = vec![0.0];
+            if apparent {
+                n.lines_mut()[0].s_max = Some(vec![0.0, 0.0]);
+            } else {
+                n.lines_mut()[0].i_max = Some(vec![0.0, 0.0]);
+            }
+            let code = &mut n.line_codes_mut()[0];
+            let g = if from {
+                &mut code.g_from
+            } else {
+                &mut code.g_to
+            };
+            *g = vec![vec![1e-4, 0.0], vec![0.0, 0.0]];
+            // A live shunt needs nonzero current at at least one line end.
+            assert!(solve_mc_ac_opf_instance(instance(n), &Default::default()).is_err());
+        }
+    }
+}
+
+#[test]
+fn zero_line_ratings_are_invariant_to_source_angle() {
+    for apparent in [false, true] {
+        let mut n = network();
+        n.loads_mut()[0].p_nom = vec![0.0];
+        n.sources_mut()[0].v_angle = vec![0.7, 0.0];
+        if apparent {
+            n.lines_mut()[0].s_max = Some(vec![0.0, 0.0]);
+        } else {
+            n.lines_mut()[0].i_max = Some(vec![0.0, 0.0]);
+        }
+        let r = solve(n);
+        assert!(r.residuals.maximum() < 1e-8);
+    }
+}
+
+#[test]
+fn zero_apparent_rating_at_ground_does_not_imply_zero_current() {
+    let mut n = network();
+    n.buses_mut()[1].grounded = names(&["n"]);
+    n.lines_mut()[0].s_max = Some(vec![1000.0, 0.0]);
+    n.line_codes_mut()[0].g_from = vec![vec![1e-5, -1e-5], vec![-1e-5, 1e-5]];
+    let r = solve(n);
+    near(r.branches[0].current_from_a[1][0], -230.0 * 1e-5, 1e-8);
+    near(r.branches[0].power_from_va[1][0], 0.0, 1e-10);
+    assert!(r.residuals.maximum() < 1e-8);
+}
+
 #[test]
 fn exact_ideal_line_and_delta_load_solve_without_impedance_inverse() {
     let mut n = network();
