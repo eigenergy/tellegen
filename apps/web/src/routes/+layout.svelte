@@ -8,12 +8,15 @@
 	import { TellegenProvider } from '@tellegen/svelte';
 	import { PUBLIC_CARTO_BASEMAP_KEY } from '$app/env/public';
 	import Analytics from '#lib/analytics/Analytics.svelte';
+	import { PUBLIC_TELLEGEN_ACOPF_WASM_URL } from '$app/env/public';
 
 	let { children } = $props();
 </script>
 
 <Analytics />
-<!-- An empty key leaves OpenFreeMap as the primary basemap. -->
-<TellegenProvider cartoApiKey={PUBLIC_CARTO_BASEMAP_KEY}>
+<TellegenProvider
+	acOpfWasmUrl={PUBLIC_TELLEGEN_ACOPF_WASM_URL}
+	cartoApiKey={PUBLIC_CARTO_BASEMAP_KEY}
+>
 	{@render children()}
 </TellegenProvider>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
+	import { onDestroy, untrack, type Snippet } from 'svelte';
 	import {
 		resolveTellegenUiConfig,
 		setAppState,
@@ -18,6 +18,7 @@
 
 	let {
 		apiBase,
+		acOpfWasmUrl,
 		loadDefaultCases,
 		docsHref,
 		orgHref,
@@ -31,6 +32,7 @@
 	const config = untrack(() =>
 		resolveTellegenUiConfig({
 			apiBase,
+			acOpfWasmUrl,
 			loadDefaultCases,
 			docsHref,
 			orgHref,
@@ -43,11 +45,13 @@
 	const app = createAppState();
 	const ctrl = createController(app, {
 		apiBase: config.apiBase,
+		acOpfWasmUrl: config.acOpfWasmUrl ?? undefined,
 		loadDefaultCases: config.loadDefaultCases
 	});
 	// A host that opens its own cases never calls load(), so the shell must not
 	// sit in its loading state waiting for a fetch that will not come.
 	if (!config.loadDefaultCases) ctrl.casesLoaded = true;
+	onDestroy(ctrl.dispose);
 
 	setPanelLayout(new PanelLayout());
 	setNoticeCenter(new NoticeCenter());
