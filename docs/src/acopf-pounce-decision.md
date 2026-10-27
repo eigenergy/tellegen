@@ -376,8 +376,9 @@ seed numerical variables without changing the declared physical problem; see
 [initial points](formulations.md#explicit-initial-points) for supported fields
 and projection rules.
 `McOpfOptions.collect_profile` enables optional
-stage and KKT diagnostics. Prices, solution sensitivities and retained sessions
-are not exposed by this initial implementation.
+stage and KKT diagnostics. Native `McOpfSession` retains a compiled model and
+accepted primal for [repeated solves and atomic edits](formulations.md#retained-sessions-and-edits).
+Prices and solution sensitivities are not exposed.
 
 The feature builds against the published PowerIO and POUNCE versions in the
 shipping lockfile. Build and test the native feature from the repository root:

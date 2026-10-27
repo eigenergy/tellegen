@@ -3,7 +3,7 @@
 //! The `mc-opf` feature is opt-in. PowerIO owns preparation and identities;
 //! POUNCE evaluates exact sparse derivatives. Accepted points are independently
 //! checked against the physical equations. Success is local, with no prices,
-//! optimality certificate, retained session, or solution sensitivities.
+//! optimality certificate or solution sensitivities.
 mod diagnostics;
 mod initial;
 #[cfg(test)]
@@ -11,11 +11,13 @@ mod initial_tests;
 pub use initial::mc_opf_initial_point_from_pf;
 mod model;
 mod result;
+mod session;
 pub use diagnostics::{McOpfDiagnostic, McOpfError, McOpfErrorKind, McOpfStage, McOpfViolation};
 pub use result::{
     McOpfCoilAxis, McOpfPortResult, McOpfShuntResult, McOpfTerminalId, McOpfTerminalVoltage,
     MC_OPF_RESULT_EXTENSION,
 };
+pub use session::{McOpfEdit, McOpfSession, McOpfSessionResult, McOpfStart, McOpfStartUsed};
 #[cfg(test)]
 mod tests;
 mod validate;
@@ -38,7 +40,7 @@ use std::{
 };
 
 /// Numerical choices, separate from the declared PowerIO problem.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct McOpfOptions {
     pub voltage_base_v: f64,
@@ -250,6 +252,43 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     record_stage(&mut profile, &mut stage, "model_compile");
     let initial_diagnostics = initial::apply(&mut model, &instance)?;
     record_stage(&mut profile, &mut stage, "initial_point");
+    solve_prepared(
+        instance,
+        options,
+        cancel,
+        PreparedSolve {
+            model,
+            fingerprint,
+            initial_diagnostics,
+            profile,
+            stage,
+        },
+    )
+    .map(|(result, _)| result)
+}
+
+struct PreparedSolve {
+    model: model::Model,
+    fingerprint: String,
+    initial_diagnostics: Vec<McOpfDiagnostic>,
+    profile: Option<McOpfProfile>,
+    stage: Instant,
+}
+
+/// Both one-shot and retained solves use the same optimizer and acceptance gate.
+fn solve_prepared(
+    instance: Arc<McAcOpfInstance>,
+    options: &McOpfOptions,
+    cancel: Option<Arc<AtomicBool>>,
+    prepared: PreparedSolve,
+) -> Result<(McOpfResult, Vec<f64>), McOpfError> {
+    let PreparedSolve {
+        model,
+        fingerprint,
+        initial_diagnostics,
+        mut profile,
+        mut stage,
+    } = prepared;
     cancelled(cancel.as_deref(), McOpfStage::Compilation)?;
     let tnlp = Rc::new(RefCell::new(CancellableNlTnlp::new(
         NlTnlp::try_new(model.problem.clone()).map_err(|e| {
@@ -340,33 +379,36 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     if let Some(p) = &mut profile {
         collect_solver_profile(p, &app);
     }
-    Ok(McOpfResult {
-        module: None,
-        terminals: model
-            .prep
-            .terminals
-            .iter()
-            .zip(&checked.voltage)
-            .map(|(t, v)| McOpfTerminalVoltage {
-                terminal: McOpfTerminalId {
-                    bus: t.bus.clone(),
-                    terminal: t.terminal.clone(),
-                },
-                voltage_v: [v.re * options.voltage_base_v, v.im * options.voltage_base_v],
-            })
-            .collect(),
-        shunts: checked.shunts,
-        options: options.clone(),
-        diagnostics: initial_diagnostics,
-        solution,
-        residuals: checked.residuals,
-        branches: checked.branches,
-        transformers: checked.transformers,
-        devices: checked.devices,
-        iterations: app.statistics().iteration_count,
-        fingerprint,
-        profile,
-    })
+    Ok((
+        McOpfResult {
+            module: None,
+            terminals: model
+                .prep
+                .terminals
+                .iter()
+                .zip(&checked.voltage)
+                .map(|(t, v)| McOpfTerminalVoltage {
+                    terminal: McOpfTerminalId {
+                        bus: t.bus.clone(),
+                        terminal: t.terminal.clone(),
+                    },
+                    voltage_v: [v.re * options.voltage_base_v, v.im * options.voltage_base_v],
+                })
+                .collect(),
+            shunts: checked.shunts,
+            options: options.clone(),
+            diagnostics: initial_diagnostics,
+            solution,
+            residuals: checked.residuals,
+            branches: checked.branches,
+            transformers: checked.transformers,
+            devices: checked.devices,
+            iterations: app.statistics().iteration_count,
+            fingerprint,
+            profile,
+        },
+        x.to_vec(),
+    ))
 }
 /// Solve an explicitly declared MC OPF module and emit a canonical solution module.
 /// A bare network is refused, so no objective or constraint selection is invented.
