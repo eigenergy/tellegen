@@ -4,7 +4,14 @@
 //! POUNCE evaluates exact sparse derivatives. Accepted points are independently
 //! checked against the physical equations. Success is local, with no prices,
 //! optimality certificate, retained session, or solution sensitivities.
+mod diagnostics;
 mod model;
+mod result;
+pub use diagnostics::{McOpfDiagnostic, McOpfError, McOpfErrorKind, McOpfStage, McOpfViolation};
+pub use result::{
+    McOpfCoilAxis, McOpfPortResult, McOpfShuntResult, McOpfTerminalId, McOpfTerminalVoltage,
+    MC_OPF_RESULT_EXTENSION,
+};
 #[cfg(test)]
 mod tests;
 mod validate;
@@ -15,7 +22,6 @@ use pounce_rs::{ApplicationReturnStatus, IpoptApplication, TNLP};
 use powerio::{McAcOpfInstance, McAcOpfSolution, PioModule, PioValue, Termination};
 use powerio_matrix::{build_mc_ac_opf_preparation, McAcOpfAssemblyOptions};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     cell::RefCell,
     collections::BTreeMap,
@@ -53,6 +59,41 @@ impl Default for McOpfOptions {
         }
     }
 }
+impl McOpfOptions {
+    fn validate(&self) -> Result<(), McOpfError> {
+        let mut invalid: Vec<_> = [
+            ("voltage_base_v", self.voltage_base_v),
+            ("power_base_va", self.power_base_va),
+            ("acceptance_tolerance", self.acceptance_tolerance),
+            ("objective_scale", self.objective_scale),
+        ]
+        .into_iter()
+        .filter(|(_, v)| !v.is_finite() || *v <= 0.0)
+        .map(|(name, _)| (name, "must be finite and positive"))
+        .collect();
+        if self.max_iterations == 0 || self.max_iterations > i32::MAX as u32 {
+            invalid.push(("max_iterations", "must be in 1..=i32::MAX"));
+        }
+        if invalid.is_empty() {
+            return Ok(());
+        }
+        let mut error = McOpfError::new(
+            McOpfErrorKind::InvalidInput,
+            McOpfStage::Input,
+            "invalid multiconductor OPF options",
+        );
+        error.diagnostics = invalid
+            .into_iter()
+            .map(|(name, requirement)| McOpfDiagnostic {
+                code: "MC_OPF.INVALID_OPTION".into(),
+                severity: powerio::DiagnosticSeverity::Error,
+                message: format!("{name} {requirement}"),
+                target: Some(format!("/options/{name}")),
+            })
+            .collect();
+        Err(error)
+    }
+}
 /// Independently recomputed residuals, in the explicitly selected working units.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct McOpfResiduals {
@@ -80,6 +121,9 @@ impl McOpfResiduals {
 /// A current and power ledger at one branch end; positive current leaves the bus.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct McOpfBranchResult {
+    pub from_terminals: Vec<McOpfTerminalId>,
+    pub to_terminals: Vec<McOpfTerminalId>,
+    pub open: bool,
     pub identity: String,
     pub current_from_a: Vec<[f64; 2]>,
     pub current_to_a: Vec<[f64; 2]>,
@@ -89,6 +133,10 @@ pub struct McOpfBranchResult {
 /// Coil powers and currents are distinct from terminal powers, especially for delta.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct McOpfDeviceResult {
+    pub terminals: Vec<McOpfTerminalId>,
+    pub coils: Vec<McOpfCoilAxis>,
+    /// Same injection/withdrawal sign convention as terminal_power_va.
+    pub terminal_current_a: Vec<[f64; 2]>,
     pub identity: String,
     pub kind: powerio_matrix::McOpfDeviceKind,
     pub coil_power_va: Vec<[f64; 2]>,
@@ -101,7 +149,13 @@ pub struct McOpfDeviceResult {
 /// shunts are separate electrical stamps and are excluded from these currents.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct McOpfTransformerResult {
+    pub coils: Vec<McOpfCoilAxis>,
+    /// Prepared rating ports; these can include magnetizing current and have
+    /// different axes from bare winding coils. They are not additive terminals.
+    pub ports: Vec<McOpfPortResult>,
     pub identity: String,
+    /// Optimized physical tap coefficient, in the canonical winding convention.
+    /// None means fixed taps, retained in solution.instance().network().
     pub tap: Option<f64>,
     pub coil_current_a: Vec<[f64; 2]>,
     pub coil_power_va: Vec<[f64; 2]>,
@@ -135,6 +189,12 @@ pub struct McOpfLinearProfile {
 }
 #[derive(Clone, Debug)]
 pub struct McOpfResult {
+    // Retain provenance and unrelated extensions when a saved result is read.
+    pub(super) module: Option<PioModule<PioValue>>,
+    pub terminals: Vec<McOpfTerminalVoltage>,
+    pub shunts: Vec<McOpfShuntResult>,
+    pub options: McOpfOptions,
+    pub diagnostics: Vec<McOpfDiagnostic>,
     pub solution: McAcOpfSolution,
     pub residuals: McOpfResiduals,
     pub branches: Vec<McOpfBranchResult>,
@@ -144,9 +204,13 @@ pub struct McOpfResult {
     pub fingerprint: String,
     pub profile: Option<McOpfProfile>,
 }
-fn cancelled(cancel: Option<&AtomicBool>) -> Result<(), String> {
+fn cancelled(cancel: Option<&AtomicBool>, stage: McOpfStage) -> Result<(), McOpfError> {
     if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
-        Err("multiconductor OPF cancelled".into())
+        Err(McOpfError::new(
+            McOpfErrorKind::Cancelled,
+            stage,
+            "multiconductor OPF cancelled",
+        ))
     } else {
         Ok(())
     }
@@ -156,7 +220,7 @@ fn cancelled(cancel: Option<&AtomicBool>) -> Result<(), String> {
 pub fn solve_mc_ac_opf_instance(
     instance: Arc<McAcOpfInstance>,
     options: &McOpfOptions,
-) -> Result<McOpfResult, String> {
+) -> Result<McOpfResult, McOpfError> {
     solve_mc_ac_opf_instance_cancellable(instance, options, None)
 }
 /// As [`solve_mc_ac_opf_instance`], with cancellation before/after compilation
@@ -165,65 +229,72 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     instance: Arc<McAcOpfInstance>,
     options: &McOpfOptions,
     cancel: Option<Arc<AtomicBool>>,
-) -> Result<McOpfResult, String> {
-    cancelled(cancel.as_deref())?;
-    if !options.acceptance_tolerance.is_finite()
-        || options.acceptance_tolerance <= 0.0
-        || !options.objective_scale.is_finite()
-        || options.objective_scale <= 0.0
-        || options.max_iterations == 0
-        || options.max_iterations > i32::MAX as u32
-    {
-        return Err("invalid multiconductor OPF options".into());
-    }
+) -> Result<McOpfResult, McOpfError> {
+    cancelled(cancel.as_deref(), McOpfStage::Input)?;
+    options.validate()?;
     let mut profile = options.collect_profile.then(McOpfProfile::default);
     let mut stage = Instant::now();
     let prep = build_mc_ac_opf_preparation(
         &instance,
         &McAcOpfAssemblyOptions::new(options.voltage_base_v, options.power_base_va),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| McOpfError::from_powerio(McOpfStage::Preparation, e))?;
     record_stage(&mut profile, &mut stage, "preparation");
-    let fingerprint = Sha256::digest(
-        [
-            b"tellegen/mc-ivr-v2\0".as_slice(),
-            &serde_json::to_vec(&prep).map_err(|e| e.to_string())?,
-        ]
-        .concat(),
-    )
-    .iter()
-    .map(|b| format!("{b:02x}"))
-    .collect();
+    let fingerprint = result::fingerprint(&prep)?;
     record_stage(&mut profile, &mut stage, "fingerprint");
-    let model = model::compile(prep)?;
+    let model = model::compile(prep)
+        .map_err(|e| McOpfError::new(McOpfErrorKind::InvalidInput, McOpfStage::Compilation, e))?;
     record_stage(&mut profile, &mut stage, "model_compile");
-    cancelled(cancel.as_deref())?;
+    cancelled(cancel.as_deref(), McOpfStage::Compilation)?;
     let tnlp = Rc::new(RefCell::new(CancellableNlTnlp::new(
-        NlTnlp::try_new(model.problem.clone())?,
+        NlTnlp::try_new(model.problem.clone()).map_err(|e| {
+            McOpfError::new(McOpfErrorKind::NumericalFailure, McOpfStage::Compilation, e)
+        })?,
         cancel.clone(),
     )));
     record_stage(&mut profile, &mut stage, "evaluator_setup");
     let mut app = IpoptApplication::new();
-    app.initialize_with_options_str(&format!("linear_solver feral\nhessian_approximation exact\nnlp_scaling_method none\nlinear_system_scaling none\nbound_relax_factor 0\ntol 1e-9\nconstr_viol_tol 1e-9\nacceptable_tol 1e-8\nmax_iter {}\nobj_scaling_factor {}\nprint_level 0\n",options.max_iterations,options.objective_scale)).map_err(|e|e.to_string())?;
+    app.initialize_with_options_str(&format!("linear_solver feral\nhessian_approximation exact\nnlp_scaling_method none\nlinear_system_scaling none\nbound_relax_factor 0\ntol 1e-9\nconstr_viol_tol 1e-9\nacceptable_tol 1e-8\nmax_iter {}\nobj_scaling_factor {}\nprint_level 0\n",options.max_iterations,options.objective_scale)).map_err(|e| McOpfError::new(McOpfErrorKind::NumericalFailure, McOpfStage::Solver, e.to_string()))?;
     if options.collect_profile {
         app.initialize_with_options_str("timing_statistics yes\n")
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                McOpfError::new(
+                    McOpfErrorKind::NumericalFailure,
+                    McOpfStage::Solver,
+                    e.to_string(),
+                )
+            })?;
     }
     configure_restoration(&mut app);
-    app.initialize().map_err(|e| e.to_string())?;
+    app.initialize().map_err(|e| {
+        McOpfError::new(
+            McOpfErrorKind::NumericalFailure,
+            McOpfStage::Solver,
+            e.to_string(),
+        )
+    })?;
     record_stage(&mut profile, &mut stage, "solver_setup");
     let status = app.optimize_tnlp(Rc::clone(&tnlp) as Rc<RefCell<dyn TNLP>>);
     record_stage(&mut profile, &mut stage, "solve");
-    cancelled(cancel.as_deref())?;
+    cancelled(cancel.as_deref(), McOpfStage::Solver)?;
     if !matches!(
         status,
         ApplicationReturnStatus::SolveSucceeded | ApplicationReturnStatus::SolvedToAcceptableLevel
     ) {
-        return Err(format!("multiconductor OPF stopped with {status:?}; a local NLP failure is not an infeasibility proof"));
+        let mut error = McOpfError::new(McOpfErrorKind::NumericalFailure, McOpfStage::Solver, format!("multiconductor OPF stopped with {status:?}; a local NLP failure is not an infeasibility proof"));
+        error.solver_status = Some(format!("{status:?}"));
+        return Err(error);
     }
     let t = tnlp.borrow();
-    let x = t.inner.final_x().ok_or("solver returned no primal point")?;
+    let x = t.inner.final_x().ok_or_else(|| {
+        McOpfError::new(
+            McOpfErrorKind::NumericalFailure,
+            McOpfStage::Solver,
+            "solver returned no primal point",
+        )
+    })?;
     let checked = validate::check(&model, x, t.inner.final_obj(), options.acceptance_tolerance)?;
+    cancelled(cancel.as_deref(), McOpfStage::Validation)?;
     record_stage(&mut profile, &mut stage, "validation");
     let source = checked
         .devices
@@ -250,7 +321,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
         generators,
         checked.objective,
     )
-    .map_err(|e| e.to_string())?
+    .map_err(|e| McOpfError::from_powerio(McOpfStage::Export, e))?
     .with_producer(format!(
         "tellegen {} mc-ivr-v1 POUNCE local solution",
         crate::VERSION
@@ -260,6 +331,23 @@ pub fn solve_mc_ac_opf_instance_cancellable(
         collect_solver_profile(p, &app);
     }
     Ok(McOpfResult {
+        module: None,
+        terminals: model
+            .prep
+            .terminals
+            .iter()
+            .zip(&checked.voltage)
+            .map(|(t, v)| McOpfTerminalVoltage {
+                terminal: McOpfTerminalId {
+                    bus: t.bus.clone(),
+                    terminal: t.terminal.clone(),
+                },
+                voltage_v: [v.re * options.voltage_base_v, v.im * options.voltage_base_v],
+            })
+            .collect(),
+        shunts: checked.shunts,
+        options: options.clone(),
+        diagnostics: Vec::new(),
         solution,
         residuals: checked.residuals,
         branches: checked.branches,
@@ -272,38 +360,74 @@ pub fn solve_mc_ac_opf_instance_cancellable(
 }
 /// Solve an explicitly declared MC OPF module and emit a canonical solution module.
 /// A bare network is refused, so no objective or constraint selection is invented.
-pub fn solve_mc_ac_opf_module_json(input: &str, options: &McOpfOptions) -> Result<String, String> {
-    let module = crate::ir::deserialize_module(input)?;
+pub fn solve_mc_ac_opf_module_json(
+    input: &str,
+    options: &McOpfOptions,
+) -> Result<String, McOpfError> {
+    let module = crate::ir::deserialize_module_with_diagnostics(input)
+        .map_err(|e| McOpfError::from_powerio(McOpfStage::Input, e))?;
     validate_mc_opf_input_diagnostics(&module)?;
-    let PioValue::McAcOpfInstance(instance) = module.into_value() else {
-        return Err("expected a PowerIO McAcOpfInstance module".into());
+    let PioValue::McAcOpfInstance(instance) = module.value() else {
+        return Err(McOpfError::new(
+            McOpfErrorKind::InvalidInput,
+            McOpfStage::Input,
+            "expected a PowerIO McAcOpfInstance module",
+        ));
     };
-    let result = solve_mc_ac_opf_instance(Arc::new(instance), options)?;
-    crate::ir::serialize_module(&PioModule::new(PioValue::McAcOpfSolution(result.solution)))
+    let mut result =
+        solve_mc_ac_opf_instance(Arc::new(instance.clone()), options).map_err(|mut error| {
+            let mut findings: Vec<_> = module.diagnostics().iter().map(Into::into).collect();
+            findings.append(&mut error.diagnostics);
+            error.diagnostics = findings;
+            error
+        })?;
+    result.diagnostics = module.diagnostics().iter().map(Into::into).collect();
+    let mut output = module
+        .map_value(|_| PioValue::McAcOpfSolution(result.solution.clone()))
+        .sever_source();
+    output.sever_value_targets();
+    result.insert_report(&mut output)?;
+    crate::ir::serialize_module(&output)
+        .map_err(|e| McOpfError::new(McOpfErrorKind::SerializationFailure, McOpfStage::Export, e))
 }
 
 /// Reject conversion errors and dropped or unsupported physical data before
 /// extracting a network or instance from its module. Typed-instance callers
 /// importing external data must retain and check these module diagnostics:
 /// physical validation cannot recover constraints already lost during parsing.
-pub fn validate_mc_opf_input_diagnostics<T>(module: &PioModule<T>) -> Result<(), String> {
-    for diagnostic in module.diagnostics() {
-        if diagnostic.severity() == powerio::DiagnosticSeverity::Error
-            || [
-                "UNSUPPORTED",
-                "MALFORMED",
-                "FIELD_DROPPED",
-                "RECORD_DROPPED",
-            ]
-            .iter()
-            .any(|code| diagnostic.code().contains(code))
-        {
-            return Err(format!(
+pub fn validate_mc_opf_input_diagnostics<T>(module: &PioModule<T>) -> Result<(), McOpfError> {
+    let rejected: Vec<_> = module
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.severity() == powerio::DiagnosticSeverity::Error
+                || [
+                    "UNSUPPORTED",
+                    "MALFORMED",
+                    "FIELD_DROPPED",
+                    "RECORD_DROPPED",
+                ]
+                .iter()
+                .any(|code| diagnostic.code().contains(code))
+        })
+        .collect();
+    if let Some(first) = rejected.first() {
+        let kind = if rejected.iter().any(|d| d.code().contains("UNSUPPORTED")) {
+            McOpfErrorKind::UnsupportedInput
+        } else {
+            McOpfErrorKind::InvalidInput
+        };
+        let mut error = McOpfError::new(
+            kind,
+            McOpfStage::Input,
+            format!(
                 "MC OPF input has a lossy or unsupported diagnostic: {}: {}",
-                diagnostic.code(),
-                diagnostic.message()
-            ));
-        }
+                first.code(),
+                first.message()
+            ),
+        );
+        error.diagnostics = module.diagnostics().iter().map(Into::into).collect();
+        return Err(error);
     }
     Ok(())
 }

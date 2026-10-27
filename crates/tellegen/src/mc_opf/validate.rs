@@ -1,12 +1,14 @@
 //! Physical acceptance calculations. Does not evaluate the expression graph.
 use super::{
     model::{Model, Pair},
-    McOpfBranchResult, McOpfDeviceResult, McOpfResiduals,
+    McOpfBranchResult, McOpfCoilAxis, McOpfDeviceResult, McOpfError, McOpfErrorKind,
+    McOpfPortResult, McOpfResiduals, McOpfShuntResult, McOpfStage, McOpfTerminalId, McOpfViolation,
 };
 use num_complex::Complex64 as C;
 use powerio_matrix::McOpfDeviceKind;
 pub(super) struct Checked {
     pub voltage: Vec<C>,
+    pub shunts: Vec<McOpfShuntResult>,
     pub residuals: McOpfResiduals,
     pub branches: Vec<McOpfBranchResult>,
     pub devices: Vec<McOpfDeviceResult>,
@@ -19,53 +21,155 @@ fn value(p: &Pair, x: &[f64]) -> C {
 fn array(v: C, base: f64) -> [f64; 2] {
     [v.re * base, v.im * base]
 }
-fn mismatch(target: &mut f64, value: f64) -> Result<(), String> {
-    if !value.is_finite() {
-        return Err("nonfinite independently recomputed residual".into());
-    }
-    *target = target.max(value.abs());
-    Ok(())
+struct Checks {
+    residuals: McOpfResiduals,
+    tolerance: f64,
+    component: String,
+    axis: Option<String>,
+    violations: std::collections::BTreeMap<&'static str, McOpfViolation>,
 }
-fn cap(target: &mut f64, value: f64, limit: Option<f64>) -> Result<(), String> {
-    if let Some(limit) = limit {
-        mismatch(
-            target,
-            if limit == 0.0 {
-                value.max(0.0)
-            } else {
-                (value / limit - 1.0).max(0.0)
-            },
-        )?;
+impl Checks {
+    fn new(tolerance: f64) -> Self {
+        Self {
+            residuals: McOpfResiduals::default(),
+            tolerance,
+            component: "instance".into(),
+            axis: None,
+            violations: Default::default(),
+        }
     }
-    Ok(())
-}
-fn interval(target: &mut f64, value: f64, lo: Option<f64>, hi: Option<f64>) -> Result<(), String> {
-    if let Some(lo) = lo {
-        mismatch(target, (lo - value).max(0.0) / lo.abs().max(1.0))?;
+    fn at(&mut self, component: impl Into<String>, axis: Option<String>) {
+        self.component = component.into();
+        self.axis = axis;
     }
-    if let Some(hi) = hi {
-        mismatch(target, (value - hi).max(0.0) / hi.abs().max(1.0))?;
+    fn failure(&self, message: impl Into<String>) -> McOpfError {
+        let mut error = McOpfError::new(
+            McOpfErrorKind::PhysicalValidationFailure,
+            McOpfStage::Validation,
+            message,
+        );
+        error.residuals = Some(Box::new(self.residuals.clone()));
+        error.violations = self.violations.values().cloned().collect();
+        error
     }
-    Ok(())
+    fn mismatch(&mut self, quantity: &'static str, value: f64) -> Result<(), McOpfError> {
+        let value = value.abs();
+        if !value.is_finite() || value > self.tolerance {
+            let witness = McOpfViolation {
+                quantity: quantity.into(),
+                component: self.component.clone(),
+                axis: self.axis.clone(),
+                residual: value.is_finite().then_some(value),
+            };
+            if !value.is_finite()
+                || self
+                    .violations
+                    .get(quantity)
+                    .is_none_or(|v| value > v.residual.unwrap_or(f64::INFINITY))
+            {
+                self.violations.insert(quantity, witness);
+            }
+        }
+        if !value.is_finite() {
+            return Err(self.failure(format!(
+                "nonfinite independently recomputed {quantity} at {}",
+                self.component
+            )));
+        }
+        let target = match quantity {
+            "kcl_pu" => &mut self.residuals.kcl_pu,
+            "kvl_pu" => &mut self.residuals.kvl_pu,
+            "power_link_pu" => &mut self.residuals.power_link_pu,
+            "prescribed_power_pu" => &mut self.residuals.prescribed_power_pu,
+            "relative_limit_violation" => &mut self.residuals.relative_limit_violation,
+            "objective_relative_error" => &mut self.residuals.objective_relative_error,
+            _ => return Err(self.failure("unknown physical residual family")),
+        };
+        *target = target.max(value);
+        Ok(())
+    }
+    fn cap(
+        &mut self,
+        quantity: &'static str,
+        value: f64,
+        limit: Option<f64>,
+    ) -> Result<(), McOpfError> {
+        if !value.is_finite() {
+            return self.mismatch(quantity, value);
+        }
+        if let Some(limit) = limit {
+            self.mismatch(
+                quantity,
+                if limit == 0.0 {
+                    value.max(0.0)
+                } else {
+                    (value / limit - 1.0).max(0.0)
+                },
+            )?;
+        }
+        Ok(())
+    }
+    fn interval(
+        &mut self,
+        quantity: &'static str,
+        value: f64,
+        lo: Option<f64>,
+        hi: Option<f64>,
+    ) -> Result<(), McOpfError> {
+        if !value.is_finite() {
+            return self.mismatch(quantity, value);
+        }
+        if let Some(lo) = lo {
+            self.mismatch(quantity, (lo - value).max(0.0) / lo.abs().max(1.0))?;
+        }
+        if let Some(hi) = hi {
+            self.mismatch(quantity, (value - hi).max(0.0) / hi.abs().max(1.0))?;
+        }
+        Ok(())
+    }
+    fn finish(self) -> Result<McOpfResiduals, McOpfError> {
+        if !self.violations.is_empty() {
+            return Err(self.failure(format!(
+                "independent multiconductor OPF validation failed: {:?}",
+                self.residuals
+            )));
+        }
+        Ok(self.residuals)
+    }
 }
 pub(super) fn check(
     model: &Model,
     x: &[f64],
     solver_objective: f64,
     tolerance: f64,
-) -> Result<Checked, String> {
+) -> Result<Checked, McOpfError> {
+    let mut checks = Checks::new(tolerance);
     if x.len() != model.problem.n
         || x.iter().any(|x| !x.is_finite())
         || !solver_objective.is_finite()
     {
-        return Err("invalid or nonfinite solver point/objective".into());
+        checks.at(
+            "solver point",
+            x.iter()
+                .position(|v| !v.is_finite())
+                .and_then(|i| model.problem.var_names.get(i).cloned()),
+        );
+        checks.violations.insert(
+            "solver_point",
+            McOpfViolation {
+                quantity: "solver_point".into(),
+                component: checks.component.clone(),
+                axis: checks.axis.clone(),
+                residual: None,
+            },
+        );
+        return Err(checks.failure("invalid or nonfinite solver point/objective"));
     }
     let prep = &model.prep;
     let sb = prep.bases.power_base_va;
     let ib = sb / prep.bases.voltage_base_v;
     let voltage: Vec<_> = model.voltage.iter().map(|v| value(v, x)).collect();
     let mut kcl = vec![C::new(0.0, 0.0); voltage.len()];
-    let mut residuals = McOpfResiduals::default();
     let mut branches = Vec::new();
     for ((br, cols), power_columns) in prep
         .branches
@@ -77,14 +181,15 @@ pub(super) fn check(
         let mut ends: [Vec<C>; 2] = [Vec::new(), Vec::new()];
         let mut powers: [Vec<C>; 2] = [Vec::new(), Vec::new()];
         for k in 0..br.from.len() {
+            checks.at(br.identity.clone(), Some(format!("conductor:{k}")));
             if !br.open {
                 let drop: C = currents
                     .iter()
                     .enumerate()
                     .map(|(j, i)| C::new(br.r[k][j], br.x[k][j]) * i)
                     .sum();
-                mismatch(
-                    &mut residuals.kvl_pu,
+                checks.mismatch(
+                    "kvl_pu",
                     (voltage[br.from[k]] - voltage[br.to[k]] - drop).norm(),
                 )?;
             }
@@ -92,6 +197,10 @@ pub(super) fn check(
                 (0, &br.from, &br.g_from, &br.b_from, 1.0),
                 (1, &br.to, &br.g_to, &br.b_to, -1.0),
             ] {
+                checks.at(
+                    br.identity.clone(),
+                    Some(format!("end:{end}:conductor:{k}")),
+                );
                 let shunt: C = nodes
                     .iter()
                     .enumerate()
@@ -104,19 +213,15 @@ pub(super) fn check(
                 };
                 let p = voltage[nodes[k]] * current.conj();
                 kcl[nodes[k]] -= current;
-                cap(
-                    &mut residuals.relative_limit_violation,
+                checks.cap(
+                    "relative_limit_violation",
                     current.norm(),
                     br.current_max[k],
                 )?;
-                cap(
-                    &mut residuals.relative_limit_violation,
-                    p.norm(),
-                    br.apparent_max[k],
-                )?;
+                checks.cap("relative_limit_violation", p.norm(), br.apparent_max[k])?;
                 if let Some(indices) = power_columns[k][end] {
                     for (index, physical) in indices.into_iter().zip([p.re, p.im]) {
-                        mismatch(&mut residuals.power_link_pu, x[index] - physical)?;
+                        checks.mismatch("power_link_pu", x[index] - physical)?;
                     }
                 }
                 ends[end].push(current);
@@ -125,6 +230,17 @@ pub(super) fn check(
         }
         branches.push(McOpfBranchResult {
             identity: br.identity.clone(),
+            from_terminals: br
+                .from
+                .iter()
+                .map(|&n| McOpfTerminalId::at(prep, n))
+                .collect(),
+            to_terminals: br
+                .to
+                .iter()
+                .map(|&n| McOpfTerminalId::at(prep, n))
+                .collect(),
+            open: br.open,
             current_from_a: ends[0].iter().map(|v| array(*v, ib)).collect(),
             current_to_a: ends[1].iter().map(|v| array(*v, ib)).collect(),
             power_from_va: powers[0].iter().map(|v| array(*v, sb)).collect(),
@@ -139,6 +255,7 @@ pub(super) fn check(
         .zip(&model.transformer_power)
         .enumerate()
     {
+        checks.at(tx.identity.clone(), Some("tap".into()));
         let currents: Vec<_> = cols.iter().map(|i| value(i, x)).collect();
         let evaluate = |row: &powerio_matrix::McOpfComplexRow| -> C {
             row.voltage
@@ -153,19 +270,12 @@ pub(super) fn check(
         };
         let alpha = model.transformer_tap[index].map_or(1.0, |id| x[id]);
         if let Some([lo, hi]) = tx.tap_bounds {
-            interval(
-                &mut residuals.relative_limit_violation,
-                alpha,
-                Some(lo),
-                Some(hi),
-            )?;
+            checks.interval("relative_limit_violation", alpha, Some(lo), Some(hi))?;
         }
         for (j, row) in tx.equations.iter().enumerate() {
+            checks.at(tx.identity.clone(), Some(format!("equation:{j}")));
             let dynamic = tx.tap_equations.get(j).map_or(C::new(0.0, 0.0), &evaluate);
-            mismatch(
-                &mut residuals.kvl_pu,
-                (evaluate(row) + alpha * dynamic).norm(),
-            )?;
+            checks.mismatch("kvl_pu", (evaluate(row) + alpha * dynamic).norm())?;
         }
         let mut powers = Vec::new();
         for (coil, &current) in tx.coils.iter().zip(&currents) {
@@ -176,29 +286,36 @@ pub(super) fn check(
                 kcl[n] += current;
             }
         }
+        let mut ports = Vec::new();
         for (port, ids) in tx.ports.iter().zip(power_columns) {
+            checks.at(tx.identity.clone(), Some(port.name.clone()));
             let i = evaluate(&port.current);
             let u = voltage[port.positive] - port.negative.map_or(C::new(0.0, 0.0), |n| voltage[n]);
             let p = u * i.conj();
-            cap(
-                &mut residuals.relative_limit_violation,
-                i.norm(),
-                port.current_max,
-            )?;
-            cap(
-                &mut residuals.relative_limit_violation,
-                p.norm(),
-                port.apparent_max,
-            )?;
+            ports.push(McOpfPortResult {
+                name: port.name.clone(),
+                positive: McOpfTerminalId::at(prep, port.positive),
+                negative: port.negative.map(|n| McOpfTerminalId::at(prep, n)),
+                current_a: array(i, ib),
+                power_va: array(p, sb),
+                current_limit_a: port.current_max.map(|i| i * ib),
+                apparent_limit_va: port.apparent_max.map(|s| s * sb),
+            });
+            checks.cap("relative_limit_violation", i.norm(), port.current_max)?;
+            checks.cap("relative_limit_violation", p.norm(), port.apparent_max)?;
             if let Some(ids) = ids {
-                mismatch(
-                    &mut residuals.power_link_pu,
-                    (p - C::new(x[ids[0]], x[ids[1]])).norm(),
-                )?;
+                checks.mismatch("power_link_pu", (p - C::new(x[ids[0]], x[ids[1]])).norm())?;
             }
         }
         transformers.push(super::McOpfTransformerResult {
             identity: tx.identity.clone(),
+            coils: tx
+                .coils
+                .iter()
+                .enumerate()
+                .map(|(k, c)| McOpfCoilAxis::new(prep, k, c.positive, c.negative))
+                .collect(),
+            ports,
             tap: tx.tap_bounds.map(|_| {
                 if tx.tap_inverse {
                     tx.tap_nominal / alpha
@@ -210,15 +327,31 @@ pub(super) fn check(
             coil_power_va: powers,
         });
     }
+    let mut shunts = Vec::new();
     for sh in &prep.shunts {
+        let mut currents = Vec::new();
+        let mut powers = Vec::new();
         for (k, &node) in sh.terminals.iter().enumerate() {
-            kcl[node] -= sh
+            let current = sh
                 .terminals
                 .iter()
                 .enumerate()
                 .map(|(j, &n)| C::new(sh.g[k][j], sh.b[k][j]) * voltage[n])
                 .sum::<C>();
+            kcl[node] -= current;
+            currents.push(array(current, ib));
+            powers.push(array(voltage[node] * current.conj(), sb));
         }
+        shunts.push(McOpfShuntResult {
+            identity: sh.identity.clone(),
+            terminals: sh
+                .terminals
+                .iter()
+                .map(|&n| McOpfTerminalId::at(prep, n))
+                .collect(),
+            current_a: currents,
+            power_va: powers,
+        });
     }
     let mut devices = Vec::new();
     let mut objective = 0.0;
@@ -233,11 +366,12 @@ pub(super) fn check(
             1.0
         };
         for (k, coil) in dev.coils.iter().enumerate() {
+            checks.at(dev.identity.clone(), Some(format!("coil:{k}")));
             let current = value(&cols.current[k], x);
             let u = voltage[coil.positive] - coil.negative.map_or(C::new(0.0, 0.0), |n| voltage[n]);
             let p = u * current.conj();
-            mismatch(
-                &mut residuals.power_link_pu,
+            checks.mismatch(
+                "power_link_pu",
                 (p - C::new(x[cols.power[k][0]], x[cols.power[k][1]])).norm(),
             )?;
             if let Some(law) = &coil.load_law {
@@ -248,56 +382,35 @@ pub(super) fn check(
                         law.terms[0].iter().map(|t| t[0]).sum(),
                         -law.terms[1].iter().map(|t| t[0]).sum::<f64>(),
                     ) / law.nominal.powi(2);
-                    mismatch(
-                        &mut residuals.prescribed_power_pu,
-                        (current - admittance * u).norm(),
-                    )?;
+                    checks.mismatch("prescribed_power_pu", (current - admittance * u).norm())?;
                 } else {
                     if ratio <= 0.0 && law.terms.iter().flatten().any(|t| t[1] != 0.0) {
-                        return Err("load voltage outside positive domain".into());
+                        return Err(checks.failure(format!(
+                            "{} coil {k}: load voltage outside positive domain",
+                            dev.identity
+                        )));
                     }
                     let target = law
                         .terms
                         .each_ref()
                         .map(|terms| terms.iter().map(|t| t[0] * ratio.powf(t[1])).sum::<f64>());
-                    mismatch(
-                        &mut residuals.prescribed_power_pu,
+                    checks.mismatch(
+                        "prescribed_power_pu",
                         (p - C::new(target[0], target[1])).norm(),
                     )?;
                 }
             } else if let Some(target) = coil.prescribed {
-                mismatch(
-                    &mut residuals.prescribed_power_pu,
+                checks.mismatch(
+                    "prescribed_power_pu",
                     (p - C::new(target[0], target[1])).norm(),
                 )?;
             }
-            interval(
-                &mut residuals.relative_limit_violation,
-                p.re,
-                coil.p_min,
-                coil.p_max,
-            )?;
-            interval(
-                &mut residuals.relative_limit_violation,
-                p.im,
-                coil.q_min,
-                coil.q_max,
-            )?;
-            cap(
-                &mut residuals.relative_limit_violation,
-                current.norm(),
-                coil.current_max,
-            )?;
-            cap(
-                &mut residuals.relative_limit_violation,
-                p.norm(),
-                coil.apparent_max,
-            )?;
+            checks.interval("relative_limit_violation", p.re, coil.p_min, coil.p_max)?;
+            checks.interval("relative_limit_violation", p.im, coil.q_min, coil.q_max)?;
+            checks.cap("relative_limit_violation", current.norm(), coil.current_max)?;
+            checks.cap("relative_limit_violation", p.norm(), coil.apparent_max)?;
             if let Some(slope) = coil.reactive_slope {
-                mismatch(
-                    &mut residuals.prescribed_power_pu,
-                    (p.im - slope * p.re).abs(),
-                )?;
+                checks.mismatch("prescribed_power_pu", (p.im - slope * p.re).abs())?;
             }
             for (curve, actual, upper) in [
                 (coil.volt_var.as_ref(), p.im, false),
@@ -322,8 +435,8 @@ pub(super) fn check(
                             / (curve.knots[j + 1] - curve.knots[j])
                             * (relu(mean - curve.knots[j]) - relu(mean - curve.knots[j + 1]));
                     }
-                    mismatch(
-                        &mut residuals.prescribed_power_pu,
+                    checks.mismatch(
+                        "prescribed_power_pu",
                         if upper {
                             (actual - target).max(0.0)
                         } else {
@@ -338,29 +451,37 @@ pub(super) fn check(
                 .terminals
                 .iter()
                 .position(|i| *i == coil.positive)
-                .ok_or("missing device positive terminal")?;
+                .ok_or_else(|| {
+                    checks.failure(format!(
+                        "{}: missing device positive terminal",
+                        dev.identity
+                    ))
+                })?;
             terminal_current[pos] += current;
             if let Some(n) = coil.negative {
                 kcl[n] -= sign * current;
-                let neg = dev
-                    .terminals
-                    .iter()
-                    .position(|i| *i == n)
-                    .ok_or("missing device negative terminal")?;
+                let neg = dev.terminals.iter().position(|i| *i == n).ok_or_else(|| {
+                    checks.failure(format!(
+                        "{}: missing device negative terminal",
+                        dev.identity
+                    ))
+                })?;
                 terminal_current[neg] -= current;
             }
             total += current;
             coil_power.push(array(p, sb));
             coil_current.push(array(current, ib));
         }
-        cap(
-            &mut residuals.relative_limit_violation,
+        checks.at(dev.identity.clone(), Some("neutral return".into()));
+        checks.cap(
+            "relative_limit_violation",
             total.norm(),
             dev.neutral_current_max,
         )?;
         if let Some([lo, hi]) = dev.net_active_bounds {
-            interval(
-                &mut residuals.relative_limit_violation,
+            checks.at(dev.identity.clone(), Some("net active power".into()));
+            checks.interval(
+                "relative_limit_violation",
                 coil_power.iter().map(|p| p[0] / sb).sum(),
                 Some(lo),
                 Some(hi),
@@ -368,6 +489,18 @@ pub(super) fn check(
         }
         devices.push(McOpfDeviceResult {
             identity: dev.identity.clone(),
+            terminals: dev
+                .terminals
+                .iter()
+                .map(|&n| McOpfTerminalId::at(prep, n))
+                .collect(),
+            coils: dev
+                .coils
+                .iter()
+                .enumerate()
+                .map(|(k, c)| McOpfCoilAxis::new(prep, k, c.positive, c.negative))
+                .collect(),
+            terminal_current_a: terminal_current.iter().map(|&i| array(i, ib)).collect(),
             kind: dev.kind,
             coil_power_va: coil_power,
             coil_current_a: coil_current,
@@ -380,6 +513,7 @@ pub(super) fn check(
         });
     }
     for limit in &prep.voltage_limits {
+        checks.at(limit.identity.clone(), None);
         let v = if limit.combination.is_empty() {
             (voltage[limit.positive] - limit.negative.map_or(C::new(0.0, 0.0), |n| voltage[n]))
                 .norm()
@@ -391,20 +525,18 @@ pub(super) fn check(
                 .sum::<C>()
                 .norm()
         };
-        cap(&mut residuals.relative_limit_violation, v, limit.upper)?;
+        checks.cap("relative_limit_violation", v, limit.upper)?;
         if let Some(floor) = limit.lower.filter(|x| *x > 0.0) {
-            mismatch(
-                &mut residuals.relative_limit_violation,
-                (1.0 - v / floor).max(0.0),
-            )?;
+            checks.mismatch("relative_limit_violation", (1.0 - v / floor).max(0.0))?;
         }
     }
     for angle in &prep.angle_limits {
+        checks.at(angle.identity.clone(), None);
         let z =
             voltage[angle.first] * voltage[angle.second].conj() * C::from_polar(1.0, -angle.offset);
         if z.norm() > 1e-12 {
-            interval(
-                &mut residuals.relative_limit_violation,
+            checks.interval(
+                "relative_limit_violation",
                 z.arg(),
                 Some(angle.lower),
                 Some(angle.upper),
@@ -413,20 +545,19 @@ pub(super) fn check(
     }
     for (i, t) in prep.terminals.iter().enumerate() {
         if !t.grounded {
-            mismatch(&mut residuals.kcl_pu, kcl[i].norm())?;
+            checks.at(t.bus.clone(), Some(t.terminal.clone()));
+            checks.mismatch("kcl_pu", kcl[i].norm())?;
         }
     }
-    mismatch(
-        &mut residuals.objective_relative_error,
+    checks.at("objective", None);
+    checks.mismatch(
+        "objective_relative_error",
         (objective - solver_objective) / objective.abs().max(1.0),
     )?;
-    if residuals.maximum() > tolerance {
-        return Err(format!(
-            "independent multiconductor OPF validation failed: {residuals:?}"
-        ));
-    }
+    let residuals = checks.finish()?;
     Ok(Checked {
         voltage,
+        shunts,
         residuals,
         branches,
         transformers,

@@ -478,13 +478,39 @@ fn independent_validator_rejects_corrupted_primal_auxiliary_objective_and_nonfin
     ] {
         let mut bad = x.clone();
         bad[index] += 0.1;
-        assert!(validate::check(&m, &bad, f, 1e-6).is_err());
+        let error = validate::check(&m, &bad, f, 1e-6).err().unwrap();
+        assert_eq!(error.kind, McOpfErrorKind::PhysicalValidationFailure);
+        assert_eq!(error.stage, McOpfStage::Validation);
+        assert!(!error.violations.is_empty());
+        assert!(error.residuals.as_ref().unwrap().maximum() > 1e-6);
+        if m.problem.var_names[index] == "line:l:from:0:p" {
+            let witness = error
+                .violations
+                .iter()
+                .find(|v| v.quantity == "power_link_pu")
+                .unwrap();
+            assert_eq!(witness.component, "line:l");
+            assert_eq!(witness.axis.as_deref(), Some("end:0:conductor:0"));
+        }
     }
-    assert!(validate::check(&m, &x, f + 1., 1e-6).is_err());
+    let objective_error = validate::check(&m, &x, f + 1., 1e-6).err().unwrap();
+    assert!(objective_error
+        .violations
+        .iter()
+        .any(|v| v.quantity == "objective_relative_error" && v.component == "objective"));
     for v in [f64::NAN, f64::INFINITY] {
         let mut bad = x.clone();
         bad[0] = v;
-        assert!(validate::check(&m, &bad, f, 1e-6).is_err());
+        let error = validate::check(&m, &bad, f, 1e-6).err().unwrap();
+        assert_eq!(error.kind, McOpfErrorKind::PhysicalValidationFailure);
+        assert_eq!(error.violations[0].residual, None);
+        assert_eq!(
+            error.violations[0].axis.as_deref(),
+            Some(m.problem.var_names[0].as_str())
+        );
+        let encoded = serde_json::to_string(&error).unwrap();
+        let decoded: McOpfError = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.violations, error.violations);
         assert!(validate::check(&m, &x, v, 1e-6).is_err());
     }
 }
@@ -538,6 +564,7 @@ fn canonical_module_roundtrip_retains_instance_and_terminal_axes() {
     assert!(
         solve_mc_ac_opf_module_json(&input, &McOpfOptions::default())
             .unwrap_err()
+            .to_string()
             .contains("diagnostic")
     );
 }
@@ -549,6 +576,7 @@ fn cancellation_and_invalid_options_stop_before_solver() {
         Some(Arc::new(AtomicBool::new(true)))
     )
     .unwrap_err()
+    .to_string()
     .contains("cancelled"));
     assert!(solve_mc_ac_opf_instance(
         instance(network()),

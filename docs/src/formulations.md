@@ -306,8 +306,37 @@ open connection. A profile rejection is not a proof of electrical infeasibility.
 
 `McOpfResult` reports SI terminal voltages and physical branch, device and winding
 ledgers, keeping terminal and coil axes distinct, including neutral returns.
-The portable solution projection contains voltages, existing source/generator
-dispatch fields and the original instance; it does not serialize every native
-ledger. Accepted solutions pass the [physical validation gate](validation.md#multiconductor-ivr-opf).
+Each terminal is identified by bus and terminal label. Each coil has a local
+zero-based index and explicit positive/negative terminals; an absent negative
+terminal means physical ground. Complex arrays are `[real, imaginary]`, with
+field suffixes identifying volts, amperes and VA. Device currents and powers
+are positive for load withdrawal and source/generator/inverter injection.
+Branch currents leave the bus toward the branch. Transformer coil and shunt
+currents enter the equipment.
+
+Transformer rating ports retain their prepared winding/port names and selected
+limits. These ports may include magnetizing current or represent through-power;
+they are measurements, not additional additive terminal injections. Bare winding
+currents and separate core/grounding shunt ledgers reconstruct physical KCL.
+The optional transformer `tap` is the optimized physical coefficient in the
+canonical winding convention; fixed taps remain in the retained instance.
+
+`McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
+PowerIO `McAcOpfSolution` plus version 1 of the namespaced module extension
+`org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
+source/generator dispatch and the original instance. The extension carries the
+complete ledgers, axes, optimized taps, numerical options/bases, residuals,
+input diagnostic summaries, fingerprint, iterations and optional profile.
+This uses PowerIO's existing extension mechanism without changing its schema.
+
+`McOpfResult::from_module_json` reads this complete report and preserves module
+records and unrelated extensions on re-export. It rejects missing/unknown report
+versions, inconsistent identities or vector lengths, changed instance/base
+fingerprints, and disagreement with canonical voltage columns. Reading a report
+does not rerun the solver or certify an external result. A canonical solution
+without the extension remains readable through PowerIO, but cannot be imported
+as a complete `McOpfResult`.
+
+Accepted solves pass the [physical validation gate](validation.md#multiconductor-ivr-opf).
 They establish local numerical success, without a global-optimality certificate,
 prices, solution sensitivities or retained solve sessions.
