@@ -1,29 +1,22 @@
 # Multiconductor IVR OPF implementation roadmap
 
-[Tellegen #160](https://github.com/eigenergy/tellegen/pull/160) and its companion
-[PowerIO #569](https://github.com/eigenergy/powerio/pull/569) and
-[#570](https://github.com/eigenergy/powerio/pull/570) are published and ready for
-review. As of 2026-10-17, #160 includes Tellegen main
-`192605a66d34be05ce27da651f799092f40f8a48`; both PowerIO branches include main
-`39f94ebf65f35044b7fc5edc5369559831ab2510` (workspace version 0.11.5).
-The PowerIO review stack is now #564 (source references and shared ZIP support)
-→ #569 (converter fidelity) → #570 (IVR preparation). #570 rejects terminal-
-referenced sources through #564's shared guard.
-The #159 review base and all original formulation/evidence commits are preserved.
-The preparation API is still unreleased, and the existing dependency, hosted MC
-CI and POUNCE release/restoration/distribution gates remain in force.
-See [the review packet](powerio-ivr-review.md) for current companion heads.
-The dated sections below retain the source identities and validation results
-from their respective development stages.
+[Tellegen #160](https://github.com/eigenergy/tellegen/pull/160) is refreshed
+against Tellegen main `f6a9c538559e988f84e7cb979df29cd465fc083c` as of
+2026-10-27. Its former base #159 is merged, so #160 now targets main.
+The PowerIO prerequisites #564, #569 and #570 are merged and the preparation
+API is available in the pinned crates.io PowerIO **0.11.6** release. POUNCE
+uses main's published **0.13.0** pins. There are no consumer path/git overrides
+or advisory suppressions in the shipping dependency graph.
 
-The reviewed stack is [#143](https://github.com/eigenergy/tellegen/pull/143)
-(optional backend), [#144](https://github.com/eigenergy/tellegen/pull/144)
-(canonical balanced model), [#145](https://github.com/eigenergy/tellegen/pull/145)
-(solve and emission), and [#159](https://github.com/eigenergy/tellegen/pull/159)
-(the current-main browser refresh of [#146](https://github.com/eigenergy/tellegen/pull/146)).
-The IVR branch originally branched from #145 as a sibling of #146. It now stacks
-above #159 for integration with the refreshed native stack and browser baseline;
-MC OPF itself remains native-only and is not forwarded by the browser worker.
+Native MC OPF now runs in hosted all-features and MC-only CI, and in `just ci`.
+The nonlinear adapter shares main's restoration factory and cancellation guard
+with balanced AC OPF; the balanced recovery ladder remains intact. MC OPF is
+native-only and is not forwarded by browser, server, CLI or Python adapters.
+See [the review packet](powerio-ivr-review.md) for reproduction and limitations.
+
+The dated sections below are historical development evidence. Their dependency
+blockers, test counts and performance measurements describe those original
+source revisions, not the current refresh. ENWL experiments have not been rerun.
 
 ## Ownership
 

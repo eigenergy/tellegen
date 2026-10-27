@@ -619,14 +619,9 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
         let u = if limit.combination.is_empty() {
             difference(&voltage, limit.positive, limit.negative)
         } else {
-            let sequence = descriptor(
-                &powerio_matrix::McOpfComplexRow {
-                    voltage: limit.combination.clone(),
-                    current: Vec::new(),
-                },
-                &voltage,
-                &[],
-            );
+            let mut row = powerio_matrix::McOpfComplexRow::default();
+            row.voltage.clone_from(&limit.combination);
+            let sequence = descriptor(&row, &voltage, &[]);
             // Lift the sequence voltage before squaring. This avoids cancellation
             // between expanded Fortescue cross terms in the backend's conservative
             // quadratic recognizer and keeps the defining rows affine.

@@ -66,15 +66,15 @@ jobs:
       # tests the feature set the browser ships.
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
-      # Do not rely on feature unification in the default workspace test.
-      # mc-opf still needs the unreleased companion PowerIO preparation API.
-      # Keep every released feature here; validate MC OPF separately with
-      # scripts/check-mc-opf.sh until that API is released and pinned.
-      - name: Test and lint the opt-in AC OPF path
+      # The MC preparation API is available in the pinned published PowerIO.
+      # Exercise the native feature explicitly; shipping adapters still exclude it.
+      - name: Test and lint the opt-in AC and multiconductor OPF paths
         run: |
-          cargo test -p tellegen --features conic,schema,acopf --locked
+          cargo test -p tellegen --all-features --locked
+          cargo test -p tellegen --no-default-features --features mc-opf --locked
           cargo test -p tellegen-acopf-wasi --features acopf --locked
-          cargo clippy -p tellegen -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
+          cargo clippy -p tellegen --all-targets --all-features -- -D warnings
+          cargo clippy -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
       - name: Run the exact-derivative POUNCE feasibility probe
         run: cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
       - name: Reproduce the pinned multiconductor OpenDSS oracle

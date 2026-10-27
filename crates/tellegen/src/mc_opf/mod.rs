@@ -9,7 +9,7 @@ mod model;
 mod tests;
 mod validate;
 
-use crate::nlp::CancellableNlTnlp;
+use crate::nlp::{configure_restoration, CancellableNlTnlp};
 use pounce_nl::nl_reader::NlTnlp;
 use pounce_rs::{ApplicationReturnStatus, IpoptApplication, TNLP};
 use powerio::{McAcOpfInstance, McAcOpfSolution, PioModule, PioValue, Termination};
@@ -209,6 +209,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
         app.initialize_with_options_str("timing_statistics yes\n")
             .map_err(|e| e.to_string())?;
     }
+    configure_restoration(&mut app);
     app.initialize().map_err(|e| e.to_string())?;
     record_stage(&mut profile, &mut stage, "solver_setup");
     let status = app.optimize_tnlp(Rc::clone(&tnlp) as Rc<RefCell<dyn TNLP>>);

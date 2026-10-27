@@ -1,28 +1,74 @@
-//! Shared POUNCE cancellation boundary for native formulations.
+//! Shared POUNCE restoration and cancellation boundary for native formulations.
 use pounce_nl::nl_reader::NlTnlp;
+use pounce_rs::pounce_algorithm::application::{
+    default_backend_factory, feral_config_from_options, ma57_config_from_options,
+};
+use pounce_rs::pounce_restoration::{
+    resto_alg_builder::RestoAlgorithmBuilder,
+    resto_inner_solver::{make_default_restoration_factory_provider, InnerBackendFactoryFactory},
+};
 use pounce_rs::{
-    BoundsInfo, Index, IpoptCq, IpoptData, IterStats, Linearity, MetaData, NlpInfo, Number,
-    ScalingRequest, Solution, SparsityRequest, StartingPoint, TNLP,
+    BoundsInfo, Index, IpoptApplication, IpoptCq, IpoptData, IterStats, Linearity, MetaData,
+    NlpInfo, Number, ScalingRequest, Solution, SparsityRequest, StartingPoint, TNLP,
 };
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+
+/// Install the same multi-pass restoration factory used by POUNCE's released
+/// WASI frontend. A bare IpoptApplication has no restoration sub-IPM.
+pub(crate) fn configure_restoration(application: &mut IpoptApplication) {
+    let feral = feral_config_from_options(application.options());
+    let ma57 = ma57_config_from_options(application.options(), "resto.");
+    let mint = move || -> InnerBackendFactoryFactory {
+        let feral = feral.clone();
+        let ma57 = ma57.clone();
+        Box::new(move || default_backend_factory(feral.clone(), ma57.clone()))
+    };
+    let provider = make_default_restoration_factory_provider(
+        RestoAlgorithmBuilder::new(),
+        application.algorithm_builder_from_options(),
+        mint,
+    );
+    application.set_restoration_factory_provider(provider);
+}
+
 /// Transparent POUNCE model decorator that polls Tellegen's cancellation flag
 /// from each intermediate callback made by the currently wired solve.
+#[cfg(test)]
+pub(crate) type IntermediateTestHook = Box<dyn FnMut(&IterStats)>;
+
 pub(crate) struct CancellableNlTnlp {
     pub(crate) inner: NlTnlp,
     cancel: Option<Arc<AtomicBool>>,
+    #[cfg(test)]
+    pub(crate) on_intermediate: Option<IntermediateTestHook>,
 }
 
 impl CancellableNlTnlp {
     pub(crate) fn new(inner: NlTnlp, cancel: Option<Arc<AtomicBool>>) -> Self {
-        Self { inner, cancel }
+        Self {
+            inner,
+            cancel,
+            #[cfg(test)]
+            on_intermediate: None,
+        }
     }
 }
 
 impl TNLP for CancellableNlTnlp {
     fn get_nlp_info(&mut self) -> Option<NlpInfo> {
+        // POUNCE 0.13's ladder continues to the next rung even after a
+        // UserRequestedStop. Refuse its next initialization before it can
+        // rebuild/evaluate the NLP; the caller maps the flag to cancellation.
+        if self
+            .cancel
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+        {
+            return None;
+        }
         self.inner.get_nlp_info()
     }
 
@@ -116,6 +162,10 @@ impl TNLP for CancellableNlTnlp {
         data: &IpoptData,
         cq: &IpoptCq,
     ) -> bool {
+        #[cfg(test)]
+        if let Some(callback) = &mut self.on_intermediate {
+            callback(&statistics);
+        }
         if self
             .cancel
             .as_ref()
