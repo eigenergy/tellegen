@@ -12,6 +12,14 @@ pub struct McOpfTerminalId {
     pub terminal: String,
 }
 impl McOpfTerminalId {
+    /// A bus and its local terminal label. Labels are not global conductor IDs.
+    pub fn new(bus: impl Into<String>, terminal: impl Into<String>) -> Self {
+        Self {
+            bus: bus.into(),
+            terminal: terminal.into(),
+        }
+    }
+
     pub(super) fn at(prep: &McAcOpfPreparation, index: usize) -> Self {
         let t = &prep.terminals[index];
         Self {
@@ -117,7 +125,7 @@ impl McOpfResult {
 
     fn report(&self) -> Report {
         Report {
-            version: 6,
+            version: 9,
             duals: self.duals.clone(),
             options: self.options.clone(),
             terminals: self.terminals.clone(),
@@ -176,10 +184,11 @@ impl McOpfResult {
         let mut report: Report =
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
         report.verify(solution)?;
-        if matches!(report.version, 2..=5) {
+        if matches!(report.version, 2..=8) {
             if let Some(old) = &report.duals {
-                // Verify legacy claims with their original parameter map first;
-                // then recover newly supported derivatives from canonical input.
+                // Verify legacy claims with their original parameter map and
+                // rank audit first; then recompute current derivatives and
+                // qualification from canonical input without a new solve.
                 let prep = initial::prepare(
                     solution.instance(),
                     &McAcOpfAssemblyOptions::new(
@@ -223,8 +232,22 @@ impl McOpfResult {
 
 impl Report {
     fn verify(&self, solution: &McAcOpfSolution) -> Result<Option<model::Model>, McOpfError> {
-        if !matches!(self.version, 1..=6) || (self.version == 1 && self.duals.is_some()) {
+        if !matches!(self.version, 1..=9) || (self.version == 1 && self.duals.is_some()) {
             return Err(invalid("unsupported MC OPF report version"));
+        }
+        if self.version < 8
+            && solution.instance().network().ibrs().iter().any(|inv| {
+                inv.control_profile.as_ref().is_some_and(|name| {
+                    solution
+                        .instance()
+                        .network()
+                        .control_profiles()
+                        .iter()
+                        .any(|p| &p.name == name && p.power_factor.is_some())
+                })
+            })
+        {
+            return Err(invalid("legacy PF reports use different constraint scaling; solve again before using their duals or sensitivities"));
         }
         let prep = initial::prepare(
             solution.instance(),
@@ -275,7 +298,12 @@ impl Report {
             }
             .map_err(invalid)?;
             let checked = duals
-                .verify(&model, solution, self.options.acceptance_tolerance)
+                .verify(
+                    &model,
+                    solution,
+                    self.options.acceptance_tolerance,
+                    self.version,
+                )
                 .map_err(invalid)?;
             let stored = serde_json::to_value((
                 &self.branches,

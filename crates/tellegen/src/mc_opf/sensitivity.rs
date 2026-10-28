@@ -24,6 +24,10 @@ pub struct McOpfSensitivityError {
     pub kind: McOpfSensitivityErrorKind,
     pub message: String,
     pub dual_status: Option<McOpfMarginalStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_rank: Option<Box<McOpfActiveRank>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linear_solve: Option<McOpfLinearSolveDiagnostics>,
 }
 impl std::fmt::Display for McOpfSensitivityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -38,7 +42,31 @@ fn error(kind: ErrorKind, message: impl Into<String>) -> McOpfSensitivityError {
         kind,
         message: message.into(),
         dual_status: None,
+        active_rank: None,
+        linear_solve: None,
     }
+}
+
+/// Deterministic structural statistics for the reusable, unregularized KKT.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct McOpfSensitivityDiagnostics {
+    pub active_rank: McOpfActiveRank,
+    pub variables: usize,
+    pub active_constraints: usize,
+    pub active_variable_bounds: usize,
+    pub kkt_dimension: usize,
+    pub kkt_nonzeros: usize,
+}
+/// Residuals evaluated against the original unregularized matrix, after any
+/// refinement. This is a backward-error check, not a forward-error bound.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct McOpfLinearSolveDiagnostics {
+    pub residual_inf: f64,
+    pub componentwise_backward_error: f64,
+    /// Maximum |residual| / (1e-10 + 1e-8 * (|rhs| + |K| |x|)).
+    /// Accepted solves have a value <= 1.
+    pub residual_tolerance_ratio: f64,
+    pub refinement_steps: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -239,6 +267,8 @@ impl<'a> McOpfSensitivities<'a> {
                 kind: ErrorKind::UnreliableDuals,
                 message: "a regular, strongly active dual point is required".into(),
                 dual_status: Some(d.status),
+                active_rank: Some(Box::new(d.active_rank.clone())),
+                linear_solve: None,
             });
         }
         let p = &model.problem;
@@ -253,6 +283,8 @@ impl<'a> McOpfSensitivities<'a> {
                     kind: ErrorKind::UnreliableDuals,
                     message: "both sides of a narrow inequality are numerically active".into(),
                     dual_status: Some(McOpfMarginalStatus::WeakActiveSet),
+                    active_rank: Some(Box::new(d.active_rank.clone())),
+                    linear_solve: None,
                 });
             }
             if (row.lower.is_some() && row.lower == row.upper) || at(row.lower) || at(row.upper) {
@@ -363,6 +395,8 @@ impl<'a> McOpfSensitivities<'a> {
                 kind: ErrorKind::UnreliableDuals,
                 message: "stationarity failed after removing inactive multipliers".into(),
                 dual_status: Some(McOpfMarginalStatus::FailedKktCheck),
+                active_rank: Some(Box::new(d.active_rank.clone())),
+                linear_solve: None,
             });
         }
         for ((r, c), v) in hr.into_iter().zip(hc).zip(h) {
@@ -377,7 +411,10 @@ impl<'a> McOpfSensitivities<'a> {
             entries.push((r, c, 1.));
             entries.push((c, r, 1.));
         }
-        let factor = linear::Factor::new(dim, entries)?;
+        let factor = linear::Factor::new(dim, entries).map_err(|mut e| {
+            e.active_rank = Some(Box::new(d.active_rank.clone()));
+            e
+        })?;
         Ok(Self {
             result,
             model,
@@ -386,6 +423,18 @@ impl<'a> McOpfSensitivities<'a> {
             jacobian,
             objective_gradient,
         })
+    }
+
+    pub fn diagnostics(&self) -> McOpfSensitivityDiagnostics {
+        let active_rank = self.result.duals.as_ref().unwrap().active_rank.clone();
+        McOpfSensitivityDiagnostics {
+            active_variable_bounds: active_rank.active_rows - self.active.len(),
+            active_rank,
+            variables: self.model.problem.n,
+            active_constraints: self.active.len(),
+            kkt_dimension: self.factor.dimension(),
+            kkt_nonzeros: self.factor.nonzeros(),
+        }
     }
 
     /// All supported physical parameter identities for this result. Individual
@@ -408,6 +457,16 @@ impl<'a> McOpfSensitivities<'a> {
         direction: &[McOpfParameterDirection],
         outputs: &[McOpfSensitivityOutput],
     ) -> Result<Vec<McOpfOutputDerivative>> {
+        self.forward_with_diagnostics(direction, outputs)
+            .map(|(values, _)| values)
+    }
+
+    /// Forward derivatives and the residual check for this specific backsolve.
+    pub fn forward_with_diagnostics(
+        &self,
+        direction: &[McOpfParameterDirection],
+        outputs: &[McOpfSensitivityOutput],
+    ) -> Result<(Vec<McOpfOutputDerivative>, McOpfLinearSolveDiagnostics)> {
         let gradients: Vec<_> = outputs
             .iter()
             .map(|o| self.output_gradient(o))
@@ -424,8 +483,8 @@ impl<'a> McOpfSensitivities<'a> {
                 rhs[i] += term.delta * v;
             }
         }
-        let tangent = self.factor.solve(&rhs)?;
-        outputs
+        let (tangent, diagnostics) = self.factor.solve_with_diagnostics(&rhs)?;
+        let values = outputs
             .iter()
             .zip(gradients)
             .map(|(output, (gradient, unit))| {
@@ -436,7 +495,8 @@ impl<'a> McOpfSensitivities<'a> {
                     derivative,
                 })
             })
-            .collect()
+            .collect::<Result<_>>()?;
+        Ok((values, diagnostics))
     }
 
     /// One transpose backsolve for a weighted scalar output, followed by sparse
@@ -447,6 +507,16 @@ impl<'a> McOpfSensitivities<'a> {
         weights: &[McOpfOutputWeight],
         parameters: &[McOpfParameter],
     ) -> Result<Vec<McOpfParameterDerivative>> {
+        self.adjoint_with_diagnostics(weights, parameters)
+            .map(|(values, _)| values)
+    }
+
+    /// Adjoint derivatives and the residual check for this specific backsolve.
+    pub fn adjoint_with_diagnostics(
+        &self,
+        weights: &[McOpfOutputWeight],
+        parameters: &[McOpfParameter],
+    ) -> Result<(Vec<McOpfParameterDerivative>, McOpfLinearSolveDiagnostics)> {
         let columns: Vec<_> = parameters
             .iter()
             .map(|p| self.parameter_rhs(p))
@@ -461,8 +531,8 @@ impl<'a> McOpfSensitivities<'a> {
                 *r += term.weight * g;
             }
         }
-        let adjoint = self.factor.solve(&rhs)?;
-        parameters
+        let (adjoint, diagnostics) = self.factor.solve_with_diagnostics(&rhs)?;
+        let values = parameters
             .iter()
             .zip(columns)
             .map(|(parameter, column)| {
@@ -474,7 +544,8 @@ impl<'a> McOpfSensitivities<'a> {
                     derivative,
                 })
             })
-            .collect()
+            .collect::<Result<_>>()?;
+        Ok((values, diagnostics))
     }
 
     fn parameter_rhs(&self, parameter: &McOpfParameter) -> Result<Vec<(usize, f64)>> {

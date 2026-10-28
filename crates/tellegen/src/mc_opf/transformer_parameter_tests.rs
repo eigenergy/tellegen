@@ -633,7 +633,7 @@ fn current_reports_verify_old_maps_before_upgrading_transformer_claims() {
         load_parameter_tests::graph(&current, &d.primal)
     );
     let lambda: Vec<_> = d.constraints.iter().map(|c| c.multiplier).collect();
-    let old = duals::analyze(
+    let old = duals::analyze_legacy(
         &legacy,
         &d.primal,
         &lambda,
@@ -648,7 +648,7 @@ fn current_reports_verify_old_maps_before_upgrading_transformer_claims() {
     let saved = r.to_module_json().unwrap();
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-    assert_eq!(report["version"], json!(6));
+    assert_eq!(report["version"], json!(9));
     report["version"] = json!(4);
     report["duals"] = serde_json::to_value(old).unwrap();
     module
@@ -663,7 +663,7 @@ fn current_reports_verify_old_maps_before_upgrading_transformer_claims() {
         crate::ir::deserialize_module(&read.to_module_json().unwrap())
             .unwrap()
             .extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-        json!(6)
+        json!(9)
     );
     report["version"] = json!(5);
     module

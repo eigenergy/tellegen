@@ -532,7 +532,7 @@ fn analytic_kkt_checks_distinguish_weak_activity_bad_duals_and_nonuniqueness() {
 }
 
 #[test]
-fn rank_budget_is_explicit_instead_of_claiming_regular_marginals() {
+fn large_dependent_active_sets_are_qualified_instead_of_skipped() {
     let d = duals::analyze(
         &quadratic_model(257, true),
         &[0.],
@@ -541,7 +541,11 @@ fn rank_budget_is_explicit_instead_of_claiming_regular_marginals() {
         &[0.],
     )
     .unwrap();
-    assert_eq!(d.status, Status::RankNotChecked);
-    assert_eq!(d.active_rank.rank, None);
+    assert_eq!(d.status, Status::RankDeficient);
+    assert_eq!(d.active_rank.rank, Some(1));
+    assert_eq!(
+        d.active_rank.qualification.unwrap().outcome,
+        McOpfRankOutcome::Complete
+    );
     assert_eq!(d.constraints.len(), 257);
 }

@@ -160,20 +160,24 @@ Regression coverage combines:
   cases check interior dispatch, forward/adjoint agreement, cost envelopes,
   units and numerical scaling, atomic profile edits, unity-PF/unused-profile
   refusals, and version 6 round trips with verified legacy upgrades.
+- Sparse rank qualification agrees with the dense pivoted reference on small
+  matrices and covers large diagonal and connected sparse cases, numerical
+  dependence, rescaling/permutations, and explicit fill/work/nonfinite refusals.
+  A known-rank triangular matrix completes within a budget that the former
+  pivot order exhausts; a near-threshold case prevents a sparse sub-tolerance
+  candidate from terminating the audit early. A generated 30-bus, two-wire
+  radial feeder checks qualification, forward/adjoint agreement, cost marginals
+  and linear residuals with bounded CI work.
+  An opt-in connected 48-section feeder exceeds both old dense-audit limits and checks
+  centered perturbations, forward/adjoint agreement, physical cost marginals,
+  base/objective-scale invariance and backsolve diagnostics. Report tests verify
+  legacy dense and sparse rank reports before upgrading and reject tampered audit
+  claims; session tests preserve accepted results and enforce stale-view rules.
 
-The inputs, reference JSON, attribution and license files in
-`crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance
-records input SHA-256 hashes, oracle revision, units and numerical tolerances;
-the component bundles also record Julia/JuMP/Ipopt versions and solver options.
-Ordinary Rust tests consume the frozen results without Julia, network access
-or an external feeder dataset. Intentional regeneration uses:
-
-```sh
-julia --project=/path/to/BMOPFTools.jl/test scripts/mc_opf_oracle.jl
-```
-
-The script requires a clean BMOPFTools checkout at
-`a8b52e069bfd4a7a57434c91bc0470ac03cfdd55`. Review changed inputs, hashes and
-reference values together; do not relax tolerances to hide a changed electrical
-problem. The [external study protocol](methodology.md#external-multiconductor-ivr-studies)
-adds larger-feeder comparisons without vendoring the dataset.
+- PF correctness tests use bounded-coefficient algebra at both signs, unity,
+  near-unity and tiny nonzero PF; original-profile validation checks wrong Q and
+  explicit relative-accuracy diagnostics. A one-bus case requires P = 400 W and
+  Q = -300 var at PF 0.8, with an analytic marginal checked by forward/adjoint
+  queries and two perturbed solves (three solves total, 50-iteration ceilings).
+  Retained edits invalidate sensitivities, and legacy PF reports cannot reuse
+  multipliers from the old scaling.

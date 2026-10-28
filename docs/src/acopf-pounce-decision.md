@@ -397,8 +397,11 @@ physical continuous tap bounds; outputs include winding/port flows and optimized
 tap ratios, including inverse regulator conventions. Shared control-profile
 mappings cover volt-var/volt-watt breakpoints and fractions and interior signed
 power factors, including all assigned coils and smoothing-width derivatives.
-Control modes, references and electrical coefficients remain fixed. Version 6
-reports retain these marginal claims; version 2–5 reports are verified before upgrade.
+Control modes, references and electrical coefficients remain fixed. Sparse rank
+qualification uses explicit fill/work budgets, with reusable KKT structure and
+per-query residual diagnostics exposed by sensitivity views. Version 7 reports
+retain these claims; version 2–6 reports are verified with their original maps
+and dense rank audit before upgrade.
 
 The feature builds against POUNCE 0.13.0 and, until PowerIO 0.11.8 is
 published, against the PowerIO candidate patched in the root `Cargo.toml`. Build and test the native feature from the repository root:

@@ -138,7 +138,9 @@ all assigned inverters and coils, including averaged voltage monitors. Exact
 mixed derivatives include both the interval slopes and the breakpoint-dependent
 softplus smoothing width. No runtime finite differences are used. Breakpoints
 use volts; fractions and power factor use ratio units. Unity power factor has
-no finite two-sided derivative, and unused profiles are unsupported. Control
+no finite two-sided derivative, and unused profiles are unsupported. For the
+bounded PF row `a*P + pf*Q`, the parameter partial is `(-pf/a)*P + Q`,
+including both mixed state derivatives; no division by `pf` is needed. Control
 families, references, assignments and aggregation stay fixed.
 
 Transformer rating parameters address effective selected result ports in A/VA,
@@ -199,7 +201,17 @@ allowance. This checks all directions, including null directions orthogonal to
 dense probe vectors. Construction costs one sparse backsolve per KKT column;
 no dense inverse is retained, and queries reuse the qualified factorization.
 Each query also checks its componentwise residual against the original
-unregularized matrix and can perform two refinement steps. The inverse check is
+unregularized matrix and can perform two refinement steps.
+
+`view.diagnostics()` returns the active rank qualification, variable/active-row
+counts, KKT dimension and assembled nonzeros. `forward_with_diagnostics` and
+`adjoint_with_diagnostics` return the same derivatives as the ordinary methods,
+plus the query's residual infinity norm, componentwise backward error,
+refinement count and maximum residual/tolerance ratio. That ratio must be at
+most one, with tolerance `1e-10 + 1e-8*(|rhs| + |K|*|x|)` per row. These statistics
+describe the assembled matrix and backsolve, not factor memory or forward error.
+
+The inverse check is
 a numerical safeguard, not an interval-arithmetic or second-order sufficiency
 certificate. Every returned derivative is conditional on the same
 regular stationary branch and active set; it does not certify global optimality
@@ -209,8 +221,22 @@ or predict behavior across active-set transitions.
 reports, unreliable duals, unsupported parameters/outputs, malformed requests,
 derivative-evaluation failure, singular/unstable KKT systems and failed linear
 solves. The existing conservative dual eligibility checks still apply, including
-zero-limit reductions, weak activity and the bounded rank audit (at most 256
-active rows and 262,144 dense audit entries). Sensitivities additionally refuse
+zero-limit reductions, weak activity and incomplete or deficient sparse rank
+qualification. The rank audit budgets sparse fill and work instead of imposing
+the legacy 256-row cutoff; its outcome and usage are retained in the dual report.
+It normalizes rows and applies twice-reorthogonalized sparse QR, preferring the
+sparsest residual row whose norm is at least half the largest remaining norm
+and exceeds the `1e-9` pivot tolerance. The global largest norm controls
+termination. This reduces fill on feeders without dropping small coefficients,
+forming normal equations or relaxing the tolerance. The limits remain two
+million live coefficients and 100 million work units; candidate visits also
+count as work. A completed audit is a numerical rank test, not a singular-value
+or conditioning certificate. Near the tolerance boundary, pivot order can affect
+the reported numerical rank. Larger or denser feeders can still exhaust a budget
+and return no rank; physical feasibility does not override that refusal.
+Eligibility and factorization errors carry the available `active_rank`; a
+failed backsolve carries its last finite `linear_solve` diagnostics when available.
+Sensitivities additionally refuse
 ambiguous narrow inequalities and loss of stationarity when inactive multipliers
 are removed. Physical acceptance alone does not establish this eligibility.
 
@@ -218,7 +244,11 @@ The session entry point requires `current_result()`: edits, changed options and
 failed or cancelled attempts invalidate access. Rust borrowing prevents edits
 while a sensitivity view is in use. An explicitly selected or cloned historical
 result remains an independent snapshot of its original instance. Portable
-version 6 results can rebuild a view after import, and verified version 2–5 dual
-reports are upgraded with load/inverter/transformer/control-profile mappings. Factorizations and views are
+version 9 results can rebuild a view after import. Version 2–8 dual reports
+are verified with their original mappings and rank audit (dense for versions
+2–6, largest-residual sparse pivots for 7–8) before upgrading to current mappings
+and sparsity-aware qualification. Versions 1–7 with assigned PF
+controls are rejected because their constraint scaling differs; they require
+a new solve. Factorizations and views are
 native in-memory objects and are not serialized. Neither queries nor failures
 change the session's accepted result, warm start or revision.

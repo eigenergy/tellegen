@@ -105,7 +105,10 @@ pub struct McOpfParameter {
     pub kind: McOpfParameterKind,
 }
 impl McOpfParameter {
-    pub(super) fn new(
+    /// Identify a physical parameter. This constructs a selector, not a claim
+    /// that the parameter exists or is differentiable in a particular result;
+    /// sensitivity queries validate the complete identity against that result.
+    pub fn new(
         owner: McOpfParameterOwner,
         component: &str,
         axis: Option<usize>,
@@ -118,7 +121,9 @@ impl McOpfParameter {
             kind,
         }
     }
-    pub(super) fn unit(&self) -> McOpfParameterUnit {
+    /// Physical unit implied by the parameter kind. Availability and regularity
+    /// are result-dependent and are checked separately by sensitivity queries.
+    pub fn unit(&self) -> McOpfParameterUnit {
         use McOpfParameterKind::*;
         match self.kind {
             LoadActivePower | Availability | ActivePowerLower | ActivePowerUpper => {
@@ -185,9 +190,12 @@ pub struct McOpfKktResiduals {
 #[serde(deny_unknown_fields)]
 pub struct McOpfActiveRank {
     pub active_rows: usize,
-    /// None when the bounded dense audit was skipped.
+    /// None when qualification could not finish within its resource budget.
     pub rank: Option<usize>,
     pub weak_inequalities: usize,
+    /// Absent only in legacy version 2–6 reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qualification: Option<super::McOpfRankDiagnostics>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -259,6 +267,26 @@ pub(super) fn analyze(
     lambda: &[f64],
     zl: &[f64],
     zu: &[f64],
+) -> Result<McOpfDualReport, String> {
+    analyze_inner(model, x, lambda, zl, zu, 9)
+}
+#[cfg(test)]
+pub(super) fn analyze_legacy(
+    model: &model::Model,
+    x: &[f64],
+    lambda: &[f64],
+    zl: &[f64],
+    zu: &[f64],
+) -> Result<McOpfDualReport, String> {
+    analyze_inner(model, x, lambda, zl, zu, 6)
+}
+pub(super) fn analyze_inner(
+    model: &model::Model,
+    x: &[f64],
+    lambda: &[f64],
+    zl: &[f64],
+    zu: &[f64],
+    report_version: u32,
 ) -> Result<McOpfDualReport, String> {
     let p = &model.problem;
     if x.len() != p.n
@@ -400,8 +428,28 @@ pub(super) fn analyze(
         return Err("nonfinite KKT residual computation".into());
     }
     let count = active.len() + active_bounds.len();
-    let rank = if count > MAX_ACTIVE_ROWS || count.saturating_mul(p.n) > MAX_RANK_ENTRIES {
-        None
+    let (rank, qualification) = if report_version >= 7 {
+        let lookup: BTreeMap<_, _> = active.iter().enumerate().map(|(i, &r)| (r, i)).collect();
+        let mut rows = vec![BTreeMap::new(); count];
+        for ((&r, &c), &v) in ir.iter().zip(&jc).zip(&jac) {
+            if let Some(&i) = lookup.get(&(r as usize)) {
+                *rows[i].entry(c as usize).or_default() += v;
+            }
+        }
+        for (i, &c) in active_bounds.iter().enumerate() {
+            rows[active.len() + i].insert(c, 1.);
+        }
+        for row in &mut rows {
+            row.retain(|_, v| *v != 0.);
+        }
+        let (rank, audit) = if report_version <= 8 {
+            super::rank::audit_legacy(rows, p.n)
+        } else {
+            super::rank::audit(rows, p.n)
+        };
+        (rank, Some(audit))
+    } else if count > MAX_ACTIVE_ROWS || count.saturating_mul(p.n) > MAX_RANK_ENTRIES {
+        (None, None)
     } else {
         let lookup: BTreeMap<_, _> = active.iter().enumerate().map(|(i, &r)| (r, i)).collect();
         let mut rows = vec![vec![0.; p.n]; count];
@@ -413,7 +461,7 @@ pub(super) fn analyze(
         for (i, &c) in active_bounds.iter().enumerate() {
             rows[active.len() + i][c] = 1.;
         }
-        Some(row_rank(rows))
+        (Some(row_rank(rows)), None)
     };
     let status = if [
         kkt.stationarity_relative_inf,
@@ -548,6 +596,7 @@ pub(super) fn analyze(
             active_rows: count,
             rank,
             weak_inequalities: weak,
+            qualification,
         },
         status,
         marginals,
@@ -556,7 +605,7 @@ pub(super) fn analyze(
 
 /// Pivoted, twice-reorthogonalized row QR after unit row normalization. This is
 /// a bounded numerical LICQ audit, not a proof of uniqueness or second order sufficiency.
-fn row_rank(mut rows: Vec<Vec<f64>>) -> usize {
+pub(super) fn row_rank(mut rows: Vec<Vec<f64>>) -> usize {
     for row in &mut rows {
         let norm = row.iter().fold(0.0_f64, |n, v| n.hypot(*v));
         if norm > 0. {
@@ -598,7 +647,14 @@ impl McOpfDualReport {
         model: &model::Model,
         solution: &McAcOpfSolution,
         tolerance: f64,
+        report_version: u32,
     ) -> Result<validate::Checked, String> {
+        if self.active_rank.qualification.as_ref().is_some_and(|q| {
+            q.tolerance != super::rank::TOLERANCE
+                || q.smallest_accepted_pivot.is_some_and(|v| !v.is_finite())
+        }) {
+            return Err("invalid rank qualification quantities".into());
+        }
         if self.constraints.iter().any(|r| {
             [r.lower, r.upper, r.identity.norm_divisor_pu]
                 .into_iter()
@@ -616,12 +672,13 @@ impl McOpfDualReport {
             return Err("nonfinite optional dual quantity".into());
         }
         let lambda: Vec<_> = self.constraints.iter().map(|r| r.multiplier).collect();
-        let recomputed = analyze(
+        let recomputed = analyze_inner(
             model,
             &self.primal,
             &lambda,
             &self.lower_bound_multipliers,
             &self.upper_bound_multipliers,
+            report_version,
         )?;
         let a = serde_json::to_value(self).map_err(|e| e.to_string())?;
         let b = serde_json::to_value(&recomputed).map_err(|e| e.to_string())?;
