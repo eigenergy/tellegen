@@ -497,6 +497,15 @@ impl<'a> McOpfSensitivities<'a> {
                         *rhs.entry(c).or_default() += 2. * row.multiplier * j / physical;
                     }
                 }
+                duals::Rule::Load(load) => {
+                    let (value, gradient) = load
+                        .evaluate(&d.primal)
+                        .map_err(|e| error(ErrorKind::UnsupportedParameter, e))?;
+                    *rhs.entry(bottom).or_default() -= value;
+                    for (c, g) in gradient {
+                        *rhs.entry(c).or_default() -= row.multiplier * g;
+                    }
+                }
             }
         }
         Ok(rhs.into_iter().collect())

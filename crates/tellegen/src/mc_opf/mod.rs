@@ -17,6 +17,9 @@ mod initial;
 #[cfg(test)]
 mod initial_tests;
 pub use initial::mc_opf_initial_point_from_pf;
+#[cfg(test)]
+mod load_parameter_tests;
+mod load_parameters;
 mod model;
 mod result;
 mod sensitivity;
@@ -264,7 +267,7 @@ pub fn solve_mc_ac_opf_instance_cancellable(
     record_stage(&mut profile, &mut stage, "preparation");
     let fingerprint = result::fingerprint(&prep)?;
     record_stage(&mut profile, &mut stage, "fingerprint");
-    let mut model = model::compile(prep)
+    let mut model = model::compile_with_load_parameters(prep, instance.network())
         .map_err(|e| McOpfError::new(McOpfErrorKind::InvalidInput, McOpfStage::Compilation, e))?;
     record_stage(&mut profile, &mut stage, "model_compile");
     let initial_diagnostics = initial::apply(&mut model, &instance)?;
