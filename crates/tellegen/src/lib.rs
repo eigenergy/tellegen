@@ -42,15 +42,19 @@ pub mod mc_pf;
 #[cfg(feature = "mc-opf")]
 pub use mc_opf::{
     mc_opf_initial_point_from_pf, solve_mc_ac_opf_instance, solve_mc_ac_opf_instance_cancellable,
-    solve_mc_ac_opf_module_json, McOpfActiveRank, McOpfBranchEnd, McOpfDeviceAxis, McOpfDualReport,
-    McOpfEdit, McOpfError, McOpfErrorKind, McOpfFlowQuantity, McOpfLinearSolveDiagnostics,
-    McOpfMarginalStatus, McOpfMarginalValue, McOpfOptions, McOpfOutputDerivative, McOpfOutputUnit,
-    McOpfOutputWeight, McOpfParameter, McOpfParameterDerivative, McOpfParameterDirection,
-    McOpfParameterKind, McOpfParameterOwner, McOpfParameterUnit, McOpfProfile,
-    McOpfRankDiagnostics, McOpfRankOutcome, McOpfResult, McOpfSensitivities,
-    McOpfSensitivityDiagnostics, McOpfSensitivityError, McOpfSensitivityErrorKind,
-    McOpfSensitivityOutput, McOpfSession, McOpfSessionResult, McOpfStage, McOpfStart,
-    McOpfStartUsed, McOpfTransformerAxis, McOpfVoltagePart,
+    solve_mc_ac_opf_module_json, validate_mc_opf_input_diagnostics, McOpfActiveRank,
+    McOpfBranchEnd, McOpfBranchResult, McOpfCoilAxis, McOpfConstraintDual, McOpfConstraintId,
+    McOpfDeviceAxis, McOpfDeviceResult, McOpfDiagnostic, McOpfDualReport, McOpfEdit, McOpfError,
+    McOpfErrorKind, McOpfFlowQuantity, McOpfKktResiduals, McOpfLinearProfile,
+    McOpfLinearSolveDiagnostics, McOpfMarginalStatus, McOpfMarginalValue, McOpfOmittedConstraint,
+    McOpfOptions, McOpfOutputDerivative, McOpfOutputUnit, McOpfOutputWeight, McOpfParameter,
+    McOpfParameterDerivative, McOpfParameterDirection, McOpfParameterKind, McOpfParameterOwner,
+    McOpfParameterUnit, McOpfPortResult, McOpfProfile, McOpfRankDiagnostics, McOpfRankOutcome,
+    McOpfResiduals, McOpfResult, McOpfRowOmission, McOpfSensitivities, McOpfSensitivityDiagnostics,
+    McOpfSensitivityError, McOpfSensitivityErrorKind, McOpfSensitivityOutput, McOpfSession,
+    McOpfSessionResult, McOpfShuntResult, McOpfStage, McOpfStart, McOpfStartUsed, McOpfTerminalId,
+    McOpfTerminalVoltage, McOpfTransformerAxis, McOpfTransformerResult, McOpfViolation,
+    McOpfVoltagePart, MC_OPF_RESULT_EXTENSION,
 };
 mod model;
 #[cfg(feature = "acopf")]
