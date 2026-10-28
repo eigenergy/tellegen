@@ -608,7 +608,7 @@ fn transformer_sessions_refresh_derivatives_and_reject_invalid_output_axes() {
 }
 
 #[test]
-fn version_five_reports_verify_old_maps_before_upgrading_transformer_claims() {
+fn current_reports_verify_old_maps_before_upgrading_transformer_claims() {
     let mut n = case("controls", "tap_regulator_b");
     n.sources_mut()[0].energy_cost_rate = Some(vec![20.]);
     set_number(&mut n, "g_no_load", 1e-8);
@@ -648,7 +648,7 @@ fn version_five_reports_verify_old_maps_before_upgrading_transformer_claims() {
     let saved = r.to_module_json().unwrap();
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-    assert_eq!(report["version"], json!(5));
+    assert_eq!(report["version"], json!(6));
     report["version"] = json!(4);
     report["duals"] = serde_json::to_value(old).unwrap();
     module
@@ -663,7 +663,7 @@ fn version_five_reports_verify_old_maps_before_upgrading_transformer_claims() {
         crate::ir::deserialize_module(&read.to_module_json().unwrap())
             .unwrap()
             .extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-        json!(5)
+        json!(6)
     );
     report["version"] = json!(5);
     module

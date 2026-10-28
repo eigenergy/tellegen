@@ -117,7 +117,7 @@ impl McOpfResult {
 
     fn report(&self) -> Report {
         Report {
-            version: 5,
+            version: 6,
             duals: self.duals.clone(),
             options: self.options.clone(),
             terminals: self.terminals.clone(),
@@ -176,7 +176,7 @@ impl McOpfResult {
         let mut report: Report =
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
         report.verify(solution)?;
-        if matches!(report.version, 2..=4) {
+        if matches!(report.version, 2..=5) {
             if let Some(old) = &report.duals {
                 // Verify legacy claims with their original parameter map first;
                 // then recover newly supported derivatives from canonical input.
@@ -223,7 +223,7 @@ impl McOpfResult {
 
 impl Report {
     fn verify(&self, solution: &McAcOpfSolution) -> Result<Option<model::Model>, McOpfError> {
-        if !matches!(self.version, 1..=5) || (self.version == 1 && self.duals.is_some()) {
+        if !matches!(self.version, 1..=6) || (self.version == 1 && self.duals.is_some()) {
             return Err(invalid("unsupported MC OPF report version"));
         }
         let prep = initial::prepare(
@@ -265,6 +265,11 @@ impl Report {
                 model::compile_with_load_parameters(prep.clone(), solution.instance().network())
             } else if self.version == 4 {
                 model::compile_with_inverter_parameters(prep.clone(), solution.instance().network())
+            } else if self.version == 5 {
+                model::compile_with_transformer_parameters(
+                    prep.clone(),
+                    solution.instance().network(),
+                )
             } else {
                 model::compile_with_parameters(prep.clone(), solution.instance().network())
             }
