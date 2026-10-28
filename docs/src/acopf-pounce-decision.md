@@ -381,7 +381,9 @@ accepted primal for [repeated solves and atomic edits](formulations.md#retained-
 `McOpfOptions.collect_duals` separately enables original-scale multipliers, KKT
 residuals, and [conditional local marginal values](formulations.md#dual-diagnostics-and-local-marginal-values)
 for supported load and limit parameters. Raw IVR KCL multipliers are not nodal
-prices. Solution sensitivities are not yet exposed.
+prices. `McOpfResult::sensitivities()` and `McOpfSession::sensitivities()` provide
+[conditional local forward and adjoint derivatives](sensitivity-interface.md#native-multiconductor-opf)
+from a verified current dual point, reusing one sparse active-KKT factorization.
 
 The feature builds against the published PowerIO and POUNCE versions in the
 shipping lockfile. Build and test the native feature from the repository root:

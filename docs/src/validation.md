@@ -114,6 +114,18 @@ Regression coverage combines:
   multipliers, scaling, derived values and physical ledgers; version 1 reports
   without dual data remain readable. Session edits refresh duals with the
   accepted revision.
+- Local forward/adjoint consistency and centered perturb-and-resolve checks for
+  objective, voltage, dispatch and current/power ledgers under load and limit
+  directions, including delta coils, neutral returns and unequal end shunts.
+  Tests check physical-unit/base/order/objective-scale invariance, objective
+  gradients against reported marginals, normalized-rating multiplier tangents,
+  saved-result reconstruction, inactive/unsupported parameters, and refusal of
+  unresolved active sets or nonunique dispatch. Analytic sparse-KKT tests reject
+  singular/unstable systems, including a full-row-rank constraint Jacobian with
+  a KKT null direction missed by fixed dense probes. Small matrix-only tests
+  check shifted regular systems, reordered/scaled coordinates and inverse
+  residual failures without optimization. Session tests and a compile-fail borrowing example
+  guard current versus historical sensitivity access across edits and failures.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance

@@ -115,8 +115,8 @@ impl McOpfResult {
         })
     }
 
-    pub(super) fn insert_report(&self, module: &mut PioModule<PioValue>) -> Result<(), McOpfError> {
-        let report = Report {
+    fn report(&self) -> Report {
+        Report {
             version: 2,
             duals: self.duals.clone(),
             options: self.options.clone(),
@@ -130,7 +130,16 @@ impl McOpfResult {
             iterations: self.iterations,
             fingerprint: self.fingerprint.clone(),
             profile: self.profile.clone(),
-        };
+        }
+    }
+
+    pub(super) fn verified_dual_model(&self) -> Result<Option<model::Model>, McOpfError> {
+        self.options.validate()?;
+        self.report().verify(&self.solution)
+    }
+
+    pub(super) fn insert_report(&self, module: &mut PioModule<PioValue>) -> Result<(), McOpfError> {
+        let report = self.report();
         // JSON turns nonfinite floats into null. Round-tripping the typed report
         // refuses those nulls in required quantities; check optional floats too.
         let encode = || -> Result<serde_json::Value, McOpfError> {
@@ -187,7 +196,7 @@ impl McOpfResult {
 }
 
 impl Report {
-    fn verify(&self, solution: &McAcOpfSolution) -> Result<(), McOpfError> {
+    fn verify(&self, solution: &McAcOpfSolution) -> Result<Option<model::Model>, McOpfError> {
         if !matches!(self.version, 1 | 2) || (self.version == 1 && self.duals.is_some()) {
             return Err(invalid("unsupported MC OPF report version"));
         }
@@ -204,6 +213,7 @@ impl Report {
                 "MC OPF report fingerprint does not match its instance and bases",
             ));
         }
+        let mut dual_model = None;
         if let Some(duals) = &self.duals {
             if !self.options.collect_duals {
                 return Err(invalid("dual report without collection option"));
@@ -229,6 +239,7 @@ impl Report {
             if !duals::same_json(&stored, &recovered) {
                 return Err(invalid("dual primal disagrees with physical ledgers"));
             }
+            dual_model = Some(model);
         } else if self.options.collect_duals
             && !self
                 .diagnostics
@@ -423,6 +434,6 @@ impl Report {
         if let Some(linear) = self.profile.as_ref().and_then(|p| p.linear_solver.as_ref()) {
             check(linear.max_fill_ratio.is_none_or(f64::is_finite), "profile")?;
         }
-        Ok(())
+        Ok(dual_model)
     }
 }

@@ -3,16 +3,16 @@
 use super::*;
 use pounce_rs::SparsityRequest;
 
-const KKT_TOL: f64 = 1e-6;
-const ACTIVE_TOL: f64 = 1e-7;
+pub(super) const KKT_TOL: f64 = 1e-6;
+pub(super) const ACTIVE_TOL: f64 = 1e-7;
 const RANK_TOL: f64 = 1e-9;
 const MAX_ACTIVE_ROWS: usize = 256;
 const MAX_RANK_ENTRIES: usize = 262_144;
 // Match NlProblem/POUNCE's directional unbounded-side sentinels.
-fn has_lower(v: f64) -> bool {
+pub(super) fn has_lower(v: f64) -> bool {
     v.is_finite() && v > -1e19
 }
-fn has_upper(v: f64) -> bool {
+pub(super) fn has_upper(v: f64) -> bool {
     v.is_finite() && v < 1e19
 }
 
@@ -101,7 +101,7 @@ impl McOpfParameter {
             kind,
         }
     }
-    fn unit(&self) -> McOpfParameterUnit {
+    pub(super) fn unit(&self) -> McOpfParameterUnit {
         use McOpfParameterKind::*;
         match self.kind {
             LoadActivePower | ActivePowerLower | ActivePowerUpper => McOpfParameterUnit::Watt,
@@ -198,7 +198,7 @@ pub(super) struct CompilerMap {
     pub rows: Vec<usize>,
     pub omitted: Vec<OmittedRow>,
     pub zero_limit: bool,
-    parameters: BTreeMap<McOpfParameter, Vec<(Option<usize>, Rule)>>,
+    pub parameters: BTreeMap<McOpfParameter, Vec<(Option<usize>, Rule)>>,
 }
 impl CompilerMap {
     pub fn origin(&mut self, label: String) -> usize {

@@ -55,7 +55,7 @@ conic = ["sensitivity"]
 # by wasm, CLI, server, or Python adapters; distribution remains unapproved.
 acopf = ["dep:pounce-nl", "dep:pounce-rs", "dep:num-complex"]
 # Experimental native multiconductor IVR OPF; no adapter enables this.
-mc-opf = ["acopf"]
+mc-opf = ["acopf", "dep:faer"]
 # JSON Schema derives for the CLI's `describe` output. Kept out of the
 # browser and numerical builds.
 schema = ["dep:schemars", "powerio/schema"]

@@ -19,7 +19,11 @@ mod initial_tests;
 pub use initial::mc_opf_initial_point_from_pf;
 mod model;
 mod result;
+mod sensitivity;
 mod session;
+pub use sensitivity::*;
+#[cfg(test)]
+mod sensitivity_tests;
 pub use diagnostics::{McOpfDiagnostic, McOpfError, McOpfErrorKind, McOpfStage, McOpfViolation};
 pub use result::{
     McOpfCoilAxis, McOpfPortResult, McOpfShuntResult, McOpfTerminalId, McOpfTerminalVoltage,
