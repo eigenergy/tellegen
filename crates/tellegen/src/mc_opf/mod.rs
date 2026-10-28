@@ -4,6 +4,9 @@
 //! POUNCE evaluates exact sparse derivatives. Accepted points are independently
 //! checked against the physical equations. Optional dual diagnostics and
 //! conditional marginal values do not certify global optimality.
+#[cfg(test)]
+mod control_parameter_tests;
+mod control_parameters;
 mod diagnostics;
 mod duals;
 pub use duals::{

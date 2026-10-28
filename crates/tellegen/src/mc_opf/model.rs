@@ -404,33 +404,41 @@ impl Builder {
 }
 pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
     // Version 1/2 reports predate canonical voltage-dependent parameter maps.
-    compile_inner(prep, None, false, false)
+    compile_inner(prep, None, false, false, false)
 }
 pub(super) fn compile_with_load_parameters(
     prep: McAcOpfPreparation,
     network: &powerio::MulticonductorNetwork,
 ) -> Result<Model, String> {
     // Version 3 reports include load mappings but predate inverter mappings.
-    compile_inner(prep, Some(network), false, false)
+    compile_inner(prep, Some(network), false, false, false)
 }
 pub(super) fn compile_with_inverter_parameters(
     prep: McAcOpfPreparation,
     network: &powerio::MulticonductorNetwork,
 ) -> Result<Model, String> {
     // Version 4 predates transformer mappings.
-    compile_inner(prep, Some(network), true, false)
+    compile_inner(prep, Some(network), true, false, false)
+}
+pub(super) fn compile_with_transformer_parameters(
+    prep: McAcOpfPreparation,
+    network: &powerio::MulticonductorNetwork,
+) -> Result<Model, String> {
+    // Version 5 predates shared control-profile parameter mappings.
+    compile_inner(prep, Some(network), true, true, false)
 }
 pub(super) fn compile_with_parameters(
     prep: McAcOpfPreparation,
     network: &powerio::MulticonductorNetwork,
 ) -> Result<Model, String> {
-    compile_inner(prep, Some(network), true, true)
+    compile_inner(prep, Some(network), true, true, true)
 }
 fn compile_inner(
     prep: McAcOpfPreparation,
     network: Option<&powerio::MulticonductorNetwork>,
     inverter_parameters: bool,
     transformer_parameters: bool,
+    control_parameters: bool,
 ) -> Result<Model, String> {
     let canonical_loads = network.map(|n| {
         n.loads()
@@ -713,6 +721,22 @@ fn compile_inner(
         if let Some(inv) = &inverter {
             inv.initialize(&mut b.dual_map);
         }
+        let controls = inverter
+            .as_ref()
+            .filter(|_| control_parameters)
+            .and_then(|inv| {
+                inv.profile().map(|p| {
+                    super::control_parameters::ControlParameters::new(
+                        inv.inv,
+                        p,
+                        dev.coils.len(),
+                        prep.bases,
+                    )
+                })
+            });
+        if let Some(c) = &controls {
+            c.initialize(&mut b.dual_map);
+        }
         let canonical_load = if dev.kind == McOpfDeviceKind::Load {
             canonical_loads
                 .as_ref()
@@ -989,10 +1013,14 @@ fn compile_inner(
                 }
             }
             if let Some(slope) = coil.reactive_slope.filter(|_| !zero_power) {
+                let origin = b.dual_map.origins.len();
                 b.affine_row(
                     format!("{name}:power_factor"),
                     &Affine::var(pq[1]).sub(&Affine::var(pq[0]).scale(slope)),
                 )?;
+                if let Some(c) = &controls {
+                    c.power_factor(&mut b.dual_map, origin, pq[0]);
+                }
             }
             for (family, curve, column, upper) in [
                 ("volt_var", coil.volt_var.as_ref(), pq[1], false),
@@ -1009,7 +1037,10 @@ fn compile_inner(
                         0.0,
                     );
                     if let Some(inv) = &inverter {
-                        inv.control(&mut b.dual_map, k, family, origin, curve, columns);
+                        inv.control(&mut b.dual_map, k, family, origin, curve, columns.clone());
+                    }
+                    if let Some(c) = &controls {
+                        c.droop(&mut b.dual_map, k, family, origin, curve, columns);
                     }
                 }
             }

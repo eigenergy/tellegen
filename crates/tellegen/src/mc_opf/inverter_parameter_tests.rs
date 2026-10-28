@@ -12,7 +12,7 @@ use McOpfSensitivityOutput as Output;
 fn parameter(axis: usize, kind: Kind) -> McOpfParameter {
     McOpfParameter::new(McOpfParameterOwner::Inverter, "inv", Some(axis), kind)
 }
-fn single() -> MulticonductorNetwork {
+pub(super) fn single() -> MulticonductorNetwork {
     let mut n = tests::network();
     n.loads_mut()[0].q_nom[0] = 20.;
     let mut inv = DistIbr::new(
@@ -33,7 +33,7 @@ fn single() -> MulticonductorNetwork {
     n.ibrs_mut().push(inv);
     n
 }
-fn three(delta: bool) -> MulticonductorNetwork {
+pub(super) fn three(delta: bool) -> MulticonductorNetwork {
     let mut n = initial_tests::case(
         "components",
         if delta {
@@ -48,7 +48,7 @@ fn three(delta: bool) -> MulticonductorNetwork {
     n.ibrs_mut()[0].q_max = Some(vec![0.; 3]);
     n
 }
-fn outputs(n: &MulticonductorNetwork) -> Vec<Output> {
+pub(super) fn outputs(n: &MulticonductorNetwork) -> Vec<Output> {
     let mut out = vec![Output::Objective];
     for k in 0..n.ibrs()[0].s_max.len() {
         for quantity in [
@@ -101,7 +101,7 @@ fn availability(n: &mut MulticonductorNetwork, k: usize, d: f64) {
     inv.p_max.as_mut().unwrap()[k] += d;
     inv.p_avail = Some(inv.p_max.as_ref().unwrap().iter().sum());
 }
-fn control(n: &mut MulticonductorNetwork, reference: Reference, average: bool) {
+pub(super) fn control(n: &mut MulticonductorNetwork, reference: Reference, average: bool) {
     let mut p = DistControlProfile::new("cp");
     p.volt_watt = Some(
         serde_json::from_value(
@@ -564,7 +564,7 @@ fn current_reports_verify_legacy_maps_before_upgrading_inverter_claims() {
             .all(|m| m.parameter.owner != McOpfParameterOwner::Inverter));
         let mut module = crate::ir::deserialize_module(&saved).unwrap();
         let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-        assert_eq!(report["version"], json!(5));
+        assert_eq!(report["version"], json!(6));
         report["version"] = json!(version);
         report["duals"] = serde_json::to_value(old).unwrap();
         module
@@ -581,7 +581,7 @@ fn current_reports_verify_legacy_maps_before_upgrading_inverter_claims() {
             crate::ir::deserialize_module(&read.to_module_json().unwrap())
                 .unwrap()
                 .extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-            json!(5)
+            json!(6)
         );
         report["version"] = json!(4);
         module

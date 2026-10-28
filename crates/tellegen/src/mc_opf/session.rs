@@ -28,6 +28,16 @@ pub enum McOpfEdit {
         inverter: String,
         p_max_w: Option<Vec<f64>>,
     },
+    /// Patch numerical settings of an existing shared profile. None leaves a
+    /// field unchanged. Families, references, units and assignments stay fixed.
+    InverterControlProfile {
+        profile: String,
+        power_factor: Option<f64>,
+        volt_var_breakpoints_v: Option<Vec<f64>>,
+        volt_var_q_limits: Option<Vec<f64>>,
+        volt_watt_breakpoints_v: Option<Vec<f64>>,
+        volt_watt_p_limits: Option<Vec<f64>>,
+    },
     /// Canonical $/kWh cost: scalar or one entry per coil; None removes it.
     GeneratorCost {
         generator: String,
@@ -482,6 +492,47 @@ fn apply_edit(
     edit: &McOpfEdit,
 ) -> Result<(), McOpfError> {
     match edit {
+        McOpfEdit::InverterControlProfile {
+            profile,
+            power_factor,
+            volt_var_breakpoints_v,
+            volt_var_q_limits,
+            volt_watt_breakpoints_v,
+            volt_watt_p_limits,
+        } => {
+            let p = named(net.control_profiles_mut(), profile, |p| &p.name)?;
+            if let Some(pf) = power_factor {
+                if !pf.is_finite() || *pf == 0. || pf.abs() > 1. {
+                    return Err(invalid(profile, "power factor must satisfy 0 < |pf| <= 1"));
+                }
+                p.power_factor
+                    .as_mut()
+                    .ok_or_else(|| invalid(profile, "profile has no power-factor control"))?
+                    .pf = *pf;
+            }
+            if volt_var_breakpoints_v.is_some() || volt_var_q_limits.is_some() {
+                let c = p
+                    .volt_var
+                    .as_mut()
+                    .ok_or_else(|| invalid(profile, "profile has no volt-var control"))?;
+                profile_curve(profile, &mut c.breakpoints, volt_var_breakpoints_v, 4, true)?;
+                profile_curve(profile, &mut c.q_limits, volt_var_q_limits, 2, false)?;
+            }
+            if volt_watt_breakpoints_v.is_some() || volt_watt_p_limits.is_some() {
+                let c = p
+                    .volt_watt
+                    .as_mut()
+                    .ok_or_else(|| invalid(profile, "profile has no volt-watt control"))?;
+                profile_curve(
+                    profile,
+                    &mut c.breakpoints,
+                    volt_watt_breakpoints_v,
+                    2,
+                    true,
+                )?;
+                profile_curve(profile, &mut c.p_limits, volt_watt_p_limits, 2, false)?;
+            }
+        }
         McOpfEdit::LoadPower { load, p_w, q_var } => {
             let d = named(net.loads_mut(), load, |d| &d.name)?;
             vector(load, p_w, d.p_nom.len(), false)?;
@@ -576,6 +627,26 @@ fn apply_edit(
             d.v_max = *maximum_v;
         }
         McOpfEdit::ConstraintSelection { constraints: value } => constraints.clone_from(value),
+    }
+    Ok(())
+}
+
+fn profile_curve(
+    target: &str,
+    current: &mut Vec<f64>,
+    replacement: &Option<Vec<f64>>,
+    count: usize,
+    breakpoints: bool,
+) -> Result<(), McOpfError> {
+    if let Some(v) = replacement {
+        vector(target, v, count, false)?;
+        if breakpoints && (v.iter().any(|v| *v <= 0.) || v.windows(2).any(|w| w[0] >= w[1])) {
+            return Err(invalid(
+                target,
+                "voltage breakpoints must be positive and strictly ordered",
+            ));
+        }
+        current.clone_from(v);
     }
     Ok(())
 }

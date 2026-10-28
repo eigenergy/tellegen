@@ -62,6 +62,7 @@ pub enum McOpfParameterOwner {
     Generator,
     Inverter,
     Transformer,
+    ControlProfile,
     Branch,
     VoltageLimit,
 }
@@ -83,6 +84,11 @@ pub enum McOpfParameterKind {
     VoltageUpper,
     TapLower,
     TapUpper,
+    VoltVarBreakpoint,
+    VoltWattBreakpoint,
+    VoltVarFraction,
+    VoltWattFraction,
+    PowerFactor,
 }
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -93,6 +99,8 @@ pub struct McOpfParameter {
     /// index for branches and inverter current ratings (coil index for delta).
     /// Transformer rating axes index result.ports; tap and voltage limits have
     /// no axis. Transformer component identities remain the transformer name.
+    /// Control-profile axes index canonical breakpoint/limit arrays; power
+    /// factor has no axis. Its component is the shared profile name.
     pub axis: Option<usize>,
     pub kind: McOpfParameterKind,
 }
@@ -119,8 +127,12 @@ impl McOpfParameter {
             LoadReactivePower | ReactivePowerLower | ReactivePowerUpper => McOpfParameterUnit::Var,
             CurrentRating => McOpfParameterUnit::Ampere,
             ApparentPowerRating => McOpfParameterUnit::VoltAmpere,
-            VoltageLower | VoltageUpper => McOpfParameterUnit::Volt,
-            TapLower | TapUpper => McOpfParameterUnit::Ratio,
+            VoltageLower | VoltageUpper | VoltVarBreakpoint | VoltWattBreakpoint => {
+                McOpfParameterUnit::Volt
+            }
+            TapLower | TapUpper | VoltVarFraction | VoltWattFraction | PowerFactor => {
+                McOpfParameterUnit::Ratio
+            }
         }
     }
 }
@@ -202,6 +214,7 @@ pub(super) enum Rule {
     Norm { physical: f64 },
     Load(super::load_parameters::LoadParameter),
     Inverter(super::inverter_parameters::DroopParameter),
+    Control(super::control_parameters::ControlParameter),
 }
 #[derive(Clone, Debug)]
 pub(super) struct OmittedRow {
@@ -484,6 +497,13 @@ pub(super) fn analyze(
                             }
                         },
                         Rule::Inverter(control) => match control.evaluate(x) {
+                            Ok((value, _)) => lambda[r] * value,
+                            Err(_) => {
+                                entry_status = McOpfMarginalStatus::UnsupportedParameter;
+                                0.
+                            }
+                        },
+                        Rule::Control(control) => match control.evaluate(x) {
                             Ok((value, _)) => lambda[r] * value,
                             Err(_) => {
                                 entry_status = McOpfMarginalStatus::UnsupportedParameter;

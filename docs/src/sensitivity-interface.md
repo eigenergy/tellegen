@@ -102,7 +102,7 @@ Parameters use the same mappings as
 nominal load coil P/Q for constant-power/current/impedance, ZIP and exponential
 laws, selected generator P/Q bounds, inverter availability and capabilities, effective branch
 current/apparent-power ratings, transformer port ratings and physical continuous
-tap bounds, and prepared voltage limits. Inactive supported
+tap bounds, prepared voltage limits, and inverter control-profile settings. Inactive supported
 limits have zero derivatives on the fixed active set. Unknown, unsupported or
 coincident-bound parameters produce an error even if their requested weight is
 zero; they are never silently treated as inactive limits. Shared linecodes and
@@ -131,6 +131,15 @@ compiler's existing magnitude lifts. This does not perturb curve coefficients or
 introduce numerical finite differences. Two-wire current-rating ties, absent or
 nonfinite ratings and zero nameplates do not provide independent partials. See
 the linked marginal-value documentation for complete field and axis semantics.
+
+`ControlProfile` directions vary a shared profile's volt-var/volt-watt voltage
+breakpoints, output fractions, or signed power factor. They accumulate across
+all assigned inverters and coils, including averaged voltage monitors. Exact
+mixed derivatives include both the interval slopes and the breakpoint-dependent
+softplus smoothing width. No runtime finite differences are used. Breakpoints
+use volts; fractions and power factor use ratio units. Unity power factor has
+no finite two-sided derivative, and unused profiles are unsupported. Control
+families, references, assignments and aggregation stay fixed.
 
 Transformer rating parameters address effective selected result ports in A/VA,
 holding electrical coefficients fixed. A shared winding nameplate may require
@@ -163,7 +172,7 @@ with the appropriate direct or inverse derivative. Fixed taps have no such outpu
 Unknown components, terminals, coils or port names are rejected.
 
 Raw multiplier outputs, network-admittance parameters, fixed/discrete tap
-setpoints and control-curve coefficients are not part of this interface.
+setpoints and control-mode switching are not part of this interface.
 
 For active constraints `c(x,theta)=0`, the stationary system is
 
@@ -209,7 +218,7 @@ The session entry point requires `current_result()`: edits, changed options and
 failed or cancelled attempts invalidate access. Rust borrowing prevents edits
 while a sensitivity view is in use. An explicitly selected or cloned historical
 result remains an independent snapshot of its original instance. Portable
-version 5 results can rebuild a view after import, and verified version 2–4 dual
-reports are upgraded with load/inverter/transformer mappings. Factorizations and views are
+version 6 results can rebuild a view after import, and verified version 2–5 dual
+reports are upgraded with load/inverter/transformer/control-profile mappings. Factorizations and views are
 native in-memory objects and are not serialized. Neither queries nor failures
 change the session's accepted result, warm start or revision.
