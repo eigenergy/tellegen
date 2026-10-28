@@ -493,7 +493,7 @@ fn current_roundtrip_and_verified_version_two_upgrade_recover_load_derivatives()
         .all(|m| m.status == McOpfMarginalStatus::UnsupportedParameter));
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-    assert_eq!(report["version"], json!(7));
+    assert_eq!(report["version"], json!(8));
     report["version"] = json!(2);
     report["duals"] = serde_json::to_value(old).unwrap();
     module
@@ -509,7 +509,7 @@ fn current_roundtrip_and_verified_version_two_upgrade_recover_load_derivatives()
     let upgraded = crate::ir::deserialize_module(&read.to_module_json().unwrap()).unwrap();
     assert_eq!(
         upgraded.extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-        json!(7)
+        json!(8)
     );
     report["version"] = json!(3);
     module

@@ -79,14 +79,14 @@ inherits = "release"
 opt-level = 3
 lto = "thin"
 
-# Candidate containing the terminal-role fix in eigenergy/powerio#742.
+# Candidate containing the PF and terminal-role fixes in eigenergy/powerio#743.
 # Keep every component on the same immutable revision.
 [patch.crates-io]
-powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "856b6073cb2b1175da5837fa448c188614b7c9a7" }
-powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "856b6073cb2b1175da5837fa448c188614b7c9a7" }
-powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "856b6073cb2b1175da5837fa448c188614b7c9a7" }
-powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "856b6073cb2b1175da5837fa448c188614b7c9a7" }
-powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "856b6073cb2b1175da5837fa448c188614b7c9a7" }
-powerio-synth = { git = "https://github.com/eigenergy/powerio.git", rev = "856b6073cb2b1175da5837fa448c188614b7c9a7" }
-powerio-tnd = { git = "https://github.com/eigenergy/powerio.git", rev = "856b6073cb2b1175da5837fa448c188614b7c9a7" }
-powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "856b6073cb2b1175da5837fa448c188614b7c9a7" }
+powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "2fc03e99cd100f3e42da1fc35f4e63829ee444f2" }
+powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "2fc03e99cd100f3e42da1fc35f4e63829ee444f2" }
+powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "2fc03e99cd100f3e42da1fc35f4e63829ee444f2" }
+powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "2fc03e99cd100f3e42da1fc35f4e63829ee444f2" }
+powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "2fc03e99cd100f3e42da1fc35f4e63829ee444f2" }
+powerio-synth = { git = "https://github.com/eigenergy/powerio.git", rev = "2fc03e99cd100f3e42da1fc35f4e63829ee444f2" }
+powerio-tnd = { git = "https://github.com/eigenergy/powerio.git", rev = "2fc03e99cd100f3e42da1fc35f4e63829ee444f2" }
+powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "2fc03e99cd100f3e42da1fc35f4e63829ee444f2" }

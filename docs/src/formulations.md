@@ -239,6 +239,18 @@ retained-session construction. Two-terminal DELTA remains one phase-to-phase
 coil; WYE and SINGLE_PHASE return connections remain supported. Session edits
 change numerical values, not terminal roles or connection topology.
 
+Fixed power-factor control uses bounded coefficients:
+`sqrt((1 - abs(pf)) * (1 + abs(pf))) * P + pf * Q = 0`, with signed
+`0 < abs(pf) <= 1`. Capability bounds still intersect this physical law.
+Acceptance also recomputes the relation from original input profiles and
+physical P/Q ledgers, independently of prepared coefficients. Passing an
+absolute power-equation tolerance is not a relative PF accuracy certificate.
+`MC_OPF.POWER_FACTOR_ACCURACY_UNQUALIFIED` reports requested and achieved PF
+when the requested magnitude is at or below the acceptance tolerance, observed
+relative accuracy exceeds that tolerance, the sign relation is wrong, or
+zero dispatch makes operating PF undefined. This diagnostic does not declare
+an otherwise accepted physical point infeasible.
+
 ### Public native workflow
 
 The runnable `crates/tellegen/examples/mc_opf_workflow.rs` example uses only public
@@ -507,16 +519,19 @@ The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
 
 `McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
-PowerIO `McAcOpfSolution` plus version 7 of the namespaced module extension
+PowerIO `McAcOpfSolution` plus version 8 of the namespaced module extension
 `org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
 source/generator dispatch and the original instance. The extension carries the
 complete ledgers, axes, optimized taps, numerical options/bases, residuals,
 input diagnostic summaries, fingerprint, iterations, optional profile and optional
-dual report. Version 1 reports without dual data remain readable. Version 2–6
-dual reports are checked using their original parameter mappings and dense rank
+dual report. Reports from versions 1–7 with assigned fixed-PF controls are
+rejected and must be solved again: their PF rows and multipliers use the old
+scaling. Version 1 reports remain readable when they contain neither PF controls
+nor dual data. Version 2–6 dual reports without PF controls are checked using
+their original parameter mappings and dense rank
 audit before current sparse rank qualification and newly
 supported load/inverter/transformer/control-profile derivatives are recomputed from the retained canonical
-instance. Re-export writes version 7; older unsupported entries are not silently
+instance. Re-export writes version 8; older unsupported entries are not silently
 accepted as current claims. Upgrading does not rerun optimization.
 This uses PowerIO's existing extension mechanism without changing its schema.
 

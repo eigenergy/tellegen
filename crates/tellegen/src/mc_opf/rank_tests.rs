@@ -175,7 +175,7 @@ fn check_rank_report(network: MulticonductorNetwork, legacy_status: McOpfMargina
     let saved = r.to_module_json().unwrap();
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let current = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-    assert_eq!(current["version"], json!(7));
+    assert_eq!(current["version"], json!(8));
     let mut report = current.clone();
     report["version"] = json!(6);
     report["duals"] = serde_json::to_value(old).unwrap();

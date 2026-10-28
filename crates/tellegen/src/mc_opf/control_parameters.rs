@@ -18,8 +18,8 @@ pub(super) enum ControlParameter {
         d_epsilon: f64,
     },
     PowerFactor {
-        column: usize,
-        slope_derivative: f64,
+        columns: [usize; 2],
+        active_coefficient_derivative: f64,
     },
 }
 
@@ -40,12 +40,9 @@ impl ControlParameter {
     pub fn evaluate(&self, x: &[f64]) -> Result<(f64, Vec<(usize, f64)>), String> {
         let (value, gradient) = match self {
             Self::PowerFactor {
-                column,
-                slope_derivative,
-            } => (
-                -slope_derivative * x[*column],
-                vec![(*column, -slope_derivative)],
-            ),
+                columns: [p, q],
+                active_coefficient_derivative: da,
+            } => (da * x[*p] + x[*q], vec![(*p, *da), (*q, 1.)]),
             Self::Droop {
                 columns,
                 knots,
@@ -140,7 +137,7 @@ impl<'a> ControlParameters<'a> {
             }
         }
     }
-    pub fn power_factor(&self, map: &mut CompilerMap, origin: usize, column: usize) {
+    pub fn power_factor(&self, map: &mut CompilerMap, origin: usize, columns: [usize; 2]) {
         let Some(pf) = self.profile.power_factor.as_ref().map(|p| p.pf) else {
             return;
         };
@@ -148,13 +145,13 @@ impl<'a> ControlParameters<'a> {
         if pf.abs() >= 1. || pf == 0. {
             return;
         }
-        let derivative = 1. / (pf * pf * (1. - pf * pf).sqrt());
+        let derivative = -pf / ((1. - pf.abs()) * (1. + pf.abs())).sqrt();
         map.term(
             self.parameter(None, Kind::PowerFactor),
             Some(origin),
             Rule::Control(ControlParameter::PowerFactor {
-                column,
-                slope_derivative: derivative,
+                columns,
+                active_coefficient_derivative: derivative,
             }),
         );
     }

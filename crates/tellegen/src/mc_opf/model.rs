@@ -1012,14 +1012,16 @@ fn compile_inner(
                     }
                 }
             }
-            if let Some(slope) = coil.reactive_slope.filter(|_| !zero_power) {
+            if let Some([a, pf]) = coil.power_factor_coefficients.filter(|_| !zero_power) {
                 let origin = b.dual_map.origins.len();
                 b.affine_row(
                     format!("{name}:power_factor"),
-                    &Affine::var(pq[1]).sub(&Affine::var(pq[0]).scale(slope)),
+                    &Affine::var(pq[0])
+                        .scale(a)
+                        .add(&Affine::var(pq[1]).scale(pf)),
                 )?;
                 if let Some(c) = &controls {
-                    c.power_factor(&mut b.dual_map, origin, pq[0]);
+                    c.power_factor(&mut b.dual_map, origin, pq);
                 }
             }
             for (family, curve, column, upper) in [

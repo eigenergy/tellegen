@@ -526,6 +526,8 @@ fn retained_power_factor_edits_preserve_families_and_reject_invalid_values() {
     for pf in [-0.9, -1., 1., 0.95] {
         profile.power_factor.as_mut().unwrap().pf = pf;
         s.apply_edits(&[edit_profile(profile.clone())]).unwrap();
+        assert!(s.current_result().is_none());
+        assert!(s.sensitivities().is_err());
         s.solve().unwrap();
         let r = &s.current_result().unwrap().result;
         let fresh = solve(s.instance().network().clone());
@@ -582,7 +584,7 @@ fn current_version_roundtrips_verify_legacy_maps_before_upgrading_profile_claims
     close(marginal(&read, &p), marginal(&r, &p));
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-    assert_eq!(report["version"], json!(7));
+    assert_eq!(report["version"], json!(8));
     report["version"] = json!(5);
     report["duals"] = serde_json::to_value(old).unwrap();
     module
@@ -596,9 +598,9 @@ fn current_version_roundtrips_verify_legacy_maps_before_upgrading_profile_claims
         crate::ir::deserialize_module(&read.to_module_json().unwrap())
             .unwrap()
             .extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-        json!(7)
+        json!(8)
     );
-    report["version"] = json!(7);
+    report["version"] = json!(8);
     module
         .insert_extension(MC_OPF_RESULT_EXTENSION, report.clone())
         .unwrap();
@@ -609,4 +611,204 @@ fn current_version_roundtrips_verify_legacy_maps_before_upgrading_profile_claims
         .insert_extension(MC_OPF_RESULT_EXTENSION, report)
         .unwrap();
     assert!(McOpfResult::from_module_json(&crate::ir::serialize_module(&module).unwrap()).is_err());
+}
+
+fn bounded_pf_network(pf: f64) -> MulticonductorNetwork {
+    let mut n = pf_network(single(), pf);
+    n.lines_mut().clear();
+    n.line_codes_mut().clear();
+    n.buses_mut().retain(|b| b.id == "s");
+    n.loads_mut()[0].bus = "s".into();
+    n.loads_mut()[0].p_nom = vec![1000.];
+    n.loads_mut()[0].q_nom = vec![0.];
+    let inv = &mut n.ibrs_mut()[0];
+    inv.bus = "s".into();
+    inv.p_max = Some(vec![1200.]);
+    inv.p_avail = Some(1200.);
+    inv.q_min = Some(vec![-300.]);
+    inv.q_max = Some(vec![1000.]);
+    inv.s_max = vec![5000.];
+    inv.i_max = None;
+    inv.extras.insert("cost".into(), json!([0.]));
+    n
+}
+
+// One bus, one inverter, three solves total including the central difference.
+#[test]
+fn bounded_pf_retains_hard_q_limit_and_local_derivatives() {
+    let n = bounded_pf_network(0.8);
+    let options = McOpfOptions {
+        collect_duals: true,
+        max_iterations: 50,
+        ..Default::default()
+    };
+    let r = solve_options(n.clone(), options.clone());
+    let [p, q] = r
+        .devices
+        .iter()
+        .find(|d| d.identity == "inv")
+        .unwrap()
+        .coil_power_va[0];
+    assert!(
+        (p - 400.).abs() < 1e-4 && (q + 300.).abs() < 1e-4,
+        "{p}, {q}"
+    );
+    assert!(!r
+        .diagnostics
+        .iter()
+        .any(|d| d.code == "MC_OPF.POWER_FACTOR_ACCURACY_UNQUALIFIED"));
+    let parameter = parameter(Kind::PowerFactor, None);
+    let view = r.sensitivities().unwrap();
+    let forward = view
+        .forward(
+            &[McOpfParameterDirection {
+                parameter: parameter.clone(),
+                delta: 1.,
+            }],
+            &[Output::Objective],
+        )
+        .unwrap()[0]
+        .derivative;
+    let adjoint = view
+        .adjoint(
+            &[McOpfOutputWeight {
+                output: Output::Objective,
+                weight: 1.,
+            }],
+            std::slice::from_ref(&parameter),
+        )
+        .unwrap()[0]
+        .derivative;
+    let expected = -0.2 / 1000. * 300. / 0.36_f64.powf(1.5);
+    close(forward, expected);
+    close(adjoint, expected);
+    close(marginal(&r, &parameter), expected);
+    let h = 1e-5;
+    let mut plus = n.clone();
+    let mut minus = n;
+    perturb(&mut plus, &parameter, h);
+    perturb(&mut minus, &parameter, -h);
+    let fd = (physical(&solve_options(plus, options.clone()), &Output::Objective)
+        - physical(&solve_options(minus, options), &Output::Objective))
+        / (2. * h);
+    assert!((fd - expected).abs() < 1e-6);
+
+    // New constraint scaling cannot reuse old PF multipliers or fingerprints.
+    let saved = r.to_module_json().unwrap();
+    let restored = McOpfResult::from_module_json(&saved).unwrap();
+    close(marginal(&restored, &parameter), expected);
+    let mut module = crate::ir::deserialize_module(&saved).unwrap();
+    let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
+    report["version"] = json!(7);
+    module
+        .insert_extension(MC_OPF_RESULT_EXTENSION, report)
+        .unwrap();
+    let error =
+        McOpfResult::from_module_json(&crate::ir::serialize_module(&module).unwrap()).unwrap_err();
+    assert!(error.message.contains("legacy PF reports"));
+}
+
+#[test]
+fn bounded_pf_parameter_partials_stay_finite_without_dividing_by_pf() {
+    use super::control_parameters::ControlParameters;
+    use super::duals::{CompilerMap, Rule};
+    for pf in [-1e-300, -1e-18, 1e-18, 1e-300] {
+        let n = pf_network(single(), pf);
+        let controls = ControlParameters::new(
+            &n.ibrs()[0],
+            &n.control_profiles()[0],
+            1,
+            Default::default(),
+        );
+        let mut map = CompilerMap::default();
+        controls.power_factor(&mut map, 0, [0, 1]);
+        let rules = &map.parameters[&parameter(Kind::PowerFactor, None)];
+        let Rule::Control(rule) = &rules[0].1 else {
+            panic!("missing PF partial")
+        };
+        let (value, mixed) = rule.evaluate(&[0., -0.3]).unwrap();
+        assert_eq!(value, -0.3);
+        assert_eq!(mixed, vec![(0, -pf), (1, 1.)]);
+    }
+}
+
+#[test]
+fn original_pf_validation_detects_wrong_control_and_qualifies_tiny_dispatch() {
+    let ledger = |p, q| {
+        vec![McOpfDeviceResult {
+            identity: "inv".into(),
+            kind: powerio_matrix::McOpfDeviceKind::Ibr,
+            terminals: vec![],
+            coils: vec![],
+            coil_power_va: vec![[p, q]],
+            coil_current_a: vec![],
+            terminal_current_a: vec![],
+            terminal_power_va: vec![],
+        }]
+    };
+    for pf in [-0.8, 0.8] {
+        let n = pf_network(single(), pf);
+        assert!(
+            validate::check_power_factors(&n, &ledger(400., -pf.signum() * 300.), 1000., 1e-6)
+                .unwrap()
+                .is_empty()
+        );
+        // A wrong preparation could enforce Q=0 with a tiny internal residual.
+        // The original profile still demands |Q|=300 var at this dispatch.
+        let error = validate::check_power_factors(&n, &ledger(400., 0.), 1000., 1e-6).unwrap_err();
+        assert_eq!(error.kind, McOpfErrorKind::PhysicalValidationFailure);
+    }
+    for pf in [-1e-18, 1e-18] {
+        let n = pf_network(single(), pf);
+        for (p, q) in [
+            (1e-15, -pf.signum() * 1000.),
+            (1e-6, -pf.signum() * 1000.),
+            (0., 0.),
+        ] {
+            let diagnostics =
+                validate::check_power_factors(&n, &ledger(p, q), 1000., 1e-6).unwrap();
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(
+                diagnostics[0].code,
+                "MC_OPF.POWER_FACTOR_ACCURACY_UNQUALIFIED"
+            );
+            assert_eq!(diagnostics[0].target.as_deref(), Some("inv"));
+        }
+    }
+}
+
+#[test]
+fn tiny_pf_solve_reports_relative_accuracy_and_preserves_it_on_import() {
+    let mut n = bounded_pf_network(1e-18);
+    n.ibrs_mut()[0].q_max = Some(vec![-300.]);
+    let r = solve_options(
+        n,
+        McOpfOptions {
+            max_iterations: 50,
+            ..Default::default()
+        },
+    );
+    assert!(r.residuals.maximum() < r.options.acceptance_tolerance);
+    let required = "MC_OPF.POWER_FACTOR_ACCURACY_UNQUALIFIED";
+    assert_eq!(
+        r.diagnostics.iter().filter(|d| d.code == required).count(),
+        1
+    );
+    let saved = r.to_module_json().unwrap();
+    let restored = McOpfResult::from_module_json(&saved).unwrap();
+    assert!(restored.diagnostics.iter().any(|d| d.code == required));
+    let mut module = crate::ir::deserialize_module(&saved).unwrap();
+    let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
+    report["diagnostics"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|d| d["code"] != required);
+    module
+        .insert_extension(MC_OPF_RESULT_EXTENSION, report)
+        .unwrap();
+    let error =
+        McOpfResult::from_module_json(&crate::ir::serialize_module(&module).unwrap()).unwrap_err();
+    assert!(error
+        .message
+        .contains("missing relative power-factor accuracy diagnostic"));
 }

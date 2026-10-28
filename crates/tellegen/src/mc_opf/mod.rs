@@ -375,6 +375,17 @@ fn solve_prepared(
             error.diagnostics.extend(initial_diagnostics.clone());
             error
         })?;
+    let pf_diagnostics = validate::check_power_factors(
+        instance.network(),
+        &checked.devices,
+        options.power_base_va,
+        options.acceptance_tolerance,
+    )
+    .map_err(|mut error| {
+        error.diagnostics.extend(initial_diagnostics.clone());
+        error
+    })?;
+    initial_diagnostics.extend(pf_diagnostics);
     cancelled(cancel.as_deref(), McOpfStage::Validation)?;
     record_stage(&mut profile, &mut stage, "validation");
     let duals = if options.collect_duals {

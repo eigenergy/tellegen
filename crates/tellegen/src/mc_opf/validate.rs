@@ -409,8 +409,8 @@ pub(super) fn check(
             checks.interval("relative_limit_violation", p.im, coil.q_min, coil.q_max)?;
             checks.cap("relative_limit_violation", current.norm(), coil.current_max)?;
             checks.cap("relative_limit_violation", p.norm(), coil.apparent_max)?;
-            if let Some(slope) = coil.reactive_slope {
-                checks.mismatch("prescribed_power_pu", (p.im - slope * p.re).abs())?;
+            if let Some([a, b]) = coil.power_factor_coefficients {
+                checks.mismatch("prescribed_power_pu", (a * p.re + b * p.im).abs())?;
             }
             for (curve, actual, upper) in [
                 (coil.volt_var.as_ref(), p.im, false),
@@ -564,4 +564,61 @@ pub(super) fn check(
         devices,
         objective,
     })
+}
+
+/// Recheck the declared PF using physical ledgers and original input profiles,
+/// independently of prepared coefficients and the expression graph.
+pub(super) fn check_power_factors(
+    network: &powerio::MulticonductorNetwork,
+    devices: &[McOpfDeviceResult],
+    power_base: f64,
+    tolerance: f64,
+) -> Result<Vec<super::McOpfDiagnostic>, McOpfError> {
+    let mut checks = Checks::new(tolerance);
+    let mut diagnostics = Vec::new();
+    for inv in network.ibrs() {
+        let Some(pf) = inv
+            .control_profile
+            .as_ref()
+            .and_then(|name| network.control_profiles().iter().find(|c| &c.name == name))
+            .and_then(|c| c.power_factor.as_ref())
+            .map(|c| c.pf)
+        else {
+            continue;
+        };
+        let device = devices
+            .iter()
+            .find(|d| d.identity == inv.name && d.kind == McOpfDeviceKind::Ibr)
+            .ok_or_else(|| checks.failure("missing inverter PF ledger"))?;
+        // Product of square roots is independent of preparation's product form.
+        let a = (1. - pf.abs()).sqrt() * (1. + pf.abs()).sqrt();
+        for (k, &[p, q]) in device.coil_power_va.iter().enumerate() {
+            checks.at(inv.name.clone(), Some(format!("coil:{k}")));
+            checks.mismatch(
+                "prescribed_power_pu",
+                a * (p / power_base) + pf * (q / power_base),
+            )?;
+            let apparent = p.hypot(q);
+            let achieved = (apparent > 0.).then(|| p.abs() / apparent);
+            let relative_error = achieved.map(|v| (v - pf.abs()).abs() / pf.abs());
+            let wrong_sign =
+                a > 0. && p != 0. && q != 0. && p.signum() * q.signum() != -pf.signum();
+            if pf.abs() <= tolerance
+                || apparent == 0.
+                || wrong_sign
+                || relative_error.is_some_and(|v| v > tolerance)
+            {
+                let achieved_text =
+                    achieved.map_or_else(|| "undefined".into(), |v| format!("{v:e}"));
+                diagnostics.push(super::McOpfDiagnostic {
+                    code: "MC_OPF.POWER_FACTOR_ACCURACY_UNQUALIFIED".into(),
+                    severity: powerio::DiagnosticSeverity::Warning,
+                    message: format!("coil {k}: requested signed PF {pf:e}, achieved |P|/|S| {achieved_text}; the absolute power-equation tolerance does not qualify relative PF accuracy or its P/Q sign relation (undefined at zero dispatch)"),
+                    target: Some(inv.name.clone()),
+                });
+            }
+        }
+    }
+    checks.finish()?;
+    Ok(diagnostics)
 }

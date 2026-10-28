@@ -150,7 +150,9 @@ all assigned inverters and coils, including averaged voltage monitors. Exact
 mixed derivatives include both the interval slopes and the breakpoint-dependent
 softplus smoothing width. No runtime finite differences are used. Breakpoints
 use volts; fractions and power factor use ratio units. Unity power factor has
-no finite two-sided derivative, and unused profiles are unsupported. Control
+no finite two-sided derivative, and unused profiles are unsupported. For the
+bounded PF row `a*P + pf*Q`, the parameter partial is `(-pf/a)*P + Q`,
+including both mixed state derivatives; no division by `pf` is needed. Control
 families, references, assignments and aggregation stay fixed.
 
 Transformer rating parameters address effective selected result ports in A/VA,
@@ -244,8 +246,10 @@ The session entry point requires `current_result()`: edits, changed options and
 failed or cancelled attempts invalidate access. Rust borrowing prevents edits
 while a sensitivity view is in use. An explicitly selected or cloned historical
 result remains an independent snapshot of its original instance. Portable
-version 7 results can rebuild a view after import, and version 2–6 dual reports
+version 8 results can rebuild a view after import, and version 2–6 dual reports
 are verified with their original mappings and rank audit before upgrading to
-current mappings and sparse qualification. Factorizations and views are
+current mappings and sparse qualification. Earlier reports with assigned PF
+controls are rejected because their constraint scaling differs; they require
+a new solve. Factorizations and views are
 native in-memory objects and are not serialized. Neither queries nor failures
 change the session's accepted result, warm start or revision.

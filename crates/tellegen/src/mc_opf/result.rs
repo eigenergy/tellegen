@@ -125,7 +125,7 @@ impl McOpfResult {
 
     fn report(&self) -> Report {
         Report {
-            version: 7,
+            version: 8,
             duals: self.duals.clone(),
             options: self.options.clone(),
             terminals: self.terminals.clone(),
@@ -231,8 +231,22 @@ impl McOpfResult {
 
 impl Report {
     fn verify(&self, solution: &McAcOpfSolution) -> Result<Option<model::Model>, McOpfError> {
-        if !matches!(self.version, 1..=7) || (self.version == 1 && self.duals.is_some()) {
+        if !matches!(self.version, 1..=8) || (self.version == 1 && self.duals.is_some()) {
             return Err(invalid("unsupported MC OPF report version"));
+        }
+        if self.version < 8
+            && solution.instance().network().ibrs().iter().any(|inv| {
+                inv.control_profile.as_ref().is_some_and(|name| {
+                    solution
+                        .instance()
+                        .network()
+                        .control_profiles()
+                        .iter()
+                        .any(|p| &p.name == name && p.power_factor.is_some())
+                })
+            })
+        {
+            return Err(invalid("legacy PF reports use different constraint scaling; solve again before using their duals or sensitivities"));
         }
         let prep = initial::prepare(
             solution.instance(),
@@ -246,6 +260,21 @@ impl Report {
             return Err(invalid(
                 "MC OPF report fingerprint does not match its instance and bases",
             ));
+        }
+        let pf_diagnostics = validate::check_power_factors(
+            solution.instance().network(),
+            &self.devices,
+            self.options.power_base_va,
+            self.options.acceptance_tolerance,
+        )
+        .map_err(|e| invalid(e.to_string()))?;
+        if pf_diagnostics.iter().any(|required| {
+            !self
+                .diagnostics
+                .iter()
+                .any(|d| d.code == required.code && d.target == required.target)
+        }) {
+            return Err(invalid("missing relative power-factor accuracy diagnostic"));
         }
         let mut dual_model = None;
         if let Some(duals) = &self.duals {

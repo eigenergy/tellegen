@@ -682,6 +682,13 @@ impl McOpfDualReport {
         }
         let checked = validate::check(model, &self.primal, solution.objective(), tolerance)
             .map_err(|e| e.to_string())?;
+        validate::check_power_factors(
+            solution.instance().network(),
+            &checked.devices,
+            model.prep.bases.power_base_va,
+            tolerance,
+        )
+        .map_err(|e| e.to_string())?;
         for (terminal, pair) in model.prep.terminals.iter().zip(&model.voltage) {
             let re = pair[0].value(&self.primal) * model.prep.bases.voltage_base_v;
             let im = pair[1].value(&self.primal) * model.prep.bases.voltage_base_v;

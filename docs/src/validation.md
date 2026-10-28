@@ -166,8 +166,16 @@ Regression coverage combines:
   An opt-in connected 48-section feeder exceeds both old dense-audit limits and checks
   centered perturbations, forward/adjoint agreement, physical cost marginals,
   base/objective-scale invariance and backsolve diagnostics. Report tests verify
-  legacy rank refusals before upgrading and reject tampered version 7 audit
+  legacy rank refusals before upgrading and reject tampered current-version audit
   claims; session tests preserve accepted results and enforce stale-view rules.
+
+- PF correctness tests use bounded-coefficient algebra at both signs, unity,
+  near-unity and tiny nonzero PF; original-profile validation checks wrong Q and
+  explicit relative-accuracy diagnostics. A one-bus case requires P = 400 W and
+  Q = -300 var at PF 0.8, with an analytic marginal checked by forward/adjoint
+  queries and two perturbed solves (three solves total, 50-iteration ceilings).
+  Retained edits invalidate sensitivities, and legacy PF reports cannot reuse
+  multipliers from the old scaling.
 
 ### Feeder validation and runtime budgets
 
