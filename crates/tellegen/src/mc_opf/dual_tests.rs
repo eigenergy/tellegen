@@ -449,7 +449,7 @@ fn legacy_version_one_reports_without_duals_remain_readable() {
 }
 
 #[test]
-fn voltage_dependent_nominal_load_parameters_are_explicitly_unsupported() {
+fn voltage_dependent_nominal_load_parameters_retain_zero_coefficients() {
     use powerio_dist::DistLoadVoltageModel as Law;
     for law in [
         Law::ConstantImpedance { v_nom: vec![230.] },
@@ -473,8 +473,8 @@ fn voltage_dependent_nominal_load_parameters_are_explicitly_unsupported() {
             .collect();
         assert_eq!(loads.len(), 2);
         for m in loads {
-            assert_eq!(m.status, Status::UnsupportedParameter);
-            assert!(m.derivative.is_none());
+            assert_eq!(m.status, Status::Conditional);
+            assert!(m.derivative.is_some());
         }
     }
 }

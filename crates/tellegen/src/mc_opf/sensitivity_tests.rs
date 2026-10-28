@@ -6,7 +6,7 @@ use McOpfParameterKind as Kind;
 use McOpfParameterOwner as Owner;
 use McOpfSensitivityOutput as Output;
 
-fn solve(net: MulticonductorNetwork) -> McOpfResult {
+pub(super) fn solve(net: MulticonductorNetwork) -> McOpfResult {
     solve_options(
         net,
         McOpfOptions {
@@ -15,7 +15,7 @@ fn solve(net: MulticonductorNetwork) -> McOpfResult {
         },
     )
 }
-fn solve_options(net: MulticonductorNetwork, options: McOpfOptions) -> McOpfResult {
+pub(super) fn solve_options(net: MulticonductorNetwork, options: McOpfOptions) -> McOpfResult {
     solve_mc_ac_opf_instance(
         Arc::new(McAcOpfInstance::from_network(net).unwrap()),
         &options,
@@ -61,7 +61,7 @@ fn branch(end: McOpfBranchEnd, conductor: usize, quantity: Flow) -> Output {
         quantity,
     }
 }
-fn outputs() -> Vec<Output> {
+pub(super) fn outputs() -> Vec<Output> {
     let mut v = vec![Output::Objective];
     for t in ["a", "n"] {
         for part in [
@@ -106,7 +106,7 @@ fn outputs() -> Vec<Output> {
     ));
     v
 }
-fn physical(r: &McOpfResult, output: &Output) -> f64 {
+pub(super) fn physical(r: &McOpfResult, output: &Output) -> f64 {
     let complex = |current: [f64; 2], power: [f64; 2], q: &Flow| match q {
         Flow::CurrentReal => current[0],
         Flow::CurrentImaginary => current[1],
@@ -182,7 +182,7 @@ fn one_bus() -> MulticonductorNetwork {
     n.loads_mut()[0].bus = "s".into();
     n
 }
-fn check_fd(
+pub(super) fn check_fd(
     net: MulticonductorNetwork,
     parameter: McOpfParameter,
     outputs: &[Output],
@@ -222,6 +222,17 @@ fn check_fd(
             )
             .unwrap();
         close(v.derivative, a[0].derivative);
+        if *o == Output::Objective {
+            let marginal = r
+                .duals
+                .as_ref()
+                .unwrap()
+                .marginals
+                .iter()
+                .find(|m| m.parameter == parameter)
+                .unwrap();
+            close(v.derivative, marginal.derivative.unwrap());
+        }
     }
 }
 
@@ -690,7 +701,7 @@ fn unsupported_parameters_outputs_and_nonfinite_requests_are_explicit_errors() {
         powerio_dist::DistLoadVoltageModel::ConstantImpedance { v_nom: vec![230.] };
     let r = solve(n);
     let s = r.sensitivities().unwrap();
-    let e = s
+    let derivatives = s
         .adjoint(
             &[McOpfOutputWeight {
                 output: Output::Objective,
@@ -698,9 +709,9 @@ fn unsupported_parameters_outputs_and_nonfinite_requests_are_explicit_errors() {
             }],
             &[load(false)],
         )
-        .unwrap_err();
-    assert_eq!(e.kind, McOpfSensitivityErrorKind::UnsupportedParameter);
-    serde_json::to_string(&e).unwrap();
+        .unwrap();
+    assert!(derivatives[0].derivative.is_finite());
+    serde_json::to_string(&derivatives).unwrap();
 }
 
 #[test]

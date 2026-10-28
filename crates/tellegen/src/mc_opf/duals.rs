@@ -186,6 +186,7 @@ pub(super) enum Rule {
     Equality { scale: f64 },
     Bound { scale: f64, lower: bool },
     Norm { physical: f64 },
+    Load(super::load_parameters::LoadParameter),
 }
 #[derive(Clone, Debug)]
 pub(super) struct OmittedRow {
@@ -456,6 +457,13 @@ pub(super) fn analyze(
                             }
                         }
                         Rule::Norm { physical } => -2. * lambda[r] * g[r] / physical,
+                        Rule::Load(load) => match load.evaluate(x) {
+                            Ok((value, _)) => lambda[r] * value,
+                            Err(_) => {
+                                entry_status = McOpfMarginalStatus::UnsupportedParameter;
+                                0.
+                            }
+                        },
                     };
                 }
             }

@@ -117,7 +117,7 @@ impl McOpfResult {
 
     fn report(&self) -> Report {
         Report {
-            version: 2,
+            version: 3,
             duals: self.duals.clone(),
             options: self.options.clone(),
             terminals: self.terminals.clone(),
@@ -173,9 +173,36 @@ impl McOpfResult {
             .extensions()
             .get(MC_OPF_RESULT_EXTENSION)
             .ok_or_else(|| invalid("module has no complete Tellegen MC OPF report"))?;
-        let report: Report =
+        let mut report: Report =
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
         report.verify(solution)?;
+        if report.version == 2 {
+            if let Some(old) = &report.duals {
+                // Verify legacy claims with their original parameter map first;
+                // then recover newly supported derivatives from canonical input.
+                let prep = initial::prepare(
+                    solution.instance(),
+                    &McAcOpfAssemblyOptions::new(
+                        report.options.voltage_base_v,
+                        report.options.power_base_va,
+                    ),
+                )?;
+                let model =
+                    model::compile_with_load_parameters(prep, solution.instance().network())
+                        .map_err(invalid)?;
+                let lambda: Vec<_> = old.constraints.iter().map(|r| r.multiplier).collect();
+                report.duals = Some(
+                    duals::analyze(
+                        &model,
+                        &old.primal,
+                        &lambda,
+                        &old.lower_bound_multipliers,
+                        &old.upper_bound_multipliers,
+                    )
+                    .map_err(invalid)?,
+                );
+            }
+        }
         Ok(Self {
             duals: report.duals,
             module: Some(module.clone()),
@@ -197,7 +224,7 @@ impl McOpfResult {
 
 impl Report {
     fn verify(&self, solution: &McAcOpfSolution) -> Result<Option<model::Model>, McOpfError> {
-        if !matches!(self.version, 1 | 2) || (self.version == 1 && self.duals.is_some()) {
+        if !matches!(self.version, 1..=3) || (self.version == 1 && self.duals.is_some()) {
             return Err(invalid("unsupported MC OPF report version"));
         }
         let prep = initial::prepare(
@@ -233,7 +260,12 @@ impl Report {
             if !self.options.collect_duals {
                 return Err(invalid("dual report without collection option"));
             }
-            let model = model::compile(prep.clone()).map_err(invalid)?;
+            let model = if self.version < 3 {
+                model::compile(prep.clone())
+            } else {
+                model::compile_with_load_parameters(prep.clone(), solution.instance().network())
+            }
+            .map_err(invalid)?;
             let checked = duals
                 .verify(&model, solution, self.options.acceptance_tolerance)
                 .map_err(invalid)?;

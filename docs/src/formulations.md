@@ -448,12 +448,16 @@ The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
 
 `McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
-PowerIO `McAcOpfSolution` plus version 2 of the namespaced module extension
+PowerIO `McAcOpfSolution` plus version 3 of the namespaced module extension
 `org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
 source/generator dispatch and the original instance. The extension carries the
 complete ledgers, axes, optimized taps, numerical options/bases, residuals,
 input diagnostic summaries, fingerprint, iterations, optional profile and optional
-dual report. Version 1 reports without dual data remain readable.
+dual report. Version 1 reports without dual data remain readable. Version 2 dual
+reports are checked using their original parameter mappings before newly
+supported load derivatives are recomputed from the retained canonical instance.
+Re-export writes version 3; older unsupported load entries are not silently
+accepted as current claims.
 This uses PowerIO's existing extension mechanism without changing its schema.
 
 `McOpfResult::from_module_json` reads this complete report and preserves module
@@ -498,7 +502,7 @@ Typed marginal entries instead report the envelope derivative of operating cost
 (currency/hour) with respect to an identified physical parameter in W, var, A,
 VA or V. A positive value means increasing that parameter raises local cost.
 For example, a lossless load served at 0.2 currency/kWh has an active-power
-marginal of 0.0002 (currency/hour)/W. Supported parameters are constant-power
+marginal of 0.0002 (currency/hour)/W. Supported parameters are nominal
 load coil P/Q, selected generator coil P/Q bounds, effective branch conductor
 current/apparent-power ratings, and prepared voltage-magnitude limits.
 Branch ratings sum contributions from both ends. Squared-norm rows include the
@@ -509,11 +513,26 @@ objective scaling within numerical tolerances.
 Parameter identities describe effective prepared limits. A shared linecode edit
 can affect several branch parameters; a scalar bus bound may affect several
 voltage measurements. These entries are not derivatives of arbitrary canonical
-input fields. Voltage-dependent nominal load parameters are explicitly
-unsupported in this first implementation. Inverter/control parameters,
+input fields. Load mappings cover constant power, constant current, constant
+impedance, ZIP and exponential laws. They hold nominal voltage, exponents and
+ZIP coefficients fixed. Canonical scalar/per-coil coefficients and their defaults
+are retained even when nominal P/Q is zero and preparation removes its terms.
+The derivative is with respect to nominal W/var, not the load's realized power at
+the solved voltage. Inverter/control parameters,
 transformer ratings and tap bounds do not yet have physical marginal mappings;
 their compiled row multipliers remain available. Coincident generator lower
 and upper bounds do not yield separate one-sided bound marginals.
+
+The load mapper follows the chosen compiled current or power law without
+changing the physical equations. It includes both real and imaginary current
+rows for an impedance-form load and uses the logarithmic-voltage coordinate
+when present. At positive voltage this also handles a zero coefficient that
+hides a nonconstant law. At zero voltage, pure impedance current-law parameter
+derivatives remain defined; hidden non-impedance laws are reported unsupported
+because their neighboring compiler profile requires positive voltage. Nonfinite
+derivative evaluations are likewise withheld without invalidating an accepted
+physical solution. Voltage-law coefficient and nominal-voltage derivatives are
+not exposed.
 
 `Conditional` means a first-order envelope value assuming the same regular local
 stationary branch and active set. It is not a second-order sufficiency test,

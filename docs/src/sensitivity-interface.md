@@ -99,12 +99,25 @@ carry output or parameter units explicitly and retain request order.
 
 Parameters use the same mappings as
 [local marginal values](formulations.md#dual-diagnostics-and-local-marginal-values):
-constant-power load coil P/Q, selected generator P/Q bounds, effective branch
+nominal load coil P/Q for constant-power/current/impedance, ZIP and exponential
+laws, selected generator P/Q bounds, effective branch
 current/apparent-power ratings, and prepared voltage limits. Inactive supported
 limits have zero derivatives on the fixed active set. Unknown, unsupported or
 coincident-bound parameters produce an error even if their requested weight is
 zero; they are never silently treated as inactive limits. Shared linecodes and
 scalar bus bounds can affect several effective parameters.
+
+For voltage-dependent loads, P/Q directions vary the canonical nominal coil
+powers while holding the voltage-law coefficients, exponents and nominal voltage
+fixed. The parameter column includes the exact mixed state–parameter derivative
+in stationarity. Canonical metadata preserves terms removed at zero nominal
+powers and follows scalar/per-coil defaults and coil incidence. Current-law
+rows differentiate `conj(S)*U/abs(U)^2`; power-law rows differentiate the voltage
+factor directly, using the log-voltage variable when the compiler introduced it.
+This supports zero-P/Q transitions without changing the physical formulation.
+At zero voltage, unsupported neighboring positive-voltage profiles are refused;
+pure impedance current laws retain their finite derivative. Derivatives with
+respect to ZIP fractions, exponents or nominal voltage are not exposed.
 
 Outputs include operating cost, earth-referenced terminal voltage real/imaginary
 parts, magnitude and local angle, device coil or terminal P/Q and rectangular
@@ -164,6 +177,7 @@ The session entry point requires `current_result()`: edits, changed options and
 failed or cancelled attempts invalidate access. Rust borrowing prevents edits
 while a sensitivity view is in use. An explicitly selected or cloned historical
 result remains an independent snapshot of its original instance. Portable
-version 2 results can rebuild a view after import; factorizations and views are
+version 3 results can rebuild a view after import, and verified version 2 dual
+reports are upgraded with the canonical load mappings. Factorizations and views are
 native in-memory objects and are not serialized. Neither queries nor failures
 change the session's accepted result, warm start or revision.
