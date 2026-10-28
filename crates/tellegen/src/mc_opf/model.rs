@@ -1,4 +1,8 @@
 //! IVR polynomial construction. Only this layer knows about POUNCE expressions.
+use super::duals::{
+    McOpfParameter as Parameter, McOpfParameterKind as ParameterKind, McOpfParameterOwner as Owner,
+    Rule,
+};
 use pounce_nl::nl_reader::{BinOp, CmpOp, Expr, NlProblem, NlProblemParts, UnaryOp};
 use powerio_matrix::{McAcOpfPreparation, McOpfDeviceKind};
 use std::collections::BTreeMap;
@@ -142,6 +146,7 @@ pub(super) enum StartLift {
 }
 #[derive(Clone, Debug)]
 pub(super) struct Model {
+    pub dual_map: super::duals::CompilerMap,
     pub start_lifts: Vec<StartLift>,
     pub zero_columns: Vec<usize>,
     pub prep: McAcOpfPreparation,
@@ -157,6 +162,7 @@ pub(super) struct Model {
 }
 #[derive(Default)]
 struct Builder {
+    dual_map: super::duals::CompilerMap,
     start_lifts: Vec<StartLift>,
     zero_columns: Vec<usize>,
     start: Vec<f64>,
@@ -228,7 +234,14 @@ impl Builder {
         let names = std::mem::take(&mut self.row_names);
         let lower = std::mem::take(&mut self.lo);
         let upper = std::mem::take(&mut self.hi);
-        for (((row, name), lo), hi) in rows.into_iter().zip(names).zip(lower).zip(upper) {
+        let origins = std::mem::take(&mut self.dual_map.rows);
+        for ((((row, name), lo), hi), origin) in rows
+            .into_iter()
+            .zip(names)
+            .zip(lower)
+            .zip(upper)
+            .zip(origins)
+        {
             if lo <= 0.0
                 && hi >= 0.0
                 && recognize_expr(&row).is_some_and(|q| {
@@ -238,19 +251,28 @@ impl Builder {
                         && q.quadratic().is_empty()
                 })
             {
+                self.dual_map.omitted.push(super::duals::OmittedRow {
+                    origin,
+                    reason: super::duals::Omission::ZeroReduction,
+                });
                 continue;
             }
-            self.row(name, row, lo, hi);
+            self.rows.push(row);
+            self.row_names.push(name);
+            self.lo.push(lo);
+            self.hi.push(hi);
+            self.dual_map.rows.push(origin);
         }
         for i in zero {
             self.zero_columns.push(i);
             self.start[i] = 0.0;
-            self.row(
+            let origin = self.row(
                 format!("{}:fixed_zero", self.names[i]),
                 Expr::Var(i),
                 0.0,
                 0.0,
             );
+            self.dual_map.origins[origin].synthetic = true;
         }
     }
     fn var(&mut self, name: String, start: f64) -> usize {
@@ -265,17 +287,25 @@ impl Builder {
             Affine::var(self.var(format!("{name}:i"), start[1])),
         ]
     }
-    fn row(&mut self, name: String, e: Expr, lo: f64, hi: f64) {
+    fn row(&mut self, name: String, e: Expr, lo: f64, hi: f64) -> usize {
+        let origin = self.dual_map.origin(name.clone());
+        self.dual_map.rows.push(origin);
         self.rows.push(e);
         self.row_names.push(name);
         self.lo.push(lo);
         self.hi.push(hi);
+        origin
     }
     fn affine_row(&mut self, name: String, a: &Affine) -> Result<(), String> {
         if a.terms.is_empty() {
             if a.constant.abs() > 1e-12 {
                 return Err(format!("{name}: inconsistent fixed equation"));
             }
+            let origin = self.dual_map.origin(name);
+            self.dual_map.omitted.push(super::duals::OmittedRow {
+                origin,
+                reason: super::duals::Omission::FixedEquation,
+            });
             return Ok(());
         }
         self.row(name, a.expr(), 0.0, 0.0);
@@ -283,18 +313,20 @@ impl Builder {
     }
     fn norm(&mut self, name: &str, v: &Pair, cap: f64) -> Result<(), String> {
         if cap == 0.0 {
+            self.dual_map.zero_limit = true;
             for (k, a) in v.iter().enumerate() {
                 self.affine_row(format!("{name}:{k}:zero"), a)?;
             }
         } else {
             let a = v[0].scale(1.0 / cap);
             let b = v[1].scale(1.0 / cap);
-            self.row(
+            let origin = self.row(
                 name.into(),
                 sum(vec![product(&a, &a), product(&b, &b)]),
                 f64::NEG_INFINITY,
                 1.0,
             );
+            self.dual_map.origins[origin].norm_divisor_pu = Some(cap);
         }
         Ok(())
     }
@@ -413,9 +445,33 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                     let node = nodes[k];
                     kcl[node] = pair_add(&kcl[node], &pair_scale(&i, -1.0));
                     if let Some(cap) = br.current_max[k] {
+                        let origin = b.dual_map.origins.len();
                         b.norm(&format!("{}:{end}:{k}:current", br.identity), &i, cap)?;
+                        b.dual_map.term(
+                            Parameter::new(
+                                Owner::Branch,
+                                &br.identity,
+                                Some(k),
+                                ParameterKind::CurrentRating,
+                            ),
+                            (cap > 0.0).then_some(origin),
+                            Rule::Norm {
+                                physical: cap * prep.bases.power_base_va
+                                    / prep.bases.voltage_base_v,
+                            },
+                        );
                     }
                     if let Some(cap) = br.apparent_max[k] {
+                        let parameter = Parameter::new(
+                            Owner::Branch,
+                            &br.identity,
+                            Some(k),
+                            ParameterKind::ApparentPowerRating,
+                        );
+                        b.dual_map.ensure(parameter.clone());
+                        if cap == 0.0 {
+                            b.dual_map.zero_limit = true;
+                        }
                         if cap == 0.0 && voltage[node].iter().all(|a| a.terms.is_empty()) {
                             // At a prescribed nonzero phasor, S = V conj(I) = 0
                             // is exactly I = 0, regardless of the reference angle.
@@ -436,11 +492,19 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                             [0.0, 0.0],
                         );
                         power_columns[k][end_index] = Some(ids);
+                        let origin = b.dual_map.origins.len();
                         b.norm(
                             &format!("{}:{end}:{k}:apparent", br.identity),
                             &[Affine::var(ids[0]), Affine::var(ids[1])],
                             cap,
                         )?;
+                        b.dual_map.term(
+                            parameter,
+                            (cap > 0.0).then_some(origin),
+                            Rule::Norm {
+                                physical: cap * prep.bases.power_base_va,
+                            },
+                        );
                     }
                 }
             }
@@ -539,6 +603,15 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
             1.0
         };
         for (k, coil) in dev.coils.iter().enumerate() {
+            if dev.kind == McOpfDeviceKind::Load {
+                for kind in [
+                    ParameterKind::LoadActivePower,
+                    ParameterKind::LoadReactivePower,
+                ] {
+                    b.dual_map
+                        .ensure(Parameter::new(Owner::Load, &dev.identity, Some(k), kind));
+                }
+            }
             let name = format!("{:?}:{}:{k}", dev.kind, dev.identity);
             let u = difference(&voltage, coil.positive, coil.negative);
             let p0 = coil.prescribed.unwrap_or([0.0, 0.0]);
@@ -581,6 +654,9 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                             target,
                             target,
                         );
+                        // A nonconstant canonical law can look constant here:
+                        // preparation removes zero coefficients. Its nominal
+                        // P/Q derivative cannot be inferred from these terms.
                     }
                 } else {
                     // Log-voltage lift defines the exact positive-voltage domain;
@@ -631,12 +707,30 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                 }
             } else if let Some(pq0) = coil.prescribed {
                 for j in 0..2 {
-                    b.row(
+                    let origin = b.row(
                         format!("{name}:prescribed:{j}"),
                         Expr::Var(pq[j]),
                         pq0[j],
                         pq0[j],
                     );
+                    if dev.kind == McOpfDeviceKind::Load {
+                        b.dual_map.term(
+                            Parameter::new(
+                                Owner::Load,
+                                &dev.identity,
+                                Some(k),
+                                if j == 0 {
+                                    ParameterKind::LoadActivePower
+                                } else {
+                                    ParameterKind::LoadReactivePower
+                                },
+                            ),
+                            Some(origin),
+                            Rule::Equality {
+                                scale: prep.bases.power_base_va.recip(),
+                            },
+                        );
+                    }
                 }
             } else {
                 for (j, (lo, hi)) in [(coil.p_min, coil.p_max), (coil.q_min, coil.q_max)]
@@ -648,12 +742,50 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                             return Err(format!("{name}: zero rating conflicts with capability"));
                         }
                     } else if lo.is_some() || hi.is_some() {
-                        b.row(
+                        let origin = b.row(
                             format!("{name}:capability:{j}"),
                             Expr::Var(pq[j]),
                             lo.unwrap_or(f64::NEG_INFINITY),
                             hi.unwrap_or(f64::INFINITY),
                         );
+                        if dev.kind == McOpfDeviceKind::Generator {
+                            for (bound, kind, lower) in [
+                                (
+                                    lo,
+                                    if j == 0 {
+                                        ParameterKind::ActivePowerLower
+                                    } else {
+                                        ParameterKind::ReactivePowerLower
+                                    },
+                                    true,
+                                ),
+                                (
+                                    hi,
+                                    if j == 0 {
+                                        ParameterKind::ActivePowerUpper
+                                    } else {
+                                        ParameterKind::ReactivePowerUpper
+                                    },
+                                    false,
+                                ),
+                            ] {
+                                if bound.is_some() {
+                                    b.dual_map.term(
+                                        Parameter::new(
+                                            Owner::Generator,
+                                            &dev.identity,
+                                            Some(k),
+                                            kind,
+                                        ),
+                                        Some(origin),
+                                        Rule::Bound {
+                                            scale: prep.bases.power_base_va.recip(),
+                                            lower,
+                                        },
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -758,16 +890,50 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
             lifted
         };
         if let Some(cap) = limit.upper {
+            let origin = b.dual_map.origins.len();
             b.norm(&format!("voltage:{}:upper", limit.identity), &u, cap)?;
+            b.dual_map.term(
+                Parameter::new(
+                    Owner::VoltageLimit,
+                    &limit.identity,
+                    None,
+                    ParameterKind::VoltageUpper,
+                ),
+                (cap > 0.0).then_some(origin),
+                Rule::Norm {
+                    physical: cap * prep.bases.voltage_base_v,
+                },
+            );
+        }
+        if limit.lower == Some(0.0) {
+            b.dual_map.ensure(Parameter::new(
+                Owner::VoltageLimit,
+                &limit.identity,
+                None,
+                ParameterKind::VoltageLower,
+            ));
         }
         if let Some(floor) = limit.lower.filter(|x| *x > 0.0) {
             let a = u[0].scale(1.0 / floor);
             let c = u[1].scale(1.0 / floor);
-            b.row(
+            let origin = b.row(
                 format!("voltage:{}:lower", limit.identity),
                 sum(vec![product(&a, &a), product(&c, &c)]),
                 1.0,
                 f64::INFINITY,
+            );
+            b.dual_map.origins[origin].norm_divisor_pu = Some(floor);
+            b.dual_map.term(
+                Parameter::new(
+                    Owner::VoltageLimit,
+                    &limit.identity,
+                    None,
+                    ParameterKind::VoltageLower,
+                ),
+                Some(origin),
+                Rule::Norm {
+                    physical: floor * prep.bases.voltage_base_v,
+                },
             );
         }
     }
@@ -852,6 +1018,7 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
         con_names: b.row_names,
     })?;
     Ok(Model {
+        dual_map: b.dual_map,
         start_lifts: b.start_lifts,
         zero_columns: b.zero_columns,
         prep,

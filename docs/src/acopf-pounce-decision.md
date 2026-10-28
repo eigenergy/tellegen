@@ -381,7 +381,10 @@ and projection rules.
 `McOpfOptions.collect_profile` enables optional
 stage and KKT diagnostics. Native `McOpfSession` retains a compiled model and
 accepted primal for [repeated solves and atomic edits](formulations.md#retained-sessions-and-edits).
-Prices and solution sensitivities are not exposed.
+`McOpfOptions.collect_duals` separately enables original-scale multipliers, KKT
+residuals, and [conditional local marginal values](formulations.md#dual-diagnostics-and-local-marginal-values)
+for supported load and limit parameters. Raw IVR KCL multipliers are not nodal
+prices. Solution sensitivities are not yet exposed.
 
 The feature builds against POUNCE 0.13.0 and, until PowerIO 0.11.8 is
 published, against the PowerIO candidate patched in the root `Cargo.toml`. Build and test the native feature from the repository root:

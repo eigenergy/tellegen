@@ -105,6 +105,15 @@ Regression coverage combines:
   explicit declared-start selection, compiled-cache reuse, and preservation of
   the accepted primal across cancellation, numerical/physical-validation failure
   and infeasible edits.
+- Opt-in dual reports, analytic load and generator-bound marginal signs/units,
+  numerical-base and objective-scale invariance, and centered cost perturbations
+  for lossy P/Q loads, delta coils, both-end branch ratings and voltage floors.
+  Analytic KKT examples and electrical cases cover weak activity, dependent
+  active rows, zero reductions and bounded rank audits without invalidating
+  accepted physical solutions. Saved dual reports reject altered identities,
+  multipliers, scaling, derived values and physical ledgers; version 1 reports
+  without dual data remain readable. Session edits refresh duals with the
+  accepted revision.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance

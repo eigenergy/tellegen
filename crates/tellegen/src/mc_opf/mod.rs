@@ -2,9 +2,17 @@
 //!
 //! The `mc-opf` feature is opt-in. PowerIO owns preparation and identities;
 //! POUNCE evaluates exact sparse derivatives. Accepted points are independently
-//! checked against the physical equations. Success is local, with no prices,
-//! optimality certificate or solution sensitivities.
+//! checked against the physical equations. Optional dual diagnostics and
+//! conditional marginal values do not certify global optimality.
 mod diagnostics;
+mod duals;
+pub use duals::{
+    McOpfActiveRank, McOpfConstraintDual, McOpfConstraintId, McOpfDualReport, McOpfKktResiduals,
+    McOpfMarginalStatus, McOpfMarginalValue, McOpfOmittedConstraint, McOpfParameter,
+    McOpfParameterKind, McOpfParameterOwner, McOpfParameterUnit, McOpfRowOmission,
+};
+#[cfg(test)]
+mod dual_tests;
 mod initial;
 #[cfg(test)]
 mod initial_tests;
@@ -52,6 +60,9 @@ pub struct McOpfOptions {
     pub objective_scale: f64,
     /// Collect stage and detailed solver timings. Off by default: timers add overhead.
     pub collect_profile: bool,
+    /// Analyze original-scale multipliers, KKT residuals and conditional local
+    /// marginal costs. Opt-in; the active-rank audit is bounded in size.
+    pub collect_duals: bool,
 }
 impl Default for McOpfOptions {
     fn default() -> Self {
@@ -62,6 +73,7 @@ impl Default for McOpfOptions {
             max_iterations: 1000,
             objective_scale: 1.0,
             collect_profile: false,
+            collect_duals: false,
         }
     }
 }
@@ -195,6 +207,7 @@ pub struct McOpfLinearProfile {
 }
 #[derive(Clone, Debug)]
 pub struct McOpfResult {
+    pub duals: Option<McOpfDualReport>,
     // Retain provenance and unrelated extensions when a saved result is read.
     pub(super) module: Option<PioModule<PioValue>>,
     pub terminals: Vec<McOpfTerminalVoltage>,
@@ -356,6 +369,30 @@ fn solve_prepared(
     initial_diagnostics.extend(pf_diagnostics);
     cancelled(cancel.as_deref(), McOpfStage::Validation)?;
     record_stage(&mut profile, &mut stage, "validation");
+    let duals = if options.collect_duals {
+        let analyzed = t
+            .inner
+            .final_lambda()
+            .zip(t.inner.final_bound_multipliers())
+            .ok_or_else(|| "solver did not return multipliers".to_owned())
+            .and_then(|(lambda, (zl, zu))| duals::analyze(&model, x, lambda, zl, zu));
+        match analyzed {
+            Ok(report) => Some(report),
+            Err(message) => {
+                initial_diagnostics.push(McOpfDiagnostic {
+                    code: "MC_OPF.DUALS_UNAVAILABLE".into(),
+                    severity: powerio::DiagnosticSeverity::Warning,
+                    message,
+                    target: None,
+                });
+                None
+            }
+        }
+    } else {
+        None
+    };
+    record_stage(&mut profile, &mut stage, "dual_analysis");
+    cancelled(cancel.as_deref(), McOpfStage::Validation)?;
     let source = checked
         .devices
         .iter()
@@ -392,6 +429,7 @@ fn solve_prepared(
     }
     Ok((
         McOpfResult {
+            duals,
             module: None,
             terminals: model
                 .prep
