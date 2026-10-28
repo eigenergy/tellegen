@@ -100,7 +100,7 @@ carry output or parameter units explicitly and retain request order.
 Parameters use the same mappings as
 [local marginal values](formulations.md#dual-diagnostics-and-local-marginal-values):
 nominal load coil P/Q for constant-power/current/impedance, ZIP and exponential
-laws, selected generator P/Q bounds, effective branch
+laws, selected generator P/Q bounds, inverter availability and capabilities, effective branch
 current/apparent-power ratings, and prepared voltage limits. Inactive supported
 limits have zero derivatives on the fixed active set. Unknown, unsupported or
 coincident-bound parameters produce an error even if their requested weight is
@@ -119,6 +119,18 @@ At zero voltage, unsupported neighboring positive-voltage profiles are refused;
 pure impedance current laws retain their finite derivative. Derivatives with
 respect to ZIP fractions, exponents or nominal voltage are not exposed.
 
+Inverter directions use canonical per-coil P/Q bounds and apparent-power ratings,
+and terminal current ratings (coil current for three-leg delta). Availability
+follows the retained-session edit: one allocated `p_max` entry changes and the
+sum becomes `p_avail`. It requires a positive selected allocation and a coherent
+observed total. The mappings include all affected volt-var/volt-watt references,
+including cross-coil PAvailable targets and averaged voltage monitors. Exact
+control-reference partials enter both feasibility and stationarity through the
+compiler's existing magnitude lifts. This does not perturb curve coefficients or
+introduce numerical finite differences. Two-wire current-rating ties, absent or
+nonfinite ratings and zero nameplates do not provide independent partials. See
+the linked marginal-value documentation for complete field and axis semantics.
+
 Outputs include operating cost, earth-referenced terminal voltage real/imaginary
 parts, magnitude and local angle, device coil or terminal P/Q and rectangular
 current, and branch-end P/Q and rectangular current. Units are currency/hour,
@@ -130,8 +142,8 @@ shunt. Device signs follow the physical result ledgers. Gradients differentiate
 physical measurements rather than assuming auxiliary power columns are exact.
 Voltage magnitude and angle at zero are unavailable; angle derivatives describe
 a local continuous angle, not the discontinuity of a wrapped display value.
-Transformer/tap outputs, raw multiplier outputs and network-admittance/control
-parameters are not part of this initial interface.
+Transformer/tap outputs, raw multiplier outputs, network-admittance parameters
+and control-curve coefficients are not part of this interface.
 
 For active constraints `c(x,theta)=0`, the stationary system is
 
@@ -177,7 +189,7 @@ The session entry point requires `current_result()`: edits, changed options and
 failed or cancelled attempts invalidate access. Rust borrowing prevents edits
 while a sensitivity view is in use. An explicitly selected or cloned historical
 result remains an independent snapshot of its original instance. Portable
-version 3 results can rebuild a view after import, and verified version 2 dual
-reports are upgraded with the canonical load mappings. Factorizations and views are
+version 4 results can rebuild a view after import, and verified version 2/3 dual
+reports are upgraded with canonical load/inverter mappings. Factorizations and views are
 native in-memory objects and are not serialized. Neither queries nor failures
 change the session's accepted result, warm start or revision.

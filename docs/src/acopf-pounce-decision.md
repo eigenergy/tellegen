@@ -389,8 +389,11 @@ prices. `McOpfResult::sensitivities()` and `McOpfSession::sensitivities()` provi
 from a verified current dual point, reusing one sparse active-KKT factorization.
 Nominal load P/Q mappings include constant-current, constant-impedance, ZIP and
 exponential laws, including coefficients hidden by zero nominal powers. Their
-voltage-law coefficients and nominal voltages remain fixed. Version 3 reports
-retain these marginal claims; version 2 reports are verified before upgrade.
+voltage-law coefficients and nominal voltages remain fixed. Inverter mappings
+cover per-coil availability, P/Q bounds, apparent-power and conductor-current
+ratings, including neutral returns and their effects on existing volt-var and
+volt-watt references. Control-curve coefficients remain fixed. Version 4 reports
+retain these marginal claims; version 2/3 reports are verified before upgrade.
 
 The feature builds against POUNCE 0.13.0 and, until PowerIO 0.11.8 is
 published, against the PowerIO candidate patched in the root `Cargo.toml`. Build and test the native feature from the repository root:

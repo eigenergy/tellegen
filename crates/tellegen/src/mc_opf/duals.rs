@@ -60,6 +60,7 @@ pub struct McOpfConstraintDual {
 pub enum McOpfParameterOwner {
     Load,
     Generator,
+    Inverter,
     Branch,
     VoltageLimit,
 }
@@ -68,6 +69,9 @@ pub enum McOpfParameterOwner {
 pub enum McOpfParameterKind {
     LoadActivePower,
     LoadReactivePower,
+    /// Per-coil inverter availability edit: vary p_max[axis] and set p_avail
+    /// to the sum, including all affected control references. Unit: W.
+    Availability,
     ActivePowerLower,
     ActivePowerUpper,
     ReactivePowerLower,
@@ -82,8 +86,9 @@ pub enum McOpfParameterKind {
 pub struct McOpfParameter {
     pub owner: McOpfParameterOwner,
     pub component: String,
-    /// Coil index for load/generator, conductor index for branch. Voltage-limit
-    /// identities already identify the prepared measurement, so have no axis.
+    /// Coil index for load/generator and inverter power parameters; conductor
+    /// index for branches and inverter current ratings (coil index for delta).
+    /// Voltage-limit identities identify the measurement and have no axis.
     pub axis: Option<usize>,
     pub kind: McOpfParameterKind,
 }
@@ -104,7 +109,9 @@ impl McOpfParameter {
     pub(super) fn unit(&self) -> McOpfParameterUnit {
         use McOpfParameterKind::*;
         match self.kind {
-            LoadActivePower | ActivePowerLower | ActivePowerUpper => McOpfParameterUnit::Watt,
+            LoadActivePower | Availability | ActivePowerLower | ActivePowerUpper => {
+                McOpfParameterUnit::Watt
+            }
             LoadReactivePower | ReactivePowerLower | ReactivePowerUpper => McOpfParameterUnit::Var,
             CurrentRating => McOpfParameterUnit::Ampere,
             ApparentPowerRating => McOpfParameterUnit::VoltAmpere,
@@ -183,10 +190,12 @@ pub struct McOpfDualReport {
 
 #[derive(Clone, Debug)]
 pub(super) enum Rule {
+    Zero,
     Equality { scale: f64 },
     Bound { scale: f64, lower: bool },
     Norm { physical: f64 },
     Load(super::load_parameters::LoadParameter),
+    Inverter(super::inverter_parameters::DroopParameter),
 }
 #[derive(Clone, Debug)]
 pub(super) struct OmittedRow {
@@ -440,11 +449,15 @@ pub(super) fn analyze(
                     entry_status = McOpfMarginalStatus::UnsupportedParameter;
                 }
                 for (origin, rule) in terms {
+                    if matches!(rule, Rule::Zero) {
+                        continue;
+                    }
                     let Some(&r) = origin.and_then(|id| lookup.get(&id)) else {
                         entry_status = McOpfMarginalStatus::UnsupportedParameter;
                         continue;
                     };
                     derivative += match rule {
+                        Rule::Zero => 0.,
                         Rule::Equality { scale } => -lambda[r] * scale,
                         Rule::Bound { scale, lower } => {
                             if p.g_l[r] == p.g_u[r] {
@@ -458,6 +471,13 @@ pub(super) fn analyze(
                         }
                         Rule::Norm { physical } => -2. * lambda[r] * g[r] / physical,
                         Rule::Load(load) => match load.evaluate(x) {
+                            Ok((value, _)) => lambda[r] * value,
+                            Err(_) => {
+                                entry_status = McOpfMarginalStatus::UnsupportedParameter;
+                                0.
+                            }
+                        },
+                        Rule::Inverter(control) => match control.evaluate(x) {
                             Ok((value, _)) => lambda[r] * value,
                             Err(_) => {
                                 entry_status = McOpfMarginalStatus::UnsupportedParameter;
