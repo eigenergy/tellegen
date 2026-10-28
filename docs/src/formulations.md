@@ -405,7 +405,8 @@ or ambiguous compiler names, the previous physical voltage/tap report is
 projected in SI units instead. An unusable warm seed falls back to the declared
 start with `MC_OPF.SESSION_WARM_START_DISCARDED`. `McOpfSessionResult::start`
 records the path used. Each attempt creates a fresh optimizer and evaluator;
-the session does not retain multipliers or matrix factorizations. Warm starts
+the session does not reuse multipliers or matrix factorizations as optimizer state.
+Optional dual reports remain attached to their accepted result revision. Warm starts
 need not be feasible and do not guarantee convergence or fewer iterations.
 
 Results carry the input `revision`, solve `attempt`, and `compilation` counters.
@@ -437,21 +438,85 @@ The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
 
 `McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
-PowerIO `McAcOpfSolution` plus version 1 of the namespaced module extension
+PowerIO `McAcOpfSolution` plus version 2 of the namespaced module extension
 `org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
 source/generator dispatch and the original instance. The extension carries the
 complete ledgers, axes, optimized taps, numerical options/bases, residuals,
-input diagnostic summaries, fingerprint, iterations and optional profile.
+input diagnostic summaries, fingerprint, iterations, optional profile and optional
+dual report. Version 1 reports without dual data remain readable.
 This uses PowerIO's existing extension mechanism without changing its schema.
 
 `McOpfResult::from_module_json` reads this complete report and preserves module
 records and unrelated extensions on re-export. It rejects missing/unknown report
 versions, inconsistent identities or vector lengths, changed instance/base
 fingerprints, and disagreement with canonical voltage columns. Reading a report
-does not rerun the solver or certify an external result. A canonical solution
+with dual data recompiles its declared problem, recomputes the derivative/KKT
+diagnostics, and checks the stored primal against the physical ledgers and
+canonical voltages. It rejects inconsistent multipliers, scaling metadata and
+derived marginal claims.
+Reading does not rerun the solver or certify an external result. A canonical solution
 without the extension remains readable through PowerIO, but cannot be imported
 as a complete `McOpfResult`.
 
 Accepted solves pass the [physical validation gate](validation.md#multiconductor-ivr-opf).
-They establish local numerical success, without a global-optimality certificate,
-prices or solution sensitivities.
+They establish local numerical success, without a global-optimality certificate.
+Solution sensitivities are not yet exposed.
+
+### Dual diagnostics and local marginal values
+
+Set `McOpfOptions.collect_duals = true` to populate `McOpfResult.duals`.
+Collection is off by default. The report includes original-objective-scale
+constraint and variable-bound multipliers, stationarity, complementarity,
+dual-feasibility and primal residuals, and an active-constraint rank audit.
+Physical acceptance remains independent: a failed diagnostic or unavailable
+marginal value does not invalidate an otherwise accepted physical solution.
+Missing multipliers or failed derivative evaluation produce
+`MC_OPF.DUALS_UNAVAILABLE`; finite but unreliable duals remain inspectable with
+an explicit report status.
+
+Each row has a unique compiler ordinal, a descriptive label and any squared-norm
+normalization radius in working units. Ordinals identify rows within that compiled
+problem, not across revisions. Labels need not be unique and are never parsed
+to recover parameter identities. Omitted fixed equations and zero-reduced rows
+retain provenance; synthetic zero definitions are identified explicitly. Raw
+row multipliers use `L = f + lambda*g`: lower-side multipliers are negative,
+upper-side multipliers positive, and equality multipliers unrestricted.
+They use compiled row units. **IVR KCL multipliers are not nodal energy prices.**
+
+Typed marginal entries instead report the envelope derivative of operating cost
+(currency/hour) with respect to an identified physical parameter in W, var, A,
+VA or V. A positive value means increasing that parameter raises local cost.
+For example, a lossless load served at 0.2 currency/kWh has an active-power
+marginal of 0.0002 (currency/hour)/W. Supported parameters are constant-power
+load coil P/Q, selected generator coil P/Q bounds, effective branch conductor
+current/apparent-power ratings, and prepared voltage-magnitude limits.
+Branch ratings sum contributions from both ends. Squared-norm rows include the
+derivative of their normalization radius, so their raw multiplier is not itself
+the physical limit marginal. Values are invariant to numerical bases and solver
+objective scaling within numerical tolerances.
+
+Parameter identities describe effective prepared limits. A shared linecode edit
+can affect several branch parameters; a scalar bus bound may affect several
+voltage measurements. These entries are not derivatives of arbitrary canonical
+input fields. Voltage-dependent nominal load parameters are explicitly
+unsupported in this first implementation. Inverter/control parameters,
+transformer ratings and tap bounds do not yet have physical marginal mappings;
+their compiled row multipliers remain available. Coincident generator lower
+and upper bounds do not yield separate one-sided bound marginals.
+
+`Conditional` means a first-order envelope value assuming the same regular local
+stationary branch and active set. It is not a second-order sufficiency test,
+global price, or proof that the optimal-value function is differentiable.
+Values are withheld after failed KKT checks, any zero-limit reduction,
+numerically dependent active rows, weakly active inequalities, or an unaudited
+rank. The rank audit uses normalized, pivoted, twice-reorthogonalized row QR,
+with a `1e-9` numerical rank threshold. It is bounded to 256 active rows and
+262,144 dense entries; larger problems report `RankNotChecked` while retaining
+raw multipliers and KKT residuals. Active-side tolerance is `1e-7*(1+abs(bound))`
+in compiled coordinates. KKT acceptance uses `1e-6` for relative stationarity,
+relative complementarity, normalized primal violation and absolute dual-sign
+violation. Relative stationarity divides each coordinate residual by one plus
+the sum of absolute gradient, Jacobian-multiplier and bound-dual contributions;
+relative complementarity divides by `1+abs(objective)`. Active inequality rows
+are weak when `abs(lambda)*norm(row_gradient) <= 1e-8` (variable bounds use
+`z <= 1e-8`). This conservative policy exposes diagnostic limits explicitly.

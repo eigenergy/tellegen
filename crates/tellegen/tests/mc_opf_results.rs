@@ -157,9 +157,11 @@ fn complete_results_roundtrip_with_coil_terminal_and_rating_port_axes() {
         let options = McOpfOptions {
             objective_scale: if bundle == "controls" { 1000.0 } else { 1.0 },
             collect_profile: true,
+            collect_duals: true,
             ..Default::default()
         };
         let result = solve_mc_ac_opf_instance(instance(net), &options).unwrap();
+        assert!(result.duals.is_some(), "{name}: missing dual report");
         assert_ledgers(&result);
         let text = result.to_module_json().unwrap();
         let back = McOpfResult::from_module_json(&text).unwrap();

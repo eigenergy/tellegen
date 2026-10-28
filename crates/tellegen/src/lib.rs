@@ -42,8 +42,10 @@ pub mod mc_pf;
 #[cfg(feature = "mc-opf")]
 pub use mc_opf::{
     mc_opf_initial_point_from_pf, solve_mc_ac_opf_instance, solve_mc_ac_opf_instance_cancellable,
-    solve_mc_ac_opf_module_json, McOpfEdit, McOpfError, McOpfErrorKind, McOpfOptions, McOpfProfile,
-    McOpfResult, McOpfSession, McOpfSessionResult, McOpfStage, McOpfStart, McOpfStartUsed,
+    solve_mc_ac_opf_module_json, McOpfDualReport, McOpfEdit, McOpfError, McOpfErrorKind,
+    McOpfMarginalStatus, McOpfMarginalValue, McOpfOptions, McOpfParameter, McOpfParameterKind,
+    McOpfParameterOwner, McOpfParameterUnit, McOpfProfile, McOpfResult, McOpfSession,
+    McOpfSessionResult, McOpfStage, McOpfStart, McOpfStartUsed,
 };
 mod model;
 #[cfg(feature = "acopf")]
