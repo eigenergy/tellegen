@@ -231,6 +231,14 @@ bounds and solver-independent IVR preparation. Tellegen compiles that prepared
 data into expressions, invokes POUNCE, and independently validates the physical
 result. BMOPFTools is an external reference for tests, not a runtime dependency.
 
+DELTA equipment and THREE_LEG inverters require phase-only terminal maps.
+PowerIO preparation rejects neutral and earth endpoints, honoring explicit
+terminal conventions. Tellegen reports `InvalidInput` at `Preparation` with
+`BUILD.MULTI.OPF_INVALID`, before optimization, for both one-shot solves and
+retained-session construction. Two-terminal DELTA remains one phase-to-phase
+coil; WYE and SINGLE_PHASE return connections remain supported. Session edits
+change numerical values, not terminal roles or connection topology.
+
 ### Public native workflow
 
 The runnable `crates/tellegen/examples/mc_opf_workflow.rs` example uses only public
@@ -375,12 +383,11 @@ starting from Tellegen's `McPfResult`, first call
 the OPF entry point does not run PF automatically.
 
 Only the numerical starting vector changes. Network data, objective, selected
-constraints, bounds, and the physical fingerprint remain unchanged. PowerIO
-0.11.6 preparation rejects initial points, so Tellegen prepares an equivalent
-physical instance without its seed, then projects the original point into the
-compiled IVR coordinates. The returned solution and canonical JSON retain the
-original physical instance and seed values. Returned seed columns are normalized
-to the instance's order for portable JSON. When serializing an input instance
+constraints, bounds, and the physical fingerprint remain unchanged. Tellegen
+prepares an equivalent physical instance without its seed, then projects the
+original point into the compiled IVR coordinates. The returned solution and
+canonical JSON retain the original physical instance and seed values. Returned
+seed columns are normalized to the instance's order for portable JSON. When serializing an input instance
 directly through PowerIO, construct its point in that instance's order too;
 PowerIO's stored assignment decoder requires matching column order.
 

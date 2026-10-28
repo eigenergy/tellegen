@@ -73,7 +73,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert manifest_path.read_text().count(NEW) == len(pin.POWERIO_CRATES)
     rejects(lambda: pin.set_manifest_revision(manifest_path, "main"))
 
-    # Publication removes the patches. The registry lock must cover all seven
+    # Publication removes the patches. The registry lock must cover all eight
     # components with one version and the checksums Cargo records.
     manifest_path.write_text('[workspace.dependencies]\npowerio = "0.11"\n')
     assert pin.manifest_revision(manifest_path) is None

@@ -426,6 +426,21 @@ fn zero_apparent_rating_at_ground_does_not_imply_zero_current() {
 #[test]
 fn exact_ideal_line_and_delta_load_solve_without_impedance_inverse() {
     let mut n = network();
+    // A DELTA is phase-to-phase, not phase-to-neutral. Retain the ideal
+    // two-wire branch, with opposite source phases and no neutral terminal.
+    for bus in n.buses_mut() {
+        bus.terminals[1] = "b".into();
+        bus.grounded.clear();
+        bus.vpn_min = None;
+        bus.vpn_max = None;
+        bus.vn_max = None;
+    }
+    n.sources_mut()[0].terminal_map[1] = "b".into();
+    n.sources_mut()[0].v_magnitude[1] = 230.;
+    n.sources_mut()[0].v_angle[1] = std::f64::consts::PI;
+    n.lines_mut()[0].terminal_map_from[1] = "b".into();
+    n.lines_mut()[0].terminal_map_to[1] = "b".into();
+    n.loads_mut()[0].terminal_map[1] = "b".into();
     n.line_codes_mut()[0].r_series = vec![vec![0.; 2]; 2];
     n.loads_mut()[0].configuration = Configuration::Delta;
     let r = solve(n);
@@ -435,6 +450,7 @@ fn exact_ideal_line_and_delta_load_solve_without_impedance_inverse() {
         1e-6,
     );
     near(r.solution.objective(), 0.02, 1e-8);
+    near(r.branches[0].current_from_a[0][0], 100. / 460., 1e-8);
 }
 
 #[test]
