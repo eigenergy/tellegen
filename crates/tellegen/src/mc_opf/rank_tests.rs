@@ -64,6 +64,7 @@ fn close(a: f64, b: f64) {
 }
 
 #[test]
+#[ignore = "opt-in 48-section study; run mc_opf::rank_tests with --ignored"]
 fn connected_feeder_qualifies_beyond_old_limits_and_predicts_perturbed_solves() {
     let n = feeder();
     let r = solve(n.clone());
@@ -147,8 +148,18 @@ fn connected_feeder_qualifies_beyond_old_limits_and_predicts_perturbed_solves() 
 }
 
 #[test]
+#[ignore = "opt-in 48-section report study; run mc_opf::rank_tests with --ignored"]
 fn legacy_rank_refusals_are_verified_before_upgrade_and_new_claims_are_checked() {
-    let r = solve(feeder());
+    check_rank_report(feeder(), McOpfMarginalStatus::RankNotChecked);
+}
+
+#[test]
+fn compact_rank_reports_keep_legacy_verification_and_tamper_checks_in_ci() {
+    check_rank_report(tests::network(), McOpfMarginalStatus::Conditional);
+}
+
+fn check_rank_report(network: MulticonductorNetwork, legacy_status: McOpfMarginalStatus) {
+    let r = solve(network);
     let d = r.duals.as_ref().unwrap();
     let model = r.verified_dual_model().unwrap().unwrap();
     let lambda: Vec<_> = d.constraints.iter().map(|c| c.multiplier).collect();
@@ -160,7 +171,7 @@ fn legacy_rank_refusals_are_verified_before_upgrade_and_new_claims_are_checked()
         &d.upper_bound_multipliers,
     )
     .unwrap();
-    assert_eq!(old.status, McOpfMarginalStatus::RankNotChecked);
+    assert_eq!(old.status, legacy_status);
     let saved = r.to_module_json().unwrap();
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let current = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
@@ -178,7 +189,7 @@ fn legacy_rank_refusals_are_verified_before_upgrade_and_new_claims_are_checked()
         McOpfMarginalStatus::Conditional
     );
     assert!(upgraded.sensitivities().is_ok());
-    report["duals"]["status"] = json!("conditional");
+    report["duals"]["status"] = json!("rank_deficient");
     module
         .insert_extension(MC_OPF_RESULT_EXTENSION, report)
         .unwrap();

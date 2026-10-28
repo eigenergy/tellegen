@@ -163,11 +163,63 @@ Regression coverage combines:
 - Sparse rank qualification agrees with the dense pivoted reference on small
   matrices and covers large diagonal and connected sparse cases, numerical
   dependence, rescaling/permutations, and explicit fill/work/nonfinite refusals.
-  A connected 48-section feeder exceeds both old dense-audit limits and checks
+  An opt-in connected 48-section feeder exceeds both old dense-audit limits and checks
   centered perturbations, forward/adjoint agreement, physical cost marginals,
   base/objective-scale invariance and backsolve diagnostics. Report tests verify
   legacy rank refusals before upgrading and reject tampered version 7 audit
   claims; session tests preserve accepted results and enforce stale-view rules.
+
+### Feeder validation and runtime budgets
+
+`mc_opf_feeder` uses one authored four-bus feeder with a delta-wye transformer,
+two coupled four-wire lines, ZIP wye/delta loads and a controlled four-leg
+inverter. Its pinned BMOPFTools reference checks rectangular voltages, line
+currents and P/Q, losses, dispatch and original inverter bounds. The test then
+checks a nominal-load sensitivity direction against centered solves, reuses one
+factorization for forward/adjoint queries, and compares a warm demand/availability/
+control edit with a fresh solve. It checks stale access and rejected-edit rollback.
+The reference records the exact input hash, oracle revision, Julia/JuMP/Ipopt
+versions, solver options, units and explicit tolerances. Objective comparison is
+specific to this fixture and matching formulation, not a global-optimality claim.
+
+The CI budget is **one fixture, five solves and one sensitivity factorization**,
+with at most 100 iterations per solve. Structural guards keep it at four buses
+and a KKT dimension below 600. Perturbed and fresh comparison solves skip dual
+collection. A local unoptimized run took about 3.1 seconds;
+elapsed time is printed for observation, not asserted against a machine-dependent
+deadline. The default suite retains inexpensive sparse rank matrices and compact
+legacy/tamper tests. The two larger 48-section studies are ignored by default
+and require an explicit command:
+
+```sh
+cargo test -p tellegen --no-default-features --features mc-opf --locked \
+  --test mc_opf_feeder -- --nocapture
+cargo test -p tellegen --no-default-features --features mc-opf --locked \
+  --lib mc_opf::rank_tests -- --ignored --nocapture
+python3 scripts/test_enwl_ivr_study.py
+```
+
+Large external studies stay opt-in. Build the existing probe in release mode;
+`--qualify` adds dual/rank details, KKT structure, view/query timings and one
+objective forward/adjoint query using a single factorization, without extra
+optimization. An unavailable derivative remains distinct from physical rejection.
+The runner records the executable hash and supports explicit case selection,
+case limits and per-process timeouts. Relative paths in a case list resolve
+against the list's directory. Duplicate output filenames are rejected; failed
+reruns replace previous accepted records so comparisons cannot use stale data.
+
+```sh
+cargo build -p tellegen --release --example mc_opf_case_probe \
+  --no-default-features --features mc-opf --locked
+python3 scripts/enwl_ivr_study.py --cases /path/to/selected-cases.json \
+  --binary target/release/examples/mc_opf_case_probe --output /tmp/feeder-study \
+  --limit 2 --timeout 120 --qualify
+```
+
+The case list is a JSON array of BMOPF file paths. Existing `--case-root` ENWL
+selection and independent oracle comparison remain available. No dataset or
+Julia process is invoked by ordinary CI tests. Regenerate only the new feeder
+reference with `scripts/mc_opf_oracle.jl feeder` in the pinned oracle environment.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance

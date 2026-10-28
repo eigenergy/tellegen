@@ -1,5 +1,65 @@
 //! Run an external BMOPF case without vendoring it. Optional arguments: power
-//! base (VA), objective scale, maximum iterations, profile (true/false). Emits one JSON result record.
+//! base (VA), objective scale, maximum iterations, profile (true/false).
+//! --qualify adds rank and one forward/adjoint query; no extra optimization.
+//! Emits one JSON result record. Diagnostic refusal preserves physical acceptance.
+#[cfg(feature = "mc-opf")]
+fn qualification(result: &tellegen::McOpfResult) -> serde_json::Value {
+    use serde_json::json;
+    use std::time::Instant;
+    use tellegen::*;
+    let d = result
+        .duals
+        .as_ref()
+        .expect("qualification requests dual collection");
+    let mut record = json!({"dual_status":d.status, "rank":d.active_rank, "kkt":d.kkt});
+    let start = Instant::now();
+    let view = match result.sensitivities() {
+        Ok(view) => view,
+        Err(error) => {
+            record["sensitivity"] = json!({"status":"unavailable","error":error,
+                "view_s":start.elapsed().as_secs_f64()});
+            return record;
+        }
+    };
+    let view_s = start.elapsed().as_secs_f64();
+    let parameters = view.parameters();
+    let parameter = parameters
+        .iter()
+        .find(|p| p.kind == McOpfParameterKind::LoadActivePower)
+        .or(parameters.first());
+    let Some(parameter) = parameter else {
+        record["sensitivity"] =
+            json!({"status":"no_supported_parameter", "view":view.diagnostics(), "view_s":view_s});
+        return record;
+    };
+    let start = Instant::now();
+    let queries = || -> Result<_, McOpfSensitivityError> {
+        let forward = view.forward_with_diagnostics(
+            &[McOpfParameterDirection {
+                parameter: parameter.clone(),
+                delta: 1.,
+            }],
+            &[McOpfSensitivityOutput::Objective],
+        )?;
+        let adjoint = view.adjoint_with_diagnostics(
+            &[McOpfOutputWeight {
+                output: McOpfSensitivityOutput::Objective,
+                weight: 1.,
+            }],
+            std::slice::from_ref(parameter),
+        )?;
+        Ok((forward, adjoint))
+    };
+    record["sensitivity"] = match queries() {
+        Ok((forward, adjoint)) => json!({"status":"available", "view":view.diagnostics(),
+            "parameter":parameter, "forward":forward.0, "forward_solve":forward.1,
+            "adjoint":adjoint.0, "adjoint_solve":adjoint.1}),
+        Err(error) => json!({"status":"unavailable", "view":view.diagnostics(), "error":error}),
+    };
+    record["sensitivity"]["view_s"] = json!(view_s);
+    record["sensitivity"]["queries_s"] = json!(start.elapsed().as_secs_f64());
+    record
+}
 #[cfg(feature = "mc-opf")]
 fn parse_case(
     input: Vec<u8>,
@@ -28,7 +88,12 @@ fn main() {
     use serde_json::json;
     use sha2::{Digest, Sha256};
     use std::{sync::Arc, time::Instant};
-    let args: Vec<_> = std::env::args().collect();
+    let qualify = std::env::args().any(|a| a == "--qualify");
+    let args: Vec<_> = std::env::args().filter(|a| a != "--qualify").collect();
+    if args.len() < 2 {
+        eprintln!("usage: mc_opf_case_probe INPUT [POWER_BASE OBJECTIVE_SCALE MAX_ITER PROFILE] [--qualify]");
+        std::process::exit(2);
+    }
     let input = std::fs::read(&args[1]).expect("read input");
     let hash = Sha256::digest(&input)
         .iter()
@@ -39,6 +104,7 @@ fn main() {
         objective_scale: args.get(3).map_or(1.0, |s| s.parse().unwrap()),
         max_iterations: args.get(4).map_or(500, |s| s.parse().unwrap()),
         collect_profile: args.get(5).is_some_and(|s| s == "true"),
+        collect_duals: qualify,
         ..Default::default()
     };
     let t = Instant::now();
@@ -69,7 +135,10 @@ fn main() {
                 .map_err(|e| tellegen::McOpfError::from_powerio(tellegen::McOpfStage::Input, e))?,
         );
         let parse_s = parse_start.elapsed().as_secs_f64();
+        let solve_start = Instant::now();
         let result = tellegen::solve_mc_ac_opf_instance(instance, &options)?;
+        let solve_s = solve_start.elapsed().as_secs_f64();
+        let qualification = qualify.then(|| qualification(&result));
         let mut bus = serde_json::Map::new();
         for (name, terminals) in axes {
             let mut v = serde_json::Map::new();
@@ -84,7 +153,7 @@ fn main() {
             bus.insert(name, json!(v));
         }
         Ok(
-            json!({"status":"accepted","parse_instance_s":parse_s,"profile":result.profile,"counts":counts,"diagnostics":diagnostics,"objective":result.solution.objective(),"iterations":result.iterations,"residuals":result.residuals,"bus":bus,"devices":result.devices,"branches":result.branches,"transformers":result.transformers,"shunts":result.shunts,"terminals":result.terminals}),
+            json!({"status":"accepted","parse_instance_s":parse_s,"solve_s":solve_s,"qualification":qualification,"profile":result.profile,"counts":counts,"diagnostics":diagnostics,"objective":result.solution.objective(),"iterations":result.iterations,"residuals":result.residuals,"bus":bus,"devices":result.devices,"branches":result.branches,"transformers":result.transformers,"shunts":result.shunts,"terminals":result.terminals}),
         )
     };
     let (outcome, iterations) = if options.collect_profile {
@@ -112,6 +181,69 @@ fn main() {
 #[cfg(all(test, feature = "mc-opf"))]
 mod tests {
     use super::parse_case;
+
+    #[test]
+    fn qualification_refusal_does_not_turn_physical_success_into_failure() {
+        use powerio::McAcOpfInstance;
+        use powerio_dist::{
+            Configuration, DistBus, DistLine, DistLineCode, DistLoad, MulticonductorNetwork,
+            VoltageSource,
+        };
+        use std::sync::Arc;
+        let terminals = || vec!["a".to_string(), "n".to_string()];
+        let mut n = MulticonductorNetwork::new();
+        let mut source = DistBus::new("s", terminals());
+        source.grounded = vec!["n".into()];
+        n.buses_mut()
+            .extend([source, DistBus::new("b", terminals())]);
+        n.line_codes_mut().push(DistLineCode::new(
+            "c",
+            vec![vec![0.1, 0.], vec![0., 0.1]],
+            vec![vec![0.; 2]; 2],
+        ));
+        n.lines_mut().push(DistLine::new(
+            "l",
+            "s",
+            "b",
+            terminals(),
+            terminals(),
+            "c",
+            1.,
+        ));
+        n.lines_mut()[0].i_max = Some(vec![0.; 2]);
+        n.loads_mut().push(DistLoad::new(
+            "d",
+            "b",
+            terminals(),
+            Configuration::Wye,
+            vec![0.],
+            vec![0.],
+        ));
+        n.sources_mut().push(VoltageSource::new(
+            "grid",
+            "s",
+            terminals(),
+            vec![230., 0.],
+            vec![0., 0.],
+        ));
+        let r = tellegen::solve_mc_ac_opf_instance(
+            Arc::new(McAcOpfInstance::from_network(n).unwrap()),
+            &tellegen::McOpfOptions {
+                collect_duals: true,
+                max_iterations: 100,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(r.residuals.maximum() <= 1e-6);
+        let diagnostic = super::qualification(&r);
+        assert_eq!(diagnostic["dual_status"], "zero_limit_reduction");
+        assert_eq!(diagnostic["sensitivity"]["status"], "unavailable");
+        assert_eq!(
+            diagnostic["sensitivity"]["error"]["kind"],
+            "unreliable_duals"
+        );
+    }
 
     #[test]
     fn probe_rejects_dropped_sequence_voltage_bounds() {

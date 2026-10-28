@@ -10,3 +10,9 @@ contains derived results from the pinned BMOPFTools IVR engine.
 
 components.json, controls.json, equipment.json and unbalanced.json are independently authored synthetic cases
 under Tellegen's MIT license, with generated references from BMOPFTools.
+
+feeder.json is an independently authored four-bus synthetic integration case
+under Tellegen's MIT license, combining the existing ZIP, delta-wye transformer
+and four-leg inverter control witnesses. feeder-reference.json contains results
+from the same pinned BMOPFTools revision; its provenance records input SHA-256,
+Julia/JuMP/Ipopt versions, options, units, tolerances and regeneration command.
