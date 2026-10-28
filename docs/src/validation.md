@@ -199,6 +199,22 @@ cargo test -p tellegen --no-default-features --features mc-opf --locked \
 python3 scripts/test_enwl_ivr_study.py
 ```
 
+The public `mc_opf_workflow` example is also registered as a test target, so its
+external-consumer API imports compile and its three contract tests run in the
+ordinary `mc-opf` suite. It reuses the same four-bus fixture for **two solves and
+one sensitivity factorization**, capped at 100 iterations per solve. A local
+debug run took about 3.3 seconds. It checks physical results, edit invalidation,
+warm starts, complete report persistence, forward/adjoint agreement with a local
+marginal, and typed unavailable/stale diagnostics. Rejected edit rollback,
+pre-cancelled attempts, unsupported report versions, declared input preservation,
+lossy input diagnostics and selector/edit JSON contracts add no optimization.
+There are no new fixtures, oracle runs or finite-difference sweeps. Run it alone:
+
+```sh
+cargo test -p tellegen --no-default-features --features mc-opf --locked \
+  --example mc_opf_workflow -- --nocapture
+```
+
 Large external studies stay opt-in. Build the existing probe in release mode;
 `--qualify` adds dual/rank details, KKT structure, view/query timings and one
 objective forward/adjoint query using a single factorization, without extra

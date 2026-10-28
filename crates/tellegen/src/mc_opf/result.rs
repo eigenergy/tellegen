@@ -12,6 +12,14 @@ pub struct McOpfTerminalId {
     pub terminal: String,
 }
 impl McOpfTerminalId {
+    /// A bus and its local terminal label. Labels are not global conductor IDs.
+    pub fn new(bus: impl Into<String>, terminal: impl Into<String>) -> Self {
+        Self {
+            bus: bus.into(),
+            terminal: terminal.into(),
+        }
+    }
+
     pub(super) fn at(prep: &McAcOpfPreparation, index: usize) -> Self {
         let t = &prep.terminals[index];
         Self {

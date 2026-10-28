@@ -72,6 +72,18 @@ and original-scale multipliers. It does not rerun optimization. The returned
 subsequent queries. The feature enables the existing optional faer dependency;
 no additional dependency versions or shipping adapters are enabled.
 
+For a complete runnable example covering edits, warm starts, report persistence,
+unavailable derivatives and both query directions, see the
+[public native workflow](formulations.md#public-native-workflow).
+It uses `McOpfParameter::new(owner, component, axis, kind)` with canonical
+equipment identity and a zero-based coil/port axis. `parameter.unit()` describes
+the parameter kind's unit; query qualification still checks existence, active
+constraints and differentiability. For its objective-only query, a forward
+direction of 1 W and an adjoint objective weight of 1 yield the same numeric
+local marginal cost in (currency/hour)/W. Forward values generally retain
+output units per unit path change, while adjoints divide the weighted output
+unit by each parameter's physical unit.
+
 ```rust,ignore
 use tellegen::{McOpfParameterDirection, McOpfSensitivityOutput};
 

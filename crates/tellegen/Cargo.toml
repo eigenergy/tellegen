@@ -93,5 +93,10 @@ required-features = ["mc-opf"]
 test = true
 
 [[example]]
+name = "mc_opf_workflow"
+required-features = ["mc-opf"]
+test = true
+
+[[example]]
 name = "acopf_benchmark"
 required-features = ["acopf"]

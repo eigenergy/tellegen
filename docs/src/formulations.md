@@ -231,6 +231,60 @@ bounds and solver-independent IVR preparation. Tellegen compiles that prepared
 data into expressions, invokes POUNCE, and independently validates the physical
 result. BMOPFTools is an external reference for tests, not a runtime dependency.
 
+### Public native workflow
+
+The runnable `crates/tellegen/examples/mc_opf_workflow.rs` example uses only public
+PowerIO and Tellegen APIs. From the repository root:
+
+```sh
+cargo run -p tellegen --no-default-features --features mc-opf --locked \
+  --example mc_opf_workflow
+cargo run -p tellegen --no-default-features --features mc-opf --locked \
+  --example mc_opf_workflow -- instance.module.json edits.json result.module.json
+```
+
+The first command explicitly promotes the bundled four-bus network to an OPF
+instance and increases one load coil's nominal active power by 1 W. The second
+requires a generation-2 PowerIO module containing a declared `McAcOpfInstance`
+and a JSON array of `McOpfEdit` values. It checks input diagnostics before
+extracting the instance, preserving the declared objective, constraints and
+initial point. Bare networks require an explicit `McAcOpfInstance::from_network`
+decision in the caller. The walkthrough requires at least one load coil; it
+selects that coil's nominal active power for its derivative query.
+
+An edit file for the bundled feeder could contain:
+
+```json
+[{"edit":"load_power","load":"w","p_w":[101,140,80],"q_var":[20,30,10]}]
+```
+
+Names and coil order come from the canonical instance; powers are W and var.
+The workflow performs a physical solve, applies the edit batch, enables dual
+collection and warm-starts a second solve. It exports and imports the complete
+`McOpfResult` PowerIO report, then reuses one sensitivity view for objective
+forward and adjoint queries. The JSON summary on stdout shows physical
+residuals, terminal voltages in V, result fingerprints, session counters,
+warm-start choice, dual qualification and query diagnostics. The optional third
+argument writes the complete report, replacing an existing file at that path;
+without it, no file is written. The printed summary is illustrative, not a
+versioned persistence format. The report remains the persistence boundary.
+
+The initial physical result has no duals, so its sensitivity query reports
+`MissingDuals`. Edits/options make current sensitivity access report
+`StaleResult` until another solve succeeds. Unavailable sensitivities remain
+separate from physical rejection. Solve/import failures exit unsuccessfully;
+typed `McOpfError` failures are printed as JSON on stderr. A physically accepted
+result with unavailable sensitivities still exits successfully: inspect the
+summary's `sensitivities.status` before using derivatives.
+
+The `mc_opf` module's report and selector types are also re-exported at the crate
+root. `McOpfParameter::new` constructs a selector and `unit()` gives its physical
+unit; construction does not establish that the parameter exists or is
+differentiable at a particular result. `McOpfTerminalId::new` takes a bus name
+and that bus's local terminal label. These native APIs remain experimental and
+opt-in; the generic `SolveRequest`, `Study`, CLI, Python and browser adapters do
+not gain MC OPF support through this example.
+
 ### Equations and derivatives
 
 Variables include rectangular terminal voltages, branch and winding currents,

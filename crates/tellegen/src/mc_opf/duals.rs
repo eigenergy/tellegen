@@ -105,7 +105,10 @@ pub struct McOpfParameter {
     pub kind: McOpfParameterKind,
 }
 impl McOpfParameter {
-    pub(super) fn new(
+    /// Identify a physical parameter. This constructs a selector, not a claim
+    /// that the parameter exists or is differentiable in a particular result;
+    /// sensitivity queries validate the complete identity against that result.
+    pub fn new(
         owner: McOpfParameterOwner,
         component: &str,
         axis: Option<usize>,
@@ -118,7 +121,9 @@ impl McOpfParameter {
             kind,
         }
     }
-    pub(super) fn unit(&self) -> McOpfParameterUnit {
+    /// Physical unit implied by the parameter kind. Availability and regularity
+    /// are result-dependent and are checked separately by sensitivity queries.
+    pub fn unit(&self) -> McOpfParameterUnit {
         use McOpfParameterKind::*;
         match self.kind {
             LoadActivePower | Availability | ActivePowerLower | ActivePowerUpper => {
