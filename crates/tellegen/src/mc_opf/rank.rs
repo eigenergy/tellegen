@@ -1,4 +1,4 @@
-//! Sparse, row-pivoted, twice-reorthogonalized QR of the active Jacobian.
+//! Sparse, threshold row-pivoted, twice-reorthogonalized QR of the active Jacobian.
 //! No normal equations, numerical fill dropping, or dense rows are used.
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,7 +24,8 @@ pub struct McOpfRankDiagnostics {
     /// Peak live coefficients, including the pivot being applied. Indexing
     /// structures use additional storage; this is not an allocator byte count.
     pub peak_nonzeros: usize,
-    /// Sparse coefficient visits, including incidence traversal and fill updates.
+    /// Sparse coefficient visits, including incidence traversal and fill updates,
+    /// plus candidate visits during sparsity-aware pivot selection.
     pub work: usize,
     pub nonzero_limit: usize,
     pub work_limit: usize,
@@ -36,7 +37,16 @@ pub(super) fn audit(
     rows: Vec<BTreeMap<usize, f64>>,
     n: usize,
 ) -> (Option<usize>, McOpfRankDiagnostics) {
-    audit_with_limits(rows, n, MAX_NONZEROS, MAX_WORK)
+    audit_with_limits(rows, n, MAX_NONZEROS, MAX_WORK, true)
+}
+
+// Saved version 7–8 reports must be checked with their original pivot order
+// and work accounting before recomputing current qualification.
+pub(super) fn audit_legacy(
+    rows: Vec<BTreeMap<usize, f64>>,
+    n: usize,
+) -> (Option<usize>, McOpfRankDiagnostics) {
+    audit_with_limits(rows, n, MAX_NONZEROS, MAX_WORK, false)
 }
 
 fn audit_with_limits(
@@ -44,6 +54,7 @@ fn audit_with_limits(
     n: usize,
     nonzero_limit: usize,
     work_limit: usize,
+    prefer_sparse: bool,
 ) -> (Option<usize>, McOpfRankDiagnostics) {
     use McOpfRankOutcome::*;
     let mut d = McOpfRankDiagnostics {
@@ -66,6 +77,7 @@ fn audit_with_limits(
         let mut incidence = vec![BTreeSet::new(); n];
         // Nonnegative finite f64 bit patterns sort in numerical order.
         let mut queue = BTreeSet::<(u64, usize)>::new();
+        let mut sparsity = BTreeSet::<(usize, usize)>::new();
         let mut norms = vec![0.; rows.len()];
         for (i, row) in rows.iter_mut().enumerate() {
             charge(&mut d, row.len())?;
@@ -81,12 +93,32 @@ fn audit_with_limits(
                 norms[i] = row.values().fold(0.0_f64, |a, b| a.hypot(*b));
             }
             queue.insert((norms[i].to_bits(), i));
+            if prefer_sparse {
+                sparsity.insert((row.len(), i));
+            }
         }
-        while let Some((bits, pivot)) = queue.pop_last() {
-            let norm = f64::from_bits(bits);
-            if norm <= TOLERANCE {
+        while let Some(&(bits, largest)) = queue.last() {
+            let largest_norm = f64::from_bits(bits);
+            if largest_norm <= TOLERANCE {
                 break;
             }
+            let mut pivot = largest;
+            if prefer_sparse {
+                // Limit fill without accepting arbitrarily small pivots: choose
+                // the sparsest row within a factor two of the largest residual.
+                // Test the global maximum for termination, never a candidate
+                // below tolerance. Retain every nonzero, including roundoff.
+                for &(_, i) in &sparsity {
+                    charge(&mut d, 1)?;
+                    if norms[i] >= 0.5 * largest_norm && norms[i] > TOLERANCE {
+                        pivot = i;
+                        break;
+                    }
+                }
+                sparsity.remove(&(rows[pivot].len(), pivot));
+            }
+            let norm = norms[pivot];
+            queue.remove(&(norm.to_bits(), pivot));
             let mut basis = std::mem::take(&mut rows[pivot]);
             charge(&mut d, basis.len())?;
             let mut affected = BTreeSet::new();
@@ -101,6 +133,9 @@ fn audit_with_limits(
                 Some(d.smallest_accepted_pivot.map_or(norm, |v| v.min(norm)));
             for i in affected {
                 queue.remove(&(norms[i].to_bits(), i));
+                if prefer_sparse {
+                    sparsity.remove(&(rows[i].len(), i));
+                }
                 let row = &mut rows[i];
                 for _ in 0..2 {
                     let (short, long) = if row.len() < basis.len() {
@@ -151,6 +186,9 @@ fn audit_with_limits(
                     return Err(Nonfinite);
                 }
                 queue.insert((norms[i].to_bits(), i));
+                if prefer_sparse {
+                    sparsity.insert((row.len(), i));
+                }
             }
             live -= basis.len();
         }
@@ -255,6 +293,43 @@ mod tests {
         }
     }
     #[test]
+    fn sparse_pivots_avoid_fill_under_the_same_work_budget() {
+        // An invertible triangular matrix has known rank without an optimizer
+        // or external fixture. Eliminating unit rows first introduces no fill.
+        let n = 40;
+        let rows: Vec<BTreeMap<usize, f64>> =
+            (0..n).map(|i| (0..=i).map(|j| (j, 1.)).collect()).collect();
+        let (rank, d) = audit_with_limits(rows.clone(), n, 2000, 100_000, true);
+        assert_eq!(rank, Some(n), "{d:?}");
+        assert_eq!(d.peak_nonzeros, d.input_nonzeros);
+        let (old_rank, old) = audit_with_limits(rows, n, 2000, 100_000, false);
+        assert_eq!(old_rank, None, "{old:?}");
+        assert_eq!(old.outcome, McOpfRankOutcome::WorkLimit);
+    }
+    #[test]
+    fn a_sparse_candidate_below_tolerance_cannot_end_the_audit() {
+        let rows = sparse(&[
+            vec![1., 0., 0.],
+            vec![1., 0.8 * TOLERANCE, 0.],
+            vec![1., 0., 1.2 * TOLERANCE],
+        ]);
+        let (rank, d) = audit(rows, 3);
+        assert_eq!(rank, Some(2), "{d:?}");
+        assert!(d.smallest_accepted_pivot.unwrap() > TOLERANCE);
+    }
+    #[test]
+    fn legacy_sparse_audit_preserves_saved_work_accounting() {
+        // Counters from the version 8 implementation, including generated fill.
+        let (rank, d) = audit_legacy(sparse(&[vec![1., 0., 1.], vec![0., 1., 1.]]), 3);
+        assert_eq!(rank, Some(2));
+        assert_eq!(d.outcome, McOpfRankOutcome::Complete);
+        assert_eq!(d.accepted_pivots, 2);
+        assert_eq!(d.input_nonzeros, 4);
+        assert_eq!(d.peak_nonzeros, 5);
+        assert_eq!(d.work, 21);
+        assert!((d.smallest_accepted_pivot.unwrap() - 0.75_f64.sqrt()).abs() < 1e-15);
+    }
+    #[test]
     fn resource_and_nonfinite_refusals_do_not_claim_a_rank() {
         let rows = sparse(&[vec![1., 0., 1.], vec![0., 1., 1.]]);
         for (fill, work, outcome) in [
@@ -262,7 +337,7 @@ mod tests {
             (4, 1000, McOpfRankOutcome::FillLimit),
             (100, 1, McOpfRankOutcome::WorkLimit),
         ] {
-            let (rank, d) = audit_with_limits(rows.clone(), 3, fill, work);
+            let (rank, d) = audit_with_limits(rows.clone(), 3, fill, work, true);
             assert_eq!(rank, None);
             assert_eq!(d.outcome, outcome);
             assert!(d.work <= work);

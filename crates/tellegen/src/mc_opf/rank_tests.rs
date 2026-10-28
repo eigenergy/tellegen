@@ -4,14 +4,14 @@ use powerio::MulticonductorNetwork;
 use powerio_dist::DistLine;
 use serde_json::json;
 
-fn feeder() -> MulticonductorNetwork {
+fn feeder(sections: usize) -> MulticonductorNetwork {
     let mut n = tests::network();
     let bus = n.buses()[1].clone();
     let load = n.loads()[0].clone();
     n.buses_mut().truncate(1);
     n.loads_mut().clear();
     n.lines_mut().clear();
-    for i in 1..=48 {
+    for i in 1..=sections {
         let name = format!("b{i}");
         let mut b = bus.clone();
         b.id = name.clone();
@@ -64,9 +64,83 @@ fn close(a: f64, b: f64) {
 }
 
 #[test]
+fn thirty_bus_feeder_qualifies_with_a_bounded_ci_budget() {
+    let start = std::time::Instant::now();
+    let n = feeder(29);
+    assert_eq!(n.buses().len(), 30);
+    // One solve and one sensitivity factorization; no perturbation sweep.
+    let r = solve_options(
+        n,
+        McOpfOptions {
+            collect_duals: true,
+            max_iterations: 100,
+            ..Default::default()
+        },
+    );
+    let d = r.duals.as_ref().unwrap();
+    assert_eq!(
+        d.status,
+        McOpfMarginalStatus::Conditional,
+        "{:?}",
+        d.active_rank
+    );
+    assert!(d.active_rank.active_rows > 256);
+    assert!(d.variables.len() < 1000);
+    let q = d.active_rank.qualification.as_ref().unwrap();
+    assert_eq!(q.outcome, McOpfRankOutcome::Complete);
+    assert!(q.work < 5_000_000, "{q:?}");
+    assert!(q.peak_nonzeros < 50_000, "{q:?}");
+    let parameter = McOpfParameter::new(
+        McOpfParameterOwner::Load,
+        "d29",
+        Some(0),
+        McOpfParameterKind::LoadActivePower,
+    );
+    let view = r.sensitivities().unwrap();
+    assert!(view.diagnostics().kkt_nonzeros < 20 * view.diagnostics().kkt_dimension);
+    let (forward, fcheck) = view
+        .forward_with_diagnostics(
+            &[McOpfParameterDirection {
+                parameter: parameter.clone(),
+                delta: 1.,
+            }],
+            &[McOpfSensitivityOutput::Objective],
+        )
+        .unwrap();
+    let (adjoint, acheck) = view
+        .adjoint_with_diagnostics(
+            &[McOpfOutputWeight {
+                output: McOpfSensitivityOutput::Objective,
+                weight: 1.,
+            }],
+            std::slice::from_ref(&parameter),
+        )
+        .unwrap();
+    close(forward[0].derivative, adjoint[0].derivative);
+    close(
+        forward[0].derivative,
+        d.marginals
+            .iter()
+            .find(|m| m.parameter == parameter)
+            .unwrap()
+            .derivative
+            .unwrap(),
+    );
+    assert!(fcheck.residual_tolerance_ratio <= 1.);
+    assert!(acheck.residual_tolerance_ratio <= 1.);
+    eprintln!(
+        "30-bus rank CI: {} rows, {} work, {} peak nonzeros, {:?}",
+        d.active_rank.active_rows,
+        q.work,
+        q.peak_nonzeros,
+        start.elapsed()
+    );
+}
+
+#[test]
 #[ignore = "opt-in 48-section study; run mc_opf::rank_tests with --ignored"]
 fn connected_feeder_qualifies_beyond_old_limits_and_predicts_perturbed_solves() {
-    let n = feeder();
+    let n = feeder(48);
     let r = solve(n.clone());
     let d = r.duals.as_ref().unwrap();
     assert_eq!(
@@ -150,7 +224,7 @@ fn connected_feeder_qualifies_beyond_old_limits_and_predicts_perturbed_solves() 
 #[test]
 #[ignore = "opt-in 48-section report study; run mc_opf::rank_tests with --ignored"]
 fn legacy_rank_refusals_are_verified_before_upgrade_and_new_claims_are_checked() {
-    check_rank_report(feeder(), McOpfMarginalStatus::RankNotChecked);
+    check_rank_report(feeder(48), McOpfMarginalStatus::RankNotChecked);
 }
 
 #[test]
@@ -175,7 +249,40 @@ fn check_rank_report(network: MulticonductorNetwork, legacy_status: McOpfMargina
     let saved = r.to_module_json().unwrap();
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let current = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-    assert_eq!(current["version"], json!(8));
+    assert_eq!(current["version"], json!(9));
+    let old_sparse = duals::analyze_inner(
+        &model,
+        &d.primal,
+        &lambda,
+        &d.lower_bound_multipliers,
+        &d.upper_bound_multipliers,
+        8,
+    )
+    .unwrap();
+    for version in [7, 8] {
+        let mut report = current.clone();
+        report["version"] = json!(version);
+        report["duals"] = serde_json::to_value(&old_sparse).unwrap();
+        module
+            .insert_extension(MC_OPF_RESULT_EXTENSION, report.clone())
+            .unwrap();
+        let read =
+            McOpfResult::from_module_json(&crate::ir::serialize_module(&module).unwrap()).unwrap();
+        assert_eq!(read.duals.as_ref().unwrap().active_rank, d.active_rank);
+        let exported = crate::ir::deserialize_module(&read.to_module_json().unwrap()).unwrap();
+        assert_eq!(
+            exported.extensions()[MC_OPF_RESULT_EXTENSION]["version"],
+            json!(9)
+        );
+        // Verification must use the old counters, not trust or overwrite them.
+        report["duals"]["active_rank"]["qualification"]["work"] = json!(0);
+        module
+            .insert_extension(MC_OPF_RESULT_EXTENSION, report)
+            .unwrap();
+        assert!(
+            McOpfResult::from_module_json(&crate::ir::serialize_module(&module).unwrap()).is_err()
+        );
+    }
     let mut report = current.clone();
     report["version"] = json!(6);
     report["duals"] = serde_json::to_value(old).unwrap();

@@ -268,8 +268,9 @@ pub(super) fn analyze(
     zl: &[f64],
     zu: &[f64],
 ) -> Result<McOpfDualReport, String> {
-    analyze_inner(model, x, lambda, zl, zu, false)
+    analyze_inner(model, x, lambda, zl, zu, 9)
 }
+#[cfg(test)]
 pub(super) fn analyze_legacy(
     model: &model::Model,
     x: &[f64],
@@ -277,15 +278,15 @@ pub(super) fn analyze_legacy(
     zl: &[f64],
     zu: &[f64],
 ) -> Result<McOpfDualReport, String> {
-    analyze_inner(model, x, lambda, zl, zu, true)
+    analyze_inner(model, x, lambda, zl, zu, 6)
 }
-fn analyze_inner(
+pub(super) fn analyze_inner(
     model: &model::Model,
     x: &[f64],
     lambda: &[f64],
     zl: &[f64],
     zu: &[f64],
-    legacy: bool,
+    report_version: u32,
 ) -> Result<McOpfDualReport, String> {
     let p = &model.problem;
     if x.len() != p.n
@@ -427,7 +428,7 @@ fn analyze_inner(
         return Err("nonfinite KKT residual computation".into());
     }
     let count = active.len() + active_bounds.len();
-    let (rank, qualification) = if !legacy {
+    let (rank, qualification) = if report_version >= 7 {
         let lookup: BTreeMap<_, _> = active.iter().enumerate().map(|(i, &r)| (r, i)).collect();
         let mut rows = vec![BTreeMap::new(); count];
         for ((&r, &c), &v) in ir.iter().zip(&jc).zip(&jac) {
@@ -441,7 +442,11 @@ fn analyze_inner(
         for row in &mut rows {
             row.retain(|_, v| *v != 0.);
         }
-        let (rank, audit) = super::rank::audit(rows, p.n);
+        let (rank, audit) = if report_version <= 8 {
+            super::rank::audit_legacy(rows, p.n)
+        } else {
+            super::rank::audit(rows, p.n)
+        };
         (rank, Some(audit))
     } else if count > MAX_ACTIVE_ROWS || count.saturating_mul(p.n) > MAX_RANK_ENTRIES {
         (None, None)
@@ -642,7 +647,7 @@ impl McOpfDualReport {
         model: &model::Model,
         solution: &McAcOpfSolution,
         tolerance: f64,
-        legacy_rank: bool,
+        report_version: u32,
     ) -> Result<validate::Checked, String> {
         if self.active_rank.qualification.as_ref().is_some_and(|q| {
             q.tolerance != super::rank::TOLERANCE
@@ -667,13 +672,13 @@ impl McOpfDualReport {
             return Err("nonfinite optional dual quantity".into());
         }
         let lambda: Vec<_> = self.constraints.iter().map(|r| r.multiplier).collect();
-        let analyze = if legacy_rank { analyze_legacy } else { analyze };
-        let recomputed = analyze(
+        let recomputed = analyze_inner(
             model,
             &self.primal,
             &lambda,
             &self.lower_bound_multipliers,
             &self.upper_bound_multipliers,
+            report_version,
         )?;
         let a = serde_json::to_value(self).map_err(|e| e.to_string())?;
         let b = serde_json::to_value(&recomputed).map_err(|e| e.to_string())?;

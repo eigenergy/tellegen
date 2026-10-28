@@ -302,7 +302,7 @@ mod tests {
         assert!((forward - marginal.derivative.unwrap()).abs() < 1e-8);
 
         let mut saved: Value = serde_json::from_str(&report).unwrap();
-        assert_eq!(saved["extensions"][MC_OPF_RESULT_EXTENSION]["version"], 8);
+        assert_eq!(saved["extensions"][MC_OPF_RESULT_EXTENSION]["version"], 9);
         saved["extensions"][MC_OPF_RESULT_EXTENSION]["version"] = json!(999);
         let error = McOpfResult::from_module_json(&saved.to_string()).unwrap_err();
         assert_eq!(error.stage, McOpfStage::Import);

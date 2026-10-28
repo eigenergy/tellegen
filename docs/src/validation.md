@@ -163,10 +163,15 @@ Regression coverage combines:
 - Sparse rank qualification agrees with the dense pivoted reference on small
   matrices and covers large diagonal and connected sparse cases, numerical
   dependence, rescaling/permutations, and explicit fill/work/nonfinite refusals.
+  A known-rank triangular matrix completes within a budget that the former
+  pivot order exhausts; a near-threshold case prevents a sparse sub-tolerance
+  candidate from terminating the audit early. A generated 30-bus, two-wire
+  radial feeder checks qualification, forward/adjoint agreement, cost marginals
+  and linear residuals with bounded CI work.
   An opt-in connected 48-section feeder exceeds both old dense-audit limits and checks
   centered perturbations, forward/adjoint agreement, physical cost marginals,
   base/objective-scale invariance and backsolve diagnostics. Report tests verify
-  legacy rank refusals before upgrading and reject tampered current-version audit
+  legacy dense and sparse rank reports before upgrading and reject tampered audit
   claims; session tests preserve accepted results and enforce stale-view rules.
 
 - PF correctness tests use bounded-coefficient algebra at both signs, unity,
@@ -195,13 +200,20 @@ with at most 100 iterations per solve. Structural guards keep it at four buses
 and a KKT dimension below 600. Perturbed and fresh comparison solves skip dual
 collection. A local unoptimized run took about 3.1 seconds;
 elapsed time is printed for observation, not asserted against a machine-dependent
-deadline. The default suite retains inexpensive sparse rank matrices and compact
-legacy/tamper tests. The two larger 48-section studies are ignored by default
+deadline. A separate generated **30-bus rank regression adds one solve and one
+sensitivity factorization**, capped at 100 iterations, fewer than 1,000 variables,
+five million rank work units and 50,000 peak coefficients. It took about 1.7
+seconds locally in an unoptimized build (352 active rows, 3,120,827 work units,
+13,986 peak coefficients). These structural/work guards are asserted; elapsed
+time is only reported. Compact rank and version 6–9 verification/tamper tests
+remain in CI. The two larger 48-section studies are ignored by default
 and require an explicit command:
 
 ```sh
 cargo test -p tellegen --no-default-features --features mc-opf --locked \
   --test mc_opf_feeder -- --nocapture
+cargo test -p tellegen --no-default-features --features mc-opf --locked \
+  --lib mc_opf::rank -- --nocapture
 cargo test -p tellegen --no-default-features --features mc-opf --locked \
   --lib mc_opf::rank_tests -- --ignored --nocapture
 python3 scripts/test_enwl_ivr_study.py
@@ -227,6 +239,13 @@ Large external studies stay opt-in. Build the existing probe in release mode;
 `--qualify` adds dual/rank details, KKT structure, view/query timings and one
 objective forward/adjoint query using a single factorization, without extra
 optimization. An unavailable derivative remains distinct from physical rejection.
+In an opt-in check of ENWL LN snapshot `t12_1330`, the 30-bus case completed all
+756 rank pivots using 62,133,130 work units and 87,612 peak coefficients; forward
+and adjoint queries were available. The 99- and 538-bus cases still exhausted the
+unchanged 100-million-work budget and explicitly refused qualification. This
+is evidence for the selected snapshots, not a guarantee for every feeder size
+or operating point. The runner records those refusals even when the physical
+solve is accepted; its successful exit alone does not establish rank eligibility.
 The runner records the executable hash and supports explicit case selection,
 case limits and per-process timeouts. Relative paths in a case list resolve
 against the list's directory. Duplicate output filenames are rejected; failed

@@ -236,6 +236,16 @@ solves. The existing conservative dual eligibility checks still apply, including
 zero-limit reductions, weak activity and incomplete or deficient sparse rank
 qualification. The rank audit budgets sparse fill and work instead of imposing
 the legacy 256-row cutoff; its outcome and usage are retained in the dual report.
+It normalizes rows and applies twice-reorthogonalized sparse QR, preferring the
+sparsest residual row whose norm is at least half the largest remaining norm
+and exceeds the `1e-9` pivot tolerance. The global largest norm controls
+termination. This reduces fill on feeders without dropping small coefficients,
+forming normal equations or relaxing the tolerance. The limits remain two
+million live coefficients and 100 million work units; candidate visits also
+count as work. A completed audit is a numerical rank test, not a singular-value
+or conditioning certificate. Near the tolerance boundary, pivot order can affect
+the reported numerical rank. Larger or denser feeders can still exhaust a budget
+and return no rank; physical feasibility does not override that refusal.
 Eligibility and factorization errors carry the available `active_rank`; a
 failed backsolve carries its last finite `linear_solve` diagnostics when available.
 Sensitivities additionally refuse
@@ -246,9 +256,10 @@ The session entry point requires `current_result()`: edits, changed options and
 failed or cancelled attempts invalidate access. Rust borrowing prevents edits
 while a sensitivity view is in use. An explicitly selected or cloned historical
 result remains an independent snapshot of its original instance. Portable
-version 8 results can rebuild a view after import, and version 2–6 dual reports
-are verified with their original mappings and rank audit before upgrading to
-current mappings and sparse qualification. Earlier reports with assigned PF
+version 9 results can rebuild a view after import. Version 2–8 dual reports
+are verified with their original mappings and rank audit (dense for versions
+2–6, largest-residual sparse pivots for 7–8) before upgrading to current mappings
+and sparsity-aware qualification. Versions 1–7 with assigned PF
 controls are rejected because their constraint scaling differs; they require
 a new solve. Factorizations and views are
 native in-memory objects and are not serialized. Neither queries nor failures

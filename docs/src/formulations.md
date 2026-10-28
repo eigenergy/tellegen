@@ -519,7 +519,7 @@ The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
 
 `McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
-PowerIO `McAcOpfSolution` plus version 8 of the namespaced module extension
+PowerIO `McAcOpfSolution` plus version 9 of the namespaced module extension
 `org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
 source/generator dispatch and the original instance. The extension carries the
 complete ledgers, axes, optimized taps, numerical options/bases, residuals,
@@ -531,7 +531,9 @@ nor dual data. Version 2–6 dual reports without PF controls are checked using
 their original parameter mappings and dense rank
 audit before current sparse rank qualification and newly
 supported load/inverter/transformer/control-profile derivatives are recomputed from the retained canonical
-instance. Re-export writes version 8; older unsupported entries are not silently
+instance. Versions 7–8 use their original largest-residual sparse pivot order
+and work accounting for verification before sparsity-aware rank qualification
+is recomputed. Re-export writes version 9; older unsupported entries are not silently
 accepted as current claims. Upgrading does not rerun optimization.
 This uses PowerIO's existing extension mechanism without changing its schema.
 
