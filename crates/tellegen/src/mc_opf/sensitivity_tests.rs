@@ -169,6 +169,51 @@ pub(super) fn physical(r: &McOpfResult, output: &Output) -> f64 {
             };
             complex(i, p, quantity)
         }
+        Output::TransformerTap { identity } => r
+            .transformers
+            .iter()
+            .find(|t| t.identity == *identity)
+            .unwrap()
+            .tap
+            .unwrap(),
+        Output::Transformer {
+            identity,
+            axis,
+            quantity,
+        } => {
+            let t = r
+                .transformers
+                .iter()
+                .find(|t| t.identity == *identity)
+                .unwrap();
+            let (i, p) = match axis {
+                McOpfTransformerAxis::Coil { index } => {
+                    (t.coil_current_a[*index], t.coil_power_va[*index])
+                }
+                McOpfTransformerAxis::Port { name } => {
+                    let p = t.ports.iter().find(|p| p.name == *name).unwrap();
+                    (p.current_a, p.power_va)
+                }
+                McOpfTransformerAxis::Terminal { terminal } => {
+                    let mut i = [0.; 2];
+                    for (c, current) in t.coils.iter().zip(&t.coil_current_a) {
+                        let sign = f64::from(c.positive == *terminal)
+                            - f64::from(c.negative.as_ref() == Some(terminal));
+                        for j in 0..2 {
+                            i[j] += sign * current[j];
+                        }
+                    }
+                    let v = r
+                        .terminals
+                        .iter()
+                        .find(|t| t.terminal == *terminal)
+                        .unwrap()
+                        .voltage_v;
+                    (i, [v[0] * i[0] + v[1] * i[1], v[1] * i[0] - v[0] * i[1]])
+                }
+            };
+            complex(i, p, quantity)
+        }
     }
 }
 fn close(a: f64, b: f64) {
