@@ -117,7 +117,7 @@ impl McOpfResult {
 
     fn report(&self) -> Report {
         Report {
-            version: 6,
+            version: 7,
             duals: self.duals.clone(),
             options: self.options.clone(),
             terminals: self.terminals.clone(),
@@ -176,7 +176,7 @@ impl McOpfResult {
         let mut report: Report =
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
         report.verify(solution)?;
-        if matches!(report.version, 2..=5) {
+        if matches!(report.version, 2..=6) {
             if let Some(old) = &report.duals {
                 // Verify legacy claims with their original parameter map first;
                 // then recover newly supported derivatives from canonical input.
@@ -223,7 +223,7 @@ impl McOpfResult {
 
 impl Report {
     fn verify(&self, solution: &McAcOpfSolution) -> Result<Option<model::Model>, McOpfError> {
-        if !matches!(self.version, 1..=6) || (self.version == 1 && self.duals.is_some()) {
+        if !matches!(self.version, 1..=7) || (self.version == 1 && self.duals.is_some()) {
             return Err(invalid("unsupported MC OPF report version"));
         }
         let prep = initial::prepare(
@@ -260,7 +260,12 @@ impl Report {
             }
             .map_err(invalid)?;
             let checked = duals
-                .verify(&model, solution, self.options.acceptance_tolerance)
+                .verify(
+                    &model,
+                    solution,
+                    self.options.acceptance_tolerance,
+                    self.version <= 6,
+                )
                 .map_err(invalid)?;
             let stored = serde_json::to_value((
                 &self.branches,

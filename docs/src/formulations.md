@@ -446,15 +446,16 @@ The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
 
 `McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
-PowerIO `McAcOpfSolution` plus version 6 of the namespaced module extension
+PowerIO `McAcOpfSolution` plus version 7 of the namespaced module extension
 `org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
 source/generator dispatch and the original instance. The extension carries the
 complete ledgers, axes, optimized taps, numerical options/bases, residuals,
 input diagnostic summaries, fingerprint, iterations, optional profile and optional
-dual report. Version 1 reports without dual data remain readable. Version 2–5
-dual reports are checked using their original parameter mappings before newly
+dual report. Version 1 reports without dual data remain readable. Version 2–6
+dual reports are checked using their original parameter mappings and dense rank
+audit before current sparse rank qualification and newly
 supported load/inverter/transformer/control-profile derivatives are recomputed from the retained canonical
-instance. Re-export writes version 6; older unsupported entries are not silently
+instance. Re-export writes version 7; older unsupported entries are not silently
 accepted as current claims. Upgrading does not rerun optimization.
 This uses PowerIO's existing extension mechanism without changing its schema.
 
@@ -598,10 +599,19 @@ stationary branch and active set. It is not a second-order sufficiency test,
 global price, or proof that the optimal-value function is differentiable.
 Values are withheld after failed KKT checks, any zero-limit reduction,
 numerically dependent active rows, weakly active inequalities, or an unaudited
-rank. The rank audit uses normalized, pivoted, twice-reorthogonalized row QR,
-with a `1e-9` numerical rank threshold. It is bounded to 256 active rows and
-262,144 dense entries; larger problems report `RankNotChecked` while retaining
-raw multipliers and KKT residuals. Active-side tolerance is `1e-7*(1+abs(bound))`
+rank. The rank audit uses normalized, pivoted, twice-reorthogonalized sparse row
+QR with a `1e-9` numerical rank threshold. Column incidence restricts updates to
+overlapping rows; no dense active-Jacobian copy, normal equations or numerical
+fill dropping is used. The audit permits up to 2,000,000 live coefficients and
+100,000,000 sparse coefficient visits. These bounds limit fill and work rather
+than the number of active rows. `active_rank.qualification` reports completion,
+fill/work exhaustion or nonfinite arithmetic, along with input/peak nonzeros,
+work, limits, accepted pivots and the smallest accepted pivot. Peak nonzeros are
+coefficient counts, not allocated bytes. An incomplete audit reports
+`RankNotChecked` and no rank; a completed deficient audit reports `RankDeficient`.
+Both preserve physical results, raw multipliers and KKT residuals. This is a
+numerical independence test, not a condition-number estimate or uniqueness proof.
+Active-side tolerance is `1e-7*(1+abs(bound))`
 in compiled coordinates. KKT acceptance uses `1e-6` for relative stationarity,
 relative complementarity, normalized primal violation and absolute dual-sign
 violation. Relative stationarity divides each coordinate residual by one plus

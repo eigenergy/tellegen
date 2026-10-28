@@ -1,5 +1,5 @@
 //! Sparse LU of a symmetrically equilibrated, unregularized KKT matrix.
-use super::{error, ErrorKind, Result};
+use super::{error, ErrorKind, McOpfLinearSolveDiagnostics, Result};
 use faer::{
     linalg::solvers::Solve,
     sparse::{linalg::solvers::Lu, SparseColMat, Triplet},
@@ -16,6 +16,9 @@ pub(super) struct Factor {
 impl Factor {
     pub fn dimension(&self) -> usize {
         self.scale.len()
+    }
+    pub fn nonzeros(&self) -> usize {
+        self.entries.len()
     }
     pub fn new(n: usize, entries: Vec<(usize, usize, f64)>) -> Result<Self> {
         let mut combined = BTreeMap::<(usize, usize), f64>::new();
@@ -72,7 +75,14 @@ impl Factor {
         self.lu.solve_in_place(b.as_mut());
         (0..rhs.len()).map(|i| b[(i, 0)] * self.scale[i]).collect()
     }
+    #[cfg(test)]
     pub fn solve(&self, rhs: &[f64]) -> Result<Vec<f64>> {
+        self.solve_with_diagnostics(rhs).map(|(x, _)| x)
+    }
+    pub fn solve_with_diagnostics(
+        &self,
+        rhs: &[f64],
+    ) -> Result<(Vec<f64>, McOpfLinearSolveDiagnostics)> {
         if rhs.len() != self.dimension() || rhs.iter().any(|v| !v.is_finite()) {
             return Err(error(
                 ErrorKind::InvalidRequest,
@@ -80,6 +90,7 @@ impl Factor {
             ));
         }
         let mut x = self.backsolve(rhs);
+        let mut last = None;
         for attempt in 0..3 {
             if x.iter().any(|v| !v.is_finite()) {
                 break;
@@ -90,13 +101,27 @@ impl Factor {
                 residual[r] -= v * x[c];
                 magnitude[r] += (v * x[c]).abs();
             }
-            if residual
-                .iter()
-                .zip(&magnitude)
-                .all(|(r, s)| r.is_finite() && s.is_finite() && r.abs() <= 1e-10 + 1e-8 * s)
-            {
-                return Ok(x);
+            if residual.iter().chain(&magnitude).any(|v| !v.is_finite()) {
+                break;
             }
+            let diagnostics = McOpfLinearSolveDiagnostics {
+                residual_inf: residual.iter().map(|r| r.abs()).fold(0., f64::max),
+                componentwise_backward_error: residual
+                    .iter()
+                    .zip(&magnitude)
+                    .map(|(r, s)| if *s == 0. { 0. } else { r.abs() / s })
+                    .fold(0., f64::max),
+                residual_tolerance_ratio: residual
+                    .iter()
+                    .zip(&magnitude)
+                    .map(|(r, s)| r.abs() / (1e-10 + 1e-8 * s))
+                    .fold(0., f64::max),
+                refinement_steps: attempt,
+            };
+            if diagnostics.residual_tolerance_ratio <= 1. {
+                return Ok((x, diagnostics));
+            }
+            last = Some(diagnostics);
             if attempt < 2 {
                 let correction = self.backsolve(&residual);
                 for (x, c) in x.iter_mut().zip(correction) {
@@ -104,10 +129,12 @@ impl Factor {
                 }
             }
         }
-        Err(error(
+        let mut error = error(
             ErrorKind::LinearSolveFailure,
             "unregularized KKT backsolve failed its componentwise residual check",
-        ))
+        );
+        error.linear_solve = last;
+        Err(error)
     }
 }
 
@@ -289,5 +316,40 @@ mod tests {
         let x = f.solve(&[0., 1.]).unwrap();
         assert!((x[0] - 1.).abs() < 1e-12 && (x[1] + 2.).abs() < 1e-12);
         assert!(f.solve(&[f64::NAN, 1.]).is_err());
+    }
+
+    #[test]
+    fn backsolve_diagnostics_measure_the_original_matrix_and_report_failed_refinement() {
+        let entries = vec![(0, 0, 2e6), (0, 1, 3.), (1, 0, 3.), (1, 1, -4e-6)];
+        let f = Factor::new(2, entries.clone()).unwrap();
+        let rhs = [1., -2.];
+        let (x, d) = f.solve_with_diagnostics(&rhs).unwrap();
+        let mut residual = rhs;
+        let mut magnitude = rhs.map(f64::abs);
+        for (r, c, v) in entries {
+            residual[r] -= v * x[c];
+            magnitude[r] += (v * x[c]).abs();
+        }
+        assert_eq!(
+            d.residual_inf,
+            residual.into_iter().map(f64::abs).fold(0., f64::max)
+        );
+        assert_eq!(
+            d.componentwise_backward_error,
+            (0..2)
+                .map(|i| residual[i].abs() / magnitude[i])
+                .fold(0., f64::max)
+        );
+        assert!(d.residual_tolerance_ratio <= 1.);
+        // Simulate inaccurate factor solves: refinement must be checked against
+        // the retained matrix and refused rather than returning an unchecked x.
+        let mut f = Factor::new(1, vec![(0, 0, 1.)]).unwrap();
+        f.entries[0].2 = 2.;
+        let error = f.solve_with_diagnostics(&[1.]).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::LinearSolveFailure);
+        let d = error.linear_solve.unwrap();
+        assert_eq!(d.refinement_steps, 2);
+        assert!(d.residual_tolerance_ratio > 1.);
+        assert!(d.residual_inf.is_finite());
     }
 }

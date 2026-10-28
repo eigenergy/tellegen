@@ -27,6 +27,10 @@ mod inverter_parameters;
 mod load_parameter_tests;
 mod load_parameters;
 mod model;
+mod rank;
+#[cfg(test)]
+mod rank_tests;
+pub use rank::{McOpfRankDiagnostics, McOpfRankOutcome};
 mod result;
 mod sensitivity;
 mod session;

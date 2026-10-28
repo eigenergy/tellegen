@@ -553,7 +553,7 @@ fn retained_power_factor_edits_preserve_families_and_reject_invalid_values() {
 }
 
 #[test]
-fn version_six_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
+fn current_version_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
     let r = solve(droop(Reference::PAvailable, false));
     let prep = initial::prepare(
         r.solution.instance(),
@@ -564,7 +564,7 @@ fn version_six_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
         model::compile_with_transformer_parameters(prep, r.solution.instance().network()).unwrap();
     let d = r.duals.as_ref().unwrap();
     let lambda: Vec<_> = d.constraints.iter().map(|c| c.multiplier).collect();
-    let old = duals::analyze(
+    let old = duals::analyze_legacy(
         &legacy,
         &d.primal,
         &lambda,
@@ -582,7 +582,7 @@ fn version_six_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
     close(marginal(&read, &p), marginal(&r, &p));
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-    assert_eq!(report["version"], json!(6));
+    assert_eq!(report["version"], json!(7));
     report["version"] = json!(5);
     report["duals"] = serde_json::to_value(old).unwrap();
     module
@@ -596,9 +596,9 @@ fn version_six_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
         crate::ir::deserialize_module(&read.to_module_json().unwrap())
             .unwrap()
             .extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-        json!(6)
+        json!(7)
     );
-    report["version"] = json!(6);
+    report["version"] = json!(7);
     module
         .insert_extension(MC_OPF_RESULT_EXTENSION, report.clone())
         .unwrap();

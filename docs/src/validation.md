@@ -160,6 +160,14 @@ Regression coverage combines:
   cases check interior dispatch, forward/adjoint agreement, cost envelopes,
   units and numerical scaling, atomic profile edits, unity-PF/unused-profile
   refusals, and version 6 round trips with verified legacy upgrades.
+- Sparse rank qualification agrees with the dense pivoted reference on small
+  matrices and covers large diagonal and connected sparse cases, numerical
+  dependence, rescaling/permutations, and explicit fill/work/nonfinite refusals.
+  A connected 48-section feeder exceeds both old dense-audit limits and checks
+  centered perturbations, forward/adjoint agreement, physical cost marginals,
+  base/objective-scale invariance and backsolve diagnostics. Report tests verify
+  legacy rank refusals before upgrading and reject tampered version 7 audit
+  claims; session tests preserve accepted results and enforce stale-view rules.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance

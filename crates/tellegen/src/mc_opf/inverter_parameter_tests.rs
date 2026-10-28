@@ -550,7 +550,7 @@ fn current_reports_verify_legacy_maps_before_upgrading_inverter_claims() {
         }
         .unwrap();
         let lambda: Vec<_> = d.constraints.iter().map(|r| r.multiplier).collect();
-        let old = duals::analyze(
+        let old = duals::analyze_legacy(
             &old_model,
             &d.primal,
             &lambda,
@@ -564,7 +564,7 @@ fn current_reports_verify_legacy_maps_before_upgrading_inverter_claims() {
             .all(|m| m.parameter.owner != McOpfParameterOwner::Inverter));
         let mut module = crate::ir::deserialize_module(&saved).unwrap();
         let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-        assert_eq!(report["version"], json!(6));
+        assert_eq!(report["version"], json!(7));
         report["version"] = json!(version);
         report["duals"] = serde_json::to_value(old).unwrap();
         module
@@ -581,7 +581,7 @@ fn current_reports_verify_legacy_maps_before_upgrading_inverter_claims() {
             crate::ir::deserialize_module(&read.to_module_json().unwrap())
                 .unwrap()
                 .extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-            json!(6)
+            json!(7)
         );
         report["version"] = json!(4);
         module
