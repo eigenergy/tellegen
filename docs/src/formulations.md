@@ -438,16 +438,16 @@ The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
 
 `McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
-PowerIO `McAcOpfSolution` plus version 3 of the namespaced module extension
+PowerIO `McAcOpfSolution` plus version 4 of the namespaced module extension
 `org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
 source/generator dispatch and the original instance. The extension carries the
 complete ledgers, axes, optimized taps, numerical options/bases, residuals,
 input diagnostic summaries, fingerprint, iterations, optional profile and optional
-dual report. Version 1 reports without dual data remain readable. Version 2 dual
-reports are checked using their original parameter mappings before newly
-supported load derivatives are recomputed from the retained canonical instance.
-Re-export writes version 3; older unsupported load entries are not silently
-accepted as current claims.
+dual report. Version 1 reports without dual data remain readable. Version 2 and 3
+dual reports are checked using their original parameter mappings before newly
+supported load/inverter derivatives are recomputed from the retained canonical
+instance. Re-export writes version 4; older unsupported entries are not silently
+accepted as current claims. Upgrading does not rerun optimization.
 This uses PowerIO's existing extension mechanism without changing its schema.
 
 `McOpfResult::from_module_json` reads this complete report and preserves module
@@ -493,8 +493,9 @@ Typed marginal entries instead report the envelope derivative of operating cost
 VA or V. A positive value means increasing that parameter raises local cost.
 For example, a lossless load served at 0.2 currency/kWh has an active-power
 marginal of 0.0002 (currency/hour)/W. Supported parameters are nominal
-load coil P/Q, selected generator coil P/Q bounds, effective branch conductor
-current/apparent-power ratings, and prepared voltage-magnitude limits.
+load coil P/Q, selected generator coil P/Q bounds, inverter availability and
+capabilities, effective branch conductor current/apparent-power ratings, and
+prepared voltage-magnitude limits.
 Branch ratings sum contributions from both ends. Squared-norm rows include the
 derivative of their normalization radius, so their raw multiplier is not itself
 the physical limit marginal. Values are invariant to numerical bases and solver
@@ -508,10 +509,37 @@ impedance, ZIP and exponential laws. They hold nominal voltage, exponents and
 ZIP coefficients fixed. Canonical scalar/per-coil coefficients and their defaults
 are retained even when nominal P/Q is zero and preparation removes its terms.
 The derivative is with respect to nominal W/var, not the load's realized power at
-the solved voltage. Inverter/control parameters,
-transformer ratings and tap bounds do not yet have physical marginal mappings;
-their compiled row multipliers remain available. Coincident generator lower
-and upper bounds do not yield separate one-sided bound marginals.
+the solved voltage. Transformer ratings, tap bounds and control-curve coefficients
+do not yet have physical marginal mappings; their compiled row multipliers
+remain available. Coincident generator/inverter lower and upper bounds do not
+yield separate one-sided bound marginals.
+
+Inverter entries use owner `Inverter` and the canonical inverter name. The
+`Availability` direction (W) follows `McOpfEdit::InverterAvailability`: increment
+one explicitly allocated `p_max` coil and recompute `p_avail` as the sum. It
+includes the selected upper P bound, a PMax-referenced volt-watt target on that
+coil, and every PAvailable-referenced target through the summed availability.
+The vector must be finite and nonnegative, the selected allocation positive,
+and an observed `p_avail` must already agree with its sum. Otherwise availability
+is `UnsupportedParameter`; the solver does not invent an allocation or reset a
+control reference as part of differentiation.
+
+Inverter `ActivePowerLower/Upper` and `ReactivePowerLower/Upper` vary canonical
+per-coil bounds in W/var while holding other fields, including `p_avail`, fixed.
+`ApparentPowerRating` varies per-coil `s_max` in VA. These mappings include
+PMax/SMax-referenced volt-watt and SMax-referenced volt-var effects, even when
+capability constraints are deselected. Curve knots, fractions, voltage references,
+aggregation and power-factor coefficients stay fixed. A reference change can
+therefore have nonzero value even if its own capability bound is inactive.
+
+`CurrentRating` varies `i_max` in A: its axis follows canonical `terminal_map`
+for single-phase/four-leg equipment, including the neutral, and coil order for
+three-leg delta equipment. For a two-wire inverter preparation takes the minimum
+of phase and return ratings; the looser finite rating has zero local derivative,
+and an exact tie refuses independent current-rating partials. Ratings must exist
+and be finite. Zero-rating reductions retain the existing conservative refusal;
+a zero nameplate used only as a control reference is also unsupported. All these
+entries remain conditional on the same regular local branch and active set.
 
 The load mapper follows the chosen compiled current or power law without
 changing the physical equations. It includes both real and imaginary current

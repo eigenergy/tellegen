@@ -117,7 +117,7 @@ impl McOpfResult {
 
     fn report(&self) -> Report {
         Report {
-            version: 3,
+            version: 4,
             duals: self.duals.clone(),
             options: self.options.clone(),
             terminals: self.terminals.clone(),
@@ -176,7 +176,7 @@ impl McOpfResult {
         let mut report: Report =
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
         report.verify(solution)?;
-        if report.version == 2 {
+        if matches!(report.version, 2 | 3) {
             if let Some(old) = &report.duals {
                 // Verify legacy claims with their original parameter map first;
                 // then recover newly supported derivatives from canonical input.
@@ -187,9 +187,8 @@ impl McOpfResult {
                         report.options.power_base_va,
                     ),
                 )?;
-                let model =
-                    model::compile_with_load_parameters(prep, solution.instance().network())
-                        .map_err(invalid)?;
+                let model = model::compile_with_parameters(prep, solution.instance().network())
+                    .map_err(invalid)?;
                 let lambda: Vec<_> = old.constraints.iter().map(|r| r.multiplier).collect();
                 report.duals = Some(
                     duals::analyze(
@@ -224,7 +223,7 @@ impl McOpfResult {
 
 impl Report {
     fn verify(&self, solution: &McAcOpfSolution) -> Result<Option<model::Model>, McOpfError> {
-        if !matches!(self.version, 1..=3) || (self.version == 1 && self.duals.is_some()) {
+        if !matches!(self.version, 1..=4) || (self.version == 1 && self.duals.is_some()) {
             return Err(invalid("unsupported MC OPF report version"));
         }
         let prep = initial::prepare(
@@ -247,8 +246,10 @@ impl Report {
             }
             let model = if self.version < 3 {
                 model::compile(prep.clone())
-            } else {
+            } else if self.version == 3 {
                 model::compile_with_load_parameters(prep.clone(), solution.instance().network())
+            } else {
+                model::compile_with_parameters(prep.clone(), solution.instance().network())
             }
             .map_err(invalid)?;
             let checked = duals

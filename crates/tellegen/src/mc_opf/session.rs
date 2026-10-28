@@ -331,7 +331,7 @@ fn compile(
         &McAcOpfAssemblyOptions::new(options.voltage_base_v, options.power_base_va),
     )?;
     let fingerprint = result::fingerprint(&prep)?;
-    let model = model::compile_with_load_parameters(prep, instance.network())
+    let model = model::compile_with_parameters(prep, instance.network())
         .map_err(|e| McOpfError::new(McOpfErrorKind::InvalidInput, McOpfStage::Compilation, e))?;
     Ok((model, fingerprint))
 }
