@@ -42,10 +42,13 @@ pub mod mc_pf;
 #[cfg(feature = "mc-opf")]
 pub use mc_opf::{
     mc_opf_initial_point_from_pf, solve_mc_ac_opf_instance, solve_mc_ac_opf_instance_cancellable,
-    solve_mc_ac_opf_module_json, McOpfDualReport, McOpfEdit, McOpfError, McOpfErrorKind,
-    McOpfMarginalStatus, McOpfMarginalValue, McOpfOptions, McOpfParameter, McOpfParameterKind,
-    McOpfParameterOwner, McOpfParameterUnit, McOpfProfile, McOpfResult, McOpfSession,
-    McOpfSessionResult, McOpfStage, McOpfStart, McOpfStartUsed,
+    solve_mc_ac_opf_module_json, McOpfBranchEnd, McOpfDeviceAxis, McOpfDualReport, McOpfEdit,
+    McOpfError, McOpfErrorKind, McOpfFlowQuantity, McOpfMarginalStatus, McOpfMarginalValue,
+    McOpfOptions, McOpfOutputDerivative, McOpfOutputUnit, McOpfOutputWeight, McOpfParameter,
+    McOpfParameterDerivative, McOpfParameterDirection, McOpfParameterKind, McOpfParameterOwner,
+    McOpfParameterUnit, McOpfProfile, McOpfResult, McOpfSensitivities, McOpfSensitivityError,
+    McOpfSensitivityErrorKind, McOpfSensitivityOutput, McOpfSession, McOpfSessionResult,
+    McOpfStage, McOpfStart, McOpfStartUsed, McOpfVoltagePart,
 };
 mod model;
 #[cfg(feature = "acopf")]
