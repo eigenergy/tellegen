@@ -101,7 +101,8 @@ Parameters use the same mappings as
 [local marginal values](formulations.md#dual-diagnostics-and-local-marginal-values):
 nominal load coil P/Q for constant-power/current/impedance, ZIP and exponential
 laws, selected generator P/Q bounds, inverter availability and capabilities, effective branch
-current/apparent-power ratings, and prepared voltage limits. Inactive supported
+current/apparent-power ratings, transformer port ratings and physical continuous
+tap bounds, and prepared voltage limits. Inactive supported
 limits have zero derivatives on the fixed active set. Unknown, unsupported or
 coincident-bound parameters produce an error even if their requested weight is
 zero; they are never silently treated as inactive limits. Shared linecodes and
@@ -131,6 +132,13 @@ introduce numerical finite differences. Two-wire current-rating ties, absent or
 nonfinite ratings and zero nameplates do not provide independent partials. See
 the linked marginal-value documentation for complete field and axis semantics.
 
+Transformer rating parameters address effective selected result ports in A/VA,
+holding electrical coefficients fixed. A shared winding nameplate may require
+several port directions and can also change impedance bases; arbitrary canonical
+nameplate edits are not represented by a single port parameter. Tap-bound inputs
+use physical ratio units, including the bound-side reversal and negative chain
+rule of type-B regulators. The physical formulation and nominal tap stay fixed.
+
 Outputs include operating cost, earth-referenced terminal voltage real/imaginary
 parts, magnitude and local angle, device coil or terminal P/Q and rectangular
 current, and branch-end P/Q and rectangular current. Units are currency/hour,
@@ -142,8 +150,20 @@ shunt. Device signs follow the physical result ledgers. Gradients differentiate
 physical measurements rather than assuming auxiliary power columns are exact.
 Voltage magnitude and angle at zero are unavailable; angle derivatives describe
 a local continuous angle, not the discontinuity of a wrapped display value.
-Transformer/tap outputs, raw multiplier outputs, network-admittance parameters
-and control-curve coefficients are not part of this interface.
+
+`Transformer` outputs use `McOpfTransformerAxis`: a coil index, a bus/terminal
+identity, or a named rating port. Coil and terminal currents enter the transformer;
+terminal outputs sum bare winding incidence, including delta and neutral returns.
+Separate core/grounding shunt ledgers are excluded from these winding-terminal
+outputs. Named ports reproduce the result's rating measurements, including
+exciting-current and through-power conventions; they are not extra KCL injections.
+P/Q and rectangular-current outputs use W/var/A and differentiate the physical
+voltage-current products. `TransformerTap` returns the optimized physical ratio,
+with the appropriate direct or inverse derivative. Fixed taps have no such output.
+Unknown components, terminals, coils or port names are rejected.
+
+Raw multiplier outputs, network-admittance parameters, fixed/discrete tap
+setpoints and control-curve coefficients are not part of this interface.
 
 For active constraints `c(x,theta)=0`, the stationary system is
 
@@ -189,7 +209,7 @@ The session entry point requires `current_result()`: edits, changed options and
 failed or cancelled attempts invalidate access. Rust borrowing prevents edits
 while a sensitivity view is in use. An explicitly selected or cloned historical
 result remains an independent snapshot of its original instance. Portable
-version 4 results can rebuild a view after import, and verified version 2/3 dual
-reports are upgraded with canonical load/inverter mappings. Factorizations and views are
+version 5 results can rebuild a view after import, and verified version 2–4 dual
+reports are upgraded with load/inverter/transformer mappings. Factorizations and views are
 native in-memory objects and are not serialized. Neither queries nor failures
 change the session's accepted result, warm start or revision.

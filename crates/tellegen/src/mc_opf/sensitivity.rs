@@ -74,6 +74,23 @@ pub enum McOpfDeviceAxis {
         terminal: String,
     },
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "axis", rename_all = "snake_case", deny_unknown_fields)]
+pub enum McOpfTransformerAxis {
+    Coil {
+        index: usize,
+    },
+    /// Sum of bare winding-current incidence at this bus/terminal, including
+    /// neutral returns. Separate core/grounding shunt ledgers are excluded.
+    Terminal {
+        terminal: McOpfTerminalId,
+    },
+    /// Prepared rating measurement, which may include exciting current or use
+    /// a distinct through-power convention. Not an additive KCL injection.
+    Port {
+        name: String,
+    },
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "output", rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
@@ -97,6 +114,16 @@ pub enum McOpfSensitivityOutput {
         conductor: usize,
         quantity: McOpfFlowQuantity,
     },
+    /// Currents enter the transformer, following the physical result ledgers.
+    Transformer {
+        identity: String,
+        axis: McOpfTransformerAxis,
+        quantity: McOpfFlowQuantity,
+    },
+    /// Optimized physical continuous tap ratio, not the internal multiplier.
+    TransformerTap {
+        identity: String,
+    },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -107,6 +134,7 @@ pub enum McOpfOutputUnit {
     Ampere,
     Watt,
     Var,
+    Ratio,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

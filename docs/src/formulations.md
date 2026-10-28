@@ -438,15 +438,15 @@ The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
 
 `McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
-PowerIO `McAcOpfSolution` plus version 4 of the namespaced module extension
+PowerIO `McAcOpfSolution` plus version 5 of the namespaced module extension
 `org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
 source/generator dispatch and the original instance. The extension carries the
 complete ledgers, axes, optimized taps, numerical options/bases, residuals,
 input diagnostic summaries, fingerprint, iterations, optional profile and optional
-dual report. Version 1 reports without dual data remain readable. Version 2 and 3
+dual report. Version 1 reports without dual data remain readable. Version 2–4
 dual reports are checked using their original parameter mappings before newly
-supported load/inverter derivatives are recomputed from the retained canonical
-instance. Re-export writes version 4; older unsupported entries are not silently
+supported load/inverter/transformer derivatives are recomputed from the retained canonical
+instance. Re-export writes version 5; older unsupported entries are not silently
 accepted as current claims. Upgrading does not rerun optimization.
 This uses PowerIO's existing extension mechanism without changing its schema.
 
@@ -490,12 +490,12 @@ They use compiled row units. **IVR KCL multipliers are not nodal energy prices.*
 
 Typed marginal entries instead report the envelope derivative of operating cost
 (currency/hour) with respect to an identified physical parameter in W, var, A,
-VA or V. A positive value means increasing that parameter raises local cost.
+VA, V or dimensionless tap ratio. A positive value means increasing that parameter raises local cost.
 For example, a lossless load served at 0.2 currency/kWh has an active-power
 marginal of 0.0002 (currency/hour)/W. Supported parameters are nominal
 load coil P/Q, selected generator coil P/Q bounds, inverter availability and
-capabilities, effective branch conductor current/apparent-power ratings, and
-prepared voltage-magnitude limits.
+capabilities, effective branch conductor and transformer port current/apparent-power
+ratings, physical continuous tap bounds, and prepared voltage-magnitude limits.
 Branch ratings sum contributions from both ends. Squared-norm rows include the
 derivative of their normalization radius, so their raw multiplier is not itself
 the physical limit marginal. Values are invariant to numerical bases and solver
@@ -509,9 +509,8 @@ impedance, ZIP and exponential laws. They hold nominal voltage, exponents and
 ZIP coefficients fixed. Canonical scalar/per-coil coefficients and their defaults
 are retained even when nominal P/Q is zero and preparation removes its terms.
 The derivative is with respect to nominal W/var, not the load's realized power at
-the solved voltage. Transformer ratings, tap bounds and control-curve coefficients
-do not yet have physical marginal mappings; their compiled row multipliers
-remain available. Coincident generator/inverter lower and upper bounds do not
+the solved voltage. Control-curve coefficients, fixed-tap setpoints and transformer
+impedances do not have parameter mappings. Coincident generator/inverter lower and upper bounds do not
 yield separate one-sided bound marginals.
 
 Inverter entries use owner `Inverter` and the canonical inverter name. The
@@ -540,6 +539,25 @@ and an exact tie refuses independent current-rating partials. Ratings must exist
 and be finite. Zero-rating reductions retain the existing conservative refusal;
 a zero nameplate used only as a control reference is also unsupported. All these
 entries remain conditional on the same regular local branch and active set.
+
+Transformer entries use owner `Transformer` and the prepared transformer identity.
+For `CurrentRating` (A) and `ApparentPowerRating` (VA), `axis` indexes that
+transformer's result `ports` array, whose name and endpoints identify the physical
+measurement. These are effective selected port limits, with all electrical
+coefficients held fixed. A canonical nameplate or winding rating can feed several
+ports and can also set impedance bases; its full derivative is not generally one
+port derivative. Combine port directions only when the canonical edit leaves
+electrical coefficients fixed. Current ports can include exciting current, while
+through-power ports may use bare winding currents. Zero-rating reductions retain
+the existing conservative refusal; absent or deselected ratings are unsupported.
+
+`TapLower` and `TapUpper` have no axis and vary the physical continuous tap bounds
+in ratio units, holding the nominal tap and transformer coefficients fixed. The
+mapper applies the chain rule for both `tap_nominal * alpha` and the type-B
+regulator convention `tap_nominal / alpha`. The inverse convention swaps the
+compiled bound sides and has a negative bound derivative. An inactive tap bound
+has zero derivative on the same active set. Fixed/discrete tap choices and edits
+that change the transformer equations are outside this interface.
 
 The load mapper follows the chosen compiled current or power law without
 changing the physical equations. It includes both real and imaginary current

@@ -61,6 +61,7 @@ pub enum McOpfParameterOwner {
     Load,
     Generator,
     Inverter,
+    Transformer,
     Branch,
     VoltageLimit,
 }
@@ -80,6 +81,8 @@ pub enum McOpfParameterKind {
     ApparentPowerRating,
     VoltageLower,
     VoltageUpper,
+    TapLower,
+    TapUpper,
 }
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -88,7 +91,8 @@ pub struct McOpfParameter {
     pub component: String,
     /// Coil index for load/generator and inverter power parameters; conductor
     /// index for branches and inverter current ratings (coil index for delta).
-    /// Voltage-limit identities identify the measurement and have no axis.
+    /// Transformer rating axes index result.ports; tap and voltage limits have
+    /// no axis. Transformer component identities remain the transformer name.
     pub axis: Option<usize>,
     pub kind: McOpfParameterKind,
 }
@@ -116,6 +120,7 @@ impl McOpfParameter {
             CurrentRating => McOpfParameterUnit::Ampere,
             ApparentPowerRating => McOpfParameterUnit::VoltAmpere,
             VoltageLower | VoltageUpper => McOpfParameterUnit::Volt,
+            TapLower | TapUpper => McOpfParameterUnit::Ratio,
         }
     }
 }
@@ -127,6 +132,7 @@ pub enum McOpfParameterUnit {
     Ampere,
     VoltAmpere,
     Volt,
+    Ratio,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

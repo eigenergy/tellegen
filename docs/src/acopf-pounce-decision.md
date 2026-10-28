@@ -389,8 +389,11 @@ exponential laws, including coefficients hidden by zero nominal powers. Their
 voltage-law coefficients and nominal voltages remain fixed. Inverter mappings
 cover per-coil availability, P/Q bounds, apparent-power and conductor-current
 ratings, including neutral returns and their effects on existing volt-var and
-volt-watt references. Control-curve coefficients remain fixed. Version 4 reports
-retain these marginal claims; version 2/3 reports are verified before upgrade.
+volt-watt references. Transformer mappings cover effective port ratings and
+physical continuous tap bounds; outputs include winding/port flows and optimized
+tap ratios, including inverse regulator conventions. Control-curve and electrical
+coefficients remain fixed. Version 5 reports retain these marginal claims;
+version 2–4 reports are verified before upgrade.
 
 The feature builds against the published PowerIO and POUNCE versions in the
 shipping lockfile. Build and test the native feature from the repository root:
