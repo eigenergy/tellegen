@@ -1,5 +1,136 @@
 # @tellegen/engine
 
+## 0.4.5
+
+### Patch Changes
+
+- [#264](https://github.com/eigenergy/tellegen/pull/264) [`75edb80`](https://github.com/eigenergy/tellegen/commit/75edb800137d908d56f17aa38221fa62f96e0615) Thanks [@samtalki](https://github.com/samtalki)! - The DC OPF, DC power flow and AC power flow solve networks with in-service HVDC lines. Each line's stated transfer enters the bus balance as fixed injections at its two terminal buses, as PowerIO 0.11.7 prepares them, and the solve reports PowerIO's `BUILD.HVDC.FIXED_INJECTION` diagnostic. A line with a terminal bus outside the solve injects at neither end and reports `BUILD.HVDC.TERMINAL_INACTIVE`. Generated OpenStreetMap grids with HVDC links now open, solve and export. The AC OPF and the SOC relaxation still refuse in-service HVDC lines.
+
+## 0.4.4
+
+### Patch Changes
+
+- [#254](https://github.com/eigenergy/tellegen/pull/254) [`020ca51`](https://github.com/eigenergy/tellegen/commit/020ca5140035f294dbb7b14c3747cf6de4b97092) Thanks [@samtalki](https://github.com/samtalki)! - Build against PowerIO 0.11.7. AC power flow on a case with HVDC lines now
+  includes their scheduled transfers as fixed bus injections; DC OPF and DC power
+  flow still leave them out. OpenDSS feeders read the circuit's source
+  impedance, so the distribution graph gains an internal source bus and its
+  impedance line, and a `switch=y` line reads as a closed 1 mOhm line. PSS/E
+  VSC DC lines are read instead of skipped.
+
+## 0.4.3
+
+### Patch Changes
+
+- [#171](https://github.com/eigenergy/tellegen/pull/171) [`1fbc8f1`](https://github.com/eigenergy/tellegen/commit/1fbc8f1ee9f432aa9ee5bb390281b67af16f21ed) Thanks [@samtalki](https://github.com/samtalki)! - `SolveRequest` accepts `start: "flat" | "case"` (`PowerFlowStart`). With
+  `"case"`, the AC power flow starts Newton from the case's stored bus voltages
+  (each bus's stored magnitude and its angle relative to the reference bus), and
+  falls back to the flat start if that state does not converge. Other
+  formulations refuse `"case"`. AC power flow now also accepts a reference bus
+  with a nonzero stated angle and reports every angle against it.
+
+- [#194](https://github.com/eigenergy/tellegen/pull/194) [`65dd440`](https://github.com/eigenergy/tellegen/commit/65dd4403665c2682850175ef75f3dcbcfa86e4b2) Thanks [@samtalki](https://github.com/samtalki)! - Add an opt-in, capability-gated browser AC OPF client backed by a separate
+  WASI worker, with hard worker cancellation and no main-thread fallback.
+
+- [#175](https://github.com/eigenergy/tellegen/pull/175) [`a54557f`](https://github.com/eigenergy/tellegen/commit/a54557f23d755ec77814f74e0dcca5d09ff11a82) Thanks [@samtalki](https://github.com/samtalki)! - DC OPF sensitivities now cover requests with linear `constraints`: every cell
+  differentiates the constrained program. The new `ConstraintLimit` parameter
+  differentiates with respect to a constraint's limits, with columns keyed
+  `{ Constraint: index }` by request position.
+
+- [#173](https://github.com/eigenergy/tellegen/pull/173) [`d768cb2`](https://github.com/eigenergy/tellegen/commit/d768cb2a96f0fbd70b93169b9f7b50af3176e332) Thanks [@samtalki](https://github.com/samtalki)! - DC OPF requests accept `limits` (`LimitOptions`):
+  - `angle_difference: false` drops the angle-difference rows.
+  - `thermal` keeps `"all"`, `"rated"`, or `{ branches: [...] }` thermal limits.
+  - `lazy` enforces thermal limits incrementally until none is violated.
+
+  `SolveResponse.limit_rounds` (`LimitRound[]`) reports each solve's program size,
+  iterations, and violations. The program also no longer carries rows for
+  inactive limits or pinned shedding, which lets PGLib's `case78484` converge.
+
+- [#170](https://github.com/eigenergy/tellegen/pull/170) [`5bd83ed`](https://github.com/eigenergy/tellegen/commit/5bd83ed4ccd79e36290aef146702b3ca398b8d18) Thanks [@samtalki](https://github.com/samtalki)! - `SolveRequest` accepts `constraints`: linear constraints on the DC OPF over
+  branch flows, bus net injections, and generator outputs, such as interface
+  or transfer limits. Each states `lower <= sum(coefficient * quantity) <= upper`
+  in MW. `SolveResponse.constraints` reports each row's value, limits, shadow
+  price, and whether it binds, and `ProblemCaps.constraints` lists the term kinds
+  a formulation accepts. The new types are `LinearConstraint`, `ConstraintTerm`,
+  `ConstraintTermKind`, and `ConstraintResult`. Other formulations refuse
+  constraints.
+
+- [#228](https://github.com/eigenergy/tellegen/pull/228) [`20c0f73`](https://github.com/eigenergy/tellegen/commit/20c0f7348482106f286818ee3ecf4c0d50b2e17d) Thanks [@samtalki](https://github.com/samtalki)! - Multiconductor graphs carry declared voltage limits and ratings, and the Studies
+  view gains an operating-point overview.
+
+  In `@tellegen/engine`, `DistGraphBus.voltage_limits` holds the model's declared
+  phase–neutral and phase–phase voltage bounds in volts, and `DistGraphEdge.rating`
+  holds per-conductor ampacity (`i_max`) or, for a transformer, its largest winding
+  rating at each bus it connects (`s_rating_by_bus`), the same on every winding-pair
+  edge. Both are present only when the model declares them.
+
+  In `@tellegen/svelte`, `McWorkbench` summarises a multiconductor power-flow result:
+  violations, losses, voltage ranges per declared reference, maximum loading and
+  maximum unbalance; a ranked issue list that selects the bus or branch; search
+  over buses and branches; per-phase voltage bars against declared limits and
+  per-conductor currents at both ends; sortable bus and branch tables; and CSV export. Cases
+  larger than 25,000 buses compute the overview on request. Setting
+  `MulticonductorCase.schematic` makes `TellegenMap` show the case as a deck.gl
+  schematic or at its source positions, with an animated switch between them,
+  result colouring, the shared selection and PNG/SVG export. `overviewResult` holds
+  the operating point the overview and schematic share. The schematic layout runs in
+  the engine: `mcSchematicLayout` in `@tellegen/engine` returns tidy or leaf-order
+  geometry and the display forest, reserving room below each bus for its attached
+  equipment. The schematic draws transformer, switch (open or closed) and attachment
+  symbols (load, generator, inverter-based resource, source, shunt) with a legend.
+  Lines show their conductors at close zoom; buses are named with short ids; parts not
+  energised from any source are drawn faint; and outside selections fly into view.
+  The schematic can be walked bus by bus from the keyboard, with a spoken description.
+  Solved P/Q and power-flow arrows show at close zoom, hover is linked across the
+  schematic and tables, and each LV network (galvanic zone) is outlined (on geographic
+  positions, as a corridor along its lines) and tinted by its worst state, with a summary tag. MV lines draw heavier than LV, and LV
+  detail fades when zoomed out. Sources, generators, large IBRs and transformers stay
+  visible as fixed-size landmarks, placed by priority. Geographic positions draw over the main
+  map's basemap, which fades in and out with the layout switch. The diagram opens on the case's own
+  positions and switches to the schematic from there. Branches drawn along the same route fan
+  apart on hover, with a card to pick between them, and buses at the same point spread
+  apart the same way. The schematic can be downloaded as a PowerIO
+  diagram layer, follows a case's own routes in source positions, and a selected
+  branch gets a multi-wire view of its conductors. Unbalance is the voltage
+  unbalance factor from terminal phasors, shown beside the magnitude spread.
+  `controller.multiFullResult`
+  reads the full operating point from a stored result or the live session, and
+  `TellegenShell` keeps `overviewResult` current for the active case
+  (`controller.followOverview`, `readOverview` and `overviewOnRequest`). A
+  multi-winding transformer counts once in losses and issues, and its loading is
+  judged per connected bus. Graph buses carry `nominal_voltage`, the declared rating
+  of a winding or source there; the diagram colours lines by voltage level, and a
+  hover shows the feeder and network of what it is over, with an optional path back
+  to the source. Graph buses also carry `attachments` (each attachment's terminals in
+  its own order and its connection) and transformer edges `windings` (bus, wye or
+  delta, terminals, rating). The diagram draws each transformer once with its winding
+  connections or centre tap, and each load or shunt with its conductors and, closest
+  in, its terminals. The
+  renderer-independent logic lives in `src/lib/diagram`, ported from the diagram
+  projection draft ([#177](https://github.com/eigenergy/tellegen/issues/177)).
+
+- [#172](https://github.com/eigenergy/tellegen/pull/172) [`21b8892`](https://github.com/eigenergy/tellegen/commit/21b8892712aa5995e78d2bb5ca01b362016e8c9b) Thanks [@samtalki](https://github.com/samtalki)! - Solves accept networks with several islands. Every formulation solves each
+  supplied island against its own reference, so each island clears at its own
+  price. `SolveResponse.diagnostics` (`SolveDiagnostic[]`) reports how the solve
+  treated the islands. An island with no in-service generator is left out with
+  its unserved load stated (`island_deenergized`). A supplied island without a
+  reference bus gets one at its largest generator
+  (`island_reference_designated`). If one island states several references, the
+  AC power flow keeps the first as its slack (`island_extra_reference`).
+
+- [#229](https://github.com/eigenergy/tellegen/pull/229) [`feb9cb0`](https://github.com/eigenergy/tellegen/commit/feb9cb0a9f991479ab5888a0ac83e3548268fc33) Thanks [@samtalki](https://github.com/samtalki)! - Multiconductor graphs carry every bus voltage bound PowerIO reads, in volts.
+  `DistVoltageLimits` gains the phase-to-ground bounds (BMOPF `v_min`/`v_max`, PMD
+  `vm_lb`/`vm_ub`) as `v_min_by_terminal` and `v_max_by_terminal`, keyed by the phase
+  terminal PowerIO assigns each bound to, and the sequence and neutral-to-ground
+  bounds `vpos_min`, `vpos_max`, `vneg_max`, `vzero_max` and `vn_max`. A bound vector
+  that does not match the bus's phase terminals, or a non-finite entry, is left out.
+  `vpp_pairs` names the phase-terminal pairs that `vpp_min`/`vpp_max` are ordered by,
+  (1,2), (2,3), (3,1) of the phase terminals as BMOPF 0.2.0 states, on a bus with two
+  or three phase terminals.
+
+- [#194](https://github.com/eigenergy/tellegen/pull/194) [`c721344`](https://github.com/eigenergy/tellegen/commit/c7213444e5c6e9a904a9db73e3195c755b05d875) Thanks [@samtalki](https://github.com/samtalki)! - Expose AC OPF recovery diagnostics from the POUNCE 0.13.0 worker and show the
+  total iteration count, including retries, in the solve card. Mark recovered
+  solves while preserving support for responses without recovery diagnostics.
+
 ## 0.4.2
 
 ### Patch Changes

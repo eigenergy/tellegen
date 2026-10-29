@@ -36,7 +36,7 @@ deny:
 wasm-adapter-test:
     cargo test -p tellegen-wasm --features conic,synth
 
-# CI gate: the EPL-2.0 pounce backend must never enter a shipped (wasm/server/cli) build.
+# CI gate: POUNCE stays out of the ordinary wasm module and native adapters.
 epl-guard:
     scripts/epl-guard.sh
 
@@ -81,10 +81,14 @@ crate-package:
 wasm:
     npm run wasm
 
-# Build the separate development-only EPL AC OPF reactor. Ordinary web builds
-# do not copy this asset; set PUBLIC_TELLEGEN_ACOPF_WASM_URL explicitly too.
+# Build the separate EPL AC OPF reactor and notices bundled by the website.
 wasm-acopf:
+    rustup target add wasm32-wasip1
     npm run wasm:acopf
+
+# CI gate: source manifests work in the Git-free container build context.
+acopf-release-test:
+    python3 scripts/test-acopf-release.py
 
 # Type-check the engine package.
 engine-check:
@@ -130,7 +134,7 @@ evidence-test:
 js-import:
     npm run test:import
 
-# Build the web app (expects `just wasm` and `just engine-build` first).
+# Build the web app (expects `just wasm`, `just wasm-acopf`, and `just engine-build`).
 web-build:
     npm run build:web
 
@@ -180,4 +184,4 @@ changeset-status:
 # ---- aggregate ----
 
 # Everything CI enforces locally, in order (gates-rust.yml, then gates-js.yml).
-ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack wasm engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit
+ci: powerio-pin fmt-check clippy deny epl-guard test mc-pf-test conic-test acopf-probe wasm-adapter-test mc-pf-regression crate-package web-lint webmcp-check webmcp-pack acopf-release-test wasm wasm-acopf engine-check engine-build js-import svelte-check svelte-test web-check svelte-packed web-build example-build web-smoke web-browser evidence-test audit

@@ -408,3 +408,36 @@ export function attachBasemapFallback(
 		map.off('error', onError);
 	};
 }
+
+/** The parts of a MapLibre map `applyBasemapTuning` touches. */
+export interface TunableMap {
+	getStyle(): StyleSpecification;
+	setLayoutProperty(layer: string, name: string, value: unknown): unknown;
+	setPaintProperty(layer: string, name: string, value: unknown): unknown;
+	setLayerZoomRange(layer: string, minzoom: number, maxzoom: number): unknown;
+}
+
+/** After a style loads: hide its labels when the spec asks, and tune an OpenFreeMap style (as the
+ * primary or the fallback) towards CARTO's quieter look. `setStyle` undoes both, so run this on
+ * every `style.load`. */
+export function applyBasemapTuning(map: TunableMap, spec: BasemapSpec, theme: BasemapTheme) {
+	const style = map.getStyle();
+	if (spec.hideLabels)
+		for (const layer of style.layers)
+			if (layer.type === 'symbol') map.setLayoutProperty(layer.id, 'visibility', 'none');
+	if (!isOpenFreeMapStyle(style)) return;
+	for (const edit of openFreeMapEdits(style, theme)) {
+		if (edit.kind === 'paint') map.setPaintProperty(edit.layer, edit.property, edit.value);
+		else map.setLayerZoomRange(edit.layer, edit.minzoom, edit.maxzoom);
+	}
+}
+
+/** A credit line for a basemap provider, for views that draw their own instead of MapLibre's
+ * attribution control. */
+export function basemapCredit(provider: BasemapProvider): string {
+	return provider === 'carto'
+		? '© CARTO © OpenStreetMap contributors'
+		: provider === 'openfreemap'
+			? '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors'
+			: '© OpenStreetMap contributors';
+}

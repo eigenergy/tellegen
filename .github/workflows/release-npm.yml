@@ -19,22 +19,9 @@ concurrency:
   queue: max
 
 jobs:
-  gates-rust:
-    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-    uses: ./.github/workflows/gates-rust.yml
-
-  gates-js:
-    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-    uses: ./.github/workflows/gates-js.yml
-
   select-mode:
-    if: github.ref == 'refs/heads/main'
+    if: vars.TELLEGEN_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main'
     name: choose version or publish
-    needs: [gates-rust, gates-js]
     runs-on: ubuntu-latest
     outputs:
       mode: ${{ steps.select-mode.outputs.mode }}
@@ -194,10 +181,26 @@ jobs:
               -f title="Release packages" -f body="$body" >/dev/null
           fi
 
+  # Only publishing runs the gates. Version mode refreshes the release pull
+  # request, whose own CI runs them, so it does not wait for runners here.
+  gates-rust:
+    if: needs.select-mode.outputs.mode == 'publish'
+    needs: select-mode
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gates-rust.yml
+
+  gates-js:
+    if: needs.select-mode.outputs.mode == 'publish'
+    needs: select-mode
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gates-js.yml
+
   pack:
     if: needs.select-mode.outputs.mode == 'publish'
     name: build and pack packages
-    needs: select-mode
+    needs: [select-mode, gates-rust, gates-js]
     runs-on: ubuntu-latest
     outputs:
       pack-dir-artifact-id: ${{ steps.pack.outputs.pack-dir-artifact-id }}

@@ -151,7 +151,10 @@ fn ingest_dist_value(
     diagnostics: &[powerio::Diagnostic],
 ) -> Result<serde_json::Value, String> {
     let graph = net.to_graph();
-    let graph_value = graph_with_neutral_metadata(net, &graph)?;
+    let mut graph_value = graph_with_neutral_metadata(net, &graph)?;
+    add_limits_and_ratings(net, &mut graph_value);
+    add_nominal_voltages(net, &mut graph_value);
+    add_connections(net, &mut graph_value);
 
     let mut n_line = 0usize;
     let mut n_switch = 0usize;
@@ -250,6 +253,363 @@ fn graph_with_neutral_metadata(
         }
     }
     Ok(value)
+}
+
+/// Add declared bus voltage limits and branch ratings, which PowerIO's graph projection leaves out,
+/// so the frontend can rank limit violations and loading against what the model declares. Values
+/// keep PowerIO's names and units (volts, amperes, volt-amperes); nothing absent is invented.
+///
+/// PowerIO's phase-to-ground bounds (`v_min`/`v_max`, from BMOPF `v_min`/`v_max` or PMD
+/// `vm_lb`/`vm_ub`) are stated per phase terminal, a uniform bound as one scalar. They are keyed
+/// here by the terminal they bound (`v_min_by_terminal`, `v_max_by_terminal`), with the phase
+/// terminals PowerIO assigned them to, so the frontend need not repeat that classification. A
+/// vector whose length does not match the phase terminals is left out rather than guessed, and so
+/// is a non-finite entry (no bound on that terminal).
+///
+/// Phase-to-phase bounds (`vpp_min`/`vpp_max`) keep PowerIO's vectors, one entry per ordered pair
+/// (1,2), (2,3), (3,1) of the phase terminals (BMOPF 0.2.0). `vpp_pairs` names those pairs with
+/// the phase terminals PowerIO assigned, for a bus with two or three of them; the schema states no
+/// order for more.
+fn add_limits_and_ratings(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
+    use serde_json::{json, Map, Value};
+    let buses: std::collections::BTreeMap<_, _> = net
+        .buses()
+        .iter()
+        .map(|bus| (bus.id.to_ascii_lowercase(), bus))
+        .collect();
+    let conventions = net.extras().get("bmopf_terminal_conventions");
+    let to_ground =
+        |bus: &powerio_dist::DistBus, scalar: Option<f64>, phases: &Option<Vec<f64>>| {
+            let indices = bus.phase_indices(conventions);
+            let per_phase = match (scalar, phases) {
+                (Some(volts), _) => vec![volts; indices.len()],
+                (None, Some(values)) if values.len() == indices.len() => values.clone(),
+                _ => return None,
+            };
+            let by_terminal: Map<String, Value> = indices
+                .iter()
+                .zip(per_phase)
+                .filter(|(_, volts)| volts.is_finite())
+                .map(|(&i, volts)| (bus.terminals[i].clone(), json!(volts)))
+                .collect();
+            (!by_terminal.is_empty()).then_some(Value::Object(by_terminal))
+        };
+    let phase_pairs = |bus: &powerio_dist::DistBus| {
+        let phases: Vec<&String> = bus
+            .phase_indices(conventions)
+            .into_iter()
+            .map(|i| &bus.terminals[i])
+            .collect();
+        let order: &[(usize, usize)] = match phases.len() {
+            2 => &[(0, 1)],
+            3 => &[(0, 1), (1, 2), (2, 0)],
+            _ => return None,
+        };
+        Some(json!(order
+            .iter()
+            .map(|&(i, j)| [phases[i], phases[j]])
+            .collect::<Vec<_>>()))
+    };
+    if let Some(graph_buses) = graph.get_mut("buses").and_then(Value::as_array_mut) {
+        for graph_bus in graph_buses {
+            let Some(bus) = graph_bus
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| buses.get(&id.to_ascii_lowercase()))
+            else {
+                continue;
+            };
+            let mut limits = Map::new();
+            for (name, value) in [
+                ("vpn_min", &bus.vpn_min),
+                ("vpn_max", &bus.vpn_max),
+                ("vpp_min", &bus.vpp_min),
+                ("vpp_max", &bus.vpp_max),
+            ] {
+                if let Some(values) = value {
+                    limits.insert(name.to_owned(), json!(values));
+                }
+            }
+            if bus.vpp_min.is_some() || bus.vpp_max.is_some() {
+                if let Some(pairs) = phase_pairs(bus) {
+                    limits.insert("vpp_pairs".to_owned(), pairs);
+                }
+            }
+            for (name, scalar, phases) in [
+                ("v_min_by_terminal", bus.v_min, &bus.v_min_phase),
+                ("v_max_by_terminal", bus.v_max, &bus.v_max_phase),
+            ] {
+                if let Some(by_terminal) = to_ground(bus, scalar, phases) {
+                    limits.insert(name.to_owned(), by_terminal);
+                }
+            }
+            // Sequence-component and neutral-to-ground bounds, as PowerIO states them. The overview
+            // does not rank these, but carrying them keeps it from calling such a case unbounded.
+            for (name, value) in [
+                ("vpos_min", bus.vpos_min),
+                ("vpos_max", bus.vpos_max),
+                ("vneg_max", bus.vneg_max),
+                ("vzero_max", bus.vzero_max),
+                ("vn_max", bus.vn_max),
+            ] {
+                if let Some(volts) = value.filter(|v| v.is_finite()) {
+                    limits.insert(name.to_owned(), json!(volts));
+                }
+            }
+            if !limits.is_empty() {
+                graph_bus["voltage_limits"] = Value::Object(limits);
+            }
+        }
+    }
+    // Index each element family once by name; `first` keeps the first of any duplicate names, as a
+    // linear search would.
+    fn first<T>(items: &[T], name: impl Fn(&T) -> &str) -> std::collections::HashMap<String, &T> {
+        let mut index = std::collections::HashMap::with_capacity(items.len());
+        for item in items {
+            index.entry(name(item).to_ascii_lowercase()).or_insert(item);
+        }
+        index
+    }
+    let lines = first(net.lines(), |line| &line.name);
+    let switches = first(net.switches(), |switch| &switch.name);
+    let transformers = first(net.transformers(), |t| &t.name);
+    let graph_bus_ids: std::collections::HashMap<String, String> = graph
+        .get("buses")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|bus| bus.get("id").and_then(Value::as_str))
+        .map(|id| (id.to_ascii_lowercase(), id.to_owned()))
+        .collect();
+    let line_rating = |line: &&powerio_dist::DistLine| {
+        line.i_max.clone().or_else(|| {
+            net.linecode(&line.linecode)
+                .and_then(|code| code.i_max.clone())
+        })
+    };
+    let Some(edges) = graph.get_mut("edges").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for edge in edges {
+        let (Some(kind), Some(id)) = (
+            edge.get("kind").and_then(Value::as_str),
+            edge.get("id")
+                .and_then(Value::as_str)
+                .map(str::to_ascii_lowercase),
+        ) else {
+            continue;
+        };
+        let rating = match kind {
+            "line" => lines
+                .get(&id)
+                .and_then(line_rating)
+                .map(|amps| json!({ "i_max": amps })),
+            "switch" => switches
+                .get(&id)
+                .and_then(|switch| switch.i_max.clone())
+                .map(|amps| json!({ "i_max": amps })),
+            // A transformer projects to one edge per winding pair, so its rating is stated for the
+            // whole transformer: the largest winding rating at each bus it connects, and every edge
+            // of the transformer carries the same one. Windings that share a bus (the two halves of
+            // a centre tap) are each declared at the full nameplate, so they are not summed.
+            "transformer" => transformers.get(&id).and_then(|t| {
+                let mut by_bus = Map::new();
+                for winding in &t.windings {
+                    if winding.s_rating <= 0.0 {
+                        continue;
+                    }
+                    let lower = winding.bus.to_ascii_lowercase();
+                    let bus = graph_bus_ids.get(&lower).cloned().unwrap_or(lower);
+                    let largest = by_bus.get(&bus).and_then(Value::as_f64).unwrap_or(0.0);
+                    by_bus.insert(bus, json!(largest.max(winding.s_rating)));
+                }
+                (!by_bus.is_empty()).then(|| json!({ "s_rating_by_bus": by_bus }))
+            }),
+            _ => None,
+        };
+        if let Some(rating) = rating {
+            edge["rating"] = rating;
+        }
+    }
+}
+
+/// Add the declared rated voltage at each bus a transformer winding or a source connects to, so
+/// the frontend can tell voltage levels apart before any solve. A polyphase winding states its
+/// line-to-line rating, a single-phase winding its own; a source with two or more energised
+/// terminals counts as line-to-line from its phasors (the largest difference between terminals,
+/// or √3 times the largest magnitude when the angles do not give one).
+/// A level for display and grouping, not a base for calculation; the largest value at a bus wins.
+fn add_nominal_voltages(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
+    use serde_json::{json, Value};
+    let mut nominal: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut note = |bus: &str, volts: f64| {
+        if volts.is_finite() && volts > 0.0 {
+            let entry = nominal.entry(bus.to_ascii_lowercase()).or_insert(0.0);
+            *entry = entry.max(volts);
+        }
+    };
+    for t in net.transformers() {
+        for w in &t.windings {
+            note(&w.bus, w.v_ref);
+        }
+    }
+    for vs in net.sources() {
+        // (magnitude, angle) of each energised terminal; NaN where the source states no angle.
+        let energised: Vec<(f64, f64)> = vs
+            .v_magnitude
+            .iter()
+            .enumerate()
+            .filter(|&(_, &v)| v > 0.0)
+            .map(|(i, &v)| (v, vs.v_angle.get(i).copied().unwrap_or(f64::NAN)))
+            .collect();
+        let largest = energised.iter().map(|&(v, _)| v).fold(0.0, f64::max);
+        // Line to line is the largest phasor difference between energised terminals: √3 times the
+        // phase magnitude for three-phase, twice it for a split-phase (180°) source.
+        let mut between = 0.0f64;
+        for (i, &(vi, ai)) in energised.iter().enumerate() {
+            for &(vj, aj) in &energised[i + 1..] {
+                between = between.max((vi * vi + vj * vj - 2.0 * vi * vj * (ai - aj).cos()).sqrt());
+            }
+        }
+        note(
+            &vs.bus,
+            if energised.len() < 2 {
+                largest
+            } else if between.is_finite() && between > 0.0 {
+                between
+            } else {
+                largest * 3f64.sqrt()
+            },
+        );
+    }
+    let Some(buses) = graph.get_mut("buses").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for bus in buses {
+        let volts = bus
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|id| nominal.get(&id.to_ascii_lowercase()).copied());
+        if let Some(volts) = volts {
+            bus["nominal_voltage"] = json!(volts);
+        }
+    }
+}
+
+/// Add how equipment connects, which PowerIO's graph projection reduces to which terminals an
+/// attachment touches: each attachment's terminals in its own order and its connection (wye, delta
+/// or single-phase; an IBR's topology), and each transformer's windings (bus, wye or delta,
+/// terminals, rating). Every edge of a multi-winding transformer carries all its windings.
+fn add_connections(net: &MulticonductorNetwork, graph: &mut serde_json::Value) {
+    use powerio_dist::{Configuration, DistWindingConn, IbrTopology};
+    use serde_json::{json, Value};
+    let configuration = |c: &Configuration| match c {
+        Configuration::Wye => "wye",
+        Configuration::Delta => "delta",
+        Configuration::SinglePhase => "single_phase",
+        _ => "other",
+    };
+    let mut by_bus: std::collections::HashMap<String, Vec<Value>> =
+        std::collections::HashMap::new();
+    let mut add = |bus: &str, item: Value| {
+        by_bus
+            .entry(bus.to_ascii_lowercase())
+            .or_default()
+            .push(item);
+    };
+    for l in net.loads() {
+        add(
+            &l.bus,
+            json!({ "kind": "load", "id": l.name, "terminals": l.terminal_map,
+                    "connection": configuration(&l.configuration) }),
+        );
+    }
+    for g in net.generators() {
+        add(
+            &g.bus,
+            json!({ "kind": "generator", "id": g.name, "terminals": g.terminal_map,
+                    "connection": configuration(&g.configuration) }),
+        );
+    }
+    for i in net.ibrs() {
+        let topology = match i.topology {
+            IbrTopology::SinglePhase => "single_phase",
+            IbrTopology::ThreeLeg => "three_leg",
+            IbrTopology::FourLeg => "four_leg",
+            _ => "other",
+        };
+        add(
+            &i.bus,
+            json!({ "kind": "ibr", "id": i.name, "terminals": i.terminal_map,
+                    "connection": topology }),
+        );
+    }
+    for sh in net.shunts() {
+        add(
+            &sh.bus,
+            json!({ "kind": "shunt", "id": sh.name, "terminals": sh.terminal_map }),
+        );
+    }
+    // PowerIO's graph projects a rated capacitor bank as a shunt attachment, so it is listed here
+    // too: the frontend draws from this list whenever a bus has one, and would otherwise drop it.
+    for c in net.capacitors() {
+        add(
+            &c.bus,
+            json!({ "kind": "shunt", "id": c.name, "terminals": c.terminal_map,
+                    "connection": configuration(&c.configuration) }),
+        );
+    }
+    for vs in net.sources() {
+        add(
+            &vs.bus,
+            json!({ "kind": "source", "id": vs.name, "terminals": vs.terminal_map }),
+        );
+    }
+    if let Some(buses) = graph.get_mut("buses").and_then(Value::as_array_mut) {
+        for bus in buses {
+            let items = bus
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| by_bus.remove(&id.to_ascii_lowercase()));
+            if let Some(items) = items {
+                bus["attachments"] = Value::Array(items);
+            }
+        }
+    }
+    let mut windings: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+    for t in net.transformers() {
+        let list: Vec<Value> = t
+            .windings
+            .iter()
+            .map(|w| {
+                json!({
+                    "bus": w.bus,
+                    "connection": match w.conn { DistWindingConn::Wye => "wye", DistWindingConn::Delta => "delta", _ => "other" },
+                    "terminals": w.terminal_map,
+                    "v_ref": w.v_ref,
+                    "s_rating": w.s_rating,
+                })
+            })
+            .collect();
+        windings
+            .entry(t.name.to_ascii_lowercase())
+            .or_insert(Value::Array(list));
+    }
+    if let Some(edges) = graph.get_mut("edges").and_then(Value::as_array_mut) {
+        for edge in edges {
+            if edge.get("kind").and_then(Value::as_str) != Some("transformer") {
+                continue;
+            }
+            let list = edge
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| windings.get(&id.to_ascii_lowercase()))
+                .cloned();
+            if let Some(list) = list {
+                edge["windings"] = list;
+            }
+        }
+    }
 }
 
 fn neutral_terminal(
@@ -441,9 +801,11 @@ mod tests {
 
         assert_eq!(v["model"], "multiconductor");
         assert_eq!(v["name"], "micro");
-        // sourcebus, loadbus, secondary.
-        assert_eq!(v["n_bus"].as_u64().unwrap(), 3);
-        assert_eq!(v["n_line"].as_u64().unwrap(), 1);
+        // sourcebus, loadbus, secondary, and the internal bus behind the
+        // circuit's source impedance. PowerIO reads the Vsource as an EMF on
+        // that bus and a series impedance line to sourcebus.
+        assert_eq!(v["n_bus"].as_u64().unwrap(), 4);
+        assert_eq!(v["n_line"].as_u64().unwrap(), 2);
         assert_eq!(v["n_transformer"].as_u64().unwrap(), 1);
         assert_eq!(v["n_load"].as_u64().unwrap(), 2);
         assert_eq!(v["n_source"].as_u64().unwrap(), 1);
@@ -456,11 +818,16 @@ mod tests {
 
         // The graph carries buses with terminals and edges with endpoints.
         let buses = v["graph"]["buses"].as_array().unwrap();
-        assert_eq!(buses.len(), 3);
+        assert_eq!(buses.len(), 4);
         assert!(buses
             .iter()
             .all(|b| !b["terminals"].as_array().unwrap().is_empty()));
+        let source_bus = buses.iter().find(|b| b["has_source"] == true).unwrap();
+        assert_ne!(source_bus["id"], "sourcebus");
         let edges = v["graph"]["edges"].as_array().unwrap();
+        assert!(edges.iter().any(|e| e["kind"] == "line"
+            && e["from"] == source_bus["id"]
+            && e["to"] == "sourcebus"));
         assert!(edges.iter().any(|e| e["kind"] == "line"));
         assert!(edges.iter().any(|e| e["kind"] == "transformer"));
         // Every edge names two buses that exist in the graph.
@@ -562,6 +929,268 @@ mod tests {
         assert_eq!(v["mc_pf_supported"], false);
         assert!(tellegen::validate_mc_module_json(v["module_json"].as_str().unwrap()).is_err());
         assert!(v["mc_pf_reason"].as_str().unwrap().contains("model"));
+    }
+
+    #[test]
+    fn graph_carries_declared_voltage_limits_and_ratings_only_when_present() {
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).expect("fixture JSON");
+        raw["bus"]["load_bus"]["vpn_min"] = serde_json::json!([207.0, 207.0, 207.0]);
+        raw["bus"]["load_bus"]["vpn_max"] = serde_json::json!([253.0, 253.0, 253.0]);
+        raw["line"]["l1"]["i_max"] = serde_json::json!([200.0, 200.0, 200.0]);
+        let value = parse(&ingest_dist(&raw.to_string(), "bmopf").expect("limits"));
+        let bus = |id: &str| {
+            value["graph"]["buses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|b| b["id"].as_str().unwrap().eq_ignore_ascii_case(id))
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(
+            bus("load_bus")["voltage_limits"]["vpn_min"],
+            serde_json::json!([207.0, 207.0, 207.0])
+        );
+        assert_eq!(bus("load_bus")["voltage_limits"]["vpn_max"][2], 253.0);
+        assert!(bus("src").get("voltage_limits").is_none());
+        let line = value["graph"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["kind"] == "line")
+            .unwrap();
+        assert_eq!(
+            line["rating"]["i_max"],
+            serde_json::json!([200.0, 200.0, 200.0])
+        );
+
+        let plain = parse(&ingest_dist(MICRO_BMOPF, "bmopf").expect("plain"));
+        assert!(plain["graph"]["edges"][0].get("rating").is_none());
+    }
+
+    /// The `voltage_limits` object of one graph bus, or `Null` when it has none.
+    fn bus_limits(value: &Value, id: &str) -> Value {
+        value["graph"]["buses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["id"].as_str().unwrap().eq_ignore_ascii_case(id))
+            .unwrap()
+            .get("voltage_limits")
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    #[test]
+    fn graph_keys_phase_to_ground_bounds_by_the_phase_terminal_they_bound() {
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).expect("fixture JSON");
+        // Uniform bounds read as one PowerIO scalar; on a numbered four-wire bus terminal 4 is the
+        // neutral, so the bounds belong to terminals 1 to 3.
+        raw["bus"]["load_bus"]["v_min"] = serde_json::json!([6800.0, 6800.0, 6800.0]);
+        raw["bus"]["load_bus"]["v_max"] = serde_json::json!([7600.0, 7600.0, 7600.0]);
+        raw["bus"]["src"]["v_min"] = serde_json::json!([6700.0, 6800.0, 6900.0]);
+        raw["bus"]["src"]["v_max"] = serde_json::json!([7500.0, 7600.0, 7700.0]);
+        let value = parse(&ingest_dist(&raw.to_string(), "bmopf").expect("bounds"));
+        let load_bus = bus_limits(&value, "load_bus");
+        assert_eq!(
+            load_bus["v_min_by_terminal"],
+            serde_json::json!({ "1": 6800.0, "2": 6800.0, "3": 6800.0 })
+        );
+        assert_eq!(
+            load_bus["v_max_by_terminal"],
+            serde_json::json!({ "1": 7600.0, "2": 7600.0, "3": 7600.0 })
+        );
+        assert!(load_bus.get("vpn_min").is_none());
+        assert_eq!(
+            bus_limits(&value, "src")["v_min_by_terminal"],
+            serde_json::json!({ "1": 6700.0, "2": 6800.0, "3": 6900.0 })
+        );
+        assert_eq!(
+            bus_limits(&value, "src")["v_max_by_terminal"],
+            serde_json::json!({ "1": 7500.0, "2": 7600.0, "3": 7700.0 })
+        );
+
+        // Declared terminal roles decide which terminals are phases, not the familiar aliases.
+        raw["terminal_conventions"] =
+            serde_json::json!({ "phase": ["2", "3", "4"], "neutral": ["1"], "earth": [] });
+        let value = parse(&ingest_dist(&raw.to_string(), "bmopf").expect("roles"));
+        assert_eq!(
+            bus_limits(&value, "src")["v_min_by_terminal"],
+            serde_json::json!({ "2": 6700.0, "3": 6800.0, "4": 6900.0 })
+        );
+
+        // A vector that does not match the phase terminals has no defined order; it is left out.
+        let mut short: Value = serde_json::from_str(MICRO_BMOPF).expect("fixture JSON");
+        short["bus"]["src"]["v_min"] = serde_json::json!([6700.0, 6800.0]);
+        short["bus"]["src"]["v_max"] = serde_json::json!([7500.0, 7600.0]);
+        let out = ingest_dist(&short.to_string(), "bmopf").expect("short bounds");
+        assert!(bus_limits(&parse(&out), "src").is_null());
+    }
+
+    #[test]
+    fn graph_names_the_phase_pairs_of_non_uniform_phase_to_phase_bounds() {
+        // BMOPF 0.2.0 orders phase-to-phase bounds by the pairs (1,2), (2,3), (3,1) of the phase
+        // terminals; terminal 4 of a numbered four-wire bus is the neutral.
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).expect("fixture JSON");
+        raw["bus"]["load_bus"]["vpp_min"] = serde_json::json!([11800.0, 11900.0, 12000.0]);
+        raw["bus"]["load_bus"]["vpp_max"] = serde_json::json!([13000.0, 13100.0, 13200.0]);
+        let value = parse(&ingest_dist(&raw.to_string(), "bmopf").expect("pairs"));
+        let load_bus = bus_limits(&value, "load_bus");
+        assert_eq!(
+            load_bus["vpp_min"],
+            serde_json::json!([11800.0, 11900.0, 12000.0])
+        );
+        assert_eq!(
+            load_bus["vpp_max"],
+            serde_json::json!([13000.0, 13100.0, 13200.0])
+        );
+        assert_eq!(
+            load_bus["vpp_pairs"],
+            serde_json::json!([["1", "2"], ["2", "3"], ["3", "1"]])
+        );
+        assert!(bus_limits(&value, "src").is_null());
+
+        // The pairs follow the declared terminal roles.
+        raw["terminal_conventions"] =
+            serde_json::json!({ "phase": ["2", "3", "4"], "neutral": ["1"], "earth": [] });
+        let value = parse(&ingest_dist(&raw.to_string(), "bmopf").expect("roles"));
+        assert_eq!(
+            bus_limits(&value, "load_bus")["vpp_pairs"],
+            serde_json::json!([["2", "3"], ["3", "4"], ["4", "2"]])
+        );
+
+        // Two phase terminals have the one pair; the schema orders no more than three.
+        let mut two: Value = serde_json::from_str(MICRO_BMOPF).expect("fixture JSON");
+        two["terminal_conventions"] =
+            serde_json::json!({ "phase": ["1", "2"], "neutral": ["3", "4"], "earth": [] });
+        two["bus"]["load_bus"]["vpp_min"] = serde_json::json!([11800.0]);
+        two["bus"]["load_bus"]["vpp_max"] = serde_json::json!([13000.0]);
+        let value = parse(&ingest_dist(&two.to_string(), "bmopf").expect("two phases"));
+        assert_eq!(
+            bus_limits(&value, "load_bus")["vpp_pairs"],
+            serde_json::json!([["1", "2"]])
+        );
+    }
+
+    #[test]
+    fn graph_carries_sequence_and_neutral_bounds_as_powerio_states_them() {
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).expect("fixture JSON");
+        raw["bus"]["load_bus"]["vneg_max"] = serde_json::json!(144.0);
+        raw["bus"]["load_bus"]["vn_max"] = serde_json::json!(50.0);
+        let value = parse(&ingest_dist(&raw.to_string(), "bmopf").expect("caps"));
+        assert_eq!(
+            bus_limits(&value, "load_bus"),
+            serde_json::json!({ "vneg_max": 144.0, "vn_max": 50.0 })
+        );
+        assert!(bus_limits(&value, "src").is_null());
+    }
+
+    #[test]
+    fn graph_carries_pmd_conductor_to_ground_bounds_in_volts() {
+        // PMD states `vm_lb`/`vm_ub` per conductor in kV; PowerIO keeps the phase conductors' in
+        // volts. Values are exact in binary so the kV-to-volt scaling compares exactly.
+        let mut raw: Value = serde_json::from_str(MICRO_PMD).expect("fixture JSON");
+        raw["bus"]["b1"]["terminals"] = serde_json::json!([1, 2, 3, 4]);
+        raw["bus"]["b1"]["grounded"] = serde_json::json!([4]);
+        raw["bus"]["b1"]["vm_lb"] = serde_json::json!([0.203125, 0.21875, 0.1875, 0.0]);
+        raw["bus"]["b1"]["vm_ub"] = serde_json::json!([0.25, 0.25, 0.25, 0.25]);
+        let value = parse(&ingest_dist(&raw.to_string(), "pmd").expect("pmd bounds"));
+        let limits = bus_limits(&value, "b1");
+        assert_eq!(
+            limits["v_min_by_terminal"],
+            serde_json::json!({ "1": 203.125, "2": 218.75, "3": 187.5 })
+        );
+        assert_eq!(
+            limits["v_max_by_terminal"],
+            serde_json::json!({ "1": 250.0, "2": 250.0, "3": 250.0 })
+        );
+    }
+
+    #[test]
+    fn transformer_ratings_are_stated_per_bus_for_the_whole_transformer() {
+        // A centre-tap transformer projects to three winding-pair edges, two of them between the
+        // same buses and one from the low-voltage bus to itself.
+        let raw =
+            include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_center_tap_loaded.json");
+        let value = parse(&ingest_dist(raw, "bmopf").expect("centre tap"));
+        let edges: Vec<&Value> = value["graph"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"] == "transformer")
+            .collect();
+        assert_eq!(edges.len(), 3);
+        for edge in &edges {
+            assert_eq!(
+                edge["rating"],
+                serde_json::json!({ "s_rating_by_bus": { "hv": 25000.0, "lv": 25000.0 } })
+            );
+        }
+    }
+
+    #[test]
+    fn graph_carries_declared_nominal_voltages_at_windings_and_sources() {
+        let raw =
+            include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_center_tap_loaded.json");
+        let value = parse(&ingest_dist(raw, "bmopf").expect("centre tap"));
+        let nominal = |id: &str| {
+            value["graph"]["buses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|b| b["id"].as_str().unwrap().eq_ignore_ascii_case(id))
+                .unwrap()["nominal_voltage"]
+                .clone()
+        };
+        // Single-phase windings state their own rating; the source has one energised terminal.
+        assert_eq!(nominal("hv"), serde_json::json!(7200.0));
+        assert_eq!(nominal("lv"), serde_json::json!(120.0));
+        assert!(nominal("src").as_f64().unwrap() > 0.0);
+    }
+
+    #[test]
+    fn graph_carries_attachment_connections_and_transformer_windings() {
+        let raw =
+            include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_center_tap_loaded.json");
+        let value = parse(&ingest_dist(raw, "bmopf").expect("centre tap"));
+        let lv = value["graph"]["buses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["id"].as_str().unwrap().eq_ignore_ascii_case("lv"))
+            .unwrap()
+            .clone();
+        let loads: Vec<&Value> = lv["attachments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["kind"] == "load")
+            .collect();
+        assert!(!loads.is_empty());
+        assert!(loads
+            .iter()
+            .all(|l| l["terminals"].as_array().unwrap().len() >= 2));
+        assert!(loads.iter().all(|l| l["connection"].is_string()));
+        let edge = value["graph"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["kind"] == "transformer")
+            .unwrap()
+            .clone();
+        // A centre tap: three windings, two of them on the low-voltage bus.
+        let windings = edge["windings"].as_array().unwrap();
+        assert_eq!(windings.len(), 3);
+        assert_eq!(
+            windings
+                .iter()
+                .filter(|w| w["bus"].as_str().unwrap().eq_ignore_ascii_case("lv"))
+                .count(),
+            2
+        );
+        assert!(windings
+            .iter()
+            .all(|w| w["connection"] == "wye" || w["connection"] == "delta"));
     }
 
     #[test]

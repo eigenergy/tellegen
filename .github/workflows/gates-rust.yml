@@ -43,8 +43,8 @@ jobs:
         with:
           command: check advisories bans licenses sources
 
-      # Mirrors `just epl-guard`. The EPL-2.0 `pounce` backend must not enter a
-      # shipped build.
+      # Mirrors `just epl-guard`. POUNCE stays out of the ordinary wasm module
+      # and native adapters; the website bundles a separate WASI reactor.
       - name: Verify the published POUNCE release pin
         run: python3 scripts/acopf-release.py
 
@@ -105,7 +105,7 @@ jobs:
           github.event_name == 'pull_request' &&
           startsWith(github.head_ref, 'release-plz-') &&
           github.event.pull_request.head.repo.full_name == github.repository
-        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-semver-checks@0.48
           fallback: none

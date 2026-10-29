@@ -1755,6 +1755,24 @@ mod tests {
     }
 
     #[test]
+    fn a_grid_with_an_hvdc_line_opens_solves_and_exports() {
+        // A generated OpenStreetMap grid keeps its HVDC links in service. The
+        // viewer opens it as a DC OPF Study and writes case files from it.
+        let mut net = crate::model::parse_matpower(crate::model::CASE3).expect("parse");
+        let mut line = powerio::Hvdc::new(powerio::BusId(3), powerio::BusId(2));
+        line.pf = 10.0;
+        line.pt = 10.0;
+        net.hvdc_mut().push(line);
+        let study = Study::from_network(&net, Problem::DcOpf).expect("study");
+        assert!(matches!(
+            study.solution().status,
+            crate::api::SolveStatus::Optimal
+        ));
+        let exported = study.export("matpower").expect("export");
+        assert!(exported.text.contains("mpc.dcline"), "{}", exported.text);
+    }
+
+    #[test]
     fn commit_matches_module_solve() {
         // A Study commit is the stateful face of the same driver: the response is
         // byte-identical to the stateless module solve at the same operating point.

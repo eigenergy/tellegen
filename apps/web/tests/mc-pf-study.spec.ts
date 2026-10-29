@@ -10,6 +10,13 @@ test.beforeEach(async ({ page }) => {
 	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 });
 
+/** Open the app and wait until it has hydrated: the prerendered file input exists before hydration
+ * attaches its listener, so a file set earlier is lost. The empty-cases panel renders only after load. */
+async function openApp(page: Page) {
+	await page.goto('/');
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
+}
+
 const typedCase = 'tests/fixtures/mc-pf-browser/public/mc-pf-three-phase.pio.json';
 const loadModelsCase = 'tests/fixtures/mc-pf-browser/public/mc-pf-load-models.bmopf.json';
 
@@ -140,8 +147,7 @@ function expectedLoadPower(spec: LoadModelSpec, ratio: number) {
 
 test('typed distribution case runs inside Studies and survives saved reopen', async ({ page }) => {
 	test.setTimeout(120_000);
-	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await openApp(page);
 	const headerFileInput = page.locator('header input[type="file"][accept*=".dss"]');
 	await expect(headerFileInput).toHaveCount(1);
 	await headerFileInput.setInputFiles(typedCase);
@@ -219,8 +225,8 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	if (!firstSavedValue) throw new Error('first saved distribution option has no value');
 	// Reload before creating the second case: ephemeral case counters restart,
 	// so durable MC snapshot ids must still remain distinct.
-	await page.reload();
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	// Load the app afresh without the saved study's link, which would reopen it by itself.
+	await openApp(page);
 	await expect(page.locator('header input[type="file"][accept*=".dss"]')).toHaveCount(1);
 	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles(typedCase);
 	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible({
@@ -243,8 +249,8 @@ test('typed distribution case runs inside Studies and survives saved reopen', as
 	expect(new Set(savedValues).size).toBe(2);
 	expect(savedValues).toContain(firstSavedValue);
 
-	await page.reload();
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	// Load the app afresh without the saved study's link, which would reopen it by itself.
+	await openApp(page);
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const reopened = page.getByRole('region', { name: 'Study workspace' });
 	const reopenedSaved = page.getByLabel('Saved study');
@@ -259,8 +265,7 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 	page
 }) => {
 	test.setTimeout(120_000);
-	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	await openApp(page);
 	await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const demoStudy = page.getByRole('region', { name: 'Study workspace' });
 	await demoStudy.getByRole('button', { name: 'Load 4-conductor example' }).click();
@@ -273,8 +278,8 @@ test('built-in four-wire demo solves and a three-wire case omits neutral-relativ
 	await demoStudy.getByRole('button', { name: 'Run power flow' }).click();
 	await expect(demoStudy.getByText('Converged', { exact: true })).toBeVisible({ timeout: 60_000 });
 
-	await page.reload();
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
+	// Load the app afresh without the saved study's link, which would reopen it by itself.
+	await openApp(page);
 	const noNeutral = await noNeutralTypedCase();
 	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles({
 		name: 'three-wire-no-neutral.pio.json',
@@ -326,8 +331,7 @@ for (const nominalVoltage of [200, 240]) {
 				delete load[field];
 		}
 
-		await page.goto('/');
-		await expect(page.getByText('no default cases loaded')).toBeVisible();
+		await openApp(page);
 		const headerFileInput = page.locator('header input[type="file"][accept*=".dss"]');
 		await expect(headerFileInput).toHaveCount(1);
 		await headerFileInput.setInputFiles({
@@ -440,8 +444,8 @@ for (const nominalVoltage of [200, 240]) {
 			study.locator('dt').filter({ hasText: 'Passive loss' }).locator('..').locator('dd')
 		).toHaveText(modelLoss);
 
-		await page.reload();
-		await expect(page.getByText('no default cases loaded')).toBeVisible();
+		// Load the app afresh without the saved study's link, which would reopen it by itself.
+		await openApp(page);
 		await page.getByRole('button', { name: 'Studies', exact: true }).click();
 		const reopened = page.getByRole('region', { name: 'Study workspace' });
 		await page.getByLabel('Saved study').selectOption({ index: 1 });
@@ -453,8 +457,8 @@ for (const nominalVoltage of [200, 240]) {
 			reopened.locator('dt').filter({ hasText: 'Passive loss' }).locator('..').locator('dd')
 		).toHaveText(modelLoss);
 
-		await page.reload();
-		await expect(page.getByText('no default cases loaded')).toBeVisible();
+		// Load the app afresh without the saved study's link, which would reopen it by itself.
+		await openApp(page);
 		await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles({
 			name: 'mc-pf-load-models-constant-power.bmopf.json',
 			mimeType: 'application/json',

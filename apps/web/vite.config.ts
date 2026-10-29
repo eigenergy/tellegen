@@ -14,21 +14,31 @@ const experimentalAcOpfAsset = fileURLToPath(
 function experimentalAcOpf(): Plugin {
 	return {
 		name: 'tellegen-experimental-acopf',
-		apply: 'build' as const,
 		buildStart() {
-			if (!process.env.PUBLIC_TELLEGEN_ACOPF_WASM_URL) return;
-			if (!existsSync(experimentalAcOpfAsset)) {
-				this.error('PUBLIC_TELLEGEN_ACOPF_WASM_URL requires `npm run wasm:acopf` first');
+			for (const name of acOpfFiles) {
+				if (!existsSync(join(dirname(experimentalAcOpfAsset), name))) {
+					this.error(`AC OPF asset ${name} is missing; run \`npm run wasm:acopf\` first`);
+				}
 			}
 		},
+		configureServer(server) {
+			server.middlewares.use((req, res, next) => {
+				const name = req.url?.split('?')[0]?.replace(/^\/experimental-acopf\//, '');
+				if (!req.url?.startsWith('/experimental-acopf/') || !acOpfFiles.includes(name ?? ''))
+					return next();
+				res.setHeader(
+					'Content-Type',
+					name!.endsWith('.wasm')
+						? 'application/wasm'
+						: name!.endsWith('.json')
+							? 'application/json'
+							: 'text/plain; charset=utf-8'
+				);
+				res.end(readFileSync(join(dirname(experimentalAcOpfAsset), name!)));
+			});
+		},
 		generateBundle() {
-			if (!process.env.PUBLIC_TELLEGEN_ACOPF_WASM_URL) return;
-			for (const name of [
-				'tellegen_acopf_wasi.wasm',
-				'POUNCE-EPL-2.0.txt',
-				'POUNCE-NOTICE.txt',
-				'POUNCE-SOURCE.json'
-			]) {
+			for (const name of acOpfFiles) {
 				this.emitFile({
 					type: 'asset',
 					fileName: `experimental-acopf/${name}`,
@@ -38,6 +48,13 @@ function experimentalAcOpf(): Plugin {
 		}
 	};
 }
+
+const acOpfFiles = [
+	'tellegen_acopf_wasi.wasm',
+	'POUNCE-EPL-2.0.txt',
+	'POUNCE-NOTICE.txt',
+	'POUNCE-SOURCE.json'
+];
 
 export default defineConfig({
 	plugins: [

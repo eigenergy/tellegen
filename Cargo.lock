@@ -1683,9 +1683,9 @@ dependencies = [
 
 [[package]]
 name = "powerio"
-version = "0.11.6"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c248cd67235f98bafdd2fc575d8ae0cbde1845cb505e4c9c6de0a9d15bbc461"
+checksum = "ea3444b51c48643d07aeae456808f865938a6ad64efb340cb06d27ae47369818"
 dependencies = [
  "num-complex",
  "powerio-core",
@@ -1700,9 +1700,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-core"
-version = "0.11.6"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b9c40c8403e8ec2770f02d4af61290e114d313971aba5868b675c3c93bfbc40"
+checksum = "bdec5b10be5bc73104d85288c9145768c1c5aa3863c4e54ad0f7ef509957238e"
 dependencies = [
  "errno",
  "libc",
@@ -1713,14 +1713,15 @@ dependencies = [
 
 [[package]]
 name = "powerio-dist"
-version = "0.11.6"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12bd6ad1814877fec6ebee338a958f398d29bb1334c5656ba2b8a897ad732c54"
+checksum = "b9b0d9744f77bf41cb10e365fed85071981d539928e241e771c3fc96e4d5c030"
 dependencies = [
  "memchr",
  "num-complex",
  "powerio-core",
  "quick-xml",
+ "regex",
  "schemars",
  "serde",
  "serde_json",
@@ -1730,15 +1731,16 @@ dependencies = [
 
 [[package]]
 name = "powerio-matrix"
-version = "0.11.6"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59145ea129e0cddfca2f8518c97c3b70f31486feccb929db768ec93dd8f3071e"
+checksum = "d60c9be89038672af3223f30970834db78c5b6a1e074edcd9fd816769188b77f"
 dependencies = [
  "faer",
  "num-complex",
  "powerio-core",
  "powerio-dist",
  "powerio-prob",
+ "powerio-synth",
  "powerio-tx",
  "rand",
  "rand_chacha",
@@ -1752,9 +1754,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-prob"
-version = "0.11.6"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88daa842edd21385ade7087d0693f033517a71b7d89c422f4361f7d3b6a12de9"
+checksum = "39604c82c8efa41417e22fe9c66847c79202caa073336de7875be60ee3554b7f"
 dependencies = [
  "powerio-core",
  "powerio-dist",
@@ -1766,10 +1768,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "powerio-tnd"
-version = "0.11.6"
+name = "powerio-synth"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21870b68b08554883197ecb5d849814f0830d1dbfc96999574300a3f8075aafb"
+checksum = "835c44a28fc8451e451a957f4cab5987eed0f5116cddbd46433c9f0c9ae56918"
+dependencies = [
+ "powerio-tx",
+ "rand",
+ "rand_chacha",
+ "serde",
+]
+
+[[package]]
+name = "powerio-tnd"
+version = "0.11.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80638020f24770f66ab0e328f89de5ac25ef40fe7c2a717e6f16613d754bb128"
 dependencies = [
  "num-complex",
  "powerio-core",
@@ -1782,9 +1796,9 @@ dependencies = [
 
 [[package]]
 name = "powerio-tx"
-version = "0.11.6"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7924816e537a4321b6eb11a7a85c97499cacaa618b2c2a972995235830ee2cf8"
+checksum = "18c13c90c501b1473e8ed625bad9d8e2fc73f959cfa6e39ffe5f0c1352ad0576"
 dependencies = [
  "lexical-core",
  "memchr",
@@ -2034,6 +2048,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex"
+version = "1.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a0e75113e14dc5acb068cd0786884f214f1312650a3d36d269f5c4f3cdee8a2"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2085,9 +2111,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
+checksum = "ab508826f74a77ca9d5aba6ff19b522583ee3eaf28a19384ff3d0e5835fadf6e"
 dependencies = [
  "dyn-clone",
  "ref-cast",
@@ -2098,9 +2124,9 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d98c67716b46af2f0b8cf752abc930f6f9aecfbf671ecfb531db8a31dbe4e2ba"
+checksum = "e1c3a92094fa7d61aa124645844facb6b554dfc797136d0f5fd1f890e2bffc69"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2333,7 +2359,7 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tellegen"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "clarabel",
  "faer",
@@ -2374,7 +2400,7 @@ dependencies = [
 
 [[package]]
 name = "tellegen-py"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "powerio",
  "pyo3",
@@ -2486,9 +2512,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.53.3"
+version = "1.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
+checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
 dependencies = [
  "bytes",
  "libc",

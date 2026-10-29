@@ -43,6 +43,8 @@ pub mod objective;
 #[cfg(feature = "sensitivity")]
 pub mod plan;
 mod problem;
+/// Schematic layouts for multiconductor graphs.
+pub mod schematic;
 #[cfg(feature = "sensitivity")]
 mod sens;
 mod solve;

@@ -75,6 +75,14 @@
 				provides the solver, sensitivity, and visualization framework.
 			</li>
 			<li>
+				<a href="https://github.com/jkitchin/pounce" target="_blank" rel="noreferrer">POUNCE</a>
+				0.13.0 provides the experimental nonlinear AC OPF solver under EPL-2.0. The bundled
+				<a href="/experimental-acopf/POUNCE-EPL-2.0.txt">license</a>,
+				<a href="/experimental-acopf/POUNCE-NOTICE.txt">notice</a>, and
+				<a href="/experimental-acopf/POUNCE-SOURCE.json">source manifest</a>
+				include the source archive locations and checksums.
+			</li>
+			<li>
 				{#if PUBLIC_CARTO_BASEMAP_KEY}
 					The basemap is
 					<a href="https://carto.com/" target="_blank" rel="noreferrer">CARTO</a>'s, with data from

@@ -1458,6 +1458,22 @@ pub fn extract_geo(module_json: &str) -> Result<String, JsError> {
     geo::extract_geo_impl(module_json).map_err(jserr)
 }
 
+/// Schematic layout of a multiconductor graph (the `graph` of `ingest_dist_case`): columnar bus
+/// positions, routed branch segments, edge roles and the display forest. `options_json` may be
+/// empty for the defaults (`{"strategy":"tidy","dx":120,"dy":28}`).
+#[wasm_bindgen]
+pub fn mc_schematic_layout(graph_json: &str, options_json: &str) -> Result<String, JsError> {
+    ensure_input_text(graph_json)?;
+    install_panic_hook();
+    let graph: powerio_dist::DistGraph = serde_json::from_str(graph_json).map_err(jserr)?;
+    let options: tellegen::schematic::SchematicOptions = if options_json.trim().is_empty() {
+        Default::default()
+    } else {
+        serde_json::from_str(options_json).map_err(jserr)?
+    };
+    serde_json::to_string(&tellegen::schematic::schematic_layout(&graph, &options)).map_err(jserr)
+}
+
 /// Fill case coordinates from a PowerWorld `.pwd` sibling: substation symbols
 /// project to approximate longitude/latitude and join onto buses through the
 /// `SubNum` extras key. Returns the refreshed `ingest_case` payload plus a

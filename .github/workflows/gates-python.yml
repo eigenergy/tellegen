@@ -9,7 +9,58 @@ on:
 permissions: {}
 
 jobs:
+  # Which Python jobs this run needs. Runners are shared with every repository
+  # in the organisation, and macOS runners are few, so a pull request can wait
+  # hours for jobs that cannot fail on its change. A push to main runs every
+  # job. A pull request runs this gate when it changes what goes into the wheel
+  # or what lints, type-checks or tests it, and builds the macOS wheels only
+  # when it changes the wheel itself; a change to this file alone does not
+  # count, because main builds every leg once it merges.
+  scope:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      python: ${{ steps.scope.outputs.python }}
+      legs: ${{ steps.scope.outputs.legs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull request checks out its merge commit; the first parent is the
+          # base it merges into.
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Choose the jobs
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          python=true
+          macos=true
+          if [ "$EVENT" = pull_request ]; then
+            # Its own command, so a failed diff fails the job instead of
+            # reading as "nothing changed".
+            changed=$(git diff --name-only HEAD^1 HEAD)
+            # What goes into the wheel, and the case its tests solve.
+            wheel='^(crates/|python/|Cargo\.(toml|lock)$|pyproject\.toml$|rust-toolchain\.toml$|docs/evidence/studies/case3\.m$)'
+            # `ruff check .` lints every Python file in the repository.
+            gate='\.py$|^(ruff\.toml|mypy\.ini|\.github/workflows/gates-python\.yml)$'
+            grep -qE "$wheel" <<<"$changed" || macos=false
+            grep -qE "$wheel|$gate" <<<"$changed" || python=false
+          fi
+          echo "python=$python" >> "$GITHUB_OUTPUT"
+          jq -nr --argjson macos "$macos" '"legs=" + ([
+            {os: "ubuntu-latest", target: "x86_64", native: true},
+            {os: "ubuntu-latest", target: "aarch64", native: false},
+            {os: "macos-14", target: "aarch64", native: true},
+            {os: "macos-14", target: "x86_64", native: false},
+            {os: "windows-latest", target: "x64", native: true}
+          ] | map(select($macos or (.os | startswith("macos") | not))) | tojson)' >> "$GITHUB_OUTPUT"
+
   python:
+    needs: scope
+    if: needs.scope.outputs.python == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -125,18 +176,15 @@ jobs:
   # turn "should" into evidence.
   wheels:
     name: wheel (${{ matrix.leg.os }} ${{ matrix.leg.target }})
+    needs: scope
+    if: needs.scope.outputs.python == 'true'
     runs-on: ${{ matrix.leg.os }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        leg:
-          - { os: ubuntu-latest, target: x86_64, native: true }
-          - { os: ubuntu-latest, target: aarch64, native: false }
-          - { os: macos-14, target: aarch64, native: true }
-          - { os: macos-14, target: x86_64, native: false }
-          - { os: windows-latest, target: x64, native: true }
+        leg: ${{ fromJSON(needs.scope.outputs.legs) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -186,6 +234,8 @@ jobs:
   # crates/tellegen/tests/data — whose BSD-3 fixtures are an open licensing
   # question before anything is published (see the design doc, Q7).
   sdist:
+    needs: scope
+    if: needs.scope.outputs.python == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -80,6 +80,7 @@ jobs:
           # A public browser key (see the Dockerfile); unset builds without one.
           build-args: |
             PUBLIC_CARTO_BASEMAP_KEY=${{ vars.CARTO_BASEMAP_KEY }}
+            TELLEGEN_SOURCE_REVISION=${{ steps.source.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test image
@@ -134,7 +135,7 @@ jobs:
           fi
       - name: Log in to GHCR
         if: steps.fresh.outputs.current == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

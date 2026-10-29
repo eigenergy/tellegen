@@ -1969,7 +1969,8 @@ mod tests {
         let catalogue: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(catalogue[0]["model"], "multiconductor");
         assert_eq!(catalogue[0]["name"], "Hosted feeder");
-        assert_eq!(catalogue[0]["n_bus"], 2);
+        // PowerIO 0.11.7 adds an internal EMF bus for the finite source impedance.
+        assert_eq!(catalogue[0]["n_bus"], 3);
         let (status, _, text) =
             get_raw_with_state(Arc::clone(&state), "/api/cases/feeder/case", &next_client()).await;
         assert_eq!(status, StatusCode::OK);

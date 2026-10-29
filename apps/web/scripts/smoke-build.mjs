@@ -53,6 +53,25 @@ if (htmlIds.size !== 1)
 	fail(`expected one SvelteKit bootstrap id, found ${[...htmlIds].join(', ')}`);
 const [bootstrapId] = htmlIds;
 
+// Every website build must ship the worker's solver and its source notices.
+const acOpfDir = join(buildDir, 'experimental-acopf');
+for (const name of [
+	'tellegen_acopf_wasi.wasm',
+	'POUNCE-EPL-2.0.txt',
+	'POUNCE-NOTICE.txt',
+	'POUNCE-SOURCE.json'
+]) {
+	const path = join(acOpfDir, name);
+	if (!existsSync(path) || statSync(path).size === 0)
+		fail(`AC OPF asset is missing or empty: ${name}`);
+}
+const acOpfBytes = readFileSync(join(acOpfDir, 'tellegen_acopf_wasi.wasm'));
+if (!acOpfBytes.subarray(0, 8).equals(Buffer.from([0, 97, 115, 109, 1, 0, 0, 0])))
+	fail('AC OPF asset is not a WebAssembly module');
+const acOpfSource = JSON.parse(read(join(acOpfDir, 'POUNCE-SOURCE.json')));
+if (createHash('sha256').update(acOpfBytes).digest('hex') !== acOpfSource.artifact_sha256)
+	fail('AC OPF asset does not match its source manifest');
+
 for (const file of walk(appDir).filter((path) => path.endsWith('.js'))) {
 	for (const id of svelteKitIds(read(file))) {
 		if (id !== bootstrapId) fail(`runtime chunk references stale SvelteKit id ${id}`);

@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -45,15 +46,21 @@ def main():
     args = parser.parse_args()
     version, packages = release_packages()
     if args.asset:
-        revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-        dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))
+        revision = os.environ.get('TELLEGEN_SOURCE_REVISION', '').strip()
+        if revision and not re.fullmatch(r'[0-9a-f]{40}', revision):
+            raise SystemExit('TELLEGEN_SOURCE_REVISION must be a full Git commit SHA')
+        dirty = None
+        if (ROOT / '.git').exists():
+            revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+            dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))
         info = {
             'development_only': True,
             'solver': 'POUNCE',
             'version': version,
             'license': 'EPL-2.0',
             'upstream_source': f'https://github.com/jkitchin/pounce/tree/v{version}',
-            'tellegen_source': f'https://github.com/eigenergy/tellegen/tree/{revision}',
+            'tellegen_source': (f'https://github.com/eigenergy/tellegen/tree/{revision}'
+                                if revision else 'https://github.com/eigenergy/tellegen'),
             'tellegen_worktree_dirty': dirty,
             'artifact_sha256': digest(args.asset),
             'artifact_bytes': args.asset.stat().st_size,

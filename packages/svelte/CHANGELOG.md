@@ -1,5 +1,90 @@
 # @tellegen/svelte
 
+## 0.4.4
+
+### Patch Changes
+
+- [#194](https://github.com/eigenergy/tellegen/pull/194) [`65dd440`](https://github.com/eigenergy/tellegen/commit/65dd4403665c2682850175ef75f3dcbcfa86e4b2) Thanks [@samtalki](https://github.com/samtalki)! - Add an opt-in, capability-gated browser AC OPF client backed by a separate
+  WASI worker, with hard worker cancellation and no main-thread fallback.
+
+- [#228](https://github.com/eigenergy/tellegen/pull/228) [`20c0f73`](https://github.com/eigenergy/tellegen/commit/20c0f7348482106f286818ee3ecf4c0d50b2e17d) Thanks [@samtalki](https://github.com/samtalki)! - Multiconductor graphs carry declared voltage limits and ratings, and the Studies
+  view gains an operating-point overview.
+
+  In `@tellegen/engine`, `DistGraphBus.voltage_limits` holds the model's declared
+  phase–neutral and phase–phase voltage bounds in volts, and `DistGraphEdge.rating`
+  holds per-conductor ampacity (`i_max`) or, for a transformer, its largest winding
+  rating at each bus it connects (`s_rating_by_bus`), the same on every winding-pair
+  edge. Both are present only when the model declares them.
+
+  In `@tellegen/svelte`, `McWorkbench` summarises a multiconductor power-flow result:
+  violations, losses, voltage ranges per declared reference, maximum loading and
+  maximum unbalance; a ranked issue list that selects the bus or branch; search
+  over buses and branches; per-phase voltage bars against declared limits and
+  per-conductor currents at both ends; sortable bus and branch tables; and CSV export. Cases
+  larger than 25,000 buses compute the overview on request. Setting
+  `MulticonductorCase.schematic` makes `TellegenMap` show the case as a deck.gl
+  schematic or at its source positions, with an animated switch between them,
+  result colouring, the shared selection and PNG/SVG export. `overviewResult` holds
+  the operating point the overview and schematic share. The schematic layout runs in
+  the engine: `mcSchematicLayout` in `@tellegen/engine` returns tidy or leaf-order
+  geometry and the display forest, reserving room below each bus for its attached
+  equipment. The schematic draws transformer, switch (open or closed) and attachment
+  symbols (load, generator, inverter-based resource, source, shunt) with a legend.
+  Lines show their conductors at close zoom; buses are named with short ids; parts not
+  energised from any source are drawn faint; and outside selections fly into view.
+  The schematic can be walked bus by bus from the keyboard, with a spoken description.
+  Solved P/Q and power-flow arrows show at close zoom, hover is linked across the
+  schematic and tables, and each LV network (galvanic zone) is outlined (on geographic
+  positions, as a corridor along its lines) and tinted by its worst state, with a summary tag. MV lines draw heavier than LV, and LV
+  detail fades when zoomed out. Sources, generators, large IBRs and transformers stay
+  visible as fixed-size landmarks, placed by priority. Geographic positions draw over the main
+  map's basemap, which fades in and out with the layout switch. The diagram opens on the case's own
+  positions and switches to the schematic from there. Branches drawn along the same route fan
+  apart on hover, with a card to pick between them, and buses at the same point spread
+  apart the same way. The schematic can be downloaded as a PowerIO
+  diagram layer, follows a case's own routes in source positions, and a selected
+  branch gets a multi-wire view of its conductors. Unbalance is the voltage
+  unbalance factor from terminal phasors, shown beside the magnitude spread.
+  `controller.multiFullResult`
+  reads the full operating point from a stored result or the live session, and
+  `TellegenShell` keeps `overviewResult` current for the active case
+  (`controller.followOverview`, `readOverview` and `overviewOnRequest`). A
+  multi-winding transformer counts once in losses and issues, and its loading is
+  judged per connected bus. Graph buses carry `nominal_voltage`, the declared rating
+  of a winding or source there; the diagram colours lines by voltage level, and a
+  hover shows the feeder and network of what it is over, with an optional path back
+  to the source. Graph buses also carry `attachments` (each attachment's terminals in
+  its own order and its connection) and transformer edges `windings` (bus, wye or
+  delta, terminals, rating). The diagram draws each transformer once with its winding
+  connections or centre tap, and each load or shunt with its conductors and, closest
+  in, its terminals. The
+  renderer-independent logic lives in `src/lib/diagram`, ported from the diagram
+  projection draft ([#177](https://github.com/eigenergy/tellegen/issues/177)).
+
+- [#229](https://github.com/eigenergy/tellegen/pull/229) [`feb9cb0`](https://github.com/eigenergy/tellegen/commit/feb9cb0a9f991479ab5888a0ac83e3548268fc33) Thanks [@samtalki](https://github.com/samtalki)! - The multiconductor overview ranks phase–ground voltages against declared
+  phase-to-ground bounds, alongside the phase–neutral and phase–phase bands. Each
+  declared reference gets its own pairs (`a–ground` and so on) in the issues, the
+  voltage ranges, the phase bars, value labels, tables and CSV export; `BusLimits`
+  holds one entry per reference. Non-uniform phase–phase bounds are ranked per pair,
+  in the pair order the engine names. A case that declares no voltage limits or ratings
+  says so plainly, and one whose limits the overview does not rank says that instead.
+
+  The overview and the schematic share one result snapshot. `MulticonductorCase`
+  derives `overviewSnapshot` from `overviewResult` once per operating point, and
+  `overviewInputs` and `overviewSearch` once per graph. `McWorkbench` takes
+  `snapshot`, `inputs` and `search` in place of `result`.
+
+- [#194](https://github.com/eigenergy/tellegen/pull/194) [`c721344`](https://github.com/eigenergy/tellegen/commit/c7213444e5c6e9a904a9db73e3195c755b05d875) Thanks [@samtalki](https://github.com/samtalki)! - Expose AC OPF recovery diagnostics from the POUNCE 0.13.0 worker and show the
+  total iteration count, including retries, in the solve card. Mark recovered
+  solves while preserving support for responses without recovery diagnostics.
+
+- [#225](https://github.com/eigenergy/tellegen/pull/225) [`12b79b5`](https://github.com/eigenergy/tellegen/commit/12b79b56a8e509aae12dbbbfa1c0375c2745b008) Thanks [@samtalki](https://github.com/samtalki)! - The multiconductor map hands its transformer symbol to deck.gl as a prepacked
+  icon atlas, so nothing is fetched. It was a `data:` URL that deck.gl fetched,
+  and a Content Security Policy whose `connect-src` leaves out `data:` blocked it,
+  so the map drew without symbols.
+- Updated dependencies [[`1fbc8f1`](https://github.com/eigenergy/tellegen/commit/1fbc8f1ee9f432aa9ee5bb390281b67af16f21ed), [`65dd440`](https://github.com/eigenergy/tellegen/commit/65dd4403665c2682850175ef75f3dcbcfa86e4b2), [`a54557f`](https://github.com/eigenergy/tellegen/commit/a54557f23d755ec77814f74e0dcca5d09ff11a82), [`d768cb2`](https://github.com/eigenergy/tellegen/commit/d768cb2a96f0fbd70b93169b9f7b50af3176e332), [`5bd83ed`](https://github.com/eigenergy/tellegen/commit/5bd83ed4ccd79e36290aef146702b3ca398b8d18), [`20c0f73`](https://github.com/eigenergy/tellegen/commit/20c0f7348482106f286818ee3ecf4c0d50b2e17d), [`21b8892`](https://github.com/eigenergy/tellegen/commit/21b8892712aa5995e78d2bb5ca01b362016e8c9b), [`feb9cb0`](https://github.com/eigenergy/tellegen/commit/feb9cb0a9f991479ab5888a0ac83e3548268fc33), [`c721344`](https://github.com/eigenergy/tellegen/commit/c7213444e5c6e9a904a9db73e3195c755b05d875)]:
+  - @tellegen/engine@0.4.3
+
 ## 0.4.3
 
 ### Patch Changes

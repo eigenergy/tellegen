@@ -28,6 +28,7 @@ export type EngineRequest =
   | { op: "apply_geo"; module_json: string; layer: string }
   | { op: "apply_layout"; module_json: string; coords: string; kind: string }
   | { op: "extract_geo"; module_json: string }
+  | { op: "mc_schematic_layout"; graph_json: string; options_json: string }
   | { op: "apply_display_geo"; module_json: string; bytes: Uint8Array }
   | { op: "capabilities" }
   | { op: "solve_module"; module_json: string; request: string }
@@ -218,6 +219,8 @@ export function runRequest(
       return mod.apply_layout(req.module_json, req.coords, req.kind);
     case "extract_geo":
       return mod.extract_geo(req.module_json);
+    case "mc_schematic_layout":
+      return mod.mc_schematic_layout(req.graph_json, req.options_json);
     case "apply_display_geo":
       return mod.apply_display_geo(req.module_json, req.bytes);
     case "capabilities":

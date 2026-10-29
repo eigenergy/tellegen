@@ -11,13 +11,15 @@ dependencies_update = false
 
 [changelog]
 protect_breaking_commits = true
-# Skip merge commits: their changes arrive with the commits they merge, which
-# have entries of their own. Setting `commit_parsers` replaces release-plz's
+# Merge commits are not skipped. release-plz follows the package's history one
+# commit at a time, and when pull request branches take main by merging it,
+# every commit it reaches can be a merge. Skipping them then leaves a version
+# bump with an empty changelog, which the crate release workflow rejects. The
+# generated entries are a draft: the changelog is curated on the release pull
+# request before it merges. Setting `commit_parsers` replaces release-plz's
 # defaults rather than adding to them, so its Keep a Changelog groups are
-# restated after the skip; a lone catch-all would file every `feat:` under
-# Other.
+# restated; a lone catch-all would file every `feat:` under Other.
 commit_parsers = [
-  { message = "^Merge ", skip = true },
   { message = "^feat", group = "added" },
   { message = "^changed", group = "changed" },
   { message = "^deprecated", group = "deprecated" },

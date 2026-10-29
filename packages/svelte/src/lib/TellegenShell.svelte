@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import AppFooter from './components/AppFooter.svelte';
 	import NotificationCenter from './components/NotificationCenter.svelte';
 	import AppHeader from './components/AppHeader.svelte';
@@ -18,6 +18,14 @@
 	const config = getUiConfig();
 
 	let dragDepth = 0;
+
+	// The overview and the diagram read the active case's whole operating point once per solve.
+	$effect(() => {
+		const c = app.activeMulti;
+		void c?.result?.solve_count;
+		void c?.mcFullResult;
+		return untrack(() => ctrl.followOverview(c));
+	});
 
 	// ShellEnvironment drops the affordance when no fine pointer is attached;
 	// forget any drag that was in flight so the next one counts from zero.

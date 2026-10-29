@@ -22,9 +22,8 @@
 		type SensitivityDomain
 	} from './colors.js';
 	import {
+		applyBasemapTuning,
 		attachBasemapFallback,
-		isOpenFreeMapStyle,
-		openFreeMapEdits,
 		resolveBasemap,
 		type BasemapFallbackReason,
 		type BasemapStyle,
@@ -61,6 +60,7 @@
 	import { getPanelLayout } from './panels.svelte.js';
 	import type { RGBA } from './colors.js';
 	import DiagramCanvas from './components/DiagramCanvas.svelte';
+	import SchematicCanvas from './components/SchematicCanvas.svelte';
 
 	const DEFAULT_CAMERA: CameraSnapshot = { center: [-85, 36], zoom: 4.5, bearing: 0, pitch: 0 };
 
@@ -152,6 +152,24 @@
 	const diagramNetwork = $derived(
 		multiNetwork ?? (displayedNetwork?.coordinate_space === 'diagram' ? displayedNetwork : null)
 	);
+	/** A multiconductor case shown as a schematic replaces both the map and the diagram canvas. */
+	const schematicCase = $derived(
+		!app.studyView && app.activeMulti?.schematic && app.activeMulti.graph ? app.activeMulti : null
+	);
+	// When a case closes its own diagram (Close, Show map), the map continues from the diagram's
+	// geographic view. Switching to another case does not: the map frames the new case instead.
+	let shownSchematic: typeof schematicCase = null;
+	$effect(() => {
+		const now = schematicCase;
+		const before = shownSchematic;
+		shownSchematic = now;
+		untrack(() => {
+			if (before && !now && app.activeMulti === before && !before.schematic && before.lastGeoView) {
+				app.camera = before.lastGeoView;
+				app.cameraHandoff = true;
+			}
+		});
+	});
 	const diagramCaseId = $derived(
 		app.studyView?.caseId ?? diagramMulti?.id ?? diagramCase?.id ?? 'diagram'
 	);
@@ -191,6 +209,11 @@
 	const basemapPrimaryProvider = $derived(basemap.primaryProvider);
 	const basemapFallbackProvider = $derived(basemap.fallbackProvider);
 	const palette = $derived(MAP_PALETTE[theme]);
+	/** The diagram draws on light paper, so its background map is the light basemap whatever the
+	 * map's theme; a host's own style is used as given. */
+	const diagramBasemap = $derived(
+		resolveBasemap({ mapStyle, fallbackMapStyle, theme: 'light', hideBasemapLabels, cartoApiKey })
+	);
 	// Set once a map has existed in this component instance: a rebuild (context
 	// loss or basemap change) restores the camera instead of reframing.
 	let hadMap = false;
@@ -879,23 +902,13 @@
 				// shows every layer again, so both are re-applied on each load.
 				const applyStyleExtras = () => {
 					m.setProjection({ type: untrack(() => projection) });
-					const style = m.getStyle();
-					if (spec.hideLabels) {
-						for (const layer of style.layers) {
-							if (layer.type === 'symbol') m.setLayoutProperty(layer.id, 'visibility', 'none');
-						}
-					}
 					// OpenFreeMap renders as the primary or as the fallback; either
 					// way it is tuned towards CARTO's quieter look.
-					if (!isOpenFreeMapStyle(style)) return;
-					const edits = openFreeMapEdits(
-						style,
+					applyBasemapTuning(
+						m,
+						spec,
 						untrack(() => theme)
 					);
-					for (const edit of edits) {
-						if (edit.kind === 'paint') m.setPaintProperty(edit.layer, edit.property, edit.value);
-						else m.setLayerZoomRange(edit.layer, edit.minzoom, edit.maxzoom);
-					}
 				};
 				m.on('style.load', applyStyleExtras);
 				const detachFallback = attachBasemapFallback(m, spec, {
@@ -1008,12 +1021,16 @@
 					overlay = null;
 				};
 				detachReady = onMapReady?.(m, o);
+				// A view closing onto this map (the diagram, from geographic positions) hands it its
+				// camera to continue from.
+				const handedOff = app.cameraHandoff;
+				app.cameraHandoff = false;
 				// Frame the active grid once the map is ready. The initial frame request
 				// (from the case load) can fire before the async map import finishes and
 				// be lost; re-issuing it here ensures the first view is the active case,
 				// not the default world view. A rebuilt map opens at the default view
 				// too, so it restores the camera the last map saved.
-				if (restoreCamera && app.camera) m.jumpTo(app.camera);
+				if ((restoreCamera || handedOff) && app.camera) m.jumpTo(app.camera);
 				else if (app.cameraSeq === handledCameraSeq)
 					app.requestFrame(app.activeCaseId ?? app.activeLocalId ?? 'all');
 				if (mapGen > 0) {
@@ -1463,7 +1480,7 @@
 	$effect(() => {
 		const seq = app.cameraSeq;
 		const snapshot = app.cameraRequest;
-		if (diagramNetwork || !map || !snapshot || seq === handledCameraSeq) return;
+		if (diagramNetwork || schematicCase || !map || !snapshot || seq === handledCameraSeq) return;
 		handledCameraSeq = seq;
 		handledFrameSeq = app.frameSeq;
 		map.jumpTo(snapshot);
@@ -1475,7 +1492,7 @@
 	// until its cue exists; anything unframeable settles immediately.
 	$effect(() => {
 		const seq = app.frameSeq;
-		if (diagramNetwork || !map || seq === handledFrameSeq) return;
+		if (diagramNetwork || schematicCase || !map || seq === handledFrameSeq) return;
 		const m = map;
 		const target = app.frameTarget;
 		const settle = () => app.settleFrame();
@@ -1505,7 +1522,23 @@
 	});
 </script>
 
-{#if diagramNetwork}
+{#if schematicCase}
+	<!-- One canvas per graph: its layouts, camera and geometry belong to that graph, so another
+	     case, or the same case with coordinates attached, starts afresh. -->
+	{#key schematicCase.graph}
+		<SchematicCanvas
+			mc={schematicCase}
+			onselectbus={(id) => {
+				if (id !== schematicCase.selectedBusId) onmultibusclick(schematicCase.id, id);
+			}}
+			onselectedge={(id) => {
+				if (id !== schematicCase.selectedEdgeId) onmultiedgeclick?.(schematicCase.id, id);
+			}}
+			onclose={() => (schematicCase.schematic = false)}
+			basemap={diagramBasemap}
+		/>
+	{/key}
+{:else if diagramNetwork}
 	<DiagramCanvas
 		network={diagramNetwork}
 		multiconductor={diagramMulti}

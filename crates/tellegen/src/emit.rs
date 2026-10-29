@@ -68,13 +68,15 @@ pub fn emit_dc_opf_solution(
     let mut bus_marginal = economic_outputs.then(|| vec![f64::NAN; n_source_buses]);
     let marginal = economic_outputs.then(|| sol.nodal_marginal_values(base));
     // Net active injection per dense bus: generation minus served demand
-    // minus the constant shunt withdrawal, the DC balance restated.
+    // minus the constant shunt withdrawal, plus the fixed HVDC injection, the
+    // DC balance restated.
     let mut injection = vec![0.0f64; dc.n];
     for (generator, &bus) in dc.gen_bus.iter().enumerate() {
         injection[bus] += sol.pg[generator];
     }
     for (dense, net_injection) in injection.iter_mut().enumerate() {
-        *net_injection -= (dc.demand[dense] - sol.psh[dense]) + dc.shunt_conductance[dense];
+        *net_injection -= (dc.demand[dense] - sol.psh[dense]) + dc.shunt_conductance[dense]
+            - dc.hvdc_injection[dense];
     }
     for dense in 0..dc.n {
         let Some(row) = dc.bus_source_rows[dense] else {

@@ -153,7 +153,8 @@ lockfile. Merge it to run the gates and publish. Tags take the form
 `@tellegen/<name>@X.Y.Z`.
 
 The workflow selects version or publish mode before it requests privileged
-permissions. Versioning runs without the GitHub App, validates an exact output
+permissions. Only publish mode runs the Rust and JavaScript gates; version mode
+refreshes the pull request, whose CI runs them. Versioning runs without the GitHub App, validates an exact output
 allowlist, and passes a SHA-256-verified patch to a fresh runner. That runner
 revalidates and commits the patch before minting the App token; only `git` and
 `gh` run afterward. Publishing builds immutable tarballs in an unprivileged
@@ -218,17 +219,20 @@ Each surface keeps its own generated changelog:
 `CHANGELOG.md` is the curated view across all four and the only record for
 releases before the split.
 
-release-plz writes the crate changelog from commit messages. The
-`commit_parsers` in `release-plz.toml` skip merge commits, whose changes
-arrive with the commits they merge, and then restate release-plz's default
-groups, because setting the list replaces the defaults.
+release-plz writes a draft crate changelog from commit messages, which is
+curated on the release pull request before it merges. The `commit_parsers` in
+`release-plz.toml` keep merge commits: when pull request branches take `main`
+by merging it, every commit release-plz reaches can be a merge, and skipping
+them leaves a version bump with no changelog, which the crate release rejects.
+The parsers restate release-plz's default groups, because setting the list
+replaces the defaults.
 
 ## CI Gates
 
 `.github/workflows/gates-rust.yml` and `.github/workflows/gates-js.yml` define
 what green means. CI calls both on every pull request. The crate release calls
-the Rust gates, and the npm release calls both. Add a gate to those files, not
-to a caller.
+the Rust gates, and the npm release calls both before it publishes. Add a gate
+to those files, not to a caller.
 
 The Rust gates are `cargo fmt --check`, clippy with warnings denied on the
 shipping crates, `cargo-deny`, the EPL guard, the workspace tests, the engine's

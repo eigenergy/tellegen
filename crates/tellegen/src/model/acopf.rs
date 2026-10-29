@@ -30,7 +30,9 @@ use powerio_matrix::{
 use powerio_prob::AcOpfInstance;
 use sha2::{Digest, Sha256};
 
-use super::{reject_unsupported_active_elements, validate_canonical_identity, PiecewiseCost};
+use super::{
+    reject_unsupported_active_elements, validate_canonical_identity, HvdcLines, PiecewiseCost,
+};
 
 const INF: f64 = 1.0e19;
 const FORMULATION_TAG: &[u8] = b"tellegen/acopf/polar-v2";
@@ -508,7 +510,7 @@ fn validate_supported(instance: &AcOpfInstance) -> Result<(), String> {
         ));
     }
 
-    reject_unsupported_active_elements(network)
+    reject_unsupported_active_elements(network, HvdcLines::Reject)
 }
 
 fn validate_bounds(name: &str, lower: f64, upper: f64) -> Result<(), String> {

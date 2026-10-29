@@ -1,0 +1,324 @@
+{
+ "_comment": "A display forest both the engine (schematic.rs) and the browser (display-tree.ts) must reproduce exactly: two sources, a loop, parallel edges, a self-loop, an open switch, an edge to an unknown bus, ids that differ in case, and buses no source reaches.",
+ "graph": {
+  "buses": [
+   {
+    "id": "S1",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": true
+   },
+   {
+    "id": "a",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": false
+   },
+   {
+    "id": "B",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": false
+   },
+   {
+    "id": "c",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": false
+   },
+   {
+    "id": "D",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": false
+   },
+   {
+    "id": "S2",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": true
+   },
+   {
+    "id": "e",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": false
+   },
+   {
+    "id": "F",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": false
+   },
+   {
+    "id": "Island1",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": false
+   },
+   {
+    "id": "island2",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": false
+   },
+   {
+    "id": "G",
+    "terminals": [
+     "1",
+     "2",
+     "3",
+     "n"
+    ],
+    "grounded": [],
+    "load_kw": 0.0,
+    "gen_kw": 0.0,
+    "has_source": false
+   }
+  ],
+  "edges": [
+   {
+    "kind": "line",
+    "id": "l1",
+    "from": "S1",
+    "to": "A",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "l2",
+    "from": "a",
+    "to": "B",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "l3",
+    "from": "B",
+    "to": "c",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "l4",
+    "from": "c",
+    "to": "a",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "l5",
+    "from": "c",
+    "to": "D",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "l5b",
+    "from": "c",
+    "to": "D",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "switch",
+    "id": "sw1",
+    "from": "D",
+    "to": "E",
+    "conductors": [],
+    "closed": false,
+    "n_phases": 3
+   },
+   {
+    "kind": "transformer",
+    "id": "t1",
+    "from": "S2",
+    "to": "e",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "l6",
+    "from": "E",
+    "to": "f",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "l7",
+    "from": "F",
+    "to": "d",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "self",
+    "from": "F",
+    "to": "f",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "ghost",
+    "from": "F",
+    "to": "nowhere",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "l8",
+    "from": "Island1",
+    "to": "island2",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   },
+   {
+    "kind": "line",
+    "id": "l9",
+    "from": "G",
+    "to": "G",
+    "conductors": [],
+    "closed": true,
+    "n_phases": 3
+   }
+  ]
+ },
+ "forest": {
+  "parent": [
+   0,
+   0,
+   1,
+   1,
+   3,
+   6,
+   7,
+   4,
+   8,
+   8,
+   10
+  ],
+  "parent_edge": [
+   -1,
+   0,
+   1,
+   3,
+   4,
+   7,
+   8,
+   9,
+   -1,
+   12,
+   -1
+  ],
+  "depth": [
+   0,
+   1,
+   2,
+   2,
+   3,
+   6,
+   5,
+   4,
+   0,
+   1,
+   0
+  ],
+  "roots": [
+   0,
+   8,
+   10
+  ]
+ }
+}

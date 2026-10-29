@@ -101,6 +101,8 @@ test('the multiconductor map draws transformer symbols under the CSP', async ({ 
 		route.fulfill({ json: blankStyle })
 	);
 	await page.goto('/');
+	// The input exists before hydration attaches its listener; a file set earlier is lost.
+	await expect(page.getByText('no default cases loaded')).toBeVisible();
 	await page.locator('input[type=file]').setInputFiles([
 		{ name: 'xfmr.json', mimeType: 'application/json', buffer: await readFile(fixture) },
 		{ name: 'xfmr.geojson', mimeType: 'application/json', buffer: Buffer.from(coordinates) }

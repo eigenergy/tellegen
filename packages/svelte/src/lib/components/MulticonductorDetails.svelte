@@ -272,6 +272,13 @@
 		</span>
 	</div>
 
+	{#if mc.graph}<button
+			class="reset"
+			aria-pressed={mc.schematic}
+			title="Symbols and the engine's schematic; results once solved"
+			onclick={() => (mc.schematic = !mc.schematic)}
+			>{mc.schematic ? 'Show map' : 'Show diagram'}</button
+		>{/if}
 	<button class="reset" onclick={() => app.requestFrame(mc.id)}>Fit case</button>
 	<button class="reset" onclick={() => ctrl.removeMultiCase(mc)}>Remove</button>
 {/if}

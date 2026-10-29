@@ -104,11 +104,10 @@ impl DcPfFormulation for Dc {
             triplets.push((r, r, 1.0));
         }
         // The caller's injection is generation minus load. Constant shunt and
-        // phase shift withdrawals sit on the other side of the Laplacian.
-        let phase = dc.phase_withdrawal();
-        let mut rhs: Vec<f64> = (0..n)
-            .map(|i| injection[i] - dc.shunt_conductance[i] - phase[i])
-            .collect();
+        // phase shift withdrawals, less the fixed HVDC injection, sit on the
+        // other side of the Laplacian.
+        let network = dc.network_withdrawal();
+        let mut rhs: Vec<f64> = (0..n).map(|i| injection[i] - network[i]).collect();
         for &r in &dc.ref_buses {
             rhs[r] = 0.0;
         }
@@ -118,7 +117,7 @@ impl DcPfFormulation for Dc {
 
 /// Read the solved angles back into branch flows and the recovered slack
 /// injections. Flows use the same affine definition as the OPF; each slack
-/// injection is `(B theta + shunt + phase_shift)[ref]`.
+/// injection is `(B theta + shunt + phase_shift - hvdc)[ref]`.
 fn read_dc_pf(dc: &DcNetwork, theta: &[f64]) -> DcPfSolution {
     let f: Vec<f64> = (0..dc.m)
         .map(|e| {
@@ -126,10 +125,7 @@ fn read_dc_pf(dc: &DcNetwork, theta: &[f64]) -> DcPfSolution {
             w * (theta[dc.br_from[e]] - theta[dc.br_to[e]]) + dc.current_flow_offset(e)
         })
         .collect();
-    let phase = dc.phase_withdrawal();
-    let mut injection: Vec<f64> = (0..dc.n)
-        .map(|i| dc.shunt_conductance[i] + phase[i])
-        .collect();
+    let mut injection = dc.network_withdrawal();
     for (row, col, v) in dc.susceptance_coo() {
         injection[row] += v * theta[col];
     }

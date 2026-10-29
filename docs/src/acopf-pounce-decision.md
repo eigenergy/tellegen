@@ -45,7 +45,7 @@ remain in place.
 The opt-in build now places `POUNCE-EPL-2.0.txt`, `POUNCE-NOTICE.txt` and
 `POUNCE-SOURCE.json` beside the WASM asset. The manifest records its SHA-256,
 size, lockfile hash, Tellegen revision/dirty state, and all 14 POUNCE source
-archive URLs and checksums. Only opt-in app builds copy these files. These
+archive URLs and checksums. Website builds copy these files with the solver. These
 materials prepare review; they do not approve public distribution. Python
 3.11+ is required for the release guard (`PYTHON` can select an interpreter).
 
@@ -306,11 +306,14 @@ host instantiates it with a minimal WASI Preview 1 clock/random/output shim in a
 fresh worker for every solve. Cancelling or superseding a solve terminates that
 worker; there is deliberately no synchronous or main-thread fallback.
 
-The hosted UI accepts an optional `PUBLIC_TELLEGEN_ACOPF_WASM_URL`. It probes
-that URL through the worker before enabling the AC OPF selector. Ordinary
-builds leave the variable unset and do not build or copy the EPL-bearing
-asset. CI opts in, builds it with `npm run wasm:acopf`, and runs a three-bus
-browser solve. The current UI path is intentionally base-case only because the
+The hosted UI defaults `PUBLIC_TELLEGEN_ACOPF_WASM_URL` to the bundled
+`/experimental-acopf/tellegen_acopf_wasi.wasm` asset. It probes that URL through
+the worker before enabling the AC OPF selector. Website builds now include the
+EPL-bearing asset and its notices; the Docker build compiles the reactor, while
+local builds and CI prepare it with `npm run wasm:acopf`. CI runs the three-bus
+browser solve against the ordinary website build. This integration prepares
+website enablement; it does not waive the release gates below.
+The current UI path is intentionally base-case only because the
 canonical AC OPF API rejects request edits and sensitivities rather than
 silently dropping them.
 
@@ -322,12 +325,12 @@ rustup target add wasm32-unknown-unknown wasm32-wasip1
 npm run wasm
 npm run wasm:acopf
 npm run build:engine
-PUBLIC_TELLEGEN_ACOPF_WASM_URL=/experimental-acopf/tellegen_acopf_wasi.wasm npm run build:web
+npm run build:web
 npm --workspace tellegen-frontend run preview
 ```
 
-The app copies the asset only during an opt-in production build; use the
-preview command above rather than the ordinary Vite development server.
+The app copies the asset and notices during every website build. The Vite
+development server also serves them after `npm run wasm:acopf`.
 These commands are for local development and do not authorize distribution.
 
 | Browser operation | Experimental AC OPF support |
@@ -362,9 +365,9 @@ default engine and all shipping adapters while present in the opt-in probe.
 That mechanical boundary is not legal approval. Before distributing a native
 binary or WASI asset containing POUNCE, the release owner must approve the
 EPL-2.0 obligations, include its license/notices, and provide a reasonable
-corresponding-source location. Until then, the feature remains a
-development-only native capability and `Problem::Acopf` remains unavailable in
-default and shipping builds.
+corresponding-source location. Until then, this website enablement must remain
+unpublished. `Problem::Acopf` remains unavailable in the default native engine
+and shipping adapters; the website uses the separate worker reactor.
 
 ## Remaining release gates
 
@@ -389,7 +392,6 @@ checks the served WASM hash against its manifest, and requires checksum-keyed
 independent objectives. For example, after an opt-in build:
 
 ```sh
-TELLEGEN_TEST_ACOPF=1 \
 TELLEGEN_ACOPF_CORPUS=/path/to/pglib-opf \
 TELLEGEN_ACOPF_REFERENCE=/path/to/reference.json \
 TELLEGEN_ACOPF_CASES=pglib_opf_case14_ieee,pglib_opf_case30_ieee,pglib_opf_case300_ieee,pglib_opf_case6468_rte \

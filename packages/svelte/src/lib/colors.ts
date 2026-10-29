@@ -225,12 +225,24 @@ export function sensitivityDomain(values: number[]): SensitivityDomain {
 	};
 }
 
-/** Branch color by loading fraction: warm gray, amber past 0.6, red past 0.9. */
+/** Loading, as a fraction of rating, from which a branch needs attention. Both loading scales
+ * share it. An optimal power flow enforces ratings, so its map draws congestion: red from here,
+ * because it cannot exceed 1. A multiconductor power flow does not enforce them, so its overview
+ * warns from here and calls a violation only above 1 (`LOADING_LIMIT` in `diagram/summary.ts`). */
+export const LOADING_ATTENTION = 0.9;
+/** Where the optimal power flow map starts shading a branch towards congestion. */
+const LOADING_ELEVATED = 0.6;
+
+/** Branch color by loading fraction: warm gray, amber past 0.6, red from `LOADING_ATTENTION`. */
 export function branchColor(loading: number, inService: boolean): RGBA {
 	if (!inService) return [197, 191, 178, 110];
-	if (loading < 0.6) return [138, 131, 117, 200];
-	if (loading < 0.9)
-		return lerpColor([138, 131, 117, 210], [212, 116, 34, 240], (loading - 0.6) / 0.3);
+	if (loading < LOADING_ELEVATED) return [138, 131, 117, 200];
+	if (loading < LOADING_ATTENTION)
+		return lerpColor(
+			[138, 131, 117, 210],
+			[212, 116, 34, 240],
+			(loading - LOADING_ELEVATED) / (LOADING_ATTENTION - LOADING_ELEVATED)
+		);
 	return [179, 38, 30, 250];
 }
 

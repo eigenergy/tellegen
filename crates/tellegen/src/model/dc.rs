@@ -12,14 +12,16 @@ use powerio_matrix::{
     build_dc_opf_preparation, AnalysisBranchSource, DcOpfAssemblyOptions, PreparedObjective, Units,
 };
 use powerio_prob::DcOpfInstance;
+use powerio_tx::HvdcTreatment;
 
 use crate::api::SolveDiagnostic;
 
 use super::islands::{energize, ReferencePolicy};
 use super::{
-    branch_ids_for_view_rows, bus_ids_for_source_rows, ids_for_view_rows, normalize_angle_bounds,
-    normalize_for_model, project_source_rows, reject_unsupported_active_elements,
-    uids_for_source_rows, validate_canonical_identity, PiecewiseCost,
+    branch_ids_for_view_rows, bus_ids_for_source_rows, hvdc_diagnostics, ids_for_view_rows,
+    normalize_angle_bounds, normalize_for_model, project_source_rows,
+    reject_unsupported_active_elements, uids_for_source_rows, validate_canonical_identity,
+    HvdcLines, PiecewiseCost,
 };
 
 /// Legacy numeric IDs exposed by Tellegen's generic solve response. These are
@@ -129,6 +131,10 @@ pub(crate) struct DcNetwork {
     pub demand: Vec<f64>,
     /// Per-unit shunt conductance withdrawal per bus.
     pub shunt_conductance: Vec<f64>,
+    /// Per-unit fixed HVDC injection per bus: `-pf` at each in-service line's
+    /// from bus and `+pt` at its to bus, PowerIO's `p_hvdc`. An injection, so the
+    /// fixed withdrawal subtracts it. All zero without in-service HVDC lines.
+    pub hvdc_injection: Vec<f64>,
     /// Reference buses, dense indices: at least one in every island, each
     /// grounded at angle zero.
     pub ref_buses: Vec<usize>,
@@ -239,7 +245,9 @@ impl DcNetwork {
             energized.network(raw),
             BranchSusceptanceFormula::SeriesSusceptance,
         )?;
-        model.diagnostics = energized.diagnostics;
+        let mut diagnostics = energized.diagnostics;
+        diagnostics.append(&mut model.diagnostics);
+        model.diagnostics = diagnostics;
         Ok(model)
     }
 
@@ -257,8 +265,10 @@ impl DcNetwork {
             .transpose()
             .map_err(|e| e.to_string())?;
         let instance = adjusted.as_ref().unwrap_or(instance);
-        reject_unsupported_active_elements(instance.network())?;
+        reject_unsupported_active_elements(instance.network(), HvdcLines::FixedInjection)?;
         let mut model = Self::build_prepared(instance, instance.network(), None)?;
+        let mut diagnostics = diagnostics;
+        diagnostics.append(&mut model.diagnostics);
         model.diagnostics = diagnostics;
         Ok(model)
     }
@@ -267,7 +277,7 @@ impl DcNetwork {
         raw: &BalancedNetwork,
         formula: BranchSusceptanceFormula,
     ) -> Result<DcNetwork, String> {
-        let input = normalize_for_model(raw)?;
+        let input = normalize_for_model(raw, HvdcLines::FixedInjection)?;
         let mut norm = input.network;
         let source_rows = input.source_rows;
         // Apply the policy before PowerIO synthesizes thermal limits. Doing this
@@ -298,6 +308,7 @@ impl DcNetwork {
         assembly.units = Units::PerUnit;
         assembly.skip_zero_impedance = false;
         assembly.synthesize_unrated_limits = true;
+        assembly.hvdc_treatment = HvdcTreatment::FixedInjection;
         let prep = build_dc_opf_preparation(instance, &assembly)
             .map_err(|e| format!("{}: {e}", e.code().code))?;
         // The analysis sources index the network the preparation read.
@@ -428,6 +439,13 @@ impl DcNetwork {
         let flow_offset = prep.calc_branch_flow_offset();
         let demand = prep.p_d.clone();
         let shunt_conductance = prep.g_s.clone();
+        // A preparation document written before PowerIO 0.11.7 carries no
+        // `p_hvdc`, which PowerIO reads as zero.
+        let hvdc_injection = if prep.p_hvdc.is_empty() {
+            vec![0.0; prep.n_buses]
+        } else {
+            prep.p_hvdc.clone()
+        };
 
         // The preparation carries positive solver edge weights; tellegen
         // stores the PowerModels-signed susceptance (negative for an
@@ -520,6 +538,7 @@ impl DcNetwork {
             c_shed,
             demand,
             shunt_conductance,
+            hvdc_injection,
             ref_buses,
             allow_shed: false,
             objective: prep.objective,
@@ -542,7 +561,10 @@ impl DcNetwork {
             gen_uids,
             linear_rows: Vec::new(),
             base_mva: prep.base_mva,
-            diagnostics: Vec::new(),
+            // `raw` is the caller's network after energizing, in its own units,
+            // so the transfer totals read in MW and an HVDC line whose terminal
+            // sits in a de-energized island is reported as left out.
+            diagnostics: hvdc_diagnostics(raw),
         })
     }
 
@@ -559,12 +581,20 @@ impl DcNetwork {
         withdrawal
     }
 
-    /// Fixed nodal withdrawal for the current demand and branch statuses.
-    pub fn current_fixed_withdrawal(&self) -> Vec<f64> {
+    /// Fixed nodal withdrawal other than demand at the current branch statuses:
+    /// shunt conductance and phase shift, less the fixed HVDC injection.
+    pub fn network_withdrawal(&self) -> Vec<f64> {
         let phase = self.phase_withdrawal();
         (0..self.n)
-            .map(|i| self.demand[i] + self.shunt_conductance[i] + phase[i])
+            .map(|i| self.shunt_conductance[i] + phase[i] - self.hvdc_injection[i])
             .collect()
+    }
+
+    /// Fixed nodal withdrawal for the current demand and branch statuses:
+    /// `p_d + g_s + p_shift - p_hvdc`, PowerIO's fixed nodal withdrawal.
+    pub fn current_fixed_withdrawal(&self) -> Vec<f64> {
+        let network = self.network_withdrawal();
+        (0..self.n).map(|i| self.demand[i] + network[i]).collect()
     }
 
     /// Complete affine branch flow offset at the current status.

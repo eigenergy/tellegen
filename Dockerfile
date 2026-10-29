@@ -28,6 +28,17 @@ RUN wasm-pack build /build/crates/tellegen-wasm --target web --out-dir /out/wasm
     && mkdir -p /out/data \
     && cp /build/crates/tellegen-synth/data/populated_places.json /out/data/
 
+# Separate reactor: keep POUNCE out of the ordinary wasm-bindgen module and
+# native server. The website runs nonlinear AC OPF in a terminable worker.
+FROM wasm AS acopf
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+RUN rustup target add wasm32-wasip1
+COPY scripts/build-acopf-wasi.sh scripts/acopf-release.py /build/scripts/
+COPY licenses /build/licenses
+ARG TELLEGEN_SOURCE_REVISION=""
+RUN bash /build/scripts/build-acopf-wasi.sh
+
 # ---- frontend build ----
 FROM node:22-slim AS frontend
 WORKDIR /app
@@ -51,6 +62,7 @@ COPY crates/tellegen/src crates/tellegen/src
 COPY crates/tellegen-synth/src crates/tellegen-synth/src
 COPY --from=wasm /out/wasm-pkg ./packages/engine/src/wasm-pkg
 COPY --from=wasm /out/data ./packages/engine/src/data
+COPY --from=acopf /build/target/experimental-acopf ./target/experimental-acopf
 # Optional CARTO basemap key. It is public by design, because the browser
 # sends it with every tile request, so restrict it to the deployment's hosts
 # on CARTO's side. Empty leaves OpenFreeMap as the primary basemap.
