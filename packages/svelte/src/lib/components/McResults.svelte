@@ -1,4 +1,6 @@
 <script lang="ts">
+	import McNetworkScope from './McNetworkScope.svelte';
+	import McModelQualification from './McModelQualification.svelte';
 	import {
 		mcPfResultDetail,
 		summarizeMcPfResult,
@@ -13,6 +15,7 @@
 	import type { McEditTiming } from '../state.svelte.js';
 	let {
 		result,
+		excludedIslands = [],
 		detail,
 		timing = null,
 		elapsedMs,
@@ -22,6 +25,7 @@
 	}: {
 		/** A live session's summary, or a stored full result. */
 		result: McPfSummary | McPfResult;
+		excludedIslands?: import('@tellegen/engine').McExcludedIsland[];
 		/** Fetches one bus's terminals and a page of equipment ports. A full
 		 * `result` serves its own pages when this is omitted. */
 		detail?: (query: McPfDetailQuery) => Promise<McPfDetail | null>;
@@ -120,6 +124,11 @@
 </script>
 
 <section aria-label="AC power flow results" class="mc-results">
+	<McNetworkScope
+		scope={summary.network_scope}
+		islands={'excluded_islands' in result ? result.excluded_islands : excludedIslands}
+	/>
+	<McModelQualification model={summary.load_model} />
 	<div class="result-heading">
 		<strong>AC power flow</strong><span
 			>{summary.iterations} iterations{elapsedMs === null
@@ -133,7 +142,7 @@
 			<dd>{summary.converged ? 'Converged' : 'Not converged'}</dd>
 		</div>
 		<div>
-			<dt>Voltage band</dt>
+			<dt>Load-model voltage band</dt>
 			<dd>{summary.voltage_valid ? 'Valid' : `${summary.voltage_violation_count} violations`}</dd>
 		</div>
 		<div>
@@ -165,6 +174,12 @@
 				>{/each}</select
 		></label
 	>
+	{#if excludedIslands.some((island) => island.buses.includes(busId ?? ''))}
+		<p role="status">
+			This bus is excluded from the calculation because its island has no voltage source. No result
+			is available.
+		</p>
+	{/if}
 	<label class="search"
 		>Terminals<input
 			aria-label="Find terminal"

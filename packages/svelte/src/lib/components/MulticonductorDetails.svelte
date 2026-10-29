@@ -1,4 +1,6 @@
 <script lang="ts">
+	import McNetworkScope from './McNetworkScope.svelte';
+	import McModelQualification from './McModelQualification.svelte';
 	import { getAppState, getController } from '../context.svelte.js';
 	import { fmt, rgbaCss } from '../format.js';
 	import {
@@ -10,7 +12,7 @@
 	} from '../multiconductor.js';
 	import { getPanelLayout } from '../panels.svelte.js';
 	import { getNoticeCenter } from '../notices.svelte.js';
-	import { type DistAttachmentKind } from '@tellegen/engine';
+	import { validateMcPfOptions, type DistAttachmentKind } from '@tellegen/engine';
 
 	const app = getAppState();
 	const ctrl = getController();
@@ -50,7 +52,10 @@
 	{#if s}
 		<p class="tag">Multiconductor</p>
 		<details class="case-details">
-			<summary>{s.n_bus} buses, {s.n_edge} {s.n_edge === 1 ? 'branch' : 'branches'}</summary>
+			<summary
+				>{s.n_bus} buses, {s.n_edge}
+				{s.n_edge === 1 ? 'branch' : 'branches'}</summary
+			>
 			<dl>
 				<div>
 					<dt>Buses</dt>
@@ -97,6 +102,15 @@
 				</dd>
 			</div>
 		</dl>
+		<McNetworkScope
+			scope={mc.mcPreparedScope}
+			islands={mc.mcExcludedIslands}
+			preview={!mc.result}
+		/>
+		{#if !mc.mcPfSupported}<p class="footnote">{mc.mcPfReason}</p>{/if}
+		{#if validateMcPfOptions(mc.mcOptions)}<p class="footnote">
+				{validateMcPfOptions(mc.mcOptions)} Update Power flow settings in Studies before solving.
+			</p>{/if}
 		<div class="calculation-actions">
 			{#if mc.solving}
 				<span role="status">Calculating&hellip;</span>{#if mc.solveAbort}<button
@@ -104,13 +118,13 @@
 					>{/if}
 			{:else}
 				<button
-					disabled={!mc.mcPfSupported}
+					disabled={!mc.mcPfSupported || !!validateMcPfOptions(mc.mcOptions)}
 					onclick={() => {
 						void ctrl
-							.solveMultiCase(mc)
+							.solveMultiCase(mc, mc.mcOptions, undefined, mc.mcRequiresEnergizedSolve)
 							.then(openResults)
 							.catch(() => {});
-					}}>Solve AC power flow</button
+					}}>{mc.mcSolveLabel}</button
 				>
 				{#if !mc.mcPfSupported}
 					<button
@@ -125,12 +139,17 @@
 				{/if}
 			{/if}
 		</div>
-		{#if mc.result}<p class="footnote">Converged, {mc.result.iterations} iterations</p>
+		{#if mc.result}<McModelQualification model={mc.result.load_model} compact />
+			<p class="footnote">Converged, {mc.result.iterations} iterations</p>
 			<button class="reset" onclick={openResults}>View results in Studies</button>{/if}
 	{/if}
 
 	{#if mc.selectedBus}
 		{@const b = mc.selectedBus}
+		{#if mc.mcExcludedIslands.some((island) => island.buses.includes(b.id))}<p role="status">
+				This bus belongs to an island with no voltage source and will be excluded from
+				energized-network calculations. No power-flow result is available for it.
+			</p>{/if}
 		<hr />
 		<h3>Bus <span class="mono">{b.id}</span></h3>
 		<div class="terminals">

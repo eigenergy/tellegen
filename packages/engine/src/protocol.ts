@@ -33,6 +33,7 @@ export type EngineRequest =
   | { op: "capabilities" }
   | { op: "solve_module"; module_json: string; request: string }
   | { op: "solve_mc_bmopf"; text: string; options: string }
+  | { op: "prepare_mc_energized_network"; module_json: string }
   | { op: "solve_mc_module"; module_json: string; options: string }
   | {
       op: "solve_mc_study";
@@ -229,6 +230,8 @@ export function runRequest(
       return mod.solve_module(req.module_json, req.request);
     case "solve_mc_bmopf":
       return mod.solve_mc_bmopf(req.text, req.options);
+    case "prepare_mc_energized_network":
+      return mod.prepare_mc_energized_network(req.module_json);
     case "solve_mc_module":
       return mod.solve_mc_module(req.module_json, req.options);
     case "solve_mc_study":

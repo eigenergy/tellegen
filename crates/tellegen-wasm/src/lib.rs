@@ -330,6 +330,15 @@ pub fn solve_mc_bmopf(text: &str, options_json: &str) -> Result<String, JsError>
     tellegen::solve_bmopf_json(text, &options).map_err(jserr)
 }
 
+/// Explicitly prepare a source-covered subset while retaining the full input.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn prepare_mc_energized_network(module_json: &str) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    install_panic_hook();
+    tellegen::prepare_mc_energized_network_json(module_json).map_err(jserr)
+}
+
 /// Solve a stored PowerIO multiconductor module. This accepts the portable
 /// module form used by browser persistence in addition to raw BMOPF text.
 #[cfg(feature = "mc-pf")]

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
 	summarizeMcPfResult,
+	DEFAULT_MC_PF_OPTIONS,
 	type AppliedMcGeoCase,
 	type BrowserMcPfSession,
 	type DistGraph,
@@ -97,20 +98,27 @@ function payload(input = 'input'): IngestedDistCase {
 		diagnostics: []
 	};
 }
-function host() {
+function host(metadata: Partial<IngestedDistCase> = {}) {
 	const app = new AppState();
 	const solve = vi.fn(async () => result);
 	const apply = vi.fn(async (): Promise<AppliedMcGeoCase> => ({
 		...payload('with-geo'),
-		report: { matched_buses: 2, matched_branches: 1, unmatched_features: 0, notes: [] }
+		report: {
+			matched_buses: 2,
+			matched_branches: 1,
+			unmatched_features: 0,
+			notes: []
+		}
 	}));
-	const ctrl = new Controller(app, { mcTransport: { solveMcModule: solve, applyMcGeo: apply } });
+	const ctrl = new Controller(app, {
+		mcTransport: { solveMcModule: solve, applyMcGeo: apply }
+	});
 	vi.spyOn(app, 'requestFrame').mockResolvedValue();
 	const c = new MulticonductorCase({
 		id: 'mc',
 		label: 'Feeder',
 		fileName: 'private.json',
-		summary: payload(),
+		summary: { ...payload(), ...metadata },
 		graph,
 		coordsKind: 'planar',
 		view: buildDiagramView(graph)
@@ -157,7 +165,12 @@ describe('multiconductor calculation and coordinates', () => {
 			const detail = vi.fn(async () => page(2));
 			const session = {
 				initialSummary: live(1),
-				lastTiming: { engine_ms: 3, round_trip_ms: 4, parse_ms: 0.1, payload_chars: 600 },
+				lastTiming: {
+					engine_ms: 3,
+					round_trip_ms: 4,
+					parse_ms: 0.1,
+					payload_chars: 600
+				},
 				result: vi.fn(async () => result),
 				loadBranches: vi.fn(async () => loads),
 				replaceLoadPowers,
@@ -333,12 +346,129 @@ describe('multiconductor calculation and coordinates', () => {
 		}
 	});
 
+	it('detects solve scope on load without preparing until the context-sensitive action is run', async () => {
+		const exclusions = [
+			{
+				buses: ['unpowered'],
+				equipment: [{ kind: 'load', name: 'unsupplied' }]
+			}
+		];
+		const { ctrl, c, solve } = host({
+			mc_excluded_islands: exclusions,
+			mc_energized_only: false
+		});
+		const scope = c.mcPreparedScope;
+		const prepare = vi.fn(async () => ({
+			module_json: 'full-with-selection',
+			network_scope: scope,
+			excluded_islands: exclusions
+		}));
+		ctrl.mcTransport.prepareMcEnergizedNetwork = prepare;
+		expect(c.mcSolveLabel).toBe('Solve energized network');
+		expect(c.mcEnergizedOnly).toBe(false);
+		expect(c.moduleJson).toBe('input');
+		expect(c.mcPreparedScope?.excluded_load_count).toBe(1);
+		expect(solve).not.toHaveBeenCalled();
+		expect(prepare).not.toHaveBeenCalled();
+		// Import-time detection must not silently alter the generic solver API.
+		solve.mockRejectedValueOnce(new Error('island has no voltage source'));
+		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('island has no voltage source');
+		expect(prepare).not.toHaveBeenCalled();
+		expect(c.mcEnergizedOnly).toBe(false);
+		c.mcOptions.max_iterations = 500;
+		await ctrl.solveMultiCase(c, c.mcOptions, undefined, c.mcRequiresEnergizedSolve);
+		expect(prepare).toHaveBeenCalledWith('input');
+		expect(solve).toHaveBeenCalledWith(
+			'full-with-selection',
+			{ ...DEFAULT_MC_PF_OPTIONS, max_iterations: 500 },
+			expect.any(AbortSignal)
+		);
+		expect(c.mcEnergizedOnly).toBe(true);
+		ctrl.dispose();
+	});
+
+	it('keeps explicit island selection and the full graph across a failed solve and retry', async () => {
+		const { ctrl, c, solve } = host();
+		const originalGraph = c.graph;
+		const exclusions = [
+			{
+				buses: ['unpowered'],
+				equipment: [{ kind: 'load', name: 'unsupplied' }]
+			}
+		];
+		const scope = {
+			excluded_island_count: 1,
+			excluded_bus_count: 1,
+			excluded_equipment_count: 1,
+			excluded_load_count: 1
+		};
+		const prepare = vi.fn().mockResolvedValue({
+			module_json: 'full-with-selection',
+			network_scope: scope,
+			excluded_islands: exclusions
+		});
+		ctrl.mcTransport.prepareMcEnergizedNetwork = prepare;
+		await ctrl.solveMultiCase(c);
+		expect(prepare).not.toHaveBeenCalled();
+		const previous = c.result;
+		const completed = c.mcCompletedSolveSeq;
+		expect(completed).toBeGreaterThan(0);
+		solve.mockRejectedValueOnce(new Error('did not converge'));
+		await expect(ctrl.solveMultiCase(c, {}, undefined, true)).rejects.toThrow('did not converge');
+		expect(c.mcCompletedSolveSeq).toBe(completed);
+		expect(c.graph).toBe(originalGraph);
+		expect(c.result).toBe(previous);
+		expect(c.mcExcludedIslands).toEqual(exclusions);
+		expect(c.mcEnergizedOnly).toBe(true);
+		expect(c.mcOptions).toEqual(DEFAULT_MC_PF_OPTIONS);
+		solve.mockResolvedValueOnce({
+			...result,
+			network_scope: scope,
+			excluded_islands: exclusions
+		});
+		await ctrl.solveMultiCase(c);
+		expect(solve).toHaveBeenLastCalledWith(
+			'full-with-selection',
+			DEFAULT_MC_PF_OPTIONS,
+			expect.any(AbortSignal)
+		);
+		expect(c.moduleJson).toBe('full-with-selection');
+		expect(c.graph).toBe(originalGraph);
+		expect(c.result?.network_scope).toEqual(scope);
+		ctrl.dispose();
+	});
+
+	it('persists selected settings across retries while failed runs retain the previous result', async () => {
+		const { ctrl, c, solve } = host();
+		await ctrl.solveMultiCase(c, { v_min_pu: 0.7, max_iterations: 150 });
+		const previous = c.result;
+		solve.mockRejectedValueOnce(new Error('did not converge'));
+		await expect(ctrl.solveMultiCase(c, { damping: 0.5 })).rejects.toThrow('did not converge');
+		expect(c.result).toBe(previous);
+		expect(c.mcOptions).toMatchObject({
+			v_min_pu: 0.7,
+			damping: 0.5,
+			max_iterations: 150
+		});
+		await ctrl.solveMultiCase(c);
+		expect(solve).toHaveBeenLastCalledWith('input', c.mcOptions, expect.any(AbortSignal));
+		const count = solve.mock.calls.length;
+		await expect(ctrl.solveMultiCase(c, { v_min_pu: 0.2 })).rejects.toThrow('Vlow');
+		expect(solve.mock.calls.length).toBe(count);
+		expect(c.mcOptions.v_min_pu).toBe(0.7);
+		ctrl.dispose();
+	});
+
 	it('records terminal results and rejects concurrent work', async () => {
 		const { ctrl, c, solve } = host();
 		const pending = ctrl.solveMultiCase(c, { tolerance: 1e-8 });
 		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('already running');
 		expect(await pending).toEqual(summary);
-		expect(solve).toHaveBeenCalledWith('input', { tolerance: 1e-8 }, expect.any(AbortSignal));
+		expect(solve).toHaveBeenCalledWith(
+			'input',
+			{ ...DEFAULT_MC_PF_OPTIONS, tolerance: 1e-8 },
+			expect.any(AbortSignal)
+		);
 		// Without a session the full result is kept for on-demand detail.
 		expect(c.result).toEqual(summary);
 		expect(c.mcFullResult).toBe(result);
@@ -351,7 +481,10 @@ describe('multiconductor calculation and coordinates', () => {
 	});
 	it('rejects unsupported retained physics before calling the engine', async () => {
 		const { app, ctrl, c, solve } = host();
-		c.summary = { ...payload(), mc_pf_unavailable_reason: 'Unsupported load model' };
+		c.summary = {
+			...payload(),
+			mc_pf_unavailable_reason: 'Unsupported load model'
+		};
 		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('Unsupported load model');
 		expect(solve).not.toHaveBeenCalled();
 		expect(app.error).toBe('Unsupported load model');
@@ -427,7 +560,7 @@ describe('multiconductor calculation and coordinates', () => {
 			'input',
 			expect.any(String),
 			'Feeder',
-			{},
+			DEFAULT_MC_PF_OPTIONS,
 			expect.any(AbortSignal)
 		);
 		expect(solve).not.toHaveBeenCalled();
@@ -523,7 +656,10 @@ describe('multiconductor calculation and coordinates', () => {
 			[1050, 2020]
 		]);
 		expect(buildGeographicView(graph, layer).edges[0].path).toEqual(view.edges[0].path);
-		const parallel = { ...graph, edges: [...graph.edges, { ...graph.edges[0], id: 'parallel' }] };
+		const parallel = {
+			...graph,
+			edges: [...graph.edges, { ...graph.edges[0], id: 'parallel' }]
+		};
 		expect(buildDiagramView(parallel, layer).edges.every((edge) => edge.path.length === 2)).toBe(
 			true
 		);

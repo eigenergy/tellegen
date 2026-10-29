@@ -19,7 +19,7 @@ test('multiconductor overview ranks declared-limit issues and links them to the 
 		mimeType: 'application/json',
 		buffer: await readFile(fixture)
 	});
-	const solve = page.getByRole('button', { name: 'Solve AC power flow', exact: true });
+	const solve = page.getByRole('button', { name: 'Run power flow', exact: true });
 	await expect(solve).toBeEnabled({ timeout: 60_000 });
 	await solve.click();
 
@@ -74,7 +74,7 @@ async function solveDocument(page: Page, name: string, doc: unknown) {
 		mimeType: 'application/json',
 		buffer: Buffer.from(JSON.stringify(doc))
 	});
-	const solve = page.getByRole('button', { name: 'Solve AC power flow', exact: true });
+	const solve = page.getByRole('button', { name: 'Run power flow', exact: true });
 	await expect(solve).toBeEnabled({ timeout: 60_000 });
 	await solve.click();
 	const overview = page.getByRole('region', { name: 'Operating point overview' });

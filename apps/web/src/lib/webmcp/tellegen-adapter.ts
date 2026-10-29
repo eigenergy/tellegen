@@ -564,6 +564,10 @@ async function inspect(
 			solution: c.result
 				? {
 						converged: c.result.converged,
+						network_scope: c.result.network_scope ? { ...c.result.network_scope } : null,
+						load_model: c.result.load_model
+							? { ...c.result.load_model, options: { ...c.result.load_model.options } }
+							: null,
 						iterations: c.result.iterations,
 						kcl_residual_a: c.result.physical_kcl_residual,
 						solve_ms: c.solveMs
@@ -1797,6 +1801,10 @@ export function createTellegenWebMcpAdapter(
 				return {
 					...displayedContext(ctrl),
 					converged: result.converged,
+					network_scope: result.network_scope ? { ...result.network_scope } : null,
+					load_model: result.load_model
+						? { ...result.load_model, options: { ...result.load_model.options } }
+						: null,
 					iterations: result.iterations,
 					terminal_count: result.terminal_count,
 					kcl_residual_a: result.physical_kcl_residual,

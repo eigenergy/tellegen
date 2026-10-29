@@ -51,6 +51,8 @@ import {
 	type EngineTransport,
 	mcPfResultDetail,
 	summarizeMcPfResult,
+	validateMcPfOptions,
+	DEFAULT_MC_PF_OPTIONS,
 	type McLoadPowerEdit,
 	type McPfDetail,
 	type McPfDetailQuery,
@@ -186,7 +188,12 @@ export interface ControllerOptions {
 	loadDefaultCases?: boolean;
 	acOpfWasmUrl?: string;
 	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
-		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession'>>;
+		Partial<
+			Pick<
+				EngineTransport,
+				'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession' | 'prepareMcEnergizedNetwork'
+			>
+		>;
 }
 
 /** Input to `Controller.openBalancedModule` and `replaceLocalCase`: a
@@ -217,7 +224,12 @@ export class Controller {
 	api: TellegenApiClient | null;
 	readonly loadDefaultCases: boolean;
 	mcTransport: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
-		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession'>>;
+		Partial<
+			Pick<
+				EngineTransport,
+				'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession' | 'prepareMcEnergizedNetwork'
+			>
+		>;
 	abort: AbortController | null = null;
 	// While set (epoch ms), the server sensitivity fallback is rate limited: skip
 	// the request and show the rate-limit copy instead of burning the budget on a
@@ -2510,18 +2522,25 @@ export class Controller {
 	/** Compute terminal quantities only for the retained input and current case revision. */
 	solveMultiCase = async (
 		c: MulticonductorCase,
-		options: McPfOptions = {},
-		signal?: AbortSignal
+		options: McPfOptions = c.mcOptions,
+		signal?: AbortSignal,
+		energizedOnly = c.mcEnergizedOnly
 	): Promise<McPfSummary> => {
 		if (signal?.aborted || this.disposed)
 			throw new DOMException('Calculation cancelled', 'AbortError');
 		if (c.solving) throw new Error('A calculation is already running for this case');
+		options = { ...DEFAULT_MC_PF_OPTIONS, ...c.mcOptions, ...options };
+		const settingsError = validateMcPfOptions(options);
+		if (settingsError) throw new Error(settingsError);
+		c.mcOptions = { ...options };
+		c.mcEnergizedOnly = energizedOnly;
 		const unavailable = c.mcPfReason;
 		if (unavailable) {
 			this.app.error = unavailable;
 			throw new Error(unavailable);
 		}
-		let input = c.moduleJson!;
+		const originalInput = c.moduleJson!;
+		let input = originalInput;
 		const retainedAtStart = c.mcSession;
 		const revision = c.revisionGeneration;
 		const seq = ++c.solveSeq;
@@ -2536,6 +2555,16 @@ export class Controller {
 			null;
 		try {
 			if (retainedAtStart) input = await retainedAtStart.inputModule();
+			if (energizedOnly) {
+				if (!this.mcTransport.prepareMcEnergizedNetwork)
+					throw new Error('Energized-network preparation is unavailable');
+				const prepared = await this.mcTransport.prepareMcEnergizedNetwork(input);
+				if (abort.signal.aborted || seq !== c.solveSeq || revision !== c.revisionGeneration)
+					throw new DOMException('Calculation cancelled', 'AbortError');
+				input = prepared.module_json;
+				c.mcExcludedIslands = prepared.excluded_islands;
+				c.mcPreparedScope = prepared.network_scope;
+			}
 			let snapshot = null;
 			let result: McPfSummary;
 			let fullResult: McPfResult | null = null;
@@ -2565,7 +2594,7 @@ export class Controller {
 				throw new DOMException('Calculation cancelled', 'AbortError');
 			if (
 				seq !== c.solveSeq ||
-				(retainedAtStart ? retainedAtStart !== c.mcSession : input !== c.moduleJson) ||
+				(retainedAtStart ? retainedAtStart !== c.mcSession : originalInput !== c.moduleJson) ||
 				revision !== c.revisionGeneration ||
 				!this.app.multiCases.includes(c)
 			)
@@ -2590,6 +2619,7 @@ export class Controller {
 			c.mcSavedAt = null;
 			c.solveMs = performance.now() - started;
 			c.revisionGeneration++;
+			c.mcCompletedSolveSeq = seq;
 			return result;
 		} catch (error) {
 			nextSession?.free();

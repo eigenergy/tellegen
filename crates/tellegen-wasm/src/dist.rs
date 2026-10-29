@@ -108,9 +108,24 @@ fn attach_mc_study_metadata(
     payload: serde_json::Value,
     module: PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
+    #[cfg(feature = "mc-pf")]
+    let selected = module
+        .extensions()
+        .contains_key("tellegen.energized_network");
+    #[cfg(feature = "mc-pf")]
+    let inspection = multiconductor_network(module.value()).map(|network| {
+        tellegen::mc_unpowered_islands(network).map(|islands| {
+            let energized_bus_count = network.buses().len()
+                - islands
+                    .iter()
+                    .map(|island| island.buses.len())
+                    .sum::<usize>();
+            (energized_bus_count, islands)
+        })
+    });
     let mut payload = crate::with_module_json(payload, module)?;
     #[cfg(feature = "mc-pf")]
-    let reason = tellegen::validate_mc_module_json(
+    let mut reason = tellegen::validate_mc_module_json(
         payload["module_json"]
             .as_str()
             .ok_or("missing multiconductor module")?,
@@ -118,6 +133,21 @@ fn attach_mc_study_metadata(
     .err();
     #[cfg(not(feature = "mc-pf"))]
     let reason = Some("Multiconductor AC power flow is disabled in this build".to_owned());
+    #[cfg(feature = "mc-pf")]
+    if reason.is_none() {
+        match inspection {
+            Some(Ok((energized_bus_count, islands))) => {
+                payload["mc_energized_only"] = selected.into();
+                payload["mc_excluded_islands"] =
+                    serde_json::to_value(islands).map_err(|e| e.to_string())?;
+                if energized_bus_count == 0 {
+                    reason = Some("No energized network: no bus island has a voltage source. The full network remains available for inspection.".to_owned());
+                }
+            }
+            Some(Err(error)) => reason = Some(error),
+            None => {}
+        }
+    }
     payload["mc_pf_supported"] = reason.is_none().into();
     payload["mc_pf_reason"] = serde_json::to_value(&reason).map_err(|e| e.to_string())?;
     payload["mc_pf_unavailable_reason"] = payload["mc_pf_reason"].clone();
@@ -846,6 +876,76 @@ mod tests {
             assert!(tellegen::validate_mc_module_json(v["module_json"].as_str().unwrap()).is_err());
             assert!(v["mc_pf_reason"].as_str().unwrap().contains("view-only"));
         }
+    }
+
+    #[cfg(feature = "mc-pf")]
+    #[test]
+    fn energized_import_retains_full_graph_and_rejects_malformed_selection_metadata() {
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).unwrap();
+        raw["bus"]["unpowered"] = raw["bus"]["load_bus"].clone();
+        let imported = parse(&ingest_dist(&raw.to_string(), "bmopf").unwrap());
+        assert_eq!(imported["mc_pf_supported"], true);
+        assert_eq!(imported["mc_energized_only"], false);
+        assert_eq!(imported["mc_excluded_islands"][0]["buses"][0], "unpowered");
+        assert_eq!(imported["graph"]["buses"].as_array().unwrap().len(), 3);
+        let original = deserialize_module(imported["module_json"].as_str().unwrap()).unwrap();
+        assert!(!original
+            .extensions()
+            .contains_key("tellegen.energized_network"));
+        let prepared: Value = serde_json::from_str(
+            &tellegen::prepare_mc_energized_network_json(imported["module_json"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        let text = prepared["module_json"].as_str().unwrap();
+        let reimported = parse(&ingest_dist_module(text).unwrap());
+        assert_eq!(reimported["n_bus"], 3);
+        assert_eq!(reimported["mc_energized_only"], true);
+        assert_eq!(
+            reimported["mc_excluded_islands"][0]["buses"][0],
+            "unpowered"
+        );
+        let mut module = deserialize_module(text).unwrap();
+        module
+            .insert_extension(
+                "tellegen.energized_network",
+                serde_json::json!({"invalid": true}),
+            )
+            .unwrap();
+        let invalid = ingest_dist_module_value(module).unwrap();
+        assert_eq!(invalid["mc_pf_supported"], false);
+        assert!(invalid["mc_excluded_islands"].is_null());
+    }
+
+    #[cfg(feature = "mc-pf")]
+    #[test]
+    fn import_detects_source_coverage_without_selecting_or_solving() {
+        let covered = parse(&ingest_dist(MICRO_BMOPF, "bmopf").unwrap());
+        assert_eq!(covered["mc_pf_supported"], true);
+        assert_eq!(covered["mc_excluded_islands"], serde_json::json!([]));
+        assert_eq!(covered["mc_energized_only"], false);
+
+        let mut raw: Value = serde_json::from_str(MICRO_BMOPF).unwrap();
+        raw["voltage_source"] = serde_json::json!({});
+        let unpowered = parse(&ingest_dist(&raw.to_string(), "bmopf").unwrap());
+        assert_eq!(unpowered["n_bus"], 2);
+        assert_eq!(unpowered["mc_pf_supported"], false);
+        assert_eq!(unpowered["mc_energized_only"], false);
+        assert!(unpowered["mc_pf_reason"]
+            .as_str()
+            .unwrap()
+            .contains("No energized network"));
+        assert_eq!(
+            unpowered["mc_excluded_islands"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(
+            unpowered["mc_excluded_islands"][0]["buses"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
