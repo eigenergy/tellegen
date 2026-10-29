@@ -8,6 +8,7 @@ lists their exact published source archives and SHA-256 checksums, the
 Tellegen source revision, and the WASI artifact's SHA-256. A dirty-worktree
 manifest denotes a development build rather than a reproducible release.
 
-This development integration does not authorize public distribution.
-Release owners must complete the repository's distribution review before
-publishing the optional asset.
+Tellegen's release owner approved distribution of this asset under EPL-2.0 on
+2026-10-29. It is distributed together with this notice, POUNCE-EPL-2.0.txt and
+POUNCE-SOURCE.json. A manifest with "development_only": true describes a local
+build, not a distributed release.
