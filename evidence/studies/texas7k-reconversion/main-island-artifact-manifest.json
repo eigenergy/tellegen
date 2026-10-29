@@ -1,0 +1,42 @@
+{
+  "License.md": {
+    "bytes": 951,
+    "sha256": "f1dc639fcbd6466b5820f91f6b6262b90652cd856e2535a2d94f48597a0e45fa"
+  },
+  "README.md": {
+    "bytes": 1041,
+    "sha256": "c4fcf99bea8e540340e5c798a342cd841b90adbbd08cc769d60d21a108a66bee"
+  },
+  "SOURCE_NOTICE.md": {
+    "bytes": 4219,
+    "sha256": "9ae057ead57034e4e6c51798702116d9aa1f5213f23e98dfb832bd363109d31d"
+  },
+  "island-removal.json": {
+    "bytes": 11202,
+    "sha256": "d8ed1597cd8987d6808c079f19a5f35c91fe133d44efa9bef330e98fe58a63f8"
+  },
+  "p1uhs0_1247.main-island.bmopf.json": {
+    "bytes": 44911506,
+    "sha256": "e57d44bf318bdd7a83894b699f0bc6ab3c72dd5721045aceb36a741a2c52e409"
+  },
+  "p1uhs0_1247.main-island.pio.json": {
+    "bytes": 69245423,
+    "sha256": "e9ec43a8bf2fc51c87e38f02191174938618001f17833d903572a1bdb0d52f98"
+  },
+  "powerio_diagnostics.json": {
+    "bytes": 3,
+    "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  "tellegen_options.json": {
+    "bytes": 114,
+    "sha256": "17c91dff45141b48c298f9b35273de6891e21353df19880ef6084cb59cdcf9e9"
+  },
+  "tellegen_voltages.json.gz": {
+    "bytes": 1059883,
+    "sha256": "7917ab3c714f70c75c522775f477f31bb15862a2db37d2c0d76359329fcc9923"
+  },
+  "validation_report.json": {
+    "bytes": 2367,
+    "sha256": "e0a6f081af483afa4e3d5fbd448e076bd3cffe8dac53b932db83dc9f3e84e91e"
+  }
+}

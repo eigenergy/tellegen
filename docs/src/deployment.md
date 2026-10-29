@@ -315,22 +315,31 @@ prebuilt case payloads.
 
 ## Texas7k distribution demo
 
-The public demo also stages `texas7k-p1uhs0_1247`, the six-feeder substation
-associated with Texas7k. The source is pinned in
-`scripts/datasets/texas7k-source.json`. Obtain a BMOPFDraftData checkout with
-that commit, build the browser engine, then prepare the data:
+The intended public example is `texas7k-p1uhs0_1247`, the main energized island
+of the six-feeder substation associated with Texas7k. It contains 22,076 modeled
+buses and all 15,299 loads. Two original unsupplied line sections (five buses,
+three lines) are removed; retained electrical values and coordinates are
+unchanged. The prepared source and notices are checksum-pinned in
+`scripts/datasets/texas7k-main-island-source.json`.
+
+Reproduce the PowerIO 0.11.7 conversion and extraction using
+`evidence/studies/texas7k-reconversion/README.md`, build the browser engine,
+then prepare the hosting data:
 
 ```sh
 npm run wasm
 npm run build:engine
-python3 scripts/datasets/stage-texas7k.py /path/to/BMOPFDraftData data
+python3 scripts/datasets/stage-texas7k.py /path/to/prepared-main-island data --main-island
 ```
 
-Alternatively set `TELLEGEN_BMOPF_REPO=/path/to/BMOPFDraftData` when invoking
-`scripts/stage-data.sh`. Staging reads committed source bytes, verifies checksums,
-reduces duplicate representation, converts to portable PowerIO, and compares
-original/reduced geometry and complete WASM PF results. It requires Git, Python
-3 and Node; it does not download data. Electrical equipment is not pruned.
+Alternatively set `TELLEGEN_TEXAS7K_MAIN_ISLAND=/path/to/prepared-main-island`
+when invoking `scripts/stage-data.sh`. Staging verifies all prepared input
+checksums, reduces duplicate representation, converts to portable PowerIO, and
+compares original/reduced geometry and complete WASM PF results. Source labels
+remain in a provenance sidecar. The reduction removes no further equipment and
+rounds no electrical values. It requires Python 3 and Node and does not download
+data. The historical full-pilot path remains available through
+`TELLEGEN_BMOPF_REPO` and is used only when no main-island path is supplied.
 
 The script preserves other distribution entries and atomically registers an
 immutable bundle under `data/distribution/`. Each bundle contains license and
@@ -357,7 +366,10 @@ The association is case-level, not a coupled transmission/distribution solve.
 The catalogue link does not assert a specific transmission bus mapping.
 
 The case endpoint negotiates gzip. Measure the served PowerIO payload, not the
-reduced BMOPF file, when estimating downloads. The complete pilot remains a
+reduced BMOPF file, when estimating downloads. The current hosted module is
+36.69 MB uncompressed and 1.26 MB gzipped; its BMOPF companion is 13.69 MB and
+1.10 MB respectively. See `evidence/studies/texas7k-reconversion/SHIPPING.md`.
+The main island remains a
 large browser workload. Run the opt-in browser check against a server serving
 both the production build and staged data:
 
@@ -373,9 +385,10 @@ options/results, and a load edit. It writes timing, transfer-size and screenshot
 artifacts. Routine browser CI uses small fixtures; run this full-data check
 before changing the pinned source, converter, solver or demo bundle.
 
-The recorded desktop acceptance run loaded in 5.34 s and solved in 1.78 s over
+The historical full-pilot desktop acceptance run loaded in 5.34 s and solved in 1.78 s over
 loopback. Combined Chromium RSS was about 1.65 GB after solving and 4.80 GB after
 the export/reopen/rerun workflow (checkpoint samples, not exclusive allocation
-or a continuous peak). The full pilot is suitable for desktop evaluation;
+or a continuous peak). Those timings were not rerun for the main-island bundle.
+The six-feeder case is intended for desktop evaluation;
 low-memory/mobile operation remains unqualified. See
 `evidence/studies/texas7k-reduction/BROWSER.md` for methodology and limits.

@@ -20,7 +20,7 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	const entry = catalogue.find((item: { id: string }) => item.id === id);
 	expect(entry).toMatchObject({
 		model: 'multiconductor',
-		n_bus: 22081,
+		n_bus: 22076,
 		distribution: {
 			related_case_id: 'case7000',
 			pf_options: {
@@ -99,7 +99,7 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 		case_id: id,
 		expected_revision: inspected.data.revision
 	});
-	expect(webmcp).toMatchObject({ ok: true, data: { converged: true, terminal_count: 55986 } });
+	expect(webmcp).toMatchObject({ ok: true, data: { converged: true, terminal_count: 55972 } });
 	if (!(await page.getByRole('region', { name: 'Study workspace' }).isVisible()))
 		await page.getByRole('button', { name: 'Studies', exact: true }).click();
 	const downloadWait = page.waitForEvent('download');
@@ -118,7 +118,10 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	const resultHash = createHash('sha256').update(JSON.stringify(snapshot.result)).digest('hex');
 	const reference = JSON.parse(
 		await readFile(
-			new URL('../../../evidence/studies/texas7k-reduction/wasm-validation.json', import.meta.url),
+			new URL(
+				'../../../evidence/studies/texas7k-reconversion/shipping-wasm-validation.json',
+				import.meta.url
+			),
 			'utf8'
 		)
 	);

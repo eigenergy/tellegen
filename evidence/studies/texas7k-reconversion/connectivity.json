@@ -1,0 +1,401 @@
+{
+  "connectivity": "Bus-level through enabled, closed lines and all transformer windings; ground is not an inter-bus edge.",
+  "opendss_original_equipment_frozen_taps": {
+    "snapshot_sha256": "8a1bc4efaaf95b91af00ab1aaf050c85243870ecf5a57467033a1f0cdc5e3ba7",
+    "converged": true,
+    "bus_count": 19598,
+    "node_count": 38218,
+    "disabled_line_count": 20,
+    "component_count": 3,
+    "components": [
+      {
+        "bus_count": 19593,
+        "source_buses": [
+          "p1uhs0_69"
+        ],
+        "load_count": 15299,
+        "load_p_w": 96375849.61422645,
+        "load_q_var": 21254038.211949665
+      },
+      {
+        "bus_count": 3,
+        "source_buses": [],
+        "load_count": 0,
+        "load_p_w": 0,
+        "load_q_var": 0,
+        "buses": [
+          "p1udt4106-p1umv2x",
+          "p1udt4106-p1umv2xx",
+          "p1udt4106-p1umv2xxx"
+        ],
+        "equipment": [
+          {
+            "name": "Line.l(r:p1udt4106-p1umv2)_s0",
+            "kind": "line",
+            "buses": [
+              "p1udt4106-p1umv2x",
+              "p1udt4106-p1umv2xx"
+            ],
+            "enabled": true,
+            "open": false,
+            "connected": true
+          },
+          {
+            "name": "Line.l(r:p1udt4106-p1umv2)_s1",
+            "kind": "line",
+            "buses": [
+              "p1udt4106-p1umv2xx",
+              "p1udt4106-p1umv2xxx"
+            ],
+            "enabled": true,
+            "open": false,
+            "connected": true
+          },
+          {
+            "name": "Line.padswitch(r:p1udt4106-p1umv2)p1u_27820",
+            "kind": "line",
+            "buses": [
+              "p1udt4106",
+              "p1udt4106-p1umv2x"
+            ],
+            "enabled": false,
+            "open": false,
+            "connected": false
+          },
+          {
+            "name": "Line.padswitch(r:p1udt4106-p1umv2)p1u_27821",
+            "kind": "line",
+            "buses": [
+              "p1udt4106-p1umv2xxx",
+              "p1umv2"
+            ],
+            "enabled": false,
+            "open": false,
+            "connected": false
+          }
+        ],
+        "max_voltage_v": 0.0
+      },
+      {
+        "bus_count": 2,
+        "source_buses": [],
+        "load_count": 0,
+        "load_p_w": 0,
+        "load_q_var": 0,
+        "buses": [
+          "p1udt1373-p1udt3224x",
+          "p1udt1373-p1udt3224xx"
+        ],
+        "equipment": [
+          {
+            "name": "Line.l(r:p1udt1373-p1udt3224)",
+            "kind": "line",
+            "buses": [
+              "p1udt1373-p1udt3224x",
+              "p1udt1373-p1udt3224xx"
+            ],
+            "enabled": true,
+            "open": false,
+            "connected": true
+          },
+          {
+            "name": "Line.padswitch(r:p1udt1373-p1udt3224)p1u_27814",
+            "kind": "line",
+            "buses": [
+              "p1udt1373",
+              "p1udt1373-p1udt3224x"
+            ],
+            "enabled": false,
+            "open": false,
+            "connected": false
+          },
+          {
+            "name": "Line.padswitch(r:p1udt1373-p1udt3224)p1u_27815",
+            "kind": "line",
+            "buses": [
+              "p1udt1373-p1udt3224xx",
+              "p1udt3224"
+            ],
+            "enabled": false,
+            "open": false,
+            "connected": false
+          }
+        ],
+        "max_voltage_v": 0.0
+      }
+    ]
+  },
+  "opendss_normalized_equipment": {
+    "snapshot_sha256": "1bb51293958f7bd94127d45965103e84c3c794f6d2b01f20162b304cb31d489f",
+    "converged": true,
+    "bus_count": 22080,
+    "node_count": 40700,
+    "disabled_line_count": 0,
+    "component_count": 3,
+    "components": [
+      {
+        "bus_count": 22075,
+        "source_buses": [
+          "p1uhs0_69"
+        ],
+        "load_count": 15299,
+        "load_p_w": 96375849.61422645,
+        "load_q_var": 21254038.211949665
+      },
+      {
+        "bus_count": 3,
+        "source_buses": [],
+        "load_count": 0,
+        "load_p_w": 0,
+        "load_q_var": 0,
+        "buses": [
+          "p1udt4106-p1umv2x",
+          "p1udt4106-p1umv2xx",
+          "p1udt4106-p1umv2xxx"
+        ],
+        "equipment": [
+          {
+            "name": "Line.l(r:p1udt4106-p1umv2)_s0",
+            "kind": "line",
+            "buses": [
+              "p1udt4106-p1umv2x",
+              "p1udt4106-p1umv2xx"
+            ],
+            "enabled": true,
+            "open": false,
+            "connected": true
+          },
+          {
+            "name": "Line.l(r:p1udt4106-p1umv2)_s1",
+            "kind": "line",
+            "buses": [
+              "p1udt4106-p1umv2xx",
+              "p1udt4106-p1umv2xxx"
+            ],
+            "enabled": true,
+            "open": false,
+            "connected": true
+          }
+        ],
+        "max_voltage_v": 0.0
+      },
+      {
+        "bus_count": 2,
+        "source_buses": [],
+        "load_count": 0,
+        "load_p_w": 0,
+        "load_q_var": 0,
+        "buses": [
+          "p1udt1373-p1udt3224x",
+          "p1udt1373-p1udt3224xx"
+        ],
+        "equipment": [
+          {
+            "name": "Line.l(r:p1udt1373-p1udt3224)",
+            "kind": "line",
+            "buses": [
+              "p1udt1373-p1udt3224x",
+              "p1udt1373-p1udt3224xx"
+            ],
+            "enabled": true,
+            "open": false,
+            "connected": true
+          }
+        ],
+        "max_voltage_v": 0.0
+      }
+    ]
+  },
+  "previous_bmopf": {
+    "sha256": "9d6ed48d0734522bc69a62e98f2d5bfc8c79a25f872ac998b7b8b769504c01b5",
+    "bus_count": 22081,
+    "load_count": 15299,
+    "component_count": 3,
+    "components": [
+      {
+        "bus_count": 22076,
+        "source_buses": [
+          "__source_internal"
+        ],
+        "load_count": 15299,
+        "load_p_w": 96375849.61422645,
+        "load_q_var": 21254038.211949665
+      },
+      {
+        "bus_count": 3,
+        "source_buses": [],
+        "load_count": 0,
+        "load_p_w": 0,
+        "load_q_var": 0,
+        "buses": [
+          "p1udt4106-p1umv2x",
+          "p1udt4106-p1umv2xx",
+          "p1udt4106-p1umv2xxx"
+        ],
+        "equipment": [
+          {
+            "kind": "line",
+            "subtype": "line",
+            "name": "l(r:p1udt4106-p1umv2)_s0",
+            "buses": [
+              "p1udt4106-p1umv2x",
+              "p1udt4106-p1umv2xx"
+            ],
+            "connected": true
+          },
+          {
+            "kind": "line",
+            "subtype": "line",
+            "name": "l(r:p1udt4106-p1umv2)_s1",
+            "buses": [
+              "p1udt4106-p1umv2xx",
+              "p1udt4106-p1umv2xxx"
+            ],
+            "connected": true
+          }
+        ]
+      },
+      {
+        "bus_count": 2,
+        "source_buses": [],
+        "load_count": 0,
+        "load_p_w": 0,
+        "load_q_var": 0,
+        "buses": [
+          "p1udt1373-p1udt3224x",
+          "p1udt1373-p1udt3224xx"
+        ],
+        "equipment": [
+          {
+            "kind": "line",
+            "subtype": "line",
+            "name": "l(r:p1udt1373-p1udt3224)",
+            "buses": [
+              "p1udt1373-p1udt3224x",
+              "p1udt1373-p1udt3224xx"
+            ],
+            "connected": true
+          }
+        ]
+      }
+    ]
+  },
+  "powerio_0_11_7_bmopf": {
+    "sha256": "1e78fc25de0d6d95e6c61e5ad7f6ff38e28b8057fb1fef8c1108805d5744df37",
+    "bus_count": 22081,
+    "load_count": 15299,
+    "component_count": 3,
+    "components": [
+      {
+        "bus_count": 22076,
+        "source_buses": [
+          "_pio_vsource_source_emf"
+        ],
+        "load_count": 15299,
+        "load_p_w": 96375849.61422645,
+        "load_q_var": 21254038.211949665
+      },
+      {
+        "bus_count": 3,
+        "source_buses": [],
+        "load_count": 0,
+        "load_p_w": 0,
+        "load_q_var": 0,
+        "buses": [
+          "p1udt4106-p1umv2x",
+          "p1udt4106-p1umv2xx",
+          "p1udt4106-p1umv2xxx"
+        ],
+        "equipment": [
+          {
+            "kind": "line",
+            "subtype": "line",
+            "name": "l(r:p1udt4106-p1umv2)_s0",
+            "buses": [
+              "p1udt4106-p1umv2x",
+              "p1udt4106-p1umv2xx"
+            ],
+            "connected": true
+          },
+          {
+            "kind": "line",
+            "subtype": "line",
+            "name": "l(r:p1udt4106-p1umv2)_s1",
+            "buses": [
+              "p1udt4106-p1umv2xx",
+              "p1udt4106-p1umv2xxx"
+            ],
+            "connected": true
+          }
+        ]
+      },
+      {
+        "bus_count": 2,
+        "source_buses": [],
+        "load_count": 0,
+        "load_p_w": 0,
+        "load_q_var": 0,
+        "buses": [
+          "p1udt1373-p1udt3224x",
+          "p1udt1373-p1udt3224xx"
+        ],
+        "equipment": [
+          {
+            "kind": "line",
+            "subtype": "line",
+            "name": "l(r:p1udt1373-p1udt3224)",
+            "buses": [
+              "p1udt1373-p1udt3224x",
+              "p1udt1373-p1udt3224xx"
+            ],
+            "connected": true
+          }
+        ]
+      }
+    ]
+  },
+  "same_unsupplied_bus_sets_at_all_stages": true,
+  "unsupplied_load_count": 0,
+  "equipment_identity_comparison": {
+    "bus": {
+      "previous": 22081,
+      "current": 22081,
+      "added": [
+        "_pio_vsource_source_emf"
+      ],
+      "removed": [
+        "__source_internal"
+      ]
+    },
+    "line": {
+      "previous": 16822,
+      "current": 16822,
+      "added": [
+        "_pio_vsource_source_impedance"
+      ],
+      "removed": [
+        "__source_impedance"
+      ]
+    },
+    "load": {
+      "previous": 15299,
+      "current": 15299,
+      "added": [],
+      "removed": []
+    },
+    "voltage_source": {
+      "previous": 1,
+      "current": 1,
+      "added": [],
+      "removed": []
+    }
+  },
+  "electrical_tables_changed": {
+    "bus": true,
+    "line": true,
+    "linecode": true,
+    "load": false,
+    "transformer": false,
+    "voltage_source": true
+  }
+}

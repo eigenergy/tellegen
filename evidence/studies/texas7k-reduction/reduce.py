@@ -5,13 +5,13 @@ Usage: python3 reduce.py SOURCE.bmopf.json OUTPUT_DIRECTORY
 This is deliberately scoped to this pilot, not a general BMOPF optimizer.
 """
 
+import argparse
 import copy
 import gzip
 import hashlib
 import json
-from pathlib import Path
 import shutil
-import sys
+from pathlib import Path
 
 
 def encode(value):
@@ -26,7 +26,7 @@ def measure(label, data):
     return {"stage": label, "bytes": len(data), "gzip_bytes": len(gzip.compress(data, compresslevel=9, mtime=0)), "sha256": sha(data)}
 
 
-def reduce(source, output):
+def reduce(source, output, externalize_linecode_sources=False):
     output.mkdir(parents=True, exist_ok=True)
     original_bytes = source.read_bytes()
     original = json.loads(original_bytes)
@@ -62,7 +62,19 @@ def reduce(source, output):
     reduced["linecode"] = {key: value for key, value in codes.items() if key in used}
     stages.append(measure("unused_linecodes_removed", encode(reduced)))
 
-    # Compare the complete record, including ratings. Keep existing code names;
+    # PowerIO 0.11.7 labels each effective line code with its originating
+    # line. Keep those labels in the sidecar so otherwise identical complete
+    # electrical records can share storage. No electrical field is omitted.
+    linecode_sources = {}
+    if externalize_linecode_sources:
+        for name, code in reduced["linecode"].items():
+            if "source" in code:
+                assert isinstance(code["source"], str)
+                linecode_sources[name] = code.pop("source")
+        stages.append(measure("linecode_source_labels_externalized", encode(reduced)))
+
+    # Compare every remaining field, including ratings. Optional source labels
+    # were preserved above. Keep existing representative code names;
     # no bus, branch, transformer or load identifiers change.
     signatures, aliases, unique = {}, {}, {}
     for name, code in reduced["linecode"].items():
@@ -91,13 +103,13 @@ def reduce(source, output):
     reduced["meta"]["provenance"]["tellegen_reduction"] = {
         "source_file": source.name,
         "source_sha256": sha(original_bytes),
-        "method": "Compact JSON; remove duplicate GeoJSON Points and unused linecodes; share identical linecode records; omit default CONSTANT_POWER load labels",
+        "method": "Compact JSON; remove duplicate GeoJSON Points and unused linecodes; share identical linecode records; omit default CONSTANT_POWER load labels" + ("; preserve per-linecode source labels in the provenance sidecar" if externalize_linecode_sources else ""),
         "electrical_values_rounded": False,
         "provenance_sidecar": "reduction-provenance.json",
     }
 
-    # Stronger than checking one operating point: every line resolves to the
-    # exact same complete code, and every other electrical table is unchanged.
+    # Every line recovers its exact original complete code after restoring any
+    # externalized source label. All other electrical tables are unchanged.
     for table in ["bus", "transformer", "voltage_source", "terminal_conventions"]:
         assert original[table] == reduced[table], table
     for name, load in reduced["load"].items():
@@ -108,7 +120,10 @@ def reduce(source, output):
     for name, line in reduced["line"].items():
         before = original["line"][name]
         assert {k: v for k, v in line.items() if k != "linecode"} == {k: v for k, v in before.items() if k != "linecode"}
-        assert original["linecode"][before["linecode"]] == reduced["linecode"][line["linecode"]]
+        restored_code = dict(reduced["linecode"][line["linecode"]])
+        if before["linecode"] in linecode_sources:
+            restored_code["source"] = linecode_sources[before["linecode"]]
+        assert original["linecode"][before["linecode"]] == restored_code
 
     data = encode(reduced)
     filename = "p1uhs0_1247.reduced.bmopf.json"
@@ -122,9 +137,16 @@ def reduce(source, output):
         "derived_bus_locations": derived, "linecode_aliases": aliases,
         "unused_linecodes": unused,
     }
+    if externalize_linecode_sources:
+        provenance["linecode_sources"] = linecode_sources
     (output / "reduction-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     for name in ["License.md", "SOURCE_NOTICE.md", "tellegen_options.json"]:
         shutil.copyfile(source.parent / name, output / name)
+    if "main_island" in original["meta"]["provenance"]:
+        shutil.copyfile(source.parent / "island-removal.json", output / "island-removal.json")
+    if externalize_linecode_sources:
+        with (output / "SOURCE_NOTICE.md").open("a") as notice:
+            notice.write("\n## Compact shipping representation\n\nRemoved duplicate bus Point geometry and default constant-power labels; shared\nidentical electrical line-code records. Per-linecode source labels and derived\ncoordinate associations remain in reduction-provenance.json. All electrical\nvalues, equipment identities and bus coordinates are retained without rounding.\n")
     report = {
         "stages": stages,
         "counts": {"buses": len(reduced["bus"]), "lines": len(reduced["line"]), "loads": len(reduced["load"]), "transformers": sum(map(len, reduced["transformer"].values())), "linecodes_original": len(codes), "linecodes_unused": len(unused), "linecodes_used_unique": len(unique), "duplicate_point_features_removed": len(seen), "default_load_models_omitted": default_models_removed, "derived_location_associations_in_sidecar": len(derived)},
@@ -133,11 +155,17 @@ def reduce(source, output):
         "numeric_rounding": False,
         "source_unchanged": sha(source.read_bytes()) == sha(original_bytes),
     }
+    if externalize_linecode_sources:
+        report["linecode_source_labels_in_sidecar"] = len(linecode_sources)
+        report["linecode_source_labels_restored_for_comparison"] = True
     (output / "size-report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        raise SystemExit(__doc__)
-    reduce(Path(sys.argv[1]), Path(sys.argv[2]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--externalize-linecode-sources", action="store_true")
+    args = parser.parse_args()
+    reduce(args.source, args.output, args.externalize_linecode_sources)

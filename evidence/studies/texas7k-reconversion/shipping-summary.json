@@ -1,0 +1,29 @@
+{
+  "manifest": "data/shipping/texas7k-main-island/distribution-cases.json",
+  "bundle": "data/shipping/texas7k-main-island/distribution/texas7k-p1uhs0_1247-6f60e4cd807b09b3",
+  "hosted_module": {
+    "file": "p1uhs0_1247.reduced.pio.json",
+    "bytes": 36692131,
+    "gzip_bytes": 1260618,
+    "sha256": "bd1806e0ba240679be01648fffe0db798d090daf98a3e07ce64b797d71a327ed"
+  },
+  "compact_bmopf": {
+    "file": "p1uhs0_1247.reduced.bmopf.json",
+    "bytes": 13693080,
+    "gzip_bytes": 1096525,
+    "sha256": "ab94d4741fa2ef70fe16010e301d2f46b72ce7ba74186c424574cd435682029c"
+  },
+  "linecode_provenance_sidecar_bytes": 3412461,
+  "component_count": 1,
+  "buses": 22076,
+  "loads": 15299,
+  "unique_electrical_linecodes": 1510,
+  "native_all_result_fields_exactly_equal": true,
+  "wasm_graph_and_all_result_fields_exactly_equal": true,
+  "electrical_schema_projection_valid": true,
+  "all_bundle_checksums_verified": true,
+  "gzip_decompresses_to_exact_hosted_module": true,
+  "staging_failure_path_tests_passed": 3,
+  "prepared_locally": true,
+  "deployed": false
+}

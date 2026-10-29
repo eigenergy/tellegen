@@ -1,5 +1,11 @@
 # Texas7k distribution JSON reduction prototype
 
+The current PowerIO 0.11.7 **main-island** shipping variant is documented in
+`../texas7k-reconversion/SHIPPING.md`. It uses the reducer's optional
+`--externalize-linecode-sources` mode: per-line source labels remain in the
+sidecar, allowing identical electrical records to share storage. The figures
+below describe the historical full-pilot prototype.
+
 This experiment reduces the storage representation of the complete
 `p1uhs0_1247` six-feeder pilot. It does not extract a feeder, eliminate buses,
 simplify electrical equipment, round numbers, or change the operating point.
