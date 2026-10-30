@@ -151,11 +151,36 @@ fn coord_key(p: (f64, f64)) -> (i64, i64) {
     ((p.0 * 1e5).round() as i64, (p.1 * 1e5).round() as i64)
 }
 
-/// Stitch fragmented ways back into whole lines. Ways of one voltage,
-/// circuit count and kind join where exactly two way ends meet: a
-/// pass-through. A point with three or more ends is a junction, and a point
-/// within `stop_km` of a station in `stops` is where lines terminate, so
-/// neither joins; a way whose two ends meet each other is left alone.
+/// One line per level a way carries at or above `floor`. A way on shared
+/// towers (`voltage=400000;220000`, `circuits=2`) is part of the 400 kV line
+/// and of the 220 kV line that run on it, so each level gets its own copy
+/// with an even share of the tagged circuits (at least one). A DC way, an
+/// untagged one, or one with a single level is kept as it is.
+pub fn split_levels(line: &OsmLine, floor: f64) -> Vec<OsmLine> {
+    let kept: Vec<f64> = line.kvs.iter().copied().filter(|kv| *kv >= floor).collect();
+    if line.is_dc || line.kvs.len() < 2 || kept.is_empty() {
+        return vec![line.clone()];
+    }
+    let share = ((line.circuits as f64 / line.kvs.len() as f64).round() as u32).max(1);
+    kept.into_iter()
+        .map(|kv| OsmLine {
+            kv,
+            kvs: vec![kv],
+            circuits: share,
+            ..line.clone()
+        })
+        .collect()
+}
+
+/// Stitch fragmented ways back into whole lines. Ways of one voltage (AC or
+/// DC) join where exactly two way ends meet: a pass-through. The circuit
+/// count and the overhead or cable kind may change along a line (a circuit
+/// strung on part of the route, a line that goes underground into a city),
+/// so neither keeps two ways apart; a joined line carries the fewest
+/// circuits of its ways and is a cable only when all of them are. A point
+/// with three or more ends is a junction, and a point within `stop_km` of a
+/// station in `stops` is where lines terminate, so neither joins; a way
+/// whose two ends meet each other is left alone.
 pub fn stitch_lines(lines: &[OsmLine], stops: &[(f64, f64)], stop_km: f64) -> Vec<OsmLine> {
     let at_station = |p: (f64, f64)| {
         let dlat = stop_km / 111.0;
@@ -163,15 +188,10 @@ pub fn stitch_lines(lines: &[OsmLine], stops: &[(f64, f64)], stop_km: f64) -> Ve
             .iter()
             .any(|s| (s.1 - p.1).abs() <= dlat && haversine_km(p.0, p.1, s.0, s.1) <= stop_km)
     };
-    let mut groups: BTreeMap<(i64, u32, bool, bool), Vec<usize>> = BTreeMap::new();
+    let mut groups: BTreeMap<(i64, bool), Vec<usize>> = BTreeMap::new();
     for (i, l) in lines.iter().enumerate() {
         groups
-            .entry((
-                (l.kv * 1000.0).round() as i64,
-                l.circuits,
-                l.is_cable,
-                l.is_dc,
-            ))
+            .entry(((l.kv * 1000.0).round() as i64, l.is_dc))
             .or_default()
             .push(i);
     }
@@ -214,6 +234,8 @@ pub fn stitch_lines(lines: &[OsmLine], stops: &[(f64, f64)], stop_km: f64) -> Ve
                 geometry.reverse();
             }
             let mut ids = lines[idxs[start]].ids.clone();
+            let mut circuits = lines[idxs[start]].circuits;
+            let mut is_cable = lines[idxs[start]].is_cable;
             used[start] = true;
             let mut cursor = (start, forward_from_head);
             loop {
@@ -231,6 +253,8 @@ pub fn stitch_lines(lines: &[OsmLine], stops: &[(f64, f64)], stop_km: f64) -> Ve
                 }
                 geometry.extend(g.into_iter().skip(1));
                 ids.extend(lines[idxs[n]].ids.iter().copied());
+                circuits = circuits.min(lines[idxs[n]].circuits);
+                is_cable &= lines[idxs[n]].is_cable;
                 cursor = (n, !entering_tail);
             }
             let first = &lines[idxs[start]];
@@ -238,8 +262,9 @@ pub fn stitch_lines(lines: &[OsmLine], stops: &[(f64, f64)], stop_km: f64) -> Ve
                 ids,
                 geometry,
                 kv: first.kv,
-                circuits: first.circuits,
-                is_cable: first.is_cable,
+                kvs: first.kvs.clone(),
+                circuits,
+                is_cable,
                 is_dc: first.is_dc,
             });
         }
@@ -529,13 +554,14 @@ impl OsmBuild {
             .parsed
             .lines
             .iter()
+            .flat_map(|l| split_levels(l, opts.voltage_floor_kv))
             .map(|l| OsmLine {
                 geometry: l
                     .geometry
                     .iter()
                     .map(|&(lon, lat)| (lift_lon(lon, &frame), lat))
                     .collect(),
-                ..l.clone()
+                ..l
             })
             .collect();
         let stations: Vec<(f64, f64)> = buses.iter().map(|b| (b.lon, b.lat)).collect();
@@ -1109,10 +1135,74 @@ mod tests {
             ids: vec![id],
             geometry: pts.to_vec(),
             kv: 220.0,
+            kvs: vec![220.0],
             circuits: 1,
             is_cable: false,
             is_dc: false,
         }
+    }
+
+    #[test]
+    fn a_line_joins_across_changes_of_circuits_and_kind() {
+        // Overhead 2-circuit way, a 1-circuit stretch, then a cable into town.
+        let mut a = line(1, &[(0.0, 0.0), (1.0, 0.0)]);
+        a.circuits = 2;
+        let b = line(2, &[(1.0, 0.0), (2.0, 0.0)]);
+        let mut c = line(3, &[(2.0, 0.0), (3.0, 0.0)]);
+        c.is_cable = true;
+        let out = stitch_lines(&[a, b, c], &[], 0.0);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].ids, vec![1, 2, 3]);
+        assert_eq!(out[0].circuits, 1, "the weakest stretch");
+        assert!(!out[0].is_cable);
+    }
+
+    #[test]
+    fn a_way_on_shared_towers_belongs_to_the_line_of_each_level() {
+        // A 400 kV line and a 220 kV line run together on 400/220 kV towers
+        // between two stations: each must come out whole at its own level.
+        let mut shared = line(10, &[(1.0, 0.0), (2.0, 0.0)]);
+        shared.kv = 400.0;
+        shared.kvs = vec![400.0, 220.0];
+        shared.circuits = 2;
+        let split = split_levels(&shared, 110.0);
+        assert_eq!(split.len(), 2);
+        assert_eq!(
+            split.iter().map(|l| (l.kv, l.circuits)).collect::<Vec<_>>(),
+            [(400.0, 1), (220.0, 1)]
+        );
+        // A level below the floor still holds its share of the circuits.
+        let mut low = shared.clone();
+        low.kvs = vec![400.0, 60.0];
+        let split_low = split_levels(&low, 110.0);
+        assert_eq!(split_low.len(), 1);
+        assert_eq!((split_low[0].kv, split_low[0].circuits), (400.0, 1));
+        assert_eq!(
+            split_levels(&line(11, &[(0.0, 0.0), (1.0, 0.0)]), 110.0).len(),
+            1
+        );
+
+        let mut hv_in = line(11, &[(0.0, 0.0), (1.0, 0.0)]);
+        hv_in.kv = 400.0;
+        hv_in.kvs = vec![400.0];
+        let mut hv_out = line(12, &[(2.0, 0.0), (3.0, 0.0)]);
+        hv_out.kv = 400.0;
+        hv_out.kvs = vec![400.0];
+        let lv_in = line(13, &[(1.0, 0.0), (1.0, -1.0)]);
+        let lv_out = line(14, &[(2.0, 0.0), (2.0, 1.0)]);
+        let mut ways = vec![hv_in, hv_out, lv_in, lv_out];
+        ways.extend(split);
+        let out = stitch_lines(&ways, &[], 0.0);
+        assert_eq!(out.len(), 2, "{out:?}");
+        let hv = out.iter().find(|l| l.kv == 400.0).unwrap();
+        assert_eq!(hv.ids, vec![11, 10, 12]);
+        assert_eq!(
+            (hv.geometry[0], *hv.geometry.last().unwrap()),
+            ((0.0, 0.0), (3.0, 0.0))
+        );
+        let lv = out.iter().find(|l| l.kv == 220.0).unwrap();
+        assert_eq!(lv.ids.len(), 3);
+        assert!(lv.ids.contains(&10));
     }
 
     #[test]
