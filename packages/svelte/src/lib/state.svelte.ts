@@ -20,6 +20,7 @@ import {
 	type McPfCallTiming,
 	type McPfResult,
 	type McPfSummary,
+	type McPfOptions,
 	type McLoadBranchState,
 	type McLoadPowerEdit,
 	type McStudySnapshot,
@@ -245,6 +246,9 @@ export interface McEditTiming extends McPfCallTiming {
 
 /** A conductor-resolved case with retained electrical inputs and terminal results. */
 export class MulticonductorCase {
+	readonly hosted: boolean;
+	distribution: CaseSummary['distribution'] = $state.raw(undefined);
+	pfOptions: McPfOptions = $state.raw({});
 	readonly id: string;
 	readonly label: string;
 	readonly fileName: string;
@@ -324,6 +328,7 @@ export class MulticonductorCase {
 	lastGeoView: CameraSnapshot | null = null;
 
 	constructor(init: {
+		hosted?: boolean;
 		id: string;
 		label: string;
 		fileName: string;
@@ -332,6 +337,7 @@ export class MulticonductorCase {
 		coordsKind: MultiCoordsKind;
 		view?: MultiView | null;
 	}) {
+		this.hosted = init.hosted ?? false;
 		this.id = init.id;
 		this.label = init.label;
 		this.fileName = init.fileName;
@@ -441,6 +447,7 @@ export class AppState {
 	/** Saved Study inspection is independent of the editable case and its solution. */
 	studyView: StudyDisplaySnapshot | null = $state.raw<StudyDisplaySnapshot | null>(null);
 	cases: CaseState[] = $state.raw<CaseState[]>([]);
+	hostedDistributionCases: CaseSummary[] = $state.raw<CaseSummary[]>([]);
 	activeCaseId = $state<string | null>(null);
 	/** Selected bus in the active case. */
 	selectedBus = $state<number | null>(null);

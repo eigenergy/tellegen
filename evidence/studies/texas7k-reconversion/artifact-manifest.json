@@ -1,0 +1,70 @@
+{
+  "equivalent_transformer_map.json": {
+    "bytes": 1070887,
+    "sha256": "03d9c86c538e04edaf20dff69f785bf1ade7059e78a3661ce17b8098ae7babee"
+  },
+  "SOURCE_NOTICE.md": {
+    "bytes": 3605,
+    "sha256": "18f348f3c71deb34cf62521620660b311a093e92a3639ebe7949446a455fa422"
+  },
+  "License.md": {
+    "bytes": 951,
+    "sha256": "f1dc639fcbd6466b5820f91f6b6262b90652cd856e2535a2d94f48597a0e45fa"
+  },
+  "p1uhs0_1247.energized.pio.json": {
+    "bytes": 69258530,
+    "sha256": "95389d88bc3e7a773e35dd8abf02cca8efd44d104470341a0cee0d2997490412"
+  },
+  "antifloat_comparison.json": {
+    "bytes": 527,
+    "sha256": "95d0e3470d6c2eefd357e65b1ea06a6474c1e4a9100d27034393ad2066371eca"
+  },
+  "powerio_diagnostics.json": {
+    "bytes": 4317719,
+    "sha256": "12a35625347d9f969babda7fe4f48dedabb0f9ff1faa7956a80137f4c4141e11"
+  },
+  "tellegen_voltages.json.gz": {
+    "bytes": 1059883,
+    "sha256": "7917ab3c714f70c75c522775f477f31bb15862a2db37d2c0d76359329fcc9923"
+  },
+  "p1uhs0_1247.bmopf.json": {
+    "bytes": 44920224,
+    "sha256": "1e78fc25de0d6d95e6c61e5ad7f6ff38e28b8057fb1fef8c1108805d5744df37"
+  },
+  "engine_parameters.json.gz": {
+    "bytes": 422165,
+    "sha256": "834cdecc9a4e08f0e0ec68103a1780ed45c212c535ba21537c028ca1e527dcc1"
+  },
+  "power_flow_summary.json": {
+    "bytes": 5416,
+    "sha256": "cd39c77c1ea1c42753820fd5fd045d97663376bf3ec086b23a084eeda7ab3159"
+  },
+  "tellegen_options.json": {
+    "bytes": 114,
+    "sha256": "17c91dff45141b48c298f9b35273de6891e21353df19880ef6084cb59cdcf9e9"
+  },
+  "tellegen_comparison.json": {
+    "bytes": 3804,
+    "sha256": "1024013428e9eda9d52de85f8e0cf46c37cce55d8e7204804686f234d5239514"
+  },
+  "power_flow_overview.svg": {
+    "bytes": 171644,
+    "sha256": "aa1eb7999cadda88a08484ed735b081b464f515cae656d2cb0debcc5e44f548f"
+  },
+  "opendss_reference.json.gz": {
+    "bytes": 875192,
+    "sha256": "c55cc401ff5035c4a5b364084e1664c825dbebd009f7ea91da94fc37a9351df7"
+  },
+  "validation_report.json": {
+    "bytes": 7106,
+    "sha256": "46c689bf8870a4ae90051532869da197621e8985dc9d8a211a2ba58b5ae8c4a4"
+  },
+  "power_flow_overview.png": {
+    "bytes": 242996,
+    "sha256": "490bc573eedff1930c75a4d08c1eeb89332700f7f3ef22a7bb886766181d4185"
+  },
+  "software_provenance.json": {
+    "bytes": 1143,
+    "sha256": "ebfaa7b19449e4ceb051539f84faa5be0404594c565779b73dbbbedac46fc957"
+  }
+}

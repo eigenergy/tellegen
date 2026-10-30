@@ -40,6 +40,7 @@ import {
 	formatPowerIoDiagnostic,
 	formatOf,
 	ingestCase,
+	ingestDistCase,
 	ingestDistCaseBytes,
 	ingestJsonDrop,
 	isDisplayFile,
@@ -191,7 +192,12 @@ export interface ControllerOptions {
 	loadDefaultCases?: boolean;
 	acOpfWasmUrl?: string;
 	mcTransport?: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
-		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession'>>;
+		Partial<
+			Pick<
+				EngineTransport,
+				'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession' | 'ingestDistCase'
+			>
+		>;
 }
 
 /** Input to `Controller.openBalancedModule` and `replaceLocalCase`: a
@@ -222,7 +228,14 @@ export class Controller {
 	api: TellegenApiClient | null;
 	readonly loadDefaultCases: boolean;
 	mcTransport: Pick<EngineTransport, 'solveMcModule' | 'applyMcGeo'> &
-		Partial<Pick<EngineTransport, 'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession'>>;
+		Partial<
+			Pick<
+				EngineTransport,
+				'solveMcStudy' | 'applyMcStudyGeo' | 'createMcPfSession' | 'ingestDistCase'
+			>
+		>;
+	private hostedLoadAbort: AbortController | null = null;
+	loadingHostedDistribution = $state<string | null>(null);
 	abort: AbortController | null = null;
 	// While set (epoch ms), the server sensitivity fallback is rate limited: skip
 	// the request and show the rate-limit copy instead of burning the budget on a
@@ -595,6 +608,9 @@ export class Controller {
 	dispose() {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.hostedLoadAbort?.abort();
+		this.hostedLoadAbort = null;
+		this.loadingHostedDistribution = null;
 		this.abort?.abort();
 		this.abort = null;
 		this.acOpfProbeAbort.abort();
@@ -983,6 +999,7 @@ export class Controller {
 		// so two concurrent loads can't double-fetch the case list and double-fit the map.
 		if (this.loading) return this.loading;
 		this.loading = (async () => {
+			this.hostedLoadAbort?.abort();
 			this.probeAcOpf();
 			// Learn the deploy's compute gate up front so fallback paths pick honest
 			// copy and skip doomed requests (the SSE stream cannot see a 403). On
@@ -1007,7 +1024,19 @@ export class Controller {
 					old.solveSeq++;
 					this.disposeStudy(old);
 				}
-				this.app.cases = summaries.filter((s) => !hidden.has(s.id)).map((s) => new CaseState(s));
+				for (const c of this.app.multiCases.filter((c) => c.hosted)) {
+					c.solveAbort?.abort();
+					if (c.mcEditTimer !== null) clearTimeout(c.mcEditTimer);
+					c.mcSession?.free();
+					c.mcSession = null;
+				}
+				this.app.multiCases = this.app.multiCases.filter((c) => !c.hosted);
+				this.leaveMulti();
+				const visible = summaries.filter((s) => !hidden.has(s.id));
+				this.app.hostedDistributionCases = visible.filter((s) => s.model === 'multiconductor');
+				this.app.cases = visible
+					.filter((s) => s.model !== 'multiconductor')
+					.map((s) => new CaseState(s));
 				this.app.activeLocalId = null;
 				this.app.placingLocalId = null;
 				this.app.activeCaseId =
@@ -1016,7 +1045,11 @@ export class Controller {
 					null;
 				const active = this.app.active;
 				if (active) await this.loadBackendCase(active, true);
-				else this.app.requestFrame('all');
+				else {
+					const distribution = this.app.hostedDistributionCases.find((s) => !s.unavailable_reason);
+					if (distribution) await this.activateHostedDistribution(distribution.id);
+					else this.app.requestFrame('all');
+				}
 				// Mark loaded only on success, so a failed first load is retried on the next
 				// mount (the page guards the call with `if (!ctrl.casesLoaded)`).
 				this.casesLoaded = true;
@@ -1081,6 +1114,7 @@ export class Controller {
 	}
 
 	activateCase = async (id: string) => {
+		this.hostedLoadAbort?.abort();
 		const candidate = this.app.byId(id);
 		if (!candidate) return;
 		if (candidate.unavailableReason) {
@@ -1109,6 +1143,9 @@ export class Controller {
 			if (c) await this.loadBackendCase(c, true);
 		} else if (t.kind === 'local') {
 			this.maybeStartLocalSolve(t.id);
+		} else if (!this.app.activeCaseId && !this.app.activeLocalId && !this.app.activeMultiId) {
+			const next = this.app.hostedDistributionCases.find((s) => !s.unavailable_reason);
+			if (next) await this.activateHostedDistribution(next.id);
 		}
 	};
 
@@ -1127,6 +1164,7 @@ export class Controller {
 	};
 
 	activateLocal = (c: LocalCase) => {
+		this.hostedLoadAbort?.abort();
 		this.app.studyView = null;
 		this.clearSelection();
 		// Mirror activateCase's reset: a local and a backend case are mutually
@@ -2496,7 +2534,16 @@ export class Controller {
 	};
 
 	/** Retain parsed electrical inputs and draw each declared coordinate space directly. */
-	private addMultiCase(fileName: string, payload: IngestedDistCase) {
+	private addMultiCase(
+		fileName: string,
+		payload: IngestedDistCase,
+		hosted?: {
+			id: string;
+			name: string;
+			distribution?: MulticonductorCase['distribution'];
+		}
+	) {
+		if (!hosted) this.hostedLoadAbort?.abort();
 		const { graph, ...summary }: { graph: IngestedDistCase['graph'] } & MultiCaseSummary = payload;
 		const coordsKind = payload.coords_kind as MultiCoordsKind;
 		const label =
@@ -2507,14 +2554,17 @@ export class Controller {
 				: buildDiagramView(graph, payload.geo_layer);
 		this.logImport(fileName, summary);
 		const c = new MulticonductorCase({
-			id: `dist-${++this.localSeq}`,
-			label,
+			id: hosted?.id ?? `dist-${++this.localSeq}`,
+			label: hosted?.name ?? label,
+			hosted: !!hosted,
 			fileName,
 			summary,
 			graph,
 			coordsKind,
 			view
 		});
+		c.distribution = hosted?.distribution;
+		c.pfOptions = { ...hosted?.distribution?.pf_options };
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.addMulti(c);
@@ -2528,6 +2578,7 @@ export class Controller {
 		options: McPfOptions = {},
 		signal?: AbortSignal
 	): Promise<McPfSummary> => {
+		options = { ...c.pfOptions, ...options };
 		if (signal?.aborted || this.disposed)
 			throw new DOMException('Calculation cancelled', 'AbortError');
 		if (c.solving) throw new Error('A calculation is already running for this case');
@@ -2602,6 +2653,7 @@ export class Controller {
 			c.mcFullResult = fullResult;
 			c.mcTiming = null;
 			c.mcSnapshot = snapshot;
+			c.pfOptions = { ...options };
 			c.mcSavedAt = null;
 			c.solveMs = performance.now() - started;
 			c.revisionGeneration++;
@@ -2945,6 +2997,7 @@ export class Controller {
 
 	/** Make a multiconductor case active, framing it when it is placed. */
 	activateMulti = (c: MulticonductorCase) => {
+		this.hostedLoadAbort?.abort();
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.activeCaseId = null;
@@ -2958,6 +3011,7 @@ export class Controller {
 	/** Select a bus in a multiconductor case: its terminal stack and incident
 	 * conductors expand. Selecting is viewing detail only — no solve. */
 	selectMultiBus = (caseId: string, busId: string) => {
+		this.hostedLoadAbort?.abort();
 		const c = this.app.multiCases.find((mc) => mc.id === caseId);
 		if (!c) return;
 		this.app.activeCaseId = null;
@@ -2971,6 +3025,7 @@ export class Controller {
 	/** Select an edge in a multiconductor case: its conductor pairing expands in
 	 * the panel. Mutually exclusive with the bus selection. */
 	selectMultiEdge = (caseId: string, edgeId: string) => {
+		this.hostedLoadAbort?.abort();
 		const c = this.app.multiCases.find((mc) => mc.id === caseId);
 		if (!c) return;
 		this.app.activeCaseId = null;
@@ -3004,6 +3059,12 @@ export class Controller {
 
 	removeMultiCase = async (c: MulticonductorCase, event?: MouseEvent) => {
 		event?.stopPropagation();
+		if (c.hosted) {
+			this.rememberHiddenDefaultCase(c.id);
+			this.app.hostedDistributionCases = this.app.hostedDistributionCases.filter(
+				(s) => s.id !== c.id
+			);
+		}
 		c.solveAbort?.abort();
 		if (c.mcEditTimer !== null) clearTimeout(c.mcEditTimer);
 		c.mcSession?.free();
@@ -3013,6 +3074,53 @@ export class Controller {
 			c.selectedEdgeId = null;
 		}
 		await this.hydrateFallback(this.app.removeMulti(c.id));
+	};
+
+	/** Hosted feeders use the same typed-module ingest and calculation path as local feeders. */
+	activateHostedDistribution = async (id: string) => {
+		if (this.disposed) return;
+		const summary = this.app.hostedDistributionCases.find((s) => s.id === id);
+		if (!summary || summary.unavailable_reason) return;
+		const existing = this.app.multiCases.find((c) => c.hosted && c.id === id);
+		if (existing) {
+			this.activateMulti(existing);
+			return;
+		}
+		const api = this.api;
+		if (!api) {
+			this.fail(`${summary.name}: no API configured`);
+			return;
+		}
+		this.hostedLoadAbort?.abort();
+		const abort = new AbortController();
+		this.hostedLoadAbort = abort;
+		this.loadingHostedDistribution = id;
+		try {
+			const text = await api.getCaseModuleJson(id, abort.signal);
+			abort.signal.throwIfAborted();
+			const payload = await (this.mcTransport.ingestDistCase ?? ingestDistCase)(text, 'pio');
+			abort.signal.throwIfAborted();
+			if (!this.app.hostedDistributionCases.includes(summary)) return;
+			this.addMultiCase(`${id}.pio.json`, payload, summary);
+			this.app.error = null;
+			this.app.errorRetry = null;
+		} catch (error) {
+			if (!abort.signal.aborted)
+				this.fail(`${summary.name}: ${errorText(error)}`, () =>
+					this.activateHostedDistribution(id)
+				);
+		} finally {
+			if (this.hostedLoadAbort === abort) {
+				this.hostedLoadAbort = null;
+				this.loadingHostedDistribution = null;
+			}
+		}
+	};
+
+	removeHostedDistribution = (id: string) => {
+		this.rememberHiddenDefaultCase(id);
+		this.app.hostedDistributionCases = this.app.hostedDistributionCases.filter((s) => s.id !== id);
+		if (this.loadingHostedDistribution === id) this.hostedLoadAbort?.abort();
 	};
 
 	/** The unified map click-to-place: a pending multiconductor case takes the

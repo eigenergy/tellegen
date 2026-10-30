@@ -1,0 +1,172 @@
+{
+  "operating_point": "Written nominal load kW/kvar; OpenDSS static regulator taps solved and frozen. No annual profile sampling.",
+  "converged": true,
+  "load_count": 15299,
+  "load_branch_count": 15913,
+  "load_p_mw": 96.37584961422135,
+  "load_q_mvar": 21.25403821195077,
+  "source_p_mw": 102.82899502614227,
+  "source_q_mvar": 46.27895101303902,
+  "source_s_mva": 112.76321884796327,
+  "source_power_factor": 0.9119019133781987,
+  "real_losses_mw": 6.4531462651127285,
+  "real_losses_percent_of_import": 6.275609582172948,
+  "line_real_losses_mw": 4.078520268014317,
+  "transformer_real_losses_mw": 2.3746259970984123,
+  "voltage_percentiles_pu": {
+    "0": 0.851977445181814,
+    "1": 0.9182945995973751,
+    "5": 0.9379372618140823,
+    "25": 0.9690609027313251,
+    "50": 0.9874620249793026,
+    "75": 1.0035583897846356,
+    "95": 1.017873873530965,
+    "99": 1.0259074816452776,
+    "100": 1.0407934752865196
+  },
+  "load_branches_below_095": 1665,
+  "load_branches_below_090": 11,
+  "load_branches_above_105": 0,
+  "worst_load_voltage": {
+    "load": "load_p1ulv7356_1",
+    "bus": "p1ulv7356",
+    "branch": 0,
+    "terminal_pair": [
+      "1",
+      "4"
+    ],
+    "voltage_v": 102.23729342181767,
+    "nominal_voltage_v": 120.0,
+    "voltage_pu": 0.851977445181814,
+    "longitude": -100.48996512543953,
+    "latitude": 28.75436697084184,
+    "p_w": 12881.427080810116
+  },
+  "highest_load_voltage": {
+    "load": "load_p1ulv3801_2",
+    "bus": "p1ulv3801",
+    "branch": 0,
+    "terminal_pair": [
+      "2",
+      "4"
+    ],
+    "voltage_v": 124.89521703438236,
+    "nominal_voltage_v": 120.0,
+    "voltage_pu": 1.0407934752865196,
+    "longitude": -100.47754048296862,
+    "latitude": 28.714396696813875,
+    "p_w": 12881.427080810116
+  },
+  "lines_over_continuous_rating": 407,
+  "total_rated_line_branches": 16818,
+  "worst_10_line_loading": [
+    {
+      "line": "l(r:p1udm981-p1udt270lv)",
+      "max_current_a": 218.93199033845252,
+      "continuous_current_limit_a": 115.0,
+      "loading_pu": 1.9037564377256742,
+      "bus_from": "p1udt270lv",
+      "bus_to": "p1udm981"
+    },
+    {
+      "line": "sb9_p1uhs0_1247_414",
+      "max_current_a": 2845.961211055451,
+      "continuous_current_limit_a": 1500.0,
+      "loading_pu": 1.8973074740369673,
+      "bus_from": "sb9_p1uhs0_1247_node_9_17",
+      "bus_to": "sb9_p1uhs0_1247_bus_9_3"
+    },
+    {
+      "line": "l(r:p1udm6863-p1udm6867)",
+      "max_current_a": 205.65693857063204,
+      "continuous_current_limit_a": 115.0,
+      "loading_pu": 1.7883212049620176,
+      "bus_from": "p1udm6867",
+      "bus_to": "p1udm6863"
+    },
+    {
+      "line": "l(r:p1udm9199-p1ulv4644)",
+      "max_current_a": 197.49234922743804,
+      "continuous_current_limit_a": 115.0,
+      "loading_pu": 1.7173247758907655,
+      "bus_from": "p1udm9199",
+      "bus_to": "p1ulv4644"
+    },
+    {
+      "line": "l(r:p1udm9199-p1udt2941lv)",
+      "max_current_a": 197.49233717618782,
+      "continuous_current_limit_a": 115.0,
+      "loading_pu": 1.7173246710972854,
+      "bus_from": "p1udt2941lv",
+      "bus_to": "p1udm9199"
+    },
+    {
+      "line": "l(r:p1udm9747-p1udt3205lv)",
+      "max_current_a": 196.97538649445303,
+      "continuous_current_limit_a": 115.0,
+      "loading_pu": 1.7128294477778525,
+      "bus_from": "p1udt3205lv",
+      "bus_to": "p1udm9747"
+    },
+    {
+      "line": "l(r:p1udt3707lv-p1ulv7033)",
+      "max_current_a": 195.75708449241932,
+      "continuous_current_limit_a": 115.0,
+      "loading_pu": 1.7022355173253854,
+      "bus_from": "p1udt3707lv",
+      "bus_to": "p1ulv7033"
+    },
+    {
+      "line": "l(r:p1udt4516lv-p1ulv10624)",
+      "max_current_a": 188.84144629388126,
+      "continuous_current_limit_a": 115.0,
+      "loading_pu": 1.642099532990272,
+      "bus_from": "p1udt4516lv",
+      "bus_to": "p1ulv10624"
+    },
+    {
+      "line": "l(r:p1udm981-p1ulv12257)",
+      "max_current_a": 188.79266037249963,
+      "continuous_current_limit_a": 115.0,
+      "loading_pu": 1.6416753075869532,
+      "bus_from": "p1udm981",
+      "bus_to": "p1ulv12257"
+    },
+    {
+      "line": "l(r:p1udt266lv-p1ulv281)",
+      "max_current_a": 187.27849000850605,
+      "continuous_current_limit_a": 115.0,
+      "loading_pu": 1.628508608769618,
+      "bus_from": "p1udt266lv",
+      "bus_to": "p1ulv281"
+    }
+  ],
+  "substation_transformers": [
+    {
+      "transformer": "sb9_p1uhs0_1247_trans_263",
+      "input_p_mw": 59.42406422132595,
+      "input_q_mvar": 24.92887763961999,
+      "input_s_mva": 64.44120071003812,
+      "nameplate_mva": 80.0,
+      "nameplate_loading_pu": 0.8055150088754763,
+      "opendss_normal_rating_mva": 88.0,
+      "normal_rating_loading_pu": 0.7322863717049786
+    },
+    {
+      "transformer": "sb9_p1uhs0_1247_trans_264",
+      "input_p_mw": 43.39367166690601,
+      "input_q_mvar": 21.338830016216903,
+      "input_s_mva": 48.35655495583035,
+      "nameplate_mva": 40.0,
+      "nameplate_loading_pu": 1.2089138738957588,
+      "opendss_normal_rating_mva": 44.0,
+      "normal_rating_loading_pu": 1.099012612632508
+    }
+  ],
+  "comparison_thresholds_note": "0.95/1.05 pu are descriptive screening thresholds, not constraints supplied with this case. Transformer loading here uses nominal nameplate kVA.",
+  "load_branches_below_095_percent": 10.463143341921699,
+  "independent_opendss_check": {
+    "overloaded_line_branches": 407,
+    "worst_line_loading_pu": 1.9037584687545355
+  }
+}

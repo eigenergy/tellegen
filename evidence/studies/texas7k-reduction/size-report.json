@@ -1,0 +1,62 @@
+{
+  "stages": [
+    {
+      "stage": "original_pretty",
+      "bytes": 30032660,
+      "gzip_bytes": 1557897,
+      "sha256": "9d6ed48d0734522bc69a62e98f2d5bfc8c79a25f872ac998b7b8b769504c01b5"
+    },
+    {
+      "stage": "minified_only",
+      "bytes": 17386523,
+      "gzip_bytes": 1479269,
+      "sha256": "b4523515bc312cf35ce875526831cf37f4fcf58522389d4e152ed771fc4f1522"
+    },
+    {
+      "stage": "single_copy_of_coordinates",
+      "bytes": 13958333,
+      "gzip_bytes": 1017382,
+      "sha256": "344d01259854b2e584012adf237d5aa5f0c2173da09b41e1dc43ba11e8ccf89b"
+    },
+    {
+      "stage": "unused_linecodes_removed",
+      "bytes": 13925473,
+      "gzip_bytes": 1016891,
+      "sha256": "9bd792b7d461edf4d2bfd6ecd71d7919d9351106105f46c7c0c065283bb4faef"
+    },
+    {
+      "stage": "identical_linecodes_shared",
+      "bytes": 12482782,
+      "gzip_bytes": 984319,
+      "sha256": "39e5b984e1c6a62ddafcb91e9564801223d6ba3551b417233684c2ae9ae9c103"
+    },
+    {
+      "stage": "default_constant_power_labels_omitted",
+      "bytes": 12100307,
+      "gzip_bytes": 979166,
+      "sha256": "7d4373149461af9cf7d4f1effcf5d032517630455053739e4d3c23bd6d8ce344"
+    },
+    {
+      "stage": "final_with_reduction_provenance",
+      "bytes": 12100718,
+      "gzip_bytes": 979383,
+      "sha256": "9debb24cfcd0d5f1533d0dc0240f206ff769a8603c1fc5500cb5ede1f2cd312a"
+    }
+  ],
+  "counts": {
+    "buses": 22081,
+    "lines": 16822,
+    "loads": 15299,
+    "transformers": 7756,
+    "linecodes_original": 2440,
+    "linecodes_unused": 30,
+    "linecodes_used_unique": 24,
+    "duplicate_point_features_removed": 22081,
+    "default_load_models_omitted": 15299,
+    "derived_location_associations_in_sidecar": 2483
+  },
+  "electrical_tables_and_expanded_linecodes_equal_after_restoring_default_load_model": true,
+  "all_bus_coordinates_equal": true,
+  "numeric_rounding": false,
+  "source_unchanged": true
+}

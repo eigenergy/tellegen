@@ -1,0 +1,237 @@
+{
+  "status": "Validated local nominal-snapshot conversion pilot; BMOPF 0.2.0 proposal",
+  "source": {
+    "converged": true,
+    "seconds": 0.7403199998661876,
+    "buses": 19598,
+    "nodes": 38218,
+    "elements": 35264,
+    "total_power_kw_kvar": [
+      -102828.98804977791,
+      -46279.52386868405
+    ],
+    "losses_w_var": [
+      6453138.744497091,
+      25025486.925086167
+    ],
+    "iterations": 113,
+    "control_iterations": 5,
+    "duplicate_definitions_removed": 192
+  },
+  "schema_valid": true,
+  "schema_sha256": "74d6c6de3637d52e42a26c4cb0584f51df70d69f360b236cf5e23afaf7669462",
+  "schema_validation_scope": "Electrical projection; bus coordinate extension checked separately",
+  "schema_projection_excluded_fields": [
+    "bus.longitude",
+    "bus.latitude"
+  ],
+  "bus_coordinate_checks": 22081,
+  "inventory": {
+    "bus": 22081,
+    "line": 16822,
+    "linecode": 16822,
+    "load": 15299,
+    "voltage_source": 1
+  },
+  "transformers_by_type": {
+    "delta_wye": 282,
+    "single_phase": 7474
+  },
+  "coordinate_features": 22081,
+  "coordinate_space": "geographic",
+  "powerio_version": "powerio 0.11.7",
+  "powerio_diagnostics_by_code": {
+    "READ.DSS.RETAINED_SOURCE_ONLY": 2439,
+    "READ.DSS.COORDINATE_SPACE_UNKNOWN": 1,
+    "EMIT.BMOPF.VALUE_SUBSTITUTED": 15299,
+    "EMIT.BMOPF.TRANSFORMER_EXTRA_DROPPED": 840,
+    "EMIT.BMOPF.TRANSFORMER_WYE_WYE_DECOMPOSED": 9,
+    "EMIT.BMOPF.RECORD_DROPPED": 84,
+    "EMIT.BMOPF.FIELD_DROPPED": 9
+  },
+  "tellegen": {
+    "network_scope": {
+      "excluded_island_count": 2,
+      "excluded_bus_count": 5,
+      "excluded_equipment_count": 3,
+      "excluded_load_count": 0
+    },
+    "excluded_islands": [
+      {
+        "buses": [
+          "p1udt1373-p1udt3224x",
+          "p1udt1373-p1udt3224xx"
+        ],
+        "equipment": [
+          {
+            "kind": "line",
+            "name": "l(r:p1udt1373-p1udt3224)"
+          }
+        ]
+      },
+      {
+        "buses": [
+          "p1udt4106-p1umv2x",
+          "p1udt4106-p1umv2xx",
+          "p1udt4106-p1umv2xxx"
+        ],
+        "equipment": [
+          {
+            "kind": "line",
+            "name": "l(r:p1udt4106-p1umv2)_s0"
+          },
+          {
+            "kind": "line",
+            "name": "l(r:p1udt4106-p1umv2)_s1"
+          }
+        ]
+      }
+    ],
+    "converged": true,
+    "load_model": {
+      "status": "original",
+      "modified_branch_count": 0,
+      "original_kcl_residual": 5.304813385009766e-06,
+      "original_scaled_kcl_residual": 0.14570897621962436,
+      "options": {
+        "tolerance": 1e-07,
+        "max_iterations": 500,
+        "damping": 1.0,
+        "zero_voltage_tolerance": 1e-09,
+        "absolute_kcl_tolerance": 1e-05,
+        "relative_kcl_tolerance": 1e-05,
+        "voltage_envelope": false,
+        "v_low_pu": 0.5,
+        "v_min_pu": 0.85,
+        "v_max_pu": 1.15
+      }
+    },
+    "load_model_changes": [],
+    "voltage_valid": true,
+    "min_voltage_pu": 0.851977445181814,
+    "max_voltage_pu": 1.0407934752865196,
+    "voltage_violations": [],
+    "iterations": 23,
+    "factorization_count": 1,
+    "matrix_dimension": 40685,
+    "matrix_nonzeros": 227579,
+    "voltage_change": 6.237604150018879e-08,
+    "physical_kcl_residual": 5.304813385009766e-06,
+    "scaled_kcl_residual": 0.14570897621962436,
+    "compared_nodes": 38203,
+    "missing_nodes": [],
+    "worst_10": [
+      {
+        "node": "p1ulv7356.1",
+        "voltage_difference_v": 0.0002289959840170071,
+        "voltage_difference_pu": 2.2369021452857467e-06
+      },
+      {
+        "node": "p1ulv7356.2",
+        "voltage_difference_v": 0.00022793990636653532,
+        "voltage_difference_pu": 2.2265860588614834e-06
+      },
+      {
+        "node": "p1udm936.1",
+        "voltage_difference_v": 0.00022720672551936654,
+        "voltage_difference_pu": 2.2025479071005122e-06
+      },
+      {
+        "node": "p1udm936.2",
+        "voltage_difference_v": 0.00022619880831199226,
+        "voltage_difference_pu": 2.1927771314751064e-06
+      },
+      {
+        "node": "p1ulv9430.1",
+        "voltage_difference_v": 0.0002537695499782907,
+        "voltage_difference_pu": 2.1781317513000276e-06
+      },
+      {
+        "node": "p1ulv9430.2",
+        "voltage_difference_v": 0.0002527396224720928,
+        "voltage_difference_pu": 2.1692917710778974e-06
+      },
+      {
+        "node": "p1ulv10469.2",
+        "voltage_difference_v": 0.0005920285832641824,
+        "voltage_difference_pu": 2.152612754412891e-06
+      },
+      {
+        "node": "p1ulv6779.2",
+        "voltage_difference_v": 0.0005903183391985466,
+        "voltage_difference_pu": 2.1501351967392507e-06
+      },
+      {
+        "node": "p1udm8610.1",
+        "voltage_difference_v": 0.00025208673833287807,
+        "voltage_difference_pu": 2.147972487431426e-06
+      },
+      {
+        "node": "p1udm10611.2",
+        "voltage_difference_v": 0.0005896140098498773,
+        "voltage_difference_pu": 2.145826478341555e-06
+      }
+    ],
+    "excluded_reference_node_count": 15,
+    "excluded_reference_nodes": [
+      "p1udt1373-p1udt3224x.1",
+      "p1udt1373-p1udt3224x.2",
+      "p1udt1373-p1udt3224x.3",
+      "p1udt1373-p1udt3224xx.1",
+      "p1udt1373-p1udt3224xx.2",
+      "p1udt1373-p1udt3224xx.3",
+      "p1udt4106-p1umv2x.1",
+      "p1udt4106-p1umv2x.2",
+      "p1udt4106-p1umv2x.3",
+      "p1udt4106-p1umv2xx.1",
+      "p1udt4106-p1umv2xx.2",
+      "p1udt4106-p1umv2xx.3",
+      "p1udt4106-p1umv2xxx.1",
+      "p1udt4106-p1umv2xxx.2",
+      "p1udt4106-p1umv2xxx.3"
+    ],
+    "excluded_reference_voltages_exactly_zero": true
+  },
+  "without_opendss_numerical_antifloat_shunts": {
+    "change_to_reference": "Only OpenDSS numerical ppm_antifloat admittances set to zero; original equipment and solved taps unchanged",
+    "compared_nodes": 38203,
+    "worst_voltage_difference_pu": 1.3476659803108622e-08,
+    "worst_node": "p1ulv11081.1",
+    "opendss_power_kw_kvar": [
+      -102828.96891513215,
+      -46278.92408697044
+    ],
+    "opendss_losses_w_var": [
+      6453119.043658338,
+      25024886.965222254
+    ],
+    "converged": true,
+    "excluded_reference_node_count": 15,
+    "excluded_reference_voltages_exactly_zero": true
+  },
+  "source_import_w_var": [
+    102828995.02614227,
+    46278951.01303902
+  ],
+  "source_import_difference_w_var": [
+    6.976364359259605,
+    -572.8556450307369
+  ],
+  "losses_w_var": [
+    6453146.265112705,
+    25024913.895737268
+  ],
+  "loss_difference_w_var": [
+    7.520615614019334,
+    -573.029348898679
+  ],
+  "elapsed_seconds": 13.050881207920611,
+  "limits": [
+    "One nominal operating point; external annual profiles were not downloaded or sampled.",
+    "Regulator control algorithms and protection are not represented in a static PF model.",
+    "Original ground references and reduced line matrices retained; no explicit neutral reconstruction.",
+    "Original buses are retained; internal star/source buses are additional model elements.",
+    "No OPF objectives or assumed voltage limits added.",
+    "Source and derivative data use the OEDI-published CC-BY-3.0-US license; see SOURCE_NOTICE.md."
+  ]
+}
