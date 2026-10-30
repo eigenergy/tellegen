@@ -452,6 +452,27 @@ fn coord_key(p: (f64, f64)) -> (i64, i64) {
     ((p.0 * 1e5).round() as i64, (p.1 * 1e5).round() as i64)
 }
 
+/// One line per level a way carries at or above `floor`. A way on shared
+/// towers (`voltage=400000;220000`, `circuits=2`) is part of the 400 kV line
+/// and of the 220 kV line that run on it, so each level gets its own copy
+/// with an even share of the tagged circuits (at least one). A DC way, an
+/// untagged one, or one with a single level is kept as it is.
+pub fn split_levels(line: &OsmLine, floor: f64) -> Vec<OsmLine> {
+    let kept: Vec<f64> = line.kvs.iter().copied().filter(|kv| *kv >= floor).collect();
+    if line.is_dc || line.kvs.len() < 2 || kept.is_empty() {
+        return vec![line.clone()];
+    }
+    let share = ((line.circuits as f64 / line.kvs.len() as f64).round() as u32).max(1);
+    kept.into_iter()
+        .map(|kv| OsmLine {
+            kv,
+            kvs: vec![kv],
+            circuits: share,
+            ..line.clone()
+        })
+        .collect()
+}
+
 /// Stitch fragmented ways back into whole lines. Ways of one voltage,
 /// circuit count and kind join where exactly two way ends meet: a
 /// pass-through. A point with three or more ends is a junction, and a point
@@ -539,6 +560,7 @@ pub fn stitch_lines(lines: &[OsmLine], stops: &[(f64, f64)], stop_km: f64) -> Ve
                 ids,
                 geometry,
                 kv: first.kv,
+                kvs: first.kvs.clone(),
                 circuits: first.circuits,
                 is_cable: first.is_cable,
                 is_dc: first.is_dc,
@@ -631,14 +653,18 @@ impl OsmBuild {
 
         // Substations that state no voltage take the voltages of the mapped
         // lines ending at them (nearly half of California's do).
-        let mut ends: VoltageGrid = BTreeMap::new();
-        let cell = SUBSTATION_VOLTAGE_REACH_KM / 111.0 * 2.0;
-        for l in self
+        // A way on shared towers ends there at each of its levels.
+        let levels: Vec<OsmLine> = self
             .parsed
             .lines
             .iter()
-            .filter(|l| !l.is_dc && l.kv >= opts.voltage_floor_kv)
-        {
+            .filter(|l| !l.is_dc)
+            .flat_map(|l| split_levels(l, opts.voltage_floor_kv))
+            .filter(|l| l.kv >= opts.voltage_floor_kv)
+            .collect();
+        let mut ends: VoltageGrid = BTreeMap::new();
+        let cell = SUBSTATION_VOLTAGE_REACH_KM / 111.0 * 2.0;
+        for l in &levels {
             for &(lon, lat) in [l.geometry[0], l.geometry[l.geometry.len() - 1]].iter() {
                 let lon = lift_lon(lon, &frame);
                 ends.entry(((lon / cell).floor() as i64, (lat / cell).floor() as i64))
@@ -647,12 +673,7 @@ impl OsmBuild {
             }
         }
         let mut vertices: VoltageGrid = BTreeMap::new();
-        for l in self
-            .parsed
-            .lines
-            .iter()
-            .filter(|l| !l.is_dc && l.kv >= opts.voltage_floor_kv)
-        {
+        for l in &levels {
             for &(lon, lat) in &l.geometry {
                 let lon = lift_lon(lon, &frame);
                 vertices
@@ -974,13 +995,14 @@ impl OsmBuild {
             .parsed
             .lines
             .iter()
+            .flat_map(|l| split_levels(l, opts.voltage_floor_kv))
             .map(|l| OsmLine {
                 geometry: l
                     .geometry
                     .iter()
                     .map(|&(lon, lat)| (lift_lon(lon, &frame), lat))
                     .collect(),
-                ..l.clone()
+                ..l
             })
             .collect();
         let stations: Vec<(f64, f64)> = buses.iter().map(|b| (b.lon, b.lat)).collect();
@@ -1823,10 +1845,65 @@ mod tests {
             ids: vec![id],
             geometry: pts.to_vec(),
             kv: 220.0,
+            kvs: vec![220.0],
             circuits: 1,
             is_cable: false,
             is_dc: false,
         }
+    }
+
+    #[test]
+    fn a_way_on_shared_towers_belongs_to_the_line_of_each_level() {
+        // A 400 kV line and a 220 kV line run together on 400/220 kV towers
+        // between two stations: each must come out whole at its own level.
+        let mut shared = line(10, &[(1.0, 0.0), (2.0, 0.0)]);
+        shared.kv = 400.0;
+        shared.kvs = vec![400.0, 220.0];
+        shared.circuits = 2;
+        let split = split_levels(&shared, 110.0);
+        assert_eq!(split.len(), 2);
+        assert_eq!(
+            split.iter().map(|l| (l.kv, l.circuits)).collect::<Vec<_>>(),
+            [(400.0, 1), (220.0, 1)]
+        );
+        // A level below the floor still holds its share of the circuits.
+        let mut low = shared.clone();
+        low.kvs = vec![400.0, 60.0];
+        let split_low = split_levels(&low, 110.0);
+        assert_eq!(split_low.len(), 1);
+        assert_eq!((split_low[0].kv, split_low[0].circuits), (400.0, 1));
+        assert_eq!(
+            split_levels(&line(11, &[(0.0, 0.0), (1.0, 0.0)]), 110.0).len(),
+            1
+        );
+
+        let mut hv_in = line(11, &[(0.0, 0.0), (1.0, 0.0)]);
+        hv_in.kv = 400.0;
+        hv_in.kvs = vec![400.0];
+        let mut hv_out = line(12, &[(2.0, 0.0), (3.0, 0.0)]);
+        hv_out.kv = 400.0;
+        hv_out.kvs = vec![400.0];
+        let lv_in = line(13, &[(1.0, 0.0), (1.0, -1.0)]);
+        let lv_out = line(14, &[(2.0, 0.0), (2.0, 1.0)]);
+        let ways = vec![hv_in, hv_out, lv_in, lv_out];
+        let split_ways: Vec<OsmLine> = ways.iter().cloned().chain(split).collect();
+        let out = line_sections(&split_ways, &[], 0.0);
+        assert_eq!(out.len(), 2, "{out:?}");
+        let hv = out.iter().find(|s| s.kv == 400.0).unwrap();
+        assert_eq!(hv.ids, vec![11, 10, 12]);
+        assert_eq!(
+            (hv.geometry[0], *hv.geometry.last().unwrap()),
+            ((0.0, 0.0), (3.0, 0.0))
+        );
+        let lv = out.iter().find(|s| s.kv == 220.0).unwrap();
+        assert_eq!(lv.ids.len(), 3);
+        assert!(lv.ids.contains(&10));
+
+        // Unsplit, the way is only part of the 400 kV line, and the 220 kV
+        // line breaks in two where it runs onto the shared towers.
+        let unsplit: Vec<OsmLine> = ways.into_iter().chain([shared]).collect();
+        let out = line_sections(&unsplit, &[], 0.0);
+        assert_eq!(out.iter().filter(|s| s.kv == 220.0).count(), 2, "{out:?}");
     }
 
     #[test]
