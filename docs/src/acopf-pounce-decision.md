@@ -356,6 +356,47 @@ A single wasm-bindgen module can be reconsidered after POUNCE has a portable
 clock. That reconsideration must measure artifact size, memory growth, and hard
 worker cancellation in real browsers.
 
+## Experimental native multiconductor IVR OPF
+
+The separate `mc-opf` feature adds native unbalanced current–voltage rectangular
+OPF with explicit terminals and neutrals. The entry points are
+`solve_mc_ac_opf_instance`, `solve_mc_ac_opf_instance_cancellable`, and
+`solve_mc_ac_opf_module_json`; the JSON entry point requires an explicitly
+declared `McAcOpfInstance`. This feature is not enabled by shipping adapters or
+forwarded by the balanced browser worker described above.
+
+PowerIO owns the canonical electrical semantics and solver-independent IVR
+preparation. Tellegen constructs the expressions and independently checks the
+accepted solution's physical equations, limits and objective. Polynomial rows
+use POUNCE's existing exact sparse quadratic evaluator; general load laws and
+smooth inverter controls use its existing sparse AD. No new differentiation
+package is introduced. `McOpfResult` includes terminal voltages and physical
+branch/device/winding ledgers. `McOpfOptions.collect_profile` enables optional
+stage and KKT diagnostics. Prices, solution sensitivities and retained sessions
+are not exposed by this initial implementation.
+
+The feature builds against POUNCE 0.13.0 and, until PowerIO 0.11.8 is
+published, against the PowerIO candidate patched in the root `Cargo.toml`. Build and test the native feature from the repository root:
+
+```sh
+cargo build -p tellegen --no-default-features --features mc-opf --locked
+cargo test -p tellegen --no-default-features --features mc-opf --locked
+```
+
+`bash scripts/check-mc-opf.sh` tests a temporary archive of committed source with
+all features, MC OPF alone, and strict all-target Clippy using the locked
+dependencies. Its optional PowerIO checkout argument is for companion development:
+it patches all eight PowerIO crates only in the temporary archive and does not
+rewrite either checkout's lockfile. A companion checkout is not required.
+
+See [Formulations](formulations.md#experimental-native-multiconductor-ivr-opf)
+for the electrical profile and derivative strategy,
+[Validation](validation.md#multiconductor-ivr-opf) for acceptance and regression
+coverage, and [Methodology](methodology.md#external-multiconductor-ivr-studies)
+for optional external studies. Ordinary frozen-reference tests need neither
+Julia nor the large ENWL dataset.
+The existing solver release and distribution gates below also apply to MC OPF.
+
 ## License and release gate
 
 POUNCE is EPL-2.0 while Tellegen is MIT. `deny.toml` admits EPL-2.0 only for the

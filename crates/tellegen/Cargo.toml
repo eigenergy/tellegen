@@ -54,6 +54,8 @@ conic = ["sensitivity"]
 # Exact nonlinear AC OPF path. EPL-2.0 POUNCE stays opt-in and is not forwarded
 # by wasm, CLI, server, or Python adapters; distribution remains unapproved.
 acopf = ["dep:pounce-nl", "dep:pounce-rs", "dep:num-complex"]
+# Experimental native multiconductor IVR OPF; no adapter enables this.
+mc-opf = ["acopf"]
 # JSON Schema derives for the CLI's `describe` output. Kept out of the
 # browser and numerical builds.
 schema = ["dep:schemars", "powerio/schema"]
@@ -84,6 +86,11 @@ required-features = ["mc-pf"]
 [[example]]
 name = "acopf_hs071_probe"
 required-features = ["acopf"]
+
+[[example]]
+name = "mc_opf_case_probe"
+required-features = ["mc-opf"]
+test = true
 
 [[example]]
 name = "acopf_benchmark"

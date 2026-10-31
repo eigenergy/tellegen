@@ -1,0 +1,12 @@
+BMOPFTools fixtures — Frederik Geth
+https://github.com/frederikgeth/BMOPFTools.jl
+
+The bounds.json cases are adapted from test/data/pmd_bounds at commit
+a8b52e069bfd4a7a57434c91bc0470ac03cfdd55 and licensed under CC BY 4.0:
+https://creativecommons.org/licenses/by/4.0/ (text in CC-BY-4.0.txt).
+Changes: bundled the 12 cases and added explicit schema/frequency metadata;
+electrical coefficients and objectives are unchanged. bounds-reference.json
+contains derived results from the pinned BMOPFTools IVR engine.
+
+components.json, controls.json, equipment.json and unbalanced.json are independently authored synthetic cases
+under Tellegen's MIT license, with generated references from BMOPFTools.
