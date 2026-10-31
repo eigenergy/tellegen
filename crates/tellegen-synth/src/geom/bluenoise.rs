@@ -1,10 +1,13 @@
 //! Poisson-disk ("blue noise") fill inside a region: candidate points are
 //! rejected when closer than a separation radius to any accepted point or
 //! anchor, so fill buses spread like substations instead of clumping. A
-//! background grid keyed on projected km makes each test O(1). The routine
-//! always returns `count` points: when the region cannot hold them at the
-//! chosen spacing, the constraint is relaxed at the end so the bus total stays
-//! deterministic.
+//! sparse background grid keyed on projected km keeps each test O(1) without
+//! allocating buckets for the empty area outside long, thin regions. The
+//! routine always returns `count` points: when the region cannot hold them at
+//! the chosen spacing, the constraint is relaxed at the end so the bus total
+//! stays deterministic.
+
+use std::collections::HashMap;
 
 use crate::geom::region::RegionShape;
 use crate::geom::Projection;
@@ -16,7 +19,7 @@ struct Grid {
     min_y: f64,
     cols: usize,
     rows: usize,
-    cells: Vec<Vec<(f64, f64)>>,
+    cells: HashMap<(usize, usize), Vec<(f64, f64)>>,
 }
 
 impl Grid {
@@ -29,7 +32,7 @@ impl Grid {
             min_y,
             cols,
             rows,
-            cells: vec![Vec::new(); cols * rows],
+            cells: HashMap::new(),
         }
     }
 
@@ -40,8 +43,8 @@ impl Grid {
     }
 
     fn insert(&mut self, x: f64, y: f64) {
-        let (c, r) = self.index(x, y);
-        self.cells[r * self.cols + c].push((x, y));
+        let index = self.index(x, y);
+        self.cells.entry(index).or_default().push((x, y));
     }
 
     fn far(&self, x: f64, y: f64, sep2: f64) -> bool {
@@ -50,7 +53,10 @@ impl Grid {
         let r0 = r.saturating_sub(2);
         for rr in r0..=(r + 2).min(self.rows - 1) {
             for cc in c0..=(c + 2).min(self.cols - 1) {
-                for &(px, py) in &self.cells[rr * self.cols + cc] {
+                let Some(points) = self.cells.get(&(cc, rr)) else {
+                    continue;
+                };
+                for &(px, py) in points {
                     if (px - x).powi(2) + (py - y).powi(2) <= sep2 {
                         return false;
                     }
@@ -137,6 +143,20 @@ mod tests {
     use super::*;
     use crate::geom::haversine_km;
     use crate::rng::{Stream, StreamTag};
+
+    #[test]
+    fn grid_allocates_buckets_only_for_occupied_cells() {
+        // A very elongated frame exercises the 4096-cell dimension cap while
+        // proving an empty region does not eagerly allocate millions of Vecs.
+        let mut grid = Grid::new(1.0, 0.0, 0.0, 10_000.0, 1_000.0);
+        assert_eq!(grid.cols, 4096);
+        assert_eq!(grid.rows, 1000);
+        assert!(grid.cells.is_empty());
+        grid.insert(10.0, 10.0);
+        grid.insert(10.2, 10.1);
+        assert_eq!(grid.cells.len(), 1);
+        assert!(grid.far(100.0, 100.0, 1.0));
+    }
 
     #[test]
     fn fill_is_spread_and_complete() {
