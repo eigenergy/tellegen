@@ -317,7 +317,11 @@ impl Generator {
         counts.insert("target_bus_count".into(), context.target_bus_count as u64);
         if self.request.source == Source::Osm {
             let doc = self.osm_json.take().unwrap_or_default();
-            let parsed = crate::osm::parse_document(&doc)?;
+            let parsed = crate::osm::parse_document_with_limits(
+                &doc,
+                self.request.limits.max_osm_document_bytes,
+                self.request.limits.max_osm_elements,
+            )?;
             self.report.provenance.osm = Some(parsed.provenance.clone());
             counts.insert("osm_elements".into(), parsed.provenance.elements as u64);
             self.state.osm = Some(crate::osm::OsmBuild::new(parsed));

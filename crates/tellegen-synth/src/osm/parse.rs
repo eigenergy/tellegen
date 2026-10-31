@@ -123,10 +123,30 @@ pub struct ParsedDocument {
     pub converters: Vec<OsmConverter>,
 }
 
-/// Parse one Overpass JSON document, or a JSON array of them (the two halves
-/// of an antimeridian-crossing region). Elements seen twice (an element both
-/// halves return) are kept once.
+/// Parse one Overpass JSON document or the two documents from an
+/// antimeridian-crossing request. Elements seen twice are kept once. Reject
+/// oversized inputs before creating the mapped graph.
 pub fn parse_document(text: &str) -> Result<ParsedDocument, SynthError> {
+    parse_document_with_limits(
+        text,
+        crate::osm::MAX_OSM_DOCUMENT_BYTES,
+        crate::osm::MAX_OSM_ELEMENTS,
+    )
+}
+
+/// Parse an Overpass document under the host's explicit resource limits.
+pub fn parse_document_with_limits(
+    text: &str,
+    max_document_bytes: usize,
+    max_elements: usize,
+) -> Result<ParsedDocument, SynthError> {
+    if text.len() > max_document_bytes {
+        return Err(SynthError::Osm(format!(
+            "document is {} bytes, over the {} byte safety limit",
+            text.len(),
+            max_document_bytes
+        )));
+    }
     let trimmed = text.trim_start();
     let documents: Vec<Document> = if trimmed.starts_with('[') {
         serde_json::from_str(trimmed)
@@ -134,6 +154,12 @@ pub fn parse_document(text: &str) -> Result<ParsedDocument, SynthError> {
         serde_json::from_str(trimmed).map(|d| vec![d])
     }
     .map_err(|e| SynthError::Osm(format!("cannot parse the Overpass JSON: {e}")))?;
+    let element_count: usize = documents.iter().map(|d| d.elements.len()).sum();
+    if element_count > max_elements {
+        return Err(SynthError::Osm(format!(
+            "response contains {element_count} elements, over the {max_elements} element safety limit"
+        )));
+    }
     let mut seen = std::collections::BTreeSet::new();
     let mut out = ParsedDocument {
         provenance: OsmProvenance {
@@ -454,6 +480,33 @@ mod tests {
         assert_eq!(parse_power_mw(""), None);
         assert_eq!(parse_power_mw("lots"), None);
         assert_eq!(parse_power_mw("5 MWh"), None);
+    }
+
+    #[test]
+    fn oversized_raw_document_is_refused_before_json_parsing() {
+        let oversized = " ".repeat(crate::osm::MAX_OSM_DOCUMENT_BYTES + 1);
+        let err = match parse_document(&oversized) {
+            Err(err) => err,
+            Ok(_) => panic!("oversized document was accepted"),
+        };
+        assert!(err.to_string().contains("safety limit"), "{err}");
+    }
+
+    #[test]
+    fn host_resource_limits_are_enforced() {
+        let document = r#"{"elements":[]}"#;
+        assert!(parse_document_with_limits(document, 1, 10)
+            .err()
+            .expect("oversized document should fail")
+            .to_string()
+            .contains("byte safety limit"));
+
+        let document = r#"{"elements":[{"type":"node","id":1},{"type":"node","id":2}]}"#;
+        assert!(parse_document_with_limits(document, 1024, 1)
+            .err()
+            .expect("too many elements should fail")
+            .to_string()
+            .contains("element safety limit"));
     }
 
     #[test]

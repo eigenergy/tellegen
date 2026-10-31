@@ -184,6 +184,48 @@ fn island_policies() {
 }
 
 #[test]
+fn osm_nested_options_reject_unknown_fields_and_invalid_bounds() {
+    let base = serde_json::json!({
+        "region": {
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[8.0,49.6],[9.5,49.6],[9.5,50.6],[8.0,50.6],[8.0,49.6]]]
+            },
+            "label": "Main valley"
+        },
+        "source": "osm",
+        "osm": { "voltage_floor_kv": 110.0 },
+        "limits": { "max_bus_count": 100 }
+    });
+    let mut misspelt = base;
+    misspelt
+        .pointer_mut("/osm")
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .insert("snap_kmm".into(), serde_json::json!(2.0));
+    let err = serde_json::from_value::<SynthRequest>(misspelt).unwrap_err();
+    assert!(err.to_string().contains("unknown field `snap_kmm`"), "{err}");
+
+    for value in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        let mut req = request(OsmIslands::Connect);
+        req.osm.as_mut().unwrap().snap_km = value;
+        assert!(
+            matches!(req.validate(), Err(SynthError::InvalidRequest(_))),
+            "snap_km={value}"
+        );
+    }
+    for value in [-1.0, f64::NAN, f64::INFINITY] {
+        let mut req = request(OsmIslands::Connect);
+        req.osm.as_mut().unwrap().clip_buffer_km = value;
+        assert!(
+            matches!(req.validate(), Err(SynthError::InvalidRequest(_))),
+            "clip_buffer_km={value}"
+        );
+    }
+}
+
+#[test]
 fn the_bus_cap_drops_the_lowest_levels_first() {
     // Nine buses at 110 kV and above. A cap of eight drops the 110 kV level:
     // sites A, B and C keep their 380 kV buses, and the two converters stay.
@@ -197,10 +239,12 @@ fn the_bus_cap_drops_the_lowest_levels_first() {
         "{:?}",
         net.buses().iter().map(|b| &b.name).collect::<Vec<_>>()
     );
-    assert!(net.buses().iter().all(|b| b.base_kv == 380.0
-        || b.name
-            .as_deref()
-            .is_some_and(|n| n.starts_with("OSM Converter"))));
+    assert!(net.buses().iter().all(|b| {
+        b.base_kv == 380.0
+            || b.name
+                .as_deref()
+                .is_some_and(|n| n.starts_with("OSM Converter"))
+    }));
     assert_eq!(count(&report, "substation_sites"), 3);
     assert_eq!(count(&report, "converters"), 2);
     assert_eq!(count(&report, "transformers"), 0);

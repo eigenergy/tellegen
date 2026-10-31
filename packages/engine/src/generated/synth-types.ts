@@ -1,5 +1,5 @@
 // Generated from Rust by synth_schema and generate-synth-types.mjs.
-// Source SHA256: ac27816de6e30174f5a8569aeb41d6fea7ec6384580019d5a6ff84d6b913e4a1
+// Source SHA256: f1e7810de0893fc37afbfdd86a3cbcd94cb20fdeb70aed089991a14234c9b8f5
 
 export type AcPfOutcome = "converged" | "not_converged" | "skipped";
 
@@ -63,7 +63,7 @@ export type IslandOptions = { "beyond"?: FarIslandPolicy; /** Landmasses whose n
 
 export type IslandOutcome = { "branches": number; "buses": number; "generators": number; "index": number; "load_mw": number; "message"?: string | null; "status": string; };
 
-export type Limits = { /** Spherical area cap of the region, km²; positive and finite. */ "max_area_km2"?: number; /** Upper bound of `branch_factor`; finite and at least 1. */ "max_branch_factor"?: number; /** Bus cap. A synthetic grid's count is held at it (`bus_count_capped`); an OpenStreetMap grid drops its lowest voltage levels until it fits (`osm_bus_count_capped`) and is refused when its highest level alone exceeds it. */ "max_bus_count"?: number; };
+export type Limits = { /** Spherical area cap of the region, km²; positive and finite. */ "max_area_km2"?: number; /** Upper bound of `branch_factor`; finite and at least 1. */ "max_branch_factor"?: number; /** Bus cap. A synthetic grid's count is held at it (`bus_count_capped`); an OpenStreetMap grid drops its lowest voltage levels until it fits (`osm_bus_count_capped`) and is refused when its highest level alone exceeds it. */ "max_bus_count"?: number; /** Maximum raw Overpass response size, in bytes. */ "max_osm_document_bytes"?: number; /** Maximum Overpass elements accepted before topology construction. */ "max_osm_elements"?: number; };
 
 export type LmpSummary = { "max": number; "mean": number; "min": number; "spread": number; };
 

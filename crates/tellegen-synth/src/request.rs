@@ -434,6 +434,12 @@ pub struct Limits {
     /// Upper bound of `branch_factor`; finite and at least 1.
     #[serde(default = "default_max_branch_factor")]
     pub max_branch_factor: f64,
+    /// Maximum raw Overpass response size, in bytes.
+    #[serde(default = "default_max_osm_document_bytes")]
+    pub max_osm_document_bytes: usize,
+    /// Maximum Overpass elements accepted before topology construction.
+    #[serde(default = "default_max_osm_elements")]
+    pub max_osm_elements: usize,
 }
 
 fn default_max_bus_count() -> u32 {
@@ -448,12 +454,22 @@ fn default_max_branch_factor() -> f64 {
     4.0
 }
 
+fn default_max_osm_document_bytes() -> usize {
+    crate::osm::MAX_OSM_DOCUMENT_BYTES
+}
+
+fn default_max_osm_elements() -> usize {
+    crate::osm::MAX_OSM_ELEMENTS
+}
+
 impl Default for Limits {
     fn default() -> Self {
         Self {
             max_bus_count: default_max_bus_count(),
             max_area_km2: default_max_area_km2(),
             max_branch_factor: default_max_branch_factor(),
+            max_osm_document_bytes: default_max_osm_document_bytes(),
+            max_osm_elements: default_max_osm_elements(),
         }
     }
 }
@@ -582,6 +598,12 @@ impl SynthRequest {
         let bad = |m: String| Err(SynthError::InvalidRequest(m));
         // The upper bounds below sit far outside any real system; they keep a
         // huge but finite number from overflowing later arithmetic.
+        if self.limits.max_osm_document_bytes == 0 {
+            return bad("limits.max_osm_document_bytes must be at least 1".into());
+        }
+        if self.limits.max_osm_elements == 0 {
+            return bad("limits.max_osm_elements must be at least 1".into());
+        }
         if self.limits.max_bus_count == 0 {
             return bad("limits.max_bus_count must be at least 1".into());
         }
@@ -591,8 +613,28 @@ impl SynthRequest {
             return bad("limits.max_area_km2 must be a positive finite number".into());
         }
         // `branch_factor` must lie in 1..=max, which is empty below 1.
-        if !(self.limits.max_branch_factor.is_finite() && self.limits.max_branch_factor >= 1.0) {
+        if !(self.limits.max_branch_factor.is_finite()
+            && self.limits.max_branch_factor >= 1.0)
+        {
             return bad("limits.max_branch_factor must be a finite number of at least 1".into());
+        }
+        // OSM controls feed spatial clustering and clipping. Reject invalid
+        // numbers before they reach geometry operations.
+        let osm = self.osm.as_ref().cloned().unwrap_or_default();
+        for (name, value, allow_zero) in [
+            ("osm.voltage_floor_kv", osm.voltage_floor_kv, false),
+            ("osm.cluster_radius_m", osm.cluster_radius_m, false),
+            ("osm.snap_km", osm.snap_km, false),
+            ("osm.hvdc_snap_km", osm.hvdc_snap_km, false),
+            ("osm.plant_snap_km", osm.plant_snap_km, false),
+            ("osm.clip_buffer_km", osm.clip_buffer_km, true),
+        ] {
+            let valid =
+                value.is_finite() && if allow_zero { value >= 0.0 } else { value > 0.0 };
+            if !valid {
+                let constraint = if allow_zero { "non-negative" } else { "positive" };
+                return bad(format!("{name} must be a {constraint} finite number"));
+            }
         }
         if !self
             .voltage_levels_kv

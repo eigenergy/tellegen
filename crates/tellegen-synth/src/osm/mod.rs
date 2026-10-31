@@ -13,6 +13,12 @@ use crate::geom::region::RegionShape;
 use crate::report::BBox;
 use crate::request::SynthRequest;
 
+/// Maximum raw response size. Applied before JSON parsing to reject global extracts.
+pub const MAX_OSM_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
+
+/// Maximum element count accepted from Overpass.
+pub const MAX_OSM_ELEMENTS: usize = 500_000;
+
 /// Server-side time limit stated in every query, seconds. A regional query
 /// that needs longer is better split than waited on.
 pub const OVERPASS_TIMEOUT_S: u32 = 60;
