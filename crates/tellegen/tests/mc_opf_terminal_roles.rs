@@ -6,7 +6,10 @@ use powerio_dist::{
     VoltageSource,
 };
 use std::sync::Arc;
-use tellegen::{solve_mc_ac_opf_instance, McOpfError, McOpfErrorKind, McOpfOptions, McOpfStage};
+use tellegen::{
+    solve_mc_ac_opf_instance, McOpfEdit, McOpfError, McOpfErrorKind, McOpfOptions, McOpfSession,
+    McOpfStage,
+};
 
 fn names(values: &[&str]) -> Vec<String> {
     values.iter().map(|v| (*v).into()).collect()
@@ -50,6 +53,10 @@ fn assert_rejected(net: MulticonductorNetwork) {
     assert_role_error(
         solve_mc_ac_opf_instance(Arc::new(instance.clone()), &McOpfOptions::default()).unwrap_err(),
     );
+    match McOpfSession::new(instance, McOpfOptions::default()) {
+        Err(error) => assert_role_error(error),
+        Ok(_) => panic!("invalid terminal roles reached a retained model"),
+    }
 }
 
 #[test]
@@ -111,4 +118,55 @@ fn bmopf_delta_neutral_is_rejected_even_when_decoding_succeeds() {
         panic!("expected a distribution network");
     };
     assert_rejected(net);
+}
+
+#[test]
+fn valid_delta_session_keeps_coil_order_and_rejects_bad_edit_atomically() {
+    let mut net = network();
+    net.loads_mut().push(DistLoad::new(
+        "d",
+        "s",
+        names(&["c", "a"]),
+        Configuration::Delta,
+        vec![100.],
+        vec![20.],
+    ));
+    let mut session = McOpfSession::new(
+        McAcOpfInstance::from_network(net).unwrap(),
+        McOpfOptions::default(),
+    )
+    .unwrap();
+    session
+        .apply_edits(&[McOpfEdit::LoadPower {
+            load: "d".into(),
+            p_w: vec![125.],
+            q_var: vec![25.],
+        }])
+        .unwrap();
+    assert_eq!(session.revision(), 1);
+    assert_eq!(session.compilation_count(), 2);
+    // The first edit is valid; the second must roll the entire batch back.
+    assert!(session
+        .apply_edits(&[
+            McOpfEdit::LoadPower {
+                load: "d".into(),
+                p_w: vec![150.],
+                q_var: vec![30.]
+            },
+            McOpfEdit::LoadPower {
+                load: "d".into(),
+                p_w: vec![1., 2.],
+                q_var: vec![0., 0.]
+            },
+        ])
+        .is_err());
+    assert_eq!(session.instance().network().loads()[0].p_nom, vec![125.]);
+    assert_eq!(session.instance().network().loads()[0].q_nom, vec![25.]);
+    assert_eq!(session.revision(), 1);
+    assert_eq!(session.compilation_count(), 2);
+    assert_eq!(session.solve_count(), 0);
+    assert_eq!(
+        session.instance().network().loads()[0].terminal_map,
+        names(&["c", "a"])
+    );
 }

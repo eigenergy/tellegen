@@ -39,7 +39,7 @@ fn from_result(r: &McOpfResult) -> OperatingPoint<MulticonductorNetwork> {
         .build_point()
         .unwrap()
 }
-fn case(bundle: &str, name: &str) -> MulticonductorNetwork {
+pub(super) fn case(bundle: &str, name: &str) -> MulticonductorNetwork {
     let text = match bundle {
         "components" => include_str!("../../tests/data/mc_opf/components.json"),
         "controls" => include_str!("../../tests/data/mc_opf/controls.json"),

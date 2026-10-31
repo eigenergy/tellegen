@@ -362,6 +362,71 @@ network. A seed need not satisfy operating limits or KCL and does not guarantee
 convergence; the usual physical acceptance gate still applies. Omitting the
 initial point preserves the existing cold start.
 
+### Retained sessions and edits
+
+`McOpfSession::new(instance, options)` prepares and compiles a native MC OPF
+instance without solving it. `solve()` uses the last accepted primal when
+available. `solve_cancellable(McOpfStart::Declared, cancel)` instead selects the
+instance's explicit initial point, or its ordinary cold start if absent.
+
+```rust
+use tellegen::{McOpfEdit, McOpfSession};
+
+// `instance` is the caller's declared McAcOpfInstance.
+let mut session = McOpfSession::new(instance, Default::default())?;
+session.solve()?;
+session.apply_edits(&[McOpfEdit::LoadPower {
+    load: "load_1".into(),
+    p_w: vec![120.0],
+    q_var: vec![25.0],
+}])?;
+let accepted = session.solve()?;
+let json = accepted.result.to_module_json()?;
+```
+
+Edits use canonical identities and equipment ordering. Supported fields are
+load nominal coil P/Q (preserving its voltage law), inverter availability,
+generator/source dispatch costs, generator P/Q bounds, line current/apparent
+power overrides, scalar bus phase-ground voltage bounds, and constraint-family
+selection. Load edits specify coil powers; initial-point power columns specify
+terminal powers. Cost units are the canonical currency/kWh, with either a scalar
+or one value per coil. Removing a line override restores linecode inheritance;
+removing a scalar bus voltage bound restores any canonical vector fallback.
+
+`InverterAvailability` takes an explicit per-coil `p_max_w` vector. It replaces
+canonical `p_max` and sets `p_avail` to the vector's sum for controls; `None`
+clears both fields. Other capability fields stay unchanged, and selection still
+determines which bounds are enforced. Released PowerIO preparation uses
+`p_avail` as a control reference, so changing that scalar alone would not impose
+new dispatch bounds. The session API does not infer a phase allocation or a
+separate shared DC-link constraint.
+
+A nonempty edit batch is applied to a candidate instance, prepared and compiled
+before committing one new revision. Rejected batches leave the session intact.
+The compiled model is reused for repeated solves and solver/acceptance option
+changes. Physical edits always recompile because coefficients are embedded in
+expressions and zero ratings can change the reduced equations. Numerical base
+changes also recompile. Topology, connection maps and other unsupported edits
+require a new session. `compilation_count()` makes this cache policy observable.
+
+Compatible warm starts carry primal coordinates by compiler identity, reset
+proven zero columns and recompute dependent auxiliaries. After a base change
+or ambiguous compiler names, the previous physical voltage/tap report is
+projected in SI units instead. An unusable warm seed falls back to the declared
+start with `MC_OPF.SESSION_WARM_START_DISCARDED`. `McOpfSessionResult::start`
+records the path used. Each attempt creates a fresh optimizer and evaluator;
+the session does not retain multipliers or matrix factorizations. Warm starts
+need not be feasible and do not guarantee convergence or fewer iterations.
+
+Results carry the input `revision`, solve `attempt`, and `compilation` counters.
+`current_result()` returns `None` after an edit, changed options or a failed or
+cancelled attempt. `last_accepted()` explicitly exposes the historical result
+with its original revision and instance. Failed attempts never replace that
+result or its warm-start primal. Empty edit batches, identical options and
+rejected changes leave the current result intact. Accepted results use the same
+independent physical validation and portable result format as one-shot solves;
+session counters and cache state are native, in-memory metadata.
+
 ### Results
 
 `McOpfResult` reports SI terminal voltages and physical branch, device and winding
@@ -399,4 +464,4 @@ as a complete `McOpfResult`.
 
 Accepted solves pass the [physical validation gate](validation.md#multiconductor-ivr-opf).
 They establish local numerical success, without a global-optimality certificate,
-prices, solution sensitivities or retained solve sessions.
+prices or solution sensitivities.

@@ -99,6 +99,12 @@ Regression coverage combines:
   check that seeds preserve objective/constraint evaluations, bounds and the
   physical fingerprint, survive canonical JSON round trips, and reject invalid
   or unsupported fields with structured diagnostics.
+- Retained sessions versus fresh solves after load, availability, cost and limit
+  edits, including zero-rating transitions, reordered tables and changed bases.
+  Tests verify atomic batch rejection, current/historical result revisions,
+  explicit declared-start selection, compiled-cache reuse, and preservation of
+  the accepted primal across cancellation, numerical/physical-validation failure
+  and infeasible edits.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance
