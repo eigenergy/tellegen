@@ -181,3 +181,102 @@ Regression coverage combines:
   queries and two perturbed solves (three solves total, 50-iteration ceilings).
   Retained edits invalidate sensitivities, and legacy PF reports cannot reuse
   multipliers from the old scaling.
+
+### Feeder validation and runtime budgets
+
+`mc_opf_feeder` uses one authored four-bus feeder with a delta-wye transformer,
+two coupled four-wire lines, ZIP wye/delta loads and a controlled four-leg
+inverter. Its pinned BMOPFTools reference checks rectangular voltages, line
+currents and P/Q, losses, dispatch and original inverter bounds. The test then
+checks a nominal-load sensitivity direction against centered solves, reuses one
+factorization for forward/adjoint queries, and compares a warm demand/availability/
+control edit with a fresh solve. It checks stale access and rejected-edit rollback.
+The reference records the exact input hash, oracle revision, Julia/JuMP/Ipopt
+versions, solver options, units and explicit tolerances. Objective comparison is
+specific to this fixture and matching formulation, not a global-optimality claim.
+
+The CI budget is **one fixture, five solves and one sensitivity factorization**,
+with at most 100 iterations per solve. Structural guards keep it at four buses
+and a KKT dimension below 600. Perturbed and fresh comparison solves skip dual
+collection. A local unoptimized run took about 3.1 seconds;
+elapsed time is printed for observation, not asserted against a machine-dependent
+deadline. A separate generated **30-bus rank regression adds one solve and one
+sensitivity factorization**, capped at 100 iterations, fewer than 1,000 variables,
+five million rank work units and 50,000 peak coefficients. It took about 1.7
+seconds locally in an unoptimized build (352 active rows, 3,120,827 work units,
+13,986 peak coefficients). These structural/work guards are asserted; elapsed
+time is only reported. Compact rank and version 6–9 verification/tamper tests
+remain in CI. The two larger 48-section studies are ignored by default
+and require an explicit command:
+
+```sh
+cargo test -p tellegen --no-default-features --features mc-opf --locked \
+  --test mc_opf_feeder -- --nocapture
+cargo test -p tellegen --no-default-features --features mc-opf --locked \
+  --lib mc_opf::rank -- --nocapture
+cargo test -p tellegen --no-default-features --features mc-opf --locked \
+  --lib mc_opf::rank_tests -- --ignored --nocapture
+python3 scripts/test_enwl_ivr_study.py
+```
+
+The public `mc_opf_workflow` example is also registered as a test target, so its
+external-consumer API imports compile and its three contract tests run in the
+ordinary `mc-opf` suite. It reuses the same four-bus fixture for **two solves and
+one sensitivity factorization**, capped at 100 iterations per solve. A local
+debug run took about 3.3 seconds. It checks physical results, edit invalidation,
+warm starts, complete report persistence, forward/adjoint agreement with a local
+marginal, and typed unavailable/stale diagnostics. Rejected edit rollback,
+pre-cancelled attempts, unsupported report versions, declared input preservation,
+lossy input diagnostics and selector/edit JSON contracts add no optimization.
+There are no new fixtures, oracle runs or finite-difference sweeps. Run it alone:
+
+```sh
+cargo test -p tellegen --no-default-features --features mc-opf --locked \
+  --example mc_opf_workflow -- --nocapture
+```
+
+Large external studies stay opt-in. Build the existing probe in release mode;
+`--qualify` adds dual/rank details, KKT structure, view/query timings and one
+objective forward/adjoint query using a single factorization, without extra
+optimization. An unavailable derivative remains distinct from physical rejection.
+In an opt-in check of ENWL LN snapshot `t12_1330`, the 30-bus case completed all
+756 rank pivots using 62,133,130 work units and 87,612 peak coefficients; forward
+and adjoint queries were available. The 99- and 538-bus cases still exhausted the
+unchanged 100-million-work budget and explicitly refused qualification. This
+is evidence for the selected snapshots, not a guarantee for every feeder size
+or operating point. The runner records those refusals even when the physical
+solve is accepted; its successful exit alone does not establish rank eligibility.
+The runner records the executable hash and supports explicit case selection,
+case limits and per-process timeouts. Relative paths in a case list resolve
+against the list's directory. Duplicate output filenames are rejected; failed
+reruns replace previous accepted records so comparisons cannot use stale data.
+
+```sh
+cargo build -p tellegen --release --example mc_opf_case_probe \
+  --no-default-features --features mc-opf --locked
+python3 scripts/enwl_ivr_study.py --cases /path/to/selected-cases.json \
+  --binary target/release/examples/mc_opf_case_probe --output /tmp/feeder-study \
+  --limit 2 --timeout 120 --qualify
+```
+
+The case list is a JSON array of BMOPF file paths. Existing `--case-root` ENWL
+selection and independent oracle comparison remain available. No dataset or
+Julia process is invoked by ordinary CI tests. Regenerate only the new feeder
+reference with `scripts/mc_opf_oracle.jl feeder` in the pinned oracle environment.
+
+The inputs, reference JSON, attribution and license files in
+`crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance
+records input SHA-256 hashes, oracle revision, units and numerical tolerances;
+the component bundles also record Julia/JuMP/Ipopt versions and solver options.
+Ordinary Rust tests consume the frozen results without Julia, network access
+or an external feeder dataset. Intentional regeneration uses:
+
+```sh
+julia --project=/path/to/BMOPFTools.jl/test scripts/mc_opf_oracle.jl
+```
+
+The script requires a clean BMOPFTools checkout at
+`a8b52e069bfd4a7a57434c91bc0470ac03cfdd55`. Review changed inputs, hashes and
+reference values together; do not relax tolerances to hide a changed electrical
+problem. The [external study protocol](methodology.md#external-multiconductor-ivr-studies)
+adds larger-feeder comparisons without vendoring the dataset.

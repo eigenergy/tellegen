@@ -26,22 +26,35 @@ def plan(root):
             for slot in ["01", "12", "25"]]
 
 
-def native(cases, binary, output):
+def native(cases, binary, output, *, qualify=False, timeout=120):
     rows = []
     write(output / "cases.json", [str(p.resolve()) for p in cases])
+    binary_hash = hashlib.sha256(binary.read_bytes()).hexdigest()
     for path in cases:
         stem = path.name.removesuffix(".bmopf.json")
+        record = None
         try:
-            run = subprocess.run([str(binary.resolve()), str(path.resolve())],
-                                 capture_output=True, text=True, timeout=120, check=True)
+            command = [str(binary.resolve()), str(path.resolve())]
+            if qualify:
+                command.append("--qualify")
+            run = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=True)
             (output / f"{stem}-native.log").write_text(run.stderr)
             record = json.loads(run.stdout.strip().splitlines()[-1])
             write(output / f"{stem}-native.json", record)
             row = {k: record["result"].get(k) for k in
-                   ["status", "objective", "iterations", "residuals", "counts", "error"]}
+                   ["status", "objective", "iterations", "residuals", "counts", "error", "solve_s", "qualification"]}
             row.update(case=stem, elapsed_s=record["elapsed_s"], sha256=record["sha256"])
-        except (subprocess.SubprocessError, ValueError, IndexError) as error:
+        except subprocess.TimeoutExpired:
+            record = None
+            row = dict(case=stem, status="timeout", timeout_s=timeout)
+        except (subprocess.SubprocessError, ValueError, IndexError, KeyError, OSError) as error:
+            record = None
             row = dict(case=stem, status="harness_error", error=str(error))
+        row.update(binary_sha256=binary_hash, qualify=qualify, timeout_s=timeout)
+        if record is None:
+            # Overwrite any previous result: a timed-out rerun must not leave
+            # an accepted record that a later comparison could mistake as fresh.
+            write(output / f"{stem}-native.json", {"result": row})
         rows.append(row)
         write(output / "native-summary.json", rows)
         print(json.dumps(row), flush=True)
@@ -121,16 +134,33 @@ def compare(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case-root", type=Path)
+    parser.add_argument("--cases", type=Path, help="Explicit JSON list of case paths; avoids a full ENWL sweep")
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--compare", action="store_true")
+    parser.add_argument("--qualify", action="store_true", help="Collect rank and one forward/adjoint query, without extra solves")
+    parser.add_argument("--limit", type=int, help="Run only this many selected cases")
+    parser.add_argument("--timeout", type=float, default=120, help="Hard wall-clock limit in seconds per native subprocess")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     if args.compare:
         return compare(args.output)
-    if args.binary is None or args.case_root is None:
-        parser.error("native runs require --binary and --case-root")
-    return native(plan(args.case_root), args.binary, args.output)
+    if args.binary is None or (args.case_root is None) == (args.cases is None):
+        parser.error("native runs require --binary and exactly one of --case-root or --cases")
+    if not math.isfinite(args.timeout) or args.timeout <= 0 or (args.limit is not None and args.limit <= 0):
+        parser.error("--timeout and --limit must be positive")
+    if args.cases:
+        selected = json.loads(args.cases.read_text())
+        if not isinstance(selected, list) or not selected or not all(isinstance(p, str) for p in selected):
+            parser.error("--cases must contain a nonempty JSON list of paths")
+        cases = [Path(p) if Path(p).is_absolute() else args.cases.parent / p for p in selected]
+    else:
+        cases = plan(args.case_root)
+    cases = cases[:args.limit]
+    stems = [p.name.removesuffix(".bmopf.json") for p in cases]
+    if len(set(stems)) != len(stems):
+        parser.error("case filenames must be unique to avoid overwriting reports")
+    return native(cases, args.binary, args.output, qualify=args.qualify, timeout=args.timeout)
 
 
 if __name__ == "__main__":

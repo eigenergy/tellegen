@@ -80,7 +80,7 @@ pub struct McOpfOptions {
     /// Collect stage and detailed solver timings. Off by default: timers add overhead.
     pub collect_profile: bool,
     /// Analyze original-scale multipliers, KKT residuals and conditional local
-    /// marginal costs. Opt-in; the active-rank audit is bounded in size.
+    /// marginal costs. Opt-in; the sparse active-rank audit has fill/work budgets.
     pub collect_duals: bool,
 }
 impl Default for McOpfOptions {

@@ -9,6 +9,7 @@ expected = "a8b52e069bfd4a7a57434c91bc0470ac03cfdd55"
 commit == expected || error("Oracle requires BMOPFTools $expected; found $commit")
 isempty(strip(read(`git -C $repo status --porcelain`, String))) || error("BMOPFTools checkout is dirty")
 root = joinpath(@__DIR__, "..", "crates", "tellegen", "tests", "data", "mc_opf")
+if ARGS != ["feeder"]
 input = read(joinpath(root, "unbalanced.json"), String)
 net = parse_bmopf(input; from_string=true)
 result = solve_opf(net; s_base=1000.0, solver_options=(
@@ -25,6 +26,32 @@ open(joinpath(root, "unbalanced-reference.json"), "w") do io
     println(io)
 end
 println("BMOPFTools objective: ", result["objective"])
+end
+
+# An explicit feeder invocation regenerates only the combined feeder witness.
+# Ordinary cargo tests consume the frozen file and never invoke Julia.
+if ARGS == ["feeder"]
+    input = read(joinpath(root, "feeder.json"), String)
+    options = Dict("tol"=>1e-10, "constr_viol_tol"=>1e-10,
+        "bound_relax_factor"=>0.0, "acceptable_iter"=>0, "print_level"=>0)
+    result = solve_opf(parse_bmopf(input; from_string=true); s_base=1000.0,
+        solver_options=collect(pairs(options)))
+    @assert result["termination_status"] in ("LOCALLY_SOLVED", "OPTIMAL")
+    @assert result["feasible"]
+    result = Dict(k=>result[k] for k in ["objective", "bus", "line", "transformer",
+        "ibr", "load", "voltage_source", "ground", "losses", "feasible", "termination_status"])
+    result["provenance"] = Dict("bmopftools_commit"=>commit,
+        "input_sha256"=>bytes2hex(sha256(input)), "generated_by"=>"scripts/mc_opf_oracle.jl feeder",
+        "julia_version"=>string(VERSION), "jump_version"=>string(pkgversion(JuMP)),
+        "ipopt_julia_version"=>string(pkgversion(Ipopt)), "power_base_va"=>1000.0,
+        "solver_options"=>options, "units"=>"V, A, W, var, currency/hour",
+        "tolerances"=>Dict("objective"=>1e-7, "voltage_v"=>2e-4,
+            "current_a"=>2e-4, "power_va"=>0.01))
+    open(joinpath(root,"feeder-reference.json"),"w") do io
+        JSON3.pretty(io,result); println(io)
+    end
+    exit()
+end
 
 # Component witnesses share one authored input bundle; freeze mapped SI outputs.
 for bundle in (isempty(ARGS) ? ["components","bounds","controls","equipment"] : ARGS)

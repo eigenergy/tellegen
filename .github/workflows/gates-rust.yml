@@ -71,6 +71,7 @@ jobs:
       # Exercise the native feature explicitly; shipping adapters still exclude it.
       - name: Test and lint the opt-in AC and multiconductor OPF paths
         run: |
+          python3 scripts/test_enwl_ivr_study.py
           cargo test -p tellegen --all-features --locked
           cargo test -p tellegen --no-default-features --features mc-opf --locked
           cargo test -p tellegen-acopf-wasi --features acopf --locked
