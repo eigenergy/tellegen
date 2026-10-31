@@ -217,3 +217,107 @@ linear generator cost representation as DC OPF. Select `socwr` in
 `solve_module_json`.
 
 These formulations compile to native Rust and WebAssembly.
+
+## Experimental native multiconductor IVR OPF
+
+The opt-in `mc-opf` feature solves unbalanced AC OPF in current–voltage
+rectangular (IVR) coordinates, with explicit terminals and neutrals. It has
+separate native entry points over `McAcOpfInstance`; see the
+[solver decision](acopf-pounce-decision.md#experimental-native-multiconductor-ivr-opf)
+for build commands and API availability.
+
+PowerIO owns canonical electrical semantics, source mappings, units, selected
+bounds and solver-independent IVR preparation. Tellegen compiles that prepared
+data into expressions, invokes POUNCE, and independently validates the physical
+result. BMOPFTools is an external reference for tests, not a runtime dependency.
+
+DELTA equipment and THREE_LEG inverters require phase-role endpoints; neutral,
+earth and other return roles are rejected during preparation. Two-terminal DELTA
+remains one phase-to-phase coil.
+
+Fixed power-factor control uses the bounded row
+`sqrt((1 - abs(pf)) * (1 + abs(pf))) * P + pf * Q = 0`.
+The signed domain is `0 < abs(pf) <= 1`; P/Q/S/I capability bounds continue to
+intersect this control law. Absolute equation tolerance alone does not establish
+relative accuracy of a tiny requested PF.
+
+### Equations and derivatives
+
+Variables include rectangular terminal voltages, branch and winding currents,
+continuous taps, and explicit active/reactive power auxiliaries. KCL, fixed
+shunts, ideal switches and the coupled branch law
+
+$$ V_{\mathrm{from}} - V_{\mathrm{to}} = Z I $$
+
+are affine. Retaining currents avoids inverting zero or singular impedance
+matrices. Complex power uses
+
+$$ P = V_r I_r + V_i I_i, \qquad Q = V_i I_r - V_r I_i. $$
+
+These links, squared voltage/current limits, and continuous tap products are
+quadratic. Apparent-power limits use explicit $P,Q$ auxiliaries so that
+$P^2 + Q^2 \le S_{\max}^2$ remains quadratic; substituting the voltage–current
+products into this circle would make it quartic. Sequence voltages similarly
+use affine auxiliaries before imposing norm bounds. Dispatch cost is linear in
+the active-power auxiliaries.
+
+POUNCE's exact sparse quadratic evaluator handles these polynomial rows. Each
+row Hessian is constant; the weighted Lagrangian Hessian still changes with the
+constraint multipliers. General load laws and smooth inverter controls use
+POUNCE's existing sparse automatic differentiation. Finite differences are
+validation tools, not production derivatives.
+
+ZIP, constant-current and exponential laws use a positive voltage domain via
+$\ell = \log(|U|/U_{\mathrm{nom}})$ and
+$|U/U_{\mathrm{nom}}|^2 = \exp(2\ell)$, with power terms expressed as exponentials
+of $\ell$. This avoids an artificial epsilon floor. Pure impedance laws instead
+use the affine relation
+$I = \overline{S_{\mathrm{nom}}}U/U_{\mathrm{nom}}^2$, including at zero voltage;
+constant-power equivalents use fixed $P,Q$. Smooth volt-var/volt-watt controls
+use a nonnegative magnitude auxiliary and stable softplus transitions with width
+0.002 times the mean physical knot voltage.
+
+### Supported electrical profile
+
+- Coupled lines with shunts at both ends, standalone shunts, ideal open/closed
+  switches, and earth-referenced ideal sources with grounded neutrals.
+- WYE, delta and two-wire constant-power, constant-current, constant-impedance,
+  ZIP and exponential loads; generators; and connection-aware capacitors.
+  Unequal capacitor coil ratings are lowered to the exact terminal-shunt matrix.
+- Single-phase, center-tapped, WYE/delta and fixed n-winding transformers;
+  Type A/B autotransformer regulators; and ABBC/BCAC/CABA open-delta regulators.
+  Preparation preserves polarity, delta roll, leakage coupling, core shunts,
+  neutral impedance/return bonds, and distinct coil and terminal ratings.
+  Supported two-sided subtypes have continuous taps; n-winding transformers
+  have fixed taps and may use mixed connections or two-phase delta windings.
+- Single-, three- and four-leg inverters, with active/reactive power, current,
+  neutral-return and apparent-power limits; signed power factor; supported
+  phase-ground, phase-neutral and phase-phase volt-var/volt-watt controls with
+  per-phase or averaged sensing; and isolated DC-link active-power coupling.
+- Phase-ground, phase-neutral, phase-phase and neutral-voltage limits;
+  positive-, negative- and zero-sequence voltage limits; and bus/line angle
+  windows strictly inside $(-\pi/2,\pi/2)$.
+
+Instance constraint selection uses `transformer:<name>` in `conductor_limits`
+for transformer limits and `ibr:<name>` in `generator_capability` for inverter
+capabilities. Droop, power-factor and DC-link equations remain physical laws
+when capability limits are deselected.
+
+Preparation rejects unsupported profiles explicitly: DC networks,
+terminal-referenced source voltages, floating source neutrals, initial points,
+unknown semantic extras, unreferenced conductor islands, ideal cycles or ideal
+paths joining multiple fixed references, bounded load laws, and unsupported
+inverter policies. The latter include conflicting power-factor/droop settings,
+three-leg droop, non-VA-fraction curves and extra minimum-active-power policies.
+Legacy negative neutral resistance must be normalized upstream to an explicit
+open connection. A profile rejection is not a proof of electrical infeasibility.
+
+### Results
+
+`McOpfResult` reports SI terminal voltages and physical branch, device and winding
+ledgers, keeping terminal and coil axes distinct, including neutral returns.
+The portable solution projection contains voltages, existing source/generator
+dispatch fields and the original instance; it does not serialize every native
+ledger. Accepted solutions pass the [physical validation gate](validation.md#multiconductor-ivr-opf).
+They establish local numerical success, without a global-optimality certificate,
+prices, solution sensitivities or retained solve sessions.
