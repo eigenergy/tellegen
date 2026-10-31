@@ -392,6 +392,25 @@ impl Builder {
     }
 }
 pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
+    // Version 1/2 reports predate canonical voltage-dependent parameter maps.
+    compile_inner(prep, None)
+}
+pub(super) fn compile_with_load_parameters(
+    prep: McAcOpfPreparation,
+    network: &powerio::MulticonductorNetwork,
+) -> Result<Model, String> {
+    compile_inner(prep, Some(network))
+}
+fn compile_inner(
+    prep: McAcOpfPreparation,
+    network: Option<&powerio::MulticonductorNetwork>,
+) -> Result<Model, String> {
+    let canonical_loads = network.map(|n| {
+        n.loads()
+            .iter()
+            .map(|load| (load.name.as_str(), load))
+            .collect::<BTreeMap<_, _>>()
+    });
     let mut b = Builder::default();
     let voltage: Vec<_> = prep
         .terminals
@@ -592,6 +611,21 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
     let mut devices = Vec::new();
     let mut objective = Vec::new();
     for dev in &prep.devices {
+        let canonical_load = if dev.kind == McOpfDeviceKind::Load {
+            canonical_loads
+                .as_ref()
+                .map(|loads| {
+                    loads.get(dev.identity.as_str()).copied().ok_or_else(|| {
+                        format!(
+                            "{}: missing canonical load parameter identity",
+                            dev.identity
+                        )
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
         let mut cols = DeviceColumns {
             current: Vec::new(),
             power: Vec::new(),
@@ -630,6 +664,39 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
             let pq = b.power_lift(&name, &u, &i, p0);
             let zero_power = coil.current_max == Some(0.0) || coil.apparent_max == Some(0.0);
             if let Some(law) = &coil.load_law {
+                let parameter_terms = canonical_load
+                    .map(|l| {
+                        super::load_parameters::terms(
+                            l,
+                            k,
+                            dev.coils.len(),
+                            prep.bases.power_base_va,
+                        )
+                    })
+                    .transpose()?;
+                let map_parameter = |b: &mut Builder, j: usize, origin: usize, coordinate| {
+                    if let Some(terms) = &parameter_terms {
+                        b.dual_map.term(
+                            Parameter::new(
+                                Owner::Load,
+                                &dev.identity,
+                                Some(k),
+                                if j == 0 {
+                                    ParameterKind::LoadActivePower
+                                } else {
+                                    ParameterKind::LoadReactivePower
+                                },
+                            ),
+                            Some(origin),
+                            Rule::Load(super::load_parameters::LoadParameter::new(
+                                terms[j].clone(),
+                                law.nominal,
+                                u.clone(),
+                                coordinate,
+                            )),
+                        );
+                    }
+                };
                 let impedance = law.terms.iter().flatten().all(|t| t[1] == 2.0);
                 if impedance {
                     // Preserve the affine constitutive law even at U = 0.
@@ -637,26 +704,44 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                         law.terms[0].iter().map(|t| t[0]).sum::<f64>() / law.nominal.powi(2);
                     let q: f64 =
                         law.terms[1].iter().map(|t| t[0]).sum::<f64>() / law.nominal.powi(2);
+                    let real_origin = b.dual_map.origins.len();
                     b.affine_row(
                         format!("{name}:impedance:r"),
                         &i[0].sub(&u[0].scale(g)).sub(&u[1].scale(q)),
                     )?;
+                    let imaginary_origin = b.dual_map.origins.len();
                     b.affine_row(
                         format!("{name}:impedance:i"),
                         &i[1].sub(&u[1].scale(g)).add(&u[0].scale(q)),
                     )?;
+                    for (part, origin) in [real_origin, imaginary_origin].into_iter().enumerate() {
+                        for j in 0..2 {
+                            map_parameter(
+                                &mut b,
+                                j,
+                                origin,
+                                super::load_parameters::Coordinate::Current {
+                                    reactive: j == 1,
+                                    part,
+                                },
+                            );
+                        }
+                    }
                 } else if law.terms.iter().flatten().all(|t| t[1] == 0.0) {
                     for (j, &power_column) in pq.iter().enumerate() {
                         let target: f64 = law.terms[j].iter().map(|t| t[0]).sum();
-                        b.row(
+                        let origin = b.row(
                             format!("{name}:constant:{j}"),
                             Expr::Var(power_column),
                             target,
                             target,
                         );
-                        // A nonconstant canonical law can look constant here:
-                        // preparation removes zero coefficients. Its nominal
-                        // P/Q derivative cannot be inferred from these terms.
+                        map_parameter(
+                            &mut b,
+                            j,
+                            origin,
+                            super::load_parameters::Coordinate::Power { log_voltage: None },
+                        );
                     }
                 } else {
                     // Log-voltage lift defines the exact positive-voltage domain;
@@ -697,11 +782,19 @@ pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
                                 }
                             })
                             .collect());
-                        b.row(
+                        let origin = b.row(
                             format!("{name}:voltage_law:{j}"),
                             bin(BinOp::Sub, Expr::Var(power_column), rhs),
                             0.0,
                             0.0,
+                        );
+                        map_parameter(
+                            &mut b,
+                            j,
+                            origin,
+                            super::load_parameters::Coordinate::Power {
+                                log_voltage: Some(ell),
+                            },
                         );
                     }
                 }

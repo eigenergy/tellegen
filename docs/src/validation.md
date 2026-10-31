@@ -126,6 +126,14 @@ Regression coverage combines:
   check shifted regular systems, reordered/scaled coordinates and inverse
   residual failures without optimization. Session tests and a compile-fail borrowing example
   guard current versus historical sensitivity access across edits and failures.
+- Voltage-dependent nominal P/Q marginals and sensitivities for constant-current,
+  constant-impedance, ZIP and exponential loads. Analytic rotated-voltage cases,
+  centered perturbations of wye/delta networks and interior generator dispatch,
+  and direct compiled residual/Jacobian parameter differences check units, signs
+  and mixed derivatives. Coverage includes zero nominal P/Q across equation-form
+  changes, per-coil coefficient/default handling, zero-voltage domain refusals,
+  base/order/objective-scale invariance, session edits and verified version 2 to 3
+  report upgrades. Metadata construction preserves the physical graph and bounds.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance
