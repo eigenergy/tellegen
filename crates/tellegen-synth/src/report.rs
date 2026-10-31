@@ -768,6 +768,9 @@ pub struct OsmProvenance {
     /// data was served under.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copyright: Option<String>,
+    /// Licence identifier inferred from the Overpass attribution notice (when recognizable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
     pub document_sha256: String,
     pub elements: usize,
     pub counts: BTreeMap<String, u64>,

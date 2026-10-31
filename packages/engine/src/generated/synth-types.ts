@@ -1,5 +1,5 @@
 // Generated from Rust by synth_schema and generate-synth-types.mjs.
-// Source SHA256: ac27816de6e30174f5a8569aeb41d6fea7ec6384580019d5a6ff84d6b913e4a1
+// Source SHA256: f7c93124f3e15db0e3b61df9ea5779c4aec7292adf42248b0b451438e0f79ed3
 
 export type AcPfOutcome = "converged" | "not_converged" | "skipped";
 
@@ -71,7 +71,7 @@ export type OsmIslands = ("connect") | ("cut") | ("keep");
 
 export type OsmOptions = { /** Infrastructure this far outside the region polygon is still kept. */ "clip_buffer_km"?: number; /** Substation and converter elements within this radius collapse into one site. */ "cluster_radius_m"?: number; /** A DC line end within this distance of a converter snaps to it. */ "hvdc_snap_km"?: number; "islands"?: OsmIslands; /** Fewer branches than this is `OsmInsufficient`. */ "min_branches"?: number; /** Fewer buses than this is `OsmInsufficient`. */ "min_buses"?: number; /** A plant within this distance of a site connects there. */ "plant_snap_km"?: number; /** A line end within this distance of a site snaps to it. */ "snap_km"?: number; /** Lines and substations below this nominal voltage are distribution and are dropped. */ "voltage_floor_kv"?: number; };
 
-export type OsmProvenance = { /** The Overpass answer's `osm3s.copyright` notice: the licence (ODbL) the data was served under. */ "copyright"?: string | null; "counts": { [key: string]: number; }; "document_sha256": string; "elements": number; "generator": string; "timestamp_osm_base"?: string | null; };
+export type OsmProvenance = { /** The Overpass answer's `osm3s.copyright` notice: the licence (ODbL) the data was served under. */ "copyright"?: string | null; "counts": { [key: string]: number; }; "document_sha256": string; "elements": number; "generator": string; /** Licence identifier inferred from the Overpass attribution notice (when recognizable). */ "license"?: string | null; "timestamp_osm_base"?: string | null; };
 
 export type PlacesProvenance = { "count": number; /** SHA-256 of the table as loaded. */ "sha256": string; /** The dataset the table was derived from (the bundled table names Natural Earth's release); absent for a bare array of rows. */ "source"?: string | null; /** SHA-256 of that dataset. */ "source_sha256"?: string | null; };
 
