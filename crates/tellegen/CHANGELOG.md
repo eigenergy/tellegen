@@ -4,6 +4,13 @@ Written by release-plz from the commits between tags. Releases through 0.1.1,
 when all three surfaces moved together, are in the
 [root `CHANGELOG.md`](../../CHANGELOG.md).
 
+## [0.5.1](https://github.com/eigenergy/tellegen/compare/v0.5.0...v0.5.1) - 2026-10-31
+
+### Other
+
+- Gate the AC model HVDC test on the sensitivity feature
+- Carry in-service HVDC lines as fixed injections in the balanced solvers
+
 ## [0.5.0](https://github.com/eigenergy/tellegen/compare/v0.4.0...v0.5.0) - 2026-10-28
 
 Released with `@tellegen/engine` 0.4.4.
