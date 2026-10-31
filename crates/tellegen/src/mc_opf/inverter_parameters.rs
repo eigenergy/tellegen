@@ -50,6 +50,9 @@ pub(super) struct InverterParameters<'a> {
     sb: f64,
 }
 impl<'a> InverterParameters<'a> {
+    pub fn profile(&self) -> Option<&'a DistControlProfile> {
+        self.profile
+    }
     pub fn new(
         inv: &'a DistIbr,
         net: &'a powerio::MulticonductorNetwork,

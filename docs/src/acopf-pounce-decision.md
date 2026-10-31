@@ -394,9 +394,11 @@ cover per-coil availability, P/Q bounds, apparent-power and conductor-current
 ratings, including neutral returns and their effects on existing volt-var and
 volt-watt references. Transformer mappings cover effective port ratings and
 physical continuous tap bounds; outputs include winding/port flows and optimized
-tap ratios, including inverse regulator conventions. Control-curve and electrical
-coefficients remain fixed. Version 5 reports retain these marginal claims;
-version 2–4 reports are verified before upgrade.
+tap ratios, including inverse regulator conventions. Shared control-profile
+mappings cover volt-var/volt-watt breakpoints and fractions and interior signed
+power factors, including all assigned coils and smoothing-width derivatives.
+Control modes, references and electrical coefficients remain fixed. Version 6
+reports retain these marginal claims; version 2–5 reports are verified before upgrade.
 
 The feature builds against POUNCE 0.13.0 and, until PowerIO 0.11.8 is
 published, against the PowerIO candidate patched in the root `Cargo.toml`. Build and test the native feature from the repository root:

@@ -151,6 +151,15 @@ Regression coverage combines:
   includes forward/adjoint agreement, cost envelopes, unit/base/scale invariance,
   session freshness, unsupported axes/fixed taps, zero-rating diagnostic refusal,
   unchanged physical graphs and version 5 reports with verified legacy upgrades.
+- Shared inverter control-profile marginals and sensitivities. Centered solves
+  check every volt-var/volt-watt breakpoint and endpoint fraction across all
+  power references, leading/lagging power factors, multiple assigned inverters,
+  delta/four-leg coils and averaged phase-ground/neutral/phase monitors. Direct
+  residual/Jacobian differences at knots and saturated voltages check exact
+  mixed derivatives, including smoothing-width changes and flat curves. Further
+  cases check interior dispatch, forward/adjoint agreement, cost envelopes,
+  units and numerical scaling, atomic profile edits, unity-PF/unused-profile
+  refusals, and version 6 round trips with verified legacy upgrades.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance

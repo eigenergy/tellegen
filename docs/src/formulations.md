@@ -401,6 +401,14 @@ determines which bounds are enforced. Released PowerIO preparation uses
 new dispatch bounds. The session API does not infer a phase allocation or a
 separate shared DC-link constraint.
 
+`InverterControlProfile` patches a named shared profile's power factor,
+volt-var breakpoints/q limits, or volt-watt breakpoints/p limits. `None` leaves
+that field unchanged. Breakpoints are positive, strictly ordered volts; output
+limits are finite dimensionless fractions in canonical array order. The edit
+affects every inverter using the profile. Existing control families, voltage and
+power references, aggregation and assignments stay fixed. Power factor must
+satisfy `0 < |pf| <= 1`. Invalid edits reject the entire batch.
+
 A nonempty edit batch is applied to a candidate instance, prepared and compiled
 before committing one new revision. Rejected batches leave the session intact.
 The compiled model is reused for repeated solves and solver/acceptance option
@@ -448,15 +456,15 @@ The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
 
 `McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
-PowerIO `McAcOpfSolution` plus version 5 of the namespaced module extension
+PowerIO `McAcOpfSolution` plus version 6 of the namespaced module extension
 `org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
 source/generator dispatch and the original instance. The extension carries the
 complete ledgers, axes, optimized taps, numerical options/bases, residuals,
 input diagnostic summaries, fingerprint, iterations, optional profile and optional
-dual report. Version 1 reports without dual data remain readable. Version 2–4
+dual report. Version 1 reports without dual data remain readable. Version 2–5
 dual reports are checked using their original parameter mappings before newly
-supported load/inverter/transformer derivatives are recomputed from the retained canonical
-instance. Re-export writes version 5; older unsupported entries are not silently
+supported load/inverter/transformer/control-profile derivatives are recomputed from the retained canonical
+instance. Re-export writes version 6; older unsupported entries are not silently
 accepted as current claims. Upgrading does not rerun optimization.
 This uses PowerIO's existing extension mechanism without changing its schema.
 
@@ -500,12 +508,13 @@ They use compiled row units. **IVR KCL multipliers are not nodal energy prices.*
 
 Typed marginal entries instead report the envelope derivative of operating cost
 (currency/hour) with respect to an identified physical parameter in W, var, A,
-VA, V or dimensionless tap ratio. A positive value means increasing that parameter raises local cost.
+VA, V or dimensionless ratio. A positive value means increasing that parameter raises local cost.
 For example, a lossless load served at 0.2 currency/kWh has an active-power
 marginal of 0.0002 (currency/hour)/W. Supported parameters are nominal
 load coil P/Q, selected generator coil P/Q bounds, inverter availability and
 capabilities, effective branch conductor and transformer port current/apparent-power
-ratings, physical continuous tap bounds, and prepared voltage-magnitude limits.
+ratings, physical continuous tap bounds, prepared voltage-magnitude limits,
+and inverter control-profile settings.
 Branch ratings sum contributions from both ends. Squared-norm rows include the
 derivative of their normalization radius, so their raw multiplier is not itself
 the physical limit marginal. Values are invariant to numerical bases and solver
@@ -519,7 +528,7 @@ impedance, ZIP and exponential laws. They hold nominal voltage, exponents and
 ZIP coefficients fixed. Canonical scalar/per-coil coefficients and their defaults
 are retained even when nominal P/Q is zero and preparation removes its terms.
 The derivative is with respect to nominal W/var, not the load's realized power at
-the solved voltage. Control-curve coefficients, fixed-tap setpoints and transformer
+the solved voltage. Fixed-tap setpoints and transformer
 impedances do not have parameter mappings. Coincident generator/inverter lower and upper bounds do not
 yield separate one-sided bound marginals.
 
@@ -549,6 +558,20 @@ and an exact tie refuses independent current-rating partials. Ratings must exist
 and be finite. Zero-rating reductions retain the existing conservative refusal;
 a zero nameplate used only as a control reference is also unsupported. All these
 entries remain conditional on the same regular local branch and active set.
+
+Shared profile entries use owner `ControlProfile` and the canonical profile
+name. `VoltVarBreakpoint` and `VoltWattBreakpoint` use volts and an axis indexing
+the canonical breakpoint array. `VoltVarFraction` and `VoltWattFraction` use
+dimensionless ratio units and index `q_limits` and `p_limits`, respectively:
+index 0 is the high-voltage endpoint, index 1 the low-voltage endpoint.
+`PowerFactor` has no axis and varies the signed canonical `pf` in ratio units.
+Each derivative sums all affected coils of every inverter assigned that profile,
+holding nameplates, availability, references and aggregation fixed. Breakpoint
+derivatives include the preparation rule for smoothing width as well as interval
+slopes. Averaged voltage monitors retain their full chain rule. Unity power
+factor is a valid setting but has no finite two-sided derivative; its marginal
+and sensitivity are unsupported, as are unused profiles. Switching control
+families, references or profile assignments is outside this local interface.
 
 Transformer entries use owner `Transformer` and the prepared transformer identity.
 For `CurrentRating` (A) and `ApparentPowerRating` (VA), `axis` indexes that
