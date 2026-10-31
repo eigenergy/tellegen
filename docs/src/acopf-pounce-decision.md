@@ -1,7 +1,9 @@
 # AC OPF solver decision
 
-Status: accepted for feasibility work; distribution and product capability are
-not yet approved. Recorded 24 September 2026.
+Status: accepted for feasibility work. Recorded 24 September 2026. On 29 October
+2026 the release owner approved EPL-2.0 distribution of the WASI asset, and the
+website serves it as an experimental, base-case-only calculation. Release gates
+2 to 5 below remain open.
 
 ## Released backend integration — 22 October 2026
 
@@ -365,18 +367,32 @@ default engine and all shipping adapters while present in the opt-in probe.
 That mechanical boundary is not legal approval. Before distributing a native
 binary or WASI asset containing POUNCE, the release owner must approve the
 EPL-2.0 obligations, include its license/notices, and provide a reasonable
-corresponding-source location. Until then, this website enablement must remain
-unpublished. `Problem::Acopf` remains unavailable in the default native engine
-and shipping adapters; the website uses the separate worker reactor.
+corresponding-source location. `Problem::Acopf` remains unavailable in the
+default native engine and shipping adapters; the website uses the separate
+worker reactor.
+
+On 29 October 2026 Samuel Talkington, the release owner, approved EPL-2.0
+distribution of POUNCE in the website's WASI asset. The website build meets the
+obligations as follows:
+
+- POUNCE is used without modification. `POUNCE-EPL-2.0.txt` (the license) and
+  `POUNCE-NOTICE.txt` (the notice) are served beside the asset under
+  `/experimental-acopf/`.
+- `POUNCE-SOURCE.json`, beside the asset, gives the corresponding source: the
+  crates.io archive URL and SHA-256 of each of the 14 POUNCE crates, the
+  upstream tag, the Tellegen commit the deployed image was built from, and the
+  asset's own SHA-256 and size. The deployed asset's manifest records
+  `"development_only": false`; local builds still record `true`.
+- The `/credits` page links all three files.
 
 ## Remaining release gates
 
-The released dependency and restoration-driver gates are implemented. This
-draft is not a distribution approval. Before public enablement, the remaining
-gates are:
+The released dependency and restoration-driver gates are implemented. Gate 1
+is complete. The release owner enabled the experimental calculation on the
+public website with gates 2 to 5 still open; they are not complete:
 
-1. Release-owner approval of EPL-2.0 distribution obligations. The opt-in build
-   now includes the license, notice and checksummed source locations.
+1. Release-owner approval of EPL-2.0 distribution obligations. Approved on
+   29 October 2026; see the section above.
 2. Resolve the inherited PowerIO → ZIP advisory failures using a reviewed,
    patched PowerIO release; no advisory exception is added here.
 3. Repeat the independent corpus check on the final Tellegen release artifact
