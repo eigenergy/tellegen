@@ -304,13 +304,63 @@ capabilities. Droop, power-factor and DC-link equations remain physical laws
 when capability limits are deselected.
 
 Preparation rejects unsupported profiles explicitly: DC networks,
-terminal-referenced source voltages, floating source neutrals, initial points,
+terminal-referenced source voltages, floating source neutrals,
 unknown semantic extras, unreferenced conductor islands, ideal cycles or ideal
 paths joining multiple fixed references, bounded load laws, and unsupported
 inverter policies. The latter include conflicting power-factor/droop settings,
 three-leg droop, non-VA-fraction curves and extra minimum-active-power policies.
 Legacy negative neutral resistance must be normalized upstream to an explicit
 open connection. A profile rejection is not a proof of electrical infeasibility.
+
+### Explicit initial points
+
+Attach a canonical `OperatingPoint<MulticonductorNetwork>` using
+`McAcOpfInstance::with_initial_point`. Build the point with PowerIO's
+`MulticonductorOperatingPointBuilder::for_point(network.clone())`. Supported
+quantity families are terminal voltage magnitude (V), terminal angle (rad),
+load/generator terminal active and reactive power (W/var), and physical
+transformer tap coefficients. Families may be omitted independently; a supplied
+family must cover all of its canonical identities. Builder vectors use the
+point network's table/terminal order. Projection matches stable identities, so
+the target instance may use a different order or numerical bases.
+
+For a converged canonical `McAcPfSolution`,
+`mc_opf_initial_point_from_pf(&solution)` creates a voltage-only point. When
+starting from Tellegen's `McPfResult`, first call
+`result.to_powerio_solution(&pf_instance)`. This is an explicit caller choice;
+the OPF entry point does not run PF automatically.
+
+Only the numerical starting vector changes. Network data, objective, selected
+constraints, bounds, and the physical fingerprint remain unchanged. Tellegen
+prepares an equivalent
+physical instance without its seed, then projects the original point into the
+compiled IVR coordinates. The returned solution and canonical JSON retain the
+original physical instance and seed values. Returned seed columns are normalized
+to the instance's order for portable JSON. When serializing an input instance
+directly through PowerIO, construct its point in that instance's order too;
+PowerIO's stored assignment decoder requires matching column order.
+
+Fixed source/ground voltages and fixed transformer taps take precedence, with
+`MC_OPF.INITIAL_POINT_PROJECTED` remarks. Active taps use the canonical physical
+coefficient, including inverse Type B regulator scaling. Missing voltages use
+the ordinary compiled defaults. Branch/winding currents are inferred from
+seeded voltages where consistent; otherwise their unspecified guesses remain
+zero, including for inconsistent ideal-branch voltage guesses. Device currents
+default to the load law or prescribed power at the seeded voltage. Explicit
+load/generator powers are terminal powers, including neutral returns, not delta
+coil powers or changes to demand/dispatch limits. They determine current guesses
+through the device's connection incidence. Power, sequence-voltage, droop
+magnitude and logarithmic-voltage auxiliaries are then recomputed; compiler
+zero reductions still apply.
+
+Nonfinite values, negative magnitudes, nonpositive taps, mismatched identities,
+terminal power guesses incompatible with the seeded voltages/connection, and
+zero voltages in logarithmic load coordinates return
+`MC_OPF.INITIAL_POINT_INVALID` with a target. Capacitor steps and switch states
+return `MC_OPF.INITIAL_POINT_UNSUPPORTED`: equipment state belongs on the
+network. A seed need not satisfy operating limits or KCL and does not guarantee
+convergence; the usual physical acceptance gate still applies. Omitting the
+initial point preserves the existing cold start.
 
 ### Results
 
