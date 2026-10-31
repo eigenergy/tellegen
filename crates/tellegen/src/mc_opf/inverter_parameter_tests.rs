@@ -531,7 +531,7 @@ fn retained_availability_edits_rebuild_derivatives_and_saved_reports() {
 }
 
 #[test]
-fn version_four_reports_verify_legacy_maps_before_upgrading_inverter_claims() {
+fn current_reports_verify_legacy_maps_before_upgrading_inverter_claims() {
     let mut n = single();
     control(&mut n, Reference::PAvailable, false);
     let r = solve(n);
@@ -564,7 +564,7 @@ fn version_four_reports_verify_legacy_maps_before_upgrading_inverter_claims() {
             .all(|m| m.parameter.owner != McOpfParameterOwner::Inverter));
         let mut module = crate::ir::deserialize_module(&saved).unwrap();
         let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-        assert_eq!(report["version"], json!(4));
+        assert_eq!(report["version"], json!(5));
         report["version"] = json!(version);
         report["duals"] = serde_json::to_value(old).unwrap();
         module
@@ -581,7 +581,7 @@ fn version_four_reports_verify_legacy_maps_before_upgrading_inverter_claims() {
             crate::ir::deserialize_module(&read.to_module_json().unwrap())
                 .unwrap()
                 .extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-            json!(4)
+            json!(5)
         );
         report["version"] = json!(4);
         module

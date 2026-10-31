@@ -30,6 +30,8 @@ mod session;
 pub use sensitivity::*;
 #[cfg(test)]
 mod sensitivity_tests;
+#[cfg(test)]
+mod transformer_parameter_tests;
 pub use diagnostics::{McOpfDiagnostic, McOpfError, McOpfErrorKind, McOpfStage, McOpfViolation};
 pub use result::{
     McOpfCoilAxis, McOpfPortResult, McOpfShuntResult, McOpfTerminalId, McOpfTerminalVoltage,

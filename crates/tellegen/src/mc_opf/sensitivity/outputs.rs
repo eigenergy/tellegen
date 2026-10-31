@@ -161,6 +161,85 @@ impl McOpfSensitivities<'_> {
                 }
                 flow(&m.voltage[node], &current, x, *quantity, sb, vb)
             }
+            McOpfSensitivityOutput::Transformer {
+                identity,
+                axis,
+                quantity,
+            } => {
+                let k = p
+                    .transformers
+                    .iter()
+                    .position(|t| t.identity == *identity)
+                    .ok_or_else(unsupported)?;
+                let tx = &p.transformers[k];
+                let currents = &m.transformer_current[k];
+                let (v, i) = match axis {
+                    McOpfTransformerAxis::Coil { index } => {
+                        let c = tx.coils.get(*index).ok_or_else(unsupported)?;
+                        (
+                            difference(&m.voltage, c.positive, c.negative),
+                            currents[*index].clone(),
+                        )
+                    }
+                    McOpfTransformerAxis::Terminal { terminal } => {
+                        let node = p
+                            .terminals
+                            .iter()
+                            .position(|t| t.bus == terminal.bus && t.terminal == terminal.terminal)
+                            .ok_or_else(unsupported)?;
+                        if !tx
+                            .coils
+                            .iter()
+                            .any(|c| c.positive == node || c.negative == Some(node))
+                        {
+                            return Err(unsupported());
+                        }
+                        let mut current = [Affine::default(), Affine::default()];
+                        for (c, i) in tx.coils.iter().zip(currents) {
+                            let sign =
+                                f64::from(c.positive == node) - f64::from(c.negative == Some(node));
+                            for j in 0..2 {
+                                current[j] = current[j].add(&i[j].scale(sign));
+                            }
+                        }
+                        (m.voltage[node].clone(), current)
+                    }
+                    McOpfTransformerAxis::Port { name } => {
+                        let port = tx
+                            .ports
+                            .iter()
+                            .find(|p| p.name == *name)
+                            .ok_or_else(unsupported)?;
+                        (
+                            difference(&m.voltage, port.positive, port.negative),
+                            model::descriptor(&port.current, &m.voltage, currents),
+                        )
+                    }
+                };
+                flow(&v, &i, x, *quantity, sb, vb)
+            }
+            McOpfSensitivityOutput::TransformerTap { identity } => {
+                let k = p
+                    .transformers
+                    .iter()
+                    .position(|t| t.identity == *identity)
+                    .ok_or_else(unsupported)?;
+                let tx = &p.transformers[k];
+                let column = m.transformer_tap[k].ok_or_else(unsupported)?;
+                if x[column] <= 0. {
+                    return Err(unsupported());
+                }
+                let scale = if tx.tap_inverse {
+                    -tx.tap_nominal / x[column].powi(2)
+                } else {
+                    tx.tap_nominal
+                };
+                (
+                    gradient(&Affine::var(column), x.len()),
+                    scale,
+                    McOpfOutputUnit::Ratio,
+                )
+            }
         };
         for v in &mut g {
             *v *= scale;

@@ -105,7 +105,11 @@ pub(super) fn difference(v: &[Pair], a: usize, b: Option<usize>) -> Pair {
         |b| pair_add(&v[a], &pair_scale(&v[b], -1.0)),
     )
 }
-fn descriptor(row: &powerio_matrix::McOpfComplexRow, voltage: &[Pair], currents: &[Pair]) -> Pair {
+pub(super) fn descriptor(
+    row: &powerio_matrix::McOpfComplexRow,
+    voltage: &[Pair],
+    currents: &[Pair],
+) -> Pair {
     let mut out = [Affine::default(), Affine::default()];
     for (terms, values) in [(&row.voltage, voltage), (&row.current, currents)] {
         for &(k, [r, i]) in terms {
@@ -400,25 +404,33 @@ impl Builder {
 }
 pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
     // Version 1/2 reports predate canonical voltage-dependent parameter maps.
-    compile_inner(prep, None, false)
+    compile_inner(prep, None, false, false)
 }
 pub(super) fn compile_with_load_parameters(
     prep: McAcOpfPreparation,
     network: &powerio::MulticonductorNetwork,
 ) -> Result<Model, String> {
     // Version 3 reports include load mappings but predate inverter mappings.
-    compile_inner(prep, Some(network), false)
+    compile_inner(prep, Some(network), false, false)
+}
+pub(super) fn compile_with_inverter_parameters(
+    prep: McAcOpfPreparation,
+    network: &powerio::MulticonductorNetwork,
+) -> Result<Model, String> {
+    // Version 4 predates transformer mappings.
+    compile_inner(prep, Some(network), true, false)
 }
 pub(super) fn compile_with_parameters(
     prep: McAcOpfPreparation,
     network: &powerio::MulticonductorNetwork,
 ) -> Result<Model, String> {
-    compile_inner(prep, Some(network), true)
+    compile_inner(prep, Some(network), true, true)
 }
 fn compile_inner(
     prep: McAcOpfPreparation,
     network: Option<&powerio::MulticonductorNetwork>,
     inverter_parameters: bool,
+    transformer_parameters: bool,
 ) -> Result<Model, String> {
     let canonical_loads = network.map(|n| {
         n.loads()
@@ -555,12 +567,38 @@ fn compile_inner(
                 format!("transformer:{}:tap", tx.identity),
                 1.0_f64.clamp(lo, hi),
             );
-            b.row(
+            let origin = b.row(
                 format!("transformer:{}:tap_bounds", tx.identity),
                 Expr::Var(id),
                 lo,
                 hi,
             );
+            if transformer_parameters {
+                for (bound, lower) in [(lo, true), (hi, false)] {
+                    let physical_lower = lower != tx.tap_inverse;
+                    b.dual_map.term(
+                        Parameter::new(
+                            Owner::Transformer,
+                            &tx.identity,
+                            None,
+                            if physical_lower {
+                                ParameterKind::TapLower
+                            } else {
+                                ParameterKind::TapUpper
+                            },
+                        ),
+                        Some(origin),
+                        Rule::Bound {
+                            scale: if tx.tap_inverse {
+                                -bound * bound / tx.tap_nominal
+                            } else {
+                                tx.tap_nominal.recip()
+                            },
+                            lower,
+                        },
+                    );
+                }
+            }
             id
         });
         transformer_tap.push(tap);
@@ -594,20 +632,50 @@ fn compile_inner(
             }
         }
         let mut powers = Vec::new();
-        for port in &tx.ports {
+        for (axis, port) in tx.ports.iter().enumerate() {
             let name = format!("transformer:{}:{}", tx.identity, port.name);
             let i = descriptor(&port.current, &voltage, &currents);
             let u = difference(&voltage, port.positive, port.negative);
             if let Some(cap) = port.current_max {
+                let origin = b.dual_map.origins.len();
                 b.norm(&format!("{name}:current"), &i, cap)?;
+                if transformer_parameters {
+                    b.dual_map.term(
+                        Parameter::new(
+                            Owner::Transformer,
+                            &tx.identity,
+                            Some(axis),
+                            ParameterKind::CurrentRating,
+                        ),
+                        (cap > 0.).then_some(origin),
+                        Rule::Norm {
+                            physical: cap * prep.bases.power_base_va / prep.bases.voltage_base_v,
+                        },
+                    );
+                }
             }
             let ids = if let Some(cap) = port.apparent_max {
                 let ids = b.power_lift(&name, &u, &i, [0.0, 0.0]);
+                let origin = b.dual_map.origins.len();
                 b.norm(
                     &format!("{name}:apparent"),
                     &[Affine::var(ids[0]), Affine::var(ids[1])],
                     cap,
                 )?;
+                if transformer_parameters {
+                    b.dual_map.term(
+                        Parameter::new(
+                            Owner::Transformer,
+                            &tx.identity,
+                            Some(axis),
+                            ParameterKind::ApparentPowerRating,
+                        ),
+                        (cap > 0.).then_some(origin),
+                        Rule::Norm {
+                            physical: cap * prep.bases.power_base_va,
+                        },
+                    );
+                }
                 Some(ids)
             } else {
                 None

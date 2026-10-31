@@ -143,6 +143,14 @@ Regression coverage combines:
   Other regressions check physical units across bases/objective scales and bus
   order, inconsistent availability totals, ties and zero-rating refusals, session
   edits, version 4 round trips and verified version 2/3 upgrades with tamper rejection.
+- Transformer port rating and physical tap-bound marginals and sensitivities.
+  Centered perturbations check winding, winding-terminal and rating-port P/Q and
+  currents, including exciting current, neutral returns, mixed connections and
+  n-winding equipment. Direct/inverse regulator cases exercise both physical
+  bound sides, interior taps and distinct open-delta leg identities. Coverage
+  includes forward/adjoint agreement, cost envelopes, unit/base/scale invariance,
+  session freshness, unsupported axes/fixed taps, zero-rating diagnostic refusal,
+  unchanged physical graphs and version 5 reports with verified legacy upgrades.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance

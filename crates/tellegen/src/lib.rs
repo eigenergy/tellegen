@@ -48,7 +48,7 @@ pub use mc_opf::{
     McOpfParameterDerivative, McOpfParameterDirection, McOpfParameterKind, McOpfParameterOwner,
     McOpfParameterUnit, McOpfProfile, McOpfResult, McOpfSensitivities, McOpfSensitivityError,
     McOpfSensitivityErrorKind, McOpfSensitivityOutput, McOpfSession, McOpfSessionResult,
-    McOpfStage, McOpfStart, McOpfStartUsed, McOpfVoltagePart,
+    McOpfStage, McOpfStart, McOpfStartUsed, McOpfTransformerAxis, McOpfVoltagePart,
 };
 mod model;
 #[cfg(feature = "acopf")]
