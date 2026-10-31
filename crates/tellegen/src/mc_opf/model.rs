@@ -330,8 +330,14 @@ impl Builder {
         }
         Ok(())
     }
-    fn droop(&mut self, name: &str, voltage: &[Pair], curve: &powerio_matrix::McOpfDroop) -> Expr {
+    fn droop(
+        &mut self,
+        name: &str,
+        voltage: &[Pair],
+        curve: &powerio_matrix::McOpfDroop,
+    ) -> (Expr, Vec<usize>) {
         let mut magnitudes = Vec::new();
+        let mut columns = Vec::new();
         for (j, &(p, q)) in curve.monitors.iter().enumerate() {
             let u = difference(voltage, p, q);
             let start = u[0].value(&self.start).hypot(u[1].value(&self.start));
@@ -354,6 +360,7 @@ impl Builder {
                 0.0,
             );
             magnitudes.push(Expr::Var(m));
+            columns.push(m);
         }
         let mean = scale(1.0 / (magnitudes.len() as f64), sum(magnitudes));
         let mut out = vec![Expr::Const(curve.values[0])];
@@ -371,7 +378,7 @@ impl Builder {
                 out.push(scale(sign * slope * curve.epsilon, softplus(z)));
             }
         }
-        sum(out)
+        (sum(out), columns)
     }
     fn power_lift(&mut self, name: &str, v: &Pair, i: &Pair, start: [f64; 2]) -> [usize; 2] {
         let ids = [
@@ -393,17 +400,25 @@ impl Builder {
 }
 pub(super) fn compile(prep: McAcOpfPreparation) -> Result<Model, String> {
     // Version 1/2 reports predate canonical voltage-dependent parameter maps.
-    compile_inner(prep, None)
+    compile_inner(prep, None, false)
 }
 pub(super) fn compile_with_load_parameters(
     prep: McAcOpfPreparation,
     network: &powerio::MulticonductorNetwork,
 ) -> Result<Model, String> {
-    compile_inner(prep, Some(network))
+    // Version 3 reports include load mappings but predate inverter mappings.
+    compile_inner(prep, Some(network), false)
+}
+pub(super) fn compile_with_parameters(
+    prep: McAcOpfPreparation,
+    network: &powerio::MulticonductorNetwork,
+) -> Result<Model, String> {
+    compile_inner(prep, Some(network), true)
 }
 fn compile_inner(
     prep: McAcOpfPreparation,
     network: Option<&powerio::MulticonductorNetwork>,
+    inverter_parameters: bool,
 ) -> Result<Model, String> {
     let canonical_loads = network.map(|n| {
         n.loads()
@@ -611,6 +626,25 @@ fn compile_inner(
     let mut devices = Vec::new();
     let mut objective = Vec::new();
     for dev in &prep.devices {
+        let inverter = if inverter_parameters && dev.kind == McOpfDeviceKind::Ibr {
+            let net = network.expect("canonical parameter input");
+            let inv = net
+                .ibrs()
+                .iter()
+                .find(|i| i.name == dev.identity)
+                .ok_or_else(|| format!("{}: missing canonical inverter identity", dev.identity))?;
+            Some(super::inverter_parameters::InverterParameters::new(
+                inv,
+                net,
+                dev.coils.len(),
+                prep.bases.power_base_va,
+            ))
+        } else {
+            None
+        };
+        if let Some(inv) = &inverter {
+            inv.initialize(&mut b.dual_map);
+        }
         let canonical_load = if dev.kind == McOpfDeviceKind::Load {
             canonical_loads
                 .as_ref()
@@ -841,7 +875,7 @@ fn compile_inner(
                             lo.unwrap_or(f64::NEG_INFINITY),
                             hi.unwrap_or(f64::INFINITY),
                         );
-                        if dev.kind == McOpfDeviceKind::Generator {
+                        if dev.kind == McOpfDeviceKind::Generator || inverter.is_some() {
                             for (bound, kind, lower) in [
                                 (
                                     lo,
@@ -863,6 +897,10 @@ fn compile_inner(
                                 ),
                             ] {
                                 if bound.is_some() {
+                                    if let Some(inv) = &inverter {
+                                        inv.bound(&mut b.dual_map, k, kind, origin, lower);
+                                        continue;
+                                    }
                                     b.dual_map.term(
                                         Parameter::new(
                                             Owner::Generator,
@@ -897,24 +935,41 @@ fn compile_inner(
                 if let Some(curve) =
                     curve.filter(|c| !zero_power || c.values.iter().any(|v| *v != 0.0))
                 {
-                    let target = b.droop(&format!("{name}:{family}"), &voltage, curve);
-                    b.row(
+                    let (target, columns) = b.droop(&format!("{name}:{family}"), &voltage, curve);
+                    let origin = b.row(
                         format!("{name}:{family}"),
                         bin(BinOp::Sub, Expr::Var(column), target),
                         if upper { f64::NEG_INFINITY } else { 0.0 },
                         0.0,
                     );
+                    if let Some(inv) = &inverter {
+                        inv.control(&mut b.dual_map, k, family, origin, curve, columns);
+                    }
                 }
             }
             if let Some(cap) = coil.current_max {
+                let origin = b.dual_map.origins.len();
                 b.norm(&format!("{name}:current_cap"), &i, cap)?;
+                if let Some(inv) = &inverter {
+                    inv.current(
+                        &mut b.dual_map,
+                        dev,
+                        Some(k),
+                        origin,
+                        cap * prep.bases.power_base_va / prep.bases.voltage_base_v,
+                    );
+                }
             }
             if let Some(cap) = coil.apparent_max.filter(|_| coil.current_max != Some(0.0)) {
+                let origin = b.dual_map.origins.len();
                 b.norm(
                     &format!("{name}:apparent_cap"),
                     &[Affine::var(pq[0]), Affine::var(pq[1])],
                     cap,
                 )?;
+                if let Some(inv) = &inverter {
+                    inv.apparent(&mut b.dual_map, k, origin, cap);
+                }
             }
             objective.push(scale(coil.cost, Expr::Var(pq[0])));
             kcl[coil.positive] = pair_add(&kcl[coil.positive], &pair_scale(&i, sign));
@@ -929,11 +984,21 @@ fn compile_inner(
             .neutral_current_max
             .filter(|_| !dev.coils.iter().all(|c| c.current_max == Some(0.0)))
         {
+            let origin = b.dual_map.origins.len();
             b.norm(
                 &format!("{:?}:{}:neutral_cap", dev.kind, dev.identity),
                 &total,
                 cap,
             )?;
+            if let Some(inv) = &inverter {
+                inv.current(
+                    &mut b.dual_map,
+                    dev,
+                    None,
+                    origin,
+                    cap * prep.bases.power_base_va / prep.bases.voltage_base_v,
+                );
+            }
         }
         if let Some([lo, hi]) = dev.net_active_bounds {
             if dev

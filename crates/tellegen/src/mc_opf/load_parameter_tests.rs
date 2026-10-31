@@ -461,7 +461,7 @@ fn session_zero_transitions_rebuild_canonical_load_parameter_maps() {
 }
 
 #[test]
-fn version_three_roundtrip_and_verified_version_two_upgrade_recover_load_derivatives() {
+fn current_roundtrip_and_verified_version_two_upgrade_recover_load_derivatives() {
     use serde_json::json;
     let r = solve(one_bus(laws().remove(0), 0., 0.));
     let saved = r.to_module_json().unwrap();
@@ -493,7 +493,7 @@ fn version_three_roundtrip_and_verified_version_two_upgrade_recover_load_derivat
         .all(|m| m.status == McOpfMarginalStatus::UnsupportedParameter));
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-    assert_eq!(report["version"], json!(3));
+    assert_eq!(report["version"], json!(4));
     report["version"] = json!(2);
     report["duals"] = serde_json::to_value(old).unwrap();
     module
@@ -509,7 +509,7 @@ fn version_three_roundtrip_and_verified_version_two_upgrade_recover_load_derivat
     let upgraded = crate::ir::deserialize_module(&read.to_module_json().unwrap()).unwrap();
     assert_eq!(
         upgraded.extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-        json!(3)
+        json!(4)
     );
     report["version"] = json!(3);
     module
@@ -575,7 +575,7 @@ fn interior_dispatch_sensitivities_include_load_law_mixed_derivatives() {
     }
 }
 
-fn graph(model: &model::Model, x: &[f64]) -> (Vec<f64>, Vec<Vec<f64>>) {
+pub(super) fn graph(model: &model::Model, x: &[f64]) -> (Vec<f64>, Vec<Vec<f64>>) {
     use pounce_rs::SparsityRequest;
     let mut t = NlTnlp::try_new(model.problem.clone()).unwrap();
     let info = t.get_nlp_info().unwrap();

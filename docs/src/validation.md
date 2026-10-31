@@ -132,8 +132,17 @@ Regression coverage combines:
   and direct compiled residual/Jacobian parameter differences check units, signs
   and mixed derivatives. Coverage includes zero nominal P/Q across equation-form
   changes, per-coil coefficient/default handling, zero-voltage domain refusals,
-  base/order/objective-scale invariance, session edits and verified version 2 to 3
+  base/order/objective-scale invariance, session edits and verified legacy
   report upgrades. Metadata construction preserves the physical graph and bounds.
+- Inverter availability and capability marginals and sensitivities: centered
+  perturb-and-resolve comparisons cover active/inactive P/Q bounds, apparent and
+  current ratings, single-phase return minima, four-leg neutral limits and delta
+  coils. Control cases cover PMax/PAvailable/SMax references, per-phase/averaged
+  monitors, cross-coil availability and deselected capability rows. Interior
+  dispatch and direct residual/Jacobian parameter differences check mixed terms.
+  Other regressions check physical units across bases/objective scales and bus
+  order, inconsistent availability totals, ties and zero-rating refusals, session
+  edits, version 4 round trips and verified version 2/3 upgrades with tamper rejection.
 
 The inputs, reference JSON, attribution and license files in
 `crates/tellegen/tests/data/mc_opf/` are regression assets. Their provenance

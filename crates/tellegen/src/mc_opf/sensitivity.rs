@@ -464,6 +464,9 @@ impl<'a> McOpfSensitivities<'a> {
         let terms = &self.model.dual_map.parameters[parameter];
         let mut rhs = BTreeMap::<usize, f64>::new();
         for (origin, rule) in terms {
+            if matches!(rule, duals::Rule::Zero) {
+                continue;
+            }
             let r = self
                 .model
                 .dual_map
@@ -479,6 +482,7 @@ impl<'a> McOpfSensitivities<'a> {
             let row = &d.constraints[r];
             let bottom = self.model.problem.n + a;
             match rule {
+                duals::Rule::Zero => {}
                 duals::Rule::Equality { scale } => *rhs.entry(bottom).or_default() += scale,
                 duals::Rule::Bound { scale, lower } => {
                     let bound = if *lower { row.lower } else { row.upper };
@@ -499,6 +503,15 @@ impl<'a> McOpfSensitivities<'a> {
                 }
                 duals::Rule::Load(load) => {
                     let (value, gradient) = load
+                        .evaluate(&d.primal)
+                        .map_err(|e| error(ErrorKind::UnsupportedParameter, e))?;
+                    *rhs.entry(bottom).or_default() -= value;
+                    for (c, g) in gradient {
+                        *rhs.entry(c).or_default() -= row.multiplier * g;
+                    }
+                }
+                duals::Rule::Inverter(control) => {
+                    let (value, gradient) = control
                         .evaluate(&d.primal)
                         .map_err(|e| error(ErrorKind::UnsupportedParameter, e))?;
                     *rhs.entry(bottom).or_default() -= value;
