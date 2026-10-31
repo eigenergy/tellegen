@@ -231,15 +231,25 @@ bounds and solver-independent IVR preparation. Tellegen compiles that prepared
 data into expressions, invokes POUNCE, and independently validates the physical
 result. BMOPFTools is an external reference for tests, not a runtime dependency.
 
-DELTA equipment and THREE_LEG inverters require phase-role endpoints; neutral,
-earth and other return roles are rejected during preparation. Two-terminal DELTA
-remains one phase-to-phase coil.
+DELTA equipment and THREE_LEG inverters require phase-only terminal maps.
+PowerIO preparation rejects neutral and earth endpoints, honoring explicit
+terminal conventions. Tellegen reports `InvalidInput` at `Preparation` with
+`BUILD.MULTI.OPF_INVALID`, before optimization, for both one-shot solves and
+retained-session construction. Two-terminal DELTA remains one phase-to-phase
+coil; WYE and SINGLE_PHASE return connections remain supported. Session edits
+change numerical values, not terminal roles or connection topology.
 
-Fixed power-factor control uses the bounded row
-`sqrt((1 - abs(pf)) * (1 + abs(pf))) * P + pf * Q = 0`.
-The signed domain is `0 < abs(pf) <= 1`; P/Q/S/I capability bounds continue to
-intersect this control law. Absolute equation tolerance alone does not establish
-relative accuracy of a tiny requested PF.
+Fixed power-factor control uses bounded coefficients:
+`sqrt((1 - abs(pf)) * (1 + abs(pf))) * P + pf * Q = 0`, with signed
+`0 < abs(pf) <= 1`. Capability bounds still intersect this physical law.
+Acceptance also recomputes the relation from original input profiles and
+physical P/Q ledgers, independently of prepared coefficients. Passing an
+absolute power-equation tolerance is not a relative PF accuracy certificate.
+`MC_OPF.POWER_FACTOR_ACCURACY_UNQUALIFIED` reports requested and achieved PF
+when the requested magnitude is at or below the acceptance tolerance, observed
+relative accuracy exceeds that tolerance, the sign relation is wrong, or
+zero dispatch makes operating PF undefined. This diagnostic does not declare
+an otherwise accepted physical point infeasible.
 
 ### Equations and derivatives
 
@@ -332,11 +342,10 @@ the OPF entry point does not run PF automatically.
 
 Only the numerical starting vector changes. Network data, objective, selected
 constraints, bounds, and the physical fingerprint remain unchanged. Tellegen
-prepares an equivalent
-physical instance without its seed, then projects the original point into the
-compiled IVR coordinates. The returned solution and canonical JSON retain the
-original physical instance and seed values. Returned seed columns are normalized
-to the instance's order for portable JSON. When serializing an input instance
+prepares an equivalent physical instance without its seed, then projects the
+original point into the compiled IVR coordinates. The returned solution and
+canonical JSON retain the original physical instance and seed values. Returned
+seed columns are normalized to the instance's order for portable JSON. When serializing an input instance
 directly through PowerIO, construct its point in that instance's order too;
 PowerIO's stored assignment decoder requires matching column order.
 
@@ -456,15 +465,21 @@ The optional transformer `tap` is the optimized physical coefficient in the
 canonical winding convention; fixed taps remain in the retained instance.
 
 `McOpfResult::to_module_json` and `solve_mc_ac_opf_module_json` emit a canonical
-PowerIO `McAcOpfSolution` plus version 6 of the namespaced module extension
+PowerIO `McAcOpfSolution` plus version 9 of the namespaced module extension
 `org.eigenergy.tellegen.mc_opf`. The canonical value retains voltages,
 source/generator dispatch and the original instance. The extension carries the
 complete ledgers, axes, optimized taps, numerical options/bases, residuals,
 input diagnostic summaries, fingerprint, iterations, optional profile and optional
-dual report. Version 1 reports without dual data remain readable. Version 2–5
-dual reports are checked using their original parameter mappings before newly
+dual report. Reports from versions 1–7 with assigned fixed-PF controls are
+rejected and must be solved again: their PF rows and multipliers use the old
+scaling. Version 1 reports remain readable when they contain neither PF controls
+nor dual data. Version 2–6 dual reports without PF controls are checked using
+their original parameter mappings and dense rank
+audit before current sparse rank qualification and newly
 supported load/inverter/transformer/control-profile derivatives are recomputed from the retained canonical
-instance. Re-export writes version 6; older unsupported entries are not silently
+instance. Versions 7–8 use their original largest-residual sparse pivot order
+and work accounting for verification before sparsity-aware rank qualification
+is recomputed. Re-export writes version 9; older unsupported entries are not silently
 accepted as current claims. Upgrading does not rerun optimization.
 This uses PowerIO's existing extension mechanism without changing its schema.
 
@@ -608,10 +623,19 @@ stationary branch and active set. It is not a second-order sufficiency test,
 global price, or proof that the optimal-value function is differentiable.
 Values are withheld after failed KKT checks, any zero-limit reduction,
 numerically dependent active rows, weakly active inequalities, or an unaudited
-rank. The rank audit uses normalized, pivoted, twice-reorthogonalized row QR,
-with a `1e-9` numerical rank threshold. It is bounded to 256 active rows and
-262,144 dense entries; larger problems report `RankNotChecked` while retaining
-raw multipliers and KKT residuals. Active-side tolerance is `1e-7*(1+abs(bound))`
+rank. The rank audit uses normalized, pivoted, twice-reorthogonalized sparse row
+QR with a `1e-9` numerical rank threshold. Column incidence restricts updates to
+overlapping rows; no dense active-Jacobian copy, normal equations or numerical
+fill dropping is used. The audit permits up to 2,000,000 live coefficients and
+100,000,000 sparse coefficient visits. These bounds limit fill and work rather
+than the number of active rows. `active_rank.qualification` reports completion,
+fill/work exhaustion or nonfinite arithmetic, along with input/peak nonzeros,
+work, limits, accepted pivots and the smallest accepted pivot. Peak nonzeros are
+coefficient counts, not allocated bytes. An incomplete audit reports
+`RankNotChecked` and no rank; a completed deficient audit reports `RankDeficient`.
+Both preserve physical results, raw multipliers and KKT residuals. This is a
+numerical independence test, not a condition-number estimate or uniqueness proof.
+Active-side tolerance is `1e-7*(1+abs(bound))`
 in compiled coordinates. KKT acceptance uses `1e-6` for relative stationarity,
 relative complementarity, normalized primal violation and absolute dual-sign
 violation. Relative stationarity divides each coordinate residual by one plus

@@ -531,6 +531,11 @@ fn sensitivity_views_require_current_verified_regular_duals() {
     let e = r.sensitivities().unwrap_err();
     assert_eq!(e.kind, McOpfSensitivityErrorKind::UnreliableDuals);
     assert_eq!(e.dual_status, Some(McOpfMarginalStatus::ZeroLimitReduction));
+    assert_eq!(
+        e.active_rank.as_deref(),
+        Some(&r.duals.as_ref().unwrap().active_rank)
+    );
+    serde_json::to_string(&e).unwrap();
     let mut n = constrained();
     n.line_codes_mut()[0].g_from = vec![vec![0.; 2]; 2];
     n.line_codes_mut()[0].b_to = vec![vec![0.; 2]; 2];

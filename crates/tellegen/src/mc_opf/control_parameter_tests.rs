@@ -526,6 +526,8 @@ fn retained_power_factor_edits_preserve_families_and_reject_invalid_values() {
     for pf in [-0.9, -1., 1., 0.95] {
         profile.power_factor.as_mut().unwrap().pf = pf;
         s.apply_edits(&[edit_profile(profile.clone())]).unwrap();
+        assert!(s.current_result().is_none());
+        assert!(s.sensitivities().is_err());
         s.solve().unwrap();
         let r = &s.current_result().unwrap().result;
         let fresh = solve(s.instance().network().clone());
@@ -553,7 +555,7 @@ fn retained_power_factor_edits_preserve_families_and_reject_invalid_values() {
 }
 
 #[test]
-fn version_six_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
+fn current_version_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
     let r = solve(droop(Reference::PAvailable, false));
     let prep = initial::prepare(
         r.solution.instance(),
@@ -564,7 +566,7 @@ fn version_six_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
         model::compile_with_transformer_parameters(prep, r.solution.instance().network()).unwrap();
     let d = r.duals.as_ref().unwrap();
     let lambda: Vec<_> = d.constraints.iter().map(|c| c.multiplier).collect();
-    let old = duals::analyze(
+    let old = duals::analyze_legacy(
         &legacy,
         &d.primal,
         &lambda,
@@ -582,7 +584,7 @@ fn version_six_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
     close(marginal(&read, &p), marginal(&r, &p));
     let mut module = crate::ir::deserialize_module(&saved).unwrap();
     let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
-    assert_eq!(report["version"], json!(6));
+    assert_eq!(report["version"], json!(9));
     report["version"] = json!(5);
     report["duals"] = serde_json::to_value(old).unwrap();
     module
@@ -596,9 +598,9 @@ fn version_six_roundtrips_verify_legacy_maps_before_upgrading_profile_claims() {
         crate::ir::deserialize_module(&read.to_module_json().unwrap())
             .unwrap()
             .extensions()[MC_OPF_RESULT_EXTENSION]["version"],
-        json!(6)
+        json!(9)
     );
-    report["version"] = json!(6);
+    report["version"] = json!(9);
     module
         .insert_extension(MC_OPF_RESULT_EXTENSION, report.clone())
         .unwrap();
@@ -691,10 +693,19 @@ fn bounded_pf_retains_hard_q_limit_and_local_derivatives() {
         / (2. * h);
     assert!((fd - expected).abs() < 1e-6);
 
-    // Current reports retain the bounded PF marginal.
+    // New constraint scaling cannot reuse old PF multipliers or fingerprints.
     let saved = r.to_module_json().unwrap();
     let restored = McOpfResult::from_module_json(&saved).unwrap();
     close(marginal(&restored, &parameter), expected);
+    let mut module = crate::ir::deserialize_module(&saved).unwrap();
+    let mut report = module.extensions()[MC_OPF_RESULT_EXTENSION].clone();
+    report["version"] = json!(7);
+    module
+        .insert_extension(MC_OPF_RESULT_EXTENSION, report)
+        .unwrap();
+    let error =
+        McOpfResult::from_module_json(&crate::ir::serialize_module(&module).unwrap()).unwrap_err();
+    assert!(error.message.contains("legacy PF reports"));
 }
 
 #[test]

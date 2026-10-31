@@ -42,13 +42,15 @@ pub mod mc_pf;
 #[cfg(feature = "mc-opf")]
 pub use mc_opf::{
     mc_opf_initial_point_from_pf, solve_mc_ac_opf_instance, solve_mc_ac_opf_instance_cancellable,
-    solve_mc_ac_opf_module_json, McOpfBranchEnd, McOpfDeviceAxis, McOpfDualReport, McOpfEdit,
-    McOpfError, McOpfErrorKind, McOpfFlowQuantity, McOpfMarginalStatus, McOpfMarginalValue,
-    McOpfOptions, McOpfOutputDerivative, McOpfOutputUnit, McOpfOutputWeight, McOpfParameter,
-    McOpfParameterDerivative, McOpfParameterDirection, McOpfParameterKind, McOpfParameterOwner,
-    McOpfParameterUnit, McOpfProfile, McOpfResult, McOpfSensitivities, McOpfSensitivityError,
-    McOpfSensitivityErrorKind, McOpfSensitivityOutput, McOpfSession, McOpfSessionResult,
-    McOpfStage, McOpfStart, McOpfStartUsed, McOpfTransformerAxis, McOpfVoltagePart,
+    solve_mc_ac_opf_module_json, McOpfActiveRank, McOpfBranchEnd, McOpfDeviceAxis, McOpfDualReport,
+    McOpfEdit, McOpfError, McOpfErrorKind, McOpfFlowQuantity, McOpfLinearSolveDiagnostics,
+    McOpfMarginalStatus, McOpfMarginalValue, McOpfOptions, McOpfOutputDerivative, McOpfOutputUnit,
+    McOpfOutputWeight, McOpfParameter, McOpfParameterDerivative, McOpfParameterDirection,
+    McOpfParameterKind, McOpfParameterOwner, McOpfParameterUnit, McOpfProfile,
+    McOpfRankDiagnostics, McOpfRankOutcome, McOpfResult, McOpfSensitivities,
+    McOpfSensitivityDiagnostics, McOpfSensitivityError, McOpfSensitivityErrorKind,
+    McOpfSensitivityOutput, McOpfSession, McOpfSessionResult, McOpfStage, McOpfStart,
+    McOpfStartUsed, McOpfTransformerAxis, McOpfVoltagePart,
 };
 mod model;
 #[cfg(feature = "acopf")]
