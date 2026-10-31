@@ -78,3 +78,18 @@ lto = true
 inherits = "release"
 opt-level = 3
 lto = "thin"
+
+# Candidate containing the PF and terminal-role fixes in eigenergy/powerio#742
+# and #743. Keep every component on the same immutable revision.
+# These fixes first ship in PowerIO 0.11.8: the v0.11.7 tag predates them and
+# lacks `power_factor_coefficients`. When removing this patch, raise every
+# PowerIO requirement above to "0.11.8" in the same commit.
+[patch.crates-io]
+powerio = { git = "https://github.com/eigenergy/powerio.git", rev = "5d08c2a3334c204b3f149f44cca3a5509ee135a5" }
+powerio-core = { git = "https://github.com/eigenergy/powerio.git", rev = "5d08c2a3334c204b3f149f44cca3a5509ee135a5" }
+powerio-dist = { git = "https://github.com/eigenergy/powerio.git", rev = "5d08c2a3334c204b3f149f44cca3a5509ee135a5" }
+powerio-matrix = { git = "https://github.com/eigenergy/powerio.git", rev = "5d08c2a3334c204b3f149f44cca3a5509ee135a5" }
+powerio-prob = { git = "https://github.com/eigenergy/powerio.git", rev = "5d08c2a3334c204b3f149f44cca3a5509ee135a5" }
+powerio-synth = { git = "https://github.com/eigenergy/powerio.git", rev = "5d08c2a3334c204b3f149f44cca3a5509ee135a5" }
+powerio-tnd = { git = "https://github.com/eigenergy/powerio.git", rev = "5d08c2a3334c204b3f149f44cca3a5509ee135a5" }
+powerio-tx = { git = "https://github.com/eigenergy/powerio.git", rev = "5d08c2a3334c204b3f149f44cca3a5509ee135a5" }
