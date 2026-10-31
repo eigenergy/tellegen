@@ -66,12 +66,16 @@ jobs:
       # tests the feature set the browser ships.
       - name: Test the engine's conic path
         run: cargo test -p tellegen --features conic
-      # Do not rely on feature unification in the default workspace test.
-      - name: Test and lint the opt-in AC OPF path
+      # The MC preparation fixes are not in a published PowerIO yet (they ship
+      # in 0.11.8); this runs against the candidate patched in Cargo.toml.
+      # Exercise the native feature explicitly; shipping adapters still exclude it.
+      - name: Test and lint the opt-in AC and multiconductor OPF paths
         run: |
           cargo test -p tellegen --all-features --locked
+          cargo test -p tellegen --no-default-features --features mc-opf --locked
           cargo test -p tellegen-acopf-wasi --features acopf --locked
-          cargo clippy -p tellegen -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
+          cargo clippy -p tellegen --all-targets --all-features -- -D warnings
+          cargo clippy -p tellegen-acopf-wasi --all-targets --features acopf -- -D warnings
       - name: Run the exact-derivative POUNCE feasibility probe
         run: cargo run -p tellegen --example acopf_hs071_probe --features acopf --locked
       - name: Reproduce the pinned multiconductor OpenDSS oracle
@@ -116,8 +120,12 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository
         run: cargo semver-checks check-release --manifest-path crates/tellegen/Cargo.toml
 
-      # This is the build-executing half of crate publication. It remains red
-      # while a packaged dependency is unavailable from crates.io, which keeps
-      # Tellegen behind the PowerIO release in the publication order.
+      # This is the build-executing half of crate publication. Verification
+      # builds the packaged crate against crates.io and ignores [patch], so it
+      # stays red while a packaged dependency, or an API that an opt-in feature
+      # uses, is unavailable from crates.io. That keeps Tellegen behind the
+      # PowerIO release in the publication order. All features are verified:
+      # with defaults only, an opt-in feature such as mc-opf could need an
+      # unpublished PowerIO while this gate stays green.
       - name: Package and verify the published crate
-        run: cargo package -p tellegen --locked
+        run: cargo package -p tellegen --locked --all-features
