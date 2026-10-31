@@ -35,9 +35,18 @@ pub mod geo;
 #[cfg(feature = "sensitivity")]
 mod history;
 pub mod ir;
+#[cfg(feature = "mc-opf")]
+pub mod mc_opf;
 #[cfg(feature = "mc-pf")]
 pub mod mc_pf;
+#[cfg(feature = "mc-opf")]
+pub use mc_opf::{
+    solve_mc_ac_opf_instance, solve_mc_ac_opf_instance_cancellable, solve_mc_ac_opf_module_json,
+    McOpfOptions, McOpfProfile, McOpfResult,
+};
 mod model;
+#[cfg(feature = "acopf")]
+mod nlp;
 #[cfg(feature = "sensitivity")]
 pub mod objective;
 #[cfg(feature = "sensitivity")]
