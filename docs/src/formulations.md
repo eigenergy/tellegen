@@ -470,7 +470,8 @@ as a complete `McOpfResult`.
 
 Accepted solves pass the [physical validation gate](validation.md#multiconductor-ivr-opf).
 They establish local numerical success, without a global-optimality certificate.
-Solution sensitivities are not yet exposed.
+[Local forward and adjoint sensitivities](sensitivity-interface.md#native-multiconductor-opf)
+are available for a verified regular dual point and supported physical parameters.
 
 ### Dual diagnostics and local marginal values
 
