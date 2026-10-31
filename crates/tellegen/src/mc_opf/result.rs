@@ -73,6 +73,8 @@ pub struct McOpfShuntResult {
 #[serde(deny_unknown_fields)]
 struct Report {
     version: u32,
+    #[serde(default)]
+    duals: Option<McOpfDualReport>,
     options: McOpfOptions,
     terminals: Vec<McOpfTerminalVoltage>,
     branches: Vec<McOpfBranchResult>,
@@ -115,7 +117,8 @@ impl McOpfResult {
 
     pub(super) fn insert_report(&self, module: &mut PioModule<PioValue>) -> Result<(), McOpfError> {
         let report = Report {
-            version: 1,
+            version: 2,
+            duals: self.duals.clone(),
             options: self.options.clone(),
             terminals: self.terminals.clone(),
             branches: self.branches.clone(),
@@ -165,6 +168,7 @@ impl McOpfResult {
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
         report.verify(solution)?;
         Ok(Self {
+            duals: report.duals,
             module: Some(module.clone()),
             solution: solution.clone(),
             options: report.options,
@@ -184,7 +188,7 @@ impl McOpfResult {
 
 impl Report {
     fn verify(&self, solution: &McAcOpfSolution) -> Result<(), McOpfError> {
-        if self.version != 1 {
+        if !matches!(self.version, 1 | 2) || (self.version == 1 && self.duals.is_some()) {
             return Err(invalid("unsupported MC OPF report version"));
         }
         let prep = initial::prepare(
@@ -214,6 +218,41 @@ impl Report {
                 .any(|d| d.code == required.code && d.target == required.target)
         }) {
             return Err(invalid("missing relative power-factor accuracy diagnostic"));
+        }
+        if let Some(duals) = &self.duals {
+            if !self.options.collect_duals {
+                return Err(invalid("dual report without collection option"));
+            }
+            let model = model::compile(prep.clone()).map_err(invalid)?;
+            let checked = duals
+                .verify(&model, solution, self.options.acceptance_tolerance)
+                .map_err(invalid)?;
+            let stored = serde_json::to_value((
+                &self.branches,
+                &self.devices,
+                &self.transformers,
+                &self.shunts,
+            ))
+            .map_err(|e| invalid(e.to_string()))?;
+            let recovered = serde_json::to_value((
+                &checked.branches,
+                &checked.devices,
+                &checked.transformers,
+                &checked.shunts,
+            ))
+            .map_err(|e| invalid(e.to_string()))?;
+            if !duals::same_json(&stored, &recovered) {
+                return Err(invalid("dual primal disagrees with physical ledgers"));
+            }
+        } else if self.options.collect_duals
+            && !self
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "MC_OPF.DUALS_UNAVAILABLE")
+        {
+            return Err(invalid(
+                "requested dual report is missing without a diagnostic",
+            ));
         }
         let ids = |indices: &[usize]| -> Vec<_> {
             indices
