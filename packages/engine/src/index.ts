@@ -290,6 +290,10 @@ export interface DistGraph {
 
 /** Multiconductor case data, terminal graph, and retained PowerIO IR. */
 export interface IngestedDistCase {
+  /** Explicit solve selection, not merely import-time detection. */
+  mc_energized_only?: boolean;
+  /** Source-less islands detected on import; retained in the full graph. */
+  mc_excluded_islands?: McExcludedIsland[];
   module_json?: string;
   geo_layer?: string;
   mc_pf_enabled?: boolean;
@@ -768,6 +772,74 @@ export interface McPfOptions {
   v_max_pu?: number;
 }
 
+/** Effective defaults shared by settings controls and programmatic reruns. */
+export const DEFAULT_MC_PF_OPTIONS: Readonly<Required<McPfOptions>> =
+  Object.freeze({
+    tolerance: 1e-4,
+    max_iterations: 100,
+    damping: 1,
+    zero_voltage_tolerance: 1e-9,
+    absolute_kcl_tolerance: 1e-4,
+    relative_kcl_tolerance: 1e-5,
+    voltage_envelope: true,
+    v_low_pu: 0.5,
+    v_min_pu: 0.85,
+    v_max_pu: 1.15,
+  });
+
+export function validateMcPfOptions(options: McPfOptions): string | null {
+  const o = { ...DEFAULT_MC_PF_OPTIONS, ...options };
+  if (
+    Object.entries(o).some(
+      ([key, value]) => key !== "voltage_envelope" && !Number.isFinite(value),
+    )
+  )
+    return "Every solver setting must be a finite number.";
+  if (typeof o.voltage_envelope !== "boolean")
+    return "Select whether to use the load-model envelope.";
+  if (!Number.isSafeInteger(o.max_iterations) || o.max_iterations < 1)
+    return "Maximum iterations must be a positive integer.";
+  if (o.damping <= 0 || o.damping > 1)
+    return "Damping must be greater than 0 and at most 1.";
+  if (
+    o.tolerance <= 0 ||
+    o.zero_voltage_tolerance <= 0 ||
+    o.absolute_kcl_tolerance <= 0 ||
+    o.relative_kcl_tolerance < 0
+  )
+    return "Tolerances must be positive; relative KCL tolerance may be zero.";
+  if (!(0 < o.v_low_pu && o.v_low_pu < o.v_min_pu && o.v_min_pu < o.v_max_pu))
+    return "Load-model thresholds must satisfy 0 < Vlow < Vmin < Vmax.";
+  return null;
+}
+
+export interface McLoadModelAssessment {
+  status: "original" | "modified" | "unverified";
+  modified_branch_count: number;
+  original_kcl_residual: number | null;
+  original_scaled_kcl_residual: number | null;
+  options: Required<McPfOptions>;
+}
+
+export interface McLoadModelChange {
+  load: string;
+  branch: number;
+  bus: string;
+  voltage_pu: number;
+  solved_power: McComplex;
+  original_power: McComplex | null;
+}
+
+/** Missing qualification on legacy results never implies original-model success. */
+export function mcLoadModelLabel(
+  model: McLoadModelAssessment | null | undefined,
+): string {
+  if (model?.status === "original") return "Original load model verified";
+  if (model?.status === "modified")
+    return "Modified load model — non-canonical result";
+  return "Original load model not verified";
+}
+
 export interface McComplex {
   re: number;
   im: number;
@@ -790,8 +862,39 @@ export interface McSourceReaction {
   power_into_network: McComplex;
 }
 
+/** Source-less bus islands explicitly left out of the calculation, not solved at zero voltage. */
+export interface McExcludedIsland {
+  buses: string[];
+  equipment: { kind: string; name: string }[];
+}
+export interface McNetworkScope {
+  excluded_island_count: number;
+  excluded_bus_count: number;
+  excluded_equipment_count: number;
+  excluded_load_count: number;
+}
+export interface McEnergizedPreparation {
+  module_json: string;
+  network_scope: McNetworkScope | null;
+  excluded_islands: McExcludedIsland[];
+}
+export function summarizeMcExcludedIslands(islands: McExcludedIsland[]): McNetworkScope | null {
+  if (!islands.length) return null;
+  const equipment = new Set(islands.flatMap(i => i.equipment.map(e => JSON.stringify([e.kind, e.name]))));
+  const loads = new Set(islands.flatMap(i => i.equipment.filter(e => e.kind === "load").map(e => e.name)));
+  return { excluded_island_count: islands.length, excluded_bus_count: islands.reduce((n,i) => n+i.buses.length,0), excluded_equipment_count: equipment.size, excluded_load_count: loads.size };
+}
+export function mcNetworkScopeLabel(scope?: McNetworkScope | null): string {
+  return scope ? `Energized network only: ${scope.excluded_island_count} unpowered ${scope.excluded_island_count === 1 ? "island" : "islands"} excluded` : "Full network";
+}
+
 export interface McPfResult {
+  network_scope?: McNetworkScope | null;
+  excluded_islands?: McExcludedIsland[];
   converged: boolean;
+  /** Absent only for legacy producers; never assume model fidelity when absent. */
+  load_model?: McLoadModelAssessment | null;
+  load_model_changes?: McLoadModelChange[];
   voltage_valid: boolean;
   min_voltage_pu: number | null;
   max_voltage_pu: number | null;
@@ -829,7 +932,9 @@ export interface McTerminalResult {
  * match {@link McPfResult}; the aggregates are what a results summary shows.
  * Interactive edits return this instead of the full result. */
 export interface McPfSummary {
+  network_scope?: McNetworkScope | null;
   converged: boolean;
+  load_model?: McLoadModelAssessment | null;
   voltage_valid: boolean;
   min_voltage_pu: number | null;
   max_voltage_pu: number | null;
@@ -916,13 +1021,19 @@ export function summarizeMcPfResult(
   }
   const passiveLoss = { re: 0, im: 0 };
   for (const port of result.element_ports) {
-    if (port.kind === "load" || port.kind === "generator" || port.kind === "ibr")
+    if (
+      port.kind === "load" ||
+      port.kind === "generator" ||
+      port.kind === "ibr"
+    )
       continue;
     passiveLoss.re += port.power_into_element.re;
     passiveLoss.im += port.power_into_element.im;
   }
   return {
+    ...(result.network_scope ? { network_scope: result.network_scope } : {}),
     converged: result.converged,
+    load_model: result.load_model ?? null,
     voltage_valid: result.voltage_valid,
     min_voltage_pu: result.min_voltage_pu,
     max_voltage_pu: result.max_voltage_pu,
@@ -965,16 +1076,17 @@ export function mcPfResultDetail(
 }
 
 /** Self-contained saved Study result for a supported distribution AC PF.
- * The input and solution modules make this replayable; `result` is the rich
- * terminal/element view rendered by the Study panel. */
+ * The input, options and qualified result make this replayable. Only a verified
+ * original-model result also includes a canonical PowerIO solution module. */
 export interface McStudySnapshot {
   schema: "tellegen-mc-pf-study";
-  version: 1;
+  version: 1 | 2;
   id: string;
   title: string;
   formulation: "mc_ac_pf";
   input_module: string;
-  solution_module: string;
+  /** Version 2 omits a canonical solution for modified or unverified models. */
+  solution_module: string | null;
   options: McPfOptions;
   result: McPfResult;
 }
@@ -1215,6 +1327,14 @@ export async function solveMcBmopf(
       }),
     ),
   );
+}
+
+/** Explicit preparation; preserves the full network and records excluded islands. */
+export async function prepareMcEnergizedNetwork(moduleJson: string): Promise<McEnergizedPreparation> {
+  assertEngineInputLength(moduleJson.length);
+  return JSON.parse(expectText(await engineHost().call({
+    op: "prepare_mc_energized_network", module_json: moduleJson,
+  })));
 }
 
 /** Solve a stored PowerIO multiconductor module through the same PF engine. */
@@ -2288,6 +2408,7 @@ export interface EngineTransport {
     moduleJson: string,
     request?: SolveRequest,
   ): Promise<SolveResponse>;
+  prepareMcEnergizedNetwork?(moduleJson: string): Promise<McEnergizedPreparation>;
   solveMcBmopf(text: string, options?: McPfOptions): Promise<McPfResult>;
   solveMcModule(
     moduleJson: string,
@@ -2346,6 +2467,7 @@ export const browserWasmTransport: EngineTransport = {
   capabilities,
   solveModule,
   solveMcBmopf,
+  prepareMcEnergizedNetwork,
   solveMcModule,
   solveMcStudy,
   createMcPfSession,

@@ -97,6 +97,10 @@ export class StudyWorkspace {
 		const c = this.grid.app.activeMulti;
 		if (!c || c === previous) throw new Error('Saved distribution power flow could not be opened');
 		c.mcSnapshot = snapshot;
+		c.mcOptions = { ...snapshot.options };
+		c.mcEnergizedOnly = !!snapshot.result.network_scope;
+		c.mcPreparedScope = snapshot.result.network_scope ?? null;
+		c.mcExcludedIslands = snapshot.result.excluded_islands ?? [];
 		c.result = summarizeMcPfResult(snapshot.result);
 		c.mcFullResult = snapshot.result;
 		c.mcSavedAt = new Date().toISOString();

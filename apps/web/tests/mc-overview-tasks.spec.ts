@@ -18,7 +18,7 @@ async function solvedOverview(page: Page) {
 		mimeType: 'application/json',
 		buffer: await readFile(fixture)
 	});
-	const solve = page.getByRole('button', { name: 'Solve AC power flow', exact: true });
+	const solve = page.getByRole('button', { name: 'Run power flow', exact: true });
 	await expect(solve).toBeEnabled({ timeout: 60_000 });
 	await solve.click();
 	const overview = page.getByRole('region', { name: 'Operating point overview' });
@@ -302,7 +302,7 @@ test('a balanced case without limits does not break the overview', async ({ page
 		mimeType: 'application/json',
 		buffer: await readFile(new URL('../static/examples/four-wire.bmopf.json', import.meta.url))
 	});
-	const solve = page.getByRole('button', { name: 'Solve AC power flow', exact: true });
+	const solve = page.getByRole('button', { name: 'Run power flow', exact: true });
 	await expect(solve).toBeEnabled({ timeout: 60_000 });
 	await solve.click();
 	const overview = page.getByRole('region', { name: 'Operating point overview' });
@@ -337,7 +337,7 @@ test('a center-tap transformer (one id, several graph edges) does not break the 
 			)
 		)
 	});
-	const solve = page.getByRole('button', { name: 'Solve AC power flow', exact: true });
+	const solve = page.getByRole('button', { name: 'Run power flow', exact: true });
 	await expect(solve).toBeEnabled({ timeout: 60_000 });
 	await solve.click();
 	const overview = page.getByRole('region', { name: 'Operating point overview' });

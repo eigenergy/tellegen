@@ -1,3 +1,4 @@
+import { DEFAULT_MC_PF_OPTIONS, summarizeMcExcludedIslands } from '@tellegen/engine';
 import type {
 	CaseSummary,
 	DemandDeltas,
@@ -18,6 +19,7 @@ import {
 	type Formulation,
 	type IngestedDistCase,
 	type McPfCallTiming,
+	type McPfOptions,
 	type McPfResult,
 	type McPfSummary,
 	type McLoadBranchState,
@@ -259,6 +261,15 @@ export class MulticonductorCase {
 	mcFullResult: McPfResult | null = $state.raw<McPfResult | null>(null);
 	/** Latency breakdown of the latest load-edit solve. */
 	mcTiming: McEditTiming | null = $state.raw<McEditTiming | null>(null);
+	/** Explicit selection for the next solve. The graph and module retain every bus. */
+	mcEnergizedOnly = $state(false);
+	/** Successful explicit solve to reveal in Studies; load edits do not advance it. */
+	mcCompletedSolveSeq = $state(0);
+	/** Detected on import, revalidated when preparing a solve; never removed from the graph. */
+	mcExcludedIslands: import('@tellegen/engine').McExcludedIsland[] = $state.raw([]);
+	mcPreparedScope: import('@tellegen/engine').McNetworkScope | null = $state.raw(null);
+	/** Selected settings for the next explicit solve; results carry their own effective settings. */
+	mcOptions: McPfOptions = $state<McPfOptions>({ ...DEFAULT_MC_PF_OPTIONS });
 	mcSnapshot: McStudySnapshot | null = $state.raw<McStudySnapshot | null>(null);
 	mcSession: BrowserMcPfSession | null = $state.raw<BrowserMcPfSession | null>(null);
 	mcLoadBranches: McLoadBranchState[] = $state.raw<McLoadBranchState[]>([]);
@@ -337,6 +348,9 @@ export class MulticonductorCase {
 		this.fileName = init.fileName;
 		this.summary = init.summary;
 		this.moduleJson = init.summary.module_json ?? null;
+		this.mcEnergizedOnly = init.summary.mc_energized_only ?? false;
+		this.mcExcludedIslands = init.summary.mc_excluded_islands ?? [];
+		this.mcPreparedScope = summarizeMcExcludedIslands(this.mcExcludedIslands);
 		this.geoLayer = init.summary.geo_layer ?? null;
 		this.graph = init.graph;
 		this.coordsKind = init.coordsKind;
@@ -351,6 +365,13 @@ export class MulticonductorCase {
 			this.summary.mc_pf_unavailable_reason ??
 			(this.summary.mc_pf_supported !== true ? 'AC power flow is unavailable for this case' : null)
 		);
+	}
+	/** Import detects scope; only a solve action opts into the selection. */
+	get mcRequiresEnergizedSolve(): boolean {
+		return this.mcExcludedIslands.length > 0;
+	}
+	get mcSolveLabel(): string {
+		return this.mcRequiresEnergizedSolve ? 'Solve energized network' : 'Run power flow';
 	}
 	get mcPfSupported(): boolean {
 		return this.mcPfReason === null;

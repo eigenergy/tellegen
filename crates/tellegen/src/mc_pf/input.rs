@@ -755,7 +755,9 @@ pub fn parse_bmopf_instance(text: &str) -> Result<McAcPfInstance, String> {
 /// but they are not advertised as MC Study inputs.
 pub fn validate_mc_module_json(text: &str) -> Result<(), String> {
     let module = crate::ir::deserialize_module(text)?;
-    validate_mc_module(&module)
+    validate_mc_module(&module)?;
+    super::energized::selection(&module)?;
+    Ok(())
 }
 
 pub(crate) fn validate_mc_module(module: &powerio::PioModule<PioValue>) -> Result<(), String> {
@@ -876,8 +878,11 @@ pub fn solve_mc_module_json(text: &str, options: &McPfOptions) -> Result<String,
     // stricter `validate_mc_module` gate is used by Study ingestion, where a
     // capability must never be inferred from a lossy projection.
     reject_lossy_diagnostics(&module)?;
-    let instance = instance_from_value(module.value())?;
-    let result = solve_mc_ac_pf_instance(&instance, options)?;
+    let instance = super::energized::instance(&module)?;
+    let mut result = solve_mc_ac_pf_instance(&instance, options)?;
+    let (_, excluded) = super::energized::selection(&module)?;
+    result.network_scope = super::energized::scope(&excluded);
+    result.excluded_islands = excluded;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
@@ -1050,7 +1055,17 @@ mod tests {
                 "p_nom": [400000.0], "q_nom": [100000.0], "v_nom": [2400.0]
             }}
         });
-        let output = solve_bmopf_json(&raw.to_string(), &McPfOptions::default()).unwrap();
+        let output = solve_bmopf_json(
+            &raw.to_string(),
+            &McPfOptions {
+                // This test checks high-precision physical quantities explicitly.
+                tolerance: 1e-8,
+                absolute_kcl_tolerance: 1e-6,
+                relative_kcl_tolerance: 1e-8,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let result: super::super::McPfResult = serde_json::from_str(&output).unwrap();
         assert!(result.converged);
         assert_eq!(result.factorization_count, 1);
@@ -1204,7 +1219,17 @@ mod tests {
                 }
             }
         });
-        let output = solve_bmopf_json(&raw.to_string(), &McPfOptions::default()).unwrap();
+        let output = solve_bmopf_json(
+            &raw.to_string(),
+            &McPfOptions {
+                // This test checks high-precision physical quantities explicitly.
+                tolerance: 1e-8,
+                absolute_kcl_tolerance: 1e-6,
+                relative_kcl_tolerance: 1e-8,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let result: super::super::McPfResult = serde_json::from_str(&output).unwrap();
         assert!(result.converged);
         assert_eq!(result.factorization_count, 1);

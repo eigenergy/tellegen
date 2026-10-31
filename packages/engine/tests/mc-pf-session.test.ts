@@ -52,6 +52,7 @@ const result: McPfResult = {
 it("summarizes a stored result exactly as the engine does", () => {
   expect(summarizeMcPfResult(result, 3)).toEqual({
     converged: true,
+    load_model: null,
     voltage_valid: false,
     min_voltage_pu: 0.84,
     max_voltage_pu: 1.01,

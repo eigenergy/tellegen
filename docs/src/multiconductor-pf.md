@@ -14,7 +14,94 @@ Finite source impedance, active device controls, generator/IBR injections, unsup
 
 A current result belongs to the input that produced it. Cancelling or failing a new calculation retains the preceding result. Numeric columns exported to PowerIO are ordered by bus/terminal and source/terminal identities, with missing or duplicate identities rejected.
 
-After an initial solve, select a bus to edit each attached load branch's active and reactive power. The browser coalesces rapid changes and automatically warm-solves from the last converged voltages. It retains the same sparse factorization because load power changes alter the nonlinear current injection, not the passive network operator. The physical impedance and voltage-envelope terms still follow the edited power; only the fixed-point compensation reference is frozen. Resetting a row removes its override, and saved results contain the edited input as well as its matching solution. An edit changes only the solver's load laws: the network is not copied, and each edit returns a small summary in one round trip. The Studies panel then fetches only the selected bus and one page of equipment results. The portable input, solution, and complete result are built only for save, export, geography attachment, or an explicit full rebuild. [Multiconductor PF performance](mc-pf-performance.md) states the latency target and payload budgets with measurements.
+After an initial solve, select a bus to edit each attached load branch's active and reactive power. The browser coalesces rapid changes and automatically warm-solves from the last converged voltages. It retains the same sparse factorization because load power changes alter the nonlinear current injection, not the passive network operator. The physical impedance and voltage-envelope terms still follow the edited power; only the fixed-point compensation reference is frozen. Resetting a row removes its override, and saved results contain the edited input and its qualified result. An edit changes only the solver's load laws: the network is not copied, and each edit returns a small summary in one round trip. The Studies panel then fetches only the selected bus and one page of equipment results. The portable input, optional canonical solution, and complete result are built only for save, export, geography attachment, or an explicit full rebuild. [Multiconductor PF performance](mc-pf-performance.md) states the latency target and payload budgets with measurements.
+
+## Solver settings and OpenDSS comparison
+
+Open **Power flow settings** in Studies to edit the next explicit run. Network and
+Studies share these settings. Editing a value does not solve; use the single
+context-sensitive solve button. A successful solve scrolls Studies to the overview
+with violations, losses and voltage ranges. Failed runs retain the preceding result
+and its recorded settings. Reopening a saved study restores the settings that
+produced that result.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| Use load-model envelope (`voltage_envelope`) | Enabled | Permit the low/high-voltage fallback described below. |
+| Vlow (`v_low_pu`) | 0.50 pu | Below this breakpoint, use nominal constant impedance. |
+| Vmin (`v_min_pu`) | 0.85 pu | Lower end of the original load-law band; below it, transition toward the low-voltage impedance law. |
+| Vmax (`v_max_pu`) | 1.15 pu | Above this breakpoint, use impedance matched to the original law at Vmax. |
+| Maximum iterations (`max_iterations`) | 100 | Maximum number of fixed-point iterations. |
+| Damping (`damping`) | 1 | Full voltage update; values in (0, 1) damp the update. |
+| Voltage-change tolerance (`tolerance`) | **1e-4 V** | Maximum absolute change in complex terminal voltage between iterations. |
+| Zero-voltage tolerance (`zero_voltage_tolerance`) | 1e-9 V | Near-zero voltage guard when evaluating load currents; not a convergence tolerance. |
+| Absolute KCL tolerance (`absolute_kcl_tolerance`) | **1e-4 A** | Absolute current-mismatch allowance at each unknown terminal. |
+| Relative KCL tolerance (`relative_kcl_tolerance`) | **1e-5** | Dimensionless current-mismatch allowance scaled by incident-current magnitude. |
+
+The three convergence tolerances were previously 1e-8 V, 1e-6 A and 1e-8,
+respectively. The new defaults reduce unnecessary iterations in interactive
+studies while retaining a physical current-balance check. All other defaults are
+unchanged. These are stopping criteria, not guaranteed bounds on solution error;
+use tighter tolerances for sensitive comparisons or small differences between
+large quantities. Frozen numerical-oracle tests retain their explicit tight
+settings.
+
+Convergence requires **both** the voltage-change check and, at every unknown
+terminal, `|KCL residual| <= absolute_kcl_tolerance + relative_kcl_tolerance * I_scale`.
+`I_scale` is the larger of the summed incident device-current magnitudes and the
+magnitude of the net load current. The reported scaled residual must be at most 1.
+For example, at a 100 A scale the new KCL allowance is 0.0011 A.
+
+OpenDSS documents a default solution tolerance of **0.0001**, applied to voltage
+magnitude changes and normalized by the bus voltage base when one is defined.
+Tellegen's **1e-4 V is not 1e-4 pu**, and its complex-voltage and KCL checks are not
+OpenDSS's stopping rule. At a 240 V base, 1e-4 pu corresponds to 0.024 V, versus
+Tellegen's 0.0001 V absolute update threshold. There is no universal conversion
+from OpenDSS's voltage tolerance to Tellegen's KCL tolerances. This change follows
+the practical goal of avoiding excessive iteration; it does not claim identical
+accuracy, iteration counts, or results. See EPRI's [solution options](https://opendss.epri.com/Options.html)
+and the OpenDSS maintainer's [explanation of tolerance](https://sourceforge.net/p/electricdss/discussion/861976/thread/15ea059b/).
+
+OpenDSS's documented load defaults are **Vminpu=0.95, Vmaxpu=1.05, Vlowpu=0.50**.
+Tellegen deliberately retains its wider **0.85–1.15 pu** band and its existing
+100-iteration cap. Users can choose 0.95 and 1.05 for a closer load-band comparison,
+but that alone does not make the two solvers equivalent. These load thresholds
+change equations; they are separate from engineering voltage limits and the
+Overview's violation counts. See EPRI's [load properties](https://opendss.epri.com/Properties7.html).
+
+The fallback moves a constant-power load **toward constant impedance**, not toward
+constant power. EPRI explains this as a way to maintain convergence at extreme
+voltages in [Load Models That Nearly Always Converge](https://opendss.epri.com/LoadModelsThatNearlyAlwaysConver.html).
+Tellegen makes the consequence explicit: after convergence it checks the original
+load law at the final voltages. A result that used changed equations is labeled
+**Modified load model — non-canonical result** in the UI and exports. Disabling
+the envelope evaluates the original equations at all voltages, without promising
+convergence. Merely going outside the band does not mark an unchanged impedance
+load as modified.
+
+## Energized-network scope and saved results
+
+Loading a case detects bus islands without a voltage source. Network and Studies
+show **Run power flow** when all islands have source coverage, or **Solve energized
+network** with counts and an expandable exclusion list before the first run.
+With no source-covered island, solving is disabled and the full case remains
+inspectable. Clicking the energized action explicitly selects the source-covered
+subset; loading alone does not select it. This connectivity check does not prove
+conductor-level solvability.
+
+All buses and equipment stay in the map, diagram and saved input. Excluded buses
+have no calculated result; they are not reported as zero voltage or zero load.
+Unsupplied loads are omitted from solved totals. Scope and load-model fidelity are
+separate qualifications and both are retained in CSV and Study JSON. Component
+coordinates on excluded equipment remain in the full input; only attachments to
+retained equipment accompany the solved subset.
+
+Version 2 studies save the input, effective settings, qualification and full
+result. A canonical PowerIO solution module is included only for an original-model
+result; otherwise `solution_module` is null. Version 1 studies are reassessed on
+replay. Replay checks exclusions, model qualification, and terminal, source and
+component quantities against the saved voltages and network equations without
+running another power flow. Unconverged iterates remain unavailable.
 
 ## Operating-point overview
 
@@ -52,7 +139,7 @@ Once a study is saved, the address bar records it with the selection and view (`
 
 Search finds buses and branches by ID. The bus and branch tables sort, filter to issues, and follow the selection; arrow keys move it. CSV exports keep full precision and begin with the case and solve that produced them. Cases with more than 25,000 buses compute the overview when asked rather than after every load edit, because reading a full result of that size takes a noticeable fraction of a second ([evidence](https://github.com/eigenergy/tellegen/tree/main/evidence/diagram)).
 
-Save a result in Studies to retain its input, solver options, terminal values, and PowerIO solution. Import/export moves the saved result between browsers. Reopening checks that its input and results agree without solving again. A geographic attachment updates both saved modules and retains all electrical values. These versioned multiconductor snapshots do not offer the balanced-network planning objectives or sensitivities.
+Save a result in Studies to retain its input, solver options, terminal values, and, when the original load model is verified, its canonical PowerIO solution. Import/export moves the saved result between browsers. Reopening checks that its input and results agree without solving again. A geographic attachment updates both saved modules and retains all electrical values. These versioned multiconductor snapshots do not offer the balanced-network planning objectives or sensitivities.
 
 Raw OpenDSS files remain available for inspection. The multiconductor calculation requires supported BMOPF data or a typed PowerIO AC power flow input with explicit source and device settings.
 

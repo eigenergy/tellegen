@@ -1,4 +1,4 @@
-import type { McComplex, McPfResult } from '@tellegen/engine';
+import { mcNetworkScopeLabel, mcLoadModelLabel, type McComplex, type McPfResult } from '@tellegen/engine';
 import { neutralTerminal } from '../multiconductor.js';
 
 /** Which reference a pair voltage is measured against. */
@@ -59,6 +59,8 @@ export interface BranchSnapshot {
 export interface ResultSnapshot {
 	kind: 'solved' | 'stress';
 	label: string;
+	/** Qualification and effective settings retained by CSV exports. */
+	provenance?: string[];
 	iterations: number | null;
 	buses: BusSnapshot[];
 	branches: BranchSnapshot[];
@@ -260,7 +262,8 @@ export function snapshotFromMcPf(
 	});
 	return {
 		kind: 'solved',
-		label,
+		label: `${label}: ${mcLoadModelLabel(result.load_model)}; ${mcNetworkScopeLabel(result.network_scope)}`,
+		provenance: [JSON.stringify({ load_model: result.load_model ?? null, network_scope: result.network_scope ?? null, excluded_islands: result.excluded_islands ?? [] })],
 		iterations: result.iterations,
 		buses: buses.map((bus) => {
 			const terminals = voltages.get(bus.id);
