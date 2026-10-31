@@ -147,6 +147,50 @@ fn the_fixture_maps_to_a_grid_that_solves() {
 }
 
 #[test]
+fn an_hvdc_transfer_shares_the_set_point_of_a_plant_at_its_converter() {
+    // A plant snapped to the receiving converter's bus: the validation copy's
+    // fixed-transfer generator must state the same set point, or the AC power
+    // flow refuses the bus as a voltage control conflict.
+    let (module, _) = generate(
+        request(OsmIslands::Connect),
+        common::places(),
+        Some(FIXTURE.to_owned()),
+    )
+    .unwrap();
+    let mut net = module.value().clone();
+    let to = net.hvdc()[0].to;
+    let mut unit = net.generators()[0].clone();
+    unit.bus = to;
+    (unit.pmin, unit.pg, unit.pmax, unit.mbase) = (0.0, 0.0, 50.0, 50.0);
+    unit.uid = Some("test-unit-at-converter".to_owned());
+    net.generators_mut().push(unit);
+    for bus in net.buses_mut().iter_mut().filter(|b| b.id == to) {
+        if bus.kind == powerio::BusType::Pq {
+            bus.kind = powerio::BusType::Pv;
+        }
+    }
+    let (copy, links) = tellegen_synth::validate::validation_copy(&net);
+    assert_eq!(links, 1);
+    let set_points: Vec<f64> = copy
+        .generators()
+        .iter()
+        .filter(|g| g.in_service && g.bus == to)
+        .map(|g| g.vg)
+        .collect();
+    assert_eq!(set_points.len(), 2);
+    assert_eq!(set_points[0], set_points[1], "{set_points:?}");
+    let ac = tellegen_synth::validate::run_ac_pf(&net, &Default::default(), None);
+    assert!(
+        !ac.message
+            .as_deref()
+            .unwrap_or("")
+            .contains("VOLTAGE_CONTROL_CONFLICT"),
+        "{:?}",
+        ac.message
+    );
+}
+
+#[test]
 fn island_policies() {
     // Cut: the converters have no plant, so their islands go, with the link.
     let (module, report) = generate(

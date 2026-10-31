@@ -15,6 +15,7 @@ use powerio::{BalancedNetwork, BusId, BusType, GenCost, Generator, Load};
 use powerio_prob::{AcPfInstance, DcOpfInstance};
 use tellegen::{Iterations, Problem, SolveRequest, SolveResponse};
 
+use crate::electrical::params::GENERATOR_VG;
 use crate::error::SynthError;
 use crate::geom::delaunay::UnionFind;
 use crate::report::{
@@ -74,7 +75,10 @@ pub fn validation_copy(net: &BalancedNetwork) -> (BalancedNetwork, usize) {
         gen.pmax = pt.max(0.0);
         gen.pmin = pt.max(0.0);
         gen.pg = pt.max(0.0);
-        gen.vg = 1.0;
+        // The set point every generated unit states: a plant at the
+        // receiving converter's bus shares the bus, and two set points at
+        // one bus are conflicting voltage controls the AC power flow refuses.
+        gen.vg = GENERATOR_VG;
         gen.mbase = pt.abs().max(1.0);
         gen.cost = Some(GenCost::new(2, 0.0, 0.0, vec![0.0, 0.0, 0.0]));
         gen.uid = Some(format!("hvdc_transfer_gen:{k}"));

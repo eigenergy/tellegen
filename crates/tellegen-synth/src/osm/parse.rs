@@ -86,6 +86,10 @@ pub struct OsmLine {
     pub geometry: Vec<(f64, f64)>,
     /// Highest tagged voltage, kV; 0 when untagged (inferred later).
     pub kv: f64,
+    /// Every distinct level the voltage tag lists, kV, highest first; empty
+    /// when untagged. A way on shared towers (`"400000;220000"`) carries
+    /// circuits at each of them.
+    pub kvs: Vec<f64>,
     pub circuits: u32,
     pub is_cable: bool,
     /// Tagged `frequency=0`: a DC line.
@@ -190,6 +194,7 @@ pub fn parse_document(text: &str) -> Result<ParsedDocument, SynthError> {
                     ids: vec![el.id],
                     geometry,
                     kv: parse_voltage(el.tag("voltage")),
+                    kvs: parse_voltages(el.tag("voltage")),
                     circuits: parse_circuits(el.tag("circuits"), el.tag("cables")),
                     is_cable: power == "cable",
                     is_dc: el.tag("frequency").trim() == "0",
