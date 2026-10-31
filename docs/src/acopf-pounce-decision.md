@@ -371,7 +371,10 @@ accepted solution's physical equations, limits and objective. Polynomial rows
 use POUNCE's existing exact sparse quadratic evaluator; general load laws and
 smooth inverter controls use its existing sparse AD. No new differentiation
 package is introduced. `McOpfResult` includes terminal voltages and physical
-branch/device/winding ledgers. `McOpfOptions.collect_profile` enables optional
+branch/device/winding/shunt ledgers with explicit terminal and coil identities.
+Canonical JSON exports retain the full report in a versioned PowerIO module
+extension; the MC APIs expose typed `McOpfError` diagnostics.
+`McOpfOptions.collect_profile` enables optional
 stage and KKT diagnostics. Prices, solution sensitivities and retained sessions
 are not exposed by this initial implementation.
 

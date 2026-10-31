@@ -6,7 +6,7 @@ use powerio_dist::{
     VoltageSource,
 };
 use std::sync::Arc;
-use tellegen::{solve_mc_ac_opf_instance, McOpfOptions};
+use tellegen::{solve_mc_ac_opf_instance, McOpfError, McOpfErrorKind, McOpfOptions, McOpfStage};
 
 fn names(values: &[&str]) -> Vec<String> {
     values.iter().map(|v| (*v).into()).collect()
@@ -32,9 +32,17 @@ fn network() -> MulticonductorNetwork {
     net
 }
 
-fn assert_role_error(error: String) {
-    assert!(error.contains("bad"), "{error}");
-    assert!(error.contains("delta requires phase terminals"), "{error}");
+fn assert_role_error(error: McOpfError) {
+    assert_eq!(error.kind, McOpfErrorKind::InvalidInput);
+    assert_eq!(error.stage, McOpfStage::Preparation);
+    assert!(error.solver_status.is_none());
+    assert!(error.residuals.is_none());
+    assert!(error
+        .diagnostics
+        .iter()
+        .any(|d| d.code == "BUILD.MULTI.OPF_INVALID"
+            && d.message.contains("bad")
+            && d.message.contains("delta requires phase terminals")));
 }
 
 fn assert_rejected(net: MulticonductorNetwork) {
