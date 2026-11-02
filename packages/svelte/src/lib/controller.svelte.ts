@@ -58,6 +58,7 @@ import {
 	type McPfDetailQuery,
 	type McPfOptions,
 	type McPfResult,
+	type McPfResultTables,
 	type McPfSummary,
 	type McStudySnapshot,
 	type AppliedGeoCase,
@@ -2711,7 +2712,7 @@ export class Controller {
 
 	private startOverviewRead(c: MulticonductorCase, seq: number) {
 		c.overviewLoading = true;
-		this.multiFullResult(c).then(
+		this.multiOverviewResult(c).then(
 			(full) => {
 				if (seq !== this.overviewSeq) return;
 				if (full) c.overviewResult = full;
@@ -2741,6 +2742,22 @@ export class Controller {
 			// A read still in flight is superseded by the next one, so this case is no longer loading.
 			c.overviewLoading = false;
 		};
+	};
+
+	/** The complete operating point in the form whole-network views read: the stored result, or
+	 * the live session's as columns, which hold no object per terminal or port. Null when there is
+	 * no result or it changed before the read finished. */
+	multiOverviewResult = async (
+		c: MulticonductorCase
+	): Promise<McPfResult | McPfResultTables | null> => {
+		if (!c.result) return null;
+		const stored = c.mcFullResult ?? c.mcSnapshot?.result ?? null;
+		const session = c.mcSession;
+		if (stored || !session) return stored;
+		if (c.mcEditRunning) return null;
+		const solve = c.result.solve_count;
+		const tables = await session.resultTables();
+		return session === c.mcSession && c.result?.solve_count === solve ? tables : null;
 	};
 
 	/** The complete operating point for whole-network views: the stored result, or one read from

@@ -1,4 +1,9 @@
-import type { DistAttachmentKind, DistConnection, DistGraph } from '@tellegen/engine';
+import type {
+	DistAttachmentKind,
+	DistConnection,
+	DistGraph,
+	McPfResultTables
+} from '@tellegen/engine';
 import type { SchematicGeometry } from './schematic-layout.js';
 import { terminalConductors, transformerGlyph, transformerInfo } from './connections.js';
 
@@ -720,15 +725,20 @@ const BRANCH_PORT_KINDS = new Set(['line', 'switch', 'transformer']);
 /** Complex power into each element (loads, generators, IBRs, shunts) by element id, and for
  * sources the power they draw (the negative of what they inject), so every attachment reads with
  * the same convention: positive is consumption. Branch ports are left out: names are unique only
- * within a family, and a line sharing a load's name must not add to it. */
-export function elementPowers(result: {
-	element_ports: {
-		element: string;
-		kind?: string;
-		power_into_element: { re: number; im: number };
-	}[];
-	source_reactions: { source: string; power_into_network: { re: number; im: number } }[];
-}): Map<string, { p: number; q: number }> {
+ * within a family, and a line sharing a load's name must not add to it. Reads a full result's
+ * objects or its columns. */
+export function elementPowers(
+	result:
+		| McPfResultTables
+		| {
+				element_ports: {
+					element: string;
+					kind?: string;
+					power_into_element: { re: number; im: number };
+				}[];
+				source_reactions: { source: string; power_into_network: { re: number; im: number } }[];
+		  }
+): Map<string, { p: number; q: number }> {
 	const out = new Map<string, { p: number; q: number }>();
 	const add = (id: string, p: number, q: number) => {
 		const row = out.get(id) ?? { p: 0, q: 0 };
@@ -736,6 +746,17 @@ export function elementPowers(result: {
 		row.q += q;
 		out.set(id, row);
 	};
+	if ('strings' in result) {
+		const names = result.strings;
+		const power = result.portPower;
+		for (let k = 0; k < result.portElement.length; k++)
+			if (!BRANCH_PORT_KINDS.has(names[result.portKind[k]]))
+				add(names[result.portElement[k]], power[2 * k], power[2 * k + 1]);
+		const source = result.sourcePower;
+		for (let k = 0; k < result.sourceName.length; k++)
+			add(names[result.sourceName[k]], -source[2 * k], -source[2 * k + 1]);
+		return out;
+	}
 	for (const port of result.element_ports)
 		if (port.kind === undefined || !BRANCH_PORT_KINDS.has(port.kind))
 			add(port.element, port.power_into_element.re, port.power_into_element.im);

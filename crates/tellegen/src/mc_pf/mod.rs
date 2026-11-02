@@ -8,12 +8,14 @@ mod input;
 mod linear;
 mod loads;
 mod network;
+mod tables;
 mod transformer;
 
 pub use input::{
     parse_bmopf_instance, solve_bmopf_json, solve_mc_module_json, validate_bmopf_json,
     validate_mc_module, validate_mc_module_json,
 };
+pub use tables::McPfResultTables;
 pub use transformer::{
     build_transformer_yprim, prepare_transformer, ComplexMatrix, PreparedTransformer,
     TransformerError, TransformerPrimitive, TransformerTerminal,
@@ -442,6 +444,13 @@ impl McPfSession {
     /// operating point. This is materialized on demand and not retained.
     pub fn build_result(&self) -> Result<McPfResult, String> {
         build_result(&self.prepared, &self.options, &self.state)
+    }
+
+    /// The terminals, equipment ports, and source reactions of
+    /// [`Self::build_result`] as columns, without an object and several
+    /// strings per port. Whole-network views read the operating point this way.
+    pub fn result_tables(&self) -> Result<McPfResultTables, String> {
+        tables::build_tables(&self.prepared, &self.options, &self.state)
     }
 
     /// The instance this session was prepared from, without load edits.
@@ -1776,7 +1785,7 @@ fn load_port(
     c: Complex64,
     branch_current: Complex64,
 ) -> McElementPort {
-    let terminal_current = c.conj() * branch_current;
+    let (current, power) = load_port_values(voltage, i, c, branch_current);
     let (bus, terminal) = &prepared.index.terminal_ids[i];
     McElementPort {
         element: load.name.clone(),
@@ -1784,9 +1793,21 @@ fn load_port(
         branch,
         bus: bus.clone(),
         terminal: terminal.clone(),
-        current_into_element: terminal_current.into(),
-        power_into_element: (voltage[i] * terminal_current.conj()).into(),
+        current_into_element: current.into(),
+        power_into_element: power.into(),
     }
+}
+
+/// Current and power into a load branch at terminal `i`, whose incidence
+/// coefficient there is `c`.
+fn load_port_values(
+    voltage: &[Complex64],
+    i: usize,
+    c: Complex64,
+    branch_current: Complex64,
+) -> (Complex64, Complex64) {
+    let current = c.conj() * branch_current;
+    (current, voltage[i] * current.conj())
 }
 
 fn passive_port(
@@ -1795,9 +1816,7 @@ fn passive_port(
     element: &network::PreparedElement,
     row: usize,
 ) -> McElementPort {
-    let port_voltages: Vec<_> = element.terminals.iter().map(|&i| voltage[i]).collect();
-    let current = element_port_current(element, row, &port_voltages);
-    let i = element.terminals[row];
+    let (i, current, power) = passive_port_values(voltage, element, row);
     let (bus, terminal) = &prepared.index.terminal_ids[i];
     McElementPort {
         element: element.name.clone(),
@@ -1806,8 +1825,21 @@ fn passive_port(
         bus: bus.clone(),
         terminal: terminal.clone(),
         current_into_element: current.into(),
-        power_into_element: (voltage[i] * current.conj()).into(),
+        power_into_element: power.into(),
     }
+}
+
+/// The terminal of a passive element's port `row`, and the current and power
+/// into the element there.
+fn passive_port_values(
+    voltage: &[Complex64],
+    element: &network::PreparedElement,
+    row: usize,
+) -> (usize, Complex64, Complex64) {
+    let port_voltages: Vec<_> = element.terminals.iter().map(|&i| voltage[i]).collect();
+    let current = element_port_current(element, row, &port_voltages);
+    let i = element.terminals[row];
+    (i, current, voltage[i] * current.conj())
 }
 
 fn element_port_current(
@@ -2994,6 +3026,48 @@ mod tests {
             assert_summary_matches(&summary, &session.build_result().unwrap());
             assert_eq!(summary.solve_count, 2);
             assert_eq!(session.materialization_count(), 0);
+        }
+    }
+
+    #[test]
+    fn result_tables_hold_the_full_result_row_for_row() {
+        for text in ORACLE_INPUTS {
+            let mut session =
+                McPfSession::new(oracle_instance(text), McPfOptions::default()).unwrap();
+            let check = |session: &McPfSession| {
+                let result = session.build_result().unwrap();
+                let tables = session.result_tables().unwrap();
+                assert_eq!(tables, McPfResultTables::from_result(&result));
+                assert_eq!(tables.terminal_count(), result.terminals.len());
+                assert_eq!(tables.port_count(), result.element_ports.len());
+                assert_eq!(tables.source_count(), result.source_reactions.len());
+                // Spot-check one row of each table against the objects.
+                let port = &result.element_ports[0];
+                assert_eq!(
+                    tables.strings[tables.port_element[0] as usize],
+                    port.element
+                );
+                assert_eq!(tables.port_power[0], port.power_into_element.re);
+                assert_eq!(tables.port_power[1], port.power_into_element.im);
+                let k = result.terminals.len() - 1;
+                assert_eq!(
+                    tables.terminal_voltage[2 * k + 1],
+                    result.terminals[k].voltage.im
+                );
+            };
+            check(&session);
+            let edits: Vec<_> = session
+                .load_branches()
+                .into_iter()
+                .map(|branch| McLoadPowerEdit {
+                    load: branch.load,
+                    branch: branch.branch,
+                    p_w: branch.base_p_w * 1.07,
+                    q_var: branch.base_q_var * 0.9,
+                })
+                .collect();
+            session.replace_load_powers(&edits).unwrap();
+            check(&session);
         }
     }
 

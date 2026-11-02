@@ -61,7 +61,9 @@ Edits are an overlay on the base input. They replace the prepared load laws
 factor stay frozen) and never copy or rebuild the network. Each solve produces
 an `McPfSummary`, computed from the converged phasors with the same output
 finiteness checks as the complete `McPfResult`, which is built only on request
-(`build_result` in Rust, `result()` in TypeScript). `edited_instance`,
+(`build_result` in Rust, `result()` in TypeScript), or as columns with each name
+stored once (`result_tables` and `resultTables()`, which whole-network views
+read). `edited_instance`,
 `input_module_json`, and `snapshot` build the edited network on demand, and
 `materialization_count` counts how often. Detail views use `detail` (one bus
 and a page of equipment ports) and the interleaved terminal voltage and
