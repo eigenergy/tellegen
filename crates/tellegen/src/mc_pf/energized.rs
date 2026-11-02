@@ -32,6 +32,13 @@ pub struct McNetworkScope {
     pub excluded_load_count: usize,
 }
 
+impl McNetworkScope {
+    /// Summarize distinct excluded equipment and the islands containing it.
+    pub fn from_excluded_islands(islands: &[McExcludedIsland]) -> Option<Self> {
+        scope(islands)
+    }
+}
+
 pub(crate) fn scope(islands: &[McExcludedIsland]) -> Option<McNetworkScope> {
     if islands.is_empty() {
         return None;
@@ -254,8 +261,24 @@ fn select(network: &MulticonductorNetwork, islands: &[McExcludedIsland]) -> Mult
 pub(crate) fn selection(
     module: &PioModule<PioValue>,
 ) -> Result<(Option<MulticonductorNetwork>, Vec<McExcludedIsland>), String> {
+    let islands = validate_selection(module)?;
+    let selected = if module.extensions().contains_key(EXTENSION) {
+        let PioValue::MulticonductorNetwork(network) = module.value() else {
+            unreachable!()
+        };
+        Some(select(network, &islands))
+    } else {
+        None
+    };
+    Ok((selected, islands))
+}
+
+/// Check the recorded exclusions without materializing the solver subset.
+pub(crate) fn validate_selection(
+    module: &PioModule<PioValue>,
+) -> Result<Vec<McExcludedIsland>, String> {
     let Some(recorded) = module.extensions().get(EXTENSION) else {
-        return Ok((None, Vec::new()));
+        return Ok(Vec::new());
     };
     let PioValue::MulticonductorNetwork(network) = module.value() else {
         return Err(
@@ -269,37 +292,43 @@ pub(crate) fn selection(
     if recorded != actual {
         return Err("energized-network exclusions do not match the full input topology".to_owned());
     }
-    Ok((Some(select(network, &actual)), actual))
+    Ok(actual)
 }
 
 /// Explicitly opt into excluding source-less bus islands. This returns the full
 /// network, with a validated selection record; no equipment is erased from it.
 pub fn prepare_mc_energized_network_json(text: &str) -> Result<String, String> {
-    let mut module = crate::ir::deserialize_module(text)?;
-    super::input::validate_mc_module(&module)?;
+    let module = crate::ir::deserialize_module(text)?;
+    let (module, islands) = prepare_mc_energized_network(&module)?;
+    serde_json::to_string(&serde_json::json!({
+        "module_json": crate::ir::serialize_module(&module)?,
+        "network_scope": scope(&islands), "excluded_islands": islands
+    }))
+    .map_err(|e| e.to_string())
+}
+
+/// Prepare a parsed input without serializing its network. The original module
+/// is unchanged; the returned module shares its full network tables.
+pub fn prepare_mc_energized_network(
+    module: &PioModule<PioValue>,
+) -> Result<(PioModule<PioValue>, Vec<McExcludedIsland>), String> {
+    super::input::validate_mc_module(module)?;
     if matches!(module.value(), PioValue::McAcPfInstance(_)) {
-        // An existing valid instance already has source coverage on every island.
-        return serde_json::to_string(&serde_json::json!({
-            "module_json": text, "network_scope": null, "excluded_islands": []
-        }))
-        .map_err(|e| e.to_string());
+        return Ok((module.clone(), Vec::new()));
     }
     let PioValue::MulticonductorNetwork(network) = module.value() else {
         return Err("energized-network preparation requires a multiconductor network".to_owned());
     };
     require_source(network)?;
     let islands = mc_unpowered_islands(network)?;
-    module
+    let mut selected = module.clone();
+    selected
         .insert_extension(
             EXTENSION,
             serde_json::to_value(&islands).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
-    serde_json::to_string(&serde_json::json!({
-        "module_json": crate::ir::serialize_module(&module)?,
-        "network_scope": scope(&islands), "excluded_islands": islands
-    }))
-    .map_err(|e| e.to_string())
+    Ok((selected, islands))
 }
 
 pub(crate) fn instance(module: &PioModule<PioValue>) -> Result<powerio::McAcPfInstance, String> {

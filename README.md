@@ -112,7 +112,12 @@ surveyed infrastructure:
 Bus color is locational marginal price. Selecting a bus shows ∂LMP/∂demand at
 that bus; selecting a binding line shows ∂LMP/∂rating. Dragging a slider
 applies the sensitivity column live; releasing it re-solves exactly in
-WebAssembly. A selector switches the formulation between DC OPF and SOCWR.
+WebAssembly. The calculation selector offers DC OPF (the default), AC power
+flow, SOCWR, and experimental nonlinear AC OPF for balanced transmission cases.
+The website bundles the separate POUNCE WASI solver and enables AC OPF after
+its browser capability probe succeeds. AC OPF currently solves the unedited
+base case; demand/rating edits, LMPs, sensitivities, and saving/exporting AC OPF
+results are not supported.
 
 Dropped `.m`, `.raw`, `.aux`, `.epc`, `.pwb`, `.dss`, and recognized JSON cases
 parse in the browser and never upload. Files with coordinates render in place;
@@ -136,6 +141,8 @@ TELLEGEN_ALLOW_FALLBACK=1 cargo run -p tellegen-server
 # frontend demo (the dev server proxies /api to localhost:8000)
 npm ci
 npm run wasm
+rustup target add wasm32-wasip1
+npm run wasm:acopf
 npm run build:engine
 npm run build:webmcp
 npm run build:svelte

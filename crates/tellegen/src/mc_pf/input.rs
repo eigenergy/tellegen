@@ -756,11 +756,12 @@ pub fn parse_bmopf_instance(text: &str) -> Result<McAcPfInstance, String> {
 pub fn validate_mc_module_json(text: &str) -> Result<(), String> {
     let module = crate::ir::deserialize_module(text)?;
     validate_mc_module(&module)?;
-    super::energized::selection(&module)?;
     Ok(())
 }
 
-pub(crate) fn validate_mc_module(module: &powerio::PioModule<PioValue>) -> Result<(), String> {
+/// [`validate_mc_module_json`] for a module already parsed in this process.
+pub fn validate_mc_module(module: &powerio::PioModule<PioValue>) -> Result<(), String> {
+    super::energized::validate_selection(module)?;
     reject_lossy_diagnostics(module)?;
     match module.value() {
         PioValue::MulticonductorNetwork(network) => validate_mc_network(network),

@@ -32,13 +32,15 @@ archives.
 
 The non-default native `tellegen/acopf` feature depends on
 [POUNCE](https://github.com/jkitchin/pounce), a pure-Rust nonlinear solver
-licensed under EPL-2.0. It is pinned to revision
-`925e75fbd036de309929e398159f946d42d0d94b`. The default engine and the
+licensed under EPL-2.0. It is pinned to the checksummed crates.io release
+`0.13.0`. The default engine and the
 published WASM, server, CLI, and Python adapters do not enable this feature.
 `scripts/epl-guard.sh` checks that boundary from Cargo's resolved dependency
-trees. The unpublished `tellegen-acopf-wasi` development adapter deliberately
-does enable it; its generated asset is gitignored and ordinary builds and
-deployments do not copy it.
+trees. The separate `tellegen-acopf-wasi` adapter deliberately enables it.
+The website bundles that generated asset, its EPL-2.0 license, notices, and
+`POUNCE-SOURCE.json` under `/experimental-acopf/`. The manifest records exact
+source archive URLs and checksums. The native server and ordinary npm packages
+do not contain the solver asset.
 
 Before any binary containing POUNCE is distributed, the release owner must
 approve the EPL-2.0 obligations, ship the POUNCE license and notices, and state

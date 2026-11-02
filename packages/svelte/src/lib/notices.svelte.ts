@@ -1,8 +1,11 @@
 import { getContext, setContext } from 'svelte';
+import type { LogEntryInput } from './log.svelte.js';
 
 export interface NoticeInput {
 	title: string;
 	details: string;
+	/** Structured findings behind `details`; the notice lists them when present. */
+	entries?: LogEntryInput[];
 	kind?: 'error' | 'warning';
 	retry?: () => void;
 	canRetry?: () => boolean;

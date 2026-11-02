@@ -2,7 +2,9 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { formatPowerIoDiagnostic } from '@tellegen/engine';
 	import { getAppState, getController } from '../context.svelte.js';
+	import { powerIoEntry, type LogEntryInput } from '../log.svelte.js';
 	import { getNoticeCenter, errorNoticeTitle } from '../notices.svelte.js';
+	import LogEntryView from './LogEntryView.svelte';
 	const app = getAppState();
 	const ctrl = getController();
 	const notices = getNoticeCenter();
@@ -33,7 +35,20 @@
 		const multi = app.activeMulti;
 		const summary = local?.summary ?? multi?.summary;
 		const geo = local?.geoWarnings ?? multi?.geoWarnings;
-		for (const [identity, title, details] of [
+		const subject = local?.fileName ?? multi?.fileName;
+		const entries: LogEntryInput[] = summary
+			? [
+					...summary.diagnostics.map((d) => powerIoEntry(d, { stage: 'Open', subject })),
+					...('warnings' in summary ? summary.warnings : []).map((message) => ({
+						severity: 'note' as const,
+						stage: 'Open',
+						source: 'tellegen',
+						subject,
+						message
+					}))
+				]
+			: [];
+		for (const [identity, title, details, items] of [
 			[
 				summary,
 				'Case import notes',
@@ -42,13 +57,15 @@
 							...summary.diagnostics.map(formatPowerIoDiagnostic),
 							...('warnings' in summary ? summary.warnings : [])
 						].join('\n\n')
-					: ''
+					: '',
+				entries
 			],
-			[geo, 'Coordinate import notes', geo?.join('\n\n') ?? '']
-		] as Array<[object | undefined, string, string]>) {
+			[geo, 'Coordinate import notes', geo?.join('\n\n') ?? '', undefined]
+		] as Array<[object | undefined, string, string, LogEntryInput[] | undefined]>) {
 			if (identity && !observed.has(identity)) {
 				observed.add(identity);
-				if (details) untrack(() => notices.push({ kind: 'warning', title, details }));
+				if (details)
+					untrack(() => notices.push({ kind: 'warning', title, details, entries: items }));
 			}
 		}
 	});
@@ -92,7 +109,15 @@
 									>{entry.title}{#if entry.count > 1}<span class="count">{entry.count}</span
 										>{/if}</summary
 								>
-								<pre data-testid="notification-details">{entry.details}</pre>
+								{#if entry.entries?.length}
+									<ol class="entries" data-testid="notification-details">
+										{#each entry.entries as item, i (i)}
+											<li><LogEntryView entry={item} showSubject={false} /></li>
+										{/each}
+									</ol>
+								{:else}
+									<pre data-testid="notification-details">{entry.details}</pre>
+								{/if}
 							</details>
 							{#if entry.retry && entry.canRetry?.()}<button onclick={entry.retry}>Retry</button
 								>{/if}
@@ -226,6 +251,12 @@
 	}
 	summary {
 		cursor: pointer;
+	}
+	.entries {
+		margin-top: 8px;
+	}
+	.entries li {
+		padding: 6px 0;
 	}
 	pre {
 		font: 11px/1.5 var(--font-mono);

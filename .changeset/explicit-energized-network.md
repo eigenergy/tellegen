@@ -11,3 +11,6 @@ the full input for inspection, identify excluded source-less islands and unsuppl
 loads, and preserve and validate network scope in saved studies, solution modules,
 and CSV exports. Use default voltage-change tolerance 1e-4 V, absolute KCL tolerance 1e-4 A,
 and relative KCL tolerance 1e-5; other solver settings remain unchanged.
+
+Prepare energized networks directly from retained inputs without an IR text round trip.
+Columnar operating-point results retain load-model qualification and excluded-island provenance.

@@ -43,8 +43,8 @@ jobs:
         with:
           command: check advisories bans licenses sources
 
-      # Mirrors `just epl-guard`. The EPL-2.0 `pounce` backend must not enter a
-      # shipped build.
+      # Mirrors `just epl-guard`. POUNCE stays out of the ordinary wasm module
+      # and native adapters; the website bundles a separate WASI reactor.
       - name: Verify the published POUNCE release pin
         run: python3 scripts/acopf-release.py
 

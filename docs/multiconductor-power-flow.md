@@ -47,7 +47,10 @@ fetches the selected bus's terminals and one page of equipment results on
 demand.
 
 The interactive API is a retained `McPfSession` in Rust and
-`createMcPfSession(moduleJson, options)` in TypeScript. A session keeps the
+`createMcPfSession(input, options)` in TypeScript, where `input` is PowerIO IR
+text or a `BrowserMcInput` the engine kept at import. A session from a kept
+input shares its network tables, so no IR text crosses the worker boundary in
+either direction. A session keeps the
 prepared passive network, compensation matrix, sparse LU factorization, and
 last converged voltage. `replace_load_powers`/`replaceLoadPowers` accepts the
 complete set of absolute load-branch overrides relative to the session's base
@@ -59,7 +62,9 @@ Edits are an overlay on the base input. They replace the prepared load laws
 factor stay frozen) and never copy or rebuild the network. Each solve produces
 an `McPfSummary`, computed from the converged phasors with the same output
 finiteness checks as the complete `McPfResult`, which is built only on request
-(`build_result` in Rust, `result()` in TypeScript). `edited_instance`,
+(`build_result` in Rust, `result()` in TypeScript), or as columns with each name
+stored once (`result_tables` and `resultTables()`, which whole-network views
+read). `edited_instance`,
 `input_module_json`, and `snapshot` build the edited network on demand, and
 `materialization_count` counts how often. Detail views use `detail` (one bus
 and a page of equipment ports) and the interleaved terminal voltage and

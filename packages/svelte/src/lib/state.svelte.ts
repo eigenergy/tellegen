@@ -21,14 +21,17 @@ import {
 	type McPfCallTiming,
 	type McPfOptions,
 	type McPfResult,
+	type McPfResultTables,
 	type McPfSummary,
 	type McLoadBranchState,
 	type McLoadPowerEdit,
+	type McModuleInput,
 	type McStudySnapshot,
 	type SensTarget,
 	type Topology
 } from '@tellegen/engine';
 import type { MultiView } from './multiconductor.js';
+import { DiagnosticLog, errorEntry } from './log.svelte.js';
 import { graphInputs, type GraphInputs } from './diagram/graph-inputs.js';
 import { buildSearchIndex, type SearchIndex } from './diagram/search.js';
 import { snapshotFromMcPf, type ResultSnapshot } from './diagram/snapshot.js';
@@ -121,8 +124,12 @@ export class LocalCase {
 	syntheticCenter: { lon: number; lat: number } | undefined = $state.raw<
 		{ lon: number; lat: number } | undefined
 	>(undefined);
-	diagram: { view: LocalView; layer: string; name: string; warnings: string[] } | null =
-		$state.raw(null);
+	diagram: {
+		view: LocalView;
+		layer: string;
+		name: string;
+		warnings: string[];
+	} | null = $state.raw(null);
 	displayMode: 'geographic' | 'diagram' = $state('geographic');
 	geoSource: string | undefined = $state.raw<string | undefined>(undefined);
 	geoWarnings: string[] | undefined = $state.raw<string[] | undefined>(undefined);
@@ -226,9 +233,10 @@ export class CaseState {
 /** A case the solver can run: a server-backed case or a browser-parsed local case. */
 export type SolvableCase = CaseState | LocalCase;
 
-/** The multiconductor ingest payload without the graph: the summary counts,
- * connected load/generation, coordinate provenance, and diagnostics. */
-export type MultiCaseSummary = Omit<IngestedDistCase, 'graph'>;
+/** The multiconductor ingest payload without the graph or the retained
+ * input: the summary counts, connected load/generation, coordinate
+ * provenance, and diagnostics. */
+export type MultiCaseSummary = Omit<IngestedDistCase, 'graph' | 'input'>;
 
 /** Geographic coordinates use the map; other positions use the diagram canvas. */
 export type MultiCoordsKind = 'geographic' | 'planar' | 'synthetic';
@@ -245,7 +253,10 @@ export class MulticonductorCase {
 	readonly id: string;
 	readonly label: string;
 	readonly fileName: string;
-	moduleJson: string | null = $state.raw<string | null>(null);
+	/** The electrical input calculations start from: the module the engine
+	 * keeps from the import, or PowerIO IR text (a saved or re-placed module).
+	 * A kept module is freed when it is replaced or the case is removed. */
+	mcInput: McModuleInput | null = $state.raw<McModuleInput | null>(null);
 	geoLayer: string | null = $state.raw<string | null>(null);
 	geoWarnings: string[] = $state.raw<string[]>([]);
 	/** Summary of the displayed operating point: from the live session after
@@ -301,9 +312,12 @@ export class MulticonductorCase {
 	/** Bumped to ask the views to bring the current selection into view again (an issue clicked
 	 * that is already selected). */
 	revealSeq = $state(0);
-	/** The full operating point read for whole-network views (overview, schematic); null until read,
-	 * and cleared when a large case's operating point changes. */
-	overviewResult: McPfResult | null = $state.raw<McPfResult | null>(null);
+	/** The full operating point read for whole-network views (overview, schematic): a stored
+	 * result, or a live session's as columns. Null until read, and cleared when a large case's
+	 * operating point changes. */
+	overviewResult: McPfResult | McPfResultTables | null = $state.raw<
+		McPfResult | McPfResultTables | null
+	>(null);
 	overviewLoading = $state(false);
 	/** The graph's buses and branches as the overview and the diagram read them: rebuilt when the
 	 * graph is replaced, never after a solve. Both views read this one copy. */
@@ -334,6 +348,9 @@ export class MulticonductorCase {
 		label: string;
 		fileName: string;
 		summary: MultiCaseSummary;
+		/** The module the engine kept from the import, in place of the
+		 * summary's `module_json`. */
+		input?: McModuleInput | null;
 		graph: DistGraph;
 		coordsKind: MultiCoordsKind;
 		view?: MultiView | null;
@@ -342,7 +359,7 @@ export class MulticonductorCase {
 		this.label = init.label;
 		this.fileName = init.fileName;
 		this.summary = init.summary;
-		this.moduleJson = init.summary.module_json ?? null;
+		this.mcInput = init.input ?? init.summary.module_json ?? null;
 		this.mcEnergizedOnly = init.summary.mc_energized_only ?? false;
 		this.mcExcludedIslands = init.summary.mc_excluded_islands ?? [];
 		this.mcPreparedScope = summarizeMcExcludedIslands(this.mcExcludedIslands);
@@ -353,7 +370,7 @@ export class MulticonductorCase {
 	}
 
 	get mcPfReason(): string | null {
-		if (!this.moduleJson) return 'This case has no retained electrical input';
+		if (!this.mcInput) return 'This case has no retained electrical input';
 		if (this.summary?.mc_pf_enabled !== true) return 'AC power flow is unavailable in this build';
 		return (
 			this.summary.mc_pf_reason ??
@@ -426,7 +443,11 @@ export class AppState {
 			throw new Error('Invalid saved drawing view');
 		}
 		this.settleFrame();
-		this.diagramCameraRequest = { caseId, center: [...snapshot.center], scale: snapshot.scale };
+		this.diagramCameraRequest = {
+			caseId,
+			center: [...snapshot.center],
+			scale: snapshot.scale
+		};
 		this.diagramCameraSeq++;
 	}
 
@@ -486,7 +507,9 @@ export class AppState {
 	/** Technical detail behind the current `error`, when the message itself is
 	 * written for people; notices keep it in their disclosure. Every write to
 	 * `error` clears it, as it clears `errorRetry`. */
-	errorDetail = $state<string | null>(null);
+	#errorDetail = $state<string | null>(null);
+	/** Every error and engine finding of this session, structured; see `DiagnosticLog`. */
+	readonly log = new DiagnosticLog();
 
 	get error(): string | null {
 		return this.#error;
@@ -494,9 +517,21 @@ export class AppState {
 
 	set error(message: string | null) {
 		this.#error = message;
-		if (message) this.errorRevision++;
+		if (message) {
+			this.errorRevision++;
+			this.log.record(errorEntry(message));
+		}
 		this.errorRetry = null;
-		this.errorDetail = null;
+		this.#errorDetail = null;
+	}
+
+	get errorDetail(): string | null {
+		return this.#errorDetail;
+	}
+
+	set errorDetail(detail: string | null) {
+		this.#errorDetail = detail;
+		if (detail && this.#error) this.log.record(errorEntry(this.#error, detail), { repeat: false });
 	}
 
 	/** Case files parsed in the browser via the powerio wasm module. */

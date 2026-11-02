@@ -180,6 +180,31 @@ it is set, `app.error` is a message written for people, and the detail holds
 the technical text behind it. `NotificationCenter` shows that text in a
 collapsed disclosure.
 
+### Log
+
+`app.log` keeps every error and engine finding of the session as structured
+entries: severity (error, warning or note), the step (`Open`, `Coordinates`,
+`Solve`, `Export`), who reported it (`PowerIO` or `tellegen`), the code, the
+message, the file or case it belongs to, the element and buses it names, and
+PowerIO's suggested action and details. The controller records what PowerIO
+reported while reading a case or a geographic layer, what each solve reported
+(islands, HVDC transfers), what each export's writer reported, and every
+`app.error`. A finding reported again counts up in place.
+
+`DiagnosticLogView` (from `@tellegen/svelte/components`) shows the log grouped
+by step and file, with severity filters, Copy, Download (`tellegen.log` JSON)
+and Clear; pass `onbus` to make the named buses selectable. The default shell
+shows it in a "Log" panel (`LogPanel`). A host can add its own findings:
+
+```ts
+getAppState().log.record({
+	severity: 'warning',
+	stage: 'Fetch',
+	source: 'Overpass',
+	message: 'overpass-api.de answered 504; trying the next mirror'
+});
+```
+
 ## Basemap
 
 CARTO's vector styles suit a network overlay best: quiet roads, flat land and

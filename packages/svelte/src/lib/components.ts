@@ -1,6 +1,9 @@
 export { default as ModelDetails } from './components/ModelDetails.svelte';
 export { default as AppFooter } from './components/AppFooter.svelte';
 export { default as NotificationCenter } from './components/NotificationCenter.svelte';
+export { default as DiagnosticLogView } from './components/DiagnosticLogView.svelte';
+export { default as LogEntryView } from './components/LogEntryView.svelte';
+export { default as LogPanel } from './components/LogPanel.svelte';
 export { default as PanelHost } from './components/PanelHost.svelte';
 export { default as ShellEnvironment } from './components/ShellEnvironment.svelte';
 export { default as AppHeader } from './components/AppHeader.svelte';
