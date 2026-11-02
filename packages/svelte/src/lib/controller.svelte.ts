@@ -2667,7 +2667,7 @@ export class Controller {
 	};
 
 	/** Above this many buses, reading and indexing the whole operating point takes a noticeable
-	 * fraction of a second (evidence/diagram), so the overview is computed on request instead of
+	 * fraction of a second (docs/evidence/diagram), so the overview is computed on request instead of
 	 * after every solve. */
 	static readonly AUTO_OVERVIEW_MAX_BUSES = 25_000;
 	private overviewSeq = 0;
