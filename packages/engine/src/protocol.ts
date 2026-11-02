@@ -58,6 +58,7 @@ export type EngineRequest =
   | { op: "mc_input_module_json"; input: number }
   | { op: "mc_input_free"; input: number }
   | { op: "mc_pf_session_result"; session: number }
+  | { op: "mc_pf_session_result_tables"; session: number }
   | { op: "mc_pf_session_summary"; session: number }
   | { op: "mc_pf_session_detail"; session: number; query: string }
   | { op: "mc_pf_session_terminal_ids"; session: number }
@@ -134,13 +135,33 @@ export interface SynthPreviewValue {
   branchKv: Float32Array;
 }
 
-/** One engine answer: wasm JSON text, nothing, a numeric array, or a
- * synthetic preview. */
-export type EngineValue = string | null | Float64Array | SynthPreviewValue;
+/** A complete multiconductor result as the engine packs its columns: counts
+ * (iterations, terminals, ports, source reactions), the names as a JSON array,
+ * and one index and one value array in the order `McPfResultBuffers`
+ * documents. `index.ts` unpacks it into `McPfResultTables`. */
+export interface McPfResultBuffersValue {
+  kind: "mc_pf_result_buffers";
+  counts: Uint32Array;
+  strings: string;
+  indices: Uint32Array;
+  values: Float64Array;
+}
+
+/** One engine answer: wasm JSON text, nothing, a numeric array, a synthetic
+ * preview, or packed result columns. */
+export type EngineValue =
+  | string
+  | null
+  | Float64Array
+  | SynthPreviewValue
+  | McPfResultBuffersValue;
 
 /** The buffers an answer moves to the caller instead of copying. */
 export function transferables(value: EngineValue): Transferable[] {
   if (value instanceof Float64Array) return [value.buffer];
+  if (value !== null && typeof value === "object" && value.kind === "mc_pf_result_buffers") {
+    return [value.counts.buffer, value.indices.buffer, value.values.buffer];
+  }
   if (value !== null && typeof value === "object" && value.kind === "synth_preview") {
     return [
       value.busPositions.buffer,
@@ -297,6 +318,20 @@ export function runRequest(
       return null;
     case "mc_pf_session_result":
       return mcPfSession(req.session).result();
+    case "mc_pf_session_result_tables": {
+      const buffers = mcPfSession(req.session).result_tables();
+      try {
+        return {
+          kind: "mc_pf_result_buffers",
+          counts: buffers.counts(),
+          strings: buffers.take_strings(),
+          indices: buffers.take_indices(),
+          values: buffers.take_values(),
+        };
+      } finally {
+        buffers.free();
+      }
+    }
     case "mc_pf_session_summary":
       return mcPfSession(req.session).summary();
     case "mc_pf_session_detail":

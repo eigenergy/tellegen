@@ -77,8 +77,8 @@ pub use mc_pf::{
     solve_mc_ac_pf_instance, solve_mc_module_json, solve_mc_study_json, validate_bmopf_json,
     validate_mc_module, validate_mc_module_json, McComplex, McElementPort, McLoadBranchState,
     McLoadPowerEdit, McPfDetail, McPfDetailQuery, McPfOptions, McPfProfile, McPfResult,
-    McPfSession, McPfSummary, McSourceReaction, McStudySnapshot, McTerminalResult,
-    McVoltageViolation,
+    McPfResultTables, McPfSession, McPfSummary, McSourceReaction, McStudySnapshot,
+    McTerminalResult, McVoltageViolation,
 };
 #[cfg(feature = "sensitivity")]
 pub use plan::{

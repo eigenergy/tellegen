@@ -2,11 +2,14 @@ import { expect, it, vi } from "vitest";
 import {
   BrowserMcPfSession,
   mcPfResultDetail,
+  mcPfResultTables,
   summarizeMcPfResult,
   type McPfResult,
+  type McPfResultTables,
   type McPfSummary,
 } from "../src/index.js";
 import type { EngineHost } from "../src/host.js";
+import { transferables, type McPfResultBuffersValue } from "../src/protocol.js";
 
 const c = (re: number, im: number) => ({ re, im });
 
@@ -132,4 +135,58 @@ it("fetches terminal identities once and terminal arrays on demand", async () =>
     solve_count: 2,
     element_port_total: 3,
   });
+});
+
+it("interns result names once, in row order, for the tables form", () => {
+  const tables = mcPfResultTables(result);
+  expect(tables.strings).toEqual(["b1", "a", "b2", "n", "ld", "load", "l1", "line", "vs"]);
+  expect([...tables.terminalBus]).toEqual([0, 2, 2]);
+  expect([...tables.portElement]).toEqual([4, 6, 6]);
+  expect([...tables.portKind]).toEqual([5, 7, 7]);
+  expect([...tables.portPower.subarray(2, 4)]).toEqual([1200, 240]);
+  expect([...tables.sourceTerminal]).toEqual([1, 3]);
+  expect(tables.iterations).toBe(9);
+});
+
+it("unpacks the engine's two packed buffers into views of the result tables", async () => {
+  const expected = mcPfResultTables(result);
+  // The engine's documented order: index columns, then interleaved value columns.
+  const indices = Uint32Array.from([
+    ...expected.terminalBus, ...expected.terminalName,
+    ...expected.portElement, ...expected.portKind, ...expected.portBranch,
+    ...expected.portBus, ...expected.portTerminal,
+    ...expected.sourceName, ...expected.sourceTerminal,
+  ]);
+  const values = Float64Array.from([
+    ...expected.terminalVoltage, ...expected.terminalCurrent, ...expected.terminalPower,
+    ...expected.portCurrent, ...expected.portPower,
+    ...expected.sourceCurrent, ...expected.sourcePower,
+  ]);
+  const packed: McPfResultBuffersValue = {
+    kind: "mc_pf_result_buffers",
+    counts: Uint32Array.from([9, 3, 3, 2]),
+    strings: JSON.stringify(expected.strings),
+    indices,
+    values,
+  };
+  expect(transferables(packed)).toEqual([packed.counts.buffer, indices.buffer, values.buffer]);
+  const call = vi.fn<EngineHost["call"]>(async (request) => {
+    expect(request).toEqual({ op: "mc_pf_session_result_tables", session: 4 });
+    return packed;
+  });
+  const session = new BrowserMcPfSession({ kind: "worker", call }, 4, summarizeMcPfResult(result, 1));
+  const tables = await session.resultTables();
+  expect(tables.strings).toEqual(expected.strings);
+  expect(tables.iterations).toBe(expected.iterations);
+  for (const key of Object.keys(expected) as (keyof McPfResultTables)[]) {
+    const column = expected[key];
+    if (!(column instanceof Uint32Array || column instanceof Float64Array)) continue;
+    const view = tables[key] as Uint32Array | Float64Array;
+    // Views into the transferred buffers, not copies.
+    expect(view.buffer).toBe(column instanceof Float64Array ? values.buffer : indices.buffer);
+    expect(Array.from(view)).toEqual(Array.from(column));
+  }
+  await expect(
+    new BrowserMcPfSession({ kind: "worker", call: async () => "{}" }, 5, summarizeMcPfResult(result, 1)).resultTables(),
+  ).rejects.toThrow("no result tables");
 });

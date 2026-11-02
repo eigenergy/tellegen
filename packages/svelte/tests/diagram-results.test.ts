@@ -148,7 +148,8 @@ describe('snapshotFromMcPf', () => {
 			port('L1', 'B', '1', 90, -10),
 			port('L1', 'B', '2', 110, -10.5),
 			port('L1', 'B', '3', 176, -11.4)
-		]
+		],
+		source_reactions: []
 	} as unknown as McPfResult;
 	const buses = [
 		{
@@ -389,7 +390,8 @@ describe('graphInputs and live-session terminals', () => {
 				port('switch', 'A', 99),
 				port('line', 'B', -4.9),
 				port('switch', 'B', -99)
-			]
+			],
+			source_reactions: []
 		} as unknown as McPfResult;
 		const branch = {
 			id: 'X1',
@@ -432,7 +434,8 @@ describe('equipment that is not a plain two-terminal branch', () => {
 				terminal('3', polar(200, 120)),
 				terminal('4', polar(0, 0))
 			],
-			element_ports: []
+			element_ports: [],
+			source_reactions: []
 		} as unknown as McPfResult;
 		const bus = {
 			id: 'B',
@@ -461,7 +464,8 @@ describe('equipment that is not a plain two-terminal branch', () => {
 				port('T1', 'transformer', 'LV', 'a', -10),
 				port('T1', 'transformer', 'LV', 'b', -9.5),
 				port('T1', 'transformer', 'LV', 'n', 0)
-			]
+			],
+			source_reactions: []
 		} as unknown as McPfResult;
 		const rating = { kind: 'apparent' as const, byBus: { HV: 25e3, LV: 25e3 } };
 		const edge = (from: string, to: string, fromTerminals: string[], toTerminals: string[]) => ({
@@ -542,7 +546,8 @@ describe('phase–ground limits', () => {
 	const result = {
 		iterations: 3,
 		terminals: [...phases('G'), ...phases('H'), ...phases('K')],
-		element_ports: []
+		element_ports: [],
+		source_reactions: []
 	} as unknown as McPfResult;
 	const inputs = graphInputs(graph);
 	const s = snapshotFromMcPf(result, inputs.buses, inputs.branches);
@@ -701,7 +706,8 @@ describe('non-uniform phase–phase limits', () => {
 			terminal(b, 'b', -120),
 			terminal(b, 'c', 120)
 		]),
-		element_ports: []
+		element_ports: [],
+		source_reactions: []
 	} as unknown as McPfResult;
 	const inputs = graphInputs(graph);
 	const s = snapshotFromMcPf(result, inputs.buses, inputs.branches);

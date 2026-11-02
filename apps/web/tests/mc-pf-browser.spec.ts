@@ -27,6 +27,8 @@ test('real browser worker solves raw and typed multiconductor PF', async ({ page
 		oracle_terminal_count: number;
 		raw_terminal_count: number;
 		typed_terminal_count: number;
+		tables_mismatch: string | null;
+		tables_port_count: number;
 		error?: string;
 	};
 	expect(result.error).toBeUndefined();
@@ -40,6 +42,9 @@ test('real browser worker solves raw and typed multiconductor PF', async ({ page
 	expect(result.max_oracle_voltage_error).toBeLessThan(1e-5);
 	expect(result.max_typed_voltage_error).toBeLessThan(1e-10);
 	expect(result.invalid_rejected).toBe(true);
+	// A live session's result columns, moved as typed arrays, equal its JSON result exactly.
+	expect(result.tables_mismatch).toBeNull();
+	expect(result.tables_port_count).toBeGreaterThan(0);
 	expect(workers.some((url) => url.includes('worker'))).toBe(true);
 	expect(pageErrors).toEqual([]);
 });

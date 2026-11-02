@@ -19,6 +19,7 @@ import {
 	type IngestedDistCase,
 	type McPfCallTiming,
 	type McPfResult,
+	type McPfResultTables,
 	type McPfSummary,
 	type McLoadBranchState,
 	type McLoadPowerEdit,
@@ -300,9 +301,12 @@ export class MulticonductorCase {
 	/** Bumped to ask the views to bring the current selection into view again (an issue clicked
 	 * that is already selected). */
 	revealSeq = $state(0);
-	/** The full operating point read for whole-network views (overview, schematic); null until read,
-	 * and cleared when a large case's operating point changes. */
-	overviewResult: McPfResult | null = $state.raw<McPfResult | null>(null);
+	/** The full operating point read for whole-network views (overview, schematic): a stored
+	 * result, or a live session's as columns. Null until read, and cleared when a large case's
+	 * operating point changes. */
+	overviewResult: McPfResult | McPfResultTables | null = $state.raw<
+		McPfResult | McPfResultTables | null
+	>(null);
 	overviewLoading = $state(false);
 	/** The graph's buses and branches as the overview and the diagram read them: rebuilt when the
 	 * graph is replaced, never after a solve. Both views read this one copy. */

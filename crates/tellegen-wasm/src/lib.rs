@@ -489,6 +489,15 @@ impl McPfSession {
         serde_json::to_string(&self.0.build_result().map_err(jserr)?).map_err(jserr)
     }
 
+    /// The complete result as packed columns (see [`McPfResultBuffers`]), for
+    /// whole-network views: a few typed arrays instead of the JSON of
+    /// [`McPfSession::result`], which grows by an object per port.
+    pub fn result_tables(&self) -> Result<McPfResultBuffers, JsError> {
+        Ok(McPfResultBuffers::pack(
+            self.0.result_tables().map_err(jserr)?,
+        ))
+    }
+
     /// Editable load branches with base and current P/Q values.
     pub fn load_branches(&self) -> Result<String, JsError> {
         serde_json::to_string(&self.0.load_branches()).map_err(jserr)
@@ -557,6 +566,105 @@ impl McPfSession {
         // converged result. Avoid the replay validator here: it prepares a
         // separate network and would defeat retained-factor interaction.
         serde_json::to_string(&snapshot).map_err(jserr)
+    }
+}
+
+/// [`tellegen::McPfResultTables`] packed into one index and one value array,
+/// so the host moves two buffers instead of sixteen columns. With `t` terminals,
+/// `p` ports, and `s` source reactions (from `counts`), `indices` holds
+/// terminal bus and terminal name (`t` each), port element, kind, branch, bus,
+/// and terminal (`p` each), then source name and terminal (`s` each).
+/// `values` holds interleaved `[re, im]` terminal voltage, current, and power
+/// (`2t` each), port current and power (`2p` each), then source current and
+/// power (`2s` each). Each part is taken once; then `free()` the object.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub struct McPfResultBuffers {
+    counts: Vec<u32>,
+    strings: Vec<String>,
+    indices: Vec<u32>,
+    values: Vec<f64>,
+}
+
+#[cfg(feature = "mc-pf")]
+impl McPfResultBuffers {
+    fn pack(tables: tellegen::McPfResultTables) -> Self {
+        let counts = [
+            tables.iterations,
+            tables.terminal_count(),
+            tables.port_count(),
+            tables.source_count(),
+        ]
+        .map(|count| count as u32)
+        .to_vec();
+        let tellegen::McPfResultTables {
+            strings,
+            terminal_bus,
+            terminal_name,
+            terminal_voltage,
+            terminal_current,
+            terminal_power,
+            port_element,
+            port_kind,
+            port_branch,
+            port_bus,
+            port_terminal,
+            port_current,
+            port_power,
+            source_name,
+            source_terminal,
+            source_current,
+            source_power,
+            ..
+        } = tables;
+        let index_columns = [
+            terminal_bus,
+            terminal_name,
+            port_element,
+            port_kind,
+            port_branch,
+            port_bus,
+            port_terminal,
+            source_name,
+            source_terminal,
+        ];
+        let value_columns = [
+            terminal_voltage,
+            terminal_current,
+            terminal_power,
+            port_current,
+            port_power,
+            source_current,
+            source_power,
+        ];
+        Self {
+            counts,
+            strings,
+            indices: index_columns.concat(),
+            values: value_columns.concat(),
+        }
+    }
+}
+
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+impl McPfResultBuffers {
+    /// Iterations, terminals, ports, and source reactions.
+    pub fn counts(&self) -> Vec<u32> {
+        self.counts.clone()
+    }
+
+    /// The names the index array refers to, as a JSON array.
+    pub fn take_strings(&mut self) -> Result<String, JsError> {
+        serde_json::to_string(&std::mem::take(&mut self.strings)).map_err(jserr)
+    }
+
+    pub fn take_indices(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.indices)
+    }
+
+    pub fn take_values(&mut self) -> Vec<f64> {
+        std::mem::take(&mut self.values)
     }
 }
 
@@ -2089,6 +2197,73 @@ mpc.gencost = [
         assert_eq!(bmopf.kind, "module");
         assert_eq!(bmopf.payload["model"], "multiconductor");
         assert_eq!(bmopf.payload["n_bus"], 2);
+    }
+
+    #[cfg(feature = "mc-pf")]
+    #[test]
+    fn result_buffers_pack_the_tables_in_the_documented_order() {
+        let text = include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_dy_xfmr.json");
+        let session = tellegen::McPfSession::new(
+            tellegen::parse_bmopf_instance(text).unwrap(),
+            tellegen::McPfOptions::default(),
+        )
+        .unwrap();
+        let tables = session.result_tables().unwrap();
+        let mut buffers = McPfResultBuffers::pack(tables.clone());
+        let (t, p, s) = (
+            tables.terminal_count(),
+            tables.port_count(),
+            tables.source_count(),
+        );
+        assert_eq!(
+            buffers.counts(),
+            vec![tables.iterations as u32, t as u32, p as u32, s as u32]
+        );
+        let strings: Vec<String> =
+            serde_json::from_str(&buffers.take_strings().ok().unwrap()).unwrap();
+        assert_eq!(strings, tables.strings);
+        let indices = buffers.take_indices();
+        let values = buffers.take_values();
+        let mut at = 0;
+        let mut next = |len: usize| {
+            at += len;
+            at - len..at
+        };
+        for column in [&tables.terminal_bus, &tables.terminal_name] {
+            assert_eq!(&indices[next(t)], column.as_slice());
+        }
+        for column in [
+            &tables.port_element,
+            &tables.port_kind,
+            &tables.port_branch,
+            &tables.port_bus,
+            &tables.port_terminal,
+        ] {
+            assert_eq!(&indices[next(p)], column.as_slice());
+        }
+        for column in [&tables.source_name, &tables.source_terminal] {
+            assert_eq!(&indices[next(s)], column.as_slice());
+        }
+        assert_eq!(at, indices.len());
+        let mut at = 0;
+        let mut next = |len: usize| {
+            at += 2 * len;
+            at - 2 * len..at
+        };
+        for column in [
+            &tables.terminal_voltage,
+            &tables.terminal_current,
+            &tables.terminal_power,
+        ] {
+            assert_eq!(&values[next(t)], column.as_slice());
+        }
+        for column in [&tables.port_current, &tables.port_power] {
+            assert_eq!(&values[next(p)], column.as_slice());
+        }
+        for column in [&tables.source_current, &tables.source_power] {
+            assert_eq!(&values[next(s)], column.as_slice());
+        }
+        assert_eq!(at, values.len());
     }
 
     #[cfg(feature = "sensitivity")]

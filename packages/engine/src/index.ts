@@ -1037,6 +1037,155 @@ export function summarizeMcPfResult(
   };
 }
 
+/** The terminals, equipment ports, and source reactions of an
+ * {@link McPfResult} as columns, row for row in the same order. Names are
+ * indices into `strings`, each stored once; complex values are interleaved
+ * `[re, im]` (volts, amperes, VA). A whole-city operating point is a few
+ * typed arrays this way, where the object form holds an object and several
+ * strings per port. */
+export interface McPfResultTables {
+  iterations: number;
+  strings: string[];
+  terminalBus: Uint32Array;
+  terminalName: Uint32Array;
+  terminalVoltage: Float64Array;
+  /** Current injected into the network. */
+  terminalCurrent: Float64Array;
+  terminalPower: Float64Array;
+  portElement: Uint32Array;
+  portKind: Uint32Array;
+  portBranch: Uint32Array;
+  portBus: Uint32Array;
+  portTerminal: Uint32Array;
+  /** Current into the element. */
+  portCurrent: Float64Array;
+  portPower: Float64Array;
+  sourceName: Uint32Array;
+  sourceTerminal: Uint32Array;
+  /** Current injected into the network. */
+  sourceCurrent: Float64Array;
+  sourcePower: Float64Array;
+}
+
+/** The tables of a stored full result, with names interned in row order as
+ * the engine does, so both describe one operating point identically. */
+export function mcPfResultTables(result: McPfResult): McPfResultTables {
+  const strings: string[] = [];
+  const index = new Map<string, number>();
+  const name = (value: string) => {
+    let at = index.get(value);
+    if (at === undefined) {
+      at = strings.push(value) - 1;
+      index.set(value, at);
+    }
+    return at;
+  };
+  const complex = (column: Float64Array, row: number, value: McComplex) => {
+    column[2 * row] = value.re;
+    column[2 * row + 1] = value.im;
+  };
+  const t = result.terminals.length;
+  const p = result.element_ports.length;
+  const s = result.source_reactions.length;
+  const tables: McPfResultTables = {
+    iterations: result.iterations,
+    strings,
+    terminalBus: new Uint32Array(t),
+    terminalName: new Uint32Array(t),
+    terminalVoltage: new Float64Array(2 * t),
+    terminalCurrent: new Float64Array(2 * t),
+    terminalPower: new Float64Array(2 * t),
+    portElement: new Uint32Array(p),
+    portKind: new Uint32Array(p),
+    portBranch: new Uint32Array(p),
+    portBus: new Uint32Array(p),
+    portTerminal: new Uint32Array(p),
+    portCurrent: new Float64Array(2 * p),
+    portPower: new Float64Array(2 * p),
+    sourceName: new Uint32Array(s),
+    sourceTerminal: new Uint32Array(s),
+    sourceCurrent: new Float64Array(2 * s),
+    sourcePower: new Float64Array(2 * s),
+  };
+  result.terminals.forEach((row, k) => {
+    tables.terminalBus[k] = name(row.bus);
+    tables.terminalName[k] = name(row.terminal);
+    complex(tables.terminalVoltage, k, row.voltage);
+    complex(tables.terminalCurrent, k, row.current_into_network);
+    complex(tables.terminalPower, k, row.power_into_network);
+  });
+  result.element_ports.forEach((port, k) => {
+    tables.portElement[k] = name(port.element);
+    tables.portKind[k] = name(port.kind);
+    tables.portBranch[k] = port.branch;
+    tables.portBus[k] = name(port.bus);
+    tables.portTerminal[k] = name(port.terminal);
+    complex(tables.portCurrent, k, port.current_into_element);
+    complex(tables.portPower, k, port.power_into_element);
+  });
+  result.source_reactions.forEach((source, k) => {
+    tables.sourceName[k] = name(source.source);
+    tables.sourceTerminal[k] = name(source.terminal);
+    complex(tables.sourceCurrent, k, source.current_into_network);
+    complex(tables.sourcePower, k, source.power_into_network);
+  });
+  return tables;
+}
+
+/** Views into the engine's packed columns, in the order its
+ * `McPfResultBuffers` documents. No values are copied. */
+function unpackResultTables(value: EngineValue): McPfResultTables {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    value instanceof Float64Array ||
+    value.kind !== "mc_pf_result_buffers"
+  ) {
+    throw new Error("engine returned no result tables");
+  }
+  const [iterations, t, p, s] = value.counts;
+  let at = 0;
+  const indices = (rows: number) => value.indices.subarray(at, (at += rows));
+  const terminalBus = indices(t);
+  const terminalName = indices(t);
+  const portElement = indices(p);
+  const portKind = indices(p);
+  const portBranch = indices(p);
+  const portBus = indices(p);
+  const portTerminal = indices(p);
+  const sourceName = indices(s);
+  const sourceTerminal = indices(s);
+  at = 0;
+  const values = (rows: number) => value.values.subarray(at, (at += 2 * rows));
+  const terminalVoltage = values(t);
+  const terminalCurrent = values(t);
+  const terminalPower = values(t);
+  const portCurrent = values(p);
+  const portPower = values(p);
+  const sourceCurrent = values(s);
+  const sourcePower = values(s);
+  return {
+    iterations,
+    strings: JSON.parse(value.strings) as string[],
+    terminalBus,
+    terminalName,
+    terminalVoltage,
+    terminalCurrent,
+    terminalPower,
+    portElement,
+    portKind,
+    portBranch,
+    portBus,
+    portTerminal,
+    portCurrent,
+    portPower,
+    sourceName,
+    sourceTerminal,
+    sourceCurrent,
+    sourcePower,
+  };
+}
+
 /** The detail page {@link BrowserMcPfSession.detail} would return, read from
  * a stored full result (a saved Study, or a solve without a session). */
 export function mcPfResultDetail(
@@ -1108,6 +1257,18 @@ export class BrowserMcPfSession {
       expectText(
         await this.host.call({ op: "mc_pf_session_summary", session: this.handle }),
       ),
+    );
+  }
+
+  /** The complete terminal and equipment result as columns: what
+   * {@link result} holds, moved as a few typed arrays instead of JSON. A
+   * whole-network view of a large case reads the operating point this way. */
+  async resultTables(): Promise<McPfResultTables> {
+    return unpackResultTables(
+      await this.host.call({
+        op: "mc_pf_session_result_tables",
+        session: this.handle,
+      }),
     );
   }
 
