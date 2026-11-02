@@ -103,6 +103,92 @@ describe('buildGeographicView', () => {
 		expect(loadBus.attachmentKinds).toContain('load');
 		expect(loadBus.terminalAttachments['1'][0].kind).toBe('load');
 	});
+
+	it('routes an edge by id or endpoints, ignoring case, only when exactly one edge matches', () => {
+		const bus = (id: string, xy: [number, number]) => ({
+			id,
+			terminals: ['1'],
+			grounded: [],
+			xy,
+			load_kw: 0,
+			gen_kw: 0,
+			has_source: false
+		});
+		const edge = (id: string, from: string, to: string) => ({
+			kind: 'line' as const,
+			id,
+			from,
+			to,
+			conductors: [['1', '1']] as [string, string][],
+			closed: true,
+			n_phases: 1
+		});
+		const routed: DistGraph = {
+			buses: [bus('a', [0, 0]), bus('b', [1, 0]), bus('c', [1, 1])],
+			edges: [
+				edge('e1', 'a', 'b'),
+				edge('e2', 'b', 'c'),
+				edge('e3', 'b', 'c'),
+				edge('e4', 'a', 'c'),
+				edge('e5', 'c', 'c')
+			]
+		};
+		const route = (properties: Record<string, unknown>, coordinates: number[][]) => ({
+			properties,
+			geometry: { type: 'LineString', coordinates }
+		});
+		const layer = JSON.stringify({
+			features: [
+				route({ uid: 'E1' }, [
+					[0, 0],
+					[0.5, 0.1],
+					[1, 0]
+				]),
+				// e2 and e3 are parallel, so their shared endpoints name neither.
+				route({ from: 'C', to: 'B' }, [
+					[1, 1],
+					[1.1, 0.5],
+					[1, 0]
+				]),
+				// Endpoints stated against the edge's direction reverse the path.
+				route({ from: 'C', to: 'a' }, [
+					[1, 1],
+					[0.4, 0.6],
+					[0, 0]
+				]),
+				// A self loop matches once, not once per direction.
+				route({ from: 'c', to: 'C' }, [
+					[1, 1],
+					[1.2, 1.2],
+					[1, 1]
+				]),
+				// An id that is not a string matches nothing.
+				route({ id: 4, from: 'a', to: 'b' }, [
+					[0, 0],
+					[9, 9]
+				])
+			]
+		});
+		const paths = Object.fromEntries(
+			buildGeographicView(routed, layer).edges.map((e) => [e.id, e.path])
+		);
+		expect(paths.e1).toEqual([
+			[0, 0],
+			[0.5, 0.1],
+			[1, 0]
+		]);
+		expect(paths.e2).toEqual([
+			[1, 0],
+			[1, 1]
+		]);
+		expect(paths.e3).toEqual(paths.e2);
+		expect(paths.e4).toEqual([
+			[0, 0],
+			[0.4, 0.6],
+			[1, 1]
+		]);
+		expect(paths.e5).toHaveLength(3);
+	});
 });
 
 describe('placeMultiView', () => {
