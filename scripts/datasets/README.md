@@ -4,7 +4,7 @@
 
 The current main-island derivative retains all six feeders and 15,299 loads,
 with five unsupplied buses and three lines removed. After reproducing it using
-`evidence/studies/texas7k-reconversion/README.md`, prepare the shipping bundle:
+`docs/evidence/studies/texas7k-reconversion/README.md`, prepare the shipping bundle:
 
 ```sh
 python3 scripts/datasets/stage-texas7k.py \
@@ -42,7 +42,7 @@ The source lock pins committed input bytes and companion notices/options.
 No download, commit, push, or deployment is performed by this script.
 
 The preparation runs the reduction and paired WASM verification in
-`evidence/studies/texas7k-reduction`. Failed validation leaves the existing
+`docs/evidence/studies/texas7k-reduction`. Failed validation leaves the existing
 manifest unchanged. Other case entries are preserved. Bundles include checksums,
 source revision, provenance, licenses and validation reports; their names hash
 the whole bundle, including run-specific timing evidence. Network module bytes

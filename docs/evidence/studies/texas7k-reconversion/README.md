@@ -134,19 +134,19 @@ vendored `powerio-dist/schemas/bmopf/0.2.0/bmopf.schema.json`.
 From this checkout, select the native validation checkout explicitly:
 
 ```sh
-python evidence/studies/texas7k-reconversion/build-runner.py \
+python docs/evidence/studies/texas7k-reconversion/build-runner.py \
   --tellegen-root /path/to/tellegen-at-7f1852cc \
   --build-dir /tmp/texas7k-runner-build \
   --target-dir /tmp/texas7k-runner-target
 
-python evidence/studies/texas7k-reconversion/rerun.py \
+python docs/evidence/studies/texas7k-reconversion/rerun.py \
   --bmopf-root /path/to/BMOPFDraftData \
   --workdir /tmp/texas7k-fresh-run \
   --powerio /path/to/powerio-0.11.7/target/release/powerio \
   --schema /path/to/powerio-0.11.7/powerio-dist/schemas/bmopf/0.2.0/bmopf.schema.json \
   --runner /tmp/texas7k-runner-target/release/texas7k-energized-runner
 
-python evidence/studies/texas7k-reconversion/audit-connectivity.py \
+python docs/evidence/studies/texas7k-reconversion/audit-connectivity.py \
   --snapshot /tmp/texas7k-fresh-run/output/fixed_snapshot.dss \
   --normalized-snapshot /tmp/texas7k-fresh-run/output/normalized_snapshot.dss \
   --bmopf /tmp/texas7k-fresh-run/output/p1uhs0_1247.bmopf.json \
@@ -166,7 +166,7 @@ ordinary `mc_pf` example and the full-case validation runner should use the
 same native Tellegen checkout and PowerIO 0.11.7 dependencies:
 
 ```sh
-python evidence/studies/texas7k-reconversion/extract-main-island.py \
+python docs/evidence/studies/texas7k-reconversion/extract-main-island.py \
   --source /tmp/texas7k-fresh-run/output/p1uhs0_1247.bmopf.json \
   --output /tmp/texas7k-main-island \
   --schema /path/to/powerio-0.11.7/powerio-dist/schemas/bmopf/0.2.0/bmopf.schema.json \

@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EVIDENCE = ROOT / 'evidence/studies/texas7k-reduction'
+EVIDENCE = ROOT / 'docs/evidence/studies/texas7k-reduction'
 LOCK = Path(__file__).with_name('texas7k-source.json')
 MAIN_ISLAND_LOCK = Path(__file__).with_name('texas7k-main-island-source.json')
 CASE_ID = 'texas7k-p1uhs0_1247'

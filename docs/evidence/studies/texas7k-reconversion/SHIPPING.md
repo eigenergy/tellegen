@@ -73,3 +73,28 @@ module bytes are reproducible with the same inputs and WASM artifact.
 
 This evidence covers local operator-data preparation. Production deployment
 is a separate operation.
+
+## Refreshed integration — 3 November 2026
+
+The #169 refresh includes #268's retained-input and qualification changes and
+main through `70754a7`. The existing checksum-pinned main-island source was
+staged again with the matching engine WASM. The engine Rust/WASM source is
+unchanged from the tested #268 integration at `680f6a8`.
+
+`shipping-wasm-validation-2026-11-03.json` records the current artifact hashes
+and the paired original/compact checks. All PF result fields remain exactly
+equal between the two representations, with 55,972 terminals, 128,426 ports,
+23 iterations and one factorization. Every input bus coordinate matches;
+display differences remain limited to the optional per-point source tags.
+The result hash includes the new load-model qualification fields and current
+solver defaults, so it is separate from the historical 30 October report.
+
+This is a fresh local staging check. Production data is managed separately.
+
+The production-build Chromium acceptance flow also passes against the freshly
+staged native server: hosted loading, UI/WebMCP solves, export, saved reopen,
+rerun and a load edit. The result hash matches the paired WASM report exactly.
+`browser-validation-2026-11-03.json` records the single local run. Timings are
+loopback measurements, not device support guarantees. The memory figure sums
+Chromium process RSS at checkpoints and can count shared pages more than once;
+it is not a continuously measured peak or a WASM heap measurement.

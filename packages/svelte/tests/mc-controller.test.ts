@@ -188,6 +188,12 @@ describe('hosted distribution catalogue', () => {
 		expect(ingest).toHaveBeenCalledWith(new TextEncoder().encode('hosted-input'), 'pio', {
 			retain: true
 		});
+		expect(app.activeMulti?.mcOptions).toMatchObject({
+			voltage_envelope: false,
+			max_iterations: 500,
+			tolerance: 1e-7,
+			absolute_kcl_tolerance: 1e-5
+		});
 		expect(getNetwork).not.toHaveBeenCalled();
 		expect(solve).not.toHaveBeenCalled();
 		const feeder = app.activeMulti!;
@@ -249,8 +255,10 @@ describe('hosted distribution catalogue', () => {
 		const pending = ctrl.activateHostedDistribution(summary.id);
 		await vi.waitFor(() => expect(ingest).toHaveBeenCalled());
 		ctrl.activateMulti(local);
-		complete(payload());
+		const input = { free: vi.fn(), moduleJson: vi.fn() } as unknown as BrowserMcInput;
+		complete({ ...payload(), module_json: undefined, input_retained: true, input });
 		await pending;
+		expect(input.free).toHaveBeenCalledOnce();
 		expect(app.activeMulti).toBe(local);
 		expect(app.multiCases).toEqual([local]);
 		expect(app.error).toBeNull();
@@ -286,13 +294,42 @@ describe('hosted distribution catalogue', () => {
 		const pending = ctrl.activateHostedDistribution(summary.id);
 		await vi.waitFor(() => expect(ingest).toHaveBeenCalled());
 		ctrl.dispose();
-		complete(payload());
+		const input = { free: vi.fn(), moduleJson: vi.fn() } as unknown as BrowserMcInput;
+		complete({ ...payload(), module_json: undefined, input_retained: true, input });
 		await pending;
+		expect(input.free).toHaveBeenCalledOnce();
 		expect(app.multiCases).toEqual([local]);
 		expect(ctrl.loadingHostedDistribution).toBeNull();
 		expect(app.error).toBeNull();
 		await ctrl.activateHostedDistribution(summary.id);
 		expect(getCaseModuleJson).toHaveBeenCalledTimes(1);
+	});
+
+	it('releases retained hosted inputs when the catalogue reloads', async () => {
+		const { app, ctrl, ingest } = hosted();
+		const first = { free: vi.fn(), moduleJson: vi.fn() } as unknown as BrowserMcInput;
+		const second = { free: vi.fn(), moduleJson: vi.fn() } as unknown as BrowserMcInput;
+		ingest.mockResolvedValueOnce({
+			...payload(),
+			module_json: undefined,
+			input: first,
+			input_retained: true
+		});
+		await ctrl.load();
+		expect(app.activeMulti?.mcInput).toBe(first);
+		expect(first.free).not.toHaveBeenCalled();
+		ingest.mockResolvedValueOnce({
+			...payload(),
+			module_json: undefined,
+			input: second,
+			input_retained: true
+		});
+		ctrl.restoreDefaultCases();
+		await ctrl.load();
+		expect(first.free).toHaveBeenCalledOnce();
+		expect(app.activeMulti?.mcInput).toBe(second);
+		ctrl.dispose();
+		expect(second.free).toHaveBeenCalledOnce();
 	});
 
 	it('reports a missing backend without starting a hosted request', async () => {

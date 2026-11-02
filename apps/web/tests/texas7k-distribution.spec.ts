@@ -63,6 +63,16 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	const started = Date.now();
 	await page.goto('/');
 	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'ready');
+	// WebMCP registers before the asynchronous catalogue load completes.
+	await expect
+		.poll(async () => {
+			const listed = await callTool(page, 'list_cases', {});
+			return (
+				listed.ok && listed.data.cases.some((item: { case_id: string }) => item.case_id === id)
+			);
+		})
+		.toBe(true);
+
 	// Case-level navigation also works when the transmission dataset is staged.
 	if (catalogue.some((item: { id: string }) => item.id === 'case7000')) {
 		expect(await callTool(page, 'select_case', { case_id: 'case7000' })).toMatchObject({
@@ -74,10 +84,8 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	} else {
 		expect(await callTool(page, 'select_case', { case_id: id })).toMatchObject({ ok: true });
 	}
-	await expect(
-		page.getByRole('button', { name: 'Solve AC power flow', exact: true })
-	).toBeEnabled();
-	await expect(page.getByText('Geographic coordinates', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
+	await expect(page.getByText('Geographic', { exact: true })).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Dataset and attribution' })).toHaveAttribute(
 		'href',
 		entry.distribution.source_url
@@ -86,7 +94,7 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	console.info('Texas7k: loaded');
 	const loadMs = Date.now() - started;
 	const solveStart = Date.now();
-	await page.getByRole('button', { name: 'Solve AC power flow', exact: true }).click();
+	await page.getByRole('button', { name: 'Run power flow', exact: true }).click();
 	await expect(page.getByRole('table', { name: 'Terminal results', exact: true })).toBeVisible({
 		timeout: 90_000
 	});
@@ -119,7 +127,7 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 	const reference = JSON.parse(
 		await readFile(
 			new URL(
-				'../../../evidence/studies/texas7k-reconversion/shipping-wasm-validation.json',
+				'../../../docs/evidence/studies/texas7k-reconversion/shipping-wasm-validation-2026-11-03.json',
 				import.meta.url
 			),
 			'utf8'

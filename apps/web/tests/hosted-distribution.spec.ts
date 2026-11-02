@@ -32,9 +32,7 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 		throw new Error(`Unexpected balanced/server-compute request: ${path}`);
 	});
 	await page.goto('/');
-	await expect(
-		page.getByRole('button', { name: 'Solve AC power flow', exact: true })
-	).toBeEnabled();
+	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
 	await expect(
 		page.getByRole('application', { name: 'Network diagram', exact: true })
 	).toBeVisible();
@@ -68,7 +66,7 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 		ok: true,
 		data: { case_id: 'feeder-b', selected: true, network_ready: true }
 	});
-	await page.getByRole('button', { name: 'Solve AC power flow', exact: true }).click();
+	await page.getByRole('button', { name: 'Run power flow', exact: true }).click();
 	await expect(page.getByRole('table', { name: 'Terminal results', exact: true })).toBeVisible();
 	const inspected = await callTool(page, 'inspect_case', {});
 	expect(inspected.ok).toBe(true);
@@ -115,9 +113,7 @@ test('hosted distribution cases load, solve, remain unique in WebMCP, and restor
 	expect(listed.data.cases).toHaveLength(2);
 	await page.getByRole('button', { name: 'Remove Hosted feeder-b', exact: true }).click();
 	await page.reload();
-	await expect(
-		page.getByRole('button', { name: 'Solve AC power flow', exact: true })
-	).toBeEnabled();
+	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
 	await expect(page.locator('.case-activate').filter({ hasText: 'Hosted feeder-b' })).toHaveCount(
 		0
 	);

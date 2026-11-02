@@ -19,7 +19,6 @@ import {
 	type Formulation,
 	type IngestedDistCase,
 	type McPfCallTiming,
-	type McPfOptions,
 	type McPfResult,
 	type McPfResultTables,
 	type McPfSummary,

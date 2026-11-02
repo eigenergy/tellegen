@@ -14,3 +14,7 @@ multiconductor exports keep large studies within the replay input limit.
 
 Cancel hosted requests on controller disposal, discard late ingest completions,
 and report missing backends without starting a request.
+
+Keep hosted inputs parsed in the engine and initialize the shared solver settings
+from catalogue defaults, including saved-study replay. Free retained inputs when
+hosted requests are superseded or the catalogue is reloaded.

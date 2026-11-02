@@ -7,7 +7,7 @@
   "powerio_version": "0.11.7",
   "powerio_release_commit": "d104aa5b47fa436b0eb8cf833c2c32ab43b2f704",
   "full_conversion_sha256": "1e78fc25de0d6d95e6c61e5ad7f6ff38e28b8057fb1fef8c1108805d5744df37",
-  "preparation_evidence": "evidence/studies/texas7k-reconversion/README.md",
+  "preparation_evidence": "docs/evidence/studies/texas7k-reconversion/README.md",
   "files": {
     "p1uhs0_1247.main-island.bmopf.json": "e57d44bf318bdd7a83894b699f0bc6ab3c72dd5721045aceb36a741a2c52e409",
     "License.md": "f1dc639fcbd6466b5820f91f6b6262b90652cd856e2535a2d94f48597a0e45fa",

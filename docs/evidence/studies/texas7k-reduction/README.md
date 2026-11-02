@@ -133,7 +133,7 @@ From the Tellegen repository root, supply the local pilot path:
 ```sh
 pilot=/path/to/BMOPFDraftData/output/Texas7kPilot
 prototype=data/prototypes/texas7k-reduced
-evidence=evidence/studies/texas7k-reduction
+evidence=docs/evidence/studies/texas7k-reduction
 
 python3 "$evidence/reduce.py" "$pilot/p1uhs0_1247.bmopf.json" "$prototype"
 cargo build --release --locked -p tellegen --example mc_pf --features mc-pf
