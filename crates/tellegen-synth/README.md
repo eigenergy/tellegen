@@ -60,3 +60,18 @@ map preview between stages, for hosts that show progress or cancel.
 Features: `schema` derives JSON Schema for the generated TypeScript
 types; `embedded-places` bundles `data/populated_places.json` for the
 CLI and offline tests.
+
+## Related
+
+- [MapToGrid](https://maptogrid.com) runs this generator in the browser
+  through `@tellegen/engine/synth`. The `tellegen generate` command runs it
+  from the command line with the same request and seed, and writes the module,
+  the report, a GeoJSON layout and any PowerIO case format.
+- Every module this crate writes is a PowerIO network, so PowerIO's Rust,
+  Python, Julia and C interfaces read it and convert it to MATPOWER, PSS/E,
+  pandapower, PowerModels, XIIDM and the other formats PowerIO writes.
+- [`powerio-synth`](https://crates.io/crates/powerio-synth) generates abstract
+  topologies (tree, lattice, PEGASE-like mesh) without loads, generators or
+  geography, for format and matrix stress tests. This crate generates
+  geo-referenced grids with demand, generation and voltage levels, validated
+  by the tellegen engine.

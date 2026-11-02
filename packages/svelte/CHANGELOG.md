@@ -1,5 +1,25 @@
 # @tellegen/svelte
 
+## 0.4.7
+
+### Patch Changes
+
+- [#280](https://github.com/eigenergy/tellegen/pull/280) [`962eaec`](https://github.com/eigenergy/tellegen/commit/962eaec2d51a8487758c878cf2bdf0d274dcfdc5) Thanks [@samtalki](https://github.com/samtalki)! - Hide the far side of the globe by culling past the horizon in the shader, and draw the overlay on top again. 0.4.6's depth test against maplibre's globe also cut away parts of a network facing the camera. `TellegenMap` adds the horizon extension to its own layers and to `extraLayers`.
+
+## 0.4.6
+
+### Patch Changes
+
+- [#277](https://github.com/eigenergy/tellegen/pull/277) [`fa48812`](https://github.com/eigenergy/tellegen/commit/fa48812d3a8c883e779108cffd132f57008febe7) Thanks [@samtalki](https://github.com/samtalki)! - On the globe, a network on the far hemisphere no longer draws through the earth. `TellegenMap`'s overlay depth-tests against the globe in globe projection and still draws on top of the flat map.
+
+## 0.4.5
+
+### Patch Changes
+
+- [#273](https://github.com/eigenergy/tellegen/pull/273) [`5e9b3a8`](https://github.com/eigenergy/tellegen/commit/5e9b3a8a5b1ef616091366e53ce7059d97162d79) Thanks [@samtalki](https://github.com/samtalki)! - Add a structured log of errors and engine findings. `app.log` records what PowerIO reported while reading a case or a geographic layer, what each solve reported, what each export's writer reported, and every `app.error`, with severity, step, source, code, file, element and buses. `DiagnosticLogView` shows it grouped by step and file with filters, Copy and Download; the default shell adds a "Log" panel, and case import notes now list their findings as rows. `Solution` carries the solve's `diagnostics` (islands, HVDC transfers), which the browser Study already returned.
+- Updated dependencies [[`5e9b3a8`](https://github.com/eigenergy/tellegen/commit/5e9b3a8a5b1ef616091366e53ce7059d97162d79)]:
+  - @tellegen/engine@0.4.6
+
 ## 0.4.4
 
 ### Patch Changes

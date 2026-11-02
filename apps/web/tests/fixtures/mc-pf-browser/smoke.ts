@@ -1,4 +1,10 @@
-import { solveMcBmopf, solveMcModule } from '@tellegen/engine';
+import {
+	createMcPfSession,
+	mcPfResultTables,
+	solveMcBmopf,
+	solveMcModule,
+	type McPfResultTables
+} from '@tellegen/engine';
 
 type Complex = { re: number; im: number };
 type Terminal = { bus: string; terminal: string; voltage: Complex };
@@ -46,6 +52,11 @@ async function main() {
 		maxOracleError = Math.max(maxOracleError, distance(terminal.voltage, expected.voltage));
 		maxTypedError = Math.max(maxTypedError, distance(terminal.voltage, typedTerminal.voltage));
 	}
+	// A live session's columns hold its full result value for value.
+	const session = await createMcPfSession(moduleJson, options);
+	const [tables, full] = await Promise.all([session.resultTables(), session.result()]);
+	session.free();
+	const tablesMismatch = compareTables(tables, mcPfResultTables(full));
 	const invalid = JSON.parse(raw) as { load: Record<string, { model?: string }> };
 	const firstLoad = Object.values(invalid.load)[0];
 	firstLoad.model = 'unsupported_model';
@@ -64,9 +75,42 @@ async function main() {
 		oracle_terminal_count: oracleTerminals.length,
 		raw_terminal_count: actual.size,
 		typed_terminal_count: typed.size,
-		invalid_rejected: invalidRejected
+		invalid_rejected: invalidRejected,
+		tables_mismatch: tablesMismatch,
+		tables_port_count: tables.portElement.length
 	};
 	if (resultNode) resultNode.textContent = JSON.stringify(payload);
+}
+
+/** The first column that differs, or null when every value is identical. */
+function compareTables(actual: McPfResultTables, expected: McPfResultTables): string | null {
+	for (const key of Object.keys(expected) as (keyof McPfResultTables)[]) {
+		const a = actual[key];
+		const e = expected[key];
+		const same = equalValue(a, e);
+		if (!same) return key;
+	}
+	return null;
+}
+
+/** Metadata is structured JSON; numeric columns still compare every value exactly. */
+function equalValue(actual: unknown, expected: unknown): boolean {
+	if (ArrayBuffer.isView(expected) || Array.isArray(expected)) {
+		if (!(ArrayBuffer.isView(actual) || Array.isArray(actual))) return false;
+		const a = actual as ArrayLike<unknown>;
+		const e = expected as ArrayLike<unknown>;
+		return a.length === e.length && Array.from(e).every((value, k) => equalValue(a[k], value));
+	}
+	if (expected !== null && typeof expected === 'object') {
+		if (actual === null || typeof actual !== 'object') return false;
+		const a = actual as Record<string, unknown>;
+		const e = expected as Record<string, unknown>;
+		return (
+			Object.keys(a).length === Object.keys(e).length &&
+			Object.keys(e).every((key) => equalValue(a[key], e[key]))
+		);
+	}
+	return Object.is(actual, expected);
 }
 
 function distance(left: Complex, right: Complex): number {

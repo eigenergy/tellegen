@@ -1,7 +1,7 @@
 <script lang="ts">
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import { tick, untrack } from 'svelte';
-	import type { Layer, PickingInfo } from '@deck.gl/core';
+	import type { Layer, LayerExtension, PickingInfo } from '@deck.gl/core';
 	import type { IconLayer, IconLayerProps, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 	import type { MapLibreOverlay } from '@deck.gl/maplibre';
 	import type { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
@@ -54,6 +54,7 @@
 		transformerIconAtlas,
 		transformerIconMapping
 	} from './transformer-icon.js';
+	import { createGlobeHorizon, withGlobeHorizon } from './globe-horizon.js';
 	import { foldMapBounds } from './map-bounds.js';
 	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt, rgbaCss } from './format.js';
@@ -239,6 +240,8 @@
 		isHovering: boolean;
 	};
 	let layerCtors = $state.raw<LayerCtors | null>(null);
+	// Hides the far side of the globe; built with the deck modules.
+	let globeHorizon: LayerExtension | null = null;
 
 	interface CaseDisplay {
 		prices: Map<number, number>;
@@ -818,9 +821,10 @@
 	}
 
 	async function loadMapModules() {
-		const [maplibre, deckMap, layers, workerUrl] = await Promise.all([
+		const [maplibre, deckMap, deckCore, layers, workerUrl] = await Promise.all([
 			import('maplibre-gl'),
 			import('@deck.gl/maplibre'),
+			import('@deck.gl/core'),
 			import('@deck.gl/layers'),
 			// A package export, not a relative import: its `development`
 			// condition keeps the worker's `?worker&url` import out of the dev
@@ -832,6 +836,7 @@
 		return {
 			maplibregl: maplibre,
 			MapLibreOverlay: deckMap.MapLibreOverlay,
+			horizon: createGlobeHorizon(deckCore.LayerExtension),
 			PathLayer: layers.PathLayer,
 			ScatterplotLayer: layers.ScatterplotLayer,
 			IconLayer: layers.IconLayer
@@ -844,8 +849,10 @@
 	// maplibre's own WebGL2 context instead of a second canvas, so the page
 	// holds one GL context rather than two. Safari evicts WebGL contexts under
 	// memory and tab pressure, and one context survives that far better; the
-	// deck layers also inherit maplibre's 4096 canvas clamp. The flat positron
-	// basemap writes no depth, so the overlay always draws on top.
+	// deck layers also inherit maplibre's 4096 canvas clamp. The basemap
+	// writes no depth we can trust (on the globe, deck's sphere and maplibre's
+	// disagree near the surface), so the overlay always draws on top, and on
+	// the globe the horizon extension hides what lies on the far side.
 	function buildOverlay(MapLibreOverlay: MapModules['MapLibreOverlay']): MapLibreOverlay {
 		const touch = coarsePointer();
 		return new MapLibreOverlay({
@@ -885,9 +892,10 @@
 		let cleanup = () => {};
 		let cancelled = false;
 		void loadMapModules()
-			.then(({ maplibregl, MapLibreOverlay, PathLayer, ScatterplotLayer, IconLayer }) => {
+			.then(({ maplibregl, MapLibreOverlay, horizon, PathLayer, ScatterplotLayer, IconLayer }) => {
 				if (cancelled) return;
 				layerCtors = { PathLayer, ScatterplotLayer, IconLayer };
+				globeHorizon = horizon;
 				const m = new maplibregl.Map({
 					container,
 					style: spec.primary,
@@ -1145,7 +1153,7 @@
 					updateTriggers: { getFillColor: [study, mode, theme], getRadius: [app.busSizing] }
 				})
 			);
-			overlay.setProps({ layers: [...layers, ...extraLayers] });
+			overlay.setProps({ layers: withGlobeHorizon([...layers, ...extraLayers], globeHorizon) });
 			return;
 		}
 		for (const c of app.cases) {
@@ -1418,7 +1426,7 @@
 				})
 			);
 		}
-		overlay.setProps({ layers: [...layers, ...extraLayers] });
+		overlay.setProps({ layers: withGlobeHorizon([...layers, ...extraLayers], globeHorizon) });
 	});
 
 	$effect(() => {
