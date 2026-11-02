@@ -47,7 +47,7 @@ builds the complete `McPfResult` for export. Whole-network views (the overview
 and the diagram) read `resultTables()` instead: the same terminals, ports, and
 source reactions as columns, moved as two transferable arrays plus one list of
 names. For a 57,757-bus city model that is about 40 MB, against a 166 MiB JSON
-result that took the page heap from 327 to 995 MiB once parsed. Detail pages
+result that the page would parse into an object per terminal and port. Detail pages
 carry the solve count they describe, so a page from an older operating point is
 discarded.
 
