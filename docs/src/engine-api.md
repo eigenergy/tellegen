@@ -37,7 +37,11 @@ The facade has the same methods as the direct exports:
 - `isDisplayFile(name)`: returns true for PowerWorld `.pwd` display files.
 - `classifyJson(bytes)`: asynchronously classifies JSON bytes and returns
   `{ kind, format }`.
-- `ingestJsonDrop(bytes)`: classifies and parses a JSON drop in one call.
+- `ingestJsonDrop(bytes, { retain })`: classifies and parses a JSON drop in one
+  call. With `retain: true`, a multiconductor module stays parsed in the engine
+  and the payload's `input` holds a `BrowserMcInput` in place of `module_json`
+  (see [Multiconductor PF](multiconductor-pf.md)). `ingestDistCaseBytes(bytes,
+  format, { retain })` takes the same option.
 - `ingestCase(bytes, format)`: parses case bytes and returns a retained PowerIO
   module plus derived display data, summary, and topology.
 - `parseDisplay(bytes)`: parses PowerWorld display data for diagram overlays.

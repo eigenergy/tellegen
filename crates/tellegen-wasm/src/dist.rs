@@ -23,6 +23,26 @@ pub(crate) fn ingest_dist_bytes_value(
     bytes: &[u8],
     format: &str,
 ) -> Result<serde_json::Value, String> {
+    let (payload, module) = parse_dist_bytes(bytes, format)?;
+    attach_mc_study_metadata(payload, module)
+}
+
+/// [`ingest_dist_bytes_value`] that keeps the parsed module instead of
+/// serializing it: the payload carries no `module_json`.
+pub(crate) fn ingest_dist_bytes_retained(
+    bytes: &[u8],
+    format: &str,
+) -> Result<(serde_json::Value, PioModule<PioValue>), String> {
+    let (payload, module) = parse_dist_bytes(bytes, format)?;
+    retain_mc_study_metadata(payload, module)
+}
+
+/// Parse a distribution case and build its drop-panel payload, without the
+/// retained-module fields.
+fn parse_dist_bytes(
+    bytes: &[u8],
+    format: &str,
+) -> Result<(serde_json::Value, PioModule<PioValue>), String> {
     let format = crate::source_format_id(format)?;
     // The angle bracketed name marks an anonymous in-memory source; the
     // readers take the case's own name (e.g. the OpenDSS circuit name).
@@ -69,7 +89,7 @@ pub(crate) fn ingest_dist_bytes_value(
         ));
     };
     let payload = ingest_dist_value(network, module.diagnostics())?;
-    attach_mc_study_metadata(payload, module)
+    Ok((payload, module))
 }
 
 /// Parse `text` as a `.pio.json` stored module and, when it holds a
@@ -92,14 +112,26 @@ pub fn ingest_dist_module_bytes(bytes: &[u8]) -> Result<String, String> {
 pub(crate) fn ingest_dist_module_value(
     module: PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
+    let payload = dist_module_payload(&module)?;
+    attach_mc_study_metadata(payload, module)
+}
+
+/// [`ingest_dist_module_value`] that keeps the module instead of serializing it.
+pub(crate) fn ingest_dist_module_retained(
+    module: PioModule<PioValue>,
+) -> Result<(serde_json::Value, PioModule<PioValue>), String> {
+    let payload = dist_module_payload(&module)?;
+    retain_mc_study_metadata(payload, module)
+}
+
+fn dist_module_payload(module: &PioModule<PioValue>) -> Result<serde_json::Value, String> {
     let Some(network) = multiconductor_network(module.value()) else {
         return Err(format!(
             "stored module holds {}, expected a multiconductor network or calculation",
             module.value().type_name()
         ));
     };
-    let payload = ingest_dist_value(network, module.diagnostics())?;
-    attach_mc_study_metadata(payload, module)
+    ingest_dist_value(network, module.diagnostics())
 }
 
 /// Retain the electrical module and report whether its physics can be calculated.
@@ -118,10 +150,35 @@ fn attach_mc_study_metadata(
     .err();
     #[cfg(not(feature = "mc-pf"))]
     let reason = Some("Multiconductor AC power flow is disabled in this build".to_owned());
+    set_mc_study_capability(&mut payload, reason)?;
+    Ok(payload)
+}
+
+/// [`attach_mc_study_metadata`] for a module the engine keeps: the same
+/// capability fields, decided on the parsed module itself rather than on a
+/// serialized copy read back, and `input_retained` in place of `module_json`.
+fn retain_mc_study_metadata(
+    payload: serde_json::Value,
+    module: PioModule<PioValue>,
+) -> Result<(serde_json::Value, PioModule<PioValue>), String> {
+    let mut payload = crate::with_module_metadata(payload, &module);
+    #[cfg(feature = "mc-pf")]
+    let reason = tellegen::validate_mc_module(&module).err();
+    #[cfg(not(feature = "mc-pf"))]
+    let reason = Some("Multiconductor AC power flow is disabled in this build".to_owned());
+    set_mc_study_capability(&mut payload, reason)?;
+    payload["input_retained"] = true.into();
+    Ok((payload, module))
+}
+
+fn set_mc_study_capability(
+    payload: &mut serde_json::Value,
+    reason: Option<String>,
+) -> Result<(), String> {
     payload["mc_pf_supported"] = reason.is_none().into();
     payload["mc_pf_reason"] = serde_json::to_value(&reason).map_err(|e| e.to_string())?;
     payload["mc_pf_unavailable_reason"] = payload["mc_pf_reason"].clone();
-    Ok(payload)
+    Ok(())
 }
 
 pub(crate) fn is_viewable_module_value(value: &PioValue) -> bool {
@@ -733,6 +790,51 @@ mod tests {
     #[cfg(feature = "mc-pf")]
     const PF_BMOPF: &str =
         include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_1ph_line.json");
+
+    #[test]
+    #[cfg(feature = "mc-pf")]
+    fn retained_ingest_reports_the_serialized_payload_and_solves_identically() {
+        for (text, format) in [
+            (PF_BMOPF, "bmopf-json"),
+            (MICRO_BMOPF, "bmopf"),
+            (MICRO_DSS, "dss"),
+        ] {
+            let mut expected = parse(&ingest_dist(text, format).unwrap());
+            let module_json = expected
+                .as_object_mut()
+                .unwrap()
+                .remove("module_json")
+                .expect("serialized payload carries module_json");
+            let (mut retained, module) =
+                ingest_dist_bytes_retained(text.as_bytes(), format).unwrap();
+            assert!(retained.get("module_json").is_none(), "{format}");
+            assert_eq!(retained["input_retained"], true, "{format}");
+            retained.as_object_mut().unwrap().remove("input_retained");
+            // Counts, graph, diagnostics, and the capability decision agree.
+            assert_eq!(retained, expected, "{format}");
+            if expected["mc_pf_supported"] != true {
+                continue;
+            }
+            // Either both inputs solve to the same voltages or both refuse
+            // with the same reason (the micro BMOPF names a missing linecode).
+            let options = tellegen::McPfOptions::default();
+            let kept = tellegen::McPfSession::from_module(&module, options);
+            let read =
+                tellegen::McPfSession::from_module_json(module_json.as_str().unwrap(), options);
+            match (kept, read) {
+                (Ok(kept), Ok(read)) => {
+                    assert_eq!(kept.terminal_ids(), read.terminal_ids(), "{format}");
+                    assert_eq!(
+                        kept.terminal_voltages(),
+                        read.terminal_voltages(),
+                        "{format}"
+                    );
+                }
+                (Err(kept), Err(read)) => assert_eq!(kept, read, "{format}"),
+                (kept, read) => panic!("{format}: {:?} vs {:?}", kept.err(), read.err()),
+            }
+        }
+    }
 
     #[test]
     #[cfg(feature = "mc-pf")]
