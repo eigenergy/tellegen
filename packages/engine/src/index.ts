@@ -288,9 +288,16 @@ export interface DistGraph {
   edges: DistGraphEdge[];
 }
 
-/** Multiconductor case data, terminal graph, and retained PowerIO IR. */
+/** Multiconductor case data, terminal graph, and the retained electrical
+ * input: PowerIO IR text, or with `{ retain: true }` the module kept in the
+ * engine. */
 export interface IngestedDistCase {
   module_json?: string;
+  /** The parsed module kept in the engine, in place of `module_json`. Present
+   * only when the ingest asked to retain it; the caller owns and frees it. */
+  input?: BrowserMcInput;
+  /** Set by the engine when it kept the module rather than serializing it. */
+  input_retained?: boolean;
   geo_layer?: string;
   mc_pf_enabled?: boolean;
   mc_pf_unavailable_reason?: string | null;
@@ -432,16 +439,36 @@ export async function classifyJson(
   );
 }
 
+/** Ingest options for a multiconductor case. */
+export interface IngestRetainOptions {
+  /** Keep the parsed multiconductor module in the engine as `payload.input`
+   * instead of returning it as `module_json`. A whole-city model's IR text is
+   * hundreds of megabytes; a retained module never crosses the boundary as
+   * text, and calculations start from it directly. */
+  retain?: boolean;
+}
+
 /** Classify and ingest one dropped JSON document in the same engine request.
  * This avoids parsing a recognized package once to classify it and again to
  * consume it. */
 export async function ingestJsonDrop(
   bytes: Uint8Array,
+  options: IngestRetainOptions = {},
 ): Promise<IngestedJsonDrop> {
   assertEngineInputBytes(bytes);
-  return JSON.parse(
-    expectText(await engineHost().call({ op: "ingest_json_drop", bytes })),
-  );
+  if (!options.retain) {
+    return JSON.parse(
+      expectText(await engineHost().call({ op: "ingest_json_drop", bytes })),
+    );
+  }
+  const host = engineHost();
+  const input = ++mcInputSeq;
+  const drop = JSON.parse(
+    expectText(await host.call({ op: "ingest_json_drop", bytes, input })),
+  ) as IngestedJsonDrop;
+  const payload = drop.payload;
+  if (payload && "model" in payload) attachInput(payload, host, input);
+  return drop;
 }
 
 /** Asserts a request that must carry a text payload actually did. */
@@ -506,14 +533,82 @@ export async function ingestDistCase(
 export async function ingestDistCaseBytes(
   bytes: Uint8Array,
   format: string,
+  options: IngestRetainOptions = {},
 ): Promise<IngestedDistCase> {
   assertEngineInputBytes(bytes);
-  return JSON.parse(
+  if (!options.retain) {
+    return JSON.parse(
+      expectText(
+        await engineHost().call({ op: "ingest_dist_case_bytes", bytes, format }),
+      ),
+    );
+  }
+  const host = engineHost();
+  const input = ++mcInputSeq;
+  const payload = JSON.parse(
     expectText(
-      await engineHost().call({ op: "ingest_dist_case_bytes", bytes, format }),
+      await host.call({ op: "ingest_dist_case_bytes", bytes, format, input }),
     ),
-  );
+  ) as IngestedDistCase;
+  attachInput(payload, host, input);
+  return payload;
 }
+
+/** Wrap the module the engine kept for `payload` under `handle`. */
+function attachInput(payload: IngestedDistCase, host: EngineHost, handle: number) {
+  if (payload.input_retained) payload.input = new BrowserMcInput(host, handle);
+}
+
+let mcInputSeq = 0;
+
+/** A dropped input must not pin a whole network in the engine: free one
+ * the caller lost without freeing. Explicit {@link BrowserMcInput.free} is
+ * still the normal path. */
+const mcInputCleanup =
+  typeof FinalizationRegistry === "undefined"
+    ? null
+    : new FinalizationRegistry<{ host: EngineHost; handle: number }>(({ host, handle }) => {
+        void host.call({ op: "mc_input_free", input: handle }).catch(() => {});
+      });
+
+/** A parsed multiconductor module kept in the engine. Calculations start
+ * from it without the module crossing the worker boundary; its PowerIO IR
+ * text is built only on request. Valid until {@link free}, or until the
+ * engine worker that holds it is lost. */
+export class BrowserMcInput {
+  #freed = false;
+
+  constructor(
+    /** The engine holding the module; a session from it runs there too. */
+    readonly host: EngineHost,
+    /** The engine-side handle. */
+    readonly handle: number,
+  ) {
+    mcInputCleanup?.register(this, { host, handle }, this);
+  }
+
+  /** The module as PowerIO IR text, for saving, exporting, or attaching
+   * coordinates. */
+  async moduleJson(): Promise<string> {
+    if (this.#freed) throw new Error("multiconductor input was freed");
+    return expectText(
+      await this.host.call({ op: "mc_input_module_json", input: this.handle }),
+    );
+  }
+
+  free(): void {
+    if (this.#freed) return;
+    this.#freed = true;
+    mcInputCleanup?.unregister(this);
+    void this.host
+      .call({ op: "mc_input_free", input: this.handle })
+      .catch(() => {});
+  }
+}
+
+/** A multiconductor calculation input: PowerIO IR text, or a module the
+ * engine keeps. */
+export type McModuleInput = string | BrowserMcInput;
 
 /** A PowerWorld drawing decoded in its declared diagram coordinate system. */
 export type DisplayPreview = ParsedGeoLayer;
@@ -1137,6 +1232,18 @@ export class BrowserMcPfSession {
     );
   }
 
+  /** The current edited input kept in the engine, without writing it as IR
+   * text. The caller owns the returned input. */
+  async input(): Promise<BrowserMcInput> {
+    const input = ++mcInputSeq;
+    await this.host.call({
+      op: "mc_pf_session_input",
+      session: this.handle,
+      input,
+    });
+    return new BrowserMcInput(this.host, input);
+  }
+
   async snapshot(
     studyId: string,
     studyTitle: string,
@@ -1162,24 +1269,35 @@ export class BrowserMcPfSession {
 
 let mcPfSessionSeq = 0;
 
-/** Parse, prepare, factor, and solve a persistent multiconductor PF session. */
+/** Prepare, factor, and solve a persistent multiconductor PF session, from
+ * PowerIO IR text or from a module the engine already keeps. */
 export async function createMcPfSession(
-  moduleJson: string,
+  input: McModuleInput,
   options: McPfOptions = {},
   signal?: AbortSignal,
 ): Promise<BrowserMcPfSession> {
-  assertEngineInputLength(moduleJson.length);
+  if (typeof input === "string") assertEngineInputLength(input.length);
   signal?.throwIfAborted();
-  const host = engineHost();
+  // A kept module lives in one engine worker; its session must too.
+  const host = typeof input === "string" ? engineHost() : input.host;
   const handle = ++mcPfSessionSeq;
   const summary = JSON.parse(
     expectText(
-      await host.call({
-        op: "mc_pf_session_new",
-        session: handle,
-        module_json: moduleJson,
-        options: JSON.stringify(options),
-      }),
+      await host.call(
+        typeof input === "string"
+          ? {
+              op: "mc_pf_session_new",
+              session: handle,
+              module_json: input,
+              options: JSON.stringify(options),
+            }
+          : {
+              op: "mc_pf_session_from_input",
+              session: handle,
+              input: input.handle,
+              options: JSON.stringify(options),
+            },
+      ),
     ),
   ) as McPfSummary;
   const session = new BrowserMcPfSession(host, handle, summary);
@@ -2261,12 +2379,16 @@ export async function generateSynthetic(
 export interface EngineTransport {
   preloadEngine(): Promise<void>;
   classifyJson(bytes: Uint8Array): Promise<JsonDropClassification>;
-  ingestJsonDrop(bytes: Uint8Array): Promise<IngestedJsonDrop>;
+  ingestJsonDrop(
+    bytes: Uint8Array,
+    options?: IngestRetainOptions,
+  ): Promise<IngestedJsonDrop>;
   ingestCase(bytes: Uint8Array, format: string): Promise<IngestedCase>;
   ingestDistCase(text: string, format: string): Promise<IngestedDistCase>;
   ingestDistCaseBytes(
     bytes: Uint8Array,
     format: string,
+    options?: IngestRetainOptions,
   ): Promise<IngestedDistCase>;
   parseDisplay(bytes: Uint8Array): Promise<DisplayPreview>;
   parseGeo(bytes: Uint8Array, hint: string): Promise<ParsedGeoLayer>;
@@ -2302,7 +2424,7 @@ export interface EngineTransport {
     signal?: AbortSignal,
   ): Promise<McStudySnapshot>;
   createMcPfSession(
-    moduleJson: string,
+    input: McModuleInput,
     options?: McPfOptions,
     signal?: AbortSignal,
   ): Promise<BrowserMcPfSession>;

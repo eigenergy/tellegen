@@ -758,7 +758,8 @@ pub fn validate_mc_module_json(text: &str) -> Result<(), String> {
     validate_mc_module(&module)
 }
 
-pub(crate) fn validate_mc_module(module: &powerio::PioModule<PioValue>) -> Result<(), String> {
+/// [`validate_mc_module_json`] for a module already parsed in this process.
+pub fn validate_mc_module(module: &powerio::PioModule<PioValue>) -> Result<(), String> {
     reject_lossy_diagnostics(module)?;
     match module.value() {
         PioValue::MulticonductorNetwork(network) => validate_mc_network(network),

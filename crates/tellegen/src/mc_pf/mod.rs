@@ -12,7 +12,7 @@ mod transformer;
 
 pub use input::{
     parse_bmopf_instance, solve_bmopf_json, solve_mc_module_json, validate_bmopf_json,
-    validate_mc_module_json,
+    validate_mc_module, validate_mc_module_json,
 };
 pub use transformer::{
     build_transformer_yprim, prepare_transformer, ComplexMatrix, PreparedTransformer,
@@ -395,20 +395,39 @@ impl McPfSession {
     /// Parse a stored PowerIO multiconductor module and create a retained session.
     pub fn from_module_json(module_json: &str, options: McPfOptions) -> Result<Self, String> {
         let started = profile_now();
-        let mut module = crate::ir::deserialize_module(module_json)?;
-        input::validate_mc_module(&module)?;
+        let module = crate::ir::deserialize_module(module_json)?;
+        let parsed = profile_now();
+        let mut session = Self::from_module(&module, options)?;
+        // Reading the text is part of the parse, alongside the conversion.
+        let read_ms = elapsed_ms(started, parsed);
+        session.cold_profile.parse_ms += read_ms;
+        session.cold_profile.total_ms += read_ms;
+        session.profile = session.cold_profile;
+        Ok(session)
+    }
+
+    /// Create a retained session from a module already parsed in this
+    /// process. The network tables are shared with `module`, not copied, so a
+    /// host that keeps the parsed module pays for the network once.
+    pub fn from_module(
+        module: &powerio::PioModule<powerio::PioValue>,
+        options: McPfOptions,
+    ) -> Result<Self, String> {
+        let started = profile_now();
+        input::validate_mc_module(module)?;
         let module_holds_network =
             matches!(module.value(), powerio::PioValue::MulticonductorNetwork(_));
         let instance = input::instance_from_value(module.value())?;
-        let parsed = profile_now();
+        let converted = profile_now();
         let mut session = Self::new(instance, options)?;
-        // Every materialization replaces the value, which releases the
-        // retained source bytes and value source map. Do that once here so
-        // the session does not hold a second copy of the stored document.
-        let _ = module.value_mut();
-        session.module = Some(module.map_value(|_| ()));
+        // Keep the records only. Every materialization replaces the value,
+        // which releases the retained source bytes and value source map; do
+        // that once here so the session holds no copy of the source document.
+        let mut records = module.clone();
+        let _ = records.value_mut();
+        session.module = Some(records.map_value(|_| ()));
         session.module_holds_network = module_holds_network;
-        session.cold_profile.parse_ms = elapsed_ms(started, parsed);
+        session.cold_profile.parse_ms = elapsed_ms(started, converted);
         session.cold_profile.total_ms += session.cold_profile.parse_ms;
         session.profile = session.cold_profile;
         Ok(session)
@@ -630,20 +649,26 @@ impl McPfSession {
 
     /// Materialize the current edited operating point as portable PowerIO IR.
     pub fn input_module_json(&self) -> Result<String, String> {
-        self.module_json_for(self.edited_instance()?)
+        crate::ir::serialize_module(&self.input_module()?)
     }
 
-    fn module_json_for(&self, instance: McAcPfInstance) -> Result<String, String> {
+    /// Materialize the current edited operating point as a PowerIO module,
+    /// with the records of the module the session was created from. Without
+    /// edits the module shares this session's network tables.
+    pub fn input_module(&self) -> Result<powerio::PioModule<powerio::PioValue>, String> {
+        Ok(self.module_for(self.edited_instance()?))
+    }
+
+    fn module_for(&self, instance: McAcPfInstance) -> powerio::PioModule<powerio::PioValue> {
         let value = if self.module_holds_network {
             powerio::PioValue::MulticonductorNetwork(instance.network().clone())
         } else {
             powerio::PioValue::McAcPfInstance(instance)
         };
-        let module = match &self.module {
+        match &self.module {
             Some(records) => records.clone().map_value(|()| value),
             None => powerio::PioModule::new(value),
-        };
-        crate::ir::serialize_module(&module)
+        }
     }
 
     /// Build a portable saved Study at the current edited operating point
@@ -672,7 +697,7 @@ impl McPfSession {
             id,
             title,
             formulation: "mc_ac_pf".to_owned(),
-            input_module: self.module_json_for(instance)?,
+            input_module: crate::ir::serialize_module(&self.module_for(instance))?,
             solution_module,
             options: self.options,
             result,
@@ -3108,6 +3133,65 @@ mod tests {
         let edited = session.input_module_json().unwrap();
         assert_eq!(edited, reparsed(&session.edited_instance().unwrap()));
         assert_eq!(session.materialization_count(), 2);
+    }
+
+    #[test]
+    fn parsed_module_session_matches_its_ir_text_and_carries_edits_without_text() {
+        let text = ORACLE_INPUTS[0];
+        let source =
+            powerio::Source::from_memory("case.bmopf.json", text.as_bytes().to_vec()).unwrap();
+        let parsed = powerio::parse_with_options(
+            source,
+            &powerio::ParseOptions::default()
+                .format("bmopf-json")
+                .unwrap(),
+        )
+        .unwrap();
+        let module_json = crate::ir::serialize_module(&parsed).unwrap();
+        let options = McPfOptions::default();
+        let from_text = McPfSession::from_module_json(&module_json, options).unwrap();
+        let mut session = McPfSession::from_module(&parsed, options).unwrap();
+        assert_eq!(session.terminal_ids(), from_text.terminal_ids());
+        assert_eq!(session.terminal_voltages(), from_text.terminal_voltages());
+        let mut summary = session.summary().clone();
+        summary.solve_count = from_text.summary().solve_count;
+        assert_eq!(&summary, from_text.summary());
+        // Both keep the same records, so both write the same IR.
+        assert_eq!(
+            session.input_module_json().unwrap(),
+            from_text.input_module_json().unwrap()
+        );
+
+        let branch = session.load_branches()[0].clone();
+        session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: branch.load.clone(),
+                branch: branch.branch,
+                p_w: branch.base_p_w * 1.3,
+                q_var: branch.base_q_var,
+            }])
+            .unwrap();
+        let edited = session.input_module().unwrap();
+        assert_eq!(
+            crate::ir::serialize_module(&edited).unwrap(),
+            session.input_module_json().unwrap()
+        );
+        let resolved = McPfSession::from_module(&edited, options).unwrap();
+        let restated = resolved
+            .load_branches()
+            .into_iter()
+            .find(|b| b.load == branch.load && b.branch == branch.branch)
+            .unwrap();
+        assert_eq!(restated.base_p_w, branch.base_p_w * 1.3);
+        let close = resolved
+            .terminal_voltages()
+            .iter()
+            .zip(session.terminal_voltages())
+            .all(|(a, b)| (a - b).abs() <= 1e-6 * a.abs().max(1.0));
+        assert!(
+            close,
+            "a session from the edited module reproduces the edit"
+        );
     }
 
     #[test]
