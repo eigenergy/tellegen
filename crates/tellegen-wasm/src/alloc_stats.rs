@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn grows_ahead_by_an_eighth_of_memory_from_one_to_sixty_four_mebibytes() {
-        let mib = |pages: usize| pages * PAGE_BYTES >> 20;
+        let mib = |pages: usize| (pages * PAGE_BYTES) >> 20;
         assert_eq!(mib(grow_ahead_pages(0)), 1);
         assert_eq!(mib(grow_ahead_pages(17)), 1);
         // 256 MiB of linear memory grows ahead by 32 MiB.
