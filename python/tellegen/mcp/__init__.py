@@ -2,23 +2,14 @@
 
 Kept out of `tellegen/__init__.py` so `import tellegen` never reaches for the
 MCP SDK: the solver is usable with no extras installed. Needs `tellegen[mcp]`,
-which adds `mcp>=2,<3` and the `powerio` wheel, and Python 3.10 or newer —
-`mcp` 2.x requires it, while the base package still supports 3.9.
+which adds `mcp>=2,<3` and the `powerio` wheel.
 """
 
 from __future__ import annotations
 
-import sys
 from typing import Any
 
 __all__ = ["main", "mcp"]
-
-if sys.version_info < (3, 10):  # pragma: no cover - guarded by the env marker
-    raise ImportError(
-        "the tellegen MCP server needs Python 3.10 or newer, because the `mcp` "
-        f"SDK does; this interpreter is {sys.version_info.major}.{sys.version_info.minor}. "
-        "The solver itself supports 3.9: `import tellegen`."
-    )
 
 
 def __getattr__(name: str) -> Any:
