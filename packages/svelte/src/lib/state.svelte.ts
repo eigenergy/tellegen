@@ -22,6 +22,7 @@ import {
 	type McPfSummary,
 	type McLoadBranchState,
 	type McLoadPowerEdit,
+	type McModuleInput,
 	type McStudySnapshot,
 	type SensTarget,
 	type Topology
@@ -229,9 +230,10 @@ export class CaseState {
 /** A case the solver can run: a server-backed case or a browser-parsed local case. */
 export type SolvableCase = CaseState | LocalCase;
 
-/** The multiconductor ingest payload without the graph: the summary counts,
- * connected load/generation, coordinate provenance, and diagnostics. */
-export type MultiCaseSummary = Omit<IngestedDistCase, 'graph'>;
+/** The multiconductor ingest payload without the graph or the retained
+ * input: the summary counts, connected load/generation, coordinate
+ * provenance, and diagnostics. */
+export type MultiCaseSummary = Omit<IngestedDistCase, 'graph' | 'input'>;
 
 /** Geographic coordinates use the map; other positions use the diagram canvas. */
 export type MultiCoordsKind = 'geographic' | 'planar' | 'synthetic';
@@ -248,7 +250,10 @@ export class MulticonductorCase {
 	readonly id: string;
 	readonly label: string;
 	readonly fileName: string;
-	moduleJson: string | null = $state.raw<string | null>(null);
+	/** The electrical input calculations start from: the module the engine
+	 * keeps from the import, or PowerIO IR text (a saved or re-placed module).
+	 * A kept module is freed when it is replaced or the case is removed. */
+	mcInput: McModuleInput | null = $state.raw<McModuleInput | null>(null);
 	geoLayer: string | null = $state.raw<string | null>(null);
 	geoWarnings: string[] = $state.raw<string[]>([]);
 	/** Summary of the displayed operating point: from the live session after
@@ -328,6 +333,9 @@ export class MulticonductorCase {
 		label: string;
 		fileName: string;
 		summary: MultiCaseSummary;
+		/** The module the engine kept from the import, in place of the
+		 * summary's `module_json`. */
+		input?: McModuleInput | null;
 		graph: DistGraph;
 		coordsKind: MultiCoordsKind;
 		view?: MultiView | null;
@@ -336,7 +344,7 @@ export class MulticonductorCase {
 		this.label = init.label;
 		this.fileName = init.fileName;
 		this.summary = init.summary;
-		this.moduleJson = init.summary.module_json ?? null;
+		this.mcInput = init.input ?? init.summary.module_json ?? null;
 		this.geoLayer = init.summary.geo_layer ?? null;
 		this.graph = init.graph;
 		this.coordsKind = init.coordsKind;
@@ -344,7 +352,7 @@ export class MulticonductorCase {
 	}
 
 	get mcPfReason(): string | null {
-		if (!this.moduleJson) return 'This case has no retained electrical input';
+		if (!this.mcInput) return 'This case has no retained electrical input';
 		if (this.summary?.mc_pf_enabled !== true) return 'AC power flow is unavailable in this build';
 		return (
 			this.summary.mc_pf_reason ??

@@ -46,7 +46,10 @@ fetches the selected bus's terminals and one page of equipment results on
 demand.
 
 The interactive API is a retained `McPfSession` in Rust and
-`createMcPfSession(moduleJson, options)` in TypeScript. A session keeps the
+`createMcPfSession(input, options)` in TypeScript, where `input` is PowerIO IR
+text or a `BrowserMcInput` the engine kept at import. A session from a kept
+input shares its network tables, so no IR text crosses the worker boundary in
+either direction. A session keeps the
 prepared passive network, compensation matrix, sparse LU factorization, and
 last converged voltage. `replace_load_powers`/`replaceLoadPowers` accepts the
 complete set of absolute load-branch overrides relative to the session's base
