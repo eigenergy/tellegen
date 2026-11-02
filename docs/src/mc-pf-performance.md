@@ -43,8 +43,13 @@ The browser makes one engine round trip per edit. Terminal and equipment
 detail is fetched only when a view asks for it: the Studies panel requests one
 bus's terminals and one 20-row equipment page, `terminalVoltages()` and
 `terminalCurrents()` return transferable `Float64Array`s, and `result()` still
-builds the complete `McPfResult` for export. Detail pages carry the solve count
-they describe, so a page from an older operating point is discarded.
+builds the complete `McPfResult` for export. Whole-network views (the overview
+and the diagram) read `resultTables()` instead: the same terminals, ports, and
+source reactions as columns, moved as two transferable arrays plus one list of
+names. For a 57,757-bus city model that is about 40 MB, against a 166 MiB JSON
+result that the page would parse into an object per terminal and port. Detail pages
+carry the solve count they describe, so a page from an older operating point is
+discarded.
 
 The four latency components are measured separately:
 
