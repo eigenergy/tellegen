@@ -94,10 +94,12 @@ def route_km(coords):
     return float(haversine_km(c[:-1, 1], c[:-1, 0], c[1:, 1], c[1:, 0]).sum())
 
 
-def project(lat, lon, lat0):
-    """Equirectangular km about lat0: accurate to well under 1% over a state."""
+def project(lat, lon, lat0, lon0=0.0):
+    """Equirectangular km about (lat0, lon0): accurate to well under 1% over a
+    state. Two networks compared must share lat0 and lon0."""
     k = math.radians(1) * EARTH_KM
-    return np.column_stack([np.asarray(lon) * k * math.cos(math.radians(lat0)), np.asarray(lat) * k])
+    return np.column_stack([(np.asarray(lon) - lon0) * k * math.cos(math.radians(lat0)),
+                            np.asarray(lat) * k])
 
 
 def kv_class(kv):
@@ -502,7 +504,7 @@ def _cell_values(points_xy, weights, cell_km, origin, shape):
     return grid
 
 
-def _route_samples(net, keep, lat0, step_km=1.0):
+def _route_samples(net, keep, lat0, lon0, step_km=1.0):
     pts, w = [], []
     for k in range(len(net.f)):
         if net.is_tx[k] or not (keep[net.f[k]] and keep[net.t[k]]):
@@ -511,7 +513,7 @@ def _route_samples(net, keep, lat0, step_km=1.0):
         if not route or len(route) < 2:
             route = [(net.lon[net.f[k]], net.lat[net.f[k]]), (net.lon[net.t[k]], net.lat[net.t[k]])]
         c = np.asarray(route, dtype=float)
-        xy = project(c[:, 1], c[:, 0], lat0)
+        xy = project(c[:, 1], c[:, 0], lat0, lon0)
         for p, q in zip(xy[:-1], xy[1:], strict=True):
             seg = float(np.linalg.norm(q - p))
             m = max(1, int(math.ceil(seg / step_km)))
@@ -524,9 +526,9 @@ def _route_samples(net, keep, lat0, step_km=1.0):
 
 
 def measure(net, frame=None, with_dc=True):
-    """Every metric of the scorecard, as a flat dict. `frame` is
-    (lat0, origin_xy, shape) for the gridded metrics so two networks share one
-    grid; None derives it from this network."""
+    """Every metric of the scorecard, as a flat dict. `frame` is the
+    projection centre (lat0, lon0) the geographic metrics use, so that two
+    networks compared share one projection; None takes this network's mean."""
     keep, ncomp, load_share = main_component(net)
     alive, redges = reduce_series(net, keep)
     m = {'components': int(ncomp), 'main_load_share': load_share,
@@ -598,8 +600,10 @@ def measure(net, frame=None, with_dc=True):
     m['mean_hops'] = float(np.mean(hops)) if hops else 0.0
 
     # Site network by band.
-    lat0 = float(np.mean(net.lat[alive])) if frame is None else frame[0]
-    xy_bus = project(net.lat, net.lon, lat0)
+    if frame is None:
+        frame = (float(np.mean(net.lat[alive])), float(np.mean(net.lon[alive])))
+    lat0, lon0 = frame
+    xy_bus = project(net.lat, net.lon, lat0, lon0)
     site_xy, site_levels = {}, defaultdict(set)
     for s in set(site[alive]):
         members = np.nonzero(site == s)[0]
@@ -635,10 +639,10 @@ def measure(net, frame=None, with_dc=True):
 
     # --- geography ----------------------------------------------------------
     m['site_xy'] = [[float(v) for v in site_xy[s]] for s in sorted(site_xy)]
-    pts, w = _route_samples(net, keep, lat0)
+    pts, w = _route_samples(net, keep, lat0, lon0)
     m['_route_samples'] = (pts, w)
     m['_load_xy'] = (xy_bus[keep], net.pd[keep])
-    m['_lat0'] = lat0
+    m['_frame'] = frame
     return m
 
 
@@ -666,3 +670,204 @@ def spearman(a, b, mask=None):
     if np.all(a == a[0]) or np.all(b == b[0]):
         return 0.0
     return float(spearmanr(a, b).statistic)
+
+
+# --------------------------------------------------------------------------
+# The mapped data itself (OpenStreetMap mode)
+# --------------------------------------------------------------------------
+
+MAP_RASTER_DEG = 0.02
+
+
+def _inside_exact(lon, lat, multipolygon):
+    """Even-odd ray casting of points against a GeoJSON MultiPolygon's outer
+    rings, vectorised over the points."""
+    px, py = np.asarray(lon, dtype=float), np.asarray(lat, dtype=float)
+    out = np.zeros(px.shape, dtype=bool)
+    for poly in multipolygon:
+        ring = np.asarray(poly[0], dtype=float)
+        hit = np.zeros(px.shape, dtype=bool)
+        for (a, b), (c, d) in zip(ring[:-1], ring[1:], strict=True):
+            crosses = (b > py) != (d > py)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                xi = (c - a) * (py - b) / (d - b) + a
+            hit ^= crosses & (px < xi)
+        out |= hit
+    return out
+
+
+def _region_raster(multipolygon, step=MAP_RASTER_DEG):
+    """Inside test for a GeoJSON MultiPolygon, rasterised at `step` degrees
+    (about 2 km): a point is inside when its cell centre is. Returns a
+    function of (lon, lat) arrays. Used for line vertices, which are many;
+    plants and substations take the exact test."""
+    rings = [np.asarray(poly[0], dtype=float) for poly in multipolygon]
+    allpts = np.vstack(rings)
+    lon0, lat0 = allpts.min(axis=0) - step
+    nx = int(math.ceil((allpts[:, 0].max() + step - lon0) / step))
+    ny = int(math.ceil((allpts[:, 1].max() + step - lat0) / step))
+    cx = lon0 + (np.arange(nx) + 0.5) * step
+    cy = lat0 + (np.arange(ny) + 0.5) * step
+    gx, gy = np.meshgrid(cx, cy, indexing='ij')
+    px, py = gx.ravel(), gy.ravel()
+    mask = np.zeros(px.shape, dtype=bool)
+    for ring in rings:
+        hit = np.zeros(px.shape, dtype=bool)
+        x1, y1 = ring[:-1, 0], ring[:-1, 1]
+        x2, y2 = ring[1:, 0], ring[1:, 1]
+        for a, b, c, d in zip(x1, y1, x2, y2, strict=True):
+            crosses = (b > py) != (d > py)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                xi = (c - a) * (py - b) / (d - b) + a
+            hit ^= crosses & (px < xi)
+        mask |= hit
+    mask = mask.reshape(nx, ny)
+
+    def inside(lon, lat):
+        i = np.floor((np.asarray(lon, dtype=float) - lon0) / step).astype(int)
+        j = np.floor((np.asarray(lat, dtype=float) - lat0) / step).astype(int)
+        ok = (i >= 0) & (i < nx) & (j >= 0) & (j < ny)
+        out = np.zeros(i.shape, dtype=bool)
+        out[ok] = mask[i[ok], j[ok]]
+        return out
+
+    return inside
+
+
+def _osm_kvs(tag):
+    out = set()
+    for part in re.split(r'[;,/ ]+', tag or ''):
+        try:
+            v = float(part) / 1000.0
+        except ValueError:
+            continue
+        if math.isfinite(v) and v > 0:
+            out.add(v)
+    return sorted(out, reverse=True)
+
+
+def _osm_mw(value):
+    s = (value or '').strip().lower().replace(',', '')
+    m = re.fullmatch(r'(?:(\d+)\s*x\s*)?([0-9.]+(?:e[+-]?\d+)?)\s*(gw|mw|kw|w|megawatt|mva)?', s)
+    if not m:
+        return None
+    unit = {'gw': 1000.0, 'mw': 1.0, 'megawatt': 1.0, 'mva': 1.0, 'kw': 1e-3, 'w': 1e-6}[m.group(3) or 'w']
+    return int(m.group(1) or 1) * float(m.group(2)) * unit
+
+
+def _osm_fuel(source):
+    s = (source or '').split(';')[0].strip().lower()
+    for fuel, names in (('gas', ('gas',)), ('oil', ('oil', 'diesel')), ('coal', ('coal', 'lignite')),
+                        ('nuclear', ('nuclear',)), ('hydro', ('hydro', 'water')), ('wind', ('wind',)),
+                        ('solar', ('solar', 'photovoltaic')), ('storage', ('battery', 'storage'))):
+        if any(n in s for n in names):
+            return fuel
+    return 'other'
+
+
+def _osm_point(el):
+    if 'lat' in el and 'lon' in el:
+        return el['lon'], el['lat']
+    c = el.get('center')
+    if c:
+        return c['lon'], c['lat']
+    b = el.get('bounds')
+    if b:
+        return (b['minlon'] + b['maxlon']) / 2, (b['minlat'] + b['maxlat']) / 2
+    return None
+
+
+def measure_map(doc, multipolygon, floor_kv=56.0):
+    """What an Overpass document itself holds inside a region, measured as
+    the scorecard measures a grid, with no engine involved: nameplate and fuel
+    mix of the power=plant features that tag their output (untagged plants
+    are counted, not estimated); every substation (an upper bound on sites);
+    the voltage levels substations tag at `floor_kv` and above, as bus shares
+    per class; and circuit-km per class of the lines that tag a voltage, from
+    their circuits (else cables / 3, else 1) over the length of their segments
+    inside the region. Those segments are kept (`_segments`: lon, lat of both
+    ends and circuits) for the gridded line density, `map_route_samples`."""
+    inside = _region_raster(multipolygon)
+    cap = defaultdict(float)
+    untagged_plants = 0
+    substations = 0
+    levels = Counter()
+    ckm = defaultdict(float)
+    segments = []
+    pts = {'plant': [], 'substation': []}
+    feats = {'plant': [], 'substation': []}
+    for el in doc.get('elements', []):
+        tags = el.get('tags') or {}
+        power = tags.get('power')
+        if power in ('plant', 'substation'):
+            p = _osm_point(el)
+            if p:
+                pts[power].append(p)
+                feats[power].append(tags)
+        elif power in ('line', 'cable'):
+            kvs = [k for k in _osm_kvs(tags.get('voltage')) if k >= floor_kv]
+            geom = np.array([(g['lon'], g['lat']) for g in el.get('geometry') or [] if g], dtype=float)
+            if not kvs or len(geom) < 2:
+                continue
+            try:
+                circuits = int(tags.get('circuits'))
+            except (TypeError, ValueError):
+                try:
+                    circuits = round(float(tags.get('cables')) / 3)
+                except (TypeError, ValueError):
+                    circuits = 1
+            circuits = min(max(circuits, 1), 12)
+            ins = inside(geom[:, 0], geom[:, 1])
+            seg = ins[:-1] & ins[1:]
+            km = haversine_km(geom[:-1, 1], geom[:-1, 0], geom[1:, 1], geom[1:, 0])
+            ckm[str(int(kv_class([kvs[0]])[0]))] += float(np.sum(km[seg])) * circuits
+            if seg.any():
+                ends = np.column_stack([geom[:-1][seg], geom[1:][seg], np.full(int(seg.sum()), circuits)])
+                segments.append(ends)
+    for kind in ('plant', 'substation'):
+        if not pts[kind]:
+            continue
+        xy = np.array(pts[kind], dtype=float)
+        for ok, tags in zip(_inside_exact(xy[:, 0], xy[:, 1], multipolygon), feats[kind], strict=True):
+            if not ok:
+                continue
+            if kind == 'plant':
+                mw = _osm_mw(tags.get('plant:output:electricity'))
+                if mw is None:
+                    untagged_plants += 1
+                else:
+                    cap[_osm_fuel(tags.get('plant:source'))] += mw
+            else:
+                substations += 1
+                for k in _osm_kvs(tags.get('voltage')):
+                    if k >= floor_kv:
+                        levels[float(kv_class([k])[0])] += 1
+    total_levels = max(sum(levels.values()), 1)
+    return {
+        'nameplate_mw': float(sum(cap.values())),
+        'fuel_mix': _shares(cap, FUELS),
+        'untagged_plants': untagged_plants,
+        'sites': substations,
+        'bus_share': {str(int(c)): levels.get(c, 0) / total_levels for c in CLASSES_KV},
+        'circuit_km': {str(int(c)): ckm.get(str(int(c)), 0.0) for c in CLASSES_KV},
+        '_segments': np.vstack(segments) if segments else np.zeros((0, 5)),
+    }
+
+
+def map_route_samples(mapm, lat0, lon0, step_km=1.0):
+    """Points every `step_km` along the map's line segments, weighted by
+    length times circuits (a generated grid's samples count each circuit's
+    branch), in the frame of `project(…, lat0, lon0)`."""
+    seg = mapm['_segments']
+    if len(seg) == 0:
+        return np.zeros((0, 2)), np.zeros(0)
+    a = project(seg[:, 1], seg[:, 0], lat0, lon0)
+    b = project(seg[:, 3], seg[:, 2], lat0, lon0)
+    pts, w = [], []
+    for p, q, c in zip(a, b, seg[:, 4], strict=True):
+        length = float(np.linalg.norm(q - p))
+        m = max(1, int(math.ceil(length / step_km)))
+        t = (np.arange(m) + 0.5) / m
+        pts.append(p[None, :] + t[:, None] * (q - p)[None, :])
+        w.append(np.full(m, length / m * c))
+    return np.vstack(pts), np.concatenate(w)

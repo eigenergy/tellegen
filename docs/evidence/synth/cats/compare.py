@@ -82,6 +82,22 @@ GEOGRAPHY = [
 ]
 METRICS = SCALE + TOPOLOGY + PARAMETERS + OPERATION + GEOGRAPHY
 
+# OpenStreetMap mode: the metrics the mapped data itself can be measured on
+# (metrics.measure_map), and what that measure is. A 'lower' value is a floor
+# on what the map holds (untagged plants only add to it), an 'upper' one a
+# ceiling (not every substation carries a transmission level); either limits
+# a metric only on its own side. A metric whose map value already misses the
+# tolerance is map-limited: the map, not the engine, sets it, so it is shown
+# but left out of the pass share and the score.
+MAP_MEASURES = {
+    'nameplate_mw': 'lower',
+    'fuel_tvd': 'value',
+    'sites': 'upper',
+    **{f'bus_share.{c}': 'value' for c in ('66', '115', '230', '500')},
+    **{f'circuit_km.{c}': 'value' for c in ('66', '115', '230', '500')},
+    'line_density_rho': 'value',
+}
+
 
 def dig(m, path):
     cur = m
@@ -168,8 +184,38 @@ def critical(gen_net, gen):
     }
 
 
-def score_one(ref, gen_net, mode):
-    gen = M.measure(gen_net)
+def map_limits(mid, kind, tol, ref, mapm):
+    """(map value, whether the map alone misses the tolerance) for one metric."""
+    if mapm is None or mid not in MAP_MEASURES:
+        return None, False
+    if mid == 'fuel_tvd':
+        v = 0.5 * sum(abs(mapm['fuel_mix'][k] - ref['fuel_mix'][k]) for k in M.FUELS)
+    elif mid == 'line_density_rho':
+        lat0, lon0 = ref['_frame']
+        pts = ref['_route_samples'][0]
+        origin = pts.min(axis=0) - CELL_LINES_KM
+        span = pts.max(axis=0) + CELL_LINES_KM - origin
+        shape = tuple(int(math.ceil(x / CELL_LINES_KM)) for x in span)
+        a = M.gridded(ref, origin, shape, CELL_LINES_KM, 'lines')
+        mp, mw = M.map_route_samples(mapm, lat0, lon0)
+        b = M._cell_values(mp, mw, CELL_LINES_KM, origin, shape)
+        v = M.spearman(a, b, (a > 0) | (b > 0))
+    else:
+        v = dig(mapm, mid)
+    r = dig(ref, mid) if kind in ('rel', 'ratio', 'abs') else None
+    e = norm_err(kind, tol, v, r)
+    if e is None or e <= 1.0 + 1e-12:
+        return v, False
+    side = MAP_MEASURES[mid]
+    if side == 'lower':
+        return v, r is not None and v > r
+    if side == 'upper':
+        return v, r is not None and v < r
+    return v, True
+
+
+def score_one(ref, gen_net, mode, mapm=None):
+    gen = M.measure(gen_net, frame=ref['_frame'])
     gen.update(derived(ref, gen))
     rows = []
     for mid, group, label, kind, tol_s, tol_o in METRICS:
@@ -180,11 +226,13 @@ def score_one(ref, gen_net, mode):
         if e is None and r is not None:
             # CATS has this quantity and the generated grid cannot produce it.
             e = math.inf
+        map_value, limited = map_limits(mid, kind, tol, ref, mapm if mode == 'osm' else None)
         rows.append({'id': mid, 'group': group, 'label': label, 'kind': kind, 'tolerance': tol,
                      'value': g, 'reference': r, 'error': e,
-                     'pass': None if e is None else bool(e <= 1.0 + 1e-12)})
+                     'pass': None if e is None else bool(e <= 1.0 + 1e-12),
+                     'map_value': map_value, 'map_limited': limited})
     crit = critical(gen_net, gen)
-    scored = [row for row in rows if row['pass'] is not None]
+    scored = [row for row in rows if row['pass'] is not None and not row['map_limited']]
     passed = sum(row['pass'] for row in scored)
     share = passed / max(len(scored), 1)
     score = sum(min(row['error'], 3.0) for row in scored) + 10.0 * sum(not v for v in crit.values())
@@ -193,6 +241,7 @@ def score_one(ref, gen_net, mode):
         'metrics': rows,
         'passed': passed,
         'scored': len(scored),
+        'map_limited': [row['id'] for row in rows if row['map_limited']],
         'pass_share': share,
         'pass': all(crit.values()) and share >= PASS_SHARE,
         'score': score,
@@ -245,11 +294,16 @@ def tol_text(kind, tol):
             'atleast': lambda t: f'≥ {t}', 'atmost': lambda t: f'≤ {t}'}[kind](tol)
 
 
-def write_scorecard(work, mode, label, results, ref_summary):
+def write_scorecard(work, mode, label, results, ref_summary, mapm=None):
     work.mkdir(parents=True, exist_ok=True)
+    rule = f'every critical check, and at least {PASS_SHARE:.0%} of the scored metrics, in every run'
+    if mapm is not None:
+        rule += ('; a metric the mapped data itself misses (the Map column, measured on the Overpass '
+                 'document inside the region with no engine involved) is map-limited and not scored')
     doc = {'schema': 'tellegen.cats-scorecard/1', 'mode': mode, 'label': label,
-           'pass_rule': f'every critical check, and at least {PASS_SHARE:.0%} of the scored metrics, in every run',
-           'runs': results, 'reference': ref_summary}
+           'pass_rule': rule, 'runs': results, 'reference': ref_summary}
+    if mapm is not None:
+        doc['map'] = {k: v for k, v in mapm.items() if not k.startswith('_')}
     (work / 'scorecard.json').write_text(json.dumps(doc, indent=1, default=float) + '\n')
     names = list(results)
     lines = [f'# CATS scorecard: {label} ({mode})', '',
@@ -260,17 +314,30 @@ def write_scorecard(work, mode, label, results, ref_summary):
         bad = [k for k, v in r['critical'].items() if not v]
         lines.append(f'| {n} | {"pass" if r["pass"] else "fail"} | {r["passed"]}/{r["scored"]} '
                      f'({r["pass_share"]:.0%}) | {r["score"]:.2f} | {", ".join(bad) or "none"} |')
-    lines += ['', '| Metric | CATS | ' + ' | '.join(names) + ' | Tolerance |',
-              '| --- | --- | ' + ' | '.join('---' for _ in names) + ' | --- |']
+    with_map = mapm is not None
+    head = '| Metric | CATS | ' + ('Map | ' if with_map else '') + ' | '.join(names) + ' | Tolerance |'
+    lines += ['', head, '| --- | --- | ' + ('--- | ' if with_map else '') + ' | '.join('---' for _ in names) + ' | --- |']
     for i, (_mid, _group, label_, kind, tol_s, tol_o) in enumerate(METRICS):
         tol = tol_o if mode == 'osm' else tol_s
-        ref_v = results[names[0]]['metrics'][i]['reference']
+        first = results[names[0]]['metrics'][i]
         cells = []
         for n in names:
             row = results[n]['metrics'][i]
-            mark = '' if row['pass'] is None else (' ✓' if row['pass'] else ' ✗')
+            if row['map_limited']:
+                mark = ' (not scored)'
+            else:
+                mark = '' if row['pass'] is None else (' ✓' if row['pass'] else ' ✗')
             cells.append(fmt(row['value']) + mark)
-        lines.append(f'| {label_} | {fmt(ref_v)} | ' + ' | '.join(cells) + f' | {tol_text(kind, tol)} |')
+        map_cell = ''
+        if with_map:
+            mv = first['map_value']
+            map_cell = ('–' if mv is None else fmt(mv) + (' map-limited' if first['map_limited'] else '')) + ' | '
+        lines.append(f'| {label_} | {fmt(first["reference"])} | {map_cell}' + ' | '.join(cells)
+                     + f' | {tol_text(kind, tol)} |')
+    if with_map:
+        lines += ['', f'Map: {mapm["untagged_plants"]:,} power=plant features inside the region tag no output '
+                  'and are not in its nameplate (the engine estimates them); its sites are every power=substation '
+                  'inside the region, an upper bound.']
     (work / 'scorecard.md').write_text('\n'.join(lines) + '\n')
 
 
@@ -278,8 +345,12 @@ def summary_line(results):
     verdicts = [r['pass'] for r in results.values()]
     scores = [r['score'] for r in results.values()]
     passed = [f'{r["passed"]}/{r["scored"]}' for r in results.values()]
-    return json.dumps({'pass': all(verdicts), 'score_mean': float(np.mean(scores)),
-                       'score_max': float(np.max(scores)), 'passed': passed})
+    out = {'pass': all(verdicts), 'score_mean': float(np.mean(scores)),
+           'score_max': float(np.max(scores)), 'passed': passed}
+    limited = sorted({m for r in results.values() for m in r.get('map_limited', [])})
+    if limited:
+        out['map_limited'] = limited
+    return json.dumps(out)
 
 
 def load_reference(cats_dir):
@@ -318,6 +389,9 @@ def cmd_run(args):
     if args.mode == 'osm':
         seeds = seeds[:1] if args.seeds else [2026]
     ref = load_reference(args.cats)
+    mapm = None
+    if args.mode == 'osm':
+        mapm = M.measure_map(json.loads(Path(args.osm).read_text()), spec['request']['region']['geometry']['coordinates'])
     results = {}
     for seed in seeds:
         req = dict(spec['request'], seed=seed)
@@ -332,16 +406,20 @@ def cmd_run(args):
             import shutil
             shutil.rmtree(out)
         generate(args.tellegen, rp, out, osm=args.osm, tuning=args.tuning)
-        results[f'seed {seed}'] = score_one(ref, M.load_generated(out), args.mode)
-    write_scorecard(work, args.mode, spec['id'], results, public(ref))
+        results[f'seed {seed}'] = score_one(ref, M.load_generated(out), args.mode, mapm)
+    write_scorecard(work, args.mode, spec['id'], results, public(ref), mapm)
     print(summary_line(results))
 
 
 def cmd_score(args):
     ref = load_reference(args.cats)
-    results = {Path(d).name: score_one(ref, M.load_generated(d), args.mode) for d in args.dirs}
+    mapm = None
+    if args.mode == 'osm' and args.osm:
+        spec = json.loads(Path(args.spec).read_text())
+        mapm = M.measure_map(json.loads(Path(args.osm).read_text()), spec['request']['region']['geometry']['coordinates'])
+    results = {Path(d).name: score_one(ref, M.load_generated(d), args.mode, mapm) for d in args.dirs}
     work = Path(args.work) if args.work else Path(args.dirs[0]).parent
-    write_scorecard(work, args.mode, args.label, results, public(ref))
+    write_scorecard(work, args.mode, args.label, results, public(ref), mapm)
     print(summary_line(results))
 
 
@@ -367,6 +445,8 @@ def main():
     s.add_argument('--cats', required=True)
     s.add_argument('--mode', choices=('synthetic', 'osm'), default='synthetic')
     s.add_argument('--label', default='california')
+    s.add_argument('--osm', help='Overpass JSON document, to measure the map itself (--mode osm)')
+    s.add_argument('--spec', default=str(HERE / 'california.json'), help='spec holding the region (with --osm)')
     s.add_argument('--work')
     s.add_argument('dirs', nargs='+')
     s.set_defaults(func=cmd_score)
