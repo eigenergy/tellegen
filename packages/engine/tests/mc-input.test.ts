@@ -3,6 +3,7 @@ import {
   BrowserMcInput,
   BrowserMcPfSession,
   createMcPfSession,
+  prepareMcEnergizedNetwork,
   summarizeMcPfResult,
   type McPfResult,
 } from "../src/index.js";
@@ -40,7 +41,9 @@ it("solves a kept module on its own host without sending IR text", async () => {
   const input = new BrowserMcInput({ kind: "worker", call }, 4);
   const session = await createMcPfSession(input, { tolerance: 1e-9 });
   expect(session.initialSummary).toEqual(summary);
-  expect(JSON.parse((call.mock.calls[0][0] as { options: string }).options)).toEqual({
+  expect(
+    JSON.parse((call.mock.calls[0][0] as { options: string }).options),
+  ).toEqual({
     tolerance: 1e-9,
   });
 });
@@ -90,25 +93,97 @@ it("routes retained ingests, sessions, and frees through one handle table", () =
   const handles = emptyHandles();
 
   const bytes = new Uint8Array([123, 125]);
-  expect(runRequest(mod, handles, { op: "ingest_json_drop", bytes })).toBe("legacy");
-  expect(handles.mcInputs.size).toBe(0);
-  expect(runRequest(mod, handles, { op: "ingest_json_drop", bytes, input: 2 })).toBe(
-    '{"input_retained":true}',
+  expect(runRequest(mod, handles, { op: "ingest_json_drop", bytes })).toBe(
+    "legacy",
   );
+  expect(handles.mcInputs.size).toBe(0);
+  expect(
+    runRequest(mod, handles, { op: "ingest_json_drop", bytes, input: 2 }),
+  ).toBe('{"input_retained":true}');
   expect(handles.mcInputs.get(2)).toBe(kept);
   expect(ingest.free).toHaveBeenCalled();
 
   expect(
-    runRequest(mod, handles, { op: "mc_pf_session_from_input", session: 8, input: 2, options: "{}" }),
+    runRequest(mod, handles, {
+      op: "mc_pf_session_from_input",
+      session: 8,
+      input: 2,
+      options: "{}",
+    }),
   ).toBe("summary");
   expect(from_input).toHaveBeenCalledWith(kept, "{}");
   expect(handles.mcPfSessions.get(8)).toBe(created);
-  expect(runRequest(mod, handles, { op: "mc_input_module_json", input: 2 })).toBe("ir");
+  expect(
+    runRequest(mod, handles, { op: "mc_input_module_json", input: 2 }),
+  ).toBe("ir");
 
   runRequest(mod, handles, { op: "mc_input_free", input: 2 });
   expect(kept.free).toHaveBeenCalled();
   expect(handles.mcInputs.size).toBe(0);
   expect(() =>
-    runRequest(mod, handles, { op: "mc_pf_session_from_input", session: 9, input: 2, options: "{}" }),
+    runRequest(mod, handles, {
+      op: "mc_pf_session_from_input",
+      session: 9,
+      input: 2,
+      options: "{}",
+    }),
   ).toThrow("unknown multiconductor input handle 2");
+});
+
+it("prepares energized islands on the retained input's host without serializing", async () => {
+  const exclusions = [{ buses: ["unpowered"], equipment: [] }];
+  const scope = {
+    excluded_island_count: 1,
+    excluded_bus_count: 1,
+    excluded_equipment_count: 0,
+    excluded_load_count: 0,
+  };
+  const call = vi.fn<EngineHost["call"]>(async (request) => {
+    expect(request).toMatchObject({
+      op: "mc_input_prepare_energized",
+      input: 4,
+    });
+    expect(request).not.toHaveProperty("module_json");
+    return JSON.stringify({
+      network_scope: scope,
+      excluded_islands: exclusions,
+    });
+  });
+  const host: EngineHost = { kind: "worker", call };
+  const original = new BrowserMcInput(host, 4);
+  const prepared = await prepareMcEnergizedNetwork(original);
+  expect(prepared.input.host).toBe(host);
+  expect(prepared.input.handle).toBe(
+    (call.mock.calls[0][0] as { output: number }).output,
+  );
+  expect(prepared.network_scope).toEqual(scope);
+  expect(prepared.excluded_islands).toEqual(exclusions);
+  original.free();
+  await expect(prepareMcEnergizedNetwork(original)).rejects.toThrow("freed");
+});
+
+it("retains the prepared module separately from the original input", () => {
+  const selected = { free: vi.fn() };
+  const prepared = {
+    take_input: () => selected,
+    take_payload: () => "scope",
+    free: vi.fn(),
+  };
+  const original = { prepare_energized: vi.fn(() => prepared), free: vi.fn() };
+  const handles = emptyHandles();
+  handles.mcInputs.set(
+    2,
+    original as unknown as InstanceType<WasmModule["McInput"]>,
+  );
+  expect(
+    runRequest({} as WasmModule, handles, {
+      op: "mc_input_prepare_energized",
+      input: 2,
+      output: 3,
+    }),
+  ).toBe("scope");
+  expect(handles.mcInputs.get(2)).toBe(original);
+  expect(handles.mcInputs.get(3)).toBe(selected);
+  expect(original.free).not.toHaveBeenCalled();
+  expect(prepared.free).toHaveBeenCalledOnce();
 });

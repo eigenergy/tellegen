@@ -183,12 +183,7 @@ export interface DistGraphAttachment {
 
 /** How a load or generator is connected; an IBR's inverter topology. */
 export type DistConnection =
-  | "wye"
-  | "delta"
-  | "single_phase"
-  | "three_leg"
-  | "four_leg"
-  | "other";
+  "wye" | "delta" | "single_phase" | "three_leg" | "four_leg" | "other";
 
 /** An attachment with its terminals in its own order and, where the model states it, its
  * connection. */
@@ -292,6 +287,10 @@ export interface DistGraph {
  * input: PowerIO IR text, or with `{ retain: true }` the module kept in the
  * engine. */
 export interface IngestedDistCase {
+  /** Explicit solve selection, not merely import-time detection. */
+  mc_energized_only?: boolean;
+  /** Source-less islands detected on import; retained in the full graph. */
+  mc_excluded_islands?: McExcludedIsland[];
   module_json?: string;
   /** The parsed module kept in the engine, in place of `module_json`. Present
    * only when the ingest asked to retain it; the caller owns and frees it. */
@@ -473,7 +472,8 @@ export async function ingestJsonDrop(
 
 /** Asserts a request that must carry a text payload actually did. */
 function expectText(value: EngineValue): string {
-  if (typeof value !== "string") throw new Error("engine returned no text payload");
+  if (typeof value !== "string")
+    throw new Error("engine returned no text payload");
   return value;
 }
 
@@ -539,7 +539,11 @@ export async function ingestDistCaseBytes(
   if (!options.retain) {
     return JSON.parse(
       expectText(
-        await engineHost().call({ op: "ingest_dist_case_bytes", bytes, format }),
+        await engineHost().call({
+          op: "ingest_dist_case_bytes",
+          bytes,
+          format,
+        }),
       ),
     );
   }
@@ -555,7 +559,11 @@ export async function ingestDistCaseBytes(
 }
 
 /** Wrap the module the engine kept for `payload` under `handle`. */
-function attachInput(payload: IngestedDistCase, host: EngineHost, handle: number) {
+function attachInput(
+  payload: IngestedDistCase,
+  host: EngineHost,
+  handle: number,
+) {
   if (payload.input_retained) payload.input = new BrowserMcInput(host, handle);
 }
 
@@ -567,9 +575,13 @@ let mcInputSeq = 0;
 const mcInputCleanup =
   typeof FinalizationRegistry === "undefined"
     ? null
-    : new FinalizationRegistry<{ host: EngineHost; handle: number }>(({ host, handle }) => {
-        void host.call({ op: "mc_input_free", input: handle }).catch(() => {});
-      });
+    : new FinalizationRegistry<{ host: EngineHost; handle: number }>(
+        ({ host, handle }) => {
+          void host
+            .call({ op: "mc_input_free", input: handle })
+            .catch(() => {});
+        },
+      );
 
 /** A parsed multiconductor module kept in the engine. Calculations start
  * from it without the module crossing the worker boundary; its PowerIO IR
@@ -594,6 +606,26 @@ export class BrowserMcInput {
     return expectText(
       await this.host.call({ op: "mc_input_module_json", input: this.handle }),
     );
+  }
+
+  /** Select energized islands on this input's host. The caller owns the new input. */
+  async prepareEnergized(): Promise<McRetainedEnergizedPreparation> {
+    if (this.#freed) throw new Error("multiconductor input was freed");
+    const output = ++mcInputSeq;
+    const prepared = JSON.parse(
+      expectText(
+        await this.host.call({
+          op: "mc_input_prepare_energized",
+          input: this.handle,
+          output,
+        }),
+      ),
+    );
+    return {
+      input: new BrowserMcInput(this.host, output),
+      network_scope: prepared.network_scope,
+      excluded_islands: prepared.excluded_islands,
+    };
   }
 
   free(): void {
@@ -841,26 +873,109 @@ export async function solveModule(
   );
 }
 
-/** Portable terminal-aware result returned by the multiconductor fixed-point
- * BMOPF entry point. Complex quantities use `{re, im}` so the JSON remains
- * lossless across the wasm boundary. */
+/** Multiconductor fixed-point power-flow settings. Engine solve/session entry
+ * points fill omitted fields from {@link DEFAULT_MC_PF_OPTIONS}; controller
+ * reruns first merge overrides into the selected case settings. Load-envelope
+ * thresholds change load equations, independently of numerical convergence.
+ * Effective settings are retained in the result's load-model assessment. */
 export interface McPfOptions {
+  /** Maximum absolute complex-voltage change between iterations, in volts;
+   * positive, default 1e-4. Convergence also requires the KCL check. */
   tolerance?: number;
+  /** Maximum fixed-point iterations; positive integer, default 100. */
   max_iterations?: number;
+  /** Dimensionless voltage-update factor in (0, 1]; default 1 (full update). */
   damping?: number;
+  /** Positive near-zero voltage guard for load-current evaluation, in volts;
+   * default 1e-9. This is not a convergence tolerance. */
   zero_voltage_tolerance?: number;
-  /** Absolute physical KCL floor in amperes; default 1e-6. */
+  /** Positive absolute physical KCL floor in amperes; default 1e-4.
+   * At each unknown terminal, |residual| <= absolute + relative * I_scale. */
   absolute_kcl_tolerance?: number;
-  /** Relative KCL tolerance against prepared incident current. */
+  /** Nonnegative dimensionless KCL tolerance; default 1e-5. I_scale is the
+   * larger of summed incident-current magnitudes and net load-current magnitude. */
   relative_kcl_tolerance?: number;
-  /** Apply the OpenDSS-style bounded-voltage load envelope; default true. */
+  /** Apply the OpenDSS-style bounded-voltage load envelope; default true.
+   * False uses original load equations at every voltage. Thresholds must still
+   * satisfy 0 < v_low_pu < v_min_pu < v_max_pu when the envelope is disabled. */
   voltage_envelope?: boolean;
-  /** Nominal-impedance breakpoint in per unit; default 0.5. */
+  /** Per-unit voltage below which loads use nominal constant impedance;
+   * default 0.5. Envelope thresholds are not engineering voltage limits. */
   v_low_pu?: number;
-  /** Lower edge of the normal load-model range; default 0.85. */
+  /** Lower edge of the original load-law band, in per unit; default 0.85.
+   * Below it, the envelope transitions toward the low-voltage impedance law. */
   v_min_pu?: number;
-  /** Upper edge of the normal load-model range; default 1.15. */
+  /** Upper edge of the original load-law band, in per unit; default 1.15.
+   * Above it, the envelope uses impedance matched to the original law here. */
   v_max_pu?: number;
+}
+
+/** Effective defaults shared by settings controls and programmatic reruns. */
+export const DEFAULT_MC_PF_OPTIONS: Readonly<Required<McPfOptions>> =
+  Object.freeze({
+    tolerance: 1e-4,
+    max_iterations: 100,
+    damping: 1,
+    zero_voltage_tolerance: 1e-9,
+    absolute_kcl_tolerance: 1e-4,
+    relative_kcl_tolerance: 1e-5,
+    voltage_envelope: true,
+    v_low_pu: 0.5,
+    v_min_pu: 0.85,
+    v_max_pu: 1.15,
+  });
+
+export function validateMcPfOptions(options: McPfOptions): string | null {
+  const o = { ...DEFAULT_MC_PF_OPTIONS, ...options };
+  if (
+    Object.entries(o).some(
+      ([key, value]) => key !== "voltage_envelope" && !Number.isFinite(value),
+    )
+  )
+    return "Every solver setting must be a finite number.";
+  if (typeof o.voltage_envelope !== "boolean")
+    return "Select whether to use the load-model envelope.";
+  if (!Number.isSafeInteger(o.max_iterations) || o.max_iterations < 1)
+    return "Maximum iterations must be a positive integer.";
+  if (o.damping <= 0 || o.damping > 1)
+    return "Damping must be greater than 0 and at most 1.";
+  if (
+    o.tolerance <= 0 ||
+    o.zero_voltage_tolerance <= 0 ||
+    o.absolute_kcl_tolerance <= 0 ||
+    o.relative_kcl_tolerance < 0
+  )
+    return "Tolerances must be positive; relative KCL tolerance may be zero.";
+  if (!(0 < o.v_low_pu && o.v_low_pu < o.v_min_pu && o.v_min_pu < o.v_max_pu))
+    return "Load-model thresholds must satisfy 0 < Vlow < Vmin < Vmax.";
+  return null;
+}
+
+export interface McLoadModelAssessment {
+  status: "original" | "modified" | "unverified";
+  modified_branch_count: number;
+  original_kcl_residual: number | null;
+  original_scaled_kcl_residual: number | null;
+  options: Required<McPfOptions>;
+}
+
+export interface McLoadModelChange {
+  load: string;
+  branch: number;
+  bus: string;
+  voltage_pu: number;
+  solved_power: McComplex;
+  original_power: McComplex | null;
+}
+
+/** Missing qualification on legacy results never implies original-model success. */
+export function mcLoadModelLabel(
+  model: McLoadModelAssessment | null | undefined,
+): string {
+  if (model?.status === "original") return "Original load model verified";
+  if (model?.status === "modified")
+    return "Modified load model — non-canonical result";
+  return "Original load model not verified";
 }
 
 export interface McComplex {
@@ -885,8 +1000,61 @@ export interface McSourceReaction {
   power_into_network: McComplex;
 }
 
+/** Source-less bus islands explicitly left out of the calculation, not solved at zero voltage. */
+export interface McExcludedIsland {
+  buses: string[];
+  equipment: { kind: string; name: string }[];
+}
+export interface McNetworkScope {
+  excluded_island_count: number;
+  excluded_bus_count: number;
+  excluded_equipment_count: number;
+  excluded_load_count: number;
+}
+export interface McRetainedEnergizedPreparation {
+  input: BrowserMcInput;
+  network_scope: McNetworkScope | null;
+  excluded_islands: McExcludedIsland[];
+}
+export interface McEnergizedPreparation {
+  module_json: string;
+  network_scope: McNetworkScope | null;
+  excluded_islands: McExcludedIsland[];
+}
+export function summarizeMcExcludedIslands(
+  islands: McExcludedIsland[],
+): McNetworkScope | null {
+  if (!islands.length) return null;
+  const equipment = new Set(
+    islands.flatMap((i) =>
+      i.equipment.map((e) => JSON.stringify([e.kind, e.name])),
+    ),
+  );
+  const loads = new Set(
+    islands.flatMap((i) =>
+      i.equipment.filter((e) => e.kind === "load").map((e) => e.name),
+    ),
+  );
+  return {
+    excluded_island_count: islands.length,
+    excluded_bus_count: islands.reduce((n, i) => n + i.buses.length, 0),
+    excluded_equipment_count: equipment.size,
+    excluded_load_count: loads.size,
+  };
+}
+export function mcNetworkScopeLabel(scope?: McNetworkScope | null): string {
+  return scope
+    ? `Energized network only: ${scope.excluded_island_count} unpowered ${scope.excluded_island_count === 1 ? "island" : "islands"} excluded`
+    : "Full network";
+}
+
 export interface McPfResult {
+  network_scope?: McNetworkScope | null;
+  excluded_islands?: McExcludedIsland[];
   converged: boolean;
+  /** Absent only for legacy producers; never assume model fidelity when absent. */
+  load_model?: McLoadModelAssessment | null;
+  load_model_changes?: McLoadModelChange[];
   voltage_valid: boolean;
   min_voltage_pu: number | null;
   max_voltage_pu: number | null;
@@ -924,7 +1092,9 @@ export interface McTerminalResult {
  * match {@link McPfResult}; the aggregates are what a results summary shows.
  * Interactive edits return this instead of the full result. */
 export interface McPfSummary {
+  network_scope?: McNetworkScope | null;
   converged: boolean;
+  load_model?: McLoadModelAssessment | null;
   voltage_valid: boolean;
   min_voltage_pu: number | null;
   max_voltage_pu: number | null;
@@ -1011,13 +1181,19 @@ export function summarizeMcPfResult(
   }
   const passiveLoss = { re: 0, im: 0 };
   for (const port of result.element_ports) {
-    if (port.kind === "load" || port.kind === "generator" || port.kind === "ibr")
+    if (
+      port.kind === "load" ||
+      port.kind === "generator" ||
+      port.kind === "ibr"
+    )
       continue;
     passiveLoss.re += port.power_into_element.re;
     passiveLoss.im += port.power_into_element.im;
   }
   return {
+    ...(result.network_scope ? { network_scope: result.network_scope } : {}),
     converged: result.converged,
+    load_model: result.load_model ?? null,
     voltage_valid: result.voltage_valid,
     min_voltage_pu: result.min_voltage_pu,
     max_voltage_pu: result.max_voltage_pu,
@@ -1044,6 +1220,9 @@ export function summarizeMcPfResult(
  * typed arrays this way, where the object form holds an object and several
  * strings per port. */
 export interface McPfResultTables {
+  load_model?: McLoadModelAssessment | null;
+  network_scope?: McNetworkScope | null;
+  excluded_islands?: McExcludedIsland[];
   iterations: number;
   strings: string[];
   terminalBus: Uint32Array;
@@ -1089,6 +1268,9 @@ export function mcPfResultTables(result: McPfResult): McPfResultTables {
   const s = result.source_reactions.length;
   const tables: McPfResultTables = {
     iterations: result.iterations,
+    load_model: result.load_model ?? null,
+    network_scope: result.network_scope ?? null,
+    excluded_islands: result.excluded_islands ?? [],
     strings,
     terminalBus: new Uint32Array(t),
     terminalName: new Uint32Array(t),
@@ -1165,6 +1347,7 @@ function unpackResultTables(value: EngineValue): McPfResultTables {
   const sourceCurrent = values(s);
   const sourcePower = values(s);
   return {
+    ...JSON.parse(value.metadata),
     iterations,
     strings: JSON.parse(value.strings) as string[],
     terminalBus,
@@ -1209,16 +1392,17 @@ export function mcPfResultDetail(
 }
 
 /** Self-contained saved Study result for a supported distribution AC PF.
- * The input and solution modules make this replayable; `result` is the rich
- * terminal/element view rendered by the Study panel. */
+ * The input, options and qualified result make this replayable. Only a verified
+ * original-model result also includes a canonical PowerIO solution module. */
 export interface McStudySnapshot {
   schema: "tellegen-mc-pf-study";
-  version: 1;
+  version: 1 | 2;
   id: string;
   title: string;
   formulation: "mc_ac_pf";
   input_module: string;
-  solution_module: string;
+  /** Version 2 omits a canonical solution for modified or unverified models. */
+  solution_module: string | null;
   options: McPfOptions;
   result: McPfResult;
 }
@@ -1255,7 +1439,10 @@ export class BrowserMcPfSession {
   async summary(): Promise<McPfSummary> {
     return JSON.parse(
       expectText(
-        await this.host.call({ op: "mc_pf_session_summary", session: this.handle }),
+        await this.host.call({
+          op: "mc_pf_session_summary",
+          session: this.handle,
+        }),
       ),
     );
   }
@@ -1471,7 +1658,9 @@ export async function createMcPfSession(
 
 /** Live and peak heap of the shared engine, with its linear memory size. */
 export async function engineMemoryStats(): Promise<EngineMemoryStats> {
-  return JSON.parse(expectText(await engineHost().call({ op: "memory_stats" })));
+  return JSON.parse(
+    expectText(await engineHost().call({ op: "memory_stats" })),
+  );
 }
 
 /** Start a new peak-heap window in the shared engine. */
@@ -1491,6 +1680,31 @@ export async function solveMcBmopf(
         op: "solve_mc_bmopf",
         text,
         options: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
+/** Explicit preparation; preserves the full network and records excluded islands. */
+export function prepareMcEnergizedNetwork(
+  input: string,
+): Promise<McEnergizedPreparation>;
+export function prepareMcEnergizedNetwork(
+  input: BrowserMcInput,
+): Promise<McRetainedEnergizedPreparation>;
+export function prepareMcEnergizedNetwork(
+  input: McModuleInput,
+): Promise<McEnergizedPreparation | McRetainedEnergizedPreparation>;
+export async function prepareMcEnergizedNetwork(
+  input: McModuleInput,
+): Promise<McEnergizedPreparation | McRetainedEnergizedPreparation> {
+  if (typeof input !== "string") return input.prepareEnergized();
+  assertEngineInputLength(input.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "prepare_mc_energized_network",
+        module_json: input,
       }),
     ),
   );
@@ -2233,7 +2447,10 @@ function synthError(error: unknown): unknown {
   const message = error instanceof Error ? error.message : String(error);
   try {
     const payload = JSON.parse(message) as Partial<SynthErrorPayload>;
-    if (typeof payload?.code === "string" && typeof payload.message === "string") {
+    if (
+      typeof payload?.code === "string" &&
+      typeof payload.message === "string"
+    ) {
       return new SynthEngineError(payload as SynthErrorPayload);
     }
   } catch {
@@ -2242,7 +2459,10 @@ function synthError(error: unknown): unknown {
   return error;
 }
 
-async function callSynth(host: EngineHost, req: EngineRequest): Promise<EngineValue> {
+async function callSynth(
+  host: EngineHost,
+  req: EngineRequest,
+): Promise<EngineValue> {
   try {
     return await host.call(req);
   } catch (error) {
@@ -2262,7 +2482,8 @@ let placesBytes: Promise<Uint8Array> | null = null;
 export function fetchSyntheticPlaces(): Promise<Uint8Array> {
   placesBytes ??= fetch(syntheticPlacesUrl())
     .then(async (response) => {
-      if (!response.ok) throw new Error(`places table: HTTP ${response.status}`);
+      if (!response.ok)
+        throw new Error(`places table: HTTP ${response.status}`);
       return new Uint8Array(await response.arrayBuffer());
     })
     .catch((error) => {
@@ -2277,7 +2498,10 @@ export function fetchSyntheticPlaces(): Promise<Uint8Array> {
  * worker that fell back to the page needs it loaded again there). */
 const placesLoaded = new WeakMap<EngineHost, EngineHost["kind"]>();
 
-async function loadPlacesOn(host: EngineHost, bytes: Uint8Array): Promise<SynthPlacesInfo> {
+async function loadPlacesOn(
+  host: EngineHost,
+  bytes: Uint8Array,
+): Promise<SynthPlacesInfo> {
   assertEngineInputBytes(bytes);
   const info = JSON.parse(
     expectText(await callSynth(host, { op: "synth_load_places", bytes })),
@@ -2289,23 +2513,37 @@ async function loadPlacesOn(host: EngineHost, bytes: Uint8Array): Promise<SynthP
 /** Load a places table onto the synthetic generation host. Sessions load the
  * shipped table on their own; call this to warm the host up or to use
  * another table of `{n, lo, la, p, c}` rows. */
-export async function loadSyntheticPlaces(bytes: Uint8Array): Promise<SynthPlacesInfo> {
+export async function loadSyntheticPlaces(
+  bytes: Uint8Array,
+): Promise<SynthPlacesInfo> {
   return loadPlacesOn(synthEngineHost(), bytes);
 }
 
 /** The Overpass QL queries for a request's region, one per bounding box (two
  * when it crosses the antimeridian). The caller fetches them and passes the
  * documents as the `osm` option. */
-export async function syntheticOverpassQueries(request: SynthRequest): Promise<string[]> {
+export async function syntheticOverpassQueries(
+  request: SynthRequest,
+): Promise<string[]> {
   const text = JSON.stringify(request);
   assertEngineInputLength(text.length);
   return JSON.parse(
-    expectText(await callSynth(synthEngineHost(), { op: "synth_overpass_queries", request: text })),
+    expectText(
+      await callSynth(synthEngineHost(), {
+        op: "synth_overpass_queries",
+        request: text,
+      }),
+    ),
   ) as string[];
 }
 
 function expectSynthPreview(value: EngineValue): SynthPreview {
-  if (value === null || typeof value !== "object" || value instanceof Float64Array || value.kind !== "synth_preview") {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    value instanceof Float64Array ||
+    value.kind !== "synth_preview"
+  ) {
     throw new Error("engine returned no synthetic preview");
   }
   return {
@@ -2355,7 +2593,12 @@ export class BrowserSynthSession {
   ): Promise<SynthAdvance & { preview?: SynthPreview }> {
     this.#check();
     const outcome = JSON.parse(
-      expectText(await callSynth(this.host, { op: "synth_session_advance", session: this.handle })),
+      expectText(
+        await callSynth(this.host, {
+          op: "synth_session_advance",
+          session: this.handle,
+        }),
+      ),
     ) as SynthAdvance;
     this.#done = outcome.done;
     if (options.withPreview && outcome.preview_changed) {
@@ -2376,7 +2619,9 @@ export class BrowserSynthSession {
     signal?.addEventListener("abort", abort, { once: true });
     try {
       while (!this.#done) {
-        const { preview, ...outcome } = await this.advance({ withPreview: onStep !== undefined });
+        const { preview, ...outcome } = await this.advance({
+          withPreview: onStep !== undefined,
+        });
         signal?.throwIfAborted();
         onStep?.(outcome, preview);
       }
@@ -2392,7 +2637,10 @@ export class BrowserSynthSession {
   async preview(): Promise<SynthPreview> {
     this.#check();
     return expectSynthPreview(
-      await callSynth(this.host, { op: "synth_session_preview", session: this.handle }),
+      await callSynth(this.host, {
+        op: "synth_session_preview",
+        session: this.handle,
+      }),
     );
   }
 
@@ -2400,7 +2648,12 @@ export class BrowserSynthSession {
   async report(): Promise<GenerationReport> {
     this.#check();
     return JSON.parse(
-      expectText(await callSynth(this.host, { op: "synth_session_report", session: this.handle })),
+      expectText(
+        await callSynth(this.host, {
+          op: "synth_session_report",
+          session: this.handle,
+        }),
+      ),
     ) as GenerationReport;
   }
 
@@ -2409,7 +2662,10 @@ export class BrowserSynthSession {
   async takeModule(): Promise<string> {
     this.#check();
     return expectText(
-      await callSynth(this.host, { op: "synth_session_module", session: this.handle }),
+      await callSynth(this.host, {
+        op: "synth_session_module",
+        session: this.handle,
+      }),
     );
   }
 
@@ -2418,7 +2674,12 @@ export class BrowserSynthSession {
   async ingest(): Promise<IngestedCase> {
     this.#check();
     return JSON.parse(
-      expectText(await callSynth(this.host, { op: "synth_session_ingest", session: this.handle })),
+      expectText(
+        await callSynth(this.host, {
+          op: "synth_session_ingest",
+          session: this.handle,
+        }),
+      ),
     ) as IngestedCase;
   }
 
@@ -2428,7 +2689,10 @@ export class BrowserSynthSession {
   async exportGridfm(): Promise<string> {
     this.#check();
     return expectText(
-      await callSynth(this.host, { op: "synth_session_export_gridfm", session: this.handle }),
+      await callSynth(this.host, {
+        op: "synth_session_export_gridfm",
+        session: this.handle,
+      }),
     );
   }
 
@@ -2437,7 +2701,12 @@ export class BrowserSynthSession {
    * untouched, and the next session starts a fresh one. On the page's own
    * thread it takes effect before the next stage. Later calls reject with
    * `reason`. */
-  cancel(reason: unknown = new DOMException("synthetic generation cancelled", "AbortError")): void {
+  cancel(
+    reason: unknown = new DOMException(
+      "synthetic generation cancelled",
+      "AbortError",
+    ),
+  ): void {
     if (this.#stopped !== null || this.#freed) return;
     this.#stopped = reason;
     const error = reason instanceof Error ? reason : new Error(String(reason));
@@ -2490,12 +2759,18 @@ export async function createSynthSession(
   const osm = osmText(options.osm);
   const host = synthEngineHost();
   if (options.places) await loadPlacesOn(host, options.places);
-  else if (placesLoaded.get(host) !== host.kind) await loadPlacesOn(host, await fetchSyntheticPlaces());
+  else if (placesLoaded.get(host) !== host.kind)
+    await loadPlacesOn(host, await fetchSyntheticPlaces());
   signal?.throwIfAborted();
   // Handles are allocated here, so a pending request replayed onto the
   // fallback host keeps naming the same session.
   const handle = ++synthSessionSeq;
-  await callSynth(host, { op: "synth_session_new", session: handle, request: requestText, osm });
+  await callSynth(host, {
+    op: "synth_session_new",
+    session: handle,
+    request: requestText,
+    osm,
+  });
   const session = new BrowserSynthSession(host, handle);
   if (signal?.aborted) {
     session.free();
@@ -2509,7 +2784,11 @@ export async function createSynthSession(
 export async function generateSynthetic(
   request: SynthRequest,
   options: SynthSessionOptions = {},
-): Promise<{ moduleJson: string; report: GenerationReport; ingest: IngestedCase }> {
+): Promise<{
+  moduleJson: string;
+  report: GenerationReport;
+  ingest: IngestedCase;
+}> {
   const { signal } = options;
   signal?.throwIfAborted();
   const requestText = JSON.stringify(request);
@@ -2517,18 +2796,35 @@ export async function generateSynthetic(
   const osm = osmText(options.osm);
   const host = synthEngineHost();
   if (options.places) await loadPlacesOn(host, options.places);
-  else if (placesLoaded.get(host) !== host.kind) await loadPlacesOn(host, await fetchSyntheticPlaces());
+  else if (placesLoaded.get(host) !== host.kind)
+    await loadPlacesOn(host, await fetchSyntheticPlaces());
   signal?.throwIfAborted();
   const cancel = () => {
-    host.cancel?.(new DOMException("synthetic generation cancelled", "AbortError"));
+    host.cancel?.(
+      new DOMException("synthetic generation cancelled", "AbortError"),
+    );
   };
   signal?.addEventListener("abort", cancel, { once: true });
   try {
     const out = JSON.parse(
-      expectText(await callSynth(host, { op: "synth_generate", request: requestText, osm })),
-    ) as { module_json: string; report: GenerationReport; ingest: IngestedCase };
+      expectText(
+        await callSynth(host, {
+          op: "synth_generate",
+          request: requestText,
+          osm,
+        }),
+      ),
+    ) as {
+      module_json: string;
+      report: GenerationReport;
+      ingest: IngestedCase;
+    };
     signal?.throwIfAborted();
-    return { moduleJson: out.module_json, report: out.report, ingest: out.ingest };
+    return {
+      moduleJson: out.module_json,
+      report: out.report,
+      ingest: out.ingest,
+    };
   } catch (error) {
     signal?.throwIfAborted();
     throw error;
@@ -2561,7 +2857,10 @@ export interface EngineTransport {
     kind: "synthetic" | "manual",
   ): Promise<StampedLayoutCase>;
   extractGeo(moduleJson: string): Promise<string>;
-  mcSchematicLayout(graph: DistGraph, options?: SchematicOptions): Promise<SchematicLayout>;
+  mcSchematicLayout(
+    graph: DistGraph,
+    options?: SchematicOptions,
+  ): Promise<SchematicLayout>;
   applyDisplayGeo(
     moduleJson: string,
     bytes: Uint8Array,
@@ -2571,6 +2870,9 @@ export interface EngineTransport {
     moduleJson: string,
     request?: SolveRequest,
   ): Promise<SolveResponse>;
+  prepareMcEnergizedNetwork?(
+    input: McModuleInput,
+  ): Promise<McEnergizedPreparation | McRetainedEnergizedPreparation>;
   solveMcBmopf(text: string, options?: McPfOptions): Promise<McPfResult>;
   solveMcModule(
     moduleJson: string,
@@ -2608,7 +2910,11 @@ export interface EngineTransport {
   generateSynthetic?(
     request: SynthRequest,
     options?: SynthSessionOptions,
-  ): Promise<{ moduleJson: string; report: GenerationReport; ingest: IngestedCase }>;
+  ): Promise<{
+    moduleJson: string;
+    report: GenerationReport;
+    ingest: IngestedCase;
+  }>;
 }
 
 export const browserWasmTransport: EngineTransport = {
@@ -2629,6 +2935,7 @@ export const browserWasmTransport: EngineTransport = {
   capabilities,
   solveModule,
   solveMcBmopf,
+  prepareMcEnergizedNetwork,
   solveMcModule,
   solveMcStudy,
   createMcPfSession,

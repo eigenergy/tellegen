@@ -26,7 +26,12 @@ export type EngineRequest =
   | { op: "ingest_json_drop"; bytes: Uint8Array; input?: number }
   | { op: "ingest_case"; bytes: Uint8Array; format: string }
   | { op: "ingest_dist_case"; text: string; format: string }
-  | { op: "ingest_dist_case_bytes"; bytes: Uint8Array; format: string; input?: number }
+  | {
+      op: "ingest_dist_case_bytes";
+      bytes: Uint8Array;
+      format: string;
+      input?: number;
+    }
   | { op: "parse_display"; bytes: Uint8Array; format: string }
   | { op: "parse_geo"; bytes: Uint8Array; hint: string }
   | { op: "apply_geo"; module_json: string; layer: string }
@@ -37,6 +42,7 @@ export type EngineRequest =
   | { op: "capabilities" }
   | { op: "solve_module"; module_json: string; request: string }
   | { op: "solve_mc_bmopf"; text: string; options: string }
+  | { op: "prepare_mc_energized_network"; module_json: string }
   | { op: "solve_mc_module"; module_json: string; options: string }
   | {
       op: "solve_mc_study";
@@ -53,8 +59,14 @@ export type EngineRequest =
       module_json: string;
       options: string;
     }
-  | { op: "mc_pf_session_from_input"; session: number; input: number; options: string }
+  | {
+      op: "mc_pf_session_from_input";
+      session: number;
+      input: number;
+      options: string;
+    }
   | { op: "mc_pf_session_input"; session: number; input: number }
+  | { op: "mc_input_prepare_energized"; input: number; output: number }
   | { op: "mc_input_module_json"; input: number }
   | { op: "mc_input_free"; input: number }
   | { op: "mc_pf_session_result"; session: number }
@@ -141,6 +153,7 @@ export interface SynthPreviewValue {
  * documents. `index.ts` unpacks it into `McPfResultTables`. */
 export interface McPfResultBuffersValue {
   kind: "mc_pf_result_buffers";
+  metadata: string;
   counts: Uint32Array;
   strings: string;
   indices: Uint32Array;
@@ -150,19 +163,23 @@ export interface McPfResultBuffersValue {
 /** One engine answer: wasm JSON text, nothing, a numeric array, a synthetic
  * preview, or packed result columns. */
 export type EngineValue =
-  | string
-  | null
-  | Float64Array
-  | SynthPreviewValue
-  | McPfResultBuffersValue;
+  string | null | Float64Array | SynthPreviewValue | McPfResultBuffersValue;
 
 /** The buffers an answer moves to the caller instead of copying. */
 export function transferables(value: EngineValue): Transferable[] {
   if (value instanceof Float64Array) return [value.buffer];
-  if (value !== null && typeof value === "object" && value.kind === "mc_pf_result_buffers") {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    value.kind === "mc_pf_result_buffers"
+  ) {
     return [value.counts.buffer, value.indices.buffer, value.values.buffer];
   }
-  if (value !== null && typeof value === "object" && value.kind === "synth_preview") {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    value.kind === "synth_preview"
+  ) {
     return [
       value.busPositions.buffer,
       value.busKinds.buffer,
@@ -218,12 +235,14 @@ export function runRequest(
   };
   const mcPfSession = (handle: number): WasmMcPfSession => {
     const session = handles.mcPfSessions.get(handle);
-    if (!session) throw new Error(`unknown multiconductor PF session handle ${handle}`);
+    if (!session)
+      throw new Error(`unknown multiconductor PF session handle ${handle}`);
     return session;
   };
   const mcInput = (handle: number): WasmMcInput => {
     const input = handles.mcInputs.get(handle);
-    if (!input) throw new Error(`unknown multiconductor input handle ${handle}`);
+    if (!input)
+      throw new Error(`unknown multiconductor input handle ${handle}`);
     return input;
   };
   // Keep the ingest's module under the caller's handle and answer its payload.
@@ -238,7 +257,8 @@ export function runRequest(
   };
   const synthSession = (handle: number): WasmSynthSession => {
     const session = handles.synthSessions.get(handle);
-    if (!session) throw new Error(`unknown synthetic generation session handle ${handle}`);
+    if (!session)
+      throw new Error(`unknown synthetic generation session handle ${handle}`);
     return session;
   };
   switch (req.op) {
@@ -263,7 +283,10 @@ export function runRequest(
     case "ingest_dist_case_bytes":
       return req.input === undefined
         ? mod.ingest_dist_case_bytes(req.bytes, req.format)
-        : retain(mod.ingest_dist_case_bytes_retained(req.bytes, req.format), req.input);
+        : retain(
+            mod.ingest_dist_case_bytes_retained(req.bytes, req.format),
+            req.input,
+          );
     case "parse_display":
       return mod.parse_display(req.bytes, req.format);
     case "parse_geo":
@@ -284,6 +307,8 @@ export function runRequest(
       return mod.solve_module(req.module_json, req.request);
     case "solve_mc_bmopf":
       return mod.solve_mc_bmopf(req.text, req.options);
+    case "prepare_mc_energized_network":
+      return mod.prepare_mc_energized_network(req.module_json);
     case "solve_mc_module":
       return mod.solve_mc_module(req.module_json, req.options);
     case "solve_mc_study":
@@ -303,13 +328,18 @@ export function runRequest(
       return session.summary();
     }
     case "mc_pf_session_from_input": {
-      const session = mod.McPfSession.from_input(mcInput(req.input), req.options);
+      const session = mod.McPfSession.from_input(
+        mcInput(req.input),
+        req.options,
+      );
       handles.mcPfSessions.set(req.session, session);
       return session.summary();
     }
     case "mc_pf_session_input":
       handles.mcInputs.set(req.input, mcPfSession(req.session).input());
       return null;
+    case "mc_input_prepare_energized":
+      return retain(mcInput(req.input).prepare_energized(), req.output);
     case "mc_input_module_json":
       return mcInput(req.input).module_json();
     case "mc_input_free":
@@ -323,6 +353,7 @@ export function runRequest(
       try {
         return {
           kind: "mc_pf_result_buffers",
+          metadata: buffers.metadata(),
           counts: buffers.counts(),
           strings: buffers.take_strings(),
           indices: buffers.take_indices(),
@@ -366,7 +397,10 @@ export function runRequest(
       mod.reset_peak_memory();
       return null;
     case "study_new":
-      handles.studies.set(req.study, new mod.Study(req.module_json, req.formulation));
+      handles.studies.set(
+        req.study,
+        new mod.Study(req.module_json, req.formulation),
+      );
       return null;
     case "study_replace_edits":
       return study(req.study).replace_edits(req.edits, req.sensitivities);

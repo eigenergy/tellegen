@@ -377,6 +377,15 @@ pub fn solve_mc_bmopf(text: &str, options_json: &str) -> Result<String, JsError>
     tellegen::solve_bmopf_json(text, &options).map_err(jserr)
 }
 
+/// Explicitly prepare a source-covered subset while retaining the full input.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn prepare_mc_energized_network(module_json: &str) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    install_panic_hook();
+    tellegen::prepare_mc_energized_network_json(module_json).map_err(jserr)
+}
+
 /// Solve a stored PowerIO multiconductor module. This accepts the portable
 /// module form used by browser persistence in addition to raw BMOPF text.
 #[cfg(feature = "mc-pf")]
@@ -580,6 +589,7 @@ impl McPfSession {
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
 pub struct McPfResultBuffers {
+    metadata: String,
     counts: Vec<u32>,
     strings: Vec<String>,
     indices: Vec<u32>,
@@ -589,6 +599,12 @@ pub struct McPfResultBuffers {
 #[cfg(feature = "mc-pf")]
 impl McPfResultBuffers {
     fn pack(tables: tellegen::McPfResultTables) -> Self {
+        let metadata = serde_json::json!({
+            "load_model": tables.load_model,
+            "network_scope": tables.network_scope,
+            "excluded_islands": tables.excluded_islands,
+        })
+        .to_string();
         let counts = [
             tables.iterations,
             tables.terminal_count(),
@@ -638,6 +654,7 @@ impl McPfResultBuffers {
             source_power,
         ];
         Self {
+            metadata,
             counts,
             strings,
             indices: index_columns.concat(),
@@ -649,6 +666,11 @@ impl McPfResultBuffers {
 #[cfg(feature = "mc-pf")]
 #[wasm_bindgen]
 impl McPfResultBuffers {
+    /// Load-model qualification and excluded-network provenance as JSON.
+    pub fn metadata(&self) -> String {
+        self.metadata.clone()
+    }
+
     /// Iterations, terminals, ports, and source reactions.
     pub fn counts(&self) -> Vec<u32> {
         self.counts.clone()
@@ -1258,6 +1280,21 @@ impl McInput {
             )));
         }
         Ok(McInput(module))
+    }
+
+    /// Explicitly select source-covered islands, keeping the full input in the engine.
+    #[cfg(feature = "mc-pf")]
+    pub fn prepare_energized(&self) -> Result<RetainedIngest, JsError> {
+        let (module, islands) = tellegen::prepare_mc_energized_network(&self.0).map_err(jserr)?;
+        let scope = tellegen::McNetworkScope::from_excluded_islands(&islands);
+        let payload = serde_json::json!({
+            "input_retained": true, "network_scope": scope, "excluded_islands": islands,
+        })
+        .to_string();
+        Ok(RetainedIngest {
+            payload,
+            input: Some(McInput::retain(module)),
+        })
     }
 
     /// The module as PowerIO IR text, for saving or exporting.

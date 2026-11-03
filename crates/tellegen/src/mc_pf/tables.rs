@@ -23,6 +23,9 @@ use super::{
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct McPfResultTables {
     pub iterations: usize,
+    pub load_model: Option<super::McLoadModelAssessment>,
+    pub network_scope: Option<super::McNetworkScope>,
+    pub excluded_islands: Vec<super::McExcludedIsland>,
     /// The names the index columns refer to.
     pub strings: Vec<String>,
     pub terminal_bus: Vec<u32>,
@@ -56,6 +59,9 @@ impl McPfResultTables {
         let mut names = Names::default();
         let mut tables = Self {
             iterations: result.iterations,
+            load_model: result.load_model.clone(),
+            network_scope: result.network_scope.clone(),
+            excluded_islands: result.excluded_islands.clone(),
             ..Self::default()
         };
         for row in &result.terminals {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { DistGraphBus, McPfResult } from '@tellegen/engine';
+import {
+	DEFAULT_MC_PF_OPTIONS,
+	mcPfResultTables,
+	type DistGraphBus,
+	type McPfResult
+} from '@tellegen/engine';
 import {
 	busLabel,
 	busLimits,
@@ -172,6 +177,38 @@ describe('snapshotFromMcPf', () => {
 		inService: true,
 		rating: { kind: 'current' as const, amps: [200, 200, 200] }
 	};
+
+	it('keeps modified-model labels and exclusions identical for object and columnar results', () => {
+		const qualified: McPfResult = {
+			...result,
+			load_model: {
+				status: 'modified',
+				modified_branch_count: 2,
+				original_kcl_residual: 1,
+				original_scaled_kcl_residual: 2,
+				options: DEFAULT_MC_PF_OPTIONS
+			},
+			network_scope: {
+				excluded_island_count: 1,
+				excluded_bus_count: 1,
+				excluded_equipment_count: 1,
+				excluded_load_count: 1
+			},
+			excluded_islands: [
+				{ buses: ['unpowered'], equipment: [{ kind: 'load', name: 'unsupplied' }] }
+			]
+		};
+		const expected = snapshotFromMcPf(qualified, buses, [branch]);
+		const actual = snapshotFromMcPf(mcPfResultTables(qualified), buses, [branch]);
+		expect(actual).toEqual(expected);
+		expect(actual.label).toContain('Modified load model');
+		expect(actual.label).toContain('Energized network only');
+		expect(JSON.parse(actual.provenance![0])).toMatchObject({
+			load_model: qualified.load_model,
+			network_scope: qualified.network_scope,
+			excluded_islands: qualified.excluded_islands
+		});
+	});
 
 	it('derives declared pair voltages, phasor unbalance and signed end totals', () => {
 		const s = snapshotFromMcPf(result, buses, [branch]);

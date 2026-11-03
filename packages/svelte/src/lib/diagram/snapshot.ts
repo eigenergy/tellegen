@@ -1,5 +1,7 @@
 import {
 	mcPfResultTables,
+	mcLoadModelLabel,
+	mcNetworkScopeLabel,
 	type McComplex,
 	type McPfResult,
 	type McPfResultTables
@@ -64,6 +66,8 @@ export interface BranchSnapshot {
 export interface ResultSnapshot {
 	kind: 'solved' | 'stress';
 	label: string;
+	/** Qualification and effective settings retained by CSV exports. */
+	provenance?: string[];
 	iterations: number | null;
 	buses: BusSnapshot[];
 	branches: BranchSnapshot[];
@@ -275,7 +279,14 @@ export function snapshotFromMcPf(
 	const voltage = t.terminalVoltage;
 	return {
 		kind: 'solved',
-		label,
+		label: `${label}: ${mcLoadModelLabel(t.load_model)}; ${mcNetworkScopeLabel(t.network_scope)}`,
+		provenance: [
+			JSON.stringify({
+				load_model: t.load_model ?? null,
+				network_scope: t.network_scope ?? null,
+				excluded_islands: t.excluded_islands ?? []
+			})
+		],
 		iterations: t.iterations,
 		buses: buses.map((bus) => {
 			const terminals = voltages.get(bus.id);

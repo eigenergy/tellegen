@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import {
   BrowserMcPfSession,
+  DEFAULT_MC_PF_OPTIONS,
   mcPfResultDetail,
   mcPfResultTables,
   summarizeMcPfResult,
@@ -14,6 +15,22 @@ import { transferables, type McPfResultBuffersValue } from "../src/protocol.js";
 const c = (re: number, im: number) => ({ re, im });
 
 const result: McPfResult = {
+  load_model: {
+    status: "modified",
+    modified_branch_count: 1,
+    original_kcl_residual: 0.2,
+    original_scaled_kcl_residual: 1.5,
+    options: DEFAULT_MC_PF_OPTIONS,
+  },
+  network_scope: {
+    excluded_island_count: 1,
+    excluded_bus_count: 1,
+    excluded_equipment_count: 1,
+    excluded_load_count: 1,
+  },
+  excluded_islands: [
+    { buses: ["unpowered"], equipment: [{ kind: "load", name: "unsupplied" }] },
+  ],
   converged: true,
   voltage_valid: false,
   min_voltage_pu: 0.84,
@@ -37,24 +54,78 @@ const result: McPfResult = {
   physical_kcl_residual: 1e-7,
   scaled_kcl_residual: 0.1,
   terminals: [
-    { bus: "b1", terminal: "a", voltage: c(240, 0), current_into_network: c(5, -1), power_into_network: c(1200, 240) },
-    { bus: "b2", terminal: "a", voltage: c(201, -3), current_into_network: c(-5, 1), power_into_network: c(-1008, 186) },
-    { bus: "b2", terminal: "n", voltage: c(0.4, 0.1), current_into_network: c(0, 0), power_into_network: c(0, 0) },
+    {
+      bus: "b1",
+      terminal: "a",
+      voltage: c(240, 0),
+      current_into_network: c(5, -1),
+      power_into_network: c(1200, 240),
+    },
+    {
+      bus: "b2",
+      terminal: "a",
+      voltage: c(201, -3),
+      current_into_network: c(-5, 1),
+      power_into_network: c(-1008, 186),
+    },
+    {
+      bus: "b2",
+      terminal: "n",
+      voltage: c(0.4, 0.1),
+      current_into_network: c(0, 0),
+      power_into_network: c(0, 0),
+    },
   ],
   element_ports: [
-    { element: "ld", kind: "load", branch: 0, bus: "b2", terminal: "a", current_into_element: c(5, -1), power_into_element: c(1008, -186) },
-    { element: "l1", kind: "line", branch: 0, bus: "b1", terminal: "a", current_into_element: c(5, -1), power_into_element: c(1200, 240) },
-    { element: "l1", kind: "line", branch: 0, bus: "b2", terminal: "a", current_into_element: c(-5, 1), power_into_element: c(-1008, 186) },
+    {
+      element: "ld",
+      kind: "load",
+      branch: 0,
+      bus: "b2",
+      terminal: "a",
+      current_into_element: c(5, -1),
+      power_into_element: c(1008, -186),
+    },
+    {
+      element: "l1",
+      kind: "line",
+      branch: 0,
+      bus: "b1",
+      terminal: "a",
+      current_into_element: c(5, -1),
+      power_into_element: c(1200, 240),
+    },
+    {
+      element: "l1",
+      kind: "line",
+      branch: 0,
+      bus: "b2",
+      terminal: "a",
+      current_into_element: c(-5, 1),
+      power_into_element: c(-1008, 186),
+    },
   ],
   source_reactions: [
-    { source: "vs", terminal: "a", current_into_network: c(5, -1), power_into_network: c(1200, 240) },
-    { source: "vs", terminal: "n", current_into_network: c(0, 0), power_into_network: c(0.5, 0.25) },
+    {
+      source: "vs",
+      terminal: "a",
+      current_into_network: c(5, -1),
+      power_into_network: c(1200, 240),
+    },
+    {
+      source: "vs",
+      terminal: "n",
+      current_into_network: c(0, 0),
+      power_into_network: c(0.5, 0.25),
+    },
   ],
 };
 
 it("summarizes a stored result exactly as the engine does", () => {
   expect(summarizeMcPfResult(result, 3)).toEqual({
     converged: true,
+    load_model: result.load_model,
+    network_scope: result.network_scope,
     voltage_valid: false,
     min_voltage_pu: 0.84,
     max_voltage_pu: 1.01,
@@ -75,7 +146,11 @@ it("summarizes a stored result exactly as the engine does", () => {
 });
 
 it("pages a stored result like a live session detail query", () => {
-  const page = mcPfResultDetail(result, { bus: "b2", port_offset: 1, port_limit: 1 });
+  const page = mcPfResultDetail(result, {
+    bus: "b2",
+    port_offset: 1,
+    port_limit: 1,
+  });
   expect(page.terminals.map((t) => t.terminal)).toEqual(["a", "n"]);
   expect(page.element_ports).toEqual([result.element_ports[1]]);
   expect(page.element_port_total).toBe(3);
@@ -87,17 +162,27 @@ it("pages a stored result like a live session detail query", () => {
 it("returns the summary from an edit and records its latency breakdown", async () => {
   const summary = summarizeMcPfResult(result, 2);
   const call = vi.fn<EngineHost["call"]>();
-  const callTimed = vi.fn<NonNullable<EngineHost["callTimed"]>>(async (request) => {
-    expect(request).toEqual({
-      op: "mc_pf_session_replace_load_powers",
-      session: 7,
-      edits: JSON.stringify([{ load: "ld", branch: 0, p_w: 900, q_var: 100 }]),
-    });
-    return { value: JSON.stringify(summary), engineMs: 4.5 };
-  });
-  const session = new BrowserMcPfSession({ kind: "worker", call, callTimed }, 7, summarizeMcPfResult(result, 1));
+  const callTimed = vi.fn<NonNullable<EngineHost["callTimed"]>>(
+    async (request) => {
+      expect(request).toEqual({
+        op: "mc_pf_session_replace_load_powers",
+        session: 7,
+        edits: JSON.stringify([
+          { load: "ld", branch: 0, p_w: 900, q_var: 100 },
+        ]),
+      });
+      return { value: JSON.stringify(summary), engineMs: 4.5 };
+    },
+  );
+  const session = new BrowserMcPfSession(
+    { kind: "worker", call, callTimed },
+    7,
+    summarizeMcPfResult(result, 1),
+  );
   await expect(
-    session.replaceLoadPowers([{ load: "ld", branch: 0, p_w: 900, q_var: 100 }]),
+    session.replaceLoadPowers([
+      { load: "ld", branch: 0, p_w: 900, q_var: 100 },
+    ]),
   ).resolves.toEqual(summary);
   expect(call).not.toHaveBeenCalled();
   expect(session.lastTiming).toMatchObject({
@@ -113,25 +198,44 @@ it("fetches terminal identities once and terminal arrays on demand", async () =>
   const call = vi.fn<EngineHost["call"]>(async (request) => {
     switch (request.op) {
       case "mc_pf_session_terminal_ids":
-        return JSON.stringify([["b1", "a"], ["b2", "a"], ["b2", "n"]]);
+        return JSON.stringify([
+          ["b1", "a"],
+          ["b2", "a"],
+          ["b2", "n"],
+        ]);
       case "mc_pf_session_terminal_voltages":
         return voltages;
       case "mc_pf_session_terminal_currents":
         return "not an array";
       case "mc_pf_session_detail":
         expect(JSON.parse(request.query)).toEqual({ bus: "b2", port_limit: 5 });
-        return JSON.stringify(mcPfResultDetail(result, { bus: "b2", port_limit: 5 }, 2));
+        return JSON.stringify(
+          mcPfResultDetail(result, { bus: "b2", port_limit: 5 }, 2),
+        );
       default:
         throw new Error(`unexpected operation ${request.op}`);
     }
   });
-  const session = new BrowserMcPfSession({ kind: "worker", call }, 3, summarizeMcPfResult(result, 1));
-  const [first, second] = await Promise.all([session.terminalIds(), session.terminalIds()]);
+  const session = new BrowserMcPfSession(
+    { kind: "worker", call },
+    3,
+    summarizeMcPfResult(result, 1),
+  );
+  const [first, second] = await Promise.all([
+    session.terminalIds(),
+    session.terminalIds(),
+  ]);
   expect(first).toBe(second);
-  expect(call.mock.calls.filter(([request]) => request.op === "mc_pf_session_terminal_ids")).toHaveLength(1);
+  expect(
+    call.mock.calls.filter(
+      ([request]) => request.op === "mc_pf_session_terminal_ids",
+    ),
+  ).toHaveLength(1);
   await expect(session.terminalVoltages()).resolves.toBe(voltages);
   await expect(session.terminalCurrents()).rejects.toThrow("numeric array");
-  await expect(session.detail({ bus: "b2", port_limit: 5 })).resolves.toMatchObject({
+  await expect(
+    session.detail({ bus: "b2", port_limit: 5 }),
+  ).resolves.toMatchObject({
     solve_count: 2,
     element_port_total: 3,
   });
@@ -139,7 +243,17 @@ it("fetches terminal identities once and terminal arrays on demand", async () =>
 
 it("interns result names once, in row order, for the tables form", () => {
   const tables = mcPfResultTables(result);
-  expect(tables.strings).toEqual(["b1", "a", "b2", "n", "ld", "load", "l1", "line", "vs"]);
+  expect(tables.strings).toEqual([
+    "b1",
+    "a",
+    "b2",
+    "n",
+    "ld",
+    "load",
+    "l1",
+    "line",
+    "vs",
+  ]);
   expect([...tables.terminalBus]).toEqual([0, 2, 2]);
   expect([...tables.portElement]).toEqual([4, 6, 6]);
   expect([...tables.portKind]).toEqual([5, 7, 7]);
@@ -152,41 +266,73 @@ it("unpacks the engine's two packed buffers into views of the result tables", as
   const expected = mcPfResultTables(result);
   // The engine's documented order: index columns, then interleaved value columns.
   const indices = Uint32Array.from([
-    ...expected.terminalBus, ...expected.terminalName,
-    ...expected.portElement, ...expected.portKind, ...expected.portBranch,
-    ...expected.portBus, ...expected.portTerminal,
-    ...expected.sourceName, ...expected.sourceTerminal,
+    ...expected.terminalBus,
+    ...expected.terminalName,
+    ...expected.portElement,
+    ...expected.portKind,
+    ...expected.portBranch,
+    ...expected.portBus,
+    ...expected.portTerminal,
+    ...expected.sourceName,
+    ...expected.sourceTerminal,
   ]);
   const values = Float64Array.from([
-    ...expected.terminalVoltage, ...expected.terminalCurrent, ...expected.terminalPower,
-    ...expected.portCurrent, ...expected.portPower,
-    ...expected.sourceCurrent, ...expected.sourcePower,
+    ...expected.terminalVoltage,
+    ...expected.terminalCurrent,
+    ...expected.terminalPower,
+    ...expected.portCurrent,
+    ...expected.portPower,
+    ...expected.sourceCurrent,
+    ...expected.sourcePower,
   ]);
   const packed: McPfResultBuffersValue = {
     kind: "mc_pf_result_buffers",
+    metadata: JSON.stringify({
+      load_model: expected.load_model,
+      network_scope: expected.network_scope,
+      excluded_islands: expected.excluded_islands,
+    }),
     counts: Uint32Array.from([9, 3, 3, 2]),
     strings: JSON.stringify(expected.strings),
     indices,
     values,
   };
-  expect(transferables(packed)).toEqual([packed.counts.buffer, indices.buffer, values.buffer]);
+  expect(transferables(packed)).toEqual([
+    packed.counts.buffer,
+    indices.buffer,
+    values.buffer,
+  ]);
   const call = vi.fn<EngineHost["call"]>(async (request) => {
     expect(request).toEqual({ op: "mc_pf_session_result_tables", session: 4 });
     return packed;
   });
-  const session = new BrowserMcPfSession({ kind: "worker", call }, 4, summarizeMcPfResult(result, 1));
+  const session = new BrowserMcPfSession(
+    { kind: "worker", call },
+    4,
+    summarizeMcPfResult(result, 1),
+  );
   const tables = await session.resultTables();
   expect(tables.strings).toEqual(expected.strings);
   expect(tables.iterations).toBe(expected.iterations);
+  expect(tables.load_model).toEqual(expected.load_model);
+  expect(tables.network_scope).toEqual(expected.network_scope);
+  expect(tables.excluded_islands).toEqual(expected.excluded_islands);
   for (const key of Object.keys(expected) as (keyof McPfResultTables)[]) {
     const column = expected[key];
-    if (!(column instanceof Uint32Array || column instanceof Float64Array)) continue;
+    if (!(column instanceof Uint32Array || column instanceof Float64Array))
+      continue;
     const view = tables[key] as Uint32Array | Float64Array;
     // Views into the transferred buffers, not copies.
-    expect(view.buffer).toBe(column instanceof Float64Array ? values.buffer : indices.buffer);
+    expect(view.buffer).toBe(
+      column instanceof Float64Array ? values.buffer : indices.buffer,
+    );
     expect(Array.from(view)).toEqual(Array.from(column));
   }
   await expect(
-    new BrowserMcPfSession({ kind: "worker", call: async () => "{}" }, 5, summarizeMcPfResult(result, 1)).resultTables(),
+    new BrowserMcPfSession(
+      { kind: "worker", call: async () => "{}" },
+      5,
+      summarizeMcPfResult(result, 1),
+    ).resultTables(),
   ).rejects.toThrow("no result tables");
 });
