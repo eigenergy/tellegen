@@ -19,6 +19,11 @@ test('real browser worker solves raw and typed multiconductor PF', async ({ page
 		)
 		.toMatchObject({ invalid_rejected: true });
 	const result = JSON.parse(await page.locator('#result').innerText()) as {
+		default_settings: {
+			converged: boolean;
+			actual: Record<string, number | boolean> | null;
+			expected: Record<string, number | boolean>;
+		};
 		raw: { converged: boolean; factorization_count: number; terminals: unknown[] };
 		typed: { converged: boolean; factorization_count: number; terminals: unknown[] };
 		max_oracle_voltage_error: number;
@@ -32,6 +37,8 @@ test('real browser worker solves raw and typed multiconductor PF', async ({ page
 		error?: string;
 	};
 	expect(result.error).toBeUndefined();
+	expect(result.default_settings.converged).toBe(true);
+	expect(result.default_settings.actual).toEqual(result.default_settings.expected);
 	expect(result.raw.converged).toBe(true);
 	expect(result.typed.converged).toBe(true);
 	expect(result.raw.factorization_count).toBe(1);

@@ -873,25 +873,40 @@ export async function solveModule(
   );
 }
 
-/** Portable terminal-aware result returned by the multiconductor fixed-point
- * BMOPF entry point. Complex quantities use `{re, im}` so the JSON remains
- * lossless across the wasm boundary. */
+/** Multiconductor fixed-point power-flow settings. Engine solve/session entry
+ * points fill omitted fields from {@link DEFAULT_MC_PF_OPTIONS}; controller
+ * reruns first merge overrides into the selected case settings. Load-envelope
+ * thresholds change load equations, independently of numerical convergence.
+ * Effective settings are retained in the result's load-model assessment. */
 export interface McPfOptions {
+  /** Maximum absolute complex-voltage change between iterations, in volts;
+   * positive, default 1e-4. Convergence also requires the KCL check. */
   tolerance?: number;
+  /** Maximum fixed-point iterations; positive integer, default 100. */
   max_iterations?: number;
+  /** Dimensionless voltage-update factor in (0, 1]; default 1 (full update). */
   damping?: number;
+  /** Positive near-zero voltage guard for load-current evaluation, in volts;
+   * default 1e-9. This is not a convergence tolerance. */
   zero_voltage_tolerance?: number;
-  /** Absolute physical KCL floor in amperes; default 1e-6. */
+  /** Positive absolute physical KCL floor in amperes; default 1e-4.
+   * At each unknown terminal, |residual| <= absolute + relative * I_scale. */
   absolute_kcl_tolerance?: number;
-  /** Relative KCL tolerance against prepared incident current. */
+  /** Nonnegative dimensionless KCL tolerance; default 1e-5. I_scale is the
+   * larger of summed incident-current magnitudes and net load-current magnitude. */
   relative_kcl_tolerance?: number;
-  /** Apply the OpenDSS-style bounded-voltage load envelope; default true. */
+  /** Apply the OpenDSS-style bounded-voltage load envelope; default true.
+   * False uses original load equations at every voltage. Thresholds must still
+   * satisfy 0 < v_low_pu < v_min_pu < v_max_pu when the envelope is disabled. */
   voltage_envelope?: boolean;
-  /** Nominal-impedance breakpoint in per unit; default 0.5. */
+  /** Per-unit voltage below which loads use nominal constant impedance;
+   * default 0.5. Envelope thresholds are not engineering voltage limits. */
   v_low_pu?: number;
-  /** Lower edge of the normal load-model range; default 0.85. */
+  /** Lower edge of the original load-law band, in per unit; default 0.85.
+   * Below it, the envelope transitions toward the low-voltage impedance law. */
   v_min_pu?: number;
-  /** Upper edge of the normal load-model range; default 1.15. */
+  /** Upper edge of the original load-law band, in per unit; default 1.15.
+   * Above it, the envelope uses impedance matched to the original law here. */
   v_max_pu?: number;
 }
 
