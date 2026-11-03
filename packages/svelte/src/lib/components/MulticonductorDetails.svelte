@@ -119,8 +119,9 @@
 		/>
 		{#if !mc.mcPfSupported}<p class="footnote">{mc.mcPfReason}</p>{/if}
 		{#if validateMcPfOptions(mc.mcOptions)}<p class="footnote">
-				{validateMcPfOptions(mc.mcOptions)} Update Power flow settings in Studies before solving.
+				{validateMcPfOptions(mc.mcOptions)} Open Settings to update solver options before solving.
 			</p>{/if}
+		<button onclick={() => (app.settingsOpen = true)}>Power flow settings</button>
 		<div class="calculation-actions">
 			{#if mc.solving}
 				<span role="status">Calculating&hellip;</span>{#if mc.solveAbort}<button

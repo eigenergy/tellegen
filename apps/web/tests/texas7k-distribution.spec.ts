@@ -68,7 +68,9 @@ test('Texas7k hosted pilot solves, edits and reopens with its recorded options',
 		.poll(async () => {
 			const listed = await callTool(page, 'list_cases', {});
 			return (
-				listed.ok && listed.data.cases.some((item: { case_id: string }) => item.case_id === id)
+				listed.ok &&
+				Array.isArray(listed.data.cases) &&
+				listed.data.cases.some((item: { case_id: string }) => item.case_id === id)
 			);
 		})
 		.toBe(true);

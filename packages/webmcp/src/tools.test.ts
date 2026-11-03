@@ -644,3 +644,38 @@ it("validates bounded multiconductor solves and forwards cancellation", async ()
     expect.any(AbortSignal),
   );
 });
+
+it("settings tools require revisions for writes, keep inspect read-only, and dispatch without an engine dependency", async () => {
+  const settings = vi.fn(() => ({
+    settings_revision: 2,
+    selected: { damping: 0.8 },
+  }));
+  const tools = createTellegenTools(adapter({ settings }));
+  const inspect = tools.find((t) => t.name === "inspect_settings")!;
+  const update = tools.find((t) => t.name === "update_settings")!;
+  expect(inspect.annotations.readOnlyHint).toBe(true);
+  expect(update.annotations.readOnlyHint).toBe(false);
+  await expect(
+    update.execute({ patch: { damping: 0.8 } }),
+  ).resolves.toMatchObject({ ok: false });
+  expect(settings).not.toHaveBeenCalled();
+  await expect(
+    update.execute({
+      case_id: "case",
+      expected_revision: "r1",
+      settings_revision: 1,
+      patch: { damping: 0.8 },
+    }),
+  ).resolves.toMatchObject({ ok: true });
+  expect(settings).toHaveBeenCalledWith(
+    expect.objectContaining({
+      action: "update",
+      settingsRevision: 1,
+      patch: { damping: 0.8 },
+    }),
+    expect.any(AbortSignal),
+  );
+  await expect(inspect.execute({ scope: "display" })).resolves.toMatchObject({
+    ok: true,
+  });
+});

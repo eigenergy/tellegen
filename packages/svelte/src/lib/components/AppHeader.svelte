@@ -117,6 +117,11 @@
 			<span class="cregion mono">Case or geo files</span>
 		</button>
 	</nav>
+	<button
+		class="settings-button"
+		onclick={() => (app.settingsOpen = !app.settingsOpen)}
+		aria-expanded={app.settingsOpen}>Settings</button
+	>
 	<span class="kicker mono">
 		<a href={config.orgHref} target="_blank" rel="noreferrer">{config.orgLabel}</a>
 		<i class="sep"></i>
@@ -139,6 +144,17 @@
 </header>
 
 <style>
+	.settings-button {
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		padding: 7px 12px;
+		color: var(--ink);
+		background: var(--surface-control);
+		font: inherit;
+		font-size: 12px;
+		cursor: pointer;
+	}
+
 	header {
 		position: absolute;
 		top: 0;

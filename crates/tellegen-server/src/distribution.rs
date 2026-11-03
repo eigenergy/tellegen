@@ -38,31 +38,16 @@ pub struct Metadata {
     pub pf_options: PfOptions,
 }
 
-/// Supported hosted overrides; omitted values retain engine defaults.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct PfOptions {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub absolute_kcl_tolerance: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_iterations: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub voltage_envelope: Option<bool>,
-}
+/// Hosted overrides use the same setting keys and validation as other callers.
+pub type PfOptions = tellegen::settings::Options;
 
 impl Metadata {
     fn validate(&self) -> Result<(), String> {
-        let options = &self.pf_options;
-        if [options.tolerance, options.absolute_kcl_tolerance]
-            .into_iter()
-            .flatten()
-            .any(|v| !v.is_finite() || v <= 0.0)
-            || options.max_iterations == Some(0)
-        {
-            return Err("hosted PF tolerances and iteration count must be positive".into());
-        }
+        tellegen::settings::resolve(&tellegen::settings::SettingsRequest {
+            calculation: "mc_ac_pf".into(),
+            baseline: self.pf_options.clone(),
+            overrides: Default::default(),
+        })?;
         if let Some(url) = &self.source_url {
             let uri: axum::http::Uri = url.parse().map_err(|_| "invalid source URL")?;
             if uri.scheme_str() != Some("https") || uri.host().is_none() {
@@ -179,4 +164,26 @@ fn load_case(data: &Path, spec: &Spec) -> Result<DistributionCase, String> {
         },
         module_json,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn hosted_overrides_accept_all_mc_fields_and_share_the_common_validator() {
+        let mut metadata:Metadata=serde_json::from_value(serde_json::json!({"pf_options":{"damping":0.8,"relative_kcl_tolerance":0,"v_low_pu":0.4,"v_min_pu":0.8,"v_max_pu":1.2}})).unwrap();
+        metadata.validate().unwrap();
+        metadata
+            .pf_options
+            .insert("v_min_pu".into(), serde_json::json!(0.3));
+        assert!(metadata.validate().is_err());
+        metadata.pf_options.remove("v_min_pu");
+        metadata
+            .pf_options
+            .insert("typo".into(), serde_json::json!(1));
+        assert!(metadata
+            .validate()
+            .unwrap_err()
+            .contains("unsupported setting"));
+    }
 }

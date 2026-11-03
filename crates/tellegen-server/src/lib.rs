@@ -12,6 +12,7 @@ use std::{
 };
 
 mod distribution;
+mod settings;
 
 use axum::{
     extract::{ConnectInfo, Path as AxumPath, Query, Request, State},
@@ -21,7 +22,7 @@ use axum::{
         sse::{Event, Sse},
         IntoResponse, Response,
     },
-    routing::{any, get},
+    routing::{any, get, post},
     Json, Router,
 };
 use powerio::{BalancedNetwork, DcOpfInstance, PioModule};
@@ -637,6 +638,11 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
             get(sensitivity_line_limit),
         )
         .route("/api/cases/{id}/solve", get(solve_stream))
+        .route(
+            "/api/calculate",
+            post(settings::calculate)
+                .layer(axum::extract::DefaultBodyLimit::max(128 * 1024 * 1024)),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_compute,
@@ -644,6 +650,8 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
 
     let app = Router::new()
         .route("/api/health", get(health))
+        .route("/api/settings", get(settings::describe))
+        .route("/api/settings/resolve", post(settings::resolve))
         .route("/api/compute", get(compute_status))
         .route("/api/cases", get(cases))
         .route(
@@ -2680,5 +2688,63 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.contains("TELLEGEN_ALLOW_FALLBACK=1"));
+    }
+    async fn post_settings(
+        state: Arc<AppState>,
+        path: &str,
+        value: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
+        let response = router(state, None)
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header("content-type", "application/json")
+                    .header("x-forwarded-for", next_client())
+                    .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))))
+                    .body(Body::from(value.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn common_settings_resolve_and_calculate_match_native_and_obey_compute_gate() {
+        let request = serde_json::json!({"calculation":"mc_ac_pf","baseline":{"max_iterations":150},"overrides":{"damping":0.8}});
+        let (status, resolved) = post_settings(
+            compute_disabled_state(),
+            "/api/settings/resolve",
+            request.clone(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let native =
+            tellegen::settings::resolve(&serde_json::from_value(request.clone()).unwrap()).unwrap();
+        assert_eq!(resolved, serde_json::to_value(native).unwrap());
+        let payload = serde_json::json!({"settings":request,"module_json":include_str!("../../../apps/web/tests/fixtures/mc-pf-browser/public/mc-pf-three-phase.pio.json")});
+        let (status, _) =
+            post_settings(compute_disabled_state(), "/api/calculate", payload.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, result) =
+            post_settings(fallback_state(), "/api/calculate", payload.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{result}");
+        let native =
+            tellegen::settings::calculate(&serde_json::from_value(payload).unwrap(), None).unwrap();
+        assert_eq!(result, serde_json::to_value(native).unwrap());
+        let (status, error) = post_settings(
+            fallback_state(),
+            "/api/settings/resolve",
+            serde_json::json!({"calculation":"dcopf","overrides":{"not_a_setting":1}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(error["error"]
+            .as_str()
+            .unwrap()
+            .contains("unsupported setting"));
     }
 }

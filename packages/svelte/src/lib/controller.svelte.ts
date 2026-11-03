@@ -31,6 +31,9 @@ import { DropBatchGate, readDropFileBytes, validateDropBatch } from './drop-limi
 import { buildGeographicView, buildDiagramView, placeMultiView } from './multiconductor.js';
 import {
 	browserWasmTransport,
+	resolveSettings,
+	settingsCatalog,
+	type ResolvedSettings,
 	applyDisplayGeo,
 	applyGeo,
 	applyLayout,
@@ -74,6 +77,35 @@ import {
 } from '@tellegen/engine';
 import { browserSolveFailure, errorText, extent, formulationLabel, rgbaCss } from './format.js';
 import { DEAD_ZONE_MW } from './slider.js';
+
+function sameSettings(a: unknown, b: unknown): boolean {
+	if (a && b && typeof a === 'object' && typeof b === 'object') {
+		const x = a as Record<string, unknown>,
+			y = b as Record<string, unknown>;
+		return (
+			Object.keys(x).length === Object.keys(y).length &&
+			Object.keys(x).every((k) => sameSettings(x[k], y[k]))
+		);
+	}
+	return Object.is(a, b);
+}
+
+function defaultCalculationSettings(calculation: string): ResolvedSettings {
+	const descriptor = settingsCatalog.calculations.find((c) => c.calculation === calculation);
+	const effective = descriptor && 'defaults' in descriptor ? { ...descriptor.defaults } : {};
+	return {
+		version: 1,
+		calculation,
+		engine_defaults: effective,
+		baseline: effective,
+		overrides: {},
+		effective
+	};
+}
+function hasCustomCalculationSettings(c: SolvableCase): boolean {
+	const accepted = c.settings.accepted;
+	return !!accepted && !sameSettings(accepted.effective, accepted.engine_defaults);
+}
 
 const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
@@ -284,6 +316,7 @@ export class Controller {
 			studyInputJson: string;
 			formulation: Formulation;
 			baseSolution: Solution;
+			settings?: ResolvedSettings;
 		}
 	>();
 	private detachedCaseCaptures = new WeakMap<
@@ -568,7 +601,19 @@ export class Controller {
 		const token = {};
 		const build = (async (): Promise<BrowserStudy | null> => {
 			try {
-				const study = await createStudy(studyInputJson, formulation);
+				const accepted =
+					(c.settings.accepted?.calculation === formulation ? c.settings.accepted : null) ??
+					(c.settings.baselines[formulation]
+						? await resolveSettings({
+								calculation: formulation,
+								baseline: c.settings.baselines[formulation]
+							})
+						: null);
+				const study = await createStudy(
+					studyInputJson,
+					formulation,
+					accepted ? { settings: { calculation: formulation, overrides: accepted.effective } } : {}
+				);
 				const baseSolution = await study.currentSolution();
 				// The case may have switched formulation or been disposed (removed, or its
 				// list reloaded) while building; don't cache a now-unwanted Study, and free
@@ -581,7 +626,8 @@ export class Controller {
 					study,
 					studyInputJson,
 					formulation,
-					baseSolution
+					baseSolution,
+					settings: accepted ?? defaultCalculationSettings(formulation)
 				});
 				return study;
 			} catch (e) {
@@ -687,6 +733,8 @@ export class Controller {
 	finishSolve(c: SolvableCase, seq: number, target: SensTarget | null) {
 		if (seq !== (c.solveSeq ?? 0)) return;
 		c.solving = false;
+		const acceptedSettings = this.caseStudies.get(c)?.settings;
+		if (acceptedSettings?.calculation === c.formulation) c.settings.accepted = acceptedSettings;
 		// Every solve of a case restates the same findings; they count once.
 		const findings = c.solution?.diagnostics ?? [];
 		if (findings.length)
@@ -1727,6 +1775,13 @@ export class Controller {
 			'bus' in target
 				? () => this.selectBus(c.id, target.bus)
 				: () => this.selectBranch(c.id, target.branch);
+		if (hasCustomCalculationSettings(c)) {
+			this.fail(
+				'The legacy server sensitivity endpoint cannot apply these calculation settings. Retry the browser calculation.',
+				retryOp
+			);
+			return;
+		}
 		const api = this.api;
 		if (this.serverComputeOff || !api) {
 			this.fail(this.computeOffNotice(c), retryOp);
@@ -2086,6 +2141,14 @@ export class Controller {
 	};
 
 	serverSolve = (c: CaseState, target: SensTarget | null, seq = c.solveSeq) => {
+		if (hasCustomCalculationSettings(c)) {
+			if (seq !== c.solveSeq) return;
+			c.solving = false;
+			this.fail(
+				'The legacy server solve stream cannot apply these calculation settings. Retry the browser calculation.'
+			);
+			return;
+		}
 		// Known-disabled server compute (or no backend at all): show the notice
 		// instead of opening a stream that answers 403 without a readable body
 		// (EventSource hides it).
@@ -2178,6 +2241,236 @@ export class Controller {
 		if (this.app.selectedBus !== null) this.setNearbyRangeAnchor(c, this.app.selectedBus, 0);
 		if (c.baseSolution) c.solution = c.baseSolution;
 		this.runSolve(c, this.selectionTarget);
+	};
+
+	/** Read selected next-run settings without changing a result or starting work. */
+	inspectSettings = (c: SolvableCase | MulticonductorCase) => {
+		const calculation =
+			c.settings.calculation ?? (c instanceof MulticonductorCase ? 'mc_ac_pf' : c.formulation);
+		const descriptor = settingsCatalog.calculations.find((d) => d.calculation === calculation);
+		const baseline =
+			c instanceof MulticonductorCase
+				? { ...c.distribution?.pf_options }
+				: { ...c.settings.baselines[calculation] };
+		const selected =
+			c instanceof MulticonductorCase
+				? { ...c.mcOptions }
+				: (c.settings.options[calculation] ?? {});
+		const defaults = descriptor && 'defaults' in descriptor ? descriptor.defaults : {};
+		const effective = { ...defaults, ...baseline, ...selected };
+		const accepted =
+			c instanceof MulticonductorCase
+				? c.result?.load_model?.options
+				: c.settings.accepted?.effective;
+		return {
+			case_id: c.id,
+			settings_revision: c.settings.revision,
+			calculation,
+			baseline,
+			selected: effective,
+			accepted: accepted ?? null,
+			accepted_calculation:
+				c instanceof MulticonductorCase
+					? c.result
+						? 'mc_ac_pf'
+						: null
+					: c.solution
+						? c.formulation
+						: null,
+			pending:
+				!!accepted &&
+				(!sameSettings(effective, accepted) ||
+					(!(c instanceof MulticonductorCase) && calculation !== c.formulation)),
+			fields: descriptor?.fields ?? []
+		};
+	};
+
+	/** Validate the complete candidate in Rust, then commit all fields atomically. */
+	updateSettings = async (
+		c: SolvableCase | MulticonductorCase,
+		calculation: string,
+		patch: Record<string, unknown>,
+		expectedRevision: number,
+		reset = false
+	) => {
+		if (c.solving) throw new Error('Settings cannot change during a calculation');
+		if (c.settings.revision !== expectedRevision)
+			throw new Error('Settings changed; inspect settings before retrying');
+		if (
+			c instanceof MulticonductorCase
+				? calculation !== 'mc_ac_pf'
+				: !this.formulationAvailable(c, calculation as Formulation)
+		)
+			throw new Error('This calculation is unavailable for the selected case');
+		if (c instanceof LocalCase && c.declaredFormulation && calculation !== c.declaredFormulation)
+			throw new Error('This PowerIO instance requires its declared calculation');
+		const overrides = reset ? {} : { ...c.settings.options[calculation], ...patch };
+		const caseRevision = c.revisionGeneration;
+		const baseline =
+			c instanceof MulticonductorCase
+				? { ...c.distribution?.pf_options }
+				: { ...c.settings.baselines[calculation] };
+		let resolved: ResolvedSettings;
+		if (calculation === 'acopf' && this.acOpfAvailable) {
+			if (Object.keys(overrides).length)
+				throw new Error('The isolated AC OPF backend has no public numerical settings');
+			resolved = {
+				version: 1,
+				calculation,
+				engine_defaults: {},
+				baseline: {},
+				overrides: {},
+				effective: {}
+			};
+		} else resolved = await resolveSettings({ calculation, baseline, overrides });
+		if (
+			c.solving ||
+			c.revisionGeneration !== caseRevision ||
+			c.settings.revision !== expectedRevision
+		)
+			throw new Error('Case or settings changed while validating; inspect before retrying');
+		c.settings.options = { ...c.settings.options, [calculation]: { ...resolved.overrides } };
+		c.settings.calculation = calculation;
+		c.settings.revision++;
+		if (c instanceof MulticonductorCase) c.mcOptions = { ...resolved.effective } as McPfOptions;
+		return this.inspectSettings(c);
+	};
+
+	canCancelSettings = (c: SolvableCase | MulticonductorCase) =>
+		c instanceof MulticonductorCase ? !!c.solveAbort : this.acOpfSolves.has(c);
+	cancelSettings = (c: SolvableCase | MulticonductorCase) => {
+		if (c instanceof MulticonductorCase) c.solveAbort?.abort();
+		else this.acOpfSolves.get(c)?.abort();
+	};
+
+	/** Explicit solve. A candidate Study replaces the accepted Study only after success. */
+	runSettings = async (c: SolvableCase | MulticonductorCase, signal?: AbortSignal) => {
+		signal?.throwIfAborted();
+		if (c.solving) throw new Error('A calculation is already running for this case');
+		const snapshot = this.inspectSettings(c);
+		const initialRevision = c.revisionGeneration;
+		if (c instanceof MulticonductorCase) {
+			const resolved = await resolveSettings({
+				calculation: 'mc_ac_pf',
+				baseline: snapshot.baseline,
+				overrides: snapshot.selected
+			});
+			if (
+				c.revisionGeneration !== initialRevision ||
+				c.settings.revision !== snapshot.settings_revision
+			)
+				throw new Error('Case or settings changed before calculation');
+			const result = await this.solveMultiCase(
+				c,
+				resolved.effective as McPfOptions,
+				signal,
+				c.mcRequiresEnergizedSolve
+			);
+			c.settings.accepted = resolved;
+			return result;
+		}
+		const formulation = snapshot.calculation as Formulation;
+		const resolved: ResolvedSettings =
+			formulation === 'acopf'
+				? {
+						version: 1,
+						calculation: formulation,
+						engine_defaults: {},
+						baseline: {},
+						overrides: {},
+						effective: {}
+					}
+				: await resolveSettings({
+						calculation: formulation,
+						baseline: snapshot.baseline,
+						overrides: c.settings.options[formulation] ?? {}
+					});
+		signal?.throwIfAborted();
+		if (c.solving) throw new Error('A calculation is already running for this case');
+		if (
+			c.revisionGeneration !== initialRevision ||
+			c.settings.revision !== snapshot.settings_revision
+		)
+			throw new Error('Case or settings changed before calculation');
+		const sequence = ++c.solveSeq;
+		const revision = c.revisionGeneration;
+		const settingsRevision = c.settings.revision;
+		const started = performance.now();
+		const cancellation = new AbortController();
+		const cancel = () => cancellation.abort();
+		signal?.addEventListener('abort', cancel, { once: true });
+		this.acOpfSolves.set(c, cancellation);
+		c.solving = true;
+		let study: BrowserStudy | null = null;
+		try {
+			const input = await this.ensureStudyInputJson(c);
+			if (!input) throw new Error('This case has no retained PowerIO input');
+			let solution: Solution;
+			let baseSolution: Solution | null = null;
+			let iterations: typeof c.iterations = [];
+			if (formulation === 'acopf') {
+				if (!this.acOpfAvailable || !this.acOpfWasmUrl || c.perturbed)
+					throw new Error('AC OPF requires its isolated backend and the unedited base case');
+				solution = solveResponseToSolution(
+					await solveAcOpfModule(this.acOpfWasmUrl, input, cancellation.signal)
+				);
+				baseSolution = solution;
+			} else {
+				study = await createStudy(input, formulation, {
+					isolated: true,
+					signal: cancellation.signal,
+					settings: { calculation: formulation, overrides: resolved.effective }
+				});
+				baseSolution = await study.currentSolution();
+				const committed = await study.commit(
+					c.id,
+					this.caseDeltas(c),
+					this.caseRatings(c),
+					null,
+					cancellation.signal
+				);
+				solution = committed.solution;
+				iterations = committed.iterations;
+			}
+			cancellation.signal.throwIfAborted();
+			if (
+				sequence !== c.solveSeq ||
+				revision !== c.revisionGeneration ||
+				settingsRevision !== c.settings.revision
+			)
+				throw new Error('Case or settings changed during calculation');
+			this.disposeStudy(c);
+			c.formulation = formulation;
+			c.settings.accepted = resolved;
+			c.settings.revision++;
+			c.solution = solution;
+			c.baseSolution = baseSolution;
+			c.sensitivity = null;
+			c.iterations = iterations;
+			c.solveBackend = formulation === 'acopf' ? 'pounce-wasi' : 'clarabel-wasm';
+			c.solveMs = Math.round(performance.now() - started);
+			if (study) {
+				this.caseStudies.set(c, {
+					study,
+					studyInputJson: input,
+					formulation,
+					baseSolution: baseSolution!,
+					settings: resolved
+				});
+				study = null;
+			}
+			this.bumpRevision(c);
+			if (this.app.displayMode !== 'demand')
+				this.app.displayMode =
+					formulation === 'acpf' || formulation === 'acopf' ? 'voltage' : 'price';
+			this.finishSolve(c, sequence, null);
+			return solution;
+		} finally {
+			study?.free();
+			if (sequence === c.solveSeq) c.solving = false;
+			if (this.acOpfSolves.get(c) === cancellation) this.acOpfSolves.delete(c);
+			signal?.removeEventListener('abort', cancel);
+		}
 	};
 
 	/** Rebuild the numerical Study for a selected calculation at the current demand. */
@@ -2617,6 +2910,19 @@ export class Controller {
 		options = { ...DEFAULT_MC_PF_OPTIONS, ...c.mcOptions, ...options };
 		const settingsError = validateMcPfOptions(options);
 		if (settingsError) throw new Error(settingsError);
+		if (!sameSettings(c.mcOptions, options)) {
+			const baseline = { ...DEFAULT_MC_PF_OPTIONS, ...c.distribution?.pf_options } as Record<
+				string,
+				unknown
+			>;
+			c.settings.options = {
+				...c.settings.options,
+				mc_ac_pf: Object.fromEntries(
+					Object.entries(options).filter(([key, value]) => !sameSettings(value, baseline[key]))
+				)
+			};
+			c.settings.revision++;
+		}
 		c.mcOptions = { ...options };
 		c.mcEnergizedOnly = energizedOnly;
 		const unavailable = c.mcPfReason;

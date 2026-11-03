@@ -18,7 +18,8 @@ After an initial solve, select a bus to edit each attached load branch's active 
 
 ## Solver settings and OpenDSS comparison
 
-Open **Power flow settings** in Studies to edit the next explicit run. Network and
+Open **Settings** from the header, Network or Studies to edit the next explicit run.
+Choose **Apply settings**, then run explicitly. See the [common settings menu and API](settings.md). Network and
 Studies share these settings. Editing a value does not solve; use the single
 context-sensitive solve button. A successful solve scrolls Studies to the overview
 with violations, losses and voltage ranges. Failed runs retain the preceding result

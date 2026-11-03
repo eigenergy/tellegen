@@ -47,6 +47,7 @@ mod problem;
 pub mod schematic;
 #[cfg(feature = "sensitivity")]
 mod sens;
+pub mod settings;
 mod solve;
 #[cfg(feature = "sensitivity")]
 pub mod study;

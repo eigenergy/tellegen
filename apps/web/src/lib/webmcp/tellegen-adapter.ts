@@ -2,6 +2,7 @@ import { tick } from 'svelte';
 import type { StudyWorkspace } from '../studies/workspace.svelte.js';
 import {
 	FORMULATIONS,
+	recordedCalculationSettings,
 	LocalCase,
 	createStudy,
 	type BrowserStudy,
@@ -1781,6 +1782,93 @@ export function createTellegenWebMcpAdapter(
 		};
 	}
 	return {
+		settings: (input, signal) =>
+			enqueue(async () => {
+				signal.throwIfAborted();
+				if (input.scope === 'display') {
+					const prefs = ctrl.app.preferences;
+					if (input.action !== 'inspect' && input.settingsRevision !== prefs.revision)
+						throw new TellegenToolError(
+							'STALE_REVISION',
+							'Display preferences changed; inspect settings before retrying'
+						);
+					if (input.action === 'update') prefs.update(input.patch ?? {});
+					if (input.action === 'reset') prefs.reset();
+					const color = prefs.coloring;
+					if (input.action !== 'inspect' && ctrl.displayOptions.some((x) => x.mode === color))
+						ctrl.app.displayMode = color;
+					return {
+						scope: 'display',
+						settings_revision: prefs.revision,
+						selected: prefs.inspect(),
+						storage_error: prefs.error
+					};
+				}
+				if (ctrl.app.studyView && input.action === 'inspect') {
+					const recorded = recordedCalculationSettings(ctrl.app.studyView.inputJson);
+					return {
+						...displayedContext(ctrl),
+						editable: false,
+						calculation: ctrl.app.studyView.formulation,
+						accepted: recorded?.effective ? JSON.parse(JSON.stringify(recorded.effective)) : null,
+						provenance: recorded ? 'recorded' : 'unavailable'
+					};
+				}
+				const c = ctrl.app.studyView ? null : (ctrl.app.activeMulti ?? ctrl.activeSolvable);
+				if (!c || (input.caseId && c.id !== input.caseId))
+					throw new TellegenToolError(
+						'STALE_CASE',
+						'Select an editable case before changing its settings'
+					);
+				if (input.action !== 'inspect' && displayedRevision(ctrl) !== input.expectedRevision)
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'Case changed; inspect_case before retrying'
+					);
+				if (input.action !== 'inspect' && c.settings.revision !== input.settingsRevision)
+					throw new TellegenToolError(
+						'STALE_REVISION',
+						'Settings changed; inspect_settings before retrying'
+					);
+				const selected = ctrl.inspectSettings(c);
+				if (input.action === 'update' || input.action === 'reset')
+					await ctrl.updateSettings(
+						c,
+						input.calculation ?? selected.calculation,
+						input.patch ?? {},
+						input.settingsRevision!,
+						input.action === 'reset'
+					);
+				if (input.action === 'run') await ctrl.runSettings(c, signal);
+				const snapshot = ctrl.inspectSettings(c);
+				if (input.field) {
+					const field = snapshot.fields.find((f) => f.key === input.field);
+					if (!field)
+						throw new TellegenToolError(
+							'INVALID_INPUT',
+							'Setting is unavailable for this calculation'
+						);
+					return JSON.parse(
+						JSON.stringify({
+							...displayedContext(ctrl),
+							settings_revision: snapshot.settings_revision,
+							calculation: snapshot.calculation,
+							field
+						})
+					);
+				}
+				return JSON.parse(
+					JSON.stringify({
+						...displayedContext(ctrl),
+						settings_revision: snapshot.settings_revision,
+						calculation: snapshot.calculation,
+						selected: snapshot.selected,
+						accepted: snapshot.accepted,
+						accepted_calculation: snapshot.accepted_calculation,
+						pending: snapshot.pending
+					})
+				);
+			}),
 		cases: {
 			listCases(input, signal) {
 				signal.throwIfAborted();

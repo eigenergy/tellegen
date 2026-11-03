@@ -873,6 +873,14 @@ pub fn solve_bmopf_json(text: &str, options: &McPfOptions) -> Result<String, Str
 /// instance. This is the portable module counterpart of the raw BMOPF entry
 /// point; the module remains typed by PowerIO throughout.
 pub fn solve_mc_module_json(text: &str, options: &McPfOptions) -> Result<String, String> {
+    solve_mc_module_json_cancellable(text, options, None)
+}
+
+pub(crate) fn solve_mc_module_json_cancellable(
+    text: &str,
+    options: &McPfOptions,
+    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) -> Result<String, String> {
     let module = crate::ir::deserialize_module(text)?;
     // Keep this established low-level entry point compatible with the raw
     // BMOPF solver: an MC OPF module has a well-defined PF projection.  The
@@ -880,7 +888,7 @@ pub fn solve_mc_module_json(text: &str, options: &McPfOptions) -> Result<String,
     // capability must never be inferred from a lossy projection.
     reject_lossy_diagnostics(&module)?;
     let instance = super::energized::instance(&module)?;
-    let mut result = solve_mc_ac_pf_instance(&instance, options)?;
+    let mut result = super::solve_mc_ac_pf_instance_cancellable(&instance, options, cancel)?;
     let (_, excluded) = super::energized::selection(&module)?;
     result.network_scope = super::energized::scope(&excluded);
     result.excluded_islands = excluded;

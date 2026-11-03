@@ -99,6 +99,10 @@ test('headless tools inspect, query, focus, preview, mutate, and reject a stale 
 				'solve_multiconductor_pf',
 				'focus_network',
 				'inspect_case',
+				'inspect_settings',
+				'update_settings',
+				'reset_settings',
+				'run_calculation',
 				'list_cases',
 				'select_case',
 				'preview_case_update',
@@ -342,7 +346,7 @@ test('a full page reload creates a new WebMCP session id', async ({ page }) => {
 	expect(String(second.data.session_id)).not.toBe(String(first.data.session_id));
 });
 
-test('inspect_case refuses a snapshot whose revision changes while its source is read', async ({
+test('pending formulation settings preserve displayed-case inspection until an explicit run', async ({
 	page
 }) => {
 	await installWebMcpHarness(page);
@@ -380,11 +384,21 @@ test('inspect_case refuses a snapshot whose revision changes while its source is
 		formulation.dispatchEvent(new Event('change', { bubbles: true }));
 		return pending;
 	});
-	expect(raced).toMatchObject({
-		ok: false,
-		error: { code: 'STALE_REVISION', message: expect.stringContaining('retry inspect_case') }
+	expect(raced).toMatchObject({ ok: true, data: { formulation: 'dcopf' } });
+	await expect
+		.poll(async () => {
+			const selected = await callTool(page, 'inspect_settings', {});
+			return selected.ok ? selected.data.calculation : null;
+		})
+		.toBe('socwr');
+	const selected = await callTool(page, 'inspect_settings', {});
+	if (!selected.ok) throw new Error(selected.error.message);
+	const run = await callTool(page, 'run_calculation', {
+		case_id: selected.data.case_id,
+		expected_revision: selected.data.revision,
+		settings_revision: selected.data.settings_revision
 	});
-
+	expect(run).toMatchObject({ ok: true, data: { calculation: 'socwr' } });
 	const retried = await callTool(page, 'inspect_case', {});
 	expect(retried).toMatchObject({ ok: true, data: { formulation: 'socwr' } });
 });
@@ -431,6 +445,10 @@ test('a dynamic planning registration failure is visible in the interface', asyn
 				'solve_multiconductor_pf',
 				'focus_network',
 				'inspect_case',
+				'inspect_settings',
+				'update_settings',
+				'reset_settings',
+				'run_calculation',
 				'list_cases',
 				'select_case',
 				'preview_case_update',

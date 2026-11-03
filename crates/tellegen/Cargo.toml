@@ -88,3 +88,7 @@ required-features = ["acopf"]
 [[example]]
 name = "acopf_benchmark"
 required-features = ["acopf"]
+
+[[example]]
+name = "settings_schema"
+required-features = ["schema"]

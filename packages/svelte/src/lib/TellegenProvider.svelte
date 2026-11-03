@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, untrack, type Snippet } from 'svelte';
+	import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
 	import {
 		resolveCartoApiKey,
 		resolveTellegenUiConfig,
@@ -49,13 +49,17 @@
 			})
 		),
 		get theme() {
-			return resolveTheme(theme);
+			return app.preferences.theme ?? resolveTheme(theme);
 		},
 		get cartoApiKey() {
 			return resolveCartoApiKey(cartoApiKey);
 		}
 	};
 	const app = createAppState();
+	onMount(() => {
+		app.preferences.initialize(typeof localStorage === 'undefined' ? undefined : localStorage);
+		app.displayMode = app.preferences.coloring;
+	});
 	const ctrl = createController(app, {
 		apiBase: config.apiBase,
 		acOpfWasmUrl: config.acOpfWasmUrl ?? undefined,
@@ -79,10 +83,9 @@
 	// server-rendered host that wants no light flash can also put the
 	// attribute in its app template.
 	$effect(() => {
-		if (config.theme !== 'dark') return;
 		const root = document.documentElement;
 		const previous = root.dataset.theme;
-		root.dataset.theme = 'dark';
+		root.dataset.theme = config.theme;
 		return () => {
 			if (previous === undefined) delete root.dataset.theme;
 			else root.dataset.theme = previous;
