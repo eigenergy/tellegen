@@ -4,7 +4,7 @@ Open **Settings** in the header or panel toolbar. The Network and Studies power-
 
 Calculation settings belong to the selected case. Edit the draft, choose **Apply settings**, then run explicitly. Applying, resetting, or selecting another calculation does not solve or replace the displayed result. Until a new run succeeds, the result retains its preceding calculation and settings. A failed or cancelled rerun retains that result. Load edits and sensitivity calculations use the accepted Study/session settings, independently of pending choices.
 
-The panel groups load-model and constraint behavior separately from numerical controls. Advanced multiconductor tolerances are collapsed. The load envelope changes equations, and angle/thermal selections change the DC OPF optimization model. These are distinct from engineering limit assessments. Source-less-island exclusion remains an explicit **Solve energized network** action, with exclusions visible before execution.
+The panel groups load-model and constraint behavior separately from numerical controls. Advanced multiconductor tolerances are collapsed. The load envelope changes equations, and angle/thermal selections change the DC OPF optimization model. These are distinct from engineering limit assessments. Source-less-island exclusion remains an explicit **Solve energized network** action, with exclusions visible before execution. Once an energized solve succeeds, or an input carrying the selection is opened, that case solves only its energized network; re-import it to solve the full network. Clearing a numeric field restores its case default.
 
 ## Scope and defaults
 
