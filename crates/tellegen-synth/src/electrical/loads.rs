@@ -1,5 +1,6 @@
-//! Load allocation. At high fidelity each bus is weighted by the inverse
-//! distance weighted demand of places within 25 km, with a floor so a
+//! Load allocation. At high fidelity each place's demand is shared among the
+//! buses within 25 km of it by inverse distance (`demand_partition`; the
+//! radius grows with the bus spacing of a coarse model), with a floor so a
 //! bus with no place nearby still carries some load; at low fidelity (or
 //! without a population signal) weights are a floor plus a skewed random
 //! draw. Weights are normalised to the context's peak demand and reactive
@@ -11,11 +12,15 @@
 use crate::context::ContextData;
 use crate::electrical::params::{bus_load_cap_mw, LOAD_FLOOR_MEDIAN_FRACTION, LOAD_IDW_RADIUS_KM};
 use crate::geom::haversine_km;
-use crate::places::demand_idw;
+use crate::places::{demand_idw, demand_partition};
 use crate::report::RegionContext;
 use crate::request::Fidelity;
 use crate::rng::Stream;
 use crate::site::DraftBus;
+
+/// Share of the even bus spacing the load radius covers in a coarse model.
+/// Modelling choice: about the radius of the Voronoi cell of a bus.
+const LOAD_SPACING_SHARE: f64 = 0.75;
 
 /// What load allocation reports back.
 pub struct LoadOutcome {
@@ -34,8 +39,20 @@ pub struct LoadOutcome {
 /// first, moves to the nearest buses of its island that still have room.
 /// Returns how many buses were above the cap and how much load moved, MW.
 fn spill_loads(buses: &mut [DraftBus], cap: f64) -> (usize, f64) {
+    spill_loads_by(buses, &|_| cap)
+}
+
+/// [`spill_loads`] with a cap per bus: every bus at or below the cap of its
+/// own voltage ([`bus_load_cap_mw`]), the excess moving to the nearest buses
+/// with room under theirs. A hierarchical network keeps its levels, so a
+/// heavy bus sheds load instead of being promoted.
+pub fn spill_loads_by_level(buses: &mut [DraftBus]) -> (usize, f64) {
+    spill_loads_by(buses, &|b: &DraftBus| bus_load_cap_mw(b.base_kv))
+}
+
+fn spill_loads_by(buses: &mut [DraftBus], cap_of: &dyn Fn(&DraftBus) -> f64) -> (usize, f64) {
     let mut over: Vec<usize> = (0..buses.len())
-        .filter(|&i| buses[i].load_mw > cap)
+        .filter(|&i| buses[i].load_mw > cap_of(&buses[i]))
         .collect();
     over.sort_by(|&a, &b| {
         buses[b]
@@ -45,14 +62,15 @@ fn spill_loads(buses: &mut [DraftBus], cap: f64) -> (usize, f64) {
     });
     let mut moved = 0.0;
     for &i in &over {
-        let mut excess = buses[i].load_mw - cap;
+        let mut excess = buses[i].load_mw - cap_of(&buses[i]);
         let (lon, lat, island) = (buses[i].lon, buses[i].lat, buses[i].island);
         let mut near: Vec<(f64, usize)> = (0..buses.len())
             .filter(|&j| {
                 j != i
                     && buses[j].island == island
                     && buses[j].kind != crate::report::BusKind::Converter
-                    && buses[j].load_mw < cap
+                    && buses[j].kind != crate::report::BusKind::Tap
+                    && buses[j].load_mw < cap_of(&buses[j])
             })
             .map(|j| (haversine_km(lon, lat, buses[j].lon, buses[j].lat), j))
             .collect();
@@ -61,7 +79,7 @@ fn spill_loads(buses: &mut [DraftBus], cap: f64) -> (usize, f64) {
             if excess <= 0.0 {
                 break;
             }
-            let take = (cap - buses[j].load_mw).min(excess);
+            let take = (cap_of(&buses[j]) - buses[j].load_mw).min(excess);
             buses[j].load_mw += take;
             buses[i].load_mw -= take;
             excess -= take;
@@ -75,6 +93,7 @@ fn spill_loads(buses: &mut [DraftBus], cap: f64) -> (usize, f64) {
 /// connection nodes and carry none), then, with `promote`, move any bus whose
 /// load exceeds its voltage class cap to the lowest level that holds it. A
 /// mapped (OSM) bus keeps its real voltage, so its caller passes false.
+#[allow(clippy::too_many_arguments)]
 pub fn assign_loads(
     buses: &mut [DraftBus],
     ctx: &RegionContext,
@@ -82,6 +101,7 @@ pub fn assign_loads(
     fidelity: Fidelity,
     power_factor: f64,
     promote: bool,
+    partition: bool,
     rng: &mut Stream,
 ) -> LoadOutcome {
     if buses.is_empty() {
@@ -93,8 +113,19 @@ pub fn assign_loads(
         };
     }
     let points: Vec<(f64, f64)> = buses.iter().map(|b| (b.lon, b.lat)).collect();
-    let raw = if fidelity == Fidelity::High {
-        demand_idw(&points, &data.cities, LOAD_IDW_RADIUS_KM)
+    // A coarse model's bus serves the territory around it, so the radius
+    // grows with the bus spacing (three quarters of the even spacing
+    // sqrt(area / buses)) once that exceeds the subtransmission radius.
+    let spacing = (data.shape.area_km2.max(1.0) / buses.len().max(1) as f64).sqrt();
+    let radius = LOAD_IDW_RADIUS_KM.max(LOAD_SPACING_SHARE * spacing);
+    // A transmission grid shares each place among the buses around it; a
+    // hierarchical one, whose buses already follow the population closely,
+    // keeps the inverse-distance weights and places most demand on the bus
+    // nearest each place afterwards (`hierarchy::blend_place_loads`).
+    let raw = if fidelity == Fidelity::High && partition {
+        demand_partition(&points, &data.cities, radius)
+    } else if fidelity == Fidelity::High {
+        demand_idw(&points, &data.cities, radius)
     } else {
         vec![0.0; buses.len()]
     };
@@ -187,6 +218,7 @@ mod tests {
             load_mw,
             load_mvar: 0.0,
             annotation: String::new(),
+            site: 0,
         }
     }
 

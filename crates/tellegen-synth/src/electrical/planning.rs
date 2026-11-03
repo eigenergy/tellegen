@@ -38,6 +38,9 @@ use crate::topology::Corridor;
 pub enum PlanMode {
     /// Choose voltage classes and circuits (synthetic corridors).
     Expand,
+    /// Add circuits and transformer capacity but keep every bus at its level
+    /// (hierarchical networks, whose levels are designed, not chosen by flow).
+    Reinforce,
     /// Keep the corridors as given and only measure the planning case
     /// (mapped OSM corridors, whose circuits are real).
     Observe,
@@ -223,9 +226,9 @@ pub fn economic_dispatch(units: &[(f64, f64, f64, f64)], demand: f64) -> Vec<f64
 /// Bus angles (radians) of a lossless DC power flow. `edges` are
 /// `(a, b, susceptance pu)`, `injection` is per unit, and `grounds` holds one
 /// bus per connected component whose angle is fixed at zero (it absorbs any
-/// imbalance of its component). Solved by Jacobi-preconditioned conjugate
-/// gradients on the grounded weighted Laplacian, which is symmetric positive
-/// definite on every component with a ground.
+/// imbalance of its component). Solved on the grounded weighted Laplacian,
+/// which is symmetric positive definite on every component with a ground
+/// ([`GroundedLaplacian`]).
 pub fn dc_angles(
     n: usize,
     edges: &[(usize, usize, f64)],
@@ -235,9 +238,102 @@ pub fn dc_angles(
     dc_angles_from(n, edges, injection, grounds, None)
 }
 
-/// [`dc_angles`] started from `guess` (the previous planning round's angles,
-/// which a round changes little), to the same tolerance on the residual.
+/// The grounded weighted Laplacian of a DC power flow, factorised once for
+/// repeated solves (sparse Cholesky). Ground buses, and buses with no
+/// branch, are left out and keep angle zero.
+pub struct GroundedLaplacian {
+    n: usize,
+    /// Row of each bus in the factor, or `usize::MAX` for one left out.
+    row: Vec<usize>,
+    llt: faer::sparse::linalg::solvers::Llt<usize, f64>,
+}
+
+impl GroundedLaplacian {
+    /// `None` when the factorisation fails (a component without a ground,
+    /// or a non-positive susceptance).
+    pub fn new(n: usize, edges: &[(usize, usize, f64)], grounds: &[usize]) -> Option<Self> {
+        let mut grounded = vec![false; n];
+        for &g in grounds {
+            grounded[g] = true;
+        }
+        let mut diag = vec![0.0; n];
+        for &(a, b, w) in edges {
+            if !(w.is_finite() && w > 0.0) {
+                return None;
+            }
+            diag[a] += w;
+            diag[b] += w;
+        }
+        let mut row = vec![usize::MAX; n];
+        let mut dim = 0usize;
+        for i in 0..n {
+            if !grounded[i] && diag[i] > 0.0 {
+                row[i] = dim;
+                dim += 1;
+            }
+        }
+        let mut entries: Vec<faer::sparse::Triplet<usize, usize, f64>> =
+            Vec::with_capacity(dim + edges.len());
+        for i in 0..n {
+            if row[i] != usize::MAX {
+                entries.push(faer::sparse::Triplet::new(row[i], row[i], diag[i]));
+            }
+        }
+        for &(a, b, w) in edges {
+            let (ra, rb) = (row[a], row[b]);
+            if ra != usize::MAX && rb != usize::MAX && ra != rb {
+                // Lower triangle only: the factorisation reads one side.
+                let (r, c) = if ra > rb { (ra, rb) } else { (rb, ra) };
+                entries.push(faer::sparse::Triplet::new(r, c, -w));
+            }
+        }
+        let mat =
+            faer::sparse::SparseColMat::<usize, f64>::try_new_from_triplets(dim, dim, &entries)
+                .ok()?;
+        let llt = mat.sp_cholesky(faer::Side::Lower).ok()?;
+        Some(Self { n, row, llt })
+    }
+
+    /// Angles for `injection` (per unit).
+    pub fn solve(&self, injection: &[f64]) -> Vec<f64> {
+        use faer::linalg::solvers::Solve;
+        let dim = self.row.iter().filter(|&&r| r != usize::MAX).count();
+        let mut x = faer::Mat::<f64>::zeros(dim, 1);
+        for i in 0..self.n {
+            if self.row[i] != usize::MAX {
+                x[(self.row[i], 0)] = injection[i];
+            }
+        }
+        self.llt.solve_in_place(x.as_mut());
+        (0..self.n)
+            .map(|i| match self.row[i] {
+                usize::MAX => 0.0,
+                r => x[(r, 0)],
+            })
+            .collect()
+    }
+}
+
+/// [`dc_angles`], by [`GroundedLaplacian`] when it factorises and otherwise
+/// by Jacobi-preconditioned conjugate gradients started from `guess` (the
+/// previous planning round's angles, which a round changes little).
 fn dc_angles_from(
+    n: usize,
+    edges: &[(usize, usize, f64)],
+    injection: &[f64],
+    grounds: &[usize],
+    guess: Option<&[f64]>,
+) -> Vec<f64> {
+    if let Some(l) = GroundedLaplacian::new(n, edges, grounds) {
+        let x = l.solve(injection);
+        if x.iter().all(|v| v.is_finite()) {
+            return x;
+        }
+    }
+    dc_angles_cg(n, edges, injection, grounds, guess)
+}
+
+fn dc_angles_cg(
     n: usize,
     edges: &[(usize, usize, f64)],
     injection: &[f64],
@@ -406,6 +502,22 @@ fn corridor_flows(
         .collect()
 }
 
+/// Circuits one corridor may hold. A hierarchical plan cannot raise a
+/// subtransmission corridor to another level, so below 100 kV it may build
+/// up to six: a heavily loaded 60–70 kV path is reinforced by more and
+/// heavier circuits on its right of way (reconductoring), not by a new
+/// voltage. Modelling choice.
+fn circuit_cap(promote: bool, kv: f64) -> u32 {
+    if !promote && kv < crate::hierarchy::SUBTRANSMISSION_KV {
+        SUBTRANSMISSION_MAX_CIRCUITS
+    } else {
+        MAX_CIRCUITS_PER_CORRIDOR
+    }
+}
+
+/// [`circuit_cap`] below 100 kV in a hierarchical plan.
+const SUBTRANSMISSION_MAX_CIRCUITS: u32 = 6;
+
 /// Plan the circuits of every corridor for the economic dispatch at peak
 /// load: promote the ends of corridors too heavy for their voltage class,
 /// add circuits (or larger banks) until no circuit runs above the
@@ -428,7 +540,8 @@ pub fn plan_corridors(
     branch_target: usize,
     mode: PlanMode,
 ) -> (Vec<CircuitDesign>, CorridorPlan) {
-    let expand = mode == PlanMode::Expand;
+    let expand = mode != PlanMode::Observe;
+    let promote = mode == PlanMode::Expand;
     let n = buses.len();
     // Electrical components of the corridor graph; each balances on its own.
     let mut uf = UnionFind::new(n);
@@ -477,7 +590,7 @@ pub fn plan_corridors(
     // The voltage ladder: the modelled levels and, when expanding, the higher
     // levels above them. Tiers index the ladder, so they shift by the number
     // of higher levels while those are available.
-    let above: Vec<f64> = if expand {
+    let above: Vec<f64> = if promote {
         above
             .iter()
             .copied()
@@ -497,7 +610,7 @@ pub fn plan_corridors(
     let mut bank_floor = vec![0.0; corridors.len()];
     let mut designs = design_circuits(buses, corridors, generators, draws);
     let mut promoted = 0usize;
-    for _ in 1..if expand { ladder.len() } else { 1 } {
+    for _ in 1..if promote { ladder.len() } else { 1 } {
         let flows = corridor_flows(n, &designs, &circuits, &injection, &grounds);
         let mut raise: Vec<Option<usize>> = vec![None; n];
         for (k, c) in corridors.iter().enumerate() {
@@ -567,12 +680,13 @@ pub fn plan_corridors(
                 }
             }
             let need = (required / d.rate_a).ceil() as u32;
-            if need > UPGRADE_CIRCUITS && mark_raise(&mut raise, buses, &corridors[c]) {
+            if promote && need > UPGRADE_CIRCUITS && mark_raise(&mut raise, buses, &corridors[c]) {
                 // A higher level carries it on fewer circuits.
                 continue;
             }
-            capped |= need > MAX_CIRCUITS_PER_CORRIDOR;
-            let need = need.min(MAX_CIRCUITS_PER_CORRIDOR);
+            let most = circuit_cap(promote, d.kv);
+            capped |= need > most;
+            let need = need.min(most);
             if need > circuits[c] {
                 circuits[c] = need;
                 added = true;
@@ -609,6 +723,14 @@ pub fn plan_corridors(
         let mut spread_ok = true;
         let mut stiffened = false;
         for (ci, members) in buses_of.iter().enumerate() {
+            // A hierarchical network is not held to the spread: its radial
+            // subtransmission and long tapped lines carry angle that no
+            // transfer path does (the California Test System spans about
+            // 140° at 200 kV and above at its own peak dispatch), and the AC
+            // power flow is the check that matters.
+            if !promote {
+                continue;
+            }
             let root = roots[ci];
             let lead = *members
                 .iter()
@@ -640,7 +762,8 @@ pub fn plan_corridors(
                 .filter(|(k, c)| {
                     component[c.a] == root
                         && ((circuits[*k] < MAX_CIRCUITS_PER_CORRIDOR && total < budget)
-                            || (buses[c.a].tier.min(buses[c.b].tier) > stiffen_top
+                            || (promote
+                                && buses[c.a].tier.min(buses[c.b].tier) > stiffen_top
                                 && hv < hv_budget))
                 })
                 .map(|(k, _)| {
@@ -674,7 +797,8 @@ pub fn plan_corridors(
                     d.set_transformer_mva(full);
                     bank_floor[k] = full;
                     upsized[k] = true;
-                } else if hv < hv_budget
+                } else if promote
+                    && hv < hv_budget
                     && mark_raise_to(&mut stiffen_raise, buses, &corridors[k], stiffen_top)
                 {
                     let c = &corridors[k];
@@ -714,7 +838,7 @@ pub fn plan_corridors(
 
     // 3. Fill to the requested branch count, heaviest planned loading first.
     let mut filler = 0usize;
-    if expand && capacity_total + stiffening < branch_target && !corridors.is_empty() {
+    if promote && capacity_total + stiffening < branch_target && !corridors.is_empty() {
         let loading = |c: usize, k: u32| flows[c].abs() / (k as f64 * designs[c].rate_a);
         let mut order: Vec<usize> = (0..corridors.len()).collect();
         order.sort_by(|&i, &j| {
@@ -773,7 +897,10 @@ pub fn plan_corridors(
             overloaded += 1;
         }
         let need = flows[c].abs() / PLANNING_UTILISATION / d.rate_a;
-        if expand && circuits[c] >= MAX_CIRCUITS_PER_CORRIDOR && need > circuits[c] as f64 + 1e-9 {
+        if expand
+            && circuits[c] >= circuit_cap(promote, designs[c].kv)
+            && need > circuits[c] as f64 + 1e-9
+        {
             capped_corridors += 1;
         }
     }
@@ -846,5 +973,31 @@ mod tests {
         let edges = [(0, 1, 2.0), (2, 3, 4.0)];
         let theta = dc_angles(4, &edges, &[0.0, -1.0, 0.0, -2.0], &[0, 2]);
         assert!((theta[1] + 0.5).abs() < 1e-9 && (theta[3] + 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_factorised_laplacian_matches_conjugate_gradients() {
+        // A meshed component with susceptances four decades apart (a site
+        // transformer beside long lines), a radial chain, and an isolated bus.
+        let mut edges = vec![
+            (0, 1, 1000.0),
+            (1, 2, 0.5),
+            (2, 3, 2.0),
+            (3, 0, 0.1),
+            (1, 3, 7.0),
+        ];
+        edges.extend((4..9).map(|i| (i, i + 1, 0.3 + i as f64)));
+        let injection: Vec<f64> = (0..11).map(|i| ((i * 7 % 5) as f64 - 2.0) * 0.3).collect();
+        let grounds = [0, 4, 10];
+        let exact = GroundedLaplacian::new(11, &edges, &grounds)
+            .unwrap()
+            .solve(&injection);
+        let cg = dc_angles_cg(11, &edges, &injection, &grounds, None);
+        for (a, b) in exact.iter().zip(&cg) {
+            assert!((a - b).abs() < 1e-8, "{a} vs {b}");
+        }
+        assert_eq!(exact[10], 0.0);
+        // A component without a ground cannot be factorised.
+        assert!(GroundedLaplacian::new(3, &[(1, 2, 1.0)], &[0]).is_none());
     }
 }
