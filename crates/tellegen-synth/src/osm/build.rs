@@ -42,8 +42,42 @@ fn estimated_plant_mw(total_load_mw: f64) -> f64 {
     (0.04 * total_load_mw.max(1.0)).clamp(20.0, 200.0)
 }
 
+/// Tagged plants of one fuel the region needs before an untagged plant of
+/// that fuel takes their median capacity instead of [`estimated_plant_mw`].
+/// Modelling choice: OpenStreetMap often marks capacity as `yes` (California:
+/// 1,169 of 2,659 plants), and the region's own plants say more about an
+/// untagged one than a share of its demand does.
+const MEDIAN_MIN_PLANTS: usize = 5;
+
+/// A mapped line end this close to a substation that states no voltage gives
+/// the substation its voltage, km. Modelling choice: line ends meet the
+/// fence of the substation they serve, and a substation's mapped centre lies
+/// within a few hundred metres of its fence.
+const SUBSTATION_VOLTAGE_REACH_KM: f64 = 1.0;
+
+/// A mapped line end this close to a substation that states its voltages adds
+/// the line's voltage to them, km: the cluster radius sites use, tighter than
+/// for an untagged substation so a neighbouring site's lines stay its own.
+const TAGGED_SUBSTATION_REACH_KM: f64 = 0.5;
+
+/// A substation that states no voltage and has no line ending at it takes the
+/// voltage of a mapped line passing this close, km: in a dense subtransmission
+/// network a distribution substation sits beside the line that taps it.
+const SUBSTATION_TAP_REACH_KM: f64 = 1.5;
+
 /// A generator this close to a mapped plant of the same fuel is one of its units, km.
 const PLANT_UNIT_KM: f64 = 3.0;
+
+/// Share of the lowest ladder level the mapped-voltage floor drops to when
+/// the request states no OSM options: 0.85 keeps 60 kV lines for a 66 kV
+/// class and 115 kV for 138 kV.
+const LADDER_FLOOR_SHARE: f64 = 0.85;
+
+/// Shortest mapped line section whose free end (no substation, no junction)
+/// still becomes a bus, km; shorter stubs are dropped. Modelling choice: a
+/// kilometre-long line ending in the open is most likely a substation OSM has
+/// not mapped.
+const MIN_DANGLING_KM: f64 = 1.0;
 
 /// Makeup units spread the shortfall over at least this many buses.
 const MAKEUP_MIN_BUSES: usize = 5;
@@ -57,6 +91,14 @@ pub struct OsmCounts {
     pub lines_stitched: usize,
     pub lines_dropped: usize,
     pub voltage_inferred: usize,
+    /// Substations that stated no voltage and took it from the lines ending
+    /// at them.
+    pub substation_voltage_inferred: usize,
+    /// Voltage levels added to tagged substations from the lines ending at
+    /// them.
+    pub substation_levels_added: usize,
+    /// Tap and line-end buses removed as dead ends.
+    pub dead_ends_pruned: usize,
     pub transformers: usize,
     pub interconnects: usize,
     pub hvdc_links: usize,
@@ -75,6 +117,12 @@ impl OsmCounts {
             ("lines_stitched", self.lines_stitched),
             ("lines_dropped", self.lines_dropped),
             ("voltage_inferred", self.voltage_inferred),
+            (
+                "substation_voltage_inferred",
+                self.substation_voltage_inferred,
+            ),
+            ("substation_levels_added", self.substation_levels_added),
+            ("dead_ends_pruned", self.dead_ends_pruned),
             ("transformers", self.transformers),
             ("interconnects", self.interconnects),
             ("hvdc_links", self.hvdc_links),
@@ -144,6 +192,171 @@ pub fn snap(
         }
     }
     best_at_voltage.or(best).map(|(_, i)| i)
+}
+
+/// Station positions on a coarse grid, for "is a station within r km" tests.
+struct StationGrid {
+    cell: f64,
+    cells: BTreeMap<(i64, i64), Vec<(f64, f64)>>,
+}
+
+impl StationGrid {
+    fn new(points: &[(f64, f64)], radius_km: f64) -> Self {
+        let cell = (radius_km / 111.0).max(1e-4) * 2.0;
+        let mut cells: BTreeMap<(i64, i64), Vec<(f64, f64)>> = BTreeMap::new();
+        for &p in points {
+            cells
+                .entry(((p.0 / cell).floor() as i64, (p.1 / cell).floor() as i64))
+                .or_default()
+                .push(p);
+        }
+        Self { cell, cells }
+    }
+
+    fn near(&self, p: (f64, f64), radius_km: f64) -> bool {
+        let (c, r) = (
+            (p.0 / self.cell).floor() as i64,
+            (p.1 / self.cell).floor() as i64,
+        );
+        let reach = ((radius_km / 111.0) / p.1.to_radians().cos().abs().max(0.05) / self.cell)
+            .ceil() as i64
+            + 1;
+        for dc in -reach..=reach {
+            for dr in -2..=2 {
+                if let Some(v) = self.cells.get(&(c + dc, r + dr)) {
+                    if v.iter()
+                        .any(|s| haversine_km(p.0, p.1, s.0, s.1) <= radius_km)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
+/// A run of mapped AC line between two nodes of the line graph: substations,
+/// junctions where three or more sections meet, and dangling ends.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Section {
+    pub ids: Vec<i64>,
+    pub geometry: Vec<(f64, f64)>,
+    pub kv: f64,
+    pub circuits: u32,
+    /// Graph degree of the first and last vertex (1 for a dangling end, 3 or
+    /// more for a junction).
+    pub degrees: (usize, usize),
+}
+
+/// Split mapped AC lines into sections. Ways of one voltage share vertices
+/// where they meet (OpenStreetMap ways joined at a tower share its node), so
+/// the ways of each voltage form a graph on their vertices. Its nodes are
+/// the vertices of degree other than two (junctions and ends) and the way
+/// ends within `stop_km` of a station (where lines terminate); the runs
+/// between nodes are the sections. A T-tapped line becomes three sections
+/// meeting at a junction instead of a way whose end touches no substation.
+/// Parallel ways on the same vertices are one section carrying their summed
+/// circuits.
+pub fn line_sections(lines: &[OsmLine], stops: &[(f64, f64)], stop_km: f64) -> Vec<Section> {
+    let grid = StationGrid::new(stops, stop_km);
+    let mut groups: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
+    for (i, l) in lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| !l.is_dc && l.geometry.len() >= 2)
+    {
+        groups
+            .entry((l.kv * 1000.0).round() as i64)
+            .or_default()
+            .push(i);
+    }
+    let mut out = Vec::new();
+    for (&kv_key, idxs) in &groups {
+        let mut vid: BTreeMap<(i64, i64), usize> = BTreeMap::new();
+        let mut coords: Vec<(f64, f64)> = Vec::new();
+        let mut is_end: Vec<bool> = Vec::new();
+        let mut edge_lines: BTreeMap<(usize, usize), Vec<usize>> = BTreeMap::new();
+        for &i in idxs {
+            let g = &lines[i].geometry;
+            let mut prev: Option<usize> = None;
+            for (k, &p) in g.iter().enumerate() {
+                let key = coord_key(p);
+                let v = *vid.entry(key).or_insert_with(|| {
+                    coords.push(p);
+                    is_end.push(false);
+                    coords.len() - 1
+                });
+                if k == 0 || k + 1 == g.len() {
+                    is_end[v] = true;
+                }
+                if let Some(u) = prev.filter(|&u| u != v) {
+                    let lst = edge_lines.entry((u.min(v), u.max(v))).or_default();
+                    if !lst.contains(&i) {
+                        lst.push(i);
+                    }
+                }
+                prev = Some(v);
+            }
+        }
+        let n = coords.len();
+        let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for &(a, b) in edge_lines.keys() {
+            adj[a].push(b);
+            adj[b].push(a);
+        }
+        let node: Vec<bool> = (0..n)
+            .map(|v| adj[v].len() != 2 || (is_end[v] && grid.near(coords[v], stop_km)))
+            .collect();
+        let mut used: std::collections::BTreeSet<(usize, usize)> =
+            std::collections::BTreeSet::new();
+        for start in 0..n {
+            if !node[start] {
+                continue;
+            }
+            for &first in &adj[start] {
+                if used.contains(&(start.min(first), start.max(first))) {
+                    continue;
+                }
+                let mut path = vec![start, first];
+                used.insert((start.min(first), start.max(first)));
+                let (mut prev, mut cur) = (start, first);
+                while !node[cur] {
+                    let Some(&next) = adj[cur].iter().find(|&&w| w != prev) else {
+                        break;
+                    };
+                    if !used.insert((cur.min(next), cur.max(next))) {
+                        break;
+                    }
+                    path.push(next);
+                    prev = cur;
+                    cur = next;
+                }
+                let mut ids: Vec<i64> = Vec::new();
+                let mut circuits = 1u32;
+                for w in path.windows(2) {
+                    let lst = &edge_lines[&(w[0].min(w[1]), w[0].max(w[1]))];
+                    let c: u32 = lst.iter().map(|&i| lines[i].circuits.max(1)).sum();
+                    circuits = circuits.max(c.min(MAX_OSM_CIRCUITS));
+                    for &i in lst {
+                        for &id in &lines[i].ids {
+                            if !ids.contains(&id) {
+                                ids.push(id);
+                            }
+                        }
+                    }
+                }
+                out.push(Section {
+                    ids,
+                    geometry: path.iter().map(|&v| coords[v]).collect(),
+                    kv: kv_key as f64 / 1000.0,
+                    circuits,
+                    degrees: (adj[start].len(), adj[cur].len()),
+                });
+            }
+        }
+    }
+    out
 }
 
 /// Coordinate key for stitching: 1e-5° (about a metre of latitude).
@@ -277,6 +490,8 @@ pub struct OsmBuild {
     /// OSM way ids per corridor.
     corridor_ids: Vec<Vec<i64>>,
     hvdc: Vec<DraftHvdc>,
+    /// `limits.max_bus_count`: junction and line-end buses stop at it.
+    bus_cap: usize,
     pub counts: OsmCounts,
 }
 
@@ -289,6 +504,7 @@ impl OsmBuild {
             sites: Vec::new(),
             corridor_ids: Vec::new(),
             hvdc: Vec::new(),
+            bus_cap: usize::MAX,
             counts: OsmCounts::default(),
         }
     }
@@ -310,20 +526,133 @@ impl OsmBuild {
         warnings: &mut Vec<Warning>,
     ) -> Result<Vec<DraftBus>, SynthError> {
         self.options = req.osm.clone().unwrap_or_default();
+        // Without stated options the floor follows the region's ladder: a
+        // ladder that reaches subtransmission keeps the mapped lines down to
+        // just below its lowest level (60 kV for a 66 kV class).
+        if req.osm.is_none() {
+            if let Some(low) = _ctx.voltage_levels_kv.iter().copied().reduce(f64::min) {
+                self.options.voltage_floor_kv =
+                    self.options.voltage_floor_kv.min(LADDER_FLOOR_SHARE * low);
+            }
+        }
         let opts = &self.options;
         let frame = data.shape.frame;
         let inside =
             |lon: f64, lat: f64| data.shape.contains_or_near(lon, lat, opts.clip_buffer_km);
         let mut clipped = 0usize;
 
+        // Substations that state no voltage take the voltages of the mapped
+        // lines ending at them (nearly half of California's do).
+        let mut ends: VoltageGrid = BTreeMap::new();
+        let cell = SUBSTATION_VOLTAGE_REACH_KM / 111.0 * 2.0;
+        for l in self
+            .parsed
+            .lines
+            .iter()
+            .filter(|l| !l.is_dc && l.kv >= opts.voltage_floor_kv)
+        {
+            for &(lon, lat) in [l.geometry[0], l.geometry[l.geometry.len() - 1]].iter() {
+                let lon = lift_lon(lon, &frame);
+                ends.entry(((lon / cell).floor() as i64, (lat / cell).floor() as i64))
+                    .or_default()
+                    .push((lon, lat, l.kv));
+            }
+        }
+        let mut vertices: VoltageGrid = BTreeMap::new();
+        for l in self
+            .parsed
+            .lines
+            .iter()
+            .filter(|l| !l.is_dc && l.kv >= opts.voltage_floor_kv)
+        {
+            for &(lon, lat) in &l.geometry {
+                let lon = lift_lon(lon, &frame);
+                vertices
+                    .entry(((lon / cell).floor() as i64, (lat / cell).floor() as i64))
+                    .or_default()
+                    .push((lon, lat, l.kv));
+            }
+        }
+        let mut inferred_subs = 0usize;
+        let mut levels_added = 0usize;
         let mut subs: Vec<((f64, f64), Vec<f64>)> = Vec::new();
         for s in &self.parsed.substations {
-            let kvs: Vec<f64> = s
+            let mut kvs: Vec<f64> = s
                 .kvs
                 .iter()
                 .copied()
                 .filter(|kv| *kv >= opts.voltage_floor_kv)
                 .collect();
+            // A tagged substation also takes the voltage of every mapped
+            // line ending at its fence: OpenStreetMap often tags only a
+            // site's transmission level although its subtransmission lines
+            // end there, which would leave that network without its feed.
+            if !s.kvs.is_empty() {
+                let lon = lift_lon(s.lon, &frame);
+                let (c, r) = ((lon / cell).floor() as i64, (s.lat / cell).floor() as i64);
+                for dc in -2..=2 {
+                    for dr in -1..=1 {
+                        for &(elon, elat, kv) in ends
+                            .get(&(c + dc, r + dr))
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[])
+                        {
+                            if haversine_km(lon, s.lat, elon, elat) <= TAGGED_SUBSTATION_REACH_KM
+                                && !kvs.iter().any(|k| (k - kv).abs() < 1e-9)
+                            {
+                                kvs.push(kv);
+                                levels_added += 1;
+                            }
+                        }
+                    }
+                }
+                kvs.sort_by(|a, b| b.total_cmp(a));
+            }
+            if kvs.is_empty() && s.kvs.is_empty() {
+                let lon = lift_lon(s.lon, &frame);
+                let (c, r) = ((lon / cell).floor() as i64, (s.lat / cell).floor() as i64);
+                for dc in -2..=2 {
+                    for dr in -1..=1 {
+                        for &(elon, elat, kv) in ends
+                            .get(&(c + dc, r + dr))
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[])
+                        {
+                            if haversine_km(lon, s.lat, elon, elat) <= SUBSTATION_VOLTAGE_REACH_KM
+                                && !kvs.iter().any(|k| (k - kv).abs() < 1e-9)
+                            {
+                                kvs.push(kv);
+                            }
+                        }
+                    }
+                }
+                if kvs.is_empty() {
+                    // No line ends there: the nearest mapped line passing
+                    // within reach, which taps it.
+                    let mut best: Option<(f64, f64)> = None;
+                    for dc in -3..=3 {
+                        for dr in -2..=2 {
+                            for &(vlon, vlat, kv) in vertices
+                                .get(&(c + dc, r + dr))
+                                .map(Vec::as_slice)
+                                .unwrap_or(&[])
+                            {
+                                let d = haversine_km(lon, s.lat, vlon, vlat);
+                                if d <= SUBSTATION_TAP_REACH_KM && best.is_none_or(|(bd, _)| d < bd)
+                                {
+                                    best = Some((d, kv));
+                                }
+                            }
+                        }
+                    }
+                    if let Some((_, kv)) = best {
+                        kvs.push(kv);
+                    }
+                }
+                if !kvs.is_empty() {
+                    inferred_subs += 1;
+                }
+            }
             if kvs.is_empty() {
                 continue;
             }
@@ -353,6 +682,8 @@ impl OsmBuild {
             self.plants.push(OsmPlant { lon, ..p.clone() });
         }
         self.counts.clipped = clipped;
+        self.counts.substation_voltage_inferred = inferred_subs;
+        self.counts.substation_levels_added = levels_added;
         let requested_floor = opts.voltage_floor_kv;
 
         // Substation levels present, lowest first: the floors a cap can raise to.
@@ -360,8 +691,9 @@ impl OsmBuild {
         levels.sort_by(|a, b| a.partial_cmp(b).unwrap());
         levels.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
         let cap = req.limits.max_bus_count as usize;
-        let converter_buses = self.converter_buses(&converters, requested_floor, data);
+        self.bus_cap = cap;
         let mut buses = self.substation_buses(&subs, requested_floor, data);
+        let converter_buses = self.converter_buses(&converters, requested_floor, &buses, data);
         let mapped = buses.len() + converter_buses.len();
         while buses.len() + converter_buses.len() > cap {
             let floor = self.options.voltage_floor_kv;
@@ -458,6 +790,9 @@ impl OsmBuild {
                     0.9,
                 ));
             }
+            for &i in &ids {
+                buses[i].site = ids[0];
+            }
             self.sites.push(ids);
         }
         buses
@@ -468,6 +803,7 @@ impl OsmBuild {
         &mut self,
         converters: &[((f64, f64), f64)],
         floor: f64,
+        substations: &[DraftBus],
         data: &ContextData,
     ) -> Vec<DraftBus> {
         let points: Vec<(f64, f64)> = converters.iter().map(|c| c.0).collect();
@@ -476,7 +812,28 @@ impl OsmBuild {
         let mut buses = Vec::new();
         for (k, ((lon, lat), members)) in converter_clusters.into_iter().enumerate() {
             let tagged = members.iter().map(|&m| converters[m].1).fold(0.0, f64::max);
-            let kv = tagged.max(floor);
+            // An untagged converter station connects at the bulk network: the
+            // highest level of the nearest mapped substation within the HVDC
+            // snap distance, else the floor.
+            let nearby = substations
+                .iter()
+                .map(|b| (haversine_km(lon, lat, b.lon, b.lat), b.base_kv))
+                .filter(|(d, _)| *d <= self.options.hvdc_snap_km)
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            let site_kv = nearby
+                .map(|(d, _)| {
+                    substations
+                        .iter()
+                        .filter(|b| (haversine_km(lon, lat, b.lon, b.lat) - d).abs() < 0.5)
+                        .map(|b| b.base_kv)
+                        .fold(0.0, f64::max)
+                })
+                .unwrap_or(0.0);
+            let kv = if tagged > 0.0 {
+                tagged.max(floor)
+            } else {
+                site_kv.max(floor)
+            };
             buses.push(osm_bus(
                 data,
                 lon,
@@ -540,19 +897,26 @@ impl OsmBuild {
             .collect();
         let stations: Vec<(f64, f64)> = buses.iter().map(|b| (b.lon, b.lat)).collect();
         let stitched = stitch_lines(&lifted, &stations, opts.snap_km);
-        self.counts.lines_stitched = lifted.len() - stitched.len();
-        let tagged_kvs: Vec<f64> = stitched
+        let sections = line_sections(&lifted, &stations, opts.snap_km);
+        let ac_ways = lifted.iter().filter(|l| !l.is_dc).count();
+        self.counts.lines_stitched = ac_ways.saturating_sub(sections.len());
+        let tagged_kvs: Vec<f64> = sections
             .iter()
-            .filter(|l| l.kv > 0.0 && !l.is_dc)
+            .filter(|l| l.kv > 0.0)
             .map(|l| l.kv)
             .collect();
         let default_kv = most_common(&tagged_kvs, opts.voltage_floor_kv);
 
-        // AC corridors, parallel ways between one bus pair at one voltage aggregated.
+        // AC corridors, parallel sections between one bus pair at one voltage
+        // aggregated. A section end at no substation becomes a junction bus
+        // where three or more sections meet, or a line-end bus when the
+        // section is long enough to matter.
         let mut aggregate: BTreeMap<(usize, usize, i64), usize> = BTreeMap::new();
+        let mut node_bus: BTreeMap<(i64, i64, i64), usize> = BTreeMap::new();
+        let bus_cap = self.bus_cap;
         let mut dropped = 0usize;
         let mut inferred = 0usize;
-        for line in stitched.iter().filter(|l| !l.is_dc) {
+        for line in &sections {
             let (head, tail) = (line.geometry[0], line.geometry[line.geometry.len() - 1]);
             let mut kv = line.kv;
             let guessed = kv <= 0.0;
@@ -571,8 +935,51 @@ impl OsmBuild {
                 dropped += 1;
                 continue;
             }
-            let from = snap(buses, head.0, head.1, Some(kv), opts.snap_km);
-            let to = snap(buses, tail.0, tail.1, Some(kv), opts.snap_km);
+            let length = polyline_km(&line.geometry);
+            let mut end_bus = |p: (f64, f64),
+                               degree: usize,
+                               buses: &mut Vec<DraftBus>,
+                               anchored: bool|
+             -> Option<usize> {
+                if let Some(i) = snap(buses, p.0, p.1, Some(kv), opts.snap_km) {
+                    return Some(i);
+                }
+                let junction = degree >= 3;
+                // A free end becomes a bus only on a long line inside the
+                // region whose voltage is tagged or fixed by its other end.
+                if !junction
+                    && (!anchored || length < MIN_DANGLING_KM || !data.shape.contains(p.0, p.1))
+                {
+                    return None;
+                }
+                // A junction is clipped as a substation is: beyond the buffer
+                // it belongs to a neighbour's network.
+                if junction && !data.shape.contains_or_near(p.0, p.1, opts.clip_buffer_km) {
+                    return None;
+                }
+                let key = (coord_key(p).0, coord_key(p).1, (kv * 1000.0).round() as i64);
+                if !node_bus.contains_key(&key) && buses.len() >= bus_cap {
+                    return None;
+                }
+                Some(*node_bus.entry(key).or_insert_with(|| {
+                    let (kind, name, note) = if junction {
+                        (BusKind::Tap, format!("OSM tap {} kV", kv), "Junction of mapped line sections (OpenStreetMap)")
+                    } else {
+                        (BusKind::Load, format!("OSM line end {} kV", kv), "End of a mapped line that reaches no mapped substation (OpenStreetMap)")
+                    };
+                    let mut bus = osm_bus(data, p.0, p.1, kv, name, kind, note, 0.6);
+                    bus.site = buses.len();
+                    buses.push(bus);
+                    buses.len() - 1
+                }))
+            };
+            // An untagged line keeps a free end only when its other end
+            // snapped, which fixed its voltage.
+            let anchored = !guessed
+                || snap(buses, head.0, head.1, Some(kv), opts.snap_km).is_some()
+                || snap(buses, tail.0, tail.1, Some(kv), opts.snap_km).is_some();
+            let from = end_bus(head, line.degrees.0, buses, anchored);
+            let to = end_bus(tail, line.degrees.1, buses, anchored);
             let (Some(from), Some(to)) = (from, to) else {
                 dropped += 1;
                 continue;
@@ -661,6 +1068,19 @@ impl OsmBuild {
                 ),
             ));
         }
+
+        // Dead ends: tap and line-end buses left with one corridor or none
+        // carry nothing, and an unloaded open-ended line only raises its
+        // voltage with its charging. They go, repeatedly, before the islands
+        // are joined.
+        let pruned = prune_dead_ends(
+            buses,
+            &mut corridors,
+            &mut ids,
+            &mut self.sites,
+            &mut self.hvdc,
+        );
+        self.counts.dead_ends_pruned = pruned;
 
         // Islands.
         let mut interconnects = 0;
@@ -831,13 +1251,33 @@ impl OsmBuild {
         let mut capacity: BTreeMap<(usize, Fuel), f64> = BTreeMap::new();
         let mut estimated = 0usize;
         let mut snapped = 0usize;
-        for (lon, lat, fuel, mw) in self.plant_sites() {
+        let sites = self.plant_sites();
+        // An untagged plant takes the median tagged capacity of the region's
+        // plants of its fuel, when at least MEDIAN_MIN_PLANTS are tagged.
+        let mut tagged: BTreeMap<Fuel, Vec<f64>> = BTreeMap::new();
+        for (_, _, fuel, mw) in &sites {
+            if let Some(mw) = mw.filter(|m| *m > 0.0) {
+                tagged.entry(*fuel).or_default().push(mw);
+            }
+        }
+        let median: BTreeMap<Fuel, f64> = tagged
+            .into_iter()
+            .filter(|(_, v)| v.len() >= MEDIAN_MIN_PLANTS)
+            .map(|(f, mut v)| {
+                v.sort_by(f64::total_cmp);
+                (f, v[v.len() / 2])
+            })
+            .collect();
+        for (lon, lat, fuel, mw) in sites {
             let Some(bus) = snap(buses, lon, lat, None, self.options.plant_snap_km) else {
                 continue;
             };
             let mw = mw.unwrap_or_else(|| {
                 estimated += 1;
-                estimated_plant_mw(total_load)
+                median
+                    .get(&fuel)
+                    .copied()
+                    .unwrap_or_else(|| estimated_plant_mw(total_load))
             });
             if mw <= 0.0 {
                 continue;
@@ -1001,6 +1441,8 @@ fn osm_bus(
         load_mw: 0.0,
         load_mvar: 0.0,
         annotation: annotation.to_owned(),
+        // Set to the bus's index once the site stage has placed every bus.
+        site: usize::MAX,
     }
 }
 
@@ -1022,6 +1464,113 @@ fn unit(bus: usize, fuel: Fuel, mw: f64, makeup: bool, rng: &mut Stream) -> Draf
     }
 }
 
+/// Remove every bus that is a tap junction or a mapped line end, carries no
+/// load and has at most one corridor, repeatedly, with its corridor; every
+/// index (corridors, their OSM ids, sites, HVDC links) is remapped. Returns
+/// the buses removed. A spur that ends nowhere carries only its own charging
+/// and lifts the voltage at its open end; a mapped line end that does reach
+/// a substation snapped to it instead.
+fn prune_dead_ends(
+    buses: &mut Vec<DraftBus>,
+    corridors: &mut Vec<Corridor>,
+    ids: &mut Vec<Vec<i64>>,
+    sites: &mut [Vec<usize>],
+    hvdc: &mut [DraftHvdc],
+) -> usize {
+    let n = buses.len();
+    let removable = |b: &DraftBus| {
+        b.load_mw <= 0.0 && (b.kind == BusKind::Tap || b.name.starts_with("OSM line end"))
+    };
+    let mut alive = vec![true; n];
+    let mut live_corridor = vec![true; corridors.len()];
+    let mut degree = vec![0usize; n];
+    let mut incident: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (k, c) in corridors.iter().enumerate() {
+        degree[c.a] += 1;
+        degree[c.b] += 1;
+        incident[c.a].push(k);
+        incident[c.b].push(k);
+    }
+    for h in hvdc.iter() {
+        // Converter ends are never dead.
+        degree[h.from] += 2;
+        degree[h.to] += 2;
+    }
+    let mut stack: Vec<usize> = (0..n)
+        .filter(|&i| degree[i] <= 1 && removable(&buses[i]))
+        .collect();
+    while let Some(i) = stack.pop() {
+        if !alive[i] || degree[i] > 1 {
+            continue;
+        }
+        alive[i] = false;
+        for &k in &incident[i] {
+            if !live_corridor[k] {
+                continue;
+            }
+            live_corridor[k] = false;
+            let c = &corridors[k];
+            let other = if c.a == i { c.b } else { c.a };
+            degree[other] = degree[other].saturating_sub(1);
+            degree[i] = degree[i].saturating_sub(1);
+            if alive[other] && degree[other] <= 1 && removable(&buses[other]) {
+                stack.push(other);
+            }
+        }
+    }
+    let removed = alive.iter().filter(|a| !**a).count();
+    if removed == 0 {
+        return 0;
+    }
+    let mut map = vec![usize::MAX; n];
+    let mut next = 0;
+    for i in 0..n {
+        if alive[i] {
+            map[i] = next;
+            next += 1;
+        }
+    }
+    let mut kept_buses = Vec::with_capacity(next);
+    for (i, b) in buses.drain(..).enumerate() {
+        if alive[i] {
+            kept_buses.push(b);
+        }
+    }
+    *buses = kept_buses;
+    for b in buses.iter_mut() {
+        if b.site != usize::MAX && b.site < n {
+            b.site = map[b.site];
+        }
+    }
+    let mut kept_corridors = Vec::new();
+    let mut kept_ids = Vec::new();
+    for (k, (mut c, id)) in corridors.drain(..).zip(ids.drain(..)).enumerate() {
+        if live_corridor[k] && alive[c.a] && alive[c.b] {
+            c.a = map[c.a];
+            c.b = map[c.b];
+            kept_corridors.push(c);
+            kept_ids.push(id);
+        }
+    }
+    *corridors = kept_corridors;
+    *ids = kept_ids;
+    for site in sites.iter_mut() {
+        site.retain(|&i| alive[i]);
+        for i in site.iter_mut() {
+            *i = map[*i];
+        }
+    }
+    for h in hvdc.iter_mut() {
+        h.from = map[h.from];
+        h.to = map[h.to];
+    }
+    removed
+}
+
+/// Line points `(lon, lat, kV)` binned by grid cell, for the voltage a
+/// substation that tags none takes from the lines near it.
+type VoltageGrid = BTreeMap<(i64, i64), Vec<(f64, f64, f64)>>;
+
 /// Join every component to the one holding bus 0 with the shortest tie,
 /// preferring a tie between buses of one voltage, Prim style: O(n·k) for k
 /// components. Ties are tagged `interconnect`. Returns how many were added.
@@ -1037,6 +1586,7 @@ pub fn connect_components(buses: &[DraftBus], corridors: &mut Vec<Corridor>) -> 
     if uf.components(n) <= 1 {
         return 0;
     }
+    let original: Vec<usize> = (0..n).map(|i| uf.find(i)).collect();
     let weight = |i: usize, j: usize| {
         haversine_km(buses[i].lon, buses[i].lat, buses[j].lon, buses[j].lat)
             + if (buses[i].base_kv - buses[j].base_kv).abs() < 1e-6 {
@@ -1097,8 +1647,78 @@ pub fn connect_components(buses: &[DraftBus], corridors: &mut Vec<Corridor>) -> 
             relax(k, &in_tree, &mut best);
         }
     }
+    // A fragment the tree joined at one voltage is also joined at every
+    // other voltage it shares with the rest, by its shortest tie at that
+    // voltage within PARALLEL_TIE_KM: a mapped fragment is cut off by
+    // missing data at all its levels, not at one, and a single tie would
+    // carry its whole load.
+    let mut existing: std::collections::BTreeSet<(usize, usize)> = corridors
+        .iter()
+        .map(|c| (c.a.min(c.b), c.a.max(c.b)))
+        .collect();
+    let mut by_level: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
+    for (i, b) in buses.iter().enumerate() {
+        by_level
+            .entry((b.base_kv * 1000.0).round() as i64)
+            .or_default()
+            .push(i);
+    }
+    let mut fragments: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (i, &root) in original.iter().enumerate() {
+        fragments.entry(root).or_default().push(i);
+    }
+    let largest = fragments
+        .iter()
+        .max_by_key(|(_, v)| v.len())
+        .map(|(&r, _)| r);
+    for (&root, members) in &fragments {
+        if Some(root) == largest {
+            continue;
+        }
+        let levels: std::collections::BTreeSet<i64> = members
+            .iter()
+            .map(|&i| (buses[i].base_kv * 1000.0).round() as i64)
+            .collect();
+        for level in levels {
+            let mut best: Option<(f64, usize, usize)> = None;
+            for &i in members
+                .iter()
+                .filter(|&&i| (buses[i].base_kv * 1000.0).round() as i64 == level)
+            {
+                for &j in &by_level[&level] {
+                    if original[j] == root {
+                        continue;
+                    }
+                    let d = haversine_km(buses[i].lon, buses[i].lat, buses[j].lon, buses[j].lat);
+                    if d <= PARALLEL_TIE_KM && best.is_none_or(|(bd, ..)| d < bd) {
+                        best = Some((d, i, j));
+                    }
+                }
+            }
+            let Some((d, i, j)) = best else { continue };
+            let (a, b) = (i.min(j), i.max(j));
+            if !existing.insert((a, b)) {
+                continue;
+            }
+            corridors.push(Corridor {
+                a,
+                b,
+                kv: buses[a].base_kv.max(buses[b].base_kv),
+                length_km: d.max(1.0),
+                role: CorridorRole::Interconnect,
+                circuits: 1,
+                route: vec![(buses[a].lon, buses[a].lat), (buses[b].lon, buses[b].lat)],
+                is_delaunay: false,
+            });
+            added += 1;
+        }
+    }
     added
 }
+
+/// Farthest a mapped fragment's extra tie at another of its voltages
+/// reaches, km. Modelling choice: about two subtransmission spans.
+const PARALLEL_TIE_KM: f64 = 50.0;
 
 #[cfg(test)]
 mod tests {
@@ -1170,6 +1790,7 @@ mod tests {
             load_mw: 0.0,
             load_mvar: 0.0,
             annotation: String::new(),
+            site: 0,
         };
         let buses = vec![bus(0.0, 380.0), bus(0.0001, 110.0), bus(0.5, 110.0)];
         assert_eq!(snap(&buses, 0.0, 0.0, Some(110.0), 2.0), Some(1));

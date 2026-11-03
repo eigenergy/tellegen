@@ -171,6 +171,40 @@ pub fn default_generator_count(n: usize) -> usize {
     ((GENERATOR_BUS_SHARE * n as f64).round() as usize).clamp(3.min(hi), hi)
 }
 
+/// Firm capacity credit of a fuel: the share of its nameplate counted
+/// toward the reserve margin (tuned, [`crate::tuning::Tuning::capacity_credit`]).
+pub fn capacity_credit(fuel: Fuel) -> f64 {
+    let c = crate::tuning::tuning().capacity_credit;
+    let k = Fuel::ALL.iter().position(|f| *f == fuel).unwrap_or(0);
+    c[k].clamp(0.05, 1.0)
+}
+
+/// Mean firm credit of a capacity mix (shares summing to 1).
+pub fn mix_credit(mix: &BTreeMap<Fuel, f64>) -> f64 {
+    let total: f64 = mix.values().sum();
+    if total <= 0.0 {
+        return 1.0;
+    }
+    mix.iter()
+        .map(|(f, s)| s / total * capacity_credit(*f))
+        .sum::<f64>()
+        .clamp(0.05, 1.0)
+}
+
+/// Unit draw weight of each fuel so that the expected nameplate shares of
+/// the drawn units follow the mix: a fuel's share divided by its mean unit
+/// size. A capacity mix (EIA's convention, and the request's) counts
+/// megawatts, not units: a gigawatt nuclear station and a 60 MW solar farm
+/// differ seventeenfold in size.
+pub fn unit_draw_weights(mix: &BTreeMap<Fuel, f64>) -> Vec<f64> {
+    mix.iter()
+        .map(|(f, s)| {
+            let p = fuel_params(*f);
+            s / (p.size_mu + 0.5 * p.size_sigma * p.size_sigma).exp()
+        })
+        .collect()
+}
+
 /// Share `capacity` among units in proportion to `raw`, holding each unit at
 /// or below its cap and passing the excess to the units still below theirs.
 /// Returns `None` when the caps together hold less than `capacity`.
@@ -216,6 +250,8 @@ pub fn place_generators(
     if n == 0 {
         return Vec::new();
     }
+    // Tap junctions carry no machine.
+    let sited = buses.iter().filter(|b| b.kind != BusKind::Tap).count();
     let deg = corridor_degrees(n, corridors);
     let max_deg = deg.iter().copied().max().unwrap_or(1).max(1) as f64;
     let max_load = buses.iter().map(|b| b.load_mw).fold(1e-6, f64::max);
@@ -229,9 +265,18 @@ pub fn place_generators(
         .collect();
 
     let requested = req.generator_count.map(|g| g as usize);
+    // A hierarchical region's buses reach subtransmission, where many small
+    // units connect: its own share (CATS has 0.24 units per bus).
     let total_count = requested
-        .unwrap_or_else(|| default_generator_count(n))
-        .min(n);
+        .unwrap_or_else(|| {
+            if crate::hierarchy::layered(ctx) {
+                let share = crate::tuning::tuning().generator_bus_share.clamp(0.0, 1.0);
+                ((share * sited as f64).round() as usize).clamp(3.min(sited.max(1)), sited.max(1))
+            } else {
+                default_generator_count(sited)
+            }
+        })
+        .min(sited);
     if total_count == 0 {
         return Vec::new();
     }
@@ -239,7 +284,11 @@ pub fn place_generators(
     // Islands: load share decides the unit count, every island gets one.
     let mut island_load: BTreeMap<usize, f64> = BTreeMap::new();
     let mut island_buses: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for (i, b) in buses.iter().enumerate() {
+    for (i, b) in buses
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| b.kind != BusKind::Tap)
+    {
         *island_load.entry(b.island).or_default() += b.load_mw;
         island_buses.entry(b.island).or_default().push(i);
     }
@@ -282,7 +331,9 @@ pub fn place_generators(
     }
 
     let fuels: Vec<Fuel> = ctx.fuel_mix.keys().copied().collect();
-    let fuel_weights: Vec<f64> = ctx.fuel_mix.values().copied().collect();
+    let fuel_weights: Vec<f64> = unit_draw_weights(&ctx.fuel_mix);
+    // Nameplate covers the reserve-margin target after firm credit.
+    let credit = mix_credit(&ctx.fuel_mix);
     let draw = |rng: &mut Stream| -> (Fuel, f64) {
         let fuel = rng
             .weighted_index(&fuel_weights)
@@ -302,11 +353,62 @@ pub fn place_generators(
         }
         let mut ranked: Vec<usize> = island_buses[&island].clone();
         ranked.sort_by(|&a, &b| score[b].partial_cmp(&score[a]).unwrap().then(a.cmp(&b)));
-        let capacity = (1.0 + req.reserve_margin) * island_load[&island].max(1.0);
+        let capacity = (1.0 + req.reserve_margin) * island_load[&island].max(1.0) / credit;
         let mut drafts: Vec<(usize, Fuel, f64)> = Vec::with_capacity(count);
         for &bus in ranked.iter().take(count) {
             let (fuel, raw) = draw(rng);
             drafts.push((bus, fuel, raw));
+        }
+        // In a hierarchical region most wind, solar and hydro units move to
+        // the buses with the least load, away from the load centres the
+        // ranking favours.
+        if crate::hierarchy::layered(ctx) {
+            let share = crate::tuning::tuning().remote_renewables.clamp(0.0, 1.0);
+            let remote = |f: Fuel| matches!(f, Fuel::Wind | Fuel::Solar | Fuel::Hydro);
+            let hosts: std::collections::BTreeSet<usize> = drafts.iter().map(|d| d.0).collect();
+            // Remote plants connect above subtransmission's lowest level:
+            // exporting through 66 kV lines raises their voltage by P·R/V²,
+            // six times more than through 115 kV ones.
+            let lowest = buses.iter().map(|b| b.tier).max().unwrap_or(0);
+            let mut rural: Vec<usize> = island_buses[&island]
+                .iter()
+                .copied()
+                .filter(|&b| !hosts.contains(&b) && (buses[b].tier < lowest || lowest == 0))
+                .collect();
+            // Least load first, a light random order among equals.
+            let jitter: BTreeMap<usize, f64> = rural.iter().map(|&b| (b, rng.uniform())).collect();
+            rural.sort_by(|&a, &b| {
+                (buses[a].load_mw + jitter[&a])
+                    .total_cmp(&(buses[b].load_mw + jitter[&b]))
+                    .then(a.cmp(&b))
+            });
+            let mut next = rural.into_iter();
+            for d in drafts.iter_mut() {
+                if remote(d.1) && rng.uniform() < share {
+                    if let Some(b) = next.next() {
+                        d.0 = b;
+                    }
+                }
+            }
+        }
+        // The largest drawn units go to the buses that can hold the most, so
+        // a gigawatt station does not land on a 69 kV bus and spill: the
+        // draws and the buses stay the same, only their pairing changes.
+        // Only a hierarchical region has buses that small.
+        let layered = crate::hierarchy::layered(ctx);
+        if layered {
+            let mut units: Vec<(Fuel, f64)> = drafts.iter().map(|d| (d.1, d.2)).collect();
+            units.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let mut hosts: Vec<usize> = drafts.iter().map(|d| d.0).collect();
+            hosts.sort_by(|&a, &b| {
+                cap_of(&buses[b])
+                    .total_cmp(&cap_of(&buses[a]))
+                    .then(score[b].total_cmp(&score[a]))
+                    .then(a.cmp(&b))
+            });
+            for (d, (bus, (fuel, raw))) in drafts.iter_mut().zip(hosts.into_iter().zip(units)) {
+                *d = (bus, fuel, raw);
+            }
         }
         // Regional adequacy: units are grouped into areas of about
         // ADEQUACY_AREA_MW of the load nearest them, and each area's units
@@ -423,6 +525,72 @@ pub fn place_generators(
                 break;
             }
         }
+        // Hold each fuel's nameplate to its share of the mix inside every
+        // adequacy area: scale the area's units of each fuel toward the
+        // fuel's share of the area's capacity (the shares of fuels the area
+        // has no unit of spread over the ones it has), within the bus caps,
+        // then the area back to its total. Areas keep their reserve margins.
+        let mix_total: f64 = ctx.fuel_mix.values().sum::<f64>().max(1e-12);
+        let areas: std::collections::BTreeSet<usize> = if layered {
+            area.iter().copied().collect()
+        } else {
+            std::collections::BTreeSet::new()
+        };
+        for &a in &areas {
+            let slots: Vec<usize> = (0..drafts.len()).filter(|&k| area[k] == a).collect();
+            let total: f64 = slots.iter().map(|&k| sizes[k]).sum();
+            if total <= 0.0 {
+                continue;
+            }
+            let present: std::collections::BTreeSet<Fuel> =
+                slots.iter().map(|&k| drafts[k].1).collect();
+            let present_share: f64 = present
+                .iter()
+                .map(|f| ctx.fuel_mix.get(f).copied().unwrap_or(0.0) / mix_total)
+                .sum::<f64>()
+                .max(1e-12);
+            for _ in 0..6 {
+                let mut by_fuel: BTreeMap<Fuel, f64> = BTreeMap::new();
+                for &k in &slots {
+                    *by_fuel.entry(drafts[k].1).or_default() += sizes[k];
+                }
+                for &k in &slots {
+                    let f = drafts[k].1;
+                    let want =
+                        ctx.fuel_mix.get(&f).copied().unwrap_or(0.0) / mix_total / present_share
+                            * total;
+                    let have = by_fuel[&f].max(1e-9);
+                    let cap = cap_of(&buses[drafts[k].0]).max(sizes[k]);
+                    sizes[k] = (sizes[k] * want / have).min(cap);
+                }
+                // Back to the area's total over the units with room.
+                for _ in 0..8 {
+                    let now: f64 = slots.iter().map(|&k| sizes[k]).sum();
+                    let gap = total - now;
+                    if gap.abs() <= 1e-9 * total {
+                        break;
+                    }
+                    let room: Vec<f64> = slots
+                        .iter()
+                        .map(|&k| {
+                            if gap > 0.0 {
+                                (cap_of(&buses[drafts[k].0]) - sizes[k]).max(0.0)
+                            } else {
+                                sizes[k]
+                            }
+                        })
+                        .collect();
+                    let room_total: f64 = room.iter().sum();
+                    if room_total <= 0.0 {
+                        break;
+                    }
+                    let take = gap.abs().min(room_total);
+                    for (&k, r) in slots.iter().zip(&room) {
+                        sizes[k] += gap.signum() * take * r / room_total;
+                    }
+                }
+            }
+        }
         over_cap += drafts
             .iter()
             .zip(&sizes)
@@ -518,6 +686,7 @@ mod tests {
                 load_mw: 750.0,
                 load_mvar: 0.0,
                 annotation: String::new(),
+                site: i,
             })
             .collect();
         let mut rng = Stream::new(7, StreamTag::Generators);
@@ -528,7 +697,7 @@ mod tests {
                 .map(|g| g.pmax_mw)
                 .sum()
         };
-        let need = (1.0 + req.reserve_margin) * 30_000.0;
+        let need = (1.0 + req.reserve_margin) * 30_000.0 / mix_credit(&ctx.fuel_mix);
         for west in [true, false] {
             assert!(
                 (held(west) - need).abs() < 1e-6 * need,

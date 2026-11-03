@@ -38,6 +38,9 @@ use crate::topology::Corridor;
 pub enum PlanMode {
     /// Choose voltage classes and circuits (synthetic corridors).
     Expand,
+    /// Add circuits and transformer capacity but keep every bus at its level
+    /// (hierarchical networks, whose levels are designed, not chosen by flow).
+    Reinforce,
     /// Keep the corridors as given and only measure the planning case
     /// (mapped OSM corridors, whose circuits are real).
     Observe,
@@ -406,6 +409,22 @@ fn corridor_flows(
         .collect()
 }
 
+/// Circuits one corridor may hold. A hierarchical plan cannot raise a
+/// subtransmission corridor to another level, so below 100 kV it may build
+/// up to six: a heavily loaded 60–70 kV path is reinforced by more and
+/// heavier circuits on its right of way (reconductoring), not by a new
+/// voltage. Modelling choice.
+fn circuit_cap(promote: bool, kv: f64) -> u32 {
+    if !promote && kv < crate::hierarchy::SUBTRANSMISSION_KV {
+        SUBTRANSMISSION_MAX_CIRCUITS
+    } else {
+        MAX_CIRCUITS_PER_CORRIDOR
+    }
+}
+
+/// [`circuit_cap`] below 100 kV in a hierarchical plan.
+const SUBTRANSMISSION_MAX_CIRCUITS: u32 = 6;
+
 /// Plan the circuits of every corridor for the economic dispatch at peak
 /// load: promote the ends of corridors too heavy for their voltage class,
 /// add circuits (or larger banks) until no circuit runs above the
@@ -428,7 +447,8 @@ pub fn plan_corridors(
     branch_target: usize,
     mode: PlanMode,
 ) -> (Vec<CircuitDesign>, CorridorPlan) {
-    let expand = mode == PlanMode::Expand;
+    let expand = mode != PlanMode::Observe;
+    let promote = mode == PlanMode::Expand;
     let n = buses.len();
     // Electrical components of the corridor graph; each balances on its own.
     let mut uf = UnionFind::new(n);
@@ -477,7 +497,7 @@ pub fn plan_corridors(
     // The voltage ladder: the modelled levels and, when expanding, the higher
     // levels above them. Tiers index the ladder, so they shift by the number
     // of higher levels while those are available.
-    let above: Vec<f64> = if expand {
+    let above: Vec<f64> = if promote {
         above
             .iter()
             .copied()
@@ -497,7 +517,7 @@ pub fn plan_corridors(
     let mut bank_floor = vec![0.0; corridors.len()];
     let mut designs = design_circuits(buses, corridors, generators, draws);
     let mut promoted = 0usize;
-    for _ in 1..if expand { ladder.len() } else { 1 } {
+    for _ in 1..if promote { ladder.len() } else { 1 } {
         let flows = corridor_flows(n, &designs, &circuits, &injection, &grounds);
         let mut raise: Vec<Option<usize>> = vec![None; n];
         for (k, c) in corridors.iter().enumerate() {
@@ -567,12 +587,13 @@ pub fn plan_corridors(
                 }
             }
             let need = (required / d.rate_a).ceil() as u32;
-            if need > UPGRADE_CIRCUITS && mark_raise(&mut raise, buses, &corridors[c]) {
+            if promote && need > UPGRADE_CIRCUITS && mark_raise(&mut raise, buses, &corridors[c]) {
                 // A higher level carries it on fewer circuits.
                 continue;
             }
-            capped |= need > MAX_CIRCUITS_PER_CORRIDOR;
-            let need = need.min(MAX_CIRCUITS_PER_CORRIDOR);
+            let most = circuit_cap(promote, d.kv);
+            capped |= need > most;
+            let need = need.min(most);
             if need > circuits[c] {
                 circuits[c] = need;
                 added = true;
@@ -609,6 +630,14 @@ pub fn plan_corridors(
         let mut spread_ok = true;
         let mut stiffened = false;
         for (ci, members) in buses_of.iter().enumerate() {
+            // A hierarchical network is not held to the spread: its radial
+            // subtransmission and long tapped lines carry angle that no
+            // transfer path does (the California Test System spans about
+            // 140° at 200 kV and above at its own peak dispatch), and the AC
+            // power flow is the check that matters.
+            if !promote {
+                continue;
+            }
             let root = roots[ci];
             let lead = *members
                 .iter()
@@ -640,7 +669,8 @@ pub fn plan_corridors(
                 .filter(|(k, c)| {
                     component[c.a] == root
                         && ((circuits[*k] < MAX_CIRCUITS_PER_CORRIDOR && total < budget)
-                            || (buses[c.a].tier.min(buses[c.b].tier) > stiffen_top
+                            || (promote
+                                && buses[c.a].tier.min(buses[c.b].tier) > stiffen_top
                                 && hv < hv_budget))
                 })
                 .map(|(k, _)| {
@@ -674,7 +704,8 @@ pub fn plan_corridors(
                     d.set_transformer_mva(full);
                     bank_floor[k] = full;
                     upsized[k] = true;
-                } else if hv < hv_budget
+                } else if promote
+                    && hv < hv_budget
                     && mark_raise_to(&mut stiffen_raise, buses, &corridors[k], stiffen_top)
                 {
                     let c = &corridors[k];
@@ -714,7 +745,7 @@ pub fn plan_corridors(
 
     // 3. Fill to the requested branch count, heaviest planned loading first.
     let mut filler = 0usize;
-    if expand && capacity_total + stiffening < branch_target && !corridors.is_empty() {
+    if promote && capacity_total + stiffening < branch_target && !corridors.is_empty() {
         let loading = |c: usize, k: u32| flows[c].abs() / (k as f64 * designs[c].rate_a);
         let mut order: Vec<usize> = (0..corridors.len()).collect();
         order.sort_by(|&i, &j| {
@@ -773,7 +804,10 @@ pub fn plan_corridors(
             overloaded += 1;
         }
         let need = flows[c].abs() / PLANNING_UTILISATION / d.rate_a;
-        if expand && circuits[c] >= MAX_CIRCUITS_PER_CORRIDOR && need > circuits[c] as f64 + 1e-9 {
+        if expand
+            && circuits[c] >= circuit_cap(promote, designs[c].kv)
+            && need > circuits[c] as f64 + 1e-9
+        {
             capped_corridors += 1;
         }
     }
