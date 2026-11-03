@@ -25,14 +25,28 @@ impl Drop for CancelOnDrop {
     }
 }
 
+/// Largest accepted `/api/calculate` body; it carries a whole input module.
+pub(super) const CALCULATE_BODY_LIMIT: usize = 128 * 1024 * 1024;
+
 pub(super) async fn calculate(
     State(state): State<Arc<AppState>>,
     connect_info: ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    Json(request): Json<CalculationRequest>,
+    body: Request,
 ) -> ApiResult<Json<CalculationResult>> {
+    // Rate-limit before buffering: a rejected client never gets to make the
+    // server read and parse a body of up to CALCULATE_BODY_LIMIT bytes.
     let client = expensive_client_key(&headers, &connect_info);
     state.check_expensive_rate_limit(ExpensiveEndpoint::Solve, &client)?;
+    let bytes = axum::body::to_bytes(body.into_body(), CALCULATE_BODY_LIMIT)
+        .await
+        .map_err(|e| ApiError {
+            status: StatusCode::PAYLOAD_TOO_LARGE,
+            message: format!("calculation request rejected: {e}"),
+        })?;
+    let request: CalculationRequest = serde_json::from_slice(&bytes)
+        .map_err(|e| ApiError::bad_request(format!("bad calculation request: {e}")))?;
+    drop(bytes);
     tellegen::settings::resolve(&request.settings).map_err(ApiError::bad_request)?;
     let cancel = Arc::new(AtomicBool::new(false));
     let _cancel = CancelOnDrop(cancel.clone());

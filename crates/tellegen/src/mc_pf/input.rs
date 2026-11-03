@@ -887,9 +887,13 @@ pub(crate) fn solve_mc_module_json_cancellable(
     // stricter `validate_mc_module` gate is used by Study ingestion, where a
     // capability must never be inferred from a lossy projection.
     reject_lossy_diagnostics(&module)?;
-    let instance = super::energized::instance(&module)?;
+    // One topology walk serves both the solver subset and the reported scope.
+    let (selected, excluded) = super::energized::selection(&module)?;
+    let instance = match selected {
+        Some(network) => McAcPfInstance::from_network(network).map_err(|e| e.to_string())?,
+        None => instance_from_value(module.value())?,
+    };
     let mut result = super::solve_mc_ac_pf_instance_cancellable(&instance, options, cancel)?;
-    let (_, excluded) = super::energized::selection(&module)?;
     result.network_scope = super::energized::scope(&excluded);
     result.excluded_islands = excluded;
     serde_json::to_string(&result).map_err(|e| e.to_string())

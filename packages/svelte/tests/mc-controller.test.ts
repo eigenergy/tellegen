@@ -676,6 +676,49 @@ describe('multiconductor calculation and coordinates', () => {
 		ctrl.dispose();
 	});
 
+	it('an unavailable case rejects a solve without changing its selected settings', async () => {
+		const { ctrl, c, solve } = host({
+			mc_pf_supported: false,
+			mc_pf_unavailable_reason: 'unsupported equipment'
+		});
+		const revision = c.settings.revision;
+		await expect(ctrl.solveMultiCase(c, { damping: 0.5 })).rejects.toThrow('unsupported equipment');
+		expect(solve).not.toHaveBeenCalled();
+		expect(c.mcOptions).toEqual(DEFAULT_MC_PF_OPTIONS);
+		expect(c.settings.revision).toBe(revision);
+		ctrl.dispose();
+	});
+
+	it('refuses a full-network solve once the retained input carries the island selection', async () => {
+		const exclusions = [
+			{ buses: ['unpowered'], equipment: [{ kind: 'load', name: 'unsupplied' }] }
+		];
+		const { ctrl, c, solve } = host({ mc_excluded_islands: exclusions });
+		ctrl.mcTransport.prepareMcEnergizedNetwork = vi.fn(async () => ({
+			module_json: 'full-with-selection',
+			network_scope: c.mcPreparedScope,
+			excluded_islands: exclusions
+		}));
+		await ctrl.solveMultiCase(c, c.mcOptions, undefined, true);
+		expect(c.mcInput).toBe('full-with-selection');
+		const count = solve.mock.calls.length;
+		await expect(ctrl.solveMultiCase(c, {}, undefined, false)).rejects.toThrow(
+			'already solves only its energized network'
+		);
+		expect(solve.mock.calls.length).toBe(count);
+		expect(c.mcEnergizedOnly).toBe(true);
+		ctrl.dispose();
+	});
+
+	it('an imported input that carries the selection cannot be solved as the full network', async () => {
+		const { ctrl, c, solve } = host({ mc_energized_only: true });
+		await expect(ctrl.solveMultiCase(c, {}, undefined, false)).rejects.toThrow(
+			'already solves only its energized network'
+		);
+		expect(solve).not.toHaveBeenCalled();
+		ctrl.dispose();
+	});
+
 	it('records terminal results and rejects concurrent work', async () => {
 		const { ctrl, c, solve } = host();
 		const pending = ctrl.solveMultiCase(c, { tolerance: 1e-8 });

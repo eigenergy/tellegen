@@ -139,3 +139,16 @@ it('cancelling a candidate Study discards its result and frees the candidate', a
 	expect(free).toHaveBeenCalledOnce();
 	ctrl.dispose();
 });
+
+it('a cleared field removes its override instead of sending an undefined setting', async () => {
+	const { ctrl, c } = setup();
+	c.settings.options = { acpf: { start: 'case' } };
+	vi.mocked(resolveSettings).mockResolvedValue({ ...resolved, overrides: {}, effective: {} });
+	await ctrl.updateSettings(c, 'acpf', { start: undefined }, 0);
+	expect(vi.mocked(resolveSettings)).toHaveBeenCalledWith({
+		calculation: 'acpf',
+		baseline: {},
+		overrides: {}
+	});
+	ctrl.dispose();
+});

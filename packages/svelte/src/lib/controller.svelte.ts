@@ -2304,7 +2304,16 @@ export class Controller {
 			throw new Error('This calculation is unavailable for the selected case');
 		if (c instanceof LocalCase && c.declaredFormulation && calculation !== c.declaredFormulation)
 			throw new Error('This PowerIO instance requires its declared calculation');
-		const overrides = reset ? {} : { ...c.settings.options[calculation], ...patch };
+		// An undefined value (a cleared field) removes that override, so the
+		// setting falls back to the case baseline or engine default.
+		const overrides = reset
+			? {}
+			: Object.fromEntries(
+					Object.entries({
+						...c.settings.options[calculation],
+						...patch
+					}).filter(([, value]) => value !== undefined)
+				);
 		const caseRevision = c.revisionGeneration;
 		const baseline =
 			c instanceof MulticonductorCase
@@ -2910,11 +2919,25 @@ export class Controller {
 		options = { ...DEFAULT_MC_PF_OPTIONS, ...c.mcOptions, ...options };
 		const settingsError = validateMcPfOptions(options);
 		if (settingsError) throw new Error(settingsError);
+		const unavailable = c.mcPfReason;
+		if (unavailable) {
+			this.app.error = unavailable;
+			throw new Error(unavailable);
+		}
+		// The retained input keeps its energized-network selection record, and
+		// there is no engine operation to remove it, so a full-network run here
+		// would still exclude the islands while claiming otherwise.
+		if (c.mcInputSelected && !energizedOnly)
+			throw new Error(
+				'This case already solves only its energized network; re-import it to solve the full network'
+			);
+		// Rejected requests change nothing. Accepted settings persist even if
+		// the solver then fails, so a retry runs with them.
 		if (!sameSettings(c.mcOptions, options)) {
-			const baseline = { ...DEFAULT_MC_PF_OPTIONS, ...c.distribution?.pf_options } as Record<
-				string,
-				unknown
-			>;
+			const baseline = {
+				...DEFAULT_MC_PF_OPTIONS,
+				...c.distribution?.pf_options
+			} as Record<string, unknown>;
 			c.settings.options = {
 				...c.settings.options,
 				mc_ac_pf: Object.fromEntries(
@@ -2925,11 +2948,6 @@ export class Controller {
 		}
 		c.mcOptions = { ...options };
 		c.mcEnergizedOnly = energizedOnly;
-		const unavailable = c.mcPfReason;
-		if (unavailable) {
-			this.app.error = unavailable;
-			throw new Error(unavailable);
-		}
 		const originalInput = c.mcInput!;
 		let input: McModuleInput = originalInput;
 		const retainedAtStart = c.mcSession;
@@ -3021,6 +3039,7 @@ export class Controller {
 			c.solveMs = performance.now() - started;
 			c.revisionGeneration++;
 			c.mcCompletedSolveSeq = seq;
+			if (energizedOnly) c.mcInputSelected = true;
 			return result;
 		} catch (error) {
 			nextSession?.free();

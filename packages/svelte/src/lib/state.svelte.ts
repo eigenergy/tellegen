@@ -283,6 +283,9 @@ export class MulticonductorCase {
 	mcTiming: McEditTiming | null = $state.raw<McEditTiming | null>(null);
 	/** Explicit selection for the next solve. The graph and module retain every bus. */
 	mcEnergizedOnly = $state(false);
+	/** The retained input carries the energized-network selection record. It
+	 * cannot be removed, so every later solve of this input is energized-only. */
+	mcInputSelected = false;
 	/** Successful explicit solve to reveal in Studies; load edits do not advance it. */
 	mcCompletedSolveSeq = $state(0);
 	/** Detected on import, revalidated when preparing a solve; never removed from the graph. */
@@ -377,6 +380,7 @@ export class MulticonductorCase {
 		this.summary = init.summary;
 		this.mcInput = init.input ?? init.summary.module_json ?? null;
 		this.mcEnergizedOnly = init.summary.mc_energized_only ?? false;
+		this.mcInputSelected = this.mcEnergizedOnly;
 		this.mcExcludedIslands = init.summary.mc_excluded_islands ?? [];
 		this.mcPreparedScope = summarizeMcExcludedIslands(this.mcExcludedIslands);
 		this.geoLayer = init.summary.geo_layer ?? null;

@@ -640,8 +640,9 @@ pub fn router(state: Arc<AppState>, frontend_build: Option<PathBuf>) -> Router {
         .route("/api/cases/{id}/solve", get(solve_stream))
         .route(
             "/api/calculate",
-            post(settings::calculate)
-                .layer(axum::extract::DefaultBodyLimit::max(128 * 1024 * 1024)),
+            post(settings::calculate).layer(axum::extract::DefaultBodyLimit::max(
+                settings::CALCULATE_BODY_LIMIT,
+            )),
         )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -2689,6 +2690,39 @@ mod tests {
         };
         assert!(err.contains("TELLEGEN_ALLOW_FALLBACK=1"));
     }
+    #[tokio::test]
+    async fn calculate_rate_limits_before_reading_the_body() {
+        let state = fallback_state();
+        let post = |state: Arc<AppState>| async move {
+            let response = router(state, None)
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/api/calculate")
+                        .header("content-type", "application/json")
+                        .header("x-forwarded-for", "198.51.100.20")
+                        .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))))
+                        .body(Body::from("not json"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            (
+                status,
+                serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            )
+        };
+        for _ in 0..DEFAULT_SOLVE_RATE_LIMIT_EVENTS {
+            let (status, body) = post(state.clone()).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        }
+        // The malformed body is never parsed once the client is over its limit.
+        let (status, body) = post(state).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    }
+
     async fn post_settings(
         state: Arc<AppState>,
         path: &str,

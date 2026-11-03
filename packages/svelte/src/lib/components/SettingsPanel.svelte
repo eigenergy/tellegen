@@ -77,9 +77,19 @@
 		maxRounds = l?.max_rounds ?? 20;
 		nearBinding = l?.near_binding ?? 0.98;
 	}
+	// Refill the draft only when the case or its settings revision changes.
+	// Results and re-solves also recompute `selected`, and must not discard
+	// edits the user has not applied yet.
+	let filledFor = '';
 	$effect(() => {
 		const value = selected;
-		if (value) {
+		if (!value) {
+			filledFor = '';
+			return;
+		}
+		const key = `${value.case_id}\u0000${value.settings_revision}`;
+		if (key !== filledFor) {
+			filledFor = key;
 			calculation = value.calculation;
 			revision = value.settings_revision;
 			fill(value.selected);

@@ -1890,10 +1890,13 @@ export function createTellegenWebMcpAdapter(
 						'STALE_REVISION',
 						'The displayed case changed; inspect_case before solving.'
 					);
+				// Same scope as the Studies and details solve actions: a case with
+				// source-less islands is solved energized-only.
 				const result = await ctrl.solveMultiCase(
 					c,
 					input.maxIterations === undefined ? {} : { max_iterations: input.maxIterations },
-					signal
+					signal,
+					c.mcEnergizedOnly || c.mcRequiresEnergizedSolve
 				);
 				signal.throwIfAborted();
 				if (ctrl.app.activeMulti !== c || ctrl.app.studyView)
