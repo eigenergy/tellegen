@@ -1,5 +1,66 @@
 # @tellegen/engine
 
+## 0.5.0
+
+### Minor Changes
+
+- [#268](https://github.com/eigenergy/tellegen/pull/268) [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Detect source-less islands on import and show one context-sensitive solve button
+  in Network and Studies, with exclusions visible before solving and shared solver
+  settings. Scroll Studies to the operating-point overview after successful explicit
+  solves. Add explicit energized-network preparation for multiconductor power flow. Retain
+  the full input for inspection, identify excluded source-less islands and unsupplied
+  loads, and preserve and validate network scope in saved studies, solution modules,
+  and CSV exports. Use default voltage-change tolerance 1e-4 V, absolute KCL tolerance 1e-4 A,
+  and relative KCL tolerance 1e-5; other solver settings remain unchanged.
+
+  Prepare energized networks directly from retained inputs without an IR text round trip.
+  Columnar operating-point results retain load-model qualification and excluded-island provenance.
+
+- [#268](https://github.com/eigenergy/tellegen/pull/268) [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Expose multiconductor power flow settings and distinguish convergence from original load-model fidelity. Results and CSV exports retain qualification and effective settings. Simulation snapshots use version 2, with no canonical PowerIO solution for modified or unverified load equations; version 1 snapshots are reassessed on replay. Load-envelope defaults are unchanged and failed reruns retain the previous result.
+
+- [#286](https://github.com/eigenergy/tellegen/pull/286) [`888859b`](https://github.com/eigenergy/tellegen/commit/888859b6ab4b11d63dabaadd6389e56d3227cd73) Thanks [@samtalki](https://github.com/samtalki)! - A multiconductor session can hand over its complete result as columns. `BrowserMcPfSession.resultTables()` returns `McPfResultTables`: the terminals, equipment ports, and source reactions of `result()`, row for row, with each name stored once and every value in a typed array. The worker transfers the arrays rather than copying them, and `mcPfResultTables(result)` gives a stored `McPfResult` the same form.
+
+  The overview and the diagram now read a live session's operating point this way, so analysing a whole-city model no longer parses a 166 MiB JSON result into an object per terminal and port. `MulticonductorCase.overviewResult` holds either form.
+
+- [#284](https://github.com/eigenergy/tellegen/pull/284) [`ef7e448`](https://github.com/eigenergy/tellegen/commit/ef7e448abf5959b489ac94b728283ea50bd67707) Thanks [@samtalki](https://github.com/samtalki)! - A multiconductor case can stay parsed in the engine instead of crossing the worker boundary as PowerIO IR text. `ingestJsonDrop` and `ingestDistCaseBytes` take `{ retain: true }` and then return the parsed module as `payload.input`, a `BrowserMcInput`, in place of `module_json`. `createMcPfSession` accepts that input, `BrowserMcPfSession.input()` returns the edited input in the same form, and `BrowserMcInput.moduleJson()` writes the IR text only when it is asked for. Without `retain`, both ingest calls return `module_json` as before.
+
+  The Svelte controller imports multiconductor cases this way, so AC power flow on a whole-city model no longer fails with "input exceeds 128 MiB limit". For a 57,757-bus model, the pretty-printed IR was 187.6 MB. `MulticonductorCase.moduleJson` is now `MulticonductorCase.mcInput`, which holds either a `BrowserMcInput` or IR text.
+
+- [#291](https://github.com/eigenergy/tellegen/pull/291) [`01184dd`](https://github.com/eigenergy/tellegen/commit/01184dd88035cfeb8c0186e8075685a3b6b6ec55) Thanks [@samtalki](https://github.com/samtalki)! - Generate state-level grids down to subtransmission, in Synthetic and
+  OpenStreetMap mode. A region whose places lie mostly in one US state takes
+  that state's demand (EIA-861 sales with an EIA-930 peak factor), capacity mix
+  (EIA-860) and voltage ladder; California's is 500/230/115/66 kV. A ladder that
+  reaches below 100 kV is built level by level: a meshed top level,
+  subtransmission pockets fed from step-downs with tap junctions, regulated
+  secondaries and nameplate sized by firm capacity credit. Synthetic California
+  is held to the California Test System at three seeds, and OpenStreetMap
+  California at its own run, in `docs/evidence/synth/cats/`.
+
+  OpenStreetMap mode keeps 60–70 kV lines where the ladder reaches them, splits
+  mapped lines at their junctions into tap buses, prunes spurs that end nowhere,
+  leaves out junctions beyond the clip buffer, adds step-downs where the mapped
+  network cannot carry its load, and regulates subtransmission buses beyond the
+  pocket reach of any step-down. Generation is faster in both modes: angle
+  solves use a sparse Cholesky factorisation, line ends snap through a grid
+  index, and containment tests read only the polygon edges that can cross the
+  point's latitude. OpenStreetMap California takes 1.1 s natively, from 5.1 s,
+  and 1.8 s in the wasm engine; Synthetic California, 7,361 buses, 1.3 s in the
+  wasm engine.
+
+  The report gains `BusKind` `"tap"`, `context.subdivision`,
+  `context.demand_by_subdivision`, `context.fuel_mix_basis`, and the
+  `"subdivision"` voltage basis. `limits.max_bus_count` defaults to 12,000,
+  from 3,000. A transmission-only synthetic grid sized from demand still stops at
+  3,000 buses; one that reaches subtransmission is sized up to the cap.
+
+### Patch Changes
+
+- [#285](https://github.com/eigenergy/tellegen/pull/285) [`3aa86e6`](https://github.com/eigenergy/tellegen/commit/3aa86e6ca4c79d485cf452c6806065644ec5f7ce) Thanks [@samtalki](https://github.com/samtalki)! - Grow the engine's wasm memory in larger steps. The allocator used to grow
+  linear memory one 64 KiB page at a time, and on a 57,757-bus distribution case
+  those tens of thousands of grows took most of the ingest. Ingesting that case
+  in the worker is now about three times faster. Linear memory, which never
+  shrinks, can end a few percent higher than before after a large ingest.
+
 ## 0.4.6
 
 ### Patch Changes

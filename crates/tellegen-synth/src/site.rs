@@ -1,9 +1,9 @@
 //! Bus siting: the most populous places inside the region anchor buses in
-//! population order, blue-noise fill supplies the rest, and population rank
-//! decides each bus's voltage tier and role.
+//! population order, population-weighted blue-noise fill supplies the rest,
+//! and population rank decides each bus's voltage tier and role.
 
 use crate::context::ContextData;
-use crate::geom::bluenoise::blue_noise_points;
+use crate::geom::bluenoise::weighted_blue_noise_points;
 use crate::report::{BusKind, ElementSource, RegionContext};
 use crate::rng::Stream;
 
@@ -30,6 +30,10 @@ pub struct DraftBus {
     pub load_mw: f64,
     pub load_mvar: f64,
     pub annotation: String,
+    /// Substation the bus belongs to: buses of one site are co-located and
+    /// joined by transformers (hierarchical networks, mapped OSM sites).
+    /// A bus alone at its site carries its own index.
+    pub site: usize,
 }
 
 /// Rank thresholds for voltage tiers: the top 12% of buses by population
@@ -47,16 +51,41 @@ pub fn tier_for_rank(levels: usize, rank: f64) -> usize {
     }
 }
 
+/// Most of a transmission grid's buses a region's places anchor; blue-noise
+/// fill sites the rest. Modelling choice: a transmission network's
+/// substations sit across the territory, not only at its largest towns. The
+/// places table lists every town of 5,000 people (GeoNames), enough to anchor
+/// every bus of a populous country in its cities alone; a quarter keeps the
+/// spread the earlier table of large places gave (about a quarter of the
+/// buses of the largest countries).
+pub const ANCHOR_SHARE: f64 = 0.25;
+
 /// Site `ctx.target_bus_count` buses. Deterministic for a seed.
 pub fn site_buses(ctx: &RegionContext, data: &ContextData, rng: &mut Stream) -> Vec<DraftBus> {
     let n = ctx.target_bus_count as usize;
     let levels = &ctx.voltage_levels_kv;
-    let ncity = data.cities.len().min(n);
+    let ncity = data
+        .cities
+        .len()
+        .min(n)
+        .min((ANCHOR_SHARE * n as f64).ceil() as usize);
     let anchors: Vec<(f64, f64)> = data.cities[..ncity]
         .iter()
         .map(|c| (c.lon, c.lat))
         .collect();
-    let fill = blue_noise_points(&data.shape, &data.polygon_weights, n - ncity, &anchors, rng);
+    // Fill follows where people live (a population density surface around
+    // the places, with a floor so empty land still gets some substations).
+    let t = crate::tuning::tuning();
+    let fill = weighted_blue_noise_points(
+        &data.shape,
+        &data.polygon_weights,
+        n - ncity,
+        &anchors,
+        &data.cities,
+        t.fill_bandwidth_km,
+        t.fill_floor,
+        rng,
+    );
 
     let mut coords: Vec<(f64, f64, Option<String>)> = Vec::with_capacity(n);
     for c in &data.cities[..ncity] {
@@ -128,6 +157,7 @@ pub fn site_buses(ctx: &RegionContext, data: &ContextData, rng: &mut Stream) -> 
             load_mw: 0.0,
             load_mvar: 0.0,
             annotation,
+            site: i,
         });
     }
     buses

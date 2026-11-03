@@ -67,7 +67,10 @@ const USAGE: &str =
                    its report, a GeoJSON layer and the requested exports.\n\
      stats [--case PATH] [--targets PATH]\n\
                    print the structural statistics of a case file, or of the\n\
-                   module on stdin.";
+                   module on stdin.\n\
+     synth-overpass-queries --request PATH\n\
+                   print, as a JSON array, the Overpass QL queries the\n\
+                   generator's OpenStreetMap mode asks for the request.";
 
 fn main() -> ExitCode {
     let arg = std::env::args().nth(1).unwrap_or_default();
@@ -158,6 +161,10 @@ fn main() -> ExitCode {
                 let parsed = synth::parse_generate_args(&args)?;
                 synth::generate_command(&parsed, Some(&synth::ctrlc_cancel))
             });
+        }
+        "synth-overpass-queries" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            return run(|| synth::overpass_queries_command(&args));
         }
         "stats" => {
             let args: Vec<String> = std::env::args().skip(2).collect();
