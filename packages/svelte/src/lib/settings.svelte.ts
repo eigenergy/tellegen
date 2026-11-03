@@ -6,6 +6,8 @@ export class CaseSettings {
 	calculation = $state<string | null>(null);
 	baselines = $state<Record<string, Record<string, unknown>>>({});
 	options = $state<Record<string, Record<string, unknown>>>({});
+	/** Rust-normalized selections, including defaults inside nested options. */
+	resolved = $state<Record<string, ResolvedSettings>>({});
 	accepted = $state.raw<ResolvedSettings | null>(null);
 }
 
@@ -30,7 +32,11 @@ export class UserPreferences {
 		}
 	}
 	inspect() {
-		return { theme: this.theme, busSizing: this.busSizing, coloring: this.coloring };
+		return {
+			theme: this.theme,
+			busSizing: this.busSizing,
+			coloring: this.coloring
+		};
 	}
 	update(patch: Record<string, unknown>, save = true) {
 		for (const [key, value] of Object.entries(patch)) {

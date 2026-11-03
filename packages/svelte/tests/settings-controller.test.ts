@@ -73,9 +73,10 @@ it('a failed candidate calculation retains the accepted result and its provenanc
 
 it('a legacy server fallback never silently replaces custom calculation settings with defaults', () => {
 	const { ctrl } = setup();
-	const c = new CaseState({ id: 'server', name: 'Server' } as ConstructorParameters<
-		typeof CaseState
-	>[0]);
+	const c = new CaseState({
+		id: 'server',
+		name: 'Server'
+	} as ConstructorParameters<typeof CaseState>[0]);
 	const previous = { objective: 123 } as unknown as Solution;
 	c.solution = previous;
 	c.solving = true;
@@ -102,7 +103,10 @@ it('a saved balanced network restores its recorded calculation as the initial se
 		coordsKind: 'file',
 		studyInputJson: JSON.stringify({
 			extensions: {
-				'tellegen.calculation-settings.v1': { calculation: 'acpf', effective: { start: 'case' } }
+				'tellegen.calculation-settings.v1': {
+					calculation: 'acpf',
+					effective: { start: 'case' }
+				}
 			}
 		})
 	});
@@ -143,12 +147,96 @@ it('cancelling a candidate Study discards its result and frees the candidate', a
 it('a cleared field removes its override instead of sending an undefined setting', async () => {
 	const { ctrl, c } = setup();
 	c.settings.options = { acpf: { start: 'case' } };
-	vi.mocked(resolveSettings).mockResolvedValue({ ...resolved, overrides: {}, effective: {} });
+	vi.mocked(resolveSettings).mockResolvedValue({
+		...resolved,
+		overrides: {},
+		effective: {}
+	});
 	await ctrl.updateSettings(c, 'acpf', { start: undefined }, 0);
 	expect(vi.mocked(resolveSettings)).toHaveBeenCalledWith({
 		calculation: 'acpf',
 		baseline: {},
 		overrides: {}
+	});
+	ctrl.dispose();
+});
+
+it('a successful partial lazy-settings run is no longer pending', async () => {
+	const { ctrl, c } = setup();
+	const normalized: ResolvedSettings = {
+		version: 1,
+		calculation: 'dcopf',
+		engine_defaults: { angle_difference: true, thermal: 'all', lazy: null },
+		baseline: { angle_difference: true, thermal: 'all', lazy: null },
+		overrides: { lazy: { near_binding: 0.9 } },
+		effective: {
+			angle_difference: true,
+			thermal: 'all',
+			lazy: { near_binding: 0.9, max_rounds: 20 }
+		}
+	};
+	vi.mocked(resolveSettings).mockResolvedValue(normalized);
+	await ctrl.updateSettings(c, 'dcopf', { lazy: { near_binding: 0.9 } }, 0);
+	c.solveDetail = '42 NLP iterations';
+	const solution = { objective: 123 } as unknown as Solution;
+	vi.mocked(createStudy).mockResolvedValue({
+		currentSolution: async () => solution,
+		commit: async () => ({ solution, iterations: [] }),
+		free: vi.fn()
+	} as unknown as Awaited<ReturnType<typeof createStudy>>);
+	await ctrl.runSettings(c);
+	expect(ctrl.inspectSettings(c).selected).toEqual(normalized.effective);
+	expect(ctrl.inspectSettings(c).pending).toBe(false);
+	expect(c.solveDetail).toBeNull();
+	ctrl.dispose();
+});
+
+it('patching a reopened distribution Study preserves restored model settings', async () => {
+	const { MulticonductorCase } = await import('../src/lib/state.svelte.js');
+	const { DEFAULT_MC_PF_OPTIONS } = await import('@tellegen/engine');
+	const { ctrl } = setup();
+	const c = new MulticonductorCase({
+		id: 'restored',
+		label: 'Restored',
+		fileName: 'saved.pio.json',
+		summary: {
+			module_json: 'input',
+			mc_pf_enabled: true,
+			mc_pf_supported: true
+		},
+		graph: { buses: [], edges: [] },
+		coordsKind: 'planar'
+	} as ConstructorParameters<typeof MulticonductorCase>[0]);
+	// StudyWorkspace.#showMulti restores settings this way after ingestion.
+	c.mcOptions = {
+		...DEFAULT_MC_PF_OPTIONS,
+		v_min_pu: 1.01,
+		max_iterations: 200
+	};
+	c.settings.baselines = { mc_ac_pf: { ...c.mcOptions } };
+	vi.mocked(resolveSettings).mockImplementation(
+		async (request) =>
+			({
+				version: 1,
+				calculation: request.calculation,
+				engine_defaults: { ...DEFAULT_MC_PF_OPTIONS },
+				baseline: { ...DEFAULT_MC_PF_OPTIONS, ...request.baseline },
+				overrides: request.overrides ?? {},
+				effective: {
+					...DEFAULT_MC_PF_OPTIONS,
+					...request.baseline,
+					...request.overrides
+				}
+			}) as ResolvedSettings
+	);
+	await ctrl.updateSettings(c, 'mc_ac_pf', { damping: 0.8 }, 0);
+	expect(c.mcOptions.v_min_pu).toBe(1.01);
+	expect(c.mcOptions.max_iterations).toBe(200);
+	await ctrl.updateSettings(c, 'mc_ac_pf', {}, c.settings.revision, true);
+	expect(c.mcOptions).toEqual({
+		...DEFAULT_MC_PF_OPTIONS,
+		v_min_pu: 1.01,
+		max_iterations: 200
 	});
 	ctrl.dispose();
 });

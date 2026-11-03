@@ -34,6 +34,7 @@ import {
 	resolveSettings,
 	settingsCatalog,
 	type ResolvedSettings,
+	type SolveResponse,
 	applyDisplayGeo,
 	applyGeo,
 	applyLayout,
@@ -88,6 +89,13 @@ function sameSettings(a: unknown, b: unknown): boolean {
 		);
 	}
 	return Object.is(a, b);
+}
+
+function acOpfSolveDetail(response: SolveResponse): string {
+	const diagnostics = response.iterations;
+	return diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
+		? `${diagnostics.total_nlp_iterations ?? diagnostics.nlp_iterations} NLP iterations${diagnostics.recovered_by ? ' (recovered)' : ''}`
+		: 'POUNCE WASI';
 }
 
 function defaultCalculationSettings(calculation: string): ResolvedSettings {
@@ -612,7 +620,14 @@ export class Controller {
 				const study = await createStudy(
 					studyInputJson,
 					formulation,
-					accepted ? { settings: { calculation: formulation, overrides: accepted.effective } } : {}
+					accepted
+						? {
+								settings: {
+									calculation: formulation,
+									overrides: accepted.effective
+								}
+							}
+						: {}
 				);
 				const baseSolution = await study.currentSolution();
 				// The case may have switched formulation or been disposed (removed, or its
@@ -2039,11 +2054,7 @@ export class Controller {
 					);
 					if (seq !== (c.solveSeq ?? 0) || cancellation.signal.aborted) return;
 					c.solution = solveResponseToSolution(response);
-					const diagnostics = response.iterations;
-					c.solveDetail =
-						diagnostics && !Array.isArray(diagnostics) && 'nlp_iterations' in diagnostics
-							? `${diagnostics.total_nlp_iterations ?? diagnostics.nlp_iterations} NLP iterations${diagnostics.recovered_by ? ' (recovered)' : ''}`
-							: 'POUNCE WASI';
+					c.solveDetail = acOpfSolveDetail(response);
 					c.solveMs = Math.round(performance.now() - t0);
 					this.finishSolve(c, seq, null);
 				} catch (error) {
@@ -2250,14 +2261,24 @@ export class Controller {
 		const descriptor = settingsCatalog.calculations.find((d) => d.calculation === calculation);
 		const baseline =
 			c instanceof MulticonductorCase
-				? { ...c.distribution?.pf_options }
+				? {
+						...c.distribution?.pf_options,
+						...c.settings.baselines[calculation]
+					}
 				: { ...c.settings.baselines[calculation] };
 		const selected =
 			c instanceof MulticonductorCase
 				? { ...c.mcOptions }
 				: (c.settings.options[calculation] ?? {});
 		const defaults = descriptor && 'defaults' in descriptor ? descriptor.defaults : {};
-		const effective = { ...defaults, ...baseline, ...selected };
+		const effective =
+			c instanceof MulticonductorCase
+				? { ...defaults, ...baseline, ...selected }
+				: (c.settings.resolved[calculation]?.effective ?? {
+						...defaults,
+						...baseline,
+						...selected
+					});
 		const accepted =
 			c instanceof MulticonductorCase
 				? c.result?.load_model?.options
@@ -2317,7 +2338,10 @@ export class Controller {
 		const caseRevision = c.revisionGeneration;
 		const baseline =
 			c instanceof MulticonductorCase
-				? { ...c.distribution?.pf_options }
+				? {
+						...c.distribution?.pf_options,
+						...c.settings.baselines[calculation]
+					}
 				: { ...c.settings.baselines[calculation] };
 		let resolved: ResolvedSettings;
 		if (calculation === 'acopf' && this.acOpfAvailable) {
@@ -2338,7 +2362,11 @@ export class Controller {
 			c.settings.revision !== expectedRevision
 		)
 			throw new Error('Case or settings changed while validating; inspect before retrying');
-		c.settings.options = { ...c.settings.options, [calculation]: { ...resolved.overrides } };
+		c.settings.options = {
+			...c.settings.options,
+			[calculation]: { ...resolved.overrides }
+		};
+		c.settings.resolved = { ...c.settings.resolved, [calculation]: resolved };
 		c.settings.calculation = calculation;
 		c.settings.revision++;
 		if (c instanceof MulticonductorCase) c.mcOptions = { ...resolved.effective } as McPfOptions;
@@ -2417,12 +2445,13 @@ export class Controller {
 			let solution: Solution;
 			let baseSolution: Solution | null = null;
 			let iterations: typeof c.iterations = [];
+			let solveDetail: string | null = null;
 			if (formulation === 'acopf') {
 				if (!this.acOpfAvailable || !this.acOpfWasmUrl || c.perturbed)
 					throw new Error('AC OPF requires its isolated backend and the unedited base case');
-				solution = solveResponseToSolution(
-					await solveAcOpfModule(this.acOpfWasmUrl, input, cancellation.signal)
-				);
+				const response = await solveAcOpfModule(this.acOpfWasmUrl, input, cancellation.signal);
+				solution = solveResponseToSolution(response);
+				solveDetail = acOpfSolveDetail(response);
 				baseSolution = solution;
 			} else {
 				study = await createStudy(input, formulation, {
@@ -2452,10 +2481,12 @@ export class Controller {
 			c.formulation = formulation;
 			c.settings.accepted = resolved;
 			c.settings.revision++;
+			c.settings.resolved = { ...c.settings.resolved, [formulation]: resolved };
 			c.solution = solution;
 			c.baseSolution = baseSolution;
 			c.sensitivity = null;
 			c.iterations = iterations;
+			c.solveDetail = solveDetail;
 			c.solveBackend = formulation === 'acopf' ? 'pounce-wasi' : 'clarabel-wasm';
 			c.solveMs = Math.round(performance.now() - started);
 			if (study) {
@@ -2898,7 +2929,10 @@ export class Controller {
 			view
 		});
 		c.distribution = hosted?.distribution;
-		c.mcOptions = { ...DEFAULT_MC_PF_OPTIONS, ...hosted?.distribution?.pf_options };
+		c.mcOptions = {
+			...DEFAULT_MC_PF_OPTIONS,
+			...hosted?.distribution?.pf_options
+		};
 		this.app.studyView = null;
 		this.clearSelection();
 		this.app.addMulti(c);

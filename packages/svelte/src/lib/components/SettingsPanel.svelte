@@ -127,11 +127,13 @@
 	function choose(value: string) {
 		calculation = value;
 		const d = catalog.calculations.find((c) => c.calculation === value);
-		fill({
-			...d?.defaults,
-			...current?.settings.baselines[value],
-			...current?.settings.options[value]
-		});
+		fill(
+			current?.settings.resolved[value]?.effective ?? {
+				...d?.defaults,
+				...current?.settings.baselines[value],
+				...current?.settings.options[value]
+			}
+		);
 		failure = '';
 	}
 	function options(): Record<string, unknown> {

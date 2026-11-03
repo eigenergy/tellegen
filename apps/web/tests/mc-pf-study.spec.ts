@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { Locator, Page } from '@playwright/test';
 
 import { expect, test } from './fixtures/page-errors.js';
+import { callTool, installWebMcpHarness } from './fixtures/planning-case.js';
 
 // These are local browser/WASM tests. Make startup deterministic and wait for
 // hydration before dispatching file-input events, including under parallel CI.
@@ -497,6 +498,7 @@ test('settings reruns qualify modified results and preserve provenance through e
 	page
 }, testInfo) => {
 	test.setTimeout(120_000);
+	await installWebMcpHarness(page);
 	await openApp(page);
 	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles(typedCase);
 	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible();
@@ -574,6 +576,29 @@ test('settings reruns qualify modified results and preserve provenance through e
 		results.getByText('Modified load model — non-canonical result', { exact: true })
 	).toBeVisible();
 	await study.getByText('Power flow settings', { exact: true }).click();
+	await expect(settings.getByLabel('Vmin (pu)', { exact: true })).toHaveValue('1.01');
+	await expect(settings.getByLabel('Maximum iterations', { exact: true })).toHaveValue('200');
+	const restored = await callTool(page, 'inspect_settings', {});
+	if (!restored.ok) throw new Error('Restored settings could not be inspected');
+	const binding = {
+		case_id: restored.data.case_id,
+		expected_revision: restored.data.revision,
+		settings_revision: restored.data.settings_revision
+	};
+	const patched = await callTool(page, 'update_settings', { ...binding, patch: { damping: 0.8 } });
+	expect(patched).toMatchObject({
+		ok: true,
+		data: { selected: { damping: 0.8, v_min_pu: 1.01, max_iterations: 200 } }
+	});
+	if (!patched.ok) throw new Error('Restored settings could not be patched');
+	const reset = await callTool(page, 'reset_settings', {
+		...binding,
+		settings_revision: patched.data.settings_revision
+	});
+	expect(reset).toMatchObject({
+		ok: true,
+		data: { selected: { damping: 1, v_min_pu: 1.01, max_iterations: 200 }, pending: false }
+	});
 	await expect(settings.getByLabel('Vmin (pu)', { exact: true })).toHaveValue('1.01');
 	await expect(settings.getByLabel('Maximum iterations', { exact: true })).toHaveValue('200');
 	await settings.getByRole('button', { name: 'Run power flow', exact: true }).click();

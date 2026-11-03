@@ -135,3 +135,35 @@ test('changing formulation applies without solving and an explicit run accepts t
 	expect(inspected.data.accepted_calculation).toBe('acpf');
 	expect(inspected.data.accepted).toEqual({ start: 'case' });
 });
+
+test('partial lazy options agree with accepted settings and remain clean when switching drafts', async ({
+	page
+}) => {
+	await page.locator('header input[type=file]').setInputFiles([
+		{ name: 'case14.m', mimeType: 'text/plain', buffer: Buffer.from(CASE14) },
+		{ name: 'case14-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(CASE14_COORDS) }
+	]);
+	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60000 });
+	const inspected = await tool(page, 'inspect_settings');
+	const updated = await tool(page, 'update_settings', {
+		case_id: inspected.data.case_id,
+		expected_revision: inspected.data.revision,
+		settings_revision: inspected.data.settings_revision,
+		patch: { lazy: { near_binding: 0.9 } }
+	});
+	expect(updated.ok).toBe(true);
+	expect(updated.data.selected).toMatchObject({ lazy: { near_binding: 0.9, max_rounds: 20 } });
+	await page.locator('header').getByRole('button', { name: 'Settings', exact: true }).click();
+	const panel = page.getByRole('region', { name: 'Common settings' });
+	await expect(panel.getByLabel('Maximum enforcement rounds')).toHaveValue('20');
+	await expect(panel.getByRole('button', { name: 'Apply settings', exact: true })).toBeDisabled();
+	await panel.getByRole('button', { name: 'Run calculation', exact: true }).click();
+	await expect(panel.getByRole('button', { name: 'Run calculation', exact: true })).toBeEnabled();
+	const accepted = await tool(page, 'inspect_settings');
+	expect(accepted.data.pending).toBe(false);
+	expect(accepted.data.selected).toEqual(accepted.data.accepted);
+	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('acpf');
+	await panel.getByRole('combobox', { name: 'Calculation', exact: true }).selectOption('dcopf');
+	await expect(panel.getByRole('button', { name: 'Apply settings', exact: true })).toBeDisabled();
+	await expect(panel.getByRole('button', { name: 'Run calculation', exact: true })).toBeEnabled();
+});

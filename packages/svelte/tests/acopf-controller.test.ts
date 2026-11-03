@@ -140,6 +140,31 @@ describe('AC OPF controller boundary', () => {
 		expect(c.solution?.objective).toBe(42);
 	});
 
+	it('an explicit settings run retains AC OPF diagnostics and a failed rerun preserves them', async () => {
+		const { ctrl, c } = host();
+		vi.mocked(solveAcOpfModule).mockResolvedValue({
+			...response,
+			iterations: {
+				nlp_iterations: 12,
+				total_nlp_iterations: 46,
+				recovered_by: 'feral-scaling',
+				primal_residual: 1e-9,
+				solver_status: 'Solve_Succeeded',
+				solver_constraint_violation: 1e-9,
+				solver_kkt_error: 1e-9,
+				model_fingerprint: 'canonical-model'
+			}
+		});
+		await ctrl.runSettings(c);
+		expect(c.solveDetail).toBe('46 NLP iterations (recovered)');
+		const accepted = c.solution;
+		vi.mocked(solveAcOpfModule).mockRejectedValue(new Error('candidate failed'));
+		await expect(ctrl.runSettings(c)).rejects.toThrow('candidate failed');
+		expect(c.solution).toBe(accepted);
+		expect(c.solveDetail).toBe('46 NLP iterations (recovered)');
+		ctrl.dispose();
+	});
+
 	it('aborts a superseded solve and ignores its late result', async () => {
 		const { ctrl, c } = host();
 		const first = pending<SolveResponse>();
