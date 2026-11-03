@@ -83,7 +83,77 @@ The gridded correlations use the cells where either network has a value.
 
 **Pass rule.** Every critical check, plus at least 80% of the scored metrics, in every run.
 
+### What the map itself holds (OpenStreetMap mode)
+
+An OpenStreetMap grid can only be as close to CATS as the map is. `metrics.measure_map`
+measures the Overpass document itself inside the region, with no engine involved:
+
+- nameplate and fuel mix of the `power=plant` features that tag their output (untagged
+  plants are counted, not estimated, so this is a floor);
+- every `power=substation`, a ceiling on sites;
+- the voltage levels substations tag at 56 kV and above, as bus shares per class;
+- circuit-km per class from the lines that tag a voltage, using `circuits` (else
+  `cables / 3`, else 1) over their length inside the region;
+- line-km per 25 km cell against CATS, gridded as for the generated grid.
+
+A metric whose map value already misses the tolerance is **map-limited**. The map sets it,
+not the engine, so it appears in the scorecard's Map column but is left out of the pass
+share and the score. A floor limits a metric only when it lies above the tolerance, and a
+ceiling only when it lies below. Plants and substations are tested against the exact
+outline; line vertices against the outline rasterised at 0.02°.
+
 ## Results
+
+All runs use the request in `california.json` with the engine in this repository.
 
 - `baseline/`: the generator before any California-specific data or tuning (the US
   national ladder and demand). 7 of 47 metrics pass at every seed.
+- `synthetic/`: **passes at every seed**, 41, 42 and 42 of 47 at seeds 1, 7 and 2026, with
+  every critical check met (AC voltages 0.961–1.051 pu). It fails at every seed on
+  circuit-km at 66 and 115 kV (1.6–1.9 × CATS), the fuel mix (TVD 0.22: CATS's 2019 fleet
+  against the EIA-860 2025 shares the engine uses for California), and lines per site in the
+  lv band. Seeds 1 and 2026 also miss the DC
+  loading median, and seeds 1 and 7 the line-density correlation.
+- `osm/`: **passes**, 34 of the 40 metrics the map supports, with every critical check met
+  (DC OPF optimal; AC voltages 0.961–1.066 pu). Seven metrics are map-limited (below). It
+  fails on buses after series reduction (3,314 against at least 6,260), sites (2,834
+  against at least 3,749, where the map has 3,948 substations of any kind), transformers per
+  site (0.38 against at most 0.20), mean degree (2.70 against at most 2.69), the degree
+  distribution (L1 0.69 against 0.20) and line density (Spearman 0.83 against 0.85, where
+  the map itself reaches 0.86). Over all 47 metrics, map-limited ones included, it passes
+  34 (72%).
+
+The OpenStreetMap document is MapToGrid's Overpass server's answer to the engine's query for
+California (`tellegen synth-overpass-queries`), `osm_base` 2026-10-26T01:00:03Z,
+40,212 elements, SHA-256
+`74cf4a8bf4f4835ecf8290dc30502a006fc6961eff91a89a38568eeafa1e0b1b`. It is not committed.
+
+The seven map-limited metrics, with what the map holds:
+
+| Metric | CATS | Map | OSM grid |
+| --- | ---: | ---: | ---: |
+| Nameplate (GW) | 68.0 | at least 102.4 (1,194 plants tag no output) | 118.6 |
+| Fuel mix TVD | – | 0.18 | 0.18 |
+| Bus share at 66 kV | 0.651 | 0.451 | 0.422 |
+| Bus share at 115 kV | 0.225 | 0.298 | 0.291 |
+| Bus share at 230 kV | 0.113 | 0.224 | 0.254 |
+| Circuit-km at 66 kV | 20,391 | 11,454 | 13,871 |
+| Circuit-km at 230 kV | 13,352 | 21,979 | 23,936 |
+
+These are differences of data, not of the design:
+
+- **Vintage.** CATS's fleet is that of 2019. The map's is that of 2025: its tagged plants
+  hold 11.5 GW of batteries against CATS's 2.1 GW of storage, and 26.0 GW of solar against
+  11.6 GW.
+- **Coverage.** The map holds about 11,500 circuit-km in the 66 kV class against CATS's
+  20,400, and 1,750 of its 3,948 substations tag a voltage of 56 kV or more.
+- **Modelling convention.** CATS models 1,015 of its 1,133 230 kV corridors as one branch,
+  while most of California's 230 kV lines are double-circuit and the map tags them so. CATS
+  also T-taps its substations through junction buses: 53% of its reduced buses have degree
+  3, where mapped lines loop into substations (degree 2). This second convention is part of
+  the degree failures above, which stay scored.
+
+`climb-log.md` records the hill climb that set the tuned constants. The country sweeps one
+directory up are the hold-out the climb never sees. Every change to the engine was checked
+against them: on the final engine, DC OPF is optimal in 54 of 54 and 51 of 51 runs, and the
+AC power flow converges inside 0.9–1.1 pu in 53 of 54 and 47 of 51.
