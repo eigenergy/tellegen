@@ -194,6 +194,94 @@ pub fn snap(
     best_at_voltage.or(best).map(|(_, i)| i)
 }
 
+/// Buses binned on a latitude–longitude grid for [`snap`] without a scan
+/// over every bus. It answers exactly as [`snap`] does (candidates are taken
+/// in bus order, so ties go to the same bus) for any tolerance up to the one
+/// it was built for, and catches up with buses appended since its last
+/// query.
+pub(crate) struct SnapIndex {
+    cell: f64,
+    tol_km: f64,
+    bins: BTreeMap<(i64, i64), Vec<usize>>,
+    indexed: usize,
+}
+
+impl SnapIndex {
+    pub(crate) fn new(tol_km: f64) -> Self {
+        Self {
+            cell: (tol_km / 111.0).max(1e-6),
+            tol_km,
+            bins: BTreeMap::new(),
+            indexed: 0,
+        }
+    }
+
+    fn key(&self, lon: f64, lat: f64) -> (i64, i64) {
+        (
+            (lon / self.cell).floor() as i64,
+            (lat / self.cell).floor() as i64,
+        )
+    }
+
+    pub(crate) fn snap(
+        &mut self,
+        buses: &[DraftBus],
+        lon: f64,
+        lat: f64,
+        voltage: Option<f64>,
+        tol_km: f64,
+    ) -> Option<usize> {
+        for (i, b) in buses.iter().enumerate().skip(self.indexed) {
+            let k = self.key(b.lon, b.lat);
+            self.bins.entry(k).or_default().push(i);
+        }
+        self.indexed = buses.len();
+        let dlat = tol_km / 111.0;
+        let reach_lat = (lat.abs() + dlat).min(89.0);
+        if tol_km > self.tol_km || reach_lat >= 89.0 {
+            return snap(buses, lon, lat, voltage, tol_km);
+        }
+        // A conservative longitude window: the great circle between two
+        // points is no longer than their parallel arc at the higher latitude.
+        let dlon = 1.05 * dlat / reach_lat.to_radians().cos();
+        let mut candidates: Vec<usize> = Vec::new();
+        for shift in [0.0, -360.0, 360.0] {
+            let (x0, y0) = self.key(lon + shift - dlon, lat - dlat);
+            let (x1, y1) = self.key(lon + shift + dlon, lat + dlat);
+            for x in x0..=x1 {
+                for y in y0..=y1 {
+                    if let Some(v) = self.bins.get(&(x, y)) {
+                        candidates.extend_from_slice(v);
+                    }
+                }
+            }
+        }
+        candidates.sort_unstable();
+        candidates.dedup();
+        let mut best: Option<(f64, usize)> = None;
+        let mut best_at_voltage: Option<(f64, usize)> = None;
+        for i in candidates {
+            let b = &buses[i];
+            if (b.lat - lat).abs() > dlat {
+                continue;
+            }
+            let d = haversine_km(lon, lat, b.lon, b.lat);
+            if d > tol_km {
+                continue;
+            }
+            if best.is_none_or(|(bd, _)| d < bd) {
+                best = Some((d, i));
+            }
+            if voltage.is_some_and(|v| (b.base_kv - v).abs() < 1e-6)
+                && best_at_voltage.is_none_or(|(bd, _)| d < bd)
+            {
+                best_at_voltage = Some((d, i));
+            }
+        }
+        best_at_voltage.or(best).map(|(_, i)| i)
+    }
+}
+
 /// Station positions on a coarse grid, for "is a station within r km" tests.
 struct StationGrid {
     cell: f64,
@@ -916,6 +1004,7 @@ impl OsmBuild {
         let bus_cap = self.bus_cap;
         let mut dropped = 0usize;
         let mut inferred = 0usize;
+        let mut index = SnapIndex::new(opts.snap_km);
         for line in &sections {
             let (head, tail) = (line.geometry[0], line.geometry[line.geometry.len() - 1]);
             let mut kv = line.kv;
@@ -923,7 +1012,7 @@ impl OsmBuild {
             if guessed {
                 let ends: Vec<f64> = [head, tail]
                     .iter()
-                    .filter_map(|p| snap(buses, p.0, p.1, None, opts.snap_km))
+                    .filter_map(|p| index.snap(buses, p.0, p.1, None, opts.snap_km))
                     .map(|i| buses[i].base_kv)
                     .collect();
                 kv = ends.iter().copied().fold(f64::INFINITY, f64::min);
@@ -939,9 +1028,10 @@ impl OsmBuild {
             let mut end_bus = |p: (f64, f64),
                                degree: usize,
                                buses: &mut Vec<DraftBus>,
+                               index: &mut SnapIndex,
                                anchored: bool|
              -> Option<usize> {
-                if let Some(i) = snap(buses, p.0, p.1, Some(kv), opts.snap_km) {
+                if let Some(i) = index.snap(buses, p.0, p.1, Some(kv), opts.snap_km) {
                     return Some(i);
                 }
                 let junction = degree >= 3;
@@ -976,10 +1066,14 @@ impl OsmBuild {
             // An untagged line keeps a free end only when its other end
             // snapped, which fixed its voltage.
             let anchored = !guessed
-                || snap(buses, head.0, head.1, Some(kv), opts.snap_km).is_some()
-                || snap(buses, tail.0, tail.1, Some(kv), opts.snap_km).is_some();
-            let from = end_bus(head, line.degrees.0, buses, anchored);
-            let to = end_bus(tail, line.degrees.1, buses, anchored);
+                || index
+                    .snap(buses, head.0, head.1, Some(kv), opts.snap_km)
+                    .is_some()
+                || index
+                    .snap(buses, tail.0, tail.1, Some(kv), opts.snap_km)
+                    .is_some();
+            let from = end_bus(head, line.degrees.0, buses, &mut index, anchored);
+            let to = end_bus(tail, line.degrees.1, buses, &mut index, anchored);
             let (Some(from), Some(to)) = (from, to) else {
                 dropped += 1;
                 continue;
@@ -1796,6 +1890,41 @@ mod tests {
         assert_eq!(snap(&buses, 0.0, 0.0, Some(110.0), 2.0), Some(1));
         assert_eq!(snap(&buses, 0.0, 0.0, Some(220.0), 2.0), Some(0));
         assert_eq!(snap(&buses, 0.2, 0.0, None, 2.0), None);
+        let mut index = SnapIndex::new(2.0);
+        assert_eq!(index.snap(&buses, 0.0, 0.0, Some(110.0), 2.0), Some(1));
+        assert_eq!(index.snap(&buses, 0.0, 0.0, Some(220.0), 2.0), Some(0));
+        assert_eq!(index.snap(&buses, 0.2, 0.0, None, 2.0), None);
+
+        // The index answers as the scan does, buses appended between queries
+        // included, at mid latitudes, near a pole and across the antimeridian.
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        for (lon0, lat0) in [(-120.0, 37.0), (10.0, 86.5), (179.95, -17.0)] {
+            let mut many: Vec<DraftBus> = Vec::new();
+            let mut index = SnapIndex::new(3.0);
+            for step in 0..400 {
+                let lon = lon0 + (next() - 0.5) * 0.4;
+                let lat = lat0 + (next() - 0.5) * 0.4;
+                let kv = if next() < 0.5 { 110.0 } else { 220.0 };
+                if step % 2 == 0 {
+                    many.push(bus(lon, kv));
+                    many.last_mut().unwrap().lat = lat;
+                }
+                for tol in [0.5, 2.0, 3.0] {
+                    let v = (next() < 0.5).then_some(kv);
+                    assert_eq!(
+                        index.snap(&many, lon, lat, v, tol),
+                        snap(&many, lon, lat, v, tol),
+                        "{lon} {lat} {tol}"
+                    );
+                }
+            }
+        }
         assert_eq!(most_common(&[220.0, 110.0, 220.0], 110.0), 220.0);
         assert_eq!(most_common(&[], 110.0), 110.0);
     }

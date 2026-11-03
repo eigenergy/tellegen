@@ -29,7 +29,7 @@ use crate::electrical::params::{
     GENERATOR_Q_PLANNING_SHARE, GENERATOR_VG, MIN_SHUNT_BANK_MVAR, VOLTAGE_SUPPORT_KM,
     VOLTAGE_SUPPORT_Q_SHARE,
 };
-use crate::electrical::planning::dc_angles;
+use crate::electrical::planning::{dc_angles, GroundedLaplacian};
 use crate::report::BusKind;
 use crate::request::Fuel;
 use crate::site::DraftBus;
@@ -100,7 +100,12 @@ pub fn ac_angles(
         .iter()
         .map(|b| (b.from, b.to, 1.0 / b.x_pu))
         .collect();
-    let mut theta = dc_angles(n, &edges, injection, grounds);
+    let factor = GroundedLaplacian::new(n, &edges, grounds);
+    let solve = |rhs: &[f64]| match &factor {
+        Some(f) => f.solve(rhs),
+        None => dc_angles(n, &edges, rhs, grounds),
+    };
+    let mut theta = solve(injection);
     let mut slack = vec![false; n];
     for &g in grounds {
         slack[g] = true;
@@ -129,7 +134,7 @@ pub fn ac_angles(
         if !worst.is_finite() {
             break;
         }
-        let step = dc_angles(n, &edges, &mismatch, grounds);
+        let step = solve(&mismatch);
         for i in 0..n {
             theta[i] += step[i];
         }

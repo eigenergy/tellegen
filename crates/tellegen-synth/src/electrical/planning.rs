@@ -226,9 +226,9 @@ pub fn economic_dispatch(units: &[(f64, f64, f64, f64)], demand: f64) -> Vec<f64
 /// Bus angles (radians) of a lossless DC power flow. `edges` are
 /// `(a, b, susceptance pu)`, `injection` is per unit, and `grounds` holds one
 /// bus per connected component whose angle is fixed at zero (it absorbs any
-/// imbalance of its component). Solved by Jacobi-preconditioned conjugate
-/// gradients on the grounded weighted Laplacian, which is symmetric positive
-/// definite on every component with a ground.
+/// imbalance of its component). Solved on the grounded weighted Laplacian,
+/// which is symmetric positive definite on every component with a ground
+/// ([`GroundedLaplacian`]).
 pub fn dc_angles(
     n: usize,
     edges: &[(usize, usize, f64)],
@@ -238,9 +238,102 @@ pub fn dc_angles(
     dc_angles_from(n, edges, injection, grounds, None)
 }
 
-/// [`dc_angles`] started from `guess` (the previous planning round's angles,
-/// which a round changes little), to the same tolerance on the residual.
+/// The grounded weighted Laplacian of a DC power flow, factorised once for
+/// repeated solves (sparse Cholesky). Ground buses, and buses with no
+/// branch, are left out and keep angle zero.
+pub struct GroundedLaplacian {
+    n: usize,
+    /// Row of each bus in the factor, or `usize::MAX` for one left out.
+    row: Vec<usize>,
+    llt: faer::sparse::linalg::solvers::Llt<usize, f64>,
+}
+
+impl GroundedLaplacian {
+    /// `None` when the factorisation fails (a component without a ground,
+    /// or a non-positive susceptance).
+    pub fn new(n: usize, edges: &[(usize, usize, f64)], grounds: &[usize]) -> Option<Self> {
+        let mut grounded = vec![false; n];
+        for &g in grounds {
+            grounded[g] = true;
+        }
+        let mut diag = vec![0.0; n];
+        for &(a, b, w) in edges {
+            if !(w.is_finite() && w > 0.0) {
+                return None;
+            }
+            diag[a] += w;
+            diag[b] += w;
+        }
+        let mut row = vec![usize::MAX; n];
+        let mut dim = 0usize;
+        for i in 0..n {
+            if !grounded[i] && diag[i] > 0.0 {
+                row[i] = dim;
+                dim += 1;
+            }
+        }
+        let mut entries: Vec<faer::sparse::Triplet<usize, usize, f64>> =
+            Vec::with_capacity(dim + edges.len());
+        for i in 0..n {
+            if row[i] != usize::MAX {
+                entries.push(faer::sparse::Triplet::new(row[i], row[i], diag[i]));
+            }
+        }
+        for &(a, b, w) in edges {
+            let (ra, rb) = (row[a], row[b]);
+            if ra != usize::MAX && rb != usize::MAX && ra != rb {
+                // Lower triangle only: the factorisation reads one side.
+                let (r, c) = if ra > rb { (ra, rb) } else { (rb, ra) };
+                entries.push(faer::sparse::Triplet::new(r, c, -w));
+            }
+        }
+        let mat =
+            faer::sparse::SparseColMat::<usize, f64>::try_new_from_triplets(dim, dim, &entries)
+                .ok()?;
+        let llt = mat.sp_cholesky(faer::Side::Lower).ok()?;
+        Some(Self { n, row, llt })
+    }
+
+    /// Angles for `injection` (per unit).
+    pub fn solve(&self, injection: &[f64]) -> Vec<f64> {
+        use faer::linalg::solvers::Solve;
+        let dim = self.row.iter().filter(|&&r| r != usize::MAX).count();
+        let mut x = faer::Mat::<f64>::zeros(dim, 1);
+        for i in 0..self.n {
+            if self.row[i] != usize::MAX {
+                x[(self.row[i], 0)] = injection[i];
+            }
+        }
+        self.llt.solve_in_place(x.as_mut());
+        (0..self.n)
+            .map(|i| match self.row[i] {
+                usize::MAX => 0.0,
+                r => x[(r, 0)],
+            })
+            .collect()
+    }
+}
+
+/// [`dc_angles`], by [`GroundedLaplacian`] when it factorises and otherwise
+/// by Jacobi-preconditioned conjugate gradients started from `guess` (the
+/// previous planning round's angles, which a round changes little).
 fn dc_angles_from(
+    n: usize,
+    edges: &[(usize, usize, f64)],
+    injection: &[f64],
+    grounds: &[usize],
+    guess: Option<&[f64]>,
+) -> Vec<f64> {
+    if let Some(l) = GroundedLaplacian::new(n, edges, grounds) {
+        let x = l.solve(injection);
+        if x.iter().all(|v| v.is_finite()) {
+            return x;
+        }
+    }
+    dc_angles_cg(n, edges, injection, grounds, guess)
+}
+
+fn dc_angles_cg(
     n: usize,
     edges: &[(usize, usize, f64)],
     injection: &[f64],
@@ -880,5 +973,31 @@ mod tests {
         let edges = [(0, 1, 2.0), (2, 3, 4.0)];
         let theta = dc_angles(4, &edges, &[0.0, -1.0, 0.0, -2.0], &[0, 2]);
         assert!((theta[1] + 0.5).abs() < 1e-9 && (theta[3] + 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_factorised_laplacian_matches_conjugate_gradients() {
+        // A meshed component with susceptances four decades apart (a site
+        // transformer beside long lines), a radial chain, and an isolated bus.
+        let mut edges = vec![
+            (0, 1, 1000.0),
+            (1, 2, 0.5),
+            (2, 3, 2.0),
+            (3, 0, 0.1),
+            (1, 3, 7.0),
+        ];
+        edges.extend((4..9).map(|i| (i, i + 1, 0.3 + i as f64)));
+        let injection: Vec<f64> = (0..11).map(|i| ((i * 7 % 5) as f64 - 2.0) * 0.3).collect();
+        let grounds = [0, 4, 10];
+        let exact = GroundedLaplacian::new(11, &edges, &grounds)
+            .unwrap()
+            .solve(&injection);
+        let cg = dc_angles_cg(11, &edges, &injection, &grounds, None);
+        for (a, b) in exact.iter().zip(&cg) {
+            assert!((a - b).abs() < 1e-8, "{a} vs {b}");
+        }
+        assert_eq!(exact[10], 0.0);
+        // A component without a ground cannot be factorised.
+        assert!(GroundedLaplacian::new(3, &[(1, 2, 1.0)], &[0]).is_none());
     }
 }
