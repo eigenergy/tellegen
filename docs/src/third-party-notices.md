@@ -33,7 +33,7 @@ archives.
 The non-default native `tellegen/acopf` feature depends on
 [POUNCE](https://github.com/jkitchin/pounce), a pure-Rust nonlinear solver
 licensed under EPL-2.0. It is pinned to the checksummed crates.io release
-`0.13.0`. The default engine and the
+`0.15.0`. The default engine and the
 published WASM, server, CLI, and Python adapters do not enable this feature.
 `scripts/epl-guard.sh` checks that boundary from Cargo's resolved dependency
 trees. The separate `tellegen-acopf-wasi` adapter deliberately enables it.

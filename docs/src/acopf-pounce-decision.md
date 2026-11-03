@@ -3,9 +3,35 @@
 Status: accepted for feasibility work; distribution and product capability are
 not yet approved. Recorded 24 September 2026.
 
+## Backend update — 4 November 2026
+
+The native and dedicated WASI paths now pin the published, checksummed
+`pounce-nl = pounce-rs = 0.15.0` release, with FERAL 0.22.0. The release and
+source-manifest guard checks all 16 POUNCE crates. The two new transitive
+crates, `pounce-convex` and `pounce-sens-core`, have explicit EPL-2.0 exceptions
+alongside the existing POUNCE crates in `deny.toml`.
+
+[POUNCE 0.15.0](https://github.com/jkitchin/pounce/releases/tag/v0.15.0) adds
+complementarity support and changes solver recovery and stopping behavior;
+the intervening 0.14.0 release also changes restoration's release test.
+Tellegen continues to construct its existing polar AC OPF model through
+`NlProblemParts` and apply its independent physical validator. The dependency
+update does not add a complementarity formulation or change the public API.
+The validation results below for 0.13.0 remain historical evidence for that
+release.
+
+Local validation used Rust 1.96.0 on macOS arm64: all 428 enabled engine tests
+and the WASI adapter test passed, along with strict all-target AC OPF Clippy,
+the HS071 probe, release/source-manifest checks, and the EPL isolation guard.
+The release `wasm32-wasip1` build also solved the existing three-bus planning
+fixture using the production WASI host under Node: objective
+`631.5334170921521`, 12 iterations, and active/reactive balance residuals below
+`5e-12` MW/MVAr. This was a reactor smoke test; the browser UI and external
+PGLib corpus were not rerun for this update.
+
 ## Released backend integration — 22 October 2026
 
-The native and dedicated WASI paths now use the published, checksummed
+The native and dedicated WASI paths were updated to the published, checksummed
 `pounce-nl = pounce-rs = 0.13.0` release (FERAL 0.21.0). Both exact dependency
 pins and every transitive POUNCE lockfile entry are checked by
 `scripts/acopf-release.py`, also invoked by the build and EPL isolation gate.
