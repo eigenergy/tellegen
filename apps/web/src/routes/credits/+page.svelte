@@ -76,7 +76,7 @@
 			</li>
 			<li>
 				<a href="https://github.com/jkitchin/pounce" target="_blank" rel="noreferrer">POUNCE</a>
-				0.13.0 provides the experimental nonlinear AC OPF solver under EPL-2.0. The bundled
+				0.15.0 provides the experimental nonlinear AC OPF solver under EPL-2.0. The bundled
 				<a href="/experimental-acopf/POUNCE-EPL-2.0.txt">license</a>,
 				<a href="/experimental-acopf/POUNCE-NOTICE.txt">notice</a>, and
 				<a href="/experimental-acopf/POUNCE-SOURCE.json">source manifest</a>
