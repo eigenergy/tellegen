@@ -1,5 +1,37 @@
 # @tellegen/svelte
 
+## 0.5.0
+
+### Minor Changes
+
+- [#268](https://github.com/eigenergy/tellegen/pull/268) [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Detect source-less islands on import and show one context-sensitive solve button
+  in Network and Studies, with exclusions visible before solving and shared solver
+  settings. Scroll Studies to the operating-point overview after successful explicit
+  solves. Add explicit energized-network preparation for multiconductor power flow. Retain
+  the full input for inspection, identify excluded source-less islands and unsupplied
+  loads, and preserve and validate network scope in saved studies, solution modules,
+  and CSV exports. Use default voltage-change tolerance 1e-4 V, absolute KCL tolerance 1e-4 A,
+  and relative KCL tolerance 1e-5; other solver settings remain unchanged.
+
+  Prepare energized networks directly from retained inputs without an IR text round trip.
+  Columnar operating-point results retain load-model qualification and excluded-island provenance.
+
+- [#268](https://github.com/eigenergy/tellegen/pull/268) [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114) Thanks [@frederikgeth](https://github.com/frederikgeth)! - Expose multiconductor power flow settings and distinguish convergence from original load-model fidelity. Results and CSV exports retain qualification and effective settings. Simulation snapshots use version 2, with no canonical PowerIO solution for modified or unverified load equations; version 1 snapshots are reassessed on replay. Load-envelope defaults are unchanged and failed reruns retain the previous result.
+
+- [#286](https://github.com/eigenergy/tellegen/pull/286) [`888859b`](https://github.com/eigenergy/tellegen/commit/888859b6ab4b11d63dabaadd6389e56d3227cd73) Thanks [@samtalki](https://github.com/samtalki)! - A multiconductor session can hand over its complete result as columns. `BrowserMcPfSession.resultTables()` returns `McPfResultTables`: the terminals, equipment ports, and source reactions of `result()`, row for row, with each name stored once and every value in a typed array. The worker transfers the arrays rather than copying them, and `mcPfResultTables(result)` gives a stored `McPfResult` the same form.
+
+  The overview and the diagram now read a live session's operating point this way, so analysing a whole-city model no longer parses a 166 MiB JSON result into an object per terminal and port. `MulticonductorCase.overviewResult` holds either form.
+
+- [#284](https://github.com/eigenergy/tellegen/pull/284) [`ef7e448`](https://github.com/eigenergy/tellegen/commit/ef7e448abf5959b489ac94b728283ea50bd67707) Thanks [@samtalki](https://github.com/samtalki)! - A multiconductor case can stay parsed in the engine instead of crossing the worker boundary as PowerIO IR text. `ingestJsonDrop` and `ingestDistCaseBytes` take `{ retain: true }` and then return the parsed module as `payload.input`, a `BrowserMcInput`, in place of `module_json`. `createMcPfSession` accepts that input, `BrowserMcPfSession.input()` returns the edited input in the same form, and `BrowserMcInput.moduleJson()` writes the IR text only when it is asked for. Without `retain`, both ingest calls return `module_json` as before.
+
+  The Svelte controller imports multiconductor cases this way, so AC power flow on a whole-city model no longer fails with "input exceeds 128 MiB limit". For a 57,757-bus model, the pretty-printed IR was 187.6 MB. `MulticonductorCase.moduleJson` is now `MulticonductorCase.mcInput`, which holds either a `BrowserMcInput` or IR text.
+
+### Patch Changes
+
+- [#283](https://github.com/eigenergy/tellegen/pull/283) [`6e9b9d4`](https://github.com/eigenergy/tellegen/commit/6e9b9d4a2a7538f46f2a74e4d2dd087fe65ab4a4) Thanks [@samtalki](https://github.com/samtalki)! - Match a multiconductor case's routed lines to its edges through an index built once, instead of scanning every edge for every route. On a 57,757-bus city case the scan took over a minute of the load. Which route lands on which edge does not change.
+- Updated dependencies [[`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114), [`7f1852c`](https://github.com/eigenergy/tellegen/commit/7f1852cc9de537c3abf72a44b916c975c37f6114), [`888859b`](https://github.com/eigenergy/tellegen/commit/888859b6ab4b11d63dabaadd6389e56d3227cd73), [`ef7e448`](https://github.com/eigenergy/tellegen/commit/ef7e448abf5959b489ac94b728283ea50bd67707), [`01184dd`](https://github.com/eigenergy/tellegen/commit/01184dd88035cfeb8c0186e8075685a3b6b6ec55), [`3aa86e6`](https://github.com/eigenergy/tellegen/commit/3aa86e6ca4c79d485cf452c6806065644ec5f7ce)]:
+  - @tellegen/engine@0.5.0
+
 ## 0.4.7
 
 ### Patch Changes

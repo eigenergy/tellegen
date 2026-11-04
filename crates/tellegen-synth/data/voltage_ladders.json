@@ -1,6 +1,6 @@
 {
  "schema": "tellegen.synth-voltage-ladders/1",
- "version": "2026-10-23",
+ "version": "2026-11-03",
  "note": "National AC transmission ladders, highest first: the levels a national model uses (levels_kv) and any higher AC level in service (above_kv), which the corridor plan may raise buses to. Lines built for a higher voltage but operated lower do not count. Gathered for tellegen-synth; quotes are transliterated to ASCII.",
  "regional": {
   "name": "ENTSO-E",
@@ -309,6 +309,20 @@
    "sources": [
     "NTCSA (Eskom), Transmission Development Plan 2024 Rev 2, p. 107, https://www.ntcsa.co.za/wp-content/uploads/2025/02/TDP-2024-Public-Report_Rev2.pdf: \"The supply to the Cape corridor is via the Alpha and Zeus 400/765 kV substations\"; p. 65: \"The Free State comprises of 275 kV, 400 kV and 765 kV lines\""
    ]
+  }
+ },
+ "subdivisions": {
+  "US-CA": {
+   "levels_kv": [
+    500,
+    230,
+    115,
+    66
+   ],
+   "sources": [
+    "HIFLD, U.S. Electric Power Transmission Lines, https://services2.arcgis.com/FiaPA4ga0iQKduv3/arcgis/rest/services/US_Electric_Power_Transmission_Lines/FeatureServer/0, queried 2026-11-03 for records intersecting California's bounding box (-124.48, 32.53, -114.13, 42.01): 500 kV 96; 345 kV 15; 230 kV 724 (220 kV 35); 138 kV 130; 115 kV 1,040; 60-70 kV 2,737 (60 kV 1,200, 66 kV 968, 69 kV 454, 70 kV 115)"
+   ],
+   "note": "Modelled down to subtransmission: the 60-70 kV networks of PG&E (60/70 kV), SCE (66 kV) and SDG&E (69 kV) are one class at 66 kV; 345 kV interties and LADWP's 287/138 kV lines map to the nearest level."
   }
  }
 }

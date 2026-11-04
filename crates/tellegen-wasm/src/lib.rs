@@ -86,11 +86,10 @@ fn read_module_bytes(bytes: &[u8]) -> Result<powerio::PioModule<powerio::PioValu
 }
 
 fn with_module_json(
-    mut payload: serde_json::Value,
+    payload: serde_json::Value,
     module: powerio::PioModule<PioValue>,
 ) -> Result<serde_json::Value, String> {
-    mark_generated_coords(&mut payload, &module);
-    set_declared_formulation(&mut payload, module.value());
+    let mut payload = with_module_metadata(payload, &module);
     let module_json = serialize_module(&module)?;
     payload
         .as_object_mut()
@@ -100,6 +99,16 @@ fn with_module_json(
             serde_json::Value::String(module_json),
         );
     Ok(payload)
+}
+
+/// The payload fields a module decides besides its serialized text.
+fn with_module_metadata(
+    mut payload: serde_json::Value,
+    module: &powerio::PioModule<PioValue>,
+) -> serde_json::Value {
+    mark_generated_coords(&mut payload, module);
+    set_declared_formulation(&mut payload, module.value());
+    payload
 }
 
 fn set_declared_formulation(payload: &mut serde_json::Value, value: &PioValue) {
@@ -201,8 +210,38 @@ pub fn ingest_json_drop(bytes: &[u8]) -> Result<String, JsError> {
     serde_json::to_string(&ingest_json_drop_value(bytes).map_err(jserr)?).map_err(jserr)
 }
 
+/// [`ingest_json_drop`] that keeps a multiconductor module in the engine
+/// instead of serializing it into the payload. A balanced drop is unchanged:
+/// it still carries `module_json` and retains nothing.
+#[cfg(feature = "sensitivity")]
+#[wasm_bindgen]
+pub fn ingest_json_drop_retained(bytes: &[u8]) -> Result<RetainedIngest, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    let (drop, module) = ingest_json_drop_parts(bytes, true).map_err(jserr)?;
+    Ok(RetainedIngest {
+        payload: serde_json::to_string(&drop).map_err(jserr)?,
+        input: module.map(McInput::retain),
+    })
+}
+
 #[cfg(feature = "sensitivity")]
 fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
+    ingest_json_drop_parts(bytes, false).map(|(drop, _)| drop)
+}
+
+/// Route one JSON drop. With `retain`, a multiconductor module comes back
+/// beside the payload rather than serialized inside it.
+#[cfg(feature = "sensitivity")]
+fn ingest_json_drop_parts(
+    bytes: &[u8],
+    retain: bool,
+) -> Result<(IngestedJsonDrop, Option<powerio::PioModule<PioValue>>), String> {
+    let mut retained = None;
+    let mut multiconductor = |parts: (serde_json::Value, powerio::PioModule<PioValue>)| {
+        retained = Some(parts.1);
+        parts.0
+    };
     let classification = powerio::classify_json_bytes(bytes);
     let (kind, format, payload) = match classification {
         JsonClass::Module => {
@@ -223,7 +262,11 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
                     );
                 payload
             } else if dist::is_viewable_module_value(module.value()) {
-                dist::ingest_dist_module_value(module)?
+                if retain {
+                    multiconductor(dist::ingest_dist_module_retained(module)?)
+                } else {
+                    dist::ingest_dist_module_value(module)?
+                }
             } else {
                 return Err(format!(
                     "stored module holds {}, which tellegen cannot view",
@@ -236,6 +279,9 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
             let kind = classification.family();
             let payload = match kind {
                 "transmission" => ingest_case_value(bytes, format.name())?,
+                "distribution" if retain => {
+                    multiconductor(dist::ingest_dist_bytes_retained(bytes, format.name())?)
+                }
                 "distribution" => dist::ingest_dist_bytes_value(bytes, format.name())?,
                 _ => return Err(format!("unsupported JSON family '{kind}'")),
             };
@@ -245,11 +291,12 @@ fn ingest_json_drop_value(bytes: &[u8]) -> Result<IngestedJsonDrop, String> {
         JsonClass::Case(Detection::Unknown) => ("unknown", None, serde_json::Value::Null),
     };
 
-    Ok(IngestedJsonDrop {
+    let drop = IngestedJsonDrop {
         kind,
         format,
         payload,
-    })
+    };
+    Ok((drop, retained))
 }
 
 /// Route Rust panics to `console.error` (with a JS stack) once. Without this a wasm panic
@@ -328,6 +375,15 @@ pub fn solve_mc_bmopf(text: &str, options_json: &str) -> Result<String, JsError>
         serde_json::from_str(options_json).map_err(jserr)?
     };
     tellegen::solve_bmopf_json(text, &options).map_err(jserr)
+}
+
+/// Explicitly prepare a source-covered subset while retaining the full input.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub fn prepare_mc_energized_network(module_json: &str) -> Result<String, JsError> {
+    ensure_input_text(module_json)?;
+    install_panic_hook();
+    tellegen::prepare_mc_energized_network_json(module_json).map_err(jserr)
 }
 
 /// Solve a stored PowerIO multiconductor module. This accepts the portable
@@ -409,6 +465,28 @@ impl McPfSession {
             .map_err(jserr)
     }
 
+    /// Create a session from a module the engine already holds. The network
+    /// is shared with `input`, and no IR text is read or written.
+    pub fn from_input(input: &McInput, options_json: &str) -> Result<McPfSession, JsError> {
+        ensure_input_text(options_json)?;
+        install_panic_hook();
+        install_profile_clock();
+        let options = if options_json.trim().is_empty() {
+            tellegen::McPfOptions::default()
+        } else {
+            serde_json::from_str(options_json).map_err(jserr)?
+        };
+        tellegen::McPfSession::from_module(&input.0, options)
+            .map(McPfSession)
+            .map_err(jserr)
+    }
+
+    /// The current edited input as a module kept in the engine, the
+    /// counterpart of [`McPfSession::input_module`] that writes no IR text.
+    pub fn input(&self) -> Result<McInput, JsError> {
+        self.0.input_module().map(McInput).map_err(jserr)
+    }
+
     /// The compact summary of the current operating point (constant size).
     pub fn summary(&self) -> Result<String, JsError> {
         serde_json::to_string(self.0.summary()).map_err(jserr)
@@ -418,6 +496,15 @@ impl McPfSession {
     /// grows with the network; the interactive path uses `summary`/`detail`.
     pub fn result(&self) -> Result<String, JsError> {
         serde_json::to_string(&self.0.build_result().map_err(jserr)?).map_err(jserr)
+    }
+
+    /// The complete result as packed columns (see [`McPfResultBuffers`]), for
+    /// whole-network views: a few typed arrays instead of the JSON of
+    /// [`McPfSession::result`], which grows by an object per port.
+    pub fn result_tables(&self) -> Result<McPfResultBuffers, JsError> {
+        Ok(McPfResultBuffers::pack(
+            self.0.result_tables().map_err(jserr)?,
+        ))
     }
 
     /// Editable load branches with base and current P/Q values.
@@ -488,6 +575,118 @@ impl McPfSession {
         // converged result. Avoid the replay validator here: it prepares a
         // separate network and would defeat retained-factor interaction.
         serde_json::to_string(&snapshot).map_err(jserr)
+    }
+}
+
+/// [`tellegen::McPfResultTables`] packed into one index and one value array,
+/// so the host moves two buffers instead of sixteen columns. With `t` terminals,
+/// `p` ports, and `s` source reactions (from `counts`), `indices` holds
+/// terminal bus and terminal name (`t` each), port element, kind, branch, bus,
+/// and terminal (`p` each), then source name and terminal (`s` each).
+/// `values` holds interleaved `[re, im]` terminal voltage, current, and power
+/// (`2t` each), port current and power (`2p` each), then source current and
+/// power (`2s` each). Each part is taken once; then `free()` the object.
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+pub struct McPfResultBuffers {
+    metadata: String,
+    counts: Vec<u32>,
+    strings: Vec<String>,
+    indices: Vec<u32>,
+    values: Vec<f64>,
+}
+
+#[cfg(feature = "mc-pf")]
+impl McPfResultBuffers {
+    fn pack(tables: tellegen::McPfResultTables) -> Self {
+        let metadata = serde_json::json!({
+            "load_model": tables.load_model,
+            "network_scope": tables.network_scope,
+            "excluded_islands": tables.excluded_islands,
+        })
+        .to_string();
+        let counts = [
+            tables.iterations,
+            tables.terminal_count(),
+            tables.port_count(),
+            tables.source_count(),
+        ]
+        .map(|count| count as u32)
+        .to_vec();
+        let tellegen::McPfResultTables {
+            strings,
+            terminal_bus,
+            terminal_name,
+            terminal_voltage,
+            terminal_current,
+            terminal_power,
+            port_element,
+            port_kind,
+            port_branch,
+            port_bus,
+            port_terminal,
+            port_current,
+            port_power,
+            source_name,
+            source_terminal,
+            source_current,
+            source_power,
+            ..
+        } = tables;
+        let index_columns = [
+            terminal_bus,
+            terminal_name,
+            port_element,
+            port_kind,
+            port_branch,
+            port_bus,
+            port_terminal,
+            source_name,
+            source_terminal,
+        ];
+        let value_columns = [
+            terminal_voltage,
+            terminal_current,
+            terminal_power,
+            port_current,
+            port_power,
+            source_current,
+            source_power,
+        ];
+        Self {
+            metadata,
+            counts,
+            strings,
+            indices: index_columns.concat(),
+            values: value_columns.concat(),
+        }
+    }
+}
+
+#[cfg(feature = "mc-pf")]
+#[wasm_bindgen]
+impl McPfResultBuffers {
+    /// Load-model qualification and excluded-network provenance as JSON.
+    pub fn metadata(&self) -> String {
+        self.metadata.clone()
+    }
+
+    /// Iterations, terminals, ports, and source reactions.
+    pub fn counts(&self) -> Vec<u32> {
+        self.counts.clone()
+    }
+
+    /// The names the index array refers to, as a JSON array.
+    pub fn take_strings(&mut self) -> Result<String, JsError> {
+        serde_json::to_string(&std::mem::take(&mut self.strings)).map_err(jserr)
+    }
+
+    pub fn take_indices(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.indices)
+    }
+
+    pub fn take_values(&mut self) -> Vec<f64> {
+        std::mem::take(&mut self.values)
     }
 }
 
@@ -1027,6 +1226,102 @@ pub fn ingest_dist_case_bytes(bytes: &[u8], format: &str) -> Result<String, JsEr
         _ => dist::ingest_dist_bytes(bytes, format),
     };
     out.map_err(jserr)
+}
+
+/// [`ingest_dist_case_bytes`] that keeps the parsed module in the engine as
+/// an [`McInput`] instead of serializing it into the payload's `module_json`.
+#[wasm_bindgen]
+pub fn ingest_dist_case_bytes_retained(
+    bytes: &[u8],
+    format: &str,
+) -> Result<RetainedIngest, JsError> {
+    ensure_input_bytes(bytes)?;
+    install_panic_hook();
+    let (payload, module) = match format {
+        "pio" | "pio-json" => {
+            let module = read_module_bytes(bytes).map_err(jserr)?;
+            dist::ingest_dist_module_retained(module)
+        }
+        _ => dist::ingest_dist_bytes_retained(bytes, format),
+    }
+    .map_err(jserr)?;
+    Ok(RetainedIngest {
+        payload: serde_json::to_string(&payload).map_err(jserr)?,
+        input: Some(McInput::retain(module)),
+    })
+}
+
+/// A parsed multiconductor module kept in the engine, so a calculation can
+/// start from it without the module crossing the wasm boundary as PowerIO IR
+/// text in either direction. The text is built only when a host asks for it.
+#[wasm_bindgen]
+pub struct McInput(powerio::PioModule<PioValue>);
+
+impl McInput {
+    /// Keep a module parsed from a case file. Its source bytes are released:
+    /// IR text never echoes them, so holding them would only cost memory.
+    fn retain(module: powerio::PioModule<PioValue>) -> Self {
+        McInput(module.sever_source())
+    }
+}
+
+#[wasm_bindgen]
+impl McInput {
+    /// Read a stored PowerIO IR document holding a multiconductor value.
+    #[wasm_bindgen(constructor)]
+    pub fn new(module_json: &str) -> Result<McInput, JsError> {
+        ensure_input_text(module_json)?;
+        install_panic_hook();
+        let module = deserialize_module(module_json).map_err(jserr)?;
+        if !dist::is_viewable_module_value(module.value()) {
+            return Err(jserr(format!(
+                "stored module holds {}, expected a multiconductor network or calculation",
+                module.value().type_name()
+            )));
+        }
+        Ok(McInput(module))
+    }
+
+    /// Explicitly select source-covered islands, keeping the full input in the engine.
+    #[cfg(feature = "mc-pf")]
+    pub fn prepare_energized(&self) -> Result<RetainedIngest, JsError> {
+        let (module, islands) = tellegen::prepare_mc_energized_network(&self.0).map_err(jserr)?;
+        let scope = tellegen::McNetworkScope::from_excluded_islands(&islands);
+        let payload = serde_json::json!({
+            "input_retained": true, "network_scope": scope, "excluded_islands": islands,
+        })
+        .to_string();
+        Ok(RetainedIngest {
+            payload,
+            input: Some(McInput::retain(module)),
+        })
+    }
+
+    /// The module as PowerIO IR text, for saving or exporting.
+    pub fn module_json(&self) -> Result<String, JsError> {
+        serialize_module(&self.0).map_err(jserr)
+    }
+}
+
+/// An ingest payload with the parsed module kept beside it. The host takes
+/// each part once.
+#[wasm_bindgen]
+pub struct RetainedIngest {
+    payload: String,
+    input: Option<McInput>,
+}
+
+#[wasm_bindgen]
+impl RetainedIngest {
+    /// The drop-panel payload JSON, without `module_json`.
+    pub fn take_payload(&mut self) -> String {
+        std::mem::take(&mut self.payload)
+    }
+
+    /// The retained module; none for a balanced JSON drop.
+    pub fn take_input(&mut self) -> Option<McInput> {
+        self.input.take()
+    }
 }
 
 /// The drop-panel payload for an already-parsed network, as a JSON value.
@@ -1939,6 +2234,118 @@ mpc.gencost = [
         assert_eq!(bmopf.kind, "module");
         assert_eq!(bmopf.payload["model"], "multiconductor");
         assert_eq!(bmopf.payload["n_bus"], 2);
+    }
+
+    #[cfg(feature = "mc-pf")]
+    #[test]
+    fn result_buffers_pack_the_tables_in_the_documented_order() {
+        let text = include_str!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_dy_xfmr.json");
+        let session = tellegen::McPfSession::new(
+            tellegen::parse_bmopf_instance(text).unwrap(),
+            tellegen::McPfOptions::default(),
+        )
+        .unwrap();
+        let tables = session.result_tables().unwrap();
+        let mut buffers = McPfResultBuffers::pack(tables.clone());
+        let (t, p, s) = (
+            tables.terminal_count(),
+            tables.port_count(),
+            tables.source_count(),
+        );
+        assert_eq!(
+            buffers.counts(),
+            vec![tables.iterations as u32, t as u32, p as u32, s as u32]
+        );
+        let strings: Vec<String> =
+            serde_json::from_str(&buffers.take_strings().ok().unwrap()).unwrap();
+        assert_eq!(strings, tables.strings);
+        let indices = buffers.take_indices();
+        let values = buffers.take_values();
+        let mut at = 0;
+        let mut next = |len: usize| {
+            at += len;
+            at - len..at
+        };
+        for column in [&tables.terminal_bus, &tables.terminal_name] {
+            assert_eq!(&indices[next(t)], column.as_slice());
+        }
+        for column in [
+            &tables.port_element,
+            &tables.port_kind,
+            &tables.port_branch,
+            &tables.port_bus,
+            &tables.port_terminal,
+        ] {
+            assert_eq!(&indices[next(p)], column.as_slice());
+        }
+        for column in [&tables.source_name, &tables.source_terminal] {
+            assert_eq!(&indices[next(s)], column.as_slice());
+        }
+        assert_eq!(at, indices.len());
+        let mut at = 0;
+        let mut next = |len: usize| {
+            at += 2 * len;
+            at - 2 * len..at
+        };
+        for column in [
+            &tables.terminal_voltage,
+            &tables.terminal_current,
+            &tables.terminal_power,
+        ] {
+            assert_eq!(&values[next(t)], column.as_slice());
+        }
+        for column in [&tables.port_current, &tables.port_power] {
+            assert_eq!(&values[next(p)], column.as_slice());
+        }
+        for column in [&tables.source_current, &tables.source_power] {
+            assert_eq!(&values[next(s)], column.as_slice());
+        }
+        assert_eq!(at, values.len());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn retained_json_drop_keeps_only_multiconductor_modules() {
+        // A balanced drop is the serialized route unchanged and keeps nothing.
+        let balanced_json = serialize_module(&powerio::PioModule::new(
+            powerio::PioValue::BalancedNetwork(parse_matpower(CASE14_NO_COORDS)),
+        ))
+        .unwrap();
+        let (balanced, kept) = ingest_json_drop_parts(balanced_json.as_bytes(), true).unwrap();
+        assert!(kept.is_none());
+        assert_eq!(balanced.payload["module_json"], balanced_json);
+
+        // A raw BMOPF case and a stored multiconductor module are kept, and
+        // the payload says so in place of carrying the module text.
+        let bmopf =
+            include_bytes!("../../tellegen/tests/data/mc_pf/oracle_inputs/pf_1ph_line.json");
+        let stored = serialize_module(&{
+            let source = Source::from_memory("line.json", bmopf.to_vec())
+                .unwrap()
+                .with_format(powerio::FormatId::new("bmopf").unwrap());
+            powerio::parse(source).unwrap()
+        })
+        .unwrap();
+        for bytes in [&bmopf[..], stored.as_bytes()] {
+            let (drop, kept) = ingest_json_drop_parts(bytes, true).unwrap();
+            let serialized = ingest_json_drop_value(bytes).unwrap();
+            assert_eq!(drop.kind, serialized.kind);
+            assert_eq!(drop.payload["input_retained"], true);
+            assert!(drop.payload.get("module_json").is_none());
+            assert_eq!(drop.payload["n_bus"], serialized.payload["n_bus"]);
+            let input = McInput::retain(kept.expect("kept module"));
+            // The kept module writes the IR the serialized route returned.
+            assert_eq!(
+                input.module_json().ok().unwrap(),
+                serialized.payload["module_json"].as_str().unwrap()
+            );
+            #[cfg(feature = "mc-pf")]
+            {
+                let session = McPfSession::from_input(&input, "").ok().unwrap();
+                let edited = session.input().ok().unwrap();
+                assert_eq!(edited.module_json().ok(), session.input_module().ok());
+            }
+        }
     }
 
     #[test]
