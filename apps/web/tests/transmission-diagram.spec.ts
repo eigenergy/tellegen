@@ -49,6 +49,15 @@ mpc.branch = [1 2 0.01 0.1 0 1000 1000 1000 0 0 1 -360 360;];
 mpc.gencost = [2 0 0 3 0.1 5 0; 2 0 0 3 0.1 5 0;];
 `;
 
+/** The results panel starts collapsed on a phone; open it where a test needs the full panel. */
+async function expandResults(page: import('@playwright/test').Page) {
+	const more = page.locator('.tx-stage .legend').getByRole('button', { name: 'More ▾' });
+	if (await more.isVisible()) await more.click();
+	await expect(
+		page.locator('.tx-stage .legend').getByRole('button', { name: 'Less ▴' })
+	).toBeVisible();
+}
+
 for (const touch of [false, true]) {
 	test.describe(touch ? 'phone touch' : 'desktop mouse', () => {
 		test.use(
@@ -248,6 +257,7 @@ for (const touch of [false, true]) {
 					await expect(page.locator('.tx-stage .status')).toHaveCount(0);
 					const panel = page.getByRole('region', { name: 'Operating limits', exact: true });
 					await expect(panel).toContainText(uniform ? '↑ 2 high' : '↑ 1 high');
+					await expandResults(page);
 					await expect(panel).toContainText(uniform ? '1.0800–1.0800 pu' : '1.0200–1.0800 pu');
 					const diagram = page.locator('.tx-stage');
 					const exceptions = diagram.getByText(`Exceptions · ${uniform ? 2 : 1}`, { exact: true });
@@ -370,6 +380,7 @@ for (const touch of [false, true]) {
 			// Once solved, the drawing can colour by results: the bus series and branch loading.
 			await page.screenshot({ path: testInfo.outputPath('transmission-voltage.png') });
 			await view('Operating limits').click();
+			await expandResults(page);
 			const toolbarBox = (await toolbar.boundingBox())!;
 			const legendBox = (await page.locator('.tx-stage .legend').boundingBox())!;
 			expect(legendBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
@@ -410,6 +421,8 @@ for (const touch of [false, true]) {
 			await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
 			await expect(canvas).toHaveCount(0);
 			await expect(page.locator('.maplibregl-canvas')).toBeVisible();
+			// The map offers the diagram beside its zoom buttons, not only in the network panel.
+			await expect(page.getByRole('button', { name: 'Single-line diagram' })).toBeVisible();
 			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 			await expect(page.getByRole('button', { name: 'Show diagram', exact: true })).toBeVisible();
 
@@ -422,6 +435,7 @@ for (const touch of [false, true]) {
 			await expect(
 				toolbar.getByRole('radio', { name: 'Operating limits', exact: true })
 			).toHaveAttribute('aria-checked', 'true');
+			await expandResults(page);
 			await page.locator('.tx-stage details.settings summary').click();
 			await expect(page.getByRole('spinbutton', { name: 'Loading warning percent' })).toHaveValue(
 				'10'
