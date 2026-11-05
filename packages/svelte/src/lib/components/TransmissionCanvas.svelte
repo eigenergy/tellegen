@@ -2126,7 +2126,8 @@
 		padding: 4px 8px;
 		font: 10px var(--font-mono);
 		color: var(--text-secondary);
-		background: var(--paper);
+		/* Chromium's headless shell can occlude the canvases past the scroll clip with a solid colour. */
+		background: linear-gradient(var(--paper), var(--paper));
 		border: 1px solid var(--line);
 		border-radius: 3px;
 	}
