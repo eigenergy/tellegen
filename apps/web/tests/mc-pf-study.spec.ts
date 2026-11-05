@@ -384,7 +384,7 @@ for (const nominalVoltage of [200, 240]) {
 		if (!exportPath) throw new Error('distribution snapshot export has no local path');
 		const snapshot = JSON.parse(await readFile(exportPath, 'utf8')) as {
 			input_module: string;
-			solution_module: string;
+			solution_module: string | null;
 			result: {
 				terminals: Array<{ bus: string; terminal: string; voltage: { re: number; im: number } }>;
 				element_ports: Array<{
@@ -398,7 +398,12 @@ for (const nominalVoltage of [200, 240]) {
 		};
 		const expectedModels = ['constant_current', 'constant_impedance', 'exponential', 'zip'];
 		expect(voltageModels(snapshot.input_module)).toEqual(expectedModels);
-		expect(voltageModels(snapshot.solution_module)).toEqual(expectedModels);
+		if (nominalVoltage === 240) {
+			expect(snapshot.solution_module).not.toBeNull();
+			expect(voltageModels(snapshot.solution_module!)).toEqual(expectedModels);
+		} else {
+			expect(snapshot.solution_module).toBeNull();
+		}
 		for (const [element, spec] of Object.entries(loadModelSpecs)) {
 			const port = snapshot.result.element_ports.find(
 				(candidate) =>
@@ -487,3 +492,237 @@ for (const nominalVoltage of [200, 240]) {
 		);
 	});
 }
+
+test('settings reruns qualify modified results and preserve provenance through export and reopen', async ({
+	page
+}, testInfo) => {
+	test.setTimeout(120_000);
+	await openApp(page);
+	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles(typedCase);
+	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible();
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	const study = page.getByRole('region', { name: 'Study workspace' });
+	await study.getByText('Power flow settings', { exact: true }).click();
+	await expect(study.getByLabel('Vmin (pu)', { exact: true })).toHaveValue('0.85');
+	await expect(study.getByLabel('Vmax (pu)', { exact: true })).toHaveValue('1.15');
+	await study.getByLabel('Vmin (pu)', { exact: true }).fill('0.4');
+	await expect(study.getByRole('button', { name: 'Run power flow', exact: true })).toBeDisabled();
+	await expect(study.getByRole('alert').filter({ hasText: 'Vlow' })).toBeVisible();
+	// Put every non-impedance load outside the normal band without changing the fixture.
+	await study.getByLabel('Vmin (pu)', { exact: true }).fill('1.01');
+	await study.getByLabel('Maximum iterations', { exact: true }).fill('200');
+	await study.getByRole('button', { name: 'Run power flow', exact: true }).click();
+	const results = study.getByRole('region', { name: 'AC power flow results' });
+	await expect(
+		results.getByText('Modified load model — non-canonical result', { exact: true })
+	).toBeVisible();
+	await expect(results.getByText('Converged', { exact: true })).toBeVisible();
+	await expect(
+		study
+			.getByRole('region', { name: 'Operating point overview' })
+			.getByText('Violations', { exact: true })
+	).toBeInViewport();
+	await study.getByRole('button', { name: 'Save result' }).click();
+	const downloadWait = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'Export', exact: true }).click();
+	const exportedPath = await (await downloadWait).path();
+	if (!exportedPath) throw new Error('missing exported snapshot');
+	const saved = JSON.parse(await readFile(exportedPath, 'utf8'));
+	expect(saved.version).toBe(2);
+	expect(saved.solution_module).toBeNull();
+	expect(saved.result.load_model.status).toBe('modified');
+	expect(saved.result.load_model.modified_branch_count).toBeGreaterThan(0);
+	expect(saved.result.load_model_changes.length).toBe(
+		saved.result.load_model.modified_branch_count
+	);
+	expect(saved.options.v_min_pu).toBe(1.01);
+	expect(saved.result.load_model.options).toEqual(saved.options);
+	const csvWait = page.waitForEvent('download');
+	await study.getByRole('button', { name: 'Bus CSV', exact: true }).click();
+	const csvPath = await (await csvWait).path();
+	if (!csvPath) throw new Error('missing CSV export');
+	const csv = await readFile(csvPath, 'utf8');
+	expect(csv).toContain('Modified load model');
+	expect(csv).toContain('v_min_pu');
+	expect(csv).toContain('1.01');
+
+	await study.getByText('Power flow settings', { exact: true }).scrollIntoViewIfNeeded();
+	await page.screenshot({
+		path: testInfo.outputPath('modified-model-settings.png'),
+		fullPage: true
+	});
+
+	// A true numerical failure keeps the previous, visibly qualified operating point.
+	await study.getByLabel('Maximum iterations', { exact: true }).fill('1');
+	await study.getByRole('button', { name: 'Run power flow', exact: true }).click();
+	await expect(study.getByRole('alert').filter({ hasText: 'did not converge' })).toBeVisible();
+	await expect(
+		results.getByText('Modified load model — non-canonical result', { exact: true })
+	).toBeVisible();
+
+	await openApp(page);
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	await page.getByLabel('Saved study').selectOption(`mc:${saved.id}`);
+	await expect(
+		results.getByText('Modified load model — non-canonical result', { exact: true })
+	).toBeVisible();
+	await study.getByText('Power flow settings', { exact: true }).click();
+	await expect(study.getByLabel('Vmin (pu)', { exact: true })).toHaveValue('1.01');
+	await expect(study.getByLabel('Maximum iterations', { exact: true })).toHaveValue('200');
+	await study.getByRole('button', { name: 'Run power flow', exact: true }).click();
+	await expect(study.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled();
+	await expect(
+		results.getByText('Modified load model — non-canonical result', { exact: true })
+	).toBeVisible();
+
+	await page.setViewportSize({ width: 390, height: 844 });
+	await study.getByText('Power flow settings', { exact: true }).click();
+	await expect(study.getByRole('button', { name: 'Run power flow', exact: true })).toBeVisible();
+	await study.getByText('Power flow settings', { exact: true }).scrollIntoViewIfNeeded();
+	await page.screenshot({
+		path: testInfo.outputPath('modified-model-settings-mobile.png'),
+		fullPage: true
+	});
+});
+
+test('energized-network selection retains excluded islands through solve, CSV and saved reopen', async ({
+	page
+}) => {
+	test.setTimeout(120_000);
+	const fixture = JSON.parse(await readFile(loadModelsCase, 'utf8'));
+	fixture.name = 'Explicit island selection';
+	fixture.bus.unpowered = structuredClone(fixture.bus.src);
+	fixture.load.unsupplied = { ...structuredClone(fixture.load.ld1), bus: 'unpowered' };
+	await openApp(page);
+	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles({
+		name: 'islands.bmopf.json',
+		mimeType: 'application/json',
+		buffer: Buffer.from(JSON.stringify(fixture))
+	});
+	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'Solve energized network', exact: true })
+	).toHaveCount(1);
+	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toHaveCount(0);
+	await expect(page.getByText('Unpowered islands detected', { exact: true })).toBeVisible();
+	await page.getByText('Islands and equipment to exclude', { exact: true }).click();
+	await expect(page.getByText('load: unsupplied', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	const study = page.getByRole('region', { name: 'Study workspace' });
+	await expect(study.getByRole('button', { name: 'Run power flow', exact: true })).toHaveCount(0);
+	await expect(
+		study.getByRole('button', { name: 'Solve energized network', exact: true })
+	).toHaveCount(1);
+	await expect(study.getByText('Unpowered islands detected', { exact: true })).toBeVisible();
+	await study.getByText('Islands and equipment to exclude', { exact: true }).click();
+	await expect(study.getByText('load: unsupplied', { exact: true })).toBeVisible();
+	await expect(study.getByRole('button', { name: 'Save result', exact: true })).toBeDisabled();
+	await study.getByText('Power flow settings', { exact: true }).click();
+	await expect(study.getByLabel('Maximum iterations', { exact: true })).toHaveValue('100');
+	await study.getByLabel('Maximum iterations', { exact: true }).fill('0');
+	await expect(
+		study.getByRole('button', { name: 'Solve energized network', exact: true })
+	).toBeDisabled();
+	await expect(study.getByRole('button', { name: 'Apply settings and run' })).toHaveCount(0);
+	await study.getByLabel('Maximum iterations', { exact: true }).fill('500');
+	await study.getByText('Advanced tolerances', { exact: true }).click();
+	await expect(study.getByLabel('Voltage-change tolerance (V)', { exact: true })).toHaveValue(
+		'0.0001'
+	);
+	await expect(study.getByLabel('Absolute KCL tolerance (A)', { exact: true })).toHaveValue(
+		'0.0001'
+	);
+	await expect(study.getByLabel('Relative KCL tolerance', { exact: true })).toHaveValue('0.00001');
+	await study.getByLabel('Voltage-change tolerance (V)', { exact: true }).fill('1e-7');
+	await study.getByLabel('Absolute KCL tolerance (A)', { exact: true }).fill('1e-5');
+	// The one solve action must use the shared settings.
+	await study.getByRole('button', { name: 'Solve energized network', exact: true }).click();
+	await expect(study.getByText('Converged', { exact: true })).toBeVisible();
+	await expect(
+		study
+			.getByRole('region', { name: 'Operating point overview' })
+			.getByText('Violations', { exact: true })
+	).toBeInViewport();
+	await expect(
+		study.getByText('1 load has no voltage source and is absent from solved totals.').first()
+	).toBeVisible();
+	const results = study.getByRole('region', { name: 'AC power flow results' });
+	await results.getByLabel('Bus result').selectOption('unpowered');
+	await expect(results.getByText('0 terminals at bus unpowered', { exact: true })).toBeVisible();
+	await expect(
+		results.getByRole('table', { name: 'Terminal results', exact: true }).locator('tbody tr')
+	).toHaveCount(0);
+	await study.getByRole('button', { name: 'Save result', exact: true }).click();
+	const download = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'Export', exact: true }).click();
+	const path = await (await download).path();
+	if (!path) throw new Error('missing study export');
+	const snapshot = JSON.parse(await readFile(path, 'utf8'));
+	expect(snapshot.options.tolerance).toBe(1e-7);
+	expect(snapshot.options.absolute_kcl_tolerance).toBe(1e-5);
+	expect(snapshot.result.load_model.options).toEqual(snapshot.options);
+	expect(snapshot.options.max_iterations).toBe(500);
+	expect(snapshot.result.network_scope).toEqual({
+		excluded_island_count: 1,
+		excluded_bus_count: 1,
+		excluded_equipment_count: 1,
+		excluded_load_count: 1
+	});
+	expect(snapshot.result.excluded_islands).toEqual([
+		{ buses: ['unpowered'], equipment: [{ kind: 'load', name: 'unsupplied' }] }
+	]);
+	expect(snapshot.input_module).toContain('unsupplied');
+	expect(snapshot.input_module).toContain('tellegen.energized_network');
+	expect(snapshot.result.terminals.every((t: { bus: string }) => t.bus !== 'unpowered')).toBe(true);
+	const csvWait = page.waitForEvent('download');
+	await study.getByRole('button', { name: 'Bus CSV', exact: true }).click();
+	const csvPath = await (await csvWait).path();
+	if (!csvPath) throw new Error('missing CSV export');
+	const csv = await readFile(csvPath, 'utf8');
+	expect(csv).toContain('Energized network only');
+	expect(csv).toContain('excluded_islands');
+	expect(csv).toContain('unsupplied');
+	const savedId = await savedDistributionOptions(page).first().getAttribute('value');
+	await openApp(page);
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	await page.getByLabel('Saved study').selectOption(savedId!);
+	await expect(study.getByText('Converged', { exact: true })).toBeVisible();
+	await expect(results.getByLabel('Bus result').locator('option[value="unpowered"]')).toHaveCount(
+		1
+	);
+	await study.getByRole('button', { name: 'Solve energized network', exact: true }).click();
+	await expect(
+		study.getByRole('button', { name: 'Solve energized network', exact: true })
+	).toBeEnabled();
+	await expect(study.getByText('Converged', { exact: true })).toBeVisible();
+	await results.getByText('Excluded islands and equipment', { exact: true }).click();
+	await expect(results.getByText('load: unsupplied', { exact: true })).toBeVisible();
+	await page.screenshot({ path: 'test-results/mc-energized-network.png', fullPage: true });
+});
+
+test('a case without voltage sources remains inspectable with solving disabled', async ({
+	page
+}) => {
+	await openApp(page);
+	const fixture = JSON.parse(await readFile(loadModelsCase, 'utf8'));
+	fixture.voltage_source = {};
+	await page.locator('header input[type="file"][accept*=".dss"]').setInputFiles({
+		name: 'no-sources.bmopf.json',
+		mimeType: 'application/json',
+		buffer: Buffer.from(JSON.stringify(fixture))
+	});
+	await expect(page.getByText('Multiconductor', { exact: true }).first()).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'Solve energized network', exact: true })
+	).toBeDisabled();
+	await expect(page.getByText(/No energized network: no bus island/)).toBeVisible();
+	await page.getByText('Islands and equipment to exclude', { exact: true }).click();
+	await expect(page.getByText('load: ld1', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	const study = page.getByRole('region', { name: 'Study workspace' });
+	await expect(
+		study.getByRole('button', { name: 'Solve energized network', exact: true })
+	).toBeDisabled();
+	await expect(study.getByRole('button', { name: 'Run power flow', exact: true })).toHaveCount(0);
+	await expect(study.getByText(/No energized network: no bus island/)).toBeVisible();
+});

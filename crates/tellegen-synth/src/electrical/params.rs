@@ -24,13 +24,35 @@ pub struct LineClass {
 ///
 /// source: r, x, b per km from Glover, Overbye, Sarma, *Power System Analysis
 /// and Design* (6th ed.), Table A.4 and Example 4.x bundle geometries
-/// (115/138 kV single 795 kcmil ACSR; 230 kV single 1272 kcmil; 345 kV 2×954
+/// (69 kV single 336.4 kcmil ACSR "Linnet", 0.19 Ω/km at 50 °C, 530 A;
+/// 138 kV single 795 kcmil ACSR; 230 kV single 1272 kcmil; 345 kV 2×954
 /// kcmil; 500 kV 3×954 kcmil; 765 kV 4×954 kcmil); thermal ratings from the
 /// same conductor ampacities; SIL from Kundur, *Power System Stability and
-/// Control*, Table 6.1 (115 kV ≈ 50 MW, 230 kV ≈ 140 MW, 345 kV ≈ 400 MW,
-/// 500 kV ≈ 900 MW, 765 kV ≈ 2200 MW); the class set matches Birchfield et
-/// al. 2017, Table II.
-pub const LINE_CLASSES: [LineClass; 5] = [
+/// Control*, Table 6.1 (69 kV ≈ 12 MW, 138 kV ≈ 50 MW, 230 kV ≈ 140 MW,
+/// 345 kV ≈ 400 MW, 500 kV ≈ 900 MW, 765 kV ≈ 2200 MW). The 115 kV class
+/// and the 500 kV reactance are the medians of the Eastern Interconnection
+/// statistics in Birchfield et al. 2017, Tables 3–4 (115 kV: x 0.003398 pu/km
+/// on 100 MVA, about 0.45 Ω/km, X/R 4.6, 160 MVA; 500 kV: x 0.000155 pu/km,
+/// about 0.39 Ω/km, X/R 17), the survey the class set follows; the 500 kV
+/// reactance sits a little below that median (0.375 Ω/km), calibrated on the
+/// California Test System (docs/evidence/synth/cats/).
+pub const LINE_CLASSES: [LineClass; 7] = [
+    LineClass {
+        kv: 69.0,
+        r_ohm_per_km: 0.19,
+        x_ohm_per_km: 0.48,
+        b_us_per_km: 3.3,
+        thermal_mva: 63.0,
+        sil_mw: 12.5,
+    },
+    LineClass {
+        kv: 115.0,
+        r_ohm_per_km: 0.098,
+        x_ohm_per_km: 0.45,
+        b_us_per_km: 3.4,
+        thermal_mva: 160.0,
+        sil_mw: 35.0,
+    },
     LineClass {
         kv: 138.0,
         r_ohm_per_km: 0.11,
@@ -57,8 +79,8 @@ pub const LINE_CLASSES: [LineClass; 5] = [
     },
     LineClass {
         kv: 500.0,
-        r_ohm_per_km: 0.02,
-        x_ohm_per_km: 0.30,
+        r_ohm_per_km: 0.022,
+        x_ohm_per_km: 0.375,
         b_us_per_km: 5.6,
         thermal_mva: 2500.0,
         sil_mw: 900.0,
@@ -103,8 +125,11 @@ pub fn line_class_index(class: &LineClass) -> usize {
 /// characteristics for EHV and UHV transmission lines", IEEE Trans. PAS-98
 /// (1979), Fig. 2: about 3.0 SIL at 50 mi (80 km), 2.0 at 100 mi (160 km),
 /// 1.35 at 200 mi (320 km), 1.0 at 300 mi (480 km), 0.85 at 400 mi (640 km),
-/// 0.6 at 600 mi (965 km). Log-linear between the knots, flat below 80 km,
-/// extrapolated as `0.6 · (965 / L)^0.5` beyond, floored at 0.4 SIL.
+/// 0.6 at 600 mi (965 km). Log-linear between the knots, extrapolated as
+/// `0.6 · (965 / L)^0.5` beyond, floored at 0.4 SIL. Below 80 km the curve's
+/// region is thermal: the stability limit rises as 1/L (the angle a line
+/// carries at its limit is held at its 80 km value), so a short line is
+/// rated by its conductor.
 pub fn st_clair_loadability(length_km: f64) -> f64 {
     const KNOTS: [(f64, f64); 6] = [
         (80.0, 3.0),
@@ -115,7 +140,7 @@ pub fn st_clair_loadability(length_km: f64) -> f64 {
         (965.0, 0.6),
     ];
     if length_km <= KNOTS[0].0 {
-        return KNOTS[0].1;
+        return KNOTS[0].1 * KNOTS[0].0 / length_km.max(1e-3);
     }
     for w in KNOTS.windows(2) {
         let ((l0, m0), (l1, m1)) = (w[0], w[1]);
@@ -139,24 +164,27 @@ pub struct TransformerClass {
 
 /// Transformer classes.
 ///
-/// source: IEEE C57.12.10 Table 10 impedance ranges for power transformers
-/// (7.5–10.5% up to 100 MVA, 9–12% above) and Grainger & Stevenson, *Power
-/// System Analysis*, Table A.1 X/R ratios rising with size (about 25 at
-/// 50 MVA, 35 at 200 MVA, 45 above 400 MVA).
+/// source: Birchfield et al. 2017, Section 4 and Fig. 6: transformer
+/// reactance on the transformer's own base is roughly normal about 0.12 pu,
+/// with at least 80% of units within 0.05–0.2, in both the Eastern and
+/// Western Interconnections; impedance rises with size (IEEE C57.12.10,
+/// Table 10: 7.5–10.5% up to 100 MVA, 9–12% above), and Grainger &
+/// Stevenson, *Power System Analysis*, Table A.1 give X/R ratios rising with
+/// size (about 25 at 50 MVA, 35 at 200 MVA, 45 above 400 MVA).
 pub const TRANSFORMER_CLASSES: [TransformerClass; 3] = [
     TransformerClass {
         max_mva: 100.0,
-        z_pu_own_base: 0.08,
+        z_pu_own_base: 0.12,
         x_over_r: 25.0,
     },
     TransformerClass {
         max_mva: 400.0,
-        z_pu_own_base: 0.10,
+        z_pu_own_base: 0.125,
         x_over_r: 35.0,
     },
     TransformerClass {
         max_mva: f64::INFINITY,
-        z_pu_own_base: 0.12,
+        z_pu_own_base: 0.13,
         x_over_r: 45.0,
     },
 ];
@@ -229,7 +257,10 @@ pub fn bus_load_cap_mw(kv: f64) -> f64 {
 }
 
 fn class_load_cap_mw(class_kv: f64) -> f64 {
-    if class_kv <= 138.0 {
+    // Subtransmission: two to three 50–75 MVA banks.
+    if class_kv <= 69.0 {
+        150.0
+    } else if class_kv <= 138.0 {
         300.0
     } else if class_kv <= 230.0 {
         1_000.0
@@ -259,7 +290,11 @@ pub fn bus_generation_cap_mw(kv: f64) -> f64 {
 }
 
 fn class_generation_cap_mw(class_kv: f64) -> f64 {
-    if class_kv <= 138.0 {
+    // At 69 kV a unit about one circuit's rating (EIA-860: small hydro,
+    // gas and solar plants interconnect at 60–70 kV).
+    if class_kv <= 69.0 {
+        60.0
+    } else if class_kv <= 138.0 {
         400.0
     } else if class_kv <= 230.0 {
         1_200.0
@@ -343,11 +378,17 @@ pub const UPGRADE_CIRCUITS: u32 = 2;
 pub const MAX_CIRCUITS_PER_CORRIDOR: u32 = 4;
 
 /// Corridor-km from the nearest generator beyond which a loaded bus gets a
-/// synchronous condenser for voltage support. source: the St. Clair curve
-/// falls to 1.0 SIL at 480 km (300 mi; Dunlop, Gutman, Marchenko 1979), where
-/// voltage-drop and stability limits replace the thermal one, so a load
-/// farther than that from any machine depends on remote voltage control alone.
-pub const VOLTAGE_SUPPORT_KM: f64 = 480.0;
+/// synchronous condenser for voltage support (the default of
+/// [`crate::tuning::Tuning::voltage_support_km`]). source: reactive power is
+/// supplied close to where it is used, because carrying it over long lines
+/// costs voltage and losses that grow with the distance (Kundur, *Power
+/// System Stability and Control*, Section 11.2); voltage control areas span
+/// tens to a little over a hundred kilometres. The earlier 480 km, where the
+/// St. Clair curve reaches 1.0 SIL (Dunlop, Gutman, Marchenko 1979), is a
+/// stability limit for transfer paths, not a voltage control distance: at
+/// 100 km the AC power flow of the country sweep converges inside 0.9–1.1 pu
+/// in 53 of 54 runs, against 49 at 480 km (docs/evidence/synth/).
+pub const VOLTAGE_SUPPORT_KM: f64 = 100.0;
 
 /// Reactive range of a synchronous condenser, MVAr per MW of the load it lies
 /// nearest to: the ±0.33 MVAr/MW of a 0.95 power-factor load, rounded up to
@@ -473,17 +514,21 @@ mod tests {
 
     #[test]
     fn classes_snap_by_log_distance() {
-        assert_eq!(line_class_for(115.0).kv, 138.0);
+        assert_eq!(line_class_for(115.0).kv, 115.0);
+        assert_eq!(line_class_for(110.0).kv, 115.0);
+        assert_eq!(line_class_for(132.0).kv, 138.0);
         assert_eq!(line_class_for(161.0).kv, 138.0);
         assert_eq!(line_class_for(220.0).kv, 230.0);
         assert_eq!(line_class_for(400.0).kv, 345.0);
-        assert_eq!(line_class_for(34.5).kv, 138.0);
+        assert_eq!(line_class_for(66.0).kv, 69.0);
+        assert_eq!(line_class_for(34.5).kv, 69.0);
         assert_eq!(line_class_for(1000.0).kv, 765.0);
     }
 
     #[test]
     fn st_clair_is_monotone_and_hits_the_knots() {
-        assert_eq!(st_clair_loadability(10.0), 3.0);
+        assert_eq!(st_clair_loadability(80.0), 3.0);
+        assert!((st_clair_loadability(40.0) - 6.0).abs() < 1e-9);
         assert!((st_clair_loadability(160.0) - 2.0).abs() < 1e-9);
         assert!((st_clair_loadability(480.0) - 1.0).abs() < 1e-9);
         let mut last = f64::INFINITY;
@@ -497,9 +542,9 @@ mod tests {
 
     #[test]
     fn transformer_classes_cover_all_sizes() {
-        assert_eq!(transformer_class_for(50.0).z_pu_own_base, 0.08);
-        assert_eq!(transformer_class_for(250.0).z_pu_own_base, 0.10);
-        assert_eq!(transformer_class_for(5000.0).z_pu_own_base, 0.12);
+        assert_eq!(transformer_class_for(50.0).z_pu_own_base, 0.12);
+        assert_eq!(transformer_class_for(250.0).z_pu_own_base, 0.125);
+        assert_eq!(transformer_class_for(5000.0).z_pu_own_base, 0.13);
         for f in Fuel::ALL {
             let p = fuel_params(f);
             assert!(p.c2 > 0.0 && p.c1_range.0 < p.c1_range.1);
