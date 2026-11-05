@@ -24,7 +24,8 @@
 			overload: number;
 			warning: number;
 			atLimit: number;
-			unknown: number;
+			voltageUnknown: number;
+			loadingUnknown: number;
 			inactive: number;
 			disconnected: number;
 		};
@@ -62,7 +63,8 @@
 			>{counts.warning} warning · {counts.atLimit} at rating</span
 		>
 		<span
-			>{counts.unknown} unknown · {counts.inactive} out of service{counts.disconnected
+			>{#if context.voltage}{counts.voltageUnknown} voltage unknown ·
+			{/if}{counts.loadingUnknown} loading unknown · {counts.inactive} out of service{counts.disconnected
 				? ` · ${counts.disconnected} de-energized`
 				: ''}</span
 		>

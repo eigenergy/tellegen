@@ -67,6 +67,18 @@ buses are excluded from voltage extrema and violations. Display comparisons allo
 voltage and `1e-5` fractional loading tolerance; these do not change solver feasibility.
 At-rating operation does not establish economic binding or enforcement.
 
+Open **Exceptions** to search voltage violations and loading exceptions by equipment ID. Voltage
+violations are ordered by distance beyond the case bound. Loading exceptions are ordered by
+overload, at rating and warning, then by utilization. Separate counts show how much voltage and
+loading data is unknown.
+
+Hover for a preview. Select an exception or an item on the diagram to keep the equipment details
+visible. **Frame** brings the equipment into view. **Clear** or Escape clears the selection.
+The inspector shows the bus voltage and source bounds, solved generation, modeled demand and
+installed capacity. For branches it shows each available endpoint MW and MVAr value, the basis and
+effective rating, the limiting end and remaining capacity. Positive endpoint flow enters the branch
+from that bus. Missing quantities are marked unavailable.
+
 The key retains formulation, solver status and freshness. Calculations in progress and errors
 identify retained results as potentially stale; legacy payloads without status say it is
 unavailable. These are base-case displays and do not establish contingency security.

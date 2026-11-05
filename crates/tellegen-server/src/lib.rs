@@ -359,6 +359,8 @@ pub struct FlowValue {
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct DispatchValue {
     pub gen: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bus: Option<usize>,
     pub mw: f64,
 }
 
@@ -1608,6 +1610,7 @@ fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
             .iter()
             .map(|g| DispatchValue {
                 gen: g.gen,
+                bus: g.bus,
                 mw: g.pg,
             })
             .collect(),
@@ -2166,6 +2169,12 @@ mod tests {
         assert!(solution["prices"][0]["value"].as_f64().unwrap().is_finite());
         assert!(solution["prices"][0].get("usd_per_mwh").is_none());
         assert!(solution.get("lmp").is_none());
+        let dispatch = solution["dispatch"].as_array().unwrap();
+        assert!(!dispatch.is_empty());
+        let buses = network["buses"].as_array().unwrap();
+        assert!(dispatch
+            .iter()
+            .all(|gen| buses.iter().any(|bus| bus["id"] == gen["bus"])));
     }
 
     #[test]

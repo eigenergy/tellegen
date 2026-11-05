@@ -171,7 +171,7 @@ export function busLevelColours(graph: TxGraph, legend: VoltageLegend): Uint8Arr
 }
 
 /** Per-segment copies of per-branch colours and widths. */
-function perSegment(scene: TxScene) {
+function perSegment(scene: Pick<TxScene, 'geometry' | 'edgeColours' | 'edgeWidths'>) {
 	const { segmentEdge } = scene.geometry;
 	const s = segmentEdge.length;
 	const colours = new Uint8Array(s * 4);
@@ -336,64 +336,80 @@ function markColours(marks: NonNullable<TxScene['marks']>): Uint8Array {
 	return out;
 }
 
-/** The layers of one frame, bottom to top. Layer ids carry the pick kind: `branches`, `buses`,
- * `transformers`, `landmark-halos`. */
-export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
+// Station fills and lines occupy the same drawing plane.
+const flatSceneProps = (kit: DeckKit) => ({
+	coordinateSystem: kit.core.COORDINATE_SYSTEM.CARTESIAN,
+	parameters: { depthCompare: 'always' as const, depthWriteEnabled: false }
+});
+
+function casedLines(
+	kit: DeckKit,
+	id: string,
+	sources: Float32Array,
+	targets: Float32Array,
+	colours: Uint8Array,
+	widths: Float32Array,
+	pickable = false
+): Layer[] {
+	const { LineLayer } = kit.layers;
+	const common = flatSceneProps(kit);
+	const core = colours.slice();
+	const glow = colours.slice();
+	const ink = INK.slice(0, 3);
+	for (let j = 0; j < widths.length; j++) {
+		core.set(ink, j * 4);
+		glow[j * 4 + 3] = Math.round(colours[j * 4 + 3] * 0.22);
+	}
+	const strokes: [string, Uint8Array, Float32Array, boolean][] = [
+		[`${id}-glow`, glow, Float32Array.from(widths, (w) => w + 4), false],
+		[`${id}-halo`, colours, Float32Array.from(widths, (w) => w + 1.5), false],
+		[
+			id,
+			core,
+			Float32Array.from(widths, (w) =>
+				id === 'busbars' ? 3.2 : Math.max(1, Math.min(1.8, w * 0.45))
+			),
+			pickable
+		]
+	];
+	return strokes.map(
+		([layerId, paint, weight, pick]) =>
+			new LineLayer({
+				...common,
+				id: layerId,
+				data: {
+					length: widths.length,
+					attributes: {
+						getSourcePosition: { value: sources, size: 3 },
+						getTargetPosition: { value: targets, size: 3 },
+						getColor: { value: paint, size: 4, normalized: true },
+						getWidth: { value: weight, size: 1 }
+					}
+				},
+				widthUnits: 'pixels',
+				pickable: pick
+			})
+	);
+}
+
+/** Route data stays on the GPU while pan, zoom and selection move the overlays. */
+export function txBranchLayers(
+	kit: DeckKit,
+	scene: Pick<TxScene, 'graph' | 'geometry' | 'edgeColours' | 'edgeWidths'>
+): Layer[] {
+	const { geometry: g } = scene;
+	const { colours, widths } = perSegment(scene);
+	for (let j = 0; j < g.segmentEdge.length; j++)
+		if (!scene.graph.inService[g.segmentEdge[j]]) colours[j * 4 + 3] = 0;
+	return casedLines(kit, 'branches', g.sources, g.targets, colours, widths, true);
+}
+
+/** The layers of one frame, bottom to top. */
+export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): Layer[] {
 	if (scene.morph) return morphLayers(kit, scene.morph, scene.graph.busId.length);
 	const { LineLayer, PolygonLayer, ScatterplotLayer, TextLayer } = kit.layers;
-	// This is a flat drawing: station fills must not depth-occlude busbars or result markers.
-	const common = {
-		coordinateSystem: kit.core.COORDINATE_SYSTEM.CARTESIAN,
-		parameters: { depthCompare: 'always' as const, depthWriteEnabled: false }
-	};
+	const common = flatSceneProps(kit);
 	const g = scene.geometry;
-	const seg = perSegment(scene);
-	const casedLines = (
-		id: string,
-		sources: Float32Array,
-		targets: Float32Array,
-		colours: Uint8Array,
-		widths: Float32Array,
-		pickable = false
-	): Layer[] => {
-		const core = colours.slice();
-		const glow = colours.slice();
-		const ink = INK.slice(0, 3);
-		for (let j = 0; j < widths.length; j++) {
-			core.set(ink, j * 4);
-			glow[j * 4 + 3] = Math.round(colours[j * 4 + 3] * 0.22);
-		}
-		const strokes: [string, Uint8Array, Float32Array, boolean][] = [
-			[`${id}-glow`, glow, Float32Array.from(widths, (w) => w + 4), false],
-			[`${id}-halo`, colours, Float32Array.from(widths, (w) => w + 1.5), false],
-			[
-				id,
-				core,
-				Float32Array.from(widths, (w) =>
-					id === 'busbars' ? 3.2 : Math.max(1, Math.min(1.8, w * 0.45))
-				),
-				pickable
-			]
-		];
-		return strokes.map(
-			([layerId, paint, weight, pick]) =>
-				new LineLayer({
-					...common,
-					id: layerId,
-					data: {
-						length: widths.length,
-						attributes: {
-							getSourcePosition: { value: sources, size: 3 },
-							getTargetPosition: { value: targets, size: 3 },
-							getColor: { value: paint, size: 4, normalized: true },
-							getWidth: { value: weight, size: 1 }
-						}
-					},
-					widthUnits: 'pixels',
-					pickable: pick
-				})
-		);
-	};
 	const highlight = (k: number, id: string, colour: RGBA, extra: number): Layer[] => {
 		const ids = segmentsOf(g, k);
 		if (!ids.length) return [];
@@ -431,11 +447,7 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 	const tx = transformerStrokes(scene);
 	const arrows = arrowStrokes(scene);
 	const attached = attachmentStrokes(scene);
-	const dashes = dashStrokes(scene);
-	// Out-of-service segments are drawn as dashes instead.
-	const solid = seg.colours.slice();
-	for (let j = 0; j < g.segmentEdge.length; j++)
-		if (!scene.graph.inService[g.segmentEdge[j]]) solid[j * 4 + 3] = 0;
+	const dashes = scene.graph.inService.includes(0) ? dashStrokes(scene) : null;
 	const parts = scene.parts;
 	const boxes = parts ? boxPolygons(parts.boxes) : [];
 	return [
@@ -461,7 +473,7 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 			: []),
 		...highlight(scene.hoveredEdge, 'hover-branch', alpha(INK, 70), 6),
 		...highlight(scene.selectedEdge, 'selected-branch', alpha(ACCENT, 200), 6),
-		...casedLines('branches', g.sources, g.targets, solid, seg.widths, true),
+		...branchLayers,
 		...(tx
 			? [
 					new ScatterplotLayer({
@@ -494,6 +506,7 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 			: []),
 		...(parts
 			? casedLines(
+					kit,
 					'busbars',
 					barEnds(parts.busbars, 0),
 					barEnds(parts.busbars, 2),
@@ -502,7 +515,16 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 					true
 				)
 			: []),
-		...casedLines('open-branches', dashes.sources, dashes.targets, dashes.colours, dashes.widths),
+		...(dashes
+			? casedLines(
+					kit,
+					'open-branches',
+					dashes.sources,
+					dashes.targets,
+					dashes.colours,
+					dashes.widths
+				)
+			: []),
 		...(attached
 			? [
 					new ScatterplotLayer({

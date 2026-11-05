@@ -101,6 +101,30 @@ for (const touch of [false, true]) {
 			}
 			await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
 			await expect(gauge).toHaveAttribute('aria-pressed', 'true');
+			const diagram = page.locator('.tx-stage');
+			const inspector = diagram.getByRole('region', { name: 'Selected equipment' });
+			await expect(inspector).toContainText('+90 MW');
+			await expect(inspector).toContainText('100%');
+			await expect(inspector).toContainText('0 MW');
+			await inspector.getByRole('button', { name: 'Clear selection' }).click();
+			await expect(inspector).toHaveCount(0);
+			const exceptions = diagram.getByText('Exceptions · 1', { exact: true });
+			if (touch) await exceptions.tap();
+			else await exceptions.press('Enter');
+			const search = diagram.getByRole('searchbox', { name: 'Search exceptions' });
+			await search.fill('branch 99');
+			await expect(diagram.getByText('No matching exceptions.')).toBeVisible();
+			await search.fill('branch 1');
+			const row = diagram.getByRole('button', { name: /Branch 1 · 1 → 2/ });
+			if (touch) await row.tap();
+			else await row.press('Enter');
+			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeFocused();
+			await expect(inspector).toContainText('Effective rating');
+			await expect(inspector).toContainText('Unavailable');
+			await inspector.getByRole('button', { name: 'Frame', exact: true }).click();
+			if (touch) await inspector.getByRole('button', { name: 'Clear selection' }).tap();
+			else await inspector.getByRole('button', { name: 'Frame', exact: true }).press('Escape');
+			await expect(inspector).toHaveCount(0);
 		});
 		for (const uniform of [false, true])
 			test(
@@ -145,6 +169,13 @@ for (const touch of [false, true]) {
 					const panel = page.getByRole('region', { name: 'Operating limits', exact: true });
 					await expect(panel).toContainText(uniform ? '↑ 2 high' : '↑ 1 high');
 					await expect(panel).toContainText(uniform ? '1.0800–1.0800 pu' : '1.0200–1.0800 pu');
+					const diagram = page.locator('.tx-stage');
+					const exceptions = diagram.getByText(`Exceptions · ${uniform ? 2 : 1}`, { exact: true });
+					await exceptions.click();
+					await expect(
+						diagram.getByRole('listitem').filter({ hasText: 'above maximum' }).first()
+					).toContainText('Bus 1');
+					await exceptions.click();
 					await panel.locator('details.station summary').click();
 					await expect(panel.getByRole('button', { name: /Worst violation: bus 1/ })).toBeVisible();
 					await expect(

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Deck, OrthographicView, OrthographicViewState, PickingInfo } from '@deck.gl/core';
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { txSchematicLayout } from '@tellegen/engine';
 	import type { Network, Solution } from '../api.js';
 	import { demandColor, priceColor, scalarDomain, type RGBA } from '../colors.js';
@@ -70,12 +70,15 @@
 	import type { DeckKit } from './schematic/layers.js';
 	import { StoredFlag, StoredNumber } from './schematic/view-prefs.svelte.js';
 	import TxOperatingPanel from './schematic/TxOperatingPanel.svelte';
+	import TxResultInspection from './schematic/TxResultInspection.svelte';
+	import { operatingExceptions, dispatchByBus } from '../diagram/transmission-inspection.js';
 	import {
 		levelPaint,
 		busLevelColours,
 		entryColour,
 		entryWidth,
 		txLayers,
+		txBranchLayers,
 		type TxScene
 	} from './schematic/tx-layers.js';
 
@@ -169,6 +172,7 @@
 		);
 		return colours;
 	});
+	const flows = $derived(new Map((solution?.flows ?? []).map((f) => [f.branch, f])));
 	const loadingStates = $derived(
 		network.branches.map((br) =>
 			assessLoading(
@@ -179,31 +183,22 @@
 			)
 		)
 	);
-	const operatingCounts = $derived.by(() => {
-		const counts = {
-			low: 0,
-			high: 0,
-			overload: 0,
-			warning: 0,
-			atLimit: 0,
-			unknown: 0,
-			inactive: 0,
-			disconnected: 0
-		};
-		if (resultContext.voltage)
-			for (const bus of network.buses) {
-				const state = assessVoltage(solvedVoltages.get(bus.id), bus, deenergized.has(bus.id)).state;
-				if (state === 'low' || state === 'high') counts[state]++;
-				else if (state !== 'normal' && state !== 'deenergized') counts.unknown++;
-			}
-		counts.disconnected = network.buses.filter((b) => deenergized.has(b.id)).length;
-		for (const state of loadingStates) {
-			if (state === 'violation') counts.overload++;
-			else if (state === 'at-limit') counts.atLimit++;
-			else if (state === 'warning' || state === 'inactive') counts[state]++;
-			else if (state !== 'normal' && state !== 'deenergized') counts.unknown++;
-		}
-		return counts;
+	const exceptions = $derived(
+		operatingExceptions(
+			network,
+			resultContext.voltage ? solvedVoltages : null,
+			deenergized,
+			loadingStates,
+			flows
+		)
+	);
+	const dispatch = $derived(dispatchByBus(solution?.dispatch ?? []));
+	const selectedDemand = $derived.by(() => {
+		const bus = network.buses[selectedBus];
+		const active = ctrl.activeSolvable;
+		if (!bus) return undefined;
+		const deltas = active?.id === caseId ? ctrl.caseDeltas(active) : {};
+		return bus.demand_mw + (deltas[bus.uid ?? bus.id] ?? deltas[bus.id] ?? 0);
 	});
 	const activeStation = $derived.by(() => {
 		if (!operatingOn || !resultContext.voltage) return null;
@@ -310,7 +305,6 @@
 				: null
 			: ctrl.activeDisplay
 	);
-	const flows = $derived(new Map((solution?.flows ?? []).map((f) => [f.branch, f])));
 	const resultsOn = $derived(colour !== 'level' && !!solution);
 	$effect(() => {
 		if (colour === 'results' && !solution) colour = 'operating';
@@ -533,8 +527,19 @@
 			labels
 		};
 	}
+	// The deck state becomes available after the dynamically imported layer kit.
+	const branchLayers = $derived(
+		deck && kit
+			? txBranchLayers(kit, {
+					graph,
+					geometry,
+					edgeColours: edgePaint.colours,
+					edgeWidths: edgePaint.widths
+				})
+			: []
+	);
 	function render() {
-		if (kit) deck?.setProps({ layers: txLayers(kit, scene()) });
+		if (kit) deck?.setProps({ layers: txLayers(kit, scene(), morph ? [] : branchLayers) });
 	}
 
 	function valueText(i: number): { label: string; text: string } | null {
@@ -1315,11 +1320,36 @@
 					{formulation}
 					context={resultContext}
 					voltageAvailable={solvedVoltages.size > 0}
-					counts={operatingCounts}
+					counts={exceptions.counts}
 					warning={warningPref.value}
 					onwarning={(value) => warningPref.set(value)}
 					station={activeStation}
 					{onselectbus}
+				/>
+				<TxResultInspection
+					{exceptions}
+					bus={network.buses[selectedBus]}
+					branch={network.branches[selectedEdge]}
+					voltage={solvedVoltages.get(graph.busId[selectedBus])}
+					voltageSolved={resultContext.voltage}
+					deenergized={deenergized.has(graph.busId[selectedBus])}
+					generation={dispatch.get(graph.busId[selectedBus])}
+					demand={selectedDemand}
+					flow={flows.get(network.branches[selectedEdge]?.id)}
+					loading={loadingStates[selectedEdge]}
+					stale={resultContext.stale}
+					oninspect={async (kind, id) => {
+						if (kind === 'bus') onselectbus(id);
+						else onselectbranch(id);
+						// Keep the diagram inspector in view when selection opens the compact network drawer.
+						await tick();
+						if (panels.compact && panels.drawer === 'network') panels.drawer = null;
+					}}
+					{onclear}
+					onframe={() => {
+						const point = selectionPoint();
+						if (point) bringIntoView(point, true);
+					}}
 				/>
 			{:else if display?.mode === 'voltage'}
 				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
@@ -1475,7 +1505,9 @@
 	<p class="sr-only" aria-live="polite">
 		{selectedBus >= 0
 			? `Selected ${network.buses[selectedBus].name ?? `bus ${network.buses[selectedBus].id}`}${graph.kv[selectedBus] > 0 ? `, ${levelLabel(graph.kv[selectedBus] * 1000)}` : ''}`
-			: ''}
+			: selectedEdge >= 0
+				? `Selected branch ${network.branches[selectedEdge].id}`
+				: ''}
 	</p>
 </div>
 
