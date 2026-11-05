@@ -101,7 +101,14 @@ for (const touch of [false, true]) {
 			const toolbarBox = (await toolbar.boundingBox())!;
 			const legendBox = (await page.locator('.tx-stage .legend').boundingBox())!;
 			expect(legendBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
+			if (!touch) {
+				const solverBox = (await page.locator('.solvecard').boundingBox())!;
+				expect(legendBox.x + legendBox.width).toBeLessThanOrEqual(solverBox.x);
+			}
 			await expect(page.locator('.tx-stage .legend')).toContainText('Loading');
+			await expect(page.locator('.tx-stage .legend')).toContainText('amber 90–100 %');
+			await expect(page.locator('.tx-stage .legend')).toContainText('red above 100 %');
+			expect(legendBox.x + legendBox.width).toBeLessThanOrEqual(touch ? 390 : 1280);
 			await expect(key).toHaveCount(0);
 
 			await canvas.focus();
@@ -123,6 +130,26 @@ for (const touch of [false, true]) {
 			await expect(page.locator('.maplibregl-canvas')).toBeVisible();
 			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
 			await expect(page.getByRole('button', { name: 'Show diagram', exact: true })).toBeVisible();
+
+			// AC results retain a fixed per-unit key rather than an autoscaled or uniform-grey key.
+			const calculation = page.getByRole('combobox', { name: 'Calculation', exact: true });
+			await calculation.selectOption('acpf');
+			await expect(calculation).toBeEnabled();
+			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
+			await toolbar.getByLabel('Colour by').selectOption('results');
+			await expect(page.locator('.tx-stage .legend')).toContainText('0.90');
+			await expect(page.locator('.tx-stage .legend')).toContainText('1.10 pu');
+			await expect(page.locator('.tx-stage .legend')).toContainText('case limits apply');
+			await toolbar.getByLabel('Basemap').uncheck();
+			await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
+			await page.evaluate(
+				() =>
+					new Promise<void>((resolve) =>
+						requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+					)
+			);
+			await page.screenshot({ path: testInfo.outputPath('transmission-ac-results.png') });
 		});
 	});
 }

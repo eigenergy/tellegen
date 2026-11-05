@@ -3,14 +3,15 @@
 	import { untrack } from 'svelte';
 	import { txSchematicLayout } from '@tellegen/engine';
 	import type { Network, Solution } from '../api.js';
+	import { demandColor, priceColor, scalarDomain, type RGBA } from '../colors.js';
 	import {
-		branchColor,
-		branchLoadingGradient,
-		demandColor,
-		priceColor,
-		scalarDomain,
-		type RGBA
-	} from '../colors.js';
+		assessLoading,
+		hasStatedRating,
+		operatingLoadingColor,
+		operatingVoltageColor,
+		voltageGradient,
+		VOLTAGE_DOMAIN
+	} from '../diagram/transmission-results.js';
 	import { getAppState, getController } from '../context.svelte.js';
 	import type { CameraSnapshot } from '../state.svelte.js';
 	import { getPanelLayout } from '../panels.svelte.js';
@@ -173,18 +174,18 @@
 
 	// Results: the map's own display series for buses and the solved loading for branches.
 	const display = $derived(ctrl.activeDisplay);
-	const flows = $derived(
-		new Map((solution?.flows ?? []).map((f) => [f.branch, { mw: f.mw, loading: f.loading }]))
-	);
+	const flows = $derived(new Map((solution?.flows ?? []).map((f) => [f.branch, f])));
 	const resultsOn = $derived(colour === 'results' && !!solution);
 	$effect(() => {
 		if (!solution && colour === 'results') colour = 'level';
 	});
 	const busValues = $derived(new Map((display?.values ?? []).map((v) => [v.bus, v.value])));
 	const domain = $derived(
-		display
-			? scalarDomain(display.mode, display.values.map((v) => v.value).filter(Number.isFinite))
-			: null
+		display?.mode === 'voltage'
+			? VOLTAGE_DOMAIN
+			: display
+				? scalarDomain(display.mode, display.values.map((v) => v.value).filter(Number.isFinite))
+				: null
 	);
 	/** One entry per voltage level, merged into ranges past six (`voltageLegend`). */
 	const legend = $derived(voltageLegend(branchLevels(graph), 6));
@@ -210,7 +211,7 @@
 				!graph.inService[k]
 					? [120, 116, 108, 200]
 					: f
-						? branchColor(f.loading, true)
+						? operatingLoadingColor(assessLoading(f, !!graph.inService[k]))
 						: [138, 131, 117, 160],
 				k * 4
 			);
@@ -226,16 +227,18 @@
 			if (focusEntry >= 0 && legend.entryOf(graph.kv[i]) !== focusEntry) c = [c[0], c[1], c[2], 40];
 			if (resultsOn && display && domain) {
 				const v = busValues.get(graph.busId[i]);
-				// A uniform series carries no contrast: neutral rather than the ramp's middle,
-				// which on a busbar would read like a warning.
+				// Uniform economic/demand series stay neutral. Voltage always retains its
+				// fixed scale and case-limit status, including uniform violations.
 				c =
-					v === undefined
-						? [180, 175, 165, 200]
-						: uniform !== null
-							? UNIFORM_INK
-							: (display.mode === 'demand' ? demandColor : priceColor)(
-									(v - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
-								);
+					display.mode === 'voltage'
+						? operatingVoltageColor(v, network.buses[i])
+						: v === undefined
+							? [180, 175, 165, 200]
+							: uniform !== null
+								? UNIFORM_INK
+								: (display.mode === 'demand' ? demandColor : priceColor)(
+										(v - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
+									);
 			}
 			out.set(c, i * 4);
 		}
@@ -304,10 +307,14 @@
 		);
 		return edges.length ? { edges, dir, unit: 5 / 2 ** stepZoom } : null;
 	});
-	const branchState = (k: number): Landmark['state'] => {
+	const branchState = (k: number): 'normal' | 'warning' | 'violation' | null => {
 		const f = flows.get(network.branches[k].id);
-		if (!f) return null;
-		return f.loading >= 0.999 ? 'violation' : f.loading >= 0.9 ? 'warning' : 'normal';
+		const state = assessLoading(f, !!graph.inService[k]);
+		return state === 'at-limit'
+			? 'warning'
+			: state === 'violation' || state === 'warning' || state === 'normal'
+				? state
+				: null;
 	};
 	const landmarkPool = $derived(
 		txLandmarks(graph, geometry, solution ? branchState : null, anchors)
@@ -473,13 +480,22 @@
 		if (resultsOn && symbolsOn)
 			network.branches.forEach((br, k) => {
 				const f = flows.get(br.id);
-				if (!f || f.loading < 0.6 || !Number.isFinite(anchors[k * 4])) return;
+				const state = branchState(k);
+				if (
+					!f ||
+					state === null ||
+					!graph.inService[k] ||
+					!hasStatedRating(f.loading_info) ||
+					f.loading < 0.6 ||
+					!Number.isFinite(anchors[k * 4])
+				)
+					return;
 				const a = { x: anchors[k * 4], y: anchors[k * 4 + 1] };
 				const sp = screen(a.x, a.y);
 				if (!inView(sp)) return;
 				candidates.push({
 					text: `${(f.loading * 100).toFixed(0)} %`,
-					state: f.loading >= 0.999 ? 'violation' : f.loading >= 0.9 ? 'warning' : 'normal',
+					state,
 					priority: 1000 + f.loading,
 					screen: sp,
 					position: [a.x, a.y]
@@ -954,16 +970,18 @@
 			bind:clientHeight={legendHeight}
 			style:top="{panels.top + toolbarHeight + 16}px"
 			style:left="{toolLeft}px"
+			style:right="{panels.compact ? 12 : panels.dockWidth('right') + 24}px"
 		>
-			{#if display && uniform !== null}
+			{#if display?.mode === 'voltage'}
+				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
+				limits apply ·
+			{:else if display && uniform !== null}
 				{display.label} uniform at {uniform.toPrecision(4)}
 				{display.unit} · grey ·
 			{:else if display}
 				{display.label} <i style:background={display.gradient}></i> ·
 			{/if}
-			Branch halo: Loading <span>0 %</span><i style:background={branchLoadingGradient}></i><span
-				>100 %+</span
-			>
+			Branch halo: Loading · grey below 90 % · amber 90–100 % · red above 100 % · unknown ratings faded
 		</div>
 	{/if}
 	{#if !resultsOn && levelsPresent.length}

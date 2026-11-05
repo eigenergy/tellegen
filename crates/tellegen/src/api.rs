@@ -599,6 +599,47 @@ pub struct BranchScalar {
     pub value: f64,
 }
 
+/// Basis of the dimensionless branch utilization, with the rating in MW or MVA.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum LoadingBasis {
+    Mw,
+    Mva,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum RatingSource {
+    Stated,
+    Synthesized,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum LoadingEnd {
+    From,
+    To,
+    Both,
+}
+
+/// Interpretation of `loading`, independent of economic binding or enforcement.
+/// An absent rating means no known equipment limit, even if a numerical solver
+/// fallback produced a finite utilization. Older responses omit this object.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BranchLoading {
+    pub basis: LoadingBasis,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating_source: Option<RatingSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limiting_end: Option<LoadingEnd>,
+}
+
 /// Branch flows, keyed by original branch id (plus the row uid when carried, as in
 /// [`BusScalar`]). `pf` (from-end active, MW) and `loading` (|S|/limit,
 /// dimensionless) are present on every formulation that has flows; the reactive
@@ -611,6 +652,8 @@ pub struct BranchFlow {
     pub uid: Option<String>,
     pub pf: f64,
     pub loading: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loading_info: Option<BranchLoading>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qf: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1043,6 +1086,12 @@ fn ac_opf_assemble(
         &solved.p_to,
         &solved.q_to,
         &prep.branches.s_max,
+        &prep
+            .branches
+            .s_max
+            .iter()
+            .map(|rate| rate.is_finite() && *rate > 0.0)
+            .collect::<Vec<_>>(),
         base,
     );
     let dispatch = prep
@@ -1354,6 +1403,7 @@ pub(crate) fn dc_opf_assemble(
             &dc.branch_uids,
             &sol.f,
             &dc.fmax,
+            &dc.thermal_rated,
             base,
         )),
         dispatch: Some(zip_gen_pg(dc, &sol.pg, base)),
@@ -1417,6 +1467,7 @@ fn solve_dc_pf(net: &BalancedNetwork, req: &SolveRequest) -> Result<SolveRespons
             &dc.branch_uids,
             &sol.f,
             &dc.fmax,
+            &dc.thermal_rated,
             base,
         )),
         dispatch: None,
@@ -1506,6 +1557,7 @@ pub(crate) fn ac_pf_assemble(
             &pt,
             &qt,
             &acnet.rate_a,
+            &acnet.thermal_rated,
             base,
         )),
         dispatch: None,
@@ -1606,6 +1658,7 @@ pub(crate) fn socwr_assemble(
             &sol.pt,
             &sol.qt,
             &acnet.rate_a,
+            &acnet.thermal_rated,
             base,
         )),
         dispatch: Some(zip_gen_pq(acnet, &sol.pg, &sol.qg, base)),
@@ -2374,6 +2427,7 @@ fn dc_branch_flows(
     branch_uids: &[Option<String>],
     f: &[f64],
     fmax: &[f64],
+    thermal_rated: &[bool],
     base: f64,
 ) -> Vec<BranchFlow> {
     branch_ids
@@ -2390,6 +2444,16 @@ fn dc_branch_flows(
                 uid: uid_at(branch_uids, e),
                 pf: f[e] * base,
                 loading,
+                loading_info: Some(BranchLoading {
+                    basis: LoadingBasis::Mw,
+                    rating: (fmax[e].is_finite() && fmax[e] > 0.0).then_some(fmax[e] * base),
+                    rating_source: Some(if thermal_rated[e] {
+                        RatingSource::Stated
+                    } else {
+                        RatingSource::Synthesized
+                    }),
+                    limiting_end: None,
+                }),
                 qf: None,
                 pt: None,
                 qt: None,
@@ -2410,6 +2474,7 @@ fn ac_branch_flows(
     pt: &[f64],
     qt: &[f64],
     rate_a: &[f64],
+    thermal_rated: &[bool],
     base: f64,
 ) -> Vec<BranchFlow> {
     branch_ids
@@ -2428,6 +2493,21 @@ fn ac_branch_flows(
                 uid: uid_at(branch_uids, e),
                 pf: pf[e] * base,
                 loading,
+                loading_info: Some(BranchLoading {
+                    basis: LoadingBasis::Mva,
+                    rating: (thermal_rated[e] && rate_a[e].is_finite() && rate_a[e] > 0.0)
+                        .then_some(rate_a[e] * base),
+                    rating_source: thermal_rated[e].then_some(RatingSource::Stated),
+                    limiting_end: (s_from.is_finite() && s_to.is_finite()).then_some(
+                        if s_from > s_to {
+                            LoadingEnd::From
+                        } else if s_to > s_from {
+                            LoadingEnd::To
+                        } else {
+                            LoadingEnd::Both
+                        },
+                    ),
+                }),
                 qf: Some(qf[e] * base),
                 pt: Some(pt[e] * base),
                 qt: Some(qt[e] * base),
@@ -2441,6 +2521,64 @@ mod tests {
     use super::super::model::CASE3;
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn loading_metadata_distinguishes_effective_dc_bounds_from_equipment_ratings() {
+        let flows = dc_branch_flows(
+            &[42, 91, 120],
+            &[],
+            &[0.5, -0.3, 0.0],
+            &[1.0, 2.0, f64::INFINITY],
+            &[true, false, false],
+            100.0,
+        );
+        assert_eq!(flows[0].branch, 42);
+        assert_eq!(flows[0].pf, 50.0);
+        assert_eq!(flows[0].loading, 0.5);
+        let stated = flows[0].loading_info.unwrap();
+        assert_eq!(stated.basis, LoadingBasis::Mw);
+        assert_eq!(stated.rating, Some(100.0));
+        assert_eq!(stated.rating_source, Some(RatingSource::Stated));
+        let synthesized = flows[1].loading_info.unwrap();
+        assert_eq!(synthesized.rating, Some(200.0));
+        assert_eq!(synthesized.rating_source, Some(RatingSource::Synthesized));
+        assert_eq!(flows[2].loading_info.unwrap().rating, None);
+        assert!(flows[0].qf.is_none());
+        assert!(flows[0].pt.is_none());
+        // Saved responses from before the additive metadata field still deserialize.
+        let legacy: BranchFlow = serde_json::from_value(serde_json::json!({
+            "branch": 42, "pf": 50.0, "loading": 0.5
+        }))
+        .unwrap();
+        assert!(legacy.loading_info.is_none());
+    }
+
+    #[cfg(feature = "sensitivity")]
+    #[test]
+    fn loading_metadata_uses_the_larger_ac_end_and_hides_unrated_sentinels() {
+        let flows = ac_branch_flows(
+            &[42, 91],
+            &[],
+            &[0.3, 0.0],
+            &[0.4, 0.0],
+            &[-0.6, 0.0],
+            &[-0.8, 0.0],
+            &[2.0, 1.0e3],
+            &[true, false],
+            100.0,
+        );
+        assert_eq!(flows[0].pf, 30.0);
+        assert_eq!(flows[0].qf, Some(40.0));
+        assert_eq!(flows[0].pt, Some(-60.0));
+        assert_eq!(flows[0].qt, Some(-80.0));
+        assert_eq!(flows[0].loading, 0.5);
+        let info = flows[0].loading_info.unwrap();
+        assert_eq!(info.basis, LoadingBasis::Mva);
+        assert_eq!(info.rating, Some(200.0));
+        assert_eq!(info.limiting_end, Some(LoadingEnd::To));
+        assert_eq!(flows[1].loading_info.unwrap().rating, None);
+        assert_eq!(flows[1].loading_info.unwrap().rating_source, None);
+    }
 
     fn case3_json() -> String {
         serde_json::to_string(&crate::model::parse_matpower(CASE3).expect("parse"))

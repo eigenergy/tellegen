@@ -1042,6 +1042,11 @@ struct ViewBus {
     gen_mw: f64,
     /// Nominal voltage in kV (0 when the source gives none).
     base_kv: f64,
+    /// Source operating voltage bounds, per unit; absent for lowered display rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vmin_pu: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vmax_pu: Option<f64>,
     /// Index into the payload's `substations`.
     substation: u32,
     /// False for a display-only bus synthesized by analysis lowering.
@@ -1086,6 +1091,11 @@ struct TopologyBus {
     demand_mw: f64,
     gen_mw: f64,
     base_kv: f64,
+    /// Source operating voltage bounds, per unit; absent for lowered display rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vmin_pu: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vmax_pu: Option<f64>,
     substation: u32,
     editable: bool,
 }
@@ -1431,6 +1441,8 @@ pub(crate) fn ingest_value(
                     demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                     gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
                     base_kv: b.base_kv,
+                    vmin_pu: (i < net.buses().len() && b.vmin.is_finite()).then_some(b.vmin),
+                    vmax_pu: (i < net.buses().len() && b.vmax.is_finite()).then_some(b.vmax),
                     substation: grouping.bus_substation[i],
                     editable: i < net.buses().len() && editable_bus_ids.contains(&b.id.0),
                 })
@@ -1492,6 +1504,8 @@ pub(crate) fn ingest_value(
                         demand_mw: demand.get(&b.id.0).copied().unwrap_or(0.0),
                         gen_mw: gen.get(&b.id.0).copied().unwrap_or(0.0),
                         base_kv: b.base_kv,
+                        vmin_pu: (i < net.buses().len() && b.vmin.is_finite()).then_some(b.vmin),
+                        vmax_pu: (i < net.buses().len() && b.vmax.is_finite()).then_some(b.vmax),
                         substation: grouping.bus_substation[i],
                         editable: i < net.buses().len() && editable_bus_ids.contains(&b.id.0),
                     }))
@@ -1927,6 +1941,8 @@ mpc.gencost = [
             .unwrap()
             .contains("case14synthetic"));
         assert_eq!(v["topology"]["buses"].as_array().unwrap().len(), 14);
+        assert_eq!(v["topology"]["buses"][0]["vmin_pu"], 0.9);
+        assert_eq!(v["topology"]["buses"][0]["vmax_pu"], 1.1);
         assert_eq!(v["topology"]["branches"].as_array().unwrap().len(), 20);
         assert_eq!(
             v["topology"]["buses"][1]["demand_mw"].as_f64().unwrap(),
@@ -1988,6 +2004,29 @@ mpc.gencost = [
     }
 
     #[test]
+    fn voltage_limits_survive_geographic_and_normalized_ingest() {
+        let mut net = parse_matpower(CASE14_NO_COORDS);
+        for (i, bus) in net.buses_mut().iter_mut().enumerate() {
+            bus.location = Some(powerio::Location {
+                x: -81.0 + i as f64 * 0.01,
+                y: 35.0,
+                kind: None,
+            });
+        }
+        net.buses_mut()[1].vmin = 0.96;
+        net.buses_mut()[1].vmax = 1.04;
+        for source in [&net, &net.to_normalized().expect("normalize")] {
+            let value = ingest_value(source, &[], Vec::new(), None).expect("ingest geographic");
+            for key in ["view", "topology"] {
+                let bus = &value[key]["buses"][1];
+                assert_eq!(bus["id"], 2);
+                assert_eq!(bus["vmin_pu"], 0.96);
+                assert_eq!(bus["vmax_pu"], 1.04);
+            }
+        }
+    }
+
+    #[test]
     fn three_winding_transformer_topology_is_closed_but_canonical_payload_stays_typed() {
         let mut net = parse_matpower(CASE14_NO_COORDS);
         let windings = [1, 2, 3].map(|id| powerio::Winding::new(powerio::BusId(id)));
@@ -2002,6 +2041,8 @@ mpc.gencost = [
         assert_eq!(value["topology"]["branches"].as_array().unwrap().len(), 23);
         let star = &value["topology"]["buses"][14];
         assert_eq!(star["editable"], false);
+        assert!(star.get("vmin_pu").is_none());
+        assert!(star.get("vmax_pu").is_none());
         assert!(star["uid"].as_str().unwrap().starts_with("analysis:buses:"));
         for branch in &value["topology"]["branches"].as_array().unwrap()[20..] {
             assert_eq!(branch["to"], 15);

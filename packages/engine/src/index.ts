@@ -21,6 +21,7 @@ import {
   assertEngineInputLength,
 } from "./input-limit.js";
 import type {
+  BranchFlow,
   BranchRatingDeltas,
   BrowserFormulation,
   DemandDeltas,
@@ -51,6 +52,9 @@ export {
 export { MAX_ENGINE_INPUT_BYTES } from "./input-limit.js";
 
 export type {
+  BranchFlow,
+  BranchLoading,
+  SolutionFlow,
   BranchRatingDeltas,
   BrowserFormulation,
   CaseSummary,
@@ -138,6 +142,9 @@ export interface TopologyBus {
   gen_mw: number;
   /** Nominal voltage in kV; 0 when the source gives none. */
   base_kv?: number;
+  /** Source operating voltage bounds in per unit. */
+  vmin_pu?: number;
+  vmax_pu?: number;
   /** Index into `Topology.substations`. */
   substation?: number;
 }
@@ -2018,7 +2025,7 @@ interface StudySolveResponse {
   vm?: { bus: number; value: number }[];
   va?: { bus: number; value: number }[];
   w?: { bus: number; value: number }[];
-  flows?: { branch: number; pf: number; loading: number }[];
+  flows?: BranchFlow[];
   dispatch?: { gen: number; bus?: number; pg: number }[];
   diagnostics?: SolveDiagnostic[];
 }
@@ -2087,7 +2094,7 @@ export interface SolutionResponseProjection {
   vm?: { bus: number; value: number }[] | null;
   va?: { bus: number; value: number }[] | null;
   w?: { bus: number; value: number }[] | null;
-  flows?: { branch: number; pf: number; loading: number }[] | null;
+  flows?: BranchFlow[] | null;
   dispatch?: { gen: number; bus?: number | null; pg: number }[] | null;
   diagnostics?: SolveDiagnostic[] | null;
 }
@@ -2106,6 +2113,11 @@ export function solveResponseToSolution(
       branch: f.branch,
       mw: f.pf,
       loading: f.loading,
+      ...(f.uid !== undefined ? { uid: f.uid } : {}),
+      ...(f.loading_info !== undefined ? { loading_info: f.loading_info } : {}),
+      ...(f.qf !== undefined ? { qf: f.qf } : {}),
+      ...(f.pt !== undefined ? { pt: f.pt } : {}),
+      ...(f.qt !== undefined ? { qt: f.qt } : {}),
     })),
     dispatch: (out.dispatch ?? []).map((d) => ({
       gen: d.gen,

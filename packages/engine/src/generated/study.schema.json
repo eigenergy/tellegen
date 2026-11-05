@@ -86,6 +86,16 @@
           "format": "double",
           "type": "number"
         },
+        "loading_info": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BranchLoading"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "pf": {
           "format": "double",
           "type": "number"
@@ -122,6 +132,45 @@
         "branch",
         "pf",
         "loading"
+      ],
+      "type": "object"
+    },
+    "BranchLoading": {
+      "description": "Interpretation of `loading`, independent of economic binding or enforcement.\nAn absent rating means no known equipment limit, even if a numerical solver\nfallback produced a finite utilization. Older responses omit this object.",
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/LoadingBasis"
+        },
+        "limiting_end": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadingEnd"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rating": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "rating_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RatingSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "basis"
       ],
       "type": "object"
     },
@@ -1372,6 +1421,22 @@
       ],
       "type": "object"
     },
+    "LoadingBasis": {
+      "description": "Basis of the dimensionless branch utilization, with the rating in MW or MVA.",
+      "enum": [
+        "mw",
+        "mva"
+      ],
+      "type": "string"
+    },
+    "LoadingEnd": {
+      "enum": [
+        "from",
+        "to",
+        "both"
+      ],
+      "type": "string"
+    },
     "ModelDetails": {
       "properties": {
         "approximations": {
@@ -1653,6 +1718,13 @@
           "type": "string"
         }
       ]
+    },
+    "RatingSource": {
+      "enum": [
+        "stated",
+        "synthesized"
+      ],
+      "type": "string"
     },
     "RowMeta": {
       "description": "Identity and quantity metadata for one row of a [`SensitivityMatrix`].",
@@ -2799,5 +2871,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "9bb97dca900fb263346a2fb193b0ebdbfd33f7b2c2627917b20e9d5f1690dcb2"
+  "x-rust-source-sha256": "077ad32ce094b19714f9ab1844d08ae8968a6a6f7421b3f48cc59a5a143a4320"
 }

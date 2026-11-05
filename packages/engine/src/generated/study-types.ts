@@ -1,5 +1,5 @@
 // Generated from Rust by study_schema and generate-study-types.mjs.
-// Source SHA256: 9bb97dca900fb263346a2fb193b0ebdbfd33f7b2c2627917b20e9d5f1690dcb2
+// Source SHA256: 077ad32ce094b19714f9ab1844d08ae8968a6a6f7421b3f48cc59a5a143a4320
 
 export type AcOpfResiduals = { "active_balance_mw": number; "active_generation_bounds_mw": number; "angle_limits_rad": number; "objective_relative_error": number; "piecewise_epigraph_cost": number; "reactive_balance_mvar": number; "reactive_generation_bounds_mvar": number; "reference_angles_rad": number; "thermal_limits_mva": number; "voltage_bounds_pu": number; };
 
@@ -7,7 +7,9 @@ export type ArtifactKind = "powerio_ir" | "geo_layer" | "evidence";
 
 export type Bound = "Min" | "Max";
 
-export type BranchFlow = { "branch": number; "loading": number; "pf": number; "pt"?: number | null; "qf"?: number | null; "qt"?: number | null; "uid"?: string | null; };
+export type BranchFlow = { "branch": number; "loading": number; "loading_info"?: (BranchLoading) | (null); "pf": number; "pt"?: number | null; "qf"?: number | null; "qt"?: number | null; "uid"?: string | null; };
+
+export type BranchLoading = { "basis": LoadingBasis; "limiting_end"?: (LoadingEnd) | (null); "rating"?: number | null; "rating_source"?: (RatingSource) | (null); };
 
 export type BranchScalar = { "branch": number; "value": number; };
 
@@ -77,6 +79,10 @@ export type Iterations = (Array<SolveIteration>) | ({ "count": number; "residual
 
 export type LimitRound = { "added": number; "enforced": number; "ipm_iterations": number; "max_loading": number; "rows": number; "variables": number; "violated": number; };
 
+export type LoadingBasis = "mw" | "mva";
+
+export type LoadingEnd = "from" | "to" | "both";
+
 export type ModelDetails = { "approximations": Array<CostApproximation>; "method": CostPreparation; "model": string; "quantity": string; "source": string; "units": string; };
 
 export type ObservableWeight = { "element": ElementKey; "weight": number; };
@@ -88,6 +94,8 @@ export type Parameter = ({ "Demand": Power; }) | ({ "Cost": CostTerm; }) | ("Lin
 export type Power = "Active" | "Reactive";
 
 export type Problem = ("dcpf") | ("dcopf") | ("acpf") | ("socwr") | ("acopf");
+
+export type RatingSource = "stated" | "synthesized";
 
 export type RowMeta = { "element": ElementId; "index": number; "operand": Operand; };
 

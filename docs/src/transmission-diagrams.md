@@ -44,11 +44,16 @@ out, levels below the top three fade so the backbone reads first.
 ## Results
 
 Once the case is solved, **Colour by: Results** colours buses by the map's current display (LMP,
-angle, voltage or demand) and branch halos by loading: grey below 60 %, amber towards 90 %,
-and red from 90 % (near the enforced rating). The loading key uses the same thresholds;
-branches above 60 % of their rating carry their loading. When the display series is the same at
+angle, voltage or demand). Branch halos are grey below 90 % utilization, amber from 90 % up to
+and including the rating, and red only above it. Comparisons allow a `1e-5` fractional display
+tolerance. These states do not establish economic binding or enforcement. Unknown ratings and
+synthesized DC bounds are faded; only stated equipment ratings receive percentage labels.
+Branches above 60 % of a stated rating carry their loading. When an economic or demand series is the same at
 every bus (a DC OPF without congestion has one price), buses are drawn neutral grey and the legend
-gives the value, rather than the middle of the colour ramp. Closer in, a chevron on each branch points
+gives the value, rather than the middle of the colour ramp. Voltage uses a fixed 0.90–1.10 pu scale
+and each bus's source bounds. A uniform low or high violation retains its colour. Voltage
+comparisons allow `1e-5` pu display tolerance; this does not change solver feasibility.
+Closer in, a chevron on each branch points
 the way active power flows; on a transformer it sits beside the symbol. Hover a bus or branch for its voltage,
 substation, rating and solved values; click to select it. Selections made elsewhere (search, the
 panels) are brought into view.

@@ -307,6 +307,11 @@ pub struct NetworkBus {
     pub gen_mw: f64,
     /// Nominal voltage in kV (0 when the source gives none).
     pub base_kv: f64,
+    /// Source operating voltage bounds, per unit; absent for lowered display rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vmin_pu: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vmax_pu: Option<f64>,
     /// Index into `NetworkPayload::substations`.
     pub substation: u32,
     /// False for a display-only bus synthesized by analysis lowering.
@@ -341,6 +346,14 @@ pub struct FlowValue {
     pub branch: usize,
     pub mw: f64,
     pub loading: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loading_info: Option<tellegen::BranchLoading>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qf: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pt: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qt: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -1495,6 +1508,8 @@ fn network_payload(
                 demand_mw: demand.get(&bus.id.0).copied().unwrap_or(0.0),
                 gen_mw: generation.get(&bus.id.0).copied().unwrap_or(0.0),
                 base_kv: bus.base_kv,
+                vmin_pu: (i < net.buses().len() && bus.vmin.is_finite()).then_some(bus.vmin),
+                vmax_pu: (i < net.buses().len() && bus.vmax.is_finite()).then_some(bus.vmax),
                 substation: grouping.bus_substation[i],
                 editable: i < net.buses().len() && editable_bus_ids.contains(&bus.id.0),
             })
@@ -1576,6 +1591,10 @@ fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
                 branch: f.branch,
                 mw: f.pf,
                 loading: f.loading,
+                loading_info: f.loading_info,
+                qf: f.qf,
+                pt: f.pt,
+                qt: f.qt,
             })
             .collect(),
         dispatch: resp
@@ -2190,7 +2209,11 @@ mod tests {
         for (left, right) in source.buses.iter().zip(&derived.buses) {
             assert!((left.demand_mw - right.demand_mw).abs() < 1e-9);
             assert!((left.gen_mw - right.gen_mw).abs() < 1e-9);
+            assert_eq!(left.vmin_pu, right.vmin_pu);
+            assert_eq!(left.vmax_pu, right.vmax_pu);
         }
+        assert_eq!(source.buses[0].vmin_pu, Some(raw.buses()[0].vmin));
+        assert_eq!(source.buses[0].vmax_pu, Some(raw.buses()[0].vmax));
         assert_eq!(source.branches.len(), derived.branches.len());
         for (left, right) in source.branches.iter().zip(&derived.branches) {
             assert!((left.rate_mw - right.rate_mw).abs() < 1e-9);
@@ -2219,6 +2242,8 @@ mod tests {
         assert_eq!(payload.buses.len(), net.buses().len() + 1);
         assert_eq!(payload.branches.len(), net.branches().len() + 3);
         assert!(!payload.buses.last().unwrap().editable);
+        assert!(payload.buses.last().unwrap().vmin_pu.is_none());
+        assert!(payload.buses.last().unwrap().vmax_pu.is_none());
         assert!(payload.branches[net.branches().len()..]
             .iter()
             .all(|branch| !branch.editable));

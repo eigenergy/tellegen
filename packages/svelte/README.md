@@ -36,6 +36,14 @@ The viewer accepts at most 32 files in one ingestion batch. Each file must be
 at most 128 MiB, and the aggregate batch must also be at most 128 MiB. Files
 remain in the browser on this path.
 
+In the transmission diagram, results use a fixed 0.90–1.10 pu voltage scale.
+Case voltage bounds determine low and high violations, including uniform voltage
+series. Branch halos are grey below 90% utilization, amber near or at the rating,
+and red only above the rating. Display comparisons allow `1e-5` pu voltage and
+`1e-5` fractional loading tolerance; these do not change solver feasibility.
+Unknown and synthesized ratings are faded and omit equipment-percentage labels.
+These colours describe the operating point, not economic binding or contingency security.
+
 `TellegenViewer` accepts:
 
 - `apiBase`, default `/api`
