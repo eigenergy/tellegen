@@ -14,6 +14,7 @@
 		onwarning,
 		station,
 		shading = false,
+		brief = false,
 		onselectbus
 	}: {
 		formulation: Parameters<typeof formulationLabel>[0];
@@ -36,6 +37,8 @@
 		onselectbus: (id: number) => void;
 		/** Whether the area shading shows voltage against the bus limits. */
 		shading?: boolean;
+		/** Collapsed to the heading and the counts that matter. */
+		brief?: boolean;
 	} = $props();
 </script>
 
@@ -44,19 +47,19 @@
 		<strong>Operating limits</strong><span>{formulationLabel(formulation)}</span
 		>{#if context.relaxed}<strong class="relaxation">Relaxation</strong>{/if}
 	</div>
-	<p class:stale={context.stale} class="freshness" role="status">
+	<p class:stale={context.stale} class="freshness" role="status" hidden={brief && !context.stale}>
 		{context.freshness} · {context.status} · base case
 	</p>
-	{#if context.voltage && voltageAvailable}<div class="voltage-key">
-			<span>Voltage</span><span>0.90</span><i style:background={voltageGradient}></i><span
-				>1.10 pu</span
-			>
-		</div>{/if}
-	{#if shading}<p class="freshness">
-			Shading: near the <span class="low">minimum</span> or
-			<span class="high">maximum</span> voltage limit
-		</p>{/if}
-	<p class="freshness">Loading: {context.basis} · tick at 100%</p>
+	{#if !brief}{#if context.voltage && voltageAvailable}<div class="voltage-key">
+				<span>Voltage</span><span>0.90</span><i style:background={voltageGradient}></i><span
+					>1.10 pu</span
+				>
+			</div>{/if}
+		{#if shading}<p class="freshness">
+				Shading: near the <span class="low">minimum</span> or
+				<span class="high">maximum</span> voltage limit
+			</p>{/if}
+		<p class="freshness">Loading: {context.basis} · tick at 100%</p>{/if}
 	<div class="counts" aria-label="Operating limit counts">
 		{#if voltageAvailable}<span class:violation={counts.low + counts.high > 0}
 				>↓ {counts.low} low · ↑ {counts.high} high</span
@@ -69,14 +72,14 @@
 		<span class:warning={counts.warning + counts.atLimit > 0}
 			>{counts.warning} warning · {counts.atLimit} at rating</span
 		>
-		<span
+		<span hidden={brief}
 			>{context.voltage ? `${counts.voltageUnknown} voltage unknown · ` : ''}{counts.loadingUnknown} loading
 			unknown · {counts.inactive} out of service{counts.disconnected
 				? ` · ${counts.disconnected} de-energized`
 				: ''}</span
 		>
 	</div>
-	<details class="settings">
+	<details class="settings" hidden={brief}>
 		<summary>Key and settings</summary>
 		<div class="settings-body">
 			{#if context.voltage}
@@ -114,7 +117,7 @@
 			</p>
 		</div>
 	</details>
-	{#if station && context.voltage}
+	{#if station && context.voltage && !brief}
 		<details class="station">
 			<summary
 				><strong>Station {station.name}</strong>

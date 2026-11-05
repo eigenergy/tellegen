@@ -19,7 +19,8 @@
 		missing,
 		hasDispatch,
 		onbranch,
-		onpreview
+		onpreview,
+		brief = false
 	}: {
 		formulation: Parameters<typeof formulationLabel>[0];
 		context: ReturnType<typeof operatingContext>;
@@ -32,6 +33,8 @@
 		hasDispatch: boolean;
 		onbranch: (id: number) => void;
 		onpreview?: (item: { kind: 'branch'; id: number } | null) => void;
+		/** Collapsed to the heading and the width scale. */
+		brief?: boolean;
 	} = $props();
 
 	let open = $state(false);
@@ -43,53 +46,55 @@
 		<span>{formulationLabel(formulation)}</span>
 		{#if context.relaxed}<strong>Relaxation</strong>{/if}
 	</header>
-	<p role="status">{context.freshness} · {context.status} · base case</p>
+	<p role="status" hidden={brief && !context.stale}>
+		{context.freshness} · {context.status} · base case
+	</p>
 	<p><span class="blue">Blue line width</span> · Largest reported endpoint |P| · 0 to {scale} MW</p>
-	<label>
-		Width scale
-		<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
-			{#each TRANSFER_SCALES as value (value)}<option {value}>{value} MW</option>{/each}
-		</select>
-		<span>Lines stop widening at the selected MW.</span>
-	</label>
-	<p>Chevrons show direction close in · Red gauges show overload in percent of rating.</p>
-	<p>
-		{zero} zero flow · {missing} active flow unavailable
-		{#if dc}
-			· Lossless DC endpoints{/if}
-	</p>
-	<p>
-		{hasDispatch
-			? 'Bus readouts show solved generation and model demand.'
-			: 'Solved generation unavailable. Bus readouts show model demand.'}
-	</p>
-	<details bind:open>
-		<summary>Largest active transfers</summary>
-		{#if transfers.length}
-			<ol>
-				{#each transfers as { branch, reading } (branch.id)}
-					<li>
-						<button
-							onclick={() => {
-								open = false;
-								onpreview?.(null);
-								onbranch(branch.id);
-							}}
-							onpointerenter={() => onpreview?.({ kind: 'branch', id: branch.id })}
-							onpointerleave={() => onpreview?.(null)}
-							onfocus={() => onpreview?.({ kind: 'branch', id: branch.id })}
-							onblur={() => onpreview?.(null)}
-						>
-							<strong>Branch {branch.id}</strong><span
-								>{transferDirectionText(reading, branch)} · {readable(reading.magnitude, 'MW')
-									.text}</span
+	{#if !brief}<label>
+			Width scale
+			<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
+				{#each TRANSFER_SCALES as value (value)}<option {value}>{value} MW</option>{/each}
+			</select>
+			<span>Lines stop widening at the selected MW.</span>
+		</label>
+		<p>Chevrons show direction close in · Red gauges show overload in percent of rating.</p>
+		<p>
+			{zero} zero flow · {missing} active flow unavailable
+			{#if dc}
+				· Lossless DC endpoints{/if}
+		</p>
+		<p>
+			{hasDispatch
+				? 'Bus readouts show solved generation and model demand.'
+				: 'Solved generation unavailable. Bus readouts show model demand.'}
+		</p>
+		<details bind:open>
+			<summary>Largest active transfers</summary>
+			{#if transfers.length}
+				<ol>
+					{#each transfers as { branch, reading } (branch.id)}
+						<li>
+							<button
+								onclick={() => {
+									open = false;
+									onpreview?.(null);
+									onbranch(branch.id);
+								}}
+								onpointerenter={() => onpreview?.({ kind: 'branch', id: branch.id })}
+								onpointerleave={() => onpreview?.(null)}
+								onfocus={() => onpreview?.({ kind: 'branch', id: branch.id })}
+								onblur={() => onpreview?.(null)}
 							>
-						</button>
-					</li>
-				{/each}
-			</ol>
-		{:else}<p>No nonzero transfers reported.</p>{/if}
-	</details>
+								<strong>Branch {branch.id}</strong><span
+									>{transferDirectionText(reading, branch)} · {readable(reading.magnitude, 'MW')
+										.text}</span
+								>
+							</button>
+						</li>
+					{/each}
+				</ol>
+			{:else}<p>No nonzero transfers reported.</p>{/if}
+		</details>{/if}
 </section>
 
 <style>

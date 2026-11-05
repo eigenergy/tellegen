@@ -23,7 +23,8 @@
 		flow,
 		onbranch,
 		onpreview,
-		shadingCentre = null
+		shadingCentre = null,
+		brief = false
 	}: {
 		formulation: Parameters<typeof formulationLabel>[0];
 		context: ReturnType<typeof operatingContext>;
@@ -38,6 +39,8 @@
 		onpreview?: (item: { kind: 'branch'; id: number } | null) => void;
 		/** The median LMP when the area shading shows price separation around it. */
 		shadingCentre?: number | null;
+		/** Collapsed to the heading, the price scale and the binding count. */
+		brief?: boolean;
 	} = $props();
 	const preview = (id: number) => ({
 		onpointerenter: () => onpreview?.({ kind: 'branch', id }),
@@ -57,7 +60,9 @@
 		<span>{formulationLabel(formulation)}</span>
 		{#if context.relaxed}<strong class="accent">Relaxation</strong>{/if}
 	</header>
-	<p role="status">{context.freshness} · {context.status} · base case</p>
+	<p role="status" hidden={brief && !context.stale}>
+		{context.freshness} · {context.status} · base case
+	</p>
 	{#if economics.uniform !== null}
 		<p>Total LMP uniform at {economicAmount(economics.uniform)}</p>
 	{:else if economics.prices.length}
@@ -65,7 +70,7 @@
 			<span>Total LMP</span><span>{domain.lo}</span><i style:background={priceGradient}></i>
 			<span>{domain.hi} {PRICE_UNIT}</span>
 		</div>
-		<label>
+		<label hidden={brief}>
 			Price scale
 			<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
 				{#each PRICE_SCALES as entry, index (index)}
@@ -74,7 +79,7 @@
 			</select>
 			<span>Values outside the scale use its end colours.</span>
 		</label>
-		{#if shadingCentre !== null}
+		{#if shadingCentre !== null && !brief}
 			<p>
 				Shading: <span class="cheap">cheaper</span> or <span class="dear">dearer</span> than the
 				median LMP, {economicAmount(shadingCentre)}
@@ -88,72 +93,79 @@
 	{:else}
 		<p>Total LMP unavailable for this result.</p>
 	{/if}
-	{#if bus}
-		<p><strong>Bus {bus.id}</strong> · Total LMP {economicAmount(busPrice)}</p>
-	{/if}
-	{#if branch}
-		<p><strong>Branch {branch.id}</strong> · {thermalStatus(branchResult)}</p>
-		<p>
-			Marginal rating relief {economicAmount(branchResult?.relief_per_mw)}
-			{#if flow?.loading_info?.rating_source === 'synthesized'}
-				· Synthesized solver bound{/if}
-		</p>
-	{/if}
-	{#if economics.thermalAvailable}
-		<p>
-			<span class="accent">Wide purple branch</span> · Binding thermal limit with positive marginal relief
-		</p>
-		<details>
-			<summary>Binding thermal limits · {economics.binding.length}</summary>
-			{#if economics.binding.length}
-				<ol>
-					{#each economics.binding.slice(0, limit) as row (row.branch)}
-						<li>
-							<button
-								aria-pressed={row.branch === branch?.id}
-								onclick={() => onbranch(row.branch)}
-								{...preview(row.branch)}
-							>
-								<strong>Branch {row.branch}</strong>
-								<span>{economicAmount(row.relief_per_mw)} · marginal relief</span>
-							</button>
-						</li>
-					{/each}
-				</ol>
-				{#if economics.binding.length > limit}<button onclick={() => (limit += 12)}
-						>Show more thermal limits</button
-					>{/if}
-			{:else}<p>No binding thermal limits in this result.</p>{/if}
-		</details>
-	{:else if OPF.has(formulation)}
-		<p>Thermal enforcement and marginal relief unavailable for this result.</p>
-	{/if}
-	{#if economics.constraints.length}
-		<details>
-			<summary>Interface and linear constraints · {economics.constraints.length}</summary>
-			{#each economics.constraints as row (row.id)}
-				<details>
-					<summary
-						>{row.id} · {row.binding ? 'Binding' : 'Slack'} · {economicAmount(
-							row.shadow_price
-						)}</summary
-					>
-					<p>
-						Enforced · {readable(row.value, 'MW').text} · lower {row.lower ?? 'none'} · upper {row.upper ??
-							'none'}
-					</p>
-					<p>
-						Signed shadow price {economicAmount(row.shadow_price)} · objective reduction for an increase
-						in the signed limit
-					</p>
-					{#each row.branches ?? [] as id (id)}
-						<button aria-pressed={id === branch?.id} onclick={() => onbranch(id)}
-							>Frame branch {id}</button
+	{#if brief}
+		{#if economics.thermalAvailable}<p>
+				Binding thermal limits · {economics.binding.length}
+			</p>{/if}
+	{:else}
+		{#if bus}
+			<p><strong>Bus {bus.id}</strong> · Total LMP {economicAmount(busPrice)}</p>
+		{/if}
+		{#if branch}
+			<p><strong>Branch {branch.id}</strong> · {thermalStatus(branchResult)}</p>
+			<p>
+				Marginal rating relief {economicAmount(branchResult?.relief_per_mw)}
+				{#if flow?.loading_info?.rating_source === 'synthesized'}
+					· Synthesized solver bound{/if}
+			</p>
+		{/if}
+		{#if economics.thermalAvailable}
+			<p>
+				<span class="accent">Wide purple branch</span> · Binding thermal limit with positive marginal
+				relief
+			</p>
+			<details>
+				<summary>Binding thermal limits · {economics.binding.length}</summary>
+				{#if economics.binding.length}
+					<ol>
+						{#each economics.binding.slice(0, limit) as row (row.branch)}
+							<li>
+								<button
+									aria-pressed={row.branch === branch?.id}
+									onclick={() => onbranch(row.branch)}
+									{...preview(row.branch)}
+								>
+									<strong>Branch {row.branch}</strong>
+									<span>{economicAmount(row.relief_per_mw)} · marginal relief</span>
+								</button>
+							</li>
+						{/each}
+					</ol>
+					{#if economics.binding.length > limit}<button onclick={() => (limit += 12)}
+							>Show more thermal limits</button
+						>{/if}
+				{:else}<p>No binding thermal limits in this result.</p>{/if}
+			</details>
+		{:else if OPF.has(formulation)}
+			<p>Thermal enforcement and marginal relief unavailable for this result.</p>
+		{/if}
+		{#if economics.constraints.length}
+			<details>
+				<summary>Interface and linear constraints · {economics.constraints.length}</summary>
+				{#each economics.constraints as row (row.id)}
+					<details>
+						<summary
+							>{row.id} · {row.binding ? 'Binding' : 'Slack'} · {economicAmount(
+								row.shadow_price
+							)}</summary
 						>
-					{/each}
-				</details>
-			{/each}
-		</details>
+						<p>
+							Enforced · {readable(row.value, 'MW').text} · lower {row.lower ?? 'none'} · upper {row.upper ??
+								'none'}
+						</p>
+						<p>
+							Signed shadow price {economicAmount(row.shadow_price)} · objective reduction for an increase
+							in the signed limit
+						</p>
+						{#each row.branches ?? [] as id (id)}
+							<button aria-pressed={id === branch?.id} onclick={() => onbranch(id)}
+								>Frame branch {id}</button
+							>
+						{/each}
+					</details>
+				{/each}
+			</details>
+		{/if}
 	{/if}
 </section>
 

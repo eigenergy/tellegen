@@ -146,6 +146,10 @@ opposite endpoint MW. AC and SOCWR show both reported active and reactive values
 through-direction arrow when the two ends supply the branch. Bus details separate solved
 generation where supplied, model demand including committed edits, and installed capacity.
 
+**Less** and **More** collapse the results panel to its summary (the view, its counts and
+scale) and expand it again. It starts collapsed on a phone, where it would cover much of the
+diagram, and opens when equipment is selected.
+
 On phones, the toolbar and voltage-key controls have 44-pixel touch targets, and the renderer
 allows a wider picking radius. Explicit zoom buttons supplement pinch zoom and the keyboard.
 The results key stays below the toolbar when it wraps. The equipment and voltage keys can be

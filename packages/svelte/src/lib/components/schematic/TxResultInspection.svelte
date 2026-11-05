@@ -32,7 +32,8 @@
 		oninspect,
 		onframe,
 		onclear,
-		onpreview
+		onpreview,
+		brief = false
 	}: {
 		exceptions: ReturnType<typeof operatingExceptions>;
 		showExceptions?: boolean;
@@ -52,6 +53,8 @@
 		onclear: () => void;
 		/** Equipment under the pointer or keyboard focus in a list, to highlight on the diagram. */
 		onpreview?: (item: { kind: 'bus' | 'branch'; id: number } | null) => void;
+		/** Collapsed: the selection's heading and flow only, no exception list. */
+		brief?: boolean;
 	} = $props();
 	const preview = (kind: 'bus' | 'branch', id: number) => ({
 		onpointerenter: () => onpreview?.({ kind, id }),
@@ -140,7 +143,11 @@
 			<button onclick={clear} aria-label="Clear selection">Clear</button>
 		</header>
 		{#if stale}<p>Showing previous or incomplete results</p>{/if}
-		{#if bus}
+		{#if brief}
+			{#if flowSentence}<p class="flow-sentence">
+					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}
+				</p>{/if}
+		{:else if bus}
 			<dl>
 				{#if !transfer}
 					<div>
@@ -251,7 +258,7 @@
 	</section>
 {/if}
 
-{#if showExceptions}
+{#if showExceptions && !brief}
 	<details bind:open>
 		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Exceptions'} · {total}</summary>
 		{#if open}

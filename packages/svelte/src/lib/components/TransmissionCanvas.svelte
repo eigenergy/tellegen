@@ -160,6 +160,9 @@
 	let kit: DeckKit | null = null;
 	let camera = $state.raw<DiagramCamera>({ target: [0, 0, 0], zoom: 0 });
 	let colour = $state<Colour>('operating');
+	/** The results panel collapsed to its summary: by default on a phone, where it would cover
+	 * much of the diagram. A new selection opens it, since the details are what was asked for. */
+	let brief = $state(getPanelLayout().compact);
 	let resultInspector = $state<ReturnType<typeof TxResultInspection>>();
 	const warningPref = new StoredNumber('tellegen.transmission.loading-warning', 0, 99, 90);
 	let gauges = $state.raw<OperatingGauge[]>([]);
@@ -1280,6 +1283,9 @@
 
 	/** Set while a click in the canvas changes the selection: that selection is already in view. */
 	let pickedHere = false;
+	$effect(() => {
+		if (selectedBus >= 0 || selectedEdge >= 0) untrack(() => (brief = false));
+	});
 	// Fly to a selection made outside the canvas (search, tables, panels) when it is off screen.
 	$effect(() => {
 		void [selectedBus, selectedEdge];
@@ -1678,6 +1684,14 @@
 				32 +
 				app.sheetInset}px))"
 		>
+			{#if operatingOn || economicsOn || transferOn}
+				<button
+					class="collapse"
+					aria-expanded={!brief}
+					title={brief ? 'Show the key, settings and lists' : 'Show only the summary'}
+					onclick={() => (brief = !brief)}>{brief ? 'More ▾' : 'Less ▴'}</button
+				>
+			{/if}
 			{#if operatingOn}
 				<TxOperatingPanel
 					{formulation}
@@ -1688,6 +1702,7 @@
 					onwarning={(value) => warningPref.set(value)}
 					station={activeStation}
 					shading={!!field}
+					{brief}
 					{onselectbus}
 				/>
 			{:else if economicsOn}
@@ -1704,6 +1719,7 @@
 					onbranch={inspectListedBranch}
 					onpreview={setPreview}
 					shadingCentre={field ? priceCentre : null}
+					{brief}
 				/>
 			{:else if transferOn}
 				<TxTransferPanel
@@ -1716,6 +1732,7 @@
 					hasDispatch={!!transferSolution && dispatch.size > 0}
 					onbranch={inspectListedBranch}
 					onpreview={setPreview}
+					{brief}
 				/>
 			{:else if !solution}
 				No result yet. Solve the case to colour the buses by the map's display series.
@@ -1752,6 +1769,7 @@
 					showExceptions={operatingOn || transferOn}
 					oninspect={inspectResult}
 					onpreview={setPreview}
+					{brief}
 					{onclear}
 					onframe={frameSelection}
 				/>
@@ -2114,6 +2132,25 @@
 	}
 	.legend.operating {
 		max-width: 720px;
+		padding-right: 64px;
+	}
+	.legend .collapse {
+		position: absolute;
+		top: 4px;
+		right: 6px;
+		padding: 2px 6px;
+		font: inherit;
+		color: var(--ink);
+		background: var(--paper);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		cursor: pointer;
+	}
+	@media (pointer: coarse) {
+		.legend .collapse {
+			min-height: 44px;
+			min-width: 44px;
+		}
 	}
 	.legend i {
 		display: inline-block;
