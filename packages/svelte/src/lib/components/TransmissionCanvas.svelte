@@ -495,9 +495,18 @@
 		return null;
 	}
 	/** Centre `p` when it is off screen, zooming in until symbols show when asked. */
-	function bringIntoView(p: [number, number], zoomIn: boolean) {
+	function bringIntoView(p: [number, number], zoomIn: boolean, centre = false) {
 		const legible = zoomIn ? Math.log2(80 / Math.max(typical, 1e-9)) : camera.zoom;
-		const next = revealPoint(p, camera, { width, height }, freeArea(), legible);
+		const view = { width, height };
+		const area = freeArea();
+		const next = centre
+			? fitBounds(
+					[p[0], p[1], p[0], p[1]],
+					view,
+					area,
+					Math.min(MAX_ZOOM, Math.max(camera.zoom, legible))
+				)
+			: revealPoint(p, camera, view, area, legible);
 		if (next) setCamera(next, true);
 	}
 
@@ -1306,6 +1315,7 @@
 	{#if resultsOn || operatingOn}
 		<div
 			class="legend"
+			class:operating={operatingOn}
 			bind:clientHeight={legendHeight}
 			style:top="{panels.top + toolbarHeight + 16}px"
 			style:left="{toolLeft}px"
@@ -1339,16 +1349,25 @@
 					loading={loadingStates[selectedEdge]}
 					stale={resultContext.stale}
 					oninspect={async (kind, id) => {
+						const networkOpen = panels.compact
+							? panels.drawer === 'network'
+							: panels.panels.some((panel) => panel.id === 'network' && panel.open);
 						if (kind === 'bus') onselectbus(id);
 						else onselectbranch(id);
-						// Keep the diagram inspector in view when selection opens the compact network drawer.
+						// The exception list already has an inspector. Preserve the user's panel layout.
 						await tick();
-						if (panels.compact && panels.drawer === 'network') panels.drawer = null;
+						if (!networkOpen) {
+							if (panels.compact && panels.drawer === 'network') panels.drawer = null;
+							else {
+								const panel = panels.panels.find((p) => p.id === 'network');
+								if (panel?.open && !panels.compact) panels.close(panel);
+							}
+						}
 					}}
 					{onclear}
 					onframe={() => {
 						const point = selectionPoint();
-						if (point) bringIntoView(point, true);
+						if (point) bringIntoView(point, true, true);
 					}}
 				/>
 			{:else if display?.mode === 'voltage'}
@@ -1649,6 +1668,9 @@
 		background: var(--paper);
 		border: 1px solid var(--line);
 		border-radius: 3px;
+	}
+	.legend.operating {
+		max-width: 720px;
 	}
 	.legend i {
 		display: inline-block;

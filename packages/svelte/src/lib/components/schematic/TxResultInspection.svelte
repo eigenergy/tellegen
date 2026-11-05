@@ -78,10 +78,13 @@
 		low: 'Below minimum',
 		high: 'Above maximum'
 	};
-	const number = new Intl.NumberFormat('en', { maximumFractionDigits: 6, useGrouping: false });
+	const numberOptions = { maximumFractionDigits: 6, useGrouping: false };
+	const number = new Intl.NumberFormat('en', numberOptions);
+	const signedNumber = new Intl.NumberFormat('en', { ...numberOptions, signDisplay: 'exceptZero' });
 	function quantity(value: number | null | undefined, unit: string, signed = false) {
 		if (value == null || !Number.isFinite(value)) return 'Unavailable';
-		return `${signed && value > 0 ? '+' : ''}${number.format(Object.is(value, -0) ? 0 : value)}${unit === '%' ? '' : ' '}${unit}`;
+		const display = (signed ? signedNumber : number).format(value);
+		return `${display === '-0' ? '0' : display}${unit === '%' ? '' : ' '}${unit}`;
 	}
 	async function inspect(kind: 'bus' | 'branch', id: number) {
 		open = false;
