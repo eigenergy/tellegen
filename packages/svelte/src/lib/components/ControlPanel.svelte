@@ -172,7 +172,7 @@
 				{/if}
 
 				<!-- The diagram does not size buses by power, so the map's size key would mislead. -->
-				{#if app.busSizing === 'power' && !ctrl.activeSolvable?.schematic}
+				{#if app.busSizing === 'power' && !ctrl.singleLineShown}
 					<hr />
 
 					<SizeLegend />

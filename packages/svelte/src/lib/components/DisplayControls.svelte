@@ -6,9 +6,7 @@
 	const ctrl = getController();
 	/** The single-line diagram replaces the map: these colours then apply only to its Map display
 	 * view, and the diagram carries its own key. */
-	const diagramOpen = $derived(
-		!app.studyView && !app.activeMulti && !!ctrl.activeSolvable?.schematic
-	);
+	const diagramOpen = $derived(!!ctrl.singleLineShown);
 </script>
 
 <div class="mode display-mode">

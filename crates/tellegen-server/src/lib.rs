@@ -36,7 +36,7 @@ use tower_http::{
 use tellegen::geo::{
     complete_coords_and_stacks, lowered_coords, spread_stacks, synthetic_layout, Coords, Stacks,
 };
-use tellegen::substations::{group_substations, GroupingOptions, Substation};
+use tellegen::substations::{group_for_display, Substation};
 use tellegen::{solve_instance_cancellable, Iterations, SolveRequest, SolveResponse};
 #[cfg(feature = "sensitivity")]
 use tellegen::{ElementId, Mode, Operand, Parameter, Power, SensRequest, SensitivityMatrix};
@@ -1483,12 +1483,7 @@ fn network_payload(
         .map(|(row, _)| row)
         .collect();
     let coords = lowered_coords(net, coords);
-    let grouping = group_substations(
-        analysis,
-        stacks,
-        (!synthetic_coords).then_some(&coords),
-        &GroupingOptions::default(),
-    );
+    let grouping = group_for_display(analysis, stacks, Some(&coords), synthetic_coords);
     let mut demand = BTreeMap::<usize, f64>::new();
     for load in analysis.loads().iter().filter(|load| load.in_service) {
         *demand.entry(load.bus.0).or_default() += load.p * power_scale;

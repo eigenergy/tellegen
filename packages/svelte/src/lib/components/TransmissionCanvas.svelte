@@ -18,7 +18,9 @@
 		loadingStateText,
 		type GaugeCandidate,
 		type OperatingGauge,
+		DEFAULT_LOADING_WARNING,
 		hasStatedRating,
+		isRated,
 		operatingLoadingColor,
 		operatingVoltageColor,
 		voltageGradient,
@@ -59,10 +61,6 @@
 		txLayoutInput,
 		fromTxLayout,
 		edgeAnchors,
-		screenAnchored,
-		lerpInto,
-		chordsInto,
-		ease,
 		voltageBandPosition,
 		fieldImage,
 		median,
@@ -70,7 +68,8 @@
 		priceSpread,
 		voltageFieldColour,
 		MORPH_MAX_BUSES,
-		MORPH_MS,
+		startMorph,
+		type Morph,
 		type SchematicGeometry,
 		type TxSchematicParts,
 		type DiagramCamera,
@@ -165,7 +164,12 @@
 	 * much of the diagram. A new selection opens it, since the details are what was asked for. */
 	let brief = $state(getPanelLayout().compact);
 	let resultInspector = $state<ReturnType<typeof TxResultInspection>>();
-	const warningPref = new StoredNumber('tellegen.transmission.loading-warning', 0, 99, 90);
+	const warningPref = new StoredNumber(
+		'tellegen.transmission.loading-warning',
+		0,
+		99,
+		DEFAULT_LOADING_WARNING * 100
+	);
 	let gauges = $state.raw<OperatingGauge[]>([]);
 	const formulation = $derived(ctrl.activeFormulation);
 	const resultContext = $derived(
@@ -173,14 +177,18 @@
 	);
 	const operatingOn = $derived(colour === 'operating');
 	const economicsOn = $derived(colour === 'economics');
+	/** Operating limits with solved voltage magnitudes (AC). */
+	const voltageView = $derived(operatingOn && resultContext.voltage);
 	const economics = $derived(economicsFor(solution, formulation));
 	let priceScale = $state(0);
 	const transferOn = $derived(colour === 'transfer');
+	/** A view with its own results panel (key, settings and lists). */
+	const panelView = $derived(operatingOn || economicsOn || transferOn);
+	/** The calculation's name as the export title block reads it. */
+	const calculationName = $derived(`${formulation}${resultContext.relaxed ? ' relaxation' : ''}`);
 	let transferScale = $state(500);
 	const dcTransfer = $derived(!resultContext.voltage);
-	const transferSolution = $derived(
-		solution && (!solution.formulation || solution.formulation === formulation) ? solution : null
-	);
+	const transferSolution = $derived(resultContext.current);
 	const solvedVoltages = $derived(operatingVoltages(solution, formulation));
 	const deenergized = $derived(
 		new Set(
@@ -198,7 +206,7 @@
 		stationMembers.map((buses) => stationVoltageSummary(buses, solvedVoltages, deenergized))
 	);
 	const stationColours = $derived.by(() => {
-		if (!operatingOn || !resultContext.voltage) return null;
+		if (!voltageView) return null;
 		const colours = new Uint8Array(stationSummaries.length * 4);
 		stationSummaries.forEach((summary, i) =>
 			colours.set(
@@ -279,23 +287,43 @@
 		buses: [],
 		branches: transferSolution ? exceptions.branches.filter((row) => row.state === 'violation') : []
 	});
+	/** Branches that can carry a utilization gauge: rated, with a flow, and in Power transfers
+	 * overloaded. `busy` ones (above normal, or normal from 60%) are shown whenever on screen;
+	 * `quiet` ones only while selected or hovered. Kept off the per-frame label pass. */
+	const gaugePool = $derived.by(() => {
+		const busy: number[] = [];
+		const quiet = new Set<number>();
+		if ((operatingOn && solution) || (transferOn && transferSolution))
+			network.branches.forEach((br, edge) => {
+				const f = flows.get(br.id);
+				const state = loadingStates[edge];
+				if (transferOn && state !== 'violation') return;
+				if (!f || !hasStatedRating(f.loading_info) || !isRated(state)) return;
+				if (state === 'normal' && f.loading < 0.6) quiet.add(edge);
+				else busy.push(edge);
+			});
+		return { busy, quiet };
+	});
+	/** The station with the worst voltage violation, shown when nothing is selected or hovered. */
+	const worstStation = $derived.by(() => {
+		let index = -1;
+		let worst = 0;
+		stationSummaries.forEach((summary, i) => {
+			if ((summary.worst?.assessment.exceedance ?? 0) > worst) {
+				worst = summary.worst!.assessment.exceedance;
+				index = i;
+			}
+		});
+		return index;
+	});
 	const activeStation = $derived.by(() => {
-		if (!operatingOn || !resultContext.voltage) return null;
-		let index =
+		if (!voltageView) return null;
+		const index =
 			selectedBus >= 0
 				? graph.substation[selectedBus]
 				: hoveredBus >= 0
 					? graph.substation[hoveredBus]
-					: -1;
-		if (index < 0) {
-			let worst = 0;
-			stationSummaries.forEach((summary, i) => {
-				if ((summary.worst?.assessment.exceedance ?? 0) > worst) {
-					worst = summary.worst!.assessment.exceedance;
-					index = i;
-				}
-			});
-		}
+					: worstStation;
 		return index < 0
 			? null
 			: {
@@ -304,7 +332,7 @@
 				};
 	});
 	const voltageMarkers = $derived.by(() => {
-		if (!operatingOn || !resultContext.voltage) return [];
+		if (!voltageView) return [];
 		const ids = symbolsOn
 			? network.buses.map((b) => b.id)
 			: stationSummaries.flatMap((s) => (s.worst ? [s.worst.bus] : []));
@@ -333,7 +361,7 @@
 	const graph = $derived(txGraph(network));
 	const previewBus = $derived(preview?.kind === 'bus' ? (graph.index.get(preview.id) ?? -1) : -1);
 	const previewEdge = $derived(
-		preview?.kind === 'branch' ? network.branches.findIndex((br) => br.id === preview!.id) : -1
+		preview?.kind === 'branch' ? (graph.branchIndex.get(preview.id) ?? -1) : -1
 	);
 	const source = $derived(txSourceLayout(graph, network));
 	const geographic = $derived(network.coordinate_space !== 'diagram');
@@ -513,7 +541,7 @@
 	/** Which bus values shade the area around the network, if any: solved voltage in Operating
 	 * limits (AC), or total LMP in OPF economics when prices differ. */
 	const fieldKind = $derived(
-		operatingOn && resultContext.voltage && solvedVoltages.size
+		voltageView && solvedVoltages.size
 			? ('voltage' as const)
 			: economicsOn && economics.prices.length && economics.uniform === null
 				? ('price' as const)
@@ -595,9 +623,7 @@
 		app.selectedBus === null ? -1 : (graph.index.get(app.selectedBus) ?? -1)
 	);
 	const selectedEdge = $derived(
-		app.selectedBranch === null
-			? -1
-			: network.branches.findIndex((br) => br.id === app.selectedBranch)
+		app.selectedBranch === null ? -1 : (graph.branchIndex.get(app.selectedBranch) ?? -1)
 	);
 
 	const transformerEdges = $derived(
@@ -860,12 +886,13 @@
 			}
 			if (parts.unit * scale >= 12)
 				for (let i = 0; i < graph.busId.length; i++) {
-					const transfer = transferOn ? valueText(i) : null;
-					const level = graph.kv[i] > 0 ? levelLabel(graph.kv[i] * 1000) : '';
-					if (!level && !transfer) continue;
+					// Off-screen busbars first, before building any text.
 					const p: [number, number] = [parts.busbars[i * 4], parts.busbars[i * 4 + 1]];
 					const sp = screen(...p);
 					if (!inView(sp)) continue;
+					const transfer = transferOn ? valueText(i) : null;
+					const level = graph.kv[i] > 0 ? levelLabel(graph.kv[i] * 1000) : '';
+					if (!level && !transfer) continue;
 					candidates.push({
 						text: transfer ? [level, transfer.text].filter(Boolean).join(' · ') : level,
 						state: 'normal',
@@ -875,7 +902,7 @@
 					});
 				}
 		}
-		if (resultsOn && !operatingOn && !economicsOn && !transferOn && symbolsOn)
+		if (colour === 'results' && resultsOn && symbolsOn)
 			network.branches.forEach((br, k) => {
 				const f = flows.get(br.id);
 				const state = branchState(k);
@@ -933,23 +960,21 @@
 		labels = placeLabels(candidates, { width, height, budget: 60 });
 		const inset = freeArea();
 		const gaugeCandidates: GaugeCandidate[] = [];
-		if ((operatingOn && solution) || (transferOn && transferSolution))
-			network.branches.forEach((br, edge) => {
-				const f = flows.get(br.id),
-					state = loadingStates[edge];
-				const selected = edge === selectedEdge || edge === hoveredEdge;
-				if (transferOn && state !== 'violation') return;
-				if (
-					!f ||
-					!hasStatedRating(f.loading_info) ||
-					!['normal', 'warning', 'at-limit', 'violation'].includes(state)
-				)
-					return;
-				if (!selected && state === 'normal' && (!symbolsOn || f.loading < 0.6)) return;
-				const [x, y] = screen(anchors[edge * 4], anchors[edge * 4 + 1]);
-				if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-				gaugeCandidates.push({ edge, ax: x, ay: y, loading: f.loading, state, selected });
-			});
+		const addGauge = (edge: number, selected: boolean) => {
+			const [x, y] = screen(anchors[edge * 4], anchors[edge * 4 + 1]);
+			if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+			const loading = flows.get(network.branches[edge].id)!.loading;
+			gaugeCandidates.push({ edge, ax: x, ay: y, loading, state: loadingStates[edge], selected });
+		};
+		const isPointed = (edge: number) => edge === selectedEdge || edge === hoveredEdge;
+		for (const edge of gaugePool.busy) {
+			const selected = isPointed(edge);
+			if (!selected && loadingStates[edge] === 'normal' && !symbolsOn) continue;
+			addGauge(edge, selected);
+		}
+		// A quiet branch shows its gauge only while selected or hovered.
+		for (const edge of new Set([selectedEdge, hoveredEdge]))
+			if (edge >= 0 && gaugePool.quiet.has(edge)) addGauge(edge, true);
 		gauges = placeOperatingGauges(
 			gaugeCandidates,
 			{
@@ -965,6 +990,36 @@
 			const placed = placeLandmarks(landmarkPool, screen, { width, height });
 			marks = { placed, strokes: landmarkStrokes(placed, 8 / scale) };
 		} else marks = null;
+	}
+
+	/** The bus row or branch a deck.gl pick stands for, from whichever layer was hit; -1 for
+	 * neither. A landmark stands for its branch, or its bus when it marks a generator. */
+	function picked(
+		info: PickingInfo
+	): { bus: number; edge: number; landmark: Landmark | null } | null {
+		if (info.index < 0) return null;
+		const at = (bus: number, edge: number, landmark: Landmark | null = null) => ({
+			bus,
+			edge,
+			landmark
+		});
+		switch (info.layer?.id) {
+			case 'buses':
+			case 'busbars':
+				return at(info.index, -1);
+			case 'attachments-pick':
+				return at(info.object.bus, -1);
+			case 'branches':
+				return at(-1, geometry.segmentEdge[info.index]);
+			case 'transformers':
+				return at(-1, transformers?.edges[info.index] ?? -1);
+			case 'landmark-halos': {
+				const l = info.object as Landmark;
+				return at(l.edge >= 0 ? -1 : l.bus, l.edge, l);
+			}
+			default:
+				return null;
+		}
 	}
 
 	// Build the renderer once the canvas exists.
@@ -1003,74 +1058,31 @@
 						};
 					},
 					onHover: (info: PickingInfo) => {
-						const id = info.layer?.id;
-						const hit = info.index >= 0;
-						hoveredBus =
-							hit && (id === 'buses' || id === 'busbars')
-								? info.index
-								: hit && id === 'attachments-pick'
-									? info.object.bus
-									: -1;
-						hoveredEdge =
-							hit && id === 'branches'
-								? geometry.segmentEdge[info.index]
-								: hit && id === 'transformers'
-									? (transformers?.edges[info.index] ?? -1)
-									: hit && id === 'landmark-halos'
-										? (info.object as Landmark).edge
-										: -1;
+						const t = picked(info);
+						// A landmark highlights its branch, never its bus.
+						hoveredBus = t && !t.landmark ? t.bus : -1;
+						hoveredEdge = t?.edge ?? -1;
 					},
 					onClick: (info: PickingInfo) => {
-						const id = info.layer?.id;
-						if (info.index < 0 || !id) {
+						if (info.index < 0 || !info.layer?.id) {
 							onclear();
 							return;
 						}
 						pickedHere = true;
 						setTimeout(() => (pickedHere = false));
-						if (id === 'buses' || id === 'busbars') onselectbus(graph.busId[info.index]);
-						else if (id === 'attachments-pick') onselectbus(graph.busId[info.object.bus]);
-						else if (id === 'branches')
-							onselectbranch(network.branches[geometry.segmentEdge[info.index]].id);
-						else if (id === 'transformers' && transformers)
-							onselectbranch(network.branches[transformers.edges[info.index]].id);
-						else if (id === 'landmark-halos') {
-							const l = info.object as Landmark;
-							if (l.edge >= 0) onselectbranch(network.branches[l.edge].id);
-							else onselectbus(graph.busId[l.bus]);
+						const t = picked(info);
+						if (!t) return;
+						if (t.edge >= 0) onselectbranch(network.branches[t.edge].id);
+						else if (t.bus >= 0) onselectbus(graph.busId[t.bus]);
+						if (t.landmark) {
 							pickedHere = false;
-							bringIntoView([l.x, l.y], true);
+							bringIntoView([t.landmark.x, t.landmark.y], true);
 						}
 					},
 					getTooltip: (info: PickingInfo) => {
-						const id = info.layer?.id;
-						if (info.index < 0) return null;
-						if (id === 'buses' || id === 'busbars')
-							return {
-								text: busTooltip(info.index)
-							};
-						if (id === 'attachments-pick')
-							return {
-								text: busTooltip(info.object.bus)
-							};
-						const k =
-							id === 'branches'
-								? geometry.segmentEdge[info.index]
-								: id === 'transformers'
-									? (transformers?.edges[info.index] ?? -1)
-									: id === 'landmark-halos'
-										? (info.object as Landmark).edge
-										: -1;
-						if (k >= 0)
-							return {
-								text: branchTooltip(k)
-							};
-						if (id === 'landmark-halos') {
-							const l = info.object as Landmark;
-							return {
-								text: busTooltip(l.bus)
-							};
-						}
+						const t = picked(info);
+						if (t && t.edge >= 0) return { text: branchTooltip(t.edge) };
+						if (t && t.bus >= 0) return { text: busTooltip(t.bus) };
 						return null;
 					}
 				});
@@ -1105,16 +1117,7 @@
 		return schematic;
 	}
 
-	let morph: {
-		from: Float32Array;
-		cur: Float32Array;
-		s: Float32Array;
-		t: Float32Array;
-		endpoints: Int32Array;
-		start: number | null;
-		warm: boolean;
-		raf: number;
-	} | null = null;
+	let morph: Morph | null = null;
 	let showSeq = 0;
 	/** Show a layout. Buses glide from where they are on screen to the new layout along straight
 	 * chords, as in the multiconductor schematic; a warm-up frame uploads the target first. */
@@ -1159,39 +1162,10 @@
 				graph.from[k] >= 0 && graph.to[k] >= 0 ? [graph.from[k], graph.to[k]] : []
 			)
 		);
-		const n = endpoints.length / 2;
-		morph = {
-			from: screenAnchored(before, from, to),
-			cur: new Float32Array(before.length),
-			s: new Float32Array(n * 3),
-			t: new Float32Array(n * 3),
-			endpoints,
-			start: null,
-			warm: false,
-			raf: 0
-		};
-		const destination = drawing.geometry.positions;
-		const tick = (now: number) => {
-			const m = morph;
-			if (!m) return;
-			if (!m.warm) {
-				m.warm = true;
-				m.raf = requestAnimationFrame(tick);
-				return;
-			}
-			m.start ??= now;
-			const k = ease(Math.min(1, (now - m.start) / MORPH_MS));
-			lerpInto(m.cur, m.from, destination, k);
-			chordsInto(m.s, m.t, m.endpoints, m.cur);
-			if (k < 1) {
-				render();
-				m.raf = requestAnimationFrame(tick);
-			} else {
-				morph = null;
-				render();
-			}
-		};
-		morph.raf = requestAnimationFrame(tick);
+		morph = startMorph(before, drawing.geometry.positions, endpoints, from, to, (m) => {
+			morph = m;
+			render();
+		});
 	}
 
 	// Redraw when data, colours or selection change.
@@ -1323,7 +1297,7 @@
 					'busId' in target
 						? [graph.index.get(target.busId) ?? -1]
 						: (() => {
-								const k = network.branches.findIndex((br) => br.id === target.branchId);
+								const k = graph.branchIndex.get(target.branchId) ?? -1;
 								return k >= 0 ? [graph.from[k], graph.to[k]] : [];
 							})();
 				const b = busBounds(
@@ -1427,11 +1401,11 @@
 			dataset: label,
 			layout: layoutName,
 			view: operatingOn
-				? `Operating limits · ${resultContext.freshness} · ${formulation}${resultContext.relaxed ? ' relaxation' : ''}`
+				? `Operating limits · ${resultContext.freshness} · ${calculationName}`
 				: economicsOn
-					? `OPF economics · ${formulation}${resultContext.relaxed ? ' relaxation' : ''} · Total LMP ${domain!.lo} to ${domain!.hi} ${PRICE_UNIT}`
+					? `OPF economics · ${calculationName} · Total LMP ${domain!.lo} to ${domain!.hi} ${PRICE_UNIT}`
 					: transferOn
-						? `Power transfers · ${formulation}${resultContext.relaxed ? ' relaxation' : ''}`
+						? `Power transfers · ${calculationName}`
 						: resultsOn
 							? `Buses: ${display?.copy ?? 'results'} · branches: loading`
 							: 'Voltage levels',
@@ -1503,7 +1477,7 @@
 			ctx.stroke();
 		}
 		ctx.restore();
-		const context = `${formulation}${resultContext.relaxed ? ' relaxation' : ''} · ${resultContext.freshness} · ${resultContext.status} · base case`;
+		const context = `${calculationName} · ${resultContext.freshness} · ${resultContext.status} · base case`;
 		const lines = transferOn
 			? [
 					`Power transfers · ${context}`,
@@ -1541,7 +1515,7 @@
 		wrapped.forEach((line, i) => ctx.fillText(line, 20, 30 + i * 16));
 	}
 	function stationText(i: number): string {
-		if (!operatingOn || !resultContext.voltage) return '';
+		if (!voltageView) return '';
 		const s = stationSummaries[graph.substation[i]];
 		return [
 			s.min && s.max
@@ -1558,7 +1532,7 @@
 	function busTooltip(i: number): string {
 		return [
 			txBusText(graph, network, i, valueText(i)),
-			operatingOn && resultContext.voltage
+			voltageView
 				? `Operating band: ${network.buses[i].vmin_pu ?? 'unknown'}–${network.buses[i].vmax_pu ?? 'unknown'} pu`
 				: '',
 			stationText(i)
@@ -1579,9 +1553,7 @@
 			...(transferOn ? [transferDirectionText(transferReadings[k], network.branches[k])] : []),
 			...(economicsOn ? [thermalStatus(economics.branches.get(network.branches[k].id))] : []),
 			`Loading: ${loadingStateText[loadingStates[k]]}`,
-			hasStatedRating(info) &&
-			f &&
-			['normal', 'warning', 'at-limit', 'violation'].includes(loadingStates[k])
+			hasStatedRating(info) && f && isRated(loadingStates[k])
 				? `${(f.loading * 100).toFixed(2)}% of ${info!.rating} ${info!.basis.toUpperCase()} rating${info!.limiting_end ? ` · limiting end: ${info!.limiting_end}` : ''}`
 				: 'Equipment utilization unavailable'
 		].join('\n');
@@ -1686,7 +1658,7 @@
 	{#if colour !== 'level'}
 		<div
 			class="legend"
-			class:operating={operatingOn || economicsOn || transferOn}
+			class:operating={panelView}
 			bind:clientHeight={legendHeight}
 			style:top="{panels.top + toolbarHeight + 16}px"
 			style:left="{toolLeft}px"
@@ -1696,7 +1668,7 @@
 				32 +
 				app.sheetInset}px))"
 		>
-			{#if operatingOn || economicsOn || transferOn}
+			{#if panelView}
 				<button
 					class="collapse"
 					aria-expanded={!brief}
@@ -1757,7 +1729,7 @@
 			{:else if display}
 				{display.label} <i style:background={display.gradient}></i> ·
 			{/if}
-			{#if operatingOn || economicsOn || transferOn}
+			{#if panelView}
 				<TxResultInspection
 					bind:this={resultInspector}
 					exceptions={transferOn ? overloadExceptions : exceptions}

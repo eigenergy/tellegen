@@ -70,7 +70,13 @@ describe('operating limits lead', () => {
 });
 
 describe('OPF economics lead', () => {
-	const base = { opf: true, ac: false, prices: [6.71, 6.71], binding: 0, thermalAvailable: true };
+	const base = {
+		opf: true,
+		ac: false,
+		range: { lo: 6.71, hi: 6.71 },
+		binding: 0,
+		thermalAvailable: true
+	};
 
 	it('explains a uniform price as the absence of binding limits', () => {
 		const lead = economicsLead({ ...base, uniform: 6.71 });
@@ -80,7 +86,7 @@ describe('OPF economics lead', () => {
 	});
 
 	it('ties separated prices to the binding limits', () => {
-		const lead = economicsLead({ ...base, prices: [5, 40], uniform: null, binding: 1 });
+		const lead = economicsLead({ ...base, range: { lo: 5, hi: 40 }, uniform: null, binding: 1 });
 		expect(lead.text).toMatch(/^Prices range from 5 .* to 40 /);
 		expect(lead.why).toMatch(
 			/^1 line limit binds \(wide purple\): power cannot flow further across it/
@@ -88,12 +94,12 @@ describe('OPF economics lead', () => {
 	});
 
 	it('credits AC losses when no thermal limit binds', () => {
-		const lead = economicsLead({ ...base, ac: true, prices: [20, 21], uniform: null });
+		const lead = economicsLead({ ...base, ac: true, range: { lo: 20, hi: 21 }, uniform: null });
 		expect(lead.why).toContain('losses and voltage limits');
 	});
 
 	it('says where prices come from for a power flow', () => {
-		const lead = economicsLead({ ...base, opf: false, prices: [], uniform: null });
+		const lead = economicsLead({ ...base, opf: false, range: null, uniform: null });
 		expect(lead.text).toBe('Prices come from an optimal power flow (OPF).');
 		expect(lead.why).toContain('Choose DC OPF, AC OPF or SOCWR');
 	});

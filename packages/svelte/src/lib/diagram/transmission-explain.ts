@@ -112,7 +112,8 @@ export interface EconomicsLeadInput {
 	opf: boolean;
 	/** Whether the result solves AC physics (losses and voltage), which also separate prices. */
 	ac: boolean;
-	prices: number[];
+	/** Lowest and highest price; null when the result has none. */
+	range: { lo: number; hi: number } | null;
 	uniform: number | null;
 	binding: number;
 	thermalAvailable: boolean;
@@ -125,7 +126,7 @@ export function economicsLead(input: EconomicsLeadInput): Lead {
 			why: 'Choose DC OPF, AC OPF or SOCWR as the calculation in the Network panel. An OPF finds the cheapest dispatch that respects the network limits; the price at a bus is what one more MW of demand there would cost.',
 			tone: 'neutral'
 		};
-	if (!input.prices.length)
+	if (!input.range)
 		return {
 			text: 'This result has no prices.',
 			why: 'Solve the case again, or choose another OPF calculation, to see locational marginal prices.',
@@ -143,8 +144,7 @@ export function economicsLead(input: EconomicsLeadInput): Lead {
 					: 'No line limit holds prices apart, so the cheapest generators can reach every bus and one marginal generator sets the price everywhere. When a line reaches its limit, prices separate on either side of it.',
 			tone: 'ok'
 		};
-	const lo = Math.min(...input.prices);
-	const hi = Math.max(...input.prices);
+	const { lo, hi } = input.range;
 	const text = `Prices range from ${economicAmount(lo)} to ${economicAmount(hi)}.`;
 	const why =
 		input.thermalAvailable && input.binding > 0

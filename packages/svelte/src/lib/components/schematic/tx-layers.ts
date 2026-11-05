@@ -1,5 +1,5 @@
 import type { Layer } from '@deck.gl/core';
-import type { RGBA } from '../../colors.js';
+import { ramp, type RGBA } from '../../colors.js';
 import {
 	attachmentGlyph,
 	branchGlyph,
@@ -57,16 +57,12 @@ export const TX_TIER_RAMPS: Record<TxTier, [RGBA, RGBA, RGBA]> = {
 	]
 };
 
-const mix = (a: RGBA, b: RGBA, t: number): RGBA =>
-	a.map((v, i) => Math.round(v + (b[i] - v) * t)) as unknown as RGBA;
-
 /** The colour of a legend entry: its hue's mid step when alone in the hue, else from darker
  * (highest level) to lighter, staying near the middle of the ramp. */
 export function entryColour(e: VoltageEntry): RGBA {
 	const [dark, mid, light] = TX_TIER_RAMPS[e.hue];
 	if (e.tierSize <= 1) return mid;
-	const t = 0.2 + (0.65 * e.inTier) / (e.tierSize - 1);
-	return t < 0.5 ? mix(dark, mid, t / 0.5) : mix(mid, light, (t - 0.5) / 0.5);
+	return ramp([dark, mid, light], 0.2 + (0.65 * e.inTier) / (e.tierSize - 1));
 }
 
 /** Line width in pixels of a legend entry: heaviest for the highest level, a step per rank. */

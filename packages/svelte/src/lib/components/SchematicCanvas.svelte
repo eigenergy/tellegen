@@ -20,19 +20,16 @@
 		busStacks,
 		displaceBuses,
 		spreadOffsets,
-		chordsInto,
 		displayTree,
-		ease,
 		diagramLayer,
 		EMPTY_GEOMETRY,
 		fromEngineLayout,
-		lerpInto,
 		loadingColour,
 		MISSING_COLOUR,
 		MORPH_MAX_BUSES,
-		MORPH_MS,
+		startMorph,
+		type Morph,
 		placeLabels,
-		screenAnchored,
 		sourceLayout,
 		titleBlock,
 		worstBand,
@@ -82,7 +79,9 @@
 		type EquipmentItem,
 		type Glyph,
 		type LabelCandidate,
-		type SchematicGeometry
+		type SchematicGeometry,
+		MAX_ZOOM,
+		MIN_ZOOM
 	} from '../diagram/index.js';
 	import { canvasPng, download, fileStem, sceneSvg } from './schematic/export.js';
 	import {
@@ -618,16 +617,7 @@
 		return fitBounds(g.bounds, { width, height }, freeArea(), g.attachmentGap ? 1 : 4);
 	}
 
-	let morph: {
-		from: Float32Array;
-		cur: Float32Array;
-		s: Float32Array;
-		t: Float32Array;
-		endpoints: Int32Array;
-		start: number | null;
-		warm: boolean;
-		raf: number;
-	} | null = null;
+	let morph: Morph | null = null;
 
 	const text = $derived(
 		new SchematicText({
@@ -851,7 +841,7 @@
 					width: '100%',
 					height: '100%',
 					views: new core.OrthographicView({ id: 'schematic', flipY: true }),
-					initialViewState: { ...camera, minZoom: -24, maxZoom: 8 },
+					initialViewState: { ...camera, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM },
 					controller: { doubleClickZoom: true },
 					pickingRadius: 6,
 					getCursor: ({ isHovering, isDragging }) =>
@@ -1089,8 +1079,8 @@
 		deck?.setProps({
 			initialViewState: {
 				...next,
-				minZoom: -24,
-				maxZoom: 8,
+				minZoom: MIN_ZOOM,
+				maxZoom: MAX_ZOOM,
 				...(animate
 					? {
 							transitionDuration: 450,
@@ -1160,43 +1150,17 @@
 				return a >= 0 && b >= 0 ? [a, b] : [];
 			})
 		);
-		const n = endpoints.length / 2;
-		morph = {
-			from: screenAnchored(before, from, to),
-			cur: new Float32Array(before.length),
-			s: new Float32Array(n * 3),
-			t: new Float32Array(n * 3),
-			endpoints,
-			start: null,
-			warm: false,
-			raf: 0
-		};
-		const destination = next.positions;
-		const tick = (now: number) => {
-			const m = morph;
-			if (!m) return;
-			if (!m.warm) {
-				m.warm = true;
-				m.raf = requestAnimationFrame(tick);
-				return;
-			}
-			m.start ??= now;
-			const k = ease(Math.min(1, (now - m.start) / MORPH_MS));
-			lerpInto(m.cur, m.from, destination, k);
-			chordsInto(m.s, m.t, m.endpoints, m.cur);
-			if (k < 1) {
-				render();
-				m.raf = requestAnimationFrame(tick);
-			} else {
-				morph = null;
-				render();
-			}
-		};
-		morph.raf = requestAnimationFrame(tick);
+		morph = startMorph(before, next.positions, endpoints, from, to, (m) => {
+			morph = m;
+			render();
+		});
 	}
 
 	function zoomBy(delta: number) {
-		setCamera({ target: camera.target, zoom: Math.max(-24, Math.min(8, camera.zoom + delta)) });
+		setCamera({
+			target: camera.target,
+			zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, camera.zoom + delta))
+		});
 	}
 	const WALK: Record<string, WalkKey> = {
 		ArrowLeft: 'parent',

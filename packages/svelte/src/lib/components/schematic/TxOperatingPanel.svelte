@@ -6,7 +6,7 @@
 		type stationVoltageSummary
 	} from '../../diagram/transmission-results.js';
 	import { TERMS, operatingLead } from '../../diagram/transmission-explain.js';
-	import TxLead from './TxLead.svelte';
+	import TxPanelHead from './TxPanelHead.svelte';
 	let {
 		formulation,
 		context,
@@ -54,14 +54,7 @@
 </script>
 
 <section class="operating-panel" aria-label="Operating limits">
-	<div class="heading">
-		<strong>Operating limits</strong><span>{formulationLabel(formulation)}</span
-		>{#if context.relaxed}<strong class="relaxation">Relaxation</strong>{/if}
-	</div>
-	<p class:stale={context.stale} class="freshness" role="status" hidden={brief && !context.stale}>
-		{context.freshness} · {context.status} · base case
-	</p>
-	<TxLead {lead} view="operating" {brief} />
+	<TxPanelHead title="Operating limits" {formulation} {context} {lead} view="operating" {brief} />
 	{#if !brief}{#if context.voltage && voltageAvailable}<div class="voltage-key">
 				<span>Voltage</span><span>0.90</span><i style:background={voltageGradient}></i><span
 					>1.10 pu</span
@@ -191,7 +184,6 @@
 		min-width: 0;
 		font: 11px var(--font-mono);
 	}
-	.heading,
 	.counts,
 	.voltage-key {
 		display: flex;
@@ -199,18 +191,13 @@
 		gap: 4px 12px;
 		align-items: center;
 	}
-	.heading strong {
-		color: var(--ink);
-	}
 	p {
 		margin: 3px 0;
 	}
 	.freshness {
 		font-size: 10px;
 	}
-	.stale,
-	.warning,
-	.relaxation {
+	.warning {
 		color: #925b05;
 	}
 	.violation {

@@ -6,11 +6,13 @@
 		type TransferReading
 	} from '../../diagram/transmission-transfer.js';
 	import { readable } from '../../format.js';
+	import { previewHandlers, type PreviewItem } from './preview.js';
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import type { operatingExceptions } from '../../diagram/transmission-inspection.js';
 	import {
 		assessVoltage,
 		hasStatedRating,
+		isRated,
 		loadingStateText,
 		type LoadingState
 	} from '../../diagram/transmission-results.js';
@@ -52,16 +54,12 @@
 		onframe: () => void;
 		onclear: () => void;
 		/** Equipment under the pointer or keyboard focus in a list, to highlight on the diagram. */
-		onpreview?: (item: { kind: 'bus' | 'branch'; id: number } | null) => void;
+		onpreview?: (item: PreviewItem | null) => void;
 		/** Collapsed: the selection's heading and flow only, no exception list. */
 		brief?: boolean;
 	} = $props();
-	const preview = (kind: 'bus' | 'branch', id: number) => ({
-		onpointerenter: () => onpreview?.({ kind, id }),
-		onpointerleave: () => onpreview?.(null),
-		onfocus: () => onpreview?.({ kind, id }),
-		onblur: () => onpreview?.(null)
-	});
+	const preview = (kind: PreviewItem['kind'], id: number) =>
+		previewHandlers(onpreview, { kind, id });
 
 	const batch = 12;
 	let limit = $state(batch);
@@ -83,11 +81,7 @@
 	);
 	const total = $derived(exceptions.buses.length + exceptions.branches.length);
 	const info = $derived(flow?.loading_info);
-	const rated = $derived(
-		hasStatedRating(info) &&
-			loading !== undefined &&
-			['normal', 'warning', 'at-limit', 'violation'].includes(loading)
-	);
+	const rated = $derived(hasStatedRating(info) && isRated(loading));
 	const voltageStatus = $derived(
 		bus && voltageSolved ? assessVoltage(voltage, bus, deenergized).state : 'missing'
 	);

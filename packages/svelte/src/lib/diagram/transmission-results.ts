@@ -72,6 +72,18 @@ export function assessLoading(
 	return flow.loading >= warning ? 'warning' : 'normal';
 }
 
+/** States with a percentage against a stated rating (the rest are unknown, unrated or off). */
+const RATED_STATES: ReadonlySet<LoadingState> = new Set([
+	'normal',
+	'warning',
+	'at-limit',
+	'violation'
+]);
+export const isRated = (state: LoadingState | undefined) => !!state && RATED_STATES.has(state);
+
+/** DC power flow and DC OPF solve angles only, never voltage magnitudes. */
+export const isDc = (formulation: string) => formulation === 'dcopf' || formulation === 'dcpf';
+
 export function operatingLoadingColor(state: LoadingState): RGBA {
 	if (state === 'violation') return [190, 32, 36, 255];
 	if (state === 'warning' || state === 'at-limit') return [210, 137, 27, 245];
@@ -149,8 +161,7 @@ export function operatingVoltages(
 	if (
 		!solution ||
 		(solution.formulation !== undefined && solution.formulation !== formulation) ||
-		formulation === 'dcopf' ||
-		formulation === 'dcpf'
+		isDc(formulation)
 	)
 		return new Map();
 	const values =
@@ -166,9 +177,8 @@ export function operatingContext(
 	solving: boolean,
 	error: boolean
 ) {
-	const dc = formulation === 'dcopf' || formulation === 'dcpf';
-	const resultFormulation = solution?.formulation ?? formulation;
-	const dcBasis = resultFormulation === 'dcopf' || resultFormulation === 'dcpf';
+	const dc = isDc(formulation);
+	const dcBasis = isDc(solution?.formulation ?? formulation);
 	const mismatch = !!solution?.formulation && solution.formulation !== formulation;
 	return {
 		status: solution?.status ?? 'status unavailable',
@@ -190,6 +200,8 @@ export function operatingContext(
 		stale: solving || error || mismatch,
 		/** A result is shown, current or not. */
 		solved: !!solution,
+		/** The result when it is for the chosen calculation; null for another calculation's. */
+		current: mismatch ? null : solution,
 		basis: dcBasis ? '|P| / MW rating' : 'max(|S from|, |S to|) / MVA rating',
 		/** `basis` in words. */
 		basisText: dcBasis
@@ -238,14 +250,15 @@ export function placeOperatingGauges(
 				: g.state === 'warning' || g.state === 'at-limit'
 					? 1e4
 					: 0) + g.loading;
-	const sorted = [...candidates].sort((a, b) => rank(b) - rank(a) || a.edge - b.edge);
-	const placed: OperatingGauge[] = [];
 	const inside = (x: number, y: number, w: number, h: number) =>
 		x >= rect.left && x + w <= rect.right && y >= rect.top && y + h <= rect.bottom;
+	// The branch point itself must be visible, or the leader would point off screen. Dropping
+	// the rest before sorting keeps the sort to what is on screen.
+	const sorted = candidates
+		.filter((g) => [g.ax, g.ay, g.loading].every(Number.isFinite) && inside(g.ax, g.ay, 0, 0))
+		.sort((a, b) => rank(b) - rank(a) || a.edge - b.edge);
+	const placed: OperatingGauge[] = [];
 	for (const g of sorted) {
-		if (![g.ax, g.ay, g.loading].every(Number.isFinite)) continue;
-		// The branch point itself must be visible, or the leader would point off screen.
-		if (!inside(g.ax, g.ay, 0, 0)) continue;
 		for (const [dx, dy] of GAUGE_OFFSETS) {
 			const x = g.ax + dx;
 			const y = g.ay + dy;

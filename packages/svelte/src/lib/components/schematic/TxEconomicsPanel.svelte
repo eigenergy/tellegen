@@ -6,12 +6,14 @@
 		PRICE_SCALES,
 		PRICE_UNIT,
 		economicAmount,
+		isOpf,
 		thermalStatus,
 		type economicsFor
 	} from '../../diagram/transmission-economics.js';
 	import type { operatingContext } from '../../diagram/transmission-results.js';
 	import { TERMS, economicsLead } from '../../diagram/transmission-explain.js';
-	import TxLead from './TxLead.svelte';
+	import TxPanelHead from './TxPanelHead.svelte';
+	import { previewHandlers, type PreviewItem } from './preview.js';
 
 	let {
 		formulation,
@@ -38,27 +40,21 @@
 		busPrice?: number;
 		flow?: SolutionFlow;
 		onbranch: (id: number) => void;
-		onpreview?: (item: { kind: 'branch'; id: number } | null) => void;
+		onpreview?: (item: PreviewItem | null) => void;
 		/** The median LMP when the area shading shows price separation around it. */
 		shadingCentre?: number | null;
 		/** Collapsed to the heading, the price scale and the binding count. */
 		brief?: boolean;
 	} = $props();
-	const preview = (id: number) => ({
-		onpointerenter: () => onpreview?.({ kind: 'branch', id }),
-		onpointerleave: () => onpreview?.(null),
-		onfocus: () => onpreview?.({ kind: 'branch', id }),
-		onblur: () => onpreview?.(null)
-	});
-	const OPF = new Set(['dcopf', 'acopf', 'socwr']);
+	const preview = (id: number) => previewHandlers(onpreview, { kind: 'branch', id });
 	const domain = $derived(PRICE_SCALES[scale]);
 	const branchResult = $derived(branch ? economics.branches.get(branch.id) : undefined);
 	let limit = $state(12);
 	const lead = $derived(
 		economicsLead({
-			opf: OPF.has(formulation),
+			opf: isOpf(formulation),
 			ac: formulation === 'acopf' || formulation === 'socwr',
-			prices: economics.prices.map((p) => p.value),
+			range: economics.range,
 			uniform: economics.uniform,
 			binding: economics.binding.length,
 			thermalAvailable: economics.thermalAvailable
@@ -67,15 +63,7 @@
 </script>
 
 <section class="economics" aria-label="OPF economics">
-	<header>
-		<strong>OPF economics</strong>
-		<span>{formulationLabel(formulation)}</span>
-		{#if context.relaxed}<strong class="accent">Relaxation</strong>{/if}
-	</header>
-	<p role="status" hidden={brief && !context.stale}>
-		{context.freshness} · {context.status} · base case
-	</p>
-	<TxLead {lead} view="economics" {brief} />
+	<TxPanelHead title="OPF economics" {formulation} {context} {lead} view="economics" {brief} />
 	{#if economics.uniform !== null}
 		<p>
 			<abbr title={TERMS.lmp}>Total LMP</abbr> uniform at
@@ -103,7 +91,7 @@
 				median LMP, {economicAmount(shadingCentre)}
 			</p>
 		{/if}
-	{:else if !OPF.has(formulation)}
+	{:else if !isOpf(formulation)}
 		<!-- The lead says where prices come from. -->
 	{:else}
 		<p>Total LMP unavailable for this result.</p>
@@ -155,7 +143,7 @@
 						>{/if}
 				{:else}<p>No binding thermal limits in this result.</p>{/if}
 			</details>
-		{:else if OPF.has(formulation)}
+		{:else if isOpf(formulation)}
 			<p>Thermal enforcement and marginal relief unavailable for this result.</p>
 		{/if}
 		{#if economics.constraints.length}
@@ -200,7 +188,6 @@
 		min-width: 0;
 		font: 11px var(--font-mono);
 	}
-	header,
 	.scale,
 	label {
 		display: flex;

@@ -25,7 +25,8 @@ function lerpColor(a: RGBA, b: RGBA, t: number): RGBA {
 	];
 }
 
-function ramp(stops: RGBA[], t: number): RGBA {
+/** Piecewise-linear colour at `t` in [0, 1] along evenly spaced `stops`. */
+export function ramp(stops: RGBA[], t: number): RGBA {
 	const x = Math.min(1, Math.max(0, t)) * (stops.length - 1);
 	const i = Math.min(stops.length - 2, Math.floor(x));
 	return lerpColor(stops[i], stops[i + 1], x - i);

@@ -32,10 +32,15 @@ export function thermalStatus(result: BranchConstraintResult | undefined): strin
 		: 'Binding · negligible marginal relief';
 }
 
+/** Calculations that produce prices and binding limits. */
+export const isOpf = (formulation: string) =>
+	formulation === 'dcopf' || formulation === 'acopf' || formulation === 'socwr';
+
 export function economicsFor(solution: Solution | null, formulation: string) {
-	const opf = formulation === 'dcopf' || formulation === 'acopf' || formulation === 'socwr';
 	const result =
-		opf && (!solution?.formulation || solution.formulation === formulation) ? solution : null;
+		isOpf(formulation) && (!solution?.formulation || solution.formulation === formulation)
+			? solution
+			: null;
 	const prices = (result?.prices ?? []).filter((price) => Number.isFinite(price.value));
 	let lo = Infinity;
 	let hi = -Infinity;
@@ -56,6 +61,8 @@ export function economicsFor(solution: Solution | null, formulation: string) {
 	);
 	return {
 		prices,
+		/** Lowest and highest price; null without prices. */
+		range: prices.length > 0 ? { lo, hi } : null,
 		uniform: prices.length > 0 && hi - lo <= 1e-5 ? (lo + hi) / 2 : null,
 		branches,
 		binding,

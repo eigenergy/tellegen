@@ -6,11 +6,8 @@ import {
 	flowDirections,
 	fromTxLayout,
 	txLayoutInput,
-	substationCentres,
-	txBranchText,
 	txBusText,
 	txLandmarks,
-	typicalBranchLength,
 	txGraph,
 	txTier,
 	voltageLegend,
@@ -191,15 +188,6 @@ describe('transmission graph', () => {
 		expect(geo.positions[2 * 3] - geo.positions[0]).toBeCloseTo(0.5, 5);
 	});
 
-	it('centres each substation on its buses', () => {
-		const net = network();
-		const g = txGraph(net);
-		const geo = txSourceLayout(g, net);
-		const c = substationCentres(g, geo);
-		expect(c[0]).toBeCloseTo((geo.positions[0] + geo.positions[3]) / 2, 3);
-		expect(c[2]).toBeCloseTo(geo.positions[6], 3);
-	});
-
 	it('ranks landmarks: congested transformers, generators by size, then quiet transformers', () => {
 		const net = network();
 		const g = txGraph(net);
@@ -221,18 +209,13 @@ describe('transmission graph', () => {
 		const a = branchAnchor(g, geo, 1)!;
 		expect(a.x).toBeCloseTo((geo.positions[3] + geo.positions[6]) / 2, 3);
 		expect(Math.hypot(a.cos, a.sin)).toBeCloseTo(1, 9);
-		expect(typicalBranchLength(g, geo)).toBeGreaterThan(0);
 	});
 
-	it('describes buses and branches for hover cards', () => {
+	it('describes buses for hover cards', () => {
 		const net = network();
 		const g = txGraph(net);
 		expect(txBusText(g, net, 0)).toBe('bus 1\n345 kV · substation ALPHA\ngeneration up to 500 MW');
 		expect(txBusText(g, net, 2, { label: 'LMP', text: '12.00 $/MWh' })).toContain('LMP 12.00');
-		expect(txBranchText(g, net, 0, { mw: 120, loading: 0.3 })).toBe(
-			'Transformer 1, bus 1 to bus 2\n345 kV / 138 kV · rating 400 MW\nflow 120 MW · 30 % of rating'
-		);
-		expect(txBranchText(g, net, 2)).toContain('out of service');
 	});
 
 	it('hands the engine the graph with the shown positions as seeds', () => {

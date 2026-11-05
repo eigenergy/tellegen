@@ -159,28 +159,19 @@
 		!app.studyView && app.activeMulti?.schematic && app.activeMulti.graph ? app.activeMulti : null
 	);
 	/** A balanced case shown as a single-line diagram, likewise replacing the map. */
-	const txCase = $derived(
-		!app.studyView &&
-			!app.activeMulti &&
-			ctrl.activeSolvable?.schematic &&
-			ctrl.activeSolvable.network
-			? ctrl.activeSolvable
-			: null
-	);
+	const txCase = $derived(ctrl.singleLineShown);
 	let shownTx: typeof txCase = null;
 	/** Open the active balanced case as a single-line diagram. */
 	function openSingleLine() {
-		const c = ctrl.activeSolvable;
-		if (!c?.network || app.activeMulti) return;
+		const c = ctrl.singleLineCase;
+		if (!c) return;
 		c.schematic = true;
 		// On a phone, the sheet would cover the diagram it opens.
 		if (panels.compact) panels.drawer = null;
 	}
 	/** The map control that opens a balanced case as a single-line diagram. */
 	let diagramControl = $state.raw<HTMLElement | null>(null);
-	const diagramAvailable = $derived(
-		!app.studyView && !app.activeMulti && !!ctrl.activeSolvable?.network
-	);
+	const diagramAvailable = $derived(!!ctrl.singleLineCase);
 	$effect(() => {
 		if (diagramControl) diagramControl.hidden = !diagramAvailable;
 	});

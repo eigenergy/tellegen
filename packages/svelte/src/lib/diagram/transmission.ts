@@ -1,6 +1,7 @@
 import type { Network, NetworkSubstation, TxLayout, TxLayoutInput } from '@tellegen/engine';
 import type { Landmark } from './landmarks.js';
 import type { SchematicGeometry } from './schematic-layout.js';
+import { lngLatToMercator } from './basemap.js';
 import { levelLabel } from './voltage-levels.js';
 
 /** Voltage tiers: the hue family a level is drawn in. Colour alone separates only a few classes
@@ -176,6 +177,8 @@ export function branchLevels(graph: TxGraph): Map<number, number> {
 export interface TxGraph {
 	busId: Int32Array;
 	index: Map<number, number>;
+	/** Branch id to row in the payload. */
+	branchIndex: Map<number, number>;
 	/** Nominal kV per bus; 0 when unknown. */
 	kv: Float32Array;
 	/** Substation per bus, into `substations`. */
@@ -231,6 +234,7 @@ export function txGraph(network: Network): TxGraph {
 	return {
 		busId,
 		index,
+		branchIndex: new Map(network.branches.map((br, k) => [br.id, k])),
 		kv,
 		substation,
 		substations,
@@ -250,23 +254,15 @@ export function txGraph(network: Network): TxGraph {
  * per-branch `transformer` flag. A Rust test pins the engine value to this one; change both. */
 export const KV_RATIO_TOLERANCE = 0.01;
 
-const R = 6_378_137;
-/** Longitude/latitude to Web Mercator metres, y down (as the schematic draws). */
-function mercator(lon: number, lat: number): [number, number] {
-	const clamped = Math.max(-85, Math.min(85, lat));
-	return [
-		(R * lon * Math.PI) / 180,
-		-R * Math.log(Math.tan(Math.PI / 4 + (clamped * Math.PI) / 360))
-	];
-}
-
 /** The network as placed in its data: geographic positions in Web Mercator metres (y down) or
  * drawing coordinates as given, relative to their centroid, so float32 keeps metre detail. Each
  * branch follows its payload path (a routed line, or the straight segment). Edge roles: 0 in
  * service, 2 out of service. */
 export function txSourceLayout(graph: TxGraph, network: Network): SchematicGeometry {
 	const geographic = network.coordinate_space !== 'diagram';
-	const project = geographic ? mercator : (x: number, y: number): [number, number] => [x, y];
+	const project = geographic
+		? lngLatToMercator
+		: (x: number, y: number): [number, number] => [x, y];
 	const n = graph.busId.length;
 	const xy = network.buses.map((b) => project(b.lon, b.lat));
 	let cx = 0;
@@ -336,44 +332,6 @@ export function txSourceLayout(graph: TxGraph, network: Network): SchematicGeome
 		bounds: Number.isFinite(x0) ? [x0, y0, x1, y1] : [0, 0, 1, 1],
 		...(geographic ? { mercatorOrigin: [cx, cy] as [number, number] } : {})
 	};
-}
-
-/** Each substation's centre on a layout (mean of its buses), as `x, y` pairs. */
-export function substationCentres(graph: TxGraph, geometry: SchematicGeometry): Float32Array {
-	const k = graph.substations.length;
-	const sum = new Float64Array(k * 2);
-	const count = new Uint32Array(k);
-	for (let i = 0; i < graph.busId.length; i++) {
-		const s = graph.substation[i];
-		sum[s * 2] += geometry.positions[i * 3];
-		sum[s * 2 + 1] += geometry.positions[i * 3 + 1];
-		count[s]++;
-	}
-	const out = new Float32Array(k * 2);
-	for (let s = 0; s < k; s++) {
-		if (!count[s]) continue;
-		out[s * 2] = sum[s * 2] / count[s];
-		out[s * 2 + 1] = sum[s * 2 + 1] / count[s];
-	}
-	return out;
-}
-
-/** The median drawn length of in-service branches, in drawing units: the scale at which symbols
- * on branches become legible. 1 when nothing is drawn. */
-export function typicalBranchLength(graph: TxGraph, geometry: SchematicGeometry): number {
-	const lengths: number[] = [];
-	for (let k = 0; k < graph.from.length; k++) {
-		const [a, b] = [graph.from[k], graph.to[k]];
-		if (a < 0 || b < 0 || a === b || !graph.inService[k]) continue;
-		const d = Math.hypot(
-			geometry.positions[a * 3] - geometry.positions[b * 3],
-			geometry.positions[a * 3 + 1] - geometry.positions[b * 3 + 1]
-		);
-		if (d > 0) lengths.push(d);
-	}
-	if (!lengths.length) return 1;
-	lengths.sort((p, q) => p - q);
-	return lengths[lengths.length >> 1];
 }
 
 /** Where a branch's symbol sits and which way it points: the middle of its first and last bus. */
@@ -478,36 +436,6 @@ export function txBusText(
 		value ? `${value.label} ${value.text}` : null
 	];
 	return lines.filter(Boolean).join('\n');
-}
-
-/** A branch as a tooltip reads it: kind, ends, voltage, rating and solved flow. */
-export function txBranchText(
-	graph: TxGraph,
-	network: Network,
-	k: number,
-	flow: { mw: number; loading: number } | null = null
-): string {
-	const br = network.branches[k];
-	const kind = graph.transformer[k] ? 'Transformer' : 'Line';
-	const [a, b] = [graph.from[k], graph.to[k]];
-	const kv =
-		graph.transformer[k] && a >= 0 && b >= 0
-			? [graph.kv[a], graph.kv[b]]
-					.filter((v) => v > 0)
-					.map((v) => levelLabel(v * 1000))
-					.join(' / ')
-			: graph.branchKv[k] > 0
-				? levelLabel(graph.branchKv[k] * 1000)
-				: '';
-	return [
-		`${kind} ${br.id}, bus ${br.from} to bus ${br.to}`,
-		[kv, br.rate_mw > 0 ? `rating ${mw(br.rate_mw)}` : null, br.status ? null : 'out of service']
-			.filter(Boolean)
-			.join(' · '),
-		flow ? `flow ${mw(flow.mw)} · ${(flow.loading * 100).toFixed(0)} % of rating` : null
-	]
-		.filter(Boolean)
-		.join('\n');
 }
 
 /** The engine layout's input: the graph's columns with the shown positions as seeds, so the

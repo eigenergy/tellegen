@@ -655,7 +655,7 @@ fn route_lines(
             around[tri.triangles[t * 3 + k]].push(t);
         }
     }
-    let next = |h: usize| if h % 3 == 2 { h - 2 } else { h + 1 };
+    let next = delaunator::next_halfedge;
     let pt = |v: usize| (points[v].x, points[v].y);
 
     // Trace each line; channels keyed by their undirected vertex pair.

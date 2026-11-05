@@ -775,6 +775,15 @@ export class Controller {
 			this.app.active ?? (this.app.activeLocal?.network ? this.app.activeLocal : null)
 	);
 	activeFormulation = $derived(this.activeSolvable?.formulation ?? 'dcopf');
+	/** The balanced case that can open as a single-line diagram: none in a saved study or for a
+	 * multiconductor case. */
+	singleLineCase = $derived.by(() =>
+		!this.app.studyView && !this.app.activeMulti && this.activeSolvable?.network
+			? this.activeSolvable
+			: null
+	);
+	/** That case while its single-line diagram replaces the map. */
+	singleLineShown = $derived(this.singleLineCase?.schematic ? this.singleLineCase : null);
 
 	networkStats = $derived.by(() => {
 		const c = this.activeSolvable;
@@ -787,11 +796,28 @@ export class Controller {
 				c.solution?.objective != null && c.baseSolution?.objective != null
 					? c.solution.objective - c.baseSolution.objective
 					: null,
-			binding:
-				c.solution && c.formulation !== 'acpf'
-					? (c.solution.branch_constraints?.filter((row) => row.binding).length ??
-						c.solution.flows.filter((f) => f.loading >= 0.999).length)
-					: null
+			binding: c.solution && c.formulation !== 'acpf' ? (this.bindingRule?.count ?? null) : null
+		};
+	});
+
+	/** Which lines the active result treats as binding: the solver's own binding flags when it
+	 * reports them, else lines loaded to 99.9% of rating (legacy and non-DC results), with the
+	 * label that says which. */
+	bindingRule = $derived.by(() => {
+		const solution = this.activeSolvable?.solution;
+		if (!solution) return null;
+		const constraints = solution.branch_constraints;
+		const flagged = constraints
+			? new Set(constraints.filter((row) => row.binding).map((row) => row.branch))
+			: null;
+		const binds = (flow: { branch: number; loading: number }) =>
+			flagged ? flagged.has(flow.branch) : flow.loading >= 0.999;
+		return {
+			label: constraints ? 'Binding lines' : 'Lines near or above rating',
+			binds,
+			count: constraints
+				? constraints.filter((row) => row.binding).length
+				: solution.flows.filter(binds).length
 		};
 	});
 

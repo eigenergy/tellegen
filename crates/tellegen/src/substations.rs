@@ -102,7 +102,7 @@ impl Default for GroupingOptions {
 
 /// Whether a branch row joins two voltage levels: PowerIO's transformer test, or endpoints whose
 /// nominal voltages differ (some synthetic cases write tap 0 on a transformer row).
-pub fn is_transformer(
+fn is_transformer(
     net: &BalancedNetwork,
     branch: usize,
     rows: &HashMap<usize, usize>,
@@ -120,7 +120,7 @@ pub fn is_transformer(
 }
 
 /// Bus id to row in `net`.
-pub fn bus_rows(net: &BalancedNetwork) -> HashMap<usize, usize> {
+fn bus_rows(net: &BalancedNetwork) -> HashMap<usize, usize> {
     net.buses()
         .iter()
         .enumerate()
@@ -258,6 +258,22 @@ pub fn group_substations(
         bus_substation,
         substations,
         transformer,
+    }
+}
+
+/// [`group_substations`] for drawing, on the coordinates a case is shown with. Synthetic
+/// (placeholder) coordinates say nothing about substations, so they give neither co-located
+/// groups nor transformer spans. Server and browser payloads both group through here.
+pub fn group_for_display(
+    net: &BalancedNetwork,
+    colocated: &[Vec<usize>],
+    located: Option<&Coords>,
+    synthetic: bool,
+) -> SubstationGrouping {
+    if synthetic {
+        group_substations(net, &[], None, &GroupingOptions::default())
+    } else {
+        group_substations(net, colocated, located, &GroupingOptions::default())
     }
 }
 

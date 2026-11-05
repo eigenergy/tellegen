@@ -4,20 +4,17 @@
 	const app = getAppState();
 	const ctrl = getController();
 
-	const constraints = $derived(ctrl.activeSolvable?.solution?.branch_constraints);
-	// Keep equipment navigation for legacy and non-DC payloads using the loading label.
+	// The active result's binding lines (see `ctrl.bindingRule`), joined to the network for
+	// identity. Each row is a button: the keyboard path for branch selection.
 	const bindingLines = $derived.by(() => {
 		const c = ctrl.activeSolvable;
-		if (!c?.network || !c.solution) return [];
+		const rule = ctrl.bindingRule;
+		if (!c?.network || !c.solution || !rule) return [];
 		const byId = new Map(c.network.branches.map((b) => [b.id, b]));
-		const binding =
-			constraints && new Set(constraints.filter((row) => row.binding).map((row) => row.branch));
-		return c.solution.flows
-			.filter((f) => (binding ? binding.has(f.branch) : f.loading >= 0.999))
-			.flatMap((f) => {
-				const branch = byId.get(f.branch);
-				return branch ? [{ branch, loading: f.loading }] : [];
-			});
+		return c.solution.flows.filter(rule.binds).flatMap((f) => {
+			const branch = byId.get(f.branch);
+			return branch ? [{ branch, loading: f.loading }] : [];
+		});
 	});
 
 	function select(branchId: number) {
@@ -30,7 +27,7 @@
 
 {#if bindingLines.length > 0}
 	<div class="binding-lines">
-		<p class="dim head">{constraints ? 'Binding lines' : 'Lines near or above rating'}</p>
+		<p class="dim head">{ctrl.bindingRule?.label}</p>
 		<ul>
 			{#each bindingLines as { branch, loading } (branch.id)}
 				<li>

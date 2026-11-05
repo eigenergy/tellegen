@@ -16,7 +16,7 @@ use wasm_bindgen::prelude::*;
 use tellegen::geo::{
     apply_aux_substation_locations, lowered_coords, network_coords, spread_stacks,
 };
-use tellegen::substations::{group_substations, GroupingOptions, Substation};
+use tellegen::substations::{group_for_display, Substation};
 #[cfg(feature = "sensitivity")]
 use tellegen::SolveResponse;
 
@@ -1413,16 +1413,7 @@ pub(crate) fn ingest_value(
     } else {
         Vec::new()
     };
-    // Shared placeholder coordinates say nothing about substations; the server passes no stacks
-    // for synthetic layouts either.
-    let colocated: &[Vec<usize>] = if synthetic { &[] } else { &stacks };
-    let grouping_options = GroupingOptions::default();
-    let grouping = group_substations(
-        analysis,
-        colocated,
-        (geographic && !synthetic).then_some(&cs),
-        &grouping_options,
-    );
+    let grouping = group_for_display(analysis, &stacks, geographic.then_some(&cs), synthetic);
 
     let topology = Topology {
         substations: &grouping.substations,

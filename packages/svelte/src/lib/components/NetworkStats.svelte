@@ -22,11 +22,7 @@
 		</div>
 		{#if ctrl.activeFormulation !== 'acpf'}
 			<div>
-				<dt>
-					{ctrl.activeSolvable?.solution?.branch_constraints
-						? 'Binding lines'
-						: 'Lines near or above rating'}
-				</dt>
+				<dt>{ctrl.bindingRule?.label ?? 'Lines near or above rating'}</dt>
 				<dd class="mono">{stats.binding ?? '…'}</dd>
 			</div>
 			<div>

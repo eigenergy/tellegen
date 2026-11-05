@@ -8,7 +8,8 @@
 		type TransferReading
 	} from '../../diagram/transmission-transfer.js';
 	import { TERMS, transferLead } from '../../diagram/transmission-explain.js';
-	import TxLead from './TxLead.svelte';
+	import TxPanelHead from './TxPanelHead.svelte';
+	import { previewHandlers, type PreviewItem } from './preview.js';
 
 	let {
 		formulation,
@@ -34,7 +35,7 @@
 		missing: number;
 		hasDispatch: boolean;
 		onbranch: (id: number) => void;
-		onpreview?: (item: { kind: 'branch'; id: number } | null) => void;
+		onpreview?: (item: PreviewItem | null) => void;
 		/** Collapsed to the heading and the width scale. */
 		brief?: boolean;
 	} = $props();
@@ -57,15 +58,7 @@
 </script>
 
 <section class="transfer" aria-label="Power transfers">
-	<header>
-		<strong>Power transfers</strong>
-		<span>{formulationLabel(formulation)}</span>
-		{#if context.relaxed}<strong>Relaxation</strong>{/if}
-	</header>
-	<p role="status" hidden={brief && !context.stale}>
-		{context.freshness} · {context.status} · base case
-	</p>
-	<TxLead {lead} view="transfer" {brief} />
+	<TxPanelHead title="Power transfers" {formulation} {context} {lead} view="transfer" {brief} />
 	<p>
 		<span class="blue">Blue line width</span> ·
 		<span
@@ -104,10 +97,7 @@
 									onpreview?.(null);
 									onbranch(branch.id);
 								}}
-								onpointerenter={() => onpreview?.({ kind: 'branch', id: branch.id })}
-								onpointerleave={() => onpreview?.(null)}
-								onfocus={() => onpreview?.({ kind: 'branch', id: branch.id })}
-								onblur={() => onpreview?.(null)}
+								{...previewHandlers(onpreview, { kind: 'branch', id: branch.id })}
 							>
 								<strong>Branch {branch.id}</strong><span
 									>{transferDirectionText(reading, branch)} · {readable(reading.magnitude, 'MW')
@@ -132,7 +122,6 @@
 		min-width: 0;
 		font: 11px var(--font-mono);
 	}
-	header,
 	label {
 		display: flex;
 		align-items: center;
