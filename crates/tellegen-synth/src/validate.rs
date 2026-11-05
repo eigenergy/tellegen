@@ -74,7 +74,13 @@ pub fn validation_copy(net: &BalancedNetwork) -> (BalancedNetwork, usize) {
         gen.pmax = pt.max(0.0);
         gen.pmin = pt.max(0.0);
         gen.pg = pt.max(0.0);
-        gen.vg = 1.0;
+        // A fixed transfer injects real power only; its stated set point is
+        // the one every generated machine carries, so it never conflicts
+        // with a machine at its converter's bus.
+        gen.vg = crate::electrical::params::GENERATOR_VG;
+        gen.voltage_regulation_on = false;
+        gen.qmax = 0.0;
+        gen.qmin = 0.0;
         gen.mbase = pt.abs().max(1.0);
         gen.cost = Some(GenCost::new(2, 0.0, 0.0, vec![0.0, 0.0, 0.0]));
         gen.uid = Some(format!("hvdc_transfer_gen:{k}"));

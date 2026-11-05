@@ -41,11 +41,15 @@ const graph = (min: number): DistGraph => ({
 const result = (volts: number) =>
 	({
 		iterations: 1,
-		terminals: [
-			{ bus: 'B', terminal: 'a', voltage: { re: volts, im: 0 } },
-			{ bus: 'B', terminal: 'n', voltage: { re: 0, im: 0 } }
-		],
-		element_ports: []
+		terminals: ['a', 'n'].map((terminal, k) => ({
+			bus: 'B',
+			terminal,
+			voltage: { re: k ? 0 : volts, im: 0 },
+			current_into_network: { re: 0, im: 0 },
+			power_into_network: { re: 0, im: 0 }
+		})),
+		element_ports: [],
+		source_reactions: []
 	}) as unknown as McPfResult;
 
 // The overview and the diagram read these from the case, so in the browser each is computed once

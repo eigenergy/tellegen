@@ -1,4 +1,11 @@
-import type { McComplex, McPfResult } from '@tellegen/engine';
+import {
+	mcPfResultTables,
+	mcLoadModelLabel,
+	mcNetworkScopeLabel,
+	type McComplex,
+	type McPfResult,
+	type McPfResultTables
+} from '@tellegen/engine';
 import { neutralTerminal } from '../multiconductor.js';
 
 /** Which reference a pair voltage is measured against. */
@@ -59,6 +66,8 @@ export interface BranchSnapshot {
 export interface ResultSnapshot {
 	kind: 'solved' | 'stress';
 	label: string;
+	/** Qualification and effective settings retained by CSV exports. */
+	provenance?: string[];
 	iterations: number | null;
 	buses: BusSnapshot[];
 	branches: BranchSnapshot[];
@@ -196,38 +205,46 @@ function busSnapshot(bus: SnapshotBus, voltage: (terminal: string) => McComplex 
 	return { pairs, unbalance: vuf === null ? null : { percent: vuf, definition: 'VUF' as const } };
 }
 
-/** Project a full multiconductor power-flow result onto the drawing's bus and branch order.
+/** Project a full multiconductor power-flow result onto the drawing's bus and branch order, from
+ * its object form or its columns (`McPfResultTables`, what a live session transfers).
  * Missing ports leave an end `null`; nothing is interpolated. */
 export function snapshotFromMcPf(
-	result: McPfResult,
+	result: McPfResult | McPfResultTables,
 	buses: SnapshotBus[],
 	branches: SnapshotBranch[],
 	label = 'Tellegen multiconductor power flow'
 ): ResultSnapshot {
-	// Nested maps keyed by bus, then element: no composite string keys on a 100k-bus result.
-	const voltages = new Map<string, Map<string, McComplex>>();
-	for (const t of result.terminals) {
-		let bus = voltages.get(t.bus);
-		if (!bus) voltages.set(t.bus, (bus = new Map()));
-		bus.set(t.terminal, t.voltage);
+	const t = 'strings' in result ? result : mcPfResultTables(result);
+	const names = t.strings;
+	// Nested maps keyed by bus, then terminal or element, holding row numbers into the tables: no
+	// composite string keys and no object per row on a 100k-bus result.
+	const voltages = new Map<string, Map<string, number>>();
+	for (let k = 0; k < t.terminalBus.length; k++) {
+		const id = names[t.terminalBus[k]];
+		let bus = voltages.get(id);
+		if (!bus) voltages.set(id, (bus = new Map()));
+		bus.set(names[t.terminalName[k]], k);
 	}
-	type Port = McPfResult['element_ports'][number];
-	const ports = new Map<string, Map<string, Port[]>>();
-	for (const p of result.element_ports) {
-		let element = ports.get(p.element);
-		if (!element) ports.set(p.element, (element = new Map()));
-		const rows = element.get(p.bus);
-		if (rows) rows.push(p);
-		else element.set(p.bus, [p]);
+	const ports = new Map<string, Map<string, number[]>>();
+	for (let k = 0; k < t.portElement.length; k++) {
+		const id = names[t.portElement[k]];
+		let element = ports.get(id);
+		if (!element) ports.set(id, (element = new Map()));
+		const bus = names[t.portBus[k]];
+		const rows = element.get(bus);
+		if (rows) rows.push(k);
+		else element.set(bus, [k]);
 	}
 	/** The element's port rows, of its own kind when a line and a switch share a name. A closed
 	 * switch has no ports of its own (the solver merges its buses), so it must not borrow another
 	 * element's rows. */
-	const elementPorts = (branch: SnapshotBranch, bus: string): Port[] | undefined => {
+	const elementPorts = (branch: SnapshotBranch, bus: string): number[] | undefined => {
 		const all = ports.get(branch.id)?.get(bus);
 		if (!all || branch.kind === undefined) return all;
-		return all.filter((r) => r.kind === branch.kind);
+		return all.filter((k) => names[t.portKind[k]] === branch.kind);
 	};
+	const power = t.portPower;
+	const current = t.portCurrent;
 	const seen = new Set<string>();
 	const branchSnapshots = branches.map((branch): BranchSnapshot => {
 		const key = `${branch.kind ?? ''}\u0000${branch.id}`;
@@ -238,33 +255,45 @@ export function snapshotFromMcPf(
 			if (!branch.inService || !rows?.length) return null;
 			let p = 0;
 			let q = 0;
-			const byTerminal = new Map<string, Port>();
-			for (const r of rows) {
-				p += r.power_into_element.re;
-				q += r.power_into_element.im;
-				byTerminal.set(r.terminal, r);
+			const byTerminal = new Map<string, number>();
+			for (const k of rows) {
+				p += power[2 * k];
+				q += power[2 * k + 1];
+				byTerminal.set(names[t.portTerminal[k]], k);
 			}
 			const currents: ConductorCurrent[] = [];
 			for (const terminal of side ? branch.toTerminals : branch.fromTerminals) {
-				const row = byTerminal.get(terminal);
-				if (row) currents.push({ terminal, amps: magnitude(row.current_into_element) });
+				const k = byTerminal.get(terminal);
+				if (k !== undefined)
+					currents.push({ terminal, amps: Math.hypot(current[2 * k], current[2 * k + 1]) });
 			}
 			return { p: p / 1000, q: q / 1000, currents };
 		}) as [BranchEnd | null, BranchEnd | null];
 		return {
 			ends,
-			...loadingOf(branch, ends, elementPorts),
+			...loadingOf(branch, ends, elementPorts, power),
 			primary,
-			loss: primary ? equipmentLoss(branch, elementPorts) : null
+			loss: primary ? equipmentLoss(branch, elementPorts, power) : null
 		};
 	});
+	const voltage = t.terminalVoltage;
 	return {
 		kind: 'solved',
-		label,
-		iterations: result.iterations,
+		label: `${label}: ${mcLoadModelLabel(t.load_model)}; ${mcNetworkScopeLabel(t.network_scope)}`,
+		provenance: [
+			JSON.stringify({
+				load_model: t.load_model ?? null,
+				network_scope: t.network_scope ?? null,
+				excluded_islands: t.excluded_islands ?? []
+			})
+		],
+		iterations: t.iterations,
 		buses: buses.map((bus) => {
 			const terminals = voltages.get(bus.id);
-			return busSnapshot(bus, (t) => terminals?.get(t));
+			return busSnapshot(bus, (terminal) => {
+				const k = terminals?.get(terminal);
+				return k === undefined ? undefined : { re: voltage[2 * k], im: voltage[2 * k + 1] };
+			});
 		}),
 		branches: branchSnapshots
 	};
@@ -287,25 +316,27 @@ export function snapshotBusesFromTerminals(
 	);
 }
 
-type PortRows = (
-	branch: SnapshotBranch,
-	bus: string
-) => McPfResult['element_ports'][number][] | undefined;
+/** Row numbers of an element's ports at one bus. */
+type PortRows = (branch: SnapshotBranch, bus: string) => number[] | undefined;
 
 /** Power summed over a set of port rows, in kW and kvar. */
-function portPower(rows: McPfResult['element_ports'][number][]) {
+function portPower(rows: number[], power: Float64Array) {
 	let p = 0;
 	let q = 0;
-	for (const r of rows) {
-		p += r.power_into_element.re;
-		q += r.power_into_element.im;
+	for (const k of rows) {
+		p += power[2 * k];
+		q += power[2 * k + 1];
 	}
 	return { p: p / 1000, q: q / 1000 };
 }
 
 /** Both ends' ports are signed into the equipment, so their sum over every bus it connects is what
  * it consumes. Each bus counts once, however many winding pairs join it. */
-function equipmentLoss(branch: SnapshotBranch, rows: PortRows): BranchSnapshot['loss'] {
+function equipmentLoss(
+	branch: SnapshotBranch,
+	rows: PortRows,
+	power: Float64Array
+): BranchSnapshot['loss'] {
 	if (!branch.inService) return null;
 	const buses = new Set([branch.from, branch.to]);
 	if (branch.rating?.kind === 'apparent')
@@ -315,9 +346,9 @@ function equipmentLoss(branch: SnapshotBranch, rows: PortRows): BranchSnapshot['
 	for (const bus of buses) {
 		const at = rows(branch, bus);
 		if (!at?.length) return null;
-		const power = portPower(at);
-		p += power.p;
-		q += power.q;
+		const sum = portPower(at, power);
+		p += sum.p;
+		q += sum.q;
 	}
 	return { p, q };
 }
@@ -325,7 +356,8 @@ function equipmentLoss(branch: SnapshotBranch, rows: PortRows): BranchSnapshot['
 function loadingOf(
 	branch: SnapshotBranch,
 	ends: [BranchEnd | null, BranchEnd | null],
-	rows: PortRows
+	rows: PortRows,
+	power: Float64Array
 ): Pick<BranchSnapshot, 'loading' | 'basis'> {
 	const rating = branch.rating;
 	if (!rating || !ends[0] || !ends[1]) return { loading: null, basis: null };
@@ -349,7 +381,7 @@ function loadingOf(
 	for (const [bus, va] of Object.entries(rating.byBus)) {
 		const at = rows(branch, bus);
 		if (!(va > 0) || !at?.length) continue;
-		const { p, q } = portPower(at);
+		const { p, q } = portPower(at, power);
 		const percent = (100 * Math.hypot(p, q) * 1000) / va;
 		if (loading === null || percent > loading) loading = percent;
 	}

@@ -758,7 +758,7 @@ fn run(args: &Args) -> Result<(), String> {
                     "snapshot_ms": snapshot_ms,
                     "snapshot_peak_heap_bytes": snapshot_peak,
                     "input_module_bytes": value.input_module.len(),
-                    "solution_module_bytes": value.solution_module.len(),
+                    "solution_module_bytes": value.solution_module.as_ref().map_or(0, String::len),
                     "to_string_ms": text.ms,
                     "to_string_peak_heap_bytes": text.peak_bytes,
                     "json_bytes": bytes.ok(),

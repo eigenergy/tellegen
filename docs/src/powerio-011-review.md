@@ -1,8 +1,9 @@
 # PowerIO 0.11 consumer review
 
-Tellegen uses the published PowerIO 0.11.7 crates. All eight PowerIO components
-resolve from crates.io at 0.11.7 with registry checksums.
-`docs/evidence/webmcp/powerio-releases.json` maps each release tag, such as
+Tellegen uses the published PowerIO 0.11.8 crates. All eight PowerIO components
+resolve from crates.io at 0.11.8 with registry checksums. This release includes
+the multiconductor IVR terminal-role checks and bounded power-factor coefficients.
+`docs/evidence/webmcp/powerio-releases.json` maps earlier release tags, such as
 [`v0.11.7`](https://github.com/eigenergy/powerio/releases/tag/v0.11.7), to its
 commit.
 
@@ -27,9 +28,9 @@ The PowerIO release, stored IR generation, and C ABI are independent:
 
 | Concern            | Current value                        | Tellegen integration                             |
 | ------------------ | ------------------------------------ | ------------------------------------------------ |
-| Rust crate release | `0.11.7`                             | dependency requirement `0.11.7`                  |
+| Rust crate release | `0.11.8`                             | dependency requirement `0.11.8`                  |
 | Stored IR          | `"schema": "pio-ir"`, `"version": 2` | sole durable browser and CLI JSON boundary       |
-| Producer           | `powerio` `0.11.7`                   | records which release wrote an IR document       |
+| Producer           | `powerio` `0.11.8`                   | records which release wrote an IR document       |
 | C ABI              | `7`                                  | unchanged and not used as an IR or crate version |
 
 The historical `powerio.module` version 1 document and bare balanced-network

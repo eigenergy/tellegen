@@ -94,11 +94,14 @@ pub use emit::solve_dc_opf_instance;
 pub use emit::{solve_ac_opf_instance_to_solution, solve_ac_opf_instance_to_solution_cancellable};
 #[cfg(feature = "mc-pf")]
 pub use mc_pf::{
-    parse_bmopf_instance, replay_mc_study_json, set_mc_pf_profile_clock, solve_bmopf_json,
-    solve_mc_ac_pf_instance, solve_mc_module_json, solve_mc_study_json, validate_bmopf_json,
-    validate_mc_module_json, McComplex, McElementPort, McLoadBranchState, McLoadPowerEdit,
-    McPfDetail, McPfDetailQuery, McPfOptions, McPfProfile, McPfResult, McPfSession, McPfSummary,
-    McSourceReaction, McStudySnapshot, McTerminalResult, McVoltageViolation,
+    mc_unpowered_islands, parse_bmopf_instance, prepare_mc_energized_network,
+    prepare_mc_energized_network_json, replay_mc_study_json, set_mc_pf_profile_clock,
+    solve_bmopf_json, solve_mc_ac_pf_instance, solve_mc_module_json, solve_mc_study_json,
+    validate_bmopf_json, validate_mc_module, validate_mc_module_json, McComplex, McElementPort,
+    McExcludedEquipment, McExcludedIsland, McLoadBranchState, McLoadModelAssessment,
+    McLoadModelChange, McLoadModelStatus, McLoadPowerEdit, McNetworkScope, McPfDetail,
+    McPfDetailQuery, McPfOptions, McPfProfile, McPfResult, McPfResultTables, McPfSession,
+    McPfSummary, McSourceReaction, McStudySnapshot, McTerminalResult, McVoltageViolation,
 };
 #[cfg(feature = "sensitivity")]
 pub use plan::{
