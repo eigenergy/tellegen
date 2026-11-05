@@ -94,6 +94,7 @@
 		entryWidth,
 		txLayers,
 		txBranchLayers,
+		CASING_SHADE,
 		type TxScene
 	} from './schematic/tx-layers.js';
 
@@ -407,10 +408,16 @@
 			fadeFrom: symbolsOn ? Infinity : 3
 		})
 	);
+	/** Branch colours and widths per view, and the branches drawn on top of the rest. Result views
+	 * keep ordinary branches thin and grey so the exceptions (loading warnings, overloads, binding
+	 * limits) are wide, saturated and visible at every zoom. */
 	const edgePaint = $derived.by(() => {
-		if (colour === 'level') return level;
+		if (colour === 'level') return { ...level, raised: null };
 		const colours = new Uint8Array(level.colours.length);
 		const widths = new Float32Array(level.widths);
+		const raised = new Uint8Array(network.branches.length);
+		// Ordinary branches keep a trace of their voltage rank in their width.
+		const quiet = (k: number) => Math.max(1, 0.55 * level.widths[k]);
 		network.branches.forEach((br, k) => {
 			const f = flows.get(br.id);
 			const marginal = economicsOn && pricedBranch(economics.branches.get(br.id));
@@ -418,7 +425,7 @@
 				const reading = transferReadings[k];
 				colours.set(
 					reading.magnitude
-						? [26, 114, 163, 230]
+						? [26, 114, 163, 235]
 						: reading.from === 0 && reading.to === 0
 							? [105, 101, 95, 205]
 							: [158, 153, 143, 100],
@@ -428,22 +435,33 @@
 				widths[k] = transferWidth(reading.magnitude, transferScale);
 				return;
 			}
+			const state = loadingStates[k];
 			colours.set(
 				!graph.inService[k]
 					? [120, 116, 108, 200]
 					: economicsOn
 						? marginal
-							? [118, 42, 131, 245]
-							: [145, 141, 132, 140]
+							? [118, 42, 131, 250]
+							: [150, 146, 137, 150]
 						: f
-							? operatingLoadingColor(loadingStates[k])
+							? operatingLoadingColor(state)
 							: [138, 131, 117, 160],
 				k * 4
 			);
 			if (resultContext.stale) colours[k * 4 + 3] = Math.round(colours[k * 4 + 3] * 0.4);
-			widths[k] += marginal ? 1.4 : 0.6;
+			if (!graph.inService[k]) return;
+			if (economicsOn) {
+				widths[k] = marginal ? Math.max(5, level.widths[k] + 2) : quiet(k);
+				if (marginal) raised[k] = 1;
+			} else if (f && state === 'violation') {
+				widths[k] = Math.max(6, level.widths[k] + 3);
+				raised[k] = 1;
+			} else if (f && (state === 'warning' || state === 'at-limit')) {
+				widths[k] = Math.max(4.5, level.widths[k] + 1.5);
+				raised[k] = 1;
+			} else widths[k] = quiet(k);
 		});
-		return { colours, widths };
+		return { colours, widths, raised: raised.includes(1) ? raised : null };
 	});
 	const busColours = $derived.by(() => {
 		const n = graph.busId.length;
@@ -668,12 +686,16 @@
 	// The deck state becomes available after the dynamically imported layer kit.
 	const branchLayers = $derived(
 		deck && kit
-			? txBranchLayers(kit, {
-					graph,
-					geometry,
-					edgeColours: edgePaint.colours,
-					edgeWidths: edgePaint.widths
-				})
+			? txBranchLayers(
+					kit,
+					{
+						graph,
+						geometry,
+						edgeColours: edgePaint.colours,
+						edgeWidths: edgePaint.widths
+					},
+					edgePaint.raised
+				)
 			: []
 	);
 	function render() {
@@ -1340,7 +1362,7 @@
 		const lines = transferOn
 			? [
 					`Power transfers · ${context}`,
-					`Blue halo width: 0–${transferScale} MW · Largest reported endpoint |P|`,
+					`Blue line width: 0–${transferScale} MW · Largest reported endpoint |P|`,
 					'Chevrons show direction · Red gauges show overload in percent of rating'
 				]
 			: [
@@ -1420,6 +1442,12 @@
 		].join('\n');
 	}
 	const rgb = (c: RGBA) => `rgb(${c.slice(0, 3).join(' ')})`;
+	const casingColour = (c: RGBA): RGBA => [
+		Math.round(c[0] * CASING_SHADE),
+		Math.round(c[1] * CASING_SHADE),
+		Math.round(c[2] * CASING_SHADE),
+		c[3]
+	];
 </script>
 
 <div class="tx-stage" bind:clientWidth={width} bind:clientHeight={height}>
@@ -1574,8 +1602,8 @@
 					onframe={frameSelection}
 				/>
 			{:else}
-				Branch halo: Loading · grey below {warningPref.value} % · amber {warningPref.value}–100 % ·
-				red above 100 % · unknown ratings faded
+				Branch colour: loading · grey below {warningPref.value} % · amber {warningPref.value}–100 %
+				· red above 100 % · unknown ratings faded
 			{/if}
 		</div>
 	{/if}
@@ -1624,7 +1652,7 @@
 			ontoggle={(e) => keyPref.set(e.currentTarget.open)}
 		>
 			<summary>Key</summary>
-			<p class="hint">Black lines · voltage in the halo</p>
+			<p class="hint">Line colour and width: voltage level</p>
 			<ul class="symbols" aria-label="Voltage levels">
 				{#each levelsPresent as l, j (l.label)}
 					{#if j === 0 || levelsPresent[j - 1].tier !== l.tier}
@@ -1646,11 +1674,15 @@
 						>
 							<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
 								><path
+									style:stroke={rgb(casingColour(entryColour(l)))}
+									style:stroke-width={entryWidth(l) + 1.4}
+									d="M-2 0H26"
+								/>
+								<path
 									style:stroke={rgb(entryColour(l))}
 									style:stroke-width={entryWidth(l)}
 									d="M-2 0H26"
-								/>
-								<path d="M-2 0H26" style:stroke="rgb(32 36 43)" style:stroke-width="1.2" /></svg
+								/></svg
 							>{l.label}
 						</button>
 					</li>

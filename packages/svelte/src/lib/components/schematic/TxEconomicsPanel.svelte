@@ -78,7 +78,7 @@
 	{/if}
 	{#if economics.thermalAvailable}
 		<p>
-			<span class="accent">Purple branch halo</span> · Binding thermal limit with positive marginal relief
+			<span class="accent">Wide purple branch</span> · Binding thermal limit with positive marginal relief
 		</p>
 		<details>
 			<summary>Binding thermal limits · {economics.binding.length}</summary>

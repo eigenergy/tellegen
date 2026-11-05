@@ -38,9 +38,10 @@ export function transferDirectionText(
 	return 'Active power leaves the branch';
 }
 
-/** The blue halo is bounded in screen pixels and remains separate from the conductor. */
+/** Line width in pixels for an active-power magnitude: area-like (square root) and capped at
+ * the chosen scale, so one large corridor cannot swamp the drawing. */
 export function transferWidth(magnitude: number | undefined, scale: number) {
-	return magnitude ? 1 + 3.5 * Math.sqrt(Math.min(magnitude / scale, 1)) : 1;
+	return magnitude ? 1.2 + 5.3 * Math.sqrt(Math.min(magnitude / scale, 1)) : 1;
 }
 
 export function modelDemand(bus: NetworkBus, deltas: Readonly<Record<string, number>>) {

@@ -43,13 +43,13 @@
 		{#if context.relaxed}<strong>Relaxation</strong>{/if}
 	</header>
 	<p role="status">{context.freshness} · {context.status} · base case</p>
-	<p><span class="blue">Blue halo width</span> · Largest reported endpoint |P| · 0 to {scale} MW</p>
+	<p><span class="blue">Blue line width</span> · Largest reported endpoint |P| · 0 to {scale} MW</p>
 	<label>
-		Halo scale
+		Width scale
 		<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
 			{#each TRANSFER_SCALES as value (value)}<option {value}>{value} MW</option>{/each}
 		</select>
-		<span>Wider halos cap at the selected MW.</span>
+		<span>Lines stop widening at the selected MW.</span>
 	</label>
 	<p>Chevrons show direction close in · Red gauges show overload in percent of rating.</p>
 	<p>

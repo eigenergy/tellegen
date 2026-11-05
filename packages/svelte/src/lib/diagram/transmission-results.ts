@@ -75,7 +75,7 @@ export function assessLoading(
 export function operatingLoadingColor(state: LoadingState): RGBA {
 	if (state === 'violation') return [190, 32, 36, 255];
 	if (state === 'warning' || state === 'at-limit') return [210, 137, 27, 245];
-	if (state === 'normal') return [138, 134, 125, 200];
+	if (state === 'normal') return [158, 153, 144, 190];
 	return [155, 150, 140, 130];
 }
 

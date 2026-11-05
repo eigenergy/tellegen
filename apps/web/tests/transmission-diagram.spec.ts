@@ -147,7 +147,7 @@ for (const touch of [false, true]) {
 			await toolbar.getByLabel('Diagram view').selectOption('transfer');
 			const transfers = diagram.getByRole('region', { name: 'Power transfers' });
 			await expect(transfers).toContainText('0 to 500 MW');
-			await transfers.getByLabel('Halo scale').selectOption('100');
+			await transfers.getByLabel('Width scale').selectOption('100');
 			await expect(transfers).toContainText('0 to 100 MW');
 			await expect(inspector.getByRole('row', { name: /From · bus 1/ })).toContainText('+80 MW');
 			await expect(inspector.getByRole('row', { name: /To · bus 2/ })).toContainText('-80 MW');
@@ -181,7 +181,7 @@ for (const touch of [false, true]) {
 					(Reflect.get(window, 'exportedCanvasText') as string[]).join(' ')
 				);
 				expect(text).toContain('Power transfers · dcopf · Result available');
-				expect(text).toContain('Blue halo width: 0–100 MW');
+				expect(text).toContain('Blue line width: 0–100 MW');
 				expect(text).toContain('Red gauges show overload in percent of rating');
 				expect(text).not.toContain('Operating limits');
 			}

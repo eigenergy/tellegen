@@ -342,6 +342,12 @@ const flatSceneProps = (kit: DeckKit) => ({
 	parameters: { depthCompare: 'always' as const, depthWriteEnabled: false }
 });
 
+/** How much a line's casing darkens its colour. */
+export const CASING_SHADE = 0.55;
+
+/** Lines whose colour fills the stroke, with a thin casing a shade darker so pale colours keep
+ * an edge on paper and on the basemap. Colour carries the data, so it takes the stroke's area
+ * (thin marks need larger colour differences to be told apart). */
 function casedLines(
 	kit: DeckKit,
 	id: string,
@@ -353,24 +359,16 @@ function casedLines(
 ): Layer[] {
 	const { LineLayer } = kit.layers;
 	const common = flatSceneProps(kit);
-	const core = colours.slice();
+	const casing = colours.slice();
 	const glow = colours.slice();
-	const ink = INK.slice(0, 3);
 	for (let j = 0; j < widths.length; j++) {
-		core.set(ink, j * 4);
-		glow[j * 4 + 3] = Math.round(colours[j * 4 + 3] * 0.22);
+		for (let c = 0; c < 3; c++) casing[j * 4 + c] = Math.round(colours[j * 4 + c] * CASING_SHADE);
+		glow[j * 4 + 3] = Math.round(colours[j * 4 + 3] * 0.18);
 	}
 	const strokes: [string, Uint8Array, Float32Array, boolean][] = [
-		[`${id}-glow`, glow, Float32Array.from(widths, (w) => w + 4), false],
-		[`${id}-halo`, colours, Float32Array.from(widths, (w) => w + 1.5), false],
-		[
-			id,
-			core,
-			Float32Array.from(widths, (w) =>
-				id === 'busbars' ? 3.2 : Math.max(1, Math.min(1.8, w * 0.45))
-			),
-			pickable
-		]
+		[`${id}-glow`, glow, Float32Array.from(widths, (w) => w + 3), false],
+		[`${id}-casing`, casing, Float32Array.from(widths, (w) => w + 1.4), false],
+		[id, colours, widths, pickable]
 	];
 	return strokes.map(
 		([layerId, paint, weight, pick]) =>
@@ -395,14 +393,46 @@ function casedLines(
 /** Route data stays on the GPU while pan, zoom and selection move the overlays. */
 export function txBranchLayers(
 	kit: DeckKit,
-	scene: Pick<TxScene, 'graph' | 'geometry' | 'edgeColours' | 'edgeWidths'>
+	scene: Pick<TxScene, 'graph' | 'geometry' | 'edgeColours' | 'edgeWidths'>,
+	raised: Uint8Array | null = null
 ): Layer[] {
 	const { geometry: g } = scene;
 	const { colours, widths } = perSegment(scene);
 	for (let j = 0; j < g.segmentEdge.length; j++)
 		if (!scene.graph.inService[g.segmentEdge[j]]) colours[j * 4 + 3] = 0;
-	return casedLines(kit, 'branches', g.sources, g.targets, colours, widths, true);
+	const layers = casedLines(kit, 'branches', g.sources, g.targets, colours, widths, true);
+	const top = raised ? raisedSegments(g, raised) : null;
+	return top
+		? [
+				...layers,
+				...casedLines(
+					kit,
+					'branches-raised',
+					pick3(g.sources, top),
+					pick3(g.targets, top),
+					pick4(colours, top),
+					Float32Array.from(top, (j) => widths[j])
+				)
+			]
+		: layers;
 }
+
+/** Segments of the branches flagged in `raised` (one byte per branch), or null when none. */
+export function raisedSegments(g: SchematicGeometry, raised: Uint8Array): Int32Array | null {
+	const out: number[] = [];
+	for (let j = 0; j < g.segmentEdge.length; j++) if (raised[g.segmentEdge[j]]) out.push(j);
+	return out.length ? Int32Array.from(out) : null;
+}
+const pick3 = (a: Float32Array, rows: Int32Array) => {
+	const out = new Float32Array(rows.length * 3);
+	rows.forEach((j, i) => out.set(a.subarray(j * 3, j * 3 + 3), i * 3));
+	return out;
+};
+const pick4 = (a: Uint8Array, rows: Int32Array) => {
+	const out = new Uint8Array(rows.length * 4);
+	rows.forEach((j, i) => out.set(a.subarray(j * 4, j * 4 + 4), i * 4));
+	return out;
+};
 
 /** The layers of one frame, bottom to top. */
 export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): Layer[] {

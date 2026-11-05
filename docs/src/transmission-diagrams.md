@@ -11,9 +11,10 @@ basemap, or drawing coordinates as given. Zoomed out, the largest generators and
 stay findable as fixed-size landmarks, placed by priority so the view never fills with markers.
 Closer in, transformers are drawn on their branch as two interlocking circles, each winding in the
 colour of the voltage on its side, generators and loads hang below their bus, and buses are named.
-Out-of-service branches are dashed. Conductors and busbars have a dark centre stroke with a
-restrained colour halo; topology stays readable against the map while the halo carries voltage
-level, or loading in the results view. Busbars are heavier than branch conductors.
+Out-of-service branches are dashed. The colour of a conductor or busbar fills the whole stroke,
+with a thin casing a shade darker so pale colours keep an edge against paper and the basemap.
+Colour carries the data, so it takes the stroke's area: small marks need larger colour
+differences to be told apart. Busbars are heavier than branch conductors.
 
 Loads use the same demand-arrow shape as the multiconductor schematic, drawn larger with a
 filled triangle. Generators use the shared machine-circle glyph. Both appear before the finer
@@ -53,8 +54,9 @@ red markers identify lower and upper violations, including uniform violating ser
 borders preserve the worst member violation. A station summary retains minimum and maximum
 values with bus identities, and links to the worst bus; it never substitutes an average.
 
-Branch halos are grey below the warning threshold, amber from the warning up to and including
-the rating, and red above it. **Key and settings** exposes the warning threshold (0–99%, default
+Branches below the warning threshold are thin and grey. Branches from the warning up to and
+including the rating are wide and amber, and overloaded branches wider still and red. Stressed
+branches are drawn on top of the others, so they stay visible at the case overview. **Key and settings** exposes the warning threshold (0–99%, default
 90%), remembered in browser storage. Local gauges show 0–125% with a visible 100% tick; their
 labels are not clamped to the gauge range. Violations, warnings and selection receive priority
 when the view is crowded. Gauges can be selected by mouse, touch or keyboard. Close in, static
@@ -95,7 +97,8 @@ Choose **OPF economics** to see total locational marginal prices in objective un
 default price scale is 0–50, with wider and signed presets. The scale stays fixed as results change,
 and values outside it use the end colours. A uniform price has a single numerical readout.
 
-A purple branch halo identifies a binding DC thermal limit with positive marginal relief. The
+A wide purple branch identifies a binding DC thermal limit with positive marginal relief; other
+branches stay thin and grey. The
 binding list orders limits by the objective reduction from one more MW of symmetric rating.
 Select a branch to frame it and see the thermal status and exact equipment values. The final solver
 program supplies enforcement and binding independently of equipment utilization. If it used a
@@ -108,9 +111,9 @@ labelled as a relaxation, and the view marks unsupported or legacy constraint da
 
 ### Power transfers
 
-Choose **Power transfers** to see active power moving through the network. Blue halo width
+Choose **Power transfers** to see active power moving through the network. Blue line width
 shows the larger reported endpoint |P| in MW on a bounded square-root scale. The default cap
-is 500 MW, with 100 MW and 1,500 MW presets. The conductor retains its dark centre. Static
+is 500 MW, with 100 MW and 1,500 MW presets. Static
 chevrons follow the local direction of the route when one end supplies the other. Grey distinguishes
 a reported zero from faded missing flow. Red gauges and the **Overloads** list retain the independent
 rating check in percent.
