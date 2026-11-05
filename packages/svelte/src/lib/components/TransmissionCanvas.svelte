@@ -72,6 +72,13 @@
 	import TxOperatingPanel from './schematic/TxOperatingPanel.svelte';
 	import TxResultInspection from './schematic/TxResultInspection.svelte';
 	import TxEconomicsPanel from './schematic/TxEconomicsPanel.svelte';
+	import TxTransferPanel from './schematic/TxTransferPanel.svelte';
+	import {
+		modelDemand,
+		transferDirectionText,
+		transferReading,
+		transferWidth
+	} from '../diagram/transmission-transfer.js';
 	import {
 		PRICE_SCALES,
 		PRICE_UNIT,
@@ -126,7 +133,7 @@
 		basemap?: BasemapSpec;
 	} = $props();
 
-	type Colour = 'level' | 'results' | 'operating' | 'economics';
+	type Colour = 'level' | 'results' | 'operating' | 'economics' | 'transfer';
 	const app = getAppState();
 	const ctrl = getController();
 	const panels = getPanelLayout();
@@ -141,6 +148,7 @@
 	let kit: DeckKit | null = null;
 	let camera = $state.raw<DiagramCamera>({ target: [0, 0, 0], zoom: 0 });
 	let colour = $state<Colour>('operating');
+	let resultInspector = $state<ReturnType<typeof TxResultInspection>>();
 	const warningPref = new StoredNumber('tellegen.transmission.loading-warning', 0, 99, 90);
 	let gauges = $state.raw<OperatingGauge[]>([]);
 	const formulation = $derived(ctrl.activeFormulation);
@@ -151,6 +159,12 @@
 	const economicsOn = $derived(colour === 'economics');
 	const economics = $derived(economicsFor(solution, formulation));
 	let priceScale = $state(0);
+	const transferOn = $derived(colour === 'transfer');
+	let transferScale = $state(500);
+	const dcTransfer = $derived(!resultContext.voltage);
+	const transferSolution = $derived(
+		solution && (!solution.formulation || solution.formulation === formulation) ? solution : null
+	);
 	const solvedVoltages = $derived(operatingVoltages(solution, formulation));
 	const deenergized = $derived(
 		new Set(
@@ -204,12 +218,50 @@
 		)
 	);
 	const dispatch = $derived(dispatchByBus(solution?.dispatch ?? []));
+	const caseDemandDeltas = $derived.by(() => {
+		const active = ctrl.activeSolvable;
+		return active?.id === caseId ? ctrl.caseDeltas(active) : {};
+	});
 	const selectedDemand = $derived.by(() => {
 		const bus = network.buses[selectedBus];
-		const active = ctrl.activeSolvable;
-		if (!bus) return undefined;
-		const deltas = active?.id === caseId ? ctrl.caseDeltas(active) : {};
-		return bus.demand_mw + (deltas[bus.uid ?? bus.id] ?? deltas[bus.id] ?? 0);
+		return bus ? modelDemand(bus, caseDemandDeltas) : undefined;
+	});
+	function transferFlow(branch: Network['branches'][number] | undefined) {
+		if (
+			!transferSolution ||
+			!branch?.status ||
+			deenergized.has(branch.from) ||
+			deenergized.has(branch.to)
+		)
+			return undefined;
+		return flows.get(branch.id);
+	}
+	const transferReadings = $derived(
+		network.branches.map((branch) => transferReading(transferFlow(branch), dcTransfer))
+	);
+	const transferSummary = $derived.by(() => {
+		let zero = 0;
+		let missing = 0;
+		const transfers: {
+			branch: Network['branches'][number];
+			reading: ReturnType<typeof transferReading>;
+		}[] = [];
+		network.branches.forEach((branch, index) => {
+			if (!branch.status || deenergized.has(branch.from) || deenergized.has(branch.to)) return;
+			const reading = transferReadings[index];
+			if (reading.magnitude) transfers.push({ branch, reading });
+			else if (reading.from === 0 && reading.to === 0) zero++;
+			else missing++;
+		});
+		transfers.sort(
+			(a, b) => b.reading.magnitude! - a.reading.magnitude! || a.branch.id - b.branch.id
+		);
+		return { transfers: transfers.slice(0, 12), zero, missing };
+	});
+	const overloadExceptions = $derived({
+		...exceptions,
+		buses: [],
+		branches: transferSolution ? exceptions.branches.filter((row) => row.state === 'violation') : []
 	});
 	const activeStation = $derived.by(() => {
 		if (!operatingOn || !resultContext.voltage) return null;
@@ -323,7 +375,9 @@
 						gradient: priceGradient,
 						values: economics.prices
 					}
-				: ctrl.activeDisplay
+				: transferOn
+					? null
+					: ctrl.activeDisplay
 	);
 	const resultsOn = $derived(colour !== 'level' && !!solution);
 	$effect(() => {
@@ -360,6 +414,20 @@
 		network.branches.forEach((br, k) => {
 			const f = flows.get(br.id);
 			const marginal = economicsOn && pricedBranch(economics.branches.get(br.id));
+			if (transferOn && graph.inService[k]) {
+				const reading = transferReadings[k];
+				colours.set(
+					reading.magnitude
+						? [26, 114, 163, 230]
+						: reading.from === 0 && reading.to === 0
+							? [105, 101, 95, 205]
+							: [158, 153, 143, 100],
+					k * 4
+				);
+				if (resultContext.stale) colours[k * 4 + 3] = Math.round(colours[k * 4 + 3] * 0.4);
+				widths[k] = transferWidth(reading.magnitude, transferScale);
+				return;
+			}
 			colours.set(
 				!graph.inService[k]
 					? [120, 116, 108, 200]
@@ -398,14 +466,14 @@
 										(v - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
 									);
 			}
-			if (operatingOn && !resultContext.voltage) c = [150, 145, 135, 200];
+			if (transferOn || (operatingOn && !resultContext.voltage)) c = [150, 145, 135, 200];
 			if (colour !== 'level' && resultContext.stale) c = [c[0], c[1], c[2], Math.round(c[3] * 0.4)];
 			out.set(c, i * 4);
 		}
 		return out;
 	});
 	const windingColours = $derived(
-		operatingOn ? busLevels.map((_, i) => (i % 4 === 3 ? 255 : 65)) : busLevels
+		operatingOn || transferOn ? busLevels.map((_, i) => (i % 4 === 3 ? 255 : 65)) : busLevels
 	);
 	const busRadius = $derived(Math.max(1.5, Math.min(5, span / 14)));
 	/** The display series' single value when it is uniform (as the map's display panel judges it). */
@@ -420,7 +488,8 @@
 		const points: NonNullable<TxScene['attachments']>['points'] = [];
 		for (let i = 0; i < graph.busId.length; i++) {
 			const gen = graph.genMw[i] > 0;
-			const load = graph.demandMw[i] > 0;
+			const load =
+				(transferOn ? modelDemand(network.buses[i], caseDemandDeltas) : graph.demandMw[i]) > 0;
 			if (!gen && !load) continue;
 			const x = parts ? parts.busbars[i * 4 + 2] : geometry.positions[i * 3];
 			const y = parts ? parts.busbars[i * 4 + 3] : geometry.positions[i * 3 + 1];
@@ -462,11 +531,8 @@
 	/** Flow arrows on legible branches once solved, pointing the way active power flows. */
 	const arrows = $derived.by(() => {
 		if (!resultsOn || !symbolsOn || economicsOn) return null;
-		const { edges, dir } = flowDirections(
-			graph,
-			geometry,
-			anchors,
-			(k) => flows.get(network.branches[k].id)?.mw ?? null
+		const { edges, dir } = flowDirections(graph, geometry, anchors, (k) =>
+			transferOn ? transferReadings[k].direction : (flows.get(network.branches[k].id)?.mw ?? null)
 		);
 		return edges.length ? { edges, dir, unit: 5 / 2 ** stepZoom } : null;
 	});
@@ -479,7 +545,12 @@
 				: null;
 	};
 	const landmarkPool = $derived(
-		txLandmarks(graph, geometry, solution && !economicsOn ? branchState : null, anchors)
+		txLandmarks(
+			graph,
+			geometry,
+			solution && !economicsOn && !transferOn ? branchState : null,
+			anchors
+		)
 	);
 	const levelsPresent = $derived(legend.entries);
 	const outOfService = $derived(graph.inService.some((on) => !on));
@@ -492,7 +563,7 @@
 			top:
 				panels.top +
 				Math.max(0, toolbarHeight - 48) +
-				(resultsOn || economicsOn ? legendHeight + 8 : 0),
+				(resultsOn || economicsOn || transferOn ? legendHeight + 8 : 0),
 			dockWidth: (side) => panels.dockWidth(side),
 			sheetInset: app.sheetInset
 		});
@@ -604,6 +675,15 @@
 	}
 
 	function valueText(i: number): { label: string; text: string } | null {
+		if (transferOn) {
+			const bus = network.buses[i];
+			const generation = transferSolution ? dispatch.get(bus.id) : undefined;
+			const demand = modelDemand(bus, caseDemandDeltas);
+			const parts = [];
+			if (generation !== undefined) parts.push(`Gen ${generation.toFixed(1)} MW`);
+			if (demand !== 0) parts.push(`Load ${demand.toFixed(1)} MW`);
+			return parts.length ? { label: 'Power', text: parts.join(' · ') } : null;
+		}
 		if (!display) return null;
 		const v = busValues.get(graph.busId[i]);
 		if (v === undefined) return null;
@@ -645,8 +725,9 @@
 				const p = at(i);
 				const sp = screen(...p);
 				if (!inView(sp)) continue;
+				const transfer = transferOn ? valueText(i) : null;
 				candidates.push({
-					text: name(i),
+					text: transfer ? `${name(i)} · ${transfer.text}` : name(i),
 					state: 'normal',
 					priority: graph.kv[i],
 					screen: sp,
@@ -673,12 +754,14 @@
 			}
 			if (parts.unit * scale >= 12)
 				for (let i = 0; i < graph.busId.length; i++) {
-					if (!(graph.kv[i] > 0)) continue;
+					const transfer = transferOn ? valueText(i) : null;
+					const level = graph.kv[i] > 0 ? levelLabel(graph.kv[i] * 1000) : '';
+					if (!level && !transfer) continue;
 					const p: [number, number] = [parts.busbars[i * 4], parts.busbars[i * 4 + 1]];
 					const sp = screen(...p);
 					if (!inView(sp)) continue;
 					candidates.push({
-						text: levelLabel(graph.kv[i] * 1000),
+						text: transfer ? [level, transfer.text].filter(Boolean).join(' · ') : level,
 						state: 'normal',
 						priority: -1,
 						screen: sp,
@@ -686,7 +769,7 @@
 					});
 				}
 		}
-		if (resultsOn && !operatingOn && !economicsOn && symbolsOn)
+		if (resultsOn && !operatingOn && !economicsOn && !transferOn && symbolsOn)
 			network.branches.forEach((br, k) => {
 				const f = flows.get(br.id);
 				const state = branchState(k);
@@ -725,14 +808,31 @@
 					position: p
 				});
 			}
+		if (transferOn && (selectedEdge >= 0 || hoveredEdge >= 0)) {
+			const edge = selectedEdge >= 0 ? selectedEdge : hoveredEdge;
+			const p: [number, number] = [anchors[edge * 4], anchors[edge * 4 + 1]];
+			const sp = screen(...p);
+			if (inView(sp)) {
+				const magnitude = transferReadings[edge].magnitude;
+				candidates.push({
+					text: magnitude === undefined ? 'Active flow unavailable' : `${magnitude.toFixed(1)} MW`,
+					state: 'normal',
+					priority: 1e9,
+					screen: sp,
+					position: p,
+					selected: true
+				});
+			}
+		}
 		labels = placeLabels(candidates, { width, height, budget: 60 });
 		const inset = freeArea();
 		const gaugeCandidates: OperatingGauge[] = [];
-		if (operatingOn && solution)
+		if ((operatingOn && solution) || (transferOn && transferSolution))
 			network.branches.forEach((br, edge) => {
 				const f = flows.get(br.id),
 					state = loadingStates[edge];
 				const selected = edge === selectedEdge || edge === hoveredEdge;
+				if (transferOn && state !== 'violation') return;
 				if (
 					!f ||
 					!hasStatedRating(f.loading_info) ||
@@ -1021,6 +1121,8 @@
 			resultsOn,
 			selectedBus,
 			busValues,
+			transferOn,
+			transferOn ? [transferReadings, dispatch, caseDemandDeltas] : null,
 			geometry,
 			parts,
 			loadingStates,
@@ -1161,9 +1263,11 @@
 				? `Operating limits · ${resultContext.freshness} · ${formulation}${resultContext.relaxed ? ' relaxation' : ''}`
 				: economicsOn
 					? `OPF economics · ${formulation}${resultContext.relaxed ? ' relaxation' : ''} · Total LMP ${domain!.lo} to ${domain!.hi} ${PRICE_UNIT}`
-					: resultsOn
-						? `Buses: ${display?.copy ?? 'results'} · branches: loading`
-						: 'Voltage levels',
+					: transferOn
+						? `Power transfers · ${formulation}${resultContext.relaxed ? ' relaxation' : ''} · Blue halo 0–${transferScale} MW · Red gauges show overload`
+						: resultsOn
+							? `Buses: ${display?.copy ?? 'results'} · branches: loading`
+							: 'Voltage levels',
 			camera,
 			result: solution
 				? {
@@ -1179,7 +1283,7 @@
 			deck,
 			canvas,
 			title,
-			operatingOn ? paintOperatingExport : undefined
+			operatingOn || transferOn ? paintOperatingExport : undefined
 		);
 		if (blob) download(blob, `${fileStem(label)}.png`);
 	}
@@ -1283,12 +1387,16 @@
 			.join('\n');
 	}
 	function branchTooltip(k: number): string {
-		const f = flows.get(network.branches[k].id),
-			info = f?.loading_info;
+		const branch = network.branches[k];
+		const f = transferOn ? transferFlow(branch) : flows.get(branch.id);
+		const info = f?.loading_info;
 		return [
 			`${graph.transformer[k] ? 'Transformer' : 'Line'} ${network.branches[k].id}: bus ${network.branches[k].from} to bus ${network.branches[k].to}`,
 			`Nominal ${graph.from[k] >= 0 ? graph.kv[graph.from[k]] : 'unknown'} / ${graph.to[k] >= 0 ? graph.kv[graph.to[k]] : 'unknown'} kV`,
-			f ? `From-end active power ${f.mw.toFixed(2)} MW` : 'Flow result missing',
+			f && (!transferOn || transferReadings[k].from !== undefined)
+				? `From-end active power ${f.mw.toFixed(2)} MW`
+				: 'Flow result missing',
+			...(transferOn ? [transferDirectionText(transferReadings[k], network.branches[k])] : []),
 			...(economicsOn ? [thermalStatus(economics.branches.get(network.branches[k].id))] : []),
 			`Loading: ${loadingStateText[loadingStates[k]]}`,
 			hasStatedRating(info) &&
@@ -1338,6 +1446,7 @@
 				<option value="level">Voltage levels</option>
 				<option value="operating">Operating limits</option>
 				<option value="economics">OPF economics</option>
+				<option value="transfer">Power transfers</option>
 				<option value="results" disabled={!solution}>Map results</option>
 			</select>
 		</label>
@@ -1368,10 +1477,10 @@
 		<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
 		<button onclick={onclose} title="Return to the map">Close</button>
 	</div>
-	{#if resultsOn || operatingOn || economicsOn}
+	{#if resultsOn || operatingOn || economicsOn || transferOn}
 		<div
 			class="legend"
-			class:operating={operatingOn || economicsOn}
+			class:operating={operatingOn || economicsOn || transferOn}
 			bind:clientHeight={legendHeight}
 			style:top="{panels.top + toolbarHeight + 16}px"
 			style:left="{toolLeft}px"
@@ -1408,6 +1517,21 @@
 						frameSelection();
 					}}
 				/>
+			{:else if transferOn}
+				<TxTransferPanel
+					{formulation}
+					context={resultContext}
+					dc={dcTransfer}
+					scale={transferScale}
+					onscale={(scale) => (transferScale = scale)}
+					{...transferSummary}
+					hasDispatch={!!transferSolution && dispatch.size > 0}
+					onbranch={async (id) => {
+						await inspectResult('branch', id);
+						resultInspector?.focusSelection();
+						frameSelection();
+					}}
+				/>
 			{:else if display?.mode === 'voltage'}
 				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
 				limits apply ·
@@ -1417,20 +1541,28 @@
 			{:else if display}
 				{display.label} <i style:background={display.gradient}></i> ·
 			{/if}
-			{#if operatingOn || economicsOn}
+			{#if operatingOn || economicsOn || transferOn}
 				<TxResultInspection
-					{exceptions}
+					bind:this={resultInspector}
+					exceptions={transferOn ? overloadExceptions : exceptions}
+					transfer={transferOn
+						? { dc: dcTransfer, reading: transferReadings[selectedEdge] }
+						: undefined}
 					bus={network.buses[selectedBus]}
 					branch={network.branches[selectedEdge]}
 					voltage={solvedVoltages.get(graph.busId[selectedBus])}
 					voltageSolved={resultContext.voltage}
 					deenergized={deenergized.has(graph.busId[selectedBus])}
-					generation={dispatch.get(graph.busId[selectedBus])}
+					generation={!transferOn || transferSolution
+						? dispatch.get(graph.busId[selectedBus])
+						: undefined}
 					demand={selectedDemand}
-					flow={flows.get(network.branches[selectedEdge]?.id)}
-					loading={loadingStates[selectedEdge]}
+					flow={transferOn
+						? transferFlow(network.branches[selectedEdge])
+						: flows.get(network.branches[selectedEdge]?.id)}
+					loading={!transferOn || transferSolution ? loadingStates[selectedEdge] : undefined}
 					stale={resultContext.stale}
-					showExceptions={operatingOn}
+					showExceptions={operatingOn || transferOn}
 					oninspect={inspectResult}
 					{onclear}
 					onframe={frameSelection}
@@ -1441,8 +1573,12 @@
 			{/if}
 		</div>
 	{/if}
-	{#if operatingOn}
-		<div class="gauges" aria-label="Branch utilization gauges" class:stale={resultContext.stale}>
+	{#if operatingOn || transferOn}
+		<div
+			class="gauges"
+			aria-label={transferOn ? 'Branch overload gauges' : 'Branch utilization gauges'}
+			class:stale={resultContext.stale}
+		>
 			{#each gauges as gauge (gauge.edge)}
 				{@const branch = network.branches[gauge.edge]}
 				<button

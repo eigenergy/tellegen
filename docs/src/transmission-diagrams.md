@@ -106,6 +106,21 @@ with links to branch members where available. The sign describes the objective r
 increase in the signed limit. AC OPF and SOCWR can show total LMP where supplied. SOCWR stays
 labelled as a relaxation, and the view marks unsupported or legacy constraint data as unavailable.
 
+### Power transfers
+
+Choose **Power transfers** to see active power moving through the network. Blue halo width
+shows the larger reported endpoint |P| in MW on a bounded square-root scale. The default cap
+is 500 MW, with 100 MW and 1,500 MW presets. The conductor retains its dark centre. Static
+chevrons follow the local direction of the route when one end supplies the other. Grey distinguishes
+a reported zero from faded missing flow. Red gauges and the **Overloads** list retain the independent
+rating check in percent.
+
+Use **Largest active transfers** or select equipment on the diagram to inspect signed endpoint
+values. Positive flow enters the branch from the named bus. The lossless DC view gives equal and
+opposite endpoint MW. AC and SOCWR show both reported active and reactive values, and omit a
+through-direction arrow when the two ends supply the branch. Bus details separate solved
+generation where supplied, model demand including committed edits, and installed capacity.
+
 On phones, the toolbar and voltage-key controls have 44-pixel touch targets, and the renderer
 allows a wider picking radius. Explicit zoom buttons supplement pinch zoom and the keyboard.
 The results key stays below the toolbar when it wraps. The equipment and voltage keys can be

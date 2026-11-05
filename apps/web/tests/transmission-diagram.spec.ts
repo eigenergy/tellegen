@@ -17,7 +17,7 @@ mpc.gen = [
  4 20 0 300 -300 1 100 1 100 10 0 0 0 0 0 0 0 0 0 0 0;
 ];
 mpc.branch = [
- 1 2 0.001 0.05 0 300 300 300 1 0 1 -360 360;
+ 1 2 0.001 0.05 0 35 35 35 1 0 1 -360 360;
  2 3 0.01 0.1 0 120 120 120 0 0 1 -360 360;
  3 4 0.01 0.1 0 120 120 120 0 0 1 -360 360;
  2 4 0.01 0.1 0 120 120 120 0 0 0 -360 360;
@@ -141,6 +141,43 @@ for (const touch of [false, true]) {
 			await expect(economics).toContainText(/Marginal rating relief [1-9]/);
 			await expect(diagram.getByLabel('Branch utilization gauges')).toHaveCount(0);
 			await page.screenshot({ path: testInfo.outputPath('opf-economics.png') });
+
+			await toolbar.getByLabel('Diagram view').selectOption('transfer');
+			const transfers = diagram.getByRole('region', { name: 'Power transfers' });
+			await expect(transfers).toContainText('0 to 500 MW');
+			await transfers.getByLabel('Halo scale').selectOption('100');
+			await expect(transfers).toContainText('0 to 100 MW');
+			await expect(inspector.getByRole('row', { name: /From · bus 1/ })).toContainText('+80 MW');
+			await expect(inspector.getByRole('row', { name: /To · bus 2/ })).toContainText('-80 MW');
+			await expect(inspector.getByRole('columnheader', { name: 'Reactive' })).toHaveCount(0);
+			await expect(inspector).toContainText('Bus 1 → bus 2');
+			await expect(diagram.getByText('Overloads · 0', { exact: true })).toBeVisible();
+			await inspector.getByRole('button', { name: 'Clear selection' }).click();
+			await transfers.getByText('Largest active transfers', { exact: true }).click();
+			const ranked = transfers.getByRole('button', { name: /Branch 1.*Bus 1 → bus 2.*80 MW/ });
+			if (touch) await ranked.tap();
+			else await ranked.press('Enter');
+			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeVisible();
+			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeFocused();
+			await page.screenshot({ path: testInfo.outputPath('power-transfers-dc.png') });
+
+			const closeNetwork = page.getByRole('button', { name: 'Close network panel', exact: true });
+			if (!(await closeNetwork.isVisible()))
+				await page.getByRole('button', { name: 'Network', exact: true }).click();
+			const lookup = page.getByRole('combobox', { name: 'Bus lookup', exact: true });
+			await lookup.fill('2');
+			await lookup.press('Enter');
+			if (touch && (await closeNetwork.isVisible())) await closeNetwork.tap();
+			await expect(inspector.getByRole('heading', { name: 'Bus 2' })).toBeVisible();
+			await expect(
+				inspector.locator('dl div').filter({ hasText: 'Solved generation' })
+			).toContainText('10 MW');
+			await expect(inspector.locator('dl div').filter({ hasText: 'Model demand' })).toContainText(
+				'90 MW'
+			);
+			await expect(
+				inspector.locator('dl div').filter({ hasText: 'Installed capacity' })
+			).toContainText('100 MW');
 		});
 		for (const uniform of [false, true])
 			test(
@@ -379,6 +416,25 @@ for (const touch of [false, true]) {
 			expect(png.subarray(1, 4).toString()).toBe('PNG');
 			expect(png.readUInt32BE(16)).toBeGreaterThanOrEqual(page.viewportSize()!.width);
 			expect(png.readUInt32BE(20)).toBeGreaterThan(page.viewportSize()!.height);
+
+			await toolbar.getByLabel('Diagram view').selectOption('transfer');
+			const transfer = page.getByRole('region', { name: 'Power transfers' });
+			await expect(transfer).toContainText('AC power flow');
+			const overloads = page.getByText('Overloads · 1', { exact: true });
+			await expect(overloads).toBeVisible();
+			await overloads.click();
+			await expect(page.getByRole('button', { name: /Branch 1.*overload/ }).first()).toBeVisible();
+			await overloads.click();
+			await transfer.getByText('Largest active transfers', { exact: true }).click();
+			await transfer
+				.getByRole('button', { name: /^Branch / })
+				.first()
+				.click();
+			const inspector = page.getByRole('region', { name: 'Selected equipment' });
+			await expect(inspector.getByRole('columnheader', { name: 'Reactive' })).toBeVisible();
+			await expect(inspector.getByRole('cell', { name: /[+-]?[0-9.]+ MVAr/ })).toHaveCount(2);
+			await expect(inspector).toContainText('Active magnitude');
+			await page.screenshot({ path: testInfo.outputPath('power-transfers-ac.png') });
 		});
 	});
 }

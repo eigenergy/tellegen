@@ -268,8 +268,8 @@ describe('transmission graph', () => {
 		const g = txGraph(net);
 		const geo = txSourceLayout(g, net);
 		const { anchors } = edgeAnchors(geo, 3);
-		// Branch 0 flows 1 → 2, branch 1 flows 3 → 2 (negative), branch 2 has no flow.
-		const flows = [100, -40, null];
+		// Branch 0 flows 1 → 2, branch 1 flows 3 → 2 (negative), branch 2 is open even though a result row exists.
+		const flows = [100, -40, 20];
 		const { edges, dir } = flowDirections(g, geo, anchors, (k) => flows[k]);
 		expect(edges).toEqual([0, 1]);
 		// Both paths run from → to in the payload, so the sign follows the flow.

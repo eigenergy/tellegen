@@ -587,7 +587,15 @@ export function flowDirections(
 	for (let k = 0; k < graph.from.length; k++) {
 		const f = mw(k);
 		const [a, b] = [graph.from[k], graph.to[k]];
-		if (f === null || Math.abs(f) < 1e-6 || a < 0 || b < 0 || !Number.isFinite(anchors[k * 4]))
+		if (
+			f === null ||
+			!Number.isFinite(f) ||
+			Math.abs(f) < 1e-6 ||
+			!graph.inService[k] ||
+			a < 0 ||
+			b < 0 ||
+			!Number.isFinite(anchors[k * 4])
+		)
 			continue;
 		edges.push(k);
 		// Source routes are normalized by txSourceLayout; engine routes also run from → to.

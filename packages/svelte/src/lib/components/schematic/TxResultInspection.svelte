@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import {
+		transferDirectionText,
+		type TransferReading
+	} from '../../diagram/transmission-transfer.js';
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import type { operatingExceptions } from '../../diagram/transmission-inspection.js';
 	import {
@@ -12,6 +16,7 @@
 	let {
 		exceptions,
 		showExceptions = true,
+		transfer,
 		bus,
 		branch,
 		voltage,
@@ -28,6 +33,7 @@
 	}: {
 		exceptions: ReturnType<typeof operatingExceptions>;
 		showExceptions?: boolean;
+		transfer?: { dc: boolean; reading: TransferReading | undefined };
 		bus: NetworkBus | undefined;
 		branch: NetworkBranch | undefined;
 		voltage: number | undefined;
@@ -88,11 +94,14 @@
 		const display = (signed ? signedNumber : number).format(value);
 		return `${display === '-0' ? '0' : display}${unit === '%' ? '' : ' '}${unit}`;
 	}
+	export function focusSelection() {
+		heading?.focus();
+	}
 	async function inspect(kind: 'bus' | 'branch', id: number) {
 		open = false;
 		await oninspect(kind, id);
 		await tick();
-		heading?.focus();
+		focusSelection();
 		onframe();
 	}
 	async function clear() {
@@ -114,26 +123,28 @@
 		{#if stale}<p>Showing previous or incomplete results</p>{/if}
 		{#if bus}
 			<dl>
-				<div>
-					<dt>Voltage</dt>
-					<dd>
-						{voltageSolved
-							? quantity(deenergized ? undefined : voltage, 'pu')
-							: 'Unavailable in DC'}
-					</dd>
-				</div>
-				<div>
-					<dt>Minimum</dt>
-					<dd>{quantity(bus.vmin_pu, 'pu')}</dd>
-				</div>
-				<div>
-					<dt>Maximum</dt>
-					<dd>{quantity(bus.vmax_pu, 'pu')}</dd>
-				</div>
-				{#if voltageSolved}<div>
-						<dt>Voltage status</dt>
-						<dd>{voltageText[voltageStatus]}</dd>
-					</div>{/if}
+				{#if !transfer}
+					<div>
+						<dt>Voltage</dt>
+						<dd>
+							{voltageSolved
+								? quantity(deenergized ? undefined : voltage, 'pu')
+								: 'Unavailable in DC'}
+						</dd>
+					</div>
+					<div>
+						<dt>Minimum</dt>
+						<dd>{quantity(bus.vmin_pu, 'pu')}</dd>
+					</div>
+					<div>
+						<dt>Maximum</dt>
+						<dd>{quantity(bus.vmax_pu, 'pu')}</dd>
+					</div>
+					{#if voltageSolved}<div>
+							<dt>Voltage status</dt>
+							<dd>{voltageText[voltageStatus]}</dd>
+						</div>{/if}
+				{/if}
 				<div>
 					<dt>Solved generation</dt>
 					<dd>{quantity(generation, 'MW')}</dd>
@@ -150,23 +161,38 @@
 		{:else if branch}
 			<p>Positive flow enters the branch from the named bus.</p>
 			<table>
-				<thead
-					><tr><th scope="col">End</th><th scope="col">Active</th><th scope="col">Reactive</th></tr
-					></thead
-				>
+				<thead>
+					<tr>
+						<th scope="col">End</th><th scope="col">Active</th>
+						{#if !transfer?.dc}<th scope="col">Reactive</th>{/if}
+					</tr>
+				</thead>
 				<tbody>
-					<tr
-						><th scope="row">From · bus {branch.from}</th><td>{quantity(flow?.mw, 'MW', true)}</td
-						><td>{quantity(flow?.qf, 'MVAr', true)}</td></tr
-					>
-					<tr
-						><th scope="row">To · bus {branch.to}</th><td>{quantity(flow?.pt, 'MW', true)}</td><td
-							>{quantity(flow?.qt, 'MVAr', true)}</td
-						></tr
-					>
+					<tr>
+						<th scope="row">From · bus {branch.from}</th>
+						<td>{quantity(transfer ? transfer.reading?.from : flow?.mw, 'MW', true)}</td>
+						{#if !transfer?.dc}<td>{quantity(flow?.qf, 'MVAr', true)}</td>{/if}
+					</tr>
+					<tr>
+						<th scope="row">To · bus {branch.to}</th>
+						<td>{quantity(transfer ? transfer.reading?.to : flow?.pt, 'MW', true)}</td>
+						{#if !transfer?.dc}<td>{quantity(flow?.qt, 'MVAr', true)}</td>{/if}
+					</tr>
 				</tbody>
 			</table>
 			<dl>
+				{#if transfer}
+					<div>
+						<dt>Active magnitude</dt>
+						<dd>{quantity(transfer.reading?.magnitude, 'MW')}</dd>
+					</div>
+					<div>
+						<dt>Direction</dt>
+						<dd>
+							{transfer.reading ? transferDirectionText(transfer.reading, branch) : 'Unavailable'}
+						</dd>
+					</div>
+				{/if}
 				<div>
 					<dt>Utilization</dt>
 					<dd>{rated && flow ? quantity(flow.loading * 100, '%') : 'Unavailable'}</dd>
@@ -204,7 +230,7 @@
 
 {#if showExceptions}
 	<details bind:open>
-		<summary bind:this={summary}>Exceptions · {total}</summary>
+		<summary bind:this={summary}>{transfer ? 'Overloads' : 'Exceptions'} · {total}</summary>
 		{#if open}
 			<label>
 				Search exceptions
@@ -216,7 +242,11 @@
 				/>
 			</label>
 			{#if !buses.length && !branches.length}<p>
-					{needle ? 'No matching exceptions.' : 'No reported operating exceptions.'}
+					{needle
+						? 'No matching exceptions.'
+						: transfer
+							? 'No reported overloads.'
+							: 'No reported operating exceptions.'}
 				</p>{/if}
 			{#if buses.length}
 				<h3>Voltage · {buses.length}</h3>
