@@ -152,7 +152,7 @@ Egypt, Chile and Indonesia have no higher AC level, and the plan adds none.
 
 | Outline | Runs | DC OPF optimal | AC converged | AC in band | Regions valid at every seed | Peaks within ±25% |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Natural Earth 1:50m | 54 | 54 | 51 | 49 | 15 of 18 | 14 of 14 |
+| Natural Earth 1:50m | 54 | 54 | 53 | 53 | 17 of 18 | 14 of 14 |
 | App 1:110m, app request | 51 | 51 | 47 | 47 | 15 of 17 | 13 of 13 |
 
 Each region's DC, AC converged, AC in band, voltage range, incomplete plans
@@ -172,22 +172,35 @@ DC start, because nothing in the pocket held its voltage. Making the
 pocket's largest load voltage-regulating removed the stall in all six
 pockets tried.
 
-The generator now gives every loaded bus farther than 480 km of corridor
-from a generator (the St. Clair curve's 1.0 SIL knot) a synchronous
-condenser, farthest first, with a reactive range of 0.5 MVAr per MW of the
-load nearest it. Across both outlines and the three seeds it places 66–74
-in Russia, 29–35 in Australia, 33–40 in Brazil, 3–8 in the United States and
-none in western Europe. Russia,
-Brazil, Chile and Egypt now pass at every seed on both outlines.
+The generator gives every loaded bus farther than
+`electrical::params::VOLTAGE_SUPPORT_KM` of corridor from a generator a
+synchronous condenser, farthest first, with a reactive range of 0.5 MVAr per
+MW of the load nearest it. That distance was first 480 km, the St. Clair
+curve's 1.0 SIL knot, which is a stability limit for transfer paths. It is
+now 100 km, the reach of a voltage control area (Kundur, §11.2). Across both
+outlines and the three seeds it now places 425–437 condensers in Russia,
+382–399 in the United States, 326–349 in China, 142–161 in Australia and
+15–33 in western Europe.
+
+That change came with three in how places are used:
+
+- the places table is GeoNames cities5000 (every place of 5,000 people or
+  more), and a transmission grid anchors buses only on places of 50,000 or
+  more;
+- the blue-noise fill follows population density;
+- each place's demand is shared among the buses around it.
+
+Together they took the 1:50m sweep from 49 to 53 runs in band, and the United
+States now passes at every seed on that outline.
 
 **What still fails** (AC in band, out of 3):
 
 | Region | 1:50m | App 1:110m | What fails |
 | --- | ---: | ---: | --- |
-| United States | 0 | 0 | Not converged, or once at up to 1.298 pu. The same kind of pocket (Nevada, Utah, West Texas, New Mexico), with no machine but within 480 km of one, so the condenser rule does not reach it |
-| China | 2 | 3 | 1:50m seed 7 not converged |
-| Australia | 3 | 2 | 1:110m seed 1 not converged |
-| Indonesia | 2 | 3 | 1:50m seed 2026 converged at up to 1.200 pu |
+| United States | 3 | 0 | On the app's outline, not converged at every seed (best mismatch 0.8–12.5 pu) |
+| Australia | 2 | 2 | 1:50m seed 1 and 1:110m seed 2026 not converged |
+
+Every run that converged stays inside 0.9–1.1 pu.
 
 `planning_incomplete` is raised wherever a country's ladder stops before the
 angle spread can be met, and in the continental regions; each region's count
@@ -224,14 +237,19 @@ different polygons, the same kind of variation as between seeds.
 
 | Region | Buses | Native CLI, median of 3 seeds (1:50m / 1:110m) | wasm in Node 26, app outline, seed 2026 |
 | --- | ---: | ---: | ---: |
-| United States | 3000 | 1.43 / 1.45 s | 2.00 s |
-| China | 3000 | 1.20 / 1.00 s | 1.48 s |
-| India | 2013 | 0.55 / 0.49 s | 0.56 s |
-| Russia | 1181 | 0.37 / 0.28 s | 0.35 s |
-| Germany | 517 | 0.05 / 0.05 s | 0.06 s |
+| United States | 3000 | 0.45 / 0.85 s | 1.32 s |
+| China | 3000 | 0.46 / 0.32 s | 0.49 s |
+| India | 2013 | 0.22 / 0.21 s | 0.31 s |
+| Russia | 1186 | 0.22 / 0.15 s | 0.23 s |
+| Germany | 518 | 0.06 / 0.06 s | 0.08 s |
 
-The United States spends about 0.9 s of its wasm run on an AC power flow
-that does not converge. The engine tries a flat start and four perturbed
+The angle solves of the corridor plan and the reactive plan use a sparse
+Cholesky factorisation of the grounded Laplacian, one per network (the
+reactive plan reuses its factor across its iterations), where they used
+Jacobi-preconditioned conjugate gradients. That more than halved the times
+of the earlier table, which this one replaces. The United States on the
+app's outline still spends 0.47 s of its wasm run on an AC power flow that
+does not converge. The engine tries a flat start and four perturbed
 restarts. Over all 105 runs of both sweeps, every AC power flow that
 converged did so from the flat start; the restarts never converged, and in
 the 14 failing solves before the condensers they cost 4.7 s in total, about
@@ -247,14 +265,14 @@ it solves; dropping restarts belongs with the AC warm start in tellegen
   converged at exactly one seed and outline and nowhere else. The rates
   above, over three seeds and two outlines, are the measure to quote, and
   three seeds are still few.
-- **The United States.** It fails at every seed on both outlines. Its weak
-  pockets lie within the condenser rule's 480 km, and its 3000-bus planning
-  spread stays near 150–260°.
+- **The United States.** It passes at every seed on the 1:50m outline and
+  fails at every seed on the app's 1:110m one, so its outcome still turns on
+  where the buses fall.
 - **One AC island per region.** Continental regions and archipelagos are
   solved as one synchronous system, and the generator has no HVDC of its
   own. Partitioning into synchronous areas joined by HVDC, and an AC warm
   start from the planned operating point, are tracked in tellegen #204.
-- **Voltage band.** A few converged runs still leave the 0.9–1.1 pu band
-  (the United States at up to 1.298 pu, Indonesia at up to 1.200). The
-  reactive plan sizes fixed shunts at the planning dispatch, while
-  validation runs at the DC OPF's.
+- **Voltage band.** Every converged run is inside 0.9–1.1 pu. The reactive
+  plan still sizes fixed shunts at the planning dispatch, while validation
+  runs at the DC OPF's, so a run whose two dispatches differ widely can fail
+  to converge rather than leave the band.

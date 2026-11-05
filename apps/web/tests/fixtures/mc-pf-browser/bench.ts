@@ -351,7 +351,7 @@ const bench = {
 			input_module_chars: input.length,
 			snapshot_ms,
 			snapshot_input_module_chars: snapshot.input_module.length,
-			snapshot_solution_module_chars: snapshot.solution_module.length,
+			snapshot_solution_module_chars: snapshot.solution_module?.length ?? 0,
 			engine_memory: await engineMemoryStats()
 		};
 	},

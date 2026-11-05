@@ -1,10 +1,12 @@
-//! Populated places (Natural Earth v5.1.2, 1:10m
-//! `ne_10m_populated_places_simple`, public domain), trimmed to
-//! `{n: name, lo: lon, la: lat, p: pop_max, c: adm0_a3}` by
-//! `scripts/derive-populated-places.py`. They anchor buses on real cities and
-//! carry the population signal that sizes and allocates load (through each
-//! country's demand, see [`crate::demand`]). Parsed once per process and
-//! shared by sessions.
+//! Populated places (GeoNames `cities5000`, CC BY 4.0: every place of 5,000
+//! people or more), trimmed by `scripts/derive-populated-places.py` to rows
+//! of `[name, lon, lat, population, country]` and, in the United States, the
+//! ISO 3166-2 state code. They anchor buses on real towns and carry the
+//! population signal that sizes and allocates load (through each country's
+//! or state's demand, see [`crate::demand`]). GeoNames populations are those
+//! of each place itself, so a region's places sum to about its population.
+//! Parsed once per process and shared by sessions. The earlier table layout,
+//! `{n, lo, la, p, c}` objects (Natural Earth places), still parses.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,9 +40,11 @@ pub const PLACE_SNAP_KM: f64 = 15.0;
 /// metropolitan area a few percent.
 pub const PLACE_SNAP_COUNTRY_SHARE: f64 = 0.5;
 
-/// Schema of the bundled table: the rows under `places`, beside the Natural
-/// Earth release and the SHA-256 of the file they were derived from.
-pub const SCHEMA: &str = "tellegen.synth-populated-places/1";
+/// Schema of the bundled table: the rows under `places`, beside the dataset
+/// and the SHA-256 of the file they were derived from.
+pub const SCHEMA: &str = "tellegen.synth-populated-places/2";
+/// The earlier layout (object rows), still accepted.
+pub const SCHEMA_V1: &str = "tellegen.synth-populated-places/1";
 
 /// One populated place.
 #[derive(Clone, Debug, PartialEq)]
@@ -48,19 +52,58 @@ pub struct Place {
     pub name: String,
     pub lon: f64,
     pub lat: f64,
-    /// `pop_max`; Natural Earth's `-99` unknown sentinel is clamped to 0.
+    /// Population; a negative unknown sentinel is clamped to 0.
     pub population: f64,
     pub iso_a3: String,
+    /// ISO 3166-2 code of the first-level subdivision ("US-CA"), where the
+    /// table states one.
+    pub subdivision: Option<String>,
 }
 
+/// A row as an object (`{n, lo, la, p, c, s?}`) or a positional array
+/// (`[n, lo, la, p, c, s?]`).
 #[derive(Deserialize)]
-struct Row {
-    n: String,
-    lo: f64,
-    la: f64,
-    p: f64,
-    #[serde(default)]
-    c: String,
+#[serde(untagged)]
+enum Row {
+    Object {
+        n: String,
+        lo: f64,
+        la: f64,
+        p: f64,
+        #[serde(default)]
+        c: String,
+        #[serde(default)]
+        s: Option<String>,
+    },
+    Array(Vec<serde_json::Value>),
+}
+
+/// A row's fields: name, lon, lat, population, country, subdivision.
+type Fields = (String, f64, f64, f64, String, Option<String>);
+
+impl Row {
+    fn fields(self, i: usize) -> Result<Fields, SynthError> {
+        match self {
+            Row::Object { n, lo, la, p, c, s } => Ok((n, lo, la, p, c, s)),
+            Row::Array(v) => {
+                let bad = || {
+                    SynthError::Places(format!(
+                        "row {i} is not [name, lon, lat, population, country, subdivision?]"
+                    ))
+                };
+                if !(5..=6).contains(&v.len()) {
+                    return Err(bad());
+                }
+                let text = |k: usize| v[k].as_str().map(str::to_owned).ok_or_else(bad);
+                let num = |k: usize| v[k].as_f64().ok_or_else(bad);
+                let s = match v.get(5) {
+                    Some(serde_json::Value::Null) | None => None,
+                    Some(_) => Some(text(5)?),
+                };
+                Ok((text(0)?, num(1)?, num(2)?, num(3)?, text(4)?, s))
+            }
+        }
+    }
 }
 
 /// The bundled table's layout.
@@ -72,6 +115,9 @@ struct Table {
     #[allow(dead_code)]
     source_url: String,
     source_sha256: String,
+    #[allow(dead_code)]
+    #[serde(default)]
+    country_info_sha256: Option<String>,
     #[allow(dead_code)]
     note: String,
     places: Vec<Row>,
@@ -86,6 +132,8 @@ pub struct Places {
     by_lat: Vec<usize>,
     /// Population of every place of a country, by country code.
     country_population: BTreeMap<String, f64>,
+    /// Population of every place of a subdivision, by ISO 3166-2 code.
+    subdivision_population: BTreeMap<String, f64>,
     sha256: String,
     /// The dataset the rows were derived from and its SHA-256, when the table
     /// names them; a bare array of rows names neither.
@@ -122,7 +170,7 @@ impl Places {
             (rows, None)
         } else {
             let table: Table = serde_json::from_slice(bytes).map_err(unreadable)?;
-            if table.schema != SCHEMA {
+            if table.schema != SCHEMA && table.schema != SCHEMA_V1 {
                 return Err(SynthError::Places(format!(
                     "places table schema {:?}, expected {SCHEMA:?}",
                     table.schema
@@ -132,22 +180,19 @@ impl Places {
         };
         let mut places = Vec::with_capacity(rows.len());
         for (i, row) in rows.into_iter().enumerate() {
-            if !(-180.0..=180.0).contains(&row.lo) || !(-90.0..=90.0).contains(&row.la) {
+            let (n, lo, la, p, c, sub) = row.fields(i)?;
+            if !(-180.0..=180.0).contains(&lo) || !(-90.0..=90.0).contains(&la) {
                 return Err(SynthError::Places(format!(
-                    "row {i} has coordinates out of range (lon={}, lat={})",
-                    row.lo, row.la
+                    "row {i} has coordinates out of range (lon={lo}, lat={la})"
                 )));
             }
             places.push(Place {
-                name: row.n,
-                lon: row.lo,
-                lat: row.la,
-                population: if row.p.is_finite() {
-                    row.p.max(0.0)
-                } else {
-                    0.0
-                },
-                iso_a3: row.c,
+                name: n,
+                lon: lo,
+                lat: la,
+                population: if p.is_finite() { p.max(0.0) } else { 0.0 },
+                iso_a3: c,
+                subdivision: sub.filter(|code| !code.is_empty()),
             });
         }
         places.sort_by(|a, b| {
@@ -169,14 +214,19 @@ impl Places {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         let mut country_population: BTreeMap<String, f64> = BTreeMap::new();
+        let mut subdivision_population: BTreeMap<String, f64> = BTreeMap::new();
         for place in &places {
             *country_population.entry(place.iso_a3.clone()).or_default() += place.population;
+            if let Some(code) = &place.subdivision {
+                *subdivision_population.entry(code.clone()).or_default() += place.population;
+            }
         }
         let digest = Sha256::digest(bytes);
         Ok(Self {
             rows: places,
             by_lat,
             country_population,
+            subdivision_population,
             sha256: digest.iter().map(|b| format!("{b:02x}")).collect(),
             source,
         })
@@ -196,6 +246,7 @@ impl Places {
             rows: Vec::new(),
             by_lat: Vec::new(),
             country_population: BTreeMap::new(),
+            subdivision_population: BTreeMap::new(),
             sha256: Sha256::digest(b"")
                 .iter()
                 .map(|b| format!("{b:02x}"))
@@ -234,6 +285,11 @@ impl Places {
     /// code (places without one under the empty code).
     pub fn country_population(&self) -> &BTreeMap<String, f64> {
         &self.country_population
+    }
+
+    /// Population of every place of each subdivision, by ISO 3166-2 code.
+    pub fn subdivision_population(&self) -> &BTreeMap<String, f64> {
+        &self.subdivision_population
     }
 
     /// Row indices with latitude in `[south, north]`.
@@ -353,6 +409,64 @@ impl Places {
 /// Inverse-distance-weighted demand within `radius_km` of each point:
 /// `Σ demand_weight / (1 + d)` over the cities in range. Cities are bucketed
 /// on a `radius`-sized grid so the cost is O(points + cities).
+/// Each place's demand split among the points within `radius_km` of it, by
+/// inverse distance `1 / (1 + d)` normalised over those points, or given to
+/// its nearest point when none is that close. Unlike [`demand_idw`], a place
+/// counts once however many points surround it: a city ringed by many
+/// substations shares its demand among them instead of lending all of it to
+/// each, so totals follow where people live and not where buses are dense.
+pub fn demand_partition(points: &[(f64, f64)], cities: &[PlacedCity], radius_km: f64) -> Vec<f64> {
+    let mut out = vec![0.0; points.len()];
+    if cities.is_empty() || points.is_empty() {
+        return out;
+    }
+    let cell_lat = radius_km.max(1e-3) / 111.0;
+    let key = |lon: f64, lat: f64| -> (i64, i64) {
+        let cell_lon = cell_lat / lat.to_radians().cos().abs().max(0.05);
+        (
+            (lon / cell_lon).floor() as i64,
+            (lat / cell_lat).floor() as i64,
+        )
+    };
+    let mut buckets: std::collections::HashMap<(i64, i64), Vec<usize>> =
+        std::collections::HashMap::new();
+    for (k, &(lon, lat)) in points.iter().enumerate() {
+        buckets.entry(key(lon, lat)).or_default().push(k);
+    }
+    for c in cities {
+        let (cx, cy) = key(c.lon, c.lat);
+        let mut near: Vec<(usize, f64)> = Vec::new();
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                if let Some(list) = buckets.get(&(cx + dx, cy + dy)) {
+                    for &k in list {
+                        let d = haversine_km(c.lon, c.lat, points[k].0, points[k].1);
+                        if d <= radius_km {
+                            near.push((k, 1.0 / (1.0 + d)));
+                        }
+                    }
+                }
+            }
+        }
+        if near.is_empty() {
+            let nearest = (0..points.len())
+                .min_by(|&a, &b| {
+                    haversine_km(c.lon, c.lat, points[a].0, points[a].1)
+                        .total_cmp(&haversine_km(c.lon, c.lat, points[b].0, points[b].1))
+                        .then(a.cmp(&b))
+                })
+                .expect("a point");
+            out[nearest] += c.demand_weight;
+            continue;
+        }
+        let total: f64 = near.iter().map(|(_, w)| w).sum();
+        for (k, w) in near {
+            out[k] += c.demand_weight * w / total;
+        }
+    }
+    out
+}
+
 pub fn demand_idw(points: &[(f64, f64)], cities: &[PlacedCity], radius_km: f64) -> Vec<f64> {
     let mut out = vec![0.0; points.len()];
     if cities.is_empty() || points.is_empty() {
@@ -413,11 +527,8 @@ mod tests {
     #[test]
     fn the_bundled_table_names_its_source_and_bare_rows_name_none() {
         let bundled = Places::parse(include_bytes!("../data/populated_places.json")).unwrap();
-        assert_eq!(bundled.len(), 7342);
-        assert!(bundled
-            .source()
-            .unwrap()
-            .starts_with("Natural Earth v5.1.2"));
+        assert_eq!(bundled.len(), 69_999);
+        assert!(bundled.source().unwrap().starts_with("GeoNames cities5000"));
         assert_eq!(bundled.source_sha256().unwrap().len(), 64);
         let bare = Places::parse(FIXTURE).unwrap();
         assert_eq!((bare.source(), bare.source_sha256()), (None, None));
@@ -520,7 +631,38 @@ mod tests {
     #[test]
     fn the_bundled_table_parses() {
         let places = Places::embedded().unwrap();
-        assert_eq!(places.len(), 7342);
+        assert_eq!(places.len(), 69_999);
         assert!(places.rows()[0].population >= places.rows()[1].population);
+        // Positional rows carry the state code in the United States only.
+        let la = places
+            .rows()
+            .iter()
+            .find(|p| p.name == "Los Angeles" && p.iso_a3 == "USA")
+            .unwrap();
+        assert_eq!(la.subdivision.as_deref(), Some("US-CA"));
+        assert!(places
+            .rows()
+            .iter()
+            .filter(|p| p.iso_a3 != "USA")
+            .all(|p| p.subdivision.is_none()));
+    }
+
+    #[test]
+    fn rows_parse_as_objects_or_arrays() {
+        let objects =
+            Places::parse(br#"[{"n":"A","lo":1.0,"la":2.0,"p":10,"c":"USA","s":"US-CA"}]"#)
+                .unwrap();
+        let arrays = Places::parse(br#"[["A",1.0,2.0,10,"USA","US-CA"]]"#).unwrap();
+        assert_eq!(objects.rows(), arrays.rows());
+        assert_eq!(arrays.rows()[0].subdivision.as_deref(), Some("US-CA"));
+        let bare = Places::parse(br#"[["B",1.0,2.0,10,"PRT"]]"#).unwrap();
+        assert_eq!(bare.rows()[0].subdivision, None);
+        for bad in [
+            &br#"[["B",1.0,2.0]]"#[..],
+            br#"[["B","x",2.0,10,"PRT"]]"#,
+            br#"[[1,1.0,2.0,10,"PRT"]]"#,
+        ] {
+            assert!(Places::parse(bad).is_err());
+        }
     }
 }

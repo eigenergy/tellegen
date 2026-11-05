@@ -1,6 +1,6 @@
 {
   "name": "@tellegen/svelte",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "description": "Svelte components for tellegen power system maps, local case files, and browser solves.",
   "keywords": [
     "svelte",
@@ -67,7 +67,7 @@
     "pack:dry-run": "npm pack --dry-run --cache ../../node_modules/.cache/npm-pack"
   },
   "dependencies": {
-    "@tellegen/engine": "^0.4.6"
+    "@tellegen/engine": "^0.5.0"
   },
   "peerDependencies": {
     "@deck.gl/core": "^9.4.0",
@@ -80,10 +80,10 @@
     "@deck.gl/core": "^9.4.0",
     "@deck.gl/layers": "^9.4.0",
     "@deck.gl/maplibre": "^9.4.0",
-    "@sveltejs/package": "^3.0.1",
+    "@sveltejs/package": "^3.0.2",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "maplibre-gl": "^6.15.0",
-    "svelte": "^5.57.2",
+    "svelte": "^5.57.3",
     "svelte-check": "^4.7.7",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",

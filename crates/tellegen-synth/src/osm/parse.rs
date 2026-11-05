@@ -68,7 +68,8 @@ impl Element {
     }
 }
 
-/// A substation site with every voltage level its tags list, in kV, highest first.
+/// A substation site with every voltage level its tags list, in kV, highest
+/// first; empty when it states none.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OsmSubstation {
     pub id: i64,
@@ -167,14 +168,14 @@ pub fn parse_document(text: &str) -> Result<ParsedDocument, SynthError> {
                 else {
                     continue;
                 };
-                if !kvs.is_empty() {
-                    out.substations.push(OsmSubstation {
-                        id: el.id,
-                        lon,
-                        lat,
-                        kvs,
-                    });
-                }
+                // Kept without a voltage too: the site stage takes it from the
+                // lines ending there.
+                out.substations.push(OsmSubstation {
+                    id: el.id,
+                    lon,
+                    lat,
+                    kvs,
+                });
             }
             power @ ("line" | "cable") => {
                 let geometry: Vec<(f64, f64)> = el
@@ -233,7 +234,7 @@ pub fn parse_document(text: &str) -> Result<ParsedDocument, SynthError> {
     let counts = &mut out.provenance.counts;
     counts.insert(
         "substations_tagged".to_owned(),
-        out.substations.len() as u64,
+        out.substations.iter().filter(|s| !s.kvs.is_empty()).count() as u64,
     );
     counts.insert("lines_tagged".to_owned(), out.lines.len() as u64);
     counts.insert("plants_tagged".to_owned(), out.plants.len() as u64);
