@@ -1,7 +1,7 @@
 import { expect, test } from './fixtures/page-errors.js';
 
 // Two voltage levels: buses 1 (345 kV) and 2 (138 kV) share a substation and a transformer;
-// 3 and 4 are 138 kV substations of their own.
+// 3 and 4 are 138 kV substations of their own. Line 2–4 is out of service.
 const CASE = `function mpc = txdiagram
 mpc.version = '2';
 mpc.baseMVA = 100;
@@ -19,7 +19,7 @@ mpc.branch = [
  1 2 0.001 0.05 0 300 300 300 1 0 1 -360 360;
  2 3 0.01 0.1 0 120 120 120 0 0 1 -360 360;
  3 4 0.01 0.1 0 120 120 120 0 0 1 -360 360;
- 2 4 0.01 0.1 0 120 120 120 0 0 1 -360 360;
+ 2 4 0.01 0.1 0 120 120 120 0 0 0 -360 360;
 ];
 mpc.gencost = [
  2 0 0 3 0.11  5   0;
@@ -60,6 +60,7 @@ test('a balanced case opens as a single-line diagram and returns to the map', as
 	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('345 kV');
 	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('138 kV');
 	await expect(key).toContainText('transformer');
+	await expect(key).toContainText('out of service');
 	// Levels are grouped under their tier.
 	await expect(key).toContainText(/extra high voltage/i);
 	await expect(key).toContainText(/high voltage/i);

@@ -63,7 +63,6 @@
 	import { StoredFlag } from './schematic/view-prefs.svelte.js';
 	import {
 		levelPaint,
-		OUT_OF_SERVICE,
 		busLevelColours,
 		entryColour,
 		entryWidth,
@@ -202,7 +201,7 @@
 			const f = flows.get(br.id);
 			colours.set(
 				!graph.inService[k]
-					? OUT_OF_SERVICE
+					? [120, 116, 108, 200]
 					: f
 						? branchColor(f.loading, true)
 						: [138, 131, 117, 160],
@@ -307,6 +306,7 @@
 		txLandmarks(graph, geometry, solution ? branchState : null, anchors)
 	);
 	const levelsPresent = $derived(legend.entries);
+	const outOfService = $derived(graph.inService.some((on) => !on));
 	const TIER_NAMES = Object.fromEntries(TX_TIERS.map((t) => [t.tier, t.name]));
 
 	/** Screen insets no panel or toolbar covers. */
@@ -949,6 +949,13 @@
 						<svg viewBox="-14 -12 28 24" width="28" height="24" aria-hidden="true"
 							><path d={glyphPath(landmarkGlyph('transformer'), 7)} /></svg
 						>transformer
+					</li>
+				{/if}
+				{#if outOfService}
+					<li>
+						<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+							><path d="M-2 0H26" stroke-dasharray="4 3" /></svg
+						>out of service
 					</li>
 				{/if}
 			</ul>

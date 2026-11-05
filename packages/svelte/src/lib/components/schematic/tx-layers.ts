@@ -74,9 +74,6 @@ export function entryWidth(e: VoltageEntry): number {
 	return e.tier === 'unknown' ? 1.1 : Math.max(1.1, 3.6 - 0.5 * e.rank);
 }
 
-/** An out-of-service branch: faint in every colour mode. */
-export const OUT_OF_SERVICE: RGBA = [197, 191, 178, 110];
-
 export interface TxScene {
 	graph: TxGraph;
 	geometry: SchematicGeometry;
@@ -137,7 +134,8 @@ export function levelPaint(
 	for (let k = 0; k < m; k++) {
 		const j = legend.entryOf(graph.branchKv[k]);
 		const { colour, width } = paint[j];
-		let c: RGBA = graph.inService[k] ? colour : OUT_OF_SERVICE;
+		// Out of service keeps its level colour, a little lighter: the dashes carry the state.
+		let c: RGBA = graph.inService[k] ? colour : alpha(colour, 190);
 		let w = width;
 		if (focus >= 0) {
 			if (j === focus) w += 1;
@@ -287,6 +285,7 @@ function dashStrokes(scene: TxScene) {
 	const src: number[] = [];
 	const dst: number[] = [];
 	const colour: number[] = [];
+	const width: number[] = [];
 	for (let j = 0; j < g.segmentEdge.length; j++) {
 		const k = g.segmentEdge[j];
 		if (scene.graph.inService[k]) continue;
@@ -301,12 +300,14 @@ function dashStrokes(scene: TxScene) {
 			src.push(x0 + (x1 - x0) * t0, y0 + (y1 - y0) * t0, 0);
 			dst.push(x0 + (x1 - x0) * t1, y0 + (y1 - y0) * t1, 0);
 			colour.push(...scene.edgeColours.subarray(k * 4, k * 4 + 4));
+			width.push(Math.max(1.4, scene.edgeWidths[k] * 0.85));
 		}
 	}
 	return {
 		sources: Float32Array.from(src),
 		targets: Float32Array.from(dst),
-		colours: Uint8Array.from(colour)
+		colours: Uint8Array.from(colour),
+		widths: Float32Array.from(width)
 	};
 }
 
@@ -467,10 +468,10 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 							attributes: {
 								getSourcePosition: { value: dashes.sources, size: 3 },
 								getTargetPosition: { value: dashes.targets, size: 3 },
-								getColor: { value: dashes.colours, size: 4, normalized: true }
+								getColor: { value: dashes.colours, size: 4, normalized: true },
+								getWidth: { value: dashes.widths, size: 1 }
 							}
 						},
-						getWidth: 1.4,
 						widthUnits: 'pixels'
 					})
 				]
