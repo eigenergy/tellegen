@@ -213,6 +213,32 @@ Both health checks should report `status: "ok"` and a nonempty `cases` array.
 For the full public demo, that array should contain `case200`, `case500`,
 `case7000`, and `cats`.
 
+## Local full-data browser check
+
+Build the web app and start a native server from the repository root with all four cases staged.
+The suite checks that the server is serving the current production build. Build the WebAssembly
+engine first if the workspace has no generated Wasm package.
+
+```sh
+npm run build:engine
+npm run build:web
+TELLEGEN_DATA="$PWD/data" TELLEGEN_FRONTEND_BUILD="$PWD/apps/web/build" \
+  TELLEGEN_HOST=127.0.0.1 TELLEGEN_PORT=4216 cargo run --release -p tellegen-server
+```
+
+In a second terminal, wait until the health check reports `status: "ok"`, then run the suite
+against the same server.
+
+```sh
+curl -fsS http://127.0.0.1:4216/api/health
+TELLEGEN_FULL_DATA=1 TELLEGEN_PREVIEW_PORT=4216 \
+  npm --workspace tellegen-frontend run test:browser -- full-data-release.spec.ts
+```
+
+The checks load every demo case, save and reopen Texas7k results, exercise browser sensitivity and
+planning, verify that an ACTIVSg200 geographic attachment preserves the result, and follow CATS
+transfer and thermal limit results into the equipment inspector.
+
 ## Reverse Proxy
 
 `deploy/Caddyfile` is a sample route for a shared edge proxy. Tellegen CI does

@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
-import type { StudyBundle } from '@tellegen/engine';
+import type { Network, Solution, StudyBundle } from '@tellegen/engine';
 import { expect, test } from './fixtures/page-errors.js';
 import { callTool, installWebMcpHarness, listTools } from './fixtures/planning-case.js';
 
@@ -282,4 +282,85 @@ test('a geographic attachment copies the selected demo and preserves its result'
 		ok: true,
 		data: { case_id: 'case200', solution: original.data.solution, edits: original.data.edits }
 	});
+});
+
+test('CATS links the routed transfer and binding limit lists to the equipment inspector', async ({
+	page,
+	request
+}) => {
+	test.setTimeout(180_000);
+	const [networkResponse, solutionResponse] = await Promise.all([
+		request.get('/api/cases/cats/network'),
+		request.get('/api/cases/cats/solution')
+	]);
+	expect(networkResponse.ok()).toBe(true);
+	expect(solutionResponse.ok()).toBe(true);
+	const network: Network = await networkResponse.json();
+	const solution: Solution = await solutionResponse.json();
+	const branches = new Map(network.branches.map((branch) => [branch.id, branch]));
+	const top = solution.flows
+		.filter(
+			(flow) => branches.get(flow.branch)?.status && Number.isFinite(flow.mw) && flow.mw !== 0
+		)
+		.sort((a, b) => Math.abs(b.mw) - Math.abs(a.mw) || a.branch - b.branch)
+		.slice(0, 12);
+	const routeSize = (branchId: number) => branches.get(branchId)?.path.length ?? 0;
+	const routed = [...top].sort((a, b) => routeSize(b.branch) - routeSize(a.branch))[0];
+	expect(routeSize(routed.branch)).toBeGreaterThan(2);
+	const branch = branches.get(routed.branch)!;
+	const source = routed.mw > 0 ? branch.from : branch.to;
+	const sink = routed.mw > 0 ? branch.to : branch.from;
+
+	await page.goto('/');
+	await expect(page.locator('html')).toHaveAttribute('data-webmcp', 'ready');
+	expect(await callTool(page, 'select_case', { case_id: 'cats' })).toMatchObject({ ok: true });
+	await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+	await page.getByRole('button', { name: 'Close network panel', exact: true }).click();
+	const diagram = page.getByRole('application', { name: 'Single-line diagram', exact: true });
+	await expect(diagram).toBeVisible();
+	await expect(page.locator('.tx-stage .status')).toHaveCount(0);
+	const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram', exact: true });
+	await toolbar.getByLabel('Basemap').uncheck();
+	const view = toolbar.getByLabel('Diagram view');
+	await view.selectOption('transfer');
+	const transfers = page.getByRole('region', { name: 'Power transfers', exact: true });
+	await transfers.getByText('Largest active transfers', { exact: true }).press('Enter');
+	const row = transfers.getByRole('button', { name: new RegExp(`^Branch ${branch.id} `) });
+	await row.press('Enter');
+	const inspector = page.getByRole('region', { name: 'Selected equipment', exact: true });
+	await expect(
+		inspector.getByRole('heading', { name: `Branch ${branch.id}`, exact: true })
+	).toBeFocused();
+	await expect(inspector).toContainText(`Bus ${source} → bus ${sink}`);
+	const readEndpoint = async (end: string) => {
+		const cell = inspector
+			.getByRole('row', { name: new RegExp(`^${end} · bus `) })
+			.getByRole('cell');
+		return Number((await cell.innerText()).replace(' MW', ''));
+	};
+	expect(await readEndpoint('From')).toBeCloseTo(routed.mw, 5);
+	expect(await readEndpoint('To')).toBeCloseTo(routed.pt ?? -routed.mw, 5);
+	await expect(inspector.getByRole('columnheader', { name: 'Reactive', exact: true })).toHaveCount(
+		0
+	);
+	await view.selectOption('economics');
+	const economics = page.getByRole('region', { name: 'OPF economics', exact: true });
+	const binding = solution.branch_constraints
+		?.filter((entry) => entry.enforced && entry.binding)
+		.sort((a, b) => (b.relief_per_mw ?? 0) - (a.relief_per_mw ?? 0) || a.branch - b.branch);
+	if (binding) {
+		expect(binding.length).toBeGreaterThan(0);
+		await economics
+			.getByText(`Binding thermal limits · ${binding.length}`, { exact: true })
+			.press('Enter');
+		await economics
+			.getByRole('button', { name: new RegExp(`^Branch ${binding[0].branch} `) })
+			.press('Enter');
+		await expect(
+			inspector.getByRole('heading', { name: `Branch ${binding[0].branch}`, exact: true })
+		).toBeVisible();
+		await expect(economics).toContainText('Binding · positive marginal relief');
+	} else {
+		await expect(economics).toContainText('Thermal enforcement and marginal relief unavailable');
+	}
 });
