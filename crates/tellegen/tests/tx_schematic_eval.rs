@@ -39,28 +39,42 @@ fn percentile(v: &[f64], p: f64) -> f64 {
 }
 
 fn report(name: &str, input: &TxLayoutInput, group_ms: f64) {
-    let t = Instant::now();
-    let layout = tx_schematic_layout(input, &TxLayoutOptions::default());
-    let layout_ms = t.elapsed().as_secs_f64() * 1e3;
-    let q = tx_layout_quality(input, &layout);
-    let moved = q.displacement.iter().filter(|d| **d > 1e-6).count();
-    println!(
-        "{name}: {} buses, {} substations | grouping {group_ms:.1} ms, layout {layout_ms:.1} ms\n  \
-         displacement (km): median {:.2}, p90 {:.2}, max {:.2}; moved {moved} ({:.0} %)\n  \
-         spacing / box side: min {:.2}, p10 {:.2}; overlapping pairs {}\n  \
-         line segments through other substations: {} of {}",
-        input.bus_substation.len(),
-        q.displacement.len(),
-        percentile(&q.displacement, 0.5) / 1e3,
-        percentile(&q.displacement, 0.9) / 1e3,
-        percentile(&q.displacement, 1.0) / 1e3,
-        100.0 * moved as f64 / q.displacement.len().max(1) as f64,
-        percentile(&q.spacing, 0.0),
-        percentile(&q.spacing, 0.1),
-        q.overlapping_pairs,
-        q.lines_through_boxes,
-        layout.role.iter().filter(|&&r| r == 0).count(),
-    );
+    for iterations in [0, 10] {
+        let options = TxLayoutOptions {
+            route_iterations: iterations,
+            ..TxLayoutOptions::default()
+        };
+        let t = Instant::now();
+        let layout = tx_schematic_layout(input, &options);
+        let layout_ms = t.elapsed().as_secs_f64() * 1e3;
+        let q = tx_layout_quality(input, &layout);
+        let moved = q.displacement.iter().filter(|d| **d > 1e-6).count();
+        let mean = |v: &[usize]| v.iter().sum::<usize>() as f64 / v.len().max(1) as f64;
+        println!(
+            "{name} ({}): {} buses, {} substations | grouping {group_ms:.1} ms, layout {layout_ms:.1} ms\n  \
+             displacement (km): median {:.2}, p90 {:.2}, max {:.2}; moved {moved} ({:.0} %)\n  \
+             spacing / box side: min {:.2}, p10 {:.2}; overlapping pairs {}\n  \
+             line segments through other substations: {} ({} lines)\n  \
+             relative length: median {:.2}, p90 {:.2}, max {:.2}; bends per line {:.2}, sharp {:.2}",
+            if iterations == 0 { "straight" } else { "routed" },
+            input.bus_substation.len(),
+            q.displacement.len(),
+            percentile(&q.displacement, 0.5) / 1e3,
+            percentile(&q.displacement, 0.9) / 1e3,
+            percentile(&q.displacement, 1.0) / 1e3,
+            100.0 * moved as f64 / q.displacement.len().max(1) as f64,
+            percentile(&q.spacing, 0.0),
+            percentile(&q.spacing, 0.1),
+            q.overlapping_pairs,
+            q.lines_through_boxes,
+            q.relative_length.len(),
+            percentile(&q.relative_length, 0.5),
+            percentile(&q.relative_length, 0.9),
+            percentile(&q.relative_length, 1.0),
+            mean(&q.bends),
+            mean(&q.sharp_bends),
+        );
+    }
 }
 
 #[test]
@@ -142,6 +156,13 @@ fn evaluate_case_from_env() {
             .push(rows.get(&br.from.0).map_or(-1, |&r| r as i64));
         input.to.push(rows.get(&br.to.0).map_or(-1, |&r| r as i64));
         input.in_service.push(u8::from(br.in_service));
+    }
+    if let Ok(path) = std::env::var("TX_EVAL_DUMP") {
+        let json = serde_json::json!({
+            "bus_substation": input.bus_substation, "kv": input.kv, "from": input.from,
+            "to": input.to, "in_service": input.in_service, "xy": input.xy,
+        });
+        std::fs::write(path, json.to_string()).expect("write layout input");
     }
     report(&case, &input, group_ms);
 }

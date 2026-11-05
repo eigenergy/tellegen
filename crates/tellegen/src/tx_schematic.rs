@@ -59,6 +59,9 @@ pub struct TxLayoutOptions {
     pub tier_scales: [f64; 2],
     /// Candidate offsets either side of the seed, per axis (Birchfield uses 10: a 21 × 21 grid).
     pub search: i32,
+    /// Rounds of channel spacing in the Delaunay line routing (Birchfield uses at least 10); 0
+    /// draws lines straight between their boxes.
+    pub route_iterations: usize,
 }
 
 impl Default for TxLayoutOptions {
@@ -69,6 +72,7 @@ impl Default for TxLayoutOptions {
             tier_counts: [12, 30],
             tier_scales: [2.0 / 3.0, 4.0 / 9.0],
             search: 10,
+            route_iterations: 10,
         }
     }
 }
@@ -364,6 +368,7 @@ pub fn tx_schematic_layout(input: &TxLayoutInput, options: &TxLayoutOptions) -> 
             }
         }
     };
+    let mut lines: Vec<LineRequest> = Vec::new();
     for e in 0..m {
         let Some((a, b)) = ends(e) else { continue };
         if a == b {
@@ -401,7 +406,44 @@ pub fn tx_schematic_layout(input: &TxLayoutInput, options: &TxLayoutOptions) -> 
                 y,
             )
         };
-        push(&[p, exit(sa, sb, p.1), exit(sb, sa, q.1), q], e);
+        lines.push(LineRequest {
+            e,
+            sa,
+            sb,
+            slots: [p, q],
+            exits: [exit(sa, sb, p.1), exit(sb, sa, q.1)],
+        });
+    }
+    // Lines between substations route through the channels of the Delaunay triangulation of the
+    // substation centres, clear of the boxes they pass (Birchfield & Overbye §IV-B).
+    let gap = 0.8 * unit;
+    let waypoints = if options.route_iterations > 0 {
+        route_lines(
+            &occupied,
+            &centre,
+            &boxes,
+            &scale,
+            &lines,
+            gap,
+            options.route_iterations,
+        )
+    } else {
+        vec![Vec::new(); lines.len()]
+    };
+    // Legs that still clip another substation (near a box corner, where channel spacing does not
+    // look) step around it.
+    let obstacles = BoxIndex::new(&boxes, &occupied);
+    for (line, via) in lines.iter().zip(&waypoints) {
+        let mut middle = vec![line.exits[0]];
+        middle.extend_from_slice(via);
+        middle.push(line.exits[1]);
+        if options.route_iterations > 0 {
+            detour(&mut middle, &obstacles, [line.sa, line.sb], gap);
+        }
+        let mut pts = vec![line.slots[0]];
+        pts.extend_from_slice(&middle);
+        pts.push(line.slots[1]);
+        push(&pts, line.e);
     }
 
     let mut bounds = [
@@ -434,6 +476,437 @@ pub fn tx_schematic_layout(input: &TxLayoutInput, options: &TxLayoutOptions) -> 
         scale,
         bounds,
     }
+}
+
+/// A line between two substations, before routing: its bar slots and box exits at both ends.
+struct LineRequest {
+    e: usize,
+    sa: usize,
+    sb: usize,
+    slots: [(f64, f64); 2],
+    exits: [(f64, f64); 2],
+}
+
+/// One crossing of a line with a Delaunay channel: where it sits along the channel (0 at `u`).
+struct Crossing {
+    line: usize,
+    /// Its position in the line's sequence of crossings.
+    k: usize,
+    t: f64,
+}
+
+/// A Delaunay edge between two substation centres that lines pass through.
+struct Channel {
+    u: (f64, f64),
+    w: (f64, f64),
+    /// Allowed range along the channel, clear of both boxes.
+    lo: f64,
+    hi: f64,
+    /// Minimum spacing between lines, as a fraction of the channel length.
+    gap: f64,
+    crossings: Vec<Crossing>,
+}
+
+/// Waypoints for each line (Birchfield & Overbye §IV-B): trace the straight line between its two
+/// substation centres through the Delaunay triangulation of all centres, add a waypoint on each
+/// channel (triangle edge) it crosses, then repeatedly space the waypoints on each channel: each
+/// takes the point nearest where the line through its neighbours crosses the channel, clear of
+/// the two substations' boxes and of the lines already placed on that channel.
+fn route_lines(
+    occupied: &[usize],
+    centre: &[(f64, f64)],
+    boxes: &[f64],
+    scale: &[f64],
+    lines: &[LineRequest],
+    gap: f64,
+    iterations: usize,
+) -> Vec<Vec<(f64, f64)>> {
+    let mut out = vec![Vec::new(); lines.len()];
+    if occupied.len() < 3 {
+        return out;
+    }
+    let points: Vec<delaunator::Point> = occupied
+        .iter()
+        .map(|&s| delaunator::Point {
+            x: centre[s].0,
+            y: centre[s].1,
+        })
+        .collect();
+    let tri = delaunator::triangulate(&points);
+    if tri.triangles.is_empty() {
+        return out;
+    }
+    let mut vertex_of = HashMap::with_capacity(occupied.len());
+    for (v, &s) in occupied.iter().enumerate() {
+        vertex_of.insert(s, v);
+    }
+    let mut around: Vec<Vec<usize>> = vec![Vec::new(); occupied.len()];
+    for t in 0..tri.triangles.len() / 3 {
+        for k in 0..3 {
+            around[tri.triangles[t * 3 + k]].push(t);
+        }
+    }
+    let next = |h: usize| if h % 3 == 2 { h - 2 } else { h + 1 };
+    let pt = |v: usize| (points[v].x, points[v].y);
+
+    // Trace each line; channels keyed by their undirected vertex pair.
+    let mut channels: HashMap<(usize, usize), usize> = HashMap::new();
+    let mut list: Vec<Channel> = Vec::new();
+    // Per line, its crossings in order as (channel, crossing index on that channel).
+    let mut path: Vec<Vec<(usize, usize)>> = vec![Vec::new(); lines.len()];
+    for (l, line) in lines.iter().enumerate() {
+        let (Some(&va), Some(&vb)) = (vertex_of.get(&line.sa), vertex_of.get(&line.sb)) else {
+            continue;
+        };
+        let (p, q) = (pt(va), pt(vb));
+        // The halfedge opposite `va` in a triangle around it that the line leaves through.
+        let mut crossed = None;
+        for &t in &around[va] {
+            let hs = [t * 3, t * 3 + 1, t * 3 + 2];
+            if hs.iter().any(|&h| tri.triangles[h] == vb) {
+                break;
+            }
+            for &h in &hs {
+                let (a, b) = (tri.triangles[h], tri.triangles[next(h)]);
+                if a != va && b != va && segments_cross(p, q, pt(a), pt(b)) {
+                    crossed = Some(h);
+                }
+            }
+            if crossed.is_some() {
+                break;
+            }
+        }
+        let mut steps = 0;
+        while let Some(h) = crossed {
+            steps += 1;
+            if steps > tri.triangles.len() {
+                path[l].clear();
+                break;
+            }
+            let (a, b) = (tri.triangles[h], tri.triangles[next(h)]);
+            let key = (a.min(b), a.max(b));
+            let c = *channels.entry(key).or_insert_with(|| {
+                list.push(channel(
+                    pt(key.0),
+                    pt(key.1),
+                    occupied[key.0],
+                    occupied[key.1],
+                    boxes,
+                    scale,
+                    gap,
+                ));
+                list.len() - 1
+            });
+            let t = line_param(p, q, list[c].u, list[c].w).unwrap_or(0.5);
+            let k = path[l].len();
+            path[l].push((c, list[c].crossings.len()));
+            list[c].crossings.push(Crossing { line: l, k, t });
+            // Into the neighbouring triangle, and out through one of its other two edges.
+            let twin = tri.halfedges[h];
+            if twin == delaunator::EMPTY {
+                break;
+            }
+            let t3 = twin - twin % 3;
+            let third = (0..3)
+                .map(|k| tri.triangles[t3 + k])
+                .find(|&v| v != a && v != b);
+            if third == Some(vb) {
+                break;
+            }
+            crossed = [next(twin), next(next(twin))].into_iter().find(|&g| {
+                let (x, y) = (tri.triangles[g], tri.triangles[next(g)]);
+                segments_cross(p, q, pt(x), pt(y))
+            });
+            if crossed.is_none() {
+                // The line runs through a vertex: leave it straight.
+                path[l].clear();
+            }
+        }
+    }
+
+    // Where each line's waypoint `j` is now.
+    let at = |list: &[Channel], (c, j): (usize, usize)| {
+        let ch = &list[c];
+        let t = ch.crossings[j].t;
+        (
+            ch.u.0 + t * (ch.w.0 - ch.u.0),
+            ch.u.1 + t * (ch.w.1 - ch.u.1),
+        )
+    };
+    for _ in 0..iterations {
+        for c in 0..list.len() {
+            let mut desired: Vec<(f64, usize)> = Vec::with_capacity(list[c].crossings.len());
+            for (j, x) in list[c].crossings.iter().enumerate() {
+                let codes = &path[x.line];
+                // A line whose trace was abandoned keeps its crossing where it is.
+                if codes.get(x.k) != Some(&(c, j)) {
+                    desired.push((x.t, j));
+                    continue;
+                }
+                let k = x.k;
+                let prev = if k == 0 {
+                    lines[x.line].exits[0]
+                } else {
+                    at(&list, codes[k - 1])
+                };
+                let next = if k + 1 == codes.len() {
+                    lines[x.line].exits[1]
+                } else {
+                    at(&list, codes[k + 1])
+                };
+                let t = line_param(prev, next, list[c].u, list[c].w).unwrap_or(x.t);
+                desired.push((t, j));
+            }
+            let ch = &mut list[c];
+            let placed = space(&mut desired, ch.lo, ch.hi, ch.gap);
+            for (j, t) in placed {
+                ch.crossings[j].t = t;
+            }
+        }
+    }
+    for (l, codes) in path.iter().enumerate() {
+        out[l] = codes.iter().map(|&code| at(&list, code)).collect();
+    }
+    out
+}
+
+/// Substation boxes on a grid, for finding the boxes a segment may cross.
+struct BoxIndex<'a> {
+    boxes: &'a [f64],
+    cell: f64,
+    cells: HashMap<(i64, i64), Vec<usize>>,
+}
+
+impl<'a> BoxIndex<'a> {
+    fn new(boxes: &'a [f64], occupied: &[usize]) -> Self {
+        let cell = occupied
+            .iter()
+            .map(|&s| (boxes[s * 4 + 2] - boxes[s * 4]).max(boxes[s * 4 + 3] - boxes[s * 4 + 1]))
+            .fold(0.0, f64::max)
+            .max(f64::MIN_POSITIVE);
+        let mut cells: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for &s in occupied {
+            let b = &boxes[s * 4..s * 4 + 4];
+            let (x0, y0) = ((b[0] / cell).floor() as i64, (b[1] / cell).floor() as i64);
+            let (x1, y1) = ((b[2] / cell).floor() as i64, (b[3] / cell).floor() as i64);
+            for x in x0..=x1 {
+                for y in y0..=y1 {
+                    cells.entry((x, y)).or_default().push(s);
+                }
+            }
+        }
+        Self { boxes, cell, cells }
+    }
+
+    /// The first box along `p → q` that the segment crosses, other than `skip`. Walks exactly
+    /// the grid cells the segment passes through (Amanatides & Woo); every box is registered in
+    /// each cell it overlaps, so no box it crosses is missed.
+    fn first_hit(&self, p: (f64, f64), q: (f64, f64), skip: [usize; 2]) -> Option<usize> {
+        let c = self.cell;
+        let (mut cx, mut cy) = ((p.0 / c).floor() as i64, (p.1 / c).floor() as i64);
+        let (ex, ey) = ((q.0 / c).floor() as i64, (q.1 / c).floor() as i64);
+        let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+        let (sx, sy) = (dx.signum() as i64, dy.signum() as i64);
+        let boundary = |cell: i64, step: i64| (cell + i64::from(step > 0)) as f64 * c;
+        let mut t_max_x = if dx != 0.0 {
+            (boundary(cx, sx) - p.0) / dx
+        } else {
+            f64::INFINITY
+        };
+        let mut t_max_y = if dy != 0.0 {
+            (boundary(cy, sy) - p.1) / dy
+        } else {
+            f64::INFINITY
+        };
+        let t_dx = if dx != 0.0 {
+            c / dx.abs()
+        } else {
+            f64::INFINITY
+        };
+        let t_dy = if dy != 0.0 {
+            c / dy.abs()
+        } else {
+            f64::INFINITY
+        };
+        let steps = ((ex - cx).abs() + (ey - cy).abs()) as usize;
+        let mut best: Option<(f64, usize)> = None;
+        for _ in 0..=steps.min(1_000_000) {
+            if let Some(ids) = self.cells.get(&(cx, cy)) {
+                for &s in ids {
+                    if skip.contains(&s) {
+                        continue;
+                    }
+                    let b = &self.boxes[s * 4..s * 4 + 4];
+                    if segment_hits_box(&[p.0, p.1, q.0, q.1], b) {
+                        let m = ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
+                        let d = (m.0 - p.0).hypot(m.1 - p.1);
+                        if best.is_none_or(|(bd, _)| d < bd) {
+                            best = Some((d, s));
+                        }
+                    }
+                }
+            }
+            // A hit in this cell may still lie beyond a box in the next one; boxes span at most
+            // two cells along an axis, so finishing the following cell settles which is first.
+            if best.is_some() && (t_max_x.min(t_max_y) > 1.0 || (cx, cy) != (ex, ey)) {
+                if let Some((d, _)) = best {
+                    let reached = t_max_x.min(t_max_y) * dx.hypot(dy);
+                    if reached > d + c {
+                        break;
+                    }
+                }
+            }
+            if (cx, cy) == (ex, ey) {
+                break;
+            }
+            if t_max_x < t_max_y {
+                t_max_x += t_dx;
+                cx += sx;
+            } else {
+                t_max_y += t_dy;
+                cy += sy;
+            }
+        }
+        best.map(|(_, s)| s)
+    }
+}
+
+/// Step each leg of `path` that crosses a box (other than its own substations') around the corner
+/// of that box that adds the least length, a few times at most per line.
+fn detour(path: &mut Vec<(f64, f64)>, index: &BoxIndex, own: [usize; 2], gap: f64) {
+    let mut inserted = 0;
+    let mut i = 0;
+    while i + 1 < path.len() && inserted < 4 {
+        let (p, q) = (path[i], path[i + 1]);
+        let Some(s) = index.first_hit(p, q, own) else {
+            i += 1;
+            continue;
+        };
+        let b = &index.boxes[s * 4..s * 4 + 4];
+        let g = gap * 0.5;
+        let corners = [
+            (b[0] - g, b[1] - g),
+            (b[2] + g, b[1] - g),
+            (b[2] + g, b[3] + g),
+            (b[0] - g, b[3] + g),
+        ];
+        let cost = |c: &(f64, f64)| (c.0 - p.0).hypot(c.1 - p.1) + (q.0 - c.0).hypot(q.1 - c.1);
+        let shrunk = [b[0] + 1e-9, b[1] + 1e-9, b[2] - 1e-9, b[3] - 1e-9];
+        // Prefer a corner whose two new legs clear this box; else the shortest.
+        let corner = corners
+            .iter()
+            .filter(|c| {
+                !segment_hits_box(&[p.0, p.1, c.0, c.1], &shrunk)
+                    && !segment_hits_box(&[c.0, c.1, q.0, q.1], &shrunk)
+            })
+            .min_by(|a, b| cost(a).total_cmp(&cost(b)))
+            .or_else(|| corners.iter().min_by(|a, b| cost(a).total_cmp(&cost(b))))
+            .copied();
+        let Some(c) = corner else { break };
+        path.insert(i + 1, c);
+        inserted += 1;
+    }
+}
+
+/// A channel between substations `su` and `sv` with centres `u` and `w`: the stretch of the edge
+/// outside both boxes (plus a gap) is where lines may cross it.
+fn channel(
+    u: (f64, f64),
+    w: (f64, f64),
+    su: usize,
+    sv: usize,
+    boxes: &[f64],
+    scale: &[f64],
+    gap: f64,
+) -> Channel {
+    let len = (w.0 - u.0).hypot(w.1 - u.1).max(f64::MIN_POSITIVE);
+    let d = ((w.0 - u.0) / len, (w.1 - u.1) / len);
+    // Distance from a box's centre along `d` to its edge.
+    let reach = |s: usize| {
+        let b = &boxes[s * 4..s * 4 + 4];
+        let (hw, hh) = ((b[2] - b[0]) / 2.0, (b[3] - b[1]) / 2.0);
+        let tx = if d.0.abs() > 1e-12 {
+            hw / d.0.abs()
+        } else {
+            f64::INFINITY
+        };
+        let ty = if d.1.abs() > 1e-12 {
+            hh / d.1.abs()
+        } else {
+            f64::INFINITY
+        };
+        tx.min(ty)
+    };
+    let g = gap * scale[su].min(scale[sv]);
+    let (mut lo, mut hi) = ((reach(su) + g) / len, 1.0 - (reach(sv) + g) / len);
+    if lo > hi {
+        let mid = (lo + hi) / 2.0;
+        (lo, hi) = (mid, mid);
+    }
+    Channel {
+        u,
+        w,
+        lo: lo.clamp(0.0, 1.0),
+        hi: hi.clamp(0.0, 1.0),
+        gap: g / len,
+        crossings: Vec::new(),
+    }
+}
+
+/// Place waypoints along a channel nearest their desired positions, in order, at least `gap`
+/// apart, within `[lo, hi]`; spread evenly when they do not fit.
+fn space(desired: &mut [(f64, usize)], lo: f64, hi: f64, gap: f64) -> Vec<(usize, f64)> {
+    desired.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    let n = desired.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let span = hi - lo;
+    if (n - 1) as f64 * gap > span {
+        return desired
+            .iter()
+            .enumerate()
+            .map(|(i, &(_, j))| {
+                let t = if n == 1 {
+                    (lo + hi) / 2.0
+                } else {
+                    lo + span * i as f64 / (n - 1) as f64
+                };
+                (j, t)
+            })
+            .collect();
+    }
+    let mut t: Vec<f64> = desired.iter().map(|d| d.0.clamp(lo, hi)).collect();
+    for i in 1..n {
+        t[i] = t[i].max(t[i - 1] + gap);
+    }
+    t[n - 1] = t[n - 1].min(hi);
+    for i in (0..n - 1).rev() {
+        t[i] = t[i].min(t[i + 1] - gap);
+    }
+    desired.iter().zip(t).map(|(&(_, j), t)| (j, t)).collect()
+}
+
+/// Whether segments `p–q` and `a–b` cross at a point inside both.
+fn segments_cross(p: (f64, f64), q: (f64, f64), a: (f64, f64), b: (f64, f64)) -> bool {
+    let orient = |o: (f64, f64), x: (f64, f64), y: (f64, f64)| {
+        (x.0 - o.0) * (y.1 - o.1) - (x.1 - o.1) * (y.0 - o.0)
+    };
+    let (d1, d2) = (orient(a, b, p), orient(a, b, q));
+    let (d3, d4) = (orient(p, q, a), orient(p, q, b));
+    d1 * d2 < 0.0 && d3 * d4 < 0.0
+}
+
+/// Where the line through `p` and `q` crosses segment `u–w`, as a fraction along `u–w`; None when
+/// they are parallel.
+fn line_param(p: (f64, f64), q: (f64, f64), u: (f64, f64), w: (f64, f64)) -> Option<f64> {
+    let (r, s) = ((q.0 - p.0, q.1 - p.1), (w.0 - u.0, w.1 - u.1));
+    let denom = r.0 * s.1 - r.1 * s.0;
+    if denom.abs() < 1e-12 * (r.0.hypot(r.1) * s.0.hypot(s.1)).max(f64::MIN_POSITIVE) {
+        return None;
+    }
+    let t = ((u.0 - p.0) * r.1 - (u.1 - p.1) * r.0) / denom;
+    Some(t.clamp(0.0, 1.0))
 }
 
 fn median(values: &[f64]) -> Option<f64> {
@@ -616,6 +1089,11 @@ pub struct TxLayoutQuality {
     pub overlapping_pairs: usize,
     /// Line segments that cross a substation box other than their own ends'.
     pub lines_through_boxes: usize,
+    /// Per line between substations: drawn length over the straight distance between its ends.
+    pub relative_length: Vec<f64>,
+    /// Per line: turns of more than one degree, and of more than sixty.
+    pub bends: Vec<usize>,
+    pub sharp_bends: Vec<usize>,
 }
 
 pub fn tx_layout_quality(input: &TxLayoutInput, layout: &TxLayout) -> TxLayoutQuality {
@@ -698,11 +1176,59 @@ pub fn tx_layout_quality(input: &TxLayoutInput, layout: &TxLayout) -> TxLayoutQu
             lines_through_boxes += 1;
         }
     }
+    // Polylines per line, from consecutive segments of the same branch.
+    let mut relative_length = Vec::new();
+    let mut bends = Vec::new();
+    let mut sharp_bends = Vec::new();
+    let mut j = 0;
+    let segs = layout.segment_edge.len();
+    while j < segs {
+        let e = layout.segment_edge[j];
+        let start = j;
+        while j < segs && layout.segment_edge[j] == e {
+            j += 1;
+        }
+        if layout.role[e as usize] != TX_ROLE_LINE {
+            continue;
+        }
+        let seg = |i: usize| &layout.segments[i * 4..i * 4 + 4];
+        let drawn: f64 = (start..j)
+            .map(|i| (seg(i)[2] - seg(i)[0]).hypot(seg(i)[3] - seg(i)[1]))
+            .sum();
+        let (a, b) = (seg(start), seg(j - 1));
+        let straight = (b[2] - a[0]).hypot(b[3] - a[1]);
+        relative_length.push(if straight > 0.0 {
+            drawn / straight
+        } else {
+            1.0
+        });
+        let (mut turns, mut sharp) = (0, 0);
+        for i in start + 1..j {
+            let (p, q) = (seg(i - 1), seg(i));
+            let a1 = (p[3] - p[1]).atan2(p[2] - p[0]);
+            let a2 = (q[3] - q[1]).atan2(q[2] - q[0]);
+            let mut d = (a2 - a1).abs().to_degrees();
+            if d > 180.0 {
+                d = 360.0 - d;
+            }
+            if d > 1.0 {
+                turns += 1;
+            }
+            if d > 60.0 {
+                sharp += 1;
+            }
+        }
+        bends.push(turns);
+        sharp_bends.push(sharp);
+    }
     TxLayoutQuality {
         displacement,
         spacing,
         overlapping_pairs,
         lines_through_boxes,
+        relative_length,
+        bends,
+        sharp_bends,
     }
 }
 
@@ -884,6 +1410,46 @@ mod tests {
                 .fold(f64::INFINITY, f64::min);
             assert!((fast[i] - slow).abs() < 1e-9, "{i}: {} vs {slow}", fast[i]);
         }
+    }
+
+    #[test]
+    fn routed_lines_step_around_substations_in_their_way() {
+        // A, B and C in a row (with D and E off the line so the triangulation has area); the
+        // line A–C would run straight through B.
+        let seeds = [
+            (0.0, 0.0),
+            (10_000.0, 0.0),
+            (20_000.0, 0.0),
+            (10_000.0, 12_000.0),
+            (10_000.0, -12_000.0),
+        ];
+        let mut input = TxLayoutInput::default();
+        for (s, &(x, y)) in seeds.iter().enumerate() {
+            input.bus_substation.push(s as u32);
+            input.kv.push(230.0);
+            input.xy.extend_from_slice(&[x, y]);
+        }
+        for (a, b) in [(0, 2), (0, 1), (1, 2), (0, 3), (3, 2), (0, 4), (4, 2)] {
+            input.from.push(a);
+            input.to.push(b);
+            input.in_service.push(1);
+        }
+        let straight = tx_schematic_layout(
+            &input,
+            &TxLayoutOptions {
+                route_iterations: 0,
+                ..TxLayoutOptions::default()
+            },
+        );
+        assert!(tx_layout_quality(&input, &straight).lines_through_boxes > 0);
+        let routed = tx_schematic_layout(&input, &TxLayoutOptions::default());
+        let q = tx_layout_quality(&input, &routed);
+        assert_eq!(q.lines_through_boxes, 0);
+        assert!(
+            q.relative_length.iter().all(|r| *r < 2.0),
+            "{:?}",
+            q.relative_length
+        );
     }
 
     #[test]

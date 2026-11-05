@@ -26,6 +26,9 @@ powerio-dist.workspace = true
 # DC/conic OPF QP/SOCP solver. Default features only (QDLDL + amd), so it stays pure
 # Rust and compiles to wasm32 as-is.
 clarabel = "0.11.1"
+# Delaunay triangulation of substation centres for line routing in the transmission schematic
+# (`tx_schematic`). Pure Rust, ISC, already in the workspace through tellegen-synth.
+delaunator = "1.1"
 # Sparse LU for the sensitivity solves. Optional so a consumer that only needs
 # the solve can drop it (the browser core build does). faer pulls pulp with
 # default features off and only `std`/`x86-v3`, so pulp's `relaxed-simd` feature

@@ -25,6 +25,9 @@ voltage first, and its transformers drawn between the busbars; lines leave
 along their own row from the side of the box facing the far substation.
 Substations take the free spot nearest their geographic position, and dense
 areas are drawn smaller, so the overview stays registered to the basemap and
-buses glide into their substations when the layout switches. ACTIVSg200 lays
-out in under a millisecond with no overlapping substations and 86 % of them at
-their true position; a 70,000-bus synthetic grid takes about 60 ms.
+buses glide into their substations when the layout switches. Lines route
+through the channels of a Delaunay triangulation of the substations, spaced
+apart and clear of the boxes they pass, and step around any box still in the
+way. ACTIVSg200 lays out in under a millisecond with no overlapping
+substations, 86 % of them at their true position and no line crossing another
+substation; a 70,000-bus synthetic grid takes about 0.35 s natively.

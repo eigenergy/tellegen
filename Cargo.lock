@@ -2309,6 +2309,7 @@ name = "tellegen"
 version = "0.5.0"
 dependencies = [
  "clarabel",
+ "delaunator",
  "faer",
  "num-complex",
  "pounce-nl",
