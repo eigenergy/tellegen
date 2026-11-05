@@ -24,7 +24,8 @@
 		caseId,
 		onbusclick,
 		onbranchclick,
-		onclear
+		onclear,
+		onsingleline
 	}: {
 		network: Network;
 		multiconductor?: MulticonductorCase | null;
@@ -32,6 +33,8 @@
 		onbusclick: (id: number) => void;
 		onbranchclick: (id: number) => void;
 		onclear: () => void;
+		/** Opens the case as a single-line diagram; the button shows only when given. */
+		onsingleline?: () => void;
 	} = $props();
 	const app = getAppState();
 	const ctrl = getController();
@@ -388,6 +391,14 @@
 	</div>
 	{#if !buses.length}<p class="empty">This drawing has no matched bus positions.</p>{/if}
 	<div class="controls" aria-label="Diagram controls">
+		{#if onsingleline}
+			<button
+				onclick={onsingleline}
+				aria-label="Single-line diagram"
+				title="Open this case as a single-line diagram: voltage levels, operating limits, prices and power flows"
+				><span class="full">Single-line diagram</span><span class="short">Diagram</span></button
+			>
+		{/if}
 		<button onclick={() => fit()} title="Fit diagram (F)">Fit diagram</button>
 		<div class="zoom">
 			<button aria-label="Zoom in" onclick={() => zoom(1.25)}>+</button><button
@@ -398,7 +409,9 @@
 	</div>
 	<p class="coordinate-label">
 		Diagram coordinates{#if multiconductor?.result}
-			· {mcLoadModelLabel(multiconductor.result.load_model)} · {mcNetworkScopeLabel(multiconductor.result.network_scope)}{/if}
+			· {mcLoadModelLabel(multiconductor.result.load_model)} · {mcNetworkScopeLabel(
+				multiconductor.result.network_scope
+			)}{/if}
 	</p>
 </div>
 
@@ -454,6 +467,17 @@
 		fill: var(--text-secondary);
 		font-family: var(--font-mono);
 		pointer-events: none;
+	}
+	.controls .short {
+		display: none;
+	}
+	@media (max-width: 760px) {
+		.controls .full {
+			display: none;
+		}
+		.controls .short {
+			display: inline;
+		}
 	}
 	.controls {
 		position: absolute;

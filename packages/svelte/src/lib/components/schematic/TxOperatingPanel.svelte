@@ -5,6 +5,8 @@
 		type operatingContext,
 		type stationVoltageSummary
 	} from '../../diagram/transmission-results.js';
+	import { TERMS, operatingLead } from '../../diagram/transmission-explain.js';
+	import TxLead from './TxLead.svelte';
 	let {
 		formulation,
 		context,
@@ -40,6 +42,15 @@
 		/** Collapsed to the heading and the counts that matter. */
 		brief?: boolean;
 	} = $props();
+	const lead = $derived(
+		operatingLead({
+			hasResult: context.solved,
+			voltageSolved: context.voltage,
+			voltageAvailable,
+			counts,
+			warning
+		})
+	);
 </script>
 
 <section class="operating-panel" aria-label="Operating limits">
@@ -50,6 +61,7 @@
 	<p class:stale={context.stale} class="freshness" role="status" hidden={brief && !context.stale}>
 		{context.freshness} · {context.status} · base case
 	</p>
+	<TxLead {lead} view="operating" {brief} />
 	{#if !brief}{#if context.voltage && voltageAvailable}<div class="voltage-key">
 				<span>Voltage</span><span>0.90</span><i style:background={voltageGradient}></i><span
 					>1.10 pu</span
@@ -58,23 +70,29 @@
 		{#if shading}<p class="freshness">
 				Shading: near the <span class="low">minimum</span> or
 				<span class="high">maximum</span> voltage limit
-			</p>{/if}
-		<p class="freshness">Loading: {context.basis} · tick at 100%</p>{/if}
+			</p>{/if}{/if}
 	<div class="counts" aria-label="Operating limit counts">
 		{#if voltageAvailable}<span class:violation={counts.low + counts.high > 0}
 				>↓ {counts.low} low · ↑ {counts.high} high</span
 			>
-		{:else}<span>{context.voltage ? 'Voltage results unavailable' : 'DC: |V| not solved'}</span
+		{:else}<span
+				title={context.voltage
+					? undefined
+					: 'DC power flow treats every voltage as 1 pu, so voltage magnitudes are not solved.'}
+				>{context.voltage ? 'Voltage results unavailable' : 'Voltage not solved (DC)'}</span
 			>{/if}
-		<span class:violation={counts.overload > 0}
+		<span class:violation={counts.overload > 0} title="Lines carrying more than their rating."
 			>{counts.overload} overload{counts.overload === 1 ? '' : 's'}</span
 		>
 		<span class:warning={counts.warning + counts.atLimit > 0}
-			>{counts.warning} warning · {counts.atLimit} at rating</span
+			><span title="{TERMS.warning} The threshold is {warning}%.">{counts.warning} warning</span>
+			· <span title={TERMS.atRating}>{counts.atLimit} at rating</span></span
 		>
 		<span hidden={brief}
-			>{context.voltage ? `${counts.voltageUnknown} voltage unknown · ` : ''}{counts.loadingUnknown} loading
-			unknown · {counts.inactive} out of service{counts.disconnected
+			>{context.voltage ? `${counts.voltageUnknown} voltage unknown · ` : ''}<span
+				title={TERMS.loadingUnknown}>{counts.loadingUnknown} without a rating</span
+			>
+			· <span title={TERMS.outOfService}>{counts.inactive} out of service</span>{counts.disconnected
 				? ` · ${counts.disconnected} de-energized`
 				: ''}</span
 		>
@@ -87,9 +105,11 @@
 					↓ low · ↑ high, against case limits. Faded: missing voltage or limits. × de-energized.
 				</p>{/if}
 			<p>
-				Loading: {context.basis}. Gauges show 0–125%, with a tick at 100%, and a leader to their
-				branch. Values above the gauge range keep their numeric label. A heavy amber outline means
-				at rating; a filled red gauge means overloaded.
+				<span title={TERMS.rating}>Loading</span> is {context.basisText} (<code
+					>{context.basis}</code
+				>). Gauges show 0–125%, with a tick at 100%, and a leader to their branch. Values above the
+				gauge range keep their numeric label. A heavy amber outline means at rating; a filled red
+				gauge means overloaded.
 			</p>
 			<label
 				>Loading warning <input
@@ -150,6 +170,14 @@
 </section>
 
 <style>
+	code {
+		font: inherit;
+	}
+	[title] {
+		text-decoration: underline dotted;
+		text-underline-offset: 2px;
+		cursor: help;
+	}
 	.low {
 		color: #2166ac;
 		font-weight: 600;

@@ -346,7 +346,7 @@ for (const touch of [false, true]) {
 			await expect(view('Operating limits')).toHaveAttribute('aria-checked', 'true');
 			await expect(
 				page.getByRole('region', { name: 'Operating limits', exact: true })
-			).toContainText('DC: |V| not solved');
+			).toContainText('Voltage not solved (DC)');
 			// Every view is visible in the toolbar, not hidden in a menu.
 			await expect(toolbar.getByRole('radiogroup', { name: 'Diagram view' })).toBeVisible();
 			await expect(toolbar.getByRole('radio')).toHaveText([

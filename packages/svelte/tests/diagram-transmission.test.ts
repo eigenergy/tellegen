@@ -109,9 +109,11 @@ describe('transmission graph', () => {
 		).toHaveLength(1);
 	});
 
-	it('shades levels within a tier and widens higher entries', () => {
-		const legend = voltageLegend(new Map([345, 230, 138, 115].map((kv) => [kv, 1])));
-		const hv = legend.entries.filter((e) => e.tier === 'hv');
+	it('shades levels that share a hue, highest darkest', () => {
+		// 69 kV claims cyan, so 230, 138 and 115 kV all stay blue.
+		const legend = voltageLegend(new Map([345, 230, 138, 115, 69].map((kv) => [kv, 1])));
+		const hv = legend.entries.filter((e) => e.hue === 'hv');
+		expect(hv.map((e) => e.label)).toEqual(['230 kV', '138 kV', '115 kV']);
 		expect(hv.map((e) => [e.inTier, e.tierSize])).toEqual([
 			[0, 3],
 			[1, 3],
@@ -120,6 +122,27 @@ describe('transmission graph', () => {
 		expect(txTier(765)).toBe('ehv');
 		expect(txTier(69)).toBe('sub');
 		expect(txTier(0)).toBe('unknown');
+	});
+
+	it("gives a case's main levels distinct hues when a lower hue is free", () => {
+		const hues = (kv: number[]) =>
+			voltageLegend(new Map(kv.map((v) => [v, 1]))).entries.map((e) => e.hue);
+		// ACTIVSg200: both 230 and 115 kV are high voltage; 115 kV borrows the unused cyan.
+		expect(hues([230, 115, 13.8])).toEqual(['hv', 'sub', 'low']);
+		expect(hues([500, 230, 115])).toEqual(['ehv', 'hv', 'sub']);
+		// Fixed tiers already separate these.
+		expect(hues([345, 138, 69])).toEqual(['ehv', 'hv', 'sub']);
+		// Out of hues: the rest share the lowest, never stepping back up.
+		expect(hues([345, 230, 138, 115])).toEqual(['ehv', 'hv', 'sub', 'sub']);
+		// The key's headings still name the voltage band.
+		expect(
+			voltageLegend(
+				new Map([
+					[230, 1],
+					[115, 1]
+				])
+			).entries.map((e) => e.tier)
+		).toEqual(['hv', 'hv']);
 	});
 
 	it('reads the engine grouping, kV and transformer flags as columns', () => {

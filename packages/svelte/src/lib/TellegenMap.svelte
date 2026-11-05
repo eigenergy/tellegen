@@ -168,6 +168,14 @@
 			: null
 	);
 	let shownTx: typeof txCase = null;
+	/** Open the active balanced case as a single-line diagram. */
+	function openSingleLine() {
+		const c = ctrl.activeSolvable;
+		if (!c?.network || app.activeMulti) return;
+		c.schematic = true;
+		// On a phone, the sheet would cover the diagram it opens.
+		if (panels.compact) panels.drawer = null;
+	}
 	/** The map control that opens a balanced case as a single-line diagram. */
 	let diagramControl = $state.raw<HTMLElement | null>(null);
 	const diagramAvailable = $derived(
@@ -983,13 +991,7 @@
 							short.className = 'short';
 							short.textContent = 'Diagram';
 							button.append(full, short);
-							button.onclick = () => {
-								const c = ctrl.activeSolvable;
-								if (!c?.network || app.activeMulti) return;
-								c.schematic = true;
-								// On a phone, the sheet would cover the diagram it opens.
-								if (panels.compact) panels.drawer = null;
-							};
+							button.onclick = openSingleLine;
 							wrap.append(button);
 							diagramControl = wrap;
 							return wrap;
@@ -1644,6 +1646,7 @@
 		onbusclick={selectDiagramBus}
 		onbranchclick={selectDiagramBranch}
 		onclear={onmapclick}
+		onsingleline={diagramAvailable && !diagramMulti ? openSingleLine : undefined}
 	/>
 {:else}
 	{#key mapGen}

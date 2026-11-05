@@ -3,6 +3,9 @@ import {
 	busBounds,
 	fitBounds,
 	freeInsets,
+	openingCamera,
+	maxZoomFor,
+	MAX_ZOOM,
 	revealPoint,
 	showsAnyPosition,
 	toScreen
@@ -61,5 +64,41 @@ describe('diagram camera', () => {
 		expect(docked).toEqual({ left: 344, right: 344, top: 74, bottom: 88 });
 		const sheet = freeInsets({ compact: true, top: 0, dockWidth: () => 300, sheetInset: 200 });
 		expect(sheet.bottom).toBe(224);
+	});
+});
+
+describe('opening camera', () => {
+	const fitted = { target: [0, 0, 0] as [number, number, number], zoom: 4 };
+	const shows = () => true;
+
+	it('keeps the map view when it shows the drawing at a useful size', () => {
+		const closer = { target: [5, 5, 0] as [number, number, number], zoom: 6 };
+		expect(openingCamera(closer, fitted, shows)).toBe(closer);
+		const slightlyOut = { ...closer, zoom: 3.5 };
+		expect(openingCamera(slightlyOut, fitted, shows)).toBe(slightlyOut);
+	});
+
+	it('fits when the map view would draw the case small, off screen or not at all', () => {
+		expect(openingCamera({ ...fitted, zoom: 2 }, fitted, shows)).toBe(fitted);
+		expect(openingCamera({ ...fitted, zoom: 6 }, fitted, () => false)).toBe(fitted);
+		expect(openingCamera(null, fitted, shows)).toBe(fitted);
+	});
+});
+
+describe('zoom limit', () => {
+	it('keeps the fixed limit for drawings in metres', () => {
+		expect(maxZoomFor([0, 0, 500_000, 300_000])).toBe(MAX_ZOOM);
+	});
+
+	it('lets a unit-box drawing fit a large canvas and zoom in', () => {
+		const zoom = maxZoomFor([0, 0, 1, 1]);
+		expect(zoom).toBe(16);
+		const fitted = fitBounds([0, 0, 1, 1], view, none, zoom);
+		// 600 px of height for one unit: well past the old 256 px cap.
+		expect(2 ** fitted.zoom).toBeCloseTo(600);
+	});
+
+	it('falls back to the fixed limit for empty bounds', () => {
+		expect(maxZoomFor([0, 0, 0, 0])).toBe(MAX_ZOOM);
 	});
 });

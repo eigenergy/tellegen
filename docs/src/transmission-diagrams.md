@@ -1,8 +1,13 @@
 # Transmission diagrams
 
 Balanced (transmission) cases open as a single-line diagram. **Single-line diagram** beside the
-map's zoom buttons (**Diagram** on a phone), or **Show diagram** in the network panel, replaces the
-map with a canvas; **Show map** or **Close** returns to the map at the view the diagram showed.
+map's zoom buttons (**Diagram** on a phone), or beside **Fit diagram** for a case drawn in diagram
+coordinates, or **Show diagram** in the network panel, replaces the map with a canvas; **Show map**
+or **Close** returns to the map at the view the diagram showed. The diagram opens at the map's view
+when that shows the case at a useful size, and otherwise fits the case into the space the panels
+leave free. While the diagram is open, the network panel's LMP, angle and demand buttons say they
+apply to the map and to the diagram's **Map display** view; the diagram's own key explains the
+other views.
 
 ## Geographic
 
@@ -36,11 +41,15 @@ is therefore drawn with three cues together:
 
 - **hue by tier**: magenta from 300 kV, blue from 100 kV, cyan from 35 kV, and neutral grey below.
   The three hues stay distinguishable from each other, and from the warning, violation and
-  selection colours, under the common colour-vision deficiencies;
+  selection colours, under the common colour-vision deficiencies. When two of a case's levels fall
+  in one tier and a lower hue is unused, the lower level takes that hue, so the main levels differ
+  in hue: ACTIVSg200's 230 and 115 kV draw blue and cyan, 500/230/115 kV magenta, blue and cyan.
+  Hues only move down, and never back up as voltage falls; 345/138/115/69 kV keeps 115 kV a
+  lighter blue because 69 kV needs cyan;
 - **shade within a tier**, darker for the higher level;
 - **width by rank**, heaviest for the highest level.
 
-The key groups the levels under their tier. Hovering a level in the key keeps it and fades the
+The key groups the levels under their tier's name, whatever hue they draw in. Hovering a level in the key keeps it and fades the
 others; clicking keeps it highlighted. Zoomed
 out, levels below the top three fade so the backbone reads first.
 
@@ -50,7 +59,18 @@ The toolbar shows every view as a tab: **Voltage levels**, **Operating limits**,
 economics**, **Power transfers** and **Map display**, so what the diagram offers is visible
 without opening a menu. Each tab describes its view on hover, and arrow keys move between them.
 A view that needs a result says what is missing instead of being disabled: OPF economics, for
-example, names the calculations that supply prices. The diagram opens on **Operating limits**. AC power flow and AC OPF show
+example, names the calculations that supply prices.
+
+Each result view opens with a plain reading of the result and the reason for it, before any
+counts or notation: "Every rated line runs below 90% of its rating", with why DC checks loading
+only; "Every bus has the same price", because no line limit binds, and prices separate when one
+does; "The busiest line carries 555 MW". A link leads to the matching section of this page. Terms
+such as rating, binding, marginal relief and objective units have short explanations on hover
+(dotted underline), and the notation (`|P| / MW rating`) sits under **Key and settings**.
+
+Prices are in objective units per MW: the units of the case's generator costs per hour. MATPOWER
+files give costs in $/h, so for them this is $/MWh; payloads do not carry a currency, so the
+diagram does not claim one. The diagram opens on **Operating limits**. AC power flow and AC OPF show
 solved voltage magnitudes and branch utilization together, independent of the map's LMP or
 demand setting. DC shows utilization and explicitly states that voltage magnitudes are not
 solved. SOCWR is labelled as a relaxation.

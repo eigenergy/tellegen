@@ -188,7 +188,13 @@ export function operatingContext(
 						? 'Result available'
 						: 'Not solved',
 		stale: solving || error || mismatch,
-		basis: dcBasis ? '|P| / MW rating' : 'max(|S from|, |S to|) / MVA rating'
+		/** A result is shown, current or not. */
+		solved: !!solution,
+		basis: dcBasis ? '|P| / MW rating' : 'max(|S from|, |S to|) / MVA rating',
+		/** `basis` in words. */
+		basisText: dcBasis
+			? 'MW flow as a percentage of the MW rating'
+			: "the larger end's apparent power (MVA) as a percentage of the MVA rating"
 	};
 }
 

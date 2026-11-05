@@ -34,14 +34,15 @@
 		busBounds,
 		cameraFromMap,
 		fitBounds,
+		openingCamera,
 		freeInsets,
 		glyphPath,
 		attachmentGlyph,
 		landmarkGlyph,
 		landmarkStrokes,
 		levelLabel,
-		MAX_ZOOM,
 		MIN_ZOOM,
+		maxZoomFor,
 		placeLabels,
 		placeLandmarks,
 		revealPoint,
@@ -657,7 +658,9 @@
 			dockWidth: (side) => panels.dockWidth(side),
 			sheetInset: app.sheetInset
 		});
-	const fitAll = () => fitBounds(geometry.bounds, { width, height }, freeArea());
+	/** The deepest zoom for this drawing, whatever its units (see `maxZoomFor`). */
+	const maxZoom = $derived(maxZoomFor(geometry.bounds));
+	const fitAll = () => fitBounds(geometry.bounds, { width, height }, freeArea(), maxZoom);
 
 	function setCamera(next: DiagramCamera, fly = false) {
 		camera = next;
@@ -666,7 +669,7 @@
 			initialViewState: {
 				...next,
 				minZoom: MIN_ZOOM,
-				maxZoom: MAX_ZOOM,
+				maxZoom,
 				...(animate
 					? {
 							transitionDuration: 450,
@@ -695,9 +698,9 @@
 					[p[0], p[1], p[0], p[1]],
 					view,
 					area,
-					Math.min(MAX_ZOOM, Math.max(camera.zoom, legible))
+					Math.min(maxZoom, Math.max(camera.zoom, legible))
 				)
-			: revealPoint(p, camera, view, area, legible);
+			: revealPoint(p, camera, view, area, legible, maxZoom);
 		if (next) setCamera(next, true);
 	}
 
@@ -973,21 +976,21 @@
 			.then(([core, layers]) => {
 				if (cancelled) return;
 				kit = { core, layers };
-				// Open where the map was when it shows part of this case; otherwise fit the drawing.
+				// Open where the map was when it shows part of this case at a useful size; otherwise
+				// fit the drawing to the free area.
 				const fromMap =
 					geometry.mercatorOrigin && app.camera
 						? cameraFromMap(app.camera, geometry.mercatorOrigin)
 						: null;
-				camera =
-					fromMap && showsAnyPosition(geometry.positions, fromMap, { width, height }, freeArea())
-						? fromMap
-						: fitAll();
+				camera = openingCamera(fromMap, fitAll(), (c) =>
+					showsAnyPosition(geometry.positions, c, { width, height }, freeArea())
+				);
 				deck = new core.Deck({
 					canvas: element,
 					width: '100%',
 					height: '100%',
 					views: new core.OrthographicView({ id: 'transmission', flipY: true }),
-					initialViewState: { ...camera, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM },
+					initialViewState: { ...camera, minZoom: MIN_ZOOM, maxZoom },
 					controller: { doubleClickZoom: true },
 					pickingRadius: matchMedia('(pointer: coarse)').matches ? 12 : 6,
 					getCursor: ({ isHovering, isDragging }) =>
@@ -1141,7 +1144,12 @@
 		// Both layouts share one frame, so the camera stays where it is unless nothing would show.
 		const to = showsAnyPosition(drawing.geometry.positions, camera, { width, height }, freeArea())
 			? camera
-			: fitBounds(drawing.geometry.bounds, { width, height }, freeArea());
+			: fitBounds(
+					drawing.geometry.bounds,
+					{ width, height },
+					freeArea(),
+					maxZoomFor(drawing.geometry.bounds)
+				);
 		setCamera(to);
 		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		if (!deck || reduced || graph.busId.length > MORPH_MAX_BUSES) return;
@@ -1323,7 +1331,11 @@
 					rows.filter((r) => r >= 0),
 					typical
 				);
-				if (b) setCamera(fitBounds(b, { width, height }, freeArea(), camera.zoom + 2), true);
+				if (b)
+					setCamera(
+						fitBounds(b, { width, height }, freeArea(), Math.min(maxZoom, camera.zoom + 2)),
+						true
+					);
 			}
 			app.settleFrame();
 		});
@@ -1332,7 +1344,7 @@
 	function zoomBy(delta: number) {
 		setCamera({
 			target: camera.target,
-			zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, camera.zoom + delta))
+			zoom: Math.max(MIN_ZOOM, Math.min(maxZoom, camera.zoom + delta))
 		});
 	}
 	function onkeydown(e: KeyboardEvent) {

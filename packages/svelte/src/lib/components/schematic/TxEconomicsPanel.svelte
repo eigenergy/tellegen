@@ -10,6 +10,8 @@
 		type economicsFor
 	} from '../../diagram/transmission-economics.js';
 	import type { operatingContext } from '../../diagram/transmission-results.js';
+	import { TERMS, economicsLead } from '../../diagram/transmission-explain.js';
+	import TxLead from './TxLead.svelte';
 
 	let {
 		formulation,
@@ -52,6 +54,16 @@
 	const domain = $derived(PRICE_SCALES[scale]);
 	const branchResult = $derived(branch ? economics.branches.get(branch.id) : undefined);
 	let limit = $state(12);
+	const lead = $derived(
+		economicsLead({
+			opf: OPF.has(formulation),
+			ac: formulation === 'acopf' || formulation === 'socwr',
+			prices: economics.prices.map((p) => p.value),
+			uniform: economics.uniform,
+			binding: economics.binding.length,
+			thermalAvailable: economics.thermalAvailable
+		})
+	);
 </script>
 
 <section class="economics" aria-label="OPF economics">
@@ -63,12 +75,18 @@
 	<p role="status" hidden={brief && !context.stale}>
 		{context.freshness} · {context.status} · base case
 	</p>
+	<TxLead {lead} view="economics" {brief} />
 	{#if economics.uniform !== null}
-		<p>Total LMP uniform at {economicAmount(economics.uniform)}</p>
+		<p>
+			<abbr title={TERMS.lmp}>Total LMP</abbr> uniform at
+			<span title={TERMS.objectiveUnits}>{economicAmount(economics.uniform)}</span>
+		</p>
 	{:else if economics.prices.length}
 		<div class="scale">
-			<span>Total LMP</span><span>{domain.lo}</span><i style:background={priceGradient}></i>
-			<span>{domain.hi} {PRICE_UNIT}</span>
+			<abbr title={TERMS.lmp}>Total LMP</abbr><span>{domain.lo}</span><i
+				style:background={priceGradient}
+			></i>
+			<span>{domain.hi} <span title={TERMS.objectiveUnits}>{PRICE_UNIT}</span></span>
 		</div>
 		<label hidden={brief}>
 			Price scale
@@ -86,10 +104,7 @@
 			</p>
 		{/if}
 	{:else if !OPF.has(formulation)}
-		<p>
-			Prices and binding limits come from an optimal power flow. Choose DC OPF, AC OPF or SOCWR as
-			the calculation in the network panel.
-		</p>
+		<!-- The lead says where prices come from. -->
 	{:else}
 		<p>Total LMP unavailable for this result.</p>
 	{/if}
@@ -104,15 +119,17 @@
 		{#if branch}
 			<p><strong>Branch {branch.id}</strong> · {thermalStatus(branchResult)}</p>
 			<p>
-				Marginal rating relief {economicAmount(branchResult?.relief_per_mw)}
+				<span title={TERMS.relief}>Marginal rating relief</span>
+				{economicAmount(branchResult?.relief_per_mw)}
 				{#if flow?.loading_info?.rating_source === 'synthesized'}
 					· Synthesized solver bound{/if}
 			</p>
 		{/if}
 		{#if economics.thermalAvailable}
 			<p>
-				<span class="accent">Wide purple branch</span> · Binding thermal limit with positive marginal
-				relief
+				<span class="accent">Wide purple line</span> · a
+				<span title={TERMS.binding}>binding</span> line limit: carrying one more MW there would
+				lower the total cost (its <span title={TERMS.relief}>marginal relief</span>)
 			</p>
 			<details>
 				<summary>Binding thermal limits · {economics.binding.length}</summary>
@@ -126,7 +143,9 @@
 									{...preview(row.branch)}
 								>
 									<strong>Branch {row.branch}</strong>
-									<span>{economicAmount(row.relief_per_mw)} · marginal relief</span>
+									<span title={TERMS.relief}
+										>{economicAmount(row.relief_per_mw)} · marginal relief</span
+									>
 								</button>
 							</li>
 						{/each}
@@ -170,6 +189,12 @@
 </section>
 
 <style>
+	abbr,
+	[title] {
+		text-decoration: underline dotted;
+		text-underline-offset: 2px;
+		cursor: help;
+	}
 	.economics {
 		width: 100%;
 		min-width: 0;

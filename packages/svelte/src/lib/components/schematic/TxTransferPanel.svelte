@@ -7,6 +7,8 @@
 		transferDirectionText,
 		type TransferReading
 	} from '../../diagram/transmission-transfer.js';
+	import { TERMS, transferLead } from '../../diagram/transmission-explain.js';
+	import TxLead from './TxLead.svelte';
 
 	let {
 		formulation,
@@ -38,6 +40,20 @@
 	} = $props();
 
 	let open = $state(false);
+	const lead = $derived.by(() => {
+		const first = transfers[0];
+		return transferLead({
+			hasResult: context.solved,
+			top: first
+				? {
+						id: first.branch.id,
+						mw: readable(first.reading.magnitude, 'MW').text,
+						direction: transferDirectionText(first.reading, first.branch)
+					}
+				: null,
+			scale
+		});
+	});
 </script>
 
 <section class="transfer" aria-label="Power transfers">
@@ -49,7 +65,15 @@
 	<p role="status" hidden={brief && !context.stale}>
 		{context.freshness} · {context.status} · base case
 	</p>
-	<p><span class="blue">Blue line width</span> · Largest reported endpoint |P| · 0 to {scale} MW</p>
+	<TxLead {lead} view="transfer" {brief} />
+	<p>
+		<span class="blue">Blue line width</span> ·
+		<span
+			title="{TERMS.activePower} Each line shows the larger of its two ends' |P| (the ends differ by the losses)."
+			>active power</span
+		>
+		· 0 to {scale} MW
+	</p>
 	{#if !brief}<label>
 			Width scale
 			<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
@@ -59,9 +83,9 @@
 		</label>
 		<p>Chevrons show direction close in · Red gauges show overload in percent of rating.</p>
 		<p>
-			{zero} zero flow · {missing} active flow unavailable
+			{zero} carrying no power · {missing} without a flow value
 			{#if dc}
-				· Lossless DC endpoints{/if}
+				· <span title={TERMS.lossless}>lossless (DC)</span>{/if}
 		</p>
 		<p>
 			{hasDispatch
@@ -98,6 +122,11 @@
 </section>
 
 <style>
+	[title] {
+		text-decoration: underline dotted;
+		text-underline-offset: 2px;
+		cursor: help;
+	}
 	.transfer {
 		width: 100%;
 		min-width: 0;

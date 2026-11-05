@@ -19,9 +19,22 @@ export interface Viewport {
 	height: number;
 }
 
-/** Zoom limits of the diagram canvases. */
+/** Zoom limits of the diagram canvases. `MAX_ZOOM` suits drawings in metres; use `maxZoomFor`
+ * for a drawing whose units may be small. */
 export const MIN_ZOOM = -24;
 export const MAX_ZOOM = 8;
+
+/** Pixels the drawing's longer side may span at the deepest zoom. */
+const DEEPEST_SPAN_PX = 2 ** 16;
+
+/** The deepest zoom for a drawing with these bounds: `MAX_ZOOM`, or deeper when the drawing's
+ * units are small. Cases in diagram coordinates are laid out in a unit box, which `MAX_ZOOM`
+ * alone would cap at 256 px across, too small to fit the canvas or to zoom into. */
+export function maxZoomFor(bounds: [number, number, number, number]): number {
+	const extent = Math.max(bounds[2] - bounds[0], bounds[3] - bounds[1]);
+	if (!(extent > 0) || !Number.isFinite(extent)) return MAX_ZOOM;
+	return Math.max(MAX_ZOOM, Math.log2(DEEPEST_SPAN_PX / extent));
+}
 
 /** The insets the panels leave free: docked panels on the sides, the toolbar on top, and the sheet
  * (compact layout) or the footer below. */
@@ -64,6 +77,23 @@ export function fitBounds(
 	};
 }
 
+/** How far (in zoom steps, factors of two) a carried-over camera may sit below the fitted one
+ * before the diagram fits instead: further out, the drawing would span under half the free width. */
+export const OPENING_ZOOM_SLACK = 1;
+
+/** The camera a diagram opens with: the one carried over from the map when it shows the drawing
+ * at a useful size, else the fitted one. A map zoomed in on part of the case keeps that view; a
+ * map zoomed further out than the fit would open the drawing small in the middle of the canvas. */
+export function openingCamera(
+	carried: DiagramCamera | null,
+	fitted: DiagramCamera,
+	shows: (camera: DiagramCamera) => boolean
+): DiagramCamera {
+	return carried && carried.zoom >= fitted.zoom - OPENING_ZOOM_SLACK && shows(carried)
+		? carried
+		: fitted;
+}
+
 /** Where a drawing point lands on screen, in CSS pixels. */
 export function toScreen(p: [number, number], camera: DiagramCamera, view: Viewport) {
 	const scale = 2 ** camera.zoom;
@@ -81,10 +111,11 @@ export function revealPoint(
 	camera: DiagramCamera,
 	view: Viewport,
 	free: Insets,
-	zoom = camera.zoom
+	zoom = camera.zoom,
+	maxZoom = MAX_ZOOM
 ): DiagramCamera | null {
 	if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) return null;
-	const next = Math.min(MAX_ZOOM, Math.max(camera.zoom, zoom));
+	const next = Math.min(maxZoom, Math.max(camera.zoom, zoom));
 	const [sx, sy] = toScreen(p, camera, view);
 	const visible =
 		sx > free.left &&
