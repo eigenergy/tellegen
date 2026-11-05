@@ -509,7 +509,8 @@ export class Controller {
 			...(c.network?.model_details ? { model_details: c.network.model_details } : {}),
 			coordinate_space: view.coordinate_space,
 			buses: view.buses,
-			branches: view.branches
+			branches: view.branches,
+			...(view.substations ? { substations: view.substations } : {})
 		};
 	}
 

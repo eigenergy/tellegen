@@ -26,6 +26,7 @@ import type {
   DemandDeltas,
   NetworkBranch,
   NetworkBus,
+  NetworkSubstation,
   ProblemCaps,
   SensitivityColumn,
   Solution,
@@ -64,6 +65,7 @@ export type {
   Network,
   NetworkBranch,
   NetworkBus,
+  NetworkSubstation,
   PowerFlowStart,
   ProblemCaps,
   SensRequest,
@@ -134,6 +136,10 @@ export interface TopologyBus {
   editable?: boolean;
   demand_mw: number;
   gen_mw: number;
+  /** Nominal voltage in kV; 0 when the source gives none. */
+  base_kv?: number;
+  /** Index into `Topology.substations`. */
+  substation?: number;
 }
 
 export interface TopologyBranch {
@@ -146,11 +152,15 @@ export interface TopologyBranch {
   to: number;
   rate_mw: number;
   status: number;
+  /** Joins two voltage levels. */
+  transformer?: boolean;
 }
 
 export interface Topology {
   buses: TopologyBus[];
   branches: TopologyBranch[];
+  /** Substations for transmission diagrams, grouped without coordinates. */
+  substations?: NetworkSubstation[];
 }
 
 /** One parse per dropped file: summary stats, plus map geometry when the
@@ -165,6 +175,8 @@ export interface IngestedCase extends CaseFileSummary {
     coordinate_space?: "geographic" | "diagram";
     buses: NetworkBus[];
     branches: NetworkBranch[];
+    /** Substations for transmission diagrams; `NetworkBus.substation` indexes this list. */
+    substations?: NetworkSubstation[];
   } | null;
 }
 

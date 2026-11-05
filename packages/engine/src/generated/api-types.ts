@@ -273,6 +273,24 @@ export interface NetworkBus {
 	lat: number;
 	demand_mw: number;
 	gen_mw: number;
+	/** Nominal voltage in kV; 0 when the source gives none. Older payloads omit the field. */
+	base_kv?: number;
+	/** Index into `Network.substations`. Older payloads omit the field. */
+	substation?: number;
+}
+
+/** How a substation's buses were grouped, strongest first: declared by the source data, sharing
+ * one coordinate, joined by transformers, or a bus on its own. */
+export type SubstationSource = 'declared' | 'colocated' | 'transformer' | 'single';
+
+/** One substation of a transmission diagram: the buses that `NetworkBus.substation` points at. */
+export interface NetworkSubstation {
+	/** `sub:<declared id>` when declared, else `bus:<lowest bus id>`. */
+	key: string;
+	name: string | null;
+	source: SubstationSource;
+	/** Distinct nominal voltages of the members in kV, highest first. */
+	kv: number[];
 }
 
 export interface NetworkBranch {
@@ -285,6 +303,8 @@ export interface NetworkBranch {
 	to: number;
 	rate_mw: number;
 	status: number;
+	/** Joins two voltage levels. Older payloads omit the field. */
+	transformer?: boolean;
 	path: [number, number][];
 }
 
@@ -297,6 +317,8 @@ export interface Network {
 	synthetic_coords: boolean;
 	buses: NetworkBus[];
 	branches: NetworkBranch[];
+	/** Substations for transmission diagrams. Older payloads omit the field. */
+	substations?: NetworkSubstation[];
 }
 
 export interface Solution {

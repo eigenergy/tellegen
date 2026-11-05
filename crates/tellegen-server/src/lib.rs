@@ -33,7 +33,10 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use tellegen::geo::{complete_coords_for, lowered_coords, spread_stacks, synthetic_layout, Coords};
+use tellegen::geo::{
+    complete_coords_and_stacks, lowered_coords, spread_stacks, synthetic_layout, Coords, Stacks,
+};
+use tellegen::substations::{group_substations, GroupingOptions, Substation};
 use tellegen::{solve_instance_cancellable, Iterations, SolveRequest, SolveResponse};
 #[cfg(feature = "sensitivity")]
 use tellegen::{ElementId, Mode, Operand, Parameter, Power, SensRequest, SensitivityMatrix};
@@ -288,6 +291,8 @@ pub struct NetworkPayload {
     pub synthetic_coords: bool,
     pub buses: Vec<NetworkBus>,
     pub branches: Vec<NetworkBranch>,
+    /// Substations for transmission diagrams; `NetworkBus::substation` indexes this list.
+    pub substations: Vec<Substation>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -300,6 +305,10 @@ pub struct NetworkBus {
     pub lat: f64,
     pub demand_mw: f64,
     pub gen_mw: f64,
+    /// Nominal voltage in kV (0 when the source gives none).
+    pub base_kv: f64,
+    /// Index into `NetworkPayload::substations`.
+    pub substation: u32,
     /// False for a display-only bus synthesized by analysis lowering.
     pub editable: bool,
 }
@@ -311,6 +320,8 @@ pub struct NetworkBranch {
     pub to: usize,
     pub rate_mw: f64,
     pub status: u8,
+    /// Joins two voltage levels (see `tellegen::substations::is_transformer`).
+    pub transformer: bool,
     /// False for a display-only branch synthesized by analysis lowering.
     pub editable: bool,
     pub path: Vec<[f64; 2]>,
@@ -1058,13 +1069,13 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
     let case_path = data_dir.join(spec.casefile);
     let (case_module, _) = parse_balanced_file(&case_path, "m")?;
     let case = case_module.value();
-    let coords = match spec.coords {
+    let (coords, stacks) = match spec.coords {
         CoordSpec::Aux(auxfile) => {
             let aux_path = data_dir.join(auxfile);
             let (aux_module, aux_text) = parse_balanced_file(&aux_path, "aux")?;
             // The substation table rides in the aux text itself. PowerIO retains
             // the source on the module rather than the network value.
-            complete_coords_for(case, aux_module.value(), Some(&aux_text), auxfile)?
+            complete_coords_and_stacks(case, aux_module.value(), Some(&aux_text), auxfile)?
         }
         CoordSpec::BusCsv(csvfile) => load_bus_csv_coords(&data_dir.join(csvfile), case)?,
     };
@@ -1084,6 +1095,7 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
         spec.name,
         PioModule::new(prepared),
         coords,
+        &stacks,
         branch_paths,
         false,
     )?;
@@ -1091,7 +1103,7 @@ fn build_staged_entry(data_dir: &Path, spec: CaseSpec) -> Result<CaseEntry, Stri
     Ok(entry)
 }
 
-fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, String> {
+fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<(Coords, Stacks), String> {
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut lines = text.lines();
     let header = lines
@@ -1141,7 +1153,7 @@ fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, St
             coords.insert(bus, (lon, lat));
         }
     }
-    spread_stacks(&mut coords);
+    let stacks = spread_stacks(&mut coords);
     for bus in case.buses() {
         if !coords.contains_key(&bus.id.0) {
             return Err(format!(
@@ -1151,7 +1163,7 @@ fn load_bus_csv_coords(path: &Path, case: &BalancedNetwork) -> Result<Coords, St
             ));
         }
     }
-    Ok(coords)
+    Ok((coords, stacks))
 }
 
 /// Branch geometry with one stored copy per feature: `index` maps every id or
@@ -1299,7 +1311,15 @@ fn build_fallback_entry(spec: &FallbackSpec) -> Result<CaseEntry, String> {
     let case_module = parse_balanced(spec.text, "<fallback>", "m")
         .map_err(|e| format!("{} fallback parse failed: {e}", spec.id))?;
     let coords = synthetic_layout(case_module.value(), spec.bbox);
-    build_entry(spec.id, spec.name, case_module, coords, None, true)
+    build_entry(
+        spec.id,
+        spec.name,
+        case_module,
+        coords,
+        &Stacks::new(),
+        None,
+        true,
+    )
 }
 
 fn retain_geometry(
@@ -1347,6 +1367,7 @@ fn build_entry(
     name: &str,
     module: PioModule<BalancedNetwork>,
     coords: Coords,
+    stacks: &Stacks,
     branch_paths: Option<BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<CaseEntry, String> {
@@ -1386,6 +1407,7 @@ fn build_entry(
         name,
         &network,
         &coords,
+        stacks,
         branch_paths.as_ref(),
         synthetic_coords,
     )?;
@@ -1408,6 +1430,7 @@ fn network_payload(
     name: &str,
     net: &BalancedNetwork,
     coords: &Coords,
+    stacks: &Stacks,
     branch_paths: Option<&BranchPaths>,
     synthetic_coords: bool,
 ) -> Result<NetworkPayload, String> {
@@ -1439,6 +1462,13 @@ fn network_payload(
         .map(|(row, _)| row)
         .collect();
     let coords = lowered_coords(net, coords);
+    let grouping = group_substations(
+        analysis,
+        stacks,
+        (!synthetic_coords).then_some(&coords),
+        &GroupingOptions::default(),
+    );
+    let bus_rows = tellegen::substations::bus_rows(analysis);
     let mut demand = BTreeMap::<usize, f64>::new();
     for load in analysis.loads().iter().filter(|load| load.in_service) {
         *demand.entry(load.bus.0).or_default() += load.p * power_scale;
@@ -1464,6 +1494,8 @@ fn network_payload(
                 lat,
                 demand_mw: demand.get(&bus.id.0).copied().unwrap_or(0.0),
                 gen_mw: generation.get(&bus.id.0).copied().unwrap_or(0.0),
+                base_kv: bus.base_kv,
+                substation: grouping.bus_substation[i],
                 editable: i < net.buses().len() && editable_bus_ids.contains(&bus.id.0),
             })
         })
@@ -1489,6 +1521,12 @@ fn network_payload(
                 to: br.to.0,
                 rate_mw: br.rate_a * power_scale,
                 status: br.in_service as u8,
+                transformer: tellegen::substations::is_transformer(
+                    analysis,
+                    i,
+                    &bus_rows,
+                    GroupingOptions::default().kv_ratio_tolerance,
+                ),
                 editable: editable_branch_rows.contains(&i),
                 path: source_paths
                     .and_then(|paths| {
@@ -1510,6 +1548,7 @@ fn network_payload(
         synthetic_coords,
         buses,
         branches,
+        substations: grouping.substations,
     })
 }
 
@@ -2134,10 +2173,18 @@ mod tests {
             .into_value();
         let coords = synthetic_layout(&raw, FALLBACK_SPECS[0].bbox);
         let normalized = raw.to_normalized().expect("normalize fallback");
-        let source =
-            network_payload("raw", "raw", &raw, &coords, None, true).expect("raw network payload");
-        let derived = network_payload("normalized", "normalized", &normalized, &coords, None, true)
-            .expect("normalized network payload");
+        let source = network_payload("raw", "raw", &raw, &coords, &Stacks::new(), None, true)
+            .expect("raw network payload");
+        let derived = network_payload(
+            "normalized",
+            "normalized",
+            &normalized,
+            &coords,
+            &Stacks::new(),
+            None,
+            true,
+        )
+        .expect("normalized network payload");
 
         assert_eq!(source.buses.len(), derived.buses.len());
         for (left, right) in source.buses.iter().zip(&derived.buses) {
@@ -2167,14 +2214,47 @@ mod tests {
             .map(|(i, bus)| (bus.id.0, (-90.0 + i as f64 * 0.001, 40.0)))
             .collect();
 
-        let payload =
-            network_payload("3w", "3w", &net, &coords, None, false).expect("3W network payload");
+        let payload = network_payload("3w", "3w", &net, &coords, &Stacks::new(), None, false)
+            .expect("3W network payload");
         assert_eq!(payload.buses.len(), net.buses().len() + 1);
         assert_eq!(payload.branches.len(), net.branches().len() + 3);
         assert!(!payload.buses.last().unwrap().editable);
         assert!(payload.branches[net.branches().len()..]
             .iter()
             .all(|branch| !branch.editable));
+        // The star bus and its three windings are transformers, so the star point and the three
+        // terminal buses (0.1 km apart) are drawn as one substation.
+        assert!(payload.branches[net.branches().len()..]
+            .iter()
+            .all(|branch| branch.transformer));
+        let star = payload.buses.last().unwrap().substation;
+        assert!(payload.buses[..3].iter().all(|bus| bus.substation == star));
+        assert_eq!(payload.substations.len(), {
+            let mut seen: Vec<u32> = payload.buses.iter().map(|b| b.substation).collect();
+            seen.sort_unstable();
+            seen.dedup();
+            seen.len()
+        });
+    }
+
+    #[test]
+    fn network_payload_groups_colocated_buses() {
+        let net = parse_balanced(FALLBACK_SPECS[0].text, "<fallback>", "m")
+            .expect("parse fallback")
+            .into_value();
+        let mut coords: Coords = net
+            .buses()
+            .iter()
+            .enumerate()
+            .map(|(i, bus)| (bus.id.0, (-90.0 + i as f64, 40.0)))
+            .collect();
+        let (a, b) = (net.buses()[0].id.0, net.buses()[1].id.0);
+        coords.insert(b, coords[&a]);
+        let stacks = spread_stacks(&mut coords);
+        let payload = network_payload("co", "co", &net, &coords, &stacks, None, false)
+            .expect("co-located network payload");
+        assert_eq!(payload.buses[0].substation, payload.buses[1].substation);
+        assert!(payload.buses[0].base_kv > 0.0);
     }
 
     #[test]
@@ -2187,8 +2267,16 @@ mod tests {
         let self_loop_from = net.branches()[1].from;
         net.branches_mut()[1].to = self_loop_from;
         let coords = synthetic_layout(&net, FALLBACK_SPECS[0].bbox);
-        let payload = network_payload("filtered", "filtered", &net, &coords, None, true)
-            .expect("filtered payload");
+        let payload = network_payload(
+            "filtered",
+            "filtered",
+            &net,
+            &coords,
+            &Stacks::new(),
+            None,
+            true,
+        )
+        .expect("filtered payload");
         assert!(!payload.buses[0].editable);
         assert!(!payload.branches[0].editable);
         assert!(!payload.branches[1].editable);
@@ -2372,7 +2460,7 @@ mod tests {
             .enumerate()
             .map(|(i, b)| (b.id.0, (i as f64, 0.0)))
             .collect();
-        let entry = build_entry("iso", "iso", case, coords, None, true).unwrap();
+        let entry = build_entry("iso", "iso", case, coords, &Stacks::new(), None, true).unwrap();
 
         let err = validate_deltas(&entry, &HashMap::from([(201usize, 1.0)])).unwrap_err();
         assert_eq!(err.status, StatusCode::BAD_REQUEST);

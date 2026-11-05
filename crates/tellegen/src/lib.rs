@@ -54,6 +54,8 @@ pub mod study;
 pub mod study_ops;
 #[cfg(all(feature = "sensitivity", not(target_arch = "wasm32")))]
 pub mod study_storage;
+/// Substation grouping for balanced network diagrams.
+pub mod substations;
 
 #[cfg(feature = "conic")]
 pub use api::solve_ac_instance;

@@ -5,6 +5,7 @@ import type {
 	Network,
 	NetworkBranch,
 	NetworkBus,
+	NetworkSubstation,
 	SensitivityColumn,
 	Solution,
 	SolveIteration
@@ -78,6 +79,7 @@ type LocalView = {
 	coordinate_space?: 'geographic' | 'diagram';
 	buses: NetworkBus[];
 	branches: NetworkBranch[];
+	substations?: NetworkSubstation[];
 };
 
 /** A case is perturbed when any committed demand or rating delta is nonzero. Shared
