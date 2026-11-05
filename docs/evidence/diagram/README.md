@@ -29,3 +29,39 @@ and parse that full result first. The Studies view therefore refreshes the overv
 only up to 25,000 buses. Larger cases show an explicit _Analyse operating point_ action, so load
 edits never stall the page. A compact columnar result transfer from the engine is the path to
 automatic refresh at full scale.
+
+# Substation overview layout
+
+Quality and speed of the balanced-case schematic (`tellegen::tx_schematic`), with the metrics of
+Birchfield and Overbye, "Techniques for drawing geographic one-line diagrams: substation spacing
+and line routing" (IEEE Trans. Power Systems 33(6), 2018, §V). Each case is laid out with lines
+straight between their boxes and with routing.
+
+```sh
+TX_EVAL_CASE=case_ACTIVSg200.m TX_EVAL_COORDS=ACTIVSg200-coords.csv \
+  TX_EVAL_OUT=$PWD/docs/evidence/diagram/tx-layout-activsg200.json \
+  cargo test --release -p tellegen --test tx_schematic_eval evaluate_case -- --ignored --nocapture
+TX_EVAL_OUT=$PWD/docs/evidence/diagram/tx-layout-synthetic.json \
+  cargo test --release -p tellegen --test tx_schematic_eval evaluate_synthetic -- --ignored --nocapture
+```
+
+`TX_EVAL_COORDS` is a `bus_i,Lat,Lon` CSV. For ACTIVSg200 it was derived from the substation table
+of `ACTIVSg200.aux` (TAMU), joining each bus to its substation's coordinate. The synthetic grids
+scatter substations over a 1,000 km square, a third of them around ten cities, with two voltage
+levels each and lines to their next two neighbours in a space-filling order; their lines are
+longer than real ones, which makes routing harder. Both tests are opt-in and never gate CI.
+
+Recorded on a MacBook Pro (Apple M4 Max) with a native release build:
+
+| Case | Buses | Layout, routed | Not moved | Max displacement | Overlapping boxes | Segments through other substations, straight → routed | Relative length, p90 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ACTIVSg200 | 200 | 0.3 ms | 86 % | 10.1 km | 0 | 20 → 0 | 1.27 |
+| synthetic | 4,000 | 14 ms | 93 % | 5.1 km | 0 | 843 → 32 | 1.10 |
+| synthetic | 20,000 | 67 ms | 94 % | 2.3 km | 0 | 5,329 → 172 | 1.08 |
+| synthetic | 70,000 | 0.33 s | 95 % | 1.3 km | 0 | 25,723 → 816 | 1.05 |
+
+Placement never overlaps two substation boxes and moves few substations from their geographic
+point, as in the paper's greedy method. Routing through the Delaunay channels, with a final step
+around any box still in the way, removes nearly every line crossing another substation, at the
+cost of about two more bends per line on the synthetic grids. Substation grouping itself takes
+13 ms for 70,000 buses (ACTIVSg70k without coordinates).

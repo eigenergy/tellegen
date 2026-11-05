@@ -38,7 +38,9 @@ fn percentile(v: &[f64], p: f64) -> f64 {
     v[((v.len() - 1) as f64 * p).round() as usize]
 }
 
-fn report(name: &str, input: &TxLayoutInput, group_ms: f64) {
+/// Print one case's metrics, straight and routed, and return them for `TX_EVAL_OUT`.
+fn report(name: &str, input: &TxLayoutInput, group_ms: f64) -> Vec<serde_json::Value> {
+    let mut runs = Vec::new();
     for iterations in [0, 10] {
         let options = TxLayoutOptions {
             route_iterations: iterations,
@@ -74,6 +76,43 @@ fn report(name: &str, input: &TxLayoutInput, group_ms: f64) {
             mean(&q.bends),
             mean(&q.sharp_bends),
         );
+        runs.push(serde_json::json!({
+            "case": name,
+            "routing": if iterations == 0 { "straight" } else { "routed" },
+            "buses": input.bus_substation.len(),
+            "substations": q.displacement.len(),
+            "grouping_ms": group_ms,
+            "layout_ms": layout_ms,
+            "displacement_km": {
+                "median": percentile(&q.displacement, 0.5) / 1e3,
+                "p90": percentile(&q.displacement, 0.9) / 1e3,
+                "max": percentile(&q.displacement, 1.0) / 1e3,
+                "moved_share": moved as f64 / q.displacement.len().max(1) as f64,
+            },
+            "spacing_over_box_side": { "min": percentile(&q.spacing, 0.0), "p10": percentile(&q.spacing, 0.1) },
+            "overlapping_pairs": q.overlapping_pairs,
+            "line_segments_through_other_substations": q.lines_through_boxes,
+            "lines": q.relative_length.len(),
+            "relative_length": {
+                "median": percentile(&q.relative_length, 0.5),
+                "p90": percentile(&q.relative_length, 0.9),
+                "max": percentile(&q.relative_length, 1.0),
+            },
+            "bends_per_line": mean(&q.bends),
+            "sharp_bends_per_line": mean(&q.sharp_bends),
+        }));
+    }
+    runs
+}
+
+fn write_out(runs: Vec<serde_json::Value>) {
+    if let Ok(path) = std::env::var("TX_EVAL_OUT") {
+        let doc = serde_json::json!({
+            "generated_by": "cargo test --release -p tellegen --test tx_schematic_eval -- --ignored",
+            "runs": runs,
+        });
+        std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap() + "\n")
+            .expect("write evaluation");
     }
 }
 
@@ -164,7 +203,10 @@ fn evaluate_case_from_env() {
         });
         std::fs::write(path, json.to_string()).expect("write layout input");
     }
-    report(&case, &input, group_ms);
+    let name = std::path::Path::new(&case)
+        .file_name()
+        .map_or(case.clone(), |f| f.to_string_lossy().into_owned());
+    write_out(report(&name, &input, group_ms));
 }
 
 /// A synthetic grid at interconnection scale: substations scattered over a 1,000 km square with
@@ -172,6 +214,7 @@ fn evaluate_case_from_env() {
 #[test]
 #[ignore]
 fn evaluate_synthetic_scale() {
+    let mut runs = Vec::new();
     for substations in [2_000usize, 10_000, 35_000] {
         let mut input = TxLayoutInput::default();
         let hash = |i: usize, k: f64| ((i as f64 * k).sin() * 43_758.545_3).fract().abs();
@@ -218,6 +261,7 @@ fn evaluate_synthetic_scale() {
                 input.in_service.push(1);
             }
         }
-        report(&format!("synthetic {substations}"), &input, 0.0);
+        runs.extend(report(&format!("synthetic {substations}"), &input, 0.0));
     }
+    write_out(runs);
 }

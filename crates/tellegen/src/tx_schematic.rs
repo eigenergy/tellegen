@@ -1146,33 +1146,21 @@ pub fn tx_layout_quality(input: &TxLayoutInput, layout: &TxLayout) -> TxLayoutQu
         grid.insert(bb);
     }
     let sub_of_row = |row: i64| (row >= 0).then(|| input.bus_substation[row as usize] as usize);
+    let index = BoxIndex::new(&layout.boxes, &occupied);
     let mut lines_through_boxes = 0;
     for (j, &e) in layout.segment_edge.iter().enumerate() {
         if layout.role[e as usize] != TX_ROLE_LINE {
             continue;
         }
         let own = [
-            sub_of_row(input.from[e as usize]),
-            sub_of_row(input.to[e as usize]),
+            sub_of_row(input.from[e as usize]).unwrap_or(usize::MAX),
+            sub_of_row(input.to[e as usize]).unwrap_or(usize::MAX),
         ];
         let seg = &layout.segments[j * 4..j * 4 + 4];
-        let sb = [
-            seg[0].min(seg[2]),
-            seg[1].min(seg[3]),
-            seg[0].max(seg[2]),
-            seg[1].max(seg[3]),
-        ];
-        let crosses = occupied.iter().any(|&s| {
-            !own.contains(&Some(s)) && {
-                let bx = b(s);
-                sb[0] < bx[2]
-                    && bx[0] < sb[2]
-                    && sb[1] < bx[3]
-                    && bx[1] < sb[3]
-                    && segment_hits_box(seg, bx)
-            }
-        });
-        if crosses {
+        if index
+            .first_hit((seg[0], seg[1]), (seg[2], seg[3]), own)
+            .is_some()
+        {
             lines_through_boxes += 1;
         }
     }
