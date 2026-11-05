@@ -43,20 +43,39 @@ out, levels below the top three fade so the backbone reads first.
 
 ## Results
 
-Once the case is solved, **Colour by: Results** colours buses by the map's current display (LMP,
-angle, voltage or demand). Branch halos are grey below 90 % utilization, amber from 90 % up to
-and including the rating, and red only above it. Comparisons allow a `1e-5` fractional display
-tolerance. These states do not establish economic binding or enforcement. Unknown ratings and
-synthesized DC bounds are faded; only stated equipment ratings receive percentage labels.
-Branches above 60 % of a stated rating carry their loading. When an economic or demand series is the same at
-every bus (a DC OPF without congestion has one price), buses are drawn neutral grey and the legend
-gives the value, rather than the middle of the colour ramp. Voltage uses a fixed 0.90–1.10 pu scale
-and each bus's source bounds. A uniform low or high violation retains its colour. Voltage
-comparisons allow `1e-5` pu display tolerance; this does not change solver feasibility.
-Closer in, a chevron on each branch points
-the way active power flows; on a transformer it sits beside the symbol. Hover a bus or branch for its voltage,
-substation, rating and solved values; click to select it. Selections made elsewhere (search, the
-panels) are brought into view.
+The **Diagram view** selector defaults to **Operating limits**. AC power flow and AC OPF show
+solved voltage magnitudes and branch utilization together, independent of the map's LMP or
+demand setting. DC shows utilization and explicitly states that voltage magnitudes are not
+solved. SOCWR is labelled as a relaxation.
+
+Voltage uses a fixed 0.90–1.10 pu scale and each bus's source bounds. Downward blue and upward
+red markers identify lower and upper violations, including uniform violating series. Substation
+borders preserve the worst member violation. A station summary retains minimum and maximum
+values with bus identities, and links to the worst bus; it never substitutes an average.
+
+Branch halos are grey below the warning threshold, amber from the warning up to and including
+the rating, and red above it. **Key and settings** exposes the warning threshold (0–99%, default
+90%), remembered in browser storage. Local gauges show 0–125% with a visible 100% tick; their
+labels are not clamped to the gauge range. Violations, warnings and selection receive priority
+when the view is crowded. Gauges can be selected by mouse, touch or keyboard. Close in, static
+chevrons show active-power direction.
+
+DC utilization is absolute MW over the effective MW rating; AC utilization is the larger end's
+apparent MVA over its MVA rating. Unknown ratings and synthesized DC bounds are faded and omit
+equipment-percentage gauges. Out-of-service lines stay dashed, while diagnosed de-energized
+buses are excluded from voltage extrema and violations. Display comparisons allow `1e-5` pu
+voltage and `1e-5` fractional loading tolerance; these do not change solver feasibility.
+At-rating operation does not establish economic binding or enforcement.
+
+The key retains formulation, solver status and freshness. Calculations in progress and errors
+identify retained results as potentially stale; legacy payloads without status say it is
+unavailable. These are base-case displays and do not establish contingency security.
+
+**Voltage levels** preserves nominal kV identification in its own colour view. Nominal kV
+labels and tooltips remain available in operating mode, where transformer strokes stay neutral
+so nominal-voltage colours do not compete with result colours. **Map results** retains the map's
+selected series; uniform economic or demand series use neutral grey. PNG export includes the
+operating gauges, result context and station range.
 
 On phones, the toolbar and voltage-key controls have 44-pixel touch targets, and the renderer
 allows a wider picking radius. Explicit zoom buttons supplement pinch zoom and the keyboard.

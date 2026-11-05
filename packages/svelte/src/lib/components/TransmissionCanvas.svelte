@@ -6,6 +6,13 @@
 	import { demandColor, priceColor, scalarDomain, type RGBA } from '../colors.js';
 	import {
 		assessLoading,
+		assessVoltage,
+		operatingVoltages,
+		operatingContext,
+		stationVoltageSummary,
+		placeOperatingGauges,
+		loadingStateText,
+		type OperatingGauge,
 		hasStatedRating,
 		operatingLoadingColor,
 		operatingVoltageColor,
@@ -39,7 +46,6 @@
 		flowDirections,
 		TX_TIERS,
 		voltageLegend,
-		txBranchText,
 		txBusText,
 		txGraph,
 		txLandmarks,
@@ -62,7 +68,8 @@
 	import { BasemapUnderlay } from './schematic/basemap-underlay.svelte.js';
 	import { canvasPng, download, fileStem } from './schematic/export.js';
 	import type { DeckKit } from './schematic/layers.js';
-	import { StoredFlag } from './schematic/view-prefs.svelte.js';
+	import { StoredFlag, StoredNumber } from './schematic/view-prefs.svelte.js';
+	import TxOperatingPanel from './schematic/TxOperatingPanel.svelte';
 	import {
 		levelPaint,
 		busLevelColours,
@@ -108,7 +115,7 @@
 		basemap?: BasemapSpec;
 	} = $props();
 
-	type Colour = 'level' | 'results';
+	type Colour = 'level' | 'results' | 'operating';
 	const app = getAppState();
 	const ctrl = getController();
 	const panels = getPanelLayout();
@@ -122,7 +129,123 @@
 	let deck = $state.raw<Deck<OrthographicView> | null>(null);
 	let kit: DeckKit | null = null;
 	let camera = $state.raw<DiagramCamera>({ target: [0, 0, 0], zoom: 0 });
-	let colour = $state<Colour>('level');
+	let colour = $state<Colour>('operating');
+	const warningPref = new StoredNumber('tellegen.transmission.loading-warning', 0, 99, 90);
+	let gauges = $state.raw<OperatingGauge[]>([]);
+	const formulation = $derived(ctrl.activeFormulation);
+	const resultContext = $derived(
+		operatingContext(formulation, solution, !!ctrl.activeSolvable?.solving, !!app.error)
+	);
+	const operatingOn = $derived(colour === 'operating');
+	const solvedVoltages = $derived(operatingVoltages(solution, formulation));
+	const deenergized = $derived(
+		new Set(
+			(solution?.diagnostics ?? [])
+				.filter((d) => d.code === 'island_deenergized')
+				.flatMap((d) => d.buses)
+		)
+	);
+	const stationMembers = $derived.by(() => {
+		const groups: Network['buses'][] = Array.from({ length: graph.substations.length }, () => []);
+		network.buses.forEach((bus, i) => groups[graph.substation[i]].push(bus));
+		return groups;
+	});
+	const stationSummaries = $derived(
+		stationMembers.map((buses) => stationVoltageSummary(buses, solvedVoltages, deenergized))
+	);
+	const stationColours = $derived.by(() => {
+		if (!operatingOn || !resultContext.voltage) return null;
+		const colours = new Uint8Array(stationSummaries.length * 4);
+		stationSummaries.forEach((summary, i) =>
+			colours.set(
+				summary.worst
+					? operatingVoltageColor(
+							summary.worst.value,
+							network.buses[graph.index.get(summary.worst.bus)!]
+						)
+					: [112, 104, 90, 90],
+				i * 4
+			)
+		);
+		return colours;
+	});
+	const loadingStates = $derived(
+		network.branches.map((br) =>
+			assessLoading(
+				flows.get(br.id),
+				!!br.status,
+				warningPref.value / 100,
+				deenergized.has(br.from) || deenergized.has(br.to)
+			)
+		)
+	);
+	const operatingCounts = $derived.by(() => {
+		const counts = {
+			low: 0,
+			high: 0,
+			overload: 0,
+			warning: 0,
+			atLimit: 0,
+			unknown: 0,
+			inactive: 0,
+			disconnected: 0
+		};
+		if (resultContext.voltage)
+			for (const bus of network.buses) {
+				const state = assessVoltage(solvedVoltages.get(bus.id), bus, deenergized.has(bus.id)).state;
+				if (state === 'low' || state === 'high') counts[state]++;
+				else if (state !== 'normal' && state !== 'deenergized') counts.unknown++;
+			}
+		counts.disconnected = network.buses.filter((b) => deenergized.has(b.id)).length;
+		for (const state of loadingStates) {
+			if (state === 'violation') counts.overload++;
+			else if (state === 'at-limit') counts.atLimit++;
+			else if (state === 'warning' || state === 'inactive') counts[state]++;
+			else if (state !== 'normal' && state !== 'deenergized') counts.unknown++;
+		}
+		return counts;
+	});
+	const activeStation = $derived.by(() => {
+		if (!operatingOn || !resultContext.voltage) return null;
+		let index =
+			selectedBus >= 0
+				? graph.substation[selectedBus]
+				: hoveredBus >= 0
+					? graph.substation[hoveredBus]
+					: -1;
+		if (index < 0) {
+			let worst = 0;
+			stationSummaries.forEach((summary, i) => {
+				if ((summary.worst?.assessment.exceedance ?? 0) > worst) {
+					worst = summary.worst!.assessment.exceedance;
+					index = i;
+				}
+			});
+		}
+		return index < 0
+			? null
+			: {
+					name: graph.substations[index].name ?? graph.substations[index].key,
+					...stationSummaries[index]
+				};
+	});
+	const voltageMarkers = $derived.by(() => {
+		if (!operatingOn || !resultContext.voltage) return [];
+		const ids = symbolsOn
+			? network.buses.map((b) => b.id)
+			: stationSummaries.flatMap((s) => (s.worst ? [s.worst.bus] : []));
+		return ids.flatMap((id) => {
+			const bus = graph.index.get(id)!;
+			const state = assessVoltage(
+				solvedVoltages.get(id),
+				network.buses[bus],
+				deenergized.has(id)
+			).state;
+			return state === 'low' || state === 'high' || state === 'deenergized'
+				? [{ bus, kind: state }]
+				: [];
+		});
+	});
 	let status = $state<string | null>('Loading the diagram renderer…');
 	let hoveredBus = $state(-1);
 	let hoveredEdge = $state(-1);
@@ -173,11 +296,24 @@
 	}));
 
 	// Results: the map's own display series for buses and the solved loading for branches.
-	const display = $derived(ctrl.activeDisplay);
+	const display = $derived(
+		operatingOn
+			? resultContext.voltage
+				? {
+						mode: 'voltage' as const,
+						label: '|V|',
+						unit: 'pu',
+						copy: 'Voltage magnitude',
+						gradient: voltageGradient,
+						values: [...solvedVoltages].map(([bus, value]) => ({ bus, value }))
+					}
+				: null
+			: ctrl.activeDisplay
+	);
 	const flows = $derived(new Map((solution?.flows ?? []).map((f) => [f.branch, f])));
-	const resultsOn = $derived(colour === 'results' && !!solution);
+	const resultsOn = $derived(colour !== 'level' && !!solution);
 	$effect(() => {
-		if (!solution && colour === 'results') colour = 'level';
+		if (colour === 'results' && !solution) colour = 'operating';
 	});
 	const busValues = $derived(new Map((display?.values ?? []).map((v) => [v.bus, v.value])));
 	const domain = $derived(
@@ -202,7 +338,7 @@
 		})
 	);
 	const edgePaint = $derived.by(() => {
-		if (!resultsOn) return level;
+		if (colour === 'level') return level;
 		const colours = new Uint8Array(level.colours.length);
 		const widths = new Float32Array(level.widths);
 		network.branches.forEach((br, k) => {
@@ -211,10 +347,11 @@
 				!graph.inService[k]
 					? [120, 116, 108, 200]
 					: f
-						? operatingLoadingColor(assessLoading(f, !!graph.inService[k]))
+						? operatingLoadingColor(loadingStates[k])
 						: [138, 131, 117, 160],
 				k * 4
 			);
+			if (resultContext.stale) colours[k * 4 + 3] = Math.round(colours[k * 4 + 3] * 0.4);
 			widths[k] += 0.6;
 		});
 		return { colours, widths };
@@ -225,13 +362,13 @@
 		for (let i = 0; i < n; i++) {
 			let c: RGBA = [busLevels[i * 4], busLevels[i * 4 + 1], busLevels[i * 4 + 2], 255];
 			if (focusEntry >= 0 && legend.entryOf(graph.kv[i]) !== focusEntry) c = [c[0], c[1], c[2], 40];
-			if (resultsOn && display && domain) {
+			if ((resultsOn || operatingOn) && display && domain) {
 				const v = busValues.get(graph.busId[i]);
 				// Uniform economic/demand series stay neutral. Voltage always retains its
 				// fixed scale and case-limit status, including uniform violations.
 				c =
 					display.mode === 'voltage'
-						? operatingVoltageColor(v, network.buses[i])
+						? operatingVoltageColor(v, network.buses[i], deenergized.has(graph.busId[i]))
 						: v === undefined
 							? [180, 175, 165, 200]
 							: uniform !== null
@@ -240,10 +377,15 @@
 										(v - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
 									);
 			}
+			if (operatingOn && !resultContext.voltage) c = [150, 145, 135, 200];
+			if (colour !== 'level' && resultContext.stale) c = [c[0], c[1], c[2], Math.round(c[3] * 0.4)];
 			out.set(c, i * 4);
 		}
 		return out;
 	});
+	const windingColours = $derived(
+		operatingOn ? busLevels.map((_, i) => (i % 4 === 3 ? 255 : 65)) : busLevels
+	);
 	const busRadius = $derived(Math.max(1.5, Math.min(5, span / 14)));
 	/** The display series' single value when it is uniform (as the map's display panel judges it). */
 	const uniform = $derived(ctrl.displayStats?.uniform ?? null);
@@ -308,8 +450,7 @@
 		return edges.length ? { edges, dir, unit: 5 / 2 ** stepZoom } : null;
 	});
 	const branchState = (k: number): 'normal' | 'warning' | 'violation' | null => {
-		const f = flows.get(network.branches[k].id);
-		const state = assessLoading(f, !!graph.inService[k]);
+		const state = loadingStates[k];
 		return state === 'at-limit'
 			? 'warning'
 			: state === 'violation' || state === 'warning' || state === 'normal'
@@ -373,7 +514,9 @@
 			edgeColours: edgePaint.colours,
 			edgeWidths: edgePaint.widths,
 			busColours,
-			busLevels,
+			busLevels: windingColours,
+			stationColours,
+			voltageMarkers,
 			busRadius,
 			selectedBus,
 			selectedEdge,
@@ -477,7 +620,7 @@
 					});
 				}
 		}
-		if (resultsOn && symbolsOn)
+		if (resultsOn && !operatingOn && symbolsOn)
 			network.branches.forEach((br, k) => {
 				const f = flows.get(br.id);
 				const state = branchState(k);
@@ -501,7 +644,51 @@
 					position: [a.x, a.y]
 				});
 			});
+		// Violating bus values retain priority even when ordinary names are hidden.
+		if (operatingOn)
+			for (const marker of voltageMarkers) {
+				const i = marker.bus,
+					p = at(i),
+					v = solvedVoltages.get(graph.busId[i]);
+				if (!inView(screen(...p))) continue;
+				candidates.push({
+					text: `${marker.kind === 'low' ? '↓' : marker.kind === 'high' ? '↑' : '×'} bus ${graph.busId[i]}${v !== undefined ? ` · ${v.toFixed(4)} pu` : ''}`,
+					state: marker.kind === 'deenergized' ? 'normal' : 'violation',
+					priority: 1e6,
+					screen: screen(...p),
+					position: p
+				});
+			}
 		labels = placeLabels(candidates, { width, height, budget: 60 });
+		const inset = freeArea();
+		const gaugeCandidates: OperatingGauge[] = [];
+		if (operatingOn && solution)
+			network.branches.forEach((br, edge) => {
+				const f = flows.get(br.id),
+					state = loadingStates[edge];
+				const selected = edge === selectedEdge || edge === hoveredEdge;
+				if (
+					!f ||
+					!hasStatedRating(f.loading_info) ||
+					!['normal', 'warning', 'at-limit', 'violation'].includes(state)
+				)
+					return;
+				if (!selected && state === 'normal' && (!symbolsOn || f.loading < 0.6)) return;
+				const [x, y] = screen(anchors[edge * 4], anchors[edge * 4 + 1]);
+				if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+				gaugeCandidates.push({ edge, x: x + 8, y: y - 38, loading: f.loading, state, selected });
+			});
+		gauges = placeOperatingGauges(
+			gaugeCandidates,
+			{
+				left: inset.left,
+				top: inset.top,
+				right: width - inset.right,
+				bottom: height - inset.bottom
+			},
+			panels.compact ? 10 : 32
+		);
+
 		if (!symbolsOn && landmarksPref.value && landmarkPool.length) {
 			const placed = placeLandmarks(landmarkPool, screen, { width, height });
 			marks = { placed, strokes: landmarkStrokes(placed, 8 / scale) };
@@ -523,7 +710,7 @@
 						? cameraFromMap(app.camera, geometry.mercatorOrigin)
 						: null;
 				camera =
-					fromMap && showsAnyPosition(geometry.positions, fromMap, { width, height })
+					fromMap && showsAnyPosition(geometry.positions, fromMap, { width, height }, freeArea())
 						? fromMap
 						: fitAll();
 				deck = new core.Deck({
@@ -588,11 +775,11 @@
 						if (info.index < 0) return null;
 						if (id === 'buses' || id === 'busbars')
 							return {
-								text: txBusText(graph, network, info.index, valueText(info.index))
+								text: busTooltip(info.index)
 							};
 						if (id === 'attachments-pick')
 							return {
-								text: txBusText(graph, network, info.object.bus, valueText(info.object.bus))
+								text: busTooltip(info.object.bus)
 							};
 						const k =
 							id === 'branches'
@@ -604,12 +791,12 @@
 										: -1;
 						if (k >= 0)
 							return {
-								text: txBranchText(graph, network, k, flows.get(network.branches[k].id) ?? null)
+								text: branchTooltip(k)
 							};
 						if (id === 'landmark-halos') {
 							const l = info.object as Landmark;
 							return {
-								text: txBusText(graph, network, l.bus, valueText(l.bus))
+								text: busTooltip(l.bus)
 							};
 						}
 						return null;
@@ -683,10 +870,7 @@
 		layout = next;
 		shown = drawing;
 		// Both layouts share one frame, so the camera stays where it is unless nothing would show.
-		const to = showsAnyPosition(drawing.geometry.positions, camera, {
-			width,
-			height
-		})
+		const to = showsAnyPosition(drawing.geometry.positions, camera, { width, height }, freeArea())
 			? camera
 			: fitBounds(drawing.geometry.bounds, { width, height }, freeArea());
 		setCamera(to);
@@ -750,7 +934,10 @@
 			attachments,
 			stepZoom,
 			marks,
-			labels
+			labels,
+			voltageMarkers,
+			stationColours,
+			operatingOn
 		];
 		if (!morph) render();
 	});
@@ -769,11 +956,40 @@
 			selectedBus,
 			busValues,
 			geometry,
-			parts
+			parts,
+			loadingStates,
+			operatingOn,
+			voltageMarkers,
+			selectedEdge,
+			hoveredEdge,
+			legendHeight,
+			toolbarHeight,
+			panels.compact,
+			panels.dockWidth('left'),
+			panels.dockWidth('right'),
+			app.sheetInset
 		];
 		if (!deck) return;
 		cancelAnimationFrame(labelFrame);
 		labelFrame = requestAnimationFrame(updateLabels);
+	});
+
+	// Preserve the camera unless a resized key or panel covers every bus.
+	$effect(() => {
+		void [
+			legendHeight,
+			toolbarHeight,
+			width,
+			height,
+			panels.dockWidth('left'),
+			panels.dockWidth('right'),
+			app.sheetInset
+		];
+		if (!deck || width <= 0 || height <= 0 || !graph.busId.length) return;
+		untrack(() => {
+			if (!showsAnyPosition(geometry.positions, camera, { width, height }, freeArea()))
+				setCamera(fitAll());
+		});
 	});
 
 	// Record the geographic view on the app, so the map continues from it when this closes.
@@ -875,9 +1091,11 @@
 		const title = titleBlock({
 			dataset: label,
 			layout: layoutName,
-			view: resultsOn
-				? `Buses: ${display?.copy ?? 'results'} · branches: loading`
-				: 'Voltage levels',
+			view: operatingOn
+				? `Operating limits · ${resultContext.freshness} · ${formulation}${resultContext.relaxed ? ' relaxation' : ''}`
+				: resultsOn
+					? `Buses: ${display?.copy ?? 'results'} · branches: loading`
+					: 'Voltage levels',
 			camera,
 			result: solution
 				? {
@@ -889,8 +1107,127 @@
 				: null,
 			exported: new Date().toISOString()
 		});
-		const blob = await canvasPng(deck, canvas, title);
+		const blob = await canvasPng(
+			deck,
+			canvas,
+			title,
+			operatingOn ? paintOperatingExport : undefined
+		);
 		if (blob) download(blob, `${fileStem(label)}.png`);
+	}
+	function paintOperatingExport(ctx: CanvasRenderingContext2D) {
+		ctx.save();
+		ctx.globalAlpha = resultContext.stale ? 0.4 : 1;
+		for (const gauge of gauges) {
+			const { x, y } = gauge;
+			const colour =
+				gauge.state === 'violation'
+					? '#be2024'
+					: gauge.state === 'warning' || gauge.state === 'at-limit'
+						? '#925b05'
+						: '#252525';
+			ctx.fillStyle = '#fcfbf7';
+			ctx.fillRect(x, y, 64, 44);
+			ctx.strokeStyle = colour;
+			ctx.lineWidth = 1;
+			ctx.strokeRect(x, y, 64, 44);
+			ctx.font = '10px "IBM Plex Mono", monospace';
+			ctx.textAlign = 'center';
+			ctx.fillStyle = colour;
+			ctx.fillText(
+				`${(gauge.loading * 100).toFixed(gauge.loading > 0.99 && gauge.loading < 1.01 ? 1 : 0)}%${gauge.state === 'at-limit' ? ' =' : gauge.state === 'violation' ? ' !' : ''}`,
+				x + 32,
+				y + 20
+			);
+			ctx.strokeStyle = '#c9c4ba';
+			ctx.lineWidth = 3;
+			ctx.beginPath();
+			ctx.moveTo(x + 10, y + 31);
+			ctx.lineTo(x + 54, y + 31);
+			ctx.stroke();
+			ctx.strokeStyle = colour;
+			ctx.beginPath();
+			ctx.moveTo(x + 10, y + 31);
+			ctx.lineTo(x + 10 + (Math.min(1.25, gauge.loading) / 1.25) * 44, y + 31);
+			ctx.stroke();
+			ctx.strokeStyle = '#252525';
+			ctx.lineWidth = 1.5;
+			ctx.beginPath();
+			ctx.moveTo(x + 45.2, y + 27);
+			ctx.lineTo(x + 45.2, y + 35);
+			ctx.stroke();
+		}
+		ctx.restore();
+		const lines = [
+			`Operating limits · ${formulation}${resultContext.relaxed ? ' relaxation' : ''} · ${resultContext.freshness} · ${resultContext.status} · base case`,
+			resultContext.voltage
+				? 'Voltage 0.90–1.10 pu · ↓ below / ↑ above case limits'
+				: 'DC: voltage magnitude not solved',
+			`Loading ${resultContext.basis} · warning ${warningPref.value}% · tick 100% · red: overload`,
+			...(activeStation
+				? [
+						`Station ${activeStation.name}: ${activeStation.min?.value.toFixed(4) ?? 'unknown'}–${activeStation.max?.value.toFixed(4) ?? 'unknown'} pu${activeStation.worst ? ` · worst bus ${activeStation.worst.bus}` : ''}`
+					]
+				: [])
+		];
+		ctx.font = '11px "IBM Plex Mono", monospace';
+		const wrapped: string[] = [];
+		for (const line of lines) {
+			let current = '';
+			for (const word of line.split(' ')) {
+				const next = current ? `${current} ${word}` : word;
+				if (current && ctx.measureText(next).width > Math.min(width - 40, 690)) {
+					wrapped.push(current);
+					current = word;
+				} else current = next;
+			}
+			wrapped.push(current);
+		}
+		ctx.fillStyle = '#fcfbf7';
+		ctx.fillRect(12, 12, Math.min(width - 24, 710), 14 + wrapped.length * 16);
+		ctx.fillStyle = '#252525';
+		wrapped.forEach((line, i) => ctx.fillText(line, 20, 30 + i * 16));
+	}
+	function stationText(i: number): string {
+		if (!operatingOn || !resultContext.voltage) return '';
+		const s = stationSummaries[graph.substation[i]];
+		return [
+			s.min && s.max
+				? `Station range ${s.min.value.toFixed(4)}–${s.max.value.toFixed(4)} pu (min bus ${s.min.bus}, max bus ${s.max.bus})`
+				: 'Station voltage unavailable',
+			s.worst
+				? `Worst violation: bus ${s.worst.bus}, ${s.worst.assessment.state === 'low' ? 'below' : 'above'} limit by ${s.worst.assessment.exceedance.toFixed(4)} pu`
+				: '',
+			`${s.unknown} missing values or limits; ${s.disconnected} de-energized`
+		]
+			.filter(Boolean)
+			.join('\n');
+	}
+	function busTooltip(i: number): string {
+		return [
+			txBusText(graph, network, i, valueText(i)),
+			operatingOn && resultContext.voltage
+				? `Operating band: ${network.buses[i].vmin_pu ?? 'unknown'}–${network.buses[i].vmax_pu ?? 'unknown'} pu`
+				: '',
+			stationText(i)
+		]
+			.filter(Boolean)
+			.join('\n');
+	}
+	function branchTooltip(k: number): string {
+		const f = flows.get(network.branches[k].id),
+			info = f?.loading_info;
+		return [
+			`${graph.transformer[k] ? 'Transformer' : 'Line'} ${network.branches[k].id}: bus ${network.branches[k].from} to bus ${network.branches[k].to}`,
+			`Nominal ${graph.from[k] >= 0 ? graph.kv[graph.from[k]] : 'unknown'} / ${graph.to[k] >= 0 ? graph.kv[graph.to[k]] : 'unknown'} kV`,
+			f ? `From-end active power ${f.mw.toFixed(2)} MW` : 'Flow result missing',
+			`Loading: ${loadingStateText[loadingStates[k]]}`,
+			hasStatedRating(info) &&
+			f &&
+			['normal', 'warning', 'at-limit', 'violation'].includes(loadingStates[k])
+				? `${(f.loading * 100).toFixed(2)}% of ${info!.rating} ${info!.basis.toUpperCase()} rating${info!.limiting_end ? ` · limiting end: ${info!.limiting_end}` : ''}`
+				: 'Equipment utilization unavailable'
+		].join('\n');
 	}
 	const rgb = (c: RGBA) => `rgb(${c.slice(0, 3).join(' ')})`;
 </script>
@@ -926,6 +1263,14 @@
 		role="toolbar"
 		aria-label="Single-line diagram"
 	>
+		<label>
+			<span class="sr-only">Diagram view</span>
+			<select bind:value={colour} title="Diagram view">
+				<option value="level">Voltage levels</option>
+				<option value="operating">Operating limits</option>
+				<option value="results" disabled={!solution}>Map results</option>
+			</select>
+		</label>
 		<div class="segmented" role="group" aria-label="Layout">
 			<button
 				aria-pressed={layout === 'source'}
@@ -947,32 +1292,36 @@
 				/> Basemap</label
 			>
 		{/if}
-		<label>
-			<span class="sr-only">Colour by</span>
-			<select
-				bind:value={colour}
-				disabled={!solution}
-				title={solution ? 'Colour by' : 'Solve the case to colour by results'}
-			>
-				<option value="level">Voltage levels</option>
-				<option value="results">Results</option>
-			</select>
-		</label>
 		<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
 		<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
 		<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
 		<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
 		<button onclick={onclose} title="Return to the map">Close</button>
 	</div>
-	{#if resultsOn}
+	{#if resultsOn || operatingOn}
 		<div
 			class="legend"
 			bind:clientHeight={legendHeight}
 			style:top="{panels.top + toolbarHeight + 16}px"
 			style:left="{toolLeft}px"
 			style:right="{panels.compact ? 12 : panels.dockWidth('right') + 24}px"
+			style:max-height="min(38vh, calc(100% - {panels.top +
+				toolbarHeight +
+				32 +
+				app.sheetInset}px))"
 		>
-			{#if display?.mode === 'voltage'}
+			{#if operatingOn}
+				<TxOperatingPanel
+					{formulation}
+					context={resultContext}
+					voltageAvailable={solvedVoltages.size > 0}
+					counts={operatingCounts}
+					warning={warningPref.value}
+					onwarning={(value) => warningPref.set(value)}
+					station={activeStation}
+					{onselectbus}
+				/>
+			{:else if display?.mode === 'voltage'}
 				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
 				limits apply ·
 			{:else if display && uniform !== null}
@@ -981,10 +1330,43 @@
 			{:else if display}
 				{display.label} <i style:background={display.gradient}></i> ·
 			{/if}
-			Branch halo: Loading · grey below 90 % · amber 90–100 % · red above 100 % · unknown ratings faded
+			{#if !operatingOn}Branch halo: Loading · grey below {warningPref.value} % · amber {warningPref.value}–100
+				% · red above 100 % · unknown ratings faded{/if}
 		</div>
 	{/if}
-	{#if !resultsOn && levelsPresent.length}
+	{#if operatingOn}
+		<div class="gauges" aria-label="Branch utilization gauges" class:stale={resultContext.stale}>
+			{#each gauges as gauge (gauge.edge)}
+				{@const branch = network.branches[gauge.edge]}
+				<button
+					class="utilization-gauge"
+					class:violation={gauge.state === 'violation'}
+					class:warning={gauge.state === 'warning' || gauge.state === 'at-limit'}
+					style:left="{gauge.x}px"
+					style:top="{gauge.y}px"
+					title={branchTooltip(gauge.edge)}
+					aria-pressed={gauge.edge === selectedEdge}
+					aria-label="Branch {branch.id}, {(gauge.loading * 100).toFixed(
+						1
+					)} percent, {loadingStateText[gauge.state]}"
+					onclick={() => onselectbranch(branch.id)}
+				>
+					<span
+						>{(gauge.loading * 100).toFixed(
+							gauge.loading > 0.99 && gauge.loading < 1.01 ? 1 : 0
+						)}%{gauge.state === 'at-limit' ? ' =' : gauge.state === 'violation' ? ' !' : ''}</span
+					>
+					<svg width="48" height="10" viewBox="0 0 48 10" aria-hidden="true"
+						><path d="M2 5H46" class="gauge-track" /><path
+							d="M2 5H{2 + (Math.min(1.25, gauge.loading) / 1.25) * 44}"
+							class="gauge-fill"
+						/><path d="M37.2 1V9" class="rating-tick" /></svg
+					>
+				</button>
+			{/each}
+		</div>
+	{/if}
+	{#if colour === 'level' && levelsPresent.length}
 		<details
 			class="key"
 			style:bottom="{panels.compact ? app.sheetInset + 12 : 24}px"
@@ -1080,6 +1462,10 @@
 			class="attribution"
 			style:opacity={underlay.opacity}
 			style:right="{panels.compact ? 12 : panels.dockWidth('right') + 24}px"
+			style:max-height="min(38vh, calc(100% - {panels.top +
+				toolbarHeight +
+				32 +
+				app.sheetInset}px))"
 			style:bottom="{panels.compact ? app.sheetInset + 8 : 8}px"
 		>
 			{basemapCredit(underlay.provider)}
@@ -1169,7 +1555,54 @@
 		background: var(--accent-soft);
 		color: var(--accent);
 	}
+	.gauges {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+	.gauges.stale {
+		opacity: 0.4;
+	}
+	.utilization-gauge {
+		position: absolute;
+		width: 64px;
+		height: 44px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 1px;
+		background: color-mix(in srgb, var(--paper) 92%, transparent);
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		color: var(--ink);
+		font: 10px var(--font-mono);
+		cursor: pointer;
+		pointer-events: auto;
+		padding: 2px;
+	}
+	.utilization-gauge.warning {
+		color: #925b05;
+	}
+	.utilization-gauge.violation {
+		color: #be2024;
+		border-color: #be2024;
+	}
+	.gauge-track {
+		stroke: #c9c4ba;
+		stroke-width: 3;
+	}
+	.gauge-fill {
+		stroke: currentColor;
+		stroke-width: 3;
+	}
+	.rating-tick {
+		stroke: #252525;
+		stroke-width: 1.5;
+	}
 	.legend {
+		overflow: auto;
+		overscroll-behavior: contain;
 		position: absolute;
 		height: auto;
 		margin-top: 0;

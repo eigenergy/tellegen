@@ -10,6 +10,8 @@ it("preserves AC endpoint quantities, utilization metadata and source identities
     limiting_end: "to",
   } as const;
   const projected = solveResponseToSolution({
+    formulation: "acpf",
+    status: "feasible",
     flows: [
       {
         branch: 42,
@@ -23,6 +25,7 @@ it("preserves AC endpoint quantities, utilization metadata and source identities
       },
     ],
   });
+  expect(projected).toMatchObject({ formulation: "acpf", status: "feasible" });
   expect(projected.flows).toEqual([
     {
       branch: 42,

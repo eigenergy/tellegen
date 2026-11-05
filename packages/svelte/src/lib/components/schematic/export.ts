@@ -30,7 +30,9 @@ export const fileStem = (label: string) => `${label.replace(/[^\w.-]+/g, '_')}-s
 export function canvasPng(
 	deck: Deck<OrthographicView>,
 	canvas: HTMLCanvasElement,
-	title: TitleBlock
+	title: TitleBlock,
+	/** Optional CSS-pixel overlays drawn above the WebGL scene, before the title block. */
+	paintOverlay?: (ctx: CanvasRenderingContext2D) => void
 ): Promise<Blob | null> {
 	// Read the drawing buffer in the same task as a forced draw, before it is cleared.
 	deck.redraw('export');
@@ -43,6 +45,15 @@ export function canvasPng(
 	ctx.fillStyle = 'rgb(252 251 247)';
 	ctx.fillRect(0, 0, out.width, out.height);
 	ctx.drawImage(canvas, 0, 0);
+	if (paintOverlay) {
+		ctx.save();
+		ctx.scale(k, k);
+		ctx.beginPath();
+		ctx.rect(0, 0, canvas.clientWidth, canvas.clientHeight);
+		ctx.clip();
+		paintOverlay(ctx);
+		ctx.restore();
+	}
 	for (const [col, lines] of [title.left, title.right].entries())
 		lines.forEach((line, i) => {
 			const lead = col === 0 && i === 0;

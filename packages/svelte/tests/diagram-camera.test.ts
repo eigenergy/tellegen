@@ -41,6 +41,12 @@ describe('diagram camera', () => {
 		const positions = Float32Array.from([0, 0, 0, 5000, 0, 0]);
 		const cam = { target: [5000, 0, 0] as [number, number, number], zoom: 0 };
 		expect(showsAnyPosition(positions, cam, view)).toBe(true);
+		expect(showsAnyPosition(positions, cam, view, { ...none, top: view.height / 2 + 1 })).toBe(
+			false
+		);
+		expect(showsAnyPosition(positions, cam, view, { ...none, left: view.width / 2 + 1 })).toBe(
+			false
+		);
 		expect(showsAnyPosition(positions, { ...cam, target: [9000, 9000, 0] }, view)).toBe(false);
 	});
 

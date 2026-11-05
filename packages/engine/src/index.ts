@@ -2089,6 +2089,8 @@ function sensitivityColumn(
 }
 
 export interface SolutionResponseProjection {
+  formulation?: string;
+  status?: string;
   objective?: number | null;
   lmp?: { bus: number; value: number }[] | null;
   vm?: { bus: number; value: number }[] | null;
@@ -2104,6 +2106,8 @@ export function solveResponseToSolution(
   out: SolutionResponseProjection,
 ): Solution {
   return {
+    ...(out.formulation !== undefined ? { formulation: out.formulation } : {}),
+    ...(out.status !== undefined ? { status: out.status } : {}),
     objective: out.objective ?? null,
     prices: (out.lmp ?? []).map((e) => ({ bus: e.bus, value: e.value })),
     vm: out.vm ?? undefined,

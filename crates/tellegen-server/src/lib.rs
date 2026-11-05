@@ -376,6 +376,8 @@ pub struct SensitivityValue {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SolutionPayload {
+    pub formulation: tellegen::Problem,
+    pub status: tellegen::SolveStatus,
     pub objective: f64,
     pub prices: Vec<PriceValue>,
     pub va: Vec<ScalarValue>,
@@ -1569,6 +1571,8 @@ fn network_payload(
 
 fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
     SolutionPayload {
+        formulation: resp.formulation,
+        status: resp.status,
         objective: resp.objective.unwrap_or(0.0),
         prices: resp
             .lmp
@@ -2155,6 +2159,8 @@ mod tests {
 
         let (status, solution) = get("/api/cases/case200/solution").await;
         assert_eq!(status, StatusCode::OK);
+        assert_eq!(solution["formulation"], "dcopf");
+        assert_eq!(solution["status"], "optimal");
         assert!(solution["objective"].as_f64().unwrap().is_finite());
         assert!(solution["prices"].as_array().unwrap().len() >= 200);
         assert!(solution["prices"][0]["value"].as_f64().unwrap().is_finite());

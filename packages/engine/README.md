@@ -81,6 +81,9 @@ DC omits reactive and receiving-end quantities. Missing metadata in legacy
 results means unknown; it does not establish zero utilization or normal operation.
 Utilization alone does not establish enforcement or economic binding.
 
+Compact solutions also retain optional `formulation` and `status` from the solver.
+Legacy display payloads can omit them; absence does not establish solve success.
+
 ## Experimental AC OPF
 
 The ordinary package contains no POUNCE WASI asset. A development host must

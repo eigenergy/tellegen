@@ -377,6 +377,9 @@ export interface SolutionFlow extends Omit<BranchFlow, 'pf'> {
 }
 
 export interface Solution {
+\t/** Solver context, absent in legacy display payloads. */
+\tformulation?: string;
+\tstatus?: string;
 \tobjective: number | null;
 \tprices: { bus: number; value: number }[];
 \tvm?: { bus: number; value: number }[];

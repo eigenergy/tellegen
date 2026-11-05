@@ -28,6 +28,34 @@ export class StoredFlag {
 	}
 }
 
+/** Validated numeric display preference. Invalid stored or edited values retain the default. */
+export class StoredNumber {
+	value: number = $state(0);
+	constructor(
+		private key: string,
+		private min: number,
+		private max: number,
+		fallback: number
+	) {
+		this.value = fallback;
+		try {
+			const raw = localStorage.getItem(key);
+			if (raw !== null) this.set(Number(raw));
+		} catch {
+			/* Storage is optional. */
+		}
+	}
+	set(value: number) {
+		if (!Number.isFinite(value) || value < this.min || value > this.max) return;
+		this.value = value;
+		try {
+			localStorage.setItem(this.key, String(value));
+		} catch {
+			/* Keep the in-memory preference. */
+		}
+	}
+}
+
 /** One of several hover targets whose card opens on hover and can be pinned open by a click:
  * shared routes and stacked buses. Leaving starts a short grace period so the pointer can reach
  * the card; while the card itself is hovered it stays open. */

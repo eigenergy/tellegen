@@ -103,14 +103,18 @@ export function revealPoint(
 export function showsAnyPosition(
 	positions: Float32Array,
 	camera: DiagramCamera,
-	view: Viewport
+	view: Viewport,
+	free: Insets = { left: 0, right: 0, top: 0, bottom: 0 }
 ): boolean {
 	const scale = 2 ** camera.zoom;
-	const [hw, hh] = [view.width / 2 / scale, view.height / 2 / scale];
 	for (let i = 0; i < positions.length; i += 3) {
+		const x = (positions[i] - camera.target[0]) * scale + view.width / 2;
+		const y = (positions[i + 1] - camera.target[1]) * scale + view.height / 2;
 		if (
-			Math.abs(positions[i] - camera.target[0]) <= hw &&
-			Math.abs(positions[i + 1] - camera.target[1]) <= hh
+			x >= free.left &&
+			x <= view.width - free.right &&
+			y >= free.top &&
+			y <= view.height - free.bottom
 		)
 			return true;
 	}

@@ -108,6 +108,9 @@ export interface TxScene {
 	busLevels: Uint8Array;
 	/** Busbars and substation boxes of the substation overview; null on source positions. */
 	parts: TxSchematicParts | null;
+	/** Worst station violation, preserving its bus identity in the overview. */
+	stationColours: Uint8Array | null;
+	voltageMarkers: { bus: number; kind: 'low' | 'high' | 'deenergized' }[];
 	/** Buses gliding between layouts: drawn instead of the scene while set. */
 	morph: {
 		s: Float32Array;
@@ -338,7 +341,11 @@ function markColours(marks: NonNullable<TxScene['marks']>): Uint8Array {
 export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 	if (scene.morph) return morphLayers(kit, scene.morph, scene.graph.busId.length);
 	const { LineLayer, PolygonLayer, ScatterplotLayer, TextLayer } = kit.layers;
-	const common = { coordinateSystem: kit.core.COORDINATE_SYSTEM.CARTESIAN };
+	// This is a flat drawing: station fills must not depth-occlude busbars or result markers.
+	const common = {
+		coordinateSystem: kit.core.COORDINATE_SYSTEM.CARTESIAN,
+		parameters: { depthCompare: 'always' as const, depthWriteEnabled: false }
+	};
 	const g = scene.geometry;
 	const seg = perSegment(scene);
 	const casedLines = (
@@ -440,8 +447,12 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 						data: boxes,
 						getPolygon: (b: { polygon: [number, number][] }) => b.polygon,
 						getFillColor: alpha(PAPER, 200),
-						getLineColor: alpha(INK, 90),
-						getLineWidth: 1,
+						getLineColor: (b: { s: number }) =>
+							scene.stationColours
+								? (Array.from(scene.stationColours.subarray(b.s * 4, b.s * 4 + 4)) as RGBA)
+								: alpha(INK, 90),
+						getLineWidth: (b: { s: number }) =>
+							scene.stationColours && scene.stationColours[b.s * 4 + 3] > 200 ? 2.5 : 1,
 						lineWidthUnits: 'pixels',
 						stroked: true,
 						filled: true
@@ -575,6 +586,27 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 			radiusMinPixels: 1.5,
 			pickable: true,
 			updateTriggers: { getFillColor: [scene.busColours] }
+		}),
+		new TextLayer({
+			...common,
+			id: 'voltage-limit-markers',
+			data: scene.voltageMarkers,
+			updateTriggers: { getPosition: [g.positions] },
+			getPosition: (m: { bus: number }) => [g.positions[m.bus * 3], g.positions[m.bus * 3 + 1], 0],
+			getText: (m: { kind: string }) => (m.kind === 'low' ? '↓' : m.kind === 'high' ? '↑' : '×'),
+			getColor: (m: { kind: string }) =>
+				m.kind === 'low'
+					? [33, 102, 172, 255]
+					: m.kind === 'high'
+						? [190, 32, 36, 255]
+						: [120, 116, 108, 255],
+			getSize: 18,
+			getPixelOffset: [-8, -10],
+			fontFamily: MONO,
+			background: true,
+			getBackgroundColor: alpha(PAPER, 230),
+			backgroundPadding: [2, 0],
+			characterSet: 'auto'
 		}),
 		...ring(scene.hoveredBus, 'hover-bus', alpha(INK, 140), scene.busRadius + 4),
 		...ring(scene.selectedBus, 'selected-bus', ACCENT, scene.busRadius + 5),

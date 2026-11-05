@@ -343,6 +343,9 @@ export interface SolutionFlow extends Omit<BranchFlow, 'pf'> {
 }
 
 export interface Solution {
+	/** Solver context, absent in legacy display payloads. */
+	formulation?: string;
+	status?: string;
 	objective: number | null;
 	prices: { bus: number; value: number }[];
 	vm?: { bus: number; value: number }[];

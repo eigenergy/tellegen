@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { NetworkBus, SolutionFlow } from '@tellegen/engine';
+import type { NetworkBus, SolutionFlow, Solution } from '@tellegen/engine';
 import {
 	assessLoading,
 	assessVoltage,
 	operatingLoadingColor,
 	operatingVoltageColor,
 	stationVoltageSummary,
+	operatingVoltages,
+	operatingContext,
+	placeOperatingGauges,
+	type OperatingGauge,
 	LOADING_TOLERANCE,
 	VOLTAGE_TOLERANCE_PU
 } from '../src/lib/diagram/transmission-results.js';
@@ -26,6 +30,89 @@ const flow = (loading: number): SolutionFlow => ({
 });
 
 describe('transmission operating limits', () => {
+	it('separates voltage availability and freshness from an economic display series', () => {
+		const solution: Solution = {
+			objective: 1,
+			prices: [{ bus: 91, value: 20 }],
+			vm: [{ bus: 91, value: 1.02 }],
+			w: [
+				{ bus: 91, value: 1.04 },
+				{ bus: 42, value: -1 }
+			],
+			va: [],
+			flows: [],
+			dispatch: []
+		};
+		expect(operatingVoltages(solution, 'dcopf').size).toBe(0);
+		expect(operatingVoltages(solution, 'acopf').get(91)).toBe(1.02);
+		expect(operatingVoltages(solution, 'socwr').get(91)).toBeCloseTo(Math.sqrt(1.04));
+		expect(operatingVoltages(solution, 'socwr').get(42)).toBeNaN();
+		expect(operatingContext('socwr', solution, false, false)).toMatchObject({
+			relaxed: true,
+			voltage: true,
+			freshness: 'Result available'
+		});
+		expect(operatingContext('acpf', solution, true, false)).toMatchObject({
+			stale: true,
+			freshness: 'Updating · previous result'
+		});
+		expect(operatingContext('acpf', solution, false, true)).toMatchObject({
+			stale: true,
+			freshness: 'Error · result may be stale'
+		});
+		expect(operatingContext('dcopf', null, false, false)).toMatchObject({
+			voltage: false,
+			freshness: 'Not solved'
+		});
+		expect(operatingContext('acpf', null, false, true).freshness).toContain('no result');
+		const previous = { ...solution, formulation: 'dcopf', status: 'optimal' };
+		expect(operatingContext('acpf', previous, false, false)).toMatchObject({
+			stale: true,
+			status: 'optimal'
+		});
+		expect(operatingContext('acpf', previous, false, false).freshness).toContain('Previous dcopf');
+		expect(operatingVoltages(previous, 'acpf').size).toBe(0);
+	});
+
+	it('excludes diagnosed de-energized buses from voltage extrema and violations', () => {
+		expect(assessVoltage(0, bus(10), true).state).toBe('deenergized');
+		expect(assessLoading(flow(0), true, 0.9, true)).toBe('deenergized');
+		const s = stationVoltageSummary(
+			[bus(10), bus(91)],
+			new Map([
+				[10, 0],
+				[91, 1.02]
+			]),
+			new Set([10])
+		);
+		expect(s).toMatchObject({
+			min: { bus: 91, value: 1.02 },
+			max: { bus: 91, value: 1.02 },
+			worst: null,
+			disconnected: 1,
+			unknown: 0
+		});
+	});
+
+	it('prioritizes selection and overload gauges within the uncovered viewport and collision budget', () => {
+		const candidate = (
+			edge: number,
+			x: number,
+			state: OperatingGauge['state'],
+			loading: number,
+			selected = false
+		): OperatingGauge => ({ edge, x, y: 60, state, loading, selected });
+		const candidates = [
+			candidate(1, 30, 'normal', 0.7),
+			candidate(2, 30, 'violation', 1.3),
+			candidate(3, 150, 'warning', 0.95),
+			candidate(4, 150, 'normal', 0.2, true),
+			candidate(5, 999, 'violation', 2)
+		];
+		const rect = { left: 20, top: 40, right: 300, bottom: 200 };
+		expect(placeOperatingGauges(candidates, rect, 2).map((g) => g.edge)).toEqual([4, 2]);
+		expect(placeOperatingGauges(candidates, rect, 0)).toEqual([]);
+	});
 	it('separates warnings, at-limit values and actual overloads', () => {
 		for (const [loading, expected] of [
 			[0, 'normal'],
