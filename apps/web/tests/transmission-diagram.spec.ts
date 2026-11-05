@@ -136,7 +136,9 @@ for (const touch of [false, true]) {
 			const binding = economics.getByRole('button', { name: /Branch 1.*marginal relief/ });
 			if (touch) await binding.tap();
 			else await binding.press('Enter');
-			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeVisible();
+			const heading = inspector.getByRole('heading', { name: 'Branch 1' });
+			await expect(heading).toBeFocused();
+			await expect(heading).toBeInViewport({ ratio: 1 });
 			await expect(economics).toContainText('Binding · positive marginal relief');
 			await expect(economics).toContainText(/Marginal rating relief [1-9]/);
 			await expect(diagram.getByLabel('Branch utilization gauges')).toHaveCount(0);
@@ -160,6 +162,29 @@ for (const touch of [false, true]) {
 			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeVisible();
 			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeFocused();
 			await page.screenshot({ path: testInfo.outputPath('power-transfers-dc.png') });
+			if (touch) {
+				// Record the text painted into the exported PNG, including lines wrapped on a phone.
+				await page.evaluate(() => {
+					const text: string[] = [];
+					Reflect.set(window, 'exportedCanvasText', text);
+					const fillText = CanvasRenderingContext2D.prototype.fillText;
+					CanvasRenderingContext2D.prototype.fillText = function (line, x, y, maxWidth) {
+						if (!this.canvas.isConnected) text.push(line);
+						fillText.call(this, line, x, y, maxWidth);
+					};
+				});
+				const pendingDownload = page.waitForEvent('download');
+				await toolbar.getByRole('button', { name: 'PNG', exact: true }).tap();
+				const exportPath = testInfo.outputPath('power-transfers-export.png');
+				await (await pendingDownload).saveAs(exportPath);
+				const text = await page.evaluate(() =>
+					(Reflect.get(window, 'exportedCanvasText') as string[]).join(' ')
+				);
+				expect(text).toContain('Power transfers · dcopf · Result available');
+				expect(text).toContain('Blue halo width: 0–100 MW');
+				expect(text).toContain('Red gauges show overload in percent of rating');
+				expect(text).not.toContain('Operating limits');
+			}
 
 			const closeNetwork = page.getByRole('button', { name: 'Close network panel', exact: true });
 			if (!(await closeNetwork.isVisible()))

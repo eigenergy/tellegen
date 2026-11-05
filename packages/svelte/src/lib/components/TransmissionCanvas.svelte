@@ -633,6 +633,12 @@
 		}
 	}
 
+	async function inspectListedBranch(id: number) {
+		await inspectResult('branch', id);
+		resultInspector?.focusSelection();
+		frameSelection();
+	}
+
 	function scene(): TxScene {
 		return {
 			graph,
@@ -1264,7 +1270,7 @@
 				: economicsOn
 					? `OPF economics · ${formulation}${resultContext.relaxed ? ' relaxation' : ''} · Total LMP ${domain!.lo} to ${domain!.hi} ${PRICE_UNIT}`
 					: transferOn
-						? `Power transfers · ${formulation}${resultContext.relaxed ? ' relaxation' : ''} · Blue halo 0–${transferScale} MW · Red gauges show overload`
+						? `Power transfers · ${formulation}${resultContext.relaxed ? ' relaxation' : ''}`
 						: resultsOn
 							? `Buses: ${display?.copy ?? 'results'} · branches: loading`
 							: 'Voltage levels',
@@ -1283,11 +1289,11 @@
 			deck,
 			canvas,
 			title,
-			operatingOn || transferOn ? paintOperatingExport : undefined
+			operatingOn || transferOn ? paintResultExport : undefined
 		);
 		if (blob) download(blob, `${fileStem(label)}.png`);
 	}
-	function paintOperatingExport(ctx: CanvasRenderingContext2D) {
+	function paintResultExport(ctx: CanvasRenderingContext2D) {
 		ctx.save();
 		ctx.globalAlpha = resultContext.stale ? 0.4 : 1;
 		for (const gauge of gauges) {
@@ -1330,18 +1336,25 @@
 			ctx.stroke();
 		}
 		ctx.restore();
-		const lines = [
-			`Operating limits · ${formulation}${resultContext.relaxed ? ' relaxation' : ''} · ${resultContext.freshness} · ${resultContext.status} · base case`,
-			resultContext.voltage
-				? 'Voltage 0.90–1.10 pu · ↓ below / ↑ above case limits'
-				: 'DC: voltage magnitude not solved',
-			`Loading ${resultContext.basis} · warning ${warningPref.value}% · tick 100% · red: overload`,
-			...(activeStation
-				? [
-						`Station ${activeStation.name}: ${activeStation.min?.value.toFixed(4) ?? 'unknown'}–${activeStation.max?.value.toFixed(4) ?? 'unknown'} pu${activeStation.worst ? ` · worst bus ${activeStation.worst.bus}` : ''}`
-					]
-				: [])
-		];
+		const context = `${formulation}${resultContext.relaxed ? ' relaxation' : ''} · ${resultContext.freshness} · ${resultContext.status} · base case`;
+		const lines = transferOn
+			? [
+					`Power transfers · ${context}`,
+					`Blue halo width: 0–${transferScale} MW · Largest reported endpoint |P|`,
+					'Chevrons show direction · Red gauges show overload in percent of rating'
+				]
+			: [
+					`Operating limits · ${context}`,
+					resultContext.voltage
+						? 'Voltage 0.90–1.10 pu · ↓ below / ↑ above case limits'
+						: 'DC: voltage magnitude not solved',
+					`Loading ${resultContext.basis} · warning ${warningPref.value}% · tick 100% · red: overload`,
+					...(activeStation
+						? [
+								`Station ${activeStation.name}: ${activeStation.min?.value.toFixed(4) ?? 'unknown'}–${activeStation.max?.value.toFixed(4) ?? 'unknown'} pu${activeStation.worst ? ` · worst bus ${activeStation.worst.bus}` : ''}`
+							]
+						: [])
+				];
 		ctx.font = '11px "IBM Plex Mono", monospace';
 		const wrapped: string[] = [];
 		for (const line of lines) {
@@ -1512,10 +1525,7 @@
 					branch={network.branches[selectedEdge]}
 					busPrice={busValues.get(graph.busId[selectedBus])}
 					flow={flows.get(network.branches[selectedEdge]?.id)}
-					onbranch={async (id) => {
-						await inspectResult('branch', id);
-						frameSelection();
-					}}
+					onbranch={inspectListedBranch}
 				/>
 			{:else if transferOn}
 				<TxTransferPanel
@@ -1526,11 +1536,7 @@
 					onscale={(scale) => (transferScale = scale)}
 					{...transferSummary}
 					hasDispatch={!!transferSolution && dispatch.size > 0}
-					onbranch={async (id) => {
-						await inspectResult('branch', id);
-						resultInspector?.focusSelection();
-						frameSelection();
-					}}
+					onbranch={inspectListedBranch}
 				/>
 			{:else if display?.mode === 'voltage'}
 				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
