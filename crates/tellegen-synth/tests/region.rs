@@ -82,10 +82,11 @@ fn antimeridian_region_wraps_output_and_stays_narrow() {
     assert!(lons.iter().all(|l| (-180.0..=180.0).contains(l)));
     assert!(lons.iter().any(|l| *l > 170.0) && lons.iter().any(|l| *l < -170.0));
     assert!(report.context.as_ref().unwrap().crosses_antimeridian);
+    // A transmission grid anchors on places of 50,000 or more: here Lautoka.
     assert!(net
         .buses()
         .iter()
-        .any(|b| b.name.as_deref() == Some("Labasa")));
+        .any(|b| b.name.as_deref() == Some("Lautoka")));
     for br in net.branches() {
         for p in br.route.as_ref().unwrap() {
             assert!((-180.0..=180.0).contains(&p.x));

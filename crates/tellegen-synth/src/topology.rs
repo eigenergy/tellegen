@@ -128,8 +128,10 @@ pub fn build_topology(
     out
 }
 
-/// Wire one island's buses (indices into `buses`).
-fn island_topology(
+/// Wire one island's buses (indices into `buses`): a spanning tree, a
+/// second tree over the highest voltage buses, the Gabriel mesh up to
+/// `unique_ratio` corridors per bus, and a few loops.
+pub(crate) fn island_topology(
     buses: &[DraftBus],
     points: &[(f64, f64)],
     idxs: &[usize],
@@ -281,6 +283,53 @@ fn island_topology(
 
     for e in local {
         edges.insert(Edge::new(idxs[e.0], idxs[e.1]));
+    }
+}
+
+/// The corridor between buses `a` and `b`: haversine length (at least
+/// `min_km`), a three-point route whose midpoint is jittered by up to
+/// `jitter` of the length, and its role relative to the selection.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn corridor_between(
+    buses: &[DraftBus],
+    a: usize,
+    b: usize,
+    data: &ContextData,
+    rng: &mut Stream,
+    min_km: f64,
+    jitter: f64,
+    is_delaunay: bool,
+) -> Corridor {
+    let (ba, bb) = (&buses[a], &buses[b]);
+    let length = haversine_km(ba.lon, ba.lat, bb.lon, bb.lat);
+    let reach = jitter * length / 111.0;
+    let frame = &data.shape.frame;
+    let mid_lon = (ba.lon + bb.lon) / 2.0 + 2.0 * reach * (rng.uniform() - 0.5);
+    let mid_lat = (ba.lat + bb.lat) / 2.0 + 2.0 * reach * (rng.uniform() - 0.5);
+    let route = vec![
+        (ba.lon, ba.lat),
+        (
+            mid_lon.clamp(frame.west, frame.east),
+            mid_lat.clamp(frame.south, frame.north),
+        ),
+        (bb.lon, bb.lat),
+    ];
+    let role = if ba.polygon != bb.polygon {
+        CorridorRole::Interconnect
+    } else if data.shape.polyline_inside(&route) {
+        CorridorRole::Internal
+    } else {
+        CorridorRole::TieLine
+    };
+    Corridor {
+        a,
+        b,
+        kv: ba.base_kv.max(bb.base_kv),
+        length_km: length.max(min_km),
+        role,
+        circuits: 1,
+        route,
+        is_delaunay,
     }
 }
 

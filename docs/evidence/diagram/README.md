@@ -6,7 +6,7 @@ CPU timings of the overview's own logic, not of the solver or the result transfe
 
 ```sh
 cd packages/svelte
-DIAGRAM_SCALE=100000 DIAGRAM_SCALE_OUT=../../evidence/diagram/overview-scale-100000.json \
+DIAGRAM_SCALE=100000 DIAGRAM_SCALE_OUT=../../docs/evidence/diagram/overview-scale-100000.json \
   npx vitest run tests/diagram-scale.test.ts
 ```
 

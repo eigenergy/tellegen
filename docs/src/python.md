@@ -1,8 +1,8 @@
 # Python
 
 The `tellegen` Python package binds the engine through PyO3 and ships as a
-`cp39-abi3` wheel built with maturin. One wheel per platform covers Python
-3.9 and newer. The base package has no runtime dependencies: case parsing and
+`cp311-abi3` wheel built with maturin. One wheel per platform covers Python
+3.11 and newer. The base package has no runtime dependencies: case parsing and
 the solvers are compiled in, so `import tellegen` never reaches for numpy,
 scipy, or the `powerio` wheel.
 
@@ -45,9 +45,9 @@ wrong trade for a native solver.
 
 ## MCP server
 
-`pip install "tellegen[mcp]"` adds the `mcp` SDK and the `powerio` wheel, and
-needs Python 3.10 or newer. It exposes the same capability, solve, plan, and
-Study tools as the CLI interface in [Persistent Studies](studies.md), in
+`pip install "tellegen[mcp]"` adds the `mcp` SDK and the `powerio` wheel. It
+exposes the same capability, solve, plan, and Study tools as the CLI interface
+in [Persistent Studies](studies.md), in
 process:
 
 ```sh
@@ -72,4 +72,4 @@ fails when the two versions differ, so a crate release must bump both.
 - `python/tellegen/`: the pure-Python `load`, `Case`, and error layer, plus
   the optional `tellegen.mcp` server.
 - `python/tests/`: pytest suites run against the installed wheel in CI on
-  Python 3.9 and 3.13, with wheels built for Linux, macOS, and Windows.
+  Python 3.11 and 3.13, with wheels built for Linux, macOS, and Windows.

@@ -388,8 +388,8 @@ prices. `McOpfResult::sensitivities()` and `McOpfSession::sensitivities()` provi
 [conditional local forward and adjoint derivatives](sensitivity-interface.md#native-multiconductor-opf)
 from a verified current dual point, reusing one sparse active-KKT factorization.
 
-The feature builds against POUNCE 0.13.0 and, until PowerIO 0.11.8 is
-published, against the PowerIO candidate patched in the root `Cargo.toml`. Build and test the native feature from the repository root:
+The feature builds against published POUNCE 0.13.0 and PowerIO 0.11.8.
+Build and test the native feature from the repository root:
 
 ```sh
 cargo build -p tellegen --no-default-features --features mc-opf --locked

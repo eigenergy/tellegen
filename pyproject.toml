@@ -10,7 +10,7 @@ dynamic = ["version"]
 description = "DC optimal power flow, AC power flow, SOCWR, and KKT sensitivities."
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 keywords = ["opf", "power-flow", "power-systems", "sensitivity", "lmp"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -26,12 +26,11 @@ dependencies = []
 
 [project.optional-dependencies]
 # The MCP server. `mcp` 2.x moved the server class to
-# `mcp.server.mcpserver.MCPServer` and needs 3.10, so the marker keeps the base
-# package installable on 3.9. `powerio` supplies the filesystem path policy
+# `mcp.server.mcpserver.MCPServer`. `powerio` supplies the filesystem path policy
 # (`powerio.mcp.sandbox`), which is shared with PowerMCP rather than copied.
 mcp = [
-  "mcp>=2,<3; python_version >= '3.10'",
-  "powerio>=0.11.3,<0.12; python_version >= '3.10'",
+  "mcp>=2,<3",
+  "powerio>=0.11.3,<0.12",
 ]
 
 [project.scripts]
