@@ -126,7 +126,7 @@ for (const touch of [false, true]) {
 			else await inspector.getByRole('button', { name: 'Frame', exact: true }).press('Escape');
 			await expect(inspector).toHaveCount(0);
 
-			await toolbar.getByLabel('Diagram view').selectOption('economics');
+			await toolbar.getByRole('radio', { name: 'OPF economics', exact: true }).click();
 			const economics = diagram.getByRole('region', { name: 'OPF economics' });
 			await expect(economics).toContainText('Total LMP');
 			await expect(economics).toContainText('objective units/MW');
@@ -144,7 +144,7 @@ for (const touch of [false, true]) {
 			await expect(diagram.getByLabel('Branch utilization gauges')).toHaveCount(0);
 			await page.screenshot({ path: testInfo.outputPath('opf-economics.png') });
 
-			await toolbar.getByLabel('Diagram view').selectOption('transfer');
+			await toolbar.getByRole('radio', { name: 'Power transfers', exact: true }).click();
 			const transfers = diagram.getByRole('region', { name: 'Power transfers' });
 			await expect(transfers).toContainText('0 to 500 MW');
 			await transfers.getByLabel('Width scale').selectOption('100');
@@ -240,7 +240,9 @@ for (const touch of [false, true]) {
 					await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 					if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
 					const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
-					await expect(toolbar.getByLabel('Diagram view')).toHaveValue('operating');
+					await expect(
+						toolbar.getByRole('radio', { name: 'Operating limits', exact: true })
+					).toHaveAttribute('aria-checked', 'true');
 					await toolbar.getByLabel('Basemap').uncheck();
 					await toolbar.getByRole('button', { name: 'Schematic', exact: true }).click();
 					await expect(page.locator('.tx-stage .status')).toHaveCount(0);
@@ -286,7 +288,7 @@ for (const touch of [false, true]) {
 						await expect(
 							page.getByRole('region', { name: 'Operating limits', exact: true })
 						).toContainText('Relaxation');
-						await toolbar.getByLabel('Diagram view').selectOption('economics');
+						await toolbar.getByRole('radio', { name: 'OPF economics', exact: true }).click();
 						const economics = page.getByRole('region', { name: 'OPF economics' });
 						await expect(economics).toContainText('Relaxation');
 						await expect(economics).toContainText(
@@ -330,12 +332,21 @@ for (const touch of [false, true]) {
 				}
 			}
 
-			const view = toolbar.getByLabel('Diagram view');
-			await expect(view).toHaveValue('operating');
+			const view = (value: string) => toolbar.getByRole('radio', { name: value, exact: true });
+			await expect(view('Operating limits')).toHaveAttribute('aria-checked', 'true');
 			await expect(
 				page.getByRole('region', { name: 'Operating limits', exact: true })
 			).toContainText('DC: |V| not solved');
-			await view.selectOption('level');
+			// Every view is visible in the toolbar, not hidden in a menu.
+			await expect(toolbar.getByRole('radiogroup', { name: 'Diagram view' })).toBeVisible();
+			await expect(toolbar.getByRole('radio')).toHaveText([
+				'Voltage levels',
+				'Operating limits',
+				'OPF economics',
+				'Power transfers',
+				'Map display'
+			]);
+			await view('Voltage levels').click();
 			// The key names the levels drawn, the transformer, and the engine's substation grouping:
 			// buses 1 and 2 share a coordinate, so four buses make three substations.
 			const key = page.locator('.tx-stage details.key');
@@ -357,10 +368,8 @@ for (const touch of [false, true]) {
 			await page.mouse.move(0, 0);
 
 			// Once solved, the drawing can colour by results: the bus series and branch loading.
-			const colour = toolbar.getByLabel('Diagram view');
-			await expect(colour).toBeEnabled({ timeout: 60_000 });
 			await page.screenshot({ path: testInfo.outputPath('transmission-voltage.png') });
-			await colour.selectOption('operating');
+			await view('Operating limits').click();
 			const toolbarBox = (await toolbar.boundingBox())!;
 			const legendBox = (await page.locator('.tx-stage .legend').boundingBox())!;
 			expect(legendBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
@@ -410,7 +419,9 @@ for (const touch of [false, true]) {
 			await expect(calculation).toBeEnabled();
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
-			await expect(toolbar.getByLabel('Diagram view')).toHaveValue('operating');
+			await expect(
+				toolbar.getByRole('radio', { name: 'Operating limits', exact: true })
+			).toHaveAttribute('aria-checked', 'true');
 			await page.locator('.tx-stage details.settings summary').click();
 			await expect(page.getByRole('spinbutton', { name: 'Loading warning percent' })).toHaveValue(
 				'10'
@@ -442,7 +453,7 @@ for (const touch of [false, true]) {
 			expect(png.readUInt32BE(16)).toBeGreaterThanOrEqual(page.viewportSize()!.width);
 			expect(png.readUInt32BE(20)).toBeGreaterThan(page.viewportSize()!.height);
 
-			await toolbar.getByLabel('Diagram view').selectOption('transfer');
+			await toolbar.getByRole('radio', { name: 'Power transfers', exact: true }).click();
 			const transfer = page.getByRole('region', { name: 'Power transfers' });
 			await expect(transfer).toContainText('AC power flow');
 			const overloads = page.getByText('Overloads · 1', { exact: true });

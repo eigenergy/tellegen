@@ -321,8 +321,8 @@ test('CATS links the routed transfer and binding limit lists to the equipment in
 	await expect(page.locator('.tx-stage .status')).toHaveCount(0);
 	const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram', exact: true });
 	await toolbar.getByLabel('Basemap').uncheck();
-	const view = toolbar.getByLabel('Diagram view');
-	await view.selectOption('transfer');
+	const view = (value: string) => toolbar.getByRole('radio', { name: value, exact: true });
+	await view('Power transfers').click();
 	const transfers = page.getByRole('region', { name: 'Power transfers', exact: true });
 	await transfers.getByText('Largest active transfers', { exact: true }).press('Enter');
 	const row = transfers.getByRole('button', { name: new RegExp(`^Branch ${branch.id} `) });
@@ -343,7 +343,7 @@ test('CATS links the routed transfer and binding limit lists to the equipment in
 	await expect(inspector.getByRole('columnheader', { name: 'Reactive', exact: true })).toHaveCount(
 		0
 	);
-	await view.selectOption('economics');
+	await view('OPF economics').click();
 	const economics = page.getByRole('region', { name: 'OPF economics', exact: true });
 	const binding = solution.branch_constraints
 		?.filter((entry) => entry.enforced && entry.binding)

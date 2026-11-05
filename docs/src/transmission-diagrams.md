@@ -1,8 +1,8 @@
 # Transmission diagrams
 
-Balanced (transmission) cases open as a single-line diagram. **Show diagram** in the network panel
-replaces the map with a canvas; **Show map** or **Close** returns to the map at the view the diagram
-showed.
+Balanced (transmission) cases open as a single-line diagram. **Single-line diagram** beside the
+map's zoom buttons (**Diagram** on a phone), or **Show diagram** in the network panel, replaces the
+map with a canvas; **Show map** or **Close** returns to the map at the view the diagram showed.
 
 ## Geographic
 
@@ -46,7 +46,11 @@ out, levels below the top three fade so the backbone reads first.
 
 ## Results
 
-The **Diagram view** selector defaults to **Operating limits**. AC power flow and AC OPF show
+The toolbar shows every view as a tab: **Voltage levels**, **Operating limits**, **OPF
+economics**, **Power transfers** and **Map display**, so what the diagram offers is visible
+without opening a menu. Each tab describes its view on hover, and arrow keys move between them.
+A view that needs a result says what is missing instead of being disabled: OPF economics, for
+example, names the calculations that supply prices. The diagram opens on **Operating limits**. AC power flow and AC OPF show
 solved voltage magnitudes and branch utilization together, independent of the map's LMP or
 demand setting. DC shows utilization and explicitly states that voltage magnitudes are not
 solved. SOCWR is labelled as a relaxation.
@@ -97,7 +101,7 @@ unavailable. These are base-case displays and do not establish contingency secur
 
 **Voltage levels** preserves nominal kV identification in its own colour view. Nominal kV
 labels and tooltips remain available in operating mode, where transformer strokes stay neutral
-so nominal-voltage colours do not compete with result colours. **Map results** retains the map's
+so nominal-voltage colours do not compete with result colours. **Map display** retains the map's
 selected series; uniform economic or demand series use neutral grey. PNG export includes the
 operating gauges, result context and station range.
 

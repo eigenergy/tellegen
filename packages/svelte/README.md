@@ -47,7 +47,7 @@ Unknown and synthesized ratings are faded. Solver status, freshness, diagnosed d
 buses and the SOCWR relaxation are explicit. Display tolerances (`1e-5` pu voltage and `1e-5`
 fractional utilization) do not change solver feasibility. These are base-case operating
 indications; utilization alone does not establish economic binding or contingency security.
-**Voltage levels** and **Map results** remain separate choices. PNG export includes the
+**Voltage levels** and **Map display** remain separate choices. PNG export includes the
 operating gauges and result context.
 
 `TellegenViewer` accepts:

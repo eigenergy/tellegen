@@ -400,9 +400,6 @@
 					: ctrl.activeDisplay
 	);
 	const resultsOn = $derived(colour !== 'level' && !!solution);
-	$effect(() => {
-		if (colour === 'results' && !solution) colour = 'operating';
-	});
 	const busValues = $derived(new Map((display?.values ?? []).map((v) => [v.bus, v.value])));
 	const domain = $derived(
 		economicsOn
@@ -1352,6 +1349,52 @@
 		else if (e.key === 'Escape') onclear();
 	}
 
+	/** The diagram's views, always visible so users can see what the diagram offers. */
+	const VIEWS: { value: Colour; label: string; hint: string }[] = [
+		{
+			value: 'level',
+			label: 'Voltage levels',
+			hint: 'Nominal voltage of each line and busbar; no results needed'
+		},
+		{
+			value: 'operating',
+			label: 'Operating limits',
+			hint: 'Branch loading against ratings and bus voltage against limits'
+		},
+		{
+			value: 'economics',
+			label: 'OPF economics',
+			hint: 'Locational marginal prices and binding thermal limits from an OPF'
+		},
+		{
+			value: 'transfer',
+			label: 'Power transfers',
+			hint: 'Active power flow: line width by MW, chevrons for direction'
+		},
+		{
+			value: 'results',
+			label: 'Map display',
+			hint: "The map's own display series on the buses (LMP, angle, voltage or demand)"
+		}
+	];
+	/** Arrow keys move between views, as in any radio group. */
+	function viewKey(e: KeyboardEvent) {
+		const step =
+			e.key === 'ArrowRight' || e.key === 'ArrowDown'
+				? 1
+				: e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+					? -1
+					: 0;
+		if (!step) return;
+		e.preventDefault();
+		const i = VIEWS.findIndex((v) => v.value === colour);
+		colour = VIEWS[(i + step + VIEWS.length) % VIEWS.length].value;
+		tick().then(() =>
+			(e.currentTarget as HTMLElement | null)
+				?.querySelector<HTMLElement>('[aria-checked="true"]')
+				?.focus()
+		);
+	}
 	const toolLeft = $derived(panels.compact ? 12 : panels.dockWidth('left') + 24);
 	const layoutName = $derived(
 		layout === 'schematic'
@@ -1565,16 +1608,23 @@
 		role="toolbar"
 		aria-label="Single-line diagram"
 	>
-		<label>
-			<span class="sr-only">Diagram view</span>
-			<select bind:value={colour} title="Diagram view">
-				<option value="level">Voltage levels</option>
-				<option value="operating">Operating limits</option>
-				<option value="economics">OPF economics</option>
-				<option value="transfer">Power transfers</option>
-				<option value="results" disabled={!solution}>Map results</option>
-			</select>
-		</label>
+		<div
+			class="segmented views"
+			role="radiogroup"
+			aria-label="Diagram view"
+			tabindex="-1"
+			onkeydown={viewKey}
+		>
+			{#each VIEWS as v (v.value)}
+				<button
+					role="radio"
+					aria-checked={colour === v.value}
+					tabindex={colour === v.value ? 0 : -1}
+					title={v.hint}
+					onclick={() => (colour = v.value)}>{v.label}</button
+				>
+			{/each}
+		</div>
 		<div class="segmented" role="group" aria-label="Layout">
 			<button
 				aria-pressed={layout === 'source'}
@@ -1615,7 +1665,7 @@
 		<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
 		<button onclick={onclose} title="Return to the map">Close</button>
 	</div>
-	{#if resultsOn || operatingOn || economicsOn || transferOn}
+	{#if colour !== 'level'}
 		<div
 			class="legend"
 			class:operating={operatingOn || economicsOn || transferOn}
@@ -1667,6 +1717,8 @@
 					onbranch={inspectListedBranch}
 					onpreview={setPreview}
 				/>
+			{:else if !solution}
+				No result yet. Solve the case to colour the buses by the map's display series.
 			{:else if display?.mode === 'voltage'}
 				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
 				limits apply ·
@@ -1703,7 +1755,7 @@
 					{onclear}
 					onframe={frameSelection}
 				/>
-			{:else}
+			{:else if solution}
 				Branch colour: loading · grey below {warningPref.value} % · amber {warningPref.value}–100 %
 				· red above 100 % · unknown ratings faded
 			{/if}
@@ -1912,8 +1964,7 @@
 		border-radius: 4px;
 		box-shadow: var(--elev-1);
 	}
-	.toolbar button,
-	.toolbar select {
+	.toolbar button {
 		font: inherit;
 		color: var(--ink);
 		background: var(--paper);
@@ -1922,8 +1973,7 @@
 		padding: 4px 8px;
 		cursor: pointer;
 	}
-	.toolbar button:disabled,
-	.toolbar select:disabled {
+	.toolbar button:disabled {
 		opacity: 0.45;
 		cursor: default;
 	}
@@ -1943,9 +1993,22 @@
 	}
 	.segmented button:last-child {
 		border-radius: 0 3px 3px 0;
+	}
+	.segmented button + button {
 		border-left: 0;
 	}
-	.segmented button[aria-pressed='true'] {
+	/* One row of views; on a narrow screen it scrolls sideways instead of taking rows. */
+	.views {
+		max-width: 100%;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	.views button {
+		white-space: nowrap;
+		flex: none;
+	}
+	.segmented button[aria-pressed='true'],
+	.segmented button[aria-checked='true'] {
 		background: var(--accent-soft);
 		color: var(--accent);
 	}
@@ -2105,7 +2168,6 @@
 	}
 	@media (pointer: coarse) {
 		.toolbar button,
-		.toolbar select,
 		.toolbar .check,
 		.symbols .level,
 		.key summary,

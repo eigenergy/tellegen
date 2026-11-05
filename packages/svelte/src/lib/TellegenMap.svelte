@@ -168,6 +168,14 @@
 			: null
 	);
 	let shownTx: typeof txCase = null;
+	/** The map control that opens a balanced case as a single-line diagram. */
+	let diagramControl = $state.raw<HTMLElement | null>(null);
+	const diagramAvailable = $derived(
+		!app.studyView && !app.activeMulti && !!ctrl.activeSolvable?.network
+	);
+	$effect(() => {
+		if (diagramControl) diagramControl.hidden = !diagramAvailable;
+	});
 	$effect(() => {
 		const now = txCase;
 		const before = shownTx;
@@ -957,6 +965,42 @@
 					if (app.placingId) onplacecase(e.lngLat.lng, e.lngLat.lat);
 				});
 				m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+				// Beside the zoom buttons, so it moves with them when a sheet opens.
+				m.addControl(
+					{
+						onAdd() {
+							const wrap = document.createElement('div');
+							wrap.className = 'maplibregl-ctrl diagram-ctrl';
+							const button = document.createElement('button');
+							button.type = 'button';
+							button.setAttribute('aria-label', 'Single-line diagram');
+							button.title =
+								'Open this case as a single-line diagram: voltage levels, operating limits, prices and power flows';
+							const full = document.createElement('span');
+							full.className = 'full';
+							full.textContent = 'Single-line diagram';
+							const short = document.createElement('span');
+							short.className = 'short';
+							short.textContent = 'Diagram';
+							button.append(full, short);
+							button.onclick = () => {
+								const c = ctrl.activeSolvable;
+								if (!c?.network || app.activeMulti) return;
+								c.schematic = true;
+								// On a phone, the sheet would cover the diagram it opens.
+								if (panels.compact) panels.drawer = null;
+							};
+							wrap.append(button);
+							diagramControl = wrap;
+							return wrap;
+						},
+						onRemove() {
+							diagramControl?.remove();
+							diagramControl = null;
+						}
+					},
+					'bottom-right'
+				);
 
 				// WebGL resilience on Safari. Two failure modes seen in the wild:
 				//   1. The canvas backing store is discarded while the tab is idle or
@@ -1854,6 +1898,44 @@
 	.map :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
 		float: none;
 		margin: 0;
+	}
+
+	.map :global(.diagram-ctrl) {
+		order: 1;
+	}
+	.map :global(.diagram-ctrl[hidden]) {
+		display: none;
+	}
+	.map :global(.diagram-ctrl .short) {
+		display: none;
+	}
+	@media (max-width: 760px) {
+		.map :global(.diagram-ctrl .full) {
+			display: none;
+		}
+		.map :global(.diagram-ctrl .short) {
+			display: inline;
+		}
+	}
+	.map :global(.diagram-ctrl button) {
+		white-space: nowrap;
+		padding: 7px 12px;
+		font: 11px var(--font-mono);
+		color: var(--ink);
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		box-shadow: var(--elev-tooltip);
+		cursor: pointer;
+	}
+	.map :global(.diagram-ctrl button:hover) {
+		border-color: var(--accent);
+		color: var(--text-accent);
+	}
+	@media (pointer: coarse) {
+		.map :global(.diagram-ctrl button) {
+			min-height: 44px;
+		}
 	}
 
 	.map :global(.maplibregl-ctrl-group) {

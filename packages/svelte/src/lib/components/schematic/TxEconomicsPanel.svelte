@@ -45,6 +45,7 @@
 		onfocus: () => onpreview?.({ kind: 'branch', id }),
 		onblur: () => onpreview?.(null)
 	});
+	const OPF = new Set(['dcopf', 'acopf', 'socwr']);
 	const domain = $derived(PRICE_SCALES[scale]);
 	const branchResult = $derived(branch ? economics.branches.get(branch.id) : undefined);
 	let limit = $state(12);
@@ -79,6 +80,11 @@
 				median LMP, {economicAmount(shadingCentre)}
 			</p>
 		{/if}
+	{:else if !OPF.has(formulation)}
+		<p>
+			Prices and binding limits come from an optimal power flow. Choose DC OPF, AC OPF or SOCWR as
+			the calculation in the network panel.
+		</p>
 	{:else}
 		<p>Total LMP unavailable for this result.</p>
 	{/if}
@@ -119,7 +125,7 @@
 					>{/if}
 			{:else}<p>No binding thermal limits in this result.</p>{/if}
 		</details>
-	{:else}
+	{:else if OPF.has(formulation)}
 		<p>Thermal enforcement and marginal relief unavailable for this result.</p>
 	{/if}
 	{#if economics.constraints.length}
