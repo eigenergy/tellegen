@@ -65,3 +65,21 @@ point, as in the paper's greedy method. Routing through the Delaunay channels, w
 around any box still in the way, removes nearly every line crossing another substation, at the
 cost of about two more bends per line on the synthetic grids. Substation grouping itself takes
 13 ms for 70,000 buses (ACTIVSg70k without coordinates).
+
+## Without coordinates
+
+Cases whose positions are synthetic are laid out by their connections instead
+(`TxSeeding::Stress`): sparse stress (Ortmann, Klimenta and Brandes 2017) on the substation graph,
+started from pivot MDS (Brandes and Pich 2006), then the same placement and routing. Without
+`TX_EVAL_COORDS` the evaluation groups buses by transformers alone and seeds by stress
+(`tx-layout-stress.json`, the TAMU ACTIVSg MATPOWER files):
+
+| Case | Buses | Substations | Layout, routed | Overlapping boxes | Segments through other substations, straight → routed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ACTIVSg2000 | 2,000 | 1,249 | 28 ms | 0 | 932 → 48 |
+| ACTIVSg10k | 10,000 | 7,210 | 0.15 s | 0 | 5,063 → 756 |
+| ACTIVSg70k | 70,000 | 54,587 | 1.2 s | 0 | 34,609 → 4,873 |
+
+Stress takes most of the time at this scale (0.8 s of 1.2 s for ACTIVSg70k, 64 pivots and at most
+60 passes); it replaces the browser's force placement, whose drawing of a meshed grid this size is
+a tangle.

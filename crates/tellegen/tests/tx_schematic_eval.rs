@@ -15,7 +15,7 @@ use powerio_tx::IndexedNetwork;
 use tellegen::geo::{spread_stacks, Coords};
 use tellegen::substations::{group_substations, GroupingOptions};
 use tellegen::tx_schematic::{
-    tx_layout_quality, tx_schematic_layout, TxLayoutInput, TxLayoutOptions,
+    tx_layout_quality, tx_schematic_layout, TxLayoutInput, TxLayoutOptions, TxSeeding,
 };
 
 fn mercator(lon: f64, lat: f64) -> (f64, f64) {
@@ -39,11 +39,17 @@ fn percentile(v: &[f64], p: f64) -> f64 {
 }
 
 /// Print one case's metrics, straight and routed, and return them for `TX_EVAL_OUT`.
-fn report(name: &str, input: &TxLayoutInput, group_ms: f64) -> Vec<serde_json::Value> {
+fn report(
+    name: &str,
+    input: &TxLayoutInput,
+    group_ms: f64,
+    seeding: TxSeeding,
+) -> Vec<serde_json::Value> {
     let mut runs = Vec::new();
     for iterations in [0, 10] {
         let options = TxLayoutOptions {
             route_iterations: iterations,
+            seeding,
             ..TxLayoutOptions::default()
         };
         let t = Instant::now();
@@ -79,6 +85,7 @@ fn report(name: &str, input: &TxLayoutInput, group_ms: f64) -> Vec<serde_json::V
         runs.push(serde_json::json!({
             "case": name,
             "routing": if iterations == 0 { "straight" } else { "routed" },
+            "seeding": format!("{seeding:?}").to_lowercase(),
             "buses": input.bus_substation.len(),
             "substations": q.displacement.len(),
             "grouping_ms": group_ms,
@@ -119,13 +126,12 @@ fn write_out(runs: Vec<serde_json::Value>) {
 #[test]
 #[ignore]
 fn evaluate_case_from_env() {
-    let (Ok(case), Ok(coords)) = (
-        std::env::var("TX_EVAL_CASE"),
-        std::env::var("TX_EVAL_COORDS"),
-    ) else {
-        eprintln!("set TX_EVAL_CASE and TX_EVAL_COORDS");
+    // Without TX_EVAL_COORDS the case is grouped by transformers alone and seeded by stress.
+    let Ok(case) = std::env::var("TX_EVAL_CASE") else {
+        eprintln!("set TX_EVAL_CASE (and TX_EVAL_COORDS for geographic seeds)");
         return;
     };
+    let coords = std::env::var("TX_EVAL_COORDS").ok();
     let text = std::fs::read_to_string(&case).expect("read case");
     let source = powerio::Source::from_memory(&case, text.into_bytes()).expect("source");
     let options = powerio::ParseOptions::default()
@@ -135,7 +141,10 @@ fn evaluate_case_from_env() {
     let module = tellegen::ir::balanced_module(module).expect("balanced");
     let net = module.value();
     let mut located = Coords::new();
-    let csv = std::fs::read_to_string(&coords).expect("read coords");
+    let csv = coords
+        .as_deref()
+        .map(|c| std::fs::read_to_string(c).expect("read coords"))
+        .unwrap_or_else(|| "bus_i,lat,lon\n".into());
     let mut lines = csv.lines();
     let header: Vec<String> = lines
         .next()
@@ -169,7 +178,7 @@ fn evaluate_case_from_env() {
     let grouping = group_substations(
         analysis,
         &stacks,
-        Some(&located),
+        coords.is_some().then_some(&located),
         &GroupingOptions::default(),
     );
     let group_ms = t.elapsed().as_secs_f64() * 1e3;
@@ -206,7 +215,12 @@ fn evaluate_case_from_env() {
     let name = std::path::Path::new(&case)
         .file_name()
         .map_or(case.clone(), |f| f.to_string_lossy().into_owned());
-    write_out(report(&name, &input, group_ms));
+    let seeding = if coords.is_some() {
+        TxSeeding::Given
+    } else {
+        TxSeeding::Stress
+    };
+    write_out(report(&name, &input, group_ms, seeding));
 }
 
 /// A synthetic grid at interconnection scale: substations scattered over a 1,000 km square with
@@ -261,7 +275,12 @@ fn evaluate_synthetic_scale() {
                 input.in_service.push(1);
             }
         }
-        runs.extend(report(&format!("synthetic {substations}"), &input, 0.0));
+        runs.extend(report(
+            &format!("synthetic {substations}"),
+            &input,
+            0.0,
+            TxSeeding::Given,
+        ));
     }
     write_out(runs);
 }

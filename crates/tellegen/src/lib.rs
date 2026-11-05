@@ -48,6 +48,8 @@ pub mod schematic;
 #[cfg(feature = "sensitivity")]
 mod sens;
 mod solve;
+/// Sparse stress layout for graphs without coordinates.
+pub mod stress;
 #[cfg(feature = "sensitivity")]
 pub mod study;
 #[cfg(feature = "sensitivity")]

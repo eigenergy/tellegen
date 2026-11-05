@@ -495,9 +495,11 @@
 	let schematic: Promise<{ geometry: SchematicGeometry; parts: TxSchematicParts }> | null = null;
 	function target(next: Layout) {
 		if (next === 'source') return Promise.resolve({ geometry: source, parts: null });
-		schematic ??= txSchematicLayout(txLayoutInput(graph, source)).then((l) =>
-			fromTxLayout(l, source.mercatorOrigin)
-		);
+		// Synthetic positions say nothing about the grid: lay its substations out by their
+		// connections instead (sparse stress), in the same frame.
+		schematic ??= txSchematicLayout(txLayoutInput(graph, source), {
+			seeding: network.synthetic_coords ? 'stress' : 'given'
+		}).then((l) => fromTxLayout(l, source.mercatorOrigin));
 		schematic.catch(() => (schematic = null));
 		return schematic;
 	}
@@ -703,7 +705,7 @@
 	const toolLeft = $derived(panels.compact ? 12 : panels.dockWidth('left') + 24);
 	const layoutName = $derived(
 		layout === 'schematic'
-			? `Substation schematic (seeded by ${geographic ? 'geography' : 'the drawing'})`
+			? `Substation schematic (${network.synthetic_coords ? 'laid out by connection' : `seeded by ${geographic ? 'geography' : 'the drawing'}`})`
 			: geographic
 				? 'Geographic positions (Web Mercator)'
 				: 'Drawing positions'

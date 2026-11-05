@@ -860,6 +860,9 @@ export interface TxLayoutInput {
 }
 
 export interface TxLayoutOptions {
+  /** `given` starts substations at their buses' positions; `stress` lays them out by their
+   * connections (sparse stress), fitted into the same frame, for synthetic positions. */
+  seeding?: "given" | "stress";
   /** Typical substation box size as a fraction of the median spacing between neighbouring
    * substations. */
   fill?: number;

@@ -30,6 +30,12 @@ registered to the basemap: switching between the two layouts moves each bus from
 point into its substation. Lines run through the gaps between substations, spaced apart, and step
 around any substation in their way.
 
+A case without coordinates is placed on the map by a synthetic layout that says nothing about the
+grid. Its schematic lays the substations out by their connections instead: sparse stress
+(Ortmann, Klimenta and Brandes 2017) on the graph of substations, so substations a few lines
+apart are drawn near each other, fitted into the same frame as the synthetic positions. ACTIVSg2000
+from its MATPOWER file lays out in about 30 ms, ACTIVSg70k in a little over a second.
+
 The method follows Birchfield and Overbye (2018): independent substation interiors, greedy
 placement at the free point nearest each substation's position, and line routing through the
 channels of a Delaunay triangulation of the substations. The
@@ -64,5 +70,6 @@ declares, because buses at one voltage in one substation are joined by lines.
 lays out the columns of a network: substation per bus, nominal kV, branch ends, service status and
 seed positions. It returns bus positions, busbars, substation boxes, routed segments and each
 branch's role (line, inside a substation, or out of service), in the units of the seeds.
+`seeding: "stress"` lays substations out by their connections rather than their positions;
 `route_iterations: 0` draws lines straight. `txGraph` and `txLayoutInput` in `@tellegen/svelte`
 build the input from a `Network`.

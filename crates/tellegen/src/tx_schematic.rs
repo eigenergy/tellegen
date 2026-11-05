@@ -46,9 +46,22 @@ pub struct TxLayoutInput {
     pub xy: Vec<f64>,
 }
 
+/// Where substations start before placement.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TxSeeding {
+    /// At the mean of their buses' positions (geography, a drawing).
+    #[default]
+    Given,
+    /// By sparse stress on the substation graph, fitted into the frame of the given positions:
+    /// for cases whose positions are synthetic.
+    Stress,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TxLayoutOptions {
+    pub seeding: TxSeeding,
     /// Typical substation box size as a fraction of the median distance between neighbouring
     /// substations. Smaller keeps substations nearer their seeds; larger shows more detail.
     pub fill: f64,
@@ -67,6 +80,7 @@ pub struct TxLayoutOptions {
 impl Default for TxLayoutOptions {
     fn default() -> Self {
         Self {
+            seeding: TxSeeding::Given,
             fill: 0.45,
             tier_radius: 3.0,
             tier_counts: [12, 30],
@@ -152,6 +166,18 @@ pub fn tx_schematic_layout(input: &TxLayoutInput, options: &TxLayoutOptions) -> 
             seed[s].0 /= count[s] as f64;
             seed[s].1 /= count[s] as f64;
         }
+    }
+
+    if options.seeding == TxSeeding::Stress {
+        seed = stress_seeds(
+            &seed,
+            &count,
+            |e| {
+                let (a, b) = (bus_at(input.from[e])?, bus_at(input.to[e])?);
+                (input.in_service.get(e).copied().unwrap_or(1) != 0).then(|| (sub_of(a), sub_of(b)))
+            },
+            m,
+        );
     }
 
     // Interiors: members by voltage, and slot assignment per busbar.
@@ -476,6 +502,58 @@ pub fn tx_schematic_layout(input: &TxLayoutInput, options: &TxLayoutOptions) -> 
         scale,
         bounds,
     }
+}
+
+/// Substation seeds from sparse stress on the substation graph (in-service branches between
+/// different substations), scaled and centred onto the bounding box of the given seeds.
+fn stress_seeds(
+    given: &[(f64, f64)],
+    count: &[usize],
+    edge: impl Fn(usize) -> Option<(usize, usize)>,
+    m: usize,
+) -> Vec<(f64, f64)> {
+    let occupied: Vec<usize> = (0..given.len()).filter(|&s| count[s] > 0).collect();
+    let mut local = vec![usize::MAX; given.len()];
+    for (i, &s) in occupied.iter().enumerate() {
+        local[s] = i;
+    }
+    let edges: Vec<(usize, usize)> = (0..m)
+        .filter_map(&edge)
+        .filter(|(a, b)| a != b)
+        .map(|(a, b)| (local[a], local[b]))
+        .collect();
+    let pos = crate::stress::sparse_stress(occupied.len(), &edges);
+    let bbox = |pts: &mut dyn Iterator<Item = (f64, f64)>| {
+        pts.fold(
+            (
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ),
+            |b, p| (b.0.min(p.0), b.1.min(p.1), b.2.max(p.0), b.3.max(p.1)),
+        )
+    };
+    let g = bbox(&mut occupied.iter().map(|&s| given[s]));
+    let q = bbox(&mut pos.iter().copied());
+    let diag = |b: (f64, f64, f64, f64)| (b.2 - b.0).hypot(b.3 - b.1);
+    let target = if diag(g).is_finite() && diag(g) > 0.0 {
+        diag(g)
+    } else {
+        1000.0 * (occupied.len() as f64).sqrt()
+    };
+    let k = target / diag(q).max(f64::MIN_POSITIVE);
+    let gc = if diag(g).is_finite() {
+        ((g.0 + g.2) / 2.0, (g.1 + g.3) / 2.0)
+    } else {
+        (0.0, 0.0)
+    };
+    let qc = ((q.0 + q.2) / 2.0, (q.1 + q.3) / 2.0);
+    let mut out = given.to_vec();
+    for (i, &s) in occupied.iter().enumerate() {
+        out[s] = (gc.0 + (pos[i].0 - qc.0) * k, gc.1 + (pos[i].1 - qc.1) * k);
+    }
+    out
 }
 
 /// A line between two substations, before routing: its bar slots and box exits at both ends.
@@ -1438,6 +1516,28 @@ mod tests {
             "{:?}",
             q.relative_length
         );
+    }
+
+    #[test]
+    fn stress_seeding_lays_out_a_case_without_positions() {
+        let mut input = grid_case(6, 2, 10_000.0);
+        input.xy.iter_mut().for_each(|v| *v = 0.0);
+        let options = TxLayoutOptions {
+            seeding: TxSeeding::Stress,
+            ..TxLayoutOptions::default()
+        };
+        let layout = tx_schematic_layout(&input, &options);
+        let q = tx_layout_quality(&input, &layout);
+        assert_eq!(q.overlapping_pairs, 0);
+        // Neighbouring substations in the grid end up near each other: lines are short relative
+        // to the drawing.
+        let span = (layout.bounds[2] - layout.bounds[0]).max(layout.bounds[3] - layout.bounds[1]);
+        let longest = layout
+            .segments
+            .chunks(4)
+            .map(|s| (s[2] - s[0]).hypot(s[3] - s[1]))
+            .fold(0.0, f64::max);
+        assert!(longest < 0.5 * span, "{longest} of {span}");
     }
 
     #[test]

@@ -31,3 +31,8 @@ apart and clear of the boxes they pass, and step around any box still in the
 way. ACTIVSg200 lays out in under a millisecond with no overlapping
 substations, 86 % of them at their true position and no line crossing another
 substation; a 70,000-bus synthetic grid takes about 0.35 s natively.
+
+A case without coordinates gets a schematic laid out by its connections (sparse
+stress on the substation graph, `seeding: "stress"`), in place of the synthetic
+positions it is placed with on the map: ACTIVSg2000 lays out in about 30 ms,
+ACTIVSg70k in a little over a second.

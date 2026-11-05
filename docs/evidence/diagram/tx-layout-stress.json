@@ -1,0 +1,179 @@
+{
+  "generated_by": "cargo test --release -p tellegen --test tx_schematic_eval evaluate_case -- --ignored (no TX_EVAL_COORDS: stress seeding)",
+  "runs": [
+    {
+      "bends_per_line": 1.9880444064901794,
+      "buses": 2000,
+      "case": "case_ACTIVSg2000.m",
+      "displacement_km": {
+        "max": 14.931533132608878,
+        "median": 7.213264752329761,
+        "moved_share": 1.0,
+        "p90": 10.690909140750303
+      },
+      "grouping_ms": 0.362833,
+      "layout_ms": 24.882375000000003,
+      "line_segments_through_other_substations": 932,
+      "lines": 2342,
+      "overlapping_pairs": 0,
+      "relative_length": {
+        "max": 1.6971623873457908,
+        "median": 1.0153698076729851,
+        "p90": 1.085044938936664
+      },
+      "routing": "straight",
+      "seeding": "stress",
+      "sharp_bends_per_line": 0.7677198975234842,
+      "spacing_over_box_side": {
+        "min": 0.6626249595699994,
+        "p10": 1.7511216279201522
+      },
+      "substations": 1249
+    },
+    {
+      "bends_per_line": 3.606319385140905,
+      "buses": 2000,
+      "case": "case_ACTIVSg2000.m",
+      "displacement_km": {
+        "max": 14.931533132608878,
+        "median": 7.213264752329761,
+        "moved_share": 1.0,
+        "p90": 10.690909140750303
+      },
+      "grouping_ms": 0.362833,
+      "layout_ms": 28.480249999999998,
+      "line_segments_through_other_substations": 48,
+      "lines": 2342,
+      "overlapping_pairs": 0,
+      "relative_length": {
+        "max": 1.7032709391610197,
+        "median": 1.025993852255194,
+        "p90": 1.1311228115657361
+      },
+      "routing": "routed",
+      "seeding": "stress",
+      "sharp_bends_per_line": 1.0503842869342441,
+      "spacing_over_box_side": {
+        "min": 0.6626249595699994,
+        "p10": 1.7511216279201522
+      },
+      "substations": 1249
+    },
+    {
+      "bends_per_line": 1.9823154431420933,
+      "buses": 10000,
+      "case": "case_ACTIVSg10k.m",
+      "displacement_km": {
+        "max": 35.22442363467391,
+        "median": 15.83007268242149,
+        "moved_share": 1.0,
+        "p90": 24.33723565561813
+      },
+      "grouping_ms": 1.918042,
+      "layout_ms": 116.835459,
+      "line_segments_through_other_substations": 5063,
+      "lines": 9726,
+      "overlapping_pairs": 0,
+      "relative_length": {
+        "max": 1.485909995298752,
+        "median": 1.0054732838479807,
+        "p90": 1.0249938380774963
+      },
+      "routing": "straight",
+      "seeding": "stress",
+      "sharp_bends_per_line": 0.7629035574748098,
+      "spacing_over_box_side": {
+        "min": 0.6055507564435784,
+        "p10": 1.8126637477757335
+      },
+      "substations": 7210
+    },
+    {
+      "bends_per_line": 5.760744396463089,
+      "buses": 10000,
+      "case": "case_ACTIVSg10k.m",
+      "displacement_km": {
+        "max": 35.22442363467391,
+        "median": 15.83007268242149,
+        "moved_share": 1.0,
+        "p90": 24.33723565561813
+      },
+      "grouping_ms": 1.918042,
+      "layout_ms": 149.138666,
+      "line_segments_through_other_substations": 756,
+      "lines": 9726,
+      "overlapping_pairs": 0,
+      "relative_length": {
+        "max": 1.485909995298752,
+        "median": 1.0102189555465586,
+        "p90": 1.0456244265431012
+      },
+      "routing": "routed",
+      "seeding": "stress",
+      "sharp_bends_per_line": 1.2416203989307013,
+      "spacing_over_box_side": {
+        "min": 0.6055507564435784,
+        "p10": 1.8126637477757335
+      },
+      "substations": 7210
+    },
+    {
+      "bends_per_line": 1.980630965228238,
+      "buses": 70000,
+      "case": "case_ACTIVSg70k.m",
+      "displacement_km": {
+        "max": 105.15864517937503,
+        "median": 43.43720077143414,
+        "moved_share": 1.0,
+        "p90": 68.83674434469035
+      },
+      "grouping_ms": 14.0435,
+      "layout_ms": 816.672375,
+      "line_segments_through_other_substations": 34609,
+      "lines": 71351,
+      "overlapping_pairs": 0,
+      "relative_length": {
+        "max": 1.298182464797898,
+        "median": 1.0033116415365155,
+        "p90": 1.0132453756498119
+      },
+      "routing": "straight",
+      "seeding": "stress",
+      "sharp_bends_per_line": 0.7416013790977001,
+      "spacing_over_box_side": {
+        "min": 0.6474490490630687,
+        "p10": 1.8420132584748095
+      },
+      "substations": 54587
+    },
+    {
+      "bends_per_line": 5.388403806533896,
+      "buses": 70000,
+      "case": "case_ACTIVSg70k.m",
+      "displacement_km": {
+        "max": 105.15864517937503,
+        "median": 43.43720077143414,
+        "moved_share": 1.0,
+        "p90": 68.83674434469035
+      },
+      "grouping_ms": 14.0435,
+      "layout_ms": 1207.280041,
+      "line_segments_through_other_substations": 4873,
+      "lines": 71351,
+      "overlapping_pairs": 0,
+      "relative_length": {
+        "max": 1.4000869149396529,
+        "median": 1.0060909407208036,
+        "p90": 1.0253013643185342
+      },
+      "routing": "routed",
+      "seeding": "stress",
+      "sharp_bends_per_line": 1.1784558030020602,
+      "spacing_over_box_side": {
+        "min": 0.6474490490630687,
+        "p10": 1.8420132584748095
+      },
+      "substations": 54587
+    }
+  ]
+}
