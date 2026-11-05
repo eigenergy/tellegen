@@ -74,6 +74,37 @@
       ],
       "type": "string"
     },
+    "BranchConstraintResult": {
+      "description": "A DC OPF branch's thermal constraint in the final solved program.",
+      "properties": {
+        "binding": {
+          "description": "An enforced bound is met to the solver's reporting tolerance.",
+          "type": "boolean"
+        },
+        "branch": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "enforced": {
+          "type": "boolean"
+        },
+        "relief_per_mw": {
+          "description": "Objective decrease per additional MW of symmetric rating. Only present\nfor an enforced row with an economic objective.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "branch",
+        "enforced",
+        "binding"
+      ],
+      "type": "object"
+    },
     "BranchFlow": {
       "description": "Branch flows, keyed by original branch id (plus the row uid when carried, as in\n[`BusScalar`]). `pf` (from-end active, MW) and `loading` (|S|/limit,\ndimensionless) are present on every formulation that has flows; the reactive\nand to-end legs are `None` on the DC paths.",
       "properties": {
@@ -373,6 +404,15 @@
         "binding": {
           "description": "`value` sits at a limit, within solver tolerance. Always true for an\nequality.",
           "type": "boolean"
+        },
+        "branches": {
+          "description": "Branches in the resolved row, including flows implied by injection terms.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -1880,6 +1920,16 @@
     "SolveResponse": {
       "description": "The formulation-agnostic solve result. A superset: every block is optional, and\neach formulation fills what it produces. Powers are MW/MVAr, nodal values are\nin objective units per selected power unit, angles radians, `vm` per unit, and\n`w = |V|^2` per unit squared. Element ids\nare the original bus/branch/generator ids, so the frontend joins straight onto\nits case.",
       "properties": {
+        "branch_constraints": {
+          "description": "Thermal constraint state and marginal relief, when exposed by the formulation.",
+          "items": {
+            "$ref": "#/$defs/BranchConstraintResult"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "constraints": {
           "description": "The request's linear constraints, in request order (dcopf). Absent when\nthe request stated none.",
           "items": {
@@ -2871,5 +2921,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "077ad32ce094b19714f9ab1844d08ae8968a6a6f7421b3f48cc59a5a143a4320"
+  "x-rust-source-sha256": "4146c1111f6a3ebf9d4caaf80ac456f417b841f1beb63a0bef06e66b9d109d48"
 }

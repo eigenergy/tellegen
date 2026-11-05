@@ -52,6 +52,7 @@ export {
 export { MAX_ENGINE_INPUT_BYTES } from "./input-limit.js";
 
 export type {
+  BranchConstraintResult,
   BranchFlow,
   BranchLoading,
   SolutionFlow,
@@ -2099,6 +2100,8 @@ export interface SolutionResponseProjection {
   flows?: BranchFlow[] | null;
   dispatch?: { gen: number; bus?: number | null; pg: number }[] | null;
   diagnostics?: SolveDiagnostic[] | null;
+  constraints?: Solution["constraints"] | null;
+  branch_constraints?: Solution["branch_constraints"] | null;
 }
 
 /** Project the formulation-agnostic wire response onto the compact map result. */
@@ -2129,6 +2132,10 @@ export function solveResponseToSolution(
       mw: d.pg,
     })),
     ...(out.diagnostics?.length ? { diagnostics: out.diagnostics } : {}),
+    ...(out.constraints != null ? { constraints: out.constraints } : {}),
+    ...(out.branch_constraints != null
+      ? { branch_constraints: out.branch_constraints }
+      : {}),
   };
 }
 

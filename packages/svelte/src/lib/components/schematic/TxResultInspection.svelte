@@ -11,6 +11,7 @@
 
 	let {
 		exceptions,
+		showExceptions = true,
 		bus,
 		branch,
 		voltage,
@@ -26,6 +27,7 @@
 		onclear
 	}: {
 		exceptions: ReturnType<typeof operatingExceptions>;
+		showExceptions?: boolean;
 		bus: NetworkBus | undefined;
 		branch: NetworkBranch | undefined;
 		voltage: number | undefined;
@@ -200,55 +202,57 @@
 	</section>
 {/if}
 
-<details bind:open>
-	<summary bind:this={summary}>Exceptions · {total}</summary>
-	{#if open}
-		<label>
-			Search exceptions
-			<input
-				type="search"
-				bind:value={query}
-				oninput={() => (limit = batch)}
-				placeholder="Bus, station or branch ID"
-			/>
-		</label>
-		{#if !buses.length && !branches.length}<p>
-				{needle ? 'No matching exceptions.' : 'No reported operating exceptions.'}
-			</p>{/if}
-		{#if buses.length}
-			<h3>Voltage · {buses.length}</h3>
-			<ol>
-				{#each buses.slice(0, limit) as b (b.id)}
-					<li>
-						<button onclick={() => inspect('bus', b.id)}
-							><strong>Bus {b.id}{b.name ? ` · ${b.name}` : ''}</strong><span
-								>{quantity(b.value, 'pu')} · {quantity(b.exceedance, 'pu')}
-								{b.state === 'low' ? 'below minimum' : 'above maximum'}</span
-							></button
-						>
-					</li>
-				{/each}
-			</ol>
+{#if showExceptions}
+	<details bind:open>
+		<summary bind:this={summary}>Exceptions · {total}</summary>
+		{#if open}
+			<label>
+				Search exceptions
+				<input
+					type="search"
+					bind:value={query}
+					oninput={() => (limit = batch)}
+					placeholder="Bus, station or branch ID"
+				/>
+			</label>
+			{#if !buses.length && !branches.length}<p>
+					{needle ? 'No matching exceptions.' : 'No reported operating exceptions.'}
+				</p>{/if}
+			{#if buses.length}
+				<h3>Voltage · {buses.length}</h3>
+				<ol>
+					{#each buses.slice(0, limit) as b (b.id)}
+						<li>
+							<button onclick={() => inspect('bus', b.id)}
+								><strong>Bus {b.id}{b.name ? ` · ${b.name}` : ''}</strong><span
+									>{quantity(b.value, 'pu')} · {quantity(b.exceedance, 'pu')}
+									{b.state === 'low' ? 'below minimum' : 'above maximum'}</span
+								></button
+							>
+						</li>
+					{/each}
+				</ol>
+			{/if}
+			{#if branches.length}
+				<h3>Branch loading · {branches.length}</h3>
+				<ol>
+					{#each branches.slice(0, limit) as b (b.id)}
+						<li>
+							<button onclick={() => inspect('branch', b.id)}
+								><strong>Branch {b.id} · {b.from} → {b.to}</strong><span
+									>{quantity(b.loading * 100, '%')} · {loadingStateText[b.state]}</span
+								></button
+							>
+						</li>
+					{/each}
+				</ol>
+			{/if}
+			{#if Math.max(buses.length, branches.length) > limit}
+				<button onclick={() => (limit += batch)}>Show more exceptions</button>
+			{/if}
 		{/if}
-		{#if branches.length}
-			<h3>Branch loading · {branches.length}</h3>
-			<ol>
-				{#each branches.slice(0, limit) as b (b.id)}
-					<li>
-						<button onclick={() => inspect('branch', b.id)}
-							><strong>Branch {b.id} · {b.from} → {b.to}</strong><span
-								>{quantity(b.loading * 100, '%')} · {loadingStateText[b.state]}</span
-							></button
-						>
-					</li>
-				{/each}
-			</ol>
-		{/if}
-		{#if Math.max(buses.length, branches.length) > limit}
-			<button onclick={() => (limit += batch)}>Show more exceptions</button>
-		{/if}
-	{/if}
-</details>
+	</details>
+{/if}
 
 <style>
 	.inspection,

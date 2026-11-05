@@ -386,6 +386,10 @@ pub struct SolutionPayload {
     pub w: Vec<ScalarValue>,
     pub flows: Vec<FlowValue>,
     pub dispatch: Vec<DispatchValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub constraints: Option<Vec<tellegen::ConstraintResult>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_constraints: Option<Vec<tellegen::BranchConstraintResult>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1574,6 +1578,8 @@ fn network_payload(
 fn solution_payload(resp: &SolveResponse) -> SolutionPayload {
     SolutionPayload {
         formulation: resp.formulation,
+        constraints: resp.constraints.clone(),
+        branch_constraints: resp.branch_constraints.clone(),
         status: resp.status,
         objective: resp.objective.unwrap_or(0.0),
         prices: resp
@@ -2169,6 +2175,14 @@ mod tests {
         assert!(solution["prices"][0]["value"].as_f64().unwrap().is_finite());
         assert!(solution["prices"][0].get("usd_per_mwh").is_none());
         assert!(solution.get("lmp").is_none());
+        let constraints = solution["branch_constraints"].as_array().unwrap();
+        let flows = solution["flows"].as_array().unwrap();
+        assert_eq!(constraints.len(), flows.len());
+        assert!(constraints.iter().zip(flows).all(|(row, flow)| {
+            row["branch"] == flow["branch"]
+                && row["enforced"].as_bool().is_some()
+                && row["binding"].as_bool().is_some()
+        }));
         let dispatch = solution["dispatch"].as_array().unwrap();
         assert!(!dispatch.is_empty());
         let buses = network["buses"].as_array().unwrap();

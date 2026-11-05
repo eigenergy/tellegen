@@ -58,7 +58,7 @@ for (const touch of [false, true]) {
 			test.setTimeout(120_000);
 			const limited = voltageCase(false)
 				.replace('2 2 0 0 0 0 1', '2 2 90 0 0 0 1')
-				.replace('1000 1000 1000', '90 90 90')
+				.replace('1000 1000 1000', '80 80 80')
 				.replace('0.1 5 0; 2 0 0 3 0.1 5 0;', '0.1 5 0; 2 0 0 3 0.1 500 0;');
 			await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
 			await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
@@ -103,7 +103,7 @@ for (const touch of [false, true]) {
 			await expect(gauge).toHaveAttribute('aria-pressed', 'true');
 			const diagram = page.locator('.tx-stage');
 			const inspector = diagram.getByRole('region', { name: 'Selected equipment' });
-			await expect(inspector).toContainText('+90 MW');
+			await expect(inspector).toContainText('+80 MW');
 			await expect(inspector).toContainText('100%');
 			await expect(inspector).toContainText('0 MW');
 			await inspector.getByRole('button', { name: 'Clear selection' }).click();
@@ -125,6 +125,22 @@ for (const touch of [false, true]) {
 			if (touch) await inspector.getByRole('button', { name: 'Clear selection' }).tap();
 			else await inspector.getByRole('button', { name: 'Frame', exact: true }).press('Escape');
 			await expect(inspector).toHaveCount(0);
+
+			await toolbar.getByLabel('Diagram view').selectOption('economics');
+			const economics = diagram.getByRole('region', { name: 'OPF economics' });
+			await expect(economics).toContainText('Total LMP');
+			await expect(economics).toContainText('objective units/MW');
+			await economics.getByLabel('Price scale').selectOption('3');
+			await expect(economics).toContainText('200 objective units/MW');
+			await economics.getByText('Binding thermal limits · 1', { exact: true }).click();
+			const binding = economics.getByRole('button', { name: /Branch 1.*marginal relief/ });
+			if (touch) await binding.tap();
+			else await binding.press('Enter');
+			await expect(inspector.getByRole('heading', { name: 'Branch 1' })).toBeVisible();
+			await expect(economics).toContainText('Binding · positive marginal relief');
+			await expect(economics).toContainText(/Marginal rating relief [1-9]/);
+			await expect(diagram.getByLabel('Branch utilization gauges')).toHaveCount(0);
+			await page.screenshot({ path: testInfo.outputPath('opf-economics.png') });
 		});
 		for (const uniform of [false, true])
 			test(
@@ -208,6 +224,12 @@ for (const touch of [false, true]) {
 						await expect(
 							page.getByRole('region', { name: 'Operating limits', exact: true })
 						).toContainText('Relaxation');
+						await toolbar.getByLabel('Diagram view').selectOption('economics');
+						const economics = page.getByRole('region', { name: 'OPF economics' });
+						await expect(economics).toContainText('Relaxation');
+						await expect(economics).toContainText(
+							'Thermal enforcement and marginal relief unavailable'
+						);
 					}
 				}
 			);

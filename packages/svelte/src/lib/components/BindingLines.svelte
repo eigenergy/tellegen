@@ -4,16 +4,16 @@
 	const app = getAppState();
 	const ctrl = getController();
 
-	// The active case's binding branches (loading at the thermal limit), joined to
-	// the network for identity. Renders nothing when none bind. Each row is a
-	// button: the keyboard path for branch selection, mirroring what clicking the
-	// line on the map does.
+	const constraints = $derived(ctrl.activeSolvable?.solution?.branch_constraints);
+	// Keep equipment navigation for legacy and non-DC payloads using the loading label.
 	const bindingLines = $derived.by(() => {
 		const c = ctrl.activeSolvable;
 		if (!c?.network || !c.solution) return [];
 		const byId = new Map(c.network.branches.map((b) => [b.id, b]));
+		const binding =
+			constraints && new Set(constraints.filter((row) => row.binding).map((row) => row.branch));
 		return c.solution.flows
-			.filter((f) => f.loading >= 0.999)
+			.filter((f) => (binding ? binding.has(f.branch) : f.loading >= 0.999))
 			.flatMap((f) => {
 				const branch = byId.get(f.branch);
 				return branch ? [{ branch, loading: f.loading }] : [];
@@ -30,7 +30,7 @@
 
 {#if bindingLines.length > 0}
 	<div class="binding-lines">
-		<p class="dim head" title="Lines loaded to their thermal rating">Binding lines</p>
+		<p class="dim head">{constraints ? 'Binding lines' : 'Lines near or above rating'}</p>
 		<ul>
 			{#each bindingLines as { branch, loading } (branch.id)}
 				<li>

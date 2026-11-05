@@ -789,7 +789,8 @@ export class Controller {
 					: null,
 			binding:
 				c.solution && c.formulation !== 'acpf'
-					? c.solution.flows.filter((f) => f.loading >= 0.999).length
+					? (c.solution.branch_constraints?.filter((row) => row.binding).length ??
+						c.solution.flows.filter((f) => f.loading >= 0.999).length)
 					: null
 		};
 	});

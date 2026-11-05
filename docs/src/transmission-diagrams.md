@@ -89,6 +89,23 @@ so nominal-voltage colours do not compete with result colours. **Map results** r
 selected series; uniform economic or demand series use neutral grey. PNG export includes the
 operating gauges, result context and station range.
 
+### OPF economics
+
+Choose **OPF economics** to see total locational marginal prices in objective units per MW. The
+default price scale is 0–50, with wider and signed presets. The scale stays fixed as results change,
+and values outside it use the end colours. A uniform price has a single numerical readout.
+
+A purple branch halo identifies a binding DC thermal limit with positive marginal relief. The
+binding list orders limits by the objective reduction from one more MW of symmetric rating.
+Select a branch to frame it and see the thermal status and exact equipment values. The final solver
+program supplies enforcement and binding independently of equipment utilization. If it used a
+synthesized solver bound, the inspector labels it.
+
+Solved interface and other linear constraints list their bounds, value and signed shadow price,
+with links to branch members where available. The sign describes the objective reduction for an
+increase in the signed limit. AC OPF and SOCWR can show total LMP where supplied. SOCWR stays
+labelled as a relaxation, and the view marks unsupported or legacy constraint data as unavailable.
+
 On phones, the toolbar and voltage-key controls have 44-pixel touch targets, and the renderer
 allows a wider picking radius. Explicit zoom buttons supplement pinch zoom and the keyboard.
 The results key stays below the toolbar when it wraps. The equipment and voltage keys can be

@@ -3,7 +3,7 @@
 	import { tick, untrack } from 'svelte';
 	import { txSchematicLayout } from '@tellegen/engine';
 	import type { Network, Solution } from '../api.js';
-	import { demandColor, priceColor, scalarDomain, type RGBA } from '../colors.js';
+	import { demandColor, priceColor, priceGradient, scalarDomain, type RGBA } from '../colors.js';
 	import {
 		assessLoading,
 		assessVoltage,
@@ -71,6 +71,14 @@
 	import { StoredFlag, StoredNumber } from './schematic/view-prefs.svelte.js';
 	import TxOperatingPanel from './schematic/TxOperatingPanel.svelte';
 	import TxResultInspection from './schematic/TxResultInspection.svelte';
+	import TxEconomicsPanel from './schematic/TxEconomicsPanel.svelte';
+	import {
+		PRICE_SCALES,
+		PRICE_UNIT,
+		economicsFor,
+		pricedBranch,
+		thermalStatus
+	} from '../diagram/transmission-economics.js';
 	import { operatingExceptions, dispatchByBus } from '../diagram/transmission-inspection.js';
 	import {
 		levelPaint,
@@ -118,7 +126,7 @@
 		basemap?: BasemapSpec;
 	} = $props();
 
-	type Colour = 'level' | 'results' | 'operating';
+	type Colour = 'level' | 'results' | 'operating' | 'economics';
 	const app = getAppState();
 	const ctrl = getController();
 	const panels = getPanelLayout();
@@ -140,6 +148,9 @@
 		operatingContext(formulation, solution, !!ctrl.activeSolvable?.solving, !!app.error)
 	);
 	const operatingOn = $derived(colour === 'operating');
+	const economicsOn = $derived(colour === 'economics');
+	const economics = $derived(economicsFor(solution, formulation));
+	let priceScale = $state(0);
 	const solvedVoltages = $derived(operatingVoltages(solution, formulation));
 	const deenergized = $derived(
 		new Set(
@@ -303,7 +314,16 @@
 						values: [...solvedVoltages].map(([bus, value]) => ({ bus, value }))
 					}
 				: null
-			: ctrl.activeDisplay
+			: economicsOn
+				? {
+						mode: 'price' as const,
+						label: 'Total LMP',
+						unit: PRICE_UNIT,
+						copy: 'Total locational marginal price',
+						gradient: priceGradient,
+						values: economics.prices
+					}
+				: ctrl.activeDisplay
 	);
 	const resultsOn = $derived(colour !== 'level' && !!solution);
 	$effect(() => {
@@ -311,11 +331,13 @@
 	});
 	const busValues = $derived(new Map((display?.values ?? []).map((v) => [v.bus, v.value])));
 	const domain = $derived(
-		display?.mode === 'voltage'
-			? VOLTAGE_DOMAIN
-			: display
-				? scalarDomain(display.mode, display.values.map((v) => v.value).filter(Number.isFinite))
-				: null
+		economicsOn
+			? PRICE_SCALES[priceScale]
+			: display?.mode === 'voltage'
+				? VOLTAGE_DOMAIN
+				: display
+					? scalarDomain(display.mode, display.values.map((v) => v.value).filter(Number.isFinite))
+					: null
 	);
 	/** One entry per voltage level, merged into ranges past six (`voltageLegend`). */
 	const legend = $derived(voltageLegend(branchLevels(graph), 6));
@@ -337,16 +359,21 @@
 		const widths = new Float32Array(level.widths);
 		network.branches.forEach((br, k) => {
 			const f = flows.get(br.id);
+			const marginal = economicsOn && pricedBranch(economics.branches.get(br.id));
 			colours.set(
 				!graph.inService[k]
 					? [120, 116, 108, 200]
-					: f
-						? operatingLoadingColor(loadingStates[k])
-						: [138, 131, 117, 160],
+					: economicsOn
+						? marginal
+							? [118, 42, 131, 245]
+							: [145, 141, 132, 140]
+						: f
+							? operatingLoadingColor(loadingStates[k])
+							: [138, 131, 117, 160],
 				k * 4
 			);
 			if (resultContext.stale) colours[k * 4 + 3] = Math.round(colours[k * 4 + 3] * 0.4);
-			widths[k] += 0.6;
+			widths[k] += marginal ? 1.4 : 0.6;
 		});
 		return { colours, widths };
 	});
@@ -356,7 +383,7 @@
 		for (let i = 0; i < n; i++) {
 			let c: RGBA = [busLevels[i * 4], busLevels[i * 4 + 1], busLevels[i * 4 + 2], 255];
 			if (focusEntry >= 0 && legend.entryOf(graph.kv[i]) !== focusEntry) c = [c[0], c[1], c[2], 40];
-			if ((resultsOn || operatingOn) && display && domain) {
+			if ((resultsOn || operatingOn || economicsOn) && display && domain) {
 				const v = busValues.get(graph.busId[i]);
 				// Uniform economic/demand series stay neutral. Voltage always retains its
 				// fixed scale and case-limit status, including uniform violations.
@@ -382,7 +409,7 @@
 	);
 	const busRadius = $derived(Math.max(1.5, Math.min(5, span / 14)));
 	/** The display series' single value when it is uniform (as the map's display panel judges it). */
-	const uniform = $derived(ctrl.displayStats?.uniform ?? null);
+	const uniform = $derived(economicsOn ? economics.uniform : (ctrl.displayStats?.uniform ?? null));
 	const UNIFORM_INK: RGBA = [120, 116, 108, 235];
 
 	/** Generator and load symbols, hanging from the bus (or the bottom of its busbar) once
@@ -434,7 +461,7 @@
 	});
 	/** Flow arrows on legible branches once solved, pointing the way active power flows. */
 	const arrows = $derived.by(() => {
-		if (!resultsOn || !symbolsOn) return null;
+		if (!resultsOn || !symbolsOn || economicsOn) return null;
 		const { edges, dir } = flowDirections(
 			graph,
 			geometry,
@@ -452,7 +479,7 @@
 				: null;
 	};
 	const landmarkPool = $derived(
-		txLandmarks(graph, geometry, solution ? branchState : null, anchors)
+		txLandmarks(graph, geometry, solution && !economicsOn ? branchState : null, anchors)
 	);
 	const levelsPresent = $derived(legend.entries);
 	const outOfService = $derived(graph.inService.some((on) => !on));
@@ -462,7 +489,10 @@
 	const freeArea = () =>
 		freeInsets({
 			compact: panels.compact,
-			top: panels.top + Math.max(0, toolbarHeight - 48) + (resultsOn ? legendHeight + 8 : 0),
+			top:
+				panels.top +
+				Math.max(0, toolbarHeight - 48) +
+				(resultsOn || economicsOn ? legendHeight + 8 : 0),
 			dockWidth: (side) => panels.dockWidth(side),
 			sheetInset: app.sheetInset
 		});
@@ -508,6 +538,28 @@
 				)
 			: revealPoint(p, camera, view, area, legible);
 		if (next) setCamera(next, true);
+	}
+
+	function frameSelection() {
+		const point = selectionPoint();
+		if (point) bringIntoView(point, true, true);
+	}
+
+	async function inspectResult(kind: 'bus' | 'branch', id: number) {
+		const networkOpen = panels.compact
+			? panels.drawer === 'network'
+			: panels.panels.some((panel) => panel.id === 'network' && panel.open);
+		if (kind === 'bus') onselectbus(id);
+		else onselectbranch(id);
+		// The diagram has its own inspector. Preserve the user's panel layout.
+		await tick();
+		if (networkOpen) return;
+		if (panels.compact) {
+			if (panels.drawer === 'network') panels.drawer = null;
+		} else {
+			const panel = panels.panels.find((p) => p.id === 'network');
+			if (panel?.open) panels.close(panel);
+		}
 	}
 
 	function scene(): TxScene {
@@ -634,7 +686,7 @@
 					});
 				}
 		}
-		if (resultsOn && !operatingOn && symbolsOn)
+		if (resultsOn && !operatingOn && !economicsOn && symbolsOn)
 			network.branches.forEach((br, k) => {
 				const f = flows.get(br.id);
 				const state = branchState(k);
@@ -1107,9 +1159,11 @@
 			layout: layoutName,
 			view: operatingOn
 				? `Operating limits · ${resultContext.freshness} · ${formulation}${resultContext.relaxed ? ' relaxation' : ''}`
-				: resultsOn
-					? `Buses: ${display?.copy ?? 'results'} · branches: loading`
-					: 'Voltage levels',
+				: economicsOn
+					? `OPF economics · ${formulation}${resultContext.relaxed ? ' relaxation' : ''} · Total LMP ${domain!.lo} to ${domain!.hi} ${PRICE_UNIT}`
+					: resultsOn
+						? `Buses: ${display?.copy ?? 'results'} · branches: loading`
+						: 'Voltage levels',
 			camera,
 			result: solution
 				? {
@@ -1235,6 +1289,7 @@
 			`${graph.transformer[k] ? 'Transformer' : 'Line'} ${network.branches[k].id}: bus ${network.branches[k].from} to bus ${network.branches[k].to}`,
 			`Nominal ${graph.from[k] >= 0 ? graph.kv[graph.from[k]] : 'unknown'} / ${graph.to[k] >= 0 ? graph.kv[graph.to[k]] : 'unknown'} kV`,
 			f ? `From-end active power ${f.mw.toFixed(2)} MW` : 'Flow result missing',
+			...(economicsOn ? [thermalStatus(economics.branches.get(network.branches[k].id))] : []),
 			`Loading: ${loadingStateText[loadingStates[k]]}`,
 			hasStatedRating(info) &&
 			f &&
@@ -1282,6 +1337,7 @@
 			<select bind:value={colour} title="Diagram view">
 				<option value="level">Voltage levels</option>
 				<option value="operating">Operating limits</option>
+				<option value="economics">OPF economics</option>
 				<option value="results" disabled={!solution}>Map results</option>
 			</select>
 		</label>
@@ -1312,10 +1368,10 @@
 		<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
 		<button onclick={onclose} title="Return to the map">Close</button>
 	</div>
-	{#if resultsOn || operatingOn}
+	{#if resultsOn || operatingOn || economicsOn}
 		<div
 			class="legend"
-			class:operating={operatingOn}
+			class:operating={operatingOn || economicsOn}
 			bind:clientHeight={legendHeight}
 			style:top="{panels.top + toolbarHeight + 16}px"
 			style:left="{toolLeft}px"
@@ -1336,6 +1392,32 @@
 					station={activeStation}
 					{onselectbus}
 				/>
+			{:else if economicsOn}
+				<TxEconomicsPanel
+					{formulation}
+					context={resultContext}
+					{economics}
+					scale={priceScale}
+					onscale={(scale) => (priceScale = scale)}
+					bus={network.buses[selectedBus]}
+					branch={network.branches[selectedEdge]}
+					busPrice={busValues.get(graph.busId[selectedBus])}
+					flow={flows.get(network.branches[selectedEdge]?.id)}
+					onbranch={async (id) => {
+						await inspectResult('branch', id);
+						frameSelection();
+					}}
+				/>
+			{:else if display?.mode === 'voltage'}
+				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
+				limits apply ·
+			{:else if display && uniform !== null}
+				{display.label} uniform at {uniform.toPrecision(4)}
+				{display.unit} · grey ·
+			{:else if display}
+				{display.label} <i style:background={display.gradient}></i> ·
+			{/if}
+			{#if operatingOn || economicsOn}
 				<TxResultInspection
 					{exceptions}
 					bus={network.buses[selectedBus]}
@@ -1348,39 +1430,15 @@
 					flow={flows.get(network.branches[selectedEdge]?.id)}
 					loading={loadingStates[selectedEdge]}
 					stale={resultContext.stale}
-					oninspect={async (kind, id) => {
-						const networkOpen = panels.compact
-							? panels.drawer === 'network'
-							: panels.panels.some((panel) => panel.id === 'network' && panel.open);
-						if (kind === 'bus') onselectbus(id);
-						else onselectbranch(id);
-						// The exception list already has an inspector. Preserve the user's panel layout.
-						await tick();
-						if (!networkOpen) {
-							if (panels.compact && panels.drawer === 'network') panels.drawer = null;
-							else {
-								const panel = panels.panels.find((p) => p.id === 'network');
-								if (panel?.open && !panels.compact) panels.close(panel);
-							}
-						}
-					}}
+					showExceptions={operatingOn}
+					oninspect={inspectResult}
 					{onclear}
-					onframe={() => {
-						const point = selectionPoint();
-						if (point) bringIntoView(point, true, true);
-					}}
+					onframe={frameSelection}
 				/>
-			{:else if display?.mode === 'voltage'}
-				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
-				limits apply ·
-			{:else if display && uniform !== null}
-				{display.label} uniform at {uniform.toPrecision(4)}
-				{display.unit} · grey ·
-			{:else if display}
-				{display.label} <i style:background={display.gradient}></i> ·
+			{:else}
+				Branch halo: Loading · grey below {warningPref.value} % · amber {warningPref.value}–100 % ·
+				red above 100 % · unknown ratings faded
 			{/if}
-			{#if !operatingOn}Branch halo: Loading · grey below {warningPref.value} % · amber {warningPref.value}–100
-				% · red above 100 % · unknown ratings faded{/if}
 		</div>
 	{/if}
 	{#if operatingOn}

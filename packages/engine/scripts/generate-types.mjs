@@ -256,11 +256,20 @@ export interface LimitRound {
 \tipm_iterations: number;
 }
 
+/** Thermal constraint from the final DC OPF program. */
+export interface BranchConstraintResult {
+\tbranch: number;
+\tenforced: boolean;
+\tbinding: boolean;
+\trelief_per_mw?: number;
+}
+
 /** The solved state of one LinearConstraint. \`shadow_price\` is
  * \`-d objective / d limit\` in objective units per MW: positive when the upper
  * limit binds, negative when the lower limit binds. */
 export interface ConstraintResult {
 \tid: string;
+\tbranches?: number[];
 \tvalue: number;
 \tlower?: number;
 \tupper?: number;
@@ -291,6 +300,7 @@ export interface SolveResponse {
 \tflows?: BranchFlow[];
 \tdispatch?: GenDispatch[];
 \tconstraints?: ConstraintResult[];
+\tbranch_constraints?: BranchConstraintResult[];
 \tdiagnostics?: SolveDiagnostic[];
 \tlimit_rounds?: LimitRound[];
 \tsensitivities?: SensitivityMatrix[];
@@ -387,6 +397,8 @@ export interface Solution {
 \tw: { bus: number; value: number }[];
 \tflows: SolutionFlow[];
 \tdispatch: { gen: number; bus?: number; mw: number }[];
+\tconstraints?: ConstraintResult[];
+\tbranch_constraints?: BranchConstraintResult[];
 \t/** How the solve treated the network: islands, HVDC transfers. Absent when it
 \t * solved the case as stated. */
 \tdiagnostics?: SolveDiagnostic[];
