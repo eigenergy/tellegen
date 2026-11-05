@@ -9,7 +9,11 @@ import {
 	operatingVoltages,
 	operatingContext,
 	placeOperatingGauges,
-	type OperatingGauge,
+	gaugeLeader,
+	gaugeText,
+	GAUGE_HEIGHT,
+	GAUGE_WIDTH,
+	type GaugeCandidate,
 	LOADING_TOLERANCE,
 	VOLTAGE_TOLERANCE_PU
 } from '../src/lib/diagram/transmission-results.js';
@@ -97,21 +101,49 @@ describe('transmission operating limits', () => {
 	it('prioritizes selection and overload gauges within the uncovered viewport and collision budget', () => {
 		const candidate = (
 			edge: number,
-			x: number,
-			state: OperatingGauge['state'],
+			ax: number,
+			state: GaugeCandidate['state'],
 			loading: number,
 			selected = false
-		): OperatingGauge => ({ edge, x, y: 60, state, loading, selected });
+		): GaugeCandidate => ({ edge, ax, ay: 120, state, loading, selected });
 		const candidates = [
 			candidate(1, 30, 'normal', 0.7),
 			candidate(2, 30, 'violation', 1.3),
-			candidate(3, 150, 'warning', 0.95),
-			candidate(4, 150, 'normal', 0.2, true),
+			candidate(3, 230, 'warning', 0.95),
+			candidate(4, 230, 'normal', 0.2, true),
 			candidate(5, 999, 'violation', 2)
 		];
-		const rect = { left: 20, top: 40, right: 300, bottom: 200 };
+		const rect = { left: 20, top: 40, right: 400, bottom: 260 };
 		expect(placeOperatingGauges(candidates, rect, 2).map((g) => g.edge)).toEqual([4, 2]);
 		expect(placeOperatingGauges(candidates, rect, 0)).toEqual([]);
+	});
+
+	it('moves a gauge around its branch before dropping it, and joins it with a leader', () => {
+		const at = (edge: number, ax: number, ay: number): GaugeCandidate => ({
+			edge,
+			ax,
+			ay,
+			state: 'violation',
+			loading: 1.2,
+			selected: false
+		});
+		const rect = { left: 0, top: 0, right: 400, bottom: 400 };
+		// Two branches at one point: the second takes the next free spot instead of vanishing.
+		const placed = placeOperatingGauges([at(1, 200, 200), at(2, 200, 200)], rect, 10);
+		expect(placed.map((g) => g.edge)).toEqual([1, 2]);
+		expect(placed[0].x).not.toBe(placed[1].x);
+		// Near the top edge, the box goes below its branch.
+		const [low] = placeOperatingGauges([at(3, 200, 20)], rect, 10);
+		expect(low.y).toBeGreaterThan(20);
+		// The leader ends on the box edge nearest the branch point.
+		const [x, y] = gaugeLeader(placed[0]);
+		expect(x).toBeGreaterThanOrEqual(placed[0].x);
+		expect(x).toBeLessThanOrEqual(placed[0].x + GAUGE_WIDTH);
+		expect(y).toBe(placed[0].y + GAUGE_HEIGHT);
+		// A branch point off screen gets no gauge.
+		expect(placeOperatingGauges([at(4, -5, 200)], rect, 10)).toEqual([]);
+		expect(gaugeText(1.003)).toBe('100.3%');
+		expect(gaugeText(0.874)).toBe('87%');
 	});
 	it('separates warnings, at-limit values and actual overloads', () => {
 		for (const [loading, expected] of [

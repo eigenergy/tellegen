@@ -192,24 +192,39 @@ export function operatingContext(
 	};
 }
 
-export type OperatingGauge = {
+/** A gauge to place: the branch's screen point it describes (`ax`, `ay`). */
+export type GaugeCandidate = {
 	edge: number;
-	x: number;
-	y: number;
+	ax: number;
+	ay: number;
 	loading: number;
 	state: LoadingState;
 	selected: boolean;
 };
+/** A placed gauge: its box's top-left corner (`x`, `y`), joined to its branch by a leader. */
+export type OperatingGauge = GaugeCandidate & { x: number; y: number };
 
-/** Fixed-size, local gauges. Selection wins, followed by violations and warnings; collisions
- * and the available canvas rectangle limit clutter independently of network size. */
+export const GAUGE_WIDTH = 64;
+export const GAUGE_HEIGHT = 44;
+/** Box offsets from the branch point, tried in order: above right, above left, below right,
+ * below left. A gap keeps the leader visible. */
+const GAUGE_OFFSETS: [number, number][] = [
+	[10, -GAUGE_HEIGHT - 14],
+	[-GAUGE_WIDTH - 10, -GAUGE_HEIGHT - 14],
+	[10, 14],
+	[-GAUGE_WIDTH - 10, 14]
+];
+
+/** Fixed-size, local gauges. Selection wins, followed by violations and warnings. Each gauge
+ * takes the first free spot around its branch point; the available canvas rectangle, collisions
+ * and the budget limit clutter independently of network size. */
 export function placeOperatingGauges(
-	candidates: OperatingGauge[],
+	candidates: GaugeCandidate[],
 	rect: { left: number; top: number; right: number; bottom: number },
 	budget: number
 ): OperatingGauge[] {
 	if (budget <= 0) return [];
-	const rank = (g: OperatingGauge) =>
+	const rank = (g: GaugeCandidate) =>
 		(g.selected
 			? 1e9
 			: g.state === 'violation'
@@ -219,16 +234,41 @@ export function placeOperatingGauges(
 					: 0) + g.loading;
 	const sorted = [...candidates].sort((a, b) => rank(b) - rank(a) || a.edge - b.edge);
 	const placed: OperatingGauge[] = [];
+	const inside = (x: number, y: number, w: number, h: number) =>
+		x >= rect.left && x + w <= rect.right && y >= rect.top && y + h <= rect.bottom;
 	for (const g of sorted) {
-		if (![g.x, g.y, g.loading].every(Number.isFinite)) continue;
-		if (g.x < rect.left || g.x + 64 > rect.right || g.y < rect.top || g.y + 44 > rect.bottom)
-			continue;
-		if (placed.some((p) => Math.abs(p.x - g.x) < 70 && Math.abs(p.y - g.y) < 48)) continue;
-		placed.push(g);
+		if (![g.ax, g.ay, g.loading].every(Number.isFinite)) continue;
+		// The branch point itself must be visible, or the leader would point off screen.
+		if (!inside(g.ax, g.ay, 0, 0)) continue;
+		for (const [dx, dy] of GAUGE_OFFSETS) {
+			const x = g.ax + dx;
+			const y = g.ay + dy;
+			if (!inside(x, y, GAUGE_WIDTH, GAUGE_HEIGHT)) continue;
+			if (
+				placed.some(
+					(p) => Math.abs(p.x - x) < GAUGE_WIDTH + 6 && Math.abs(p.y - y) < GAUGE_HEIGHT + 4
+				)
+			)
+				continue;
+			placed.push({ ...g, x, y });
+			break;
+		}
 		if (placed.length >= budget) break;
 	}
 	return placed;
 }
+
+/** Where a gauge's leader meets its box: the nearest point of the box to the branch point. */
+export function gaugeLeader(g: OperatingGauge): [number, number] {
+	return [
+		Math.max(g.x, Math.min(g.ax, g.x + GAUGE_WIDTH)),
+		Math.max(g.y, Math.min(g.ay, g.y + GAUGE_HEIGHT))
+	];
+}
+
+/** A gauge's percentage, with a decimal only near the rating where it decides the state. */
+export const gaugeText = (loading: number) =>
+	`${(loading * 100).toFixed(loading > 0.99 && loading < 1.01 ? 1 : 0)}%`;
 
 export const loadingStateText: Record<LoadingState, string> = {
 	deenergized: 'de-energized',

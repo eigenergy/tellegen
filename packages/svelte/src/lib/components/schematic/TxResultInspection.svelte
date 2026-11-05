@@ -29,7 +29,8 @@
 		stale,
 		oninspect,
 		onframe,
-		onclear
+		onclear,
+		onpreview
 	}: {
 		exceptions: ReturnType<typeof operatingExceptions>;
 		showExceptions?: boolean;
@@ -47,7 +48,15 @@
 		oninspect: (kind: 'bus' | 'branch', id: number) => Promise<void>;
 		onframe: () => void;
 		onclear: () => void;
+		/** Equipment under the pointer or keyboard focus in a list, to highlight on the diagram. */
+		onpreview?: (item: { kind: 'bus' | 'branch'; id: number } | null) => void;
 	} = $props();
+	const preview = (kind: 'bus' | 'branch', id: number) => ({
+		onpointerenter: () => onpreview?.({ kind, id }),
+		onpointerleave: () => onpreview?.(null),
+		onfocus: () => onpreview?.({ kind, id }),
+		onblur: () => onpreview?.(null)
+	});
 
 	const batch = 12;
 	let limit = $state(batch);
@@ -253,7 +262,7 @@
 				<ol>
 					{#each buses.slice(0, limit) as b (b.id)}
 						<li>
-							<button onclick={() => inspect('bus', b.id)}
+							<button onclick={() => inspect('bus', b.id)} {...preview('bus', b.id)}
 								><strong>Bus {b.id}{b.name ? ` · ${b.name}` : ''}</strong><span
 									>{quantity(b.value, 'pu')} · {quantity(b.exceedance, 'pu')}
 									{b.state === 'low' ? 'below minimum' : 'above maximum'}</span
@@ -268,7 +277,7 @@
 				<ol>
 					{#each branches.slice(0, limit) as b (b.id)}
 						<li>
-							<button onclick={() => inspect('branch', b.id)}
+							<button onclick={() => inspect('branch', b.id)} {...preview('branch', b.id)}
 								><strong>Branch {b.id} · {b.from} → {b.to}</strong><span
 									>{quantity(b.loading * 100, '%')} · {loadingStateText[b.state]}</span
 								></button

@@ -21,7 +21,9 @@
 		branch,
 		busPrice,
 		flow,
-		onbranch
+		onbranch,
+		onpreview,
+		shadingCentre = null
 	}: {
 		formulation: Parameters<typeof formulationLabel>[0];
 		context: ReturnType<typeof operatingContext>;
@@ -33,7 +35,16 @@
 		busPrice?: number;
 		flow?: SolutionFlow;
 		onbranch: (id: number) => void;
+		onpreview?: (item: { kind: 'branch'; id: number } | null) => void;
+		/** The median LMP when the area shading shows price separation around it. */
+		shadingCentre?: number | null;
 	} = $props();
+	const preview = (id: number) => ({
+		onpointerenter: () => onpreview?.({ kind: 'branch', id }),
+		onpointerleave: () => onpreview?.(null),
+		onfocus: () => onpreview?.({ kind: 'branch', id }),
+		onblur: () => onpreview?.(null)
+	});
 	const domain = $derived(PRICE_SCALES[scale]);
 	const branchResult = $derived(branch ? economics.branches.get(branch.id) : undefined);
 	let limit = $state(12);
@@ -62,6 +73,12 @@
 			</select>
 			<span>Values outside the scale use its end colours.</span>
 		</label>
+		{#if shadingCentre !== null}
+			<p>
+				Shading: <span class="cheap">cheaper</span> or <span class="dear">dearer</span> than the
+				median LMP, {economicAmount(shadingCentre)}
+			</p>
+		{/if}
 	{:else}
 		<p>Total LMP unavailable for this result.</p>
 	{/if}
@@ -86,7 +103,11 @@
 				<ol>
 					{#each economics.binding.slice(0, limit) as row (row.branch)}
 						<li>
-							<button aria-pressed={row.branch === branch?.id} onclick={() => onbranch(row.branch)}>
+							<button
+								aria-pressed={row.branch === branch?.id}
+								onclick={() => onbranch(row.branch)}
+								{...preview(row.branch)}
+							>
 								<strong>Branch {row.branch}</strong>
 								<span>{economicAmount(row.relief_per_mw)} · marginal relief</span>
 							</button>
@@ -149,6 +170,14 @@
 	}
 	.accent {
 		color: #762a83;
+	}
+	.cheap {
+		color: #2166ac;
+		font-weight: 600;
+	}
+	.dear {
+		color: #9a5a2c;
+		font-weight: 600;
 	}
 	p {
 		margin: 5px 0;

@@ -13,6 +13,7 @@
 		warning,
 		onwarning,
 		station,
+		shading = false,
 		onselectbus
 	}: {
 		formulation: Parameters<typeof formulationLabel>[0];
@@ -33,6 +34,8 @@
 		onwarning: (value: number) => void;
 		station: ({ name: string } & ReturnType<typeof stationVoltageSummary>) | null;
 		onselectbus: (id: number) => void;
+		/** Whether the area shading shows voltage against the bus limits. */
+		shading?: boolean;
 	} = $props();
 </script>
 
@@ -49,6 +52,10 @@
 				>1.10 pu</span
 			>
 		</div>{/if}
+	{#if shading}<p class="freshness">
+			Shading: near the <span class="low">minimum</span> or
+			<span class="high">maximum</span> voltage limit
+		</p>{/if}
 	<p class="freshness">Loading: {context.basis} · tick at 100%</p>
 	<div class="counts" aria-label="Operating limit counts">
 		{#if voltageAvailable}<span class:violation={counts.low + counts.high > 0}
@@ -63,8 +70,8 @@
 			>{counts.warning} warning · {counts.atLimit} at rating</span
 		>
 		<span
-			>{#if context.voltage}{counts.voltageUnknown} voltage unknown ·
-			{/if}{counts.loadingUnknown} loading unknown · {counts.inactive} out of service{counts.disconnected
+			>{context.voltage ? `${counts.voltageUnknown} voltage unknown · ` : ''}{counts.loadingUnknown} loading
+			unknown · {counts.inactive} out of service{counts.disconnected
 				? ` · ${counts.disconnected} de-energized`
 				: ''}</span
 		>
@@ -77,8 +84,9 @@
 					↓ low · ↑ high, against case limits. Faded: missing voltage or limits. × de-energized.
 				</p>{/if}
 			<p>
-				Loading: {context.basis}. Gauges show 0–125%, with a tick at 100%. Values above the gauge
-				range retain their numeric label.
+				Loading: {context.basis}. Gauges show 0–125%, with a tick at 100%, and a leader to their
+				branch. Values above the gauge range keep their numeric label. A heavy amber outline means
+				at rating; a filled red gauge means overloaded.
 			</p>
 			<label
 				>Loading warning <input
@@ -139,6 +147,14 @@
 </section>
 
 <style>
+	.low {
+		color: #2166ac;
+		font-weight: 600;
+	}
+	.high {
+		color: #9a5a2c;
+		font-weight: 600;
+	}
 	.operating-panel {
 		width: 100%;
 		min-width: 0;

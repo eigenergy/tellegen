@@ -18,7 +18,8 @@
 		zero,
 		missing,
 		hasDispatch,
-		onbranch
+		onbranch,
+		onpreview
 	}: {
 		formulation: Parameters<typeof formulationLabel>[0];
 		context: ReturnType<typeof operatingContext>;
@@ -30,6 +31,7 @@
 		missing: number;
 		hasDispatch: boolean;
 		onbranch: (id: number) => void;
+		onpreview?: (item: { kind: 'branch'; id: number } | null) => void;
 	} = $props();
 
 	const mw = new Intl.NumberFormat('en', { maximumFractionDigits: 2 });
@@ -71,8 +73,13 @@
 						<button
 							onclick={() => {
 								open = false;
+								onpreview?.(null);
 								onbranch(branch.id);
 							}}
+							onpointerenter={() => onpreview?.({ kind: 'branch', id: branch.id })}
+							onpointerleave={() => onpreview?.(null)}
+							onfocus={() => onpreview?.({ kind: 'branch', id: branch.id })}
+							onblur={() => onpreview?.(null)}
 						>
 							<strong>Branch {branch.id}</strong><span
 								>{transferDirectionText(reading, branch)} · {mw.format(reading.magnitude!)} MW</span

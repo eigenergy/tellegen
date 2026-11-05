@@ -50,7 +50,11 @@ demand setting. DC shows utilization and explicitly states that voltage magnitud
 solved. SOCWR is labelled as a relaxation.
 
 Voltage uses a fixed 0.90–1.10 pu scale and each bus's source bounds. Downward blue and upward
-red markers identify lower and upper violations, including uniform violating series. Substation
+red markers identify lower and upper violations, including uniform violating series.
+**Shading** (on by default) shades the area around the network by where each bus voltage sits in
+its own band: clear in the middle half, blue towards the minimum and brown towards the maximum,
+at full strength at a limit. Low- or high-voltage regions show by area before any number is read
+(Overbye et al., IEEE TPWRS 2003, found contours gave the fastest violation detection). Substation
 borders preserve the worst member violation. A station summary retains minimum and maximum
 values with bus identities, and links to the worst bus; it never substitutes an average.
 
@@ -58,8 +62,11 @@ Branches below the warning threshold are thin and grey. Branches from the warnin
 including the rating are wide and amber, and overloaded branches wider still and red. Stressed
 branches are drawn on top of the others, so they stay visible at the case overview. **Key and settings** exposes the warning threshold (0–99%, default
 90%), remembered in browser storage. Local gauges show 0–125% with a visible 100% tick; their
-labels are not clamped to the gauge range. Violations, warnings and selection receive priority
-when the view is crowded. Gauges can be selected by mouse, touch or keyboard. Close in, static
+labels are not clamped to the gauge range. A leader joins each gauge to the middle of its branch.
+A heavy amber outline marks operation at the rating and a filled red gauge an overload, so the
+state does not rest on hue alone. Violations, warnings and selection receive priority when the
+view is crowded; a gauge moves around its branch to find space before it is left out. Gauges
+can be selected by mouse, touch or keyboard. Close in, static
 chevrons show active-power direction.
 
 DC utilization is absolute MW over the effective MW rating; AC utilization is the larger end's
@@ -74,7 +81,8 @@ violations are ordered by distance beyond the case bound. Loading exceptions are
 overload, at rating and warning, then by utilization. Separate counts show how much voltage and
 loading data is unknown.
 
-Hover for a preview. Select an exception or an item on the diagram to keep the equipment details
+Hovering or focusing a row in a result list highlights its equipment on the diagram. Hover
+equipment for a preview. Select an exception or an item on the diagram to keep the equipment details
 visible. **Frame** brings the equipment into view. **Clear** or Escape clears the selection.
 The inspector shows the bus voltage and source bounds, solved generation, modeled demand and
 installed capacity. For branches it shows each available endpoint MW and MVAr value, the basis and
@@ -96,6 +104,11 @@ operating gauges, result context and station range.
 Choose **OPF economics** to see total locational marginal prices in objective units per MW. The
 default price scale is 0–50, with wider and signed presets. The scale stays fixed as results change,
 and values outside it use the end colours. A uniform price has a single numerical readout.
+When prices differ, **Shading** shades the area around the network by each bus's distance from
+the median LMP: blue where power is cheaper and brown where it is dearer. The full-strength
+distance is the largest in the result, but at least 5% of the median or one price unit, so
+small spreads stay faint. The shading shows where congestion separates prices, whatever the
+price level; bus colours keep the fixed scale.
 
 A wide purple branch identifies a binding DC thermal limit with positive marginal relief; other
 branches stay thin and grey. The

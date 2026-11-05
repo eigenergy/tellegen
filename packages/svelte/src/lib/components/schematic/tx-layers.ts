@@ -88,6 +88,11 @@ export interface TxScene {
 	selectedEdge: number;
 	hoveredBus: number;
 	hoveredEdge: number;
+	/** Equipment hovered or focused in a result list, drawn with a stronger highlight. */
+	previewBus: number;
+	previewEdge: number;
+	/** Bus values shaded over the drawing's area, beneath everything else. */
+	field: { image: HTMLCanvasElement; bounds: [number, number, number, number] } | null;
 	/** Per branch, its symbol point on the drawn geometry: `x, y, cos, sin` (`edgeAnchors`). */
 	anchors: Float32Array;
 	/** Transformer symbols on their branch, once legible: branch rows and the glyph scale (drawing
@@ -437,7 +442,7 @@ const pick4 = (a: Uint8Array, rows: Int32Array) => {
 /** The layers of one frame, bottom to top. */
 export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): Layer[] {
 	if (scene.morph) return morphLayers(kit, scene.morph, scene.graph.busId.length);
-	const { LineLayer, PolygonLayer, ScatterplotLayer, TextLayer } = kit.layers;
+	const { BitmapLayer, LineLayer, PolygonLayer, ScatterplotLayer, TextLayer } = kit.layers;
 	const common = flatSceneProps(kit);
 	const g = scene.geometry;
 	const highlight = (k: number, id: string, colour: RGBA, extra: number): Layer[] => {
@@ -481,6 +486,23 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 	const parts = scene.parts;
 	const boxes = parts ? boxPolygons(parts.boxes) : [];
 	return [
+		...(scene.field
+			? [
+					new BitmapLayer({
+						...common,
+						id: 'field',
+						image: scene.field.image,
+						// left, bottom, right, top; the view runs y downwards, so image row 0 is at y0.
+						bounds: [
+							scene.field.bounds[0],
+							scene.field.bounds[3],
+							scene.field.bounds[2],
+							scene.field.bounds[1]
+						],
+						textureParameters: { minFilter: 'linear', magFilter: 'linear' }
+					})
+				]
+			: []),
 		...(parts
 			? [
 					new PolygonLayer({
@@ -501,6 +523,7 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 					})
 				]
 			: []),
+		...highlight(scene.previewEdge, 'preview-branch', alpha(INK, 150), 10),
 		...highlight(scene.hoveredEdge, 'hover-branch', alpha(INK, 70), 6),
 		...highlight(scene.selectedEdge, 'selected-branch', alpha(ACCENT, 200), 6),
 		...branchLayers,
@@ -660,6 +683,7 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 			backgroundPadding: [2, 0],
 			characterSet: 'auto'
 		}),
+		...ring(scene.previewBus, 'preview-bus', alpha(INK, 200), scene.busRadius + 9),
 		...ring(scene.hoveredBus, 'hover-bus', alpha(INK, 140), scene.busRadius + 4),
 		...ring(scene.selectedBus, 'selected-bus', ACCENT, scene.busRadius + 5),
 		...(scene.marks

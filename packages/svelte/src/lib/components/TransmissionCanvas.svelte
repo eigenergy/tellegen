@@ -11,7 +11,12 @@
 		operatingContext,
 		stationVoltageSummary,
 		placeOperatingGauges,
+		gaugeLeader,
+		gaugeText,
+		GAUGE_HEIGHT,
+		GAUGE_WIDTH,
 		loadingStateText,
+		type GaugeCandidate,
 		type OperatingGauge,
 		hasStatedRating,
 		operatingLoadingColor,
@@ -57,6 +62,12 @@
 		lerpInto,
 		chordsInto,
 		ease,
+		voltageBandPosition,
+		fieldImage,
+		median,
+		priceFieldColour,
+		priceSpread,
+		voltageFieldColour,
 		MORPH_MAX_BUSES,
 		MORPH_MS,
 		type SchematicGeometry,
@@ -308,11 +319,18 @@
 	let status = $state<string | null>('Loading the diagram renderer…');
 	let hoveredBus = $state(-1);
 	let hoveredEdge = $state(-1);
+	/** Equipment hovered or focused in a result list: highlighted on the diagram. */
+	let preview = $state<{ kind: 'bus' | 'branch'; id: number } | null>(null);
+	const setPreview = (item: { kind: 'bus' | 'branch'; id: number } | null) => (preview = item);
 	let labels = $state.raw<(LabelCandidate & { position: [number, number] })[]>([]);
 	let marks = $state.raw<TxScene['marks']>(null);
 
 	type Layout = 'source' | 'schematic';
 	const graph = $derived(txGraph(network));
+	const previewBus = $derived(preview?.kind === 'bus' ? (graph.index.get(preview.id) ?? -1) : -1);
+	const previewEdge = $derived(
+		preview?.kind === 'branch' ? network.branches.findIndex((br) => br.id === preview!.id) : -1
+	);
 	const source = $derived(txSourceLayout(graph, network));
 	const geographic = $derived(network.coordinate_space !== 'diagram');
 	let layout = $state<Layout>('source');
@@ -345,6 +363,7 @@
 	const basemapPref = new StoredFlag('tellegen.schematic.basemap', ['on', 'off'], true);
 	const landmarksPref = new StoredFlag('tellegen.schematic.landmarks', ['on', 'off'], true);
 	const keyPref = new StoredFlag('tellegen.schematic.key', ['open', 'closed'], true);
+	const fieldPref = new StoredFlag('tellegen.transmission.field', ['on', 'off'], true);
 	const underlay = new BasemapUnderlay(() => ({
 		wanted: basemapPref.value && geographic && !!geometry.mercatorOrigin,
 		container: mapBox,
@@ -489,6 +508,55 @@
 			out.set(c, i * 4);
 		}
 		return out;
+	});
+	/** Which bus values shade the area around the network, if any: solved voltage in Operating
+	 * limits (AC), or total LMP in OPF economics when prices differ. */
+	const fieldKind = $derived(
+		operatingOn && resultContext.voltage && solvedVoltages.size
+			? ('voltage' as const)
+			: economicsOn && economics.prices.length && economics.uniform === null
+				? ('price' as const)
+				: null
+	);
+	/** The median total LMP, the centre of the price-separation shading. */
+	const priceCentre = $derived(
+		fieldKind === 'price' ? (median(economics.prices.map((p) => p.value)) ?? null) : null
+	);
+	/** The shaded field as an image in drawing coordinates. */
+	const field = $derived.by(() => {
+		if (!fieldKind || !fieldPref.value || typeof document === 'undefined') return null;
+		const n = graph.busId.length;
+		const values = new Float64Array(n).fill(NaN);
+		for (let i = 0; i < n; i++) {
+			const id = graph.busId[i];
+			if (deenergized.has(id)) continue;
+			const bus = network.buses[i];
+			const v =
+				fieldKind === 'voltage'
+					? voltageBandPosition(solvedVoltages.get(id), bus.vmin_pu, bus.vmax_pu)
+					: busValues.get(id);
+			if (v !== undefined) values[i] = v;
+		}
+		const fade = resultContext.stale ? 0.4 : 1;
+		let colourOf = (v: number) => voltageFieldColour(v, 150 * fade);
+		if (fieldKind === 'price') {
+			if (priceCentre === null) return null;
+			for (let i = 0; i < n; i++) values[i] -= priceCentre;
+			const spread = priceSpread(values, 0);
+			colourOf = (v: number) => priceFieldColour(v, spread, 130 * fade);
+		}
+		const image = fieldImage(geometry.positions, values, colourOf, {
+			reach: typical * 1.4,
+			maxSize: 320
+		});
+		if (!image) return null;
+		const canvas = document.createElement('canvas');
+		canvas.width = image.width;
+		canvas.height = image.height;
+		canvas
+			.getContext('2d')
+			?.putImageData(new ImageData(image.data, image.width, image.height), 0, 0);
+		return { image: canvas, bounds: image.bounds };
 	});
 	const windingColours = $derived(
 		operatingOn || transferOn ? busLevels.map((_, i) => (i % 4 === 3 ? 255 : 65)) : busLevels
@@ -672,6 +740,9 @@
 			selectedEdge,
 			hoveredBus,
 			hoveredEdge,
+			previewBus,
+			previewEdge,
+			field,
 			anchors,
 			arrows,
 			attachments,
@@ -854,7 +925,7 @@
 		}
 		labels = placeLabels(candidates, { width, height, budget: 60 });
 		const inset = freeArea();
-		const gaugeCandidates: OperatingGauge[] = [];
+		const gaugeCandidates: GaugeCandidate[] = [];
 		if ((operatingOn && solution) || (transferOn && transferSolution))
 			network.branches.forEach((br, edge) => {
 				const f = flows.get(br.id),
@@ -870,7 +941,7 @@
 				if (!selected && state === 'normal' && (!symbolsOn || f.loading < 0.6)) return;
 				const [x, y] = screen(anchors[edge * 4], anchors[edge * 4 + 1]);
 				if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-				gaugeCandidates.push({ edge, x: x + 8, y: y - 38, loading: f.loading, state, selected });
+				gaugeCandidates.push({ edge, ax: x, ay: y, loading: f.loading, state, selected });
 			});
 		gauges = placeOperatingGauges(
 			gaugeCandidates,
@@ -1123,6 +1194,9 @@
 			selectedEdge,
 			hoveredBus,
 			hoveredEdge,
+			previewBus,
+			previewEdge,
+			field,
 			transformers,
 			arrows,
 			attachments,
@@ -1320,37 +1394,43 @@
 		ctx.globalAlpha = resultContext.stale ? 0.4 : 1;
 		for (const gauge of gauges) {
 			const { x, y } = gauge;
-			const colour =
-				gauge.state === 'violation'
-					? '#be2024'
-					: gauge.state === 'warning' || gauge.state === 'at-limit'
-						? '#925b05'
-						: '#252525';
-			ctx.fillStyle = '#fcfbf7';
-			ctx.fillRect(x, y, 64, 44);
+			const over = gauge.state === 'violation';
+			const colour = over
+				? '#be2024'
+				: gauge.state === 'warning' || gauge.state === 'at-limit'
+					? '#925b05'
+					: '#252525';
+			const [lx, ly] = gaugeLeader(gauge);
 			ctx.strokeStyle = colour;
-			ctx.lineWidth = 1;
-			ctx.strokeRect(x, y, 64, 44);
+			ctx.lineWidth = 1.2;
+			ctx.beginPath();
+			ctx.moveTo(gauge.ax, gauge.ay);
+			ctx.lineTo(lx, ly);
+			ctx.stroke();
+			ctx.fillStyle = colour;
+			ctx.beginPath();
+			ctx.arc(gauge.ax, gauge.ay, 2.5, 0, 2 * Math.PI);
+			ctx.fill();
+			ctx.fillStyle = over ? '#be2024' : '#fcfbf7';
+			ctx.fillRect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT);
+			ctx.lineWidth = gauge.state === 'at-limit' ? 2 : 1;
+			ctx.strokeRect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT);
 			ctx.font = '10px "IBM Plex Mono", monospace';
 			ctx.textAlign = 'center';
-			ctx.fillStyle = colour;
-			ctx.fillText(
-				`${(gauge.loading * 100).toFixed(gauge.loading > 0.99 && gauge.loading < 1.01 ? 1 : 0)}%${gauge.state === 'at-limit' ? ' =' : gauge.state === 'violation' ? ' !' : ''}`,
-				x + 32,
-				y + 20
-			);
-			ctx.strokeStyle = '#c9c4ba';
+			ctx.fillStyle = over ? '#ffffff' : colour;
+			ctx.fillText(gaugeText(gauge.loading), x + 32, y + 20);
+			ctx.strokeStyle = over ? '#f2b8b5' : '#c9c4ba';
 			ctx.lineWidth = 3;
 			ctx.beginPath();
 			ctx.moveTo(x + 10, y + 31);
 			ctx.lineTo(x + 54, y + 31);
 			ctx.stroke();
-			ctx.strokeStyle = colour;
+			ctx.strokeStyle = over ? '#ffffff' : colour;
 			ctx.beginPath();
 			ctx.moveTo(x + 10, y + 31);
 			ctx.lineTo(x + 10 + (Math.min(1.25, gauge.loading) / 1.25) * 44, y + 31);
 			ctx.stroke();
-			ctx.strokeStyle = '#252525';
+			ctx.strokeStyle = over ? '#ffffff' : '#252525';
 			ctx.lineWidth = 1.5;
 			ctx.beginPath();
 			ctx.moveTo(x + 45.2, y + 27);
@@ -1512,6 +1592,19 @@
 				/> Basemap</label
 			>
 		{/if}
+		{#if fieldKind}
+			<label
+				class="check"
+				title={fieldKind === 'voltage'
+					? 'Shade the area around buses near their voltage limits: blue towards the minimum, brown towards the maximum'
+					: 'Shade the area around buses by total LMP, on the price scale'}
+				><input
+					type="checkbox"
+					checked={fieldPref.value}
+					onchange={(e) => fieldPref.set(e.currentTarget.checked)}
+				/> Shading</label
+			>
+		{/if}
 		<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
 		<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
 		<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
@@ -1540,6 +1633,7 @@
 					warning={warningPref.value}
 					onwarning={(value) => warningPref.set(value)}
 					station={activeStation}
+					shading={!!field}
 					{onselectbus}
 				/>
 			{:else if economicsOn}
@@ -1554,6 +1648,8 @@
 					busPrice={busValues.get(graph.busId[selectedBus])}
 					flow={flows.get(network.branches[selectedEdge]?.id)}
 					onbranch={inspectListedBranch}
+					onpreview={setPreview}
+					shadingCentre={field ? priceCentre : null}
 				/>
 			{:else if transferOn}
 				<TxTransferPanel
@@ -1565,6 +1661,7 @@
 					{...transferSummary}
 					hasDispatch={!!transferSolution && dispatch.size > 0}
 					onbranch={inspectListedBranch}
+					onpreview={setPreview}
 				/>
 			{:else if display?.mode === 'voltage'}
 				Voltage <span>0.90</span><i style:background={voltageGradient}></i><span>1.10 pu</span> · case
@@ -1598,6 +1695,7 @@
 					stale={resultContext.stale}
 					showExceptions={operatingOn || transferOn}
 					oninspect={inspectResult}
+					onpreview={setPreview}
 					{onclear}
 					onframe={frameSelection}
 				/>
@@ -1613,12 +1711,25 @@
 			aria-label={transferOn ? 'Branch overload gauges' : 'Branch utilization gauges'}
 			class:stale={resultContext.stale}
 		>
+			<svg class="leaders" aria-hidden="true" {width} {height}>
+				{#each gauges as gauge (gauge.edge)}
+					{@const [lx, ly] = gaugeLeader(gauge)}
+					<g
+						class:violation={gauge.state === 'violation'}
+						class:warning={gauge.state === 'warning' || gauge.state === 'at-limit'}
+					>
+						<line x1={gauge.ax} y1={gauge.ay} x2={lx} y2={ly} />
+						<circle cx={gauge.ax} cy={gauge.ay} r="2.5" />
+					</g>
+				{/each}
+			</svg>
 			{#each gauges as gauge (gauge.edge)}
 				{@const branch = network.branches[gauge.edge]}
 				<button
 					class="utilization-gauge"
 					class:violation={gauge.state === 'violation'}
 					class:warning={gauge.state === 'warning' || gauge.state === 'at-limit'}
+					class:at-limit={gauge.state === 'at-limit'}
 					style:left="{gauge.x}px"
 					style:top="{gauge.y}px"
 					title={branchTooltip(gauge.edge)}
@@ -1628,11 +1739,7 @@
 					)} percent, {loadingStateText[gauge.state]}"
 					onclick={() => onselectbranch(branch.id)}
 				>
-					<span
-						>{(gauge.loading * 100).toFixed(
-							gauge.loading > 0.99 && gauge.loading < 1.01 ? 1 : 0
-						)}%{gauge.state === 'at-limit' ? ' =' : gauge.state === 'violation' ? ' !' : ''}</span
-					>
+					<span>{gaugeText(gauge.loading)}</span>
 					<svg width="48" height="10" viewBox="0 0 48 10" aria-hidden="true"
 						><path d="M2 5H46" class="gauge-track" /><path
 							d="M2 5H{2 + (Math.min(1.25, gauge.loading) / 1.25) * 44}"
@@ -1866,10 +1973,47 @@
 	}
 	.utilization-gauge.warning {
 		color: #925b05;
+		border-color: #925b05;
+	}
+	/* At rating: a heavier outline; over rating: filled. Shape and fill, not only hue. */
+	.utilization-gauge.at-limit {
+		border-width: 2px;
 	}
 	.utilization-gauge.violation {
-		color: #be2024;
+		color: #fff;
+		background: #be2024;
 		border-color: #be2024;
+		font-weight: 600;
+	}
+	.utilization-gauge.violation .gauge-track {
+		stroke: #f2b8b5;
+	}
+	.utilization-gauge.violation .rating-tick {
+		stroke: #fff;
+	}
+	.leaders {
+		position: absolute;
+		inset: 0;
+		overflow: visible;
+	}
+	.leaders line {
+		stroke: #6b665c;
+		stroke-width: 1.2;
+	}
+	.leaders circle {
+		fill: #6b665c;
+	}
+	.leaders .warning line {
+		stroke: #925b05;
+	}
+	.leaders .warning circle {
+		fill: #925b05;
+	}
+	.leaders .violation line {
+		stroke: #be2024;
+	}
+	.leaders .violation circle {
+		fill: #be2024;
 	}
 	.gauge-track {
 		stroke: #c9c4ba;
