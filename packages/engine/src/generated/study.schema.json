@@ -2921,5 +2921,5 @@
   ],
   "title": "StudySchema",
   "type": "object",
-  "x-rust-source-sha256": "4146c1111f6a3ebf9d4caaf80ac456f417b841f1beb63a0bef06e66b9d109d48"
+  "x-rust-source-sha256": "1cc1a5487273f294ba568d8289a0c21b580715b7c388a97852d267ef5d3141a3"
 }

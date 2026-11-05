@@ -65,6 +65,10 @@ pub struct SubstationGrouping {
     pub bus_substation: Vec<u32>,
     /// Substations ordered by their lowest member row.
     pub substations: Vec<Substation>,
+    /// Per branch row of the analysis view: whether it is a transformer ([`is_transformer`] at
+    /// the grouping's tolerance). Computed once here so callers need not repeat the test.
+    #[serde(skip_serializing)]
+    pub transformer: Vec<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -139,6 +143,9 @@ pub fn group_substations(
     let rows = bus_rows(net);
     let declared = declared_keys(net, &rows);
     let mut sets = Groups::new(&declared);
+    let transformer: Vec<bool> = (0..net.branches().len())
+        .map(|k| is_transformer(net, k, &rows, options.kv_ratio_tolerance))
+        .collect();
 
     for group in colocated {
         let members: Vec<usize> = group
@@ -159,7 +166,8 @@ pub fn group_substations(
         let (Some(&a), Some(&b)) = (rows.get(&br.from.0), rows.get(&br.to.0)) else {
             continue;
         };
-        if a == b || !is_transformer(net, k, &rows, options.kv_ratio_tolerance) {
+        // An out-of-service transformer couples nothing, so it joins nothing.
+        if a == b || !br.in_service || !transformer[k] {
             continue;
         }
         if !far(br.from.0, br.to.0) {
@@ -176,7 +184,7 @@ pub fn group_substations(
                     && br.from != br.to
                     && rows.contains_key(&br.from.0)
                     && rows.contains_key(&br.to.0)
-                    && !is_transformer(net, k, &rows, options.kv_ratio_tolerance)
+                    && !transformer[k]
             })
             .collect();
         let mut x: Vec<f64> = same_kv
@@ -197,6 +205,16 @@ pub fn group_substations(
         }
     }
 
+    // The lowest bus id per component, for the `bus:<id>` key: rows need not be in id order.
+    let mut lowest_id: HashMap<usize, usize> = HashMap::new();
+    for row in 0..n {
+        let id = net.buses()[row].id.0;
+        let root = sets.find(row);
+        lowest_id
+            .entry(root)
+            .and_modify(|v| *v = (*v).min(id))
+            .or_insert(id);
+    }
     // Number components by their lowest row so the output follows bus order.
     let mut index_of_root: HashMap<usize, u32> = HashMap::new();
     let mut bus_substation = Vec::with_capacity(n);
@@ -211,11 +229,7 @@ pub fn group_substations(
                     d.name.clone(),
                     GroupSource::Declared,
                 ),
-                None => (
-                    format!("bus:{}", net.buses()[row].id.0),
-                    None,
-                    sets.source[root],
-                ),
+                None => (format!("bus:{}", lowest_id[&root]), None, sets.source[root]),
             };
             substations.push(Substation {
                 key,
@@ -243,6 +257,7 @@ pub fn group_substations(
     SubstationGrouping {
         bus_substation,
         substations,
+        transformer,
     }
 }
 
@@ -437,6 +452,31 @@ mod tests {
         assert!(is_transformer(&net, 0, &rows, 0.01));
         let g = group_substations(&net, &[], None, &GroupingOptions::default());
         assert_eq!(members(&g), vec![vec![0, 1]]);
+    }
+
+    #[test]
+    fn out_of_service_transformers_join_nothing() {
+        let mut net = network(&[(1, 345.0), (2, 138.0)], &[(1, 2, 1.0)]);
+        net.branches_mut()[0].in_service = false;
+        let g = group_substations(&net, &[], None, &GroupingOptions::default());
+        assert_eq!(members(&g), vec![vec![0], vec![1]]);
+        // Still drawn as a transformer.
+        assert_eq!(g.transformer, vec![true]);
+    }
+
+    #[test]
+    fn keys_use_the_lowest_bus_id_not_the_lowest_row() {
+        let net = network(&[(200, 138.0), (5, 138.0)], &[(200, 5, 0.0)]);
+        let g = group_substations(&net, &[vec![200, 5]], None, &GroupingOptions::default());
+        assert_eq!(members(&g), vec![vec![0, 1]]);
+        assert_eq!(g.substations[0].key, "bus:5");
+    }
+
+    #[test]
+    fn kv_ratio_tolerance_matches_the_svelte_fallback() {
+        // `KV_RATIO_TOLERANCE` in packages/svelte/src/lib/diagram/transmission.ts repeats this
+        // value for older payloads; change both together.
+        assert_eq!(GroupingOptions::default().kv_ratio_tolerance, 0.01);
     }
 
     #[test]

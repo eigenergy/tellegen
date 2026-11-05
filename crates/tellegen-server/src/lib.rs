@@ -1489,7 +1489,6 @@ fn network_payload(
         (!synthetic_coords).then_some(&coords),
         &GroupingOptions::default(),
     );
-    let bus_rows = tellegen::substations::bus_rows(analysis);
     let mut demand = BTreeMap::<usize, f64>::new();
     for load in analysis.loads().iter().filter(|load| load.in_service) {
         *demand.entry(load.bus.0).or_default() += load.p * power_scale;
@@ -1544,12 +1543,7 @@ fn network_payload(
                 to: br.to.0,
                 rate_mw: br.rate_a * power_scale,
                 status: br.in_service as u8,
-                transformer: tellegen::substations::is_transformer(
-                    analysis,
-                    i,
-                    &bus_rows,
-                    GroupingOptions::default().kv_ratio_tolerance,
-                ),
+                transformer: grouping.transformer[i],
                 editable: editable_branch_rows.contains(&i),
                 path: source_paths
                     .and_then(|paths| {

@@ -46,6 +46,30 @@ pub struct TxLayoutInput {
     pub xy: Vec<f64>,
 }
 
+impl TxLayoutInput {
+    /// Check the columns agree, so [`tx_schematic_layout`] can index them without panicking:
+    /// one `kv` per bus, one `to` per `from`, and substation indices below the bus count (every
+    /// substation holds at least one bus). Short `in_service` and `xy` columns are allowed and
+    /// read as in service and unplaced.
+    pub fn validate(&self) -> Result<(), String> {
+        let n = self.bus_substation.len();
+        if self.kv.len() != n {
+            return Err(format!("kv has {} entries for {n} buses", self.kv.len()));
+        }
+        if self.to.len() != self.from.len() {
+            return Err(format!(
+                "to has {} entries for {} branches",
+                self.to.len(),
+                self.from.len()
+            ));
+        }
+        if let Some(&s) = self.bus_substation.iter().find(|&&s| s as usize >= n) {
+            return Err(format!("substation index {s} out of range for {n} buses"));
+        }
+        Ok(())
+    }
+}
+
 /// Where substations start before placement.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -129,6 +153,8 @@ struct Interior {
     h: f64,
 }
 
+/// Lay out `input`, which must pass [`TxLayoutInput::validate`]; callers with untrusted input
+/// check it first.
 pub fn tx_schematic_layout(input: &TxLayoutInput, options: &TxLayoutOptions) -> TxLayout {
     let n = input.bus_substation.len();
     let m = input.from.len();
@@ -1581,5 +1607,33 @@ mod tests {
         assert!(segment_hits_box(&[-1.0, 0.5, 2.0, 0.5], &b));
         assert!(!segment_hits_box(&[-1.0, 2.0, 2.0, 2.0], &b));
         assert!(!segment_hits_box(&[-1.0, -0.1, 0.5, -2.0], &b));
+    }
+
+    #[test]
+    fn validate_rejects_mismatched_columns() {
+        let ok = TxLayoutInput {
+            bus_substation: vec![0, 1],
+            kv: vec![138.0, 138.0],
+            from: vec![0],
+            to: vec![1],
+            in_service: vec![1],
+            xy: vec![0.0, 0.0, 1.0, 0.0],
+        };
+        assert!(ok.validate().is_ok());
+        let short_kv = TxLayoutInput {
+            kv: vec![138.0],
+            ..ok.clone()
+        };
+        assert!(short_kv.validate().is_err());
+        let short_to = TxLayoutInput {
+            to: vec![],
+            ..ok.clone()
+        };
+        assert!(short_to.validate().is_err());
+        let far_sub = TxLayoutInput {
+            bus_substation: vec![0, u32::MAX],
+            ..ok
+        };
+        assert!(far_sub.validate().is_err());
     }
 }

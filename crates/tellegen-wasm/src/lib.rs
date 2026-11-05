@@ -16,7 +16,7 @@ use wasm_bindgen::prelude::*;
 use tellegen::geo::{
     apply_aux_substation_locations, lowered_coords, network_coords, spread_stacks,
 };
-use tellegen::substations::{group_substations, is_transformer, GroupingOptions, Substation};
+use tellegen::substations::{group_substations, GroupingOptions, Substation};
 #[cfg(feature = "sensitivity")]
 use tellegen::SolveResponse;
 
@@ -1404,26 +1404,25 @@ pub(crate) fn ingest_value(
     let mut cs = lowered_coords(net, &network_coords(net, source_text));
     let space = net.geo().as_ref().map(|g| &g.space);
     let geographic = !matches!(space, Some(powerio::CoordinateSpace::Diagram { .. }));
+    let synthetic = matches!(
+        net.geo().as_ref().and_then(|g| g.kind),
+        Some(powerio::geo::CoordsKind::Synthetic)
+    );
     let stacks = if geographic && !cs.is_empty() {
         spread_stacks(&mut cs)
     } else {
         Vec::new()
     };
-    let synthetic = matches!(
-        net.geo().as_ref().and_then(|g| g.kind),
-        Some(powerio::geo::CoordsKind::Synthetic)
-    );
+    // Shared placeholder coordinates say nothing about substations; the server passes no stacks
+    // for synthetic layouts either.
+    let colocated: &[Vec<usize>] = if synthetic { &[] } else { &stacks };
     let grouping_options = GroupingOptions::default();
     let grouping = group_substations(
         analysis,
-        &stacks,
+        colocated,
         (geographic && !synthetic).then_some(&cs),
         &grouping_options,
     );
-    let bus_rows = tellegen::substations::bus_rows(analysis);
-    let transformer: Vec<bool> = (0..analysis.branches().len())
-        .map(|k| is_transformer(analysis, k, &bus_rows, grouping_options.kv_ratio_tolerance))
-        .collect();
 
     let topology = Topology {
         substations: &grouping.substations,
@@ -1460,7 +1459,7 @@ pub(crate) fn ingest_value(
                     to: br.to.0,
                     rate_mw: br.rate_a * power_scale,
                     status: br.in_service as u8,
-                    transformer: transformer[i],
+                    transformer: grouping.transformer[i],
                     editable: editable_branch_rows.contains(&i),
                 })
             })
@@ -1531,7 +1530,7 @@ pub(crate) fn ingest_value(
                         to: br.to.0,
                         rate_mw: br.rate_a * power_scale,
                         status: br.in_service as u8,
-                        transformer: transformer[i],
+                        transformer: grouping.transformer[i],
                         editable: editable_branch_rows.contains(&i),
                         path,
                     }))
@@ -1833,6 +1832,7 @@ pub fn tx_schematic_layout(input_json: &str, options_json: &str) -> Result<Strin
     install_panic_hook();
     let input: tellegen::tx_schematic::TxLayoutInput =
         serde_json::from_str(input_json).map_err(jserr)?;
+    input.validate().map_err(jserr)?;
     let options: tellegen::tx_schematic::TxLayoutOptions = if options_json.trim().is_empty() {
         Default::default()
     } else {

@@ -2493,6 +2493,7 @@ fn dc_branch_flows(
             } else {
                 0.0
             };
+            let rating = (fmax[e].is_finite() && fmax[e] > 0.0).then_some(fmax[e] * base);
             BranchFlow {
                 branch,
                 uid: uid_at(branch_uids, e),
@@ -2500,11 +2501,14 @@ fn dc_branch_flows(
                 loading,
                 loading_info: Some(BranchLoading {
                     basis: LoadingBasis::Mw,
-                    rating: (fmax[e].is_finite() && fmax[e] > 0.0).then_some(fmax[e] * base),
-                    rating_source: Some(if thermal_rated[e] {
-                        RatingSource::Stated
-                    } else {
-                        RatingSource::Synthesized
+                    rating,
+                    // As in AC: no source when there is no rating.
+                    rating_source: rating.map(|_| {
+                        if thermal_rated[e] {
+                            RatingSource::Stated
+                        } else {
+                            RatingSource::Synthesized
+                        }
                     }),
                     limiting_end: None,
                 }),

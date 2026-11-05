@@ -541,8 +541,8 @@
 		let colourOf = (v: number) => voltageFieldColour(v, 150 * fade);
 		if (fieldKind === 'price') {
 			if (priceCentre === null) return null;
+			const spread = priceSpread(values, priceCentre);
 			for (let i = 0; i < n; i++) values[i] -= priceCentre;
-			const spread = priceSpread(values, 0);
 			colourOf = (v: number) => priceFieldColour(v, spread, 130 * fade);
 		}
 		const image = fieldImage(geometry.positions, values, colourOf, {
