@@ -79,6 +79,21 @@ const HIDDEN_DEFAULT_CASES_KEY = 'tellegen.hiddenDefaultCases.v1';
 // Open on South Carolina by default: it has the most interesting price action.
 const DEFAULT_CASE_ID = 'case500';
 
+/** Commit and snapshot responses can order object keys differently (including nested loading
+ * metadata). Compare the exact JSON values, retaining array order and numerical equality. */
+function sameSolution(a: Solution, b: Solution): boolean {
+	const ordered = (_key: string, value: unknown) => {
+		if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+		const record = value as Record<string, unknown>;
+		return Object.fromEntries(
+			Object.keys(record)
+				.sort()
+				.map((key) => [key, record[key]])
+		);
+	};
+	return JSON.stringify(a, ordered) === JSON.stringify(b, ordered);
+}
+
 /** A parsed geographic sidecar awaiting application: the canonical `.geo.json`
  * layer document from the engine's tolerant reader, its source file name, and
  * the reader's notes on records it could not use. */
@@ -3144,7 +3159,7 @@ export class Controller {
 		const cached = this.caseStudies.get(c);
 		if (c.solution && cached?.studyInputJson === base && cached.formulation === c.formulation) {
 			const current = await cached.study.currentSolution();
-			if (JSON.stringify(current) === JSON.stringify(c.solution)) {
+			if (sameSolution(current, c.solution)) {
 				return {
 					input: await cached.study.saveInstanceModule(),
 					solution: await cached.study.saveSolutionModule(),
@@ -3163,10 +3178,7 @@ export class Controller {
 		const api = this.api;
 		if (c instanceof CaseState && c.solution && c.formulation === 'dcopf' && api?.getSavedCase) {
 			const snapshot = await api.getSavedCase(c.id);
-			if (
-				snapshot.base_input !== base ||
-				JSON.stringify(snapshot.display_solution) !== JSON.stringify(c.solution)
-			)
+			if (snapshot.base_input !== base || !sameSolution(snapshot.display_solution, c.solution))
 				throw new Error('The server case changed. Reload it before saving.');
 			return {
 				input: snapshot.input,
