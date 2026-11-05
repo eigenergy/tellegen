@@ -275,4 +275,38 @@ describe('transmission graph', () => {
 		// Both paths run from → to in the payload, so the sign follows the flow.
 		expect([...dir]).toEqual([1, -1]);
 	});
+	it.each([false, true])(
+		'keeps arrows aligned on a doubling-back route (reversed: %s)',
+		(reverse) => {
+			const net = network();
+			net.coordinate_space = 'diagram';
+			net.buses[1].lon = 0;
+			net.buses[1].lat = 0;
+			net.buses[2].lon = 10;
+			net.buses[2].lat = 4;
+			const path: [number, number][] = [
+				[0, 0],
+				[20, 0],
+				[20, 2],
+				[-10, 2],
+				[-10, 4],
+				[10, 4]
+			];
+			net.branches[1].path = reverse ? path.reverse() : path;
+			const g = txGraph(net);
+			const geometry = txSourceLayout(g, net);
+			const { anchors } = edgeAnchors(geometry, net.branches.length);
+			// Its middle leg runs left, although the to bus is right of the from bus.
+			expect(anchors[6]).toBeLessThan(0);
+			expect([...flowDirections(g, geometry, anchors, (k) => (k === 1 ? 10 : null)).dir]).toEqual([
+				1
+			]);
+			expect([...flowDirections(g, geometry, anchors, (k) => (k === 1 ? -10 : null)).dir]).toEqual([
+				-1
+			]);
+			const first = [...geometry.segmentEdge].indexOf(1);
+			expect(geometry.sources[first * 3]).toBeCloseTo(geometry.positions[3]);
+			expect(geometry.sources[first * 3 + 1]).toBeCloseTo(geometry.positions[4]);
+		}
+	);
 });

@@ -233,17 +233,32 @@ export const LOADING_ATTENTION = 0.9;
 /** Where the optimal power flow map starts shading a branch towards congestion. */
 const LOADING_ELEVATED = 0.6;
 
+const LOADING_BASE: RGBA = [138, 131, 117, 200];
+const LOADING_AMBER: RGBA = [212, 116, 34, 240];
+const LOADING_RED: RGBA = [179, 38, 30, 250];
+const LOADING_STOPS: [RGBA, number][] = [
+	[LOADING_BASE, 0],
+	[LOADING_BASE, LOADING_ELEVATED],
+	[LOADING_AMBER, LOADING_ATTENTION],
+	[LOADING_RED, LOADING_ATTENTION],
+	[LOADING_RED, 1]
+];
+/** Same thresholds and RGB values as branchColor, including the step to red at 90%. */
+export const branchLoadingGradient = `linear-gradient(90deg, ${LOADING_STOPS.map(
+	([c, stop]) => `rgb(${c.slice(0, 3).join(' ')}) ${stop * 100}%`
+).join(', ')})`;
+
 /** Branch color by loading fraction: warm gray, amber past 0.6, red from `LOADING_ATTENTION`. */
 export function branchColor(loading: number, inService: boolean): RGBA {
 	if (!inService) return [197, 191, 178, 110];
-	if (loading < LOADING_ELEVATED) return [138, 131, 117, 200];
+	if (loading < LOADING_ELEVATED) return LOADING_BASE;
 	if (loading < LOADING_ATTENTION)
 		return lerpColor(
 			[138, 131, 117, 210],
-			[212, 116, 34, 240],
+			LOADING_AMBER,
 			(loading - LOADING_ELEVATED) / (LOADING_ATTENTION - LOADING_ELEVATED)
 		);
-	return [179, 38, 30, 250];
+	return LOADING_RED;
 }
 
 export function branchWidth(loading: number): number {

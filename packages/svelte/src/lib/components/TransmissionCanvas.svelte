@@ -5,9 +5,9 @@
 	import type { Network, Solution } from '../api.js';
 	import {
 		branchColor,
+		branchLoadingGradient,
 		demandColor,
 		priceColor,
-		priceGradient,
 		scalarDomain,
 		type RGBA
 	} from '../colors.js';
@@ -23,6 +23,7 @@
 		fitBounds,
 		freeInsets,
 		glyphPath,
+		attachmentGlyph,
 		landmarkGlyph,
 		landmarkStrokes,
 		levelLabel,
@@ -113,6 +114,8 @@
 
 	let width = $state(0);
 	let height = $state(0);
+	let toolbarHeight = $state(0);
+	let legendHeight = $state(0);
 	let canvas = $state<HTMLCanvasElement>();
 	let mapBox = $state<HTMLDivElement>();
 	let deck = $state.raw<Deck<OrthographicView> | null>(null);
@@ -131,9 +134,10 @@
 	const geographic = $derived(network.coordinate_space !== 'diagram');
 	let layout = $state<Layout>('source');
 	/** The drawing on screen; replaced by `show`, which animates between layouts. */
-	let shown = $state.raw<{ geometry: SchematicGeometry; parts: TxSchematicParts | null } | null>(
-		null
-	);
+	let shown = $state.raw<{
+		geometry: SchematicGeometry;
+		parts: TxSchematicParts | null;
+	} | null>(null);
 	const geometry = $derived(shown?.geometry ?? source);
 	const parts = $derived(shown?.parts ?? null);
 	const anchored = $derived(edgeAnchors(geometry, network.branches.length));
@@ -191,7 +195,10 @@
 	const busLevels = $derived(busLevelColours(graph, legend));
 	// Zoomed out, levels below the top three fade so the backbone reads first.
 	const level = $derived(
-		levelPaint(graph, legend, { focus: focusEntry, fadeFrom: symbolsOn ? Infinity : 3 })
+		levelPaint(graph, legend, {
+			focus: focusEntry,
+			fadeFrom: symbolsOn ? Infinity : 3
+		})
 	);
 	const edgePaint = $derived.by(() => {
 		if (!resultsOn) return level;
@@ -242,18 +249,18 @@
 	/** Generator and load symbols, hanging from the bus (or the bottom of its busbar) once
 	 * symbols are legible; side by side when a bus has both. */
 	const attachments = $derived.by(() => {
-		if (!symbolsOn) return null;
-		const unit = 5 / 2 ** stepZoom;
-		const points: { x: number; y: number; kind: 'generator' | 'load' }[] = [];
+		if (span < 35 || (parts && parts.unit * 2 ** camera.zoom < 3)) return null;
+		const unit = 7 / 2 ** stepZoom;
+		const points: NonNullable<TxScene['attachments']>['points'] = [];
 		for (let i = 0; i < graph.busId.length; i++) {
 			const gen = graph.genMw[i] > 0;
 			const load = graph.demandMw[i] > 0;
 			if (!gen && !load) continue;
 			const x = parts ? parts.busbars[i * 4 + 2] : geometry.positions[i * 3];
 			const y = parts ? parts.busbars[i * 4 + 3] : geometry.positions[i * 3 + 1];
-			const dx = gen && load ? 1.1 * unit : 0;
-			if (gen) points.push({ x: x - dx, y, kind: 'generator' });
-			if (load) points.push({ x: x + dx, y, kind: 'load' });
+			const dx = gen && load ? 1.5 * unit : 0;
+			if (gen) points.push({ x: x - dx, y, rootX: x, bus: i, kind: 'generator' });
+			if (load) points.push({ x: x + dx, y, rootX: x, bus: i, kind: 'load' });
 		}
 		return points.length ? { points, unit } : null;
 	});
@@ -313,7 +320,7 @@
 	const freeArea = () =>
 		freeInsets({
 			compact: panels.compact,
-			top: panels.top,
+			top: panels.top + Math.max(0, toolbarHeight - 48) + (resultsOn ? legendHeight + 8 : 0),
 			dockWidth: (side) => panels.dockWidth(side),
 			sheetInset: app.sheetInset
 		});
@@ -385,7 +392,10 @@
 		const v = busValues.get(graph.busId[i]);
 		if (v === undefined) return null;
 		const digits = display.mode === 'voltage' ? 4 : 2;
-		return { label: display.label, text: `${v.toFixed(digits)} ${display.unit}` };
+		return {
+			label: display.label,
+			text: `${v.toFixed(digits)} ${display.unit}`
+		};
 	}
 
 	function updateLabels() {
@@ -507,17 +517,25 @@
 					views: new core.OrthographicView({ id: 'transmission', flipY: true }),
 					initialViewState: { ...camera, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM },
 					controller: { doubleClickZoom: true },
-					pickingRadius: 6,
+					pickingRadius: matchMedia('(pointer: coarse)').matches ? 12 : 6,
 					getCursor: ({ isHovering, isDragging }) =>
 						isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab',
 					onViewStateChange: ({ viewState }) => {
 						const v = viewState as OrthographicViewState;
-						camera = { target: v.target as [number, number, number], zoom: v.zoom as number };
+						camera = {
+							target: v.target as [number, number, number],
+							zoom: v.zoom as number
+						};
 					},
 					onHover: (info: PickingInfo) => {
 						const id = info.layer?.id;
 						const hit = info.index >= 0;
-						hoveredBus = hit && (id === 'buses' || id === 'busbars') ? info.index : -1;
+						hoveredBus =
+							hit && (id === 'buses' || id === 'busbars')
+								? info.index
+								: hit && id === 'attachments-pick'
+									? info.object.bus
+									: -1;
 						hoveredEdge =
 							hit && id === 'branches'
 								? geometry.segmentEdge[info.index]
@@ -536,6 +554,7 @@
 						pickedHere = true;
 						setTimeout(() => (pickedHere = false));
 						if (id === 'buses' || id === 'busbars') onselectbus(graph.busId[info.index]);
+						else if (id === 'attachments-pick') onselectbus(graph.busId[info.object.bus]);
 						else if (id === 'branches')
 							onselectbranch(network.branches[geometry.segmentEdge[info.index]].id);
 						else if (id === 'transformers' && transformers)
@@ -552,7 +571,13 @@
 						const id = info.layer?.id;
 						if (info.index < 0) return null;
 						if (id === 'buses' || id === 'busbars')
-							return { text: txBusText(graph, network, info.index, valueText(info.index)) };
+							return {
+								text: txBusText(graph, network, info.index, valueText(info.index))
+							};
+						if (id === 'attachments-pick')
+							return {
+								text: txBusText(graph, network, info.object.bus, valueText(info.object.bus))
+							};
 						const k =
 							id === 'branches'
 								? geometry.segmentEdge[info.index]
@@ -567,7 +592,9 @@
 							};
 						if (id === 'landmark-halos') {
 							const l = info.object as Landmark;
-							return { text: txBusText(graph, network, l.bus, valueText(l.bus)) };
+							return {
+								text: txBusText(graph, network, l.bus, valueText(l.bus))
+							};
 						}
 						return null;
 					}
@@ -588,7 +615,10 @@
 	});
 
 	// The substation overview is laid out in the engine (Rust), once per network.
-	let schematic: Promise<{ geometry: SchematicGeometry; parts: TxSchematicParts }> | null = null;
+	let schematic: Promise<{
+		geometry: SchematicGeometry;
+		parts: TxSchematicParts;
+	}> | null = null;
 	function target(next: Layout) {
 		if (next === 'source') return Promise.resolve({ geometry: source, parts: null });
 		// Synthetic positions say nothing about the grid: lay its substations out by their
@@ -618,7 +648,10 @@
 		const slow = setTimeout(() => {
 			if (seq === showSeq) status = 'Laying out the substations…';
 		}, 150);
-		let drawing: { geometry: SchematicGeometry; parts: TxSchematicParts | null };
+		let drawing: {
+			geometry: SchematicGeometry;
+			parts: TxSchematicParts | null;
+		};
 		try {
 			drawing = await target(next);
 		} catch (e) {
@@ -634,7 +667,10 @@
 		layout = next;
 		shown = drawing;
 		// Both layouts share one frame, so the camera stays where it is unless nothing would show.
-		const to = showsAnyPosition(drawing.geometry.positions, camera, { width, height })
+		const to = showsAnyPosition(drawing.geometry.positions, camera, {
+			width,
+			height
+		})
 			? camera
 			: fitBounds(drawing.geometry.bounds, { width, height }, freeArea());
 		setCamera(to);
@@ -729,7 +765,14 @@
 		const origin = geometry.mercatorOrigin;
 		if (!deck || !origin) return;
 		const view = basemapCamera(camera, origin);
-		untrack(() => ongeoview?.({ center: view.center, zoom: view.zoom, bearing: 0, pitch: 0 }));
+		untrack(() =>
+			ongeoview?.({
+				center: view.center,
+				zoom: view.zoom,
+				bearing: 0,
+				pitch: 0
+			})
+		);
 	});
 
 	/** Set while a click in the canvas changes the selection: that selection is already in view. */
@@ -821,7 +864,12 @@
 				: 'Voltage levels',
 			camera,
 			result: solution
-				? { kind: 'solved', label: display?.copy ?? 'Solved', iterations: null, revision: caseId }
+				? {
+						kind: 'solved',
+						label: display?.copy ?? 'Solved',
+						iterations: null,
+						revision: caseId
+					}
 				: null,
 			exported: new Date().toISOString()
 		});
@@ -854,6 +902,9 @@
 	</div>
 	<div
 		class="toolbar"
+		bind:clientHeight={toolbarHeight}
+		style:max-width="calc(100% - {toolLeft +
+			(panels.compact ? 12 : panels.dockWidth('right') + 24)}px)"
 		style:top="{panels.top + 8}px"
 		style:left="{toolLeft}px"
 		role="toolbar"
@@ -892,18 +943,27 @@
 			</select>
 		</label>
 		<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
+		<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
+		<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
 		<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
 		<button onclick={onclose} title="Return to the map">Close</button>
 	</div>
 	{#if resultsOn}
-		<div class="legend" style:top="{panels.top + 50}px" style:left="{toolLeft}px">
+		<div
+			class="legend"
+			bind:clientHeight={legendHeight}
+			style:top="{panels.top + toolbarHeight + 16}px"
+			style:left="{toolLeft}px"
+		>
 			{#if display && uniform !== null}
 				{display.label} uniform at {uniform.toPrecision(4)}
 				{display.unit} · grey ·
 			{:else if display}
 				{display.label} <i style:background={display.gradient}></i> ·
 			{/if}
-			Loading <span>0 %</span><i style:background={priceGradient}></i><span>100 %</span>
+			Branch halo: Loading <span>0 %</span><i style:background={branchLoadingGradient}></i><span
+				>100 %+</span
+			>
 		</div>
 	{/if}
 	{#if !resultsOn && levelsPresent.length}
@@ -915,6 +975,7 @@
 			ontoggle={(e) => keyPref.set(e.currentTarget.open)}
 		>
 			<summary>Key</summary>
+			<p class="hint">Black lines · voltage in the halo</p>
 			<ul class="symbols" aria-label="Voltage levels">
 				{#each levelsPresent as l, j (l.label)}
 					{#if j === 0 || levelsPresent[j - 1].tier !== l.tier}
@@ -939,7 +1000,8 @@
 									style:stroke={rgb(entryColour(l))}
 									style:stroke-width={entryWidth(l)}
 									d="M-2 0H26"
-								/></svg
+								/>
+								<path d="M-2 0H26" style:stroke="rgb(32 36 43)" style:stroke-width="1.2" /></svg
 							>{l.label}
 						</button>
 					</li>
@@ -958,6 +1020,18 @@
 						>out of service
 					</li>
 				{/if}
+			</ul>
+			<ul class="symbols" aria-label="Equipment">
+				<li>
+					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+						><path d={glyphPath(attachmentGlyph('load'), 10)} class="load-key" /></svg
+					>load (demand arrow)
+				</li>
+				<li>
+					<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+						><path d={glyphPath(attachmentGlyph('generator'), 9)} /></svg
+					>generator
+				</li>
 			</ul>
 			<label class="toggle"
 				><input
@@ -1027,8 +1101,9 @@
 	}
 	.toolbar {
 		position: absolute;
+		width: max-content;
 		flex-wrap: wrap;
-		max-width: calc(100% - 24px);
+		right: 12px;
 		display: flex;
 		gap: 6px;
 		align-items: center;
@@ -1078,7 +1153,11 @@
 	}
 	.legend {
 		position: absolute;
+		height: auto;
+		margin-top: 0;
 		display: flex;
+		flex-wrap: wrap;
+		right: 12px;
 		gap: 6px;
 		align-items: center;
 		padding: 4px 8px;
@@ -1095,6 +1174,8 @@
 		border-radius: 2px;
 	}
 	.key {
+		max-height: 40vh;
+		overflow: auto;
 		position: absolute;
 		padding: 4px 8px;
 		font: 10px var(--font-mono);
@@ -1132,6 +1213,20 @@
 		fill: none;
 		stroke: var(--ink);
 		stroke-width: 1.1;
+	}
+	.symbols .load-key {
+		fill: var(--ink);
+	}
+	@media (pointer: coarse) {
+		.toolbar button,
+		.toolbar select,
+		.toolbar .check,
+		.symbols .level,
+		.key summary,
+		.key .toggle {
+			min-height: 44px;
+			min-width: 44px;
+		}
 	}
 	.symbols .level {
 		display: flex;

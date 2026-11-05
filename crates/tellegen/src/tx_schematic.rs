@@ -513,6 +513,11 @@ fn stress_seeds(
     m: usize,
 ) -> Vec<(f64, f64)> {
     let occupied: Vec<usize> = (0..given.len()).filter(|&s| count[s] > 0).collect();
+    // A singleton has no graph extent to scale. Keep its finite seed instead of producing
+    // infinity * zero when fitting the zero-size stress layout to the drawing frame.
+    if occupied.len() < 2 {
+        return given.to_vec();
+    }
     let mut local = vec![usize::MAX; given.len()];
     for (i, &s) in occupied.iter().enumerate() {
         local[s] = i;
@@ -1538,6 +1543,36 @@ mod tests {
             .map(|s| (s[2] - s[0]).hypot(s[3] - s[1]))
             .fold(0.0, f64::max);
         assert!(longest < 0.5 * span, "{longest} of {span}");
+    }
+
+    #[test]
+    fn stress_seeding_keeps_a_single_substation_finite() {
+        let input = TxLayoutInput {
+            bus_substation: vec![0, 0],
+            kv: vec![230.0, 115.0],
+            from: vec![0],
+            to: vec![1],
+            in_service: vec![1],
+            xy: vec![0.0, 0.0, 100.0, 100.0],
+        };
+        let layout = tx_schematic_layout(
+            &input,
+            &TxLayoutOptions {
+                seeding: TxSeeding::Stress,
+                ..TxLayoutOptions::default()
+            },
+        );
+        assert!(layout
+            .positions
+            .iter()
+            .chain(&layout.busbars)
+            .chain(&layout.boxes)
+            .chain(&layout.segments)
+            .chain(&layout.bounds)
+            .all(|v| v.is_finite()));
+        assert_eq!(layout.role, vec![TX_ROLE_INTERNAL]);
+        assert!(!layout.segments.is_empty());
+        assert!(!serde_json::to_string(&layout).unwrap().contains("null"));
     }
 
     #[test]

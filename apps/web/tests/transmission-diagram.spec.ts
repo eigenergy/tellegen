@@ -33,68 +33,96 @@ const COORDS = `bus_i,lat,lon
 4,34.0,-80.9
 `;
 
-test('a balanced case opens as a single-line diagram and returns to the map', async ({
-	page
-}, testInfo) => {
-	test.setTimeout(120_000);
-	await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
-	await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
-	await page.goto('/');
-	await expect(page.getByText('no default cases loaded')).toBeVisible();
-	await page.locator('input[type="file"]').setInputFiles([
-		{ name: 'txdiagram-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(COORDS) },
-		{ name: 'txdiagram.m', mimeType: 'text/plain', buffer: Buffer.from(CASE) }
-	]);
-	await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
+for (const touch of [false, true]) {
+	test.describe(touch ? 'phone touch' : 'desktop mouse', () => {
+		test.use(
+			touch ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true } : {}
+		);
+		test('a balanced case opens as a single-line diagram and returns to the map', async ({
+			page
+		}, testInfo) => {
+			test.setTimeout(120_000);
+			await page.route('**/api/compute', (route) => route.fulfill({ json: { enabled: false } }));
+			await page.route('**/api/cases', (route) => route.fulfill({ json: [] }));
+			await page.goto('/');
+			await expect(page.getByText('no default cases loaded')).toBeVisible();
+			await page.locator('input[type="file"]').setInputFiles([
+				{ name: 'txdiagram-coords.csv', mimeType: 'text/csv', buffer: Buffer.from(COORDS) },
+				{ name: 'txdiagram.m', mimeType: 'text/plain', buffer: Buffer.from(CASE) }
+			]);
+			if (touch) await page.getByRole('button', { name: 'Solver', exact: true }).tap();
+			await expect(page.locator('.solvecard')).toContainText('DC OPF', { timeout: 60_000 });
 
-	await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
-	const canvas = page.getByRole('application', { name: 'Single-line diagram' });
-	await expect(canvas).toBeVisible();
-	await expect(page.locator('.maplibregl-ctrl-attrib')).toHaveCount(0);
-	const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
-	await expect(toolbar).toContainText('Geographic');
+			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
+			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
+			const canvas = page.getByRole('application', { name: 'Single-line diagram' });
+			await expect(canvas).toBeVisible();
+			await expect(page.locator('.maplibregl-ctrl-attrib')).toHaveCount(0);
+			const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
+			await expect(toolbar).toContainText('Geographic');
+			await page.emulateMedia({ reducedMotion: 'reduce' });
+			if (touch) {
+				expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+				for (const name of ['Zoom in', 'Zoom out', 'Fit', 'Close']) {
+					const button = toolbar.getByRole('button', { name, exact: true });
+					const bounds = (await button.boundingBox())!;
+					expect(bounds.height).toBeGreaterThanOrEqual(44);
+					expect(bounds.x).toBeGreaterThanOrEqual(0);
+					expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+				}
+			}
 
-	// The key names the levels drawn, the transformer, and the engine's substation grouping:
-	// buses 1 and 2 share a coordinate, so four buses make three substations.
-	const key = page.locator('.tx-stage details.key');
-	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('345 kV');
-	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('138 kV');
-	await expect(key).toContainText('transformer');
-	await expect(key).toContainText('out of service');
-	// Levels are grouped under their tier.
-	await expect(key).toContainText(/extra high voltage/i);
-	await expect(key).toContainText(/high voltage/i);
-	await expect(key).toContainText('3 substations, 4 buses');
-	// A level in the key highlights on hover and stays highlighted when clicked.
-	const level = key.getByRole('button', { name: /345 kV/ });
-	await level.click();
-	await expect(level).toHaveAttribute('aria-pressed', 'true');
-	await level.click();
-	await expect(level).toHaveAttribute('aria-pressed', 'false');
+			// The key names the levels drawn, the transformer, and the engine's substation grouping:
+			// buses 1 and 2 share a coordinate, so four buses make three substations.
+			const key = page.locator('.tx-stage details.key');
+			await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('345 kV');
+			await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('138 kV');
+			await expect(key).toContainText('transformer');
+			await expect(key).toContainText('out of service');
+			// Levels are grouped under their tier.
+			await expect(key).toContainText(/extra high voltage/i);
+			await expect(key).toContainText(/high voltage/i);
+			await expect(key).toContainText('3 substations, 4 buses');
+			// A level in the key highlights on hover and stays highlighted when clicked.
+			const level = key.getByRole('button', { name: /345 kV/ });
+			await level.click();
+			await expect(level).toHaveAttribute('aria-pressed', 'true');
+			await level.click();
+			await expect(level).toHaveAttribute('aria-pressed', 'false');
+			await toolbar.getByRole('button', { name: 'Fit', exact: true }).focus();
+			await page.mouse.move(0, 0);
 
-	// Once solved, the drawing can colour by results: the bus series and branch loading.
-	const colour = toolbar.getByLabel('Colour by');
-	await expect(colour).toBeEnabled({ timeout: 60_000 });
-	await colour.selectOption('results');
-	await expect(page.locator('.tx-stage .legend')).toContainText('Loading');
-	await expect(key).toHaveCount(0);
+			// Once solved, the drawing can colour by results: the bus series and branch loading.
+			const colour = toolbar.getByLabel('Colour by');
+			await expect(colour).toBeEnabled({ timeout: 60_000 });
+			await page.screenshot({ path: testInfo.outputPath('transmission-voltage.png') });
+			await colour.selectOption('results');
+			const toolbarBox = (await toolbar.boundingBox())!;
+			const legendBox = (await page.locator('.tx-stage .legend').boundingBox())!;
+			expect(legendBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
+			await expect(page.locator('.tx-stage .legend')).toContainText('Loading');
+			await expect(key).toHaveCount(0);
 
-	await canvas.focus();
-	await canvas.press('+');
-	await canvas.press('f');
-	await page.screenshot({ path: testInfo.outputPath('transmission-diagram.png') });
+			await canvas.focus();
+			await canvas.press('+');
+			await canvas.press('f');
+			await page.screenshot({ path: testInfo.outputPath('transmission-diagram.png') });
 
-	// The substation overview is laid out in the engine and shares the frame of the geography.
-	const schematic = toolbar.getByRole('button', { name: 'Schematic', exact: true });
-	await schematic.click();
-	await expect(schematic).toHaveAttribute('aria-pressed', 'true');
-	await expect(page.locator('.tx-stage .status')).toHaveCount(0);
-	await page.screenshot({ path: testInfo.outputPath('transmission-schematic.png') });
-	await toolbar.getByRole('button', { name: 'Geographic', exact: true }).click();
-	await expect(schematic).toHaveAttribute('aria-pressed', 'false');
+			// The substation overview is laid out in the engine and shares the frame of the geography.
+			const schematic = toolbar.getByRole('button', { name: 'Schematic', exact: true });
+			await schematic.click();
+			await expect(schematic).toHaveAttribute('aria-pressed', 'true');
+			await expect(page.locator('.tx-stage .status')).toHaveCount(0);
+			await page.screenshot({ path: testInfo.outputPath('transmission-schematic.png') });
+			await toolbar.getByRole('button', { name: 'Geographic', exact: true }).click();
+			await expect(schematic).toHaveAttribute('aria-pressed', 'false');
 
-	await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
-	await expect(canvas).toHaveCount(0);
-	await expect(page.locator('.maplibregl-canvas')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Show diagram', exact: true })).toBeVisible();
-});
+			await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
+			await expect(canvas).toHaveCount(0);
+			await expect(page.locator('.maplibregl-canvas')).toBeVisible();
+			if (touch) await page.getByRole('button', { name: 'Network', exact: true }).tap();
+			await expect(page.getByRole('button', { name: 'Show diagram', exact: true })).toBeVisible();
+		});
+	});
+}

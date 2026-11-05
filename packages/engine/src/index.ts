@@ -872,6 +872,8 @@ export interface TxLayoutOptions {
   tier_scales?: [number, number];
   /** Candidate offsets either side of the seed, per axis. */
   search?: number;
+  /** Rounds of channel spacing in line routing (default 10); 0 draws straight lines. */
+  route_iterations?: number;
 }
 
 /** Columnar substation overview in the units of the seeds; y grows downwards. Edge roles: 0 line

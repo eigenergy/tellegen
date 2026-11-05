@@ -11,7 +11,14 @@ basemap, or drawing coordinates as given. Zoomed out, the largest generators and
 stay findable as fixed-size landmarks, placed by priority so the view never fills with markers.
 Closer in, transformers are drawn on their branch as two interlocking circles, each winding in the
 colour of the voltage on its side, generators and loads hang below their bus, and buses are named.
-Out-of-service branches are dashed.
+Out-of-service branches are dashed. Conductors and busbars have a dark centre stroke with a
+restrained colour halo; topology stays readable against the map while the halo carries voltage
+level, or loading in the results view. Busbars are heavier than branch conductors.
+
+Loads use the same demand-arrow shape as the multiconductor schematic, drawn larger with a
+filled triangle. Generators use the shared machine-circle glyph. Both appear before the finer
+transformer detail and can be clicked or tapped to select their bus. A bus with generation and
+load draws the symbols side by side, with visible connections back to the bus.
 
 ## Voltage levels
 
@@ -37,13 +44,20 @@ out, levels below the top three fade so the backbone reads first.
 ## Results
 
 Once the case is solved, **Colour by: Results** colours buses by the map's current display (LMP,
-angle, voltage or demand) and branches by loading, from grey through amber to red at the rating;
+angle, voltage or demand) and branch halos by loading: grey below 60 %, amber towards 90 %,
+and red from 90 % (near the enforced rating). The loading key uses the same thresholds;
 branches above 60 % of their rating carry their loading. When the display series is the same at
 every bus (a DC OPF without congestion has one price), buses are drawn neutral grey and the legend
 gives the value, rather than the middle of the colour ramp. Closer in, a chevron on each branch points
 the way active power flows; on a transformer it sits beside the symbol. Hover a bus or branch for its voltage,
 substation, rating and solved values; click to select it. Selections made elsewhere (search, the
 panels) are brought into view.
+
+On phones, the toolbar and voltage-key controls have 44-pixel touch targets, and the renderer
+allows a wider picking radius. Explicit zoom buttons supplement pinch zoom and the keyboard.
+The results key stays below the toolbar when it wraps. The equipment and voltage keys can be
+collapsed, and scroll within the available height. Tapping a symbol selects its bus and opens the
+same details used on desktop; information is also available through search and the panels.
 
 ## Schematic
 

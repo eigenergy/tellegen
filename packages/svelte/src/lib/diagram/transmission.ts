@@ -270,6 +270,17 @@ export function txSourceLayout(graph: TxGraph, network: Network): SchematicGeome
 							[positions[b * 3], positions[b * 3 + 1]]
 						]
 					: [];
+		// Geographic routes may be stored in either endpoint order. Normalize once, so local
+		// tangents, flow arrows and transformer winding colours all follow from → to, even
+		// where the route doubles back against the straight endpoint chord.
+		if (points.length >= 2 && a >= 0 && b >= 0) {
+			const distance = (p: [number, number], row: number) =>
+				Math.hypot(p[0] - positions[row * 3], p[1] - positions[row * 3 + 1]);
+			const first = points[0];
+			const last = points[points.length - 1];
+			if (distance(first, b) + distance(last, a) < distance(first, a) + distance(last, b))
+				points.reverse();
+		}
 		for (let i = 1; i < points.length; i++, s++) {
 			sources[s * 3] = points[i - 1][0];
 			sources[s * 3 + 1] = points[i - 1][1];
@@ -567,23 +578,20 @@ export function edgeAnchors(
  * unknown; zero and unknown flows and undrawn branches are left out. */
 export function flowDirections(
 	graph: TxGraph,
-	geometry: SchematicGeometry,
+	_geometry: SchematicGeometry,
 	anchors: Float32Array,
 	mw: (k: number) => number | null
 ): { edges: number[]; dir: Int8Array } {
 	const edges: number[] = [];
 	const dir: number[] = [];
-	const g = geometry.positions;
 	for (let k = 0; k < graph.from.length; k++) {
 		const f = mw(k);
 		const [a, b] = [graph.from[k], graph.to[k]];
 		if (f === null || Math.abs(f) < 1e-6 || a < 0 || b < 0 || !Number.isFinite(anchors[k * 4]))
 			continue;
-		const along =
-			(g[b * 3] - g[a * 3]) * anchors[k * 4 + 2] +
-			(g[b * 3 + 1] - g[a * 3 + 1]) * anchors[k * 4 + 3];
 		edges.push(k);
-		dir.push((along >= 0 ? 1 : -1) * Math.sign(f));
+		// Source routes are normalized by txSourceLayout; engine routes also run from → to.
+		dir.push(Math.sign(f));
 	}
 	return { edges, dir: Int8Array.from(dir) };
 }
