@@ -17,6 +17,11 @@ jobs:
     env:
       # A bare runner has no external solver. Let the tests use the bundled one.
       TELLEGEN_ALLOW_FALLBACK: "1"
+      # The feature matrix links many native test binaries. Keep source-line
+      # backtraces without duplicating full debug information in every binary
+      # and exhausting the hosted runner's disk.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
