@@ -480,6 +480,7 @@ test('buses at the same point spread apart for the keyboard cursor', async ({ pa
 	await page.getByRole('button', { name: 'Show diagram' }).click();
 	const schematic = page.getByRole('application', { name: 'Schematic diagram' });
 	await expect(schematic).toBeVisible();
+	await expect(page.locator('.schematic-stage .status')).toHaveCount(0);
 	await schematic.focus();
 	await page.keyboard.press('ArrowRight');
 	await expect(schematic.locator('[aria-live]')).toContainText('One of 2 buses at this point');
