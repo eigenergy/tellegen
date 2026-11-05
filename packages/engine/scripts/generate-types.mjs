@@ -314,8 +314,8 @@ export interface NetworkBus {
 }
 
 /** How a substation's buses were grouped, strongest first: declared by the source data, sharing
- * one coordinate, joined by transformers, or a bus on its own. */
-export type SubstationSource = 'declared' | 'colocated' | 'transformer' | 'single';
+ * one coordinate, joined by transformers, joined by bus-splitting jumpers, or a bus on its own. */
+export type SubstationSource = 'declared' | 'colocated' | 'transformer' | 'jumper' | 'single';
 
 /** One substation of a transmission diagram: the buses that \`NetworkBus.substation\` points at. */
 export interface NetworkSubstation {

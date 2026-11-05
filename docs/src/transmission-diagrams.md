@@ -50,7 +50,10 @@ The engine groups buses into substations from the strongest evidence a case offe
 1. substations declared by the source: PowerIO voltage levels (CGMES, XIIDM, RAWX, PSS/E) or a
    PowerWorld `SubNum`;
 2. buses at exactly the same coordinate (ACTIVSg buses carry their substation's coordinate);
-3. the two ends of a transformer, unless both are located more than 2 km apart.
+3. the two ends of a transformer, unless both are located more than 2 km apart;
+4. the two ends of a bus-splitting jumper: a branch between buses at one voltage whose reactance is
+   under a tenth of the case's typical line, likewise unless more than 2 km apart, and only while
+   the group stays under 32 buses.
 
 Two buses declared in different substations are never joined by the weaker rules, and any bus none
 of them joins is a substation of its own. A branch is a transformer when PowerIO says so (a tap or
@@ -60,9 +63,9 @@ an electrical claim.
 Network payloads carry the result: `NetworkBus.base_kv`, `NetworkBus.substation` (an index into
 `Network.substations`) and `NetworkBranch.transformer`. Each substation has a stable `key`
 (`sub:<declared id>` or `bus:<lowest bus id>`), a `name` when declared, the rule that grouped it
-(`source`) and its distinct voltages (`kv`). Cases without coordinates group by transformers alone:
-ACTIVSg200 from its MATPOWER file gives 134 groups, against the 111 substations its aux file
-declares, because buses at one voltage in one substation are joined by lines.
+(`source`) and its distinct voltages (`kv`). Cases without coordinates group by transformers and
+jumpers: ACTIVSg200 from its MATPOWER file gives the 111 substations its aux file declares, its 23
+jumpers having a fifteenth of the median line's reactance.
 
 ## Engine API
 

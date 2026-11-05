@@ -12,7 +12,10 @@ The same fields appear on ingested local cases (`IngestedCase.view` and
 The engine groups buses into substations from the strongest evidence the case
 offers: substations declared by the source (PowerIO voltage levels, or a
 PowerWorld `SubNum`), buses that shared one coordinate before display spreading,
-then the two ends of a transformer when they are not far apart. Each substation
+then the two ends of a transformer when they are not far apart, then the two
+ends of a bus-splitting jumper (a same-voltage branch with under a tenth of the
+case's typical line reactance), which brings ACTIVSg200 from its MATPOWER file
+to its 111 substations without coordinates. Each substation
 records which of these grouped it (`source`), its distinct voltages (`kv`) and a
 stable `key`. ACTIVSg200 from its aux file gives its 111 declared substations;
 grouping 70,000 buses takes about 13 ms natively. A branch counts as a

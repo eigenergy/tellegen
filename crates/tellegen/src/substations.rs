@@ -12,6 +12,9 @@
 //!    (ACTIVSg buses carry their substation's coordinate). The caller passes these groups; see
 //!    [`crate::geo::spread_stacks`].
 //! 3. **Transformer**: the two ends of a transformer, unless both are located and far apart.
+//! 4. **Jumper**: the two ends of a same-voltage branch whose reactance is a small fraction of the
+//!    case's typical line (a bus-splitting jumper inside a substation), likewise unless far apart,
+//!    and only while the group stays small.
 //!
 //! Two buses declared in different substations are never merged by the weaker rules.
 //! Buses that none of these join form a substation of their own.
@@ -29,7 +32,9 @@ use crate::geo::Coords;
 pub enum GroupSource {
     /// A single bus that no rule joined to another.
     Single,
-    /// Joined only through transformers.
+    /// Joined only through bus-splitting jumpers.
+    Jumper,
+    /// Joined through transformers (and possibly jumpers).
     Transformer,
     /// Joined by sharing a coordinate (possibly with transformers).
     Colocated,
@@ -71,6 +76,13 @@ pub struct GroupingOptions {
     /// Endpoint nominal voltages differing by more than this fraction mark a branch as a
     /// transformer even when its tap and shift fields are zero.
     pub kv_ratio_tolerance: f64,
+    /// A same-voltage branch with reactance below this fraction of the median reactance of the
+    /// case's same-voltage branches is a jumper. ACTIVSg200's 23 jumpers sit at 0.07 of its
+    /// median line; its shortest line between substations at 0.15. Zero disables the rule.
+    pub jumper_fraction: f64,
+    /// Jumpers do not grow a group past this many buses, so a chain of short lines cannot merge
+    /// a region into one substation.
+    pub max_jumper_group: usize,
 }
 
 impl Default for GroupingOptions {
@@ -78,6 +90,8 @@ impl Default for GroupingOptions {
         Self {
             max_transformer_span_km: 2.0,
             kv_ratio_tolerance: 0.01,
+            jumper_fraction: 0.1,
+            max_jumper_group: 32,
         }
     }
 }
@@ -135,6 +149,12 @@ pub fn group_substations(
             sets.union(pair[0], pair[1], GroupSource::Colocated);
         }
     }
+    // Both ends located and further apart than a substation can be.
+    let far = |a: usize, b: usize| {
+        located
+            .and_then(|coords| Some((coords.get(&a)?, coords.get(&b)?)))
+            .is_some_and(|(p, q)| haversine_km(*p, *q) > options.max_transformer_span_km)
+    };
     for (k, br) in net.branches().iter().enumerate() {
         let (Some(&a), Some(&b)) = (rows.get(&br.from.0), rows.get(&br.to.0)) else {
             continue;
@@ -142,11 +162,38 @@ pub fn group_substations(
         if a == b || !is_transformer(net, k, &rows, options.kv_ratio_tolerance) {
             continue;
         }
-        let far = located
-            .and_then(|coords| Some((coords.get(&br.from.0)?, coords.get(&br.to.0)?)))
-            .is_some_and(|(p, q)| haversine_km(*p, *q) > options.max_transformer_span_km);
-        if !far {
+        if !far(br.from.0, br.to.0) {
             sets.union(a, b, GroupSource::Transformer);
+        }
+    }
+    // Jumpers: same-voltage, in-service branches far shorter (in reactance) than the case's
+    // typical line.
+    if options.jumper_fraction > 0.0 {
+        let same_kv: Vec<usize> = (0..net.branches().len())
+            .filter(|&k| {
+                let br = &net.branches()[k];
+                br.in_service
+                    && br.from != br.to
+                    && rows.contains_key(&br.from.0)
+                    && rows.contains_key(&br.to.0)
+                    && !is_transformer(net, k, &rows, options.kv_ratio_tolerance)
+            })
+            .collect();
+        let mut x: Vec<f64> = same_kv
+            .iter()
+            .map(|&k| net.branches()[k].x.abs())
+            .filter(|v| v.is_finite())
+            .collect();
+        x.sort_by(f64::total_cmp);
+        if let Some(&median) = x.get(x.len() / 2) {
+            let threshold = options.jumper_fraction * median;
+            for &k in &same_kv {
+                let br = &net.branches()[k];
+                if br.x.abs() < threshold && !far(br.from.0, br.to.0) {
+                    let (a, b) = (rows[&br.from.0], rows[&br.to.0]);
+                    sets.union_capped(a, b, GroupSource::Jumper, options.max_jumper_group);
+                }
+            }
         }
     }
 
@@ -257,6 +304,7 @@ fn declared_keys(net: &BalancedNetwork, rows: &HashMap<usize, usize>) -> Vec<Opt
 struct Groups {
     parent: Vec<usize>,
     rank: Vec<u8>,
+    size: Vec<usize>,
     declared: Vec<Option<Declared>>,
     source: Vec<GroupSource>,
 }
@@ -267,6 +315,7 @@ impl Groups {
         let mut groups = Self {
             parent: (0..n).collect(),
             rank: vec![0; n],
+            size: vec![1; n],
             declared: declared.to_vec(),
             source: vec![GroupSource::Single; n],
         };
@@ -312,10 +361,19 @@ impl Groups {
             self.rank[root] += 1;
         }
         self.parent[child] = root;
+        self.size[root] += self.size[child];
         if self.declared[root].is_none() {
             self.declared[root] = self.declared[child].take();
         }
         self.source[root] = self.source[root].max(self.source[child]).max(why);
+    }
+
+    /// [`Groups::union`], unless the merged group would exceed `cap` buses.
+    fn union_capped(&mut self, a: usize, b: usize, why: GroupSource, cap: usize) {
+        let (ra, rb) = (self.find(a), self.find(b));
+        if ra != rb && self.size[ra] + self.size[rb] <= cap {
+            self.union(a, b, why);
+        }
     }
 }
 
@@ -437,6 +495,58 @@ mod tests {
         let g = group_substations(&net, &[], None, &GroupingOptions::default());
         assert_eq!(members(&g), vec![vec![0, 1]]);
         assert_eq!(g.substations[0].key, "sub:7");
+    }
+
+    /// Buses `(id, kv)` and branches `(from, to, tap, x)`.
+    fn network_x(buses: &[(usize, f64)], branches: &[(usize, usize, f64, f64)]) -> BalancedNetwork {
+        let mut net = network(
+            buses,
+            &branches.iter().map(|b| (b.0, b.1, b.2)).collect::<Vec<_>>(),
+        );
+        for (row, b) in branches.iter().enumerate() {
+            net.branches_mut()[row].x = b.3;
+        }
+        net
+    }
+
+    #[test]
+    fn jumpers_join_buses_split_inside_a_substation() {
+        // 1 =jumper= 2 (x 0.003) inside one substation; lines 2-3, 3-4, 4-1 at x 0.05.
+        let net = network_x(
+            &[(1, 115.0), (2, 115.0), (3, 115.0), (4, 115.0)],
+            &[
+                (1, 2, 0.0, 0.003),
+                (2, 3, 0.0, 0.05),
+                (3, 4, 0.0, 0.05),
+                (4, 1, 0.0, 0.05),
+            ],
+        );
+        let g = group_substations(&net, &[], None, &GroupingOptions::default());
+        assert_eq!(members(&g), vec![vec![0, 1], vec![2], vec![3]]);
+        assert_eq!(g.substations[0].source, GroupSource::Jumper);
+        let off = GroupingOptions {
+            jumper_fraction: 0.0,
+            ..GroupingOptions::default()
+        };
+        assert_eq!(
+            group_substations(&net, &[], None, &off).substations.len(),
+            4
+        );
+    }
+
+    #[test]
+    fn a_chain_of_jumpers_stops_at_the_cap() {
+        // Ten buses joined by very short lines, plus enough long lines to set the median.
+        let buses: Vec<_> = (1..=12).map(|i| (i, 115.0)).collect();
+        let mut branches: Vec<_> = (1..10).map(|i| (i, i + 1, 0.0, 0.001)).collect();
+        branches.extend((1..=12).map(|i| (i, if i == 12 { 1 } else { i + 1 }, 0.0, 0.05)));
+        let net = network_x(&buses, &branches);
+        let options = GroupingOptions {
+            max_jumper_group: 4,
+            ..GroupingOptions::default()
+        };
+        let g = group_substations(&net, &[], None, &options);
+        assert!(g.substations.iter().all(|s| s.buses.len() <= 4));
     }
 
     #[test]
