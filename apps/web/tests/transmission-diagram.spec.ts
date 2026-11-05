@@ -57,10 +57,16 @@ test('a balanced case opens as a single-line diagram and returns to the map', as
 	// The key names the levels drawn, the transformer, and the engine's substation grouping:
 	// buses 1 and 2 share a coordinate, so four buses make three substations.
 	const key = page.locator('.tx-stage details.key');
-	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('300–450 kV');
-	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('100–200 kV');
+	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('345 kV');
+	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('138 kV');
 	await expect(key).toContainText('transformer');
 	await expect(key).toContainText('3 substations, 4 buses');
+	// A level in the key highlights on hover and stays highlighted when clicked.
+	const level = key.getByRole('button', { name: /345 kV/ });
+	await level.click();
+	await expect(level).toHaveAttribute('aria-pressed', 'true');
+	await level.click();
+	await expect(level).toHaveAttribute('aria-pressed', 'false');
 
 	// Once solved, the drawing can colour by results: the bus series and branch loading.
 	const colour = toolbar.getByLabel('Colour by');

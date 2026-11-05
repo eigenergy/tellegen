@@ -3,27 +3,139 @@ import type { Landmark } from './landmarks.js';
 import type { SchematicGeometry } from './schematic-layout.js';
 import { levelLabel } from './voltage-levels.js';
 
-/** Voltage classes for transmission drawings, by nominal kV. Bands follow the common levels:
- * 765/500, 345/400, 220/230, 115–161, 66/69, and everything below (subtransmission, generator
- * terminals). */
-export type TxKvClass = 'ehv' | 'ehv2' | 'hv' | 'hv2' | 'sub' | 'low';
+/** Voltage tiers: the hue family a level is drawn in. Colour alone separates only a few classes
+ * on a map (any two lines can touch), so levels within a tier are told apart by line width,
+ * shade and their legend label. */
+export type TxTier = 'ehv' | 'hv' | 'sub' | 'low' | 'unknown';
 
-export const TX_KV_CLASSES: { cls: TxKvClass; name: string; from: number }[] = [
-	{ cls: 'ehv', name: '500 kV and above', from: 450 },
-	{ cls: 'ehv2', name: '300–450 kV', from: 300 },
-	{ cls: 'hv', name: '200–300 kV', from: 200 },
-	{ cls: 'hv2', name: '100–200 kV', from: 100 },
-	{ cls: 'sub', name: '50–100 kV', from: 50 },
-	{ cls: 'low', name: 'below 50 kV', from: 0 }
+export const TX_TIERS: { tier: TxTier; name: string; from: number }[] = [
+	{ tier: 'ehv', name: 'extra high voltage', from: 300 },
+	{ tier: 'hv', name: 'high voltage', from: 100 },
+	{ tier: 'sub', name: 'subtransmission', from: 35 },
+	{ tier: 'low', name: 'below 35 kV', from: 1e-9 },
+	{ tier: 'unknown', name: 'voltage not given', from: -Infinity }
 ];
 
-/** The class of a nominal voltage in kV; unknown (0 or missing) counts as the lowest. */
-export function txKvClass(kv: number): TxKvClass {
-	return TX_KV_CLASSES.find((c) => kv >= c.from)!.cls;
+/** The tier of a nominal voltage in kV; 0 or missing is unknown. */
+export function txTier(kv: number): TxTier {
+	return TX_TIERS.find((t) => kv >= t.from)!.tier;
 }
 
-/** Rank of a class, 0 for the highest: for ordering, widths and shades. */
-export const txKvRank = (cls: TxKvClass): number => TX_KV_CLASSES.findIndex((c) => c.cls === cls);
+/** One entry of the voltage legend: a level, or adjacent levels merged into a range. */
+export interface VoltageEntry {
+	/** Nominal levels in kV, highest first; empty for the unknown entry. */
+	levels: number[];
+	label: string;
+	tier: TxTier;
+	/** Position among the entries of its tier (0 highest) and how many the tier has. */
+	inTier: number;
+	tierSize: number;
+	/** Position among all entries, 0 for the highest. */
+	rank: number;
+	/** Branches drawn at these levels. */
+	branches: number;
+}
+
+export interface VoltageLegend {
+	entries: VoltageEntry[];
+	/** The entry a nominal voltage belongs to. */
+	entryOf: (kv: number) => number;
+}
+
+/** Levels closer than this (relative) are one level: 132 and 132.0001 kV, rounding in files. */
+const SAME_LEVEL = 1e-3;
+
+/** A voltage legend with one entry per distinct nominal level, highest first, at most `budget`
+ * entries. When a case has more levels, adjacent levels merge into ranges, cheapest merge first.
+ * A merge costs the voltage ratio it spans (log) times the square root of its higher level, and
+ * merges across tiers cost ten times more: so closely spaced low levels (115 and 138 kV) merge
+ * first and extra high voltage levels stay distinct longest. `levels` maps each nominal kV to
+ * how many branches are drawn at it (0 kV: voltage not given, always its own entry). */
+export function voltageLegend(levels: Map<number, number>, budget = 6): VoltageLegend {
+	const known = [...levels.entries()].filter(([kv]) => kv > 0).sort((a, b) => b[0] - a[0]);
+	const hasUnknown = [...levels.keys()].some((kv) => !(kv > 0));
+	const unknown = [...levels.entries()].filter(([kv]) => !(kv > 0)).reduce((n, [, c]) => n + c, 0);
+	// Collapse levels that differ only by rounding.
+	let groups: { levels: number[]; branches: number }[] = [];
+	for (const [kv, count] of known) {
+		const last = groups[groups.length - 1];
+		if (last && Math.abs(last.levels[last.levels.length - 1] - kv) <= SAME_LEVEL * kv)
+			last.branches += count;
+		else groups.push({ levels: [kv], branches: count });
+	}
+	const room = Math.max(1, budget - (hasUnknown ? 1 : 0));
+	const cost = (hi: { levels: number[] }, lo: { levels: number[] }) => {
+		const top = hi.levels[0];
+		const bottom = lo.levels[lo.levels.length - 1];
+		const cross = txTier(top) !== txTier(bottom) ? 10 : 1;
+		return Math.log(top / bottom) * Math.sqrt(top) * cross;
+	};
+	while (groups.length > room) {
+		let best = 0;
+		for (let i = 1; i < groups.length - 1; i++)
+			if (cost(groups[i], groups[i + 1]) < cost(groups[best], groups[best + 1])) best = i;
+		const [a, b] = [groups[best], groups[best + 1]];
+		groups = [
+			...groups.slice(0, best),
+			{ levels: [...a.levels, ...b.levels], branches: a.branches + b.branches },
+			...groups.slice(best + 2)
+		];
+	}
+	const kvLabel = (kv: number) => `${Number(kv.toPrecision(4))}`;
+	const entries: VoltageEntry[] = groups.map((g, rank) => {
+		const [top, bottom] = [g.levels[0], g.levels[g.levels.length - 1]];
+		return {
+			levels: g.levels,
+			label: top === bottom ? `${kvLabel(top)} kV` : `${kvLabel(bottom)}–${kvLabel(top)} kV`,
+			tier: txTier(top),
+			inTier: 0,
+			tierSize: 0,
+			rank,
+			branches: g.branches
+		};
+	});
+	if (hasUnknown)
+		entries.push({
+			levels: [],
+			label: 'voltage not given',
+			tier: 'unknown',
+			inTier: 0,
+			tierSize: 1,
+			rank: entries.length,
+			branches: unknown
+		});
+	for (const e of entries) {
+		const same = entries.filter((o) => o.tier === e.tier);
+		e.tierSize = same.length;
+		e.inTier = same.indexOf(e);
+	}
+	const entryOf = (kv: number) => {
+		if (!(kv > 0)) return entries.length - 1;
+		const i = entries.findIndex(
+			(e) =>
+				e.levels.length &&
+				kv <= e.levels[0] * (1 + SAME_LEVEL) &&
+				kv >= e.levels[e.levels.length - 1] * (1 - SAME_LEVEL)
+		);
+		return i >= 0 ? i : entries.length - 1;
+	};
+	return { entries, entryOf };
+}
+
+/** Branches per nominal level (each branch at its higher end's voltage), for `voltageLegend`. */
+export function branchLevels(graph: TxGraph): Map<number, number> {
+	const out = new Map<number, number>();
+	for (let k = 0; k < graph.branchKv.length; k++) {
+		const kv = Math.round(graph.branchKv[k] * 1000) / 1000;
+		out.set(kv, (out.get(kv) ?? 0) + 1);
+	}
+	// Buses at a level no branch reaches still need an entry (an isolated generator bus).
+	for (let i = 0; i < graph.kv.length; i++) {
+		const kv = Math.round(graph.kv[i] * 1000) / 1000;
+		if (!out.has(kv)) out.set(kv, 0);
+	}
+	return out;
+}
 
 /** A balanced network as columnar arrays in payload order, for drawing. Buses are addressed by
  * their row (`index.get(id)`); branch ends are rows, -1 when the bus is not in the payload. */
@@ -448,4 +560,30 @@ export function edgeAnchors(
 		walked[k] += l;
 	}
 	return { anchors, lengths };
+}
+
+/** Which way active power flows along each branch's drawn path at its anchor: +1 along the path's
+ * direction there, -1 against. `mw(k)` gives branch `k`'s flow, positive from → to, or null when
+ * unknown; zero and unknown flows and undrawn branches are left out. */
+export function flowDirections(
+	graph: TxGraph,
+	geometry: SchematicGeometry,
+	anchors: Float32Array,
+	mw: (k: number) => number | null
+): { edges: number[]; dir: Int8Array } {
+	const edges: number[] = [];
+	const dir: number[] = [];
+	const g = geometry.positions;
+	for (let k = 0; k < graph.from.length; k++) {
+		const f = mw(k);
+		const [a, b] = [graph.from[k], graph.to[k]];
+		if (f === null || Math.abs(f) < 1e-6 || a < 0 || b < 0 || !Number.isFinite(anchors[k * 4]))
+			continue;
+		const along =
+			(g[b * 3] - g[a * 3]) * anchors[k * 4 + 2] +
+			(g[b * 3 + 1] - g[a * 3 + 1]) * anchors[k * 4 + 3];
+		edges.push(k);
+		dir.push((along >= 0 ? 1 : -1) * Math.sign(f));
+	}
+	return { edges, dir: Int8Array.from(dir) };
 }

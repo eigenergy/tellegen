@@ -3,6 +3,7 @@ import type { Network } from '@tellegen/engine';
 import {
 	branchAnchor,
 	edgeAnchors,
+	flowDirections,
 	fromTxLayout,
 	txLayoutInput,
 	substationCentres,
@@ -11,9 +12,9 @@ import {
 	txLandmarks,
 	typicalBranchLength,
 	txGraph,
-	txKvClass,
-	txSourceLayout,
-	TX_KV_CLASSES
+	txTier,
+	voltageLegend,
+	txSourceLayout
 } from '../src/lib/diagram/index.js';
 
 /** 1 (345 kV) =T= 2 (138 kV) at one substation, a 138 kV line to 3, and 3 -- 4 out of service. */
@@ -57,20 +58,68 @@ const network = (grouped = true): Network => ({
 });
 
 describe('transmission graph', () => {
-	it('classes nominal voltages into transmission bands', () => {
-		expect([765, 500, 345, 230, 138, 69, 13.8, 0].map(txKvClass)).toEqual([
-			'ehv',
-			'ehv',
-			'ehv2',
-			'hv',
-			'hv2',
-			'sub',
-			'low',
-			'low'
-		]);
-		expect(TX_KV_CLASSES.map((c) => c.from)).toEqual(
-			[...TX_KV_CLASSES.map((c) => c.from)].sort((a, b) => b - a)
+	it('gives each voltage level its own legend entry within the budget', () => {
+		const legend = voltageLegend(
+			new Map([
+				[345, 10],
+				[138, 40],
+				[13.8, 5],
+				[0, 1]
+			])
 		);
+		expect(legend.entries.map((e) => e.label)).toEqual([
+			'345 kV',
+			'138 kV',
+			'13.8 kV',
+			'voltage not given'
+		]);
+		expect(legend.entries.map((e) => e.tier)).toEqual(['ehv', 'hv', 'low', 'unknown']);
+		expect(legend.entryOf(138)).toBe(1);
+		expect(legend.entryOf(0)).toBe(3);
+	});
+
+	it('merges close low levels first and keeps high levels distinct longest', () => {
+		const levels = new Map([765, 500, 345, 230, 138, 115, 69].map((kv) => [kv, 1]));
+		const six = voltageLegend(levels, 6);
+		expect(six.entries.map((e) => e.label)).toEqual([
+			'765 kV',
+			'500 kV',
+			'345 kV',
+			'230 kV',
+			'115–138 kV',
+			'69 kV'
+		]);
+		expect(six.entryOf(115)).toBe(4);
+		expect(six.entryOf(138)).toBe(4);
+		const four = voltageLegend(levels, 4);
+		expect(four.entries.map((e) => e.label)).toEqual([
+			'765 kV',
+			'345–500 kV',
+			'115–230 kV',
+			'69 kV'
+		]);
+		// Levels that differ only by rounding are one level.
+		expect(
+			voltageLegend(
+				new Map([
+					[138, 1],
+					[138.0001, 2]
+				])
+			).entries
+		).toHaveLength(1);
+	});
+
+	it('shades levels within a tier and widens higher entries', () => {
+		const legend = voltageLegend(new Map([345, 230, 138, 115].map((kv) => [kv, 1])));
+		const hv = legend.entries.filter((e) => e.tier === 'hv');
+		expect(hv.map((e) => [e.inTier, e.tierSize])).toEqual([
+			[0, 3],
+			[1, 3],
+			[2, 3]
+		]);
+		expect(txTier(765)).toBe('ehv');
+		expect(txTier(69)).toBe('sub');
+		expect(txTier(0)).toBe('unknown');
 	});
 
 	it('reads the engine grouping, kV and transformer flags as columns', () => {
@@ -212,5 +261,18 @@ describe('transmission graph', () => {
 		expect([...anchors.subarray(0, 4)]).toEqual([10, 0, 1, 0]);
 		expect(lengths[0]).toBe(20);
 		expect(Number.isNaN(anchors[4])).toBe(true);
+	});
+
+	it('points flow arrows the way power flows along the drawn path', () => {
+		const net = network();
+		const g = txGraph(net);
+		const geo = txSourceLayout(g, net);
+		const { anchors } = edgeAnchors(geo, 3);
+		// Branch 0 flows 1 → 2, branch 1 flows 3 → 2 (negative), branch 2 has no flow.
+		const flows = [100, -40, null];
+		const { edges, dir } = flowDirections(g, geo, anchors, (k) => flows[k]);
+		expect(edges).toEqual([0, 1]);
+		// Both paths run from → to in the payload, so the sign follows the flow.
+		expect([...dir]).toEqual([1, -1]);
 	});
 });

@@ -33,11 +33,12 @@
 		revealPoint,
 		showsAnyPosition,
 		titleBlock,
-		TX_KV_CLASSES,
+		branchLevels,
+		flowDirections,
+		voltageLegend,
 		txBranchText,
 		txBusText,
 		txGraph,
-		txKvClass,
 		txLandmarks,
 		txSourceLayout,
 		txLayoutInput,
@@ -62,8 +63,9 @@
 	import {
 		levelPaint,
 		OUT_OF_SERVICE,
-		TX_LEVEL_COLOURS,
-		TX_LEVEL_WIDTHS,
+		busLevelColours,
+		entryColour,
+		entryWidth,
 		txLayers,
 		type TxScene
 	} from './schematic/tx-layers.js';
@@ -180,7 +182,17 @@
 			? scalarDomain(display.mode, display.values.map((v) => v.value).filter(Number.isFinite))
 			: null
 	);
-	const level = $derived(levelPaint(graph));
+	/** One entry per voltage level, merged into ranges past six (`voltageLegend`). */
+	const legend = $derived(voltageLegend(branchLevels(graph), 6));
+	/** A legend entry hovered or pinned in the key: that level stays, the others fade. */
+	let hoveredEntry = $state(-1);
+	let pinnedEntry = $state(-1);
+	const focusEntry = $derived(hoveredEntry >= 0 ? hoveredEntry : pinnedEntry);
+	const busLevels = $derived(busLevelColours(graph, legend));
+	// Zoomed out, levels below the top three fade so the backbone reads first.
+	const level = $derived(
+		levelPaint(graph, legend, { focus: focusEntry, fadeFrom: symbolsOn ? Infinity : 3 })
+	);
 	const edgePaint = $derived.by(() => {
 		if (!resultsOn) return level;
 		const colours = new Uint8Array(level.colours.length);
@@ -203,7 +215,8 @@
 		const n = graph.busId.length;
 		const out = new Uint8Array(n * 4);
 		for (let i = 0; i < n; i++) {
-			let c: RGBA = TX_LEVEL_COLOURS[txKvClass(graph.kv[i])];
+			let c: RGBA = [busLevels[i * 4], busLevels[i * 4 + 1], busLevels[i * 4 + 2], 255];
+			if (focusEntry >= 0 && legend.entryOf(graph.kv[i]) !== focusEntry) c = [c[0], c[1], c[2], 40];
 			if (resultsOn && display && domain) {
 				const v = busValues.get(graph.busId[i]);
 				c =
@@ -238,6 +251,26 @@
 		const edges = transformerEdges.filter((k) => Number.isFinite(anchors[k * 4]));
 		return edges.length ? { edges, unit: 6 / 2 ** stepZoom } : null;
 	});
+	/** Per substation, the member bus that names it: its highest voltage, then lowest row. */
+	const subLead = $derived.by(() => {
+		const lead = new Int32Array(graph.substations.length).fill(-1);
+		for (let i = 0; i < graph.busId.length; i++) {
+			const s = graph.substation[i];
+			if (lead[s] < 0 || graph.kv[i] > graph.kv[lead[s]]) lead[s] = i;
+		}
+		return lead;
+	});
+	/** Flow arrows on legible branches once solved, pointing the way active power flows. */
+	const arrows = $derived.by(() => {
+		if (!resultsOn || !symbolsOn) return null;
+		const { edges, dir } = flowDirections(
+			graph,
+			geometry,
+			anchors,
+			(k) => flows.get(network.branches[k].id)?.mw ?? null
+		);
+		return edges.length ? { edges, dir, unit: 5 / 2 ** stepZoom } : null;
+	});
 	const branchState = (k: number): Landmark['state'] => {
 		const f = flows.get(network.branches[k].id);
 		if (!f) return null;
@@ -246,9 +279,7 @@
 	const landmarkPool = $derived(
 		txLandmarks(graph, geometry, solution ? branchState : null, anchors)
 	);
-	const levelsPresent = $derived(
-		TX_KV_CLASSES.filter(({ cls }) => graph.branchKv.some((kv) => txKvClass(kv) === cls))
-	);
+	const levelsPresent = $derived(legend.entries);
 
 	/** Screen insets no panel or toolbar covers. */
 	const freeArea = () =>
@@ -300,12 +331,14 @@
 			edgeColours: edgePaint.colours,
 			edgeWidths: edgePaint.widths,
 			busColours,
+			busLevels,
 			busRadius,
 			selectedBus,
 			selectedEdge,
 			hoveredBus,
 			hoveredEdge,
 			anchors,
+			arrows,
 			transformers,
 			parts,
 			morph: morph ? { s: morph.s, t: morph.t, cur: morph.cur, endpoints: morph.endpoints } : null,
@@ -350,7 +383,7 @@
 				selected: true
 			});
 		}
-		if (namesOn)
+		if (namesOn && !parts)
 			for (let i = 0; i < graph.busId.length; i++) {
 				if (i === selectedBus) continue;
 				const p = at(i);
@@ -364,6 +397,39 @@
 					position: p
 				});
 			}
+		// In the overview a substation is named once, at its box; close in, its busbars carry
+		// their voltage.
+		if (namesOn && parts) {
+			for (let s = 0; s < graph.substations.length; s++) {
+				const [x0, y0, x1] = parts.boxes.subarray(s * 4, s * 4 + 3);
+				if (!(x1 > x0)) continue;
+				const p: [number, number] = [x0, y0];
+				const sp = screen(...p);
+				if (!inView(sp)) continue;
+				const lead = subLead[s];
+				candidates.push({
+					text: graph.substations[s].name ?? (lead >= 0 ? name(lead) : graph.substations[s].key),
+					state: 'normal',
+					priority: lead >= 0 ? graph.kv[lead] : 0,
+					screen: sp,
+					position: p
+				});
+			}
+			if (parts.unit * scale >= 12)
+				for (let i = 0; i < graph.busId.length; i++) {
+					if (!(graph.kv[i] > 0)) continue;
+					const p: [number, number] = [parts.busbars[i * 4], parts.busbars[i * 4 + 1]];
+					const sp = screen(...p);
+					if (!inView(sp)) continue;
+					candidates.push({
+						text: levelLabel(graph.kv[i] * 1000),
+						state: 'normal',
+						priority: -1,
+						screen: sp,
+						position: p
+					});
+				}
+		}
 		if (resultsOn && symbolsOn)
 			network.branches.forEach((br, k) => {
 				const f = flows.get(br.id);
@@ -598,6 +664,7 @@
 			hoveredBus,
 			hoveredEdge,
 			transformers,
+			arrows,
 			marks,
 			labels
 		];
@@ -616,7 +683,9 @@
 			namesOn,
 			resultsOn,
 			selectedBus,
-			busValues
+			busValues,
+			geometry,
+			parts
 		];
 		if (!deck) return;
 		cancelAnimationFrame(labelFrame);
@@ -812,15 +881,29 @@
 		>
 			<summary>Key</summary>
 			<ul class="symbols" aria-label="Voltage levels">
-				{#each levelsPresent as l (l.cls)}
+				{#each levelsPresent as l, j (l.label)}
 					<li>
-						<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
-							><path
-								style:stroke={rgb(TX_LEVEL_COLOURS[l.cls])}
-								style:stroke-width={TX_LEVEL_WIDTHS[l.cls]}
-								d="M-2 0H26"
-							/></svg
-						>{l.name}
+						<button
+							class="level"
+							class:dim={focusEntry >= 0 && focusEntry !== j}
+							aria-pressed={pinnedEntry === j}
+							title="Highlight {l.label} ({l.branches.toLocaleString()} branch{l.branches === 1
+								? ''
+								: 'es'}); click to keep it highlighted"
+							onpointerenter={() => (hoveredEntry = j)}
+							onpointerleave={() => (hoveredEntry = -1)}
+							onfocus={() => (hoveredEntry = j)}
+							onblur={() => (hoveredEntry = -1)}
+							onclick={() => (pinnedEntry = pinnedEntry === j ? -1 : j)}
+						>
+							<svg viewBox="-2 -12 28 24" width="28" height="24" aria-hidden="true"
+								><path
+									style:stroke={rgb(entryColour(l))}
+									style:stroke-width={entryWidth(l)}
+									d="M-2 0H26"
+								/></svg
+							>{l.label}
+						</button>
 					</li>
 				{/each}
 				{#if transformerEdges.length}
@@ -1004,6 +1087,25 @@
 		fill: none;
 		stroke: var(--ink);
 		stroke-width: 1.1;
+	}
+	.symbols .level {
+		display: flex;
+		gap: 4px;
+		align-items: center;
+		padding: 0 4px 0 0;
+		font: inherit;
+		color: var(--ink);
+		background: none;
+		border: 1px solid transparent;
+		border-radius: 3px;
+		cursor: pointer;
+	}
+	.symbols .level[aria-pressed='true'] {
+		border-color: var(--line);
+		background: var(--accent-soft);
+	}
+	.symbols .level.dim {
+		opacity: 0.45;
 	}
 	.attribution {
 		position: absolute;

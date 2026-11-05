@@ -2,13 +2,14 @@ import type { Layer } from '@deck.gl/core';
 import type { RGBA } from '../../colors.js';
 import {
 	branchGlyph,
-	txKvClass,
 	type LabelCandidate,
 	type Landmark,
 	type SchematicGeometry,
 	type TxGraph,
-	type TxKvClass,
-	type TxSchematicParts
+	type TxSchematicParts,
+	type TxTier,
+	type VoltageEntry,
+	type VoltageLegend
 } from '../../diagram/index.js';
 import { morphLayers, type DeckKit } from './layers.js';
 import {
@@ -23,27 +24,54 @@ import {
 	stateInk
 } from './palette.js';
 
-/** Line colour per transmission voltage class: shades of the one blue the multiconductor diagram
- * uses for MV and above, darker for higher levels, and the quiet warm grey below 50 kV. Clear of
- * the warning, violation, selection and path colours (decision D4). */
-export const TX_LEVEL_COLOURS: Record<TxKvClass, RGBA> = {
-	ehv: [26, 28, 84, 245],
-	ehv2: [38, 44, 112, 240],
-	hv: [30, 76, 140, 240],
-	hv2: [58, 118, 178, 235],
-	sub: [104, 150, 196, 230],
-	low: [138, 131, 117, 210]
+/** Voltage tier colours as light-to-dark ramps (dark, mid, light). The three hues pass the
+ * all-pairs colour-vision check against each other and against the warning, violation and
+ * selection colours at their mid steps; within a tier the shade steps are monotone in lightness.
+ * Lower-voltage grey is neutral on purpose. */
+export const TX_TIER_RAMPS: Record<TxTier, [RGBA, RGBA, RGBA]> = {
+	ehv: [
+		[94, 24, 88, 245],
+		[155, 47, 143, 245],
+		[199, 101, 188, 240]
+	],
+	hv: [
+		[31, 52, 133, 245],
+		[51, 82, 196, 240],
+		[106, 143, 224, 235]
+	],
+	sub: [
+		[11, 95, 120, 240],
+		[21, 146, 181, 235],
+		[93, 187, 214, 230]
+	],
+	low: [
+		[111, 106, 96, 225],
+		[138, 132, 119, 215],
+		[166, 160, 148, 205]
+	],
+	unknown: [
+		[176, 170, 158, 200],
+		[176, 170, 158, 200],
+		[176, 170, 158, 200]
+	]
 };
 
-/** Line width in pixels per voltage class. */
-export const TX_LEVEL_WIDTHS: Record<TxKvClass, number> = {
-	ehv: 3.4,
-	ehv2: 2.9,
-	hv: 2.4,
-	hv2: 1.9,
-	sub: 1.5,
-	low: 1.1
-};
+const mix = (a: RGBA, b: RGBA, t: number): RGBA =>
+	a.map((v, i) => Math.round(v + (b[i] - v) * t)) as unknown as RGBA;
+
+/** The colour of a legend entry: its tier's mid step when alone in the tier, else from darker
+ * (highest level) to lighter, staying near the middle of the ramp. */
+export function entryColour(e: VoltageEntry): RGBA {
+	const [dark, mid, light] = TX_TIER_RAMPS[e.tier];
+	if (e.tierSize <= 1) return mid;
+	const t = 0.2 + (0.65 * e.inTier) / (e.tierSize - 1);
+	return t < 0.5 ? mix(dark, mid, t / 0.5) : mix(mid, light, (t - 0.5) / 0.5);
+}
+
+/** Line width in pixels of a legend entry: heaviest for the highest level, a step per rank. */
+export function entryWidth(e: VoltageEntry): number {
+	return e.tier === 'unknown' ? 1.1 : Math.max(1.1, 3.6 - 0.5 * e.rank);
+}
 
 /** An out-of-service branch: faint in every colour mode. */
 export const OUT_OF_SERVICE: RGBA = [197, 191, 178, 110];
@@ -67,6 +95,11 @@ export interface TxScene {
 	/** Transformer symbols on their branch, once legible: branch rows and the glyph scale (drawing
 	 * units per glyph unit). */
 	transformers: { edges: number[]; unit: number } | null;
+	/** Active power direction arrows once results and symbols show: branch rows, +1 when power
+	 * flows along the drawn path's direction at the anchor, -1 against, and the glyph scale. */
+	arrows: { edges: number[]; dir: Int8Array; unit: number } | null;
+	/** Level colour per bus, for transformer windings. */
+	busLevels: Uint8Array;
 	/** Busbars and substation boxes of the substation overview; null on source positions. */
 	parts: TxSchematicParts | null;
 	/** Buses gliding between layouts: drawn instead of the scene while set. */
@@ -78,17 +111,41 @@ export interface TxScene {
 	labels: (LabelCandidate & { position: [number, number] })[];
 }
 
-/** Colour and width per branch for the voltage-level view. */
-export function levelPaint(graph: TxGraph): { colours: Uint8Array; widths: Float32Array } {
+/** Colour and width per branch for the voltage-level view. `focus` (a legend entry) keeps that
+ * level and fades the others; `fadeFrom` fades entries of that rank and below, so the backbone
+ * reads first when zoomed out. */
+export function levelPaint(
+	graph: TxGraph,
+	legend: VoltageLegend,
+	options: { focus?: number; fadeFrom?: number } = {}
+): { colours: Uint8Array; widths: Float32Array } {
 	const m = graph.from.length;
 	const colours = new Uint8Array(m * 4);
 	const widths = new Float32Array(m);
+	const paint = legend.entries.map((e) => ({ colour: entryColour(e), width: entryWidth(e) }));
+	const focus = options.focus ?? -1;
+	const fadeFrom = options.fadeFrom ?? Infinity;
 	for (let k = 0; k < m; k++) {
-		const cls = txKvClass(graph.branchKv[k]);
-		colours.set(graph.inService[k] ? TX_LEVEL_COLOURS[cls] : OUT_OF_SERVICE, k * 4);
-		widths[k] = TX_LEVEL_WIDTHS[cls];
+		const j = legend.entryOf(graph.branchKv[k]);
+		const { colour, width } = paint[j];
+		let c: RGBA = graph.inService[k] ? colour : OUT_OF_SERVICE;
+		let w = width;
+		if (focus >= 0) {
+			if (j === focus) w += 1;
+			else c = alpha(c, 40);
+		} else if (j >= fadeFrom) c = alpha(c, Math.round(c[3] * 0.45));
+		colours.set(c, k * 4);
+		widths[k] = w;
 	}
 	return { colours, widths };
+}
+
+/** Level colour per bus (its legend entry), independent of any result colouring. */
+export function busLevelColours(graph: TxGraph, legend: VoltageLegend): Uint8Array {
+	const paint = legend.entries.map(entryColour);
+	const out = new Uint8Array(graph.kv.length * 4);
+	for (let i = 0; i < graph.kv.length; i++) out.set(paint[legend.entryOf(graph.kv[i])], i * 4);
+	return out;
 }
 
 /** Per-segment copies of per-branch colours and widths. */
@@ -125,11 +182,26 @@ function transformerStrokes(scene: TxScene) {
 	const centres: number[] = [];
 	const owner: number[] = [];
 	const edges: number[] = [];
+	const colours: number[] = [];
+	const { positions } = scene.geometry;
 	for (const k of t.edges) {
 		const [x, y, c, s] = scene.anchors.subarray(k * 4, k * 4 + 4);
 		if (!Number.isFinite(x)) continue;
 		edges.push(k);
 		centres.push(x, y, 0);
+		// Each winding (lead and circle) takes the level colour of the bus on its side; the
+		// drawn path may run either way, so match the glyph's direction to from → to.
+		const [a, b] = [scene.graph.from[k], scene.graph.to[k]];
+		const forward =
+			(positions[b * 3] - positions[a * 3]) * c +
+				(positions[b * 3 + 1] - positions[a * 3 + 1]) * s >=
+			0;
+		const side = (part: number) => (part < 2 === forward ? a : b);
+		glyph.forEach((line, part) => {
+			const bus = side(part);
+			const colour = scene.busLevels.subarray(bus * 4, bus * 4 + 4);
+			for (let i = 1; i < line.length; i++) colours.push(colour[0], colour[1], colour[2], 255);
+		});
 		for (const line of glyph)
 			for (let i = 1; i < line.length; i++) {
 				const [px, py] = line[i - 1];
@@ -143,9 +215,39 @@ function transformerStrokes(scene: TxScene) {
 		sources: Float32Array.from(src),
 		targets: Float32Array.from(dst),
 		centres: Float32Array.from(centres),
+		colours: Uint8Array.from(colours),
 		owner,
 		edges
 	};
+}
+
+/** Chevrons along each branch pointing the way active power flows; beside the symbol on a
+ * transformer. */
+function arrowStrokes(scene: TxScene) {
+	const a = scene.arrows;
+	if (!a) return null;
+	const chevron: [number, number][] = [
+		[-0.55, -0.7],
+		[0.45, 0],
+		[-0.55, 0.7]
+	];
+	const src: number[] = [];
+	const dst: number[] = [];
+	a.edges.forEach((k, j) => {
+		const [x0, y0, c0, s0] = scene.anchors.subarray(k * 4, k * 4 + 4);
+		if (!Number.isFinite(x0)) return;
+		const d = a.dir[j];
+		const [c, s] = [c0 * d, s0 * d];
+		const ahead = scene.graph.transformer[k] ? 2.6 : 0;
+		const [x, y] = [x0 + c * ahead * a.unit, y0 + s * ahead * a.unit];
+		for (let i = 1; i < chevron.length; i++) {
+			const [px, py] = chevron[i - 1];
+			const [qx, qy] = chevron[i];
+			src.push(x + a.unit * (px * c - py * s), y + a.unit * (px * s + py * c), 0);
+			dst.push(x + a.unit * (qx * c - qy * s), y + a.unit * (qx * s + qy * c), 0);
+		}
+	});
+	return { sources: Float32Array.from(src), targets: Float32Array.from(dst) };
 }
 
 /** Landmark stroke colours by state: ink, or the warning and violation colours. */
@@ -201,6 +303,7 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 					})
 				];
 	const tx = transformerStrokes(scene);
+	const arrows = arrowStrokes(scene);
 	const parts = scene.parts;
 	const boxes = parts ? boxPolygons(parts.boxes) : [];
 	return [
@@ -259,11 +362,11 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 							length: tx.owner.length,
 							attributes: {
 								getSourcePosition: { value: tx.sources, size: 3 },
-								getTargetPosition: { value: tx.targets, size: 3 }
+								getTargetPosition: { value: tx.targets, size: 3 },
+								getColor: { value: tx.colours, size: 4, normalized: true }
 							}
 						},
-						getColor: SYMBOL_INK,
-						getWidth: 1.4,
+						getWidth: 1.6,
 						widthUnits: 'pixels'
 					})
 				]
@@ -285,6 +388,24 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 						widthUnits: 'pixels',
 						pickable: true,
 						updateTriggers: { getColor: [scene.busColours] }
+					})
+				]
+			: []),
+		...(arrows && arrows.sources.length
+			? [
+					new LineLayer({
+						...common,
+						id: 'flow-arrows',
+						data: {
+							length: arrows.sources.length / 3,
+							attributes: {
+								getSourcePosition: { value: arrows.sources, size: 3 },
+								getTargetPosition: { value: arrows.targets, size: 3 }
+							}
+						},
+						getColor: INK,
+						getWidth: 1.6,
+						widthUnits: 'pixels'
 					})
 				]
 			: []),

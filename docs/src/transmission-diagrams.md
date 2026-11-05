@@ -7,15 +7,37 @@ showed.
 ## Geographic
 
 The diagram first draws the case on its own positions: geographic coordinates over the map's
-basemap, or drawing coordinates as given. Lines are shaded and weighted by voltage level, darker and
-heavier for higher levels, in six bands from 500 kV and above to below 50 kV; the key lists the
-bands the case uses. Zoomed out, the largest generators and the transformers stay findable as
-fixed-size landmarks, placed by priority so the view never fills with markers. Closer in,
-transformers are drawn on their branch as two interlocking circles and buses are named.
+basemap, or drawing coordinates as given. Zoomed out, the largest generators and the transformers
+stay findable as fixed-size landmarks, placed by priority so the view never fills with markers.
+Closer in, transformers are drawn on their branch as two interlocking circles, each winding in the
+colour of the voltage on its side, and buses are named.
+
+## Voltage levels
+
+The key lists the case's own nominal voltages, highest first: "500 kV", "230 kV", "161 kV". It
+holds at most six entries. A case with more levels merges adjacent levels into ranges, cheapest
+merge first, where a merge costs the voltage ratio it spans weighted towards higher levels; so
+closely spaced low levels merge first ("115–138 kV", generator terminals as "13.2–13.8 kV") and
+the highest levels stay distinct longest.
+
+On a map any two lines can touch, so colour alone reliably separates only a few classes. Each level
+is therefore drawn with three cues together:
+
+- **hue by tier**: magenta from 300 kV, blue from 100 kV, cyan from 35 kV, and neutral grey below.
+  The three hues stay distinguishable from each other, and from the warning, violation and
+  selection colours, under the common colour-vision deficiencies;
+- **shade within a tier**, darker for the higher level;
+- **width by rank**, heaviest for the highest level.
+
+Hovering a level in the key keeps it and fades the others; clicking keeps it highlighted. Zoomed
+out, levels below the top three fade so the backbone reads first.
+
+## Results
 
 Once the case is solved, **Colour by: Results** colours buses by the map's current display (LMP,
 angle, voltage or demand) and branches by loading, from grey through amber to red at the rating;
-branches above 60 % of their rating carry their loading. Hover a bus or branch for its voltage,
+branches above 60 % of their rating carry their loading. Closer in, a chevron on each branch points
+the way active power flows; on a transformer it sits beside the symbol. Hover a bus or branch for its voltage,
 substation, rating and solved values; click to select it. Selections made elsewhere (search, the
 panels) are brought into view.
 
@@ -28,7 +50,8 @@ their other end without overlapping. Substations sit at, or as near as space all
 geographic position, and substations in dense areas are drawn smaller, so the overview stays
 registered to the basemap: switching between the two layouts moves each bus from its geographic
 point into its substation. Lines run through the gaps between substations, spaced apart, and step
-around any substation in their way.
+around any substation in their way. Each substation is named once, at the corner of its box; closer in, its
+busbars carry their voltage.
 
 A case without coordinates is placed on the map by a synthetic layout that says nothing about the
 grid. Its schematic lays the substations out by their connections instead: sparse stress
