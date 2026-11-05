@@ -16,9 +16,11 @@ with a thin casing a shade darker so pale colours keep an edge against paper and
 Colour carries the data, so it takes the stroke's area: small marks need larger colour
 differences to be told apart. Busbars are heavier than branch conductors.
 
-Loads use the same demand-arrow shape as the multiconductor schematic, drawn larger with a
-filled triangle. Generators use the shared machine-circle glyph. Both appear before the finer
-transformer detail and can be clicked or tapped to select their bus. A bus with generation and
+Loads use the same demand-arrow shape as the multiconductor schematic, with a filled triangle in
+a quiet grey: nearly every bus has load, so loads are context rather than the result. They
+appear with the full equipment detail. Generators use the shared machine-circle glyph in symbol
+ink and appear a step earlier. Both can be clicked or tapped to select their bus, and both fade
+with buses outside a highlighted voltage level. A bus with generation and
 load draws the symbols side by side, with visible connections back to the bus.
 
 ## Voltage levels

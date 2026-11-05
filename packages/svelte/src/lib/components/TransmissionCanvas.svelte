@@ -567,7 +567,9 @@
 	const UNIFORM_INK: RGBA = [120, 116, 108, 235];
 
 	/** Generator and load symbols, hanging from the bus (or the bottom of its busbar) once
-	 * symbols are legible; side by side when a bus has both. */
+	 * symbols are legible; side by side when a bus has both. Nearly every bus has load, so loads
+	 * wait for the full equipment detail and stay quieter than generators: they are context, not
+	 * the result. Both fade with buses outside a highlighted voltage level. */
 	const attachments = $derived.by(() => {
 		if (span < 35 || (parts && parts.unit * 2 ** camera.zoom < 3)) return null;
 		const unit = 7 / 2 ** stepZoom;
@@ -575,13 +577,15 @@
 		for (let i = 0; i < graph.busId.length; i++) {
 			const gen = graph.genMw[i] > 0;
 			const load =
+				symbolsOn &&
 				(transferOn ? modelDemand(network.buses[i], caseDemandDeltas) : graph.demandMw[i]) > 0;
 			if (!gen && !load) continue;
 			const x = parts ? parts.busbars[i * 4 + 2] : geometry.positions[i * 3];
 			const y = parts ? parts.busbars[i * 4 + 3] : geometry.positions[i * 3 + 1];
 			const dx = gen && load ? 1.5 * unit : 0;
-			if (gen) points.push({ x: x - dx, y, rootX: x, bus: i, kind: 'generator' });
-			if (load) points.push({ x: x + dx, y, rootX: x, bus: i, kind: 'load' });
+			const dim = focusEntry >= 0 && legend.entryOf(graph.kv[i]) !== focusEntry;
+			if (gen) points.push({ x: x - dx, y, rootX: x, bus: i, kind: 'generator', dim });
+			if (load) points.push({ x: x + dx, y, rootX: x, bus: i, kind: 'load', dim });
 		}
 		return points.length ? { points, unit } : null;
 	});
@@ -2096,7 +2100,8 @@
 		stroke-width: 1.1;
 	}
 	.symbols .load-key {
-		fill: var(--ink);
+		fill: rgb(134 128 118);
+		stroke: rgb(134 128 118);
 	}
 	@media (pointer: coarse) {
 		.toolbar button,

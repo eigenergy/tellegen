@@ -104,7 +104,15 @@ export interface TxScene {
 	/** Generator and load symbols hanging below their bus once legible: where each hangs from
 	 * and the glyph scale. */
 	attachments: {
-		points: { x: number; y: number; rootX: number; bus: number; kind: 'generator' | 'load' }[];
+		points: {
+			x: number;
+			y: number;
+			rootX: number;
+			bus: number;
+			kind: 'generator' | 'load';
+			/** Outside a highlighted voltage level. */
+			dim?: boolean;
+		}[];
 		unit: number;
 	} | null;
 	/** Drawing units per screen pixel, for dashes of a fixed screen size. */
@@ -273,18 +281,33 @@ function arrowStrokes(scene: TxScene) {
 	return { sources: Float32Array.from(src), targets: Float32Array.from(dst) };
 }
 
+/** Load symbols are drawn in a quiet grey: present on nearly every bus, they are context. */
+export const LOAD_INK: RGBA = [134, 128, 118, 255];
+/** Load glyphs relative to the generator glyph. */
+const LOAD_SCALE = 1.05;
+
+/** The ink of an attachment symbol: generators in symbol ink, loads in grey; faded when outside
+ * a highlighted voltage level. */
+export function attachmentInk(kind: 'generator' | 'load', dim = false): RGBA {
+	const ink = kind === 'load' ? LOAD_INK : SYMBOL_INK;
+	return dim ? alpha(ink, 50) : ink;
+}
+
 /** Generator and load symbols as strokes, hanging straight down from their points. */
 function attachmentStrokes(scene: TxScene) {
 	const at = scene.attachments;
 	if (!at || !at.points.length) return null;
 	const src: number[] = [];
 	const dst: number[] = [];
+	const colours: number[] = [];
 	for (const p of at.points) {
+		const ink = attachmentInk(p.kind, p.dim);
 		if (p.x !== p.rootX) {
 			src.push(p.rootX, p.y, 0);
 			dst.push(p.x, p.y, 0);
+			colours.push(...ink);
 		}
-		const unit = at.unit * (p.kind === 'load' ? 1.2 : 1);
+		const unit = at.unit * (p.kind === 'load' ? LOAD_SCALE : 1);
 		for (const line of attachmentGlyph(p.kind))
 			for (let i = 1; i < line.length; i++) {
 				// Rotated a quarter turn: the glyph's +x runs down the screen.
@@ -292,9 +315,14 @@ function attachmentStrokes(scene: TxScene) {
 				const [bx, by] = line[i];
 				src.push(p.x - unit * ay, p.y + unit * ax, 0);
 				dst.push(p.x - unit * by, p.y + unit * bx, 0);
+				colours.push(...ink);
 			}
 	}
-	return { sources: Float32Array.from(src), targets: Float32Array.from(dst) };
+	return {
+		sources: Float32Array.from(src),
+		targets: Float32Array.from(dst),
+		colours: Uint8Array.from(colours)
+	};
 }
 
 /** Out-of-service branches as dashes of a fixed screen length (4 px on, 3 px off). */
@@ -600,10 +628,11 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 						data: scene.attachments!.points.filter((p) => p.kind === 'load'),
 						getPolygon: (p: NonNullable<TxScene['attachments']>['points'][number]) =>
 							attachmentGlyph('load')[1].map(([x, y]) => [
-								p.x - 1.2 * scene.attachments!.unit * y,
-								p.y + 1.2 * scene.attachments!.unit * x
+								p.x - LOAD_SCALE * scene.attachments!.unit * y,
+								p.y + LOAD_SCALE * scene.attachments!.unit * x
 							]),
-						getFillColor: INK,
+						getFillColor: (p: NonNullable<TxScene['attachments']>['points'][number]) =>
+							attachmentInk('load', p.dim),
 						filled: true,
 						stroked: false
 					}),
@@ -614,11 +643,11 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 							length: attached.sources.length / 3,
 							attributes: {
 								getSourcePosition: { value: attached.sources, size: 3 },
-								getTargetPosition: { value: attached.targets, size: 3 }
+								getTargetPosition: { value: attached.targets, size: 3 },
+								getColor: { value: attached.colours, size: 4, normalized: true }
 							}
 						},
-						getColor: SYMBOL_INK,
-						getWidth: 1.8,
+						getWidth: 1.6,
 						widthUnits: 'pixels'
 					})
 				]
