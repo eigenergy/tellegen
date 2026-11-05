@@ -7,9 +7,10 @@ import {
 	type Landmark,
 	type SchematicGeometry,
 	type TxGraph,
-	type TxKvClass
+	type TxKvClass,
+	type TxSchematicParts
 } from '../../diagram/index.js';
-import type { DeckKit } from './layers.js';
+import { morphLayers, type DeckKit } from './layers.js';
 import {
 	ACCENT,
 	DANGER,
@@ -61,9 +62,15 @@ export interface TxScene {
 	selectedEdge: number;
 	hoveredBus: number;
 	hoveredEdge: number;
+	/** Per branch, its symbol point on the drawn geometry: `x, y, cos, sin` (`edgeAnchors`). */
+	anchors: Float32Array;
 	/** Transformer symbols on their branch, once legible: branch rows and the glyph scale (drawing
 	 * units per glyph unit). */
 	transformers: { edges: number[]; unit: number } | null;
+	/** Busbars and substation boxes of the substation overview; null on source positions. */
+	parts: TxSchematicParts | null;
+	/** Buses gliding between layouts: drawn instead of the scene while set. */
+	morph: { s: Float32Array; t: Float32Array; cur: Float32Array; endpoints: Int32Array } | null;
 	marks: {
 		placed: Landmark[];
 		strokes: { sources: Float32Array; targets: Float32Array; owner: Int32Array };
@@ -117,18 +124,11 @@ function transformerStrokes(scene: TxScene) {
 	const dst: number[] = [];
 	const centres: number[] = [];
 	const owner: number[] = [];
-	const { positions } = scene.geometry;
+	const edges: number[] = [];
 	for (const k of t.edges) {
-		const [a, b] = [scene.graph.from[k], scene.graph.to[k]];
-		const [ax, ay, bx, by] = [
-			positions[a * 3],
-			positions[a * 3 + 1],
-			positions[b * 3],
-			positions[b * 3 + 1]
-		];
-		const len = Math.hypot(bx - ax, by - ay) || 1;
-		const [c, s] = [(bx - ax) / len, (by - ay) / len];
-		const [x, y] = [(ax + bx) / 2, (ay + by) / 2];
+		const [x, y, c, s] = scene.anchors.subarray(k * 4, k * 4 + 4);
+		if (!Number.isFinite(x)) continue;
+		edges.push(k);
 		centres.push(x, y, 0);
 		for (const line of glyph)
 			for (let i = 1; i < line.length; i++) {
@@ -144,7 +144,7 @@ function transformerStrokes(scene: TxScene) {
 		targets: Float32Array.from(dst),
 		centres: Float32Array.from(centres),
 		owner,
-		edges: t.edges
+		edges
 	};
 }
 
@@ -161,7 +161,8 @@ function markColours(marks: NonNullable<TxScene['marks']>): Uint8Array {
 /** The layers of one frame, bottom to top. Layer ids carry the pick kind: `branches`, `buses`,
  * `transformers`, `landmark-halos`. */
 export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
-	const { LineLayer, ScatterplotLayer, TextLayer } = kit.layers;
+	if (scene.morph) return morphLayers(kit, scene.morph, scene.graph.busId.length);
+	const { LineLayer, PolygonLayer, ScatterplotLayer, TextLayer } = kit.layers;
 	const common = { coordinateSystem: kit.core.COORDINATE_SYSTEM.CARTESIAN };
 	const g = scene.geometry;
 	const seg = perSegment(scene);
@@ -200,7 +201,25 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 					})
 				];
 	const tx = transformerStrokes(scene);
+	const parts = scene.parts;
+	const boxes = parts ? boxPolygons(parts.boxes) : [];
 	return [
+		...(parts
+			? [
+					new PolygonLayer({
+						...common,
+						id: 'substations',
+						data: boxes,
+						getPolygon: (b: { polygon: [number, number][] }) => b.polygon,
+						getFillColor: alpha(PAPER, 200),
+						getLineColor: alpha(INK, 90),
+						getLineWidth: 1,
+						lineWidthUnits: 'pixels',
+						stroked: true,
+						filled: true
+					})
+				]
+			: []),
 		...highlight(scene.hoveredEdge, 'hover-branch', alpha(INK, 70), 6),
 		...highlight(scene.selectedEdge, 'selected-branch', alpha(ACCENT, 200), 6),
 		new LineLayer({
@@ -249,9 +268,30 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 					})
 				]
 			: []),
+		...(parts
+			? [
+					new LineLayer({
+						...common,
+						id: 'busbars',
+						data: {
+							length: parts.busbars.length / 4,
+							attributes: {
+								getSourcePosition: { value: barEnds(parts.busbars, 0), size: 3 },
+								getTargetPosition: { value: barEnds(parts.busbars, 2), size: 3 },
+								getColor: { value: scene.busColours, size: 4, normalized: true }
+							}
+						},
+						getWidth: 5,
+						widthUnits: 'pixels',
+						pickable: true,
+						updateTriggers: { getColor: [scene.busColours] }
+					})
+				]
+			: []),
 		new ScatterplotLayer({
 			...common,
 			id: 'buses',
+			visible: !parts,
 			data: {
 				length: g.positions.length / 3,
 				attributes: {
@@ -317,4 +357,34 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 			characterSet: 'auto'
 		})
 	];
+}
+
+/** Substation boxes as closed rectangles. */
+function boxPolygons(boxes: Float32Array): { s: number; polygon: [number, number][] }[] {
+	const out: { s: number; polygon: [number, number][] }[] = [];
+	for (let s = 0; s < boxes.length / 4; s++) {
+		const [x0, y0, x1, y1] = boxes.subarray(s * 4, s * 4 + 4);
+		if (!(x1 > x0) || !(y1 > y0)) continue;
+		out.push({
+			s,
+			polygon: [
+				[x0, y0],
+				[x1, y0],
+				[x1, y1],
+				[x0, y1]
+			]
+		});
+	}
+	return out;
+}
+
+/** One end of each busbar (`offset` 0 for the top, 2 for the bottom) as `x, y, 0` triples. */
+function barEnds(busbars: Float32Array, offset: 0 | 2): Float32Array {
+	const n = busbars.length / 4;
+	const out = new Float32Array(n * 3);
+	for (let i = 0; i < n; i++) {
+		out[i * 3] = busbars[i * 4 + offset];
+		out[i * 3 + 1] = busbars[i * 4 + offset + 1];
+	}
+	return out;
 }

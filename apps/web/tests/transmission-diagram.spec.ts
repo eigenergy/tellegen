@@ -74,6 +74,15 @@ test('a balanced case opens as a single-line diagram and returns to the map', as
 	await canvas.press('f');
 	await page.screenshot({ path: testInfo.outputPath('transmission-diagram.png') });
 
+	// The substation overview is laid out in the engine and shares the frame of the geography.
+	const schematic = toolbar.getByRole('button', { name: 'Schematic', exact: true });
+	await schematic.click();
+	await expect(schematic).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.locator('.tx-stage .status')).toHaveCount(0);
+	await page.screenshot({ path: testInfo.outputPath('transmission-schematic.png') });
+	await toolbar.getByRole('button', { name: 'Geographic', exact: true }).click();
+	await expect(schematic).toHaveAttribute('aria-pressed', 'false');
+
 	await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
 	await expect(canvas).toHaveCount(0);
 	await expect(page.locator('.maplibregl-canvas')).toBeVisible();

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Deck, OrthographicView, OrthographicViewState, PickingInfo } from '@deck.gl/core';
 	import { untrack } from 'svelte';
+	import { txSchematicLayout } from '@tellegen/engine';
 	import type { Network, Solution } from '../api.js';
 	import {
 		branchColor,
@@ -39,8 +40,17 @@
 		txKvClass,
 		txLandmarks,
 		txSourceLayout,
-		typicalBranchLength,
-		branchAnchor,
+		txLayoutInput,
+		fromTxLayout,
+		edgeAnchors,
+		screenAnchored,
+		lerpInto,
+		chordsInto,
+		ease,
+		MORPH_MAX_BUSES,
+		MORPH_MS,
+		type SchematicGeometry,
+		type TxSchematicParts,
 		type DiagramCamera,
 		type LabelCandidate,
 		type Landmark
@@ -113,16 +123,35 @@
 	let labels = $state.raw<(LabelCandidate & { position: [number, number] })[]>([]);
 	let marks = $state.raw<TxScene['marks']>(null);
 
+	type Layout = 'source' | 'schematic';
 	const graph = $derived(txGraph(network));
-	const geometry = $derived(txSourceLayout(graph, network));
+	const source = $derived(txSourceLayout(graph, network));
 	const geographic = $derived(network.coordinate_space !== 'diagram');
-	/** Pixels a typical branch spans at the current zoom: drives what is drawn. */
-	const typical = $derived(typicalBranchLength(graph, geometry));
+	let layout = $state<Layout>('source');
+	/** The drawing on screen; replaced by `show`, which animates between layouts. */
+	let shown = $state.raw<{ geometry: SchematicGeometry; parts: TxSchematicParts | null } | null>(
+		null
+	);
+	const geometry = $derived(shown?.geometry ?? source);
+	const parts = $derived(shown?.parts ?? null);
+	const anchored = $derived(edgeAnchors(geometry, network.branches.length));
+	/** Per branch: `x, y, cos, sin` halfway along its drawn path. */
+	const anchors = $derived(anchored.anchors);
+	/** A typical drawn branch, in drawing units: what is legible at a zoom depends on it. */
+	const typical = $derived.by(() => {
+		const lengths = Array.from(anchored.lengths).filter(
+			(l, k) => l > 0 && graph.inService[k] && geometry.role[k] !== 1
+		);
+		if (!lengths.length) return 1;
+		lengths.sort((a, b) => a - b);
+		return lengths[lengths.length >> 1];
+	});
 	const span = $derived(typical * 2 ** camera.zoom);
 	/** Zoom in quarter steps, so symbol sizes and landmarks change only when this does. */
 	const stepZoom = $derived(Math.floor(camera.zoom * 4) / 4);
-	const symbolsOn = $derived(span >= 60);
-	const namesOn = $derived(span >= 140);
+	/** In the overview, symbols also wait until substation interiors are legible. */
+	const symbolsOn = $derived(span >= 60 && (!parts || parts.unit * 2 ** camera.zoom >= 4));
+	const namesOn = $derived(span >= 140 && (!parts || parts.unit * 2 ** camera.zoom >= 6));
 
 	const basemapPref = new StoredFlag('tellegen.schematic.basemap', ['on', 'off'], true);
 	const landmarksPref = new StoredFlag('tellegen.schematic.landmarks', ['on', 'off'], true);
@@ -204,17 +233,19 @@
 			graph.transformer[k] && graph.from[k] >= 0 && graph.to[k] >= 0 ? [k] : []
 		)
 	);
-	const transformers = $derived(
-		symbolsOn && transformerEdges.length
-			? { edges: transformerEdges, unit: 6 / 2 ** stepZoom }
-			: null
-	);
+	const transformers = $derived.by(() => {
+		if (!symbolsOn) return null;
+		const edges = transformerEdges.filter((k) => Number.isFinite(anchors[k * 4]));
+		return edges.length ? { edges, unit: 6 / 2 ** stepZoom } : null;
+	});
 	const branchState = (k: number): Landmark['state'] => {
 		const f = flows.get(network.branches[k].id);
 		if (!f) return null;
 		return f.loading >= 0.999 ? 'violation' : f.loading >= 0.9 ? 'warning' : 'normal';
 	};
-	const landmarkPool = $derived(txLandmarks(graph, geometry, solution ? branchState : null));
+	const landmarkPool = $derived(
+		txLandmarks(graph, geometry, solution ? branchState : null, anchors)
+	);
 	const levelsPresent = $derived(
 		TX_KV_CLASSES.filter(({ cls }) => graph.branchKv.some((kv) => txKvClass(kv) === cls))
 	);
@@ -251,10 +282,8 @@
 	function selectionPoint(): [number, number] | null {
 		if (selectedBus >= 0)
 			return [geometry.positions[selectedBus * 3], geometry.positions[selectedBus * 3 + 1]];
-		if (selectedEdge >= 0) {
-			const a = branchAnchor(graph, geometry, selectedEdge);
-			return a ? [a.x, a.y] : null;
-		}
+		if (selectedEdge >= 0 && Number.isFinite(anchors[selectedEdge * 4]))
+			return [anchors[selectedEdge * 4], anchors[selectedEdge * 4 + 1]];
 		return null;
 	}
 	/** Centre `p` when it is off screen, zooming in until symbols show when asked. */
@@ -276,7 +305,10 @@
 			selectedEdge,
 			hoveredBus,
 			hoveredEdge,
+			anchors,
 			transformers,
+			parts,
+			morph: morph ? { s: morph.s, t: morph.t, cur: morph.cur, endpoints: morph.endpoints } : null,
 			marks,
 			labels
 		};
@@ -335,9 +367,8 @@
 		if (resultsOn && symbolsOn)
 			network.branches.forEach((br, k) => {
 				const f = flows.get(br.id);
-				if (!f || f.loading < 0.6) return;
-				const a = branchAnchor(graph, geometry, k);
-				if (!a) return;
+				if (!f || f.loading < 0.6 || !Number.isFinite(anchors[k * 4])) return;
+				const a = { x: anchors[k * 4], y: anchors[k * 4 + 1] };
 				const sp = screen(a.x, a.y);
 				if (!inView(sp)) return;
 				candidates.push({
@@ -390,7 +421,7 @@
 					onHover: (info: PickingInfo) => {
 						const id = info.layer?.id;
 						const hit = info.index >= 0;
-						hoveredBus = hit && id === 'buses' ? info.index : -1;
+						hoveredBus = hit && (id === 'buses' || id === 'busbars') ? info.index : -1;
 						hoveredEdge =
 							hit && id === 'branches'
 								? geometry.segmentEdge[info.index]
@@ -408,7 +439,7 @@
 						}
 						pickedHere = true;
 						setTimeout(() => (pickedHere = false));
-						if (id === 'buses') onselectbus(graph.busId[info.index]);
+						if (id === 'buses' || id === 'busbars') onselectbus(graph.busId[info.index]);
 						else if (id === 'branches')
 							onselectbranch(network.branches[geometry.segmentEdge[info.index]].id);
 						else if (id === 'transformers' && transformers)
@@ -424,7 +455,7 @@
 					getTooltip: (info: PickingInfo) => {
 						const id = info.layer?.id;
 						if (info.index < 0) return null;
-						if (id === 'buses')
+						if (id === 'buses' || id === 'busbars')
 							return { text: txBusText(graph, network, info.index, valueText(info.index)) };
 						const k =
 							id === 'branches'
@@ -455,12 +486,108 @@
 			cancelled = true;
 		};
 	});
-	$effect(() => () => deck?.finalize());
+	$effect(() => () => {
+		if (morph) cancelAnimationFrame(morph.raf);
+		deck?.finalize();
+	});
+
+	// The substation overview is laid out in the engine (Rust), once per network.
+	let schematic: Promise<{ geometry: SchematicGeometry; parts: TxSchematicParts }> | null = null;
+	function target(next: Layout) {
+		if (next === 'source') return Promise.resolve({ geometry: source, parts: null });
+		schematic ??= txSchematicLayout(txLayoutInput(graph, source)).then((l) =>
+			fromTxLayout(l, source.mercatorOrigin)
+		);
+		schematic.catch(() => (schematic = null));
+		return schematic;
+	}
+
+	let morph: {
+		from: Float32Array;
+		cur: Float32Array;
+		s: Float32Array;
+		t: Float32Array;
+		endpoints: Int32Array;
+		start: number | null;
+		warm: boolean;
+		raf: number;
+	} | null = null;
+	let showSeq = 0;
+	/** Show a layout. Buses glide from where they are on screen to the new layout along straight
+	 * chords, as in the multiconductor schematic; a warm-up frame uploads the target first. */
+	async function show(next: Layout) {
+		const seq = ++showSeq;
+		const slow = setTimeout(() => {
+			if (seq === showSeq) status = 'Laying out the substations…';
+		}, 150);
+		let drawing: { geometry: SchematicGeometry; parts: TxSchematicParts | null };
+		try {
+			drawing = await target(next);
+		} catch (e) {
+			status = `The substations could not be laid out: ${e instanceof Error ? e.message : e}`;
+			return;
+		} finally {
+			clearTimeout(slow);
+		}
+		if (seq !== showSeq) return;
+		status = null;
+		const before = geometry.positions;
+		const from = { ...camera };
+		layout = next;
+		shown = drawing;
+		// Both layouts share one frame, so the camera stays where it is unless nothing would show.
+		const to = showsAnyPosition(drawing.geometry.positions, camera, { width, height })
+			? camera
+			: fitBounds(drawing.geometry.bounds, { width, height }, freeArea());
+		setCamera(to);
+		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (!deck || reduced || graph.busId.length > MORPH_MAX_BUSES) return;
+		if (morph) cancelAnimationFrame(morph.raf);
+		const endpoints = Int32Array.from(
+			network.branches.flatMap((_, k) =>
+				graph.from[k] >= 0 && graph.to[k] >= 0 ? [graph.from[k], graph.to[k]] : []
+			)
+		);
+		const n = endpoints.length / 2;
+		morph = {
+			from: screenAnchored(before, from, to),
+			cur: new Float32Array(before.length),
+			s: new Float32Array(n * 3),
+			t: new Float32Array(n * 3),
+			endpoints,
+			start: null,
+			warm: false,
+			raf: 0
+		};
+		const destination = drawing.geometry.positions;
+		const tick = (now: number) => {
+			const m = morph;
+			if (!m) return;
+			if (!m.warm) {
+				m.warm = true;
+				m.raf = requestAnimationFrame(tick);
+				return;
+			}
+			m.start ??= now;
+			const k = ease(Math.min(1, (now - m.start) / MORPH_MS));
+			lerpInto(m.cur, m.from, destination, k);
+			chordsInto(m.s, m.t, m.endpoints, m.cur);
+			if (k < 1) {
+				render();
+				m.raf = requestAnimationFrame(tick);
+			} else {
+				morph = null;
+				render();
+			}
+		};
+		morph.raf = requestAnimationFrame(tick);
+	}
 
 	// Redraw when data, colours or selection change.
 	$effect(() => {
 		void [
 			geometry,
+			parts,
 			edgePaint,
 			busColours,
 			busRadius,
@@ -472,7 +599,7 @@
 			marks,
 			labels
 		];
-		render();
+		if (!morph) render();
 	});
 	// Relabel and re-place landmarks when the camera or what is shown changes.
 	let labelFrame = 0;
@@ -575,7 +702,11 @@
 
 	const toolLeft = $derived(panels.compact ? 12 : panels.dockWidth('left') + 24);
 	const layoutName = $derived(
-		geographic ? 'Geographic positions (Web Mercator)' : 'Drawing positions'
+		layout === 'schematic'
+			? `Substation schematic (seeded by ${geographic ? 'geography' : 'the drawing'})`
+			: geographic
+				? 'Geographic positions (Web Mercator)'
+				: 'Drawing positions'
 	);
 	async function exportPng() {
 		if (!deck || !canvas) return;
@@ -625,9 +756,18 @@
 		role="toolbar"
 		aria-label="Single-line diagram"
 	>
-		<span class="layout" title="The substation schematic follows in a later step"
-			>{geographic ? 'Geographic' : 'Drawing'}</span
-		>
+		<div class="segmented" role="group" aria-label="Layout">
+			<button
+				aria-pressed={layout === 'source'}
+				title="Positions from the case data"
+				onclick={() => show('source')}>{geographic ? 'Geographic' : 'Drawing'}</button
+			>
+			<button
+				aria-pressed={layout === 'schematic'}
+				title="Substations near their positions, one busbar per bus, lines between them"
+				onclick={() => show('schematic')}>Schematic</button
+			>
+		</div>
 		{#if geographic}
 			<label class="check" title="Map tiles under the geographic positions, as on the main map"
 				><input
@@ -789,9 +929,22 @@
 		gap: 4px;
 		align-items: center;
 	}
-	.layout {
-		padding: 0 4px;
-		color: var(--ink);
+	.segmented {
+		display: flex;
+	}
+	.segmented button {
+		border-radius: 0;
+	}
+	.segmented button:first-child {
+		border-radius: 3px 0 0 3px;
+	}
+	.segmented button:last-child {
+		border-radius: 0 3px 3px 0;
+		border-left: 0;
+	}
+	.segmented button[aria-pressed='true'] {
+		background: var(--accent-soft);
+		color: var(--accent);
 	}
 	.legend {
 		position: absolute;

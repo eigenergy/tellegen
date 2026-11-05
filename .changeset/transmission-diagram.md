@@ -1,4 +1,5 @@
 ---
+"@tellegen/engine": minor
 "@tellegen/svelte": minor
 ---
 
@@ -16,3 +17,14 @@ showed.
 
 The multiconductor schematic now shares its camera fitting and basemap code
 with the new diagram; its behaviour is unchanged.
+
+**Schematic** switches the diagram to a substation overview laid out in the
+engine (`txSchematicLayout` in `@tellegen/engine`), after Birchfield and
+Overbye (2018). Each substation is a box with one busbar per bus, highest
+voltage first, and its transformers drawn between the busbars; lines leave
+along their own row from the side of the box facing the far substation.
+Substations take the free spot nearest their geographic position, and dense
+areas are drawn smaller, so the overview stays registered to the basemap and
+buses glide into their substations when the layout switches. ACTIVSg200 lays
+out in under a millisecond with no overlapping substations and 86 % of them at
+their true position; a 70,000-bus synthetic grid takes about 60 ms.

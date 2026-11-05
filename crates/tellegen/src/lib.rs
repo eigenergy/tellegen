@@ -56,6 +56,8 @@ pub mod study_ops;
 pub mod study_storage;
 /// Substation grouping for balanced network diagrams.
 pub mod substations;
+/// Substation overview layouts for balanced network diagrams.
+pub mod tx_schematic;
 
 #[cfg(feature = "conic")]
 pub use api::solve_ac_instance;

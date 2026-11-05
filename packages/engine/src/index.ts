@@ -844,6 +844,73 @@ export async function mcSchematicLayout(
   );
 }
 
+/** A balanced network as columns for the substation overview layout, in payload order. */
+export interface TxLayoutInput {
+  /** Substation index per bus (`NetworkBus.substation`). */
+  bus_substation: number[];
+  /** Nominal kV per bus; 0 when unknown. */
+  kv: number[];
+  /** Bus row of each branch end; -1 when the bus is not drawn. */
+  from: number[];
+  to: number[];
+  /** 1 in service, 0 out. */
+  in_service: number[];
+  /** `x, y` per bus (y down): the seeds, usually Web Mercator metres. */
+  xy: number[];
+}
+
+export interface TxLayoutOptions {
+  /** Typical substation box size as a fraction of the median spacing between neighbouring
+   * substations. */
+  fill?: number;
+  /** Density tiers: radius in median spacings, neighbour counts and the scale for each tier. */
+  tier_radius?: number;
+  tier_counts?: [number, number];
+  tier_scales?: [number, number];
+  /** Candidate offsets either side of the seed, per axis. */
+  search?: number;
+}
+
+/** Columnar substation overview in the units of the seeds; y grows downwards. Edge roles: 0 line
+ * between substations, 1 inside a substation (a transformer or coupler), 2 out of service. */
+export interface TxLayout {
+  version: number;
+  /** `x, y` per bus: the middle of its busbar. */
+  positions: number[];
+  /** `x0, y0, x1, y1` per bus. */
+  busbars: number[];
+  /** `x0, y0, x1, y1` per substation. */
+  boxes: number[];
+  /** `x0, y0, x1, y1` per segment; a routed branch has several. */
+  segments: number[];
+  segment_edge: number[];
+  role: number[];
+  /** Drawing units per interior grid block, before tier scaling. */
+  unit: number;
+  /** Tier scale per substation. */
+  scale: number[];
+  bounds: [number, number, number, number];
+}
+
+/** Lay out a balanced network as a substation overview in the engine: substations placed greedily
+ * near their seeds, one busbar per bus inside each, lines between busbar slots. */
+export async function txSchematicLayout(
+  input: TxLayoutInput,
+  options: TxLayoutOptions = {},
+): Promise<TxLayout> {
+  const inputJson = JSON.stringify(input);
+  assertEngineInputLength(inputJson.length);
+  return JSON.parse(
+    expectText(
+      await engineHost().call({
+        op: "tx_schematic_layout",
+        input_json: inputJson,
+        options_json: JSON.stringify(options),
+      }),
+    ),
+  );
+}
+
 /** Fill case coordinates from a PowerWorld `.pwd` sibling: substation symbols
  * project to approximate longitude/latitude and join onto buses through the
  * `SubNum` extras key. Rejects when no bus joined. */
@@ -2873,6 +2940,10 @@ export interface EngineTransport {
     graph: DistGraph,
     options?: SchematicOptions,
   ): Promise<SchematicLayout>;
+  txSchematicLayout?(
+    input: TxLayoutInput,
+    options?: TxLayoutOptions,
+  ): Promise<TxLayout>;
   applyDisplayGeo(
     moduleJson: string,
     bytes: Uint8Array,
@@ -2943,6 +3014,7 @@ export const browserWasmTransport: EngineTransport = {
   applyLayout,
   extractGeo,
   mcSchematicLayout,
+  txSchematicLayout,
   applyDisplayGeo,
   capabilities,
   solveModule,

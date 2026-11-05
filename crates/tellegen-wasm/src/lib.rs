@@ -1810,6 +1810,26 @@ pub fn mc_schematic_layout(graph_json: &str, options_json: &str) -> Result<Strin
     serde_json::to_string(&tellegen::schematic::schematic_layout(&graph, &options)).map_err(jserr)
 }
 
+/// Substation overview layout of a balanced network (`txSchematicLayout` in `@tellegen/engine`):
+/// columnar bus positions, busbars, substation boxes, routed branch segments and edge roles, in
+/// the units of the seed positions. `options_json` may be empty for the defaults.
+#[wasm_bindgen]
+pub fn tx_schematic_layout(input_json: &str, options_json: &str) -> Result<String, JsError> {
+    ensure_input_text(input_json)?;
+    install_panic_hook();
+    let input: tellegen::tx_schematic::TxLayoutInput =
+        serde_json::from_str(input_json).map_err(jserr)?;
+    let options: tellegen::tx_schematic::TxLayoutOptions = if options_json.trim().is_empty() {
+        Default::default()
+    } else {
+        serde_json::from_str(options_json).map_err(jserr)?
+    };
+    serde_json::to_string(&tellegen::tx_schematic::tx_schematic_layout(
+        &input, &options,
+    ))
+    .map_err(jserr)
+}
+
 /// Fill case coordinates from a PowerWorld `.pwd` sibling: substation symbols
 /// project to approximate longitude/latitude and join onto buses through the
 /// `SubNum` extras key. Returns the refreshed `ingest_case` payload plus a

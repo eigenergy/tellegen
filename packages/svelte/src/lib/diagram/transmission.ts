@@ -1,4 +1,4 @@
-import type { Network, NetworkSubstation } from '@tellegen/engine';
+import type { Network, NetworkSubstation, TxLayout, TxLayoutInput } from '@tellegen/engine';
 import type { Landmark } from './landmarks.js';
 import type { SchematicGeometry } from './schematic-layout.js';
 import { levelLabel } from './voltage-levels.js';
@@ -241,7 +241,9 @@ export function branchAnchor(
 export function txLandmarks(
 	graph: TxGraph,
 	geometry: SchematicGeometry,
-	branchState: ((k: number) => Landmark['state']) | null = null
+	branchState: ((k: number) => Landmark['state']) | null = null,
+	/** Per-branch anchors on the drawn geometry (`edgeAnchors`); bus midpoints when absent. */
+	anchors: Float32Array | null = null
 ): Landmark[] {
 	const out: Landmark[] = [];
 	for (let i = 0; i < graph.busId.length; i++) {
@@ -262,8 +264,15 @@ export function txLandmarks(
 	}
 	for (let k = 0; k < graph.from.length; k++) {
 		if (!graph.transformer[k] || !graph.inService[k]) continue;
-		const anchor = branchAnchor(graph, geometry, k);
-		if (!anchor) continue;
+		const anchor = anchors
+			? {
+					x: anchors[k * 4],
+					y: anchors[k * 4 + 1],
+					cos: anchors[k * 4 + 2],
+					sin: anchors[k * 4 + 3]
+				}
+			: branchAnchor(graph, geometry, k);
+		if (!anchor || !Number.isFinite(anchor.x)) continue;
 		const state = branchState?.(k) ?? null;
 		out.push({
 			kind: 'transformer',
@@ -338,4 +347,105 @@ export function txBranchText(
 	]
 		.filter(Boolean)
 		.join('\n');
+}
+
+/** The engine layout's input: the graph's columns with the shown positions as seeds, so the
+ * schematic comes back in the same frame (and the same Web Mercator origin) as the geography. */
+export function txLayoutInput(graph: TxGraph, seeds: SchematicGeometry): TxLayoutInput {
+	const n = graph.busId.length;
+	const xy = new Array<number>(n * 2);
+	for (let i = 0; i < n; i++) {
+		xy[i * 2] = seeds.positions[i * 3];
+		xy[i * 2 + 1] = seeds.positions[i * 3 + 1];
+	}
+	return {
+		bus_substation: Array.from(graph.substation),
+		kv: Array.from(graph.kv),
+		from: Array.from(graph.from),
+		to: Array.from(graph.to),
+		in_service: Array.from(graph.inService),
+		xy
+	};
+}
+
+/** What a substation overview draws beyond buses and branches. */
+export interface TxSchematicParts {
+	/** `x0, y0, x1, y1` per bus. */
+	busbars: Float32Array;
+	/** `x0, y0, x1, y1` per substation. */
+	boxes: Float32Array;
+	/** Drawing units per interior grid block, before tier scaling. */
+	unit: number;
+}
+
+/** The engine's substation overview as GPU-ready geometry, keeping the seeds' Web Mercator origin
+ * so the basemap stays registered. */
+export function fromTxLayout(
+	layout: TxLayout,
+	origin: [number, number] | undefined
+): { geometry: SchematicGeometry; parts: TxSchematicParts } {
+	const n = layout.positions.length / 2;
+	const positions = new Float32Array(n * 3);
+	for (let i = 0; i < n; i++) {
+		positions[i * 3] = layout.positions[i * 2];
+		positions[i * 3 + 1] = layout.positions[i * 2 + 1];
+	}
+	const s = layout.segment_edge.length;
+	const sources = new Float32Array(s * 3);
+	const targets = new Float32Array(s * 3);
+	for (let j = 0; j < s; j++) {
+		sources[j * 3] = layout.segments[j * 4];
+		sources[j * 3 + 1] = layout.segments[j * 4 + 1];
+		targets[j * 3] = layout.segments[j * 4 + 2];
+		targets[j * 3 + 1] = layout.segments[j * 4 + 3];
+	}
+	return {
+		geometry: {
+			positions,
+			sources,
+			targets,
+			segmentEdge: Int32Array.from(layout.segment_edge),
+			role: Uint8Array.from(layout.role),
+			bounds: layout.bounds,
+			version: layout.version,
+			...(origin ? { mercatorOrigin: origin } : {})
+		},
+		parts: {
+			busbars: Float32Array.from(layout.busbars),
+			boxes: Float32Array.from(layout.boxes),
+			unit: layout.unit
+		}
+	};
+}
+
+/** Per branch, where its symbol and label go on the drawn geometry: the point halfway along its
+ * drawn path, with the direction there (`x, y, cos, sin`), and the path length. NaN when the
+ * branch is not drawn. */
+export function edgeAnchors(
+	geometry: SchematicGeometry,
+	edges: number
+): { anchors: Float32Array; lengths: Float32Array } {
+	const anchors = new Float32Array(edges * 4).fill(NaN);
+	const lengths = new Float32Array(edges);
+	const { sources: a, targets: b, segmentEdge } = geometry;
+	const len = (j: number) => Math.hypot(b[j * 3] - a[j * 3], b[j * 3 + 1] - a[j * 3 + 1]);
+	for (let j = 0; j < segmentEdge.length; j++) lengths[segmentEdge[j]] += len(j);
+	const walked = new Float32Array(edges);
+	for (let j = 0; j < segmentEdge.length; j++) {
+		const k = segmentEdge[j];
+		if (!Number.isNaN(anchors[k * 4])) continue;
+		const l = len(j);
+		const half = lengths[k] / 2;
+		if (walked[k] + l >= half) {
+			const t = l > 0 ? (half - walked[k]) / l : 0.5;
+			const dx = b[j * 3] - a[j * 3];
+			const dy = b[j * 3 + 1] - a[j * 3 + 1];
+			anchors.set(
+				[a[j * 3] + t * dx, a[j * 3 + 1] + t * dy, l > 0 ? dx / l : 1, l > 0 ? dy / l : 0],
+				k * 4
+			);
+		}
+		walked[k] += l;
+	}
+	return { anchors, lengths };
 }

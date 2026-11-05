@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Network } from '@tellegen/engine';
 import {
+	branchAnchor,
+	edgeAnchors,
+	fromTxLayout,
+	txLayoutInput,
 	substationCentres,
+	txBranchText,
+	txBusText,
+	txLandmarks,
+	typicalBranchLength,
 	txGraph,
 	txKvClass,
 	txSourceLayout,
@@ -118,5 +126,91 @@ describe('transmission graph', () => {
 		const c = substationCentres(g, geo);
 		expect(c[0]).toBeCloseTo((geo.positions[0] + geo.positions[3]) / 2, 3);
 		expect(c[2]).toBeCloseTo(geo.positions[6], 3);
+	});
+
+	it('ranks landmarks: congested transformers, generators by size, then quiet transformers', () => {
+		const net = network();
+		const g = txGraph(net);
+		const geo = txSourceLayout(g, net);
+		const quiet = txLandmarks(g, geo);
+		expect(quiet.map((l) => l.kind)).toEqual(['generator', 'transformer']);
+		expect(quiet[0].weight).toBe(500);
+		const hot = txLandmarks(g, geo, (k) => (k === 0 ? 'violation' : 'normal'));
+		expect(hot.map((l) => [l.kind, l.tier])).toEqual([
+			['transformer', 1],
+			['generator', 2]
+		]);
+	});
+
+	it('anchors a branch symbol midway along its ends, pointing from one to the other', () => {
+		const net = network();
+		const g = txGraph(net);
+		const geo = txSourceLayout(g, net);
+		const a = branchAnchor(g, geo, 1)!;
+		expect(a.x).toBeCloseTo((geo.positions[3] + geo.positions[6]) / 2, 3);
+		expect(Math.hypot(a.cos, a.sin)).toBeCloseTo(1, 9);
+		expect(typicalBranchLength(g, geo)).toBeGreaterThan(0);
+	});
+
+	it('describes buses and branches for hover cards', () => {
+		const net = network();
+		const g = txGraph(net);
+		expect(txBusText(g, net, 0)).toBe('bus 1\n345 kV · substation ALPHA\ngeneration up to 500 MW');
+		expect(txBusText(g, net, 2, { label: 'LMP', text: '12.00 $/MWh' })).toContain('LMP 12.00');
+		expect(txBranchText(g, net, 0, { mw: 120, loading: 0.3 })).toBe(
+			'Transformer 1, bus 1 to bus 2\n345 kV / 138 kV · rating 400 MW\nflow 120 MW · 30 % of rating'
+		);
+		expect(txBranchText(g, net, 2)).toContain('out of service');
+	});
+
+	it('hands the engine the graph with the shown positions as seeds', () => {
+		const net = network();
+		const g = txGraph(net);
+		const geo = txSourceLayout(g, net);
+		const input = txLayoutInput(g, geo);
+		expect(input.bus_substation).toEqual([0, 0, 1, 2]);
+		expect(input.from).toEqual([0, 1, 2]);
+		expect(input.in_service).toEqual([1, 1, 0]);
+		expect(input.xy[4]).toBeCloseTo(geo.positions[6], 3);
+	});
+
+	it("turns the engine layout into drawable geometry in the seeds' frame", () => {
+		const { geometry, parts } = fromTxLayout(
+			{
+				version: 1,
+				positions: [0, 0, 10, 0],
+				busbars: [0, -1, 0, 1, 10, -1, 10, 1],
+				boxes: [-1, -2, 1, 2, 9, -2, 11, 2],
+				segments: [0, 0, 5, 0, 5, 0, 10, 0],
+				segment_edge: [0, 0],
+				role: [0],
+				unit: 0.5,
+				scale: [1, 1],
+				bounds: [-1, -2, 11, 2]
+			},
+			[100, 200]
+		);
+		expect([...geometry.positions]).toEqual([0, 0, 0, 10, 0, 0]);
+		expect(geometry.mercatorOrigin).toEqual([100, 200]);
+		expect([...geometry.segmentEdge]).toEqual([0, 0]);
+		expect(parts.unit).toBe(0.5);
+		expect(parts.boxes.length).toBe(8);
+	});
+
+	it('anchors each branch halfway along its drawn path', () => {
+		const geometry = {
+			positions: new Float32Array(9),
+			// Branch 0: an L, 0,0 → 10,0 → 10,10 (length 20, halfway at the corner).
+			// Branch 1: not drawn.
+			sources: Float32Array.from([0, 0, 0, 10, 0, 0]),
+			targets: Float32Array.from([10, 0, 0, 10, 10, 0]),
+			segmentEdge: Int32Array.from([0, 0]),
+			role: new Uint8Array(2),
+			bounds: [0, 0, 10, 10] as [number, number, number, number]
+		};
+		const { anchors, lengths } = edgeAnchors(geometry, 2);
+		expect([...anchors.subarray(0, 4)]).toEqual([10, 0, 1, 0]);
+		expect(lengths[0]).toBe(20);
+		expect(Number.isNaN(anchors[4])).toBe(true);
 	});
 });
