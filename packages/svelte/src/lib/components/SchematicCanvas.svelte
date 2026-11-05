@@ -44,6 +44,10 @@
 		BASEMAP_STYLE,
 		basemapCamera,
 		cameraFromMap,
+		fitBounds,
+		freeInsets,
+		revealPoint,
+		showsAnyPosition,
 		fanRoute,
 		routeMiddle,
 		type FannedBranch,
@@ -94,13 +98,8 @@
 	import PickCard from './schematic/PickCard.svelte';
 	import { SchematicText, tooltip } from './schematic/text.js';
 	import { HoverPin, StoredFlag } from './schematic/view-prefs.svelte.js';
-	import {
-		applyBasemapTuning,
-		attachBasemapFallback,
-		basemapCredit,
-		type BasemapProvider,
-		type BasemapSpec
-	} from '../basemap.js';
+	import { basemapCredit, type BasemapSpec } from '../basemap.js';
+	import { BasemapUnderlay } from './schematic/basemap-underlay.svelte.js';
 
 	/** Without a basemap from the map: the keyless CARTO style it used to default to. */
 	const DEFAULT_BASEMAP: BasemapSpec = {
@@ -156,13 +155,7 @@
 	/** Map tiles under geographic positions, as for the main map; they fade in and out with the
 	 * layout switch. While fading out they stay pinned to the screen as the camera moves on. */
 	const basemapPref = new StoredFlag('tellegen.schematic.basemap', ['on', 'off'], true);
-	let basemapOpacity = $state(0);
-	const BASEMAP_FADE_MS = 700;
 	let mapBox = $state<HTMLDivElement>();
-	let basemap: import('maplibre-gl').Map | null = null;
-	let basemapLoading = false;
-	/** Who serves the basemap on screen, for its credit line. */
-	let basemapProvider = $state<BasemapProvider>('custom');
 	/** Landmarks placed for the current view, with their fixed-pixel glyph strokes. */
 	let marks = $state.raw<{
 		placed: Landmark[];
@@ -219,73 +212,14 @@
 			mc.coordsKind === 'geographic' &&
 			!!source?.mercatorOrigin
 	);
-	let fadeFrame = 0;
-	$effect(() => {
-		const target = basemapWanted ? 1 : 0;
-		untrack(() => {
-			cancelAnimationFrame(fadeFrame);
-			const start = basemapOpacity;
-			if (start === target) return;
-			if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-				basemapOpacity = target;
-				return;
-			}
-			const t0 = performance.now();
-			const step = (now: number) => {
-				const k = Math.min(1, (now - t0) / BASEMAP_FADE_MS);
-				basemapOpacity = start + (target - start) * ease(k);
-				if (k < 1) fadeFrame = requestAnimationFrame(step);
-			};
-			fadeFrame = requestAnimationFrame(step);
-		});
-	});
-
-	// The basemap map is created the first time it is wanted, and follows the schematic camera only
-	// while wanted: fading out, it stays where it was on screen as the drawing moves to its new layout.
-	$effect(() => {
-		if (!basemapWanted || !mapBox || basemap || basemapLoading) return;
-		basemapLoading = true;
-		const container = mapBox;
-		const spec = basemapSpec;
-		basemapProvider = spec.primaryProvider ?? 'custom';
-		Promise.all([
-			import('maplibre-gl'),
-			// As the map loads it: a package export keeps the worker out of the dev pre-bundle.
-			import('@tellegen/svelte/maplibre-worker').then((m) => m.maplibreWorkerUrl())
-		])
-			.then(([maplibre, workerUrl]) => {
-				maplibre.setWorkerUrl(workerUrl);
-				const origin = source?.mercatorOrigin ?? [0, 0];
-				const m = new maplibre.Map({
-					container,
-					style: spec.primary,
-					interactive: false,
-					attributionControl: false,
-					...basemapCamera(camera, origin)
-				});
-				// The same style handling as the map: labels hidden when asked, OpenFreeMap tuned, and
-				// the fallback style when the primary cannot be shown.
-				m.on('style.load', () => applyBasemapTuning(m, spec, 'light'));
-				attachBasemapFallback(m, spec, {
-					onFallback: (reason) => (basemapProvider = reason.to ?? 'custom')
-				});
-				basemap = m;
-			})
-			.catch(() => {
-				basemapLoading = false;
-			});
-	});
-	$effect(() => {
-		const origin = source?.mercatorOrigin;
-		void [width, height];
-		if (!basemapWanted || !origin) return;
-		const view = basemapCamera(camera, origin);
-		untrack(() => {
-			basemap?.resize();
-			basemap?.jumpTo(view);
-		});
-	});
-	$effect(() => () => basemap?.remove());
+	const underlay = new BasemapUnderlay(() => ({
+		wanted: basemapWanted,
+		container: mapBox,
+		spec: basemapSpec,
+		origin: source?.mercatorOrigin ?? null,
+		camera,
+		size: [width, height]
+	}));
 	const powers = $derived(mc.overviewResult ? elementPowers(mc.overviewResult) : null);
 	const snapshot = $derived(mc.overviewSnapshot);
 	/** Equipment symbols on the shown layout: branch symbols interrupt their line. */
@@ -659,21 +593,6 @@
 		})
 	);
 
-	/** Whether `view` shows at least one bus of `g`. */
-	function showsAny(
-		g: SchematicGeometry,
-		view: { target: [number, number, number]; zoom: number }
-	) {
-		const scale = 2 ** view.zoom;
-		const [hw, hh] = [width / 2 / scale, height / 2 / scale];
-		for (let i = 0; i < g.positions.length; i += 3) {
-			const dx = g.positions[i] - view.target[0];
-			const dy = g.positions[i + 1] - view.target[1];
-			if (Math.abs(dx) <= hw && Math.abs(dy) <= hh) return true;
-		}
-		return false;
-	}
-
 	// Record the geographic view on the case, so the map can continue from it when this diagram is
 	// closed (TellegenMap applies it). A plain field, written here rather than on teardown: writing
 	// app state while a component is torn down left the map's deriveds stale.
@@ -686,28 +605,17 @@
 	});
 
 	/** Screen insets of the area no panel or toolbar covers. */
-	function freeArea() {
-		return {
-			left: panels.compact ? 28 : panels.dockWidth('left') + 44,
-			right: panels.compact ? 28 : panels.dockWidth('right') + 44,
-			top: panels.top + 64,
-			bottom: panels.compact ? app.sheetInset + 24 : 88
-		};
-	}
+	const freeArea = () =>
+		freeInsets({
+			compact: panels.compact,
+			top: panels.top,
+			dockWidth: (side) => panels.dockWidth(side),
+			sheetInset: app.sheetInset
+		});
 
 	function fitCamera(g: SchematicGeometry) {
-		const [x0, y0, x1, y1] = g.bounds;
-		const { left, right, top, bottom } = freeArea();
-		const w = Math.max(80, width - left - right);
-		const h = Math.max(80, height - top - bottom);
-		const zoom = Math.log2(Math.min(w / Math.max(1, x1 - x0), h / Math.max(1, y1 - y0)));
-		const scale = 2 ** zoom;
-		// Centre the drawing in the free area between the docked panels.
-		const cx = (x0 + x1) / 2 - (left - right) / 2 / scale;
-		const cy = (y0 + y1) / 2 - (top - bottom) / 2 / scale;
 		// Schematic units are sized for about 1:1 to 2:1; closer, a small network's symbols balloon.
-		const max = g.attachmentGap ? 1 : 4;
-		return { target: [cx, cy, 0] as [number, number, number], zoom: Math.min(zoom, max) };
+		return fitBounds(g.bounds, { width, height }, freeArea(), g.attachmentGap ? 1 : 4);
 	}
 
 	let morph: {
@@ -1170,23 +1078,9 @@
 
 	/** Centre `p` in the uncovered view when it is outside it or drawn too small to read. */
 	function bringIntoView(p: [number, number], zoomIn = true) {
-		if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) return;
 		const legible = equipment && zoomIn ? Math.log2(8 / equipment.unit) : camera.zoom;
-		const zoom = Math.min(8, Math.max(camera.zoom, legible));
-		const { left, right, top, bottom } = freeArea();
-		const scale = 2 ** camera.zoom;
-		const sx = (p[0] - camera.target[0]) * scale + width / 2;
-		const sy = (p[1] - camera.target[1]) * scale + height / 2;
-		const visible = sx > left && sx < width - right && sy > top && sy < height - bottom;
-		if (visible && zoom === camera.zoom) return;
-		// Centre it in the free area, not behind a docked panel.
-		const k = 2 ** zoom;
-		const target: [number, number, number] = [
-			p[0] - (left - right) / 2 / k,
-			p[1] - (top - bottom) / 2 / k,
-			0
-		];
-		setCamera({ target, zoom }, true);
+		const next = revealPoint(p, camera, { width, height }, freeArea(), legible);
+		if (next) setCamera(next, true);
 	}
 
 	function setCamera(next: { target: [number, number, number]; zoom: number }, fly = false) {
@@ -1251,7 +1145,10 @@
 			!previous && nextLayout === 'source' && next.mercatorOrigin && app.camera
 				? cameraFromMap(app.camera, next.mercatorOrigin)
 				: null;
-		const to = fromMap && showsAny(next, fromMap) ? fromMap : fitCamera(next);
+		const to =
+			fromMap && showsAnyPosition(next.positions, fromMap, { width, height })
+				? fromMap
+				: fitCamera(next);
 		setCamera(to);
 		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		if (!previous || !deck || reduced || graph.buses.length > MORPH_MAX_BUSES) return;
@@ -1433,7 +1330,12 @@
 		tabindex="0"
 		{onkeydown}
 	>
-		<div class="basemap" bind:this={mapBox} style:opacity={basemapOpacity} aria-hidden="true"></div>
+		<div
+			class="basemap"
+			bind:this={mapBox}
+			style:opacity={underlay.opacity}
+			aria-hidden="true"
+		></div>
 		<canvas bind:this={canvas}></canvas>
 		<p class="sr-only" aria-live="polite">{announcement}</p>
 	</div>
@@ -1708,14 +1610,14 @@
 			</PickCard>
 		{/if}
 	{/if}
-	{#if basemapOpacity > 0}
+	{#if underlay.opacity > 0}
 		<p
 			class="attribution"
-			style:opacity={basemapOpacity}
+			style:opacity={underlay.opacity}
 			style:right="{panels.compact ? 12 : panels.dockWidth('right') + 24}px"
 			style:bottom="{panels.compact ? app.sheetInset + 8 : 8}px"
 		>
-			{basemapCredit(basemapProvider)}
+			{basemapCredit(underlay.provider)}
 		</p>
 	{/if}
 	{#if status}<p class="status" role="status">{status}</p>{/if}

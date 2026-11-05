@@ -1,5 +1,7 @@
 import type { Network, NetworkSubstation } from '@tellegen/engine';
+import type { Landmark } from './landmarks.js';
 import type { SchematicGeometry } from './schematic-layout.js';
+import { levelLabel } from './voltage-levels.js';
 
 /** Voltage classes for transmission drawings, by nominal kV. Bands follow the common levels:
  * 765/500, 345/400, 220/230, 115–161, 66/69, and everything below (subtransmission, generator
@@ -193,4 +195,147 @@ export function substationCentres(graph: TxGraph, geometry: SchematicGeometry): 
 		out[s * 2 + 1] = sum[s * 2 + 1] / count[s];
 	}
 	return out;
+}
+
+/** The median drawn length of in-service branches, in drawing units: the scale at which symbols
+ * on branches become legible. 1 when nothing is drawn. */
+export function typicalBranchLength(graph: TxGraph, geometry: SchematicGeometry): number {
+	const lengths: number[] = [];
+	for (let k = 0; k < graph.from.length; k++) {
+		const [a, b] = [graph.from[k], graph.to[k]];
+		if (a < 0 || b < 0 || a === b || !graph.inService[k]) continue;
+		const d = Math.hypot(
+			geometry.positions[a * 3] - geometry.positions[b * 3],
+			geometry.positions[a * 3 + 1] - geometry.positions[b * 3 + 1]
+		);
+		if (d > 0) lengths.push(d);
+	}
+	if (!lengths.length) return 1;
+	lengths.sort((p, q) => p - q);
+	return lengths[lengths.length >> 1];
+}
+
+/** Where a branch's symbol sits and which way it points: the middle of its first and last bus. */
+export function branchAnchor(
+	graph: TxGraph,
+	geometry: SchematicGeometry,
+	k: number
+): { x: number; y: number; cos: number; sin: number } | null {
+	const [a, b] = [graph.from[k], graph.to[k]];
+	if (a < 0 || b < 0) return null;
+	const [ax, ay] = [geometry.positions[a * 3], geometry.positions[a * 3 + 1]];
+	const [bx, by] = [geometry.positions[b * 3], geometry.positions[b * 3 + 1]];
+	const len = Math.hypot(bx - ax, by - ay);
+	return {
+		x: (ax + bx) / 2,
+		y: (ay + by) / 2,
+		cos: len > 0 ? (bx - ax) / len : 1,
+		sin: len > 0 ? (by - ay) / len : 0
+	};
+}
+
+/** Landmarks that keep a transmission drawing findable when zoomed out, in priority order:
+ * generators by capacity (one per bus), then transformers by their higher voltage. Placed by
+ * `placeLandmarks` like the multiconductor ones. Branch states come from `branchState` when a
+ * result is shown. */
+export function txLandmarks(
+	graph: TxGraph,
+	geometry: SchematicGeometry,
+	branchState: ((k: number) => Landmark['state']) | null = null
+): Landmark[] {
+	const out: Landmark[] = [];
+	for (let i = 0; i < graph.busId.length; i++) {
+		if (!(graph.genMw[i] > 0)) continue;
+		out.push({
+			kind: 'generator',
+			x: geometry.positions[i * 3],
+			y: geometry.positions[i * 3 + 1],
+			cos: 1,
+			sin: 0,
+			tier: 2,
+			weight: graph.genMw[i],
+			state: null,
+			ids: [String(graph.busId[i])],
+			bus: i,
+			edge: -1
+		});
+	}
+	for (let k = 0; k < graph.from.length; k++) {
+		if (!graph.transformer[k] || !graph.inService[k]) continue;
+		const anchor = branchAnchor(graph, geometry, k);
+		if (!anchor) continue;
+		const state = branchState?.(k) ?? null;
+		out.push({
+			kind: 'transformer',
+			...anchor,
+			// A transformer near its rating is worth finding before a quiet one.
+			tier: state === 'violation' || state === 'warning' ? 1 : 3,
+			weight: graph.branchKv[k],
+			state,
+			ids: [],
+			bus: -1,
+			edge: k
+		});
+	}
+	return out.sort((a, b) => a.tier - b.tier || b.weight - a.weight);
+}
+
+const mw = (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })} MW`;
+
+/** A bus as a tooltip reads it: name and number, voltage level, substation, and its value. */
+export function txBusText(
+	graph: TxGraph,
+	network: Network,
+	i: number,
+	value: { label: string; text: string } | null = null
+): string {
+	const bus = network.buses[i];
+	const sub = graph.substations[graph.substation[i]];
+	const lines = [
+		`${bus.name ? `${bus.name} · ` : ''}bus ${bus.id}`,
+		[
+			graph.kv[i] > 0 ? levelLabel(graph.kv[i] * 1000) : null,
+			graph.grouped && sub ? `substation ${sub.name ?? sub.key.replace(/^(sub|bus):/, '')}` : null
+		]
+			.filter(Boolean)
+			.join(' · '),
+		[
+			graph.demandMw[i] ? `load ${mw(graph.demandMw[i])}` : null,
+			graph.genMw[i] ? `generation up to ${mw(graph.genMw[i])}` : null
+		]
+			.filter(Boolean)
+			.join(' · '),
+		value ? `${value.label} ${value.text}` : null
+	];
+	return lines.filter(Boolean).join('\n');
+}
+
+/** A branch as a tooltip reads it: kind, ends, voltage, rating and solved flow. */
+export function txBranchText(
+	graph: TxGraph,
+	network: Network,
+	k: number,
+	flow: { mw: number; loading: number } | null = null
+): string {
+	const br = network.branches[k];
+	const kind = graph.transformer[k] ? 'Transformer' : 'Line';
+	const [a, b] = [graph.from[k], graph.to[k]];
+	const kv =
+		graph.transformer[k] && a >= 0 && b >= 0
+			? [graph.kv[a], graph.kv[b]]
+					.filter((v) => v > 0)
+					.map((v) => levelLabel(v * 1000))
+					.join(' / ')
+			: graph.branchKv[k] > 0
+				? levelLabel(graph.branchKv[k] * 1000)
+				: '';
+	return [
+		`${kind} ${br.id}, bus ${br.from} to bus ${br.to}`,
+		[kv, br.rate_mw > 0 ? `rating ${mw(br.rate_mw)}` : null, br.status ? null : 'out of service']
+			.filter(Boolean)
+			.join(' · '),
+		flow ? `flow ${mw(flow.mw)} · ${(flow.loading * 100).toFixed(0)} % of rating` : null
+	]
+		.filter(Boolean)
+		.join('\n');
 }

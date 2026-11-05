@@ -62,6 +62,7 @@
 	import type { RGBA } from './colors.js';
 	import DiagramCanvas from './components/DiagramCanvas.svelte';
 	import SchematicCanvas from './components/SchematicCanvas.svelte';
+	import TransmissionCanvas from './components/TransmissionCanvas.svelte';
 
 	const DEFAULT_CAMERA: CameraSnapshot = { center: [-85, 36], zoom: 4.5, bearing: 0, pitch: 0 };
 
@@ -157,6 +158,33 @@
 	const schematicCase = $derived(
 		!app.studyView && app.activeMulti?.schematic && app.activeMulti.graph ? app.activeMulti : null
 	);
+	/** A balanced case shown as a single-line diagram, likewise replacing the map. */
+	const txCase = $derived(
+		!app.studyView &&
+			!app.activeMulti &&
+			ctrl.activeSolvable?.schematic &&
+			ctrl.activeSolvable.network
+			? ctrl.activeSolvable
+			: null
+	);
+	let shownTx: typeof txCase = null;
+	$effect(() => {
+		const now = txCase;
+		const before = shownTx;
+		shownTx = now;
+		untrack(() => {
+			if (
+				before &&
+				!now &&
+				ctrl.activeSolvable === before &&
+				!before.schematic &&
+				before.lastGeoView
+			) {
+				app.camera = before.lastGeoView;
+				app.cameraHandoff = true;
+			}
+		});
+	});
 	// When a case closes its own diagram (Close, Show map), the map continues from the diagram's
 	// geographic view. Switching to another case does not: the map frames the new case instead.
 	let shownSchematic: typeof schematicCase = null;
@@ -1488,7 +1516,8 @@
 	$effect(() => {
 		const seq = app.cameraSeq;
 		const snapshot = app.cameraRequest;
-		if (diagramNetwork || schematicCase || !map || !snapshot || seq === handledCameraSeq) return;
+		if (diagramNetwork || schematicCase || txCase || !map || !snapshot || seq === handledCameraSeq)
+			return;
 		handledCameraSeq = seq;
 		handledFrameSeq = app.frameSeq;
 		map.jumpTo(snapshot);
@@ -1500,7 +1529,7 @@
 	// until its cue exists; anything unframeable settles immediately.
 	$effect(() => {
 		const seq = app.frameSeq;
-		if (diagramNetwork || schematicCase || !map || seq === handledFrameSeq) return;
+		if (diagramNetwork || schematicCase || txCase || !map || seq === handledFrameSeq) return;
 		const m = map;
 		const target = app.frameTarget;
 		const settle = () => app.settleFrame();
@@ -1543,6 +1572,23 @@
 				if (id !== schematicCase.selectedEdgeId) onmultiedgeclick?.(schematicCase.id, id);
 			}}
 			onclose={() => (schematicCase.schematic = false)}
+			basemap={diagramBasemap}
+		/>
+	{/key}
+{:else if txCase?.network}
+	<!-- One canvas per network payload: a new payload (another case, edits that rebuild it, attached
+	     coordinates) starts afresh. -->
+	{#key txCase.network}
+		<TransmissionCanvas
+			network={txCase.network}
+			solution={txCase.solution}
+			caseId={txCase.id}
+			label={'label' in txCase ? txCase.label : txCase.name}
+			onselectbus={selectDiagramBus}
+			onselectbranch={selectDiagramBranch}
+			onclear={onmapclick}
+			onclose={() => (txCase.schematic = false)}
+			ongeoview={(view) => (txCase.lastGeoView = view)}
 			basemap={diagramBasemap}
 		/>
 	{/key}
