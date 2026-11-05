@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { mcNetworkScopeLabel, mcLoadModelLabel } from '@tellegen/engine';
 	import { untrack } from 'svelte';
 	import { on } from 'svelte/events';
 	import type { Network, NetworkBus } from '../api.js';
@@ -395,7 +396,10 @@
 			>
 		</div>
 	</div>
-	<p class="coordinate-label">Diagram coordinates</p>
+	<p class="coordinate-label">
+		Diagram coordinates{#if multiconductor?.result}
+			· {mcLoadModelLabel(multiconductor.result.load_model)} · {mcNetworkScopeLabel(multiconductor.result.network_scope)}{/if}
+	</p>
 </div>
 
 <style>

@@ -14,7 +14,7 @@ use tellegen::{Problem, Study};
 use tellegen_synth::request::CalibrationTargets;
 use tellegen_synth::{Generator, Places, SynthRequest};
 
-pub const GENERATE_USAGE: &str = "usage: tellegen generate --request PATH --out DIR [--places PATH] [--osm PATH] [--export FORMAT[,FORMAT...]] [--gridfm]";
+pub const GENERATE_USAGE: &str = "usage: tellegen generate --request PATH --out DIR [--places PATH] [--osm PATH] [--export FORMAT[,FORMAT...]] [--gridfm] [--tuning PATH]";
 pub const STATS_USAGE: &str =
     "usage: tellegen stats [--case PATH] [--targets PATH]   (a PowerIO module on stdin without --case)";
 
@@ -27,6 +27,9 @@ pub struct GenerateArgs {
     pub osm: Option<PathBuf>,
     pub exports: Vec<String>,
     pub gridfm: bool,
+    /// Overrides of the generator's tuned constants for this process
+    /// (`tellegen_synth::tuning::Tuning`, JSON); calibration runs only.
+    pub tuning: Option<PathBuf>,
 }
 
 pub fn parse_generate_args(args: &[String]) -> Result<GenerateArgs, String> {
@@ -36,6 +39,7 @@ pub fn parse_generate_args(args: &[String]) -> Result<GenerateArgs, String> {
     let mut osm = None;
     let mut exports = Vec::new();
     let mut gridfm = false;
+    let mut tuning = None;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let mut value = |name: &str| {
@@ -56,6 +60,7 @@ pub fn parse_generate_args(args: &[String]) -> Result<GenerateArgs, String> {
                     .map(str::to_owned),
             ),
             "--gridfm" => gridfm = true,
+            "--tuning" => tuning = Some(PathBuf::from(value("--tuning")?)),
             other => return Err(format!("unknown argument {other:?}\n\n{GENERATE_USAGE}")),
         }
     }
@@ -66,7 +71,22 @@ pub fn parse_generate_args(args: &[String]) -> Result<GenerateArgs, String> {
         osm,
         exports,
         gridfm,
+        tuning,
     })
+}
+
+/// `tellegen synth-overpass-queries --request PATH`: the Overpass QL the
+/// OpenStreetMap mode asks for the request, as a JSON array of strings.
+pub fn overpass_queries_command(args: &[String]) -> Result<String, String> {
+    let usage = "usage: tellegen synth-overpass-queries --request PATH";
+    let path = match args {
+        [flag, path] if flag == "--request" => PathBuf::from(path),
+        _ => return Err(usage.to_owned()),
+    };
+    let request: SynthRequest =
+        serde_json::from_str(&read_text(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+    let queries = tellegen_synth::osm::overpass_queries(&request).map_err(|e| e.to_string())?;
+    serde_json::to_string(&queries).map_err(|e| e.to_string())
 }
 
 /// Milliseconds since the first call: the stage clock of a native session.
@@ -93,6 +113,11 @@ pub fn generate_command(
     args: &GenerateArgs,
     cancel: Option<&dyn Fn(Arc<std::sync::atomic::AtomicBool>)>,
 ) -> Result<String, String> {
+    if let Some(path) = &args.tuning {
+        let tuning: tellegen_synth::tuning::Tuning = serde_json::from_str(&read_text(path)?)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        tellegen_synth::tuning::set_tuning(tuning)?;
+    }
     let request: SynthRequest = serde_json::from_str(&read_text(&args.request)?)
         .map_err(|e| format!("{}: {e}", args.request.display()))?;
     let places = match &args.places {
@@ -293,6 +318,7 @@ mod tests {
             osm: None,
             exports: vec!["matpower".into(), "psse35".into()],
             gridfm: true,
+            tuning: None,
         };
         let summary: serde_json::Value =
             serde_json::from_str(&generate_command(&args, None).unwrap()).unwrap();

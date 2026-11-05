@@ -7,8 +7,10 @@
  * valid when pending requests replay against the other host. */
 
 import type {
+  WasmMcInput,
   WasmMcPfSession,
   WasmModule,
+  WasmRetainedIngest,
   WasmStudy,
   WasmSynthSession,
 } from "./module.js";
@@ -19,10 +21,17 @@ export type EngineRequest =
   | { op: "study_document_import"; bundle: string }
   | { op: "study_document_run"; bundle: string; request: string }
   | { op: "classify_json"; bytes: Uint8Array }
-  | { op: "ingest_json_drop"; bytes: Uint8Array }
+  /** With `input`, a multiconductor module stays in the engine under that
+   * handle and the payload carries no `module_json`. */
+  | { op: "ingest_json_drop"; bytes: Uint8Array; input?: number }
   | { op: "ingest_case"; bytes: Uint8Array; format: string }
   | { op: "ingest_dist_case"; text: string; format: string }
-  | { op: "ingest_dist_case_bytes"; bytes: Uint8Array; format: string }
+  | {
+      op: "ingest_dist_case_bytes";
+      bytes: Uint8Array;
+      format: string;
+      input?: number;
+    }
   | { op: "parse_display"; bytes: Uint8Array; format: string }
   | { op: "parse_geo"; bytes: Uint8Array; hint: string }
   | { op: "apply_geo"; module_json: string; layer: string }
@@ -33,6 +42,7 @@ export type EngineRequest =
   | { op: "capabilities" }
   | { op: "solve_module"; module_json: string; request: string }
   | { op: "solve_mc_bmopf"; text: string; options: string }
+  | { op: "prepare_mc_energized_network"; module_json: string }
   | { op: "solve_mc_module"; module_json: string; options: string }
   | {
       op: "solve_mc_study";
@@ -49,7 +59,18 @@ export type EngineRequest =
       module_json: string;
       options: string;
     }
+  | {
+      op: "mc_pf_session_from_input";
+      session: number;
+      input: number;
+      options: string;
+    }
+  | { op: "mc_pf_session_input"; session: number; input: number }
+  | { op: "mc_input_prepare_energized"; input: number; output: number }
+  | { op: "mc_input_module_json"; input: number }
+  | { op: "mc_input_free"; input: number }
   | { op: "mc_pf_session_result"; session: number }
+  | { op: "mc_pf_session_result_tables"; session: number }
   | { op: "mc_pf_session_summary"; session: number }
   | { op: "mc_pf_session_detail"; session: number; query: string }
   | { op: "mc_pf_session_terminal_ids"; session: number }
@@ -126,14 +147,39 @@ export interface SynthPreviewValue {
   branchKv: Float32Array;
 }
 
-/** One engine answer: wasm JSON text, nothing, a numeric array, or a
- * synthetic preview. */
-export type EngineValue = string | null | Float64Array | SynthPreviewValue;
+/** A complete multiconductor result as the engine packs its columns: counts
+ * (iterations, terminals, ports, source reactions), the names as a JSON array,
+ * and one index and one value array in the order `McPfResultBuffers`
+ * documents. `index.ts` unpacks it into `McPfResultTables`. */
+export interface McPfResultBuffersValue {
+  kind: "mc_pf_result_buffers";
+  metadata: string;
+  counts: Uint32Array;
+  strings: string;
+  indices: Uint32Array;
+  values: Float64Array;
+}
+
+/** One engine answer: wasm JSON text, nothing, a numeric array, a synthetic
+ * preview, or packed result columns. */
+export type EngineValue =
+  string | null | Float64Array | SynthPreviewValue | McPfResultBuffersValue;
 
 /** The buffers an answer moves to the caller instead of copying. */
 export function transferables(value: EngineValue): Transferable[] {
   if (value instanceof Float64Array) return [value.buffer];
-  if (value !== null && typeof value === "object" && value.kind === "synth_preview") {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    value.kind === "mc_pf_result_buffers"
+  ) {
+    return [value.counts.buffer, value.indices.buffer, value.values.buffer];
+  }
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    value.kind === "synth_preview"
+  ) {
     return [
       value.busPositions.buffer,
       value.busKinds.buffer,
@@ -158,12 +204,19 @@ export type WorkerResponse =
 export interface EngineHandles {
   studies: Map<number, WasmStudy>;
   mcPfSessions: Map<number, WasmMcPfSession>;
+  /** Parsed multiconductor modules kept for calculations. */
+  mcInputs: Map<number, WasmMcInput>;
   synthSessions: Map<number, WasmSynthSession>;
 }
 
 /** An empty handle table for one side of the boundary. */
 export function emptyHandles(): EngineHandles {
-  return { studies: new Map(), mcPfSessions: new Map(), synthSessions: new Map() };
+  return {
+    studies: new Map(),
+    mcPfSessions: new Map(),
+    mcInputs: new Map(),
+    synthSessions: new Map(),
+  };
 }
 
 /** Run one request against a loaded wasm module. `studies` maps caller
@@ -182,12 +235,30 @@ export function runRequest(
   };
   const mcPfSession = (handle: number): WasmMcPfSession => {
     const session = handles.mcPfSessions.get(handle);
-    if (!session) throw new Error(`unknown multiconductor PF session handle ${handle}`);
+    if (!session)
+      throw new Error(`unknown multiconductor PF session handle ${handle}`);
     return session;
+  };
+  const mcInput = (handle: number): WasmMcInput => {
+    const input = handles.mcInputs.get(handle);
+    if (!input)
+      throw new Error(`unknown multiconductor input handle ${handle}`);
+    return input;
+  };
+  // Keep the ingest's module under the caller's handle and answer its payload.
+  const retain = (ingest: WasmRetainedIngest, handle: number): string => {
+    try {
+      const input = ingest.take_input();
+      if (input) handles.mcInputs.set(handle, input);
+      return ingest.take_payload();
+    } finally {
+      ingest.free();
+    }
   };
   const synthSession = (handle: number): WasmSynthSession => {
     const session = handles.synthSessions.get(handle);
-    if (!session) throw new Error(`unknown synthetic generation session handle ${handle}`);
+    if (!session)
+      throw new Error(`unknown synthetic generation session handle ${handle}`);
     return session;
   };
   switch (req.op) {
@@ -202,13 +273,20 @@ export function runRequest(
     case "classify_json":
       return mod.classify_json(req.bytes);
     case "ingest_json_drop":
-      return mod.ingest_json_drop(req.bytes);
+      return req.input === undefined
+        ? mod.ingest_json_drop(req.bytes)
+        : retain(mod.ingest_json_drop_retained(req.bytes), req.input);
     case "ingest_case":
       return mod.ingest_case(req.bytes, req.format);
     case "ingest_dist_case":
       return mod.ingest_dist_case(req.text, req.format);
     case "ingest_dist_case_bytes":
-      return mod.ingest_dist_case_bytes(req.bytes, req.format);
+      return req.input === undefined
+        ? mod.ingest_dist_case_bytes(req.bytes, req.format)
+        : retain(
+            mod.ingest_dist_case_bytes_retained(req.bytes, req.format),
+            req.input,
+          );
     case "parse_display":
       return mod.parse_display(req.bytes, req.format);
     case "parse_geo":
@@ -229,6 +307,8 @@ export function runRequest(
       return mod.solve_module(req.module_json, req.request);
     case "solve_mc_bmopf":
       return mod.solve_mc_bmopf(req.text, req.options);
+    case "prepare_mc_energized_network":
+      return mod.prepare_mc_energized_network(req.module_json);
     case "solve_mc_module":
       return mod.solve_mc_module(req.module_json, req.options);
     case "solve_mc_study":
@@ -247,8 +327,42 @@ export function runRequest(
       handles.mcPfSessions.set(req.session, session);
       return session.summary();
     }
+    case "mc_pf_session_from_input": {
+      const session = mod.McPfSession.from_input(
+        mcInput(req.input),
+        req.options,
+      );
+      handles.mcPfSessions.set(req.session, session);
+      return session.summary();
+    }
+    case "mc_pf_session_input":
+      handles.mcInputs.set(req.input, mcPfSession(req.session).input());
+      return null;
+    case "mc_input_prepare_energized":
+      return retain(mcInput(req.input).prepare_energized(), req.output);
+    case "mc_input_module_json":
+      return mcInput(req.input).module_json();
+    case "mc_input_free":
+      handles.mcInputs.get(req.input)?.free();
+      handles.mcInputs.delete(req.input);
+      return null;
     case "mc_pf_session_result":
       return mcPfSession(req.session).result();
+    case "mc_pf_session_result_tables": {
+      const buffers = mcPfSession(req.session).result_tables();
+      try {
+        return {
+          kind: "mc_pf_result_buffers",
+          metadata: buffers.metadata(),
+          counts: buffers.counts(),
+          strings: buffers.take_strings(),
+          indices: buffers.take_indices(),
+          values: buffers.take_values(),
+        };
+      } finally {
+        buffers.free();
+      }
+    }
     case "mc_pf_session_summary":
       return mcPfSession(req.session).summary();
     case "mc_pf_session_detail":
@@ -283,7 +397,10 @@ export function runRequest(
       mod.reset_peak_memory();
       return null;
     case "study_new":
-      handles.studies.set(req.study, new mod.Study(req.module_json, req.formulation));
+      handles.studies.set(
+        req.study,
+        new mod.Study(req.module_json, req.formulation),
+      );
       return null;
     case "study_replace_edits":
       return study(req.study).replace_edits(req.edits, req.sensitivities);

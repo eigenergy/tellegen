@@ -54,6 +54,10 @@ fn run(case: &str, input: &str, reference: &str) {
                 // The frozen references predate the solver-wide OpenDSS
                 // envelope and intentionally exercise raw load equations.
                 voltage_envelope: false,
+                // Preserve the precision of the frozen OpenDSS comparison.
+                tolerance: 1e-8,
+                absolute_kcl_tolerance: 1e-6,
+                relative_kcl_tolerance: 1e-8,
                 ..Default::default()
             },
         )

@@ -155,6 +155,36 @@ function withRoutes(view: MultiView, layer?: string): MultiView {
 	const routes = new Map<string, [number, number][]>();
 	const same = (a: unknown, b: string) =>
 		typeof a === 'string' && a.toLowerCase() === b.toLowerCase();
+	// Index the edges once by lowercased id and by lowercased directed endpoint
+	// pair. A city case carries tens of thousands of routes and edges, so a scan
+	// of every edge per feature is quadratic.
+	const byId = new Map<string, PlacedMultiEdge[]>();
+	const byEnds = new Map<string, Map<string, PlacedMultiEdge[]>>();
+	for (const edge of view.edges) {
+		const id = edge.id.toLowerCase();
+		const from = edge.from.toLowerCase();
+		const to = edge.to.toLowerCase();
+		const withId = byId.get(id);
+		if (withId) withId.push(edge);
+		else byId.set(id, [edge]);
+		let fromEnds = byEnds.get(from);
+		if (!fromEnds) byEnds.set(from, (fromEnds = new Map()));
+		const between = fromEnds.get(to);
+		if (between) between.push(edge);
+		else fromEnds.set(to, [edge]);
+	}
+	const directed = (from: string, to: string) => byEnds.get(from)?.get(to) ?? [];
+	// The edges `same` would match: by id when the feature names one, otherwise
+	// by its endpoints in either direction. A self loop's two directions are one
+	// set, so it is not counted twice.
+	const matching = (id: unknown, from: unknown, to: unknown): PlacedMultiEdge[] => {
+		if (id !== undefined) return typeof id === 'string' ? (byId.get(id.toLowerCase()) ?? []) : [];
+		if (typeof from !== 'string' || typeof to !== 'string') return [];
+		const f = from.toLowerCase();
+		const t = to.toLowerCase();
+		const forward = directed(f, t);
+		return f === t ? forward : [...forward, ...directed(t, f)];
+	};
 	for (const feature of features) {
 		const props = feature?.properties;
 		const geometry = feature?.geometry;
@@ -172,12 +202,7 @@ function withRoutes(view: MultiView, layer?: string): MultiView {
 		const from = props.from ?? props.bus_from;
 		const to = props.to ?? props.bus_to;
 		const id = props.id ?? props.uid;
-		const matches = view.edges.filter((edge) =>
-			id !== undefined
-				? same(id, edge.id)
-				: (same(from, edge.from) && same(to, edge.to)) ||
-					(same(from, edge.to) && same(to, edge.from))
-		);
+		const matches = matching(id, from, to);
 		if (matches.length !== 1) continue;
 		const edge = matches[0];
 		const reverse = same(from, edge.to) && same(to, edge.from);

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { DistGraphBus, McPfResult } from '@tellegen/engine';
+import {
+	DEFAULT_MC_PF_OPTIONS,
+	mcPfResultTables,
+	type DistGraphBus,
+	type McPfResult
+} from '@tellegen/engine';
 import {
 	busLabel,
 	busLimits,
@@ -148,7 +153,8 @@ describe('snapshotFromMcPf', () => {
 			port('L1', 'B', '1', 90, -10),
 			port('L1', 'B', '2', 110, -10.5),
 			port('L1', 'B', '3', 176, -11.4)
-		]
+		],
+		source_reactions: []
 	} as unknown as McPfResult;
 	const buses = [
 		{
@@ -171,6 +177,38 @@ describe('snapshotFromMcPf', () => {
 		inService: true,
 		rating: { kind: 'current' as const, amps: [200, 200, 200] }
 	};
+
+	it('keeps modified-model labels and exclusions identical for object and columnar results', () => {
+		const qualified: McPfResult = {
+			...result,
+			load_model: {
+				status: 'modified',
+				modified_branch_count: 2,
+				original_kcl_residual: 1,
+				original_scaled_kcl_residual: 2,
+				options: DEFAULT_MC_PF_OPTIONS
+			},
+			network_scope: {
+				excluded_island_count: 1,
+				excluded_bus_count: 1,
+				excluded_equipment_count: 1,
+				excluded_load_count: 1
+			},
+			excluded_islands: [
+				{ buses: ['unpowered'], equipment: [{ kind: 'load', name: 'unsupplied' }] }
+			]
+		};
+		const expected = snapshotFromMcPf(qualified, buses, [branch]);
+		const actual = snapshotFromMcPf(mcPfResultTables(qualified), buses, [branch]);
+		expect(actual).toEqual(expected);
+		expect(actual.label).toContain('Modified load model');
+		expect(actual.label).toContain('Energized network only');
+		expect(JSON.parse(actual.provenance![0])).toMatchObject({
+			load_model: qualified.load_model,
+			network_scope: qualified.network_scope,
+			excluded_islands: qualified.excluded_islands
+		});
+	});
 
 	it('derives declared pair voltages, phasor unbalance and signed end totals', () => {
 		const s = snapshotFromMcPf(result, buses, [branch]);
@@ -389,7 +427,8 @@ describe('graphInputs and live-session terminals', () => {
 				port('switch', 'A', 99),
 				port('line', 'B', -4.9),
 				port('switch', 'B', -99)
-			]
+			],
+			source_reactions: []
 		} as unknown as McPfResult;
 		const branch = {
 			id: 'X1',
@@ -432,7 +471,8 @@ describe('equipment that is not a plain two-terminal branch', () => {
 				terminal('3', polar(200, 120)),
 				terminal('4', polar(0, 0))
 			],
-			element_ports: []
+			element_ports: [],
+			source_reactions: []
 		} as unknown as McPfResult;
 		const bus = {
 			id: 'B',
@@ -461,7 +501,8 @@ describe('equipment that is not a plain two-terminal branch', () => {
 				port('T1', 'transformer', 'LV', 'a', -10),
 				port('T1', 'transformer', 'LV', 'b', -9.5),
 				port('T1', 'transformer', 'LV', 'n', 0)
-			]
+			],
+			source_reactions: []
 		} as unknown as McPfResult;
 		const rating = { kind: 'apparent' as const, byBus: { HV: 25e3, LV: 25e3 } };
 		const edge = (from: string, to: string, fromTerminals: string[], toTerminals: string[]) => ({
@@ -542,7 +583,8 @@ describe('phase–ground limits', () => {
 	const result = {
 		iterations: 3,
 		terminals: [...phases('G'), ...phases('H'), ...phases('K')],
-		element_ports: []
+		element_ports: [],
+		source_reactions: []
 	} as unknown as McPfResult;
 	const inputs = graphInputs(graph);
 	const s = snapshotFromMcPf(result, inputs.buses, inputs.branches);
@@ -701,7 +743,8 @@ describe('non-uniform phase–phase limits', () => {
 			terminal(b, 'b', -120),
 			terminal(b, 'c', 120)
 		]),
-		element_ports: []
+		element_ports: [],
+		source_reactions: []
 	} as unknown as McPfResult;
 	const inputs = graphInputs(graph);
 	const s = snapshotFromMcPf(result, inputs.buses, inputs.branches);

@@ -91,6 +91,11 @@ pub struct DraftBranch {
 /// System base, MVA.
 pub const BASE_MVA: f64 = 100.0;
 
+/// Share of the impedance spread (in log terms) extra-high-voltage classes
+/// keep. Modelling choice from the concentration of Birchfield et al. 2017,
+/// Fig. 7.
+pub const EHV_SPREAD_SHARE: f64 = 0.6;
+
 /// Midpoint offset between neighbouring parallel circuits on the map, degrees.
 const PARALLEL_ROUTE_OFFSET_DEG: f64 = 0.006;
 
@@ -109,6 +114,15 @@ pub fn spread_sigma(fidelity: Fidelity) -> f64 {
 /// loading with its square at the same surge impedance (`SIL = V² / Zc`).
 pub fn line_parameters(kv: f64, length_km: f64, spread: f64) -> (f64, f64, f64, f64, &'static str) {
     let (class, ratio) = class_ratio(kv);
+    // Extra-high-voltage lines follow a few standard bundle designs, so their
+    // per-km reactance varies less: Birchfield et al. 2017, Fig. 7 puts over
+    // half of the Eastern Interconnection's 500 kV lines within ±7% of the
+    // median.
+    let spread = if class.kv >= 345.0 {
+        spread.powf(EHV_SPREAD_SHARE)
+    } else {
+        spread
+    };
     let z_base = kv * kv / BASE_MVA;
     let x_ohm = class.x_ohm_per_km * length_km * spread;
     let r_ohm = class.r_ohm_per_km * length_km * spread;
@@ -318,15 +332,22 @@ mod tests {
 
     #[test]
     fn levels_between_classes_scale_ratings_with_voltage() {
-        // 34.5 kV on 138 kV conductors: a quarter of the thermal MVA and a
-        // sixteenth of the SIL.
+        // 34.5 kV on 69 kV conductors: half the thermal MVA. A short line is
+        // thermally limited.
         let (_, _, _, rate, basis) = line_parameters(34.5, 10.0, 1.0);
+        assert_eq!(basis, "thermal");
+        assert!((rate - 63.0 / 2.0).abs() < 1e-9, "{rate}");
+        // At 400 km the stability limit binds: a quarter of 69 kV's SIL.
+        let (_, _, _, rate, basis) = line_parameters(34.5, 400.0, 1.0);
         assert_eq!(basis, "loadability");
-        assert!((rate - 50.0 / 16.0 * 3.0).abs() < 1e-9, "{rate}");
+        assert!(
+            (rate - 12.5 / 4.0 * st_clair_loadability(400.0)).abs() < 1e-9,
+            "{rate}"
+        );
         let r: f64 = 161.0 / 138.0;
         let (_, _, _, rate, _) = line_parameters(161.0, 10.0, 1.0);
         assert!(
-            (rate - (180.0 * r).min(50.0 * r * r * 3.0)).abs() < 1e-9,
+            (rate - (180.0 * r).min(50.0 * r * r * st_clair_loadability(10.0))).abs() < 1e-9,
             "{rate}"
         );
     }
@@ -334,9 +355,9 @@ mod tests {
     #[test]
     fn transformer_impedance_follows_class_and_base() {
         let (r, x) = transformer_impedance(100.0);
-        assert!((x - 0.08).abs() < 0.001);
+        assert!((x - 0.12).abs() < 0.001);
         assert!((x / r - 25.0).abs() < 1e-9);
         let (_, x) = transformer_impedance(500.0);
-        assert!((x - 0.12 * 100.0 / 500.0).abs() < 0.001);
+        assert!((x - 0.13 * 100.0 / 500.0).abs() < 0.001);
     }
 }

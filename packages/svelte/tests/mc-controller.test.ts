@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
 	summarizeMcPfResult,
+	DEFAULT_MC_PF_OPTIONS,
 	type AppliedMcGeoCase,
+	type BrowserMcInput,
 	type BrowserMcPfSession,
 	type DistGraph,
 	type IngestedDistCase,
@@ -97,20 +99,27 @@ function payload(input = 'input'): IngestedDistCase {
 		diagnostics: []
 	};
 }
-function host() {
+function host(metadata: Partial<IngestedDistCase> = {}) {
 	const app = new AppState();
 	const solve = vi.fn(async () => result);
 	const apply = vi.fn(async (): Promise<AppliedMcGeoCase> => ({
 		...payload('with-geo'),
-		report: { matched_buses: 2, matched_branches: 1, unmatched_features: 0, notes: [] }
+		report: {
+			matched_buses: 2,
+			matched_branches: 1,
+			unmatched_features: 0,
+			notes: []
+		}
 	}));
-	const ctrl = new Controller(app, { mcTransport: { solveMcModule: solve, applyMcGeo: apply } });
+	const ctrl = new Controller(app, {
+		mcTransport: { solveMcModule: solve, applyMcGeo: apply }
+	});
 	vi.spyOn(app, 'requestFrame').mockResolvedValue();
 	const c = new MulticonductorCase({
 		id: 'mc',
 		label: 'Feeder',
 		fileName: 'private.json',
-		summary: payload(),
+		summary: { ...payload(), ...metadata },
 		graph,
 		coordsKind: 'planar',
 		view: buildDiagramView(graph)
@@ -157,12 +166,17 @@ describe('multiconductor calculation and coordinates', () => {
 			const detail = vi.fn(async () => page(2));
 			const session = {
 				initialSummary: live(1),
-				lastTiming: { engine_ms: 3, round_trip_ms: 4, parse_ms: 0.1, payload_chars: 600 },
+				lastTiming: {
+					engine_ms: 3,
+					round_trip_ms: 4,
+					parse_ms: 0.1,
+					payload_chars: 600
+				},
 				result: vi.fn(async () => result),
 				loadBranches: vi.fn(async () => loads),
 				replaceLoadPowers,
 				detail,
-				inputModule: vi.fn(async () => 'edited-input'),
+				input: vi.fn(async () => 'edited-input'),
 				snapshot: vi.fn(async () =>
 					snapshot(replaceLoadPowers.mock.calls.length ? editedFull : result)
 				),
@@ -190,7 +204,7 @@ describe('multiconductor calculation and coordinates', () => {
 			expect(c.mcLoadBranches[0]).toMatchObject({ p_w: 11_000, q_var: 2_100 });
 			expect(session.result).not.toHaveBeenCalled();
 			expect(c.mcTiming).toMatchObject({ engine_ms: 3, payload_chars: 600 });
-			expect(c.moduleJson).toBe('input');
+			expect(c.mcInput).toBe('input');
 			expect(c.mcSnapshot).toBeNull();
 			expect(session.snapshot).not.toHaveBeenCalled();
 			// Detail pages come from the session and must describe this solve.
@@ -229,7 +243,7 @@ describe('multiconductor calculation and coordinates', () => {
 				replaceLoadPowers: vi.fn(
 					() => new Promise<McPfSummary>((resolve) => (finishReplace = resolve))
 				),
-				inputModule: vi.fn(async () => 'input'),
+				input: vi.fn(async () => 'input'),
 				snapshot: vi.fn(),
 				free: vi.fn()
 			} as unknown as BrowserMcPfSession;
@@ -238,7 +252,7 @@ describe('multiconductor calculation and coordinates', () => {
 				result: vi.fn(async () => result),
 				loadBranches: vi.fn(async () => loads),
 				replaceLoadPowers: vi.fn(async () => live(2, { iterations: 2 })),
-				inputModule: vi.fn(async () => 'input'),
+				input: vi.fn(async () => 'input'),
 				snapshot: vi.fn(),
 				free: vi.fn()
 			} as unknown as BrowserMcPfSession;
@@ -313,7 +327,7 @@ describe('multiconductor calculation and coordinates', () => {
 					alive = false;
 					throw dead;
 				}),
-				inputModule: vi.fn(async () => 'input'),
+				input: vi.fn(async () => 'input'),
 				snapshot: vi.fn(),
 				free: vi.fn()
 			} as unknown as BrowserMcPfSession;
@@ -333,12 +347,129 @@ describe('multiconductor calculation and coordinates', () => {
 		}
 	});
 
+	it('detects solve scope on load without preparing until the context-sensitive action is run', async () => {
+		const exclusions = [
+			{
+				buses: ['unpowered'],
+				equipment: [{ kind: 'load', name: 'unsupplied' }]
+			}
+		];
+		const { ctrl, c, solve } = host({
+			mc_excluded_islands: exclusions,
+			mc_energized_only: false
+		});
+		const scope = c.mcPreparedScope;
+		const prepare = vi.fn(async () => ({
+			module_json: 'full-with-selection',
+			network_scope: scope,
+			excluded_islands: exclusions
+		}));
+		ctrl.mcTransport.prepareMcEnergizedNetwork = prepare;
+		expect(c.mcSolveLabel).toBe('Solve energized network');
+		expect(c.mcEnergizedOnly).toBe(false);
+		expect(c.mcInput).toBe('input');
+		expect(c.mcPreparedScope?.excluded_load_count).toBe(1);
+		expect(solve).not.toHaveBeenCalled();
+		expect(prepare).not.toHaveBeenCalled();
+		// Import-time detection must not silently alter the generic solver API.
+		solve.mockRejectedValueOnce(new Error('island has no voltage source'));
+		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('island has no voltage source');
+		expect(prepare).not.toHaveBeenCalled();
+		expect(c.mcEnergizedOnly).toBe(false);
+		c.mcOptions.max_iterations = 500;
+		await ctrl.solveMultiCase(c, c.mcOptions, undefined, c.mcRequiresEnergizedSolve);
+		expect(prepare).toHaveBeenCalledWith('input');
+		expect(solve).toHaveBeenCalledWith(
+			'full-with-selection',
+			{ ...DEFAULT_MC_PF_OPTIONS, max_iterations: 500 },
+			expect.any(AbortSignal)
+		);
+		expect(c.mcEnergizedOnly).toBe(true);
+		ctrl.dispose();
+	});
+
+	it('keeps explicit island selection and the full graph across a failed solve and retry', async () => {
+		const { ctrl, c, solve } = host();
+		const originalGraph = c.graph;
+		const exclusions = [
+			{
+				buses: ['unpowered'],
+				equipment: [{ kind: 'load', name: 'unsupplied' }]
+			}
+		];
+		const scope = {
+			excluded_island_count: 1,
+			excluded_bus_count: 1,
+			excluded_equipment_count: 1,
+			excluded_load_count: 1
+		};
+		const prepare = vi.fn().mockResolvedValue({
+			module_json: 'full-with-selection',
+			network_scope: scope,
+			excluded_islands: exclusions
+		});
+		ctrl.mcTransport.prepareMcEnergizedNetwork = prepare;
+		await ctrl.solveMultiCase(c);
+		expect(prepare).not.toHaveBeenCalled();
+		const previous = c.result;
+		const completed = c.mcCompletedSolveSeq;
+		expect(completed).toBeGreaterThan(0);
+		solve.mockRejectedValueOnce(new Error('did not converge'));
+		await expect(ctrl.solveMultiCase(c, {}, undefined, true)).rejects.toThrow('did not converge');
+		expect(c.mcCompletedSolveSeq).toBe(completed);
+		expect(c.graph).toBe(originalGraph);
+		expect(c.result).toBe(previous);
+		expect(c.mcExcludedIslands).toEqual(exclusions);
+		expect(c.mcEnergizedOnly).toBe(true);
+		expect(c.mcOptions).toEqual(DEFAULT_MC_PF_OPTIONS);
+		solve.mockResolvedValueOnce({
+			...result,
+			network_scope: scope,
+			excluded_islands: exclusions
+		});
+		await ctrl.solveMultiCase(c);
+		expect(solve).toHaveBeenLastCalledWith(
+			'full-with-selection',
+			DEFAULT_MC_PF_OPTIONS,
+			expect.any(AbortSignal)
+		);
+		expect(c.mcInput).toBe('full-with-selection');
+		expect(c.graph).toBe(originalGraph);
+		expect(c.result?.network_scope).toEqual(scope);
+		ctrl.dispose();
+	});
+
+	it('persists selected settings across retries while failed runs retain the previous result', async () => {
+		const { ctrl, c, solve } = host();
+		await ctrl.solveMultiCase(c, { v_min_pu: 0.7, max_iterations: 150 });
+		const previous = c.result;
+		solve.mockRejectedValueOnce(new Error('did not converge'));
+		await expect(ctrl.solveMultiCase(c, { damping: 0.5 })).rejects.toThrow('did not converge');
+		expect(c.result).toBe(previous);
+		expect(c.mcOptions).toMatchObject({
+			v_min_pu: 0.7,
+			damping: 0.5,
+			max_iterations: 150
+		});
+		await ctrl.solveMultiCase(c);
+		expect(solve).toHaveBeenLastCalledWith('input', c.mcOptions, expect.any(AbortSignal));
+		const count = solve.mock.calls.length;
+		await expect(ctrl.solveMultiCase(c, { v_min_pu: 0.2 })).rejects.toThrow('Vlow');
+		expect(solve.mock.calls.length).toBe(count);
+		expect(c.mcOptions.v_min_pu).toBe(0.7);
+		ctrl.dispose();
+	});
+
 	it('records terminal results and rejects concurrent work', async () => {
 		const { ctrl, c, solve } = host();
 		const pending = ctrl.solveMultiCase(c, { tolerance: 1e-8 });
 		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('already running');
 		expect(await pending).toEqual(summary);
-		expect(solve).toHaveBeenCalledWith('input', { tolerance: 1e-8 }, expect.any(AbortSignal));
+		expect(solve).toHaveBeenCalledWith(
+			'input',
+			{ ...DEFAULT_MC_PF_OPTIONS, tolerance: 1e-8 },
+			expect.any(AbortSignal)
+		);
 		// Without a session the full result is kept for on-demand detail.
 		expect(c.result).toEqual(summary);
 		expect(c.mcFullResult).toBe(result);
@@ -351,7 +482,10 @@ describe('multiconductor calculation and coordinates', () => {
 	});
 	it('rejects unsupported retained physics before calling the engine', async () => {
 		const { app, ctrl, c, solve } = host();
-		c.summary = { ...payload(), mc_pf_unavailable_reason: 'Unsupported load model' };
+		c.summary = {
+			...payload(),
+			mc_pf_unavailable_reason: 'Unsupported load model'
+		};
 		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('Unsupported load model');
 		expect(solve).not.toHaveBeenCalled();
 		expect(app.error).toBe('Unsupported load model');
@@ -375,6 +509,138 @@ describe('multiconductor calculation and coordinates', () => {
 		expect(c.solving).toBe(false);
 		expect(app.error).toBeNull();
 	});
+	it('solves from the module the engine kept and frees each replaced one', async () => {
+		const { app, ctrl, solve, apply } = host();
+		const kept = (text: string) =>
+			({ free: vi.fn(), moduleJson: vi.fn(async () => text) }) as unknown as BrowserMcInput;
+		const imported = kept('imported-ir');
+		const edited = kept('edited-ir');
+		const c = new MulticonductorCase({
+			id: 'kept',
+			label: 'City',
+			fileName: 'city.bmopf.json',
+			summary: { ...payload(), module_json: undefined, input_retained: true },
+			input: imported,
+			graph,
+			coordsKind: 'planar',
+			view: buildDiagramView(graph)
+		});
+		app.addMulti(c);
+		expect(c.mcPfSupported).toBe(true);
+		const session = {
+			initialSummary: live(1),
+			loadBranches: vi.fn(async () => []),
+			input: vi.fn(async () => edited),
+			snapshot: vi.fn(),
+			free: vi.fn()
+		} as unknown as BrowserMcPfSession;
+		const create = vi.fn(async () => session);
+		ctrl.mcTransport.createMcPfSession = create;
+
+		await ctrl.solveMultiCase(c);
+		// The handle itself reaches the engine; no IR text is written.
+		expect(create).toHaveBeenCalledWith(imported, DEFAULT_MC_PF_OPTIONS, expect.any(AbortSignal));
+		expect(imported.moduleJson).not.toHaveBeenCalled();
+		expect(solve).not.toHaveBeenCalled();
+
+		// A second solve starts from the session's edited input, kept in the
+		// engine, which then replaces the imported module.
+		await ctrl.solveMultiCase(c);
+		expect(create).toHaveBeenLastCalledWith(edited, DEFAULT_MC_PF_OPTIONS, expect.any(AbortSignal));
+		expect(c.mcInput).toBe(edited);
+		expect(imported.free).toHaveBeenCalledTimes(1);
+		expect(edited.free).not.toHaveBeenCalled();
+
+		// Coordinates attach to IR text: the kept module is written once and
+		// released when the text replaces it.
+		app.activeMultiId = c.id;
+		session.snapshot = vi.fn(async () => {
+			throw new Error('snapshots are not under test');
+		});
+		c.result = null;
+		await ctrl.applyMultiGeoLayers(c, [{ name: 'coords', layer: 'layer', diagnostics: [] }]);
+		expect(apply).toHaveBeenCalledWith('edited-ir', 'layer');
+		expect(edited.free).toHaveBeenCalledTimes(1);
+		expect(c.mcInput).toBe('with-geo');
+
+		const removed = kept('removed-ir');
+		c.mcInput = removed;
+		await ctrl.removeMultiCase(c);
+		expect(removed.free).toHaveBeenCalledTimes(1);
+		expect(c.mcInput).toBeNull();
+	});
+	it('keeps energized preparation in the engine across success, failure and cancellation', async () => {
+		const { ctrl, c } = host();
+		const kept = () => ({ free: vi.fn(), moduleJson: vi.fn() }) as unknown as BrowserMcInput;
+		const original = kept();
+		const selected = kept();
+		const edited = kept();
+		const failedSelection = kept();
+		const cancelledSelection = kept();
+		c.mcInput = original;
+		const session = {
+			initialSummary: live(1),
+			loadBranches: vi.fn(async () => []),
+			input: vi.fn(async () => edited),
+			free: vi.fn()
+		} as unknown as BrowserMcPfSession;
+		const create = vi
+			.fn()
+			.mockResolvedValueOnce(session)
+			.mockRejectedValueOnce(new Error('solve failed'));
+		ctrl.mcTransport.createMcPfSession = create;
+		const prepare = vi
+			.fn()
+			.mockResolvedValueOnce({ input: selected, network_scope: null, excluded_islands: [] })
+			.mockResolvedValueOnce({ input: failedSelection, network_scope: null, excluded_islands: [] });
+		ctrl.mcTransport.prepareMcEnergizedNetwork = prepare;
+		await ctrl.solveMultiCase(c, {}, undefined, true);
+		expect(prepare).toHaveBeenCalledWith(original);
+		expect(create).toHaveBeenCalledWith(selected, DEFAULT_MC_PF_OPTIONS, expect.any(AbortSignal));
+		expect(original.free).toHaveBeenCalledOnce();
+		expect(c.mcInput).toBe(selected);
+		const accepted = c.result;
+		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('solve failed');
+		expect(prepare).toHaveBeenLastCalledWith(edited);
+		expect(edited.free).toHaveBeenCalledOnce();
+		expect(failedSelection.free).toHaveBeenCalledOnce();
+		expect(selected.free).not.toHaveBeenCalled();
+		expect(c.result).toBe(accepted);
+		expect(c.mcSession).toBe(session);
+		const abort = new AbortController();
+		session.input = vi.fn(async () => kept());
+		prepare.mockImplementationOnce(async () => {
+			abort.abort();
+			return { input: cancelledSelection, network_scope: null, excluded_islands: [] };
+		});
+		await expect(ctrl.solveMultiCase(c, {}, abort.signal)).rejects.toMatchObject({
+			name: 'AbortError'
+		});
+		expect(cancelledSelection.free).toHaveBeenCalledOnce();
+		for (const input of [original, selected, edited, failedSelection, cancelledSelection])
+			expect(input.moduleJson).not.toHaveBeenCalled();
+		ctrl.dispose();
+	});
+
+	it('frees an edited input taken for a solve that fails', async () => {
+		const { ctrl, c } = host();
+		const edited = { free: vi.fn(), moduleJson: vi.fn() } as unknown as BrowserMcInput;
+		const first = {
+			initialSummary: live(1),
+			loadBranches: vi.fn(async () => []),
+			input: vi.fn(async () => edited),
+			free: vi.fn()
+		} as unknown as BrowserMcPfSession;
+		ctrl.mcTransport.createMcPfSession = vi
+			.fn<() => Promise<BrowserMcPfSession>>()
+			.mockResolvedValueOnce(first)
+			.mockResolvedValueOnce({ ...first, initialSummary: live(1, { converged: false }) });
+		await ctrl.solveMultiCase(c);
+		await expect(ctrl.solveMultiCase(c)).rejects.toThrow('did not converge');
+		expect(edited.free).toHaveBeenCalledTimes(1);
+		expect(c.mcInput).toBe('input');
+		expect(c.mcSession).toBe(first);
+	});
 	it('does not accept a result computed from a changed input', async () => {
 		const { ctrl, c, solve } = host();
 		c.result = summary;
@@ -386,7 +652,7 @@ describe('multiconductor calculation and coordinates', () => {
 				})
 		);
 		const pending = ctrl.solveMultiCase(c);
-		c.moduleJson = 'changed';
+		c.mcInput = 'changed';
 		finish({ ...result, iterations: 6 });
 		await expect(pending).rejects.toThrow('case changed');
 		expect(c.result).toEqual(summary);
@@ -397,7 +663,7 @@ describe('multiconductor calculation and coordinates', () => {
 		await ctrl.applyMultiGeoLayers(c, [
 			{ name: 'private.geojson', layer: 'layer', diagnostics: [] }
 		]);
-		expect(c.moduleJson).toBe('with-geo');
+		expect(c.mcInput).toBe('with-geo');
 		expect(c.result).toEqual(summary);
 		expect(c.view!.buses[0].lon).toBe(1000);
 		app.activeMultiId = null;
@@ -427,7 +693,7 @@ describe('multiconductor calculation and coordinates', () => {
 			'input',
 			expect.any(String),
 			'Feeder',
-			{},
+			DEFAULT_MC_PF_OPTIONS,
 			expect.any(AbortSignal)
 		);
 		expect(solve).not.toHaveBeenCalled();
@@ -458,7 +724,7 @@ describe('multiconductor calculation and coordinates', () => {
 			ctrl.applyMultiGeoLayers(c, [{ name: 'other', layer: 'other', diagnostics: [] }])
 		).rejects.toThrow('No coordinates');
 		expect(c.mcSnapshot).toBe(before);
-		expect(c.moduleJson).toBe('with-geo');
+		expect(c.mcInput).toBe('with-geo');
 	});
 	it('keeps result detail from the saved snapshot when coordinates replace a live session', async () => {
 		const { ctrl, c } = host();
@@ -523,7 +789,10 @@ describe('multiconductor calculation and coordinates', () => {
 			[1050, 2020]
 		]);
 		expect(buildGeographicView(graph, layer).edges[0].path).toEqual(view.edges[0].path);
-		const parallel = { ...graph, edges: [...graph.edges, { ...graph.edges[0], id: 'parallel' }] };
+		const parallel = {
+			...graph,
+			edges: [...graph.edges, { ...graph.edges[0], id: 'parallel' }]
+		};
 		expect(buildDiagramView(parallel, layer).edges.every((edge) => edge.path.length === 2)).toBe(
 			true
 		);
