@@ -4,16 +4,23 @@
 //! fixed-point iteration changes only the compensated load-current RHS, so the
 //! factor is retained through initialization and convergence.
 
+mod energized;
+pub use energized::{
+    mc_unpowered_islands, prepare_mc_energized_network, prepare_mc_energized_network_json,
+    McExcludedEquipment, McExcludedIsland, McNetworkScope,
+};
 mod input;
 mod linear;
 mod loads;
 mod network;
+mod tables;
 mod transformer;
 
 pub use input::{
     parse_bmopf_instance, solve_bmopf_json, solve_mc_module_json, validate_bmopf_json,
-    validate_mc_module_json,
+    validate_mc_module, validate_mc_module_json,
 };
+pub use tables::McPfResultTables;
 pub use transformer::{
     build_transformer_yprim, prepare_transformer, ComplexMatrix, PreparedTransformer,
     TransformerError, TransformerPrimitive, TransformerTerminal,
@@ -29,7 +36,7 @@ use std::sync::{Arc, OnceLock};
 
 use network::PreparedNetwork;
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct McPfOptions {
@@ -52,15 +59,15 @@ pub struct McPfOptions {
 impl Default for McPfOptions {
     fn default() -> Self {
         Self {
-            tolerance: 1e-8,
+            tolerance: 1e-4,
             max_iterations: 100,
             damping: 1.0,
             zero_voltage_tolerance: 1e-9,
             // Sparse LU residual floors accumulate across large feeder
             // matrices.  This is an absolute physical-current floor; the
             // relative term still scales acceptance with incident currents.
-            absolute_kcl_tolerance: 1e-6,
-            relative_kcl_tolerance: 1e-8,
+            absolute_kcl_tolerance: 1e-4,
+            relative_kcl_tolerance: 1e-5,
             voltage_envelope: true,
             v_low_pu: 0.5,
             v_min_pu: 0.85,
@@ -130,10 +137,55 @@ pub struct McElementPort {
     pub power_into_element: McComplex,
 }
 
+/// Qualification of the final operating point, independent of voltage limits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum McLoadModelStatus {
+    Original,
+    Modified,
+    Unverified,
+}
+
+/// Constant-size provenance carried by summaries and complete results.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct McLoadModelAssessment {
+    pub status: McLoadModelStatus,
+    pub modified_branch_count: usize,
+    /// None when an original load law is undefined or non-finite at this point.
+    pub original_kcl_residual: Option<f64>,
+    pub original_scaled_kcl_residual: Option<f64>,
+    pub options: McPfOptions,
+}
+
+/// A branch whose final current differs from its original load law.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct McLoadModelChange {
+    pub load: String,
+    pub branch: usize,
+    pub bus: String,
+    pub voltage_pu: f64,
+    /// Actual absorbed power, W + j var.
+    pub solved_power: McComplex,
+    /// Original-law power at the same voltage; None if the law is undefined.
+    pub original_power: Option<McComplex>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McPfResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_scope: Option<McNetworkScope>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_islands: Vec<McExcludedIsland>,
     pub converged: bool,
+    /// Absent only on legacy results, whose model fidelity is not yet assessed.
+    #[serde(default)]
+    pub load_model: Option<McLoadModelAssessment>,
+    #[serde(default)]
+    pub load_model_changes: Vec<McLoadModelChange>,
     /// Whether every load branch lies inside the configured normal voltage band.
     pub voltage_valid: bool,
     pub min_voltage_pu: Option<f64>,
@@ -187,7 +239,11 @@ pub struct McLoadBranchState {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct McPfSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_scope: Option<McNetworkScope>,
     pub converged: bool,
+    #[serde(default)]
+    pub load_model: Option<McLoadModelAssessment>,
     /// Whether every load branch lies inside the configured normal voltage band.
     pub voltage_valid: bool,
     pub min_voltage_pu: Option<f64>,
@@ -326,6 +382,8 @@ pub(crate) fn elapsed_ms(start: Option<f64>, end: Option<f64>) -> f64 {
 #[derive(Debug)]
 pub struct McPfSession {
     base_instance: McAcPfInstance,
+    full_network: Option<powerio_dist::MulticonductorNetwork>,
+    excluded_islands: Vec<McExcludedIsland>,
     prepared: PreparedNetwork,
     options: McPfOptions,
     /// The stored module's records (descriptors, diagnostics, history) with
@@ -374,6 +432,8 @@ impl McPfSession {
         profile.timed = started.is_some();
         Ok(Self {
             base_instance: instance,
+            full_network: None,
+            excluded_islands: Vec::new(),
             prepared,
             options,
             module: None,
@@ -395,20 +455,50 @@ impl McPfSession {
     /// Parse a stored PowerIO multiconductor module and create a retained session.
     pub fn from_module_json(module_json: &str, options: McPfOptions) -> Result<Self, String> {
         let started = profile_now();
-        let mut module = crate::ir::deserialize_module(module_json)?;
-        input::validate_mc_module(&module)?;
+        let module = crate::ir::deserialize_module(module_json)?;
+        let parsed = profile_now();
+        let mut session = Self::from_module(&module, options)?;
+        // Reading the text is part of the parse, alongside the conversion.
+        let read_ms = elapsed_ms(started, parsed);
+        session.cold_profile.parse_ms += read_ms;
+        session.cold_profile.total_ms += read_ms;
+        session.profile = session.cold_profile;
+        Ok(session)
+    }
+
+    /// Create a retained session from a module already parsed in this
+    /// process. The network tables are shared with `module`, not copied, so a
+    /// host that keeps the parsed module pays for the network once.
+    pub fn from_module(
+        module: &powerio::PioModule<powerio::PioValue>,
+        options: McPfOptions,
+    ) -> Result<Self, String> {
+        let started = profile_now();
+        input::validate_mc_module(module)?;
         let module_holds_network =
             matches!(module.value(), powerio::PioValue::MulticonductorNetwork(_));
-        let instance = input::instance_from_value(module.value())?;
-        let parsed = profile_now();
+        let (selected, excluded_islands) = energized::selection(module)?;
+        let instance = match selected {
+            Some(network) => McAcPfInstance::from_network(network).map_err(|e| e.to_string())?,
+            None => input::instance_from_value(module.value())?,
+        };
+        let converted = profile_now();
         let mut session = Self::new(instance, options)?;
-        // Every materialization replaces the value, which releases the
-        // retained source bytes and value source map. Do that once here so
-        // the session does not hold a second copy of the stored document.
-        let _ = module.value_mut();
-        session.module = Some(module.map_value(|_| ()));
+        if module.extensions().contains_key(energized::EXTENSION) {
+            if let powerio::PioValue::MulticonductorNetwork(network) = module.value() {
+                session.full_network = Some(network.clone());
+            }
+        }
+        session.summary.network_scope = energized::scope(&excluded_islands);
+        session.excluded_islands = excluded_islands;
+        // Keep the records only. Every materialization replaces the value,
+        // which releases the retained source bytes and value source map; do
+        // that once here so the session holds no copy of the source document.
+        let mut records = module.clone();
+        let _ = records.value_mut();
+        session.module = Some(records.map_value(|_| ()));
         session.module_holds_network = module_holds_network;
-        session.cold_profile.parse_ms = elapsed_ms(started, parsed);
+        session.cold_profile.parse_ms = elapsed_ms(started, converted);
         session.cold_profile.total_ms += session.cold_profile.parse_ms;
         session.profile = session.cold_profile;
         Ok(session)
@@ -422,7 +512,21 @@ impl McPfSession {
     /// Build the complete terminal and equipment result for the current
     /// operating point. This is materialized on demand and not retained.
     pub fn build_result(&self) -> Result<McPfResult, String> {
-        build_result(&self.prepared, &self.options, &self.state)
+        let mut result = build_result(&self.prepared, &self.options, &self.state)?;
+        result.network_scope = energized::scope(&self.excluded_islands);
+        result.excluded_islands = self.excluded_islands.clone();
+        Ok(result)
+    }
+
+    /// The terminals, equipment ports, and source reactions of
+    /// [`Self::build_result`] as columns, without an object and several
+    /// strings per port. Whole-network views read the operating point this way.
+    pub fn result_tables(&self) -> Result<McPfResultTables, String> {
+        let mut tables = tables::build_tables(&self.prepared, &self.options, &self.state)?;
+        tables.load_model = self.summary.load_model.clone();
+        tables.network_scope = energized::scope(&self.excluded_islands);
+        tables.excluded_islands = self.excluded_islands.clone();
+        Ok(tables)
     }
 
     /// The instance this session was prepared from, without load edits.
@@ -630,20 +734,40 @@ impl McPfSession {
 
     /// Materialize the current edited operating point as portable PowerIO IR.
     pub fn input_module_json(&self) -> Result<String, String> {
-        self.module_json_for(self.edited_instance()?)
+        crate::ir::serialize_module(&self.input_module()?)
     }
 
-    fn module_json_for(&self, instance: McAcPfInstance) -> Result<String, String> {
-        let value = if self.module_holds_network {
+    /// Materialize the current edited operating point as a PowerIO module,
+    /// with the records of the module the session was created from. Without
+    /// edits the module shares this session's network tables.
+    pub fn input_module(&self) -> Result<powerio::PioModule<powerio::PioValue>, String> {
+        Ok(self.module_for(self.edited_instance()?))
+    }
+
+    fn module_for(&self, instance: McAcPfInstance) -> powerio::PioModule<powerio::PioValue> {
+        let value = if let Some(full) = &self.full_network {
+            let mut full = full.clone();
+            let edited: BTreeMap<_, _> = instance
+                .network()
+                .loads()
+                .iter()
+                .map(|l| (l.name.as_str(), l))
+                .collect();
+            for load in full.loads_mut() {
+                if let Some(value) = edited.get(load.name.as_str()) {
+                    *load = (*value).clone();
+                }
+            }
+            powerio::PioValue::MulticonductorNetwork(full)
+        } else if self.module_holds_network {
             powerio::PioValue::MulticonductorNetwork(instance.network().clone())
         } else {
             powerio::PioValue::McAcPfInstance(instance)
         };
-        let module = match &self.module {
+        match &self.module {
             Some(records) => records.clone().map_value(|()| value),
             None => powerio::PioModule::new(value),
-        };
-        crate::ir::serialize_module(&module)
+        }
     }
 
     /// Build a portable saved Study at the current edited operating point
@@ -662,18 +786,17 @@ impl McPfSession {
         // instance; replay validation compares them.
         let instance = self.edited_instance()?;
         let result = self.build_result()?;
-        let solution = result.to_powerio_solution(&instance)?;
-        let solution_module = crate::ir::serialize_module(&powerio::PioModule::new(
-            powerio::PioValue::McAcPfSolution(solution),
-        ))?;
+        let solution_module = result.solution_module(&instance)?;
         Ok(McStudySnapshot {
             schema: McStudySnapshot::SCHEMA.to_owned(),
             version: McStudySnapshot::VERSION,
             id,
             title,
             formulation: "mc_ac_pf".to_owned(),
-            input_module: self.module_json_for(instance)?,
-            solution_module,
+            input_module: compact_module_json(crate::ir::serialize_module(
+                &self.module_for(instance),
+            )?),
+            solution_module: solution_module.map(compact_module_json),
             options: self.options,
             result,
         })
@@ -759,6 +882,7 @@ impl McPfSession {
         };
         self.state = state;
         self.summary = summary;
+        self.summary.network_scope = energized::scope(&self.excluded_islands);
         self.solve_count += 1;
         profile.total_ms = elapsed_ms(started, profile_now());
         profile.timed = started.is_some();
@@ -771,8 +895,9 @@ impl McPfSession {
 ///
 /// This deliberately sits beside the balanced KKT Study rather than pretending
 /// that a multiconductor fixed-point result has balanced buses, objectives, or
-/// sensitivity columns. The input and solution modules make the snapshot
-/// self-contained; the rich result is the UI-facing terminal/element view.
+/// sensitivity columns. The input, effective options and rich terminal/element
+/// result make it self-contained. Only a verified original-model result also
+/// carries a canonical PowerIO solution module.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct McStudySnapshot {
     pub schema: String,
@@ -781,14 +906,15 @@ pub struct McStudySnapshot {
     pub title: String,
     pub formulation: String,
     pub input_module: String,
-    pub solution_module: String,
+    /// None for modified or unverified load laws; result remains fully inspectable.
+    pub solution_module: Option<String>,
     pub options: McPfOptions,
     pub result: McPfResult,
 }
 
 impl McStudySnapshot {
     pub const SCHEMA: &'static str = "tellegen-mc-pf-study";
-    pub const VERSION: u32 = 1;
+    pub const VERSION: u32 = 2;
 
     pub fn solve(
         id: impl Into<String>,
@@ -796,26 +922,8 @@ impl McStudySnapshot {
         input_module: &str,
         options: McPfOptions,
     ) -> Result<Self, String> {
-        let module = crate::ir::deserialize_module(input_module)?;
-        input::validate_mc_module(&module)?;
-        let instance = input::instance_from_value(module.value())?;
-        let result = solve_mc_ac_pf_instance(&instance, &options)?;
-        let solution = result.to_powerio_solution(&instance)?;
-        let solution_module = crate::ir::serialize_module(&powerio::PioModule::new(
-            powerio::PioValue::McAcPfSolution(solution),
-        ))
-        .map_err(|e| e.to_string())?;
-        let snapshot = Self {
-            schema: Self::SCHEMA.to_owned(),
-            version: Self::VERSION,
-            id: id.into(),
-            title: title.into(),
-            formulation: "mc_ac_pf".to_owned(),
-            input_module: input_module.to_owned(),
-            solution_module,
-            options,
-            result,
-        };
+        let session = McPfSession::from_module_json(input_module, options)?;
+        let snapshot = session.snapshot(id, title)?;
         snapshot.validate()?;
         Ok(snapshot)
     }
@@ -833,18 +941,54 @@ impl McStudySnapshot {
         validate_options(&self.options)?;
         let input = crate::ir::deserialize_module(&self.input_module)?;
         input::validate_mc_module(&input)?;
-        let input_instance = input::instance_from_value(input.value())?;
-        let solution = crate::ir::deserialize_module(&self.solution_module)?;
-        let powerio::PioValue::McAcPfSolution(solution) = solution.into_value() else {
-            return Err("multiconductor Study snapshot solution must be McAcPfSolution".to_owned());
-        };
-        let input_instance_json = instance_module_value(&input_instance)?;
-        let solution_instance_json = instance_module_value(solution.instance())?;
-        if input_instance_json != solution_instance_json {
-            return Err(
-                "multiconductor Study snapshot input and solution instances differ".to_owned(),
-            );
+        let input_instance = energized::instance(&input)?;
+        let (_, excluded) = energized::selection(&input)?;
+        if self.result.excluded_islands != excluded
+            || self.result.network_scope != energized::scope(&excluded)
+        {
+            return Err("Study result exclusions differ from its full input topology".to_owned());
         }
+        let canonical = self
+            .result
+            .load_model
+            .as_ref()
+            .is_some_and(|m| m.status == McLoadModelStatus::Original);
+        if canonical != self.solution_module.is_some() || self.result.load_model.is_none() {
+            return Err("multiconductor Study canonical solution does not match its load-model qualification".to_owned());
+        }
+        let solution = if let Some(text) = &self.solution_module {
+            let module = crate::ir::deserialize_module(text)?;
+            let expected =
+                serde_json::to_value(&self.result.load_model).map_err(|e| e.to_string())?;
+            let expected_scope =
+                serde_json::to_value(&self.result.excluded_islands).map_err(|e| e.to_string())?;
+            if (!self.result.excluded_islands.is_empty()
+                && module.extensions().get(energized::EXTENSION) != Some(&expected_scope))
+                || (self.result.excluded_islands.is_empty()
+                    && module.extensions().contains_key(energized::EXTENSION))
+            {
+                return Err("Study solution exclusions differ from its result".to_owned());
+            }
+            if module.extensions().get("tellegen.mc_pf") != Some(&expected) {
+                return Err(
+                    "multiconductor Study solution qualification differs from its result"
+                        .to_owned(),
+                );
+            }
+            let powerio::PioValue::McAcPfSolution(solution) = module.into_value() else {
+                return Err("multiconductor Study solution must be McAcPfSolution".to_owned());
+            };
+            if instance_module_value(&input_instance)?
+                != instance_module_value(solution.instance())?
+            {
+                return Err(
+                    "multiconductor Study snapshot input and solution instances differ".to_owned(),
+                );
+            }
+            solution
+        } else {
+            self.result.project_powerio_solution(&input_instance)?
+        };
         validate_result_against_solution(&self.result, &solution, &self.options)?;
         Ok(())
     }
@@ -853,32 +997,32 @@ impl McStudySnapshot {
     pub fn apply_geo_layer(&mut self, layer: &powerio::GeoLayer) -> Result<(), String> {
         self.validate()?;
         let mut input = crate::ir::deserialize_module(&self.input_module)?;
-        let instance = input::instance_from_value(input.value())?;
-        let mut network = instance.network().clone();
+        let instance = energized::instance(&input)?;
+        let mut network = match input.value() {
+            powerio::PioValue::MulticonductorNetwork(full) => full.clone(),
+            _ => instance.network().clone(),
+        };
         let report = powerio::dist_geo::apply_dist_geo_layer(&mut network, layer);
         if report.matched_buses == 0 && report.matched_branches == 0 {
             return Err("no saved case equipment matched the geographic file".to_owned());
         }
-        let instance = instance
-            .with_network(network.clone())
-            .map_err(|e| e.to_string())?;
         *input.value_mut() = match input.value() {
             powerio::PioValue::MulticonductorNetwork(_) => {
                 powerio::PioValue::MulticonductorNetwork(network)
             }
-            powerio::PioValue::McAcPfInstance(_) => {
-                powerio::PioValue::McAcPfInstance(instance.clone())
-            }
+            powerio::PioValue::McAcPfInstance(_) => powerio::PioValue::McAcPfInstance(
+                instance.with_network(network).map_err(|e| e.to_string())?,
+            ),
             _ => {
                 return Err("saved power flow requires a network or AC power flow input".to_owned())
             }
         };
-        let mut solution = crate::ir::deserialize_module(&self.solution_module)?;
-        *solution.value_mut() =
-            powerio::PioValue::McAcPfSolution(self.result.to_powerio_solution(&instance)?);
         let mut updated = self.clone();
-        updated.input_module = crate::ir::serialize_module(&input)?;
-        updated.solution_module = crate::ir::serialize_module(&solution)?;
+        updated.input_module = compact_module_json(crate::ir::serialize_module(&input)?);
+        updated.solution_module = self
+            .result
+            .solution_module(&energized::instance(&input)?)?
+            .map(compact_module_json);
         updated.validate()?;
         *self = updated;
         Ok(())
@@ -890,11 +1034,63 @@ impl McStudySnapshot {
     }
 
     pub fn from_json(text: &str) -> Result<Self, String> {
-        let snapshot: Self = serde_json::from_str(text)
+        let mut snapshot: Self = serde_json::from_str(text)
             .map_err(|e| format!("invalid multiconductor Study snapshot: {e}"))?;
+        if snapshot.schema == Self::SCHEMA && snapshot.version == 1 {
+            validate_options(&snapshot.options)?;
+            let input = crate::ir::deserialize_module(&snapshot.input_module)?;
+            input::validate_mc_module(&input)?;
+            let instance = energized::instance(&input)?;
+            let text = snapshot
+                .solution_module
+                .as_ref()
+                .ok_or("legacy Study omits its solution")?;
+            let module = crate::ir::deserialize_module(text)?;
+            let powerio::PioValue::McAcPfSolution(solution) = module.into_value() else {
+                return Err("legacy Study solution must be McAcPfSolution".to_owned());
+            };
+            if instance_module_value(&instance)? != instance_module_value(solution.instance())? {
+                return Err(
+                    "multiconductor Study snapshot input and solution instances differ".to_owned(),
+                );
+            }
+            let (assessment, changes) =
+                validate_result_against_solution(&snapshot.result, &solution, &snapshot.options)?;
+            snapshot.result.load_model = Some(assessment);
+            snapshot.result.load_model_changes = changes;
+            snapshot.solution_module = snapshot.result.solution_module(&instance)?;
+            snapshot.version = Self::VERSION;
+        }
         snapshot.validate()?;
         Ok(snapshot)
     }
+}
+
+/// Strip only JSON formatting whitespace from PowerIO's already-validated
+/// serialized module. Keep number spellings, Unicode and string contents byte
+/// exact, without materializing a second large JSON tree for a saved Study.
+fn compact_module_json(text: String) -> String {
+    let mut bytes = text.into_bytes();
+    let mut quoted = false;
+    let mut escaped = false;
+    bytes.retain(|&byte| {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                quoted = false;
+            }
+            true
+        } else if byte == b'"' {
+            quoted = true;
+            true
+        } else {
+            !byte.is_ascii_whitespace()
+        }
+    });
+    String::from_utf8(bytes).expect("removing ASCII whitespace preserves UTF-8")
 }
 
 fn instance_module_value(instance: &McAcPfInstance) -> Result<serde_json::Value, String> {
@@ -909,7 +1105,7 @@ fn validate_result_against_solution(
     result: &McPfResult,
     solution: &McAcPfSolution,
     options: &McPfOptions,
-) -> Result<(), String> {
+) -> Result<(McLoadModelAssessment, Vec<McLoadModelChange>), String> {
     if solution.termination() != &Termination::Converged {
         return Err("multiconductor Study solution is not marked converged".to_owned());
     }
@@ -986,6 +1182,61 @@ fn validate_result_against_solution(
                 })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    for (i, fixed) in prepared.fixed.iter().enumerate() {
+        if fixed.is_some_and(|value| !close_complex(prepared_voltage[i].into(), value)) {
+            return Err("multiconductor Study voltage differs from a fixed terminal".to_owned());
+        }
+    }
+    let mut effective_current = vec![Complex64::default(); prepared_voltage.len()];
+    total_load_current_into(
+        &prepared,
+        &prepared_voltage,
+        options,
+        &mut effective_current,
+    )?;
+    let (residual, scaled) = kcl_metrics(
+        &prepared,
+        &prepared_voltage,
+        &effective_current,
+        options,
+        &mut KclScratch::new(prepared_voltage.len()),
+    );
+    if !residual.is_finite()
+        || !scaled.is_finite()
+        || scaled > 1.0 + 1e-10
+        || !close(residual, result.physical_kcl_residual)
+        || !close(scaled, result.scaled_kcl_residual)
+    {
+        return Err(
+            "multiconductor Study does not satisfy its effective load equations".to_owned(),
+        );
+    }
+    let mut changes = Vec::new();
+    let assessment = assess_load_model(
+        &prepared,
+        options,
+        &prepared_voltage,
+        |load, branch, actual, original| {
+            changes.push(load_model_change(
+                load,
+                branch,
+                &prepared_voltage,
+                actual,
+                original,
+            ))
+        },
+    )?;
+    if result
+        .load_model
+        .as_ref()
+        .is_some_and(|saved| saved != &assessment)
+        || (result.load_model.is_some() && result.load_model_changes != changes)
+    {
+        return Err(
+            "multiconductor Study load-model qualification differs from its terminal voltages"
+                .to_owned(),
+        );
+    }
     let (expected_min, expected_max, expected_violations) =
         assess_load_voltages(&prepared, &prepared_voltage, options);
     if result.min_voltage_pu != expected_min
@@ -1008,6 +1259,18 @@ fn validate_result_against_solution(
                     "multiconductor Study result terminal identity/order differs at {}/{}",
                     bus.id, terminal
                 ));
+            }
+            let expected_current = passive_current(&prepared, &prepared_voltage, index);
+            if !close_complex(actual.current_into_network, expected_current)
+                || !close_complex(
+                    actual.power_into_network,
+                    prepared_voltage[index] * expected_current.conj(),
+                )
+            {
+                return Err(
+                    "multiconductor Study terminal quantities differ from its network equations"
+                        .to_owned(),
+                );
             }
             let magnitude = actual.voltage.re.hypot(actual.voltage.im);
             let angle = actual.voltage.im.atan2(actual.voltage.re);
@@ -1081,6 +1344,20 @@ fn validate_result_against_solution(
                         .to_owned(),
                 );
             }
+            let i = prepared.index.resolve((&source.bus, terminal))?;
+            let expected_current =
+                passive_current(&prepared, &prepared_voltage, i) + effective_current[i];
+            if !close_complex(reaction.current_into_network, expected_current)
+                || !close_complex(
+                    reaction.power_into_network,
+                    prepared_voltage[i] * expected_current.conj(),
+                )
+            {
+                return Err(
+                    "multiconductor Study source quantities differ from its network equations"
+                        .to_owned(),
+                );
+            }
             let expected_power = solution
                 .source_active_injections()
                 .get(source_index)
@@ -1141,7 +1418,71 @@ fn validate_result_against_solution(
             "multiconductor Study result element port identities do not match its input".to_owned(),
         );
     }
-    Ok(())
+    // A modified-model snapshot has no canonical solution to compare against.
+    // Recompute each port from the saved phasors and effective device equations,
+    // rather than treating the result's own I and V*conj(I) as independent evidence.
+    let ports: BTreeMap<_, _> = result
+        .element_ports
+        .iter()
+        .map(|port| {
+            (
+                (
+                    port.kind.as_str(),
+                    port.element.as_str(),
+                    port.branch,
+                    port.bus.as_str(),
+                    port.terminal.as_str(),
+                ),
+                port,
+            )
+        })
+        .collect();
+    let check_port = |expected: McElementPort| -> Result<(), String> {
+        let actual = ports
+            .get(&(
+                expected.kind.as_str(),
+                expected.element.as_str(),
+                expected.branch,
+                expected.bus.as_str(),
+                expected.terminal.as_str(),
+            ))
+            .ok_or("multiconductor Study omits an expected element port")?;
+        if !close_complex(
+            actual.current_into_element,
+            expected.current_into_element.into_complex(),
+        ) || !close_complex(
+            actual.power_into_element,
+            expected.power_into_element.into_complex(),
+        ) {
+            return Err(
+                "multiconductor Study element quantities differ from its network equations"
+                    .to_owned(),
+            );
+        }
+        Ok(())
+    };
+    for load in &prepared.loads {
+        for (branch, incidence) in load.incidence.iter().enumerate() {
+            let current = load.branch_current(branch, &prepared_voltage, options)?;
+            for &(i, c) in incidence {
+                check_port(load_port(
+                    &prepared,
+                    &prepared_voltage,
+                    load,
+                    branch,
+                    i,
+                    c,
+                    current,
+                ))?;
+            }
+        }
+    }
+    for element in &prepared.elements {
+        for row in 0..element.terminals.len() {
+            check_port(passive_port(&prepared, &prepared_voltage, element, row))?;
+        }
+    }
+    Ok((assessment, changes))
 }
 
 type ElementPortKey = (String, String, usize, String, String);
@@ -1321,6 +1662,50 @@ impl McPfResult {
     /// solution.  Complex currents remain available on this result because
     /// the v0.11 portable solution stores current and active-power magnitudes.
     pub fn to_powerio_solution(&self, instance: &McAcPfInstance) -> Result<McAcPfSolution, String> {
+        if !self
+            .load_model
+            .as_ref()
+            .is_some_and(|model| model.status == McLoadModelStatus::Original)
+        {
+            return Err("cannot export modified or unverified load equations as a canonical PowerIO solution; export a multiconductor Study snapshot instead".to_owned());
+        }
+        self.project_powerio_solution(instance)
+    }
+
+    /// A canonical solution module with explicit solver provenance, when verified.
+    fn solution_module(&self, instance: &McAcPfInstance) -> Result<Option<String>, String> {
+        if !self
+            .load_model
+            .as_ref()
+            .is_some_and(|model| model.status == McLoadModelStatus::Original)
+        {
+            return Ok(None);
+        }
+        let mut module = powerio::PioModule::new(powerio::PioValue::McAcPfSolution(
+            self.to_powerio_solution(instance)?,
+        ));
+        module
+            .insert_extension(
+                "tellegen.mc_pf",
+                serde_json::to_value(&self.load_model).map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+        if !self.excluded_islands.is_empty() {
+            module
+                .insert_extension(
+                    energized::EXTENSION,
+                    serde_json::to_value(&self.excluded_islands).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        crate::ir::serialize_module(&module).map(Some)
+    }
+
+    /// Internal projection for validating snapshot quantities, never a modified-model export.
+    fn project_powerio_solution(
+        &self,
+        instance: &McAcPfInstance,
+    ) -> Result<McAcPfSolution, String> {
         if !self.converged {
             return Err("cannot export an unconverged AC power flow as a solution".to_owned());
         }
@@ -1557,6 +1942,89 @@ fn iterate(
 const NON_FINITE_OUTPUT: &str =
     "fixed-point PF produced a non-finite voltage, current, or power output";
 
+fn load_model_change(
+    load: &loads::BranchLoad,
+    branch: usize,
+    voltage: &[Complex64],
+    actual: Complex64,
+    original: Option<Complex64>,
+) -> McLoadModelChange {
+    let u = load.branch_voltage(branch, voltage);
+    McLoadModelChange {
+        load: load.name.clone(),
+        branch,
+        bus: load.bus.clone(),
+        voltage_pu: u.norm() / load.nominal_voltage[branch],
+        solved_power: (u * actual.conj()).into(),
+        original_power: original.map(|current| (u * current.conj()).into()),
+    }
+}
+
+/// Evaluate the original equations at the final phasors. Voltage-band membership
+/// alone is not evidence of a changed law (impedance and zero-power loads are
+/// unchanged). Intermediate envelope use does not qualify the final point.
+fn assess_load_model(
+    prepared: &PreparedNetwork,
+    options: &McPfOptions,
+    voltage: &[Complex64],
+    mut changed: impl FnMut(&loads::BranchLoad, usize, Complex64, Option<Complex64>),
+) -> Result<McLoadModelAssessment, String> {
+    let original_options = McPfOptions {
+        voltage_envelope: false,
+        ..*options
+    };
+    let mut original_current = vec![Complex64::default(); voltage.len()];
+    let mut original_defined = true;
+    let mut modified_branch_count = 0;
+    for load in &prepared.loads {
+        for (branch, incidence) in load.incidence.iter().enumerate() {
+            let actual = load.branch_current(branch, voltage, options)?;
+            let original = load.branch_current(branch, voltage, &original_options).ok();
+            if let Some(current) = original {
+                for &(i, c) in incidence {
+                    original_current[i] += c.conj() * current;
+                }
+            } else {
+                original_defined = false;
+            }
+            // Allow only floating-point roundoff when comparing the two laws,
+            // not the user's convergence tolerances or voltage-band settings.
+            let differs = original.is_none_or(|current| {
+                (actual - current).norm() > 1e-12 * (1.0 + actual.norm().max(current.norm()))
+            });
+            if differs {
+                modified_branch_count += 1;
+                changed(load, branch, actual, original);
+            }
+        }
+    }
+    let residuals = original_defined
+        .then(|| {
+            kcl_metrics(
+                prepared,
+                voltage,
+                &original_current,
+                &original_options,
+                &mut KclScratch::new(voltage.len()),
+            )
+        })
+        .filter(|(raw, scaled)| raw.is_finite() && scaled.is_finite());
+    let status = if modified_branch_count > 0 {
+        McLoadModelStatus::Modified
+    } else if residuals.is_some_and(|(_, scaled)| scaled <= 1.0) {
+        McLoadModelStatus::Original
+    } else {
+        McLoadModelStatus::Unverified
+    };
+    Ok(McLoadModelAssessment {
+        status,
+        modified_branch_count,
+        original_kcl_residual: residuals.map(|(raw, _)| raw),
+        original_scaled_kcl_residual: residuals.map(|(_, scaled)| scaled),
+        options: *options,
+    })
+}
+
 /// Reduce a converged fixed point to its compact summary.
 ///
 /// This applies the same output finiteness gate as [`build_result`] to every
@@ -1622,7 +2090,14 @@ fn summarize(
         violations += usize::from(bound.is_some());
     });
     Ok(McPfSummary {
+        network_scope: None,
         converged: true,
+        load_model: Some(assess_load_model(
+            prepared,
+            options,
+            voltage,
+            |_, _, _, _| {},
+        )?),
         voltage_valid: violations == 0,
         min_voltage_pu: minimum,
         max_voltage_pu: maximum,
@@ -1701,8 +2176,21 @@ fn build_result(
     }
     let (min_voltage_pu, max_voltage_pu, voltage_violations) =
         assess_load_voltages(prepared, voltage, options);
+    let mut load_model_changes = Vec::new();
+    let load_model = Some(assess_load_model(
+        prepared,
+        options,
+        voltage,
+        |load, branch, actual, original| {
+            load_model_changes.push(load_model_change(load, branch, voltage, actual, original));
+        },
+    )?);
     Ok(McPfResult {
+        network_scope: None,
+        excluded_islands: Vec::new(),
         converged: true,
+        load_model,
+        load_model_changes,
         voltage_valid: voltage_violations.is_empty(),
         min_voltage_pu,
         max_voltage_pu,
@@ -1751,7 +2239,7 @@ fn load_port(
     c: Complex64,
     branch_current: Complex64,
 ) -> McElementPort {
-    let terminal_current = c.conj() * branch_current;
+    let (current, power) = load_port_values(voltage, i, c, branch_current);
     let (bus, terminal) = &prepared.index.terminal_ids[i];
     McElementPort {
         element: load.name.clone(),
@@ -1759,9 +2247,21 @@ fn load_port(
         branch,
         bus: bus.clone(),
         terminal: terminal.clone(),
-        current_into_element: terminal_current.into(),
-        power_into_element: (voltage[i] * terminal_current.conj()).into(),
+        current_into_element: current.into(),
+        power_into_element: power.into(),
     }
+}
+
+/// Current and power into a load branch at terminal `i`, whose incidence
+/// coefficient there is `c`.
+fn load_port_values(
+    voltage: &[Complex64],
+    i: usize,
+    c: Complex64,
+    branch_current: Complex64,
+) -> (Complex64, Complex64) {
+    let current = c.conj() * branch_current;
+    (current, voltage[i] * current.conj())
 }
 
 fn passive_port(
@@ -1770,9 +2270,7 @@ fn passive_port(
     element: &network::PreparedElement,
     row: usize,
 ) -> McElementPort {
-    let port_voltages: Vec<_> = element.terminals.iter().map(|&i| voltage[i]).collect();
-    let current = element_port_current(element, row, &port_voltages);
-    let i = element.terminals[row];
+    let (i, current, power) = passive_port_values(voltage, element, row);
     let (bus, terminal) = &prepared.index.terminal_ids[i];
     McElementPort {
         element: element.name.clone(),
@@ -1781,8 +2279,21 @@ fn passive_port(
         bus: bus.clone(),
         terminal: terminal.clone(),
         current_into_element: current.into(),
-        power_into_element: (voltage[i] * current.conj()).into(),
+        power_into_element: power.into(),
     }
+}
+
+/// The terminal of a passive element's port `row`, and the current and power
+/// into the element there.
+fn passive_port_values(
+    voltage: &[Complex64],
+    element: &network::PreparedElement,
+    row: usize,
+) -> (usize, Complex64, Complex64) {
+    let port_voltages: Vec<_> = element.terminals.iter().map(|&i| voltage[i]).collect();
+    let current = element_port_current(element, row, &port_voltages);
+    let i = element.terminals[row];
+    (i, current, voltage[i] * current.conj())
 }
 
 fn element_port_current(
@@ -2099,7 +2610,17 @@ mod tests {
         network.loads_mut()[0].voltage_model =
             DistLoadVoltageModel::ConstantImpedance { v_nom: vec![10.0] };
         instance = McAcPfInstance::from_network(network).unwrap();
-        let mut session = McPfSession::new(instance, McPfOptions::default()).unwrap();
+        let mut session = McPfSession::new(
+            instance,
+            McPfOptions {
+                // This test checks high-precision physical quantities explicitly.
+                tolerance: 1e-8,
+                absolute_kcl_tolerance: 1e-6,
+                relative_kcl_tolerance: 1e-8,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         session
             .replace_load_powers(&[McLoadPowerEdit {
                 load: "pl".into(),
@@ -2663,7 +3184,17 @@ mod tests {
         network.loads_mut()[0].voltage_model =
             DistLoadVoltageModel::ConstantPower { v_nom: Vec::new() };
         let instance = McAcPfInstance::from_network(network).unwrap();
-        let result = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap();
+        let result = solve_mc_ac_pf_instance(
+            &instance,
+            &McPfOptions {
+                // This test checks high-precision physical quantities explicitly.
+                tolerance: 1e-8,
+                absolute_kcl_tolerance: 1e-6,
+                relative_kcl_tolerance: 1e-8,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert!(result.voltage_valid);
         let minimum = result.min_voltage_pu.expect("one load branch");
         assert!((minimum - 0.9898979486).abs() < 1e-8, "{minimum}");
@@ -2802,6 +3333,504 @@ mod tests {
     }
 
     #[test]
+    fn compact_study_modules_preserve_strings_and_number_spellings() {
+        let value = serde_json::json!({"name": "island \" α \\ \n bus", "values": [1.23456789012345, -1e-100]});
+        let pretty = serde_json::to_string_pretty(&value).unwrap();
+        let compact = compact_module_json(pretty.clone());
+        assert_eq!(compact, serde_json::to_string(&value).unwrap());
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&compact).unwrap(),
+            value
+        );
+        assert!(compact.len() < pretty.len());
+    }
+
+    fn island_module() -> String {
+        let mut network = one_phase(1.0).network().clone();
+        network
+            .buses_mut()
+            .push(DistBus::new("island", vec!["1".into()]));
+        let mut load = network.loads()[0].clone();
+        load.name = "unsupplied".into();
+        load.bus = "island".into();
+        network.loads_mut().push(load);
+        network.switches_mut().push(powerio_dist::DistSwitch::new(
+            "open-boundary",
+            "load",
+            "island",
+            vec!["1".into()],
+            vec!["1".into()],
+            true,
+        ));
+        crate::ir::serialize_module(&powerio::PioModule::new(
+            powerio::PioValue::MulticonductorNetwork(network),
+        ))
+        .unwrap()
+    }
+
+    fn prepare_energized(text: &str) -> String {
+        let value: serde_json::Value =
+            serde_json::from_str(&prepare_mc_energized_network_json(text).unwrap()).unwrap();
+        value["module_json"].as_str().unwrap().to_owned()
+    }
+
+    #[test]
+    fn energized_selection_preserves_full_network_edits_and_replay() {
+        let full = island_module();
+        assert!(McPfSession::from_module_json(&full, McPfOptions::default())
+            .unwrap_err()
+            .contains("has no voltage source"));
+        let prepared = prepare_energized(&full);
+        let mut session = McPfSession::from_module_json(&prepared, McPfOptions::default()).unwrap();
+        let scope = session.summary().network_scope.as_ref().unwrap();
+        assert_eq!(scope.excluded_bus_count, 1);
+        assert_eq!(scope.excluded_load_count, 1);
+        assert_eq!(scope.excluded_equipment_count, 2);
+        assert_eq!(session.base_instance().network().buses().len(), 2);
+        session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 0,
+                p_w: 2.0,
+                q_var: 0.0,
+            }])
+            .unwrap();
+        assert_eq!(
+            session
+                .summary()
+                .network_scope
+                .as_ref()
+                .unwrap()
+                .excluded_load_count,
+            1
+        );
+        assert_eq!(session.materialization_count(), 0);
+        let snapshot = session
+            .snapshot("energized", "Full network with selected islands")
+            .unwrap();
+        let replay = McStudySnapshot::from_json(&snapshot.to_json().unwrap()).unwrap();
+        let mut located = replay.clone();
+        let layer = powerio::GeoLayer::parse(r#"{"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{"bus":"island"},"geometry":{"type":"Point","coordinates":[-83.9,35.9]}}
+        ]}"#, Some("island.geo.json")).unwrap();
+        located.apply_geo_layer(&layer.layer).unwrap();
+        assert!(located.input_module.contains("-83.9"));
+        assert_eq!(
+            serde_json::to_value(&located.result).unwrap(),
+            serde_json::to_value(&replay.result).unwrap()
+        );
+        let input = crate::ir::deserialize_module(&replay.input_module).unwrap();
+        let powerio::PioValue::MulticonductorNetwork(network) = input.value() else {
+            panic!("full network");
+        };
+        assert_eq!(network.buses().len(), 3);
+        assert_eq!(
+            network
+                .loads()
+                .iter()
+                .find(|l| l.name == "pl")
+                .unwrap()
+                .p_nom,
+            vec![2.0]
+        );
+        assert_eq!(
+            network
+                .loads()
+                .iter()
+                .find(|l| l.name == "unsupplied")
+                .unwrap()
+                .p_nom,
+            vec![1.0]
+        );
+        assert!(!replay.result.terminals.iter().any(|t| t.bus == "island"));
+        let solution =
+            crate::ir::deserialize_module(replay.solution_module.as_ref().unwrap()).unwrap();
+        assert_eq!(
+            solution.extensions()[energized::EXTENSION],
+            serde_json::to_value(&replay.result.excluded_islands).unwrap()
+        );
+        let rerun = McPfSession::from_module_json(&replay.input_module, replay.options).unwrap();
+        assert_eq!(
+            rerun.summary().network_scope,
+            session.summary().network_scope
+        );
+        let mut forged = replay.clone();
+        forged.result.excluded_islands.clear();
+        assert!(forged.validate().unwrap_err().contains("exclusions"));
+        let mut forged = input.clone();
+        forged
+            .insert_extension(energized::EXTENSION, serde_json::json!([]))
+            .unwrap();
+        assert!(McPfSession::from_module_json(
+            &crate::ir::serialize_module(&forged).unwrap(),
+            McPfOptions::default()
+        )
+        .unwrap_err()
+        .contains("topology"));
+        // A second source makes the other island eligible without inventing a connection.
+        let mut network = network.clone();
+        let mut source = network.sources()[0].clone();
+        source.name = "other".into();
+        source.bus = "island".into();
+        network.sources_mut().push(source);
+        let module = crate::ir::serialize_module(&powerio::PioModule::new(
+            powerio::PioValue::MulticonductorNetwork(network),
+        ))
+        .unwrap();
+        let selected = prepare_energized(&module);
+        assert!(
+            McPfSession::from_module_json(&selected, McPfOptions::default())
+                .unwrap()
+                .summary()
+                .network_scope
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn energized_selection_preserves_full_locations_and_filters_solver_locations() {
+        use powerio_dist::{DistComponentLocation, DistGeographicPoint, DistLocationTarget};
+        let mut module = crate::ir::deserialize_module(&island_module()).unwrap();
+        let powerio::PioValue::MulticonductorNetwork(network) = module.value_mut() else {
+            panic!()
+        };
+        for (target, name) in [
+            (DistLocationTarget::Bus, "load"),
+            (DistLocationTarget::Bus, "island"),
+            (DistLocationTarget::Load, "unsupplied"),
+            (DistLocationTarget::Switch, "open-boundary"),
+        ] {
+            network
+                .component_locations_mut()
+                .push(DistComponentLocation::new(
+                    target,
+                    name,
+                    DistGeographicPoint::new(Some(35.0), Some(-83.0)),
+                ));
+        }
+        let prepared = prepare_energized(&crate::ir::serialize_module(&module).unwrap());
+        let session = McPfSession::from_module_json(&prepared, McPfOptions::default()).unwrap();
+        let selected = session.base_instance().network();
+        assert_eq!(selected.component_locations().len(), 1);
+        selected.validate_component_locations().unwrap();
+        let snapshot = session.snapshot("locations", "Located islands").unwrap();
+        let replay = McStudySnapshot::from_json(&snapshot.to_json().unwrap()).unwrap();
+        let full = crate::ir::deserialize_module(&replay.input_module).unwrap();
+        let powerio::PioValue::MulticonductorNetwork(full) = full.value() else {
+            panic!()
+        };
+        assert_eq!(full.component_locations().len(), 4);
+        let solution =
+            crate::ir::deserialize_module(replay.solution_module.as_ref().unwrap()).unwrap();
+        let powerio::PioValue::McAcPfSolution(solution) = solution.value() else {
+            panic!()
+        };
+        assert_eq!(solution.network().component_locations().len(), 1);
+    }
+
+    #[test]
+    fn energized_selection_rejects_no_sources_and_unknown_bus_references() {
+        let mut module = crate::ir::deserialize_module(&island_module()).unwrap();
+        let powerio::PioValue::MulticonductorNetwork(network) = module.value_mut() else {
+            panic!();
+        };
+        network.sources_mut().clear();
+        assert!(
+            prepare_mc_energized_network_json(&crate::ir::serialize_module(&module).unwrap())
+                .unwrap_err()
+                .contains("without a voltage source")
+        );
+        let mut module = crate::ir::deserialize_module(&island_module()).unwrap();
+        let powerio::PioValue::MulticonductorNetwork(network) = module.value_mut() else {
+            panic!();
+        };
+        network.loads_mut()[1].bus = "missing".into();
+        assert!(
+            prepare_mc_energized_network_json(&crate::ir::serialize_module(&module).unwrap())
+                .unwrap_err()
+                .contains("unknown bus")
+        );
+    }
+
+    #[test]
+    fn model_qualification_is_independent_of_voltage_band_and_envelope_enablement() {
+        let mut network = one_phase(30.0).network().clone();
+        network.loads_mut()[0].voltage_model =
+            DistLoadVoltageModel::ConstantImpedance { v_nom: vec![10.0] };
+        let instance = McAcPfInstance::from_network(network).unwrap();
+        let result = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap();
+        assert!(!result.voltage_valid);
+        assert_eq!(
+            result.load_model.as_ref().unwrap().status,
+            McLoadModelStatus::Original
+        );
+        assert!(result.load_model_changes.is_empty());
+        assert!(result.to_powerio_solution(&instance).is_ok());
+
+        let options = McPfOptions {
+            voltage_envelope: false,
+            v_min_pu: 1.01,
+            v_max_pu: 1.2,
+            ..Default::default()
+        };
+        let result = solve_mc_ac_pf_instance(&one_phase(1.0), &options).unwrap();
+        assert!(!result.voltage_valid);
+        assert_eq!(
+            result.load_model.as_ref().unwrap().status,
+            McLoadModelStatus::Original
+        );
+        assert!(
+            result
+                .load_model
+                .as_ref()
+                .unwrap()
+                .original_scaled_kcl_residual
+                .unwrap()
+                <= 1.0
+        );
+    }
+
+    #[test]
+    fn zero_voltage_and_high_voltage_fallbacks_are_explicitly_qualified() {
+        for source_voltage in [0.0, 13.0] {
+            let mut network = one_phase(1.0).network().clone();
+            network.sources_mut()[0].v_magnitude[0] = source_voltage;
+            let instance = McAcPfInstance::from_network(network).unwrap();
+            let result = solve_mc_ac_pf_instance(&instance, &McPfOptions::default()).unwrap();
+            let model = result.load_model.as_ref().unwrap();
+            assert_eq!(model.status, McLoadModelStatus::Modified);
+            assert_eq!(model.modified_branch_count, 1);
+            assert_eq!(
+                result.load_model_changes[0].original_power.is_none(),
+                source_voltage == 0.0
+            );
+            assert_eq!(model.original_kcl_residual.is_none(), source_voltage == 0.0);
+        }
+        let mut network = one_phase(0.0).network().clone();
+        network.sources_mut()[0].v_magnitude[0] = 0.0;
+        let result = solve_mc_ac_pf_instance(
+            &McAcPfInstance::from_network(network).unwrap(),
+            &McPfOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.load_model.as_ref().unwrap().status,
+            McLoadModelStatus::Original
+        );
+        assert!(!result.voltage_valid);
+    }
+
+    #[test]
+    fn modified_results_export_and_replay_without_a_canonical_solution() {
+        let options = McPfOptions {
+            max_iterations: 200,
+            ..Default::default()
+        };
+        let snapshot = McStudySnapshot::solve(
+            "relaxed",
+            "Stressed feeder",
+            &one_phase_module(30.0),
+            options,
+        )
+        .unwrap();
+        let assessment = snapshot.result.load_model.as_ref().unwrap();
+        assert_eq!(assessment.status, McLoadModelStatus::Modified);
+        assert_eq!(assessment.modified_branch_count, 1);
+        assert!(assessment.original_scaled_kcl_residual.unwrap() > 1.0);
+        assert_eq!(assessment.options, options);
+        assert!(snapshot.solution_module.is_none());
+        let change = &snapshot.result.load_model_changes[0];
+        assert_eq!(change.load, "pl");
+        assert!((change.original_power.unwrap().re - 30.0).abs() < 1e-10);
+        assert!((change.solved_power.re - 30.0).abs() > 1.0);
+        assert!(snapshot
+            .result
+            .to_powerio_solution(&one_phase(30.0))
+            .unwrap_err()
+            .contains("canonical"));
+        let replay = McStudySnapshot::from_json(&snapshot.to_json().unwrap()).unwrap();
+        assert_eq!(replay.result.load_model, snapshot.result.load_model);
+        assert_eq!(
+            replay.result.load_model_changes,
+            snapshot.result.load_model_changes
+        );
+        let mut forged = snapshot.clone();
+        forged
+            .result
+            .load_model
+            .as_mut()
+            .unwrap()
+            .modified_branch_count = 0;
+        assert!(forged.validate().unwrap_err().contains("qualification"));
+        let mut forged = snapshot.clone();
+        forged.result.load_model_changes[0].solved_power.re += 1.0;
+        assert!(forged.validate().unwrap_err().contains("qualification"));
+        let mut forged = snapshot;
+        forged.options.v_min_pu = 0.8;
+        assert!(forged.validate().is_err());
+    }
+
+    #[test]
+    fn replay_rejects_self_consistent_but_fabricated_electrical_quantities() {
+        for power in [1.0, 30.0] {
+            let snapshot = McStudySnapshot::solve(
+                "replay",
+                "Validation",
+                &one_phase_module(power),
+                McPfOptions {
+                    max_iterations: 200,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            for kind in ["terminal", "source", "load", "line"] {
+                let mut forged = snapshot.clone();
+                let (current, power) = match kind {
+                    "terminal" => {
+                        let value = forged
+                            .result
+                            .terminals
+                            .iter_mut()
+                            .find(|t| t.current_into_network.re.abs() > 0.01)
+                            .unwrap();
+                        (
+                            &mut value.current_into_network,
+                            &mut value.power_into_network,
+                        )
+                    }
+                    "source" => {
+                        let value = &mut forged.result.source_reactions[0];
+                        (
+                            &mut value.current_into_network,
+                            &mut value.power_into_network,
+                        )
+                    }
+                    _ => {
+                        let value = forged
+                            .result
+                            .element_ports
+                            .iter_mut()
+                            .find(|p| p.kind == kind && p.current_into_element.re.abs() > 0.01)
+                            .unwrap();
+                        (
+                            &mut value.current_into_element,
+                            &mut value.power_into_element,
+                        )
+                    }
+                };
+                current.re *= 2.0;
+                current.im *= 2.0;
+                power.re *= 2.0;
+                power.im *= 2.0;
+                assert!(
+                    McStudySnapshot::from_json(&serde_json::to_string(&forged).unwrap())
+                        .unwrap_err()
+                        .contains("network equations"),
+                    "{kind}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_snapshots_are_reassessed_before_reexport() {
+        for power in [1.0, 30.0] {
+            let mut snapshot = McStudySnapshot::solve(
+                "old",
+                "Legacy",
+                &one_phase_module(power),
+                McPfOptions {
+                    max_iterations: 200,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let expected = snapshot.result.load_model.clone();
+            // Reproduce the v1 format, which exported relaxed points as canonical.
+            snapshot.version = 1;
+            let solution = snapshot
+                .result
+                .project_powerio_solution(&one_phase(power))
+                .unwrap();
+            snapshot.solution_module = Some(
+                crate::ir::serialize_module(&powerio::PioModule::new(
+                    powerio::PioValue::McAcPfSolution(solution),
+                ))
+                .unwrap(),
+            );
+            snapshot.result.load_model = None;
+            snapshot.result.load_model_changes.clear();
+            let mut value = serde_json::to_value(snapshot).unwrap();
+            value["result"]
+                .as_object_mut()
+                .unwrap()
+                .remove("load_model");
+            value["result"]
+                .as_object_mut()
+                .unwrap()
+                .remove("load_model_changes");
+            let replay = McStudySnapshot::from_json(&value.to_string()).unwrap();
+            assert_eq!(replay.version, 2);
+            assert_eq!(replay.result.load_model, expected);
+            assert_eq!(replay.solution_module.is_some(), power == 1.0);
+            replay.validate().unwrap();
+        }
+    }
+
+    #[test]
+    fn session_edits_refresh_qualification_and_failed_edits_keep_it() {
+        let mut session = McPfSession::new(
+            one_phase(1.0),
+            McPfOptions {
+                max_iterations: 200,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            session.summary().load_model.as_ref().unwrap().status,
+            McLoadModelStatus::Original
+        );
+        session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 0,
+                p_w: 30.0,
+                q_var: 0.0,
+            }])
+            .unwrap();
+        let summary = session.summary().clone();
+        assert_eq!(
+            summary.load_model.as_ref().unwrap().status,
+            McLoadModelStatus::Modified
+        );
+        assert_eq!(
+            session.build_result().unwrap().load_model,
+            summary.load_model
+        );
+        assert!(session
+            .snapshot("s", "modified")
+            .unwrap()
+            .solution_module
+            .is_none());
+        assert!(session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: "pl".into(),
+                branch: 0,
+                p_w: f64::NAN,
+                q_var: 0.0
+            }])
+            .is_err());
+        assert_eq!(session.summary(), &summary);
+        session.replace_load_powers(&[]).unwrap();
+        assert_eq!(
+            session.summary().load_model.as_ref().unwrap().status,
+            McLoadModelStatus::Original
+        );
+        assert_eq!(session.factorization_count(), 1);
+    }
+
+    #[test]
     fn study_snapshot_is_self_contained_and_replayable() {
         let snapshot = McStudySnapshot::solve(
             "distribution-study",
@@ -2815,7 +3844,11 @@ mod tests {
         assert_eq!(replayed.schema, McStudySnapshot::SCHEMA);
         assert_eq!(replayed.formulation, "mc_ac_pf");
         assert_eq!(replayed.result.factorization_count, 1);
-        assert!(replayed.solution_module.contains("McAcPfSolution"));
+        assert!(replayed
+            .solution_module
+            .as_ref()
+            .unwrap()
+            .contains("McAcPfSolution"));
     }
 
     #[test]
@@ -2866,7 +3899,10 @@ mod tests {
         snapshot.apply_geo_layer(&layer.layer).unwrap();
         let restored = McStudySnapshot::from_json(&snapshot.to_json().unwrap()).unwrap();
         assert_eq!(serde_json::to_value(&restored.result).unwrap(), result);
-        for text in [&restored.input_module, &restored.solution_module] {
+        for text in [
+            &restored.input_module,
+            restored.solution_module.as_ref().unwrap(),
+        ] {
             assert!(text.contains("-83.85"), "saved route midpoint is absent");
         }
         let saved = snapshot.to_json().unwrap();
@@ -2969,6 +4005,48 @@ mod tests {
             assert_summary_matches(&summary, &session.build_result().unwrap());
             assert_eq!(summary.solve_count, 2);
             assert_eq!(session.materialization_count(), 0);
+        }
+    }
+
+    #[test]
+    fn result_tables_hold_the_full_result_row_for_row() {
+        for text in ORACLE_INPUTS {
+            let mut session =
+                McPfSession::new(oracle_instance(text), McPfOptions::default()).unwrap();
+            let check = |session: &McPfSession| {
+                let result = session.build_result().unwrap();
+                let tables = session.result_tables().unwrap();
+                assert_eq!(tables, McPfResultTables::from_result(&result));
+                assert_eq!(tables.terminal_count(), result.terminals.len());
+                assert_eq!(tables.port_count(), result.element_ports.len());
+                assert_eq!(tables.source_count(), result.source_reactions.len());
+                // Spot-check one row of each table against the objects.
+                let port = &result.element_ports[0];
+                assert_eq!(
+                    tables.strings[tables.port_element[0] as usize],
+                    port.element
+                );
+                assert_eq!(tables.port_power[0], port.power_into_element.re);
+                assert_eq!(tables.port_power[1], port.power_into_element.im);
+                let k = result.terminals.len() - 1;
+                assert_eq!(
+                    tables.terminal_voltage[2 * k + 1],
+                    result.terminals[k].voltage.im
+                );
+            };
+            check(&session);
+            let edits: Vec<_> = session
+                .load_branches()
+                .into_iter()
+                .map(|branch| McLoadPowerEdit {
+                    load: branch.load,
+                    branch: branch.branch,
+                    p_w: branch.base_p_w * 1.07,
+                    q_var: branch.base_q_var * 0.9,
+                })
+                .collect();
+            session.replace_load_powers(&edits).unwrap();
+            check(&session);
         }
     }
 
@@ -3108,6 +4186,65 @@ mod tests {
         let edited = session.input_module_json().unwrap();
         assert_eq!(edited, reparsed(&session.edited_instance().unwrap()));
         assert_eq!(session.materialization_count(), 2);
+    }
+
+    #[test]
+    fn parsed_module_session_matches_its_ir_text_and_carries_edits_without_text() {
+        let text = ORACLE_INPUTS[0];
+        let source =
+            powerio::Source::from_memory("case.bmopf.json", text.as_bytes().to_vec()).unwrap();
+        let parsed = powerio::parse_with_options(
+            source,
+            &powerio::ParseOptions::default()
+                .format("bmopf-json")
+                .unwrap(),
+        )
+        .unwrap();
+        let module_json = crate::ir::serialize_module(&parsed).unwrap();
+        let options = McPfOptions::default();
+        let from_text = McPfSession::from_module_json(&module_json, options).unwrap();
+        let mut session = McPfSession::from_module(&parsed, options).unwrap();
+        assert_eq!(session.terminal_ids(), from_text.terminal_ids());
+        assert_eq!(session.terminal_voltages(), from_text.terminal_voltages());
+        let mut summary = session.summary().clone();
+        summary.solve_count = from_text.summary().solve_count;
+        assert_eq!(&summary, from_text.summary());
+        // Both keep the same records, so both write the same IR.
+        assert_eq!(
+            session.input_module_json().unwrap(),
+            from_text.input_module_json().unwrap()
+        );
+
+        let branch = session.load_branches()[0].clone();
+        session
+            .replace_load_powers(&[McLoadPowerEdit {
+                load: branch.load.clone(),
+                branch: branch.branch,
+                p_w: branch.base_p_w * 1.3,
+                q_var: branch.base_q_var,
+            }])
+            .unwrap();
+        let edited = session.input_module().unwrap();
+        assert_eq!(
+            crate::ir::serialize_module(&edited).unwrap(),
+            session.input_module_json().unwrap()
+        );
+        let resolved = McPfSession::from_module(&edited, options).unwrap();
+        let restated = resolved
+            .load_branches()
+            .into_iter()
+            .find(|b| b.load == branch.load && b.branch == branch.branch)
+            .unwrap();
+        assert_eq!(restated.base_p_w, branch.base_p_w * 1.3);
+        let close = resolved
+            .terminal_voltages()
+            .iter()
+            .zip(session.terminal_voltages())
+            .all(|(a, b)| (a - b).abs() <= 1e-6 * a.abs().max(1.0));
+        assert!(
+            close,
+            "a session from the edited module reproduces the edit"
+        );
     }
 
     #[test]

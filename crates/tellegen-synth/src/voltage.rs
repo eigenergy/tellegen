@@ -54,6 +54,10 @@ struct TableFile {
     regional: Regional,
     standard: Standard,
     countries: BTreeMap<String, Entry>,
+    /// First-level subdivisions (ISO 3166-2) modelled down to
+    /// subtransmission; a region dominated by one takes its ladder.
+    #[serde(default)]
+    subdivisions: BTreeMap<String, Entry>,
 }
 
 /// Where a ladder came from.
@@ -65,6 +69,8 @@ pub enum LadderSource {
     Regional,
     /// IEC 60038's standard levels, for any other country.
     Standard,
+    /// A subdivision's own entry.
+    Subdivision,
 }
 
 /// A resolved ladder.
@@ -90,6 +96,7 @@ pub struct VoltageLadders {
     regional_levels: Vec<f64>,
     standard_levels: Vec<f64>,
     countries: BTreeMap<String, (Vec<f64>, Vec<f64>)>,
+    subdivisions: BTreeMap<String, (Vec<f64>, Vec<f64>)>,
 }
 
 /// Levels sorted highest first; an error for an empty, non-positive or
@@ -118,7 +125,13 @@ impl VoltageLadders {
             ));
         }
         let mut countries = BTreeMap::new();
-        for (code, entry) in file.countries {
+        let mut subdivisions = BTreeMap::new();
+        let entries = file
+            .countries
+            .into_iter()
+            .map(|e| (false, e))
+            .chain(file.subdivisions.into_iter().map(|e| (true, e)));
+        for (sub, (code, entry)) in entries {
             let levels = ladder(&code, &entry.levels_kv)?;
             let above = ladder(&code, &entry.above_kv)?;
             if levels.is_empty() || entry.sources.is_empty() {
@@ -130,7 +143,11 @@ impl VoltageLadders {
                 ));
             }
             let _ = entry.note;
-            countries.insert(code, (levels, above));
+            if sub {
+                subdivisions.insert(code, (levels, above));
+            } else {
+                countries.insert(code, (levels, above));
+            }
         }
         let regional_levels = ladder("regional", &file.regional.levels_kv)?;
         let standard_levels = ladder("standard", &file.standard.levels_kv)?;
@@ -153,6 +170,16 @@ impl VoltageLadders {
             regional_levels,
             standard_levels,
             countries,
+            subdivisions,
+        })
+    }
+
+    /// The ladder of a subdivision with its own entry.
+    pub fn subdivision_ladder(&self, code: &str) -> Option<Ladder> {
+        self.subdivisions.get(code).map(|(levels, above)| Ladder {
+            levels_kv: levels.clone(),
+            above_kv: above.clone(),
+            source: LadderSource::Subdivision,
         })
     }
 

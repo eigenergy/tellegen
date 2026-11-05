@@ -31,6 +31,9 @@ rand_chacha = { version = "0.10", default-features = false }
 # Pure Rust O(n log n) Delaunay triangulation with robust orientation predicates;
 # the minimum spanning tree and the Gabriel mesh are both derived from it.
 delaunator = "1.1"
+# Sparse Cholesky for the planning and reactive-plan angle solves (already in
+# the graph through `tellegen`'s `sensitivity` feature, with the same features).
+faer = { version = "0.24.4", default-features = false, features = ["std", "linalg", "sparse", "sparse-linalg"] }
 # Complex arithmetic for the GridFM π-model admittances (already in the graph
 # through `tellegen`'s `sensitivity` feature).
 num-complex = { version = "0.4", default-features = false }

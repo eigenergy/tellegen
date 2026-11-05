@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { DistGraph, SchematicLayout } from '@tellegen/engine';
+import {
+	mcPfResultTables,
+	type DistGraph,
+	type McPfResult,
+	type SchematicLayout
+} from '@tellegen/engine';
 import {
 	attachmentGlyph,
 	branchGlyph,
@@ -462,6 +467,35 @@ describe('solved values on the drawing', () => {
 		});
 		expect(powers.get('ld1')).toEqual({ p: 150, q: 15 });
 		expect(powers.get('grid')).toEqual({ p: -160, q: -20 });
+		// A live session's columns give the same sums; branch ports stay out.
+		const z = { re: 0, im: 0 };
+		const port = (element: string, kind: string, re: number, im: number) => ({
+			element,
+			kind,
+			branch: 0,
+			bus: 'B',
+			terminal: '1',
+			current_into_element: z,
+			power_into_element: { re, im }
+		});
+		const tables = mcPfResultTables({
+			iterations: 1,
+			terminals: [],
+			element_ports: [
+				port('ld1', 'load', 100, 10),
+				port('ld1', 'line', 7, 7),
+				port('ld1', 'load', 50, 5)
+			],
+			source_reactions: [
+				{
+					source: 'grid',
+					terminal: '1',
+					current_into_network: z,
+					power_into_network: { re: 160, im: 20 }
+				}
+			]
+		} as unknown as McPfResult);
+		expect(elementPowers(tables)).toEqual(powers);
 		expect(formatPower(15_000, 5_000)).toBe('15.0 kW 5.0 kvar');
 		expect(formatPower(2.5e6, -1e5)).toBe('2.5 MW -0.1 Mvar');
 		expect(formatPower(160, 20)).toBe('160 W 20.0 var');
