@@ -26,3 +26,8 @@ export { default as Sparkline } from './Sparkline.svelte';
 
 export { default as McResults } from './components/McResults.svelte';
 export { default as McWorkbench } from './components/McWorkbench.svelte';
+
+export { default as McPfSettings } from './components/McPfSettings.svelte';
+export { default as McModelQualification } from './components/McModelQualification.svelte';
+
+export { default as McNetworkScope } from './components/McNetworkScope.svelte';

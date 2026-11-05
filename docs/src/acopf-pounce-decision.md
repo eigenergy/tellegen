@@ -386,8 +386,8 @@ residuals, and [conditional local marginal values](formulations.md#dual-diagnost
 for supported load and limit parameters. Raw IVR KCL multipliers are not nodal
 prices. Solution sensitivities are not yet exposed.
 
-The feature builds against POUNCE 0.13.0 and, until PowerIO 0.11.8 is
-published, against the PowerIO candidate patched in the root `Cargo.toml`. Build and test the native feature from the repository root:
+The feature builds against published POUNCE 0.13.0 and PowerIO 0.11.8.
+Build and test the native feature from the repository root:
 
 ```sh
 cargo build -p tellegen --no-default-features --features mc-opf --locked

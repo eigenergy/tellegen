@@ -57,7 +57,7 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 			buffer: Buffer.from(coordinates('diagram'))
 		}
 	]);
-	await expect(page.getByRole('button', { name: 'Solve AC power flow', exact: true })).toBeEnabled({
+	await expect(page.getByRole('button', { name: 'Run power flow', exact: true })).toBeEnabled({
 		timeout: 60_000
 	});
 	await expect(
@@ -67,7 +67,12 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 	await expect(page.locator('[data-bus-id="0"] circle')).toHaveAttribute('cx', /1000|1100/);
 	const path = page.locator('[data-branch-id="0"]');
 	expect((await path.getAttribute('d'))?.split(' L')).toHaveLength(3);
-	await page.getByRole('button', { name: 'Solve AC power flow', exact: true }).click();
+	await page.getByRole('button', { name: 'Run power flow', exact: true }).click();
+	await expect(
+		page
+			.getByRole('region', { name: 'Operating point overview' })
+			.getByText('Violations', { exact: true })
+	).toBeInViewport();
 	const table = page.getByRole('table', { name: 'Terminal results', exact: true });
 	await expect(table).toBeVisible({ timeout: 60_000 });
 	await expect(table.locator('tbody tr')).toHaveCount(4);
@@ -82,7 +87,20 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 		case_id: caseId,
 		expected_revision: inspected.data.revision
 	});
-	expect(solved).toMatchObject({ ok: true, data: { converged: true, terminal_count: 8 } });
+	expect(solved).toMatchObject({
+		ok: true,
+		data: {
+			converged: true,
+			terminal_count: 8,
+			load_model: {
+				status: expect.stringMatching(/^(original|modified)$/),
+				options: { voltage_envelope: true, v_min_pu: 0.85, v_max_pu: 1.15 }
+			}
+		}
+	});
+	expect(inspected.data.solution).toMatchObject({
+		load_model: { status: expect.stringMatching(/^(original|modified)$/) }
+	});
 	const query = await callTool(page, 'query_network', {
 		case_id: caseId,
 		element_kind: 'bus',
@@ -131,7 +149,8 @@ test('multiconductor UI solves, exposes terminal values to agents, and retains r
 	expect(snapshot.schema).toBe('tellegen-mc-pf-study');
 	expect(snapshot.result.terminals).toHaveLength(8);
 	expect(snapshot.input_module).toContain('-82.9');
-	expect(snapshot.solution_module).toContain('-82.9');
+	if (snapshot.solution_module) expect(snapshot.solution_module).toContain('-82.9');
+	else expect(snapshot.result.load_model.status).toBe('modified');
 	const fresh = await page.context().browser()!.newContext();
 	try {
 		const imported = await fresh.newPage();
