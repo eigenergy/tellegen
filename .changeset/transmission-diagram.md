@@ -46,3 +46,8 @@ width by rank. Hovering a level in the key highlights it; clicking keeps it
 highlighted. Zoomed out, levels below the top three fade. With results shown,
 chevrons on branches point the way active power flows. The schematic names each
 substation at its box and labels busbars with their voltage close in.
+
+Close in, generators and loads hang below their bus; out-of-service branches
+are dashed; the key groups levels under their tier. When the display series is
+uniform (one price everywhere), buses turn neutral grey and the legend states
+the value, rather than taking the middle of the colour ramp.

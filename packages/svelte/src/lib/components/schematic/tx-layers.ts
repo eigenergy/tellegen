@@ -1,6 +1,7 @@
 import type { Layer } from '@deck.gl/core';
 import type { RGBA } from '../../colors.js';
 import {
+	attachmentGlyph,
 	branchGlyph,
 	type LabelCandidate,
 	type Landmark,
@@ -98,6 +99,14 @@ export interface TxScene {
 	/** Active power direction arrows once results and symbols show: branch rows, +1 when power
 	 * flows along the drawn path's direction at the anchor, -1 against, and the glyph scale. */
 	arrows: { edges: number[]; dir: Int8Array; unit: number } | null;
+	/** Generator and load symbols hanging below their bus once legible: where each hangs from
+	 * and the glyph scale. */
+	attachments: {
+		points: { x: number; y: number; kind: 'generator' | 'load' }[];
+		unit: number;
+	} | null;
+	/** Drawing units per screen pixel, for dashes of a fixed screen size. */
+	pixel: number;
 	/** Level colour per bus, for transformer windings. */
 	busLevels: Uint8Array;
 	/** Busbars and substation boxes of the substation overview; null on source positions. */
@@ -199,8 +208,10 @@ function transformerStrokes(scene: TxScene) {
 		const side = (part: number) => (part < 2 === forward ? a : b);
 		glyph.forEach((line, part) => {
 			const bus = side(part);
+			// A shade darker than the line, so pale levels still read as a stroke on paper.
 			const colour = scene.busLevels.subarray(bus * 4, bus * 4 + 4);
-			for (let i = 1; i < line.length; i++) colours.push(colour[0], colour[1], colour[2], 255);
+			for (let i = 1; i < line.length; i++)
+				colours.push(colour[0] * 0.72, colour[1] * 0.72, colour[2] * 0.72, 255);
 		});
 		for (const line of glyph)
 			for (let i = 1; i < line.length; i++) {
@@ -248,6 +259,55 @@ function arrowStrokes(scene: TxScene) {
 		}
 	});
 	return { sources: Float32Array.from(src), targets: Float32Array.from(dst) };
+}
+
+/** Generator and load symbols as strokes, hanging straight down from their points. */
+function attachmentStrokes(scene: TxScene) {
+	const at = scene.attachments;
+	if (!at || !at.points.length) return null;
+	const src: number[] = [];
+	const dst: number[] = [];
+	for (const p of at.points)
+		for (const line of attachmentGlyph(p.kind))
+			for (let i = 1; i < line.length; i++) {
+				// Rotated a quarter turn: the glyph's +x runs down the screen.
+				const [ax, ay] = line[i - 1];
+				const [bx, by] = line[i];
+				src.push(p.x - at.unit * ay, p.y + at.unit * ax, 0);
+				dst.push(p.x - at.unit * by, p.y + at.unit * bx, 0);
+			}
+	return { sources: Float32Array.from(src), targets: Float32Array.from(dst) };
+}
+
+/** Out-of-service branches as dashes of a fixed screen length (4 px on, 3 px off). */
+function dashStrokes(scene: TxScene) {
+	const g = scene.geometry;
+	const on = 4 * scene.pixel;
+	const period = 7 * scene.pixel;
+	const src: number[] = [];
+	const dst: number[] = [];
+	const colour: number[] = [];
+	for (let j = 0; j < g.segmentEdge.length; j++) {
+		const k = g.segmentEdge[j];
+		if (scene.graph.inService[k]) continue;
+		const [x0, y0] = [g.sources[j * 3], g.sources[j * 3 + 1]];
+		const [x1, y1] = [g.targets[j * 3], g.targets[j * 3 + 1]];
+		const len = Math.hypot(x1 - x0, y1 - y0);
+		if (!(len > 0)) continue;
+		const pieces = Math.min(2000, Math.ceil(len / period));
+		for (let i = 0; i < pieces; i++) {
+			const t0 = (i * period) / len;
+			const t1 = Math.min(1, (i * period + on) / len);
+			src.push(x0 + (x1 - x0) * t0, y0 + (y1 - y0) * t0, 0);
+			dst.push(x0 + (x1 - x0) * t1, y0 + (y1 - y0) * t1, 0);
+			colour.push(...scene.edgeColours.subarray(k * 4, k * 4 + 4));
+		}
+	}
+	return {
+		sources: Float32Array.from(src),
+		targets: Float32Array.from(dst),
+		colours: Uint8Array.from(colour)
+	};
 }
 
 /** Landmark stroke colours by state: ink, or the warning and violation colours. */
@@ -304,6 +364,12 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 				];
 	const tx = transformerStrokes(scene);
 	const arrows = arrowStrokes(scene);
+	const attached = attachmentStrokes(scene);
+	const dashes = dashStrokes(scene);
+	// Out-of-service segments are drawn as dashes instead.
+	const solid = seg.colours.slice();
+	for (let j = 0; j < g.segmentEdge.length; j++)
+		if (!scene.graph.inService[g.segmentEdge[j]]) solid[j * 4 + 3] = 0;
 	const parts = scene.parts;
 	const boxes = parts ? boxPolygons(parts.boxes) : [];
 	return [
@@ -333,7 +399,7 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 				attributes: {
 					getSourcePosition: { value: g.sources, size: 3 },
 					getTargetPosition: { value: g.targets, size: 3 },
-					getColor: { value: seg.colours, size: 4, normalized: true },
+					getColor: { value: solid, size: 4, normalized: true },
 					getWidth: { value: seg.widths, size: 1 }
 				}
 			},
@@ -388,6 +454,42 @@ export function txLayers(kit: DeckKit, scene: TxScene): Layer[] {
 						widthUnits: 'pixels',
 						pickable: true,
 						updateTriggers: { getColor: [scene.busColours] }
+					})
+				]
+			: []),
+		...(dashes.sources.length
+			? [
+					new LineLayer({
+						...common,
+						id: 'open-branches',
+						data: {
+							length: dashes.sources.length / 3,
+							attributes: {
+								getSourcePosition: { value: dashes.sources, size: 3 },
+								getTargetPosition: { value: dashes.targets, size: 3 },
+								getColor: { value: dashes.colours, size: 4, normalized: true }
+							}
+						},
+						getWidth: 1.4,
+						widthUnits: 'pixels'
+					})
+				]
+			: []),
+		...(attached
+			? [
+					new LineLayer({
+						...common,
+						id: 'attachments',
+						data: {
+							length: attached.sources.length / 3,
+							attributes: {
+								getSourcePosition: { value: attached.sources, size: 3 },
+								getTargetPosition: { value: attached.targets, size: 3 }
+							}
+						},
+						getColor: SYMBOL_INK,
+						getWidth: 1.3,
+						widthUnits: 'pixels'
 					})
 				]
 			: []),

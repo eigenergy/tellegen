@@ -35,6 +35,7 @@
 		titleBlock,
 		branchLevels,
 		flowDirections,
+		TX_TIERS,
 		voltageLegend,
 		txBranchText,
 		txBusText,
@@ -219,18 +220,44 @@
 			if (focusEntry >= 0 && legend.entryOf(graph.kv[i]) !== focusEntry) c = [c[0], c[1], c[2], 40];
 			if (resultsOn && display && domain) {
 				const v = busValues.get(graph.busId[i]);
+				// A uniform series carries no contrast: neutral rather than the ramp's middle,
+				// which on a busbar would read like a warning.
 				c =
 					v === undefined
 						? [180, 175, 165, 200]
-						: (display.mode === 'demand' ? demandColor : priceColor)(
-								(v - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
-							);
+						: uniform !== null
+							? UNIFORM_INK
+							: (display.mode === 'demand' ? demandColor : priceColor)(
+									(v - domain.lo) / Math.max(domain.hi - domain.lo, 1e-12)
+								);
 			}
 			out.set(c, i * 4);
 		}
 		return out;
 	});
 	const busRadius = $derived(Math.max(1.5, Math.min(5, span / 14)));
+	/** The display series' single value when it is uniform (as the map's display panel judges it). */
+	const uniform = $derived(ctrl.displayStats?.uniform ?? null);
+	const UNIFORM_INK: RGBA = [120, 116, 108, 235];
+
+	/** Generator and load symbols, hanging from the bus (or the bottom of its busbar) once
+	 * symbols are legible; side by side when a bus has both. */
+	const attachments = $derived.by(() => {
+		if (!symbolsOn) return null;
+		const unit = 5 / 2 ** stepZoom;
+		const points: { x: number; y: number; kind: 'generator' | 'load' }[] = [];
+		for (let i = 0; i < graph.busId.length; i++) {
+			const gen = graph.genMw[i] > 0;
+			const load = graph.demandMw[i] > 0;
+			if (!gen && !load) continue;
+			const x = parts ? parts.busbars[i * 4 + 2] : geometry.positions[i * 3];
+			const y = parts ? parts.busbars[i * 4 + 3] : geometry.positions[i * 3 + 1];
+			const dx = gen && load ? 1.1 * unit : 0;
+			if (gen) points.push({ x: x - dx, y, kind: 'generator' });
+			if (load) points.push({ x: x + dx, y, kind: 'load' });
+		}
+		return points.length ? { points, unit } : null;
+	});
 
 	const selectedBus = $derived(
 		app.selectedBus === null ? -1 : (graph.index.get(app.selectedBus) ?? -1)
@@ -280,6 +307,7 @@
 		txLandmarks(graph, geometry, solution ? branchState : null, anchors)
 	);
 	const levelsPresent = $derived(legend.entries);
+	const TIER_NAMES = Object.fromEntries(TX_TIERS.map((t) => [t.tier, t.name]));
 
 	/** Screen insets no panel or toolbar covers. */
 	const freeArea = () =>
@@ -339,6 +367,8 @@
 			hoveredEdge,
 			anchors,
 			arrows,
+			attachments,
+			pixel: 1 / 2 ** stepZoom,
 			transformers,
 			parts,
 			morph: morph ? { s: morph.s, t: morph.t, cur: morph.cur, endpoints: morph.endpoints } : null,
@@ -665,6 +695,8 @@
 			hoveredEdge,
 			transformers,
 			arrows,
+			attachments,
+			stepZoom,
 			marks,
 			labels
 		];
@@ -865,7 +897,10 @@
 	</div>
 	{#if resultsOn}
 		<div class="legend" style:top="{panels.top + 50}px" style:left="{toolLeft}px">
-			{#if display}
+			{#if display && uniform !== null}
+				{display.label} uniform at {uniform.toPrecision(4)}
+				{display.unit} · grey ·
+			{:else if display}
 				{display.label} <i style:background={display.gradient}></i> ·
 			{/if}
 			Loading <span>0 %</span><i style:background={priceGradient}></i><span>100 %</span>
@@ -882,6 +917,9 @@
 			<summary>Key</summary>
 			<ul class="symbols" aria-label="Voltage levels">
 				{#each levelsPresent as l, j (l.label)}
+					{#if j === 0 || levelsPresent[j - 1].tier !== l.tier}
+						<li class="tier">{TIER_NAMES[l.tier]}</li>
+					{/if}
 					<li>
 						<button
 							class="level"
@@ -1106,6 +1144,13 @@
 	}
 	.symbols .level.dim {
 		opacity: 0.45;
+	}
+	.symbols .tier {
+		margin-top: 4px;
+		color: var(--text-secondary);
+		font-size: 9px;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
 	}
 	.attribution {
 		position: absolute;

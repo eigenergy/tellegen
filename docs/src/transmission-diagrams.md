@@ -10,7 +10,8 @@ The diagram first draws the case on its own positions: geographic coordinates ov
 basemap, or drawing coordinates as given. Zoomed out, the largest generators and the transformers
 stay findable as fixed-size landmarks, placed by priority so the view never fills with markers.
 Closer in, transformers are drawn on their branch as two interlocking circles, each winding in the
-colour of the voltage on its side, and buses are named.
+colour of the voltage on its side, generators and loads hang below their bus, and buses are named.
+Out-of-service branches are dashed.
 
 ## Voltage levels
 
@@ -29,14 +30,17 @@ is therefore drawn with three cues together:
 - **shade within a tier**, darker for the higher level;
 - **width by rank**, heaviest for the highest level.
 
-Hovering a level in the key keeps it and fades the others; clicking keeps it highlighted. Zoomed
+The key groups the levels under their tier. Hovering a level in the key keeps it and fades the
+others; clicking keeps it highlighted. Zoomed
 out, levels below the top three fade so the backbone reads first.
 
 ## Results
 
 Once the case is solved, **Colour by: Results** colours buses by the map's current display (LMP,
 angle, voltage or demand) and branches by loading, from grey through amber to red at the rating;
-branches above 60 % of their rating carry their loading. Closer in, a chevron on each branch points
+branches above 60 % of their rating carry their loading. When the display series is the same at
+every bus (a DC OPF without congestion has one price), buses are drawn neutral grey and the legend
+gives the value, rather than the middle of the colour ramp. Closer in, a chevron on each branch points
 the way active power flows; on a transformer it sits beside the symbol. Hover a bus or branch for its voltage,
 substation, rating and solved values; click to select it. Selections made elsewhere (search, the
 panels) are brought into view.

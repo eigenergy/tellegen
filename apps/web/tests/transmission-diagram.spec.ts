@@ -60,6 +60,9 @@ test('a balanced case opens as a single-line diagram and returns to the map', as
 	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('345 kV');
 	await expect(key.getByRole('list', { name: 'Voltage levels' })).toContainText('138 kV');
 	await expect(key).toContainText('transformer');
+	// Levels are grouped under their tier.
+	await expect(key).toContainText(/extra high voltage/i);
+	await expect(key).toContainText(/high voltage/i);
 	await expect(key).toContainText('3 substations, 4 buses');
 	// A level in the key highlights on hover and stays highlighted when clicked.
 	const level = key.getByRole('button', { name: /345 kV/ });
