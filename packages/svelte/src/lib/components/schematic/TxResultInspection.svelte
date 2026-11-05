@@ -2,8 +2,10 @@
 	import { tick } from 'svelte';
 	import {
 		transferDirectionText,
+		transferReading,
 		type TransferReading
 	} from '../../diagram/transmission-transfer.js';
+	import { readable } from '../../format.js';
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import type { operatingExceptions } from '../../diagram/transmission-inspection.js';
 	import {
@@ -95,14 +97,14 @@
 		low: 'Below minimum',
 		high: 'Above maximum'
 	};
-	const numberOptions = { maximumFractionDigits: 6, useGrouping: false };
-	const number = new Intl.NumberFormat('en', numberOptions);
-	const signedNumber = new Intl.NumberFormat('en', { ...numberOptions, signDisplay: 'exceptZero' });
-	function quantity(value: number | null | undefined, unit: string, signed = false) {
-		if (value == null || !Number.isFinite(value)) return 'Unavailable';
-		const display = (signed ? signedNumber : number).format(value);
-		return `${display === '-0' ? '0' : display}${unit === '%' ? '' : ' '}${unit}`;
-	}
+	/** The flow along the branch in words, when one end supplies the other. */
+	const flowSentence = $derived.by(() => {
+		if (!branch) return null;
+		const reading = transfer ? transfer.reading : transferReading(flow, !voltageSolved);
+		if (!reading?.magnitude || !reading.direction) return null;
+		const [a, b] = reading.direction > 0 ? [branch.from, branch.to] : [branch.to, branch.from];
+		return { mw: readable(reading.magnitude, 'MW').text, from: a, to: b };
+	});
 	export function focusSelection() {
 		heading?.focus();
 	}
@@ -120,6 +122,14 @@
 	}
 </script>
 
+<!-- A rounded quantity; the exact value is kept for hover and for checks. -->
+{#snippet q(value: number | null | undefined, unit: string, signed = false)}
+	{@const r = readable(value, unit, signed)}
+	<span data-exact={r.exact} title={r.exact === r.text ? undefined : `Exact: ${r.exact}`}
+		>{r.text}</span
+	>
+{/snippet}
+
 {#if bus || branch}
 	<section class="inspection" aria-label="Selected equipment">
 		<header>
@@ -136,18 +146,19 @@
 					<div>
 						<dt>Voltage</dt>
 						<dd>
-							{voltageSolved
-								? quantity(deenergized ? undefined : voltage, 'pu')
-								: 'Unavailable in DC'}
+							{#if voltageSolved}{@render q(
+									deenergized ? undefined : voltage,
+									'pu'
+								)}{:else}Unavailable in DC{/if}
 						</dd>
 					</div>
 					<div>
 						<dt>Minimum</dt>
-						<dd>{quantity(bus.vmin_pu, 'pu')}</dd>
+						<dd>{@render q(bus.vmin_pu, 'pu')}</dd>
 					</div>
 					<div>
 						<dt>Maximum</dt>
-						<dd>{quantity(bus.vmax_pu, 'pu')}</dd>
+						<dd>{@render q(bus.vmax_pu, 'pu')}</dd>
 					</div>
 					{#if voltageSolved}<div>
 							<dt>Voltage status</dt>
@@ -156,19 +167,22 @@
 				{/if}
 				<div>
 					<dt>Solved generation</dt>
-					<dd>{quantity(generation, 'MW')}</dd>
+					<dd>{@render q(generation, 'MW')}</dd>
 				</div>
 				<div>
 					<dt>Model demand</dt>
-					<dd>{quantity(demand, 'MW')}</dd>
+					<dd>{@render q(demand, 'MW')}</dd>
 				</div>
 				<div>
 					<dt>Installed capacity</dt>
-					<dd>{quantity(bus.gen_mw, 'MW')}</dd>
+					<dd>{@render q(bus.gen_mw, 'MW')}</dd>
 				</div>
 			</dl>
 		{:else if branch}
-			<p>Positive flow enters the branch from the named bus.</p>
+			{#if flowSentence}<p class="flow-sentence">
+					<strong>{flowSentence.mw}</strong> flows from bus {flowSentence.from} to bus {flowSentence.to}
+				</p>{/if}
+			<p class="convention">Signs at each end: positive where power enters the branch.</p>
 			<table>
 				<thead>
 					<tr>
@@ -179,13 +193,13 @@
 				<tbody>
 					<tr>
 						<th scope="row">From · bus {branch.from}</th>
-						<td>{quantity(transfer ? transfer.reading?.from : flow?.mw, 'MW', true)}</td>
-						{#if !transfer?.dc}<td>{quantity(flow?.qf, 'MVAr', true)}</td>{/if}
+						<td>{@render q(transfer ? transfer.reading?.from : flow?.mw, 'MW', true)}</td>
+						{#if !transfer?.dc}<td>{@render q(flow?.qf, 'MVAr', true)}</td>{/if}
 					</tr>
 					<tr>
 						<th scope="row">To · bus {branch.to}</th>
-						<td>{quantity(transfer ? transfer.reading?.to : flow?.pt, 'MW', true)}</td>
-						{#if !transfer?.dc}<td>{quantity(flow?.qt, 'MVAr', true)}</td>{/if}
+						<td>{@render q(transfer ? transfer.reading?.to : flow?.pt, 'MW', true)}</td>
+						{#if !transfer?.dc}<td>{@render q(flow?.qt, 'MVAr', true)}</td>{/if}
 					</tr>
 				</tbody>
 			</table>
@@ -193,7 +207,7 @@
 				{#if transfer}
 					<div>
 						<dt>Active magnitude</dt>
-						<dd>{quantity(transfer.reading?.magnitude, 'MW')}</dd>
+						<dd>{@render q(transfer.reading?.magnitude, 'MW')}</dd>
 					</div>
 					<div>
 						<dt>Direction</dt>
@@ -204,7 +218,7 @@
 				{/if}
 				<div>
 					<dt>Utilization</dt>
-					<dd>{rated && flow ? quantity(flow.loading * 100, '%') : 'Unavailable'}</dd>
+					<dd>{@render q(rated && flow ? flow.loading * 100 : undefined, '%')}</dd>
 				</div>
 				<div>
 					<dt>Loading status</dt>
@@ -216,12 +230,12 @@
 				</div>
 				<div>
 					<dt>Effective rating</dt>
-					<dd>{quantity(rated ? info?.rating : undefined, info?.basis.toUpperCase() ?? '')}</dd>
+					<dd>{@render q(rated ? info?.rating : undefined, info?.basis.toUpperCase() ?? '')}</dd>
 				</div>
 				<div>
 					<dt>Headroom</dt>
 					<dd>
-						{quantity(
+						{@render q(
 							rated && flow && info?.rating ? info.rating * (1 - flow.loading) : undefined,
 							info?.basis.toUpperCase() ?? '',
 							true
@@ -264,7 +278,7 @@
 						<li>
 							<button onclick={() => inspect('bus', b.id)} {...preview('bus', b.id)}
 								><strong>Bus {b.id}{b.name ? ` · ${b.name}` : ''}</strong><span
-									>{quantity(b.value, 'pu')} · {quantity(b.exceedance, 'pu')}
+									>{@render q(b.value, 'pu')} · {@render q(b.exceedance, 'pu')}
 									{b.state === 'low' ? 'below minimum' : 'above maximum'}</span
 								></button
 							>
@@ -279,7 +293,7 @@
 						<li>
 							<button onclick={() => inspect('branch', b.id)} {...preview('branch', b.id)}
 								><strong>Branch {b.id} · {b.from} → {b.to}</strong><span
-									>{quantity(b.loading * 100, '%')} · {loadingStateText[b.state]}</span
+									>{@render q(b.loading * 100, '%')} · {loadingStateText[b.state]}</span
 								></button
 							>
 						</li>
@@ -320,6 +334,13 @@
 	}
 	p {
 		margin: 4px 0;
+	}
+	.flow-sentence {
+		color: var(--ink);
+		font-size: 12px;
+	}
+	.convention {
+		color: var(--text-secondary);
 	}
 	dl {
 		display: grid;

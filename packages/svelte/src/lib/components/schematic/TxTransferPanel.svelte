@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { NetworkBranch } from '@tellegen/engine';
-	import { formulationLabel } from '../../format.js';
+	import { formulationLabel, readable } from '../../format.js';
 	import type { operatingContext } from '../../diagram/transmission-results.js';
 	import {
 		TRANSFER_SCALES,
@@ -34,7 +34,6 @@
 		onpreview?: (item: { kind: 'branch'; id: number } | null) => void;
 	} = $props();
 
-	const mw = new Intl.NumberFormat('en', { maximumFractionDigits: 2 });
 	let open = $state(false);
 </script>
 
@@ -82,7 +81,8 @@
 							onblur={() => onpreview?.(null)}
 						>
 							<strong>Branch {branch.id}</strong><span
-								>{transferDirectionText(reading, branch)} · {mw.format(reading.magnitude!)} MW</span
+								>{transferDirectionText(reading, branch)} · {readable(reading.magnitude, 'MW')
+									.text}</span
 							>
 						</button>
 					</li>

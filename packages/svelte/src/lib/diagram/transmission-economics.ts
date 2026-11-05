@@ -1,4 +1,5 @@
 import type { BranchConstraintResult, Solution } from '@tellegen/engine';
+import { readable } from '../format.js';
 
 export const PRICE_UNIT = 'objective units/MW';
 export const PRICE_SCALES = [
@@ -10,11 +11,11 @@ export const PRICE_SCALES = [
 
 // Suppress multiplier noise at the precision used in the constraint list.
 const MARGINAL_TOLERANCE = 1e-5;
-const amount = new Intl.NumberFormat('en', { maximumFractionDigits: 6, useGrouping: false });
 
+/** A price or shadow price rounded for reading (about three significant figures). */
 export function economicAmount(value: number | null | undefined): string {
 	if (value == null || !Number.isFinite(value)) return 'Unavailable';
-	return `${amount.format(Math.abs(value) < 5e-7 ? 0 : value)} ${PRICE_UNIT}`;
+	return readable(Math.abs(value) < 5e-7 ? 0 : value, PRICE_UNIT).text;
 }
 
 export function pricedBranch(result: BranchConstraintResult | undefined): boolean {

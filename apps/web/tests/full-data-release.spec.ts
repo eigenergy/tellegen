@@ -333,10 +333,12 @@ test('CATS links the routed transfer and binding limit lists to the equipment in
 	).toBeFocused();
 	await expect(inspector).toContainText(`Bus ${source} → bus ${sink}`);
 	const readEndpoint = async (end: string) => {
-		const cell = inspector
+		// Values are rounded for reading; the exact value stays on the element.
+		const value = inspector
 			.getByRole('row', { name: new RegExp(`^${end} · bus `) })
-			.getByRole('cell');
-		return Number((await cell.innerText()).replace(' MW', ''));
+			.getByRole('cell')
+			.locator('[data-exact]');
+		return Number((await value.getAttribute('data-exact'))!.replace(' MW', ''));
 	};
 	expect(await readEndpoint('From')).toBeCloseTo(routed.mw, 5);
 	expect(await readEndpoint('To')).toBeCloseTo(routed.pt ?? -routed.mw, 5);

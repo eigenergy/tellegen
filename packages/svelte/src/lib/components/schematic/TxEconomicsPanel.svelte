@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { NetworkBranch, NetworkBus, SolutionFlow } from '@tellegen/engine';
 	import { priceGradient } from '../../colors.js';
-	import { formulationLabel } from '../../format.js';
+	import { formulationLabel, readable } from '../../format.js';
 	import {
 		PRICE_SCALES,
 		PRICE_UNIT,
@@ -139,7 +139,7 @@
 						)}</summary
 					>
 					<p>
-						Enforced · {row.value.toFixed(6)} MW · lower {row.lower ?? 'none'} · upper {row.upper ??
+						Enforced · {readable(row.value, 'MW').text} · lower {row.lower ?? 'none'} · upper {row.upper ??
 							'none'}
 					</p>
 					<p>
