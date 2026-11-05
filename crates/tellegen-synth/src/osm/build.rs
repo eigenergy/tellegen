@@ -455,19 +455,21 @@ fn coord_key(p: (f64, f64)) -> (i64, i64) {
 /// One line per level a way carries at or above `floor`. A way on shared
 /// towers (`voltage=400000;220000`, `circuits=2`) is part of the 400 kV line
 /// and of the 220 kV line that run on it, so each level gets its own copy
-/// with an even share of the tagged circuits (at least one). A DC way, an
-/// untagged one, or one with a single level is kept as it is.
+/// with the circuits the way carries at it (`OsmLine::levels`). A level below
+/// the floor keeps its circuits rather than passing them to the others. A DC
+/// way, an untagged one, one with a single level, or one with no level at or
+/// above the floor is kept as it is.
 pub fn split_levels(line: &OsmLine, floor: f64) -> Vec<OsmLine> {
-    let kept: Vec<f64> = line.kvs.iter().copied().filter(|kv| *kv >= floor).collect();
-    if line.is_dc || line.kvs.len() < 2 || kept.is_empty() {
+    if line.is_dc || line.levels.len() < 2 || line.kv < floor {
         return vec![line.clone()];
     }
-    let share = ((line.circuits as f64 / line.kvs.len() as f64).round() as u32).max(1);
-    kept.into_iter()
-        .map(|kv| OsmLine {
+    line.levels
+        .iter()
+        .filter(|&&(kv, _)| kv >= floor)
+        .map(|&(kv, circuits)| OsmLine {
             kv,
-            kvs: vec![kv],
-            circuits: share,
+            levels: vec![(kv, circuits)],
+            circuits,
             ..line.clone()
         })
         .collect()
@@ -560,7 +562,7 @@ pub fn stitch_lines(lines: &[OsmLine], stops: &[(f64, f64)], stop_km: f64) -> Ve
                 ids,
                 geometry,
                 kv: first.kv,
-                kvs: first.kvs.clone(),
+                levels: first.levels.clone(),
                 circuits: first.circuits,
                 is_cable: first.is_cable,
                 is_dc: first.is_dc,
@@ -1845,7 +1847,7 @@ mod tests {
             ids: vec![id],
             geometry: pts.to_vec(),
             kv: 220.0,
-            kvs: vec![220.0],
+            levels: vec![(220.0, 1)],
             circuits: 1,
             is_cable: false,
             is_dc: false,
@@ -1858,20 +1860,24 @@ mod tests {
         // between two stations: each must come out whole at its own level.
         let mut shared = line(10, &[(1.0, 0.0), (2.0, 0.0)]);
         shared.kv = 400.0;
-        shared.kvs = vec![400.0, 220.0];
-        shared.circuits = 2;
+        shared.levels = vec![(400.0, 1), (220.0, 2)];
+        shared.circuits = 3;
         let split = split_levels(&shared, 110.0);
         assert_eq!(split.len(), 2);
         assert_eq!(
             split.iter().map(|l| (l.kv, l.circuits)).collect::<Vec<_>>(),
-            [(400.0, 1), (220.0, 1)]
+            [(400.0, 1), (220.0, 2)]
         );
-        // A level below the floor still holds its share of the circuits.
+        assert!(split.iter().all(|l| l.levels == [(l.kv, l.circuits)]));
+        // A level below the floor keeps its circuits; the others do not
+        // take them.
         let mut low = shared.clone();
-        low.kvs = vec![400.0, 60.0];
+        low.levels = vec![(400.0, 1), (60.0, 2)];
         let split_low = split_levels(&low, 110.0);
         assert_eq!(split_low.len(), 1);
         assert_eq!((split_low[0].kv, split_low[0].circuits), (400.0, 1));
+        // A way with no level at the floor stays whole, to be dropped there.
+        assert_eq!(split_levels(&low, 500.0), [low.clone()]);
         assert_eq!(
             split_levels(&line(11, &[(0.0, 0.0), (1.0, 0.0)]), 110.0).len(),
             1
@@ -1879,10 +1885,10 @@ mod tests {
 
         let mut hv_in = line(11, &[(0.0, 0.0), (1.0, 0.0)]);
         hv_in.kv = 400.0;
-        hv_in.kvs = vec![400.0];
+        hv_in.levels = vec![(400.0, 1)];
         let mut hv_out = line(12, &[(2.0, 0.0), (3.0, 0.0)]);
         hv_out.kv = 400.0;
-        hv_out.kvs = vec![400.0];
+        hv_out.levels = vec![(400.0, 1)];
         let lv_in = line(13, &[(1.0, 0.0), (1.0, -1.0)]);
         let lv_out = line(14, &[(2.0, 0.0), (2.0, 1.0)]);
         let ways = vec![hv_in, hv_out, lv_in, lv_out];

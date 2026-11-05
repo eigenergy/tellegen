@@ -396,3 +396,60 @@ fn absurd_circuit_counts_are_clamped() {
     let (module, _) = generate(request(OsmIslands::Connect), common::places(), Some(doc)).unwrap();
     assert!(module.value().branches().len() < 100);
 }
+
+#[test]
+fn shared_voltage_counts_are_preserved() {
+    use tellegen_synth::osm::{build::split_levels, parse_document};
+    let json = r#"{"elements":[{
+        "type":"way","id":1,
+        "geometry":[{"lon":8.2,"lat":50.0},{"lon":8.9,"lat":50.05}],
+        "tags":{"power":"line",
+                "voltage":"380000;110000;110000","circuits":"3"}
+    }]}"#;
+    let parsed = parse_document(json).unwrap();
+    for (floor, expected) in [
+        (110.0, vec![(380.0, 1), (110.0, 2)]),
+        (220.0, vec![(380.0, 1)]),
+    ] {
+        let actual: Vec<_> = split_levels(&parsed.lines[0], floor)
+            .iter()
+            .map(|l| (l.kv, l.circuits))
+            .collect();
+        assert_eq!(actual, expected, "voltage floor: {floor}");
+    }
+}
+
+#[test]
+fn a_shared_tower_way_makes_one_branch_per_listed_circuit() {
+    // Way 304 between Sites C and A, retagged as one 380 kV and two 110 kV
+    // circuits on shared towers: three branch rows, not one more 380 kV
+    // parallel.
+    let doc = FIXTURE.replace(
+        r#""id": 304, "geometry": [{"lat": 50.40, "lon": 8.55}, {"lat": 50.20, "lon": 8.35}, {"lat": 50.00, "lon": 8.20}], "tags": {"power": "line", "voltage": "380000"}"#,
+        r#""id": 304, "geometry": [{"lat": 50.40, "lon": 8.55}, {"lat": 50.20, "lon": 8.35}, {"lat": 50.00, "lon": 8.20}], "tags": {"power": "line", "voltage": "380000;110000;110000", "circuits": "3"}"#,
+    );
+    assert_ne!(doc, FIXTURE);
+    let mut req = request(OsmIslands::Connect);
+    req.validation.run_dc_opf = false;
+    req.validation.run_ac_pf = false;
+    req.calibration.enabled = false;
+    let (module, report) = generate(req, common::places(), Some(doc)).unwrap();
+    let net = module.value();
+    let annotations = &report.elements.as_ref().unwrap().branches;
+    let mut kvs: Vec<f64> = net
+        .branches()
+        .iter()
+        .zip(annotations)
+        .filter(|(_, a)| a.osm_ids.contains(&304))
+        .map(|(row, _)| {
+            net.buses()
+                .iter()
+                .find(|b| b.id == row.from)
+                .unwrap()
+                .base_kv
+        })
+        .collect();
+    kvs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    assert_eq!(kvs, [380.0, 110.0, 110.0]);
+    assert!(common::check_circuit_annotations(net, &report) > 0);
+}
