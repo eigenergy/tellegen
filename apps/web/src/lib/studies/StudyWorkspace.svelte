@@ -8,11 +8,14 @@
 		PanelFrame,
 		ModelDetails,
 		McResults,
+		McPfSettings,
+		McNetworkScope,
+		McModelQualification,
 		McWorkbench,
 		getNoticeCenter,
 		errorNoticeTitle
 	} from '@tellegen/svelte';
-	import type { StudyOperation } from '@tellegen/engine';
+	import { validateMcPfOptions, type StudyOperation } from '@tellegen/engine';
 	import TellegenWebMcp from '../webmcp/TellegenWebMcp.svelte';
 	import { caseRevision } from '../webmcp/tellegen-adapter.js';
 	import { StudyWorkspace } from './workspace.svelte.js';
@@ -56,7 +59,9 @@
 	let demandSearch = $state('');
 	let demandPage = $state(0);
 	let goalForComparison = $state('');
-	let content: HTMLElement | undefined;
+	let content = $state<HTMLElement>();
+	let mcResultsStart = $state<HTMLDivElement>();
+	const revealedSolves = new WeakMap<object, number>();
 	const pageSize = 20;
 	const multi = $derived(ctrl.app.activeMulti);
 	const mcDoc = $derived(workspace.activeMcDocument);
@@ -256,6 +261,47 @@
 		await tick();
 		content?.scrollTo({ top: 0 });
 	}
+	// Covers solves launched from either panel, including when Network opens
+	// Studies after completion. Wait for the result DOM, then scroll only this
+	// panel. Load edits and unsuccessful attempts leave the reading position alone.
+	$effect(() => {
+		const current = multi;
+		const sequence = current?.mcCompletedSolveSeq ?? 0;
+		const container = content;
+		const target = mcResultsStart;
+		if (
+			!current ||
+			!sequence ||
+			current.solving ||
+			!container ||
+			!target ||
+			revealedSolves.get(current) === sequence
+		)
+			return;
+		void tick().then(() => {
+			if (
+				multi !== current ||
+				current.solving ||
+				current.mcCompletedSolveSeq !== sequence ||
+				content !== container ||
+				mcResultsStart !== target
+			)
+				return;
+			revealedSolves.set(current, sequence);
+			const top =
+				container.scrollTop +
+				target.getBoundingClientRect().top -
+				container.getBoundingClientRect().top -
+				16;
+			container.scrollTo({
+				top,
+				behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+					? 'instant'
+					: 'smooth'
+			});
+		});
+	});
+
 	async function loadMcExample() {
 		const response = await fetch('/examples/four-wire.bmopf.json');
 		if (!response.ok) throw new Error('The example could not be loaded. Try again.');
@@ -502,16 +548,32 @@
 			{#if multi}
 				<h3>{multi.label}</h3>
 				<p class="hint">Distribution power flow</p>
+				{#key multi.id}<McPfSettings
+						bind:options={multi.mcOptions}
+						disabled={multi.solving || workspace.busy || !multi.mcPfSupported}
+					/>{/key}
+				<McNetworkScope scope={multi.mcPreparedScope} islands={multi.mcExcludedIslands} preview />
+				{#if !multi.mcPfSupported}<p class="hint">{multi.mcPfReason}</p>{/if}
+				{#if multi.result}<McModelQualification model={multi.result.load_model} compact />{/if}
 				<div class="action-row">
 					{#if multi.solving}<span role="status">Calculating...</span>{#if multi.solveAbort}<button
 								onclick={() => multi.solveAbort?.abort()}>Cancel</button
 							>{/if}
 					{:else}<button
 							class="primary"
-							disabled={!multi.mcPfSupported || workspace.busy}
+							disabled={!multi.mcPfSupported ||
+								workspace.busy ||
+								!!validateMcPfOptions(multi.mcOptions)}
 							onclick={() => {
-								void ctrl.solveMultiCase(multi).catch(() => {});
-							}}>Run power flow</button
+								void attempt(() =>
+									ctrl.solveMultiCase(
+										multi,
+										multi.mcOptions,
+										undefined,
+										multi.mcRequiresEnergizedSolve
+									)
+								);
+							}}>{multi.mcSolveLabel}</button
 						>{/if}
 					<button
 						disabled={!multi.result || multi.solving || workspace.busy || !!multi.mcSavedAt}
@@ -532,6 +594,7 @@
 								details: multi.mcPfReason ?? 'This case cannot run AC power flow'
 							})}>Why unavailable</button
 					>{/if}
+				{#if multi.result}<div bind:this={mcResultsStart}></div>{/if}
 				{#if multi.result && multi.graph && multi.overviewInputs && multi.overviewSearch}<McWorkbench
 						snapshot={multi.overviewSnapshot}
 						graph={multi.graph}
@@ -552,6 +615,7 @@
 					/>{/if}
 				{#if multi.result}<McResults
 						result={multi.result}
+						excludedIslands={multi.mcExcludedIslands}
 						detail={(query) => ctrl.multiResultDetail(multi, query)}
 						timing={multi.mcTiming}
 						elapsedMs={multi.solveMs}

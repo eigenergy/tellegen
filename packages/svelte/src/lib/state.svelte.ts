@@ -1,3 +1,4 @@
+import { DEFAULT_MC_PF_OPTIONS, summarizeMcExcludedIslands } from '@tellegen/engine';
 import type {
 	CaseSummary,
 	DemandDeltas,
@@ -18,10 +19,13 @@ import {
 	type Formulation,
 	type IngestedDistCase,
 	type McPfCallTiming,
+	type McPfOptions,
 	type McPfResult,
+	type McPfResultTables,
 	type McPfSummary,
 	type McLoadBranchState,
 	type McLoadPowerEdit,
+	type McModuleInput,
 	type McStudySnapshot,
 	type SensTarget,
 	type Topology
@@ -229,9 +233,10 @@ export class CaseState {
 /** A case the solver can run: a server-backed case or a browser-parsed local case. */
 export type SolvableCase = CaseState | LocalCase;
 
-/** The multiconductor ingest payload without the graph: the summary counts,
- * connected load/generation, coordinate provenance, and diagnostics. */
-export type MultiCaseSummary = Omit<IngestedDistCase, 'graph'>;
+/** The multiconductor ingest payload without the graph or the retained
+ * input: the summary counts, connected load/generation, coordinate
+ * provenance, and diagnostics. */
+export type MultiCaseSummary = Omit<IngestedDistCase, 'graph' | 'input'>;
 
 /** Geographic coordinates use the map; other positions use the diagram canvas. */
 export type MultiCoordsKind = 'geographic' | 'planar' | 'synthetic';
@@ -248,7 +253,10 @@ export class MulticonductorCase {
 	readonly id: string;
 	readonly label: string;
 	readonly fileName: string;
-	moduleJson: string | null = $state.raw<string | null>(null);
+	/** The electrical input calculations start from: the module the engine
+	 * keeps from the import, or PowerIO IR text (a saved or re-placed module).
+	 * A kept module is freed when it is replaced or the case is removed. */
+	mcInput: McModuleInput | null = $state.raw<McModuleInput | null>(null);
 	geoLayer: string | null = $state.raw<string | null>(null);
 	geoWarnings: string[] = $state.raw<string[]>([]);
 	/** Summary of the displayed operating point: from the live session after
@@ -259,6 +267,15 @@ export class MulticonductorCase {
 	mcFullResult: McPfResult | null = $state.raw<McPfResult | null>(null);
 	/** Latency breakdown of the latest load-edit solve. */
 	mcTiming: McEditTiming | null = $state.raw<McEditTiming | null>(null);
+	/** Explicit selection for the next solve. The graph and module retain every bus. */
+	mcEnergizedOnly = $state(false);
+	/** Successful explicit solve to reveal in Studies; load edits do not advance it. */
+	mcCompletedSolveSeq = $state(0);
+	/** Detected on import, revalidated when preparing a solve; never removed from the graph. */
+	mcExcludedIslands: import('@tellegen/engine').McExcludedIsland[] = $state.raw([]);
+	mcPreparedScope: import('@tellegen/engine').McNetworkScope | null = $state.raw(null);
+	/** Selected settings for the next explicit solve; results carry their own effective settings. */
+	mcOptions: McPfOptions = $state<McPfOptions>({ ...DEFAULT_MC_PF_OPTIONS });
 	mcSnapshot: McStudySnapshot | null = $state.raw<McStudySnapshot | null>(null);
 	mcSession: BrowserMcPfSession | null = $state.raw<BrowserMcPfSession | null>(null);
 	mcLoadBranches: McLoadBranchState[] = $state.raw<McLoadBranchState[]>([]);
@@ -295,9 +312,12 @@ export class MulticonductorCase {
 	/** Bumped to ask the views to bring the current selection into view again (an issue clicked
 	 * that is already selected). */
 	revealSeq = $state(0);
-	/** The full operating point read for whole-network views (overview, schematic); null until read,
-	 * and cleared when a large case's operating point changes. */
-	overviewResult: McPfResult | null = $state.raw<McPfResult | null>(null);
+	/** The full operating point read for whole-network views (overview, schematic): a stored
+	 * result, or a live session's as columns. Null until read, and cleared when a large case's
+	 * operating point changes. */
+	overviewResult: McPfResult | McPfResultTables | null = $state.raw<
+		McPfResult | McPfResultTables | null
+	>(null);
 	overviewLoading = $state(false);
 	/** The graph's buses and branches as the overview and the diagram read them: rebuilt when the
 	 * graph is replaced, never after a solve. Both views read this one copy. */
@@ -328,6 +348,9 @@ export class MulticonductorCase {
 		label: string;
 		fileName: string;
 		summary: MultiCaseSummary;
+		/** The module the engine kept from the import, in place of the
+		 * summary's `module_json`. */
+		input?: McModuleInput | null;
 		graph: DistGraph;
 		coordsKind: MultiCoordsKind;
 		view?: MultiView | null;
@@ -336,7 +359,10 @@ export class MulticonductorCase {
 		this.label = init.label;
 		this.fileName = init.fileName;
 		this.summary = init.summary;
-		this.moduleJson = init.summary.module_json ?? null;
+		this.mcInput = init.input ?? init.summary.module_json ?? null;
+		this.mcEnergizedOnly = init.summary.mc_energized_only ?? false;
+		this.mcExcludedIslands = init.summary.mc_excluded_islands ?? [];
+		this.mcPreparedScope = summarizeMcExcludedIslands(this.mcExcludedIslands);
 		this.geoLayer = init.summary.geo_layer ?? null;
 		this.graph = init.graph;
 		this.coordsKind = init.coordsKind;
@@ -344,13 +370,20 @@ export class MulticonductorCase {
 	}
 
 	get mcPfReason(): string | null {
-		if (!this.moduleJson) return 'This case has no retained electrical input';
+		if (!this.mcInput) return 'This case has no retained electrical input';
 		if (this.summary?.mc_pf_enabled !== true) return 'AC power flow is unavailable in this build';
 		return (
 			this.summary.mc_pf_reason ??
 			this.summary.mc_pf_unavailable_reason ??
 			(this.summary.mc_pf_supported !== true ? 'AC power flow is unavailable for this case' : null)
 		);
+	}
+	/** Import detects scope; only a solve action opts into the selection. */
+	get mcRequiresEnergizedSolve(): boolean {
+		return this.mcExcludedIslands.length > 0;
+	}
+	get mcSolveLabel(): string {
+		return this.mcRequiresEnergizedSolve ? 'Solve energized network' : 'Run power flow';
 	}
 	get mcPfSupported(): boolean {
 		return this.mcPfReason === null;

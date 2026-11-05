@@ -206,6 +206,7 @@
 			`Tellegen export ${new Date().toISOString()}`,
 			`Case: ${label}`,
 			`${snapshot.label}; ${snapshot.iterations ?? '?'} iterations`,
+			...(snapshot.provenance ?? []),
 			'P/Q are positive into the equipment at each end; voltages are terminal-pair magnitudes'
 		]);
 		const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -227,6 +228,7 @@
 				onclick={() => onschematic(!schematic)}>{schematic ? 'Show map' : 'Show diagram'}</button
 			>{/if}
 	</div>
+	{#if snapshot}<p class="result-provenance">{snapshot.label}</p>{/if}
 	<OmniSearch
 		index={search}
 		hint={searchHint}

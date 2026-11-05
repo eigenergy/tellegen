@@ -121,6 +121,8 @@ pub enum BusKind {
     Substation = 1,
     Generator = 2,
     Converter = 3,
+    /// A junction where a line branches, with no load or machine.
+    Tap = 4,
 }
 
 impl BusKind {
@@ -130,6 +132,7 @@ impl BusKind {
             BusKind::Substation => "substation",
             BusKind::Generator => "generator",
             BusKind::Converter => "converter",
+            BusKind::Tap => "tap",
         }
     }
 }
@@ -217,6 +220,41 @@ pub enum DemandBasis {
     DefaultPerBus,
 }
 
+/// One subdivision's part of a region's demand (a US state from the
+/// subdivision table, [`crate::subnational`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct SubdivisionDemand {
+    /// ISO 3166-2 code.
+    pub code: String,
+    pub year: u32,
+    pub places: usize,
+    /// Population of those places.
+    pub population: f64,
+    /// Peak demand of those places, MW: the subdivision's peak times the
+    /// share of its listed population inside the region.
+    pub peak_mw: f64,
+    /// The subdivision's peak (average load × peak factor), MW.
+    pub subdivision_peak_mw: f64,
+    pub peak_factor: f64,
+    /// `measured` (EIA-930, the table's), `request` (stated), or `default`.
+    pub peak_factor_basis: String,
+}
+
+/// Where a region's capacity mix came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum FuelMixBasis {
+    /// The request stated it.
+    Request,
+    /// The nameplate mix of the region's dominant subdivision
+    /// (`RegionContext::subdivision`).
+    Subdivision,
+    /// The default (US) mix.
+    Default,
+}
+
 /// Where a region's voltage levels came from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -227,6 +265,9 @@ pub enum VoltageBasis {
     /// The national ladder of the region's dominant country
     /// (`RegionContext::voltage_country`, `Provenance::voltage_table`).
     Country,
+    /// The ladder of the region's dominant subdivision
+    /// (`RegionContext::subdivision`), down to subtransmission.
+    Subdivision,
     /// The dominant country has no ladder in the table: the ENTSO-E members'
     /// ladder for a member, else IEC 60038's standard levels (warning
     /// `voltage_fallback`).
@@ -297,7 +338,16 @@ pub struct RegionContext {
     /// only).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub demand_by_country: Vec<CountryDemand>,
+    /// Places of subdivisions with their own demand table draw it instead of
+    /// their country's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub demand_by_subdivision: Vec<SubdivisionDemand>,
+    /// The subdivision whose places carry the most demand, when the places
+    /// name one (ISO 3166-2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdivision: Option<String>,
     pub fuel_mix: BTreeMap<Fuel, f64>,
+    pub fuel_mix_basis: FuelMixBasis,
     /// Branches per bus the topology aims at.
     pub branch_factor: f64,
     /// Nominal levels, highest first; a level the corridor plan added above

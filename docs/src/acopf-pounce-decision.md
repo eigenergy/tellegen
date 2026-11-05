@@ -398,8 +398,8 @@ tap ratios, including inverse regulator conventions. Control-curve and electrica
 coefficients remain fixed. Version 5 reports retain these marginal claims;
 version 2–4 reports are verified before upgrade.
 
-The feature builds against POUNCE 0.13.0 and, until PowerIO 0.11.8 is
-published, against the PowerIO candidate patched in the root `Cargo.toml`. Build and test the native feature from the repository root:
+The feature builds against published POUNCE 0.13.0 and PowerIO 0.11.8.
+Build and test the native feature from the repository root:
 
 ```sh
 cargo build -p tellegen --no-default-features --features mc-opf --locked
