@@ -7,25 +7,33 @@ Geo-referenced synthetic transmission grids for a map region, produced as
 Given a GeoJSON region, a seed and a handful of planning parameters, the
 generator:
 
-1. measures the region and its populated places (Natural Earth, public
-   domain), sizes peak demand from each place's country (Ember's national
-   demand via Our World in Data, CC BY 4.0, bundled as
-   `data/national_demand.json`, the unlisted part spread over each
-   country's area), takes the national voltage ladder of its dominant
-   country (`data/voltage_ladders.json`), and resolves the bus count and
-   fuel mix;
-2. sites buses on the most populous places plus blue-noise fill, and
-   allocates demand weighted loads;
+1. measures the region and its populated places (GeoNames cities5000,
+   CC BY 4.0, https://www.geonames.org/, bundled as
+   `data/populated_places.json`), sizes peak demand from each place's
+   country (Ember's national demand via Our World in Data, CC BY 4.0,
+   bundled as `data/national_demand.json`, the unlisted part spread over
+   each country's area) or, in the United States, its state (EIA-861 sales,
+   Census population and EIA-930 peak factors, public domain,
+   `data/subnational_demand.json`), takes the voltage ladder and fuel mix of
+   the dominant state or country (`data/voltage_ladders.json`,
+   `data/subnational_fuel_mix.json` from EIA-860), and resolves the bus
+   count;
+2. sites buses on the most populous places plus population-weighted
+   blue-noise fill, and allocates demand weighted loads;
 3. wires each electrical island with a minimum spanning tree, a spanning
    tree over the highest voltage buses, a Gabriel proximity mesh and a few
-   high-voltage loops, all from one Delaunay triangulation (O(n log n));
+   high-voltage loops, all from one Delaunay triangulation (O(n log n)). A
+   ladder that reaches subtransmission (below 100 kV) is built level by
+   level instead (`hierarchy`): sites per level, a meshed top level, and
+   subtransmission pockets fed from step-downs, with tap junctions;
 4. sites reserve-margin generation area by area (no bus collects more
    than its voltage class can evacuate), designs every corridor from cited line and
    transformer class tables with St. Clair loadability, and plans the
    network before validating it: corridor voltage by power and distance,
    circuits for the peak economic dispatch, an island angle spread inside
-   the steady-state stability margin, and shunt banks that balance reactive
-   power at every bus;
+   the steady-state stability margin, synchronous condensers for remote
+   pockets and regulated subtransmission secondaries, and shunt banks that
+   balance reactive power at every bus;
 5. validates with the engine: a DC optimal power flow and an AC power flow
    per island, plus a recorded calibration over a declared parameter set.
 
@@ -56,6 +64,12 @@ println!("{} buses, DC OPF {:?}", module.value().buses().len(), dc.status);
 
 `Generator` exposes the same pipeline one stage at a time (`step`), with a
 map preview between stages, for hosts that show progress or cancel.
+
+With `source: "osm"` the buses, lines and plants come from an Overpass
+document of OpenStreetMap `power=*` features (ODbL) instead, and the same
+planning and validation run on the mapped network. How close California comes
+to the California Test System in both modes is measured in
+`docs/evidence/synth/cats/`.
 
 Features: `schema` derives JSON Schema for the generated TypeScript
 types; `embedded-places` bundles `data/populated_places.json` for the

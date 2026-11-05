@@ -37,8 +37,10 @@ fn the_fixture_maps_to_a_grid_that_solves() {
     .unwrap();
     let net = module.value();
     // Sites A and C have two levels each, B is mapped twice and clusters, D
-    // and E have one, plus two converters; the 20 kV site and the site outside
-    // the region are gone.
+    // and E have one, plus two converters; the 20 kV site and the site
+    // outside the region are gone. The dangling way (a long line into the
+    // region that reaches no mapped substation) ends in a bus no other line
+    // reaches, which is pruned with it: a spur to nowhere.
     assert_eq!(
         net.buses().len(),
         9,
@@ -47,6 +49,11 @@ fn the_fixture_maps_to_a_grid_that_solves() {
     );
     assert_eq!(count(&report, "substation_sites"), 5);
     assert_eq!(count(&report, "converters"), 2);
+    assert_eq!(
+        count(&report, "dead_ends_pruned"),
+        1,
+        "the dangling way's end"
+    );
     assert_eq!(
         count(&report, "clipped"),
         2,
@@ -58,11 +65,7 @@ fn the_fixture_maps_to_a_grid_that_solves() {
         1,
         "the untagged way takes 110 kV"
     );
-    assert_eq!(
-        count(&report, "lines_dropped"),
-        2,
-        "the 20 kV line and the dangling way"
-    );
+    assert_eq!(count(&report, "lines_dropped"), 1, "the 20 kV line");
     assert_eq!(count(&report, "transformers"), 2, "one per two-level site");
     assert_eq!(count(&report, "hvdc_links"), 1);
     assert_eq!(
