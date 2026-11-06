@@ -1,3 +1,4 @@
+import { equipmentGlyph, type EquipmentDrawing } from '../../diagram/transmission-equipment.js';
 import type { Layer } from '@deck.gl/core';
 import { ramp, type RGBA } from '../../colors.js';
 import {
@@ -71,6 +72,9 @@ export function entryWidth(e: VoltageEntry): number {
 }
 
 export interface TxScene {
+	internalStarRows?: Set<number>;
+	equipment?: EquipmentDrawing;
+	phaseShifters?: Set<number>;
 	graph: TxGraph;
 	geometry: SchematicGeometry;
 	/** `r, g, b, a` per branch. */
@@ -88,7 +92,10 @@ export interface TxScene {
 	previewBus: number;
 	previewEdge: number;
 	/** Bus values shaded over the drawing's area, beneath everything else. */
-	field: { image: HTMLCanvasElement; bounds: [number, number, number, number] } | null;
+	field: {
+		image: HTMLCanvasElement;
+		bounds: [number, number, number, number];
+	} | null;
 	/** Per branch, its symbol point on the drawn geometry: `x, y, cos, sin` (`edgeAnchors`). */
 	anchors: Float32Array;
 	/** Transformer symbols on their branch, once legible: branch rows and the glyph scale (drawing
@@ -207,7 +214,7 @@ function segmentsOf(geometry: SchematicGeometry, k: number): number[] {
 function transformerStrokes(scene: TxScene) {
 	const t = scene.transformers;
 	if (!t) return null;
-	const glyph = branchGlyph('transformer', true)!;
+
 	const src: number[] = [];
 	const dst: number[] = [];
 	const centres: number[] = [];
@@ -215,6 +222,9 @@ function transformerStrokes(scene: TxScene) {
 	const edges: number[] = [];
 	const colours: number[] = [];
 	for (const k of t.edges) {
+		const glyph = scene.phaseShifters?.has(k)
+			? equipmentGlyph('pst')
+			: branchGlyph('transformer', true)!;
 		const [x, y, c, s] = scene.anchors.subarray(k * 4, k * 4 + 4);
 		if (!Number.isFinite(x)) continue;
 		edges.push(k);
@@ -640,7 +650,11 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 							attributes: {
 								getSourcePosition: { value: attached.sources, size: 3 },
 								getTargetPosition: { value: attached.targets, size: 3 },
-								getColor: { value: attached.colours, size: 4, normalized: true }
+								getColor: {
+									value: attached.colours,
+									size: 4,
+									normalized: true
+								}
 							}
 						},
 						getWidth: 1.6,
@@ -674,7 +688,17 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 				length: g.positions.length / 3,
 				attributes: {
 					getPosition: { value: g.positions, size: 3 },
-					getFillColor: { value: scene.busColours, size: 4, normalized: true }
+					getFillColor: { value: scene.busColours, size: 4, normalized: true },
+					...(scene.internalStarRows?.size
+						? {
+								getRadius: {
+									value: Float32Array.from({ length: g.positions.length / 3 }, (_, i) =>
+										scene.internalStarRows?.has(i) ? 0 : scene.busRadius
+									),
+									size: 1
+								}
+							}
+						: {})
 				}
 			},
 			stroked: true,
@@ -683,7 +707,7 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 			lineWidthUnits: 'pixels',
 			getRadius: scene.busRadius,
 			radiusUnits: 'pixels',
-			radiusMinPixels: 1.5,
+			radiusMinPixels: scene.internalStarRows?.size ? 0 : 1.5,
 			pickable: true,
 			updateTriggers: { getFillColor: [scene.busColours] }
 		}),
@@ -746,6 +770,47 @@ export function txLayers(kit: DeckKit, scene: TxScene, branchLayers: Layer[]): L
 						},
 						getWidth: 1.6,
 						widthUnits: 'pixels'
+					})
+				]
+			: []),
+		...(scene.equipment
+			? [
+					new ScatterplotLayer({
+						...common,
+						id: 'equipment-masks',
+						data: scene.equipment.masks,
+						getPosition: (d: EquipmentDrawing['masks'][number]) => [...d.position, 0],
+						getRadius: (d: EquipmentDrawing['masks'][number]) => d.radius,
+						radiusUnits: 'meters',
+						getFillColor: PAPER,
+						pickable: false
+					}),
+					new LineLayer({
+						...common,
+						id: 'equipment-strokes',
+						data: scene.equipment.strokes,
+						getSourcePosition: (d: EquipmentDrawing['strokes'][number]) => [...d.from, 0],
+						getTargetPosition: (d: EquipmentDrawing['strokes'][number]) => [...d.to, 0],
+						getColor: (d: EquipmentDrawing['strokes'][number]) =>
+							d.inactive ? [135, 132, 125, 200] : SYMBOL_INK,
+						getWidth: 1.6,
+						widthUnits: 'pixels',
+						pickable: true
+					}),
+					new TextLayer({
+						...common,
+						id: 'equipment-labels',
+						data: scene.equipment.labels,
+						getPosition: (d: EquipmentDrawing['labels'][number]) => [...d.position, 0],
+						getText: (d: EquipmentDrawing['labels'][number]) => d.text,
+						getColor: SYMBOL_INK,
+						getSize: 11,
+						background: true,
+						getBackgroundColor: PAPER,
+						backgroundPadding: [3, 2],
+						fontFamily: MONO,
+						characterSet: 'auto',
+						pickable: true
 					})
 				]
 			: []),

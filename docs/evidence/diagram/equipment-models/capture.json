@@ -1,0 +1,42 @@
+{
+  "captured_utc": "2026-11-06T11:51:42.118077+00:00",
+  "source": "Working tree committed with this evidence",
+  "viewports": [
+    1280,
+    390,
+    320
+  ],
+  "height": 844,
+  "browser": "Installed Chrome; emulated touch on narrow viewports",
+  "tests": "6 equipment + 10 existing transmission browser tests passed",
+  "screenshots": {
+    "equipment-desktop.png": {
+      "test_output": "transmission-equipment-equ-e952c--fixed-transfer-limitations/equipment-models.png",
+      "sha256": "fd8d7562bac24dd6c8e23617b55f1cdcf67dbea6b9a01e564117e5291491f955"
+    },
+    "equipment-phone.png": {
+      "test_output": "transmission-equipment-equ-ba159--fixed-transfer-limitations/equipment-models.png",
+      "sha256": "808250762ae5323c1bd7a626389aca787157c9e9cc49a5b93740474bc2accc5e"
+    },
+    "equipment-320.png": {
+      "test_output": "transmission-equipment-equ-50731--fixed-transfer-limitations/equipment-models.png",
+      "sha256": "7aff48ee27d3630b4dd7074358c5698255c1be03d3f2df6dc467bc60a4c7173f"
+    },
+    "equipment-export.png": {
+      "test_output": "transmission-equipment-equ-e952c--fixed-transfer-limitations/equipment-export.png",
+      "sha256": "73c55bffc2e80ebfd044ec1c9ffb576b56f243fd8aa2ffd76d0d6efcf06e2e88"
+    },
+    "mtdc-desktop.png": {
+      "test_output": "transmission-equipment-det-d8c1b-h-and-qualified-AC-coupling/mtdc-topology.png",
+      "sha256": "f5e24cfe8bb9ee0a9dab1214f80f82adf98b405538a91783d7d029c9847e206f"
+    },
+    "mtdc-phone.png": {
+      "test_output": "transmission-equipment-det-9f7cc-h-and-qualified-AC-coupling/mtdc-topology.png",
+      "sha256": "fc4b29d30aefec098a4df85ff04fff227815ccfe2805189067b65f0a69617352"
+    },
+    "mtdc-320.png": {
+      "test_output": "transmission-equipment-det-d11e6-h-and-qualified-AC-coupling/mtdc-topology.png",
+      "sha256": "c8ae943cbac5b191df442baacee39b219d6e94a8857d423f3fedcc4f209ed967"
+    }
+  }
+}

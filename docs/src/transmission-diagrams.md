@@ -268,3 +268,83 @@ branch's role (line, inside a substation, or out of service), in the units of th
 `seeding: "stress"` lays substations out by their connections rather than their positions;
 `route_iterations: 0` draws lines straight. `txGraph` and `txLayoutInput` in `@tellegen/svelte`
 build the input from a `Network`.
+
+## Equipment models and DC networks
+
+**Equipment** opens a searchable, keyboard- and touch-accessible inventory. It is
+available in every diagram view. The panel distinguishes a device's source state,
+input settings and the selected formulation's treatment. Its scroll area stays
+inside the screen, including at 320 CSS pixels.
+
+| Equipment | Visual language | Calculation treatment |
+| --- | --- | --- |
+| Transformer | Two winding circles | Fixed ratio and phase shift |
+| PST | Winding circles with a regulation arrow | Identified by explicit phase-control metadata, including at zero angle; setting remains fixed |
+| Capacitor bank / reactor | Separate capacitor plates / coil | Individual source shunts, including zero-output and out-of-service banks; fixed admittance |
+| Mixed admittance | Generic shunt symbol | Conductance and susceptance remain distinct |
+| Three-winding transformer | Three winding circles | One source device mapped to three analysis branches and an internal star bus |
+| SVC, storage | Distinct device symbols and explicit labels | Active devices rejected by the ordinary formulations |
+| Switch | Open or closed contact and state label | Open contacts disconnect; closed contacts require topology reduction |
+| Reduced HVDC | Two converter boxes and a labeled DC connection | Fixed terminal injections in DC PF/DC OPF/AC PF; rejected in AC OPF/SOCWR |
+| Detailed DC | Separate node/branch/converter graph | Source connectivity, with a qualified solver when sufficient data exists |
+
+A nonzero transformer phase angle alone does not identify a PST. A fixed winding
+connection can introduce phase shift too. Tap positions, step tables and source
+regulation settings are retained as input metadata; their presence does not mean
+an automatic regulator is running. Shunt B is shown in Mvar at 1 pu: positive B
+supplies reactive power and negative B absorbs it. At voltage V pu, the reactive
+contribution is B V². The AC-network DC approximation omits reactive power.
+
+The symbols use familiar single-line conventions and redundant text/state
+labels. They are not a claim of compliance with a particular IEC 60617 symbol
+variant. No breaker arrangement, pole arrangement or earth return is inferred
+from a reduced two-terminal HVDC link. Equipment strokes are included in the
+main diagram's PNG export; the separate detailed-DC inspector is not part of that
+canvas export.
+
+### Detailed DC calculation
+
+Expand **Detailed DC network** for actual source connections. Node dots denote
+junctions; crossings without dots do not. Unknown or disconnected terminal state
+is explicit. AC synchronous islands are never joined by introducing an AC branch
+for a DC connection. Source import diagnostics remain available under **Import
+coverage**, including omissions reported by readers.
+
+**Solve DC network** uses explicit positive/return converter terminals, resistive
+DC lines, nodal current balance and `Pac = Udc Idc + a + b |Idc| + c Idc²`.
+Units are kV, kA and MW. Positive Pac is withdrawal from the AC bus; negative Pac
+supplies the AC bus. The explicit engine API also accepts power, current, voltage
+and linear MW/kV droop controls. Every connected component needs a potential
+reference and appropriate voltage regulation. Missing references, singular or
+conflicting controls, nonpositive resistance and nonfinite parameters fail with
+an error. The current dense solver is limited to 512 variables.
+
+The source adapter qualifies VSC records with explicit connected terminals,
+polarity, AC-bus mapping, control targets, loss coefficients and a solid ground.
+It supports source DC-voltage and active-power controls. It refuses unsupported
+LCC models, ambiguous source droop units, valve-current relations, DC switching
+or series-device reduction and missing parameters. It never fills unknown losses
+with zero. Back-to-back connections need no artificial DC line; a shared DC
+network can have two, three or more converters and radial or meshed wiring.
+
+Numerical convergence and equipment feasibility are separate. Results list the
+bounds actually checked, unspecified bounds and violations. A converged point
+with missing ratings is not an all-clear. Point-to-point tests use the analytical
+quadratic voltage solution; multi-terminal tests independently check power/loss
+balance, reverse flow, outages, control loss and finite-difference sensitivities.
+
+For imported local cases, **Solve with AC power flow** applies the solved VSC Pac
+and explicit fixed reactive targets to the original AC network. **Dispatch AC
+generation** runs AC-network DC OPF with those fixed converter injections. These
+studies use the imported case, not diagram demand edits. They reject overlapping
+reduced HVDC links, unsupported AC-voltage/reactive capability controls and AC
+islands that would omit a converter. Results appear in this inspector and do not
+replace the main diagram's result set. AC generation optimality does not mean
+that the DC transfers were optimized.
+
+The Rust APIs are `dc_grid::solve`, `dc_grid::active_power_sensitivity` and
+`ac_dc::solve_source`; browser APIs are `solveDcGrid` and `solveAcDc`. Sensitivities
+are local derivatives of fixed control equations, not derivatives through
+saturation or mode changes. Zero-current absolute-loss kinks are rejected.
+Automatic PST/OLTC/shunt regulation, converter AC-voltage control, joint nonlinear
+AC/DC OPF, LCC commutation, protection and transient studies are not implemented.

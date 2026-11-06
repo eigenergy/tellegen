@@ -82,6 +82,8 @@
 	import { StoredFlag, StoredNumber } from './schematic/view-prefs.svelte.js';
 	import TxOperatingPanel from './schematic/TxOperatingPanel.svelte';
 	import TxResultInspection from './schematic/TxResultInspection.svelte';
+	import TxEquipmentPanel from './schematic/TxEquipmentPanel.svelte';
+	import { equipmentDrawing, equipmentItems } from '../diagram/transmission-equipment.js';
 	import TxEconomicsPanel from './schematic/TxEconomicsPanel.svelte';
 	import TxTransferPanel from './schematic/TxTransferPanel.svelte';
 	import {
@@ -620,6 +622,31 @@
 		return points.length ? { points, unit } : null;
 	});
 
+	let equipmentOpen = $state(false);
+	let selectedEquipment = $state('');
+	const equipmentInventory = $derived(equipmentItems(network));
+	const auxiliaryEquipment = $derived(
+		equipmentDrawing(network, graph, geometry, parts, anchors, 7 / 2 ** stepZoom, symbolsOn)
+	);
+	const phaseShifters = $derived(
+		new Set(
+			(network.equipment?.transformers ?? [])
+				.filter((t) => t.phase_shifter)
+				.flatMap((t) => {
+					const row = graph.branchIndex.get(t.branch);
+					return row === undefined ? [] : [row];
+				})
+		)
+	);
+	async function selectEquipment(key: string) {
+		selectedEquipment = key;
+		equipmentOpen = true;
+		const item = equipmentInventory.find((i) => i.key === key);
+		if (item?.branch !== undefined) await inspectResult('branch', item.branch);
+		else if (item?.bus !== undefined) await inspectResult('bus', item.bus);
+		if (panels.compact && panels.drawer === 'network') panels.drawer = null;
+	}
+
 	const selectedBus = $derived(
 		app.selectedBus === null ? -1 : (graph.index.get(app.selectedBus) ?? -1)
 	);
@@ -627,9 +654,25 @@
 		app.selectedBranch === null ? -1 : (graph.branchIndex.get(app.selectedBranch) ?? -1)
 	);
 
+	const internalStarRows = $derived(
+		new Set(
+			(network.equipment?.three_winding ?? []).flatMap((t) => {
+				const row = t.star_bus === null ? undefined : graph.index.get(t.star_bus);
+				return row === undefined ? [] : [row];
+			})
+		)
+	);
+	const threeWindingBranches = $derived(
+		new Set((network.equipment?.three_winding ?? []).flatMap((t) => t.branches))
+	);
 	const transformerEdges = $derived(
 		network.branches.flatMap((_, k) =>
-			graph.transformer[k] && graph.from[k] >= 0 && graph.to[k] >= 0 ? [k] : []
+			!threeWindingBranches.has(network.branches[k].id) &&
+			(graph.transformer[k] || phaseShifters.has(k)) &&
+			graph.from[k] >= 0 &&
+			graph.to[k] >= 0
+				? [k]
+				: []
 		)
 	);
 	const transformers = $derived.by(() => {
@@ -760,12 +803,17 @@
 	}
 
 	function scene(): TxScene {
+		const physicalBusColours = internalStarRows.size ? busColours.slice() : busColours;
+		for (const row of internalStarRows) physicalBusColours[row * 4 + 3] = 0;
 		return {
+			internalStarRows,
+			equipment: auxiliaryEquipment,
+			phaseShifters,
 			graph,
 			geometry,
 			edgeColours: edgePaint.colours,
 			edgeWidths: edgePaint.widths,
-			busColours,
+			busColours: physicalBusColours,
 			busLevels: windingColours,
 			stationColours,
 			voltageMarkers,
@@ -837,7 +885,10 @@
 		const screen = (x: number, y: number): [number, number] => [(x - x0) * scale, (y - y0) * scale];
 		const inView = ([sx, sy]: [number, number]) =>
 			sx >= 0 && sx <= width && sy >= 0 && sy <= height;
-		const name = (i: number) => network.buses[i].name ?? `bus ${network.buses[i].id}`;
+		const name = (i: number) =>
+			internalStarRows.has(i)
+				? `Analysis star ${network.buses[i].id}`
+				: (network.buses[i].name ?? `bus ${network.buses[i].id}`);
 		const candidates: (LabelCandidate & { position: [number, number] })[] = [];
 		const at = (i: number): [number, number] => [
 			geometry.positions[i * 3],
@@ -857,7 +908,7 @@
 		}
 		if (namesOn && !parts)
 			for (let i = 0; i < graph.busId.length; i++) {
-				if (i === selectedBus) continue;
+				if (i === selectedBus || internalStarRows.has(i)) continue;
 				const p = at(i);
 				const sp = screen(...p);
 				if (!inView(sp)) continue;
@@ -890,6 +941,7 @@
 			}
 			if (parts.unit * scale >= 12)
 				for (let i = 0; i < graph.busId.length; i++) {
+					if (internalStarRows.has(i)) continue;
 					// Off-screen busbars first, before building any text.
 					const p: [number, number] = [parts.busbars[i * 4], parts.busbars[i * 4 + 1]];
 					const sp = screen(...p);
@@ -1075,6 +1127,10 @@
 						hoveredEdge = t?.edge ?? -1;
 					},
 					onClick: (info: PickingInfo) => {
+						if (info.layer?.id.startsWith('equipment-') && info.object?.key) {
+							selectEquipment(info.object.key);
+							return;
+						}
 						if (info.index < 0 || !info.layer?.id) {
 							onclear();
 							return;
@@ -1195,6 +1251,8 @@
 			previewEdge,
 			field,
 			transformers,
+			auxiliaryEquipment,
+			phaseShifters,
 			arrows,
 			attachments,
 			stepZoom,
@@ -1617,6 +1675,11 @@
 						{#each VIEWS as v (v.value)}<option value={v.value}>{v.label}</option>{/each}
 					</select></label
 				>
+				<button
+					aria-expanded={equipmentOpen}
+					aria-controls="tx-equipment-panel"
+					onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
+				>
 				<button onclick={onclose} title="Return to the map">Close</button>
 			</div>
 		{:else}
@@ -1662,6 +1725,13 @@
 			</div>
 		{/if}
 
+		{#if !panels.compact}
+			<button
+				aria-expanded={equipmentOpen}
+				aria-controls="tx-equipment-panel"
+				onclick={() => (equipmentOpen = !equipmentOpen)}>Equipment</button
+			>
+		{/if}
 		<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
 		<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
 		<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
@@ -1700,7 +1770,29 @@
 			</div>
 		{/if}
 	</div>
-	{#if colour !== 'level'}
+	{#if equipmentOpen}
+		<div
+			id="tx-equipment-panel"
+			class="equipment-overlay"
+			style:top="{panels.top + toolbarHeight + 16}px"
+			style:left="{toolLeft}px"
+			style:max-width="calc(100% - {toolLeft + 12}px)"
+			style:max-height="calc(100% - {panels.top +
+				toolbarHeight +
+				32 +
+				Math.max(app.sheetInset, panels.bottom)}px)"
+		>
+			<TxEquipmentPanel
+				moduleJson={app.activeLocal?.studyInputJson ?? undefined}
+				{formulation}
+				{network}
+				selected={selectedEquipment}
+				onselect={selectEquipment}
+				onclose={() => (equipmentOpen = false)}
+			/>
+		</div>
+	{/if}
+	{#if colour !== 'level' && !equipmentOpen}
 		<div
 			class="legend"
 			class:operating={panelView}
@@ -1973,6 +2065,12 @@
 </div>
 
 <style>
+	.equipment-overlay {
+		overflow: auto;
+		position: absolute;
+		z-index: 12;
+		width: 370px;
+	}
 	.mobile-view {
 		display: flex;
 		width: 100%;
