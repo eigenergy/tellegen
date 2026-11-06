@@ -212,10 +212,9 @@ pub fn prepare_transformer(
             .iter()
             .take(terminal_count(winding, phases))
         {
-            if !terminals
-                .iter()
-                .any(|t: &TransformerTerminal| t.bus == winding.bus && t.terminal == *terminal)
-            {
+            if !terminals.iter().any(|t: &TransformerTerminal| {
+                t.bus.eq_ignore_ascii_case(&winding.bus) && t.terminal == *terminal
+            }) {
                 terminals.push(TransformerTerminal {
                     bus: winding.bus.clone(),
                     terminal: terminal.clone(),
@@ -525,10 +524,9 @@ fn prepare_single_phase_autotransformer(
         (from, &from.terminal_map[1]),
         (to, &to.terminal_map[1]),
     ] {
-        if !terminals
-            .iter()
-            .any(|item: &TransformerTerminal| item.bus == winding.bus && item.terminal == *terminal)
-        {
+        if !terminals.iter().any(|item: &TransformerTerminal| {
+            item.bus.eq_ignore_ascii_case(&winding.bus) && item.terminal == *terminal
+        }) {
             terminals.push(TransformerTerminal {
                 bus: winding.bus.clone(),
                 terminal: terminal.clone(),
@@ -719,7 +717,7 @@ fn coil_voltage(w: &DistWinding, phases: usize) -> f64 {
 fn terminal_index(terminals: &[TransformerTerminal], bus: &str, terminal: &str) -> Option<usize> {
     terminals
         .iter()
-        .position(|t| t.bus == bus && t.terminal == terminal)
+        .position(|t| t.bus.eq_ignore_ascii_case(bus) && t.terminal == terminal)
 }
 
 fn coil_refs(
