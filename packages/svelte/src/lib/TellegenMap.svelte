@@ -126,7 +126,9 @@
 		attribution?: 'compact' | 'full';
 		/** Called once the map and overlay exist, with an optional cleanup. It
 		 * fires again after a context-loss or basemap remount, after the previous
-		 * cleanup ran. */
+		 * cleanup ran. It runs before the first style loads, and a switch to the
+		 * fallback basemap does not call it again: the new style drops every
+		 * source and layer the host added, so add those on each `style.load`. */
 		onMapReady?: (map: MapLibreMap, overlay: MapLibreOverlay) => void | (() => void);
 		/** The primary basemap failed and the fallback was requested. The
 		 * reason's `from` and `to` name the providers (`'carto'`,
