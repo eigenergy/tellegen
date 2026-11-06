@@ -10,8 +10,9 @@ const SYNTH_EXTRAS = 'tellegen_synth';
  * it. Empty for any other module, and for text that does not parse. */
 export function tapBusIds(moduleJson: string | null | undefined): ReadonlySet<number> {
 	const ids = new Set<number>();
-	// Only a module that names a tap is parsed a second time.
-	if (!moduleJson?.includes('"tap"')) return ids;
+	// Only a module tellegen-synth wrote is parsed a second time; a branch's
+	// `"tap"` ratio is in every transmission case.
+	if (!moduleJson?.includes(`"${SYNTH_EXTRAS}"`) || !moduleJson.includes('"tap"')) return ids;
 	let buses: unknown;
 	try {
 		buses = JSON.parse(moduleJson)?.value?.data?.buses;
