@@ -473,9 +473,13 @@
 		if (!caseId || branchId === null) return null;
 		const branch = displayedGeometry(caseId)?.branches.find((b) => b.id === branchId);
 		const path = branch?.path.filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
-		const displayPath = path ? unwrapLongitudePath(path) : path;
 		return branch && path && path.length >= 2
-			? { key: `${app.studyView?.id ?? caseId}-${branch.id}`, caseId, branchId: branch.id, path: displayPath! }
+			? {
+					key: `${app.studyView?.id ?? caseId}-${branch.id}`,
+					caseId,
+					branchId: branch.id,
+					path: unwrapLongitudePath(path)
+				}
 			: null;
 	});
 	let selectedCueEl = $state.raw<HTMLDivElement | null>(null);
@@ -679,7 +683,7 @@
 	}
 
 	function branchBounds(path: [number, number][]): LngLatBoundsLike | null {
-		return routeBounds(unwrapLongitudePath(path));
+		return routeBounds(path);
 	}
 
 	function prefersReducedMotion(): boolean {
