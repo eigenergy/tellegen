@@ -154,3 +154,72 @@ test('closing a chooser releases it and allows re-import without adding unchecke
 	await dialog.getByRole('button', { name: 'Import selected cases' }).click();
 	await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
 });
+
+test('a zipped four-wire snapshot runs while unsupported neighbours stay view-only', async ({
+	page
+}) => {
+	const references = JSON.parse(
+		await readFile(
+			new URL('../../../crates/tellegen/tests/data/dss_snapshots.json', import.meta.url),
+			'utf8'
+		)
+	);
+	const source = references.cases.find((c: { name: string }) => c.name === 'four_wire').source;
+	const unsupported =
+		'new circuit.three basekv=11\nnew transformer.t phases=3 windings=3 buses=[sourcebus lb lc] conns=[wye wye delta] kvs=[11 .4 .4] kvas=[100 100 100] xhl=4 xht=5 xlt=6\n';
+	await page.locator('input[type="file"]').setInputFiles({
+		name: 'snapshots.zip',
+		mimeType: 'application/zip',
+		buffer: storedZip({
+			'four-wire.dss': source,
+			'three-winding.dss': unsupported,
+			'generator.dss':
+				'new circuit.qc basekv=.4\nnew generator.g phases=3 bus1=sourcebus kv=.4 kw=3 kvar=1 model=1\n'
+		})
+	});
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.locator('.candidate')).toHaveCount(3);
+	await dialog.getByRole('button', { name: 'Select all matching' }).click();
+	await dialog.getByRole('button', { name: 'Import selected cases' }).click();
+	await expect(dialog.locator('[data-outcome="view-only"]')).toHaveCount(2);
+	await expect(
+		dialog.locator('[data-outcome="view-only"]').filter({ hasText: 'three-winding.dss' })
+	).toContainText('3 windings');
+	await expect(
+		dialog.locator('[data-outcome="view-only"]').filter({ hasText: 'generator.dss' })
+	).toContainText('generator or IBR injections');
+	await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
+	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+	await page.getByRole('button', { name: /snapshots.zip \/ four-wire.dss Multiconductor/ }).click();
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	const study = page.getByRole('region', { name: 'Study workspace' });
+	await expect(study.getByRole('button', { name: 'Run power flow' })).toBeEnabled();
+	await study.getByRole('button', { name: 'Run power flow' }).click();
+	await expect(study.getByText('Converged', { exact: true })).toBeVisible();
+	await expect(
+		study.getByText('Original load model verified', { exact: true }).first()
+	).toBeVisible();
+	await expect(study.getByRole('button', { name: 'Save result' })).toBeEnabled();
+});
+
+test('a large collection keeps the first and last case reachable', async ({ page }) => {
+	const cases = Object.fromEntries(
+		Array.from({ length: 20 }, (_, i) => [`case-${String(i).padStart(2, '0')}.m`, comparison])
+	);
+	await page
+		.locator('input[type="file"]')
+		.setInputFiles({ name: 'many.zip', mimeType: 'application/zip', buffer: storedZip(cases) });
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.locator('.candidate')).toHaveCount(20);
+	await dialog.getByRole('button', { name: 'Select all matching' }).click();
+	await dialog.getByRole('button', { name: 'Import selected cases' }).click();
+	await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(20);
+	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+	for (const width of [1280, 390]) {
+		await page.setViewportSize({ width, height: 800 });
+		for (const name of ['case-00.m', 'case-19.m', 'case-00.m']) {
+			await page.getByRole('button', { name: new RegExp(`${name} Local`) }).click();
+			await expect(page.locator('.case-chip.active .cname')).toContainText(name);
+		}
+	}
+});

@@ -5,26 +5,6 @@ use powerio::{PioModule, PioValue};
 use powerio_dist::{CoordinateSpace, DistGeoMeta, DistGraphEdgeKind, MulticonductorNetwork};
 use tellegen::ir::deserialize_module;
 
-/// Preserve the source-format restriction when a module arrives through a
-/// selected tree instead of the single-buffer entry point.
-#[cfg(feature = "sensitivity")]
-pub(crate) fn mark_raw_dss_restriction(
-    module: PioModule<PioValue>,
-) -> Result<PioModule<PioValue>, String> {
-    if !module
-        .sources()
-        .iter()
-        .any(|s| s.format().is_some_and(|f| f.as_str() == "dss"))
-    {
-        return Ok(module);
-    }
-    module.with_diagnostic(powerio::Diagnostic::new(
-        powerio::DiagnosticCode::new("PARTNER.TELLEGEN.MC_PF_UNSUPPORTED").map_err(|e| e.to_string())?,
-        powerio::DiagnosticSeverity::Warning,
-        "OpenDSS imports are view-only until their source, load and control semantics are qualified for snapshot power flow",
-    )).map_err(|e| e.to_string())
-}
-
 /// Parse `text` in a distribution `format` (`dss`, `bmopf`, or `pmd`) and
 /// return the drop-panel payload JSON (see [`ingest_dist_value`]). The format
 /// token is resolved by PowerIO's universal parser; anything else, including
@@ -66,12 +46,7 @@ fn parse_dist_bytes(
     let format = crate::source_format_id(format)?;
     // The angle bracketed name marks an anonymous in-memory source; the
     // readers take the case's own name (e.g. the OpenDSS circuit name).
-    let raw_study_error = if matches!(format.as_str(), "dss") {
-        Some(
-            "OpenDSS imports are view-only for MC Study mode until finite-source and control semantics are normalized; use BMOPF or a typed MC AC PF module"
-                .to_owned(),
-        )
-    } else if matches!(format.as_str(), "bmopf-json" | "bmopf") {
+    let raw_study_error = if matches!(format.as_str(), "bmopf-json" | "bmopf") {
         #[cfg(feature = "mc-pf")]
         let preflight = tellegen::validate_bmopf_json(
             std::str::from_utf8(bytes).map_err(|_| "BMOPF input is not valid UTF-8".to_owned())?,
@@ -979,9 +954,15 @@ mod tests {
         }
         #[cfg(feature = "mc-pf")]
         {
-            assert_eq!(v["mc_pf_supported"], false);
-            assert!(tellegen::validate_mc_module_json(v["module_json"].as_str().unwrap()).is_err());
-            assert!(v["mc_pf_reason"].as_str().unwrap().contains("view-only"));
+            assert_eq!(v["mc_pf_supported"], true);
+            let module = v["module_json"].as_str().unwrap();
+            tellegen::validate_mc_module_json(module).unwrap();
+            let result: tellegen::McPfResult = serde_json::from_str(
+                &tellegen::solve_mc_module_json(module, &Default::default()).unwrap(),
+            )
+            .unwrap();
+            assert!(result.converged);
+            assert!(result.scaled_kcl_residual <= 1.0);
         }
     }
 
