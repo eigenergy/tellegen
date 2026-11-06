@@ -41,6 +41,19 @@ test('dragging a mixed ZIP discovers both shared masters and keeps successful im
 	await expect(dialog.getByRole('status')).toContainText('Import finished', { timeout: 30_000 });
 	await expect(dialog.locator('[data-outcome="failed"]')).toHaveCount(1);
 	await expect(page.locator('.case-chip.local')).toHaveCount(3);
+	// Imported rows remain selectable for source export, without being imported twice.
+	await dialog.getByRole('button', { name: 'Clear selection' }).click();
+	await dialog
+		.locator('.candidate')
+		.filter({ hasText: 'comparison.m' })
+		.getByRole('checkbox')
+		.check();
+	await expect(dialog.getByRole('button', { name: 'Import selected cases' })).toBeDisabled();
+	const sourceEvent = page.waitForEvent('download');
+	await dialog.getByRole('button', { name: 'Export selected source ZIP' }).click();
+	const source = await readFile((await (await sourceEvent).path())!);
+	expect(source.includes(Buffer.from(comparison))).toBe(true);
+	expect(source.includes(Buffer.from(day))).toBe(false);
 	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
 	await expect(
 		page.getByRole('button', { name: /study.zip \/ masters\/day.dss Multiconductor/ })

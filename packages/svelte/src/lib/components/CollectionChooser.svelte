@@ -19,6 +19,7 @@
 	);
 	const done = (row: CollectionRow) =>
 		['imported', 'view-only', 'incomplete'].includes(row.outcome);
+	const importable = $derived(selected.filter((row) => !done(row)));
 	$effect(() => {
 		if (model.open && dialog && !dialog.open) {
 			query = '';
@@ -39,6 +40,7 @@
 			link.click();
 			setTimeout(() => URL.revokeObjectURL(url), 1000);
 		} catch (error) {
+			if (error instanceof DOMException && error.name === 'AbortError') return;
 			model.errors.push(error instanceof Error ? error.message : String(error));
 		}
 	}
@@ -121,7 +123,7 @@
 		{#each visible as row (row.id)}
 			<div class="candidate" data-outcome={row.outcome}>
 				<label class="name"
-					><input type="checkbox" bind:checked={row.checked} disabled={model.busy || done(row)} />
+					><input type="checkbox" bind:checked={row.checked} disabled={model.busy} />
 					<span>{row.label}</span></label
 				>
 				<label class="format"
@@ -203,9 +205,9 @@
 		applied to every case: import first, then select a case and attach its sidecar.
 	</p>
 	<div class="footer">
-		<span>{selected.length} selected (up to 32 per import)</span><button
+		<span>{selected.length} selected; {importable.length} to import (up to 32 per import)</span><button
 			class="primary"
-			disabled={model.busy || !selected.length || selected.length > 32}
+			disabled={model.busy || !importable.length || importable.length > 32}
 			onclick={() => model.importSelected()}>Import selected cases</button
 		>
 	</div>

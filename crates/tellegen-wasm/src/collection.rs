@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use powerio::collection::SourceBundleScope;
+use powerio::collection::{CollectionOperation, SourceBundleScope};
 use powerio::{
     ArtifactPath, Collection, CollectionLimits, CollectionSelection, ParseOptions, PioValue,
 };
@@ -154,10 +154,16 @@ impl CaseCollection {
         module
             .insert_extension("tellegen.collection_origin", origin.clone())
             .map_err(|e| e.to_string())?;
-        if module.sources().iter().any(|s| {
-            s.format()
-                .is_some_and(|f| matches!(f.as_str(), "bmopf-json" | "bmopf"))
-        }) {
+        let parsed_source_is = |formats: &[&str]| {
+            selection.operation == CollectionOperation::Parse
+                && module.sources().iter().any(|source| {
+                    source
+                        .format()
+                        .is_some_and(|format| formats.contains(&format.as_str()))
+                })
+        };
+        let is_aux = parsed_source_is(&["aux", "powerworld"]);
+        if parsed_source_is(&["bmopf-json", "bmopf"]) {
             let source = self.0.source(&selection).map_err(|e| e.to_string())?;
             let buffer = source.primary_buffer().map_err(|e| e.to_string())?;
             let text = std::str::from_utf8(buffer.bytes()).map_err(|e| e.to_string())?;
@@ -187,7 +193,7 @@ impl CaseCollection {
             // AUX location tables live in retained source, outside the typed
             // electrical value, and must survive selected-source ingestion.
             if let PioValue::BalancedNetwork(network) = module.value_mut() {
-                if matches!(selection.format.as_deref(), Some("aux" | "powerworld")) {
+                if is_aux {
                     let source = self.0.source(&selection).map_err(|e| e.to_string())?;
                     let buffer = source.primary_buffer().map_err(|e| e.to_string())?;
                     let text = std::str::from_utf8(buffer.bytes()).map_err(|e| e.to_string())?;
@@ -271,6 +277,35 @@ mod tests {
                 "balanced"
             );
         }
+    }
+
+    #[test]
+    fn autodetected_aux_keeps_locations_through_collection_and_ir_reimport() {
+        let aux = b"DATA (Substation, [SubNum, Latitude, Longitude])\n{\n12 35.0 -81.0\n}\n\
+                    DATA (Bus, [BusNum, BusName, BusNomVolt, BusSlack, SubNum])\n{\n\
+                    1 \"ALPHA\" 138 \"YES\" 12\n}\n";
+        let session =
+            CaseCollection::files("locations", "[\"case.aux\"]", &[0, aux.len() as u32], aux)
+                .unwrap();
+        let imported = session.ingest_value(&select("case.aux")).unwrap();
+        assert_eq!(imported["payload"]["view"]["buses"][0]["lon"], -81.0);
+        assert_eq!(imported["payload"]["view"]["buses"][0]["lat"], 35.0);
+        let saved = imported["payload"]["module_json"]
+            .as_str()
+            .unwrap()
+            .as_bytes();
+        let restored = CaseCollection::files(
+            "saved",
+            "[\"case.pio.json\"]",
+            &[0, saved.len() as u32],
+            saved,
+        )
+        .unwrap();
+        let candidate = restored.0.inspect().unwrap().remove(0);
+        let reimported = restored
+            .ingest_value(&serde_json::to_string(&candidate.selection).unwrap())
+            .unwrap();
+        assert_eq!(reimported["payload"]["view"], imported["payload"]["view"]);
     }
 
     #[test]
