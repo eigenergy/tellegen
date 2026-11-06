@@ -862,7 +862,12 @@ pub(super) fn validate_mc_network(
         // The only legacy law that may infer its nominal voltage is constant
         // power. Its inference stays in preparation; all explicit load laws
         // can be checked without assembling or factoring a network matrix.
-        if !load.voltage_model.v_nom().is_empty() {
+        if !load.voltage_model.v_nom().is_empty()
+            || !matches!(
+                load.voltage_model,
+                powerio_dist::DistLoadVoltageModel::ConstantPower { .. }
+            )
+        {
             super::loads::prepare_load(load, &index, None)?;
         }
     }

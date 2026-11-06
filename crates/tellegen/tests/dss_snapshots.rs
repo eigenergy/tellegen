@@ -27,6 +27,32 @@ fn module(text: &str) -> powerio::PioModule<powerio::PioValue> {
 }
 
 #[test]
+fn capability_rejects_missing_voltage_dependent_load_base() {
+    for model in [
+        powerio_dist::DistLoadVoltageModel::ConstantCurrent { v_nom: vec![] },
+        powerio_dist::DistLoadVoltageModel::ConstantImpedance { v_nom: vec![] },
+        powerio_dist::DistLoadVoltageModel::Exponential {
+            v_nom: vec![],
+            gamma_p: vec![0.7],
+            gamma_q: vec![2.3],
+        },
+    ] {
+        let mut input = module(
+            "new circuit.qc basekv=.4\nnew load.ld phases=3 bus1=sourcebus kv=.4 kw=3 kvar=1\n",
+        );
+        let powerio::PioValue::MulticonductorNetwork(network) = input.value_mut() else {
+            panic!()
+        };
+        network.loads_mut()[0].voltage_model = model;
+        let reason = tellegen::validate_mc_module(&input).unwrap_err();
+        assert!(reason.contains("nominal branch voltage"), "{reason}");
+        let saved = tellegen::ir::serialize_module(&input).unwrap();
+        assert!(tellegen::validate_mc_module_json(&saved).is_err());
+        assert!(tellegen::solve_mc_module_json(&saved, &Default::default()).is_err());
+    }
+}
+
+#[test]
 fn finite_sources_bounded_loads_four_wires_and_transformer_match_opendss() {
     let report: Report = serde_json::from_str(include_str!("data/dss_snapshots.json")).unwrap();
     assert_eq!(report.cases.len(), 38);
