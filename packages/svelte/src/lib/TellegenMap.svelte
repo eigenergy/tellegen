@@ -56,7 +56,7 @@
 	} from './transformer-icon.js';
 	import { createGlobeHorizon, withGlobeHorizon } from './globe-horizon.js';
 	import { foldMapBounds } from './map-bounds.js';
-	import { routeBounds, unwrapLongitudePath } from './antimeridian.js';
+	import { nearestLongitude, routeBounds, unwrapLongitudePath } from './antimeridian.js';
 	import { getAppState, getController } from './context.svelte.js';
 	import { displayFmt, fmt, rgbaCss } from './format.js';
 	import { getPanelLayout } from './panels.svelte.js';
@@ -502,9 +502,16 @@
 	});
 	let multiDetailEl = $state.raw<SVGSVGElement | null>(null);
 
+	/** The screen point of a coordinate in the world copy nearest the camera.
+	 * MapLibre projects a longitude in the copy it names, so a point across the
+	 * antimeridian from the camera would land a whole world width away. */
+	function projectNear(m: MapLibreMap, [lon, lat]: [number, number]) {
+		return m.project([nearestLongitude(lon, m.getCenter().lng), lat]);
+	}
+
 	function syncSelectedCue() {
 		if (!map || !selectedCueEl || !selectedBusCue) return;
-		const point = map.project([selectedBusCue.lon, selectedBusCue.lat]);
+		const point = projectNear(map, [selectedBusCue.lon, selectedBusCue.lat]);
 		const { clientWidth, clientHeight } = map.getContainer();
 		const inRange =
 			point.x >= -40 &&
@@ -528,8 +535,12 @@
 		}
 		const activeMap = map;
 		const { clientWidth, clientHeight } = activeMap.getContainer();
+		// The path is unwrapped, so one shift by whole turns moves all of it to
+		// the world copy nearest the camera without breaking it at the seam.
+		const [lon0] = selectedBranchCue.path[0];
+		const shift = nearestLongitude(lon0, activeMap.getCenter().lng) - lon0;
 		const points = selectedBranchCue.path
-			.map(([lon, lat]) => activeMap.project([lon, lat]))
+			.map(([lon, lat]) => activeMap.project([lon + shift, lat]))
 			.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
 		if (clientWidth === 0 || clientHeight === 0 || points.length < 2) {
 			selectedBranchCueEl.style.display = 'none';
@@ -595,14 +606,14 @@
 			return;
 		}
 		const { bus, edges } = detail;
-		const busPt = m.project([bus.lon, bus.lat]);
+		const busPt = projectNear(m, [bus.lon, bus.lat]);
 
 		const STRAND_SPACING = 5;
 		let strands = '';
 		for (const e of edges) {
 			const selectedIsFrom = e.from === bus.id;
 			const other = selectedIsFrom ? e.path[e.path.length - 1] : e.path[0];
-			const b = m.project(other);
+			const b = projectNear(m, other);
 			const dx = b.x - busPt.x;
 			const dy = b.y - busPt.y;
 			const len = Math.hypot(dx, dy) || 1;
