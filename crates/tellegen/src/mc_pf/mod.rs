@@ -46,7 +46,9 @@ pub struct McPfOptions {
     pub zero_voltage_tolerance: f64,
     pub absolute_kcl_tolerance: f64,
     pub relative_kcl_tolerance: f64,
-    /// Apply the OpenDSS-style bounded-voltage load envelope.
+    /// Apply the legacy OpenDSS-style envelope to unbounded load laws.
+    /// Explicit PowerIO bounded laws always retain their own thresholds,
+    /// coefficients, cutoff and current limit regardless of this option.
     pub voltage_envelope: bool,
     /// Below this per-unit voltage, loads use their nominal impedance.
     pub v_low_pu: f64,
@@ -3561,7 +3563,7 @@ mod tests {
         assert!(
             prepare_mc_energized_network_json(&crate::ir::serialize_module(&module).unwrap())
                 .unwrap_err()
-                .contains("unknown bus")
+                .contains("missing")
         );
     }
 

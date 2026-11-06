@@ -170,9 +170,8 @@ impl CaseCollection {
             }
         }
         let (kind, payload) = if dist::is_viewable_module_value(module.value()) {
-            // T1 retains the existing raw DSS restriction. A separately
-            // qualified snapshot profile may relax it, never ZIP admission.
-            module = dist::mark_raw_dss_restriction(module)?;
+            // The typed snapshot capability gate applies equally to raw files
+            // and collection selections; ZIP admission cannot bypass it.
             ("multiconductor", dist::ingest_dist_module_value(module)?)
         } else if crate::balanced_study_network(module.value()).is_some() {
             // AUX location tables live in retained source, outside the typed
@@ -268,12 +267,12 @@ mod tests {
                 assert_eq!(a["incomplete"], false);
                 assert_eq!(a["payload"]["n_load"], 1);
                 assert_eq!(a["payload"]["graph"], b["payload"]["graph"]);
-                assert_eq!(a["payload"]["mc_pf_supported"], false);
+                assert_eq!(a["payload"]["mc_pf_supported"], true);
                 let restored = crate::read_module_bytes(
                     a["payload"]["module_json"].as_str().unwrap().as_bytes(),
                 )
                 .unwrap();
-                assert!(tellegen::validate_mc_module(&restored).is_err());
+                assert!(tellegen::validate_mc_module(&restored).is_ok());
             }
         }
         let imported = zip.ingest_value(&select("comparison.m")).unwrap();

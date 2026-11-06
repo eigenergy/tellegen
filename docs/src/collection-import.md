@@ -47,3 +47,21 @@ other cases). A single master by itself need not be a complete project. Closing
 the chooser releases source collections. Imported PowerIO modules retain
 structured source origin and diagnostics but do not embed the archive; saving
 and restoring a module does not restore an original-ZIP download.
+
+## OpenDSS snapshot power flow
+
+Qualified OpenDSS imports can run **Studies → Run power flow** after import.
+The initial profile covers normalized finite sources with grounded references,
+explicit conductor impedances, bounded ZIP and exponential loads (including
+OpenDSS voltage bands and ZIP dropout), and supported finite-leakage transformers.
+An explicit fourth neutral conductor is supported. Source-defined load bounds
+always take precedence over the optional solver envelope; disabling that option
+does not remove the source model's own voltage bounds.
+
+Passive definitions, profiles and monitoring records remain in the module.
+This is a fixed equipment snapshot: daily/yearly simulation, control execution,
+and an OpenDSS script's sequence of solves are not run. Active regulator/control
+objects, unresolved geometry or dependencies, floating source references,
+general three-winding transformers, and unqualified transformer settings remain
+view-only with a reason. Convergence and operating voltage-limit compliance are
+reported separately. A runnable model can still fail to converge.

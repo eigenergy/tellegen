@@ -276,16 +276,7 @@ impl PreparedNetwork {
         if !instance.control_modes().is_empty() {
             return Err("active regulator/capacitor controls are unsupported; solve a fixed operating snapshot".to_owned());
         }
-        if !network.untyped_objects().is_empty() {
-            let names = network
-                .untyped_objects()
-                .iter()
-                .map(|o| format!("{}.{},", o.class, o.name))
-                .collect::<String>();
-            return Err(format!(
-                "network retains unsupported untyped active objects: {names}"
-            ));
-        }
+        super::input::validate_mc_network(network)?;
         let index = NetworkIndex::new(network)?;
         let n = index.terminal_ids.len();
         // Name lookups keep the first matching row, exactly as the linear

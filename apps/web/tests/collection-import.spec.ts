@@ -141,3 +141,39 @@ test('closing a chooser releases it and allows re-import without adding unchecke
 	await dialog.getByRole('button', { name: 'Import selected cases' }).click();
 	await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
 });
+
+test('a zipped four-wire snapshot runs while an unsupported neighbour stays view-only', async ({
+	page
+}) => {
+	const references = JSON.parse(
+		await readFile(
+			new URL('../../../crates/tellegen/tests/data/dss_snapshots.json', import.meta.url),
+			'utf8'
+		)
+	);
+	const source = references.cases.find((c: { name: string }) => c.name === 'four_wire').source;
+	const unsupported =
+		'new circuit.three basekv=11\nnew transformer.t phases=3 windings=3 buses=[sourcebus lb lc] conns=[wye wye delta] kvs=[11 .4 .4] kvas=[100 100 100] xhl=4 xht=5 xlt=6\n';
+	await page.locator('input[type="file"]').setInputFiles({
+		name: 'snapshots.zip',
+		mimeType: 'application/zip',
+		buffer: storedZip({ 'four-wire.dss': source, 'three-winding.dss': unsupported })
+	});
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.locator('.candidate')).toHaveCount(2);
+	await dialog.getByRole('button', { name: 'Select all matching' }).click();
+	await dialog.getByRole('button', { name: 'Import selected cases' }).click();
+	await expect(dialog.locator('[data-outcome="view-only"]')).toContainText('3 windings');
+	await expect(dialog.locator('[data-outcome="imported"]')).toHaveCount(1);
+	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+	await page.getByRole('button', { name: /snapshots.zip \/ four-wire.dss Multiconductor/ }).click();
+	await page.getByRole('button', { name: 'Studies', exact: true }).click();
+	const study = page.getByRole('region', { name: 'Study workspace' });
+	await expect(study.getByRole('button', { name: 'Run power flow' })).toBeEnabled();
+	await study.getByRole('button', { name: 'Run power flow' }).click();
+	await expect(study.getByText('Converged', { exact: true })).toBeVisible();
+	await expect(
+		study.getByText('Original load model verified', { exact: true }).first()
+	).toBeVisible();
+	await expect(study.getByRole('button', { name: 'Save result' })).toBeEnabled();
+});
