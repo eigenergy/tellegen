@@ -15,6 +15,10 @@ export function operatingExceptions(
 		warning: 0,
 		atLimit: 0,
 		voltageUnknown: 0,
+		voltageChecked: 0,
+		loadingChecked: 0,
+		flowMissing: 0,
+		ratingUnknown: 0,
 		loadingUnknown: 0,
 		inactive: 0,
 		disconnected: 0
@@ -33,6 +37,7 @@ export function operatingExceptions(
 		} else if (voltages) {
 			const value = voltages.get(bus.id);
 			const { state, exceedance } = assessVoltage(value, bus);
+			if (state === 'normal' || state === 'low' || state === 'high') counts.voltageChecked++;
 			if (state === 'low' || state === 'high') {
 				counts[state]++;
 				buses.push({
@@ -51,6 +56,8 @@ export function operatingExceptions(
 	}
 	network.branches.forEach((branch, index) => {
 		const state = loading[index];
+		if (state === 'normal' || state === 'warning' || state === 'at-limit' || state === 'violation')
+			counts.loadingChecked++;
 		if (state === 'violation' || state === 'at-limit' || state === 'warning') {
 			counts[state === 'violation' ? 'overload' : state === 'at-limit' ? 'atLimit' : 'warning']++;
 			branches.push({
@@ -64,6 +71,8 @@ export function operatingExceptions(
 			counts.inactive++;
 		} else if (state !== 'normal' && state !== 'deenergized') {
 			counts.loadingUnknown++;
+			if (state === 'missing') counts.flowMissing++;
+			else counts.ratingUnknown++;
 		}
 	});
 	const rank = { violation: 2, 'at-limit': 1, warning: 0 } as const;

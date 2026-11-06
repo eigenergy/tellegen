@@ -74,21 +74,25 @@
 			<abbr title={TERMS.lmp}>Total LMP</abbr><span>{domain.lo}</span><i
 				style:background={priceGradient}
 			></i>
-			<span>{domain.hi} <span title={TERMS.objectiveUnits}>{PRICE_UNIT}</span></span>
+			<span
+				>{domain.hi}
+				<span title={TERMS.objectiveUnits}>{PRICE_UNIT}</span></span
+			>
 		</div>
-		<label hidden={brief}>
-			Price scale
-			<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
-				{#each PRICE_SCALES as entry, index (index)}
-					<option value={index}>{entry.lo} to {entry.hi}</option>
-				{/each}
-			</select>
-			<span>Values outside the scale use its end colours.</span>
-		</label>
+		{#if !brief}<label>
+				Price scale
+				<select value={scale} onchange={(event) => onscale(Number(event.currentTarget.value))}>
+					{#each PRICE_SCALES as entry, index (index)}
+						<option value={index}>{entry.lo} to {entry.hi}</option>
+					{/each}
+				</select>
+				<span>Values outside the scale use its end colours.</span>
+			</label>{/if}
 		{#if shadingCentre !== null && !brief}
 			<p>
-				Shading: <span class="cheap">cheaper</span> or <span class="dear">dearer</span> than the
-				median LMP, {economicAmount(shadingCentre)}
+				Interpolated shading: <span class="cheap">cheaper</span> or
+				<span class="dear">dearer</span>
+				than the median LMP, {economicAmount(shadingCentre)}
 			</p>
 		{/if}
 	{:else if !isOpf(formulation)}
@@ -101,8 +105,20 @@
 				Binding thermal limits · {economics.binding.length}
 			</p>{/if}
 	{:else}
+		<details class="concepts">
+			<summary>Loading, binding and marginal relief explained</summary>
+			<p>
+				<strong>At rating:</strong>
+				{TERMS.atRating} This is a flow measurement, not a statement about solver enforcement.
+			</p>
+			<p><strong>Binding:</strong> {TERMS.binding}</p>
+			<p><strong>Marginal relief:</strong> {TERMS.relief}</p>
+			<p><strong>LMP:</strong> {TERMS.lmp} {TERMS.objectiveUnits}</p>
+		</details>
 		{#if bus}
-			<p><strong>Bus {bus.id}</strong> · Total LMP {economicAmount(busPrice)}</p>
+			<p>
+				<strong>Bus {bus.id}</strong> · Total LMP {economicAmount(busPrice)}
+			</p>
 		{/if}
 		{#if branch}
 			<p><strong>Branch {branch.id}</strong> · {thermalStatus(branchResult)}</p>
@@ -116,8 +132,9 @@
 		{#if economics.thermalAvailable}
 			<p>
 				<span class="accent">Wide purple line</span> · a
-				<span title={TERMS.binding}>binding</span> line limit: carrying one more MW there would
-				lower the total cost (its <span title={TERMS.relief}>marginal relief</span>)
+				<span title={TERMS.binding}>binding</span> line limit with positive marginal relief:
+				increasing its rating can lower the optimal cost (its
+				<span title={TERMS.relief}>marginal relief</span>)
 			</p>
 			<details>
 				<summary>Binding thermal limits · {economics.binding.length}</summary>

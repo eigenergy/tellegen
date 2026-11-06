@@ -51,11 +51,54 @@ mpc.gencost = [2 0 0 3 0.1 5 0; 2 0 0 3 0.1 5 0;];
 
 /** The results panel starts collapsed on a phone; open it where a test needs the full panel. */
 async function expandResults(page: import('@playwright/test').Page) {
-	const more = page.locator('.tx-stage .legend').getByRole('button', { name: 'More ▾' });
+	const more = page.locator('.tx-stage .legend').getByRole('button', { name: 'Details ▾' });
 	if (await more.isVisible()) await more.click();
 	await expect(
-		page.locator('.tx-stage .legend').getByRole('button', { name: 'Less ▴' })
+		page.locator('.tx-stage .legend').getByRole('button', { name: 'Summary ▴' })
 	).toBeVisible();
+}
+
+async function selectView(toolbar: import('@playwright/test').Locator, label: string) {
+	const select = toolbar.getByRole('combobox', { name: 'Diagram view', exact: true });
+	if (await select.isVisible()) await select.selectOption({ label });
+	else await toolbar.getByRole('radio', { name: label, exact: true }).click();
+}
+async function expectView(toolbar: import('@playwright/test').Locator, label: string) {
+	const select = toolbar.getByRole('combobox', { name: 'Diagram view', exact: true });
+	if (await select.isVisible()) await expect(select.locator('option:checked')).toHaveText(label);
+	else
+		await expect(toolbar.getByRole('radio', { name: label, exact: true })).toHaveAttribute(
+			'aria-checked',
+			'true'
+		);
+}
+async function selectLayout(toolbar: import('@playwright/test').Locator, label: string) {
+	const select = toolbar.getByRole('combobox', { name: 'Diagram layout', exact: true });
+	if (await select.isVisible()) {
+		await select.selectOption({ label });
+		await expect(select.locator('option:checked')).toHaveText(label);
+	} else {
+		const button = toolbar.getByRole('button', { name: label, exact: true });
+		await button.click();
+		await expect(button).toHaveAttribute('aria-pressed', 'true');
+	}
+}
+async function displayOptions(toolbar: import('@playwright/test').Locator, open: boolean) {
+	const toggle = toolbar.getByRole('button', { name: 'Display', exact: true });
+	if (
+		(await toggle.isVisible()) &&
+		((await toggle.getAttribute('aria-expanded')) === 'true') !== open
+	)
+		await toggle.click();
+}
+async function hideBasemap(toolbar: import('@playwright/test').Locator) {
+	await displayOptions(toolbar, true);
+	await toolbar.getByLabel('Basemap').uncheck();
+	await displayOptions(toolbar, false);
+}
+async function exportPng(toolbar: import('@playwright/test').Locator) {
+	await displayOptions(toolbar, true);
+	await toolbar.getByRole('button', { name: 'PNG', exact: true }).click();
 }
 
 for (const touch of [false, true]) {
@@ -88,7 +131,7 @@ for (const touch of [false, true]) {
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
 			const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
-			await toolbar.getByLabel('Basemap').uncheck();
+			await hideBasemap(toolbar);
 			await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
 			const panel = page.getByRole('region', { name: 'Operating limits', exact: true });
 			await expect(panel).toContainText('1 at rating');
@@ -135,7 +178,7 @@ for (const touch of [false, true]) {
 			else await inspector.getByRole('button', { name: 'Frame', exact: true }).press('Escape');
 			await expect(inspector).toHaveCount(0);
 
-			await toolbar.getByRole('radio', { name: 'OPF economics', exact: true }).click();
+			await selectView(toolbar, 'OPF economics');
 			const economics = diagram.getByRole('region', { name: 'OPF economics' });
 			await expect(economics).toContainText('Total LMP');
 			await expect(economics).toContainText('objective units/MW');
@@ -153,7 +196,7 @@ for (const touch of [false, true]) {
 			await expect(diagram.getByLabel('Branch utilization gauges')).toHaveCount(0);
 			await page.screenshot({ path: testInfo.outputPath('opf-economics.png') });
 
-			await toolbar.getByRole('radio', { name: 'Power transfers', exact: true }).click();
+			await selectView(toolbar, 'Power transfers');
 			const transfers = diagram.getByRole('region', { name: 'Power transfers' });
 			await expect(transfers).toContainText('0 to 500 MW');
 			await transfers.getByLabel('Width scale').selectOption('100');
@@ -183,7 +226,7 @@ for (const touch of [false, true]) {
 					};
 				});
 				const pendingDownload = page.waitForEvent('download');
-				await toolbar.getByRole('button', { name: 'PNG', exact: true }).tap();
+				await exportPng(toolbar);
 				const exportPath = testInfo.outputPath('power-transfers-export.png');
 				await (await pendingDownload).saveAs(exportPath);
 				const text = await page.evaluate(() =>
@@ -249,11 +292,9 @@ for (const touch of [false, true]) {
 					await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 					if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
 					const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
-					await expect(
-						toolbar.getByRole('radio', { name: 'Operating limits', exact: true })
-					).toHaveAttribute('aria-checked', 'true');
-					await toolbar.getByLabel('Basemap').uncheck();
-					await toolbar.getByRole('button', { name: 'Schematic', exact: true }).click();
+					await expectView(toolbar, 'Operating limits');
+					await hideBasemap(toolbar);
+					await selectLayout(toolbar, 'Schematic');
 					await expect(page.locator('.tx-stage .status')).toHaveCount(0);
 					const panel = page.getByRole('region', { name: 'Operating limits', exact: true });
 					await expect(panel).toContainText(uniform ? '↑ 2 high' : '↑ 1 high');
@@ -289,7 +330,7 @@ for (const touch of [false, true]) {
 					).toContainText('1.0800 pu');
 					if (!touch && !uniform) {
 						const pending = page.waitForEvent('download');
-						await toolbar.getByRole('button', { name: 'PNG', exact: true }).click();
+						await exportPng(toolbar);
 						await (await pending).saveAs(testInfo.outputPath('station-limits-export.png'));
 						await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
 						await calculation.selectOption('socwr');
@@ -298,7 +339,7 @@ for (const touch of [false, true]) {
 						await expect(
 							page.getByRole('region', { name: 'Operating limits', exact: true })
 						).toContainText('Relaxation');
-						await toolbar.getByRole('radio', { name: 'OPF economics', exact: true }).click();
+						await selectView(toolbar, 'OPF economics');
 						const economics = page.getByRole('region', { name: 'OPF economics' });
 						await expect(economics).toContainText('Relaxation');
 						await expect(economics).toContainText(
@@ -342,21 +383,67 @@ for (const touch of [false, true]) {
 				}
 			}
 
-			const view = (value: string) => toolbar.getByRole('radio', { name: value, exact: true });
-			await expect(view('Operating limits')).toHaveAttribute('aria-checked', 'true');
+			await expectView(toolbar, 'Operating limits');
 			await expect(
 				page.getByRole('region', { name: 'Operating limits', exact: true })
 			).toContainText('Voltage not solved (DC)');
-			// Every view is visible in the toolbar, not hidden in a menu.
-			await expect(toolbar.getByRole('radiogroup', { name: 'Diagram view' })).toBeVisible();
-			await expect(toolbar.getByRole('radio')).toHaveText([
+			// Every view is named in the mobile selector; desktop keeps keyboard-operable radios.
+			const viewNames = [
 				'Voltage levels',
 				'Operating limits',
 				'OPF economics',
 				'Power transfers',
 				'Map display'
-			]);
-			await view('Voltage levels').click();
+			];
+			if (touch) {
+				const chooser = toolbar.getByRole('combobox', { name: 'Diagram view', exact: true });
+				await expect(chooser).toBeVisible();
+				await expect(chooser.locator('option')).toHaveText(viewNames);
+				expect((await toolbar.boundingBox())!.height).toBeLessThan(125);
+				await expect(toolbar.getByLabel('Basemap')).toHaveCount(0);
+				await selectView(toolbar, 'OPF economics');
+				const economics = page.getByRole('region', { name: 'OPF economics', exact: true });
+				await expect(economics.getByLabel('Price scale')).toHaveCount(0);
+				await expect(
+					page.locator('.tx-stage .legend').getByRole('button', { name: 'Details ▾' })
+				).toBeVisible();
+				await page.screenshot({ path: testInfo.outputPath('mobile-economics-summary.png') });
+				await expandResults(page);
+				await expect(economics.getByLabel('Price scale')).toBeVisible();
+				await economics
+					.getByText('Loading, binding and marginal relief explained', { exact: true })
+					.click();
+				await expect(
+					economics.getByText(/A binding limit can have zero marginal value/)
+				).toBeVisible();
+				await economics
+					.locator('details.concepts')
+					.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+				await page.screenshot({ path: testInfo.outputPath('mobile-economics-explained.png') });
+				await page.locator('.tx-stage .legend').evaluate((el) => {
+					el.scrollTop = 0;
+				});
+				await page.locator('.tx-stage .legend').getByRole('button', { name: 'Summary ▴' }).click();
+				await expect(economics.getByLabel('Price scale')).toHaveCount(0);
+				await page.setViewportSize({ width: 320, height: 740 });
+				for (const control of await toolbar.locator('button, select').all()) {
+					const box = (await control.boundingBox())!;
+					expect(box.x).toBeGreaterThanOrEqual(0);
+					expect(box.x + box.width).toBeLessThanOrEqual(320);
+					expect(box.height).toBeGreaterThanOrEqual(44);
+				}
+				await page.setViewportSize({ width: 390, height: 844 });
+			} else {
+				await expect(toolbar.getByRole('radio')).toHaveText(viewNames);
+				await toolbar.getByRole('radio', { name: 'Operating limits', exact: true }).focus();
+				await page.keyboard.press('ArrowRight');
+				await expect(
+					toolbar.getByRole('radio', { name: 'OPF economics', exact: true })
+				).toBeFocused();
+				await expectView(toolbar, 'OPF economics');
+			}
+
+			await selectView(toolbar, 'Voltage levels');
 			// The key names the levels drawn, the transformer, and the engine's substation grouping:
 			// buses 1 and 2 share a coordinate, so four buses make three substations.
 			const key = page.locator('.tx-stage details.key');
@@ -379,7 +466,7 @@ for (const touch of [false, true]) {
 
 			// Once solved, the drawing can colour by results: the bus series and branch loading.
 			await page.screenshot({ path: testInfo.outputPath('transmission-voltage.png') });
-			await view('Operating limits').click();
+			await selectView(toolbar, 'Operating limits');
 			await expandResults(page);
 			const toolbarBox = (await toolbar.boundingBox())!;
 			const legendBox = (await page.locator('.tx-stage .legend').boundingBox())!;
@@ -410,13 +497,10 @@ for (const touch of [false, true]) {
 			await page.screenshot({ path: testInfo.outputPath('transmission-diagram.png') });
 
 			// The substation overview is laid out in the engine and shares the frame of the geography.
-			const schematic = toolbar.getByRole('button', { name: 'Schematic', exact: true });
-			await schematic.click();
-			await expect(schematic).toHaveAttribute('aria-pressed', 'true');
+			await selectLayout(toolbar, 'Schematic');
 			await expect(page.locator('.tx-stage .status')).toHaveCount(0);
 			await page.screenshot({ path: testInfo.outputPath('transmission-schematic.png') });
-			await toolbar.getByRole('button', { name: 'Geographic', exact: true }).click();
-			await expect(schematic).toHaveAttribute('aria-pressed', 'false');
+			await selectLayout(toolbar, 'Geographic');
 
 			await toolbar.getByRole('button', { name: 'Close', exact: true }).click();
 			await expect(canvas).toHaveCount(0);
@@ -432,9 +516,7 @@ for (const touch of [false, true]) {
 			await expect(calculation).toBeEnabled();
 			await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
 			if (touch) await page.getByRole('button', { name: 'Close network panel' }).tap();
-			await expect(
-				toolbar.getByRole('radio', { name: 'Operating limits', exact: true })
-			).toHaveAttribute('aria-checked', 'true');
+			await expectView(toolbar, 'Operating limits');
 			await expandResults(page);
 			await page.locator('.tx-stage details.settings summary').click();
 			await expect(page.getByRole('spinbutton', { name: 'Loading warning percent' })).toHaveValue(
@@ -449,7 +531,7 @@ for (const touch of [false, true]) {
 				'max(|S from|, |S to|) / MVA rating'
 			);
 			await page.locator('.tx-stage details.settings summary').click();
-			await toolbar.getByLabel('Basemap').uncheck();
+			await hideBasemap(toolbar);
 			await toolbar.getByRole('button', { name: 'Fit', exact: true }).click();
 			await page.evaluate(
 				() =>
@@ -459,7 +541,7 @@ for (const touch of [false, true]) {
 			);
 			await page.screenshot({ path: testInfo.outputPath('transmission-ac-results.png') });
 			const pendingDownload = page.waitForEvent('download');
-			await toolbar.getByRole('button', { name: 'PNG', exact: true }).click();
+			await exportPng(toolbar);
 			const imagePath = testInfo.outputPath('operating-limits-export.png');
 			await (await pendingDownload).saveAs(imagePath);
 			const png = await readFile(imagePath);
@@ -467,7 +549,7 @@ for (const touch of [false, true]) {
 			expect(png.readUInt32BE(16)).toBeGreaterThanOrEqual(page.viewportSize()!.width);
 			expect(png.readUInt32BE(20)).toBeGreaterThan(page.viewportSize()!.height);
 
-			await toolbar.getByRole('radio', { name: 'Power transfers', exact: true }).click();
+			await selectView(toolbar, 'Power transfers');
 			const transfer = page.getByRole('region', { name: 'Power transfers' });
 			await expect(transfer).toContainText('AC power flow');
 			const overloads = page.getByText('Overloads · 1', { exact: true });
@@ -486,5 +568,46 @@ for (const touch of [false, true]) {
 			await expect(inspector).toContainText('Active magnitude');
 			await page.screenshot({ path: testInfo.outputPath('power-transfers-ac.png') });
 		});
+	});
+}
+
+// Legacy and partial backend results must not become healthy or zero-flow summaries.
+for (const previousFormulation of [false, true]) {
+	test(`partial backend data preserves unknowns${previousFormulation ? ' while awaiting the selected calculation' : ''}`, async ({
+		page
+	}, testInfo) => {
+		const { mockDataRoutes, SOLUTION } = await import('./fixtures/backend-case.js');
+		await mockDataRoutes(page);
+		await page.route('**/api/cases/case1/solution', (route) =>
+			route.fulfill({
+				json: {
+					...SOLUTION,
+					formulation: previousFormulation ? 'acpf' : 'dcopf',
+					flows: []
+				}
+			})
+		);
+		await page.goto('/');
+		await page.getByRole('button', { name: 'Show diagram', exact: true }).click();
+		const toolbar = page.getByRole('toolbar', { name: 'Single-line diagram' });
+		const operating = page.getByRole('region', { name: 'Operating limits', exact: true });
+		await expect(operating).toContainText('No line loading could be assessed.');
+		await expect(operating).toContainText('1 line has no usable flow value.');
+		await expect(operating.locator('.lead')).not.toHaveClass(/\bok\b/);
+		await selectView(toolbar, 'Power transfers');
+		const transfer = page.getByRole('region', { name: 'Power transfers', exact: true });
+		await expect(transfer).toContainText(
+			previousFormulation
+				? 'Awaiting a result for this calculation.'
+				: 'Flow values are unavailable for 1 in-service line.'
+		);
+		await expect(transfer).not.toContainText('No line carries power');
+		if (!previousFormulation) {
+			await selectView(toolbar, 'OPF economics');
+			const economics = page.getByRole('region', { name: 'OPF economics', exact: true });
+			await expect(economics).toContainText('Thermal binding information is unavailable');
+			await expect(economics).not.toContainText('No reported thermal limit binds');
+			await page.screenshot({ path: testInfo.outputPath('unknown-thermal-status.png') });
+		}
 	});
 }

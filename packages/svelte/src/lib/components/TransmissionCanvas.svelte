@@ -163,6 +163,7 @@
 	/** The results panel collapsed to its summary: by default on a phone, where it would cover
 	 * much of the diagram. A new selection opens it, since the details are what was asked for. */
 	let brief = $state(getPanelLayout().compact);
+	let displayOptions = $state(false);
 	let resultInspector = $state<ReturnType<typeof TxResultInspection>>();
 	const warningPref = new StoredNumber(
 		'tellegen.transmission.loading-warning',
@@ -803,7 +804,10 @@
 			: []
 	);
 	function render() {
-		if (kit) deck?.setProps({ layers: txLayers(kit, scene(), morph ? [] : branchLayers) });
+		if (kit)
+			deck?.setProps({
+				layers: txLayers(kit, scene(), morph ? [] : branchLayers)
+			});
 	}
 
 	function valueText(i: number): { label: string; text: string } | null {
@@ -964,7 +968,14 @@
 			const [x, y] = screen(anchors[edge * 4], anchors[edge * 4 + 1]);
 			if (!Number.isFinite(x) || !Number.isFinite(y)) return;
 			const loading = flows.get(network.branches[edge].id)!.loading;
-			gaugeCandidates.push({ edge, ax: x, ay: y, loading, state: loadingStates[edge], selected });
+			gaugeCandidates.push({
+				edge,
+				ax: x,
+				ay: y,
+				loading,
+				state: loadingStates[edge],
+				selected
+			});
 		};
 		const isPointed = (edge: number) => edge === selectedEdge || edge === hoveredEdge;
 		for (const edge of gaugePool.busy) {
@@ -1590,6 +1601,7 @@
 	</div>
 	<div
 		class="toolbar"
+		class:compact={panels.compact}
 		bind:clientHeight={toolbarHeight}
 		style:max-width="calc(100% - {toolLeft +
 			(panels.compact ? 12 : panels.dockWidth('right') + 24)}px)"
@@ -1598,62 +1610,95 @@
 		role="toolbar"
 		aria-label="Single-line diagram"
 	>
-		<div
-			class="segmented views"
-			role="radiogroup"
-			aria-label="Diagram view"
-			tabindex="-1"
-			onkeydown={viewKey}
-		>
-			{#each VIEWS as v (v.value)}
-				<button
-					role="radio"
-					aria-checked={colour === v.value}
-					tabindex={colour === v.value ? 0 : -1}
-					title={v.hint}
-					onclick={() => (colour = v.value)}>{v.label}</button
+		{#if panels.compact}
+			<div class="mobile-view">
+				<label
+					>View <select aria-label="Diagram view" bind:value={colour}>
+						{#each VIEWS as v (v.value)}<option value={v.value}>{v.label}</option>{/each}
+					</select></label
 				>
-			{/each}
-		</div>
-		<div class="segmented" role="group" aria-label="Layout">
-			<button
-				aria-pressed={layout === 'source'}
-				title="Positions from the case data"
-				onclick={() => show('source')}>{geographic ? 'Geographic' : 'Drawing'}</button
+				<button onclick={onclose} title="Return to the map">Close</button>
+			</div>
+		{:else}
+			<div
+				class="segmented views"
+				role="radiogroup"
+				aria-label="Diagram view"
+				tabindex="-1"
+				onkeydown={viewKey}
 			>
-			<button
-				aria-pressed={layout === 'schematic'}
-				title="Substations near their positions, one busbar per bus, lines between them"
-				onclick={() => show('schematic')}>Schematic</button
-			>
-		</div>
-		{#if geographic}
-			<label class="check" title="Map tiles under the geographic positions, as on the main map"
-				><input
-					type="checkbox"
-					checked={basemapPref.value}
-					onchange={(e) => basemapPref.set(e.currentTarget.checked)}
-				/> Basemap</label
-			>
+				{#each VIEWS as v (v.value)}
+					<button
+						role="radio"
+						aria-checked={colour === v.value}
+						tabindex={colour === v.value ? 0 : -1}
+						title={v.hint}
+						onclick={() => (colour = v.value)}>{v.label}</button
+					>
+				{/each}
+			</div>
 		{/if}
-		{#if fieldKind}
-			<label
-				class="check"
-				title={fieldKind === 'voltage'
-					? 'Shade the area around buses near their voltage limits: blue towards the minimum, brown towards the maximum'
-					: 'Shade the area around buses by total LMP, on the price scale'}
-				><input
-					type="checkbox"
-					checked={fieldPref.value}
-					onchange={(e) => fieldPref.set(e.currentTarget.checked)}
-				/> Shading</label
+		{#if panels.compact}
+			<select
+				aria-label="Diagram layout"
+				value={layout}
+				onchange={(e) => show(e.currentTarget.value as Layout)}
 			>
+				<option value="source">{geographic ? 'Geographic' : 'Drawing'}</option>
+				<option value="schematic">Schematic</option>
+			</select>
+		{:else}
+			<div class="segmented" role="group" aria-label="Layout">
+				<button
+					aria-pressed={layout === 'source'}
+					title="Positions from the case data"
+					onclick={() => show('source')}>{geographic ? 'Geographic' : 'Drawing'}</button
+				>
+				<button
+					aria-pressed={layout === 'schematic'}
+					title="Substations near their positions, one busbar per bus, lines between them"
+					onclick={() => show('schematic')}>Schematic</button
+				>
+			</div>
 		{/if}
+
 		<button onclick={() => setCamera(fitAll())} title="Fit the drawing (F)">Fit</button>
 		<button onclick={() => zoomBy(-0.5)} aria-label="Zoom out" title="Zoom out">−</button>
 		<button onclick={() => zoomBy(0.5)} aria-label="Zoom in" title="Zoom in">+</button>
-		<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
-		<button onclick={onclose} title="Return to the map">Close</button>
+		{#if panels.compact}
+			<button
+				aria-expanded={displayOptions}
+				aria-controls="tx-display-options"
+				onclick={() => (displayOptions = !displayOptions)}>Display</button
+			>
+		{:else}<button onclick={onclose} title="Return to the map">Close</button>{/if}
+		{#if !panels.compact || displayOptions}
+			<div id="tx-display-options" class="display-options">
+				{#if geographic}
+					<label class="check" title="Map tiles under the geographic positions, as on the main map"
+						><input
+							type="checkbox"
+							checked={basemapPref.value}
+							onchange={(e) => basemapPref.set(e.currentTarget.checked)}
+						/> Basemap</label
+					>
+				{/if}
+				{#if fieldKind}
+					<label
+						class="check"
+						title={fieldKind === 'voltage'
+							? 'Shade the area around buses near their voltage limits: blue towards the minimum, brown towards the maximum'
+							: 'Interpolate price differences around buses: blue below the median LMP, brown above; bus colours use the fixed price scale'}
+						><input
+							type="checkbox"
+							checked={fieldPref.value}
+							onchange={(e) => fieldPref.set(e.currentTarget.checked)}
+						/> Shading</label
+					>
+				{/if}
+				<button onclick={exportPng} title="PNG of this view with a title block">PNG</button>
+			</div>
+		{/if}
 	</div>
 	{#if colour !== 'level'}
 		<div
@@ -1673,7 +1718,7 @@
 					class="collapse"
 					aria-expanded={!brief}
 					title={brief ? 'Show the key, settings and lists' : 'Show only the summary'}
-					onclick={() => (brief = !brief)}>{brief ? 'More ▾' : 'Less ▴'}</button
+					onclick={() => (brief = !brief)}>{brief ? 'Details ▾' : 'Summary ▴'}</button
 				>
 			{/if}
 			{#if operatingOn}
@@ -1928,6 +1973,53 @@
 </div>
 
 <style>
+	.mobile-view {
+		display: flex;
+		width: 100%;
+		gap: 6px;
+	}
+	.mobile-view label {
+		display: flex;
+		align-items: center;
+		flex: 1;
+		gap: 6px;
+		min-width: 0;
+	}
+	.mobile-view select {
+		flex: 1;
+		min-width: 0;
+	}
+	.toolbar select {
+		font: inherit;
+		background: var(--paper);
+		color: var(--ink);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		padding: 4px;
+	}
+	.toolbar.compact {
+		gap: 5px;
+	}
+	.toolbar.compact select {
+		min-height: 44px;
+		font-size: 16px;
+	}
+	.toolbar.compact > select {
+		width: 116px;
+		font-size: 13px;
+	}
+	.display-options {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.compact .display-options {
+		width: 100%;
+		border-top: 1px solid var(--line);
+		padding-top: 6px;
+	}
+
 	/* The multiconductor schematic's look, so both diagrams read as one tool. */
 	.tx-stage {
 		position: absolute;
@@ -2116,13 +2208,13 @@
 		border-radius: 3px;
 	}
 	.legend.operating {
+		display: flow-root;
 		max-width: 720px;
-		padding-right: 64px;
+		padding-right: 8px;
 	}
 	.legend .collapse {
-		position: absolute;
-		top: 4px;
-		right: 6px;
+		float: right;
+		margin-left: 8px;
 		padding: 2px 6px;
 		font: inherit;
 		color: var(--ink);

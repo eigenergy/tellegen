@@ -55,18 +55,29 @@ out, levels below the top three fade so the backbone reads first.
 
 ## Results
 
-The toolbar shows every view as a tab: **Voltage levels**, **Operating limits**, **OPF
-economics**, **Power transfers** and **Map display**, so what the diagram offers is visible
-without opening a menu. Each tab describes its view on hover, and arrow keys move between them.
-A view that needs a result says what is missing instead of being disabled: OPF economics, for
-example, names the calculations that supply prices.
+On desktop the toolbar shows **Voltage levels**, **Operating limits**, **OPF economics**,
+**Power transfers** and **Map display** as tabs; arrow keys move between them. On phones,
+the labelled **View** selector lists all five views without a clipped horizontal tab strip.
+The layout selector, fit and zoom controls remain beside **Display**, which reveals basemap,
+shading and PNG export options. These settings start closed to leave room for the network.
+A view that needs a result explains what is missing instead of being disabled.
 
-Each result view opens with a plain reading of the result and the reason for it, before any
-counts or notation: "Every rated line runs below 90% of its rating", with why DC checks loading
-only; "Every bus has the same price", because no line limit binds, and prices separate when one
-does; "The busiest line carries 555 MW". A link leads to the matching section of this page. Terms
-such as rating, binding, marginal relief and objective units have short explanations on hover
-(dotted underline), and the notation (`|P| / MW rating`) sits under **Key and settings**.
+Each result view starts with what the available data supports. Operating summaries report how
+many lines and buses were checked, and distinguish missing flows from unknown rating metadata.
+Missing voltages or limits prevent an all-clear summary. Out-of-service and diagnosed de-energized
+equipment are excluded from checks. A checked voltage is compared with its available source bounds;
+this is not a guarantee about limits absent from the case.
+
+Economics reports the range of supplied prices without inferring thermal binding status from
+price differences or uniformity. If constraint metadata is absent, its status is explicitly
+unavailable. Transfers distinguish absent results, a previous calculation's retained result,
+missing flows and confirmed zero active power. A largest transfer is qualified as being among
+reported flows when other branch flows are missing.
+
+**Details** expands the summary to show settings, lists and explanations; **Summary** collapses
+it again. **Key and settings**, **Loading, binding and marginal relief explained**, and **MW,
+MVAr and MVA explained** can be opened by touch or keyboard. Hover definitions remain available
+as shortcuts. A documentation link accompanies the expanded explanation.
 
 Prices are in objective units per MW: the units of the case's generator costs per hour. MATPOWER
 files give costs in $/h, so for them this is $/MWh; payloads do not carry a currency, so the
@@ -79,7 +90,8 @@ Voltage uses a fixed 0.90–1.10 pu scale and each bus's source bounds. Downward
 red markers identify lower and upper violations, including uniform violating series.
 **Shading** (on by default) shades the area around the network by where each bus voltage sits in
 its own band: clear in the middle half, blue towards the minimum and brown towards the maximum,
-at full strength at a limit. Low- or high-voltage regions show by area before any number is read
+at full strength at a limit. Shading interpolates bus values in drawing space; it is not a
+measurement at every point on the map. Low- or high-voltage regions show by area before any number is read
 (Overbye et al., IEEE TPWRS 2003, found contours gave the fastest violation detection). Substation
 borders preserve the worst member violation. A station summary retains minimum and maximum
 values with bus identities, and links to the worst bus; it never substitutes an average.
@@ -136,8 +148,8 @@ and values outside it use the end colours. A uniform price has a single numerica
 When prices differ, **Shading** shades the area around the network by each bus's distance from
 the median LMP: blue where power is cheaper and brown where it is dearer. The full-strength
 distance is the largest in the result, but at least 5% of the median or one price unit, so
-small spreads stay faint. The shading shows where congestion separates prices, whatever the
-price level; bus colours keep the fixed scale.
+small spreads stay faint. The shading shows relative price differences, not their cause, and interpolates between buses.
+It uses a different reference from the bus colours, which keep the fixed absolute scale.
 
 A wide purple branch identifies a binding DC thermal limit with positive marginal relief; other
 branches stay thin and grey. The
@@ -150,6 +162,28 @@ Solved interface and other linear constraints list their bounds, value and signe
 with links to branch members where available. The sign describes the objective reduction for an
 increase in the signed limit. AC OPF and SOCWR can show total LMP where supplied. SOCWR stays
 labelled as a relaxation, and the view marks unsupported or legacy constraint data as unavailable.
+
+#### Loading is not marginal value
+
+These quantities answer different questions:
+
+| Readout | What it establishes | What it does not establish |
+| --- | --- | --- |
+| 100% utilization | The reported flow reaches the effective rating, within display tolerance. | Whether the solver enforced that rating. |
+| Binding constraint | An enforced limit is reached, within reporting tolerance. | Whether relaxing it would reduce optimal cost. |
+| Positive marginal rating relief | Increasing the rating has a positive local rate of cost reduction. | That the actual flow will rise by the same amount, or that a large upgrade has this constant value. |
+
+For example, an enforced line limit can sit at 100% with zero marginal relief. Another line at 100% can
+have relief of 20 objective units/MW: a small increase in its rating then has an estimated
+cost benefit at that local rate. The second line is purple; both can appear in the binding list.
+Changing the display warning threshold changes neither the optimization nor these values.
+Equal bus prices alone do not identify a unique marginal generator. Different prices can
+reflect constraints, separate islands, and, for AC, losses; interpret them with the reported
+constraint data rather than diagnosing a cause from colour alone.
+
+Nominal **kV** identifies the voltage level. **pu** compares a solved voltage with that nominal
+value: 1.00 pu is nominal and 0.95 pu is 5% below it. **MW** is active power; **MVAr** is reactive
+power. Both contribute to **MVA**, the apparent power used for the AC equipment-loading check.
 
 ### Power transfers
 
@@ -166,8 +200,8 @@ opposite endpoint MW. AC and SOCWR show both reported active and reactive values
 through-direction arrow when the two ends supply the branch. Bus details separate solved
 generation where supplied, model demand including committed edits, and installed capacity.
 
-**Less** and **More** collapse the results panel to its summary (the view, its counts and
-scale) and expand it again. It starts collapsed on a phone, where it would cover much of the
+**Summary** and **Details** collapse the results panel to its summary (the view, its counts and
+scale) and expand it again. The price-scale selector is hidden in the collapsed economics panel. It starts collapsed on a phone, where it would cover much of the
 diagram, and opens when equipment is selected.
 
 On phones, the toolbar and voltage-key controls have 44-pixel touch targets, and the renderer

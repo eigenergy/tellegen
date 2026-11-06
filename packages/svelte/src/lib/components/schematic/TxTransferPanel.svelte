@@ -44,7 +44,10 @@
 	const lead = $derived.by(() => {
 		const first = transfers[0];
 		return transferLead({
-			hasResult: context.solved,
+			hasResult: !!context.current,
+			awaiting: context.solved && !context.current,
+			missing,
+			zero,
 			top: first
 				? {
 						id: first.branch.id,
@@ -85,6 +88,11 @@
 				? 'Bus readouts show solved generation and model demand.'
 				: 'Solved generation unavailable. Bus readouts show model demand.'}
 		</p>
+		<details>
+			<summary>MW, MVAr and MVA explained</summary>
+			<p>{TERMS.activePower}</p>
+			<p>{TERMS.lossless}</p>
+		</details>
 		<details bind:open>
 			<summary>Largest active transfers</summary>
 			{#if transfers.length}
@@ -97,7 +105,10 @@
 									onpreview?.(null);
 									onbranch(branch.id);
 								}}
-								{...previewHandlers(onpreview, { kind: 'branch', id: branch.id })}
+								{...previewHandlers(onpreview, {
+									kind: 'branch',
+									id: branch.id
+								})}
 							>
 								<strong>Branch {branch.id}</strong><span
 									>{transferDirectionText(reading, branch)} · {readable(reading.magnitude, 'MW')

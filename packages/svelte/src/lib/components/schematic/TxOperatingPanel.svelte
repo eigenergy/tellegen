@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { operatingExceptions } from '../../diagram/transmission-inspection.js';
 	import { formulationLabel } from '../../format.js';
 	import {
 		voltageGradient,
@@ -22,17 +23,7 @@
 		formulation: Parameters<typeof formulationLabel>[0];
 		context: ReturnType<typeof operatingContext>;
 		voltageAvailable: boolean;
-		counts: {
-			low: number;
-			high: number;
-			overload: number;
-			warning: number;
-			atLimit: number;
-			voltageUnknown: number;
-			loadingUnknown: number;
-			inactive: number;
-			disconnected: number;
-		};
+		counts: ReturnType<typeof operatingExceptions>['counts'];
 		warning: number;
 		onwarning: (value: number) => void;
 		station: ({ name: string } & ReturnType<typeof stationVoltageSummary>) | null;
@@ -46,7 +37,6 @@
 		operatingLead({
 			hasResult: context.solved,
 			voltageSolved: context.voltage,
-			voltageAvailable,
 			counts,
 			warning
 		})
@@ -61,7 +51,7 @@
 				>
 			</div>{/if}
 		{#if shading}<p class="freshness">
-				Shading: near the <span class="low">minimum</span> or
+				Interpolated shading: near the <span class="low">minimum</span> or
 				<span class="high">maximum</span> voltage limit
 			</p>{/if}{/if}
 	<div class="counts" aria-label="Operating limit counts">
@@ -83,9 +73,11 @@
 		>
 		<span hidden={brief}
 			>{context.voltage ? `${counts.voltageUnknown} voltage unknown · ` : ''}<span
-				title={TERMS.loadingUnknown}>{counts.loadingUnknown} without a rating</span
+				title={TERMS.loadingUnknown}
+				>{counts.flowMissing} missing flows · {counts.ratingUnknown} unknown ratings</span
 			>
-			· <span title={TERMS.outOfService}>{counts.inactive} out of service</span>{counts.disconnected
+			·
+			<span title={TERMS.outOfService}>{counts.inactive} out of service</span>{counts.disconnected
 				? ` · ${counts.disconnected} de-energized`
 				: ''}</span
 		>
@@ -119,6 +111,10 @@
 					}}
 				/> %</label
 			>
+			<p>
+				Per unit (pu) compares voltage with its nominal kV: 1.00 pu is nominal, 0.95 pu is 5% below
+				it.
+			</p>
 			<p>
 				Grey below {warning}% · amber {warning}–100% · red above 100%. At rating does not mean
 				economically binding.
